@@ -42,6 +42,199 @@ import {
   IconSidebarLeft,
   IconX,
 } from "./icons";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	focusRing: {
+			":focus-visible": {
+					outline: "2px solid var(--accent-ink)",
+					outlineOffset: "2px"
+			}
+	},
+	Mx1: {
+			marginInline: "-4px"
+	},
+	flex: {
+			display: "flex"
+	},
+	maxWFull: {
+			maxWidth: "100%"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gapX15: {
+			columnGap: "6px"
+	},
+	gapY05: {
+			rowGap: "2px"
+	},
+	roundedSm: {
+			borderRadius: "calc(4px * var(--rf))"
+	},
+	px1: {
+			paddingInline: "4px"
+	},
+	textLeft: {
+			textAlign: "left"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	transitionColors: {
+			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	h25: {
+			height: "10px"
+	},
+	w40: {
+			width: "160px"
+	},
+	shrink: {
+			flexShrink: "1"
+	},
+	bgLine: {
+			backgroundColor: "var(--border)"
+	},
+	w200px: {
+			width: "200px"
+	},
+	minW90px: {
+			minWidth: "90px"
+	},
+	shrink100: {
+			flexShrink: "100"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	maxW150px: {
+			maxWidth: "150px"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	minW200px: {
+			minWidth: "200px"
+	},
+	maxW320px: {
+			maxWidth: "320px"
+	},
+	size18px: {
+			width: "18px",
+			height: "18px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	minH0: {
+			minHeight: "0"
+	},
+	wFull: {
+			width: "100%"
+	},
+	overflowYAuto: {
+			overflowY: "auto"
+	},
+	bgSurface: {
+			backgroundColor: "var(--bg)"
+	},
+	mxAuto: {
+			marginInline: "auto"
+	},
+	maxW920px: {
+			maxWidth: "920px"
+	},
+	px6: {
+			paddingInline: "24px"
+	},
+	pb15: {
+			paddingBottom: "60px"
+	},
+	pt7: {
+			paddingTop: "28px"
+	},
+	mb18px: {
+			marginBottom: "18px"
+	},
+	mb8: {
+			marginBottom: "32px"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	mb5: {
+			marginBottom: "20px"
+	},
+	itemsBaseline: {
+			alignItems: "baseline"
+	},
+	leading13: {
+			lineHeight: "1.3"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	justifySelfEnd: {
+			justifySelf: "flex-end"
+	},
+	textGreen: {
+			color: "var(--green)"
+	},
+	ml2: {
+			marginLeft: "8px"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	minH13: {
+			minHeight: "52px"
+	},
+	borderB: {
+			borderBottomStyle: "solid",
+			borderBottomWidth: "1px"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	bgPanel: {
+			backgroundColor: "var(--bg-panel)"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	fontNormal: {
+			fontWeight: "var(--font-weight-normal)"
+	},
+	minH10: {
+			minHeight: "40px"
+	},
+	size10: {
+			width: "40px",
+			height: "40px"
+	},
+});
 
 interface Props {
   sessions: UnifiedSession[];
@@ -120,7 +313,7 @@ function Separator() {
   // A space of its own rather than a margin: the dot costs the line as little
   // as it can, and the clauses stay on one row a little longer for it.
   return (
-    <span aria-hidden="true" className="text-faint">
+    <span aria-hidden="true" {...stylex.props(sx.textFaint)}>
       {" ·"}
     </span>
   );
@@ -163,9 +356,9 @@ function OverviewLine({
       // The clauses wrap rather than truncate: a narrow window should cost the
       // line a second row, not hide the trend behind an ellipsis that gives no
       // hint of what it swallowed.
-      className="focus-ring group -mx-1 flex max-w-full cursor-pointer flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded-sm px-1 text-left text-supporting tabular-nums text-dim transition-colors hover:text-fg"
+      className="group tabular-nums hover:text-fg" {...stylex.props(sx.focusRing, sx.Mx1, sx.flex, sx.maxWFull, sx.cursorPointer, sx.flexWrap, sx.itemsCenter, sx.gapX15, sx.gapY05, sx.roundedSm, sx.px1, sx.textLeft, sx.textDim, sx.transitionColors, typography.supporting)}
     >
-      <span className="flex items-center gap-2">
+      <span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
         <span
           aria-hidden="true"
           className={
@@ -193,12 +386,12 @@ function OverviewLine({
         </>
       ) : null}
       {trend ? (
-        <span className="text-faint transition-colors group-hover:text-dim">
+        <span className="group-hover:text-dim" {...stylex.props(sx.textFaint, sx.transitionColors)}>
           {trend}
         </span>
       ) : null}
       {!stats && (
-        <span className="h-2.5 w-40 shrink rounded-sm bg-line motion-safe:animate-pulse" />
+        <span className="motion-safe:animate-pulse" {...stylex.props(sx.h25, sx.w40, sx.shrink, sx.roundedSm, sx.bgLine)} />
       )}
     </button>
   );
@@ -392,7 +585,7 @@ setAddingToSidebar(false);
           and past the field's floor the labels do truncate, which is the honest
           end of a bar that has run out of room. */}
       <Input
-        className="w-[200px] min-w-[90px] shrink-[100]"
+        {...stylex.props(sx.w200px, sx.minW90px, sx.shrink100)}
         type="search"
         aria-label="Search pull requests"
         placeholder="Search pull requests…"
@@ -405,22 +598,22 @@ setAddingToSidebar(false);
         <Menu.Root>
           <Menu.Trigger
             render={
-              <Button variant="ghost" className="min-w-0" icon={<IconPeople size={18} />} caret>
-                <span className="max-w-[150px] truncate">
+              <Button variant="ghost" {...stylex.props(sx.minW0)} icon={<IconPeople size={18} />} caret>
+                <span {...stylex.props(sx.maxW150px, sx.truncate)}>
                   {person === "all" ? "Anyone" : personLabel(person)}
                 </span>
               </Button>
             }
           />
-          <Menu.Popup align="end" className="min-w-[200px] max-w-[320px]">
+          <Menu.Popup align="end" {...stylex.props(sx.minW200px, sx.maxW320px)}>
             <Menu.RadioGroup
               value={person}
               onValueChange={(value) => setPerson(String(value))}
             >
               <Menu.RadioItem value="all" closeOnClick>
                 {/* Sized to the faces below so every label shares one edge. */}
-                <span className="size-[18px] shrink-0" />
-                <span className="min-w-0 flex-1 truncate">Anyone</span>
+                <span {...stylex.props(sx.size18px, sx.shrink0)} />
+                <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>Anyone</span>
                 <Menu.Check on={person === "all"} />
               </Menu.RadioItem>
               {people.map((who) => {
@@ -428,7 +621,7 @@ setAddingToSidebar(false);
                 return (
                   <Menu.RadioItem key={key} value={key} closeOnClick>
                     <UserAvatar name={who.name} size={18} />
-                    <span className="min-w-0 flex-1 truncate">
+                    <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
                       {key === currentUser.toLowerCase()
                         ? `${who.fullName} (you)`
                         : who.fullName}
@@ -445,8 +638,8 @@ setAddingToSidebar(false);
       <Menu.Root>
         <Menu.Trigger
           render={
-            <Button variant="ghost" className="min-w-0" icon={<IconFolder size={18} />} caret>
-              <span className="max-w-[150px] truncate">
+            <Button variant="ghost" {...stylex.props(sx.minW0)} icon={<IconFolder size={18} />} caret>
+              <span {...stylex.props(sx.maxW150px, sx.truncate)}>
                 {workspaceId === "all"
                   ? "All workspaces"
                   : workspaceId === "standalone"
@@ -459,23 +652,23 @@ setAddingToSidebar(false);
         {/* Capped, because a workspace is named after the pull request it was
             opened for and those names run long. Uncapped, one of them sets the
             width of the whole popup and the menu spans half the page. */}
-        <Menu.Popup align="end" className="min-w-[200px] max-w-[320px]">
+        <Menu.Popup align="end" {...stylex.props(sx.minW200px, sx.maxW320px)}>
           <Menu.RadioGroup
             value={workspaceId}
             onValueChange={(value) => setWorkspaceId(String(value))}
           >
             <Menu.RadioItem value="all" closeOnClick>
-              <span className="min-w-0 flex-1 truncate">All workspaces</span>
+              <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>All workspaces</span>
               <Menu.Check on={workspaceId === "all"} />
             </Menu.RadioItem>
             {workspaceOptions.map((workspace) => (
               <Menu.RadioItem key={workspace.id} value={workspace.id} closeOnClick>
-                <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+                <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>{workspace.name}</span>
                 <Menu.Check on={workspaceId === workspace.id} />
               </Menu.RadioItem>
             ))}
             <Menu.RadioItem value="standalone" closeOnClick>
-              <span className="min-w-0 flex-1 truncate">Standalone</span>
+              <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>Standalone</span>
               <Menu.Check on={workspaceId === "standalone"} />
             </Menu.RadioItem>
           </Menu.RadioGroup>
@@ -486,25 +679,25 @@ setAddingToSidebar(false);
         <Menu.Root>
           <Menu.Trigger
             render={
-              <Button variant="ghost" className="min-w-0" icon={<IconRepo size={18} />} caret>
-                <span className="max-w-[150px] truncate">
+              <Button variant="ghost" {...stylex.props(sx.minW0)} icon={<IconRepo size={18} />} caret>
+                <span {...stylex.props(sx.maxW150px, sx.truncate)}>
                   {repo === "all" ? "All repos" : repoLabel(repo)}
                 </span>
               </Button>
             }
           />
-          <Menu.Popup align="end" className="min-w-[200px] max-w-[320px]">
+          <Menu.Popup align="end" {...stylex.props(sx.minW200px, sx.maxW320px)}>
             <Menu.RadioGroup value={repo} onValueChange={(value) => setRepo(String(value))}>
               <Menu.RadioItem value="all" closeOnClick>
                 {/* Sized to the tiles below so every label shares one edge. */}
-                <span className="size-[18px] shrink-0" />
-                <span className="min-w-0 flex-1 truncate">All repos</span>
+                <span {...stylex.props(sx.size18px, sx.shrink0)} />
+                <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>All repos</span>
                 <Menu.Check on={repo === "all"} />
               </Menu.RadioItem>
               {repoOptions.map((name) => (
                 <Menu.RadioItem key={name} value={name} closeOnClick>
                   <RepoTile name={name} size={18} />
-                  <span className="min-w-0 flex-1 truncate">{repoLabel(name)}</span>
+                  <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>{repoLabel(name)}</span>
                   <Menu.Check on={repo === name} />
                 </Menu.RadioItem>
               ))}
@@ -539,7 +732,7 @@ setAddingToSidebar(false);
             closeOnClick
           >
             <IconArchive size={18} />
-            <span className="min-w-0 flex-1 truncate">Show archived</span>
+            <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>Show archived</span>
             <Menu.Check on={showArchived} />
           </Menu.CheckboxItem>
         </Menu.Popup>
@@ -550,7 +743,7 @@ setAddingToSidebar(false);
           is what makes it scan as the button that makes something. */}
       <Button
         variant="primary"
-        className="shrink-0"
+        {...stylex.props(sx.shrink0)}
         icon={<IconPlus size={18} />}
         onClick={onNewSession}
       >
@@ -562,9 +755,9 @@ setAddingToSidebar(false);
   return (
     // The page frame every other list page in the app uses: one centred
     // column at the shared width and padding, a PageHeader on top.
-    <div data-page-scroll className="min-h-0 w-full flex-1 overflow-y-auto bg-surface">
+    <div data-page-scroll {...stylex.props(sx.minH0, sx.wFull, sx.flex1, sx.overflowYAuto, sx.bgSurface)}>
       {topbarActionsEl ? createPortal(actions, topbarActionsEl) : null}
-      <div className="mx-auto w-full max-w-[920px] px-6 pb-15 pt-7 max-[560px]:px-4 max-[560px]:pb-12 max-[560px]:pt-[18px]">
+      <div className="max-[560px]:px-4 max-[560px]:pb-12 max-[560px]:pt-[18px]" {...stylex.props(sx.mxAuto, sx.wFull, sx.maxW920px, sx.px6, sx.pb15, sx.pt7)}>
         {/* The page's name is the top bar's now. With no `PageTitle` under it
             the large-title handoff never has a heading to defer to, so the bar
             holds "Pull requests" in its left corner for good rather than
@@ -574,7 +767,7 @@ setAddingToSidebar(false);
 
             `min-w-0` because the line wraps, and a flex child asked for its
             content size takes the width of one clause rather than of the row. */}
-        <div className="mb-[18px] flex min-w-0 max-[560px]:mb-3.5">
+        <div className="max-[560px]:mb-3.5" {...stylex.props(sx.mb18px, sx.flex, sx.minW0)}>
           <OverviewLine
             running={running}
             stats={stats}
@@ -600,16 +793,16 @@ setAddingToSidebar(false);
         ) : (
           <div className={PR_LIST}>
             {sections.map((section) => (
-              <section key={section.state} className="mb-8">
+              <section key={section.state} {...stylex.props(sx.mb8)}>
                 <h2 className={PR_SECTION_LABEL}>
                   {section.label}
-                  <span className="text-label font-medium text-faint">{section.rows.length}</span>
+                  <span {...stylex.props(sx.fontMedium, sx.textFaint, typography.label)}>{section.rows.length}</span>
                 </h2>
                 {section.groups.map(([label, rows]) => (
-                  <div key={label} className="mb-5">
+                  <div key={label} {...stylex.props(sx.mb5)}>
                     <h3 className={PR_GROUP_LABEL}>
                       {label}
-                      <span className="font-medium">{rows.length}</span>
+                      <span {...stylex.props(sx.fontMedium)}>{rows.length}</span>
                     </h3>
                     <div>
                       {rows.map((row) => {
@@ -640,12 +833,12 @@ setAddingToSidebar(false);
                                 in kebab case on most rows and cost the list
                                 half its height; it stays in the row's tooltip,
                                 in search, and in the panel the row opens. */}
-                            <span className="flex min-w-0 items-baseline gap-2">
-                              <span className="truncate text-item-title font-medium leading-[1.3] text-fg">
+                            <span {...stylex.props(sx.flex, sx.minW0, sx.itemsBaseline, sx.gap2)}>
+                              <span {...stylex.props(sx.truncate, sx.fontMedium, sx.leading13, sx.textFg, typography.itemTitle)}>
                                 {row.title}
                               </span>
                               {row.number && (
-                                <span className="shrink-0 text-meta tabular-nums text-faint">
+                                <span className="tabular-nums" {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}>
                                   #{row.number}
                                 </span>
                               )}
@@ -655,15 +848,15 @@ setAddingToSidebar(false);
                                 is the convention rather than a status, and it
                                 reads at a glance in a way a neutral pair of
                                 numbers does not. */}
-                            <span className="justify-self-end text-meta tabular-nums phone:hidden">
+                            <span className="tabular-nums phone:hidden" {...stylex.props(sx.justifySelfEnd, typography.meta)}>
                               {row.additions !== undefined && (
-                                <span className="text-green">+{compactDiff(row.additions)}</span>
+                                <span {...stylex.props(sx.textGreen)}>+{compactDiff(row.additions)}</span>
                               )}
                               {row.deletions !== undefined && (
-                                <span className="ml-2 text-red">−{compactDiff(row.deletions)}</span>
+                                <span {...stylex.props(sx.ml2, sx.textRed)}>−{compactDiff(row.deletions)}</span>
                               )}
                             </span>
-                            <span className="justify-self-end text-meta tabular-nums text-faint">
+                            <span className="tabular-nums" {...stylex.props(sx.justifySelfEnd, sx.textFaint, typography.meta)}>
                               {compactAge(row.updatedAt)}
                             </span>
                           </button>
@@ -689,12 +882,12 @@ setAddingToSidebar(false);
       >
         {preview && (
           <>
-            <div className="flex min-h-13 shrink-0 items-center gap-2 border-b border-line bg-panel px-3 phone:min-h-14">
-              <div className="flex min-w-0 flex-1 items-center gap-2 px-1 text-item-title font-medium text-fg">
-                <IconPullRequest size={19} className="shrink-0 text-dim" />
-                <span className="truncate">{repoLabel(preview.repo)}</span>
+            <div className="phone:min-h-14" {...stylex.props(sx.flex, sx.minH13, sx.shrink0, sx.itemsCenter, sx.gap2, sx.borderB, sx.borderLine, sx.bgPanel, sx.px3)}>
+              <div {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.px1, sx.fontMedium, sx.textFg, typography.itemTitle)}>
+                <IconPullRequest size={19} {...stylex.props(sx.shrink0, sx.textDim)} />
+                <span {...stylex.props(sx.truncate)}>{repoLabel(preview.repo)}</span>
                 {preview.number && (
-                  <span className="shrink-0 font-normal tabular-nums text-faint">
+                  <span className="tabular-nums" {...stylex.props(sx.shrink0, sx.fontNormal, sx.textFaint)}>
                     #{preview.number}
                   </span>
                 )}
@@ -702,7 +895,7 @@ setAddingToSidebar(false);
               {preview.workspaceId ? (
                 <Button
                   variant="default"
-                  className="min-h-10 shrink-0 phone:min-h-11"
+                  className="phone:min-h-11" {...stylex.props(sx.minH10, sx.shrink0)}
                   icon={<IconSidebarLeft size={18} />}
                   onClick={() => {
                     onOpenWorkspace(preview.workspaceId!, preview);
@@ -714,7 +907,7 @@ setAddingToSidebar(false);
               ) : preview.state === "OPEN" ? (
                 <Button
                   variant="default"
-                  className="min-h-10 shrink-0 phone:min-h-11"
+                  className="phone:min-h-11" {...stylex.props(sx.minH10, sx.shrink0)}
                   icon={<IconSidebarLeft size={18} />}
                   disabled={addingToSidebar}
                   onClick={() => void addPreviewToSidebar()}
@@ -724,13 +917,13 @@ setAddingToSidebar(false);
               ) : null}
               <Button
                 variant="ghost"
-                className="size-10 shrink-0 phone:size-11"
+                className="phone:size-11" {...stylex.props(sx.size10, sx.shrink0)}
                 icon={<IconX size={20} />}
                 aria-label="Close pull request"
                 onClick={() => setPreview(null)}
               />
             </div>
-            <div className="min-h-0 flex-1">
+            <div {...stylex.props(sx.minH0, sx.flex1)}>
               <PrQueuePreview
                 key={`${preview.repo}:${preview.branch}`}
                 repo={preview.repo}

@@ -16,6 +16,49 @@ import {
 import { EmptyState, InlineAlert } from "../../ui/state";
 import { Switch } from "../../ui/switch";
 import { Select, SettingRow } from "./shared";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	justifyBetween: {
+			justifyContent: "space-between"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	borderB: {
+			borderBottomStyle: "solid",
+			borderBottomWidth: "1px"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	px5: {
+			paddingInline: "20px"
+	},
+	py3: {
+			paddingBlock: "12px"
+	},
+	leadingRelaxed: {
+			lineHeight: "var(--leading-relaxed)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+});
 
 // ── Papercuts: the cross-session friction log agents append via the
 // opensession-papercuts tools — per-repo toggles + the recent entries. ──
@@ -93,7 +136,7 @@ export function PapercutsPanel() {
 				))}
 			</SettingCard>
 
-			<SettingsGroupLabel className="flex items-center justify-between gap-2">
+			<SettingsGroupLabel {...stylex.props(sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap2)}>
 				Last 30 days · {entries.length} logged
 				<Select
 					label="Filter papercuts by repo"
@@ -114,12 +157,12 @@ export function PapercutsPanel() {
 					{entries.map((e, i) => (
 						<div
 							key={`${e.ts}-${i}`}
-							className="border-b border-line px-5 py-3 last:border-b-0"
+							className="last:border-b-0" {...stylex.props(sx.borderB, sx.borderLine, sx.px5, sx.py3)}
 						>
-							<div className="text-body leading-relaxed text-fg">
+							<div {...stylex.props(sx.leadingRelaxed, sx.textFg, typography.body)}>
 								{e.message}
 							</div>
-							<div className="mt-1 text-meta text-faint">
+							<div {...stylex.props(sx.mt1, sx.textFaint, typography.meta)}>
 								{[
 									e.repo,
 									e.by,

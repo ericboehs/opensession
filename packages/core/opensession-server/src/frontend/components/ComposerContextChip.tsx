@@ -4,6 +4,40 @@ import { cn } from "../ui/cn";
 import { duration, ease } from "../ui/motion";
 import { Tooltip } from "../ui/tooltip";
 import { IconX } from "./icons";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	fontNormal: {
+			fontWeight: "var(--font-weight-normal)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	scale08: {
+			scale: ".8"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	mb1: {
+			marginBottom: "4px"
+	},
+	flex: {
+			display: "flex"
+	},
+	originLeft: {
+			transformOrigin: "0"
+	},
+});
 
 /** Per-tone colour, spelled out in full: Tailwind scans source as text, so a
  *  class assembled from the tone name would never be generated. Neutral keeps
@@ -88,9 +122,9 @@ export function ComposerContextChip({
 			<span className={cn("inline-flex shrink-0 items-center", colours.icon)}>
 				{icon}
 			</span>
-			<span className="truncate">{label}</span>
+			<span {...stylex.props(sx.truncate)}>{label}</span>
 			{meta && (
-				<span className="shrink-0 font-normal text-faint">{meta}</span>
+				<span {...stylex.props(sx.shrink0, sx.fontNormal, sx.textFaint)}>{meta}</span>
 			)}
 			{onRemove && (
 				<button
@@ -105,7 +139,7 @@ export function ComposerContextChip({
 						colours.remove,
 					)}
 				>
-					<IconX size={20} className="scale-[0.8] [&_path]:stroke-2" />
+					<IconX size={20} className="[&_path]:stroke-2" {...stylex.props(sx.scale08)} />
 				</button>
 			)}
 		</div>
@@ -123,13 +157,13 @@ export function ComposerContextChip({
 			animate={{ height: "auto", opacity: 1 }}
 			exit={{ height: 0, opacity: 0 }}
 			transition={{ type: "tween", duration: duration.base, ease }}
-			className="overflow-hidden"
+			{...stylex.props(sx.overflowHidden)}
 		>
 			<motion.div
 				initial={{ y: 2, scale: 0.98 }}
 				animate={{ y: 0, scale: 1 }}
 				transition={{ type: "tween", duration: duration.micro, ease }}
-				className="mb-1 flex origin-left"
+				{...stylex.props(sx.mb1, sx.flex, sx.originLeft)}
 			>
 				{title ? <Tooltip label={title}>{chip}</Tooltip> : chip}
 			</motion.div>

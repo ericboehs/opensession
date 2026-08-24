@@ -19,6 +19,11 @@
  */
 import { transformSync } from "@babel/core";
 import stylexBabelPlugin from "@stylexjs/babel-plugin";
+import { join, resolve } from "path";
+
+const SERVER_ROOT = join(import.meta.dir, "..", "..");
+/** Everything under this root that mentions @stylexjs/stylex gets compiled. */
+const FRONTEND_SRC_STYLEX = resolve(SERVER_ROOT, "src", "frontend");
 
 export type StylexCollector = {
 	/** Compiled CSS rule text keyed by the class name that owns it, so the
@@ -68,73 +73,48 @@ export function stylexCss(collector: StylexCollector): string {
 }
 
 /**
- * The Bun plugin. Place it BEFORE reactCompilerPlugin in the plugins array:
- * StyleX must see the authored source (its static analysis rejects
- * compiler-transformed trees) and its output feeds the compiler like any
- * other file.
+ * Transform ONE frontend source file through the StyleX compiler, collecting
+ * its rules into the build's collector. Returns the source unchanged when the
+ * file does not use StyleX. TypeScript syntax is PRESERVED — the caller hands
+ * the result to the next pass (oxc React Compiler) with the original loader.
  */
-export function stylexBunPlugin(collector: StylexCollector): import("bun").BunPlugin {
-	return {
-		name: "stylex",
-		setup(build) {
-			build.onLoad({ filter: /\.[jt]sx?$/ }, (args) => {
-				if (!args.path.startsWith(FRONTEND_SRC_STYLEX)) return undefined;
-				const sourceText = readFileSync(args.path, "utf8");
-				if (!sourceText.includes("@stylexjs/stylex")) return undefined;
-				try {
-					const result = transformSync(sourceText, {
-						filename: args.path,
-						// Syntax only: TypeScript is stripped (Babel can't re-emit it),
-						// JSX survives because the downstream loader accepts it.
-						parserOpts: { plugins: ["typescript", "jsx"] },
-						// The plugin's shipped types do not line up with @babel/core's
-						// PluginItem; the runtime contract is the standard pair.
-						plugins: [
-							[
-								stylexBabelPlugin as never,
-								{
-									dev: false,
-									runtimeInjection: false,
-									genConditionalClasses: true,
-									treeshakeCompensation: true,
-									// Cross-file tokens (styles/tokens.stylex.ts) need the
-									// import resolved to a canonical path; commonJS mode
-									// walks node_modules-style relative paths, which is all
-									// the frontend uses.
-									unstable_moduleResolution: {
-										type: "commonJS",
-										rootDir: FRONTEND_SRC_STYLEX,
-									},
-								},
-							],
-						],
-						configFile: false,
-						babelrc: false,
-					});
-					if (!result?.code) return undefined;
-					const meta = (result.metadata ?? {}) as {
-						stylex?: [string, Record<string, string>];
-					};
-					collectStylexRules(
-						collector,
-						meta.stylex as unknown,
-					);
-					return { contents: result.code, loader: "jsx" };
-				} catch (e) {
-					// A file StyleX cannot compile must fail the build loudly once
-					// the app depends on the sheet for layout; during the migration
-					// it still fails here rather than shipping silently wrong.
-					throw new Error(
-						`[frontend] StyleX compile FAILED on ${args.path}: ${e instanceof Error ? e.stack : String(e)}`,
-					);
-				}
-			});
-		},
-	};
+export function stylexTransform(
+	path: string,
+	sourceText: string,
+	collector: StylexCollector,
+): string {
+	if (!path.startsWith(FRONTEND_SRC_STYLEX)) return sourceText;
+	if (!sourceText.includes("@stylexjs/stylex")) return sourceText;
+	// The plugin's shipped types do not line up with @babel/core's; the
+	// runtime contract is the standard [plugin, options] pair.
+	const result = transformSync(sourceText, {
+		filename: path,
+		// Syntax only: nothing is stripped, JSX survives untouched.
+		parserOpts: { plugins: ["typescript", "jsx"] },
+		plugins: [
+			[
+				stylexBabelPlugin as never,
+				{
+					dev: false,
+					runtimeInjection: false,
+					genConditionalClasses: true,
+					treeshakeCompensation: true,
+					// Cross-file tokens (styles/tokens.stylex.ts) need the import
+					// resolved to a canonical path; commonJS mode walks
+					// node_modules-style relative paths, which is all the
+					// frontend uses.
+					unstable_moduleResolution: {
+						type: "commonJS",
+						rootDir: FRONTEND_SRC_STYLEX,
+					},
+				},
+			],
+		],
+		configFile: false,
+		babelrc: false,
+	});
+	if (!result?.code) return sourceText;
+	const meta = (result.metadata ?? {}) as { stylex?: unknown };
+	collectStylexRules(collector, meta.stylex);
+	return result.code;
 }
-
-import { readFileSync } from "node:fs";
-import { join, resolve } from "path";
-
-const SERVER_ROOT = join(import.meta.dir, "..", "..");
-const FRONTEND_SRC_STYLEX = resolve(SERVER_ROOT, "src", "frontend");

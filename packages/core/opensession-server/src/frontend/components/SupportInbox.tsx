@@ -22,6 +22,58 @@ import { cn } from "../ui/cn";
 import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
 import { ConversationPane } from "./ConversationPane";
 import { IconMail } from "./icons";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	size7px: {
+			width: "7px",
+			height: "7px"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	flex: {
+			display: "flex"
+	},
+	minH0: {
+			minHeight: "0"
+	},
+	mt2: {
+			marginTop: "8px"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	py6: {
+			paddingBlock: "24px"
+	},
+	textCenter: {
+			textAlign: "center"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	p8: {
+			padding: "32px"
+	},
+});
 
 /**
  * The Plain queue as a place of its own: the tickets in a column beside the
@@ -158,11 +210,11 @@ export function SupportInbox({
 			>
 				<span className={SIDEBAR_RAIL}>
 					<span
-						className="size-[7px] rounded-full"
+						{...stylex.props(sx.size7px, sx.roundedFull)}
 						style={{ backgroundColor: dot }}
 					/>
 				</span>
-				<span className="min-w-0 flex-1">
+				<span {...stylex.props(sx.minW0, sx.flex1)}>
 					<span className={ROW_HEAD}>
 						<span className={ROW_NAME}>{customer}</span>
 						{stamp && (
@@ -183,7 +235,7 @@ export function SupportInbox({
 	}
 
 	return (
-		<div className="flex min-h-0 flex-1">
+		<div {...stylex.props(sx.flex, sx.minH0, sx.flex1)}>
 			{showList && (
 				<aside className={COLUMN}>
 					<div className={SUPPORT_COLUMN_BAR}>
@@ -196,9 +248,9 @@ export function SupportInbox({
 						{threads === null ? (
 							<LoadingState>Loading tickets…</LoadingState>
 						) : error && threads.length === 0 ? (
-							<InlineAlert className="mt-2">{error}</InlineAlert>
+							<InlineAlert {...stylex.props(sx.mt2)}>{error}</InlineAlert>
 						) : threads.length === 0 ? (
-							<div className="px-3 py-6 text-center text-label text-faint">
+							<div {...stylex.props(sx.px3, sx.py6, sx.textCenter, sx.textFaint, typography.label)}>
 								Nothing waiting in Plain.
 							</div>
 						) : (
@@ -242,7 +294,7 @@ export function SupportInbox({
 			)}
 
 			{showTicket && (
-				<section className="flex min-w-0 flex-1 flex-col">
+				<section {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.flexCol)}>
 					{/* An open ticket brings its own bar, with its subject and
 					    customer in it. This is the one for when nothing is open, and
 					    for phones, where the app's floating back control sits here
@@ -259,7 +311,7 @@ export function SupportInbox({
 							headerInBar
 						/>
 					) : (
-						<div className="flex min-h-0 flex-1 items-center justify-center p-8">
+						<div {...stylex.props(sx.flex, sx.minH0, sx.flex1, sx.itemsCenter, sx.justifyCenter, sx.p8)}>
 							<EmptyState
 								icon={<IconMail size={22} />}
 								title="No ticket selected"

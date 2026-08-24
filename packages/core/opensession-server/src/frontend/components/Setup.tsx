@@ -25,6 +25,113 @@ import {
   publicUrlState,
   type SetupStatus,
 } from "./setup-shared";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	mt10: {
+			marginTop: "40px"
+	},
+	m0: {
+			margin: "0"
+	},
+	mb2: {
+			marginBottom: "8px"
+	},
+	px4: {
+			paddingInline: "16px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	focusRing: {
+			":focus-visible": {
+					outline: "2px solid var(--accent-ink)",
+					outlineOffset: "2px"
+			}
+	},
+	flex: {
+			display: "flex"
+	},
+	wFull: {
+			width: "100%"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap25: {
+			gap: "10px"
+	},
+	py3: {
+			paddingBlock: "12px"
+	},
+	textLeft: {
+			textAlign: "left"
+	},
+	srOnly: {
+			clipPath: "inset(50%)",
+			whiteSpace: "nowrap",
+			borderWidth: "0",
+			width: "1px",
+			height: "1px",
+			margin: "-1px",
+			padding: "0",
+			position: "absolute",
+			overflow: "hidden"
+	},
+	mb3: {
+			marginBottom: "12px"
+	},
+	px5: {
+			paddingInline: "20px"
+	},
+	fontTitle: {
+			fontWeight: "var(--title-weight)"
+	},
+	tracking0015em: {
+			letterSpacing: "-.015em"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	mt15: {
+			marginTop: "6px"
+	},
+	maxW62ch: {
+			maxWidth: "62ch"
+	},
+	leadingRelaxed: {
+			lineHeight: "var(--leading-relaxed)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	relative: {
+			position: "relative"
+	},
+	maxW980px: {
+			maxWidth: "980px"
+	},
+	grid: {
+			display: "grid"
+	},
+	itemsStart: {
+			alignItems: "flex-start"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	mt0: {
+			marginTop: "0"
+	},
+});
 
 // Settings → Setup: every part of a new instance, in the order someone fills
 // it in, with a summary rail that jumps to the section that still needs work.
@@ -89,11 +196,11 @@ function SetupSummary({
   return (
     <aside
       aria-labelledby="setup-summary-title"
-      className="mt-10 desktop:sticky desktop:top-0 desktop:col-start-2 desktop:row-start-1 desktop:mt-0"
+      className="desktop:sticky desktop:top-0 desktop:col-start-2 desktop:row-start-1 desktop:mt-0" {...stylex.props(sx.mt10)}
     >
       <h2
         id="setup-summary-title"
-        className="m-0 mb-2 px-4 text-label font-semibold text-faint"
+        {...stylex.props(sx.m0, sx.mb2, sx.px4, sx.fontSemibold, sx.textFaint, typography.label)}
       >
         Summary
       </h2>
@@ -103,7 +210,7 @@ function SetupSummary({
             key={step.id}
             type="button"
             onClick={() => onSelect(step.id)}
-            className="focus-ring flex w-full cursor-pointer items-center gap-2.5 px-4 py-3 text-left hover:bg-hover"
+            className="hover:bg-hover" {...stylex.props(sx.focusRing, sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap25, sx.px4, sx.py3, sx.textLeft)}
           >
             <span
               className={cn(
@@ -122,7 +229,7 @@ function SetupSummary({
             >
               {step.label}
             </span>
-            <span className="sr-only">
+            <span {...stylex.props(sx.srOnly)}>
               {step.complete ? ", complete" : ", needs setup"}
             </span>
           </button>
@@ -147,11 +254,11 @@ function SetupPageSection({
 }) {
   return (
     <section id={sectionAnchor(id)} className={cn("scroll-mt-4", className)}>
-      <div className="mb-3 px-5">
-        <h2 className="m-0 text-section-title font-title tracking-[-0.015em] text-fg">
+      <div {...stylex.props(sx.mb3, sx.px5)}>
+        <h2 {...stylex.props(sx.m0, sx.fontTitle, sx.tracking0015em, sx.textFg, typography.sectionTitle)}>
           {title}
         </h2>
-        <p className="m-0 mt-1.5 max-w-[62ch] text-supporting leading-relaxed text-dim">
+        <p {...stylex.props(sx.m0, sx.mt15, sx.maxW62ch, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
           {description}
         </p>
       </div>
@@ -182,7 +289,7 @@ export function SetupPanel({
   }
 
   return (
-    <SettingsPanel className="relative max-w-[980px] [&_input]:phone:text-input-phone">
+    <SettingsPanel className="[&_input]:phone:text-input-phone" {...stylex.props(sx.relative, sx.maxW980px)}>
       <SettingsHeader
         title="Workspace setup"
         actions={
@@ -196,13 +303,13 @@ export function SetupPanel({
           {failed ? "Couldn't load setup status." : "Loading…"}
         </LoadingState>
       ) : (
-        <div className="grid items-start desktop:grid-cols-[minmax(0,720px)_220px] desktop:gap-10">
-          <div className="min-w-0 desktop:col-start-1 desktop:row-start-1">
+        <div className="desktop:grid-cols-[minmax(0,720px)_220px] desktop:gap-10" {...stylex.props(sx.grid, sx.itemsStart)}>
+          <div className="desktop:col-start-1 desktop:row-start-1" {...stylex.props(sx.minW0)}>
             <SetupPageSection
               id="server"
               title="Server access"
               description="Add a private app domain and a separate public address for signed webhooks."
-              className="mt-0"
+              {...stylex.props(sx.mt0)}
             >
               <SetupServerAccess
                 access={status.access}

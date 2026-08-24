@@ -11,6 +11,17 @@ import {
 	type TranscriptVirtualNavigation,
 } from "../lib/transcript-virtual-navigation";
 import { cn } from "../ui/cn";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	relative: {
+			position: "relative"
+	},
+	wFull: {
+			width: "100%"
+	},
+});
 
 export interface VirtualTranscriptItem {
 	key: string;
@@ -207,7 +218,7 @@ export function VirtualTranscriptList({
 		<>
 			<div
 				ref={rootRef}
-				className="relative w-full"
+				{...stylex.props(sx.relative, sx.wFull)}
 				style={{ height: virtualizer.getTotalSize() }}
 				data-virtual-transcript
 				data-virtual-count={items.length}

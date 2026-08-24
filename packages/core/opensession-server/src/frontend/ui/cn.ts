@@ -1,5 +1,13 @@
 import { clsx, type ClassValue } from "clsx";
 import { extendTailwindMerge } from "tailwind-merge";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	px3: {
+			paddingInline: "12px"
+	},
+});
 
 /**
  * The semantic type scale from styles/tailwind.css. tailwind-merge only ships
@@ -49,7 +57,7 @@ const twMerge = extendTailwindMerge({
 /**
  * Class combiner for the ui/ layer: clsx for conditionals, tailwind-merge so
  * a caller's className can override a wrapper's defaults (`cn("px-2", className)`
- * with className="px-3" yields px-3, not both). Every ui/ component must pass
+ * with {...stylex.props(sx.px3)} yields px-3, not both). Every ui/ component must pass
  * its className prop through this — a wrapper that swallows className forces
  * call sites to fork it.
  */

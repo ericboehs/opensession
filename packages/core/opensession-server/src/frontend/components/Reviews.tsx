@@ -8,6 +8,265 @@ import { PrPanel } from "./PrPanel";
 import { providerFromUrl, avatarUrl } from "../lib/provider";
 import { EmptyState } from "../ui/state";
 import { Badge } from "../ui/badge";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap7px: {
+			gap: "7px"
+	},
+	h1: {
+			height: "4px"
+	},
+	w46px: {
+			width: "46px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	bgActive: {
+			backgroundColor: "var(--bg-active)"
+	},
+	hFull: {
+			height: "100%"
+	},
+	bgGreen: {
+			backgroundColor: "var(--green)"
+	},
+	bgRed: {
+			backgroundColor: "var(--red)"
+	},
+	bgYellow: {
+			backgroundColor: "var(--yellow)"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap1: {
+			gap: "4px"
+	},
+	textGreen: {
+			color: "var(--green)"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	gap05: {
+			gap: "2px"
+	},
+	size2: {
+			width: "8px",
+			height: "8px"
+	},
+	roundedXs: {
+			borderRadius: "calc(2px * var(--rf))"
+	},
+	bgLineStrong: {
+			backgroundColor: "var(--border-strong)"
+	},
+	flex: {
+			display: "flex"
+	},
+	minH0: {
+			minHeight: "0"
+	},
+	bgSurface: {
+			backgroundColor: "var(--bg)"
+	},
+	hidden: {
+			display: "none"
+	},
+	borderB: {
+			borderBottomStyle: "solid",
+			borderBottomWidth: "1px"
+	},
+	borderDivider: {
+			borderColor: "var(--divider)"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	py2: {
+			paddingBlock: "8px"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	roundedControl: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	border0: {
+			borderStyle: "solid",
+			borderWidth: "0"
+	},
+	bgTransparent: {
+			backgroundColor: "#0000"
+	},
+	px2: {
+			paddingInline: "8px"
+	},
+	py15: {
+			paddingBlock: "6px"
+	},
+	textSm: {
+			fontSize: "var(--type-label)",
+			lineHeight: "var(--tw-leading,var(--text-sm--line-height))"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	flex1: {
+			flex: "1"
+	},
+	relative: {
+			position: "relative"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	overflowYAuto: {
+			overflowY: "auto"
+	},
+	sticky: {
+			position: "sticky"
+	},
+	top0: {
+			top: "0"
+	},
+	z3: {
+			zIndex: "3"
+	},
+	px22px: {
+			paddingInline: "22px"
+	},
+	pt4: {
+			paddingTop: "16px"
+	},
+	mb3: {
+			marginBottom: "12px"
+	},
+	justifyBetween: {
+			justifyContent: "space-between"
+	},
+	gap4: {
+			gap: "16px"
+	},
+	m0: {
+			margin: "0"
+	},
+	fontTitle: {
+			fontWeight: "var(--title-weight)"
+	},
+	tracking001em: {
+			letterSpacing: "-.01em"
+	},
+	w60: {
+			width: "240px"
+	},
+	roundedMd: {
+			borderRadius: "calc(7px * var(--rf))"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	bgRaised: {
+			backgroundColor: "var(--bg-raised)"
+	},
+	px25: {
+			paddingInline: "10px"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	outlineNone: {
+			outlineStyle: "none"
+	},
+	Mx22px: {
+			marginInline: "-22px"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	whitespaceNowrap: {
+			whiteSpace: "nowrap"
+	},
+	itemsBaseline: {
+			alignItems: "baseline"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	leading13: {
+			lineHeight: "1.3"
+	},
+	selfCenter: {
+			alignSelf: "center"
+	},
+	roundedSm: {
+			borderRadius: "calc(4px * var(--rf))"
+	},
+	p05: {
+			padding: "2px"
+	},
+	opacity0: {
+			opacity: "0"
+	},
+	transitionOpacity: {
+			transitionProperty: "opacity",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	maxWFull: {
+			maxWidth: "100%"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	tracking002em: {
+			letterSpacing: ".02em"
+	},
+	textYellow: {
+			color: "var(--yellow)"
+	},
+	size22px: {
+			width: "22px",
+			height: "22px"
+	},
+	roundedAvatar: {
+			borderRadius: "calc(32% * var(--rp))"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+});
 
 interface Props {
   sessions: UnifiedSession[];
@@ -146,18 +405,18 @@ function ChecksCell({ s }: { s: UnifiedSession }) {
   const pct = (n: number) => `${(n / c.total) * 100}%`;
   return (
     <span
-      className="inline-flex items-center gap-[7px] text-meta"
+      {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap7px, typography.meta)}
       title={`${c.passed} passed · ${c.failed} failed · ${c.pending} pending · ${c.total} total`}
     >
       <span className={`size-2 shrink-0 rounded-full ${CHECKS_TONE[tone].dot}`} />
       <span className={`whitespace-nowrap ${CHECKS_TONE[tone].label}`}>{label}</span>
       <span
-        className="inline-flex h-1 w-[46px] shrink-0 overflow-hidden rounded-full bg-active phone:hidden"
+        className="phone:hidden" {...stylex.props(sx.inlineFlex, sx.h1, sx.w46px, sx.shrink0, sx.overflowHidden, sx.roundedFull, sx.bgActive)}
         aria-hidden
       >
-        <span className="h-full bg-green" style={{ width: pct(c.passed) }} />
-        <span className="h-full bg-red" style={{ width: pct(c.failed) }} />
-        <span className="h-full bg-yellow" style={{ width: pct(c.pending) }} />
+        <span {...stylex.props(sx.hFull, sx.bgGreen)} style={{ width: pct(c.passed) }} />
+        <span {...stylex.props(sx.hFull, sx.bgRed)} style={{ width: pct(c.failed) }} />
+        <span {...stylex.props(sx.hFull, sx.bgYellow)} style={{ width: pct(c.pending) }} />
       </span>
     </span>
   );
@@ -186,22 +445,22 @@ function ChangesCell({ s }: { s: UnifiedSession }) {
   const grays = Math.max(0, blocks - greens - reds);
   return (
     <span
-      className="inline-flex flex-col gap-1"
+      {...stylex.props(sx.inlineFlex, sx.flexCol, sx.gap1)}
       title={`${files} file${files === 1 ? "" : "s"} changed`}
     >
-      <span className="inline-flex gap-[7px] text-meta tabular-nums">
-        <span className="text-green">+{add}</span>
-        <span className="text-red">−{del}</span>
+      <span className="tabular-nums" {...stylex.props(sx.inlineFlex, sx.gap7px, typography.meta)}>
+        <span {...stylex.props(sx.textGreen)}>+{add}</span>
+        <span {...stylex.props(sx.textRed)}>−{del}</span>
       </span>
-      <span className="inline-flex gap-0.5" aria-hidden>
+      <span {...stylex.props(sx.inlineFlex, sx.gap05)} aria-hidden>
         {Array.from({ length: greens }).map((_, i) => (
-          <span key={`g${i}`} className="size-2 rounded-xs bg-green" />
+          <span key={`g${i}`} {...stylex.props(sx.size2, sx.roundedXs, sx.bgGreen)} />
         ))}
         {Array.from({ length: reds }).map((_, i) => (
-          <span key={`r${i}`} className="size-2 rounded-xs bg-red" />
+          <span key={`r${i}`} {...stylex.props(sx.size2, sx.roundedXs, sx.bgRed)} />
         ))}
         {Array.from({ length: grays }).map((_, i) => (
-          <span key={`n${i}`} className="size-2 rounded-xs bg-line-strong" />
+          <span key={`n${i}`} {...stylex.props(sx.size2, sx.roundedXs, sx.bgLineStrong)} />
         ))}
       </span>
     </span>
@@ -312,10 +571,10 @@ export function Reviews({
   // the app sidebar.
   if (selected) {
     return (
-      <div className="flex h-full min-h-0 flex-col bg-surface">
-        <div className="hidden shrink-0 items-center border-b border-divider px-3 py-2 phone:flex">
+      <div {...stylex.props(sx.flex, sx.hFull, sx.minH0, sx.flexCol, sx.bgSurface)}>
+        <div className="phone:flex" {...stylex.props(sx.hidden, sx.shrink0, sx.itemsCenter, sx.borderB, sx.borderDivider, sx.px3, sx.py2)}>
           <button
-            className="inline-flex items-center gap-1.5 rounded-control border-0 bg-transparent px-2 py-1.5 text-sm font-medium text-fg hover:bg-hover"
+            className="hover:bg-hover" {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px2, sx.py15, sx.textSm, sx.fontMedium, sx.textFg)}
             onClick={() => onSelect("")}
           >
             <svg width="17" height="17" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
@@ -324,7 +583,7 @@ export function Reviews({
             Pull requests
           </button>
         </div>
-        <div className="min-h-0 flex-1">
+        <div {...stylex.props(sx.minH0, sx.flex1)}>
           <PrPanel
             onOpenPr={onOpenPr}
             key={selected.id}
@@ -343,17 +602,17 @@ export function Reviews({
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1">
-      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto phone:overflow-x-hidden">
-        <div className="sticky top-0 z-[3] bg-surface px-[22px] pt-4">
-          <div className="mb-3 flex items-center justify-between gap-4">
-            <h1 className="m-0 text-section-title font-title tracking-[-0.01em]">Reviews</h1>
-            <div className="flex w-60 items-center gap-[7px] rounded-md border border-line bg-raised px-2.5 py-1.5 text-faint transition-[border-color,background-color] focus-within:border-line-strong focus-within:bg-panel">
+    <div {...stylex.props(sx.relative, sx.flex, sx.minH0, sx.flex1)}>
+      <div className="phone:overflow-x-hidden" {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.flexCol, sx.overflowYAuto)}>
+        <div {...stylex.props(sx.sticky, sx.top0, sx.z3, sx.bgSurface, sx.px22px, sx.pt4)}>
+          <div {...stylex.props(sx.mb3, sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap4)}>
+            <h1 {...stylex.props(sx.m0, sx.fontTitle, sx.tracking001em, typography.sectionTitle)}>Reviews</h1>
+            <div className="transition-[border-color,background-color] focus-within:border-line-strong focus-within:bg-panel" {...stylex.props(sx.flex, sx.w60, sx.itemsCenter, sx.gap7px, sx.roundedMd, sx.border, sx.borderLine, sx.bgRaised, sx.px25, sx.py15, sx.textFaint)}>
               <svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
                 <path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z" />
               </svg>
               <input
-                className="min-w-0 flex-1 border-0 bg-transparent text-label text-fg outline-none placeholder:text-faint"
+                className="placeholder:text-faint" {...stylex.props(sx.minW0, sx.flex1, sx.border0, sx.bgTransparent, sx.textFg, sx.outlineNone, typography.label)}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search pull requests…"
@@ -365,7 +624,7 @@ export function Reviews({
               underline sits on top of it. The negative margin cancels the
               header's 22px padding. Five tabs + counts don't fit a phone, so
               below 720px the strip scrolls edge to edge instead. */}
-          <div className="-mx-[22px] flex gap-0.5 border-b border-divider px-[22px] phone:overflow-x-auto phone:[scrollbar-width:none] phone:[&::-webkit-scrollbar]:hidden">
+          <div className="phone:overflow-x-auto phone:[scrollbar-width:none] phone:[&::-webkit-scrollbar]:hidden" {...stylex.props(sx.Mx22px, sx.flex, sx.gap05, sx.borderB, sx.borderDivider, sx.px22px)}>
             {TABS.map((t) => {
               const on = filter === t.key;
               return (
@@ -408,7 +667,7 @@ export function Reviews({
         </div>
 
         {filtered.length === 0 ? (
-          <div className="flex flex-1 items-center justify-center">
+          <div {...stylex.props(sx.flex, sx.flex1, sx.itemsCenter, sx.justifyCenter)}>
             <EmptyState
               title={prSessions.length === 0 ? "No pull requests yet" : "Nothing here"}
             >
@@ -420,7 +679,7 @@ export function Reviews({
             </EmptyState>
           </div>
         ) : (
-          <div className="flex flex-col" role="table">
+          <div {...stylex.props(sx.flex, sx.flexCol)} role="table">
             {filtered.map((s) => {
               const meta = stateMeta(s);
               return (
@@ -432,21 +691,21 @@ export function Reviews({
                 >
                   <span className={`${C_STATE} ${STATE_TONE[meta.key]}`} role="cell">
                     <StateIcon kind={meta.key} />
-                    <span className="whitespace-nowrap">{meta.label}</span>
+                    <span {...stylex.props(sx.whitespaceNowrap)}>{meta.label}</span>
                   </span>
                   <span className={C_TITLE} role="cell">
-                    <span className="flex min-w-0 items-baseline gap-2">
-                      <span className="truncate text-item-title leading-[1.3] font-medium">
+                    <span {...stylex.props(sx.flex, sx.minW0, sx.itemsBaseline, sx.gap2)}>
+                      <span {...stylex.props(sx.truncate, sx.leading13, sx.fontMedium, typography.itemTitle)}>
                         {cleanTitle(s)}
                       </span>
                       {prNum(s) && (
-                        <span className="shrink-0 text-meta text-faint tabular-nums">
+                        <span className="tabular-nums" {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}>
                           {prNum(s)}
                         </span>
                       )}
                       {s.prUrl && (
                         <span
-                          className="inline-flex shrink-0 items-center self-center rounded-sm p-0.5 text-faint opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:text-link"
+                          className="group-hover:opacity-100 focus-visible:opacity-100 hover:text-link" {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.selfCenter, sx.roundedSm, sx.p05, sx.textFaint, sx.opacity0, sx.transitionOpacity)}
                           title={`Open on ${providerFromUrl(s.prUrl).name}`}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -459,23 +718,23 @@ export function Reviews({
                         </span>
                       )}
                     </span>
-                    <span className="flex min-w-0 items-center gap-3 text-meta text-faint">
+                    <span {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap3, sx.textFaint, typography.meta)}>
                       {multiRepo && (
                         <Badge>{s.repo ? repoLabel(s.repo) : "repository"}</Badge>
                       )}
                       {s.branch && (
-                        <span className="inline-flex min-w-0 max-w-full items-center gap-1 overflow-hidden text-meta text-dim [&>svg]:shrink-0 [&>svg]:opacity-70">
+                        <span className="[&>svg]:shrink-0 [&>svg]:opacity-70" {...stylex.props(sx.inlineFlex, sx.minW0, sx.maxWFull, sx.itemsCenter, sx.gap1, sx.overflowHidden, sx.textDim, typography.meta)}>
                           <svg width="17" height="17" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
                             <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" />
                           </svg>
-                          <span className="truncate">{s.branch}</span>
+                          <span {...stylex.props(sx.truncate)}>{s.branch}</span>
                         </span>
                       )}
                       {s.linearIssue && (
-                        <Badge className="tracking-[0.02em]">{s.linearIssue.identifier}</Badge>
+                        <Badge {...stylex.props(sx.tracking002em)}>{s.linearIssue.identifier}</Badge>
                       )}
                       {s.isRunning && (
-                        <span className="shrink-0 text-meta text-yellow">● running</span>
+                        <span {...stylex.props(sx.shrink0, sx.textYellow, typography.meta)}>● running</span>
                       )}
                     </span>
                   </span>
@@ -497,21 +756,21 @@ export function Reviews({
                           const src = avatarUrl(s.prAuthor, providerFromUrl(s.prUrl), 40);
                           return src ? (
                             <img
-                              className="size-[22px] shrink-0 rounded-avatar bg-active"
+                              {...stylex.props(sx.size22px, sx.shrink0, sx.roundedAvatar, sx.bgActive)}
                               src={src}
                               alt=""
                               loading="lazy"
                             />
                           ) : (
                             <span
-                              className="inline-flex size-[22px] shrink-0 items-center justify-center rounded-avatar bg-active text-meta font-semibold text-faint"
+                              {...stylex.props(sx.inlineFlex, sx.size22px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedAvatar, sx.bgActive, sx.fontSemibold, sx.textFaint, typography.meta)}
                               aria-hidden
                             >
                               {s.prAuthor.charAt(0).toUpperCase()}
                             </span>
                           );
                         })()}
-                        <span className="truncate text-meta text-dim">{s.prAuthor}</span>
+                        <span {...stylex.props(sx.truncate, sx.textDim, typography.meta)}>{s.prAuthor}</span>
                       </>
                     ) : (
                       <span className={DIM}>–</span>

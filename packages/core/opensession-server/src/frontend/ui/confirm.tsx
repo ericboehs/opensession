@@ -1,6 +1,51 @@
 import * as React from "react";
 import { Modal } from "./modal";
 import { Button } from "./button";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	m0: {
+			margin: "0"
+	},
+	textBalance: {
+			textWrap: "balance"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	leadingTight: {
+			lineHeight: "var(--leading-tight)"
+	},
+	tracking001em: {
+			letterSpacing: "-.01em"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	textPretty: {
+			textWrap: "pretty"
+	},
+	fontNormal: {
+			fontWeight: "var(--font-weight-normal)"
+	},
+	leadingRelaxed: {
+			lineHeight: "var(--leading-relaxed)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+});
 
 /**
  * The app's confirmation alert: a title, an optional one-sentence
@@ -74,12 +119,12 @@ export function ConfirmDialog({
 			>
 				{/* 6px between title and consequence, the same step Modal.Header
 				    holds, so an alert and a full dialog open on one rhythm. */}
-				<div className="flex flex-col gap-1.5">
-					<Modal.Title className="m-0 text-balance text-dialog-title font-semibold leading-tight tracking-[-0.01em] text-fg">
+				<div {...stylex.props(sx.flex, sx.flexCol, sx.gap15)}>
+					<Modal.Title {...stylex.props(sx.m0, sx.textBalance, sx.fontSemibold, sx.leadingTight, sx.tracking001em, sx.textFg, typography.dialogTitle)}>
 						{title}
 					</Modal.Title>
 					{description && (
-						<Modal.Description className="m-0 text-pretty text-supporting font-normal leading-relaxed text-dim">
+						<Modal.Description {...stylex.props(sx.m0, sx.textPretty, sx.fontNormal, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 							{description}
 						</Modal.Description>
 					)}

@@ -3,6 +3,51 @@ import { Tooltip as BaseTooltip } from "@base-ui/react/tooltip";
 import { cn } from "./cn";
 import { ExclusivePopupProvider } from "./exclusive-popups";
 import { FLOATING_OVERLAY_LAYER } from "./popup-classes";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap3px: {
+			gap: "3px"
+	},
+	h4: {
+			height: "16px"
+	},
+	minW4: {
+			minWidth: "16px"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	roundedSm: {
+			borderRadius: "calc(4px * var(--rf))"
+	},
+	px3px: {
+			paddingInline: "3px"
+	},
+	textXs: {
+			fontSize: "var(--type-label)",
+			lineHeight: "var(--tw-leading,var(--text-xs--line-height))"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	FontFamilyInherit: {
+			fontFamily: "inherit"
+	},
+	bgWhite20: {
+			backgroundColor: "#fff3"
+	},
+	textWhite75: {
+			color: "#ffffffbf"
+	},
+});
 
 /**
  * Tooltip on Base UI (Tooltip.Root/Trigger/Positioner/Popup), styled with
@@ -103,11 +148,11 @@ export function Tooltip({
 							{label}
 						</span>
 						{shortcut && shortcut.length > 0 && (
-							<span className="inline-flex items-center gap-[3px]">
+							<span {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap3px)}>
 								{shortcut.map((k, i) => (
 									<kbd
 										key={i}
-										className="inline-flex h-4 min-w-4 items-center justify-center rounded-sm px-[3px] text-xs font-medium [font-family:inherit] bg-white/20 text-white/75"
+										{...stylex.props(sx.inlineFlex, sx.h4, sx.minW4, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.px3px, sx.textXs, sx.fontMedium, sx.FontFamilyInherit, sx.bgWhite20, sx.textWhite75)}
 									>
 										{k}
 									</kbd>

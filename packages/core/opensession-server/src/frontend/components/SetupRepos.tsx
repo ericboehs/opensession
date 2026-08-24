@@ -40,6 +40,212 @@ import {
 	type SetupStatus,
 } from "./setup-shared";
 import { Badge } from "../ui/badge";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	itemsStart: {
+			alignItems: "flex-start"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	fontMono: {
+			fontFamily: "var(--mono)"
+	},
+	mt2: {
+			marginTop: "8px"
+	},
+	flex: {
+			display: "flex"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	itemsEnd: {
+			alignItems: "flex-end"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	w44: {
+			width: "176px"
+	},
+	mt15: {
+			marginTop: "6px"
+	},
+	mt3: {
+			marginTop: "12px"
+	},
+	grid: {
+			display: "grid"
+	},
+	minH11: {
+			minHeight: "44px"
+	},
+	maxW36rem: {
+			maxWidth: "36rem"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gapX3: {
+			columnGap: "12px"
+	},
+	gapY1: {
+			rowGap: "4px"
+	},
+	py1: {
+			paddingBlock: "4px"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	colSpan2: {
+			gridColumn: "span 2/span 2"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	roundedMd: {
+			borderRadius: "calc(7px * var(--rf))"
+	},
+	outlineNone: {
+			outlineStyle: "none"
+	},
+	w248px: {
+			width: "248px"
+	},
+	p3: {
+			padding: "12px"
+	},
+	mb2: {
+			marginBottom: "8px"
+	},
+	hidden: {
+			display: "none"
+	},
+	hFull: {
+			height: "100%"
+	},
+	wFull: {
+			width: "100%"
+	},
+	roundedControl: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	objectCover: {
+			objectFit: "cover"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderDashed: {
+			borderStyle: "dashed"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	pt1: {
+			paddingTop: "4px"
+	},
+	h5: {
+			height: "20px"
+	},
+	w5: {
+			width: "20px"
+	},
+	flex1: {
+			flex: "1"
+	},
+	leadingRelaxed: {
+			lineHeight: "var(--leading-relaxed)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	text15px: {
+			fontSize: "15px"
+	},
+	fontBold: {
+			fontWeight: "var(--font-weight-bold)"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	borderB: {
+			borderBottomStyle: "solid",
+			borderBottomWidth: "1px"
+	},
+	px1: {
+			paddingInline: "4px"
+	},
+	py2: {
+			paddingBlock: "8px"
+	},
+	itemsBaseline: {
+			alignItems: "baseline"
+	},
+	mt05: {
+			marginTop: "2px"
+	},
+	maxH320px: {
+			maxHeight: "320px"
+	},
+	overflowYAuto: {
+			overflowY: "auto"
+	},
+	roundedSm: {
+			borderRadius: "calc(4px * var(--rf))"
+	},
+	bgSurface: {
+			backgroundColor: "var(--bg)"
+	},
+	px15: {
+			paddingInline: "6px"
+	},
+	py05: {
+			paddingBlock: "2px"
+	},
+	text092em: {
+			fontSize: ".92em"
+	},
+	mt25: {
+			marginTop: "10px"
+	},
+	borderT: {
+			borderTopStyle: "solid",
+			borderTopWidth: "1px"
+	},
+	pt3: {
+			paddingTop: "12px"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	maxH240px: {
+			maxHeight: "240px"
+	},
+});
 
 // Settings → Setup → Repositories: the registered repos sessions work in,
 // plus an add flow. With a GitHub credential (a connected account or the bot
@@ -260,7 +466,7 @@ setSaving(null);
 	}
 
 	return (
-		<SettingRow className="items-start">
+		<SettingRow {...stylex.props(sx.itemsStart)}>
 			<RepoTileButton
 				repo={appearance}
 				id={repo.id}
@@ -268,13 +474,13 @@ setSaving(null);
 			/>
 			<SettingRowText>
 				<SettingRowTitle>{repo.label}</SettingRowTitle>
-				<SettingRowDescription className="truncate font-mono text-meta">
+				<SettingRowDescription {...stylex.props(sx.truncate, sx.fontMono, typography.meta)}>
 					{repo.path}
 				</SettingRowDescription>
-				<form className="mt-2 flex flex-wrap items-end gap-2" onSubmit={saveBranch}>
-					<Field label="Default branch" className="w-44">
+				<form {...stylex.props(sx.mt2, sx.flex, sx.flexWrap, sx.itemsEnd, sx.gap2)} onSubmit={saveBranch}>
+					<Field label="Default branch" {...stylex.props(sx.w44)}>
 						<Input
-							className="font-mono"
+							{...stylex.props(sx.fontMono)}
 							value={branch}
 							onChange={(event) => {
 								setBranch(event.target.value);
@@ -297,12 +503,12 @@ setSaving(null);
 					</Button>
 				</form>
 				{branchError && (
-					<InlineAlert id={branchErrorId} className="mt-1.5">
+					<InlineAlert id={branchErrorId} {...stylex.props(sx.mt15)}>
 						{branchError}
 					</InlineAlert>
 				)}
-				<div className="mt-3 grid min-h-11 max-w-[36rem] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 py-1 phone:-ml-11 phone:max-w-[calc(100%+2.75rem)]">
-					<span className="min-w-0 text-label font-medium text-fg">
+				<div className="grid-cols-[minmax(0,1fr)_auto] phone:-ml-11 phone:max-w-[calc(100%+2.75rem)]" {...stylex.props(sx.mt3, sx.grid, sx.minH11, sx.maxW36rem, sx.itemsCenter, sx.gapX3, sx.gapY1, sx.py1)}>
+					<span {...stylex.props(sx.minW0, sx.fontMedium, sx.textFg, typography.label)}>
 						Use isolated worktrees
 					</span>
 					<Switch
@@ -314,13 +520,13 @@ setSaving(null);
 					/>
 					<span
 						id={worktreeDescriptionId}
-						className="col-span-2 text-meta text-dim"
+						{...stylex.props(sx.colSpan2, sx.textDim, typography.meta)}
 					>
 						Give new code sessions a separate worktree. Existing sessions stay put.
 					</span>
 				</div>
 				{worktreeError && (
-					<InlineAlert id={worktreeErrorId} className="mt-1.5">
+					<InlineAlert id={worktreeErrorId} {...stylex.props(sx.mt15)}>
 						{worktreeError}
 					</InlineAlert>
 				)}
@@ -393,13 +599,13 @@ setBusy(false);
 	return (
 		<Popover.Root>
 			<Popover.Trigger
-				className="shrink-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent,#6b8afd)]"
+				className="focus-visible:ring-2 focus-visible:ring-[var(--accent,#6b8afd)]" {...stylex.props(sx.shrink0, sx.roundedMd, sx.outlineNone)}
 				aria-label={`Change ${id}'s icon`}
 			>
 				<RepoTile name={id} size={28} />
 			</Popover.Trigger>
-			<Popover.Popup className="w-[248px] p-3" initialFocus>
-				<div className="mb-2 text-meta font-medium text-dim">Icon</div>
+			<Popover.Popup {...stylex.props(sx.w248px, sx.p3)} initialFocus>
+				<div {...stylex.props(sx.mb2, sx.fontMedium, sx.textDim, typography.meta)}>Icon</div>
 				{/* Faded while automatic is on: these choices aren't in effect.
 				    Still live, though — picking one is how you leave automatic,
 				    so the fade never becomes a mode you have to escape first. */}
@@ -431,7 +637,7 @@ setBusy(false);
 					<img
 						src={repoGithubAvatarUrl(id)}
 						alt=""
-						className="hidden"
+						{...stylex.props(sx.hidden)}
 						onLoad={() => setAvatarOk(true)}
 						onError={() => setAvatarOk(false)}
 					/>
@@ -445,7 +651,7 @@ setBusy(false);
 							<img
 								src={repoGithubAvatarUrl(id)}
 								alt=""
-								className="h-full w-full rounded-control object-cover"
+								{...stylex.props(sx.hFull, sx.wFull, sx.roundedControl, sx.objectCover)}
 							/>
 						</TileChoice>
 					)}
@@ -455,7 +661,7 @@ setBusy(false);
 						disabled={busy}
 						onClick={() => fileInput.current?.click()}
 					>
-						<span className="flex h-full w-full items-center justify-center rounded-control border border-dashed border-line text-dim">
+						<span {...stylex.props(sx.flex, sx.hFull, sx.wFull, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.border, sx.borderDashed, sx.borderLine, sx.textDim)}>
 							<IconArrowUpToLine size={14} />
 						</span>
 					</TileChoice>
@@ -463,7 +669,7 @@ setBusy(false);
 						ref={fileInput}
 						type="file"
 						accept="image/*"
-						className="hidden"
+						{...stylex.props(sx.hidden)}
 						onChange={(e) => {
 							const file = e.target.files?.[0];
 							// Cleared so picking the same file twice still fires.
@@ -475,11 +681,11 @@ setBusy(false);
 				{/* The default, as a switch: it's a mode, not a thirteenth
 				    choice. Off pins whatever it was giving, so leaving
 				    automatic never lands the repo somewhere it wasn't. */}
-				<label className="mt-3 flex cursor-pointer items-center gap-2 pt-1">
-					<span className="h-5 w-5 shrink-0">
+				<label {...stylex.props(sx.mt3, sx.flex, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.pt1)}>
+					<span {...stylex.props(sx.h5, sx.w5, sx.shrink0)}>
 						<LetterTile id={id} color={repo?.autoColor} />
 					</span>
-					<span className="min-w-0 flex-1 text-control-label text-fg">
+					<span {...stylex.props(sx.minW0, sx.flex1, sx.textFg, typography.controlLabel)}>
 						Automatic
 					</span>
 					<Switch
@@ -494,14 +700,14 @@ setBusy(false);
 						}
 					/>
 				</label>
-				<div className="mt-1.5 text-supporting leading-relaxed text-faint">
+				<div {...stylex.props(sx.mt15, sx.leadingRelaxed, sx.textFaint, typography.supporting)}>
 					{busy
 						? "Working…"
 						: avatarOk
 							? `Automatic keeps this repo on a color no other repo has. The avatar is ${repo?.ghRepo?.split("/")[0]}’s. Every repo that owner has shows the same picture.`
 							: "Automatic keeps this repo on a color no other repo has."}
 				</div>
-				{error && <InlineAlert className="mt-2">{error}</InlineAlert>}
+				{error && <InlineAlert {...stylex.props(sx.mt2)}>{error}</InlineAlert>}
 			</Popover.Popup>
 		</Popover.Root>
 	);
@@ -545,7 +751,7 @@ function TileChoice({
 function LetterTile({ id, color }: { id: string; color?: string }) {
 	return (
 		<span
-			className="flex h-full w-full items-center justify-center rounded-control text-[15px] font-bold"
+			{...stylex.props(sx.flex, sx.hFull, sx.wFull, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.text15px, sx.fontBold)}
 			style={{ background: repoIconFill(color ?? repoColor(id)), color: REPO_TILE_INK }}
 		>
 			{repoLetter(id)}
@@ -591,10 +797,10 @@ function RepoPickRow({
 	onAdd: () => void;
 }) {
 	return (
-		<div className="flex items-center gap-3 border-b border-line px-1 py-2 last:border-b-0">
-			<div className="min-w-0 flex-1">
-				<div className="flex min-w-0 items-baseline gap-2">
-					<span className="truncate text-control-label font-medium text-fg">
+		<div className="last:border-b-0" {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3, sx.borderB, sx.borderLine, sx.px1, sx.py2)}>
+			<div {...stylex.props(sx.minW0, sx.flex1)}>
+				<div {...stylex.props(sx.flex, sx.minW0, sx.itemsBaseline, sx.gap2)}>
+					<span {...stylex.props(sx.truncate, sx.fontMedium, sx.textFg, typography.controlLabel)}>
 						{repo.fullName}
 					</span>
 					{repo.private && (
@@ -604,7 +810,7 @@ function RepoPickRow({
 					)}
 				</div>
 				{repo.description && (
-					<div className="mt-0.5 truncate text-supporting text-faint">
+					<div {...stylex.props(sx.mt05, sx.truncate, sx.textFaint, typography.supporting)}>
 						{repo.description}
 					</div>
 				)}
@@ -736,9 +942,9 @@ setAddingRepo(null);
 						autoCapitalize="none"
 						spellCheck={false}
 					/>
-					<div className="mt-2 max-h-[320px] overflow-y-auto">
+					<div {...stylex.props(sx.mt2, sx.maxH320px, sx.overflowYAuto)}>
 						{filtered.length === 0 ? (
-							<EmptyState placement="row" className="px-1">
+							<EmptyState placement="row" {...stylex.props(sx.px1)}>
 								No repositories match.
 							</EmptyState>
 						) : (
@@ -754,14 +960,14 @@ setAddingRepo(null);
 							))
 						)}
 					</div>
-					<div className="mt-2 text-meta text-faint">
+					<div {...stylex.props(sx.mt2, sx.textFaint, typography.meta)}>
 						Browsing as the {browse.source === "user" ? "connected account" : "bot"}.
 						Only repos that credential can reach are listed.
 					</div>
 				</>
 			) : (
 				<>
-					<div className="text-supporting leading-relaxed text-dim">
+					<div {...stylex.props(sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 						{browseFailed ? (
 							<>Couldn&rsquo;t load the GitHub repo list right now.</>
 						) : (
@@ -769,7 +975,7 @@ setAddingRepo(null);
 								No GitHub credential yet, so the repo list can&rsquo;t be browsed.
 								Connect your GitHub account under Settings → Connections to list
 								your private repos here. (Operators can instead set{" "}
-								<code className="rounded-sm bg-surface px-1.5 py-0.5 font-mono text-[0.92em] text-fg">
+								<code {...stylex.props(sx.roundedSm, sx.bgSurface, sx.px15, sx.py05, sx.fontMono, sx.text092em, sx.textFg)}>
 									GITHUB_API_TOKEN
 								</code>{" "}
 								via the GitHub integration card below.)
@@ -777,7 +983,7 @@ setAddingRepo(null);
 						)}{" "}
 						You can still register a repo by name:
 					</div>
-					<div className="mt-2.5 flex items-center gap-2">
+					<div {...stylex.props(sx.mt25, sx.flex, sx.itemsCenter, sx.gap2)}>
 						<input
 							ref={inputRef}
 							className={cn(settingsInputClass, "flex-1 font-mono")}
@@ -804,17 +1010,17 @@ setAddingRepo(null);
 			)}
 			{(csConfigured || csError) && (
 				<>
-					<div className="mt-3 border-t border-line pt-3 text-meta font-medium text-dim">
+					<div {...stylex.props(sx.mt3, sx.borderT, sx.borderLine, sx.pt3, sx.fontMedium, sx.textDim, typography.meta)}>
 						code.storage
 					</div>
 					{csError ? (
-						<InlineAlert className="mt-1.5">
+						<InlineAlert {...stylex.props(sx.mt15)}>
 							code.storage is configured but its repo list failed: {csError}
 						</InlineAlert>
 					) : (
-						<div className="mt-1 max-h-[240px] overflow-y-auto">
+						<div {...stylex.props(sx.mt1, sx.maxH240px, sx.overflowYAuto)}>
 							{csFiltered.length === 0 ? (
-								<EmptyState placement="row" className="px-1">
+								<EmptyState placement="row" {...stylex.props(sx.px1)}>
 									{filter.trim()
 										? "No code.storage repositories match."
 										: "No repositories visible to the org's signing key."}
@@ -837,7 +1043,7 @@ setAddingRepo(null);
 					)}
 				</>
 			)}
-			{error && <InlineAlert className="mt-2.5">{error}</InlineAlert>}
+			{error && <InlineAlert {...stylex.props(sx.mt25)}>{error}</InlineAlert>}
 		</div>
 	);
 }

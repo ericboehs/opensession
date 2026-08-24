@@ -6,6 +6,65 @@ import { cn } from "../ui/cn";
 import { Menu } from "../ui/menu";
 import { IconChevronDown } from "./icons";
 import { UserAvatar } from "./UserAvatar";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	absolute: {
+			position: "absolute"
+	},
+	bottom0: {
+			bottom: "0"
+	},
+	right0: {
+			right: "0"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	relative: {
+			position: "relative"
+	},
+	flex: {
+			display: "flex"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	opacity55: {
+			opacity: ".55"
+	},
+	minW210px: {
+			minWidth: "210px"
+	},
+	gap9px: {
+			gap: "9px"
+	},
+	roundedSm: {
+			borderRadius: "calc(4px * var(--rf))"
+	},
+	px2: {
+			paddingInline: "8px"
+	},
+	py15: {
+			paddingBlock: "6px"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	size22px: {
+			width: "22px",
+			height: "22px"
+	},
+});
 
 /**
  * The team, as a face row. One derivation (`useTeamPresence`) feeds every
@@ -152,7 +211,7 @@ export function StatusDot({
 	if (state === "away") return null;
 	return (
 		<span
-			className="absolute bottom-0 right-0 rounded-full"
+			{...stylex.props(sx.absolute, sx.bottom0, sx.right0, sx.roundedFull)}
 			style={{ width: size, height: size, boxShadow: `0 0 0 1.5px ${ring}` }}
 			aria-hidden="true"
 		>
@@ -193,7 +252,7 @@ function Face({
 		// `flex`, not `inline-flex`: an inline box sits on its parent's baseline
 		// and carries the descender space below it, which makes the face ride
 		// high against anything centred beside it (the pile's "+N").
-		<span className="relative flex">
+		<span {...stylex.props(sx.relative, sx.flex)}>
 			<UserAvatar
 				name={member.person.name}
 				size={size}
@@ -274,7 +333,7 @@ export function TeamFacepile({
 					zIndex: selected ? shown.length + 1 : shown.length - i,
 				};
 				return (
-					<span key={m.key} className="relative" style={style} title={label}>
+					<span key={m.key} {...stylex.props(sx.relative)} style={style} title={label}>
 						<Face
 							member={m}
 							size={size}
@@ -375,15 +434,15 @@ export function TeamLensMenu({
 				/>
 				{!compact && (
 					<>
-						<span className="truncate max-[860px]:hidden">{label}</span>
+						<span className="max-[860px]:hidden" {...stylex.props(sx.truncate)}>{label}</span>
 						{/* The Button primitive's `caret` step (ui/button.tsx): this
 						    trigger is a facepile, so it can't be a Button, but the
 						    affordance has to read the same as every other menu. */}
-						<IconChevronDown className="shrink-0 opacity-55" size={16} />
+						<IconChevronDown {...stylex.props(sx.shrink0, sx.opacity55)} size={16} />
 					</>
 				)}
 			</Menu.Trigger>
-			<Menu.Popup side={side} align={align} className="min-w-[210px]">
+			<Menu.Popup side={side} align={align} {...stylex.props(sx.minW210px)}>
 				{/* Says what the menu changes: these are lanes and rows to read, not
 				    people to open. The label has to sit inside a Group — Base UI
 				    wires it to the group it names. */}
@@ -395,10 +454,10 @@ export function TeamLensMenu({
 							key={m.key}
 							value={m.key}
 							closeOnClick
-							className="gap-[9px] rounded-sm px-2 py-1.5"
+							{...stylex.props(sx.gap9px, sx.roundedSm, sx.px2, sx.py15)}
 						>
 							<Face member={m} size={22} status ring="var(--bg-panel)" />
-							<span className="min-w-0 flex-1 truncate">
+							<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
 								{m.isYou ? `${m.person.fullName} (you)` : m.person.fullName}
 							</span>
 							<Menu.Check on={m.key === value} />
@@ -408,13 +467,13 @@ export function TeamLensMenu({
 					<Menu.RadioItem
 						value="everyone"
 						closeOnClick
-						className="gap-[9px] rounded-sm px-2 py-1.5"
+						{...stylex.props(sx.gap9px, sx.roundedSm, sx.px2, sx.py15)}
 					>
 						{/* Sized to the faces above so every label shares one edge. */}
-						<span className="size-[22px] shrink-0" />
+						<span {...stylex.props(sx.size22px, sx.shrink0)} />
 						{/* Not a person: it drops the filter entirely. Named for what
 						    you get, in the same words the sidebar header uses for it. */}
-						<span className="min-w-0 flex-1 truncate">All workspaces</span>
+						<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>All workspaces</span>
 						<Menu.Check on={value === "everyone"} />
 						</Menu.RadioItem>
 					</Menu.RadioGroup>

@@ -104,6 +104,78 @@ import {
 import { PersonalSandboxDefaultRow } from "./SandboxDefaults";
 import { RepoTile } from "../RepoTile";
 import { IconRepo, IconSparkle } from "../icons";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap25: {
+			gap: "10px"
+	},
+	h25: {
+			height: "10px"
+	},
+	w72: {
+			width: "72%"
+	},
+	w88: {
+			width: "88%"
+	},
+	w46: {
+			width: "46%"
+	},
+	mt2: {
+			marginTop: "8px"
+	},
+	h4: {
+			height: "16px"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	itemsStart: {
+			alignItems: "flex-start"
+	},
+	gap1: {
+			gap: "4px"
+	},
+	px05: {
+			paddingInline: "2px"
+	},
+	mt0: {
+			marginTop: "0"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	itemsEnd: {
+			alignItems: "flex-end"
+	},
+	justifyEnd: {
+			justifyContent: "flex-end"
+	},
+	gapX3: {
+			columnGap: "12px"
+	},
+	gapY2: {
+			rowGap: "8px"
+	},
+});
 
 // ── Desk voice ─────────────────────────────────────────────────────────────
 
@@ -170,7 +242,7 @@ setBusy(false);
 					)
 				}
 				control={
-					<div className="flex items-center gap-2">
+					<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
 						<Input
 							type="password"
 							autoComplete="off"
@@ -353,10 +425,10 @@ setStatus("idle");
 					// ten-row grey slab, which is the editor's box rather than its
 					// contents and reads as a field you have been locked out of.
 					<Skeleton label="Loading your prompt">
-						<SettingsSection className="flex flex-col gap-2.5">
-							<SkeletonBar className="h-2.5 w-[72%]" />
-							<SkeletonBar className="h-2.5 w-[88%]" />
-							<SkeletonBar className="h-2.5 w-[46%]" />
+						<SettingsSection {...stylex.props(sx.flex, sx.flexCol, sx.gap25)}>
+							<SkeletonBar {...stylex.props(sx.h25, sx.w72)} />
+							<SkeletonBar {...stylex.props(sx.h25, sx.w88)} />
+							<SkeletonBar {...stylex.props(sx.h25, sx.w46)} />
 						</SettingsSection>
 					</Skeleton>
 				)}
@@ -378,7 +450,7 @@ setStatus("idle");
 					}}
 					onBlur={() => void commit()}
 				/>
-				<div className="mt-2 h-4 text-label font-medium text-faint">
+				<div {...stylex.props(sx.mt2, sx.h4, sx.fontMedium, sx.textFaint, typography.label)}>
 					{status === "saving"
 						? "Saving…"
 						: dirty
@@ -411,8 +483,8 @@ function BusyGestureSelect({
 }) {
 	const label = `Follow-up behavior for ${glyph}`;
 	return (
-		<span className="flex flex-col items-start gap-1">
-			<span className="px-0.5 text-meta font-medium text-faint">{glyph}</span>
+		<span {...stylex.props(sx.flex, sx.flexCol, sx.itemsStart, sx.gap1)}>
+			<span {...stylex.props(sx.px05, sx.fontMedium, sx.textFaint, typography.meta)}>{glyph}</span>
 			<Select
 				label={label}
 				value={value}
@@ -510,7 +582,7 @@ export function PreferencesPanel() {
 	return (
 		<SettingsPanel>
 			<SettingsHeader title="Preferences" />
-			<SettingsGroupLabel className="mt-0">Messages</SettingsGroupLabel>
+			<SettingsGroupLabel {...stylex.props(sx.mt0)}>Messages</SettingsGroupLabel>
 			<SettingCard>
 				{/* These four choices become one starting state for every new session. */}
 				<SettingGroup>
@@ -597,7 +669,7 @@ export function PreferencesPanel() {
 						title="Follow-up while busy"
 						desc="Queue waits until the run fully finishes; steer folds your message into the running turn without stopping it."
 						control={
-							<div className="flex flex-wrap items-end justify-end gap-x-3 gap-y-2">
+							<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsEnd, sx.justifyEnd, sx.gapX3, sx.gapY2)}>
 								<BusyGestureSelect
 									gesture="enter"
 									glyph={sendKey === "enter" ? "↩" : MOD_ENTER_GLYPH}

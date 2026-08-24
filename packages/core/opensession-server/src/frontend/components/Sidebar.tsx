@@ -318,6 +318,271 @@ import {
 	SIDEBAR_ROW_TITLE,
 	SidebarItem,
 } from "./sidebar/SidebarItem";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	translateXPx: {
+			translate: "1px 0"
+	},
+	TranslateYPx: {
+			translate: "0 -1px"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	roundedMd: {
+			borderRadius: "calc(7px * var(--rf))"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	bgBg: {
+			backgroundColor: "var(--bg)"
+	},
+	px3px: {
+			paddingInline: "3px"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textInherit: {
+			color: "inherit"
+	},
+	outlineNone: {
+			outlineStyle: "none"
+	},
+	relative: {
+			position: "relative"
+	},
+	ml1: {
+			marginLeft: "4px"
+	},
+	flex: {
+			display: "flex"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	Right1: {
+			right: "-4px"
+	},
+	Bottom1: {
+			bottom: "-4px"
+	},
+	size3: {
+			width: "12px",
+			height: "12px"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	bgAccent: {
+			backgroundColor: "var(--accent)"
+	},
+	text8px: {
+			fontSize: "8px"
+	},
+	fontBold: {
+			fontWeight: "var(--font-weight-bold)"
+	},
+	leadingNone: {
+			lineHeight: "1"
+	},
+	textOnAccent: {
+			color: "var(--on-accent)"
+	},
+	ringPanel: {},
+	mb2: {
+			marginBottom: "8px"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	flex01Auto: {
+			flex: "0 auto"
+	},
+	itemsBaseline: {
+			alignItems: "baseline"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	mlAuto: {
+			marginLeft: "auto"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	size7: {
+			width: "28px",
+			height: "28px"
+	},
+	opacity100: {
+			opacity: "1"
+	},
+	duration150: {
+			transitionDuration: ".15s"
+	},
+	mt05: {
+			marginTop: "2px"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	py2: {
+			paddingBlock: "8px"
+	},
+	px7px: {
+			paddingInline: "7px"
+	},
+	pyPx: {
+			paddingBlock: "1px"
+	},
+	leading15: {
+			lineHeight: "1.5"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	right2: {
+			right: "8px"
+	},
+	top12: {
+			top: "50%"
+	},
+	TranslateY12: {
+			translate: "0 calc(calc(1 / 2 * 100%) * -1)"
+	},
+	TeamFaceRingVarSidebarBg: {},
+	gap2: {
+			gap: "8px"
+	},
+	textSm: {
+			fontSize: "var(--type-label)",
+			lineHeight: "var(--tw-leading,var(--text-sm--line-height))"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	translateY05px: {
+			translate: "0 .5px"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	size10: {
+			width: "40px",
+			height: "40px"
+	},
+	border0: {
+			borderStyle: "solid",
+			borderWidth: "0"
+	},
+	bgTransparent: {
+			backgroundColor: "#0000"
+	},
+	block: {
+			display: "block"
+	},
+	maxWFull: {
+			maxWidth: "100%"
+	},
+	flexNone: {
+			flex: "none"
+	},
+	mx4: {
+			marginInline: "16px"
+	},
+	mt2px: {
+			marginTop: "-2px"
+	},
+	my7: {
+			marginBlock: "28px"
+	},
+	py0: {
+			paddingBlock: "0"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	textCenter: {
+			textAlign: "center"
+	},
+	leading14: {
+			lineHeight: "1.4"
+	},
+	minH360px: {
+			minHeight: "360px"
+	},
+	py12: {
+			paddingBlock: "48px"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	px7: {
+			paddingInline: "28px"
+	},
+	mb3: {
+			marginBottom: "12px"
+	},
+	leading115: {
+			lineHeight: "1.15"
+	},
+	tracking002em: {
+			letterSpacing: "-.02em"
+	},
+	m0: {
+			margin: "0"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	maxW26ch: {
+			maxWidth: "26ch"
+	},
+	leading145: {
+			lineHeight: "1.45"
+	},
+	textPretty: {
+			textWrap: "pretty"
+	},
+	mt4: {
+			marginTop: "16px"
+	},
+	gap1: {
+			gap: "4px"
+	},
+	px4: {
+			paddingInline: "16px"
+	},
+	pb1: {
+			paddingBottom: "4px"
+	},
+	pt05: {
+			paddingTop: "2px"
+	},
+});
 
 // Re-exported for App.tsx, which holds the sidebar ref.
 export type { SidebarHandle } from "../lib/sidebar-types";
@@ -2597,7 +2862,7 @@ setClosingPrUrls((current) => {
 		{
 			id: "prs",
 			label: SIDEBAR_TOOL_LABELS.prs,
-			icon: <IconPullRequest className="translate-x-px -translate-y-px" />,
+			icon: <IconPullRequest {...stylex.props(sx.translateXPx, sx.TranslateYPx)} />,
 			active: prsActive,
 			onClick: onOpenPrs,
 			title: "Pull request worktrees",
@@ -3057,7 +3322,7 @@ setClosingPrUrls((current) => {
 				)}
 				{editing ? (
 					<input
-						className="min-w-0 flex-1 rounded-md border border-[var(--accent,#6b8afd)] bg-bg px-[3px] text-body font-medium text-inherit outline-none desktop:text-item-title"
+						className="border-[var(--accent,#6b8afd)] desktop:text-item-title" {...stylex.props(sx.minW0, sx.flex1, sx.roundedMd, sx.border, sx.bgBg, sx.px3px, sx.fontMedium, sx.textInherit, sx.outlineNone, typography.body)}
 						value={row.workspace ? workspaceDraft : sessionDraft}
 						autoFocus
 						onChange={(e) =>
@@ -3115,14 +3380,14 @@ setClosingPrUrls((current) => {
 					// Same badge as a session row (SidebarItem): the face of whoever
 					// tagged you, with an accent @ so it can't read as a viewer.
 					<span
-						className="relative ml-1 flex shrink-0 items-center"
+						{...stylex.props(sx.relative, sx.ml1, sx.flex, sx.shrink0, sx.itemsCenter)}
 						title={`${row.mention} mentioned you`}
 						aria-label={`${row.mention} mentioned you`}
 					>
-						<UserAvatar name={row.mention} size={16} className="shrink-0" />
+						<UserAvatar name={row.mention} size={16} {...stylex.props(sx.shrink0)} />
 						<span
 							aria-hidden="true"
-							className="absolute -right-1 -bottom-1 flex size-3 items-center justify-center rounded-full bg-accent text-[8px] font-bold leading-none text-on-accent ring-2 ring-panel"
+							className="ring-2" {...stylex.props(sx.absolute, sx.Right1, sx.Bottom1, sx.flex, sx.size3, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgAccent, sx.text8px, sx.fontBold, sx.leadingNone, sx.textOnAccent, sx.ringPanel)}
 						>
 							@
 						</span>
@@ -3971,7 +4236,7 @@ fetchFeedItems("plain")
 		return (
 			<>
 				{(scratchRows.length > 0 || scratchSnoozedRows.length > 0) && (
-					<div className="mb-2" data-sidebar-scratch-workspaces>
+					<div {...stylex.props(sx.mb2)} data-sidebar-scratch-workspaces>
 						{renderWorkspaceGrouping(
 							scratchRows,
 							"scratch::",
@@ -4080,14 +4345,14 @@ fetchFeedItems("plain")
 								    mode, so the band reads as "these are Ask sessions"
 								    rather than as a project called Ask. */}
 								{repo === ASK_BAND ? (
-									<IconEye size={16} className="text-faint" />
+									<IconEye size={16} {...stylex.props(sx.textFaint)} />
 								) : (
 									<RepoTile name={repo} className={SIDEBAR_REPO_TILE} />
 								)}
 							</span>
 							{/* The differently sized name and count share a baseline, while the
 							    pair stays vertically centred against the tile. */}
-							<span className="flex min-w-0 flex-[0_1_auto] items-baseline gap-1.5 desktop:gap-[9px]">
+							<span className="desktop:gap-[9px]" {...stylex.props(sx.flex, sx.minW0, sx.flex01Auto, sx.itemsBaseline, sx.gap15)}>
 								<span className={cn(SIDEBAR_GROUP_NAME, "flex-[0_1_auto] font-semibold")}>
 									{repo === ASK_BAND ? "Ask" : repoLabel(repo)}
 								</span>
@@ -4133,7 +4398,7 @@ fetchFeedItems("plain")
 								<span
 									role="button"
 									tabIndex={0}
-									className="relative ml-auto inline-flex size-7 shrink-0 items-center justify-center rounded-md text-faint opacity-100 transition-[opacity,color] duration-150 hover:text-fg focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100 before:absolute before:inset-0.5 before:z-0 before:rounded-sm before:[corner-shape:var(--cs)] before:transition-[background] before:content-[''] hover:before:bg-hover [&>*]:relative [&>*]:z-[1]"
+									className="transition-[opacity,color] hover:text-fg focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100 before:absolute before:inset-0.5 before:z-0 before:rounded-sm before:[corner-shape:var(--cs)] before:transition-[background] before:content-[''] hover:before:bg-hover [&>*]:relative [&>*]:z-[1]" {...stylex.props(sx.relative, sx.mlAuto, sx.inlineFlex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.textFaint, sx.opacity100, sx.duration150)}
 									title={
 										repo === ASK_BAND
 											? "New Ask session, no repo"
@@ -4155,7 +4420,7 @@ fetchFeedItems("plain")
 							)}
 						</button>
 						{open ? (
-							<div className="mt-0.5">
+							<div {...stylex.props(sx.mt05)}>
 								{renderLabeledLane({
 									label: "Needs review",
 									name: "needsreview",
@@ -4189,7 +4454,7 @@ fetchFeedItems("plain")
 							(selectedReviewRows.length > 0 ||
 								selectedRows.length > 0 ||
 								selectedPrs.length > 0) && (
-								<div className="mt-0.5">
+								<div {...stylex.props(sx.mt05)}>
 									{selectedReviewRows.map(renderReviewWsRow)}
 									{selectedRows.map(renderWsRow)}
 									{selectedPrs.map(renderPrRow)}
@@ -4365,12 +4630,12 @@ fetchFeedItems("plain")
 				: items.filter((i) => i.lane === feed.attentionLane).length
 			: 0;
 		const noMatches = (
-			<div className="px-3 py-2 text-label text-faint">
+			<div {...stylex.props(sx.px3, sx.py2, sx.textFaint, typography.label)}>
 				No items match the filters
 			</div>
 		);
 		const openBody = isPlain ? (
-			<div className="mt-0.5">
+			<div {...stylex.props(sx.mt05)}>
 				{count === 0
 					? noMatches
 					: withLanes
@@ -4380,18 +4645,18 @@ fetchFeedItems("plain")
 								.map(renderSupportRow)}
 			</div>
 		) : (
-			<div className="mt-0.5">
+			<div {...stylex.props(sx.mt05)}>
 				{count === 0 ? noMatches : items.map(renderRow)}
 			</div>
 		);
 		const collapsedBody = isPlain
 			? activeThreads.length > 0 && (
-					<div className="mt-0.5">
+					<div {...stylex.props(sx.mt05)}>
 						{activeThreads.map(renderSupportRow)}
 					</div>
 				)
 			: activeItems.length > 0 && (
-					<div className="mt-0.5">
+					<div {...stylex.props(sx.mt05)}>
 						{activeItems.map(renderRow)}
 					</div>
 				);
@@ -4417,7 +4682,7 @@ fetchFeedItems("plain")
 						<span className={SIDEBAR_RAIL}>
 							<RepoTile name={feed.id} className={SIDEBAR_REPO_TILE} />
 						</span>
-						<span className="flex min-w-0 flex-[0_1_auto] items-baseline gap-1.5 desktop:gap-[9px]">
+						<span className="desktop:gap-[9px]" {...stylex.props(sx.flex, sx.minW0, sx.flex01Auto, sx.itemsBaseline, sx.gap15)}>
 							<span className={cn(SIDEBAR_GROUP_NAME, "flex-[0_1_auto] font-semibold")}>{feed.title}</span>
 							<span className={cn(SIDEBAR_GROUP_COUNT, "shrink-0")}>{count}</span>
 						</span>
@@ -4568,7 +4833,7 @@ fetchFeedItems("plain")
 							// `rounded-full`, not `rounded-[999px]`: this pill never
 							// carried a corner-shape, and rounded-full is the one
 							// radius spelling base.css does NOT squircle.
-							<span className="ml-auto rounded-full bg-accent px-[7px] py-px text-meta leading-[1.5] font-semibold text-on-accent">
+							<span {...stylex.props(sx.mlAuto, sx.roundedFull, sx.bgAccent, sx.px7px, sx.pyPx, sx.leading15, sx.fontSemibold, sx.textOnAccent, typography.meta)}>
 								{tool.count}
 							</span>
 						)}
@@ -4617,7 +4882,7 @@ fetchFeedItems("plain")
 								onClick={() => setToolVisible(tool.id, false)}
 							>
 								<IconEyeOff size={20} className={MENU_ICON} />
-								<span className="min-w-0 flex-1 truncate">
+								<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
 									Remove from toolbar
 								</span>
 							</ContextMenu.Item>
@@ -4653,7 +4918,7 @@ fetchFeedItems("plain")
 				// Feed.
 				if (tool.id !== "feed" || team.length === 0) return row;
 				return (
-					<div key={tool.id} className="group/team-lens relative">
+					<div key={tool.id} className="group/team-lens" {...stylex.props(sx.relative)}>
 						{row}
 						<TeamLensMenu
 							members={team}
@@ -4675,7 +4940,7 @@ fetchFeedItems("plain")
 							// the faces are a thumb-sized target rather than a 24px
 							// one. It stays a pill either way, so the padding is only
 							// reach: nothing about it reads larger at rest.
-							className="absolute right-2 top-1/2 -translate-y-1/2 phone:py-2.5 [--team-face-ring:var(--sidebar-bg)] group-hover/team-lens:[--team-face-ring:var(--row-chip)] data-[popup-open]:[--team-face-ring:var(--row-chip)]"
+							className="phone:py-2.5 group-hover/team-lens:[--team-face-ring:var(--row-chip)] data-[popup-open]:[--team-face-ring:var(--row-chip)]" {...stylex.props(sx.absolute, sx.right2, sx.top12, sx.TranslateY12, sx.TeamFaceRingVarSidebarBg)}
 						/>
 					</div>
 				);
@@ -4723,7 +4988,7 @@ fetchFeedItems("plain")
 					    action at the far edge, so the label stays visually stable and
 					    the close control gets a full touch target. */}
 					<div
-						className="flex min-w-0 flex-1 items-center gap-2 text-sm text-fg phone:text-base"
+						className="phone:text-base" {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.textSm, sx.textFg)}
 						ref={(node) => {
 							titleRef.current = node;
 						}}
@@ -4731,18 +4996,18 @@ fetchFeedItems("plain")
 						{filter.person === "everyone" ? (
 							<IconPeople
 								size={20}
-								className="shrink-0 translate-y-[0.5px] text-dim phone:-translate-y-px"
+								className="phone:-translate-y-px" {...stylex.props(sx.shrink0, sx.translateY05px, sx.textDim)}
 							/>
 						) : (
 							filter.person !== "unassigned" && (
 								<UserAvatar
 									name={personLensName}
 									size={20}
-									className="shrink-0"
+									{...stylex.props(sx.shrink0)}
 								/>
 							)
 						)}
-						<span className="min-w-0 truncate font-semibold">
+						<span {...stylex.props(sx.minW0, sx.truncate, sx.fontSemibold)}>
 							{filter.person === "everyone"
 								? "Everyone"
 								: filter.person === "unassigned"
@@ -4752,7 +5017,7 @@ fetchFeedItems("plain")
 					</div>
 					<Tooltip label="Back to your workspaces">
 						<button
-							className="relative flex size-10 shrink-0 items-center justify-center rounded-md border-0 bg-transparent text-dim transition-[color,scale] before:absolute before:inset-2 before:rounded-md before:transition-colors before:content-[''] hover:text-fg hover:before:bg-hover active:scale-[0.96] phone:size-11 motion-reduce:transform-none [&>*]:relative [&>*]:z-[1]"
+							className="transition-[color,scale] before:absolute before:inset-2 before:rounded-md before:transition-colors before:content-[''] hover:text-fg hover:before:bg-hover active:scale-[0.96] phone:size-11 motion-reduce:transform-none [&>*]:relative [&>*]:z-[1]" {...stylex.props(sx.relative, sx.flex, sx.size10, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.border0, sx.bgTransparent, sx.textDim)}
 							onClick={() => setFilter({ person: "me" })}
 							aria-label="Back to your workspaces"
 						>
@@ -4823,7 +5088,7 @@ fetchFeedItems("plain")
 			)}
 			{/* The active lens label already grows to push its close control to
 			    this edge. Your own sidebar still needs the flexible spacer. */}
-			{!borrowedLens && <div className="min-w-0 flex-1" />}
+			{!borrowedLens && <div {...stylex.props(sx.minW0, sx.flex1)} />}
 			{/* Grouped so the pair's combined width can be measured when deciding
 			    whether the repo chip fits inline. Gone on phones, where filter
 			    moves to the top bar and the red FAB covers new-session. Gone in a
@@ -4949,11 +5214,11 @@ fetchFeedItems("plain")
 		>
 			{isPhone && sidebarChrome}
 
-			<div className="block max-w-full min-w-0 flex-none">
+			<div {...stylex.props(sx.block, sx.maxWFull, sx.minW0, sx.flexNone)}>
 
 				{/* Fallback row: only when the chip doesn't fit inline. */}
 				{filter.repo !== "all" && !repoInline && (
-					<div className="mx-4 mt-[-2px] mb-2 flex min-w-0 md:mr-2 md:ml-4">
+					<div className="md:mr-2 md:ml-4" {...stylex.props(sx.mx4, sx.mt2px, sx.mb2, sx.flex, sx.minW0)}>
 						<RepoFilterChip
 							repo={filter.repo}
 							repos={repos}
@@ -5213,7 +5478,7 @@ fetchFeedItems("plain")
 						variant="bare"
 						rows={8}
 						label="Loading sessions"
-						className="py-2"
+						{...stylex.props(sx.py2)}
 						rowClassName="px-2.5 py-[9px] phone:px-2 phone:py-[13px]"
 					/>
 				)}
@@ -5224,7 +5489,7 @@ fetchFeedItems("plain")
 				    sidebar's own column in a border and outshouted the rows. */}
 				{sessionsError && sessions.length === 0 && !sessionsLoading && (
 					<EmptyState
-						className="mx-4 my-7 gap-1.5 py-0"
+						{...stylex.props(sx.mx4, sx.my7, sx.gap15, sx.py0)}
 						action={
 							<Button size="sm" onClick={onRetrySessions}>
 								Try again
@@ -5235,7 +5500,7 @@ fetchFeedItems("plain")
 						    the failure is legible at a glance without a box around
 						    it. EmptyState's own copy colour is `text-dim`, which a
 						    class on the wrapper would not beat. */}
-						<span className="text-red">Couldn't load sessions</span>
+						<span {...stylex.props(sx.textRed)}>Couldn't load sessions</span>
 					</EmptyState>
 				)}
 				{workspaceListEmpty &&
@@ -5243,7 +5508,7 @@ fetchFeedItems("plain")
 					!sessionsError &&
 					hasWorkspaceFilter &&
 					!githubConnectionRequired && (
-					<div className="mx-4 my-7 text-center text-label leading-[1.4] text-faint">
+					<div {...stylex.props(sx.mx4, sx.my7, sx.textCenter, sx.leading14, sx.textFaint, typography.label)}>
 						No matching workspaces
 					</div>
 				)}
@@ -5265,7 +5530,7 @@ fetchFeedItems("plain")
 					(!hasWorkspaceFilter || githubConnectionRequired) &&
 					!draftRow &&
 					(!isPhone || !productEmpty) && (
-					<div className="mx-4 my-7 text-center text-label leading-[1.4] text-faint">
+					<div {...stylex.props(sx.mx4, sx.my7, sx.textCenter, sx.leading14, sx.textFaint, typography.label)}>
 						{githubConnectionRequired ? "No sessions" : "No workspaces yet"}
 					</div>
 				)}
@@ -5277,22 +5542,22 @@ fetchFeedItems("plain")
 					githubConnectionRequired ? (
 						<GithubConnectEmptyState
 							onConnect={onNewSession}
-							className="min-h-[360px] py-12"
+							{...stylex.props(sx.minH360px, sx.py12)}
 						/>
 					) : (
-						<div className="flex min-h-[360px] flex-col items-center justify-center px-7 py-12 text-center">
-							<IconMessages size={30} className="mb-3 text-dim" />
-							<div className="text-section-title leading-[1.15] font-semibold tracking-[-0.02em] text-fg">
+						<div {...stylex.props(sx.flex, sx.minH360px, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.px7, sx.py12, sx.textCenter)}>
+							<IconMessages size={30} {...stylex.props(sx.mb3, sx.textDim)} />
+							<div {...stylex.props(sx.leading115, sx.fontSemibold, sx.tracking002em, sx.textFg, typography.sectionTitle)}>
 								No sessions
 							</div>
-							<p className="m-0 mt-1 max-w-[26ch] text-body leading-[1.45] text-dim text-pretty">
+							<p {...stylex.props(sx.m0, sx.mt1, sx.maxW26ch, sx.leading145, sx.textDim, sx.textPretty, typography.body)}>
 								Start one and it shows up here.
 							</p>
-							<div className="mt-4 flex flex-col items-center gap-1">
+							<div {...stylex.props(sx.mt4, sx.flex, sx.flexCol, sx.itemsCenter, sx.gap1)}>
 								<Button
 									variant="soft"
 									size="md"
-									className="rounded-full px-4"
+									{...stylex.props(sx.roundedFull, sx.px4)}
 									onClick={onNewSession}
 								>
 									New session
@@ -5750,8 +6015,8 @@ fetchFeedItems("plain")
 							})
 						}
 					>
-						<IconRobot size={20} className="shrink-0" />
-						<span className="min-w-0 truncate">
+						<IconRobot size={20} {...stylex.props(sx.shrink0)} />
+						<span {...stylex.props(sx.minW0, sx.truncate)}>
 							{filter.autoCreated === "hide" ? "Show" : "Hide"}{" "}
 							{autoCreatedRows} started by an agent
 						</span>
@@ -5787,7 +6052,7 @@ fetchFeedItems("plain")
 										: "Expand automations"
 								}
 							>
-								<span className="min-w-0 truncate">Automations</span>
+								<span {...stylex.props(sx.minW0, sx.truncate)}>Automations</span>
 								{/* The count sits right after the heading, not pinned to the
 								    far right; any future action can still be pushed there
 								    with ml-auto. */}
@@ -5902,7 +6167,7 @@ fetchFeedItems("plain")
 										)}
 										{open &&
 											(group.totalItems || group.items.length) > group.items.length && (
-												<div className="px-4 pb-1 pt-0.5 text-meta tabular-nums text-faint">
+												<div className="tabular-nums" {...stylex.props(sx.px4, sx.pb1, sx.pt05, sx.textFaint, typography.meta)}>
 													Latest {group.items.length} of {group.totalItems} runs
 												</div>
 											)}

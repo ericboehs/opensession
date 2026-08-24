@@ -303,6 +303,93 @@ import type { UnifiedSession } from "./lib/types";
 import "./styles/base.css";
 import "./styles/legacy.css";
 import { EmptyState, LoadingState } from "./ui/state";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "./styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	gap5: {
+			gap: "20px"
+	},
+	m0: {
+			margin: "0"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	tracking001em: {
+			letterSpacing: "-.01em"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	leadingRelaxed: {
+			lineHeight: "var(--leading-relaxed)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	mt3: {
+			marginTop: "12px"
+	},
+	justifyEnd: {
+			justifyContent: "flex-end"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	ml5: {
+			marginLeft: "20px"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	opacity70: {
+			opacity: ".7"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	flex: {
+			display: "flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	flex1: {
+			flex: "1"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	minH0: {
+			minHeight: "0"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	overflowYAuto: {
+			overflowY: "auto"
+	},
+	px5: {
+			paddingInline: "20px"
+	},
+	py8: {
+			paddingBlock: "32px"
+	},
+	wFull: {
+			width: "100%"
+	},
+	maxW680px: {
+			maxWidth: "680px"
+	},
+});
 
 function deferred<T extends React.ComponentType<any>>(
 	load: () => Promise<{ default: T }>,
@@ -4956,16 +5043,16 @@ console.error("Rename workspace failed:", error);
 				}}
 				disablePointerDismissal
 			>
-				<Modal.Content widthClassName="max-w-[34rem]" className="gap-5">
-					<Modal.Title className="m-0 text-dialog-title font-semibold tracking-[-0.01em] text-fg">
+				<Modal.Content widthClassName="max-w-[34rem]" {...stylex.props(sx.gap5)}>
+					<Modal.Title {...stylex.props(sx.m0, sx.fontSemibold, sx.tracking001em, sx.textFg, typography.dialogTitle)}>
 						Close running session{runningCloseConfirmation?.runningCount === 1 ? "" : "s"}?
 					</Modal.Title>
-					<Modal.Description className="m-0 text-body leading-relaxed text-dim">
+					<Modal.Description {...stylex.props(sx.m0, sx.leadingRelaxed, sx.textDim, typography.body)}>
 						{runningCloseConfirmation?.runningCount === 1
 							? "This session is currently running. Closing it will cancel its current run."
 							: `These ${runningCloseConfirmation?.runningCount ?? 0} sessions are currently running. Closing them will cancel their current runs.`}
 					</Modal.Description>
-					<Modal.Footer className="mt-3 justify-end gap-3">
+					<Modal.Footer {...stylex.props(sx.mt3, sx.justifyEnd, sx.gap3)}>
 						<Modal.Close render={<Button size="lg">Cancel</Button>} />
 						<Button
 							variant="danger-strong"
@@ -4977,7 +5064,7 @@ console.error("Rename workspace failed:", error);
 							}}
 						>
 							<span>Close anyway</span>
-							<span className="ml-5 text-label font-medium opacity-70">⌘↵</span>
+							<span {...stylex.props(sx.ml5, sx.fontMedium, sx.opacity70, typography.label)}>⌘↵</span>
 						</Button>
 					</Modal.Footer>
 				</Modal.Content>
@@ -5007,7 +5094,7 @@ console.error("Rename workspace failed:", error);
 						route.view === "archived" && ARCHIVED_SEARCH_HEADER,
 					)}
 				>
-					<TopBarLeading className="shrink-0">
+					<TopBarLeading {...stylex.props(sx.shrink0)}>
 						{mobileDetail ? (
 							<TopBarBack
 								floating
@@ -5093,7 +5180,7 @@ console.error("Rename workspace failed:", error);
 									{currentSession && sessionWasAgentStarted(currentSession) && (
 										<IconRobot
 											size={16}
-											className="shrink-0 text-faint"
+											{...stylex.props(sx.shrink0, sx.textFaint)}
 											aria-label="Started by an agent"
 										/>
 									)}
@@ -5240,7 +5327,7 @@ console.error("Rename workspace failed:", error);
 								isPhone ? "hidden" : "flex",
 							)}
 						>
-							<div className="sidebar-brand-actions flex shrink-0 items-center gap-2">
+							<div className="sidebar-brand-actions" {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.gap2)}>
 								<Tooltip
 									label="Hide sidebar"
 									side="bottom"
@@ -5824,7 +5911,7 @@ console.error("Archive failed:", e);
 									)
 								)
 							) : (
-								<div className="flex flex-1 items-center justify-center">
+								<div {...stylex.props(sx.flex, sx.flex1, sx.itemsCenter, sx.justifyCenter)}>
 									{(() => {
 										const isLoading = loading || route.id === pendingSessionId;
 										if (sessionsError && !isLoading) {
@@ -5874,10 +5961,10 @@ console.error("Archive failed:", e);
 								onConnect={() =>
 									navigate({ view: "settings", section: "myAccounts" })
 								}
-								className="min-h-0 flex-1"
+								{...stylex.props(sx.minH0, sx.flex1)}
 							/>
 						) : productEmpty && githubConnectionState === "loading" ? (
-							<LoadingState className="min-h-0 flex-1">Checking GitHub…</LoadingState>
+							<LoadingState {...stylex.props(sx.minH0, sx.flex1)}>Checking GitHub…</LoadingState>
 						) : productEmpty ? (
 							/* With nothing to open, the page IS the new-session card: the
 							   same palette rendered in place, so the empty state is
@@ -5889,8 +5976,8 @@ console.error("Archive failed:", e);
 							   sidebar +): one instance at a time, and since both persist
 							   the same "new-session" draft, whatever was typed here is
 							   already in the one that opens. */
-							<div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-5 py-8">
-								<div className="flex w-full max-w-[680px] flex-col">
+							<div {...stylex.props(sx.flex, sx.minH0, sx.flex1, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.overflowYAuto, sx.px5, sx.py8)}>
+								<div {...stylex.props(sx.flex, sx.wFull, sx.maxW680px, sx.flexCol)}>
 									{!palette.open && (
 										<NewSession
 											inline

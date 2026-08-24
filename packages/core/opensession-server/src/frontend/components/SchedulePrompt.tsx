@@ -16,6 +16,214 @@ import {
 } from "../lib/composer-classes";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	pointerEventsNone: {
+			pointerEvents: "none"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	Top5px: {
+			top: "-5px"
+	},
+	Right5px: {
+			right: "-5px"
+	},
+	h15px: {
+			height: "15px"
+	},
+	minW15px: {
+			minWidth: "15px"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	bgYellow: {
+			backgroundColor: "var(--yellow)"
+	},
+	px3px: {
+			paddingInline: "3px"
+	},
+	textCenter: {
+			textAlign: "center"
+	},
+	text10px: {
+			fontSize: "10px"
+	},
+	leading15px: {
+			lineHeight: "15px"
+	},
+	fontBold: {
+			fontWeight: "var(--font-weight-bold)"
+	},
+	textWhite: {
+			color: "var(--color-white)"
+	},
+	mb05: {
+			marginBottom: "2px"
+	},
+	flex: {
+			display: "flex"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gapPx: {
+			gap: "1px"
+	},
+	borderB: {
+			borderBottomStyle: "solid",
+			borderBottomWidth: "1px"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	pb1: {
+			paddingBottom: "4px"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	itemsBaseline: {
+			alignItems: "baseline"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	px9px: {
+			paddingInline: "9px"
+	},
+	py5px: {
+			paddingBlock: "5px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	textYellow: {
+			color: "var(--yellow)"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	mlAuto: {
+			marginLeft: "auto"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	pt15: {
+			paddingTop: "6px"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	mx15: {
+			marginInline: "6px"
+	},
+	my1: {
+			marginBlock: "4px"
+	},
+	hPx: {
+			height: "1px"
+	},
+	bgLine: {
+			backgroundColor: "var(--border)"
+	},
+	pt1: {
+			paddingTop: "4px"
+	},
+	pb05: {
+			paddingBottom: "2px"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	fixed: {
+			position: "fixed"
+	},
+	inset0: {
+			inset: "0"
+	},
+	z300: {
+			zIndex: "300"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	bgBlack40: {
+			backgroundColor: "#0006"
+	},
+	p5: {
+			padding: "20px"
+	},
+	w420px: {
+			width: "420px"
+	},
+	maxW92vw: {
+			maxWidth: "92vw"
+	},
+	roundedXl: {
+			borderRadius: "calc(18px * var(--rf))"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderLineStrong: {
+			borderColor: "var(--border-strong)"
+	},
+	bgRaised: {
+			backgroundColor: "var(--bg-raised)"
+	},
+	smoothShadowLg: {
+			boxShadow: "0 4px 12px -4px var(--smooth-shadow-color), 0 18px 48px -14px var(--smooth-shadow-color)"
+	},
+	itemsStart: {
+			alignItems: "flex-start"
+	},
+	justifyBetween: {
+			justifyContent: "space-between"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	mt3px: {
+			marginTop: "3px"
+	},
+	Mt05: {
+			marginTop: "-2px"
+	},
+	Mr1: {
+			marginRight: "-4px"
+	},
+	mt4: {
+			marginTop: "16px"
+	},
+	mt5: {
+			marginTop: "20px"
+	},
+	justifyEnd: {
+			justifyContent: "flex-end"
+	},
+});
 
 /** "in 45m" / "in 3h" / "in 2d" for a future instant (short form). */
 function inTime(iso: string): string {
@@ -237,7 +445,7 @@ setError(e.message);
           />
         )}
         {pending.length > 0 && (
-          <span className="pointer-events-none absolute -top-[5px] -right-[5px] h-[15px] min-w-[15px] rounded-full bg-yellow px-[3px] text-center text-[10px] leading-[15px] font-bold text-white shadow-[0_0_0_2px_var(--bg)]">
+          <span className="shadow-[0_0_0_2px_var(--bg)]" {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.Top5px, sx.Right5px, sx.h15px, sx.minW15px, sx.roundedFull, sx.bgYellow, sx.px3px, sx.textCenter, sx.text10px, sx.leading15px, sx.fontBold, sx.textWhite)}>
             {pending.length}
           </span>
         )}
@@ -254,24 +462,24 @@ setError(e.message);
         >
           {/* Pending scheduled messages, listed above the picks with a cancel. */}
           {pending.length > 0 && (
-            <div className="mb-0.5 flex flex-col gap-px border-b border-line pb-1">
+            <div {...stylex.props(sx.mb05, sx.flex, sx.flexCol, sx.gapPx, sx.borderB, sx.borderLine, sx.pb1)}>
               {pending.map((p) => (
                 <div
                   key={p.id}
-                  className="flex min-w-0 items-baseline gap-2 px-[9px] py-[5px] text-meta"
+                  {...stylex.props(sx.flex, sx.minW0, sx.itemsBaseline, sx.gap2, sx.px9px, sx.py5px, typography.meta)}
                 >
                   <span
-                    className="shrink-0 font-semibold text-yellow"
+                    {...stylex.props(sx.shrink0, sx.fontSemibold, sx.textYellow)}
                     title={new Date(p.at).toLocaleString()}
                   >
                     {inTime(p.at)}
                   </span>
-                  <span className="truncate text-dim" title={p.prompt}>
+                  <span {...stylex.props(sx.truncate, sx.textDim)} title={p.prompt}>
                     {p.prompt}
                   </span>
                   <button
                     type="button"
-                    className="ml-auto shrink-0 text-meta text-faint hover:text-red"
+                    className="hover:text-red" {...stylex.props(sx.mlAuto, sx.shrink0, sx.textFaint, typography.meta)}
                     title="Cancel this scheduled message"
                     onClick={async () => {
                       await (async () => {
@@ -289,7 +497,7 @@ await deleteScheduledPromptApi(p.id);
             </div>
           )}
 
-          <div className="px-[9px] pt-1.5 pb-1 text-meta font-medium text-faint">
+          <div {...stylex.props(sx.px9px, sx.pt15, sx.pb1, sx.fontMedium, sx.textFaint, typography.meta)}>
             Schedule message
           </div>
           {quickOptions().map((o) => (
@@ -306,7 +514,7 @@ await deleteScheduledPromptApi(p.id);
               {o.label}
             </button>
           ))}
-          <div className="mx-1.5 my-1 h-px bg-line" />
+          <div {...stylex.props(sx.mx15, sx.my1, sx.hPx, sx.bgLine)} />
           <button
             type="button"
             role="menuitem"
@@ -317,7 +525,7 @@ await deleteScheduledPromptApi(p.id);
             Custom time
           </button>
           {error && !customOpen && (
-            <div className="px-[9px] pt-1 pb-0.5 text-meta text-red">{error}</div>
+            <div {...stylex.props(sx.px9px, sx.pt1, sx.pb05, sx.textRed, typography.meta)}>{error}</div>
           )}
         </div>
       )}
@@ -326,29 +534,29 @@ await deleteScheduledPromptApi(p.id);
         // The class name stays: SessionViewer and Sidebar look for an open
         // overlay by this selector before taking a global key.
         <div
-          className="composer-schedule-modal-backdrop fixed inset-0 z-[300] flex items-center justify-center bg-black/40 p-5"
+          className="composer-schedule-modal-backdrop" {...stylex.props(sx.fixed, sx.inset0, sx.z300, sx.flex, sx.itemsCenter, sx.justifyCenter, sx.bgBlack40, sx.p5)}
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) setCustomOpen(false);
           }}
         >
-          <div className="w-[420px] max-w-[92vw] rounded-xl border border-line-strong bg-raised p-5 smooth-shadow-lg">
-            <div className="flex items-start justify-between gap-3">
+          <div {...stylex.props(sx.w420px, sx.maxW92vw, sx.roundedXl, sx.border, sx.borderLineStrong, sx.bgRaised, sx.p5, sx.smoothShadowLg)}>
+            <div {...stylex.props(sx.flex, sx.itemsStart, sx.justifyBetween, sx.gap3)}>
               <div>
-                <div className="text-dialog-title font-semibold text-fg">
+                <div {...stylex.props(sx.fontSemibold, sx.textFg, typography.dialogTitle)}>
                   Schedule message
                 </div>
-                <div className="mt-[3px] text-meta text-dim">Time zone: {tz}</div>
+                <div {...stylex.props(sx.mt3px, sx.textDim, typography.meta)}>Time zone: {tz}</div>
               </div>
               <Button
                 variant="ghost"
                 size="sm"
-                className="-mt-0.5 -mr-1"
+                {...stylex.props(sx.Mt05, sx.Mr1)}
                 onClick={() => setCustomOpen(false)}
                 aria-label="Close"
                 icon={<IconX size={20} />}
               />
             </div>
-            <div className="mt-4 flex gap-2">
+            <div {...stylex.props(sx.mt4, sx.flex, sx.gap2)}>
               <input
                 type="date"
                 value={date}
@@ -364,9 +572,9 @@ await deleteScheduledPromptApi(p.id);
               />
             </div>
             {error && (
-              <div className="px-[9px] pt-1 pb-0.5 text-meta text-red">{error}</div>
+              <div {...stylex.props(sx.px9px, sx.pt1, sx.pb05, sx.textRed, typography.meta)}>{error}</div>
             )}
-            <div className="mt-5 flex justify-end gap-2">
+            <div {...stylex.props(sx.mt5, sx.flex, sx.justifyEnd, sx.gap2)}>
               <Button variant="soft" size="lg" onClick={() => setCustomOpen(false)}>
                 Cancel
               </Button>

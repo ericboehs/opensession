@@ -6,6 +6,88 @@ import { IconGitCommit, IconPencil, IconPullRequest } from "./icons";
 import { Popover } from "../ui/popover";
 import { cn } from "../ui/cn";
 import { scrollToVirtualTranscriptEntry } from "../lib/transcript-virtual-navigation";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	srOnly: {
+			clipPath: "inset(50%)",
+			whiteSpace: "nowrap",
+			borderWidth: "0",
+			width: "1px",
+			height: "1px",
+			margin: "-1px",
+			padding: "0",
+			position: "absolute",
+			overflow: "hidden"
+	},
+	pointerEventsNone: {
+			pointerEvents: "none"
+	},
+	w320px: {
+			width: "320px"
+	},
+	p4: {
+			padding: "16px"
+	},
+	m0: {
+			margin: "0"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	leadingSnug: {
+			lineHeight: "var(--leading-snug)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	mt2: {
+			marginTop: "8px"
+	},
+	leadingNormal: {
+			lineHeight: "var(--leading-normal)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	mt3: {
+			marginTop: "12px"
+	},
+	flex: {
+			display: "flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	mlAuto: {
+			marginLeft: "auto"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+});
 
 /**
  * Your own messages, as a rail of ticks down the left edge of the transcript.
@@ -436,7 +518,7 @@ export function MessageRail({ messages, containerRef, leaveLatest }: Props) {
 				{/* A scrubber has nothing to announce until someone arrives on the
 				    keyboard, and then it has to announce every step. */}
 				{keyboard && shown && (
-					<span aria-live="polite" className="sr-only">
+					<span aria-live="polite" {...stylex.props(sx.srOnly)}>
 						{`Message ${active + 1} of ${count}: ${shown.preview}`}
 					</span>
 				)}
@@ -451,28 +533,28 @@ export function MessageRail({ messages, containerRef, leaveLatest }: Props) {
 					// The card answers a question, it does not take one: every
 					// target is on the rail, so the pointer never has to reach it
 					// and the transcript underneath stays selectable.
-					className="pointer-events-none w-[320px] p-4"
+					{...stylex.props(sx.pointerEventsNone, sx.w320px, sx.p4)}
 				>
 					{/* `m-0` on both: no Preflight ships (styles/tailwind.css), so a
 					    bare `<p>` keeps the UA's `margin-block: 1em`. That put a
 					    second 15px above the title on top of the card's own
 					    padding, and widened both gaps under it. */}
-					<p className="m-0 line-clamp-2 text-body font-semibold leading-snug text-fg">
+					<p className="line-clamp-2" {...stylex.props(sx.m0, sx.fontSemibold, sx.leadingSnug, sx.textFg, typography.body)}>
 						{shown.preview}
 					</p>
 					{shown.reply && (
-						<p className="m-0 mt-2 line-clamp-3 text-label leading-normal text-dim">
+						<p className="line-clamp-3" {...stylex.props(sx.m0, sx.mt2, sx.leadingNormal, sx.textDim, typography.label)}>
 							{shown.reply}
 						</p>
 					)}
-					<div className="mt-3 flex items-center gap-3 text-label text-faint">
+					<div {...stylex.props(sx.mt3, sx.flex, sx.itemsCenter, sx.gap3, sx.textFaint, typography.label)}>
 						{shown.outcome && (
-							<span className="inline-flex min-w-0 items-center gap-1.5 text-dim">
+							<span {...stylex.props(sx.inlineFlex, sx.minW0, sx.itemsCenter, sx.gap15, sx.textDim)}>
 								<OutcomeIcon kind={shown.outcome.kind} />
-								<span className="truncate">{shown.outcome.label}</span>
+								<span {...stylex.props(sx.truncate)}>{shown.outcome.label}</span>
 							</span>
 						)}
-						<span className="ml-auto shrink-0">
+						<span {...stylex.props(sx.mlAuto, sx.shrink0)}>
 							{shown.sender ? `${shown.sender} · ` : ""}
 							{relativeTime(shown.timestamp)}
 						</span>

@@ -4,6 +4,45 @@ import { motion } from "motion/react";
 import * as React from "react";
 import { cn } from "./cn";
 import { duration, ease } from "./motion";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	relative: {
+			position: "relative"
+	},
+	flex: {
+			display: "flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	inset0: {
+			inset: "0"
+	},
+	roundedControl: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderVarSegmentedKnobEdge: {
+			borderColor: "var(--segmented-knob-edge)"
+	},
+	bgVarSegmentedKnobSurface: {
+			backgroundColor: "var(--segmented-knob-surface)"
+	},
+	smoothShadowSm: {
+			boxShadow: "0 1px 3px -1px var(--smooth-shadow-color), 0 4px 10px -4px var(--smooth-shadow-color)"
+	},
+});
 
 /**
  * Segmented control — a short, exclusive choice shown in full, where every
@@ -138,7 +177,7 @@ export function SegmentedOption({
 		>
 			{selected && <SegmentedKnob knobId={knobId} />}
 			{/* Above the knob, which is absolutely positioned over the option. */}
-			<span className="relative flex items-center gap-1.5">{children}</span>
+			<span {...stylex.props(sx.relative, sx.flex, sx.itemsCenter, sx.gap15)}>{children}</span>
 		</Toggle>
 	);
 }
@@ -157,7 +196,7 @@ export function SegmentedKnob({ knobId }: { knobId: string }) {
 		<motion.span
 			layoutId={knobId}
 			aria-hidden
-			className="absolute inset-0 rounded-control border border-[var(--segmented-knob-edge)] bg-[var(--segmented-knob-surface)] smooth-shadow-sm"
+			{...stylex.props(sx.absolute, sx.inset0, sx.roundedControl, sx.border, sx.borderVarSegmentedKnobEdge, sx.bgVarSegmentedKnobSurface, sx.smoothShadowSm)}
 			transition={{ type: "tween", duration: duration.base, ease }}
 		/>
 	);

@@ -1,6 +1,26 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { clampSplitRatio } from "../lib/split-tabs";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	grid: {
+			display: "grid"
+	},
+	minH0: {
+			minHeight: "0"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+});
 
 type Socket = ReturnType<typeof useWebSocket>;
 export type SplitSide = "left" | "right";
@@ -127,7 +147,7 @@ export function SessionSplit({
 	return (
 		<div
 			ref={rootRef}
-			className="grid min-h-0 min-w-0 flex-1 overflow-hidden"
+			{...stylex.props(sx.grid, sx.minH0, sx.minW0, sx.flex1, sx.overflowHidden)}
 			style={{ gridTemplateColumns: splitColumns(draftRatio) }}
 		>
 			{column("left", leftSocket)}

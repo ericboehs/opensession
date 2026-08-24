@@ -9,6 +9,17 @@ import {
 import { cn } from "../../ui/cn";
 import { IconPencil, IconPlus } from "../icons";
 import { SIDEBAR_ROW, SIDEBAR_ROW_TITLE } from "./SidebarItem";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	shrink0: {
+			flexShrink: "0"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+});
 
 /**
  * The session that hasn't started yet.
@@ -57,7 +68,7 @@ export function DraftRow({
 			aria-label="New session, not started yet"
 		>
 			<span className={SIDEBAR_RAIL}>
-				<IconPlus className="shrink-0 text-faint" size={16} />
+				<IconPlus {...stylex.props(sx.shrink0, sx.textFaint)} size={16} />
 			</span>
 			<span className={SIDEBAR_ROW_TITLE}>New session</span>
 			{draft && (

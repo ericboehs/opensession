@@ -4,6 +4,63 @@ import { cn } from "./cn";
 import { fieldClasses } from "./input";
 import { markTileClass } from "../lib/mark-tile";
 import { Skeleton, SkeletonBar } from "./state";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	minW0: {
+			minWidth: "0"
+	},
+	m0: {
+			margin: "0"
+	},
+	fontTitle: {
+			fontWeight: "var(--title-weight)"
+	},
+	tracking002em: {
+			letterSpacing: "-.02em"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	mt15: {
+			marginTop: "6px"
+	},
+	leadingRelaxed: {
+			lineHeight: "var(--leading-relaxed)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	flex: {
+			display: "flex"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	flexShrink0: {
+			flexShrink: "0"
+	},
+	h15: {
+			height: "6px"
+	},
+	w15: {
+			width: "6px"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+});
 
 export function SettingsPanel({
 	className,
@@ -34,17 +91,17 @@ export function SettingsHeader({
 			className={cn("mb-5 flex items-start justify-between gap-4 px-5", className)}
 			{...props}
 		>
-			<div className="min-w-0">
-				<h1 className="m-0 text-page-title font-title tracking-[-0.02em] text-fg [.settings-sheet_&]:hidden">
+			<div {...stylex.props(sx.minW0)}>
+				<h1 className="[.settings-sheet_&]:hidden" {...stylex.props(sx.m0, sx.fontTitle, sx.tracking002em, sx.textFg, typography.pageTitle)}>
 					{title}
 				</h1>
 				{description && (
-					<p className="m-0 mt-1.5 text-supporting leading-relaxed text-dim [.settings-sheet_&]:mt-0">
+					<p className="[.settings-sheet_&]:mt-0" {...stylex.props(sx.m0, sx.mt15, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 						{description}
 					</p>
 				)}
 			</div>
-			{actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+			{actions && <div {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.gap2)}>{actions}</div>}
 		</header>
 	);
 }
@@ -71,8 +128,8 @@ export function SettingsGroupLabel({
 			)}
 			{...props}
 		>
-			<span className="min-w-0">{children}</span>
-			{actions && <div className="flex shrink-0 items-center gap-1.5">{actions}</div>}
+			<span {...stylex.props(sx.minW0)}>{children}</span>
+			{actions && <div {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.gap15)}>{actions}</div>}
 		</div>
 	);
 }
@@ -320,8 +377,8 @@ export function SettingRowControl({
  */
 export function StatusChip({ label, dot }: { label: string; dot: string }) {
 	return (
-		<span className="flex flex-shrink-0 items-center gap-1.5 text-label text-dim">
-			<span className="h-1.5 w-1.5 rounded-full" style={{ background: dot }} />
+		<span {...stylex.props(sx.flex, sx.flexShrink0, sx.itemsCenter, sx.gap15, sx.textDim, typography.label)}>
+			<span {...stylex.props(sx.h15, sx.w15, sx.roundedFull)} style={{ background: dot }} />
 			{label}
 		</span>
 	);

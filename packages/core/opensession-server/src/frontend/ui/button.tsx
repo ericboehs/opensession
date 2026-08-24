@@ -1,6 +1,26 @@
 import * as React from "react";
 import { IconChevronDown } from "../components/icons";
 import { cn } from "./cn";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	TextBoxTrimBothCapAlphabetic: {
+			textBox: "trim-both cap alphabetic"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	opacity55: {
+			opacity: ".55"
+	},
+});
 
 /**
  * Button primitive — the shared optics for text, icon+label, and icon-only
@@ -295,7 +315,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 		// wrapping it would make it a flex item of a flex item.
 		const label =
 			typeof children === "string" || typeof children === "number" ? (
-				<span className="[text-box:trim-both_cap_alphabetic]">{children}</span>
+				<span {...stylex.props(sx.TextBoxTrimBothCapAlphabetic)}>{children}</span>
 			) : (
 				children
 			);
@@ -313,11 +333,11 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 				)}
 				{label}
 				{trailing != null && (
-					<span className="inline-flex shrink-0 items-center">{trailing}</span>
+					<span {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter)}>{trailing}</span>
 				)}
 				{caret && (
 					<IconChevronDown
-						className="shrink-0 opacity-55"
+						{...stylex.props(sx.shrink0, sx.opacity55)}
 						size={caretSize[size]}
 					/>
 				)}

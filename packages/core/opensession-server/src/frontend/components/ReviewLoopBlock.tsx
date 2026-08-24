@@ -2,6 +2,151 @@ import React, { useState } from "react";
 import { IconChevronDown, IconCheckCircle, IconX } from "./icons";
 import { cn } from "../ui/cn";
 import type { ReviewLoopResult } from "../lib/review-loop";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	mxAuto: {
+			marginInline: "auto"
+	},
+	mb3: {
+			marginBottom: "12px"
+	},
+	wFull: {
+			width: "100%"
+	},
+	maxWVarSessionCol: {
+			maxWidth: "var(--session-col)"
+	},
+	Mx2: {
+			marginInline: "-8px"
+	},
+	flex: {
+			display: "flex"
+	},
+	wCalc10016px: {
+			width: "calc(100% + 16px)"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	itemsBaseline: {
+			alignItems: "baseline"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	roundedControl: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	border0: {
+			borderStyle: "solid",
+			borderWidth: "0"
+	},
+	bgTransparent: {
+			backgroundColor: "#0000"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	py1: {
+			paddingBlock: "4px"
+	},
+	textLeft: {
+			textAlign: "left"
+	},
+	fontSans: {
+			fontFamily: "var(--sans)"
+	},
+	leading5: {
+			lineHeight: "20px"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	transitionColors: {
+			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	block: {
+			display: "block"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	leading4: {
+			lineHeight: "16px"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	hidden: {
+			display: "none"
+	},
+	mlAuto: {
+			marginLeft: "auto"
+	},
+	size11px: {
+			width: "11px",
+			height: "11px"
+	},
+	flexNone: {
+			flex: "none"
+	},
+	selfCenter: {
+			alignSelf: "center"
+	},
+	animateSpin: {
+			animation: "var(--animate-spin)"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderBLineStrong: {
+			borderBottomColor: "var(--border-strong)"
+	},
+	borderLLineStrong: {
+			borderLeftColor: "var(--border-strong)"
+	},
+	borderRLineStrong: {
+			borderRightColor: "var(--border-strong)"
+	},
+	borderTDim: {
+			borderTopColor: "var(--text-dim)"
+	},
+	mt05: {
+			marginTop: "2px"
+	},
+	pl2: {
+			paddingLeft: "8px"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	px1: {
+			paddingInline: "4px"
+	},
+	py3px: {
+			paddingBlock: "3px"
+	},
+});
 
 /**
  * A review handoff and the work it triggered, folded like a normal turn. Once
@@ -37,7 +182,7 @@ export function ReviewLoopBlock({
 		.join(", ");
 
 	return (
-		<section className="mx-auto mb-3 w-full max-w-[var(--session-col)]" aria-label="Review loop">
+		<section {...stylex.props(sx.mxAuto, sx.mb3, sx.wFull, sx.maxWVarSessionCol)} aria-label="Review loop">
 			<button
 				type="button"
 				aria-expanded={open}
@@ -49,7 +194,7 @@ export function ReviewLoopBlock({
 						return next;
 					})
 				}
-				className="-mx-2 flex w-[calc(100%+16px)] min-w-0 cursor-pointer items-baseline gap-2 rounded-control border-0 bg-transparent px-3 py-1 text-left font-sans text-item-title leading-5 text-dim transition-colors hover:bg-hover/40 hover:text-fg phone:min-h-10"
+				className="hover:bg-hover/40 hover:text-fg phone:min-h-10" {...stylex.props(sx.Mx2, sx.flex, sx.wCalc10016px, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px3, sx.py1, sx.textLeft, sx.fontSans, sx.leading5, sx.textDim, sx.transitionColors, typography.itemTitle)}
 			>
 				<span
 					className={cn(
@@ -57,22 +202,22 @@ export function ReviewLoopBlock({
 						open ? "-translate-y-px" : "-rotate-90",
 					)}
 				>
-					<IconChevronDown size={20} className="block" />
+					<IconChevronDown size={20} {...stylex.props(sx.block)} />
 				</span>
-				<span className="shrink-0 font-medium">Review loop</span>
-				<span className="min-w-0 truncate text-label leading-4 text-faint">{visibleDetail}</span>
+				<span {...stylex.props(sx.shrink0, sx.fontMedium)}>Review loop</span>
+				<span {...stylex.props(sx.minW0, sx.truncate, sx.leading4, sx.textFaint, typography.label)}>{visibleDetail}</span>
 				{prNumber && (
-					<span className="hidden shrink-0 text-label leading-4 text-faint desktop:block">PR #{prNumber}</span>
+					<span className="desktop:block" {...stylex.props(sx.hidden, sx.shrink0, sx.leading4, sx.textFaint, typography.label)}>PR #{prNumber}</span>
 				)}
 				{live && (
 					<span
-						className="ml-auto size-[11px] flex-none self-center animate-spin rounded-full border border-b-line-strong border-l-line-strong border-r-line-strong border-t-dim"
+						{...stylex.props(sx.mlAuto, sx.size11px, sx.flexNone, sx.selfCenter, sx.animateSpin, sx.roundedFull, sx.border, sx.borderBLineStrong, sx.borderLLineStrong, sx.borderRLineStrong, sx.borderTDim)}
 						aria-label="Review in progress"
 					/>
 				)}
 			</button>
 			{open && (
-				<div className="mt-0.5 pl-2 [&>*:last-child]:mb-0">
+				<div className="[&>*:last-child]:mb-0" {...stylex.props(sx.mt05, sx.pl2)}>
 					{children}
 					{result && !live && result.status !== "pending" && (
 						<ReviewLoopResultRow result={result} rounds={rounds} />
@@ -114,7 +259,7 @@ function ReviewLoopResultRow({
 	const passed = result.status === "passed";
 	return (
 		<div
-			className="mt-1 flex w-full min-w-0 items-baseline gap-2 rounded-control bg-transparent px-1 py-[3px] font-sans"
+			{...stylex.props(sx.mt1, sx.flex, sx.wFull, sx.minW0, sx.itemsBaseline, sx.gap2, sx.roundedControl, sx.bgTransparent, sx.px1, sx.py3px, sx.fontSans)}
 			aria-label={passed ? "Review passed" : "Review failed"}
 		>
 			<span
@@ -125,10 +270,10 @@ function ReviewLoopResultRow({
 			>
 				{passed ? <IconCheckCircle size={20} /> : <IconX size={20} />}
 			</span>
-			<span className="shrink-0 text-item-title font-medium leading-5 text-dim">
+			<span {...stylex.props(sx.shrink0, sx.fontMedium, sx.leading5, sx.textDim, typography.itemTitle)}>
 				{passed ? "Ready to merge" : "Needs changes"}
 			</span>
-			<span className="min-w-0 truncate text-label leading-4 text-faint">{facts}</span>
+			<span {...stylex.props(sx.minW0, sx.truncate, sx.leading4, sx.textFaint, typography.label)}>{facts}</span>
 		</div>
 	);
 }

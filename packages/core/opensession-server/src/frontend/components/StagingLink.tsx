@@ -13,6 +13,84 @@ import { ContextMenu, MENU_ICON } from "../ui/menu";
 import { IconArrowUpRight, IconCheck, IconCopy, IconGlobe } from "./icons";
 import { checkClass, isDeployment } from "./PrPanel";
 import { useShortcutLabel } from "../hooks/useShortcutBindings";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	relative: {
+			position: "relative"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	animateStagingShimmer14sEaseInOutInfinite: {
+			animation: "1.4s ease-in-out infinite staging-shimmer"
+	},
+	flex: {
+			display: "flex"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	roundedMd: {
+			borderRadius: "calc(7px * var(--rf))"
+	},
+	px25: {
+			paddingInline: "10px"
+	},
+	py2: {
+			paddingBlock: "8px"
+	},
+	textLeft: {
+			textAlign: "left"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	size5: {
+			width: "20px",
+			height: "20px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	noUnderline: {
+			textDecorationLine: "none"
+	},
+	grow: {
+			flexGrow: "1"
+	},
+	textGreen: {
+			color: "var(--green)"
+	},
+	MlPx: {
+			marginLeft: "-1px"
+	},
+	opacity80: {
+			opacity: ".8"
+	},
+});
 
 // The open-preview chord's handler lives in SessionViewer: this component
 // mounts once per layout variant, so a listener here would register several
@@ -166,7 +244,7 @@ export function StagingLink({
 		if (!deployPending) return null;
 		const shimmerGlobe = (size: number) => (
 			<span
-				className="relative inline-flex items-center justify-center animate-[staging-shimmer_1.4s_ease-in-out_infinite]"
+				{...stylex.props(sx.relative, sx.inlineFlex, sx.itemsCenter, sx.justifyCenter, sx.animateStagingShimmer14sEaseInOutInfinite)}
 				aria-hidden="true"
 			>
 				<IconGlobe size={size} />
@@ -193,13 +271,13 @@ export function StagingLink({
 		if (variant === "action") {
 			return (
 				<span
-					className="flex min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-supporting font-semibold text-faint"
+					{...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px25, sx.py2, sx.textLeft, sx.fontSemibold, sx.textFaint, typography.supporting)}
 					title="Preview environment starting… the link appears once it's up"
 				>
-					<span className="inline-flex size-5 shrink-0 items-center justify-center">
+					<span {...stylex.props(sx.inlineFlex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>
 						{shimmerGlobe(17)}
 					</span>
-					<span className="min-w-0 flex-1 truncate">Preview environment</span>
+					<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>Preview environment</span>
 				</span>
 			);
 		}
@@ -284,7 +362,7 @@ export function StagingLink({
 		copied ? (
 			<CopyCheck copied size={size} idle={restingIcon(size)} />
 		) : (
-			<span className="relative inline-flex items-center justify-center">
+			<span {...stylex.props(sx.relative, sx.inlineFlex, sx.itemsCenter, sx.justifyCenter)}>
 				{spinning && (
 					<span
 						className={`${RING_BASE} ${RING_MOTION} ${ring}`}
@@ -325,7 +403,7 @@ export function StagingLink({
 			{/* An inline-flex box, not `contents`: the popup positions from the
 			    cursor but Base UI still measures the trigger, and a box-less element
 			    measures as a zero rect at the origin. */}
-			<ContextMenu.Trigger render={<span className="inline-flex shrink-0" />}>
+			<ContextMenu.Trigger render={<span {...stylex.props(sx.inlineFlex, sx.shrink0)} />}>
 				{trigger}
 			</ContextMenu.Trigger>
 			<ContextMenu.Popup>
@@ -335,22 +413,22 @@ export function StagingLink({
 							href={href}
 							target="_blank"
 							rel="noopener"
-							className="no-underline"
+							{...stylex.props(sx.noUnderline)}
 						/>
 					}
 				>
 					<IconArrowUpRight size={20} className={MENU_ICON} />
-					<span className="grow">Open preview</span>
+					<span {...stylex.props(sx.grow)}>Open preview</span>
 				</ContextMenu.Item>
 				{/* Keeps the popup open so the checkmark lands where it was clicked,
 				    matching the PR menu's copy rows. */}
 				<ContextMenu.Item closeOnClick={false} onClick={() => copy(href)}>
 					{copied ? (
-						<IconCheck size={20} className="text-green" />
+						<IconCheck size={20} {...stylex.props(sx.textGreen)} />
 					) : (
 						<IconCopy size={20} className={MENU_ICON} />
 					)}
-					<span className="grow">{copied ? "Copied" : "Copy link"}</span>
+					<span {...stylex.props(sx.grow)}>{copied ? "Copied" : "Copy link"}</span>
 				</ContextMenu.Item>
 			</ContextMenu.Popup>
 		</ContextMenu.Root>
@@ -393,10 +471,10 @@ export function StagingLink({
 				/* A phone grid cell: no right-click, so no copy to advertise. */
 				title={`${tooltip("")} · ${href}`}
 			>
-				<span className="inline-flex size-5 shrink-0 items-center justify-center text-faint">
+				<span {...stylex.props(sx.inlineFlex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textFaint)}>
 					{globe(17, RING_LG)}
 				</span>
-				<span className="min-w-0 flex-1 truncate">Preview environment</span>
+				<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>Preview environment</span>
 			</a>
 		);
 	}
@@ -450,7 +528,7 @@ export function StagingLink({
 		>
 			{globe(15, RING_SM)}
 			Preview environment
-			<IconArrowUpRight size={15} className="-ml-px opacity-80" />
+			<IconArrowUpRight size={15} {...stylex.props(sx.MlPx, sx.opacity80)} />
 		</a>,
 	);
 }

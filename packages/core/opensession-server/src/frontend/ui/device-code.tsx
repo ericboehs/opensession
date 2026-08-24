@@ -2,6 +2,31 @@ import { IconCopy } from "../components/icons";
 import { cn } from "./cn";
 import { CopyCheck, useCopy } from "./copy";
 import { Tooltip } from "./tooltip";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	translateY05px: {
+			translate: "0 .5px"
+	},
+	tracking014em: {
+			letterSpacing: ".14em"
+	},
+	Mr014em: {
+			marginRight: "-.14em"
+	},
+	TextBoxTrimBothCapAlphabetic: {
+			textBox: "trim-both cap alphabetic"
+	},
+	opacity45: {
+			opacity: ".45"
+	},
+	transitionOpacity: {
+			transitionProperty: "opacity",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+});
 
 /**
  * A one-time device code (GitHub, ChatGPT) that someone has to enter on
@@ -45,7 +70,7 @@ export function DeviceCode({
 				    on the button's middle whatever font the platform picks, plus
 				    the half pixel the PR strip's labels carry (a word reads a touch
 				    high at the geometric center). */}
-				<span className="translate-y-[0.5px] tracking-[0.14em] -mr-[0.14em] [text-box:trim-both_cap_alphabetic]">
+				<span {...stylex.props(sx.translateY05px, sx.tracking014em, sx.Mr014em, sx.TextBoxTrimBothCapAlphabetic)}>
 					{code}
 				</span>
 				<CopyCheck
@@ -54,7 +79,7 @@ export function DeviceCode({
 					idle={
 						<IconCopy
 							size={20}
-							className="opacity-45 transition-opacity group-hover:opacity-80"
+							className="group-hover:opacity-80" {...stylex.props(sx.opacity45, sx.transitionOpacity)}
 						/>
 					}
 				/>

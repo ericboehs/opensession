@@ -47,6 +47,32 @@ import {
 } from "./session-tabs/empty-tab-morph";
 import { useTabReorder } from "./session-tabs/useTabReorder";
 import { shouldShowTabStrip } from "../lib/split-tabs";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	minW250px: {
+			minWidth: "250px"
+	},
+	minW240px: {
+			minWidth: "240px"
+	},
+	maxW320px: {
+			maxWidth: "320px"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	grow: {
+			flexGrow: "1"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+});
 
 /**
  * The tab strip is scoped to ONE Workspace: it shows the sibling sessions of the
@@ -396,7 +422,7 @@ export function SessionTabs({
 			>
 				<IconPlus size={ctrlIconSize} />
 			</ContextMenu.Trigger>
-			<ContextMenu.Popup className="min-w-[250px]">
+			<ContextMenu.Popup {...stylex.props(sx.minW250px)}>
 				<ContextMenu.Item onClick={() => onNewSession("share")}>
 					New session · share worktree
 				</ContextMenu.Item>
@@ -418,7 +444,7 @@ export function SessionTabs({
 			<Menu.Trigger className={TAB_HISTORY} aria-label="Archived sessions" title="Archived sessions">
 				<IconHistory size={ctrlIconSize} />
 			</Menu.Trigger>
-			<Menu.Popup align="end" sideOffset={4} className="min-w-[240px] max-w-[320px]">
+			<Menu.Popup align="end" sideOffset={4} {...stylex.props(sx.minW240px, sx.maxW320px)}>
 				<ArchivedSessionItems sessions={archived} onSelect={onSelect} onRestore={onRestore} />
 			</Menu.Popup>
 		</Menu.Root>
@@ -567,7 +593,7 @@ export function SessionTabs({
 										)}
 										{emptyVisual ? (
 											<span
-												className="inline-flex min-w-0"
+												{...stylex.props(sx.inlineFlex, sx.minW0)}
 												data-empty-tab-title=""
 											>
 												{titleContent}
@@ -628,7 +654,7 @@ export function SessionTabs({
 											}}
 										>
 											{emptyVisual ? (
-												<span className="inline-flex" data-empty-tab-glyph="">
+												<span {...stylex.props(sx.inlineFlex)} data-empty-tab-glyph="">
 													<IconX size={16} dense aria-hidden="true" />
 												</span>
 											) : (
@@ -639,45 +665,45 @@ export function SessionTabs({
 									{/* finalFocus=false: "Rename session" mounts the inline rename
 							    input (autoFocus) — the closing menu must not steal focus
 							    back to the tab. */}
-									<ContextMenu.Popup className="min-w-[250px]" finalFocus={false}>
+									<ContextMenu.Popup {...stylex.props(sx.minW250px)} finalFocus={false}>
 										<ContextMenu.Item
 											onClick={() => {
 												setDraft(session.title);
 												setEditKey(key);
 											}}
 										>
-											<span className="grow">Rename session</span>
+											<span {...stylex.props(sx.grow)}>Rename session</span>
 										</ContextMenu.Item>
 										{/* The cross-bar drag, spelled out: a bar down to its last
 								    tab has no room to show a drag, and this is also the
 								    only way back for someone who never found the gesture. */}
 										{onMoveAcross && (
 											<ContextMenu.Item onClick={() => onMoveAcross(key)}>
-												<span className="grow">Move to {moveAcrossSide} side</span>
+												<span {...stylex.props(sx.grow)}>Move to {moveAcrossSide} side</span>
 											</ContextMenu.Item>
 										)}
 										<ContextMenu.Separator />
 										<ContextMenu.SubmenuRoot>
 											<ContextMenu.SubmenuTrigger>
-												<span className="grow">Copy transcript</span>
-												<IconChevronRight size={16} className="text-faint" />
+												<span {...stylex.props(sx.grow)}>Copy transcript</span>
+												<IconChevronRight size={16} {...stylex.props(sx.textFaint)} />
 											</ContextMenu.SubmenuTrigger>
 											<Menu.Popup>
 												<Menu.Item onClick={() => void copySessionTranscript(session, "concise", onToast)}>
-													<span className="grow">Concise</span>
+													<span {...stylex.props(sx.grow)}>Concise</span>
 													{key === activeId && copyTranscriptLabel && (
 														<Menu.Shortcut>{copyTranscriptLabel}</Menu.Shortcut>
 													)}
 												</Menu.Item>
 												<Menu.Item onClick={() => void copySessionTranscript(session, "full", onToast)}>
-													<span className="grow">Full</span>
+													<span {...stylex.props(sx.grow)}>Full</span>
 												</Menu.Item>
 											</Menu.Popup>
 										</ContextMenu.SubmenuRoot>
 										<ContextMenu.Item
 											onClick={() => copyToClipboard(absoluteLink(sessionPath(session)), () => onToast("Link copied"))}
 										>
-											<span className="grow">Copy link</span>
+											<span {...stylex.props(sx.grow)}>Copy link</span>
 										</ContextMenu.Item>
 										<ContextMenu.Separator />
 										{/* Tab color. A swatch click bubbles to the Item, which
@@ -704,7 +730,7 @@ export function SessionTabs({
 										</ContextMenu.Item>
 										<ContextMenu.Separator />
 										<ContextMenu.Item onClick={() => onClose(session)}>
-											<span className="grow">Close tab</span>
+											<span {...stylex.props(sx.grow)}>Close tab</span>
 											{key === activeId && closeLabel && (
 												<ContextMenu.Shortcut>{closeLabel}</ContextMenu.Shortcut>
 											)}

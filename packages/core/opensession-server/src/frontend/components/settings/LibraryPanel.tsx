@@ -48,6 +48,156 @@ import { Badge } from "../../ui/badge";
 import { Segmented, SegmentedOption } from "../../ui/segmented";
 import { EmptyState, InlineAlert, Skeleton, SkeletonBar } from "../../ui/state";
 import { Switch } from "../../ui/switch";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	mt11: {
+			marginTop: "44px"
+	},
+	px5: {
+			paddingInline: "20px"
+	},
+	mb4: {
+			marginBottom: "16px"
+	},
+	h4: {
+			height: "16px"
+	},
+	w22: {
+			width: "22%"
+	},
+	borderB: {
+			borderBottomStyle: "solid",
+			borderBottomWidth: "1px"
+	},
+	borderDivider: {
+			borderColor: "var(--divider)"
+	},
+	pb3: {
+			paddingBottom: "12px"
+	},
+	grid: {
+			display: "grid"
+	},
+	gridCols1: {
+			gridTemplateColumns: "repeat(1,minmax(0,1fr))"
+	},
+	gapX12: {
+			columnGap: "48px"
+	},
+	flex: {
+			display: "flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap35: {
+			gap: "14px"
+	},
+	py35: {
+			paddingBlock: "14px"
+	},
+	size9: {
+			width: "36px",
+			height: "36px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	roundedControl: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	mb1: {
+			marginBottom: "4px"
+	},
+	itemsBaseline: {
+			alignItems: "baseline"
+	},
+	justifyBetween: {
+			justifyContent: "space-between"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	m0: {
+			margin: "0"
+	},
+	fontTitle: {
+			fontWeight: "var(--title-weight)"
+	},
+	tracking001em: {
+			letterSpacing: "-.01em"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	maxWNone: {
+			maxWidth: "none"
+	},
+	mb11: {
+			marginBottom: "44px"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	gap25: {
+			gap: "10px"
+	},
+	pt4: {
+			paddingTop: "16px"
+	},
+	transitionOpacity: {
+			transitionProperty: "opacity",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	minW180px: {
+			minWidth: "180px"
+	},
+	maxWFull: {
+			maxWidth: "100%"
+	},
+	overflowXAuto: {
+			overflowX: "auto"
+	},
+	ScrollbarWidthNone: {
+			scrollbarWidth: "none"
+	},
+	mt4: {
+			marginTop: "16px"
+	},
+	px0: {
+			paddingInline: "0"
+	},
+});
 
 // ── The library: one browsable catalog over the things this instance can be
 // extended with. The server derives it (src/server/library.ts) from the
@@ -246,14 +396,14 @@ function EntryControl({
  */
 function CatalogSkeleton() {
 	return (
-		<Skeleton label="Loading the library" className="mt-11 px-5">
-			<SkeletonBar className="mb-4 h-4 w-[22%] border-b border-divider pb-3" />
+		<Skeleton label="Loading the library" {...stylex.props(sx.mt11, sx.px5)}>
+			<SkeletonBar {...stylex.props(sx.mb4, sx.h4, sx.w22, sx.borderB, sx.borderDivider, sx.pb3)} />
 			<div className="@container">
-				<div className="grid grid-cols-1 gap-x-12 @[560px]:grid-cols-2">
+				<div className="@[560px]:grid-cols-2" {...stylex.props(sx.grid, sx.gridCols1, sx.gapX12)}>
 					{CATALOG_GHOST_ROWS.map((row) => (
-						<div key={row.name} className="flex items-center gap-3.5 py-3.5">
-							<SkeletonBar className="size-9 shrink-0 rounded-control" />
-							<div className="min-w-0 flex-1">
+						<div key={row.name} {...stylex.props(sx.flex, sx.itemsCenter, sx.gap35, sx.py35)}>
+							<SkeletonBar {...stylex.props(sx.size9, sx.shrink0, sx.roundedControl)} />
+							<div {...stylex.props(sx.minW0, sx.flex1)}>
 								<SkeletonBar className={row.name} />
 								<SkeletonBar className={`mt-2 h-2.5 ${row.description}`} />
 							</div>
@@ -283,12 +433,12 @@ function SectionHeading({
 	count?: number;
 }) {
 	return (
-		<div className="mb-1 flex items-baseline justify-between gap-3 border-b border-divider pb-3">
-			<h2 className="m-0 text-section-title font-title tracking-[-0.01em] text-fg">
+		<div {...stylex.props(sx.mb1, sx.flex, sx.itemsBaseline, sx.justifyBetween, sx.gap3, sx.borderB, sx.borderDivider, sx.pb3)}>
+			<h2 {...stylex.props(sx.m0, sx.fontTitle, sx.tracking001em, sx.textFg, typography.sectionTitle)}>
 				{children}
 			</h2>
 			{count != null && (
-				<span className="text-supporting tabular-nums text-faint">{count}</span>
+				<span className="tabular-nums" {...stylex.props(sx.textFaint, typography.supporting)}>{count}</span>
 			)}
 		</div>
 	);
@@ -308,11 +458,11 @@ function EntryCard({
 		// two dozen entries the page reads as boxes rather than as things you can
 		// add. The mark carries the row, and the gutter between the columns is
 		// what separates one from the next.
-		<div className="flex items-center gap-3.5 py-3.5">
+		<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap35, sx.py35)}>
 			<EntryIcon entry={entry} size={36} />
-			<div className="min-w-0 flex-1">
-				<div className="flex items-center gap-1.5">
-					<span className="truncate text-item-title font-medium text-fg">
+			<div {...stylex.props(sx.minW0, sx.flex1)}>
+				<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap15)}>
+					<span {...stylex.props(sx.truncate, sx.fontMedium, sx.textFg, typography.itemTitle)}>
 						{entry.name}
 					</span>
 					{/* A template is the odd one out: it opens a pre-filled form to
@@ -320,7 +470,7 @@ function EntryCard({
 					    already says and this confirms before the click. */}
 					{entry.install === "draft" && <Badge>Template</Badge>}
 				</div>
-				<div className="truncate text-supporting text-dim">
+				<div {...stylex.props(sx.truncate, sx.textDim, typography.supporting)}>
 					{entry.description}
 					{entry.requires?.length
 						? ` Needs ${entry.requires.map(displayName).join(" and ")}.`
@@ -410,7 +560,7 @@ export function LibraryPanel() {
 
 	if (error)
 		return (
-			<SettingsPanel className="max-w-none">
+			<SettingsPanel {...stylex.props(sx.maxWNone)}>
 				{header}
 				<InlineAlert>{error}</InlineAlert>
 			</SettingsPanel>
@@ -418,20 +568,20 @@ export function LibraryPanel() {
 
 	if (!entries)
 		return (
-			<SettingsPanel className="max-w-none">
+			<SettingsPanel {...stylex.props(sx.maxWNone)}>
 				{header}
 				<CatalogSkeleton />
 			</SettingsPanel>
 		);
 
 	return (
-		<SettingsPanel className="max-w-none">
+		<SettingsPanel {...stylex.props(sx.maxWNone)}>
 			{header}
 
 			{installed.length > 0 && (
-				<section className="mb-11 px-5">
+				<section {...stylex.props(sx.mb11, sx.px5)}>
 					<SectionHeading>Installed</SectionHeading>
-					<div className="flex flex-wrap gap-2.5 pt-4">
+					<div {...stylex.props(sx.flex, sx.flexWrap, sx.gap25, sx.pt4)}>
 						{installed.map((entry) => (
 							<a
 								key={entry.id}
@@ -440,7 +590,7 @@ export function LibraryPanel() {
 								aria-label={entry.name}
 								// The tile's own corner, so the focus ring traces the mark
 								// rather than a squarer box behind it.
-								className="rounded-control transition-opacity hover:opacity-80"
+								className="hover:opacity-80" {...stylex.props(sx.roundedControl, sx.transitionOpacity)}
 							>
 								<EntryIcon entry={entry} size={36} />
 							</a>
@@ -449,9 +599,9 @@ export function LibraryPanel() {
 				</section>
 			)}
 
-			<div className="flex flex-wrap items-center gap-2 px-5">
+			<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap2, sx.px5)}>
 				<Input
-					className="min-w-[180px] flex-1"
+					{...stylex.props(sx.minW180px, sx.flex1)}
 					placeholder="Search the library"
 					value={query}
 					onChange={(e) => setQuery(e.target.value)}
@@ -460,7 +610,7 @@ export function LibraryPanel() {
 				    than the sheet and the segmented control's own tap sizing makes
 				    them wider still, so the strip scrolls rather than wrapping into
 				    a second row of chrome above the catalog. */}
-				<div className="max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+				<div className="[&::-webkit-scrollbar]:hidden" {...stylex.props(sx.maxWFull, sx.overflowXAuto, sx.ScrollbarWidthNone)}>
 					<Segmented
 						label="Filter the library"
 						size="sm"
@@ -481,7 +631,7 @@ export function LibraryPanel() {
 			)}
 
 			{groups.map((group) => (
-				<section key={group.type} className="mt-11 px-5">
+				<section key={group.type} {...stylex.props(sx.mt11, sx.px5)}>
 					<SectionHeading count={group.entries.length}>
 						{TYPE_LABELS[group.type]}
 					</SectionHeading>
@@ -493,7 +643,7 @@ export function LibraryPanel() {
 					    fill under a row, the air is what tells the two columns
 					    apart. */}
 					<div className="@container">
-						<div className="grid grid-cols-1 gap-x-12 @[560px]:grid-cols-2">
+						<div className="@[560px]:grid-cols-2" {...stylex.props(sx.grid, sx.gridCols1, sx.gapX12)}>
 							{group.entries.map((entry) => (
 								<EntryCard
 									key={entry.id}
@@ -509,7 +659,7 @@ export function LibraryPanel() {
 							))}
 						</div>
 					</div>
-					<SettingsHint className="mt-4 px-0">
+					<SettingsHint {...stylex.props(sx.mt4, sx.px0)}>
 						{group.type === "tool" ? (
 							<>
 								{TYPE_BLURB.tool} These switches are saved in this browser only,

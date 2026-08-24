@@ -12,6 +12,18 @@ import {
 import { toast } from "../../ui/toast";
 import { getCurrentUser } from "../UserPicker";
 import { Select, SettingRow } from "./shared";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	mt0: {
+			marginTop: "0"
+	},
+});
 
 type Scope = "workspace" | "personal";
 
@@ -40,7 +52,7 @@ function SandboxDefaultRow({ scope, canManage = true }: { scope: Scope; canManag
 			<SettingRow
 				title="Default sandbox"
 				desc="Loading available sandbox providers…"
-				control={<span className="text-supporting text-faint">Loading…</span>}
+				control={<span {...stylex.props(sx.textFaint, typography.supporting)}>Loading…</span>}
 			/>
 		);
 	}
@@ -116,7 +128,7 @@ export function PersonalSandboxDefaultRow() {
 export function WorkspaceSandboxDefaults({ canManage = true }: { canManage?: boolean }) {
 	return (
 		<>
-			<SettingsGroupLabel className="mt-0">Session environment</SettingsGroupLabel>
+			<SettingsGroupLabel {...stylex.props(sx.mt0)}>Session environment</SettingsGroupLabel>
 			<SettingCard>
 				<SandboxDefaultRow scope="workspace" canManage={canManage} />
 			</SettingCard>

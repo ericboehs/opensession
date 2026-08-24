@@ -40,6 +40,123 @@ import {
   rowMenuTriggerClasses,
 } from "../ui/settings";
 import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	minH0: {
+			minHeight: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	overflowYAuto: {
+			overflowY: "auto"
+	},
+	px8: {
+			paddingInline: "32px"
+	},
+	pt11: {
+			paddingTop: "44px"
+	},
+	pb22: {
+			paddingBottom: "88px"
+	},
+	selfStart: {
+			alignSelf: "flex-start"
+	},
+	mb4: {
+			marginBottom: "16px"
+	},
+	px5: {
+			paddingInline: "20px"
+	},
+	mb3: {
+			marginBottom: "12px"
+	},
+	itemsStart: {
+			alignItems: "flex-start"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	mt0: {
+			marginTop: "0"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	mt2: {
+			marginTop: "8px"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap1: {
+			gap: "4px"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	size2: {
+			width: "8px",
+			height: "8px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	gap35: {
+			gap: "14px"
+	},
+	mt3px: {
+			marginTop: "3px"
+	},
+	mt05: {
+			marginTop: "2px"
+	},
+	block: {
+			display: "block"
+	},
+	fontNormal: {
+			fontWeight: "var(--font-weight-normal)"
+	},
+});
 
 /* Security is a tool surface hosted inside Settings, so it reads as one of its
    pages: the settings reading column, a SettingsHeader on top, and each group
@@ -156,8 +273,8 @@ setError(e.message);
   }
 
   return (
-    <div className="flex min-h-0 flex-1 justify-center overflow-y-auto px-8 pt-11 pb-22 phone:px-4 phone:pt-5 phone:pb-12">
-      <SettingsPanel className="self-start">
+    <div className="phone:px-4 phone:pt-5 phone:pb-12" {...stylex.props(sx.flex, sx.minH0, sx.flex1, sx.justifyCenter, sx.overflowYAuto, sx.px8, sx.pt11, sx.pb22)}>
+      <SettingsPanel {...stylex.props(sx.selfStart)}>
         <SettingsHeader
           title="Security"
           description="deepsec scans across your repos. Every confirmed finding lands as its own PR."
@@ -185,7 +302,7 @@ setError(e.message);
 
         {/* The tab bar takes the card's own inset, so it sits over the rows it
             switches rather than over the page. */}
-        <div className="mb-4 px-5">
+        <div {...stylex.props(sx.mb4, sx.px5)}>
           <Segmented
             label="Security view"
             value={tab}
@@ -197,7 +314,7 @@ setError(e.message);
         </div>
 
         {error && (
-          <InlineAlert className="mb-3" onDismiss={() => setError(null)}>
+          <InlineAlert {...stylex.props(sx.mb3)} onDismiss={() => setError(null)}>
             {error}
           </InlineAlert>
         )}
@@ -213,13 +330,13 @@ setError(e.message);
               </EmptyState>
             ) : (
               profiles.map((p) => (
-                <SettingRow key={p.id} className="items-start">
+                <SettingRow key={p.id} {...stylex.props(sx.itemsStart)}>
                   <SettingRowText>
                     <SettingRowTitle>{p.name}</SettingRowTitle>
                     <SettingRowDescription className="line-clamp-2">
                       {p.prompt}
                     </SettingRowDescription>
-                    <div className="mt-1 text-meta text-faint">by {p.createdBy}</div>
+                    <div {...stylex.props(sx.mt1, sx.textFaint, typography.meta)}>by {p.createdBy}</div>
                   </SettingRowText>
                   <SettingRowControl>
                     <Menu.Root>
@@ -236,7 +353,7 @@ setError(e.message);
                         </Menu.Item>
                         <Menu.Item
                           onClick={() => handleDeleteProfile(p)}
-                          className="text-red data-[highlighted]:bg-red-soft"
+                          className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
                         >
                           <IconTrash size={16} />
                           Delete profile
@@ -252,7 +369,7 @@ setError(e.message);
           <>
             {recurring.length > 0 && (
               <>
-                <SettingsGroupLabel className="mt-0">Recurring</SettingsGroupLabel>
+                <SettingsGroupLabel {...stylex.props(sx.mt0)}>Recurring</SettingsGroupLabel>
                 <SettingCard>
                   {recurring.map((r) => (
                     <SettingRow key={r.id}>
@@ -263,7 +380,7 @@ setError(e.message);
                           {r.lastRunAt ? ` · last run ${relativeTime(r.lastRunAt)}` : ""}
                         </SettingRowDescription>
                       </SettingRowText>
-                      <SettingRowControl className="flex items-center gap-3">
+                      <SettingRowControl {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3)}>
                         {r.lastRunStatus === "ok" || r.lastRunStatus === "error" ? (
                           <RunGlyph
                             ok={r.lastRunStatus === "ok"}
@@ -294,9 +411,9 @@ setError(e.message);
                 </EmptyState>
               ) : (
                 scans.map((s) => (
-                  <SettingRow key={s.id} className="items-start">
+                  <SettingRow key={s.id} {...stylex.props(sx.itemsStart)}>
                     <SettingRowText>
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap2)}>
                         <SettingRowTitle>
                           {s.interactive ? "Interactive scan" : "Scan"} ·{" "}
                           {s.repos.map(repoLabel).join(", ")}
@@ -314,24 +431,24 @@ setError(e.message);
                         </SettingRowDescription>
                       )}
 
-                      <div className="mt-2 flex flex-col gap-1">
+                      <div {...stylex.props(sx.mt2, sx.flex, sx.flexCol, sx.gap1)}>
                         {s.sessions.map((ref) => (
                           <div
                             key={ref.repo + ref.sessionId}
-                            className="flex min-w-0 items-center gap-2 text-label text-dim"
+                            {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.textDim, typography.label)}
                           >
                             {ref.status === "running" ? (
                               <span
-                                className="size-2 shrink-0 rounded-full"
+                                {...stylex.props(sx.size2, sx.shrink0, sx.roundedFull)}
                                 style={{ background: "var(--yellow)" }}
                                 title="Running"
                               />
                             ) : (
                               <RunGlyph ok={ref.status === "ok"} title={ref.error} />
                             )}
-                            <span className="shrink-0 text-fg">{repoLabel(ref.repo)}</span>
+                            <span {...stylex.props(sx.shrink0, sx.textFg)}>{repoLabel(ref.repo)}</span>
                             {ref.error && (
-                              <span className="truncate text-red" title={ref.error}>
+                              <span {...stylex.props(sx.truncate, sx.textRed)} title={ref.error}>
                                 {ref.error}
                               </span>
                             )}
@@ -351,13 +468,13 @@ setError(e.message);
                         ))}
                       </div>
 
-                      <div className="mt-2 text-meta text-faint">
+                      <div {...stylex.props(sx.mt2, sx.textFaint, typography.meta)}>
                         started {relativeTime(s.createdAt)}
                         {s.finishedAt && ` · finished ${relativeTime(s.finishedAt)}`}
                         {` · by ${s.createdBy}`}
                       </div>
                     </SettingRowText>
-                    <SettingRowControl className="flex items-center gap-2">
+                    <SettingRowControl {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
                       <StatusChip {...scanStatus(s.status)} />
                       <Menu.Root>
                         <Menu.Trigger className={rowMenuTriggerClasses} aria-label="Manage scan">
@@ -366,7 +483,7 @@ setError(e.message);
                         <Menu.Popup align="end" sideOffset={4}>
                           <Menu.Item
                             onClick={() => handleDeleteScan(s)}
-                            className="text-red data-[highlighted]:bg-red-soft"
+                            className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
                           >
                             <IconTrash size={16} />
                             Remove scan
@@ -489,12 +606,12 @@ setError(e.message);
           description="Start a search for findings across your repositories."
         />
 
-        <div className="flex flex-col gap-3.5">
+        <div {...stylex.props(sx.flex, sx.flexCol, sx.gap35)}>
           {/* self-start: the track hugs its two options. A flex column stretches
               its children, and a stretched segmented control is a full-width
               well with a knob sitting in one corner of it. */}
           <Segmented
-            className="self-start"
+            {...stylex.props(sx.selfStart)}
             label="Scan scope"
             value={scope}
             onValueChange={(next) => {
@@ -534,7 +651,7 @@ setError(e.message);
               onChange={setProfileId}
             />
             {profiles.length === 0 && (
-              <span className="text-supporting text-faint">
+              <span {...stylex.props(sx.textFaint, typography.supporting)}>
                 No profiles yet. A profile tells a scan how to read your code.
               </span>
             )}
@@ -562,7 +679,7 @@ setError(e.message);
               disabled={!canRecur}
             />
             {!singleRepo && (
-              <span className="text-supporting text-faint">
+              <span {...stylex.props(sx.textFaint, typography.supporting)}>
                 Recurring and interactive scans take one repository at a time.
               </span>
             )}
@@ -575,14 +692,14 @@ setError(e.message);
             )}
           >
             <Checkbox
-              className="mt-[3px]"
+              {...stylex.props(sx.mt3px)}
               checked={canInteractive && interactive}
               disabled={!canInteractive}
               onCheckedChange={setInteractive}
             />
             <span>
               Interactive mode
-              <span className="mt-0.5 block text-label font-normal text-faint">
+              <span {...stylex.props(sx.mt05, sx.block, sx.fontNormal, sx.textFaint, typography.label)}>
                 Instead of scanning end to end, {AGENT_NAME} shapes the threat model
                 with you in a session first.
               </span>
@@ -672,7 +789,7 @@ setError(e.message);
           description="A profile tells every scan that uses it how to read your code."
         />
 
-        <div className="flex flex-col gap-3.5">
+        <div {...stylex.props(sx.flex, sx.flexCol, sx.gap35)}>
           <Field label="Name">
             <Input
               ref={nameRef}

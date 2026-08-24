@@ -23,6 +23,112 @@ import { tidyPath, type PathRoot } from "../lib/tidy-path";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { pointerCanHover } from "../lib/pointer";
 import { ExtBadge } from "./lang-marks";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	mr15: {
+			marginRight: "6px"
+	},
+	pl1: {
+			paddingLeft: "4px"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	leading4: {
+			lineHeight: "16px"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	textGreen: {
+			color: "var(--green)"
+	},
+	maxW380px: {
+			maxWidth: "380px"
+	},
+	my1: {
+			marginBlock: "4px"
+	},
+	flex: {
+			display: "flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	px25: {
+			paddingInline: "10px"
+	},
+	py15: {
+			paddingBlock: "6px"
+	},
+	textXs: {
+			fontSize: "var(--type-label)",
+			lineHeight: "var(--tw-leading,var(--text-xs--line-height))"
+	},
+	pt05: {
+			paddingTop: "2px"
+	},
+	py1: {
+			paddingBlock: "4px"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	size4: {
+			width: "16px",
+			height: "16px"
+	},
+	flexShrink0: {
+			flexShrink: "0"
+	},
+	mb15: {
+			marginBottom: "6px"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	px1: {
+			paddingInline: "4px"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	overflowYAuto: {
+			overflowY: "auto"
+	},
+	ml1: {
+			marginLeft: "4px"
+	},
+	h6: {
+			height: "24px"
+	},
+	roundedMd: {
+			borderRadius: "calc(7px * var(--rf))"
+	},
+	px15: {
+			paddingInline: "6px"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+});
 
 export interface TouchedFile {
   path: string;
@@ -100,7 +206,7 @@ export const TurnFooter = function TurnFooter({
       )}
     >
       {duration && (
-        <span className="mr-1.5 pl-1 text-meta font-medium leading-4 text-faint">
+        <span {...stylex.props(sx.mr15, sx.pl1, sx.fontMedium, sx.leading4, sx.textFaint, typography.meta)}>
           {duration}
         </span>
       )}
@@ -116,7 +222,7 @@ export const TurnFooter = function TurnFooter({
             aria-label={copied ? "Copied" : "Copy message"}
           >
             {copied ? (
-              <IconCheck size={20} className="text-green" />
+              <IconCheck size={20} {...stylex.props(sx.textGreen)} />
             ) : (
               <IconCopy size={20} />
             )}
@@ -133,21 +239,21 @@ export const TurnFooter = function TurnFooter({
             side="bottom"
             align="start"
             sideOffset={4}
-            className="max-w-[380px]"
+            {...stylex.props(sx.maxW380px)}
           >
             {onFork && (
               <Menu.Item onClick={() => onFork(entry.id)}>
-                <IconBranches size={20} className="text-faint" />
+                <IconBranches size={20} {...stylex.props(sx.textFaint)} />
                 Fork from here
               </Menu.Item>
             )}
-            {onFork && <Menu.Separator className="my-1" />}
-            <div className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium text-faint">
+            {onFork && <Menu.Separator {...stylex.props(sx.my1)} />}
+            <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.px25, sx.py15, sx.textXs, sx.fontMedium, sx.textFaint)}>
               <IconClock size={20} />
               {fullTime(entry.timestamp)}
             </div>
             {entry.model && (
-              <div className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium text-faint">
+              <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.px25, sx.py15, sx.textXs, sx.fontMedium, sx.textFaint)}>
                 <IconSparkle size={20} />
                 Written by {messageModelLabel(entry.model)}
               </div>
@@ -157,20 +263,20 @@ export const TurnFooter = function TurnFooter({
                 same-named files a turn touched is worth more than the space. */}
             {files.length > 0 && (
               <>
-                <Menu.Separator className="my-1" />
+                <Menu.Separator {...stylex.props(sx.my1)} />
                 {/* GroupLabel MUST live inside a Group — bare it throws Base UI
                     error #31 and white-screens the app on open. */}
                 <Menu.Group>
-                  <Menu.GroupLabel className="px-2.5 pt-0.5">
+                  <Menu.GroupLabel {...stylex.props(sx.px25, sx.pt05)}>
                     Changed files
                   </Menu.GroupLabel>
                   {files.slice(0, MAX_MENU_FILES).map((f) => (
                     <div
                       key={f.path}
-                      className="flex items-center gap-2 px-2.5 py-1 text-xs font-medium text-faint"
+                      {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.px25, sx.py1, sx.textXs, sx.fontMedium, sx.textFaint)}
                     >
                       <ExtBadge name={fileName(f.path)} />
-                      <span className="min-w-0 flex-1 truncate text-dim">
+                      <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.textDim)}>
                         {tidyPath(f.path, pathRoots)}
                       </span>
                       <LineStats
@@ -180,7 +286,7 @@ export const TurnFooter = function TurnFooter({
                     </div>
                   ))}
                   {files.length > MAX_MENU_FILES && (
-                    <div className="px-2.5 py-1 text-xs font-medium text-faint">
+                    <div {...stylex.props(sx.px25, sx.py1, sx.textXs, sx.fontMedium, sx.textFaint)}>
                       +{files.length - MAX_MENU_FILES} more
                     </div>
                   )}
@@ -303,7 +409,7 @@ function AssetChip({ path }: { path: string }) {
       <span className={cn("max-w-[180px] truncate text-dim", FOOTER_TEXT)}>
         {name}
       </span>
-      <IconArrowUpRight size={20} className="size-4 flex-shrink-0 text-faint" />
+      <IconArrowUpRight size={20} {...stylex.props(sx.size4, sx.flexShrink0, sx.textFaint)} />
     </>
   );
   if (!asset.available)
@@ -417,7 +523,7 @@ function FileDiffCard({
   const diff = turnDiff(file);
   return (
     <div>
-      <div className="mb-1.5 flex items-center gap-1.5 px-1">
+      <div {...stylex.props(sx.mb15, sx.flex, sx.itemsCenter, sx.gap15, sx.px1)}>
         <ExtBadge name={name} />
         <span
           className={cn("min-w-0 flex-1 truncate text-dim", FOOTER_TEXT)}
@@ -496,7 +602,7 @@ export function TurnLineStatsCard({
     <>
       <span
         ref={anchor}
-        className="flex flex-shrink-0 items-center"
+        {...stylex.props(sx.flex, sx.flexShrink0, sx.itemsCenter)}
         onMouseEnter={() => {
           if (pointerCanHover()) schedule(true, CARD_OPEN_MS);
         }}
@@ -522,7 +628,7 @@ export function TurnLineStatsCard({
             className={DIFF_CARD}
           >
             <div
-              className="flex max-h-[min(60vh,420px)] flex-col gap-2 overflow-y-auto"
+              className="max-h-[min(60vh,420px)]" {...stylex.props(sx.flex, sx.flexCol, sx.gap2, sx.overflowYAuto)}
               onMouseEnter={hold}
               onMouseLeave={() => schedule(false, CARD_CLOSE_MS)}
             >
@@ -553,7 +659,7 @@ function MoreChip({ files }: { files: TouchedFile[] }) {
         (files.length > 12 ? ", …" : "")
       }
     >
-      <span className="ml-1 flex h-6 flex-shrink-0 items-center gap-1.5 rounded-md px-1.5">
+      <span {...stylex.props(sx.ml1, sx.flex, sx.h6, sx.flexShrink0, sx.itemsCenter, sx.gap15, sx.roundedMd, sx.px15)}>
         <span className={cn("text-faint", FOOTER_TEXT)}>
           +{files.length} more
         </span>
@@ -579,8 +685,8 @@ export function LineStats({
         className
       )}
     >
-      <span className="text-green">+{additions}</span>
-      <span className="text-red">-{deletions}</span>
+      <span {...stylex.props(sx.textGreen)}>+{additions}</span>
+      <span {...stylex.props(sx.textRed)}>-{deletions}</span>
     </span>
   );
 }

@@ -18,6 +18,23 @@ import {
 import { InlineAlert } from "../../ui/state";
 import { Switch } from "../../ui/switch";
 import { Select, SettingRow } from "./shared";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	mt0: {
+			marginTop: "0"
+	},
+	flex: {
+			display: "flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap2: {
+			gap: "8px"
+	},
+});
 
 // ── Warm previews (per-repo prebuilt template worktrees) ────────────────────
 
@@ -64,7 +81,7 @@ function WarmPreviewsPanel() {
 	}
 
 	const label = (
-		<SettingsGroupLabel className="mt-0">Host dependency cache</SettingsGroupLabel>
+		<SettingsGroupLabel {...stylex.props(sx.mt0)}>Host dependency cache</SettingsGroupLabel>
 	);
 
 	if (!repos)
@@ -105,7 +122,7 @@ function WarmPreviewsPanel() {
 							title={entry.repoId}
 							desc={status}
 							control={
-								<div className="flex items-center gap-2">
+								<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
 									{entry.enabled && (
 										<>
 											<Button

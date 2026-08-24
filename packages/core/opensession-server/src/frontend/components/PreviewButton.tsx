@@ -23,6 +23,295 @@ import {
   IconPlay,
   IconPlayOutline,
 } from "./icons";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	grow: {
+			flexGrow: "1"
+	},
+	fixed: {
+			position: "fixed"
+	},
+	inset0: {
+			inset: "0"
+	},
+	z300: {
+			zIndex: "300"
+	},
+	bgBlack60: {
+			backgroundColor: "#0009"
+	},
+	flex: {
+			display: "flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	p6: {
+			padding: "24px"
+	},
+	bgRaised: {
+			backgroundColor: "var(--bg-raised)"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	roundedPanel: {
+			borderRadius: "calc(var(--radius) * var(--rf))"
+	},
+	smoothShadowLg: {
+			boxShadow: "0 4px 12px -4px var(--smooth-shadow-color), 0 18px 48px -14px var(--smooth-shadow-color)"
+	},
+	p3: {
+			padding: "12px"
+	},
+	maxW90vw: {
+			maxWidth: "90vw"
+	},
+	maxH90vh: {
+			maxHeight: "90vh"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap25: {
+			gap: "10px"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	px2: {
+			paddingInline: "8px"
+	},
+	py4: {
+			paddingBlock: "16px"
+	},
+	maxWFull: {
+			maxWidth: "100%"
+	},
+	maxH75vh: {
+			maxHeight: "75vh"
+	},
+	objectContain: {
+			objectFit: "contain"
+	},
+	roundedMd: {
+			borderRadius: "calc(7px * var(--rf))"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	justifyEnd: {
+			justifyContent: "flex-end"
+	},
+	px14px: {
+			paddingInline: "14px"
+	},
+	py1: {
+			paddingBlock: "4px"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	minH26px: {
+			minHeight: "26px"
+	},
+	whitespaceNowrap: {
+			whiteSpace: "nowrap"
+	},
+	roundedXs: {
+			borderRadius: "calc(2px * var(--rf))"
+	},
+	bgControl: {
+			backgroundColor: "var(--control-surface)"
+	},
+	px25: {
+			paddingInline: "10px"
+	},
+	textXs: {
+			fontSize: "var(--type-label)",
+			lineHeight: "var(--tw-leading,var(--text-xs--line-height))"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	smoothShadowSm: {
+			boxShadow: "0 1px 3px -1px var(--smooth-shadow-color), 0 4px 10px -4px var(--smooth-shadow-color)"
+	},
+	transition: {
+			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to,opacity,box-shadow,transform,translate,scale,rotate,filter,-webkit-backdrop-filter,backdrop-filter,display,content-visibility,overlay,pointer-events",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	minW240px: {
+			minWidth: "240px"
+	},
+	p25: {
+			padding: "10px"
+	},
+	mb2: {
+			marginBottom: "8px"
+	},
+	fontBold: {
+			fontWeight: "var(--font-weight-bold)"
+	},
+	tracking001em: {
+			letterSpacing: "-.01em"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	px0: {
+			paddingInline: "0"
+	},
+	listNone: {
+			listStyleType: "none"
+	},
+	gap5px: {
+			gap: "5px"
+	},
+	p0: {
+			padding: "0"
+	},
+	minH10: {
+			minHeight: "40px"
+	},
+	gap7px: {
+			gap: "7px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	underline: {
+			textDecorationLine: "underline"
+	},
+	decorationTransparent: {
+			textDecorationColor: "#0000"
+	},
+	underlineOffset2: {
+			textUnderlineOffset: "2px"
+	},
+	transitionTextDecorationColor: {
+			transitionProperty: "text-decoration-color",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	mt15: {
+			marginTop: "6px"
+	},
+	textCenter: {
+			textAlign: "center"
+	},
+	size5: {
+			width: "20px",
+			height: "20px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	relative: {
+			position: "relative"
+	},
+	w8: {
+			width: "32px"
+	},
+	roundedControl: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	roundedLNone: {
+			borderTopLeftRadius: "0",
+			borderBottomLeftRadius: "0"
+	},
+	outlineNone: {
+			outlineStyle: "none"
+	},
+	transitionColors: {
+			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	pointerEventsNone: {
+			pointerEvents: "none"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	left12: {
+			left: "50%"
+	},
+	top12: {
+			top: "50%"
+	},
+	size25px: {
+			width: "25px",
+			height: "25px"
+	},
+	TranslateX12: {
+			translate: "calc(calc(1 / 2 * 100%) * -1) 0"
+	},
+	TranslateY12: {
+			translate: "0 calc(calc(1 / 2 * 100%) * -1)"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	borderTransparent: {
+			borderColor: "#0000"
+	},
+	borderTCurrent: {
+			borderTopColor: "currentColor"
+	},
+	opacity90: {
+			opacity: ".9"
+	},
+	animatePreviewSpin07sLinearInfinite: {
+			animation: ".7s linear infinite preview-spin"
+	},
+	itemsStretch: {
+			alignItems: "stretch"
+	},
+	MlPx: {
+			marginLeft: "-1px"
+	},
+	opacity80: {
+			opacity: ".8"
+	},
+	inline: {
+			display: "inline"
+	},
+	hidden: {
+			display: "none"
+	},
+	textAccent: {
+			color: "var(--accent)"
+	},
+});
 
 // Any worktree session gets the control; whether a repo can actually boot a
 // preview comes back on the status itself (`bootable` — repo-committed
@@ -163,7 +452,7 @@ export function PreviewButton({
         ) : (
           <IconPlayOutline size={20} className={running ? "text-green" : MENU_ICON} />
         )}
-        <span className="grow">
+        <span {...stylex.props(sx.grow)}>
           {isStarting ? "Cancel preview startup" : running ? "Open preview" : "Preview"}
         </span>
       </Menu.Item>
@@ -250,7 +539,7 @@ setShotError(e.message);
   // Shared snapshot preview modal — rendered by both layouts.
   const snapshotModal = (shot || shotError) && (
     <div
-      className="fixed inset-0 z-[300] bg-black/60 flex items-center justify-center p-6"
+      {...stylex.props(sx.fixed, sx.inset0, sx.z300, sx.bgBlack60, sx.flex, sx.itemsCenter, sx.justifyCenter, sx.p6)}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) {
           setShot(null);
@@ -258,22 +547,22 @@ setShotError(e.message);
         }
       }}
     >
-      <div className="bg-raised border border-line rounded-panel smooth-shadow-lg p-3 max-w-[90vw] max-h-[90vh] flex flex-col gap-2.5">
+      <div {...stylex.props(sx.bgRaised, sx.border, sx.borderLine, sx.roundedPanel, sx.smoothShadowLg, sx.p3, sx.maxW90vw, sx.maxH90vh, sx.flex, sx.flexCol, sx.gap25)}>
         {shotError ? (
-          <div className="text-red text-label px-2 py-4">{shotError}</div>
+          <div {...stylex.props(sx.textRed, sx.px2, sx.py4, typography.label)}>{shotError}</div>
         ) : (
           <img
             src={shot!}
             alt="Preview screenshot"
-            className="max-w-full max-h-[75vh] object-contain rounded-md border border-line"
+            {...stylex.props(sx.maxWFull, sx.maxH75vh, sx.objectContain, sx.roundedMd, sx.border, sx.borderLine)}
           />
         )}
-        <div className="flex items-center gap-2 justify-end">
+        <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.justifyEnd)}>
           {shot && onAttachImage && (
             <Button
               variant="primary"
               size="sm"
-              className="px-[14px] py-1"
+              {...stylex.props(sx.px14px, sx.py1)}
               onClick={() => {
                 onAttachImage(shot);
                 setShot(null);
@@ -284,7 +573,7 @@ setShotError(e.message);
           )}
           {shot && (
             <a
-              className="inline-flex min-h-[26px] items-center justify-center whitespace-nowrap rounded-xs border border-line bg-control px-2.5 text-xs font-medium text-dim smooth-shadow-sm transition hover:border-line-strong hover:text-fg active:scale-[0.97]"
+              className="hover:border-line-strong hover:text-fg active:scale-[0.97]" {...stylex.props(sx.inlineFlex, sx.minH26px, sx.itemsCenter, sx.justifyCenter, sx.whitespaceNowrap, sx.roundedXs, sx.border, sx.borderLine, sx.bgControl, sx.px25, sx.textXs, sx.fontMedium, sx.textDim, sx.smoothShadowSm, sx.transition)}
               href={shot}
               download={`preview-${session.id}.png`}
             >
@@ -320,17 +609,17 @@ setShotError(e.message);
       // Holds real controls, so let the keyboard in (the hover cards on this
       // primitive deliberately don't take focus).
       initialFocus
-      className="min-w-[240px] p-2.5"
+      {...stylex.props(sx.minW240px, sx.p25)}
     >
-      <div className="mb-2 text-meta font-bold tracking-[-0.01em] text-faint">Dev services</div>
+      <div {...stylex.props(sx.mb2, sx.fontBold, sx.tracking001em, sx.textFaint, typography.meta)}>Dev services</div>
       {status.services.length === 0 ? (
-        <div className="px-0 py-1 text-xs text-faint">
+        <div {...stylex.props(sx.px0, sx.py1, sx.textXs, sx.textFaint)}>
           {isStarting ? "Starting up…" : "Not started yet"}
         </div>
       ) : (
-        <ul className="mb-2 flex list-none flex-col gap-[5px] p-0">
+        <ul {...stylex.props(sx.mb2, sx.flex, sx.listNone, sx.flexCol, sx.gap5px, sx.p0)}>
           {status.services.map((s) => (
-            <li key={s.key} className="flex min-h-10 items-center gap-[7px] text-xs text-dim">
+            <li key={s.key} {...stylex.props(sx.flex, sx.minH10, sx.itemsCenter, sx.gap7px, sx.textXs, sx.textDim)}>
               <span
                 className={cn(
                   "size-[7px] shrink-0 rounded-full",
@@ -344,14 +633,14 @@ setShotError(e.message);
                   href={s.previewUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="font-semibold text-fg underline decoration-transparent underline-offset-2 transition-[text-decoration-color] hover:decoration-current focus-visible:decoration-current"
+                  className="hover:decoration-current focus-visible:decoration-current" {...stylex.props(sx.fontSemibold, sx.textFg, sx.underline, sx.decorationTransparent, sx.underlineOffset2, sx.transitionTextDecorationColor)}
                 >
                   {s.name}
                 </a>
               ) : (
-                <span className="font-semibold">{s.name}</span>
+                <span {...stylex.props(sx.fontSemibold)}>{s.name}</span>
               )}
-              <span className="text-faint">:{s.port}</span>
+              <span {...stylex.props(sx.textFaint)}>:{s.port}</span>
               <span className={cn("ml-auto text-meta text-faint", s.running && "text-green")}>
                 {s.running ? "running" : "stopped"}
               </span>
@@ -372,7 +661,7 @@ setShotError(e.message);
           Start dev server
         </button>
       ) : (
-        <div className="px-0 py-1 text-xs text-faint">{notBootableHint}.</div>
+        <div {...stylex.props(sx.px0, sx.py1, sx.textXs, sx.textFaint)}>{notBootableHint}.</div>
       )}
       {variant !== "bar" && running && (
         <button className={cn(popoverActionClass, "mt-1.5")} onClick={snap} disabled={snapping}>
@@ -389,7 +678,7 @@ setShotError(e.message);
           Copy preview link
         </button>
       )}
-      <div className="mt-1.5 text-center text-meta text-faint">
+      <div {...stylex.props(sx.mt15, sx.textCenter, sx.textFaint, typography.meta)}>
         {running || anyRunning ? (
           "Stops this worktree's dev process group only."
         ) : bootable ? (
@@ -415,10 +704,10 @@ setShotError(e.message);
       "flex min-w-0 flex-1 items-center gap-2 rounded-md rounded-r-none px-2.5 py-2 text-left text-supporting font-semibold text-fg no-underline outline-none transition-colors hover:bg-hover focus-visible:bg-hover disabled:cursor-default disabled:opacity-50 aria-disabled:cursor-default aria-disabled:opacity-50";
     const mainContent = (
       <>
-        <span className="inline-flex size-5 shrink-0 items-center justify-center text-faint">
+        <span {...stylex.props(sx.inlineFlex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textFaint)}>
           {isStarting ? <span className={spinnerClass} /> : <IconPlay size={17} />}
         </span>
-        <span className="min-w-0 flex-1 truncate">
+        <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
           {isStarting ? (stopping ? "Cancelling…" : "Starting…") : "Preview"}
         </span>
       </>
@@ -426,7 +715,7 @@ setShotError(e.message);
 
     return (
       <Popover.Root open={open} onOpenChange={setOpen}>
-        <div className="relative flex min-w-0" ref={wrapRef}>
+        <div {...stylex.props(sx.relative, sx.flex, sx.minW0)} ref={wrapRef}>
           {running ? (
             <a
               className={mainClass}
@@ -462,7 +751,7 @@ setShotError(e.message);
           <Popover.Trigger
             render={
               <button
-                className="flex w-8 shrink-0 items-center justify-center rounded-control rounded-l-none text-faint outline-none transition-colors hover:bg-hover hover:text-fg focus-visible:bg-hover focus-visible:text-fg"
+                className="hover:bg-hover hover:text-fg focus-visible:bg-hover focus-visible:text-fg" {...stylex.props(sx.flex, sx.w8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.roundedLNone, sx.textFaint, sx.outlineNone, sx.transitionColors)}
                 title="Dev services"
                 aria-label="Dev services"
               >
@@ -506,7 +795,7 @@ setShotError(e.message);
     );
     return (
       <Popover.Root open={open} onOpenChange={setOpen}>
-        <div className="relative inline-flex items-center" ref={wrapRef}>
+        <div {...stylex.props(sx.relative, sx.inlineFlex, sx.itemsCenter)} ref={wrapRef}>
           {running ? (
             <Tooltip
               label={
@@ -553,9 +842,9 @@ setShotError(e.message);
                 onContextMenu={openServices}
                 disabled={stopping}
               >
-                <span className="relative inline-flex items-center justify-center">
+                <span {...stylex.props(sx.relative, sx.inlineFlex, sx.itemsCenter, sx.justifyCenter)}>
                   <span
-                    className="pointer-events-none absolute left-1/2 top-1/2 size-[25px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-transparent border-t-current opacity-90 animate-[preview-spin_0.7s_linear_infinite]"
+                    {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.left12, sx.top12, sx.size25px, sx.TranslateX12, sx.TranslateY12, sx.roundedFull, sx.border, sx.borderTransparent, sx.borderTCurrent, sx.opacity90, sx.animatePreviewSpin07sLinearInfinite)}
                     aria-hidden="true"
                   />
                   <IconPlayOutline size={22} />
@@ -597,7 +886,7 @@ setShotError(e.message);
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <div className="relative inline-flex items-stretch" ref={wrapRef}>
+      <div {...stylex.props(sx.relative, sx.inlineFlex, sx.itemsStretch)} ref={wrapRef}>
         {running ? (
           <a
             className={cn(
@@ -616,9 +905,9 @@ setShotError(e.message);
               }
             }}
           >
-            <IconPlay size={15} className="opacity-90" />
+            <IconPlay size={15} {...stylex.props(sx.opacity90)} />
             Preview
-            <IconArrowUpRight size={15} className="-ml-px opacity-80" />
+            <IconArrowUpRight size={15} {...stylex.props(sx.MlPx, sx.opacity80)} />
           </a>
         ) : isStarting ? (
           <button
@@ -632,10 +921,10 @@ setShotError(e.message);
             title="Starting the dev server (first build can take a minute). Click to cancel."
           >
             <span className={spinnerClass} />
-            <span className="inline group-hover:hidden">
+            <span className="group-hover:hidden" {...stylex.props(sx.inline)}>
               {stopping ? "Cancelling…" : "Starting…"}
             </span>
-            <span className="hidden group-hover:inline">Cancel</span>
+            <span className="group-hover:inline" {...stylex.props(sx.hidden)}>Cancel</span>
           </button>
         ) : !bootable ? (
           <button
@@ -648,7 +937,7 @@ setShotError(e.message);
             aria-disabled="true"
             title={`${notBootableHint}.`}
           >
-            <IconPlay size={15} className="text-accent" />
+            <IconPlay size={15} {...stylex.props(sx.textAccent)} />
             Preview
           </button>
         ) : (
@@ -661,7 +950,7 @@ setShotError(e.message);
             onClick={start}
             title="Start the dev server and preview this session"
           >
-            <IconPlay size={15} className="text-accent" />
+            <IconPlay size={15} {...stylex.props(sx.textAccent)} />
             Preview
           </button>
         )}

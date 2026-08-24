@@ -4,6 +4,17 @@ import type { ReplySuggestion } from "../lib/reply-suggestions";
 import { duration, ease } from "../ui/motion";
 import { Tooltip } from "../ui/tooltip";
 import { cn } from "../ui/cn";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	pointerEventsAuto: {
+			pointerEvents: "auto"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+});
 
 /**
  * Quick-reply chips above the session composer: the two or three replies the
@@ -134,7 +145,7 @@ export function ReplySuggestions({ suggestions, onPick, className }: Props) {
 				// injected props are known to get lost.
 				<motion.div
 					key={`${s.label}-${i}`}
-					className="pointer-events-auto shrink-0"
+					{...stylex.props(sx.pointerEventsAuto, sx.shrink0)}
 					// The row arrives seconds after the turn ends, so it fades in from
 					// its own size rather than sliding: something appearing above the
 					// composer while you are reading should not also move. The small

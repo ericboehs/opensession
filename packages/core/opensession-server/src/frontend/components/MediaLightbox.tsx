@@ -54,6 +54,302 @@ import {
 	IconShare,
 	IconX,
 } from "./icons";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	boxBorder: {
+			boxSizing: "border-box"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	rounded2xl: {
+			borderRadius: "calc(22px * var(--rf))"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderWhite20: {
+			borderColor: "#fff3"
+	},
+	bgVarDiagramCanvas: {
+			backgroundColor: "var(--diagram-canvas)"
+	},
+	p4: {
+			padding: "16px"
+	},
+	TransformOrigin00: {
+			transformOrigin: "0 0"
+	},
+	minH0: {
+			minHeight: "0"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	maxHFull: {
+			maxHeight: "100%"
+	},
+	maxWFull: {
+			maxWidth: "100%"
+	},
+	objectContain: {
+			objectFit: "contain"
+	},
+	pointerEventsNone: {
+			pointerEvents: "none"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	cursorMove: {
+			cursor: "move"
+	},
+	touchNone: {
+			touchAction: "none"
+	},
+	rounded3px: {
+			borderRadius: "3px"
+	},
+	borderWhite: {
+			borderColor: "var(--color-white)"
+	},
+	fixed: {
+			position: "fixed"
+	},
+	inset0: {
+			inset: "0"
+	},
+	z11000: {
+			zIndex: "11000"
+	},
+	flex: {
+			display: "flex"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	bgBlack85: {
+			backgroundColor: "#000000d9"
+	},
+	flex1: {
+			flex: "1"
+	},
+	selfStretch: {
+			alignSelf: "stretch"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	gap05: {
+			gap: "2px"
+	},
+	px6: {
+			paddingInline: "24px"
+	},
+	textCenter: {
+			textAlign: "center"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	textSm: {
+			fontSize: "var(--type-label)",
+			lineHeight: "var(--tw-leading,var(--text-sm--line-height))"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	leadingSnug: {
+			lineHeight: "var(--leading-snug)"
+	},
+	textWhite: {
+			color: "var(--color-white)"
+	},
+	textWhite75: {
+			color: "#ffffffbf"
+	},
+	h12: {
+			height: "48px"
+	},
+	snapMandatory: {},
+	gap1: {
+			gap: "4px"
+	},
+	overflowXAuto: {
+			overflowX: "auto"
+	},
+	pxCalc5022px: {
+			paddingInline: "calc(50% - 22px)"
+	},
+	ScrollbarWidthNone: {
+			scrollbarWidth: "none"
+	},
+	grid: {
+			display: "grid"
+	},
+	size11: {
+			width: "44px",
+			height: "44px"
+	},
+	snapCenter: {
+			scrollSnapAlign: "center"
+	},
+	placeItemsCenter: {
+			placeItems: "center"
+	},
+	border0: {
+			borderStyle: "solid",
+			borderWidth: "0"
+	},
+	bgTransparent: {
+			backgroundColor: "#0000"
+	},
+	p0: {
+			padding: "0"
+	},
+	sizeFull: {
+			width: "100%",
+			height: "100%"
+	},
+	objectCover: {
+			objectFit: "cover"
+	},
+	gridCols3: {
+			gridTemplateColumns: "repeat(3,minmax(0,1fr))"
+	},
+	px5: {
+			paddingInline: "20px"
+	},
+	justifySelfStart: {
+			justifySelf: "flex-start"
+	},
+	insetX0: {
+			insetInline: "0"
+	},
+	bottomCalc16pxEnvSafeAreaInsetBottom: {
+			bottom: "calc(16px + env(safe-area-inset-bottom))"
+	},
+	z20: {
+			zIndex: "20"
+	},
+	px4: {
+			paddingInline: "16px"
+	},
+	pointerEventsAuto: {
+			pointerEvents: "auto"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	borderWhite10: {
+			borderColor: "#ffffff1a"
+	},
+	bgBlack55: {
+			backgroundColor: "#0000008c"
+	},
+	py1: {
+			paddingBlock: "4px"
+	},
+	pl4: {
+			paddingLeft: "16px"
+	},
+	pr1: {
+			paddingRight: "4px"
+	},
+	minH9: {
+			minHeight: "36px"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	textWhite70: {
+			color: "#ffffffb3"
+	},
+	cursorText: {
+			cursor: "text"
+	},
+	rounded22px: {
+			borderRadius: "22px"
+	},
+	p15: {
+			padding: "6px"
+	},
+	itemsEnd: {
+			alignItems: "flex-end"
+	},
+	block: {
+			display: "block"
+	},
+	wFull: {
+			width: "100%"
+	},
+	resizeNone: {
+			resize: "none"
+	},
+	appearanceNone: {
+			appearance: "none"
+	},
+	px25: {
+			paddingInline: "10px"
+	},
+	py2: {
+			paddingBlock: "8px"
+	},
+	outlineNone: {
+			outlineStyle: "none"
+	},
+	size9: {
+			width: "36px",
+			height: "36px"
+	},
+	textWhite60: {
+			color: "#fff9"
+	},
+	bgAccent: {
+			backgroundColor: "var(--accent)"
+	},
+	transitionTransform: {
+			transitionProperty: "transform,translate,scale,rotate",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	pb1: {
+			paddingBottom: "4px"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	p1: {
+			padding: "4px"
+	},
+	leadingNone: {
+			lineHeight: "1"
+	},
+	textWhite50: {
+			color: "#ffffff80"
+	},
+});
 
 /**
  * Full-screen lightbox for all in-app media: workspace-media thumbnails (the
@@ -1367,7 +1663,7 @@ function ZoomableMedia({
 					// the diagram is drawn on in the transcript: a light-theme
 					// chart is near-black ink, which would be unreadable straight
 					// on the scrim.
-					className="box-border shrink-0 rounded-2xl border border-white/20 bg-[var(--diagram-canvas)] p-4 [transform-origin:0_0] [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
+					className="[&>svg]:block [&>svg]:h-full [&>svg]:w-full" {...stylex.props(sx.boxBorder, sx.shrink0, sx.rounded2xl, sx.border, sx.borderWhite20, sx.bgVarDiagramCanvas, sx.p4, sx.TransformOrigin00)}
 					style={{ width: fit?.w, height: fit?.h, viewTransitionName }}
 					// The markup is mermaid's own output, already rendered into the
 					// transcript by MarkdownBody; this is the same SVG, resized.
@@ -1394,7 +1690,7 @@ function ZoomableMedia({
 						// screen-sized photo reads as a crop rather than a shape.
 						// Anything rounder would leave the scale, and it starts
 						// clipping content that sits in a screenshot's own corner.
-						className="min-h-0 min-w-0 max-h-full max-w-full rounded-2xl border border-white/20 object-contain [transform-origin:0_0]"
+						{...stylex.props(sx.minH0, sx.minW0, sx.maxHFull, sx.maxWFull, sx.rounded2xl, sx.border, sx.borderWhite20, sx.objectContain, sx.TransformOrigin00)}
 						style={{ viewTransitionName }}
 					/>
 					{commentMode && shownRegionBox && imageBox && (
@@ -1404,7 +1700,7 @@ function ZoomableMedia({
 						   it to the picture's own rounded box so it cannot leak over the
 						   scrim and the chrome. */
 						<div
-							className="pointer-events-none absolute overflow-hidden rounded-2xl"
+							{...stylex.props(sx.pointerEventsNone, sx.absolute, sx.overflowHidden, sx.rounded2xl)}
 							style={{
 								left: imageBox.left,
 								top: imageBox.top,
@@ -1414,7 +1710,7 @@ function ZoomableMedia({
 							aria-hidden="true"
 						>
 							<div
-								className="absolute shadow-[0_0_0_9999px_rgb(0_0_0/0.5)]"
+								className="shadow-[0_0_0_9999px_rgb(0_0_0/0.5)]" {...stylex.props(sx.absolute)}
 								style={{
 									left: shownRegionBox.left - imageBox.left,
 									top: shownRegionBox.top - imageBox.top,
@@ -1434,7 +1730,7 @@ function ZoomableMedia({
 							// what says where the selection is, so the line only has to
 							// trace it. The dark hairline under it keeps the white edge
 							// legible on a white screenshot.
-							className="absolute cursor-move touch-none rounded-[3px] border border-white shadow-[0_0_0_1px_rgb(0_0_0/0.22)]"
+							className="shadow-[0_0_0_1px_rgb(0_0_0/0.22)]" {...stylex.props(sx.absolute, sx.cursorMove, sx.touchNone, sx.rounded3px, sx.border, sx.borderWhite)}
 							style={shownRegionBox}
 							aria-hidden="true"
 						>
@@ -1897,7 +2193,7 @@ sendingCommentRef.current = false;
 		<motion.div
 			ref={dialogRef}
 			data-media-lightbox=""
-			className="fixed inset-0 z-[11000] flex flex-col bg-black/85 phone:h-[100dvh] phone:bg-black"
+			className="phone:h-[100dvh] phone:bg-black" {...stylex.props(sx.fixed, sx.inset0, sx.z11000, sx.flex, sx.flexCol, sx.bgBlack85)}
 			role="dialog"
 			tabIndex={-1}
 			aria-modal="true"
@@ -2075,7 +2371,7 @@ sendingCommentRef.current = false;
 					</button>
 				)}
 				<motion.div
-					className="flex min-h-0 min-w-0 flex-1 self-stretch"
+					{...stylex.props(sx.flex, sx.minH0, sx.minW0, sx.flex1, sx.selfStretch)}
 					initial={
 						useHeroTransition
 							? false
@@ -2138,7 +2434,7 @@ sendingCommentRef.current = false;
 						// close too. Without this, only the thin strip outside this
 						// wrapper was a backdrop and the lightbox felt stuck.
 						<div
-							className="flex min-h-0 min-w-0 flex-1 items-center justify-center self-stretch"
+							{...stylex.props(sx.flex, sx.minH0, sx.minW0, sx.flex1, sx.itemsCenter, sx.justifyCenter, sx.selfStretch)}
 							onMouseDown={(e) => {
 								if (e.target === e.currentTarget) requestClose();
 							}}
@@ -2152,7 +2448,7 @@ sendingCommentRef.current = false;
 								playsInline
 								// Same hairline as the photo: a dark first frame needs
 								// an edge against the scrim just as much.
-								className="min-h-0 min-w-0 max-h-full max-w-full rounded-2xl border border-white/20"
+								{...stylex.props(sx.minH0, sx.minW0, sx.maxHFull, sx.maxWFull, sx.rounded2xl, sx.border, sx.borderWhite20)}
 							/>
 						</div>
 					)}
@@ -2180,10 +2476,10 @@ sendingCommentRef.current = false;
 					aria-hidden={!chromeVisible ? true : undefined}
 				>
 					{!commenting && (item.walkthroughLabel || caption || description) && (
-						<div className="flex max-w-full flex-col items-center gap-0.5 px-6 text-center">
-							<div className="flex max-w-full items-center justify-center gap-2">
+						<div {...stylex.props(sx.flex, sx.maxWFull, sx.flexCol, sx.itemsCenter, sx.gap05, sx.px6, sx.textCenter)}>
+							<div {...stylex.props(sx.flex, sx.maxWFull, sx.itemsCenter, sx.justifyCenter, sx.gap2)}>
 								{caption && (
-									<div className="line-clamp-2 min-w-0 max-w-full text-sm font-medium leading-snug text-white">
+									<div className="line-clamp-2" {...stylex.props(sx.minW0, sx.maxWFull, sx.textSm, sx.fontMedium, sx.leadingSnug, sx.textWhite)}>
 										{caption}
 									</div>
 								)}
@@ -2199,7 +2495,7 @@ sendingCommentRef.current = false;
 								)}
 							</div>
 							{description && (
-								<div className="line-clamp-2 max-w-full text-sm leading-snug text-white/75">
+								<div className="line-clamp-2" {...stylex.props(sx.maxWFull, sx.textSm, sx.leadingSnug, sx.textWhite75)}>
 									{description}
 								</div>
 							)}
@@ -2209,7 +2505,7 @@ sendingCommentRef.current = false;
 					{many && (
 						<div
 							ref={filmstripRef}
-							className="flex h-12 snap-x snap-mandatory items-center gap-1 overflow-x-auto px-[calc(50%_-_22px)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+							className="snap-x [&::-webkit-scrollbar]:hidden" {...stylex.props(sx.flex, sx.h12, sx.snapMandatory, sx.itemsCenter, sx.gap1, sx.overflowXAuto, sx.pxCalc5022px, sx.ScrollbarWidthNone)}
 							role="group"
 							aria-label="Media filmstrip"
 						>
@@ -2220,7 +2516,7 @@ sendingCommentRef.current = false;
 										key={`${thumb.src}-${thumbIndex}`}
 										type="button"
 										data-lightbox-thumb={thumbIndex}
-										className="grid size-11 shrink-0 snap-center place-items-center border-0 bg-transparent p-0"
+										{...stylex.props(sx.grid, sx.size11, sx.shrink0, sx.snapCenter, sx.placeItemsCenter, sx.border0, sx.bgTransparent, sx.p0)}
 										onClick={() => go(thumbIndex)}
 										aria-label={`Show ${thumb.kind} ${thumbIndex + 1} of ${items.length}`}
 										aria-current={active ? "true" : undefined}
@@ -2239,14 +2535,14 @@ sendingCommentRef.current = false;
 													muted
 													playsInline
 													preload="metadata"
-													className="size-full object-cover"
+													{...stylex.props(sx.sizeFull, sx.objectCover)}
 												/>
 											) : (
 												<img
 													src={thumb.src}
 													alt=""
 													loading="lazy"
-													className="size-full object-cover"
+													{...stylex.props(sx.sizeFull, sx.objectCover)}
 												/>
 											)}
 										</span>
@@ -2256,8 +2552,8 @@ sendingCommentRef.current = false;
 						</div>
 					)}
 
-					<div className="grid grid-cols-3 items-center px-5">
-						<div className="justify-self-start">
+					<div {...stylex.props(sx.grid, sx.gridCols3, sx.itemsCenter, sx.px5)}>
+						<div {...stylex.props(sx.justifySelfStart)}>
 							{nativeShare ? (
 								<button
 									type="button"
@@ -2317,14 +2613,14 @@ sendingCommentRef.current = false;
 			)}
 
 			{commenting && !selection && (
-				<div className="pointer-events-none absolute inset-x-0 bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 flex justify-center px-4">
-					<div className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/10 bg-black/55 py-1 pl-4 pr-1 shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_12px_44px_rgb(0_0_0/0.5)] backdrop-blur-2xl backdrop-saturate-150">
-						<span className="text-label font-medium text-white">
+				<div {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.insetX0, sx.bottomCalc16pxEnvSafeAreaInsetBottom, sx.z20, sx.flex, sx.justifyCenter, sx.px4)}>
+					<div className="shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_12px_44px_rgb(0_0_0/0.5)] backdrop-blur-2xl backdrop-saturate-150" {...stylex.props(sx.pointerEventsAuto, sx.flex, sx.itemsCenter, sx.gap1, sx.roundedFull, sx.border, sx.borderWhite10, sx.bgBlack55, sx.py1, sx.pl4, sx.pr1)}>
+						<span {...stylex.props(sx.fontMedium, sx.textWhite, typography.label)}>
 							Drag over the part you mean
 						</span>
 						<button
 							type="button"
-							className="min-h-9 rounded-full px-3 text-label font-medium text-white/70 hover:bg-white/10 hover:text-white phone:min-h-11"
+							className="hover:bg-white/10 hover:text-white phone:min-h-11" {...stylex.props(sx.minH9, sx.roundedFull, sx.px3, sx.fontMedium, sx.textWhite70, typography.label)}
 							onClick={resetComment}
 						>
 							Cancel
@@ -2339,7 +2635,7 @@ sendingCommentRef.current = false;
 					/* Fixed and placed against the region: the remark and the pixels it
 					   is about read as one thing. Kept to a single row, because on a
 					   phone a taller card would cover the picture it is describing. */
-					className="fixed z-20 flex cursor-text flex-col gap-1 rounded-[22px] bg-black/55 p-1.5 shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_16px_50px_rgb(0_0_0/0.5)] backdrop-blur-2xl backdrop-saturate-150"
+					className="shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_16px_50px_rgb(0_0_0/0.5)] backdrop-blur-2xl backdrop-saturate-150" {...stylex.props(sx.fixed, sx.z20, sx.flex, sx.cursorText, sx.flexCol, sx.gap1, sx.rounded22px, sx.bgBlack55, sx.p15)}
 					// It grows out of the corner of the region it belongs to, rather
 					// than fading in beside it.
 					initial={reduceMotion ? false : { opacity: 0, scale: 0.94 }}
@@ -2368,7 +2664,7 @@ sendingCommentRef.current = false;
 						commentInputRef.current?.focus({ preventScroll: true });
 					}}
 				>
-					<div className="flex items-end gap-1">
+					<div {...stylex.props(sx.flex, sx.itemsEnd, sx.gap1)}>
 						<textarea
 							ref={commentInputRef}
 							value={commentText}
@@ -2396,12 +2692,12 @@ sendingCommentRef.current = false;
 							// A long remark grows the bar rather than scrolling inside
 							// one line, up to the point where it would start covering
 							// the picture it is about.
-							className="block w-full flex-1 resize-none appearance-none border-0 bg-transparent px-2.5 py-2 text-body leading-snug text-white outline-none [scrollbar-width:none] placeholder:text-white/45 phone:text-input-phone [&::-webkit-scrollbar]:hidden"
+							className="placeholder:text-white/45 phone:text-input-phone [&::-webkit-scrollbar]:hidden" {...stylex.props(sx.block, sx.wFull, sx.flex1, sx.resizeNone, sx.appearanceNone, sx.border0, sx.bgTransparent, sx.px25, sx.py2, sx.leadingSnug, sx.textWhite, sx.outlineNone, sx.ScrollbarWidthNone, typography.body)}
 							disabled={sendingComment}
 						/>
 						<button
 							type="button"
-							className="grid size-9 shrink-0 place-items-center rounded-full border-0 bg-transparent p-0 text-white/60 hover:bg-white/10 hover:text-white phone:size-11"
+							className="hover:bg-white/10 hover:text-white phone:size-11" {...stylex.props(sx.grid, sx.size9, sx.shrink0, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgTransparent, sx.p0, sx.textWhite60)}
 							onClick={resetComment}
 							disabled={sendingComment}
 							aria-label="Cancel comment"
@@ -2412,7 +2708,7 @@ sendingCommentRef.current = false;
 							type="submit"
 							// The filled circle a message is sent with, in the app's own
 							// accent rather than a plain white chip.
-							className="grid size-9 shrink-0 place-items-center rounded-full border-0 bg-accent p-0 text-white transition-transform active:scale-[0.94] disabled:bg-white/15 disabled:text-white/40 phone:size-11"
+							className="active:scale-[0.94] disabled:bg-white/15 disabled:text-white/40 phone:size-11" {...stylex.props(sx.grid, sx.size9, sx.shrink0, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgAccent, sx.p0, sx.textWhite, sx.transitionTransform)}
 							disabled={!commentText.trim() || sendingComment}
 							aria-label={sendingComment ? "Sending comment" : "Send comment"}
 						>
@@ -2420,7 +2716,7 @@ sendingCommentRef.current = false;
 						</button>
 					</div>
 					{commentError && (
-						<div className="px-2.5 pb-1 text-label text-red" role="alert">
+						<div {...stylex.props(sx.px25, sx.pb1, sx.textRed, typography.label)} role="alert">
 							{commentError}
 						</div>
 					)}
@@ -2443,10 +2739,10 @@ sendingCommentRef.current = false;
 				}}
 			>
 				{(item.walkthroughLabel || caption || description) && (
-					<div className="flex max-w-full flex-col items-center gap-0.5 text-center">
-						<div className="flex max-w-full items-center justify-center gap-2">
+					<div {...stylex.props(sx.flex, sx.maxWFull, sx.flexCol, sx.itemsCenter, sx.gap05, sx.textCenter)}>
+						<div {...stylex.props(sx.flex, sx.maxWFull, sx.itemsCenter, sx.justifyCenter, sx.gap2)}>
 							{caption && (
-								<div className="min-w-0 max-w-full truncate text-sm font-medium text-white">
+								<div {...stylex.props(sx.minW0, sx.maxWFull, sx.truncate, sx.textSm, sx.fontMedium, sx.textWhite)}>
 									{caption}
 								</div>
 							)}
@@ -2462,17 +2758,17 @@ sendingCommentRef.current = false;
 							)}
 						</div>
 						{description && (
-							<div className="max-w-[min(720px,90vw)] line-clamp-2 text-sm leading-snug text-white/75">
+							<div className="max-w-[min(720px,90vw)] line-clamp-2" {...stylex.props(sx.textSm, sx.leadingSnug, sx.textWhite75)}>
 								{description}
 							</div>
 						)}
 					</div>
 				)}
-				<div className="flex items-center gap-1.5">
+				<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap15)}>
 					{many && (
 						// Dots provide direct jumps; the counter beside them gives the
 						// exact position without making the reader count circles.
-						<div className="flex items-center">
+						<div {...stylex.props(sx.flex, sx.itemsCenter)}>
 							{dotIndexes.map((dot, position) => (
 								<button
 									key={`${dot}-${items[dot].src}`}
@@ -2480,7 +2776,7 @@ sendingCommentRef.current = false;
 									onClick={() => go(dot)}
 									aria-label={`Show ${dot + 1} of ${items.length}`}
 									aria-current={dot === index ? "true" : undefined}
-									className="group shrink-0 cursor-pointer border-0 bg-transparent p-1 leading-none"
+									className="group" {...stylex.props(sx.shrink0, sx.cursorPointer, sx.border0, sx.bgTransparent, sx.p1, sx.leadingNone)}
 								>
 									<span
 										className={cn(
@@ -2499,7 +2795,7 @@ sendingCommentRef.current = false;
 						</div>
 					)}
 					{many && (
-						<span className="text-meta font-medium tabular-nums text-white/50">
+						<span className="tabular-nums" {...stylex.props(sx.fontMedium, sx.textWhite50, typography.meta)}>
 							{index + 1} of {items.length}
 						</span>
 					)}

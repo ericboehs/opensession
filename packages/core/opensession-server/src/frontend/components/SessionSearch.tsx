@@ -31,6 +31,186 @@ import {
 	sessionHasOwner,
 	sessionOwners,
 } from "../lib/session-owner";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	justifyBetween: {
+			justifyContent: "space-between"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	flex: {
+			display: "flex"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap25: {
+			gap: "10px"
+	},
+	size18px: {
+			width: "18px",
+			height: "18px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	borderB: {
+			borderBottomStyle: "solid",
+			borderBottomWidth: "1px"
+	},
+	borderDivider: {
+			borderColor: "var(--divider)"
+	},
+	px5: {
+			paddingInline: "20px"
+	},
+	py4: {
+			paddingBlock: "16px"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	borderNone: {
+			borderStyle: "none"
+	},
+	bgTransparent: {
+			backgroundColor: "#0000"
+	},
+	fontSans: {
+			fontFamily: "var(--sans)"
+	},
+	textInputPhone: {
+			fontSize: "var(--type-input-phone)"
+	},
+	leading14: {
+			lineHeight: "1.4"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	outlineNone: {
+			outlineStyle: "none"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	px4: {
+			paddingInline: "16px"
+	},
+	py25: {
+			paddingBlock: "10px"
+	},
+	mlAuto: {
+			marginLeft: "auto"
+	},
+	minH0: {
+			minHeight: "0"
+	},
+	overflowYAuto: {
+			overflowY: "auto"
+	},
+	p2: {
+			padding: "8px"
+	},
+	py7: {
+			paddingBlock: "28px"
+	},
+	textCenter: {
+			textAlign: "center"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	pb15: {
+			paddingBottom: "6px"
+	},
+	pt25: {
+			paddingTop: "10px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	size5: {
+			width: "20px",
+			height: "20px"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap05: {
+			gap: "2px"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	maxWFull: {
+			maxWidth: "100%"
+	},
+	leading135: {
+			lineHeight: "1.35"
+	},
+	gap3px: {
+			gap: "3px"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	whitespaceNowrap: {
+			whiteSpace: "nowrap"
+	},
+	maxW220px: {
+			maxWidth: "220px"
+	},
+	roundedSm: {
+			borderRadius: "calc(4px * var(--rf))"
+	},
+	px15: {
+			paddingInline: "6px"
+	},
+	pyPx: {
+			paddingBlock: "1px"
+	},
+	textYellow: {
+			color: "var(--yellow)"
+	},
+	gap4: {
+			gap: "16px"
+	},
+	borderT: {
+			borderTopStyle: "solid",
+			borderTopWidth: "1px"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+});
 
 export interface CommandPaletteAction {
 	id: string;
@@ -236,15 +416,15 @@ function FilterMenu({
 							key={option.value}
 							value={option.value}
 							closeOnClick
-							className="justify-between gap-3"
+							{...stylex.props(sx.justifyBetween, sx.gap3)}
 						>
-							<span className="flex min-w-0 flex-1 items-center gap-2.5">
+							<span {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap25)}>
 								{hasIcons && (
-									<span className="flex size-[18px] shrink-0 items-center justify-center text-dim">
+									<span {...stylex.props(sx.flex, sx.size18px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textDim)}>
 										{option.icon}
 									</span>
 								)}
-								<span className="min-w-0 truncate">{option.label}</span>
+								<span {...stylex.props(sx.minW0, sx.truncate)}>{option.label}</span>
 							</span>
 							<Menu.Check on={option.value === value} />
 						</Menu.RadioItem>
@@ -511,13 +691,13 @@ if (!ctrl.signal.aborted) setSearching(false);
 				initialFocus={inputRef}
 				onKeyDown={onKeyDown}
 			>
-				<div className="flex items-center gap-3 border-b border-divider px-5 py-4">
-					<IconSearch className="shrink-0 text-faint" size={22} />
+				<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3, sx.borderB, sx.borderDivider, sx.px5, sx.py4)}>
+					<IconSearch {...stylex.props(sx.shrink0, sx.textFaint)} size={22} />
 					<input
 						ref={inputRef}
 						// 16px at every width on purpose: anything smaller makes iOS zoom
 						// the page when the palette's field takes focus.
-						className="flex-1 border-none bg-transparent font-sans text-input-phone leading-[1.4] text-fg outline-none placeholder:text-faint"
+						className="placeholder:text-faint" {...stylex.props(sx.flex1, sx.borderNone, sx.bgTransparent, sx.fontSans, sx.textInputPhone, sx.leading14, sx.textFg, sx.outlineNone)}
 						value={query}
 						onChange={(e) => {
 							setQuery(e.target.value);
@@ -547,7 +727,7 @@ if (!ctrl.signal.aborted) setSearching(false);
 				</div>
 
 				<div
-					className="flex flex-wrap items-center gap-2 border-b border-divider px-4 py-2.5"
+					{...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap2, sx.borderB, sx.borderDivider, sx.px4, sx.py25)}
 					aria-label="Session filters"
 				>
 					<FilterMenu
@@ -576,7 +756,7 @@ if (!ctrl.signal.aborted) setSearching(false);
 							type="button"
 							variant="ghost"
 							size="sm"
-							className="ml-auto text-faint"
+							{...stylex.props(sx.mlAuto, sx.textFaint)}
 							data-session-filter-clear
 							onClick={() => {
 								setPerson("all");
@@ -591,12 +771,12 @@ if (!ctrl.signal.aborted) setSearching(false);
 
 				<div
 					id="command-palette-results"
-					className="min-h-0 flex-1 overflow-y-auto p-2"
+					{...stylex.props(sx.minH0, sx.flex1, sx.overflowYAuto, sx.p2)}
 					ref={listRef}
 					role="listbox"
 				>
 					{results.length === 0 && (
-						<div className="px-4 py-7 text-center text-label text-faint">
+						<div {...stylex.props(sx.px4, sx.py7, sx.textCenter, sx.textFaint, typography.label)}>
 							{searching ? "Searching conversations…" : "Nothing found"}
 						</div>
 					)}
@@ -606,7 +786,7 @@ if (!ctrl.signal.aborted) setSearching(false);
 							return (
 								<React.Fragment key={`action:${result.action.id}`}>
 									{startsGroup && (
-										<div className="px-3 pb-1.5 pt-2.5 text-meta font-semibold text-faint">
+										<div {...stylex.props(sx.px3, sx.pb15, sx.pt25, sx.fontSemibold, sx.textFaint, typography.meta)}>
 											{result.category}
 										</div>
 									)}
@@ -622,16 +802,16 @@ if (!ctrl.signal.aborted) setSearching(false);
 										onClick={() => selectResult(result)}
 									>
 										{result.action.icon && (
-											<span className="inline-flex size-5 shrink-0 items-center justify-center text-dim group-aria-selected:text-fg">{result.action.icon}</span>
+											<span className="group-aria-selected:text-fg" {...stylex.props(sx.inlineFlex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textDim)}>{result.action.icon}</span>
 										)}
-										<span className="flex min-w-0 flex-1 flex-col gap-0.5">
-											<span className="truncate text-label font-medium">{result.action.label}</span>
+										<span {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.flexCol, sx.gap05)}>
+											<span {...stylex.props(sx.truncate, sx.fontMedium, typography.label)}>{result.action.label}</span>
 											{result.action.description && (
-												<span className="max-w-full truncate text-supporting leading-[1.35] text-dim">{result.action.description}</span>
+												<span {...stylex.props(sx.maxWFull, sx.truncate, sx.leading135, sx.textDim, typography.supporting)}>{result.action.description}</span>
 											)}
 										</span>
 										{result.action.shortcut && (
-											<span className="inline-flex shrink-0 items-center gap-[3px] max-[560px]:hidden">
+											<span className="max-[560px]:hidden" {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap3px)}>
 												{result.action.shortcut.map((key) => <kbd key={key} className={KBD}>{key}</kbd>)}
 											</span>
 										)}
@@ -644,7 +824,7 @@ if (!ctrl.signal.aborted) setSearching(false);
 							return (
 								<React.Fragment key={`pr:${pr.url}`}>
 									{startsGroup && (
-										<div className="px-3 pb-1.5 pt-2.5 text-meta font-semibold text-faint">
+										<div {...stylex.props(sx.px3, sx.pb15, sx.pt25, sx.fontSemibold, sx.textFaint, typography.meta)}>
 											{result.category}
 										</div>
 									)}
@@ -659,16 +839,16 @@ if (!ctrl.signal.aborted) setSearching(false);
 										onMouseMove={() => setActiveKey(resultKey(result))}
 										onClick={() => selectResult(result)}
 									>
-										<span className="inline-flex size-5 shrink-0 items-center justify-center text-dim group-aria-selected:text-fg"><IconPullRequest size={18} /></span>
-										<span className="flex min-w-0 flex-1 flex-col gap-0.5">
-											<span className="truncate text-label font-medium">{pr.title}</span>
-											<span className="flex items-center gap-2 overflow-hidden whitespace-nowrap text-meta text-faint">
-												<span className="text-dim">{repoLabel(pr.repo)} #{pr.number}</span>
-												<span className="max-w-[220px] truncate max-[560px]:hidden">{pr.branch}</span>
+										<span className="group-aria-selected:text-fg" {...stylex.props(sx.inlineFlex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textDim)}><IconPullRequest size={18} /></span>
+										<span {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.flexCol, sx.gap05)}>
+											<span {...stylex.props(sx.truncate, sx.fontMedium, typography.label)}>{pr.title}</span>
+											<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.overflowHidden, sx.whitespaceNowrap, sx.textFaint, typography.meta)}>
+												<span {...stylex.props(sx.textDim)}>{repoLabel(pr.repo)} #{pr.number}</span>
+												<span className="max-[560px]:hidden" {...stylex.props(sx.maxW220px, sx.truncate)}>{pr.branch}</span>
 												<span>{pr.author}</span>
 											</span>
 										</span>
-										<span className="shrink-0 text-meta text-faint max-[560px]:hidden">{prStatus(pr)}</span>
+										<span className="max-[560px]:hidden" {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}>{prStatus(pr)}</span>
 									</button>
 								</React.Fragment>
 							);
@@ -679,7 +859,7 @@ if (!ctrl.signal.aborted) setSearching(false);
 						return (
 							<React.Fragment key={`session:${s.id}`}>
 								{startsGroup && (
-										<div className="px-3 pb-1.5 pt-2.5 text-meta font-semibold text-faint">
+										<div {...stylex.props(sx.px3, sx.pb15, sx.pt25, sx.fontSemibold, sx.textFaint, typography.meta)}>
 											{result.category}
 										</div>
 									)}
@@ -695,30 +875,30 @@ if (!ctrl.signal.aborted) setSearching(false);
 									onClick={() => selectResult(result)}
 								>
 									<span className={`size-2 shrink-0 rounded-full ${meta.dotClass}`} />
-									<span className="flex min-w-0 flex-1 flex-col gap-0.5">
-										<span className="truncate text-label font-medium">{s.title}</span>
+									<span {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.flexCol, sx.gap05)}>
+										<span {...stylex.props(sx.truncate, sx.fontMedium, typography.label)}>{s.title}</span>
 										{result.snippet && (
-											<span className="max-w-full truncate text-supporting leading-[1.35] text-dim">{result.snippet}</span>
+											<span {...stylex.props(sx.maxWFull, sx.truncate, sx.leading135, sx.textDim, typography.supporting)}>{result.snippet}</span>
 										)}
-										<span className="flex items-center gap-2 overflow-hidden whitespace-nowrap text-meta text-faint">
+										<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.overflowHidden, sx.whitespaceNowrap, sx.textFaint, typography.meta)}>
 											{s.automation ? (
-												<span className="rounded-sm bg-[color-mix(in_srgb,var(--yellow)_16%,transparent)] px-1.5 py-px text-meta text-yellow">{s.automation}</span>
+												<span className="bg-[color-mix(in_srgb,var(--yellow)_16%,transparent)]" {...stylex.props(sx.roundedSm, sx.px15, sx.pyPx, sx.textYellow, typography.meta)}>{s.automation}</span>
 											) : (
 												s.startedBy && <span>{s.startedBy}</span>
 											)}
-											<span className="text-dim">{sessionRepo(s)}</span>
-											{s.branch && <span className="max-w-[220px] truncate max-[560px]:hidden">{s.branch}</span>}
-											<span className="ml-auto shrink-0">{relativeTime(s.lastActivity)}</span>
+											<span {...stylex.props(sx.textDim)}>{sessionRepo(s)}</span>
+											{s.branch && <span className="max-[560px]:hidden" {...stylex.props(sx.maxW220px, sx.truncate)}>{s.branch}</span>}
+											<span {...stylex.props(sx.mlAuto, sx.shrink0)}>{relativeTime(s.lastActivity)}</span>
 										</span>
 									</span>
-									<span className="shrink-0 text-meta text-faint max-[560px]:hidden">{meta.label}</span>
+									<span className="max-[560px]:hidden" {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}>{meta.label}</span>
 								</button>
 							</React.Fragment>
 						);
 					})}
 				</div>
 
-				<div className="flex items-center gap-4 border-t border-line px-4 py-2.5 text-meta text-faint">
+				<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap4, sx.borderT, sx.borderLine, sx.px4, sx.py25, sx.textFaint, typography.meta)}>
 					<span className="phone:hidden">
 						<kbd className={KBD}>↑</kbd>
 						<kbd className={KBD}>↓</kbd> navigate
@@ -726,7 +906,7 @@ if (!ctrl.signal.aborted) setSearching(false);
 					<span className="phone:hidden">
 						<kbd className={KBD}>↵</kbd> open
 					</span>
-					<span className="ml-auto">
+					<span {...stylex.props(sx.mlAuto)}>
 						{results.length} result{results.length === 1 ? "" : "s"}
 					</span>
 				</div>

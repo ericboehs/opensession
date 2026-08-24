@@ -26,6 +26,194 @@ import {
 } from "./TurnFooter";
 import { transcriptDisclosureLedger } from "../lib/transcript-disclosures";
 import { turnScrollAnchor } from "../lib/transcript-block-identity";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	mxAuto: {
+			marginInline: "auto"
+	},
+	mb3: {
+			marginBottom: "12px"
+	},
+	wFull: {
+			width: "100%"
+	},
+	maxWVarSessionCol: {
+			maxWidth: "var(--session-col)"
+	},
+	Mx2: {
+			marginInline: "-8px"
+	},
+	flex: {
+			display: "flex"
+	},
+	wCalc10016px: {
+			width: "calc(100% + 16px)"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	itemsBaseline: {
+			alignItems: "baseline"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	roundedControl: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	border0: {
+			borderStyle: "solid",
+			borderWidth: "0"
+	},
+	bgTransparent: {
+			backgroundColor: "#0000"
+	},
+	py1: {
+			paddingBlock: "4px"
+	},
+	pl1: {
+			paddingLeft: "4px"
+	},
+	pr3: {
+			paddingRight: "12px"
+	},
+	textLeft: {
+			textAlign: "left"
+	},
+	fontSans: {
+			fontFamily: "var(--sans)"
+	},
+	leading5: {
+			lineHeight: "20px"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	transitionColors: {
+			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	block: {
+			display: "block"
+	},
+	flexShrink0: {
+			flexShrink: "0"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	leading4: {
+			lineHeight: "16px"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	insetY0: {
+			insetBlock: "0"
+	},
+	Left2: {
+			left: "-8px"
+	},
+	w4: {
+			width: "16px"
+	},
+	p0: {
+			padding: "0"
+	},
+	MlPx: {
+			marginLeft: "-1px"
+	},
+	pl7px: {
+			paddingLeft: "7px"
+	},
+	pr1: {
+			paddingRight: "4px"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	px1: {
+			paddingInline: "4px"
+	},
+	py3px: {
+			paddingBlock: "3px"
+	},
+	relative: {
+			position: "relative"
+	},
+	grid: {
+			display: "grid"
+	},
+	size22px: {
+			width: "22px",
+			height: "22px"
+	},
+	placeItemsCenter: {
+			placeItems: "center"
+	},
+	left12: {
+			left: "50%"
+	},
+	top12: {
+			top: "50%"
+	},
+	TranslateX12: {
+			translate: "calc(calc(1 / 2 * 100%) * -1) 0"
+	},
+	TranslateY12: {
+			translate: "0 calc(calc(1 / 2 * 100%) * -1)"
+	},
+	flex1: {
+			flex: "1"
+	},
+	size11px: {
+			width: "11px",
+			height: "11px"
+	},
+	animateSpin: {
+			animation: "var(--animate-spin)"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderBLineStrong: {
+			borderBottomColor: "var(--border-strong)"
+	},
+	borderLLineStrong: {
+			borderLeftColor: "var(--border-strong)"
+	},
+	borderRLineStrong: {
+			borderRightColor: "var(--border-strong)"
+	},
+	borderTDim: {
+			borderTopColor: "var(--text-dim)"
+	},
+	ml3: {
+			marginLeft: "12px"
+	},
+	my2: {
+			marginBlock: "8px"
+	},
+});
 
 interface Props {
   /** The folded part of one assistant turn: tool_use + intermediate assistant
@@ -176,7 +364,7 @@ export const TurnBlock = function TurnBlock({
 
   return (
     <div
-      className="mx-auto mb-3 w-full max-w-[var(--session-col)]"
+      {...stylex.props(sx.mxAuto, sx.mb3, sx.wFull, sx.maxWVarSessionCol)}
       // Anchor identity for the history scroll hold: the LAST item survives a
       // history page merging older items into this turn (the first doesn't).
       data-eid={turnScrollAnchor(items)}
@@ -197,7 +385,7 @@ export const TurnBlock = function TurnBlock({
         // asymmetric padding moves the disclosure line into that overhang so
         // the open rail sits near the transcript edge instead of floating
         // inside the work column.
-        className="-mx-2 flex w-[calc(100%+16px)] min-w-0 cursor-pointer items-baseline gap-2 rounded-control border-0 bg-transparent py-1 pl-1 pr-3 text-left font-sans text-item-title leading-5 text-dim transition-colors hover:bg-hover/40 hover:text-fg"
+        className="hover:bg-hover/40 hover:text-fg" {...stylex.props(sx.Mx2, sx.flex, sx.wCalc10016px, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.py1, sx.pl1, sx.pr3, sx.textLeft, sx.fontSans, sx.leading5, sx.textDim, sx.transitionColors, typography.itemTitle)}
       >
         <span
           className={cn(
@@ -205,13 +393,13 @@ export const TurnBlock = function TurnBlock({
             !expanded && "-rotate-90"
           )}
         >
-          <IconChevronDown size={20} className="block" />
+          <IconChevronDown size={20} {...stylex.props(sx.block)} />
         </span>
-        <span className="flex-shrink-0 font-medium">
+        <span {...stylex.props(sx.flexShrink0, sx.fontMedium)}>
           {live ? "Working" : "Worked"}
         </span>
         {metaLabel && (
-          <span className="min-w-0 truncate text-label leading-4 text-faint">
+          <span {...stylex.props(sx.minW0, sx.truncate, sx.leading4, sx.textFaint, typography.label)}>
             {metaLabel}
           </span>
         )}
@@ -225,12 +413,12 @@ export const TurnBlock = function TurnBlock({
           />
         )}
         {toolOnlyAggregate?.mediaLabel && (
-          <span className="flex-shrink-0 text-meta text-faint">
+          <span {...stylex.props(sx.flexShrink0, sx.textFaint, typography.meta)}>
             {toolOnlyAggregate.mediaLabel}
           </span>
         )}
         {live && !expanded && hasNarration && lastTool && (
-          <span className="min-w-0 truncate text-label leading-4 text-faint">
+          <span {...stylex.props(sx.minW0, sx.truncate, sx.leading4, sx.textFaint, typography.label)}>
             {toolDisplayName(lastTool.toolName)}:{" "}
             {toolSummary(
               lastTool.toolName || "Tool",
@@ -261,7 +449,7 @@ export const TurnBlock = function TurnBlock({
             type="button"
             aria-label={`Collapse ${live ? "Working" : "Worked"}`}
             onClick={() => rememberExpansion(false)}
-            className="absolute inset-y-0 -left-2 w-4 cursor-pointer border-0 bg-transparent p-0 after:absolute after:inset-y-0 after:left-1/2 after:border-l after:border-transparent after:transition-colors hover:after:border-line-strong focus-visible:after:border-line-strong"
+            className="after:absolute after:inset-y-0 after:left-1/2 after:border-l after:border-transparent after:transition-colors hover:after:border-line-strong focus-visible:after:border-line-strong" {...stylex.props(sx.absolute, sx.insetY0, sx.Left2, sx.w4, sx.cursorPointer, sx.border0, sx.bgTransparent, sx.p0)}
           />
           {sections.map((sec) =>
             sec.kind === "msg" ? (
@@ -275,7 +463,7 @@ export const TurnBlock = function TurnBlock({
               // the 1px optical correction for the icon's inset glyph.
               <div
                 key={sec.items[0].id}
-                className="-ml-px desktop:ml-0"
+                className="desktop:ml-0" {...stylex.props(sx.MlPx)}
                 data-eid={`${sec.items[sec.items.length - 1].id}#sec`}
               >
                 {/* The outer Working row is already the tool-only run's
@@ -297,7 +485,7 @@ export const TurnBlock = function TurnBlock({
 
       {/* Aligned with the fold's own rows (see TurnMessage on the 7px). */}
       {(featured.images.length > 0 || featured.videos.length > 0) && (
-        <div className="pl-[7px] pr-1">
+        <div {...stylex.props(sx.pl7px, sx.pr1)}>
           <EntryImages images={featured.images} sessionId={sessionId} />
           <EntryVideos videos={featured.videos} />
         </div>
@@ -431,19 +619,19 @@ function ToolRunBlock({
         aria-label={`${expanded ? "Hide" : "Show"} ${items.length} grouped steps: ${label}${statusLabel ? `. ${statusLabel}` : ""}`}
         title={`${items.length} grouped steps`}
         onClick={() => rememberExpansion(!expanded)}
-        className="group flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-control border-0 bg-transparent px-1 py-[3px] text-left font-sans transition-colors hover:bg-hover/40 phone:min-h-10"
+        className="group hover:bg-hover/40 phone:min-h-10" {...stylex.props(sx.flex, sx.wFull, sx.minW0, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px1, sx.py3px, sx.textLeft, sx.fontSans, sx.transitionColors)}
       >
         {/* Open, the row is a heading for the steps under it, so it keeps the
             chevron rather than a stack of what is already on screen. Closed,
             the stack stands in until a hover offers the chevron. */}
-        <span className="relative grid size-[22px] flex-shrink-0 place-items-center text-faint">
+        <span {...stylex.props(sx.relative, sx.grid, sx.size22px, sx.flexShrink0, sx.placeItemsCenter, sx.textFaint)}>
           <span
             className={cn(
               "absolute inset-0 transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0",
               expanded && "opacity-0"
             )}
           >
-            <IconStack size={18} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
+            <IconStack size={18} {...stylex.props(sx.absolute, sx.left12, sx.top12, sx.TranslateX12, sx.TranslateY12)} />
           </span>
           <IconChevronDown
             size={20}
@@ -457,7 +645,7 @@ function ToolRunBlock({
             and one click puts every step back with its own glyph, so naming
             them here only asks to be read. The names stay in the aria-label,
             where the count alone would tell a screen reader nothing. */}
-        <span className="flex-shrink-0 truncate text-item-title font-medium leading-5 text-dim transition-colors group-hover:text-fg">
+        <span className="group-hover:text-fg" {...stylex.props(sx.flexShrink0, sx.truncate, sx.fontMedium, sx.leading5, sx.textDim, sx.transitionColors, typography.itemTitle)}>
           {items.length} step{items.length === 1 ? "" : "s"}
         </span>
         {/* What the count can't say: a run that edited files moved lines, in
@@ -465,16 +653,16 @@ function ToolRunBlock({
         {additions + deletions > 0 && (
           <LineStats additions={additions} deletions={deletions} />
         )}
-        <span className="min-w-0 flex-1" />
+        <span {...stylex.props(sx.minW0, sx.flex1)} />
         {mediaLabel && (
-          <span className="flex-shrink-0 text-meta text-faint">{mediaLabel}</span>
+          <span {...stylex.props(sx.flexShrink0, sx.textFaint, typography.meta)}>{mediaLabel}</span>
         )}
         {pending > 0 && (
-          <span className="size-[11px] flex-shrink-0 animate-spin rounded-full border border-b-line-strong border-l-line-strong border-r-line-strong border-t-dim" />
+          <span {...stylex.props(sx.size11px, sx.flexShrink0, sx.animateSpin, sx.roundedFull, sx.border, sx.borderBLineStrong, sx.borderLLineStrong, sx.borderRLineStrong, sx.borderTDim)} />
         )}
       </button>
       {expanded && (
-        <div className="ml-3">
+        <div {...stylex.props(sx.ml3)}>
           {items.map((entry) => (
             <ToolCallBlock
               key={entry.id}
@@ -652,7 +840,7 @@ function TurnMessage({
       // 4 starts left of every other line in the turn. 7 sits just inside the
       // chevron's ink — the glyph's own side bearing makes a true 9 read as an
       // indent rather than an alignment.
-      className="mx-auto my-2 w-full max-w-[var(--session-col)] pr-1 pl-[7px]"
+      {...stylex.props(sx.mxAuto, sx.my2, sx.wFull, sx.maxWVarSessionCol, sx.pr1, sx.pl7px)}
       data-eid={entry.id}
     >
       <ClampedBody

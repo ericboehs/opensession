@@ -16,6 +16,23 @@ import { MIN_ICON_SIZE } from "../components/icons";
 import { copyToClipboard, shareOrCopyLink } from "../lib/share-link";
 import { cn } from "./cn";
 import { toast as fireToast } from "./toast";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	colStart1: {
+			gridColumnStart: "1"
+	},
+	rowStart1: {
+			gridRowStart: "1"
+	},
+	grid: {
+			display: "grid"
+	},
+	placeItemsCenter: {
+			placeItems: "center"
+	},
+});
 
 /**
  * A checkmark that draws itself on mount — the shared "success" gesture used by
@@ -101,7 +118,7 @@ export function CopyCheck({
 				) : (
 					<motion.span
 						key="idle"
-						className="col-start-1 row-start-1 grid place-items-center"
+						{...stylex.props(sx.colStart1, sx.rowStart1, sx.grid, sx.placeItemsCenter)}
 						initial={{ opacity: 0, scale: 0.6 }}
 						animate={{ opacity: 1, scale: 1 }}
 						exit={{ opacity: 0, scale: 0.6 }}

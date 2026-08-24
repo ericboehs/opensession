@@ -61,6 +61,130 @@ import { ReliabilityPanel } from "./settings/ReliabilityPanel";
 import { SettingsAccountCard, SettingsAccountFooter } from "./SettingsAccount";
 import { SetupPanel } from "./Setup";
 import type { Workspace } from "../lib/types";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	relative: {
+			position: "relative"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	block: {
+			display: "block"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	fontNormal: {
+			fontWeight: "var(--font-weight-normal)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	px25: {
+			paddingInline: "10px"
+	},
+	py3: {
+			paddingBlock: "12px"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	left3: {
+			left: "12px"
+	},
+	right3: {
+			right: "12px"
+	},
+	minH0: {
+			minHeight: "0"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	mb2: {
+			marginBottom: "8px"
+	},
+	mt5: {
+			marginTop: "20px"
+	},
+	px1: {
+			paddingInline: "4px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	rounded2xl: {
+			borderRadius: "calc(22px * var(--rf))"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderDividerSoft: {
+			borderColor: "var(--divider-soft)"
+	},
+	bgSettingsPlate: {
+			backgroundColor: "var(--settings-plate)"
+	},
+	flex: {
+			display: "flex"
+	},
+	wFull: {
+			width: "100%"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	border0: {
+			borderStyle: "solid",
+			borderWidth: "0"
+	},
+	bgTransparent: {
+			backgroundColor: "#0000"
+	},
+	px35: {
+			paddingInline: "14px"
+	},
+	textLeft: {
+			textAlign: "left"
+	},
+	h7: {
+			height: "28px"
+	},
+	w7: {
+			width: "28px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	mt6: {
+			marginTop: "24px"
+	},
+});
 
 // The full-window Settings surface: a left sub-nav + a scrolling body, reached
 // from the "Settings" item in the account menu. Designed to grow — each area is
@@ -148,7 +272,7 @@ function NavSearch({
 	// or stick the strip around it without moving the icons off the field.
 	return (
 		<div className={className} ref={ref}>
-			<div className="relative">
+			<div {...stylex.props(sx.relative)}>
 				<IconSearch
 					size={sheet ? 20 : 18}
 					className={cn(
@@ -354,10 +478,10 @@ export function Settings({
 									onClick={() => onSelect(s.key)}
 								>
 									<span className={SETTINGS_NAV_ICON}>{s.icon}</span>
-									<span className="min-w-0 flex-1">
+									<span {...stylex.props(sx.minW0, sx.flex1)}>
 										{s.label}
 										{hint && (
-											<span className="block truncate text-meta font-normal text-faint">
+											<span {...stylex.props(sx.block, sx.truncate, sx.fontNormal, sx.textFaint, typography.meta)}>
 												{hint}
 											</span>
 										)}
@@ -367,7 +491,7 @@ export function Settings({
 						</div>
 					))}
 					{shown.length === 0 && (
-						<div className="px-2.5 py-3 text-meta text-faint">
+						<div {...stylex.props(sx.px25, sx.py3, sx.textFaint, typography.meta)}>
 							Nothing matches “{query}”.
 						</div>
 					)}
@@ -468,7 +592,7 @@ function MobileSettings({
 					<PhoneTopBar>
 						{detail && (
 							<SheetIconButton
-								className="absolute left-3"
+								{...stylex.props(sx.absolute, sx.left3)}
 								onClick={() => onShowRoot?.()}
 								aria-label="Back to settings"
 							>
@@ -483,7 +607,7 @@ function MobileSettings({
 							{detail ? shownLabel : "Settings"}
 						</PhoneTopBarTitle>
 						<SheetIconButton
-							className="absolute right-3"
+							{...stylex.props(sx.absolute, sx.right3)}
 							onClick={dismiss}
 							aria-label="Close settings"
 						>
@@ -491,7 +615,7 @@ function MobileSettings({
 						</SheetIconButton>
 					</PhoneTopBar>
 
-					<div className="relative min-h-0 flex-1 overflow-hidden">
+					<div {...stylex.props(sx.relative, sx.minH0, sx.flex1, sx.overflowHidden)}>
 						{/* Root page: grouped section list over a bottom search bar.
 						    Parked slightly left while a detail page covers it, iOS-style. */}
 						<div
@@ -501,35 +625,35 @@ function MobileSettings({
 							<div className={SETTINGS_SHEET_LIST}>
 								{shown.map((g) => (
 									<div key={g.group}>
-										<div className="mb-2 mt-5 px-1 text-control-label font-semibold text-faint">
+										<div {...stylex.props(sx.mb2, sx.mt5, sx.px1, sx.fontSemibold, sx.textFaint, typography.controlLabel)}>
 											{g.group}
 										</div>
-										<div className="overflow-hidden rounded-2xl border border-divider-soft bg-settings-plate">
+										<div {...stylex.props(sx.overflowHidden, sx.rounded2xl, sx.border, sx.borderDividerSoft, sx.bgSettingsPlate)}>
 											{g.hits.map(({ item: s, hint }) => (
 												<button
 													key={s.key}
-													className="relative flex w-full items-center gap-3 border-0 bg-transparent px-3.5 py-3 text-left after:absolute after:bottom-0 after:left-[54px] after:right-0 after:h-px after:bg-divider-soft last:after:hidden active:bg-hover"
+													className="after:absolute after:bottom-0 after:left-[54px] after:right-0 after:h-px after:bg-divider-soft last:after:hidden active:bg-hover" {...stylex.props(sx.relative, sx.flex, sx.wFull, sx.itemsCenter, sx.gap3, sx.border0, sx.bgTransparent, sx.px35, sx.py3, sx.textLeft)}
 													onClick={() => onSelect(s.key)}
 												>
-													<span className="flex h-7 w-7 shrink-0 items-center justify-center text-dim">
+													<span {...stylex.props(sx.flex, sx.h7, sx.w7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textDim)}>
 														{s.icon}
 													</span>
-												<span className="min-w-0 flex-1 text-item-title font-medium text-fg">
+												<span {...stylex.props(sx.minW0, sx.flex1, sx.fontMedium, sx.textFg, typography.itemTitle)}>
 														{s.label}
 														{hint && (
-															<span className="block truncate text-meta font-normal text-faint">
+															<span {...stylex.props(sx.block, sx.truncate, sx.fontNormal, sx.textFaint, typography.meta)}>
 																{hint}
 															</span>
 														)}
 													</span>
-													<IconChevronRight size={20} className="shrink-0 text-faint" />
+													<IconChevronRight size={20} {...stylex.props(sx.shrink0, sx.textFaint)} />
 												</button>
 											))}
 										</div>
 									</div>
 								))}
 								{shown.length === 0 && (
-									<div className="mt-6 px-1 text-supporting text-faint">
+									<div {...stylex.props(sx.mt6, sx.px1, sx.textFaint, typography.supporting)}>
 										Nothing matches “{query}”.
 									</div>
 								)}

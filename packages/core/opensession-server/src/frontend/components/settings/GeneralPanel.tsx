@@ -29,6 +29,112 @@ import { toast } from "../../ui/toast";
 import { InlineAlert } from "../../ui/state";
 import { IconArrowUpToLine, IconTrash } from "../icons";
 import { IdentityRows } from "../SetupIdentity";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	itemsCenter: {
+			alignItems: "center"
+	},
+	flex: {
+			display: "flex"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	justifyEnd: {
+			justifyContent: "flex-end"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	relative: {
+			position: "relative"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	focusRing: {
+			":focus-visible": {
+					outline: "2px solid var(--accent-ink)",
+					outlineOffset: "2px"
+			}
+	},
+	size14: {
+			width: "56px",
+			height: "56px"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	roundedLg: {
+			borderRadius: "calc(14px * var(--rf))"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	outlineDivider: {
+			outlineColor: "var(--divider)"
+	},
+	sizeFull: {
+			width: "100%",
+			height: "100%"
+	},
+	objectCover: {
+			objectFit: "cover"
+	},
+	pointerEventsNone: {
+			pointerEvents: "none"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	inset0: {
+			inset: "0"
+	},
+	grid: {
+			display: "grid"
+	},
+	placeItemsCenter: {
+			placeItems: "center"
+	},
+	roundedInherit: {
+			borderRadius: "inherit"
+	},
+	bgBlack50: {
+			backgroundColor: "#00000080"
+	},
+	textWhite: {
+			color: "var(--color-white)"
+	},
+	opacity0: {
+			opacity: "0"
+	},
+	transitionOpacity: {
+			transitionProperty: "opacity",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	duration150: {
+			transitionDuration: ".15s"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	hidden: {
+			display: "none"
+	},
+});
 
 const NAME_INPUT_CLASS = cn(settingsInputClass, "w-[220px] max-w-full");
 
@@ -188,18 +294,18 @@ setBusy(false);
 			) : settings ? (
 				<>
 					<SettingCard>
-						<SettingRow className="items-center">
+						<SettingRow {...stylex.props(sx.itemsCenter)}>
 							<SettingRowText>
 								<SettingRowTitle>Upload icon</SettingRowTitle>
 							</SettingRowText>
-							<SettingRowControl className="flex flex-wrap items-center justify-end gap-2">
-								<div className="group/overlay-action relative flex shrink-0 flex-col items-center gap-1.5">
+							<SettingRowControl {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.justifyEnd, sx.gap2)}>
+								<div className="group/overlay-action" {...stylex.props(sx.relative, sx.flex, sx.shrink0, sx.flexCol, sx.itemsCenter, sx.gap15)}>
 									<button
 										type="button"
 										disabled={busy}
 										onClick={() => fileInput.current?.click()}
 										aria-label={showIcon ? "Change organization icon" : "Upload organization icon"}
-										className="focus-ring group/upload relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg text-section-title font-semibold outline outline-1 outline-divider disabled:pointer-events-none"
+										className="group/upload outline outline-1 disabled:pointer-events-none" {...stylex.props(sx.focusRing, sx.relative, sx.flex, sx.size14, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.overflowHidden, sx.roundedLg, sx.fontSemibold, sx.outlineDivider, typography.sectionTitle)}
 										style={
 											showIcon
 												? undefined
@@ -213,19 +319,19 @@ setBusy(false);
 											<img
 												src={settings.organizationIconUrl || undefined}
 												alt=""
-												className="size-full object-cover"
+												{...stylex.props(sx.sizeFull, sx.objectCover)}
 												onError={() => setIconFailed(true)}
 											/>
 										) : (
 											initials
 										)}
-										<span className="pointer-events-none absolute inset-0 grid place-items-center rounded-[inherit] bg-black/50 text-white opacity-0 transition-opacity duration-150 group-hover/upload:opacity-100 group-focus-visible/upload:opacity-100">
+										<span className="group-hover/upload:opacity-100 group-focus-visible/upload:opacity-100" {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.inset0, sx.grid, sx.placeItemsCenter, sx.roundedInherit, sx.bgBlack50, sx.textWhite, sx.opacity0, sx.transitionOpacity, sx.duration150)}>
 											<IconArrowUpToLine size={20} />
 										</span>
 									</button>
 									{settings.organizationIconUrl && (
 										<OverlayAction
-											icon={<IconTrash className="text-red" size={20} />}
+											icon={<IconTrash {...stylex.props(sx.textRed)} size={20} />}
 											disabled={busy}
 											onClick={removeIcon}
 											aria-label="Remove organization icon"
@@ -239,7 +345,7 @@ setBusy(false);
 									type="file"
 									disabled={busy}
 									accept="image/*"
-									className="hidden"
+									{...stylex.props(sx.hidden)}
 									onChange={(event) => {
 										const file = event.target.files?.[0];
 										event.target.value = "";

@@ -12,6 +12,81 @@ import {
   SettingsPanel,
 } from "../../ui/settings";
 import { EmptyState, InlineAlert } from "../../ui/state";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	minH14: {
+			minHeight: "56px"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	borderB: {
+			borderBottomStyle: "solid",
+			borderBottomWidth: "1px"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	py2: {
+			paddingBlock: "8px"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	minH10: {
+			minHeight: "40px"
+	},
+	roundedMd: {
+			borderRadius: "calc(7px * var(--rf))"
+	},
+	bgButton: {
+			backgroundColor: "var(--button-surface)"
+	},
+	textSm: {
+			fontSize: "var(--type-label)",
+			lineHeight: "var(--tw-leading,var(--text-sm--line-height))"
+	},
+	transitionTransform: {
+			transitionProperty: "transform,translate,scale,rotate",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+});
 
 type DeadLetter = {
   id?: number;
@@ -99,21 +174,21 @@ export function ReliabilityPanel({ initialBody = null }: { initialBody?: Respons
       ) : (
         <SettingCard>
           {entries.map((entry) => (
-            <div key={`${entry.timerId ? "timer" : "outbox"}:${entry.sessionId}:${entry.timerId || entry.id}`} className="flex min-h-14 items-center gap-3 border-b border-line px-3 py-2 last:border-b-0 phone:items-start phone:flex-col">
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-item-title font-medium text-fg">{entry.kind}</div>
-                <div className="truncate text-meta text-dim">{entry.lastError || "Delivery failed"} · {entry.attempts} attempts</div>
+            <div key={`${entry.timerId ? "timer" : "outbox"}:${entry.sessionId}:${entry.timerId || entry.id}`} className="last:border-b-0 phone:items-start phone:flex-col" {...stylex.props(sx.flex, sx.minH14, sx.itemsCenter, sx.gap3, sx.borderB, sx.borderLine, sx.px3, sx.py2)}>
+              <div {...stylex.props(sx.minW0, sx.flex1)}>
+                <div {...stylex.props(sx.truncate, sx.fontMedium, sx.textFg, typography.itemTitle)}>{entry.kind}</div>
+                <div {...stylex.props(sx.truncate, sx.textDim, typography.meta)}>{entry.lastError || "Delivery failed"} · {entry.attempts} attempts</div>
               </div>
-              <div className="flex shrink-0 gap-2 phone:w-full">
-                <button className="min-h-10 rounded-md bg-button px-3 text-sm text-fg active:scale-[0.96] transition-transform" onClick={() => void change(entry, "retry").catch((cause) => setError(String(cause)))}>Retry</button>
-                <button className="min-h-10 rounded-md px-3 text-sm text-danger hover:bg-hover active:scale-[0.96] transition-[background-color,scale]" onClick={() => void change(entry, "discard").catch((cause) => setError(String(cause)))}>Discard</button>
+              <div className="phone:w-full" {...stylex.props(sx.flex, sx.shrink0, sx.gap2)}>
+                <button className="active:scale-[0.96]" {...stylex.props(sx.minH10, sx.roundedMd, sx.bgButton, sx.px3, sx.textSm, sx.textFg, sx.transitionTransform)} onClick={() => void change(entry, "retry").catch((cause) => setError(String(cause)))}>Retry</button>
+                <button className="text-danger hover:bg-hover active:scale-[0.96] transition-[background-color,scale]" {...stylex.props(sx.minH10, sx.roundedMd, sx.px3, sx.textSm)} onClick={() => void change(entry, "discard").catch((cause) => setError(String(cause)))}>Discard</button>
               </div>
             </div>
           ))}
         </SettingCard>
       )}
       {body?.nextOffset !== undefined && (
-        <button className="min-h-10 rounded-md bg-button px-3 text-sm text-fg active:scale-[0.96] transition-transform" onClick={() => void loadMore().catch((cause) => setError(String(cause)))}>Load more</button>
+        <button className="active:scale-[0.96]" {...stylex.props(sx.minH10, sx.roundedMd, sx.bgButton, sx.px3, sx.textSm, sx.textFg, sx.transitionTransform)} onClick={() => void loadMore().catch((cause) => setError(String(cause)))}>Load more</button>
       )}
       <SettingsGroupLabel>Pending sends</SettingsGroupLabel>
       {pendingSends.length === 0 ? (
@@ -121,14 +196,14 @@ export function ReliabilityPanel({ initialBody = null }: { initialBody?: Respons
       ) : (
         <SettingCard>
           {pendingSends.map(({ command, outbox }) => (
-            <div key={command.requestId} className="flex min-h-14 items-center gap-3 border-b border-line px-3 py-2 last:border-b-0 phone:items-start phone:flex-col">
-              <div className="min-w-0 flex-1">
-                <div className="text-item-title font-medium text-fg">{command.type}</div>
-                <div className="truncate text-meta text-dim">{command.requestId}</div>
+            <div key={command.requestId} className="last:border-b-0 phone:items-start phone:flex-col" {...stylex.props(sx.flex, sx.minH14, sx.itemsCenter, sx.gap3, sx.borderB, sx.borderLine, sx.px3, sx.py2)}>
+              <div {...stylex.props(sx.minW0, sx.flex1)}>
+                <div {...stylex.props(sx.fontMedium, sx.textFg, typography.itemTitle)}>{command.type}</div>
+                <div {...stylex.props(sx.truncate, sx.textDim, typography.meta)}>{command.requestId}</div>
               </div>
-              <div className="flex shrink-0 gap-2 phone:w-full">
-                <button className="min-h-10 rounded-md bg-button px-3 text-sm text-fg active:scale-[0.96] transition-transform" onClick={() => window.dispatchEvent(new Event("opensession-command-outbox-retry"))}>Retry</button>
-                <button className="min-h-10 rounded-md px-3 text-sm text-danger hover:bg-hover active:scale-[0.96] transition-[background-color,scale]" onClick={() => {
+              <div className="phone:w-full" {...stylex.props(sx.flex, sx.shrink0, sx.gap2)}>
+                <button className="active:scale-[0.96]" {...stylex.props(sx.minH10, sx.roundedMd, sx.bgButton, sx.px3, sx.textSm, sx.textFg, sx.transitionTransform)} onClick={() => window.dispatchEvent(new Event("opensession-command-outbox-retry"))}>Retry</button>
+                <button className="text-danger hover:bg-hover active:scale-[0.96] transition-[background-color,scale]" {...stylex.props(sx.minH10, sx.roundedMd, sx.px3, sx.textSm)} onClick={() => {
                   if (!window.confirm("Forget this pending send? It may already have reached the server.")) return;
                   outbox.forget(command.requestId);
                   setPendingVersion((value) => value + 1);

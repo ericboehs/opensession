@@ -11,6 +11,48 @@ import { Field, fieldClasses } from "../ui/input";
 import { noAutofill } from "../lib/composer-autofill";
 import { composerSessionRef } from "../lib/share-link";
 import type { NewSessionPrefill } from "../lib/new-session-link";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	grow: {
+			flexGrow: "1"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	w80: {
+			width: "320px"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	p0: {
+			padding: "0"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	leading14: {
+			lineHeight: "1.4"
+	},
+	flex1: {
+			flex: "1"
+	},
+	borderAccent: {
+			borderColor: "var(--accent)"
+	},
+	bgAccentSoft: {
+			backgroundColor: "var(--accent-soft)"
+	},
+	textAccent: {
+			color: "var(--accent)"
+	},
+});
 
 type Flavor = "build" | "learnings" | "analyze";
 
@@ -179,29 +221,29 @@ export function SpinOffMenu({
               the session menu and owns it. Spin off hands the transcript to
               a fresh agent run rather than branching this one. */}
           <IconSparkle size={20} className={MENU_ICON} />
-          <span className="grow">Spin off</span>
-          <IconChevronRight size={16} className="text-faint" />
+          <span {...stylex.props(sx.grow)}>Spin off</span>
+          <IconChevronRight size={16} {...stylex.props(sx.textFaint)} />
         </Menu.SubmenuTrigger>
-        <Menu.Popup className="w-80 overflow-hidden p-0">
+        <Menu.Popup {...stylex.props(sx.w80, sx.overflowHidden, sx.p0)}>
           {isAsk && (
             <Menu.Item closeOnClick={false} onClick={() => pick("build")} className={itemCls}>
-              <span className="text-label font-semibold text-fg">Build this</span>
-              <span className="text-supporting leading-[1.4] text-faint">Start a coding session with this conversation as context</span>
+              <span {...stylex.props(sx.fontSemibold, sx.textFg, typography.label)}>Build this</span>
+              <span {...stylex.props(sx.leading14, sx.textFaint, typography.supporting)}>Start a coding session with this conversation as context</span>
             </Menu.Item>
           )}
           <Menu.Item closeOnClick={false} onClick={() => pick("learnings")} className={itemCls}>
-            <span className="text-label font-semibold text-fg">Capture learnings → docs PR</span>
-            <span className="text-supporting leading-[1.4] text-faint">{AGENT_NAME} adds what was learned here to {session.repo || "the repository"} docs</span>
+            <span {...stylex.props(sx.fontSemibold, sx.textFg, typography.label)}>Capture learnings → docs PR</span>
+            <span {...stylex.props(sx.leading14, sx.textFaint, typography.supporting)}>{AGENT_NAME} adds what was learned here to {session.repo || "the repository"} docs</span>
           </Menu.Item>
           <Menu.Item closeOnClick={false} onClick={() => pick("analyze")} className={itemCls}>
-            <span className="text-label font-semibold text-fg">Analyze session</span>
-            <span className="text-supporting leading-[1.4] text-faint">What went well, what didn't, and a better prompt</span>
+            <span {...stylex.props(sx.fontSemibold, sx.textFg, typography.label)}>Analyze session</span>
+            <span {...stylex.props(sx.leading14, sx.textFaint, typography.supporting)}>What went well, what didn't, and a better prompt</span>
           </Menu.Item>
           {/* Closes the whole menu rather than opening the form above: there is
               nothing to fill in here, the composer IS the form. */}
           <Menu.Item onClick={openLinkedSession} className={itemCls}>
-            <span className="text-label font-semibold text-fg">Reference this session</span>
-            <span className="text-supporting leading-[1.4] text-faint">Opens the new-session composer with a link to this one — you write the prompt</span>
+            <span {...stylex.props(sx.fontSemibold, sx.textFg, typography.label)}>Reference this session</span>
+            <span {...stylex.props(sx.leading14, sx.textFaint, typography.supporting)}>Opens the new-session composer with a link to this one — you write the prompt</span>
           </Menu.Item>
         </Menu.Popup>
       </Menu.SubmenuRoot>
@@ -256,16 +298,16 @@ export function SpinOffMenu({
 
           <Modal.Footer>
             {starting && (
-              <span className="text-supporting text-faint">
+              <span {...stylex.props(sx.textFaint, typography.supporting)}>
                 Starting the session. We'll take you there automatically.
               </span>
             )}
-            <div className="flex-1" />
+            <div {...stylex.props(sx.flex1)} />
             <Button onClick={() => setFlavor(null)} disabled={starting}>
               Cancel
             </Button>
             <Button
-              className="border-accent bg-accent-soft text-accent hover:border-accent hover:text-accent"
+              className="hover:border-accent hover:text-accent" {...stylex.props(sx.borderAccent, sx.bgAccentSoft, sx.textAccent)}
               onClick={start}
               disabled={!canStart}
             >

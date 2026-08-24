@@ -3,6 +3,120 @@ import { IconX } from "../components/icons";
 import { cn } from "./cn";
 import { PageLoader } from "./page-loader";
 import { Spinner } from "./spinner";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	AnimationGhostInVarDurVarEase180msBoth: {
+			animation: "ghost-in var(--dur) var(--ease) .18s both"
+	},
+	mt2: {
+			marginTop: "8px"
+	},
+	h25: {
+			height: "10px"
+	},
+	w26: {
+			width: "26%"
+	},
+	mxAuto: {
+			marginInline: "auto"
+	},
+	mb45: {
+			marginBottom: "18px"
+	},
+	flex: {
+			display: "flex"
+	},
+	wFull: {
+			width: "100%"
+	},
+	maxWVarSessionCol: {
+			maxWidth: "var(--session-col)"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap25: {
+			gap: "10px"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	focusRing: {
+			":focus-visible": {
+					outline: "2px solid var(--accent-ink)",
+					outlineOffset: "2px"
+			}
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	selfCenter: {
+			alignSelf: "center"
+	},
+	whitespaceNowrap: {
+			whiteSpace: "nowrap"
+	},
+	underline: {
+			textDecorationLine: "underline"
+	},
+	underlineOffset2: {
+			textUnderlineOffset: "2px"
+	},
+	opacity80: {
+			opacity: ".8"
+	},
+	transitionOpacity: {
+			transitionProperty: "opacity",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	relative: {
+			position: "relative"
+	},
+	Mr1: {
+			marginRight: "-4px"
+	},
+	size6: {
+			width: "24px",
+			height: "24px"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	roundedControl: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	opacity60: {
+			opacity: ".6"
+	},
+});
 
 /**
  * Async-state primitives — one language for "nothing here yet", "fetching"
@@ -77,8 +191,8 @@ export function EmptyState({
 	const block = placement === "block";
 	return (
 		<div className={cn(placements[placement], className)} {...props}>
-			{block && icon && <span className="text-faint">{icon}</span>}
-			{title && <div className="text-control-label font-medium text-fg">{title}</div>}
+			{block && icon && <span {...stylex.props(sx.textFaint)}>{icon}</span>}
+			{title && <div {...stylex.props(sx.fontMedium, sx.textFg, typography.controlLabel)}>{title}</div>}
 			{children && (
 				<div className={cn("text-supporting leading-snug text-dim", block && "max-w-[46ch]")}>
 					{children}
@@ -114,8 +228,8 @@ export function LoadingState({
 			className={cn(placements[placement], className)}
 			{...props}
 		>
-			{block && spinner && <PageLoader className="text-dim" />}
-			<div className="inline-flex items-center gap-2 text-supporting text-faint">
+			{block && spinner && <PageLoader {...stylex.props(sx.textDim)} />}
+			<div {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap2, sx.textFaint, typography.supporting)}>
 				{!block && spinner && <Spinner />}
 				{children}
 			</div>
@@ -152,7 +266,7 @@ export function Skeleton({
 			role="status"
 			aria-live="polite"
 			aria-label={label}
-			className="[animation:ghost-in_var(--dur)_var(--ease)_180ms_both]"
+			{...stylex.props(sx.AnimationGhostInVarDurVarEase180msBoth)}
 			{...props}
 		>
 			<div className={cn("animate-pulse", className)}>{children}</div>
@@ -249,7 +363,7 @@ export function ListSkeleton({
 					)}
 				>
 					<SkeletonBar className={SKELETON_WIDTHS[i % SKELETON_WIDTHS.length]} />
-					{cards && <SkeletonBar className="mt-2 h-2.5 w-[26%]" />}
+					{cards && <SkeletonBar {...stylex.props(sx.mt2, sx.h25, sx.w26)} />}
 				</div>
 			))}
 		</Skeleton>
@@ -290,10 +404,10 @@ export function TranscriptSkeleton({
 		<Skeleton label={label} className={cn("flex flex-col", className)} {...props}>
 			{TRANSCRIPT_GHOST_TURNS.map((turn) => (
 				<React.Fragment key={turn.bubble}>
-					<div className="mx-auto mb-4.5 flex w-full max-w-[var(--session-col)] flex-col">
+					<div {...stylex.props(sx.mxAuto, sx.mb45, sx.flex, sx.wFull, sx.maxWVarSessionCol, sx.flexCol)}>
 						<SkeletonBar className={cn("self-end rounded-lg", turn.bubble)} />
 					</div>
-					<div className="mx-auto mb-4.5 flex w-full max-w-[var(--session-col)] flex-col gap-2.5">
+					<div {...stylex.props(sx.mxAuto, sx.mb45, sx.flex, sx.wFull, sx.maxWVarSessionCol, sx.flexCol, sx.gap25)}>
 						{turn.lines.map((width) => (
 							<SkeletonBar key={width} className={width} />
 						))}
@@ -351,14 +465,14 @@ export function InlineAlert({
 			}}
 			{...props}
 		>
-			<div className="min-w-0 flex-1">
-				{title && <div className="font-medium">{title}</div>}
+			<div {...stylex.props(sx.minW0, sx.flex1)}>
+				{title && <div {...stylex.props(sx.fontMedium)}>{title}</div>}
 				<div className={cn("min-w-0", title && "mt-0.5 opacity-90")}>{children}</div>
 			</div>
 			{onRetry && (
 				<button
 					type="button"
-					className="focus-ring shrink-0 self-center whitespace-nowrap text-supporting font-medium underline underline-offset-2 opacity-80 transition-opacity hover:opacity-100"
+					className="hover:opacity-100" {...stylex.props(sx.focusRing, sx.shrink0, sx.selfCenter, sx.whitespaceNowrap, sx.fontMedium, sx.underline, sx.underlineOffset2, sx.opacity80, sx.transitionOpacity, typography.supporting)}
 					onClick={(e) => {
 						e.stopPropagation();
 						onRetry();
@@ -373,7 +487,7 @@ export function InlineAlert({
 					aria-label="Dismiss"
 					// Visually 24px so it sits inside the box's 10px padding; the
 					// pseudo-element takes the hit area out to 40px.
-					className="focus-ring relative -mr-1 flex size-6 shrink-0 items-center justify-center rounded-control opacity-60 transition-opacity hover:opacity-100 before:absolute before:-inset-2 before:content-['']"
+					className="hover:opacity-100 before:absolute before:-inset-2 before:content-['']" {...stylex.props(sx.focusRing, sx.relative, sx.Mr1, sx.flex, sx.size6, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.opacity60, sx.transitionOpacity)}
 					onClick={(e) => {
 						e.stopPropagation();
 						onDismiss();

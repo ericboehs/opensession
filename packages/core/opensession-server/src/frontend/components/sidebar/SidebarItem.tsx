@@ -41,6 +41,131 @@ import { SessionCardBody, WsPrStatusMark } from "../sidebar/HoverCards";
 import { SidebarCtxMenu } from "../sidebar/SidebarCtxMenu";
 import { UserAvatar } from "../UserAvatar";
 import React, { useEffect, useRef, useState } from "react";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	text7b86e8: {
+			color: "#7b86e8"
+	},
+	srOnly: {
+			clipPath: "inset(50%)",
+			whiteSpace: "nowrap",
+			borderWidth: "0",
+			width: "1px",
+			height: "1px",
+			margin: "-1px",
+			padding: "0",
+			position: "absolute",
+			overflow: "hidden"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	roundedMd: {
+			borderRadius: "calc(7px * var(--rf))"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderAccent: {
+			borderColor: "var(--accent)"
+	},
+	bgBg: {
+			backgroundColor: "var(--bg)"
+	},
+	px3px: {
+			paddingInline: "3px"
+	},
+	py0: {
+			paddingBlock: "0"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textInherit: {
+			color: "inherit"
+	},
+	outlineNone: {
+			outlineStyle: "none"
+	},
+	relative: {
+			position: "relative"
+	},
+	ml1: {
+			marginLeft: "4px"
+	},
+	flex: {
+			display: "flex"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	Right1: {
+			right: "-4px"
+	},
+	Bottom1: {
+			bottom: "-4px"
+	},
+	size3: {
+			width: "12px",
+			height: "12px"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	bgAccent: {
+			backgroundColor: "var(--accent)"
+	},
+	text8px: {
+			fontSize: "8px"
+	},
+	fontBold: {
+			fontWeight: "var(--font-weight-bold)"
+	},
+	leadingNone: {
+			lineHeight: "1"
+	},
+	textOnAccent: {
+			color: "var(--on-accent)"
+	},
+	ringPanel: {},
+	opacity50: {
+			opacity: ".5"
+	},
+	mt3px: {
+			marginTop: "3px"
+	},
+	gap1: {
+			gap: "4px"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	pl7: {
+			paddingLeft: "28px"
+	},
+	whitespaceNowrap: {
+			whiteSpace: "nowrap"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+});
 
 /** The sidebar's selectable row — the shape every list family wears: session,
  *  workspace, PR, support, feed and archived rows. Migrated off the
@@ -312,7 +437,7 @@ export function SidebarItem({
 	// tab is where an exact last-activity stamp belongs.
 	if (session.linearIssue) {
 		metaParts.push(
-			<span key="lin" className="text-[#7b86e8]">
+			<span key="lin" {...stylex.props(sx.text7b86e8)}>
 				{session.linearIssue.identifier}
 			</span>,
 		);
@@ -487,8 +612,8 @@ export function SidebarItem({
 				{/* Questions stay blue. A stopped run is red, so it cannot look as
 				    though it is waiting for a reply. */}
 				<span className={SIDEBAR_RAIL}>
-					{waitingForInput && <span className="sr-only">Waiting for your input</span>}
-					{failed && <span className="sr-only">Last run failed</span>}
+					{waitingForInput && <span {...stylex.props(sx.srOnly)}>Waiting for your input</span>}
+					{failed && <span {...stylex.props(sx.srOnly)}>Last run failed</span>}
 					{waitingForInput ? (
 						<span
 							className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.waiting}`}
@@ -511,7 +636,7 @@ export function SidebarItem({
 				</span>
 				{editing ? (
 					<input
-						className="min-w-0 flex-1 rounded-md border border-accent bg-bg px-[3px] py-0 text-body font-medium text-inherit outline-none desktop:text-item-title phone:text-input-phone"
+						className="desktop:text-item-title phone:text-input-phone" {...stylex.props(sx.minW0, sx.flex1, sx.roundedMd, sx.border, sx.borderAccent, sx.bgBg, sx.px3px, sx.py0, sx.fontMedium, sx.textInherit, sx.outlineNone, typography.body)}
 						value={draft}
 						autoFocus
 						onChange={(e) => setDraft(e.target.value)}
@@ -549,14 +674,14 @@ export function SidebarItem({
 					// use and wins over it, because "you were asked" is the stronger
 					// signal — and it names who asked, which a dot cannot.
 					<span
-						className="relative ml-1 flex shrink-0 items-center"
+						{...stylex.props(sx.relative, sx.ml1, sx.flex, sx.shrink0, sx.itemsCenter)}
 						title={`${mention} mentioned you`}
 						aria-label={`${mention} mentioned you`}
 					>
-						<UserAvatar name={mention} size={16} className="shrink-0" />
+						<UserAvatar name={mention} size={16} {...stylex.props(sx.shrink0)} />
 						<span
 							aria-hidden="true"
-							className="absolute -right-1 -bottom-1 flex size-3 items-center justify-center rounded-full bg-accent text-[8px] font-bold leading-none text-on-accent ring-2 ring-panel"
+							className="ring-2" {...stylex.props(sx.absolute, sx.Right1, sx.Bottom1, sx.flex, sx.size3, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgAccent, sx.text8px, sx.fontBold, sx.leadingNone, sx.textOnAccent, sx.ringPanel)}
 						>
 							@
 						</span>
@@ -575,7 +700,7 @@ export function SidebarItem({
 					>
 						{metaParts.map((part, i) => (
 							<React.Fragment key={i}>
-								{i > 0 && <span className="opacity-50">·</span>}
+								{i > 0 && <span {...stylex.props(sx.opacity50)}>·</span>}
 								{part}
 							</React.Fragment>
 						))}
@@ -595,10 +720,10 @@ export function SidebarItem({
 			    clears the hover-revealed buttons, so this line needs no reserve of
 			    its own. */}
 			{!mine && (
-				<div className="mt-[3px] flex items-center gap-1 overflow-hidden pl-7 whitespace-nowrap text-meta text-faint phone:text-label group-data-[unread]:text-dim">
+				<div className="phone:text-label group-data-[unread]:text-dim" {...stylex.props(sx.mt3px, sx.flex, sx.itemsCenter, sx.gap1, sx.overflowHidden, sx.pl7, sx.whitespaceNowrap, sx.textFaint, typography.meta)}>
 					{metaParts.map((part, i) => (
 						<React.Fragment key={i}>
-							{i > 0 && <span className="opacity-50">·</span>}
+							{i > 0 && <span {...stylex.props(sx.opacity50)}>·</span>}
 							{part}
 						</React.Fragment>
 					))}

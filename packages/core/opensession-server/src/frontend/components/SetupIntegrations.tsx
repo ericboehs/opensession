@@ -21,6 +21,224 @@ import {
 } from "./setup-shared";
 import { IntegrationSetupDialog } from "./IntegrationSetupDialog";
 import { IconTile } from "./BrandTile";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	itemsStart: {
+			alignItems: "flex-start"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	px5: {
+			paddingInline: "20px"
+	},
+	py4: {
+			paddingBlock: "16px"
+	},
+	minW14rem: {
+			minWidth: "14rem"
+	},
+	flex1: {
+			flex: "1"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	m0: {
+			margin: "0"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	leadingRelaxed: {
+			lineHeight: "var(--leading-relaxed)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	mt2: {
+			marginTop: "8px"
+	},
+	textYellow: {
+			color: "var(--yellow)"
+	},
+	mlAuto: {
+			marginLeft: "auto"
+	},
+	minH10: {
+			minHeight: "40px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	grid: {
+			display: "grid"
+	},
+	gap25: {
+			gap: "10px"
+	},
+	p4: {
+			padding: "16px"
+	},
+	mt0: {
+			marginTop: "0"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap4: {
+			gap: "16px"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	pl5: {
+			paddingLeft: "20px"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	mt05: {
+			marginTop: "2px"
+	},
+	mt4: {
+			marginTop: "16px"
+	},
+	borderT: {
+			borderTopStyle: "solid",
+			borderTopWidth: "1px"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	pt4: {
+			paddingTop: "16px"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	gap1: {
+			gap: "4px"
+	},
+	minH20: {
+			minHeight: "80px"
+	},
+	wFull: {
+			width: "100%"
+	},
+	resizeY: {
+			resize: "vertical"
+	},
+	roundedMd: {
+			borderRadius: "calc(7px * var(--rf))"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	bgSurface: {
+			backgroundColor: "var(--bg)"
+	},
+	px25: {
+			paddingInline: "10px"
+	},
+	py15: {
+			paddingBlock: "6px"
+	},
+	fontMono: {
+			fontFamily: "var(--mono)"
+	},
+	outlineNone: {
+			outlineStyle: "none"
+	},
+	focusRing: {
+			":focus-visible": {
+					outline: "2px solid var(--accent-ink)",
+					outlineOffset: "2px"
+			}
+	},
+	leadingSnug: {
+			lineHeight: "var(--leading-snug)"
+	},
+	px4: {
+			paddingInline: "16px"
+	},
+	gapX3: {
+			columnGap: "12px"
+	},
+	gapY1: {
+			rowGap: "4px"
+	},
+	colStart2: {
+			gridColumnStart: "2"
+	},
+	rowStart2: {
+			gridRowStart: "2"
+	},
+	mt15: {
+			marginTop: "6px"
+	},
+	colStart3: {
+			gridColumnStart: "3"
+	},
+	rowSpan2: {
+			gridRow: "span 2/span 2"
+	},
+	rowStart1: {
+			gridRowStart: "1"
+	},
+	ml4: {
+			marginLeft: "16px"
+	},
+	hidden: {
+			display: "none"
+	},
+	minH11: {
+			minHeight: "44px"
+	},
+	justifyBetween: {
+			justifyContent: "space-between"
+	},
+	mt3: {
+			marginTop: "12px"
+	},
+	gridCols2: {
+			gridTemplateColumns: "repeat(2,minmax(0,1fr))"
+	},
+	hFull: {
+			height: "100%"
+	},
+	mtAuto: {
+			marginTop: "auto"
+	},
+	pt1: {
+			paddingTop: "4px"
+	},
+	justifyEnd: {
+			justifyContent: "flex-end"
+	},
+});
 
 // The configuration forms behind the integration registry: paste the
 // credentials, flip the enable switch, Save, restart. Rendered both as a Setup
@@ -76,23 +294,23 @@ setToggling(false);
 	return (
 		<>
 			<SettingCard>
-				<div className="flex flex-wrap items-start gap-3 px-5 py-4">
+				<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsStart, sx.gap3, sx.px5, sx.py4)}>
 					<IconTile name={integration.id} size={40} />
-					<div className="min-w-[14rem] flex-1">
-						<div className="flex flex-wrap items-center gap-2">
-							<div className="text-item-title font-semibold text-fg">{integration.label}</div>
+					<div {...stylex.props(sx.minW14rem, sx.flex1)}>
+						<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap2)}>
+							<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>{integration.label}</div>
 							<StateChip tone={state.tone} label={state.label} />
 						</div>
-						<p className="m-0 mt-1 text-supporting leading-relaxed text-dim">
+						<p {...stylex.props(sx.m0, sx.mt1, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 							{INTEGRATION_DESCRIPTIONS[integration.id] ?? `Connect ${integration.label} to Open Session.`}
 						</p>
 						{integration.missingRequired.length > 0 && (
-							<div className="mt-2 text-meta text-yellow">
+							<div {...stylex.props(sx.mt2, sx.textYellow, typography.meta)}>
 								Missing {integration.missingRequired.join(", ")}
 							</div>
 						)}
 					</div>
-					<div className="ml-auto flex min-h-10 shrink-0 items-center gap-2">
+					<div {...stylex.props(sx.mlAuto, sx.flex, sx.minH10, sx.shrink0, sx.itemsCenter, sx.gap2)}>
 						{canToggle && (
 							<Switch
 								checked={integration.enabled}
@@ -132,7 +350,7 @@ export function IntegrationsList({
 }) {
 	return (
 		<>
-			<div className="grid gap-3">
+			<div {...stylex.props(sx.grid, sx.gap3)}>
 				{integrations.map((i) => (
 					<IntegrationCard
 						key={i.id}
@@ -173,28 +391,28 @@ function GithubAuthSetupDialog({
 			<Modal.Content widthClassName="max-w-[34rem]">
 				<Modal.Header
 					title={
-						<span className="flex items-center gap-2.5">
+						<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25)}>
 							<IconTile name="github" size={28} />
 							GitHub sign-in
 						</span>
 					}
 					description="Let teammates connect GitHub so interactive sessions open PRs as them."
 				/>
-				<SettingsSection className="p-4">{configuration}</SettingsSection>
+				<SettingsSection {...stylex.props(sx.p4)}>{configuration}</SettingsSection>
 				<Disclosure
 					title="Setup guide"
 					defaultOpen={!github.clientIdConfigured}
 					actions={
 						<LinkChips
-							className="mt-0"
+							{...stylex.props(sx.mt0)}
 							links={[{ label: "Create GitHub App", url: github.appCreateUrl }]}
 						/>
 					}
 				>
-					<div className="flex flex-col gap-4">
+					<div {...stylex.props(sx.flex, sx.flexCol, sx.gap4)}>
 						<SetupSteps steps={githubSetupSteps()} />
 						<GuideBlock title="Permissions">
-							<ul className="m-0 flex flex-col gap-1.5 pl-5 text-supporting leading-relaxed text-dim">
+							<ul {...stylex.props(sx.m0, sx.flex, sx.flexCol, sx.gap15, sx.pl5, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 								<li>Contents write lets a connected teammate&rsquo;s interactive session push commits; pull-request and issue write cover PR creation, reviews, and conversation comments.</li>
 								<li>A connected user can reach only repositories allowed by both their own GitHub access and the app installation.</li>
 								<li>Personal tokens are injected only into interactive runs owned by that teammate. Automations continue to use the bot account.</li>
@@ -365,10 +583,10 @@ setSaving(false);
 	// protect behind a button, and the steps above end in these two fields.
 	const configuration = (
 		<>
-			<div className="flex items-center gap-4">
-				<div className="min-w-0 flex-1">
-					<div className="text-item-title font-medium text-fg">Enable GitHub sign-in</div>
-					<div className="mt-0.5 text-supporting text-dim">
+			<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap4)}>
+				<div {...stylex.props(sx.minW0, sx.flex1)}>
+					<div {...stylex.props(sx.fontMedium, sx.textFg, typography.itemTitle)}>Enable GitHub sign-in</div>
+					<div {...stylex.props(sx.mt05, sx.textDim, typography.supporting)}>
 						Takes effect after you restart Open Session.
 					</div>
 				</div>
@@ -379,11 +597,11 @@ setSaving(false);
 					aria-label="Enable GitHub sign-in"
 				/>
 			</div>
-			<div className="mt-4 flex flex-col gap-4 border-t border-line pt-4">
-				<div className="flex items-center gap-4">
-					<div className="min-w-0 flex-1">
-						<div className="text-item-title font-medium text-fg">Use the GitHub App for bot actions</div>
-						<div className="mt-0.5 text-supporting text-dim">
+			<div {...stylex.props(sx.mt4, sx.flex, sx.flexCol, sx.gap4, sx.borderT, sx.borderLine, sx.pt4)}>
+				<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap4)}>
+					<div {...stylex.props(sx.minW0, sx.flex1)}>
+						<div {...stylex.props(sx.fontMedium, sx.textFg, typography.itemTitle)}>Use the GitHub App for bot actions</div>
+						<div {...stylex.props(sx.mt05, sx.textDim, typography.supporting)}>
 							Switches reviews, comments, clones and pushes away from the PAT.
 						</div>
 					</div>
@@ -395,7 +613,7 @@ setSaving(false);
 					/>
 				</div>
 				{!github.appCredentialConfigured && (
-					<p className="m-0 text-supporting text-faint">
+					<p {...stylex.props(sx.m0, sx.textFaint, typography.supporting)}>
 						Add the App private key before switching credentials.
 					</p>
 				)}
@@ -433,10 +651,10 @@ setSaving(false);
 						setClientSecret("");
 					}}
 				/>
-				<label className="flex flex-col gap-1">
-					<span className="text-supporting text-fg">Private key (PEM)</span>
+				<label {...stylex.props(sx.flex, sx.flexCol, sx.gap1)}>
+					<span {...stylex.props(sx.textFg, typography.supporting)}>Private key (PEM)</span>
 					<textarea
-						className="min-h-20 w-full resize-y rounded-md border border-line bg-surface px-2.5 py-1.5 font-mono text-supporting text-fg outline-none focus-ring"
+						{...stylex.props(sx.minH20, sx.wFull, sx.resizeY, sx.roundedMd, sx.border, sx.borderLine, sx.bgSurface, sx.px25, sx.py15, sx.fontMono, sx.textFg, sx.outlineNone, sx.focusRing, typography.supporting)}
 						value={privateKey}
 						onChange={(e) => setPrivateKey(e.target.value)}
 						placeholder="-----BEGIN RSA PRIVATE KEY-----"
@@ -446,13 +664,13 @@ setSaving(false);
 						autoComplete="off"
 						spellCheck={false}
 					/>
-					<span className="text-meta leading-snug text-faint">
+					<span {...stylex.props(sx.leadingSnug, sx.textFaint, typography.meta)}>
 						In the App&rsquo;s Private keys, Generate a private key and paste the
 						.pem here. Lets the bot and PR checks run on the App; leave blank for
 						sign-in only.
 					</span>
 				</label>
-				<p className="m-0 text-supporting text-faint">
+				<p {...stylex.props(sx.m0, sx.textFaint, typography.supporting)}>
 					Credentials stay on this server and are never shown back.
 				</p>
 			</div>
@@ -461,9 +679,9 @@ setSaving(false);
 
 	return (
 		<>
-			<div className="grid px-4 phone:px-0">
+			<div className="phone:px-0" {...stylex.props(sx.grid, sx.px4)}>
 				<SettingCard className={onboarding && !active ? "hidden" : undefined}>
-					<div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 px-5 py-4 phone:grid-cols-[auto_minmax(0,1fr)] phone:px-3 phone:py-2">
+					<div className="grid-cols-[auto_minmax(0,1fr)_auto] phone:grid-cols-[auto_minmax(0,1fr)] phone:px-3 phone:py-2" {...stylex.props(sx.grid, sx.itemsStart, sx.gapX3, sx.gapY1, sx.px5, sx.py4)}>
 						<IconTile name="github" size={40} />
 						<div
 							className={cn(
@@ -473,14 +691,14 @@ setSaving(false);
 								onboarding && "self-center",
 							)}
 						>
-							<div className="text-item-title font-semibold text-fg">
+							<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>
 								{onboarding ? "GitHub" : "GitHub sign-in"}
 							</div>
 							<StateChip tone={state.tone} label={state.label} />
 						</div>
 						{!onboarding && (
-							<div className="col-start-2 row-start-2 min-w-0 phone:col-span-2 phone:col-start-1 phone:mt-3">
-								<p className="m-0 text-supporting leading-relaxed text-dim">
+							<div className="phone:col-span-2 phone:col-start-1 phone:mt-3" {...stylex.props(sx.colStart2, sx.rowStart2, sx.minW0)}>
+								<p {...stylex.props(sx.m0, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 									Interactive sessions open PRs as their connected owner instead of the bot.
 								</p>
 								{/* The Device Flow switch lives on GitHub, so nothing here can
@@ -488,7 +706,7 @@ setSaving(false);
 								    the requirement is stated wherever the connection is set up
 								    rather than left to the moment a teammate is locked out. */}
 								{active && (
-									<div className="mt-1.5 text-meta leading-relaxed text-faint">
+									<div {...stylex.props(sx.mt15, sx.leadingRelaxed, sx.textFaint, typography.meta)}>
 										{"Device Flow must be enabled in your GitHub App." +
 											(secretConfigured
 												? ""
@@ -498,10 +716,10 @@ setSaving(false);
 							</div>
 						)}
 						{!onboarding && (
-						<div className="col-start-3 row-span-2 row-start-1 ml-4 flex min-h-10 shrink-0 items-center gap-2 phone:col-span-2 phone:col-start-1 phone:row-span-1 phone:row-start-3 phone:mt-4 phone:ml-0 phone:flex-col phone:items-stretch">
+						<div className="phone:col-span-2 phone:col-start-1 phone:row-span-1 phone:row-start-3 phone:mt-4 phone:ml-0 phone:flex-col phone:items-stretch" {...stylex.props(sx.colStart3, sx.rowSpan2, sx.rowStart1, sx.ml4, sx.flex, sx.minH10, sx.shrink0, sx.itemsCenter, sx.gap2)}>
 							{(github.clientIdConfigured || github.userPrAuth) && (
 								<>
-									<div className="hidden min-h-11 items-center justify-between text-label font-medium text-dim phone:flex">
+									<div className="phone:flex" {...stylex.props(sx.hidden, sx.minH11, sx.itemsCenter, sx.justifyBetween, sx.fontMedium, sx.textDim, typography.label)}>
 										<span>GitHub sign-in</span>
 										<Switch
 											checked={github.userPrAuth}
@@ -536,19 +754,19 @@ setSaving(false);
 				    whole workspace, so the work is a one-time setup on GitHub that a
 				    person should be able to read before opening a credentials form. */}
 				{onboarding && (
-					<div className="mt-3 grid grid-cols-2 items-start gap-3 phone:grid-cols-1">
-						<SettingsSection className="flex h-full flex-col gap-3">
-							<div className="text-item-title font-semibold text-fg">How to connect</div>
+					<div className="phone:grid-cols-1" {...stylex.props(sx.mt3, sx.grid, sx.gridCols2, sx.itemsStart, sx.gap3)}>
+						<SettingsSection {...stylex.props(sx.flex, sx.hFull, sx.flexCol, sx.gap3)}>
+							<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>How to connect</div>
 							<SetupSteps steps={GITHUB_ONBOARDING_STEPS} />
 							<LinkChips
-								className="mt-auto pt-1"
+								{...stylex.props(sx.mtAuto, sx.pt1)}
 								links={[{ label: "Create GitHub App", url: github.appCreateUrl }]}
 							/>
 						</SettingsSection>
-						<SettingsSection className="p-4">
+						<SettingsSection {...stylex.props(sx.p4)}>
 							{configuration}
 							{error && <InlineAlert>{error}</InlineAlert>}
-							<div className="mt-4 flex justify-end">
+							<div {...stylex.props(sx.mt4, sx.flex, sx.justifyEnd)}>
 								<Button
 									variant="primary"
 									className="phone:min-h-11 phone:w-full phone:justify-center"

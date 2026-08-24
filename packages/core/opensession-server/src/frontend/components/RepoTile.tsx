@@ -8,6 +8,21 @@ import {
 	repoIconFill,
 	repoIconRevision,
 } from "../lib/repo-colors";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	sizeFull: {
+			width: "100%",
+			height: "100%"
+	},
+	objectCover: {
+			objectFit: "cover"
+	},
+	BorderRadiusInherit: {
+			borderRadius: "inherit"
+	},
+});
 
 // The display-name map lives in lib/repo-label and the tile colors in
 // lib/repo-colors, so lib-level formatters can reach both without a component
@@ -105,7 +120,7 @@ export function RepoTile({
 					}`}
 					alt=""
 					loading="lazy"
-					className="size-full object-cover [border-radius:inherit]"
+					{...stylex.props(sx.sizeFull, sx.objectCover, sx.BorderRadiusInherit)}
 					onError={() => setFailedFor(attempt)}
 				/>
 			</span>

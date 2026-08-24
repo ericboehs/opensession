@@ -39,6 +39,139 @@ import {
 	PEOPLE_CHIP_SELECTED,
 	PEOPLE_SECTION_LABEL,
 } from "../lib/people-classes";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	minW0: {
+			minWidth: "0"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	flex: {
+			display: "flex"
+	},
+	size24px: {
+			width: "24px",
+			height: "24px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	roundedAvatar: {
+			borderRadius: "calc(32% * var(--rp))"
+	},
+	bgActive: {
+			backgroundColor: "var(--bg-active)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	minH0: {
+			minHeight: "0"
+	},
+	wFull: {
+			width: "100%"
+	},
+	flex1: {
+			flex: "1"
+	},
+	overflowYAuto: {
+			overflowY: "auto"
+	},
+	bgSurface: {
+			backgroundColor: "var(--bg)"
+	},
+	mxAuto: {
+			marginInline: "auto"
+	},
+	maxW920px: {
+			maxWidth: "920px"
+	},
+	px6: {
+			paddingInline: "24px"
+	},
+	pb15: {
+			paddingBottom: "60px"
+	},
+	pt7: {
+			paddingTop: "28px"
+	},
+	relative: {
+			position: "relative"
+	},
+	mb2: {
+			marginBottom: "8px"
+	},
+	minH30px: {
+			minHeight: "30px"
+	},
+	justifyBetween: {
+			justifyContent: "space-between"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	maxW150px: {
+			maxWidth: "150px"
+	},
+	minW200px: {
+			minWidth: "200px"
+	},
+	size18px: {
+			width: "18px",
+			height: "18px"
+	},
+	mb5: {
+			marginBottom: "20px"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	itemsBaseline: {
+			alignItems: "baseline"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	selfCenter: {
+			alignSelf: "center"
+	},
+	leading13: {
+			lineHeight: "1.3"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	justifySelfEnd: {
+			justifySelf: "flex-end"
+	},
+	textGreen: {
+			color: "var(--green)"
+	},
+	ml2: {
+			marginLeft: "8px"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+});
 
 /**
  * What the team has been shipping.
@@ -100,7 +233,7 @@ function ScopeChip({
 			aria-pressed={selected}
 		>
 			{mark}
-			<span className="min-w-0 truncate">{label}</span>
+			<span {...stylex.props(sx.minW0, sx.truncate)}>{label}</span>
 		</button>
 	);
 }
@@ -120,7 +253,7 @@ function FeedOwnerMark({ owner }: { owner: FeedOwner }) {
 	}
 	return (
 		<span
-			className="flex size-[24px] shrink-0 items-center justify-center rounded-avatar bg-active text-dim shadow-[var(--avatar-edge)]"
+			className="shadow-[var(--avatar-edge)]" {...stylex.props(sx.flex, sx.size24px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedAvatar, sx.bgActive, sx.textDim)}
 			title={owner.label}
 		>
 			<IconRobot size={14} />
@@ -273,10 +406,10 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 	return (
 		// The page frame every other list page in the app uses: one centred
 		// column at the shared width and padding, a PageHeader on top.
-		<div data-page-scroll className="min-h-0 w-full flex-1 overflow-y-auto bg-surface">
-			<div className="mx-auto w-full max-w-[920px] px-6 pb-15 pt-7 phone:pt-[calc(var(--header-h)+18px)] max-[560px]:px-4 max-[560px]:pb-12">
+		<div data-page-scroll {...stylex.props(sx.minH0, sx.wFull, sx.flex1, sx.overflowYAuto, sx.bgSurface)}>
+			<div className="phone:pt-[calc(var(--header-h)+18px)] max-[560px]:px-4 max-[560px]:pb-12" {...stylex.props(sx.mxAuto, sx.wFull, sx.maxW920px, sx.px6, sx.pb15, sx.pt7)}>
 				<PageHeader>
-					<div className="min-w-0">
+					<div {...stylex.props(sx.minW0)}>
 						<PageTitle>Feed</PageTitle>
 						<PageDescription>
 							What the team has been shipping. Pick someone to narrow it, and to
@@ -311,7 +444,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 									// The face carries whether they're around. The dot rings
 									// itself in the chip's own fill so it reads as a gap in the
 									// picture rather than a mark on it.
-									<span className="relative flex">
+									<span {...stylex.props(sx.relative, sx.flex)}>
 										<UserAvatar name={member.person.name} size={26} />
 										<StatusDot
 											state={presenceState(member)}
@@ -332,7 +465,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 
 				{feedLoading ? (
 					<>
-						<div className="mb-2 flex min-h-[30px] items-center">
+						<div {...stylex.props(sx.mb2, sx.flex, sx.minH30px, sx.itemsCenter)}>
 							<h3 className={cn(PEOPLE_SECTION_LABEL, "mb-0")}>Shipped</h3>
 						</div>
 						<ListSkeleton
@@ -355,7 +488,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 						    changing whose sidebar you are in, and it has to stay on
 						    screen when a pick empties the list, or the only way back
 						    is gone. */}
-						<div className="mb-2 flex min-h-[30px] items-center justify-between gap-3">
+						<div {...stylex.props(sx.mb2, sx.flex, sx.minH30px, sx.itemsCenter, sx.justifyBetween, sx.gap3)}>
 							<h3 className={cn(PEOPLE_SECTION_LABEL, "mb-0")}>
 								{scopeName ? `${scopeName} shipped` : "Shipped"}
 							</h3>
@@ -364,27 +497,27 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 									<Menu.Trigger
 										render={
 											<Button variant="ghost" size="sm" icon={<IconRepo size={18} />} caret>
-												<span className="max-w-[150px] truncate">
+												<span {...stylex.props(sx.maxW150px, sx.truncate)}>
 													{repo === "all" ? "In all repos" : `In ${repoLabel(repo)}`}
 												</span>
 											</Button>
 										}
 									/>
-									<Menu.Popup align="end" className="min-w-[200px]">
+									<Menu.Popup align="end" {...stylex.props(sx.minW200px)}>
 										<Menu.RadioGroup
 											value={repo}
 											onValueChange={(value) => setRepo(String(value))}
 										>
 											<Menu.RadioItem value="all" closeOnClick>
 												{/* Sized to the tiles below so every label shares one edge. */}
-												<span className="size-[18px] shrink-0" />
-												<span className="min-w-0 flex-1 truncate">All repos</span>
+												<span {...stylex.props(sx.size18px, sx.shrink0)} />
+												<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>All repos</span>
 												<Menu.Check on={repo === "all"} />
 											</Menu.RadioItem>
 											{repoOptions.map((name) => (
 												<Menu.RadioItem key={name} value={name} closeOnClick>
 													<RepoTile name={name} size={18} />
-													<span className="min-w-0 flex-1 truncate">
+													<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
 														{repoLabel(name)}
 													</span>
 													<Menu.Check on={repo === name} />
@@ -421,10 +554,10 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 						) : null}
 						<div className={PR_LIST}>
 							{dayGroups.map(([label, rows]) => (
-								<div key={label} className="mb-5">
+								<div key={label} {...stylex.props(sx.mb5)}>
 									<h4 className={PR_FEED_GROUP_LABEL}>
 										{label}
-										<span className="font-medium">{rows.length}</span>
+										<span {...stylex.props(sx.fontMedium)}>{rows.length}</span>
 									</h4>
 									<div>
 										{rows.map((row) => (
@@ -459,13 +592,13 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 												    what the picture already said and made the feed twice
 												    as tall as it needed to be. The name is in the row's
 												    tooltip and in the repo filter above. */}
-												<span className="flex min-w-0 items-baseline gap-2">
-													<RepoTile name={row.repo} size={16} className="self-center" />
-													<span className="truncate text-item-title font-medium leading-[1.3] text-fg">
+												<span {...stylex.props(sx.flex, sx.minW0, sx.itemsBaseline, sx.gap2)}>
+													<RepoTile name={row.repo} size={16} {...stylex.props(sx.selfCenter)} />
+													<span {...stylex.props(sx.truncate, sx.fontMedium, sx.leading13, sx.textFg, typography.itemTitle)}>
 														{row.title}
 													</span>
 													{row.ref && (
-														<span className="shrink-0 text-meta tabular-nums text-faint">
+														<span className="tabular-nums" {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}>
 															{row.ref}
 														</span>
 													)}
@@ -478,15 +611,15 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 												</span>
 												{/* A side that moved no lines is left off rather than
 												    written as a zero: every commit carries both counts. */}
-												<span className="justify-self-end text-meta tabular-nums phone:hidden">
+												<span className="tabular-nums phone:hidden" {...stylex.props(sx.justifySelfEnd, typography.meta)}>
 													{!!row.additions && (
-														<span className="text-green">+{compactDiff(row.additions)}</span>
+														<span {...stylex.props(sx.textGreen)}>+{compactDiff(row.additions)}</span>
 													)}
 													{!!row.deletions && (
-														<span className="ml-2 text-red">−{compactDiff(row.deletions)}</span>
+														<span {...stylex.props(sx.ml2, sx.textRed)}>−{compactDiff(row.deletions)}</span>
 													)}
 												</span>
-												<span className="justify-self-end text-meta tabular-nums text-faint">
+												<span className="tabular-nums" {...stylex.props(sx.justifySelfEnd, sx.textFaint, typography.meta)}>
 													{compactAge(row.shippedAt)}
 												</span>
 											</button>
@@ -501,7 +634,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 						    it holds nothing older, so the last page ends in the list
 						    rather than in a button that would do nothing. */}
 						{canWiden && (
-							<div className="mt-1 flex justify-center">
+							<div {...stylex.props(sx.mt1, sx.flex, sx.justifyCenter)}>
 								<Button
 									variant="ghost"
 									size="sm"

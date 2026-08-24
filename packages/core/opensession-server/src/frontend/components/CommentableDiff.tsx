@@ -48,6 +48,288 @@ import { toast } from "../ui/toast";
 import { useStickyEdges } from "../hooks/useStickyEdges";
 import { UserAvatar } from "./UserAvatar";
 import { ExtBadge, fileExt } from "./lang-marks";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	justifyBetween: {
+			justifyContent: "space-between"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	borderNone: {
+			borderStyle: "none"
+	},
+	bgTransparent: {
+			backgroundColor: "#0000"
+	},
+	px1: {
+			paddingInline: "4px"
+	},
+	py05: {
+			paddingBlock: "2px"
+	},
+	leading145: {
+			lineHeight: "1.45"
+	},
+	whitespacePreWrap: {
+			whiteSpace: "pre-wrap"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	OverflowWrapAnywhere: {
+			overflowWrap: "anywhere"
+	},
+	pointerEventsNone: {
+			pointerEvents: "none"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	inset0: {
+			inset: "0"
+	},
+	hidden: {
+			display: "none"
+	},
+	roundedTLg: {
+			borderTopLeftRadius: "calc(14px * var(--rf))",
+			borderTopRightRadius: "calc(14px * var(--rf))"
+	},
+	size5: {
+			width: "20px",
+			height: "20px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	textEllipsis: {
+			textOverflow: "ellipsis"
+	},
+	whitespaceNowrap: {
+			whiteSpace: "nowrap"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	gap3px: {
+			gap: "3px"
+	},
+	fontSans: {
+			fontFamily: "var(--sans)"
+	},
+	mlAuto: {
+			marginLeft: "auto"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	maxW260px: {
+			maxWidth: "260px"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	minH0: {
+			minHeight: "0"
+	},
+	px25: {
+			paddingInline: "10px"
+	},
+	py3px: {
+			paddingBlock: "3px"
+	},
+	textXs: {
+			fontSize: "var(--type-label)",
+			lineHeight: "var(--tw-leading,var(--text-xs--line-height))"
+	},
+	fontNormal: {
+			fontWeight: "var(--font-weight-normal)"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	minW230px: {
+			minWidth: "230px"
+	},
+	flex1: {
+			flex: "1"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	borderT: {
+			borderTopStyle: "solid",
+			borderTopWidth: "1px"
+	},
+	borderDividerSoft: {
+			borderColor: "var(--divider-soft)"
+	},
+	bgRaised: {
+			backgroundColor: "var(--bg-raised)"
+	},
+	p2: {
+			padding: "8px"
+	},
+	gap1: {
+			gap: "4px"
+	},
+	gap25: {
+			gap: "10px"
+	},
+	roundedMd: {
+			borderRadius: "calc(7px * var(--rf))"
+	},
+	bgGreenSoft: {
+			backgroundColor: "var(--green-soft)"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	py15: {
+			paddingBlock: "6px"
+	},
+	textGreen: {
+			color: "var(--green)"
+	},
+	Mb1: {
+			marginBottom: "-4px"
+	},
+	justifyEnd: {
+			justifyContent: "flex-end"
+	},
+	gap7px: {
+			gap: "7px"
+	},
+	wFull: {
+			width: "100%"
+	},
+	px3px: {
+			paddingInline: "3px"
+	},
+	py1: {
+			paddingBlock: "4px"
+	},
+	textLeft: {
+			textAlign: "left"
+	},
+	borderL: {
+			borderLeftStyle: "solid",
+			borderLeftWidth: "1px"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	pl3: {
+			paddingLeft: "12px"
+	},
+	pb2: {
+			paddingBottom: "8px"
+	},
+	textCenter: {
+			textAlign: "center"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	bgBg: {
+			backgroundColor: "var(--bg)"
+	},
+	focusRing: {
+			":focus-visible": {
+					outline: "2px solid var(--accent-ink)",
+					outlineOffset: "2px"
+			}
+	},
+	minH11: {
+			minHeight: "44px"
+	},
+	border0: {
+			borderStyle: "solid",
+			borderWidth: "0"
+	},
+	py2: {
+			paddingBlock: "8px"
+	},
+	py3: {
+			paddingBlock: "12px"
+	},
+	mb2: {
+			marginBottom: "8px"
+	},
+	roundedSm: {
+			borderRadius: "calc(4px * var(--rf))"
+	},
+	bgYellowSoft: {
+			backgroundColor: "var(--yellow-soft)"
+	},
+	px15: {
+			paddingInline: "6px"
+	},
+	textYellow: {
+			color: "var(--yellow)"
+	},
+	leadingRelaxed: {
+			lineHeight: "var(--leading-relaxed)"
+	},
+	p3: {
+			padding: "12px"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	mr1: {
+			marginRight: "4px"
+	},
+	py5px: {
+			paddingBlock: "5px"
+	},
+	px14px: {
+			paddingInline: "14px"
+	},
+	py6px: {
+			paddingBlock: "6px"
+	},
+});
 
 /* The +/− counts. DiffPanel's summary strip carries the same pair, and the two
    must read alike. */
@@ -637,14 +919,14 @@ setSavingEdit(false);
           className={`${CARD} gap-1.5 border border-l-[3px] border-line-strong border-l-accent px-2.5 py-[9px]`}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-meta text-faint">
+          <div {...stylex.props(sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap2)}>
+            <span {...stylex.props(sx.textFaint, typography.meta)}>
               {comment.path} · {lineLabel}
               {comment.side === "deletions" ? " (removed)" : ""}
             </span>
             {onRemovePending && (
               <button
-                className="cursor-pointer border-none bg-transparent px-1 py-0.5 text-meta text-faint hover:text-red"
+                className="hover:text-red" {...stylex.props(sx.cursorPointer, sx.borderNone, sx.bgTransparent, sx.px1, sx.py05, sx.textFaint, typography.meta)}
                 onClick={() => onRemovePending(comment.id)}
                 title="Remove this pending comment"
               >
@@ -652,7 +934,7 @@ setSavingEdit(false);
               </button>
             )}
           </div>
-          <div className="text-label leading-[1.45] whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">
+          <div {...stylex.props(sx.leading145, sx.whitespacePreWrap, sx.textFg, sx.OverflowWrapAnywhere, typography.label)}>
             {comment.text}
           </div>
         </div>
@@ -789,7 +1071,7 @@ const pendingByFile = m;
           {stickyFileHeaders && (
             <span
               aria-hidden="true"
-              className="pointer-events-none absolute inset-0 hidden rounded-t-lg shadow-[inset_0_0_0_1px_var(--border),inset_0_-1px_0_var(--divider)] group-data-[stuck]:block"
+              className="shadow-[inset_0_0_0_1px_var(--border),inset_0_-1px_0_var(--divider)] group-data-[stuck]:block" {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.inset0, sx.hidden, sx.roundedTLg)}
             />
           )}
           <button
@@ -805,19 +1087,19 @@ const pendingByFile = m;
               size={16}
               className={`shrink-0 text-faint transition-transform ${isOpen ? "rotate-90" : ""}`}
             />
-            <span className="flex size-5 shrink-0 items-center justify-center text-dim">
+            <span {...stylex.props(sx.flex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textDim)}>
               {fileExt(base) ? (
                 <ExtBadge name={base} size={14} />
               ) : (
                 <IconFile size={17} />
               )}
             </span>
-            <span className="flex min-w-0 items-center gap-2 overflow-hidden text-label">
-              <span className="shrink-0 overflow-hidden text-ellipsis whitespace-nowrap font-semibold text-fg">
+            <span {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.overflowHidden, typography.label)}>
+              <span {...stylex.props(sx.shrink0, sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.fontSemibold, sx.textFg)}>
                 {base}
               </span>
               {dir && (
-                <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-faint">
+                <span {...stylex.props(sx.minW0, sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.textFaint)}>
                   {dir}
                 </span>
               )}
@@ -855,24 +1137,24 @@ const pendingByFile = m;
             />
           </Tooltip>
           {pend.length > 0 && (
-            <span className="inline-flex shrink-0 items-center gap-[3px] font-sans text-meta text-faint before:text-meta before:content-['💬']">
+            <span className="before:text-meta before:content-['💬']" {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap3px, sx.fontSans, sx.textFaint, typography.meta)}>
               {pend.length}
             </span>
           )}
           {isEditing && (
             <span
-              className="ml-auto inline-flex shrink-0 items-center gap-1.5"
+              {...stylex.props(sx.mlAuto, sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap15)}
               onClick={(e) => e.stopPropagation()}
             >
               {editError && (
-                <span className="max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap text-label text-red">
+                <span {...stylex.props(sx.maxW260px, sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.textRed, typography.label)}>
                   {editError}
                 </span>
               )}
               <Button
                 variant="soft"
                 size="sm"
-                className="min-h-0 px-2.5 py-[3px] text-xs font-normal"
+                {...stylex.props(sx.minH0, sx.px25, sx.py3px, sx.textXs, sx.fontNormal)}
                 onClick={cancelEdit}
                 disabled={savingEdit}
               >
@@ -881,7 +1163,7 @@ const pendingByFile = m;
               <Button
                 variant="primary"
                 size="sm"
-                className="min-h-0 px-2.5 py-[3px] text-xs font-medium shadow-none"
+                className="shadow-none" {...stylex.props(sx.minH0, sx.px25, sx.py3px, sx.textXs, sx.fontMedium)}
                 onClick={saveEdit}
                 disabled={savingEdit}
               >
@@ -963,7 +1245,7 @@ const pendingByFile = m;
                   }
                 />
               </Tooltip>
-              <Menu.Popup align="end" className="min-w-[230px]">
+              <Menu.Popup align="end" {...stylex.props(sx.minW230px)}>
                 {fileUrl && (
                   <>
                     <Menu.Item
@@ -972,7 +1254,7 @@ const pendingByFile = m;
                       }
                     >
                       <IconArrowUpRight size={18} className={MENU_ICON} />
-                      <span className="min-w-0 flex-1 truncate">
+                      <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
                         Open file on {fileActions.providerName}
                       </span>
                     </Menu.Item>
@@ -980,7 +1262,7 @@ const pendingByFile = m;
                       onClick={() => copyMenuValue(fileUrl, "File link copied")}
                     >
                       <IconLink size={18} className={MENU_ICON} />
-                      <span className="min-w-0 flex-1 truncate">
+                      <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
                         Copy link to file
                       </span>
                     </Menu.Item>
@@ -991,20 +1273,20 @@ const pendingByFile = m;
                   onClick={() => copyMenuValue(file.name, "File path copied")}
                 >
                   <IconCopy size={18} className={MENU_ICON} />
-                  <span className="min-w-0 flex-1 truncate">Copy full path</span>
+                  <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>Copy full path</span>
                 </Menu.Item>
                 <Menu.Item
                   onClick={() => copyMenuValue(base, "Filename copied")}
                 >
                   <IconCopy size={18} className={MENU_ICON} />
-                  <span className="min-w-0 flex-1 truncate">Copy filename</span>
+                  <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>Copy filename</span>
                 </Menu.Item>
                 {fileActions.loadContents &&
                   file.type !== "deleted" &&
                   !IMAGE_EXT.test(file.name) && (
                   <Menu.Item onClick={() => void copyFileContents(file)}>
                     <IconCopy size={18} className={MENU_ICON} />
-                    <span className="min-w-0 flex-1 truncate">
+                    <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
                       Copy file contents
                     </span>
                   </Menu.Item>
@@ -1037,7 +1319,7 @@ const pendingByFile = m;
                 />
               ))}
             {resolved.length > 0 && (
-              <div className="flex flex-col gap-1.5 border-t border-divider-soft bg-raised p-2">
+              <div {...stylex.props(sx.flex, sx.flexCol, sx.gap15, sx.borderT, sx.borderDividerSoft, sx.bgRaised, sx.p2)}>
                 {resolved.map((thread) => (
                   <ResolvedReviewThread
                     key={thread.id}
@@ -1058,7 +1340,7 @@ const pendingByFile = m;
     <>
       {showGroupsStatus && groupsLoading && (
         <span className={GROUPS_NOTE} role="status">
-          <Spinner className="text-faint" />
+          <Spinner {...stylex.props(sx.textFaint)} />
           Organizing files…
         </span>
       )}
@@ -1071,7 +1353,7 @@ const pendingByFile = m;
       )}
       {viewedEnabled && showViewedProgress && (
         <span
-          className="flex items-center gap-1 text-meta text-faint tabular-nums"
+          className="tabular-nums" {...stylex.props(sx.flex, sx.itemsCenter, sx.gap1, sx.textFaint, typography.meta)}
           aria-label={`${viewedCount} of ${files.length} files viewed`}
         >
           <IconEye size={20} />
@@ -1098,14 +1380,14 @@ const pendingByFile = m;
   );
 
   return (
-    <div ref={setStickyRoot} className="flex flex-col gap-2.5">
+    <div ref={setStickyRoot} {...stylex.props(sx.flex, sx.flexCol, sx.gap25)}>
       {confirmation && (
-        <div className="rounded-md bg-green-soft px-3 py-1.5 text-label font-semibold text-green">
+        <div {...stylex.props(sx.roundedMd, sx.bgGreenSoft, sx.px3, sx.py15, sx.fontSemibold, sx.textGreen, typography.label)}>
           {confirmation}
         </div>
       )}
       {controlsTarget === undefined ? (
-        <div className="-mb-1 flex items-center justify-end">{controls}</div>
+        <div {...stylex.props(sx.Mb1, sx.flex, sx.itemsCenter, sx.justifyEnd)}>{controls}</div>
       ) : controlsTarget ? (
         createPortal(controls, controlsTarget)
       ) : null}
@@ -1124,12 +1406,12 @@ const pendingByFile = m;
               // Group headers are deliberately quieter than file rows: they
               // give scan structure without competing with filenames.
               <section
-                className="flex flex-col gap-[7px] [section+&]:mt-1"
+                className="[section+&]:mt-1" {...stylex.props(sx.flex, sx.flexCol, sx.gap7px)}
                 key={groupKey}
               >
                 <button
                   type="button"
-                  className="flex w-full cursor-pointer items-center gap-[7px] border-none bg-transparent px-[3px] py-1 text-left font-sans text-dim hover:text-fg"
+                  className="hover:text-fg" {...stylex.props(sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap7px, sx.borderNone, sx.bgTransparent, sx.px3px, sx.py1, sx.textLeft, sx.fontSans, sx.textDim)}
                   data-diff-group-files={JSON.stringify(
                     group.indices.map((index) => files[index].name),
                   )}
@@ -1147,14 +1429,14 @@ const pendingByFile = m;
                     size={16}
                     className={`shrink-0 text-faint transition-transform ${collapsed ? "" : "rotate-90"}`}
                   />
-                  <span className="text-label font-semibold">
+                  <span {...stylex.props(sx.fontSemibold, typography.label)}>
                     {group.title}
                   </span>
-                  <span className="text-meta text-faint">
+                  <span {...stylex.props(sx.textFaint, typography.meta)}>
                     {group.indices.length}
                   </span>
                   {showFileStats && (
-                  <span className="ml-auto flex gap-2 text-meta">
+                  <span {...stylex.props(sx.mlAuto, sx.flex, sx.gap2, typography.meta)}>
                       {totals.add > 0 && (
                         <span className={DIFF_ADD}>+{totals.add}</span>
                       )}
@@ -1165,7 +1447,7 @@ const pendingByFile = m;
                   )}
                 </button>
                 {!collapsed && (
-                  <div className="flex flex-col gap-[7px] border-l border-line pl-3">
+                  <div {...stylex.props(sx.flex, sx.flexCol, sx.gap7px, sx.borderL, sx.borderLine, sx.pl3)}>
                     {group.indices.map((index) =>
                       renderFile(files[index], index),
                     )}
@@ -1175,7 +1457,7 @@ const pendingByFile = m;
             );
           })
         : files.map(renderFile)}
-      <div className="pb-2 text-center text-meta text-faint">
+      <div {...stylex.props(sx.pb2, sx.textCenter, sx.textFaint, typography.meta)}>
         {disabled
           ? disabledHint || "Commenting is unavailable right now."
           : reviewMode
@@ -1205,15 +1487,15 @@ function ResolvedReviewThread({
   const author = thread.rootAuthor || comments[0].login || "Unknown";
 
   return (
-    <article className="overflow-hidden rounded-md border border-divider-soft bg-bg">
+    <article {...stylex.props(sx.overflowHidden, sx.roundedMd, sx.border, sx.borderDividerSoft, sx.bgBg)}>
       <button
         type="button"
-        className="focus-ring flex min-h-11 w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-2 text-left text-label text-dim hover:bg-hover"
+        className="hover:bg-hover" {...stylex.props(sx.focusRing, sx.flex, sx.minH11, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.border0, sx.bgTransparent, sx.px3, sx.py2, sx.textLeft, sx.textDim, typography.label)}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        <IconCheckCircle size={17} className="shrink-0 text-dim" />
-        <span className="min-w-0 flex-1 truncate">
+        <IconCheckCircle size={17} {...stylex.props(sx.shrink0, sx.textDim)} />
+        <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
           {count} resolved {count === 1 ? "comment" : "comments"} from {author}
         </span>
         <IconChevronRight
@@ -1222,29 +1504,29 @@ function ResolvedReviewThread({
         />
       </button>
       {open && (
-        <div className="border-t border-divider-soft">
+        <div {...stylex.props(sx.borderT, sx.borderDividerSoft)}>
           {comments.map((comment, index) => (
             <div
               key={`${thread.id}-${index}`}
-              className="px-3 py-3 [&+&]:border-t [&+&]:border-divider-soft"
+              className="[&+&]:border-t [&+&]:border-divider-soft" {...stylex.props(sx.px3, sx.py3)}
             >
-              <div className="mb-2 flex items-center gap-2">
+              <div {...stylex.props(sx.mb2, sx.flex, sx.itemsCenter, sx.gap2)}>
                 <UserAvatar
                   name={comment.login || "Unknown"}
                   login={comment.login || null}
                   size={22}
                 />
-                <span className="text-label font-semibold text-fg">
+                <span {...stylex.props(sx.fontSemibold, sx.textFg, typography.label)}>
                   {comment.login || "Unknown"}
                 </span>
                 {index === 0 && thread.isOutdated && (
-                  <span className="rounded-sm bg-yellow-soft px-1.5 py-0.5 text-meta font-medium text-yellow">
+                  <span {...stylex.props(sx.roundedSm, sx.bgYellowSoft, sx.px15, sx.py05, sx.fontMedium, sx.textYellow, typography.meta)}>
                     Outdated
                   </span>
                 )}
               </div>
               <div
-                className="markdown text-label leading-relaxed text-dim"
+                className="markdown" {...stylex.props(sx.leadingRelaxed, sx.textDim, typography.label)}
                 dangerouslySetInnerHTML={{
                   __html: renderPrCommentMarkdown(comment.body, { repo }),
                 }}
@@ -1275,12 +1557,12 @@ function ImageDiffRow({
   const showNew = !!srcs?.newSrc && file.type !== "deleted" && !newErr;
   if (!showOld && !showNew)
     return (
-      <div className="p-3 text-label text-dim">
+      <div {...stylex.props(sx.p3, sx.textDim, typography.label)}>
         Image not available to preview
       </div>
     );
   return (
-    <div className="flex flex-wrap gap-3 p-3">
+    <div {...stylex.props(sx.flex, sx.flexWrap, sx.gap3, sx.p3)}>
       {showOld && (
         <figure className={IMAGE_CELL}>
           <img
@@ -1291,7 +1573,7 @@ function ImageDiffRow({
             onError={() => setOldErr(true)}
           />
           <figcaption className={IMAGE_CAPTION}>
-            <span className="mr-1 text-red">−</span>
+            <span {...stylex.props(sx.mr1, sx.textRed)}>−</span>
             {file.type === "deleted" ? "Deleted" : "Before"}
           </figcaption>
         </figure>
@@ -1306,7 +1588,7 @@ function ImageDiffRow({
             onError={() => setNewErr(true)}
           />
           <figcaption className={IMAGE_CAPTION}>
-            <span className="mr-1 text-green">+</span>
+            <span {...stylex.props(sx.mr1, sx.textGreen)}>+</span>
             {file.type === "new" ? "Added" : "After"}
           </figcaption>
         </figure>
@@ -1362,9 +1644,9 @@ setError(e.message || "Failed to submit");
       className={`${CARD} gap-2 border border-accent p-2.5`}
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="text-meta text-faint">{targetLabel}</div>
+      <div {...stylex.props(sx.textFaint, typography.meta)}>{targetLabel}</div>
       {disabled ? (
-        <div className="text-label text-faint">
+        <div {...stylex.props(sx.textFaint, typography.label)}>
           {disabledHint || "Unavailable right now"}
         </div>
       ) : (
@@ -1387,12 +1669,12 @@ setError(e.message || "Failed to submit");
               }
             }}
           />
-          {error && <div className="text-label text-red">{error}</div>}
-          <div className="flex justify-end gap-2">
+          {error && <div {...stylex.props(sx.textRed, typography.label)}>{error}</div>}
+          <div {...stylex.props(sx.flex, sx.justifyEnd, sx.gap2)}>
             <Button
               variant="soft"
               size="sm"
-              className="min-h-0 px-3 py-[5px] text-label font-normal"
+              {...stylex.props(sx.minH0, sx.px3, sx.py5px, sx.fontNormal, typography.label)}
               onClick={onCancel}
               disabled={sending}
             >
@@ -1401,7 +1683,7 @@ setError(e.message || "Failed to submit");
             <Button
               variant="primary"
               size="sm"
-              className="min-h-0 px-[14px] py-[6px] text-supporting font-medium shadow-none"
+              className="shadow-none" {...stylex.props(sx.minH0, sx.px14px, sx.py6px, sx.fontMedium, typography.supporting)}
               onClick={submit}
               disabled={sending || !text.trim()}
             >

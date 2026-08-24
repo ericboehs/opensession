@@ -10,6 +10,126 @@ import { EmptyState } from "../ui/state";
 import { getCurrentUser } from "./UserPicker";
 import { IconCheck, IconListCircles, IconPlus, IconX } from "./icons";
 import { Input } from "../ui/input";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	minH11: {
+			minHeight: "44px"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	py25: {
+			paddingBlock: "10px"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	mt05: {
+			marginTop: "2px"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	gapX25: {
+			columnGap: "10px"
+	},
+	gapY1: {
+			rowGap: "4px"
+	},
+	underline: {
+			textDecorationLine: "underline"
+	},
+	decorationDotted: {
+			textDecorationStyle: "dotted"
+	},
+	underlineOffset2: {
+			textUnderlineOffset: "2px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	hFull: {
+			height: "100%"
+	},
+	overflowYAuto: {
+			overflowY: "auto"
+	},
+	px4: {
+			paddingInline: "16px"
+	},
+	py5: {
+			paddingBlock: "20px"
+	},
+	mxAuto: {
+			marginInline: "auto"
+	},
+	maxW760px: {
+			maxWidth: "760px"
+	},
+	mb5: {
+			marginBottom: "20px"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	mb3: {
+			marginBottom: "12px"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	py8: {
+			paddingBlock: "32px"
+	},
+	textCenter: {
+			textAlign: "center"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	roundedXl: {
+			borderRadius: "calc(18px * var(--rf))"
+	},
+	bgRaised: {
+			backgroundColor: "var(--bg-raised)"
+	},
+	mt5: {
+			marginTop: "20px"
+	},
+	mb2: {
+			marginBottom: "8px"
+	},
+	minH10: {
+			minHeight: "40px"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+});
 
 interface TasksProps {
 	addHandler: (handler: (message: WSServerMessage) => void) => () => void;
@@ -43,7 +163,7 @@ function TaskRow({
 }) {
 	const done = task.status === "done";
 	return (
-		<li className="group flex min-h-11 items-center gap-3 px-3 py-2.5 sm:px-4">
+		<li className="group sm:px-4" {...stylex.props(sx.flex, sx.minH11, sx.itemsCenter, sx.gap3, sx.px3, sx.py25)}>
 			<button
 				type="button"
 				className={cn(
@@ -57,7 +177,7 @@ function TaskRow({
 			>
 				<IconCheck size={14} />
 			</button>
-			<div className="min-w-0 flex-1">
+			<div {...stylex.props(sx.minW0, sx.flex1)}>
 				<div
 					className={cn(
 						"text-item-title font-medium text-fg",
@@ -67,10 +187,10 @@ function TaskRow({
 					{task.text}
 				</div>
 				{task.note && (
-					<div className="mt-0.5 text-label text-faint">{task.note}</div>
+					<div {...stylex.props(sx.mt05, sx.textFaint, typography.label)}>{task.note}</div>
 				)}
 				{(task.due || (task.remindAt && !done) || task.source.sessionId) && (
-					<div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-label text-faint">
+					<div {...stylex.props(sx.mt1, sx.flex, sx.flexWrap, sx.itemsCenter, sx.gapX25, sx.gapY1, sx.textFaint, typography.label)}>
 						{task.due && <span>Due {task.due}</span>}
 						{task.remindAt && !done && (
 							<span className={cn(task.remindedAt && "line-through")}>
@@ -81,7 +201,7 @@ function TaskRow({
 						{task.source.sessionId && (
 							<button
 								type="button"
-								className="underline decoration-dotted underline-offset-2 hover:text-dim"
+								className="hover:text-dim" {...stylex.props(sx.underline, sx.decorationDotted, sx.underlineOffset2)}
 								onClick={() => onOpenSession(task.source.sessionId!)}
 							>
 								Open source
@@ -94,7 +214,7 @@ function TaskRow({
 				<Button
 					variant="ghost"
 					size="md"
-					className="shrink-0 text-faint"
+					{...stylex.props(sx.shrink0, sx.textFaint)}
 					onClick={() => onDrop(task)}
 					aria-label={`Drop ${task.text}`}
 					title="Drop task"
@@ -205,8 +325,8 @@ setAdding(false);
 	const done = (tasks || []).filter((task) => task.status === "done");
 
 	return (
-		<div data-page-scroll className="h-full overflow-y-auto px-4 py-5 sm:px-7 sm:py-7">
-			<div className="mx-auto max-w-[760px]">
+		<div data-page-scroll className="sm:px-7 sm:py-7" {...stylex.props(sx.hFull, sx.overflowYAuto, sx.px4, sx.py5)}>
+			<div {...stylex.props(sx.mxAuto, sx.maxW760px)}>
 				<PageHeader>
 					<div>
 						<PageTitle>Tasks</PageTitle>
@@ -217,7 +337,7 @@ setAdding(false);
 				</PageHeader>
 
 				<form
-					className="mb-5 flex gap-2"
+					{...stylex.props(sx.mb5, sx.flex, sx.gap2)}
 					onSubmit={(event) => {
 						event.preventDefault();
 						void addTask();
@@ -225,7 +345,7 @@ setAdding(false);
 				>
 					<Input
 						size="lg"
-						className="min-w-0 flex-1"
+						{...stylex.props(sx.minW0, sx.flex1)}
 						value={draft}
 						placeholder="Add a task"
 						onChange={(event) => setDraft(event.target.value)}
@@ -241,11 +361,11 @@ setAdding(false);
 					</Button>
 				</form>
 
-				{error && <div className="mb-3 text-body text-red">{error}</div>}
+				{error && <div {...stylex.props(sx.mb3, sx.textRed, typography.body)}>{error}</div>}
 
 				{tasks === null ? (
 					<Card>
-						<div className="px-4 py-8 text-center text-body text-dim">
+						<div {...stylex.props(sx.px4, sx.py8, sx.textCenter, sx.textDim, typography.body)}>
 							Loading…
 						</div>
 					</Card>
@@ -265,7 +385,7 @@ setAdding(false);
 					<div
 						// Empty reads as a soft, borderless well rather than a card with
 						// nothing in it: rounder, one step lighter, no outline.
-						className="overflow-hidden rounded-xl bg-raised px-4"
+						{...stylex.props(sx.overflowHidden, sx.roundedXl, sx.bgRaised, sx.px4)}
 					>
 						<EmptyState
 							icon={<IconListCircles size={22} />}
@@ -277,15 +397,15 @@ setAdding(false);
 				)}
 
 				{done.length > 0 && (
-					<div className="mt-5">
+					<div {...stylex.props(sx.mt5)}>
 						<button
 							type="button"
-							className="mb-2 flex min-h-10 items-center gap-2 text-control-label font-medium text-dim hover:text-fg"
+							className="hover:text-fg" {...stylex.props(sx.mb2, sx.flex, sx.minH10, sx.itemsCenter, sx.gap2, sx.fontMedium, sx.textDim, typography.controlLabel)}
 							onClick={() => setShowDone((current) => !current)}
 							aria-expanded={showDone}
 						>
 							<span>{showDone ? "Hide" : "Show"} completed</span>
-							<span className="text-faint">{done.length}</span>
+							<span {...stylex.props(sx.textFaint)}>{done.length}</span>
 						</button>
 						{showDone && (
 							<CardList as="ul">

@@ -21,6 +21,140 @@ import { toast } from "../../ui/toast";
 import { IconImage, IconPencil, IconTrash } from "../icons";
 import { useCurrentUser } from "../UserPicker";
 import { UserAvatar } from "../UserAvatar";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	mt0: {
+			marginTop: "0"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap0: {
+			gap: "0"
+	},
+	py7: {
+			paddingBlock: "28px"
+	},
+	size20: {
+			width: "80px",
+			height: "80px"
+	},
+	roundedAvatar: {
+			borderRadius: "calc(32% * var(--rp))"
+	},
+	mt4: {
+			marginTop: "16px"
+	},
+	h3: {
+			height: "12px"
+	},
+	w40: {
+			width: "160px"
+	},
+	hidden: {
+			display: "none"
+	},
+	focusRing: {
+			":focus-visible": {
+					outline: "2px solid var(--accent-ink)",
+					outlineOffset: "2px"
+			}
+	},
+	relative: {
+			position: "relative"
+	},
+	flex: {
+			display: "flex"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	Bottom05: {
+			bottom: "-2px"
+	},
+	Right05: {
+			right: "-2px"
+	},
+	grid: {
+			display: "grid"
+	},
+	size8: {
+			width: "32px",
+			height: "32px"
+	},
+	placeItemsCenter: {
+			placeItems: "center"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	bgWhite: {
+			backgroundColor: "var(--color-white)"
+	},
+	textBlack: {
+			color: "var(--color-black)"
+	},
+	mt35: {
+			marginTop: "14px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap35: {
+			gap: "14px"
+	},
+	p5: {
+			padding: "20px"
+	},
+	mb1: {
+			marginBottom: "4px"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	wMax: {
+			width: "max-content"
+	},
+	text10px: {
+			fontSize: "10px"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	leadingNone: {
+			lineHeight: "1"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	m0: {
+			margin: "0"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	justifyEnd: {
+			justifyContent: "flex-end"
+	},
+	gap2: {
+			gap: "8px"
+	},
+});
 
 /**
  * Settings > Personal > Account, first block: who you are on this instance.
@@ -56,7 +190,7 @@ export function ProfileSection() {
 
 	return (
 		<>
-			<SettingsGroupLabel className="mt-0">Profile</SettingsGroupLabel>
+			<SettingsGroupLabel {...stylex.props(sx.mt0)}>Profile</SettingsGroupLabel>
 			{loadError ? (
 				<InlineAlert>{loadError}</InlineAlert>
 			) : !profile ? (
@@ -86,9 +220,9 @@ export function ProfileSection() {
 function ProfileSkeleton() {
 	return (
 		<Skeleton label="Loading your profile">
-			<SettingsForm className="items-center gap-0 py-7">
-				<SkeletonBar className="size-20 rounded-avatar" />
-				<SkeletonBar className="mt-4 h-3 w-40" />
+			<SettingsForm {...stylex.props(sx.itemsCenter, sx.gap0, sx.py7)}>
+				<SkeletonBar {...stylex.props(sx.size20, sx.roundedAvatar)} />
+				<SkeletonBar {...stylex.props(sx.mt4, sx.h3, sx.w40)} />
 			</SettingsForm>
 		</Skeleton>
 	);
@@ -212,10 +346,10 @@ setBusy(null);
 				ref={fileRef}
 				type="file"
 				accept="image/png,image/jpeg,image/gif,image/webp"
-				className="hidden"
+				{...stylex.props(sx.hidden)}
 				onChange={(e) => void pickPicture(e.target.files?.[0])}
 			/>
-			<SettingsForm className="items-center gap-0 py-7">
+			<SettingsForm {...stylex.props(sx.itemsCenter, sx.gap0, sx.py7)}>
 				{/* The whole portrait opens the editor, with the badge as the mark
 				    that says so. A badge that is the only target makes a 28px hit
 				    area out of a 80px one, and the picture is what the eye goes to
@@ -224,7 +358,7 @@ setBusy(null);
 					type="button"
 					onClick={() => setEditing(true)}
 					aria-label="Edit profile"
-					className="focus-ring relative flex rounded-avatar"
+					{...stylex.props(sx.focusRing, sx.relative, sx.flex, sx.roundedAvatar)}
 				>
 					<UserAvatar
 						name={profile.name}
@@ -238,7 +372,7 @@ setBusy(null);
 					    so it has to hold its own contrast in both themes instead of
 					    following the page. Same reason its ink is hard black. */}
 					<span
-						className="absolute -bottom-0.5 -right-0.5 grid size-8 place-items-center rounded-full bg-white text-black shadow-sm"
+						className="shadow-sm" {...stylex.props(sx.absolute, sx.Bottom05, sx.Right05, sx.grid, sx.size8, sx.placeItemsCenter, sx.roundedFull, sx.bgWhite, sx.textBlack)}
 						aria-hidden
 					>
 						{busy === "picture" ? (
@@ -251,7 +385,7 @@ setBusy(null);
 				{/* Your name and nothing under it. The GitHub login is already on
 				    the account row below, and a timezone is a setting rather than
 				    something you recognize yourself by. */}
-				<div className="mt-3.5 text-item-title font-semibold text-fg">
+				<div {...stylex.props(sx.mt35, sx.fontSemibold, sx.textFg, typography.itemTitle)}>
 					{profile.name}
 				</div>
 			</SettingsForm>
@@ -269,8 +403,8 @@ setBusy(null);
 				modalClassName="w-[min(420px,calc(100vw-32px))]"
 			>
 				{(dismiss) => (
-					<form className="flex flex-col gap-3.5 p-5" onSubmit={submit}>
-						<div className="text-item-title font-semibold text-fg">
+					<form {...stylex.props(sx.flex, sx.flexCol, sx.gap35, sx.p5)} onSubmit={submit}>
+						<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>
 							Edit profile
 						</div>
 						{/* The picture is the control: the whole square picks a file,
@@ -291,14 +425,14 @@ setBusy(null);
 
 						    A touch client has no hover, so there the overlay stays
 						    on. */}
-						<div className="group/overlay-action relative mb-1 mt-1 w-max">
+						<div className="group/overlay-action" {...stylex.props(sx.relative, sx.mb1, sx.mt1, sx.wMax)}>
 							<button
 								type="button"
 								disabled={busy !== null}
 								onClick={() => fileRef.current?.click()}
 								aria-label={pictureAction}
 								title={pictureAction}
-								className="focus-ring group relative flex rounded-avatar disabled:pointer-events-none"
+								className="group disabled:pointer-events-none" {...stylex.props(sx.focusRing, sx.relative, sx.flex, sx.roundedAvatar)}
 							>
 								<UserAvatar
 									name={name || profile.name}
@@ -327,7 +461,7 @@ setBusy(null);
 											{/* One word: the button already carries the whole
 											    sentence as its accessible name, and 72px of
 											    picture cannot hold two. */}
-											<span className="text-[10px] font-medium leading-none">
+											<span {...stylex.props(sx.text10px, sx.fontMedium, sx.leadingNone)}>
 												{profile.image ? "Change" : "Upload"}
 											</span>
 										</>
@@ -340,7 +474,7 @@ setBusy(null);
 									onClick={() => void removePicture()}
 									aria-label="Remove picture"
 									title="Remove picture"
-									icon={<IconTrash className="text-red" size={16} />}
+									icon={<IconTrash {...stylex.props(sx.textRed)} size={16} />}
 								/>
 							)}
 						</div>
@@ -348,7 +482,7 @@ setBusy(null);
 						    the `<label>`, so text inside it joins the input's accessible
 						    name. The wrapper gives it the gap the label already has
 						    above the input, rather than the form's row gap. */}
-						<div className="flex min-w-0 flex-col gap-1.5">
+						<div {...stylex.props(sx.flex, sx.minW0, sx.flexCol, sx.gap15)}>
 							<Field label="Name">
 								<Input
 									value={name}
@@ -363,7 +497,7 @@ setBusy(null);
 							    All they need is which name their teammates will see, and
 							    that the old one still finds them. */}
 							{shortNameChanging && (
-								<p className="m-0 text-supporting text-dim">
+								<p {...stylex.props(sx.m0, sx.textDim, typography.supporting)}>
 									{profile.shortName} becomes {nextShort} in mentions and
 									attribution. {profile.shortName} keeps working.
 								</p>
@@ -392,7 +526,7 @@ setBusy(null);
 						{error && (
 							<InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
 						)}
-						<div className="mt-1 flex justify-end gap-2">
+						<div {...stylex.props(sx.mt1, sx.flex, sx.justifyEnd, sx.gap2)}>
 							<Button
 								variant="ghost"
 								className={isPhone ? "min-h-11" : undefined}

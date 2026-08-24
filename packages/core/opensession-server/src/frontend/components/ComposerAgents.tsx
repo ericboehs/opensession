@@ -6,6 +6,123 @@ import { composerFlapBorder } from "../lib/composer-classes";
 import { cn } from "../ui/cn";
 import { IconChevronDown, IconChevronRight } from "./icons";
 import { PlanChecklist } from "./PlanChecklist";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flexNone: {
+			flex: "none"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flexAuto: {
+			flex: "auto"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	flex: {
+			display: "flex"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap25: {
+			gap: "10px"
+	},
+	maxH168px: {
+			maxHeight: "168px"
+	},
+	gap7px: {
+			gap: "7px"
+	},
+	overflowYAuto: {
+			overflowY: "auto"
+	},
+	m0: {
+			margin: "0"
+	},
+	listNone: {
+			listStyleType: "none"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	p0: {
+			padding: "0"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	gapX3: {
+			columnGap: "12px"
+	},
+	gapY1: {
+			rowGap: "4px"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap5px: {
+			gap: "5px"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	maxH108px: {
+			maxHeight: "108px"
+	},
+	gap05: {
+			gap: "2px"
+	},
+	selfStart: {
+			alignSelf: "flex-start"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	bgVarBgHover: {
+			backgroundColor: "var(--bg-hover)"
+	},
+	py5px: {
+			paddingBlock: "5px"
+	},
+	pr25: {
+			paddingRight: "10px"
+	},
+	pl3: {
+			paddingLeft: "12px"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+});
 
 /**
  * The run-status flap above the composer: what this session is doing right
@@ -148,34 +265,34 @@ export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 		>
 			{!open && <span className={cn(liveDot, "size-2")} />}
 			{total === 0 && (
-				<span className="flex-none font-medium text-faint tabular-nums">
+				<span className="tabular-nums" {...stylex.props(sx.flexNone, sx.fontMedium, sx.textFaint)}>
 					{planDone}/{planTotal}
 				</span>
 			)}
 			{/* flex-auto, not flex-1: with a zero basis the label would only ever
 			    take the free space left over, so a long phase name stopped pushing
 			    the caret and started truncating a step early. */}
-			<span className="min-w-0 flex-auto truncate">
+			<span {...stylex.props(sx.minW0, sx.flexAuto, sx.truncate)}>
 				{total > 0 ? (
 					<>
-						<strong className="font-semibold">{runningCount} running</strong>
+						<strong {...stylex.props(sx.fontSemibold)}>{runningCount} running</strong>
 						{total > runningCount ? (
-							<span className="font-medium text-faint">
+							<span {...stylex.props(sx.fontMedium, sx.textFaint)}>
 								{" "}
 								· {done}/{total} done
 							</span>
 						) : null}
 						{planTotal > 0 ? (
-							<span className="font-medium text-faint">
+							<span {...stylex.props(sx.fontMedium, sx.textFaint)}>
 								{" "}
 								· Plan {planDone}/{planTotal}
 							</span>
 						) : !open && phase ? (
-							<span className="font-medium text-faint"> · {phase}</span>
+							<span {...stylex.props(sx.fontMedium, sx.textFaint)}> · {phase}</span>
 						) : null}
 					</>
 				) : (
-					<strong className="font-semibold">
+					<strong {...stylex.props(sx.fontSemibold)}>
 						{!open && planStep ? planStep : "Plan"}
 					</strong>
 				)}
@@ -212,10 +329,10 @@ export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 			data-open={open ? "" : undefined}
 		>
 			{open && (
-				<div className="flex flex-col gap-2.5">
+				<div {...stylex.props(sx.flex, sx.flexCol, sx.gap25)}>
 					{planTotal > 0 && (
 						// Its own scroller so a long plan doesn't push the composer down.
-						<div className="flex max-h-[168px] flex-col gap-[7px] overflow-y-auto">
+						<div {...stylex.props(sx.flex, sx.maxH168px, sx.flexCol, sx.gap7px, sx.overflowYAuto)}>
 							{/* The pill right below already reads "Plan · 2/5"; the title
 							    only earns its line when there's an agents section under
 							    it to be told apart from. */}
@@ -248,7 +365,7 @@ export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 							{/* Phase stepper: current step green, past steps checked + dim,
 							    future faint. */}
 							{steps.length > 1 && (
-								<ol className="m-0 flex list-none flex-col gap-1.5 p-0">
+								<ol {...stylex.props(sx.m0, sx.flex, sx.listNone, sx.flexCol, sx.gap15, sx.p0)}>
 									{steps.map((s, i) => (
 										<li
 											key={s}
@@ -277,41 +394,41 @@ export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 								</ol>
 							)}
 
-							<div className="flex flex-wrap gap-x-3 gap-y-1 text-meta font-medium">
-								<span className="inline-flex items-center gap-[5px]">
+							<div {...stylex.props(sx.flex, sx.flexWrap, sx.gapX3, sx.gapY1, sx.fontMedium, typography.meta)}>
+								<span {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap5px)}>
 									<i className={cn(liveDot, "size-2")} />
 									{runningCount} running
 								</span>
 								{done > 0 && (
-									<span className="inline-flex items-center gap-[5px] text-dim">
+									<span {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap5px, sx.textDim)}>
 										{done}/{total} done
 									</span>
 								)}
 								{pending > 0 && (
-									<span className="inline-flex items-center gap-[5px] text-faint">
+									<span {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap5px, sx.textFaint)}>
 										{pending} queued
 									</span>
 								)}
 								{error > 0 && (
-									<span className="inline-flex items-center gap-[5px] text-red">
+									<span {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap5px, sx.textRed)}>
 										{error} failed
 									</span>
 								)}
 							</div>
 
 							{running.length > 0 && (
-								<ul className="m-0 flex max-h-[108px] list-none flex-col gap-[5px] overflow-y-auto p-0 text-meta font-medium">
+								<ul {...stylex.props(sx.m0, sx.flex, sx.maxH108px, sx.listNone, sx.flexCol, sx.gap5px, sx.overflowYAuto, sx.p0, sx.fontMedium, typography.meta)}>
 									{running.slice(0, 4).map((a) => (
-										<li key={a.key} className="flex min-w-0 items-center gap-[7px]">
+										<li key={a.key} {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap7px)}>
 											<i className={cn(liveDot, "size-1.5")} />
-											<span className="truncate">{a.label}</span>
+											<span {...stylex.props(sx.truncate)}>{a.label}</span>
 											{a.phase && single?.phases?.length !== 1 ? (
-												<span className="flex-none text-faint"> · {a.phase}</span>
+												<span {...stylex.props(sx.flexNone, sx.textFaint)}> · {a.phase}</span>
 											) : null}
 										</li>
 									))}
 									{running.length > 4 && (
-										<li className="flex min-w-0 flex-none items-center gap-[7px] text-faint">
+										<li {...stylex.props(sx.flex, sx.minW0, sx.flexNone, sx.itemsCenter, sx.gap7px, sx.textFaint)}>
 											+{running.length - 4} more
 										</li>
 									)}
@@ -320,7 +437,7 @@ export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 
 							<button
 								type="button"
-								className="inline-flex items-center gap-0.5 self-start rounded-full border border-line bg-[var(--bg-hover)] py-[5px] pr-2.5 pl-3 text-meta font-semibold text-fg active:bg-pressed"
+								className="active:bg-pressed" {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap05, sx.selfStart, sx.roundedFull, sx.border, sx.borderLine, sx.bgVarBgHover, sx.py5px, sx.pr25, sx.pl3, sx.fontSemibold, sx.textFg, typography.meta)}
 								onClick={onOpenPanel}
 							>
 								Open full panel

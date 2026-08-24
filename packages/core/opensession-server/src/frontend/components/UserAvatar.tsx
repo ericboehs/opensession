@@ -1,5 +1,29 @@
 import React, { useEffect, useState } from "react";
 import { cn } from "../ui/cn";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	absolute: {
+			position: "absolute"
+	},
+	inset0: {
+			inset: "0"
+	},
+	sizeFull: {
+			width: "100%",
+			height: "100%"
+	},
+	roundedInherit: {
+			borderRadius: "inherit"
+	},
+	CornerShapeInherit: {
+			cornerShape: "inherit"
+	},
+	objectCover: {
+			objectFit: "cover"
+	},
+});
 
 /**
  * GitHub logins for the team, keyed by lowercased first name — the shape of
@@ -116,7 +140,7 @@ export function UserAvatar({
 					// took the radius but kept the squircle, and only the frame's
 					// clip hid it. Inheriting the shape as well as the radius is
 					// what makes the picture the frame's shape, always.
-					className="absolute inset-0 size-full rounded-[inherit] [corner-shape:inherit] object-cover shadow-[var(--avatar-edge)]"
+					className="shadow-[var(--avatar-edge)]" {...stylex.props(sx.absolute, sx.inset0, sx.sizeFull, sx.roundedInherit, sx.CornerShapeInherit, sx.objectCover)}
 					loading="lazy"
 					draggable={false}
 					onError={() => setFailed(true)}

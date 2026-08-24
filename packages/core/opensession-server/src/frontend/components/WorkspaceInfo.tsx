@@ -79,6 +79,335 @@ import {
 	IconRobot,
 	IconStack,
 } from "./icons";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	size4px: {
+			width: "4px",
+			height: "4px"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	bgCurrent: {
+			backgroundColor: "currentColor"
+	},
+	size6: {
+			width: "24px",
+			height: "24px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	objectCover: {
+			objectFit: "cover"
+	},
+	bgActive: {
+			backgroundColor: "var(--bg-active)"
+	},
+	grid: {
+			display: "grid"
+	},
+	placeItemsCenter: {
+			placeItems: "center"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	textWhite: {
+			color: "var(--color-white)"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	right15: {
+			right: "6px"
+	},
+	top12: {
+			top: "50%"
+	},
+	z1: {
+			zIndex: "1"
+	},
+	TranslateY12: {
+			translate: "0 calc(calc(1 / 2 * 100%) * -1)"
+	},
+	roundedControl: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	borderLineStrong: {
+			borderColor: "var(--border-strong)"
+	},
+	bgPanel: {
+			backgroundColor: "var(--bg-panel)"
+	},
+	px2: {
+			paddingInline: "8px"
+	},
+	py05: {
+			paddingBlock: "2px"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	opacity0: {
+			opacity: "0"
+	},
+	transitionOpacity: {
+			transitionProperty: "opacity",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	duration150: {
+			transitionDuration: ".15s"
+	},
+	relative: {
+			position: "relative"
+	},
+	flex: {
+			display: "flex"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	roundedMd: {
+			borderRadius: "calc(7px * var(--rf))"
+	},
+	py5px: {
+			paddingBlock: "5px"
+	},
+	textLeft: {
+			textAlign: "left"
+	},
+	transitionColors: {
+			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	flex1: {
+			flex: "1"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	leading135: {
+			lineHeight: "1.35"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	gap9px: {
+			gap: "9px"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	py11px: {
+			paddingBlock: "11px"
+	},
+	contents: {
+			display: "contents"
+	},
+	minH0: {
+			minHeight: "0"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	mb15: {
+			marginBottom: "6px"
+	},
+	itemsBaseline: {
+			alignItems: "baseline"
+	},
+	justifyBetween: {
+			justifyContent: "space-between"
+	},
+	mb5px: {
+			marginBottom: "5px"
+	},
+	overflowYAuto: {
+			overflowY: "auto"
+	},
+	size4: {
+			width: "16px",
+			height: "16px"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	gap1: {
+			gap: "4px"
+	},
+	textGreen: {
+			color: "var(--green)"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	maxWFull: {
+			maxWidth: "100%"
+	},
+	py25: {
+			paddingBlock: "10px"
+	},
+	mb2: {
+			marginBottom: "8px"
+	},
+	overflowAuto: {
+			overflow: "auto"
+	},
+	Mr1: {
+			marginRight: "-4px"
+	},
+	mlAuto: {
+			marginLeft: "auto"
+	},
+	minW280px: {
+			minWidth: "280px"
+	},
+	itemsStart: {
+			alignItems: "flex-start"
+	},
+	py2: {
+			paddingBlock: "8px"
+	},
+	mt05: {
+			marginTop: "2px"
+	},
+	wFull: {
+			width: "100%"
+	},
+	gap25: {
+			gap: "10px"
+	},
+	borderB: {
+			borderBottomStyle: "solid",
+			borderBottomWidth: "1px"
+	},
+	borderDivider: {
+			borderColor: "var(--divider)"
+	},
+	px4: {
+			paddingInline: "16px"
+	},
+	py3: {
+			paddingBlock: "12px"
+	},
+	underline: {
+			textDecorationLine: "underline"
+	},
+	underlineOffset2: {
+			textUnderlineOffset: "2px"
+	},
+	minW200px: {
+			minWidth: "200px"
+	},
+	size22px: {
+			width: "22px",
+			height: "22px"
+	},
+	pb1: {
+			paddingBottom: "4px"
+	},
+	snapMandatory: {},
+	overflowXAuto: {
+			overflowX: "auto"
+	},
+	overflowYHidden: {
+			overflowY: "hidden"
+	},
+	roundedLg: {
+			borderRadius: "calc(14px * var(--rf))"
+	},
+	p3: {
+			padding: "12px"
+	},
+	ScrollPaddingLeft12px: {
+			scrollPaddingLeft: "12px"
+	},
+	ScrollbarWidthNone: {
+			scrollbarWidth: "none"
+	},
+	block: {
+			display: "block"
+	},
+	aspectVideo: {
+			aspectRatio: "var(--aspect-video)"
+	},
+	roundedCalc14pxVarRf12px: {
+			borderRadius: "calc(14px * var(--rf) - 12px)"
+	},
+	bgSurface: {
+			backgroundColor: "var(--bg)"
+	},
+	hFull: {
+			height: "100%"
+	},
+	objectContain: {
+			objectFit: "contain"
+	},
+	pointerEventsNone: {
+			pointerEvents: "none"
+	},
+	inset0: {
+			inset: "0"
+	},
+	size8: {
+			width: "32px",
+			height: "32px"
+	},
+	bgBlack45: {
+			backgroundColor: "#00000073"
+	},
+	gap4: {
+			gap: "16px"
+	},
+	pb22px: {
+			paddingBottom: "22px"
+	},
+	pt3: {
+			paddingTop: "12px"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	leadingSnug: {
+			lineHeight: "var(--leading-snug)"
+	},
+});
 
 /**
  * Workspace info block at the top of the right side panel (the "Info" tab): a
@@ -235,7 +564,7 @@ function fmtBytes(n: number): string {
 /** A dot: the mark for a file that already existed and was edited. Sized to
 		read as punctuation next to the ± counts rather than as a second glyph. */
 const STATUS_DOT = (
-	<span className="size-[4px] rounded-full bg-current" aria-hidden />
+	<span {...stylex.props(sx.size4px, sx.roundedFull, sx.bgCurrent)} aria-hidden />
 );
 /**
  * What the run did to the file, as a mark rather than a letter. A list of
@@ -307,7 +636,7 @@ function CommentAvatar({ author }: { author: string }) {
 	if (canAvatar && !failed) {
 		return (
 			<img
-				className="size-6 shrink-0 rounded-full border border-line object-cover bg-active"
+				{...stylex.props(sx.size6, sx.shrink0, sx.roundedFull, sx.border, sx.borderLine, sx.objectCover, sx.bgActive)}
 				src={`https://github.com/${login}.png?size=48`}
 				alt=""
 				aria-hidden
@@ -318,7 +647,7 @@ function CommentAvatar({ author }: { author: string }) {
 	}
 	return (
 		<span
-			className="grid size-6 shrink-0 place-items-center rounded-full border border-line bg-active text-meta font-semibold text-white"
+			{...stylex.props(sx.grid, sx.size6, sx.shrink0, sx.placeItemsCenter, sx.roundedFull, sx.border, sx.borderLine, sx.bgActive, sx.fontSemibold, sx.textWhite, typography.meta)}
 			style={{ background: `hsl(${hueFor(login || "?")} 52% 42%)` }}
 			aria-hidden
 		>
@@ -350,7 +679,7 @@ function CommentCard({
 	const addBtn = onAddToInput && (
 		<button
 			type="button"
-			className="absolute right-1.5 top-1/2 z-[1] -translate-y-1/2 rounded-control border border-line-strong bg-panel px-2 py-0.5 text-meta font-semibold text-dim opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:border-faint hover:bg-hover hover:text-fg"
+			className="group-hover:opacity-100 hover:border-faint hover:bg-hover hover:text-fg" {...stylex.props(sx.absolute, sx.right15, sx.top12, sx.z1, sx.TranslateY12, sx.roundedControl, sx.border, sx.borderLineStrong, sx.bgPanel, sx.px2, sx.py05, sx.fontSemibold, sx.textDim, sx.opacity0, sx.transitionOpacity, sx.duration150, typography.meta)}
 			onClick={(e) => {
 				e.stopPropagation();
 				onAddToInput(formatPrCommentPrompt(comment, pr));
@@ -370,7 +699,7 @@ function CommentCard({
 				openOnHover
 				delay={200}
 				closeDelay={90}
-				className="group relative flex min-w-0 items-center gap-2 rounded-md px-2 py-[5px] text-left transition-colors hover:bg-hover"
+				className="group hover:bg-hover" {...stylex.props(sx.relative, sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px2, sx.py5px, sx.textLeft, sx.transitionColors)}
 				role="button"
 				tabIndex={0}
 				onClick={() => onOpenTab?.("pr")}
@@ -380,10 +709,10 @@ function CommentCard({
 				aria-label={`Comment by ${comment.author}`}
 			>
 				{avatar}
-				<span className="min-w-0 flex-1 truncate text-supporting font-medium leading-[1.35] text-fg">
+				<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.fontMedium, sx.leading135, sx.textFg, typography.supporting)}>
 					{title}
 				</span>
-				<span className="shrink-0 text-meta text-faint">
+				<span {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}>
 					{relTime(comment.createdAt)}
 				</span>
 				{addBtn}
@@ -393,22 +722,22 @@ function CommentCard({
 				align="start"
 				sideOffset={10}
 				elevation="lg"
-				className="flex max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))] cursor-pointer gap-[9px] overflow-hidden bg-panel px-3 py-[11px]"
+				className="max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))]" {...stylex.props(sx.flex, sx.cursorPointer, sx.gap9px, sx.overflowHidden, sx.bgPanel, sx.px3, sx.py11px)}
 			>
-				<div className="contents" onClick={() => onOpenTab?.("pr")}>
+				<div {...stylex.props(sx.contents)} onClick={() => onOpenTab?.("pr")}>
 					{avatar}
-					<div className="flex min-h-0 flex-1 flex-col">
-						<div className="mb-1.5 flex min-w-0 items-baseline justify-between gap-2">
-							<span className="min-w-0 truncate text-meta font-semibold text-faint">
+					<div {...stylex.props(sx.flex, sx.minH0, sx.flex1, sx.flexCol)}>
+						<div {...stylex.props(sx.mb15, sx.flex, sx.minW0, sx.itemsBaseline, sx.justifyBetween, sx.gap2)}>
+							<span {...stylex.props(sx.minW0, sx.truncate, sx.fontSemibold, sx.textFaint, typography.meta)}>
 								{comment.author}
 							</span>
 							{comment.createdAt && (
-								<span className="shrink-0 text-meta text-faint">
+								<span {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}>
 									{relTime(comment.createdAt)}
 								</span>
 							)}
 						</div>
-					<div className="mb-[5px] min-h-0 flex-1 overflow-y-auto">
+					<div {...stylex.props(sx.mb5px, sx.minH0, sx.flex1, sx.overflowYAuto)}>
 							<MarkdownBody html={html} className="markdown" />
 						</div>
 					</div>
@@ -433,13 +762,13 @@ const PREVIEW_DIFF_OPTIONS = {
 function CommitRow({ commit }: { commit: WorkspaceCommit }) {
 	const content = (
 		<>
-			<span className="grid size-4 shrink-0 place-items-center text-faint">
+			<span {...stylex.props(sx.grid, sx.size4, sx.shrink0, sx.placeItemsCenter, sx.textFaint)}>
 				<IconGitCommit size={20} />
 			</span>
-			<span className="min-w-0 flex-1 truncate text-label text-fg">
+			<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.textFg, typography.label)}>
 				{commit.title}
 			</span>
-			<span className="shrink-0 text-meta font-medium text-dim tabular-nums">
+			<span className="tabular-nums" {...stylex.props(sx.shrink0, sx.fontMedium, sx.textDim, typography.meta)}>
 				{commit.filesChanged} file{commit.filesChanged === 1 ? "" : "s"}
 			</span>
 		</>
@@ -491,21 +820,21 @@ function FileRow({
 			themeType: theme,
 		}));
 	const stats = (
-		<span className="inline-flex shrink-0 items-center gap-1 text-meta font-semibold tabular-nums">
+		<span className="tabular-nums" {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap1, sx.fontSemibold, typography.meta)}>
 			{file.additions > 0 && (
-				<span className="text-green">+{file.additions}</span>
+				<span {...stylex.props(sx.textGreen)}>+{file.additions}</span>
 			)}
 			{file.deletions > 0 && (
-				<span className="text-red">−{file.deletions}</span>
+				<span {...stylex.props(sx.textRed)}>−{file.deletions}</span>
 			)}
 		</span>
 	);
 	// The directory is what gives, not the filename: a path long enough to cut
 	// is cut in the middle, so the name — the part being read — stays whole.
 	const path = (
-		<span className="flex min-w-0 flex-1 items-baseline text-left text-label">
-			{dir && <span className="truncate text-dim">{dir}</span>}
-			<span className="max-w-full shrink-0 truncate text-fg">{base}</span>
+		<span {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.itemsBaseline, sx.textLeft, typography.label)}>
+			{dir && <span {...stylex.props(sx.truncate, sx.textDim)}>{dir}</span>}
+			<span {...stylex.props(sx.maxWFull, sx.shrink0, sx.truncate, sx.textFg)}>{base}</span>
 		</span>
 	);
 	const mark = STATUS_MARK[file.status];
@@ -517,7 +846,7 @@ function FileRow({
 				delay={200}
 				closeDelay={90}
 				type="button"
-				className="flex min-w-0 items-center gap-2 rounded-md px-2 py-[5px] text-left transition-colors hover:bg-hover"
+				className="hover:bg-hover" {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px2, sx.py5px, sx.textLeft, sx.transitionColors)}
 				onClick={() => onOpenTab?.("changes")}
 				aria-label={`${file.path} · ${mark.label.toLowerCase()} · open in Changes`}
 			>
@@ -543,17 +872,17 @@ function FileRow({
 					align="start"
 					sideOffset={10}
 					elevation="lg"
-					className="flex max-h-[min(720px,82vh,var(--available-height))] w-[min(720px,calc(100vw-24px))] cursor-pointer flex-col overflow-hidden bg-panel px-3 py-2.5"
+					className="max-h-[min(720px,82vh,var(--available-height))] w-[min(720px,calc(100vw-24px))]" {...stylex.props(sx.flex, sx.cursorPointer, sx.flexCol, sx.overflowHidden, sx.bgPanel, sx.px3, sx.py25)}
 				>
 					<div
-						className="flex min-h-0 flex-1 flex-col overflow-hidden"
+						{...stylex.props(sx.flex, sx.minH0, sx.flex1, sx.flexCol, sx.overflowHidden)}
 						onClick={() => onOpenTab?.("changes")}
 					>
-						<div className="mb-2 flex min-w-0 items-baseline justify-between gap-2">
+						<div {...stylex.props(sx.mb2, sx.flex, sx.minW0, sx.itemsBaseline, sx.justifyBetween, sx.gap2)}>
 							{path}
 							{stats}
 						</div>
-						<div className="min-h-0 flex-1 overflow-auto text-label">
+						<div {...stylex.props(sx.minH0, sx.flex1, sx.overflowAuto, typography.label)}>
 							<FileDiff fileDiff={meta} options={options} disableWorkerPool />
 						</div>
 					</div>
@@ -736,7 +1065,7 @@ setBusy(null);
 
 	return (
 		<div data-agent-score className={INFO_SECTION_CLASS}>
-			<div className="flex items-center gap-2">
+			<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
 				{/* One section for both reviewers: the agent's reading and the
 				    teammate's request are the same question, so they share a label
 				    and a plate rather than sitting in two sections that each say
@@ -745,13 +1074,13 @@ setBusy(null);
 				{actionable && (
 					<Menu.Root>
 						<Menu.Trigger
-							className="-mr-1 ml-auto grid size-6 shrink-0 place-items-center rounded-md text-faint transition-[color,background-color] hover:bg-hover hover:text-fg disabled:opacity-50"
+							className="transition-[color,background-color] hover:bg-hover hover:text-fg disabled:opacity-50" {...stylex.props(sx.Mr1, sx.mlAuto, sx.grid, sx.size6, sx.shrink0, sx.placeItemsCenter, sx.roundedMd, sx.textFaint)}
 							disabled={busy !== null}
 							aria-label={`${AGENT_NAME} actions`}
 						>
 							<IconChevronDown size={14} />
 						</Menu.Trigger>
-						<Menu.Popup align="end" sideOffset={6} className="min-w-[280px]">
+						<Menu.Popup align="end" sideOffset={6} {...stylex.props(sx.minW280px)}>
 							<Menu.Group>
 								<Menu.GroupLabel>{AGENT_NAME} actions</Menu.GroupLabel>
 								{PR_AGENT_ACTIONS.map((action) => (
@@ -759,11 +1088,11 @@ setBusy(null);
 										key={action.kind}
 										disabled={busy !== null || (action.kind === "review" && active)}
 										onClick={() => run(action)}
-										className="items-start py-2"
+										{...stylex.props(sx.itemsStart, sx.py2)}
 									>
-										<div className="min-w-0">
-											<div className="font-semibold text-fg">{action.label}</div>
-											<div className="mt-0.5 text-supporting leading-[1.35] text-faint">
+										<div {...stylex.props(sx.minW0)}>
+											<div {...stylex.props(sx.fontSemibold, sx.textFg)}>{action.label}</div>
+											<div {...stylex.props(sx.mt05, sx.leading135, sx.textFaint, typography.supporting)}>
 												{action.hint}
 											</div>
 										</div>
@@ -807,7 +1136,7 @@ setBusy(null);
 								    the shared "Review": this line is the agent's, the one
 								    under it is the teammate's. */}
 								{AGENT_NAME}
-								<span className="text-faint"> · </span>
+								<span {...stylex.props(sx.textFaint)}> · </span>
 								{score ? (
 									<>
 									{/* No live region: the panel repolls, and a `status` role
@@ -815,10 +1144,10 @@ setBusy(null);
 									<span className={cn("font-semibold tabular-nums", scoreTone)}>
 										{score}/5
 									</span>
-										<span className="text-faint"> · </span>
+										<span {...stylex.props(sx.textFaint)}> · </span>
 									</>
 								) : null}
-								<span className="text-dim">{state}</span>
+								<span {...stylex.props(sx.textDim)}>{state}</span>
 							</span>
 						</Popover.Trigger>
 						{reviewMessage && (
@@ -826,16 +1155,16 @@ setBusy(null);
 								side="left"
 								align="start"
 								sideOffset={12}
-								className="flex max-h-[min(680px,calc(100vh-24px),var(--available-height))] w-[min(680px,calc(100vw-24px),var(--available-width))] min-h-0 overflow-hidden"
+								className="max-h-[min(680px,calc(100vh-24px),var(--available-height))] w-[min(680px,calc(100vw-24px),var(--available-width))]" {...stylex.props(sx.flex, sx.minH0, sx.overflowHidden)}
 							>
-								<div className="flex min-h-0 w-full flex-col">
-									<div className="flex items-center gap-2.5 border-b border-divider px-4 py-3">
+								<div {...stylex.props(sx.flex, sx.minH0, sx.wFull, sx.flexCol)}>
+									<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25, sx.borderB, sx.borderDivider, sx.px4, sx.py3)}>
 										<CommentAvatar author={reviewComment?.author || GITHUB_BOT_NAME || AGENT_NAME} />
-										<div className="min-w-0 flex-1">
-											<div className="truncate text-label font-semibold text-fg">
+										<div {...stylex.props(sx.minW0, sx.flex1)}>
+											<div {...stylex.props(sx.truncate, sx.fontSemibold, sx.textFg, typography.label)}>
 												{reviewComment?.author || GITHUB_BOT_NAME || AGENT_NAME}
 											</div>
-											<div className="text-meta text-faint">
+											<div {...stylex.props(sx.textFaint, typography.meta)}>
 												Automated review{reviewedAgo ? ` · reviewed ${reviewedAgo} ago` : ""}
 											</div>
 										</div>
@@ -843,7 +1172,7 @@ setBusy(null);
 											{score ?? "–"}/5
 										</span>
 									</div>
-									<div className="min-h-0 overflow-auto px-4 py-3">
+									<div {...stylex.props(sx.minH0, sx.overflowAuto, sx.px4, sx.py3)}>
 										<MarkdownBody html={reviewHtml} className="markdown review-preview-markdown" />
 									</div>
 								</div>
@@ -865,14 +1194,14 @@ setBusy(null);
 				{children}
 			</div>
 			{done && (
-				<div className="px-3 text-supporting text-dim">
+				<div {...stylex.props(sx.px3, sx.textDim, typography.supporting)}>
 					Started {done.label.toLowerCase()}. {AGENT_NAME} will post results on{" "}
 					{pr.url ? (
 						<a
 							href={pr.url}
 							target="_blank"
 							rel="noopener"
-							className="text-fg underline decoration-line-strong underline-offset-2"
+							className="decoration-line-strong" {...stylex.props(sx.textFg, sx.underline, sx.underlineOffset2)}
 						>
 							the PR
 						</a>
@@ -892,7 +1221,7 @@ setBusy(null);
 									e.preventDefault();
 									onOpenSession(done.bksId!, done.session ?? null);
 								}}
-								className="text-fg underline decoration-line-strong underline-offset-2"
+								className="decoration-line-strong" {...stylex.props(sx.textFg, sx.underline, sx.underlineOffset2)}
 							>
 								open run
 							</a>
@@ -901,7 +1230,7 @@ setBusy(null);
 				</div>
 			)}
 			{error && (
-				<div className="px-3 text-supporting text-red">
+				<div {...stylex.props(sx.px3, sx.textRed, typography.supporting)}>
 					{error}
 				</div>
 			)}
@@ -1114,7 +1443,7 @@ function ReviewerChip({
 					{rowName && (
 						<>
 							{rowName}
-							<span className="text-faint"> · </span>
+							<span {...stylex.props(sx.textFaint)}> · </span>
 						</>
 					)}
 					<span className={stateTone}>{rowState}</span>
@@ -1148,7 +1477,7 @@ function ReviewerChip({
 						</>
 					)}
 				</Menu.Trigger>
-				<Menu.Popup align="start" sideOffset={6} className="min-w-[200px]">
+				<Menu.Popup align="start" sideOffset={6} {...stylex.props(sx.minW200px)}>
 					{req &&
 						(accepted ? (
 							<Menu.Item
@@ -1158,21 +1487,21 @@ function ReviewerChip({
 										: accept(false)
 								}
 							>
-								<IconBell size={20} className="text-dim" />
-								<span className="min-w-0 flex-1 truncate">Reopen review</span>
+								<IconBell size={20} {...stylex.props(sx.textDim)} />
+								<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>Reopen review</span>
 							</Menu.Item>
 						) : (
 							<Menu.Item onClick={() => accept(true)}>
-								<IconCheck size={20} className="text-dim" />
-								<span className="min-w-0 flex-1 truncate">Mark as reviewed</span>
+								<IconCheck size={20} {...stylex.props(sx.textDim)} />
+								<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>Mark as reviewed</span>
 							</Menu.Item>
 						))}
 					{req && <Menu.Separator />}
 					{TEAM.map((name) => (
 						<Menu.Item key={name} onClick={() => pick(name)}>
 							<UserAvatar name={name} size={22} />
-							<span className="min-w-0 flex-1 truncate">{name}</span>
-							<Menu.Check on={req?.to === name} size={20} className="text-dim" />
+							<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>{name}</span>
+							<Menu.Check on={req?.to === name} size={20} {...stylex.props(sx.textDim)} />
 						</Menu.Item>
 					))}
 					{reviewTeams.length > 0 && <Menu.Separator />}
@@ -1181,17 +1510,17 @@ function ReviewerChip({
 							key={team.github}
 							onClick={() => pick(team.github, team.members)}
 						>
-							<span className="grid size-[22px] place-items-center text-dim">
+							<span {...stylex.props(sx.grid, sx.size22px, sx.placeItemsCenter, sx.textDim)}>
 								<IconStack size={20} />
 							</span>
-							<span className="min-w-0 flex-1 truncate">{team.name}</span>
-							<Menu.Check on={req?.to === team.github} size={20} className="text-dim" />
+							<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>{team.name}</span>
+							<Menu.Check on={req?.to === team.github} size={20} {...stylex.props(sx.textDim)} />
 						</Menu.Item>
 					))}
 					{(req || githubRequested.length > 0) && (
 						<>
 							<Menu.Separator />
-							<Menu.Item className="text-dim" onClick={() => pick(null)}>
+							<Menu.Item {...stylex.props(sx.textDim)} onClick={() => pick(null)}>
 								Clear review request
 							</Menu.Item>
 						</>
@@ -1200,7 +1529,7 @@ function ReviewerChip({
 			</Menu.Root>
 			</div>
 			{error && (
-				<div className="px-2 pb-1 text-meta font-medium text-red">{error}</div>
+				<div {...stylex.props(sx.px2, sx.pb1, sx.fontMedium, sx.textRed, typography.meta)}>{error}</div>
 			)}
 		</>
 	);
@@ -1306,7 +1635,7 @@ function MediaStrip({ items }: { items: StripItem[] }) {
 			// own `px-2`, which puts row content 12px off the card edge. A frame is
 			// its own content, so the card holds all 12 itself and the frames line
 			// up with the rows and the label above them.
-			className="flex snap-x snap-mandatory gap-2 overflow-x-auto overflow-y-hidden rounded-lg bg-panel p-3 [scroll-padding-left:12px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+			className="snap-x [&::-webkit-scrollbar]:hidden" {...stylex.props(sx.flex, sx.snapMandatory, sx.gap2, sx.overflowXAuto, sx.overflowYHidden, sx.roundedLg, sx.bgPanel, sx.p3, sx.ScrollPaddingLeft12px, sx.ScrollbarWidthNone)}
 		>
 			{items.map((item) => (
 				<button
@@ -1339,10 +1668,10 @@ function MediaStrip({ items }: { items: StripItem[] }) {
 						// at the same step every other image in the app is outlined
 						// with (NoteBubble, the Slack composer's thumbnails). Hover is
 						// the fill alone: there is no line above strong to escalate to.
-						className="relative block aspect-video w-full overflow-hidden rounded-[calc(14px*var(--rf)-12px)] border border-line-strong bg-surface transition-colors group-hover/frame:bg-hover"
+						className="group-hover/frame:bg-hover" {...stylex.props(sx.relative, sx.block, sx.aspectVideo, sx.wFull, sx.overflowHidden, sx.roundedCalc14pxVarRf12px, sx.border, sx.borderLineStrong, sx.bgSurface, sx.transitionColors)}
 					>
 						{item.kind === "file" ? (
-							<span className="grid h-full w-full place-items-center text-faint">
+							<span {...stylex.props(sx.grid, sx.hFull, sx.wFull, sx.placeItemsCenter, sx.textFaint)}>
 								<IconFile size={24} />
 							</span>
 						) : item.kind === "image" ? (
@@ -1352,7 +1681,7 @@ function MediaStrip({ items }: { items: StripItem[] }) {
 								loading="lazy"
 								// contain, not cover: a screenshot is only worth showing
 								// if the whole frame is there.
-								className="h-full w-full object-contain"
+								{...stylex.props(sx.hFull, sx.wFull, sx.objectContain)}
 							/>
 						) : (
 							<>
@@ -1364,12 +1693,12 @@ function MediaStrip({ items }: { items: StripItem[] }) {
 									muted
 									playsInline
 									preload="metadata"
-									className="h-full w-full object-contain"
+									{...stylex.props(sx.hFull, sx.wFull, sx.objectContain)}
 								/>
 								{/* Dark translucent disc so the wedge reads on any frame
 								    (a bare white glyph vanishes on light footage). */}
-								<span className="pointer-events-none absolute inset-0 grid place-items-center">
-									<span className="grid size-8 place-items-center rounded-full bg-black/45 text-white backdrop-blur-sm">
+								<span {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.inset0, sx.grid, sx.placeItemsCenter)}>
+									<span className="backdrop-blur-sm" {...stylex.props(sx.grid, sx.size8, sx.placeItemsCenter, sx.roundedFull, sx.bgBlack45, sx.textWhite)}>
 										<IconPlay size={18} />
 									</span>
 								</span>
@@ -1377,7 +1706,7 @@ function MediaStrip({ items }: { items: StripItem[] }) {
 						)}
 					</span>
 					{item.caption && (
-						<span className="block w-full truncate text-meta text-dim">
+						<span {...stylex.props(sx.block, sx.wFull, sx.truncate, sx.textDim, typography.meta)}>
 							{item.caption}
 						</span>
 					)}
@@ -1545,7 +1874,7 @@ export function WorkspaceInfo({
 	// page reaches it from an ancestor — `[&_.workspace-info-panel]:pt-0` in
 	// INFO_OVERVIEW (lib/session-viewer-classes).
 	return (
-		<div className="workspace-info-panel flex flex-col gap-4 px-2 pb-[22px] pt-3">
+		<div className="workspace-info-panel" {...stylex.props(sx.flex, sx.flexCol, sx.gap4, sx.px2, sx.pb22px, sx.pt3)}>
 			{/* Both reviewers in one section. With a PR the agent's card owns the
 			    plate and the teammate's row goes in under it; without one there is
 			    no agent reading to show, so the row stands in its own section. */}
@@ -1568,7 +1897,7 @@ export function WorkspaceInfo({
 				// `px-3`, the label inset: the badge is a section's worth of content
 				// with no plate under it, so it lines up with the labels rather than
 				// with the rows inside a plate.
-				<div className="flex flex-wrap items-center gap-1.5 px-3">
+				<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap15, sx.px3)}>
 					<SandboxBadge sessionId={sessionId} sandbox={sandbox} />
 				</div>
 			)}
@@ -1576,7 +1905,7 @@ export function WorkspaceInfo({
 				<GitStatusRows sessionId={sessionId} git={git} send={send} />
 			)}
 			{hasBody ? (
-				<div className="grid gap-4">
+				<div {...stylex.props(sx.grid, sx.gap4)}>
 					{comments.length > 0 && (
 						<div className={INFO_SECTION_CLASS}>
 							<div className={cn(INFO_LABEL_CLASS, "flex items-center justify-between gap-2")}>
@@ -1586,7 +1915,7 @@ export function WorkspaceInfo({
 								{onAddToInput && (
 									<button
 										type="button"
-										className="rounded-control border border-line bg-surface px-2 py-0.5 text-meta font-semibold text-dim transition-colors hover:border-line-strong hover:bg-hover hover:text-fg"
+										className="hover:border-line-strong hover:bg-hover hover:text-fg" {...stylex.props(sx.roundedControl, sx.border, sx.borderLine, sx.bgSurface, sx.px2, sx.py05, sx.fontSemibold, sx.textDim, sx.transitionColors, typography.meta)}
 										onClick={() =>
 											onAddToInput(formatFixCommentsPrompt(comments, pr!))
 										}
@@ -1639,12 +1968,12 @@ export function WorkspaceInfo({
 								<span>
 									{changed.length} file{changed.length === 1 ? "" : "s"} changed
 								</span>
-								<span className="inline-flex shrink-0 items-center gap-1 text-meta font-semibold tabular-nums">
+								<span className="tabular-nums" {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap1, sx.fontSemibold, typography.meta)}>
 									{totalAdd > 0 && (
-										<span className="text-green">+{totalAdd}</span>
+										<span {...stylex.props(sx.textGreen)}>+{totalAdd}</span>
 									)}
 									{totalDel > 0 && (
-										<span className="text-red">−{totalDel}</span>
+										<span {...stylex.props(sx.textRed)}>−{totalDel}</span>
 									)}
 								</span>
 							</div>
@@ -1708,7 +2037,7 @@ export function WorkspaceInfo({
 								)}
 							>
 								<span>Assets</span>
-								<span className="flex items-center gap-1.5">
+								<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap15)}>
 									<AssetViewToggle mode={assetView} onChange={setAssetView} />
 									<span className="tabular-nums">{assets.length}</span>
 								</span>
@@ -1781,15 +2110,15 @@ export function WorkspaceInfo({
 													)}
 												/>
 											)}
-											<span className="min-w-0 flex-1">
-												<span className="block truncate">{a.path}</span>
+											<span {...stylex.props(sx.minW0, sx.flex1)}>
+												<span {...stylex.props(sx.block, sx.truncate)}>{a.path}</span>
 												{a.description && (
-													<span className="mt-0.5 line-clamp-2 text-supporting leading-snug text-dim">
+													<span className="line-clamp-2" {...stylex.props(sx.mt05, sx.leadingSnug, sx.textDim, typography.supporting)}>
 														{a.description}
 													</span>
 												)}
 											</span>
-											<span className="shrink-0 text-meta text-faint">
+											<span {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}>
 												{fmtBytes(a.size)}
 											</span>
 										</button>

@@ -1,6 +1,174 @@
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import React, { useEffect, useRef, useState } from "react";
 import type { PrFile } from "../../lib/types";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	sticky: {
+			position: "sticky"
+	},
+	mb2: {
+			marginBottom: "8px"
+	},
+	ml2: {
+			marginLeft: "8px"
+	},
+	flex: {
+			display: "flex"
+	},
+	minH0: {
+			minHeight: "0"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	roundedLg: {
+			borderRadius: "calc(14px * var(--rf))"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	bgSurface: {
+			backgroundColor: "var(--bg)"
+	},
+	h11: {
+			height: "44px"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	fontNormal: {
+			fontWeight: "var(--font-weight-normal)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	overflowYAuto: {
+			overflowY: "auto"
+	},
+	px1: {
+			paddingInline: "4px"
+	},
+	py15: {
+			paddingBlock: "6px"
+	},
+	m0: {
+			margin: "0"
+	},
+	px2: {
+			paddingInline: "8px"
+	},
+	py3: {
+			paddingBlock: "12px"
+	},
+	block: {
+			display: "block"
+	},
+	hFull: {
+			height: "100%"
+	},
+	ColorSchemeDark: {
+			colorScheme: "dark"
+	},
+	TreesAccentOverrideVarAccent: {},
+	TreesBgOverrideTransparent: {},
+	TreesBorderColorOverrideVarDivider: {},
+	TreesFgMutedOverrideVarTextFaint: {},
+	TreesFgOverrideVarTextDim: {},
+	TreesFocusRingColorOverrideVarAccent: {},
+	TreesSelectedBgOverrideVarSelected: {},
+	TreesSelectedFgOverrideVarText: {},
+	gap05: {
+			gap: "2px"
+	},
+	minH8: {
+			minHeight: "32px"
+	},
+	roundedRow: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	border0: {
+			borderStyle: "solid",
+			borderWidth: "0"
+	},
+	bgTransparent: {
+			backgroundColor: "#0000"
+	},
+	textLeft: {
+			textAlign: "left"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	ml1: {
+			marginLeft: "4px"
+	},
+	gap1: {
+			gap: "4px"
+	},
+	textGreen: {
+			color: "var(--green)"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	insetY0: {
+			insetBlock: "0"
+	},
+	Right1: {
+			right: "-4px"
+	},
+	z10: {
+			zIndex: "10"
+	},
+	w9px: {
+			width: "9px"
+	},
+	cursorColResize: {
+			cursor: "col-resize"
+	},
+	touchNone: {
+			touchAction: "none"
+	},
+});
 
 const WIDTH_KEY = "opensession-pr-file-tree-width";
 const DEFAULT_WIDTH = 300;
@@ -132,30 +300,30 @@ export function PrFileTree({
       ref={rootRef}
       id="pr-file-tree"
       aria-label="Changed files"
-      className="sticky top-[var(--review-file-tree-top,0px)] mb-2 ml-2 mt-[var(--review-file-tree-gap,8px)] flex max-h-[calc(100dvh-var(--review-file-tree-top,0px)-16px)] min-h-0 shrink-0 flex-col rounded-lg border border-line bg-surface desktop:max-h-[calc(100dvh-var(--desktop-header-h)-var(--review-file-tree-top,0px)-16px)]"
+      className="top-[var(--review-file-tree-top,0px)] mt-[var(--review-file-tree-gap,8px)] max-h-[calc(100dvh-var(--review-file-tree-top,0px)-16px)] desktop:max-h-[calc(100dvh-var(--desktop-header-h)-var(--review-file-tree-top,0px)-16px)]" {...stylex.props(sx.sticky, sx.mb2, sx.ml2, sx.flex, sx.minH0, sx.shrink0, sx.flexCol, sx.roundedLg, sx.border, sx.borderLine, sx.bgSurface)}
       style={{
         width: renderedWidth,
         maxWidth: `calc(100% - ${MIN_DIFF_WIDTH}px)`,
       }}
     >
-      <div className="flex h-11 shrink-0 items-center gap-2 px-3 text-label font-medium text-fg shadow-[inset_0_-1px_0_var(--divider)]">
-        <span className="min-w-0 flex-1 truncate">Changed files</span>
-        <span className="text-meta font-normal tabular-nums text-faint">
+      <div className="shadow-[inset_0_-1px_0_var(--divider)]" {...stylex.props(sx.flex, sx.h11, sx.shrink0, sx.itemsCenter, sx.gap2, sx.px3, sx.fontMedium, sx.textFg, typography.label)}>
+        <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>Changed files</span>
+        <span className="tabular-nums" {...stylex.props(sx.fontNormal, sx.textFaint, typography.meta)}>
           {files.length}
         </span>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1.5">
+      <div {...stylex.props(sx.minH0, sx.flex1, sx.overflowYAuto, sx.px1, sx.py15)}>
         {files.length === 0 ? (
-          <p className="m-0 px-2 py-3 text-label text-faint">
+          <p {...stylex.props(sx.m0, sx.px2, sx.py3, sx.textFaint, typography.label)}>
             No files to review
           </p>
         ) : mode === "tree" ? (
           <FileTree
             model={model}
-            className="block h-full [color-scheme:dark] [--trees-accent-override:var(--accent)] [--trees-bg-override:transparent] [--trees-border-color-override:var(--divider)] [--trees-fg-muted-override:var(--text-faint)] [--trees-fg-override:var(--text-dim)] [--trees-focus-ring-color-override:var(--accent)] [--trees-selected-bg-override:var(--selected)] [--trees-selected-fg-override:var(--text)]"
+            {...stylex.props(sx.block, sx.hFull, sx.ColorSchemeDark, sx.TreesAccentOverrideVarAccent, sx.TreesBgOverrideTransparent, sx.TreesBorderColorOverrideVarDivider, sx.TreesFgMutedOverrideVarTextFaint, sx.TreesFgOverrideVarTextDim, sx.TreesFocusRingColorOverrideVarAccent, sx.TreesSelectedBgOverrideVarSelected, sx.TreesSelectedFgOverrideVarText)}
           />
         ) : (
-          <div className="flex flex-col gap-0.5">
+          <div {...stylex.props(sx.flex, sx.flexCol, sx.gap05)}>
             {files.map((file) => {
               const slash = file.path.lastIndexOf("/");
               const dir = slash >= 0 ? file.path.slice(0, slash + 1) : "";
@@ -164,25 +332,25 @@ export function PrFileTree({
                 <button
                   key={file.path}
                   type="button"
-                  className="group flex min-h-8 min-w-0 items-center gap-2 rounded-row border-0 bg-transparent px-2 text-left text-label text-dim hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+                  className="group hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent" {...stylex.props(sx.flex, sx.minH8, sx.minW0, sx.itemsCenter, sx.gap2, sx.roundedRow, sx.border0, sx.bgTransparent, sx.px2, sx.textLeft, sx.textDim, typography.label)}
                   title={file.path}
                   onClick={() => onOpenFile(file.path)}
                 >
-                  <span className="flex min-w-0 flex-1 overflow-hidden">
-                    <span className="shrink-0 font-medium text-fg">{base}</span>
+                  <span {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.overflowHidden)}>
+                    <span {...stylex.props(sx.shrink0, sx.fontMedium, sx.textFg)}>{base}</span>
                     {dir && (
-                      <span className="ml-1 min-w-0 truncate text-faint">
+                      <span {...stylex.props(sx.ml1, sx.minW0, sx.truncate, sx.textFaint)}>
                         {dir}
                       </span>
                     )}
                   </span>
                   {showFileStats && (
-                    <span className="flex shrink-0 gap-1 text-meta tabular-nums">
+                    <span className="tabular-nums" {...stylex.props(sx.flex, sx.shrink0, sx.gap1, typography.meta)}>
                       {file.additions > 0 && (
-                        <span className="text-green">+{file.additions}</span>
+                        <span {...stylex.props(sx.textGreen)}>+{file.additions}</span>
                       )}
                       {file.deletions > 0 && (
-                        <span className="text-red">−{file.deletions}</span>
+                        <span {...stylex.props(sx.textRed)}>−{file.deletions}</span>
                       )}
                     </span>
                   )}
@@ -200,7 +368,7 @@ export function PrFileTree({
         aria-valuemax={maxWidth}
         aria-valuenow={Math.round(renderedWidth)}
         tabIndex={0}
-        className="absolute inset-y-0 -right-1 z-10 w-[9px] cursor-col-resize touch-none after:absolute after:inset-y-1 after:left-1 after:w-px after:bg-transparent after:transition-[background-color] after:content-[''] hover:after:bg-accent focus-visible:outline-none focus-visible:after:bg-accent [body.resizing-pr-file-tree_&]:after:bg-accent"
+        className="after:absolute after:inset-y-1 after:left-1 after:w-px after:bg-transparent after:transition-[background-color] after:content-[''] hover:after:bg-accent focus-visible:outline-none focus-visible:after:bg-accent [body.resizing-pr-file-tree_&]:after:bg-accent" {...stylex.props(sx.absolute, sx.insetY0, sx.Right1, sx.z10, sx.w9px, sx.cursorColResize, sx.touchNone)}
         onPointerDown={startResize}
         onDoubleClick={() => commitWidth(DEFAULT_WIDTH)}
         onKeyDown={(event) => {

@@ -11,6 +11,54 @@ import {
 	popupSurfaceClasses,
 } from "./popup-classes";
 import { restoreSelectFocusAfterClose } from "./select-focus";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	colStart1: {
+			gridColumnStart: "1"
+	},
+	rowStart1: {
+			gridRowStart: "1"
+	},
+	flex: {
+			display: "flex"
+	},
+	size4: {
+			width: "16px",
+			height: "16px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	size17px: {
+			width: "17px",
+			height: "17px"
+	},
+	textAccent: {
+			color: "var(--accent)"
+	},
+});
 
 /**
  * Select on Base UI parts: a field-shaped trigger that opens the app's own
@@ -126,7 +174,7 @@ function Trigger(triggerProps: TriggerProps) {
 			)}
 		>
 			{iconSlot && (
-				<span className="col-start-1 row-start-1 flex size-4 shrink-0 items-center justify-center text-dim">
+				<span {...stylex.props(sx.colStart1, sx.rowStart1, sx.flex, sx.size4, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textDim)}>
 					{icon}
 				</span>
 			)}
@@ -209,19 +257,19 @@ function Item(itemProps: ItemProps) {
 				className,
 			)}
 		>
-			<span className="flex min-w-0 items-center gap-2">
+			<span {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
 				{iconSlot && (
-					<span className="flex size-4 shrink-0 items-center justify-center text-dim">
+					<span {...stylex.props(sx.flex, sx.size4, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textDim)}>
 						{icon}
 					</span>
 				)}
-				<BaseSelect.ItemText className="min-w-0 truncate">{children}</BaseSelect.ItemText>
+				<BaseSelect.ItemText {...stylex.props(sx.minW0, sx.truncate)}>{children}</BaseSelect.ItemText>
 			</span>
 			{/* The tick's column is reserved on every row, the way `ui/menu`'s
 			    `Check` reserves it: an indicator that only takes space while
 			    selected makes the picked row wider than the rest, so the popup
 			    is a different width depending on what is selected. */}
-			<span className="flex size-[17px] shrink-0 items-center justify-center text-accent">
+			<span {...stylex.props(sx.flex, sx.size17px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textAccent)}>
 				<BaseSelect.ItemIndicator>
 					<IconCheck size={17} />
 				</BaseSelect.ItemIndicator>

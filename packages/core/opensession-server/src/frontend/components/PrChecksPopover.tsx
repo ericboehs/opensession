@@ -7,6 +7,114 @@ import {
 import type { PrCheck } from "../lib/types";
 import { Popover } from "../ui/popover";
 import { CheckStatusIcon } from "./CheckStatusIcon";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	p0: {
+			padding: "0"
+	},
+	itemsBaseline: {
+			alignItems: "baseline"
+	},
+	justifyBetween: {
+			justifyContent: "space-between"
+	},
+	gap25: {
+			gap: "10px"
+	},
+	borderB: {
+			borderBottomStyle: "solid",
+			borderBottomWidth: "1px"
+	},
+	borderDivider: {
+			borderColor: "var(--divider)"
+	},
+	bgSurface: {
+			backgroundColor: "var(--bg)"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	py9px: {
+			paddingBlock: "9px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	textGreen: {
+			color: "var(--green)"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	textYellow: {
+			color: "var(--yellow)"
+	},
+	overflowYAuto: {
+			overflowY: "auto"
+	},
+	p1: {
+			padding: "4px"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap9px: {
+			gap: "9px"
+	},
+	roundedMd: {
+			borderRadius: "calc(7px * var(--rf))"
+	},
+	px2: {
+			paddingInline: "8px"
+	},
+	py15: {
+			paddingBlock: "6px"
+	},
+	noUnderline: {
+			textDecorationLine: "none"
+	},
+});
 
 /** A shared checks preview: hover for detail, click its trigger to open Review's Checks tab. */
 export function PrChecksPopover({
@@ -59,19 +167,19 @@ export function PrChecksPopover({
 				side="left"
 				align="start"
 				sideOffset={10}
-				className="flex max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))] flex-col overflow-hidden p-0"
+				className="max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))]" {...stylex.props(sx.flex, sx.flexCol, sx.overflowHidden, sx.p0)}
 			>
-				<div className="flex items-baseline justify-between gap-2.5 border-b border-divider bg-surface px-3 py-[9px]">
-					<span className="text-label font-semibold text-fg">
+				<div {...stylex.props(sx.flex, sx.itemsBaseline, sx.justifyBetween, sx.gap25, sx.borderB, sx.borderDivider, sx.bgSurface, sx.px3, sx.py9px)}>
+					<span {...stylex.props(sx.fontSemibold, sx.textFg, typography.label)}>
 						{sorted.length} check{sorted.length === 1 ? "" : "s"}
 					</span>
-					<span className="inline-flex gap-2 text-meta font-semibold">
-						{summary.passed > 0 && <span className="text-green">{summary.passed} passed</span>}
-						{summary.failed > 0 && <span className="text-red">{summary.failed} failed</span>}
-						{summary.pending > 0 && <span className="text-yellow">{summary.pending} running</span>}
+					<span {...stylex.props(sx.inlineFlex, sx.gap2, sx.fontSemibold, typography.meta)}>
+						{summary.passed > 0 && <span {...stylex.props(sx.textGreen)}>{summary.passed} passed</span>}
+						{summary.failed > 0 && <span {...stylex.props(sx.textRed)}>{summary.failed} failed</span>}
+						{summary.pending > 0 && <span {...stylex.props(sx.textYellow)}>{summary.pending} running</span>}
 					</span>
 				</div>
-				<div className="overflow-y-auto p-1">
+				<div {...stylex.props(sx.overflowYAuto, sx.p1)}>
 					{sorted.map((check, i) => {
 						const status = checkStatusMeta(check);
 						const content = (
@@ -79,10 +187,10 @@ export function PrChecksPopover({
 								<span className={`inline-flex size-4 shrink-0 ${checkToneClass(status.kind)}`}>
 									<CheckStatusIcon kind={status.kind} />
 								</span>
-								<span className="min-w-0 flex-1 truncate text-label font-medium text-fg">
+								<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.fontMedium, sx.textFg, typography.label)}>
 									{check.name}
 								</span>
-								<span className="shrink-0 text-label font-medium text-dim">
+								<span {...stylex.props(sx.shrink0, sx.fontMedium, sx.textDim, typography.label)}>
 									{status.label}
 								</span>
 							</>
@@ -90,7 +198,7 @@ export function PrChecksPopover({
 						return check.url ? (
 							<a
 								key={`${check.name}:${i}`}
-								className="flex items-center gap-[9px] rounded-md px-2 py-1.5 text-fg no-underline hover:bg-surface"
+								className="hover:bg-surface" {...stylex.props(sx.flex, sx.itemsCenter, sx.gap9px, sx.roundedMd, sx.px2, sx.py15, sx.textFg, sx.noUnderline)}
 								href={check.url}
 								target="_blank"
 								rel="noopener"
@@ -98,7 +206,7 @@ export function PrChecksPopover({
 								{content}
 							</a>
 						) : (
-							<div key={`${check.name}:${i}`} className="flex items-center gap-[9px] rounded-md px-2 py-1.5 text-fg">
+							<div key={`${check.name}:${i}`} {...stylex.props(sx.flex, sx.itemsCenter, sx.gap9px, sx.roundedMd, sx.px2, sx.py15, sx.textFg)}>
 								{content}
 							</div>
 						);

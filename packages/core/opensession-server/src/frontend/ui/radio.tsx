@@ -2,6 +2,21 @@ import * as React from "react";
 import { Radio as BaseRadio } from "@base-ui/react/radio";
 import { RadioGroup as BaseRadioGroup } from "@base-ui/react/radio-group";
 import { cn } from "./cn";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	size15: {
+			width: "6px",
+			height: "6px"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	bgOnAccentControl: {
+			backgroundColor: "var(--on-accent-control,var(--on-accent))"
+	},
+});
 
 type RadioProps = React.ComponentProps<typeof BaseRadio.Root>;
 type RadioGroupProps = React.ComponentProps<typeof BaseRadioGroup>;
@@ -21,7 +36,7 @@ export function Radio({ className, ...props }: RadioProps) {
 			)}
 			{...props}
 		>
-			<BaseRadio.Indicator className="size-1.5 rounded-full bg-on-accent-control" />
+			<BaseRadio.Indicator {...stylex.props(sx.size15, sx.roundedFull, sx.bgOnAccentControl)} />
 		</BaseRadio.Root>
 	);
 }

@@ -76,6 +76,112 @@ import {
 	IconRobot,
 	IconStack,
 } from "./icons";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	textGreen: {
+			color: "var(--green)"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	pb1: {
+			paddingBottom: "4px"
+	},
+	mx2: {
+			marginInline: "8px"
+	},
+	flex: {
+			display: "flex"
+	},
+	minH7: {
+			minHeight: "28px"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	px2: {
+			paddingInline: "8px"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	minH6: {
+			minHeight: "24px"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	px4: {
+			paddingInline: "16px"
+	},
+	py1: {
+			paddingBlock: "4px"
+	},
+	minW200px: {
+			minWidth: "200px"
+	},
+	flex1: {
+			flex: "1"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	grid: {
+			display: "grid"
+	},
+	size22px: {
+			width: "22px",
+			height: "22px"
+	},
+	placeItemsCenter: {
+			placeItems: "center"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	hFull: {
+			height: "100%"
+	},
+	wFull: {
+			width: "100%"
+	},
+	objectContain: {
+			objectFit: "contain"
+	},
+	pointerEventsNone: {
+			pointerEvents: "none"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	inset0: {
+			inset: "0"
+	},
+	size7: {
+			width: "28px",
+			height: "28px"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	bgBlack45: {
+			backgroundColor: "#00000073"
+	},
+	textWhite: {
+			color: "var(--color-white)"
+	},
+});
 
 /**
  * The session header's compact stand-in for the right Workspace panel: one
@@ -765,8 +871,8 @@ setFixBusy(false);
 					</span>
 					<span className={WS_SUMMARY_LABEL}>{label}</span>
 					<span className={WS_SUMMARY_COUNT}>
-						<span className="text-green">+{additions}</span>{" "}
-						<span className="text-red">−{deletions}</span>
+						<span {...stylex.props(sx.textGreen)}>+{additions}</span>{" "}
+						<span {...stylex.props(sx.textRed)}>−{deletions}</span>
 					</span>
 					{reviewMode && (
 						<IconChevronDown
@@ -779,11 +885,11 @@ setFixBusy(false);
 					)}
 				</button>
 				{reviewMode && changesOpen && pr?.files?.length ? (
-					<div className="pb-1">
+					<div {...stylex.props(sx.pb1)}>
 						{pr.files.map((file) => (
 							<div
 								key={file.path}
-								className="mx-2 flex min-h-7 min-w-0 items-center gap-1.5 px-2 text-label text-dim"
+								{...stylex.props(sx.mx2, sx.flex, sx.minH7, sx.minW0, sx.itemsCenter, sx.gap15, sx.px2, sx.textDim, typography.label)}
 							>
 								<span className={WS_SUMMARY_RAIL} aria-hidden />
 								<span className={WS_SUMMARY_LABEL} title={file.path}>
@@ -791,10 +897,10 @@ setFixBusy(false);
 								</span>
 								<span className={WS_SUMMARY_COUNT}>
 									{file.additions > 0 && (
-										<span className="text-green">+{file.additions}</span>
+										<span {...stylex.props(sx.textGreen)}>+{file.additions}</span>
 									)}{" "}
 									{file.deletions > 0 && (
-										<span className="text-red">−{file.deletions}</span>
+										<span {...stylex.props(sx.textRed)}>−{file.deletions}</span>
 									)}
 								</span>
 							</div>
@@ -971,7 +1077,7 @@ setFixBusy(false);
 						<Button
 							variant="ghost"
 							size="sm"
-							className="min-h-6 px-2 text-meta phone:min-h-11"
+							className="phone:min-h-11" {...stylex.props(sx.minH6, sx.px2, typography.meta)}
 							onClick={() => go(onOpenPr)}
 						>
 							Open
@@ -1014,14 +1120,14 @@ setFixBusy(false);
 							{AGENT_NAME}
 							{osReviewActive ? (
 								<>
-									<span className="text-faint"> · </span>
-									<span className="text-dim">
+									<span {...stylex.props(sx.textFaint)}> · </span>
+									<span {...stylex.props(sx.textDim)}>
 										{reviewCancelling ? "Cancelling…" : "Reviewing…"}
 									</span>
 								</>
 							) : osScore ? (
 								<>
-									<span className="text-faint"> · </span>
+									<span {...stylex.props(sx.textFaint)}> · </span>
 									<span className={cn("tabular-nums", osScoreTone)}>{osScore}/5</span>
 								</>
 							) : null}
@@ -1050,7 +1156,7 @@ setFixBusy(false);
 						)}
 					</button>
 					{fixError && (
-						<div className="px-4 py-1 text-supporting text-red" role="alert">
+						<div {...stylex.props(sx.px4, sx.py1, sx.textRed, typography.supporting)} role="alert">
 							{fixError}
 						</div>
 					)}
@@ -1118,16 +1224,16 @@ setFixBusy(false);
 					<Menu.Popup
 						align="end"
 						sideOffset={6}
-						className="min-w-[200px]"
+						{...stylex.props(sx.minW200px)}
 					>
 						{people.map((person) => (
 							<Menu.Item key={person.name} onClick={() => pickReviewer(person.name)}>
 								<UserAvatar name={person.name} size={22} />
-								<span className="min-w-0 flex-1 truncate">{person.name}</span>
+								<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>{person.name}</span>
 								<Menu.Check
 									on={selectedReview?.to === person.name}
 									size={20}
-									className="text-dim"
+									{...stylex.props(sx.textDim)}
 								/>
 							</Menu.Item>
 						))}
@@ -1137,14 +1243,14 @@ setFixBusy(false);
 								key={team.github}
 								onClick={() => pickReviewer(team.github, team.members)}
 							>
-								<span className="grid size-[22px] place-items-center text-dim">
+								<span {...stylex.props(sx.grid, sx.size22px, sx.placeItemsCenter, sx.textDim)}>
 									<IconStack size={20} />
 								</span>
-								<span className="min-w-0 flex-1 truncate">{team.name}</span>
+								<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>{team.name}</span>
 								<Menu.Check
 									on={selectedReview?.to === team.github}
 									size={20}
-									className="text-dim"
+									{...stylex.props(sx.textDim)}
 								/>
 							</Menu.Item>
 						))}
@@ -1152,7 +1258,7 @@ setFixBusy(false);
 				</Menu.Root>
 			)}
 				{reviewError && (
-					<div className="px-4 py-1 text-meta font-medium text-red">{reviewError}</div>
+					<div {...stylex.props(sx.px4, sx.py1, sx.fontMedium, sx.textRed, typography.meta)}>{reviewError}</div>
 				)}
 			</div>
 
@@ -1269,10 +1375,10 @@ setFixBusy(false);
 												muted
 												playsInline
 												preload="metadata"
-												className="h-full w-full object-contain"
+												{...stylex.props(sx.hFull, sx.wFull, sx.objectContain)}
 											/>
-											<span className="pointer-events-none absolute inset-0 grid place-items-center">
-												<span className="grid size-7 place-items-center rounded-full bg-black/45 text-white backdrop-blur-sm">
+											<span {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.inset0, sx.grid, sx.placeItemsCenter)}>
+												<span className="backdrop-blur-sm" {...stylex.props(sx.grid, sx.size7, sx.placeItemsCenter, sx.roundedFull, sx.bgBlack45, sx.textWhite)}>
 													<IconPlay size={16} />
 												</span>
 											</span>
@@ -1282,7 +1388,7 @@ setFixBusy(false);
 											src={item.src}
 											alt=""
 											loading="lazy"
-											className="h-full w-full object-contain"
+											{...stylex.props(sx.hFull, sx.wFull, sx.objectContain)}
 										/>
 									)}
 								</span>
@@ -1300,7 +1406,7 @@ setFixBusy(false);
 							"group/assets justify-between gap-2",
 						)}
 					>
-						<span className="flex items-center gap-1.5">
+						<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap15)}>
 							<span>Assets</span>
 							<span className={cn(WS_SUMMARY_COUNT, "text-faint")}>
 								{assets.length}
@@ -1333,10 +1439,10 @@ setFixBusy(false);
 													muted
 													playsInline
 													preload="metadata"
-													className="h-full w-full object-contain"
+													{...stylex.props(sx.hFull, sx.wFull, sx.objectContain)}
 												/>
-												<span className="pointer-events-none absolute inset-0 grid place-items-center">
-													<span className="grid size-7 place-items-center rounded-full bg-black/45 text-white backdrop-blur-sm">
+												<span {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.inset0, sx.grid, sx.placeItemsCenter)}>
+													<span className="backdrop-blur-sm" {...stylex.props(sx.grid, sx.size7, sx.placeItemsCenter, sx.roundedFull, sx.bgBlack45, sx.textWhite)}>
 														<IconPlay size={16} />
 													</span>
 												</span>
@@ -1346,13 +1452,13 @@ setFixBusy(false);
 												src={sessionAssetPreviewUrl(session.id, file)}
 												alt=""
 												loading="lazy"
-												className="h-full w-full object-contain"
+												{...stylex.props(sx.hFull, sx.wFull, sx.objectContain)}
 											/>
 										) : (
 											// A report or a data file has no picture to show, so it
 											// holds the same tile with a glyph in it rather than
 											// dropping out of the set and stranding itself below.
-											<span className="grid h-full w-full place-items-center text-faint">
+											<span {...stylex.props(sx.grid, sx.hFull, sx.wFull, sx.placeItemsCenter, sx.textFaint)}>
 												<IconFile size={22} />
 											</span>
 										)}

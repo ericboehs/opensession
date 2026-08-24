@@ -2,6 +2,41 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { cn } from "./cn";
 import { PhoneTopBarAction } from "./top-bar";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	touchNone: {
+			touchAction: "none"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	pb15: {
+			paddingBottom: "6px"
+	},
+	pt25: {
+			paddingTop: "10px"
+	},
+	h5px: {
+			height: "5px"
+	},
+	w9: {
+			width: "36px"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	bgActive: {
+			backgroundColor: "var(--bg-active)"
+	},
+});
 
 /**
  * The app's sheet/dialog language for surfaces that own their own open state —
@@ -281,12 +316,12 @@ export function ResponsiveDialog({
 			>
 				{phone && !phonePage && showPhoneGrabber && (
 					<div
-						className="flex shrink-0 touch-none justify-center pb-1.5 pt-2.5"
+						{...stylex.props(sx.flex, sx.shrink0, sx.touchNone, sx.justifyCenter, sx.pb15, sx.pt25)}
 						onTouchStart={onTouchStart}
 						onTouchMove={onTouchMove}
 						onTouchEnd={onTouchEnd}
 					>
-						<div className="h-[5px] w-9 rounded-full bg-active" />
+						<div {...stylex.props(sx.h5px, sx.w9, sx.roundedFull, sx.bgActive)} />
 					</div>
 				)}
 				{typeof children === "function" ? children(onClose) : children}

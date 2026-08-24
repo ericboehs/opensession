@@ -53,6 +53,240 @@ import {
   relativeTime,
   type CodeStorageStatus,
 } from "../lib/api";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	grid: {
+			display: "grid"
+	},
+	gap25: {
+			gap: "10px"
+	},
+	flex: {
+			display: "flex"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	p35: {
+			padding: "14px"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	size30px: {
+			width: "30px",
+			height: "30px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	roundedControl: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	w38: {
+			width: "38%"
+	},
+	mlAuto: {
+			marginLeft: "auto"
+	},
+	h5: {
+			height: "20px"
+	},
+	w16: {
+			width: "64px"
+	},
+	rounded999px: {
+			borderRadius: "999px"
+	},
+	h25: {
+			height: "10px"
+	},
+	w72: {
+			width: "72%"
+	},
+	w34: {
+			width: "34%"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	leadingSnug: {
+			lineHeight: "var(--leading-snug)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	itemsStart: {
+			alignItems: "flex-start"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	px5: {
+			paddingInline: "20px"
+	},
+	py3: {
+			paddingBlock: "12px"
+	},
+	transitionColors: {
+			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	flexShrink0: {
+			flexShrink: "0"
+	},
+	gap1: {
+			gap: "4px"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	bgActive: {
+			backgroundColor: "var(--bg-active)"
+	},
+	px15: {
+			paddingInline: "6px"
+	},
+	py05: {
+			paddingBlock: "2px"
+	},
+	textGreen: {
+			color: "var(--green)"
+	},
+	mt05: {
+			marginTop: "2px"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	rounded: {
+			borderRadius: "var(--radius-xs)"
+	},
+	pyPx: {
+			paddingBlock: "1px"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	mt3px: {
+			marginTop: "3px"
+	},
+	gap4: {
+			gap: "16px"
+	},
+	fontMono: {
+			fontFamily: "var(--mono)"
+	},
+	mrAuto: {
+			marginRight: "auto"
+	},
+	underline: {
+			textDecorationLine: "underline"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	py35: {
+			paddingBlock: "14px"
+	},
+	gapX2: {
+			columnGap: "8px"
+	},
+	gapY1: {
+			rowGap: "4px"
+	},
+	gapX3: {
+			columnGap: "12px"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	ml2: {
+			marginLeft: "8px"
+	},
+	fontNormal: {
+			fontWeight: "var(--font-weight-normal)"
+	},
+	selfStart: {
+			alignSelf: "flex-start"
+	},
+	roundedSm: {
+			borderRadius: "calc(4px * var(--rf))"
+	},
+	bgSurface: {
+			backgroundColor: "var(--bg)"
+	},
+	px1: {
+			paddingInline: "4px"
+	},
+	text092em: {
+			fontSize: ".92em"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	py25: {
+			paddingBlock: "10px"
+	},
+	borderT: {
+			borderTopStyle: "solid",
+			borderTopWidth: "1px"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	maxW340px: {
+			maxWidth: "340px"
+	},
+	maxW720px: {
+			maxWidth: "720px"
+	},
+	mb2: {
+			marginBottom: "8px"
+	},
+	leading145: {
+			lineHeight: "1.45"
+	},
+	whitespaceNowrap: {
+			whiteSpace: "nowrap"
+	},
+	mt15: {
+			marginTop: "6px"
+	},
+	mb18px: {
+			marginBottom: "18px"
+	},
+	gap35: {
+			gap: "14px"
+	},
+});
 
 interface McpConnection {
   name: string;
@@ -137,17 +371,17 @@ function ConnectionsSkeleton() {
       <SectionHeading>Agents: how work reaches {AGENT_NAME}</SectionHeading>
       <Skeleton
         label="Checking connections"
-        className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-2.5"
+        className="grid-cols-[repeat(auto-fill,minmax(230px,1fr))]" {...stylex.props(sx.grid, sx.gap25)}
       >
         {Array.from({ length: 3 }, (_, index) => (
-          <SettingsSection key={index} className="flex flex-col gap-2 p-3.5">
-            <div className="flex items-center gap-2.5">
-              <SkeletonBar className="size-[30px] shrink-0 rounded-control" />
-              <SkeletonBar className="w-[38%]" />
-              <SkeletonBar className="ml-auto h-5 w-16 rounded-[999px]" />
+          <SettingsSection key={index} {...stylex.props(sx.flex, sx.flexCol, sx.gap2, sx.p35)}>
+            <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25)}>
+              <SkeletonBar {...stylex.props(sx.size30px, sx.shrink0, sx.roundedControl)} />
+              <SkeletonBar {...stylex.props(sx.w38)} />
+              <SkeletonBar {...stylex.props(sx.mlAuto, sx.h5, sx.w16, sx.rounded999px)} />
             </div>
-            <SkeletonBar className="h-2.5 w-[72%]" />
-            <SkeletonBar className="h-2.5 w-[34%]" />
+            <SkeletonBar {...stylex.props(sx.h25, sx.w72)} />
+            <SkeletonBar {...stylex.props(sx.h25, sx.w34)} />
           </SettingsSection>
         ))}
       </Skeleton>
@@ -341,15 +575,15 @@ setRemoveError(e.message);
       ) : (
         <>
           <SectionHeading>Agents: how work reaches {AGENT_NAME}</SectionHeading>
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-2.5">
+          <div className="grid-cols-[repeat(auto-fill,minmax(230px,1fr))]" {...stylex.props(sx.grid, sx.gap25)}>
             {Object.entries(data.agents).map(([name, health]) => {
               const ok = health?.status === "operational";
               const count = typeof health?.activeSessions === "number" ? health.activeSessions : null;
               return (
-                <SettingsSection key={name} className="flex flex-col gap-2 p-3.5">
-                  <div className="flex items-center gap-2.5">
+                <SettingsSection key={name} {...stylex.props(sx.flex, sx.flexCol, sx.gap2, sx.p35)}>
+                  <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25)}>
                     <IconTile name={name} size={30} />
-                    <span className="min-w-0 flex-1 truncate text-item-title font-medium text-fg">
+                    <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.fontMedium, sx.textFg, typography.itemTitle)}>
                       {displayName(name)}
                     </span>
                     <StatusChip
@@ -357,11 +591,11 @@ setRemoveError(e.message);
                       dot={ok ? "var(--green)" : "var(--red)"}
                     />
                   </div>
-                  <div className="text-label leading-snug text-dim">
+                  <div {...stylex.props(sx.leadingSnug, sx.textDim, typography.label)}>
                     {AGENT_BLURBS[name] || "Inbound agent"}
                   </div>
                   {count !== null && (
-                    <div className="text-label text-faint">
+                    <div {...stylex.props(sx.textFaint, typography.label)}>
                       {count.toLocaleString()} active session{count === 1 ? "" : "s"}
                     </div>
                   )}
@@ -378,17 +612,17 @@ setRemoveError(e.message);
               return (
                 <div
                   key={s.name}
-                  className="group flex items-start gap-3 px-5 py-3 transition-colors hover:bg-hover"
+                  className="group hover:bg-hover" {...stylex.props(sx.flex, sx.itemsStart, sx.gap3, sx.px5, sx.py3, sx.transitionColors)}
                 >
                   <IconTile name={s.name} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-item-title font-medium text-fg">
+                  <div {...stylex.props(sx.minW0, sx.flex1)}>
+                    <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
+                      <span {...stylex.props(sx.truncate, sx.fontMedium, sx.textFg, typography.itemTitle)}>
                         {displayName(s.name)}
                       </span>
                       {restricted && (
                         <span
-                          className="flex flex-shrink-0 items-center gap-1 rounded-full bg-active px-1.5 py-0.5 text-meta font-medium text-dim"
+                          {...stylex.props(sx.flex, sx.flexShrink0, sx.itemsCenter, sx.gap1, sx.roundedFull, sx.bgActive, sx.px15, sx.py05, sx.fontMedium, sx.textDim, typography.meta)}
                           title={`Only these people's sessions get this server: ${s.allowedUsers!.join(", ")}`}
                         >
                           <LockIcon /> {s.allowedUsers!.join(", ")}
@@ -396,7 +630,7 @@ setRemoveError(e.message);
                       )}
                       {(oauthByName[s.name]?.shared || oauthByName[s.name]?.users.length) ? (
                         <span
-                          className="flex flex-shrink-0 items-center gap-1 rounded-full bg-active px-1.5 py-0.5 text-meta font-medium text-green"
+                          {...stylex.props(sx.flex, sx.flexShrink0, sx.itemsCenter, sx.gap1, sx.roundedFull, sx.bgActive, sx.px15, sx.py05, sx.fontMedium, sx.textGreen, typography.meta)}
                           title={[
                             oauthByName[s.name]?.shared
                               ? `Workspace grant${oauthByName[s.name]!.shared!.connectedBy ? ` (by ${oauthByName[s.name]!.shared!.connectedBy})` : ""}`
@@ -416,15 +650,15 @@ setRemoveError(e.message);
                         </span>
                       ) : null}
                     </div>
-                    <div className="truncate text-label text-dim">
+                    <div {...stylex.props(sx.truncate, sx.textDim, typography.label)}>
                       {MCP_BLURBS[s.name] || "MCP server"}
                     </div>
-                    <div className="mt-0.5 flex items-center gap-1.5 text-meta text-faint">
-                      <span className="rounded bg-active px-1.5 py-px">{s.transport}</span>
-                      <span className="truncate" title={s.target}>{s.target}</span>
+                    <div {...stylex.props(sx.mt05, sx.flex, sx.itemsCenter, sx.gap15, sx.textFaint, typography.meta)}>
+                      <span {...stylex.props(sx.rounded, sx.bgActive, sx.px15, sx.pyPx)}>{s.transport}</span>
+                      <span {...stylex.props(sx.truncate)} title={s.target}>{s.target}</span>
                     </div>
                     {meta.bad && s.detail && (
-                      <div className="mt-1 truncate text-meta text-red" title={s.detail}>
+                      <div {...stylex.props(sx.mt1, sx.truncate, sx.textRed, typography.meta)} title={s.detail}>
                         {s.detail}
                       </div>
                     )}
@@ -444,19 +678,19 @@ setRemoveError(e.message);
                       {(s.transport === "http" || oauthByName[s.name]?.capable) && (
                         <>
                           <Menu.Item onClick={() => handleOauthConnect(s, "shared")}>
-                            <IconPlus size={16} className="text-faint" />
+                            <IconPlus size={16} {...stylex.props(sx.textFaint)} />
                             {oauthByName[s.name]?.shared
                               ? "Reconnect (workspace)"
                               : "Connect (workspace)"}
                           </Menu.Item>
                           <Menu.Item onClick={() => handleOauthConnect(s, "me")}>
-                            <IconPlus size={16} className="text-faint" />
+                            <IconPlus size={16} {...stylex.props(sx.textFaint)} />
                             Connect my account
                           </Menu.Item>
                           {s.transport === "http" &&
                           oauthByName[s.name]?.manualToken ? (
                             <Menu.Item onClick={() => setTokenConnect(s)}>
-                              <IconPlus size={16} className="text-faint" />
+                              <IconPlus size={16} {...stylex.props(sx.textFaint)} />
                               Connect with API token
                             </Menu.Item>
                           ) : null}
@@ -470,7 +704,7 @@ setRemoveError(e.message);
                                 )
                               }
                             >
-                              <IconTrash size={16} className="text-faint" />
+                              <IconTrash size={16} {...stylex.props(sx.textFaint)} />
                               Disconnect OAuth
                             </Menu.Item>
                           ) : null}
@@ -478,12 +712,12 @@ setRemoveError(e.message);
                         </>
                       )}
                       <Menu.Item onClick={() => handleRestrict(s)}>
-                        <IconSliders size={16} className="text-faint" />
+                        <IconSliders size={16} {...stylex.props(sx.textFaint)} />
                         {restricted ? "Edit access" : "Restrict access"}
                       </Menu.Item>
                       <Menu.Item
                         onClick={() => handleRemove(s.name)}
-                        className="text-red data-[highlighted]:bg-red-soft"
+                        className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
                       >
                         <IconTrash size={16} />
                         Remove server
@@ -613,9 +847,9 @@ function generateGithubAppName(): string {
 
 function WizardCheck({ children }: { children: React.ReactNode }) {
   return (
-    <li className="flex items-start gap-2 text-supporting leading-snug text-dim">
-      <span className="mt-[3px] shrink-0 text-green">✓</span>
-      <span className="min-w-0">{children}</span>
+    <li {...stylex.props(sx.flex, sx.itemsStart, sx.gap2, sx.leadingSnug, sx.textDim, typography.supporting)}>
+      <span {...stylex.props(sx.mt3px, sx.shrink0, sx.textGreen)}>✓</span>
+      <span {...stylex.props(sx.minW0)}>{children}</span>
     </li>
   );
 }
@@ -744,9 +978,9 @@ function GithubAppWizard({
         />
 
         {step === 1 && (
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <span className="text-supporting text-dim">Create under</span>
+          <div {...stylex.props(sx.flex, sx.flexCol, sx.gap4)}>
+            <div {...stylex.props(sx.flex, sx.flexCol, sx.gap15)}>
+              <span {...stylex.props(sx.textDim, typography.supporting)}>Create under</span>
               <Segmented
                 label="Create under"
                 size="sm"
@@ -778,11 +1012,11 @@ function GithubAppWizard({
                     aria-label="Organization login"
                   />
                   {intentOrg && (
-                    <div className="text-meta leading-snug text-dim">
+                    <div {...stylex.props(sx.leadingSnug, sx.textDim, typography.meta)}>
                       Finishing sign-in setup for {intentOrg}.
                     </div>
                   )}
-                  <div className="text-meta leading-snug text-faint">
+                  <div {...stylex.props(sx.leadingSnug, sx.textFaint, typography.meta)}>
                     For a team, create it in your organization so the org owns
                     the app and it can reach org repos. You need permission to
                     create apps in the org.
@@ -809,22 +1043,22 @@ function GithubAppWizard({
                 Create app on GitHub
               </Button>
             )}
-            <div className="text-supporting leading-snug text-dim">
+            <div {...stylex.props(sx.leadingSnug, sx.textDim, typography.supporting)}>
               Opens a pre-filled form. On that page:
             </div>
             {/* An annotated screenshot could slot in here, but GitHub's settings
                 UI changes, so the text carries the flow and stays correct. */}
-            <ul className="flex flex-col gap-2">
+            <ul {...stylex.props(sx.flex, sx.flexCol, sx.gap2)}>
               <WizardCheck>
-                Confirm <span className="text-fg">Device Flow</span> is checked.
+                Confirm <span {...stylex.props(sx.textFg)}>Device Flow</span> is checked.
               </WizardCheck>
               <WizardCheck>
-                Click <span className="text-fg">Create GitHub App</span>.
+                Click <span {...stylex.props(sx.textFg)}>Create GitHub App</span>.
               </WizardCheck>
             </ul>
-            <div className="text-meta leading-snug text-faint">
+            <div {...stylex.props(sx.leadingSnug, sx.textFaint, typography.meta)}>
               Pre-filled: name{" "}
-              <span className="font-mono text-dim">{appName}</span>, permissions
+              <span {...stylex.props(sx.fontMono, sx.textDim)}>{appName}</span>, permissions
               (Contents + Pull requests, read &amp; write; Members, read), private,
               no webhook.
               Names are unique on GitHub, so tweak it if it's taken.
@@ -832,7 +1066,7 @@ function GithubAppWizard({
             <Modal.Footer>
               <button
                 type="button"
-                className="mr-auto text-supporting text-dim underline hover:text-fg"
+                className="hover:text-fg" {...stylex.props(sx.mrAuto, sx.textDim, sx.underline, typography.supporting)}
                 onClick={() => setStep(2)}
               >
                 I already have an app
@@ -854,13 +1088,13 @@ function GithubAppWizard({
         )}
 
         {step === 2 && (
-          <div className="flex flex-col gap-4">
-            <div className="text-supporting leading-snug text-dim">
+          <div {...stylex.props(sx.flex, sx.flexCol, sx.gap4)}>
+            <div {...stylex.props(sx.leadingSnug, sx.textDim, typography.supporting)}>
               On your new app's settings page:
             </div>
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1">
-                <label className="text-supporting text-fg">Client ID</label>
+            <div {...stylex.props(sx.flex, sx.flexCol, sx.gap3)}>
+              <div {...stylex.props(sx.flex, sx.flexCol, sx.gap1)}>
+                <label {...stylex.props(sx.textFg, typography.supporting)}>Client ID</label>
                 <input
                   ref={setStepFocus}
                   type="text"
@@ -873,14 +1107,14 @@ function GithubAppWizard({
                   autoComplete="off"
                   spellCheck={false}
                 />
-                <span className="text-meta leading-snug text-faint">
-                  In <span className="text-dim">About</span> at the top: the{" "}
-                  <span className="text-dim">Client ID</span>, not the App ID above
+                <span {...stylex.props(sx.leadingSnug, sx.textFaint, typography.meta)}>
+                  In <span {...stylex.props(sx.textDim)}>About</span> at the top: the{" "}
+                  <span {...stylex.props(sx.textDim)}>Client ID</span>, not the App ID above
                   it.
                 </span>
               </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-supporting text-fg">App slug</label>
+              <div {...stylex.props(sx.flex, sx.flexCol, sx.gap1)}>
+                <label {...stylex.props(sx.textFg, typography.supporting)}>App slug</label>
                 <input
                   type="text"
                   className={cn(settingsInputClass, "font-mono")}
@@ -892,16 +1126,16 @@ function GithubAppWizard({
                   autoComplete="off"
                   spellCheck={false}
                 />
-                <span className="text-meta leading-snug text-faint">
+                <span {...stylex.props(sx.leadingSnug, sx.textFaint, typography.meta)}>
                   From the app's URL{" "}
-                  <span className="font-mono text-dim">
+                  <span {...stylex.props(sx.fontMono, sx.textDim)}>
                     github.com/settings/apps/{previewSlug}
                   </span>
                   . Pre-filled, so fix it only if you renamed the app.
                 </span>
               </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-supporting text-fg">Client secret</label>
+              <div {...stylex.props(sx.flex, sx.flexCol, sx.gap1)}>
+                <label {...stylex.props(sx.textFg, typography.supporting)}>Client secret</label>
                 <input
                   type="password"
                   className={cn(settingsInputClass, "font-mono")}
@@ -913,14 +1147,14 @@ function GithubAppWizard({
                   autoComplete="off"
                   spellCheck={false}
                 />
-                <span className="text-meta leading-snug text-faint">
-                  In <span className="text-dim">Client secrets</span>, click{" "}
-                  <span className="text-dim">Generate a new client secret</span>, then
+                <span {...stylex.props(sx.leadingSnug, sx.textFaint, typography.meta)}>
+                  In <span {...stylex.props(sx.textDim)}>Client secrets</span>, click{" "}
+                  <span {...stylex.props(sx.textDim)}>Generate a new client secret</span>, then
                   copy it (shown once). Required.
                 </span>
               </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-supporting text-fg">Private key (PEM)</label>
+              <div {...stylex.props(sx.flex, sx.flexCol, sx.gap1)}>
+                <label {...stylex.props(sx.textFg, typography.supporting)}>Private key (PEM)</label>
                 <textarea
                   className={cn(settingsInputClass, "min-h-20 resize-y font-mono")}
                   value={privateKey}
@@ -931,9 +1165,9 @@ function GithubAppWizard({
                   autoComplete="off"
                   spellCheck={false}
                 />
-                <span className="text-meta leading-snug text-faint">
-                  In <span className="text-dim">Private keys</span>, click{" "}
-                  <span className="text-dim">Generate a private key</span>, then paste
+                <span {...stylex.props(sx.leadingSnug, sx.textFaint, typography.meta)}>
+                  In <span {...stylex.props(sx.textDim)}>Private keys</span>, click{" "}
+                  <span {...stylex.props(sx.textDim)}>Generate a private key</span>, then paste
                   the downloaded .pem here. Lets the bot and PR checks run on the App;
                   leave blank for sign-in only.
                 </span>
@@ -943,7 +1177,7 @@ function GithubAppWizard({
               <Button
                 variant="ghost"
                 onClick={() => setStep(1)}
-                className="mr-auto"
+                {...stylex.props(sx.mrAuto)}
               >
                 Back
               </Button>
@@ -959,8 +1193,8 @@ function GithubAppWizard({
         )}
 
         {step === 3 && (
-          <div className="flex flex-col gap-4">
-            <div className="text-supporting leading-snug text-dim">
+          <div {...stylex.props(sx.flex, sx.flexCol, sx.gap4)}>
+            <div {...stylex.props(sx.leadingSnug, sx.textDim, typography.supporting)}>
               Install the app on the repositories you want to use. Its access
               reaches only the repos you pick here.
             </div>
@@ -978,7 +1212,7 @@ function GithubAppWizard({
               <Button
                 variant="ghost"
                 onClick={() => setStep(2)}
-                className="mr-auto"
+                {...stylex.props(sx.mrAuto)}
               >
                 Back
               </Button>
@@ -990,22 +1224,22 @@ function GithubAppWizard({
         )}
 
         {step === 4 && (
-          <div className="flex flex-col gap-4">
+          <div {...stylex.props(sx.flex, sx.flexCol, sx.gap4)}>
             {appOwner === "org" && (
-              <div className="text-supporting leading-snug text-dim">
+              <div {...stylex.props(sx.leadingSnug, sx.textDim, typography.supporting)}>
                 This turns on GitHub sign-in for this workspace. You'll be signed
                 in as the first admin.
               </div>
             )}
             {flow ? (
-              <div className="flex flex-col gap-2.5">
-                <div className="text-supporting text-dim">
+              <div {...stylex.props(sx.flex, sx.flexCol, sx.gap25)}>
+                <div {...stylex.props(sx.textDim, typography.supporting)}>
                   Enter this code at{" "}
-                  <span className="font-medium text-fg">
+                  <span {...stylex.props(sx.fontMedium, sx.textFg)}>
                     {flow.verificationUri.replace(/^https:\/\//, "")}
                   </span>
                 </div>
-                <div className="flex flex-wrap items-center gap-2.5">
+                <div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap25)}>
                   <DeviceCode code={flow.userCode} />
                   <Button
                     size="sm"
@@ -1018,7 +1252,7 @@ function GithubAppWizard({
                     Open GitHub
                   </Button>
                 </div>
-                <div className="flex items-center gap-2 text-supporting text-dim">
+                <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.textDim, typography.supporting)}>
                   <PulseDot size={7} />
                   <span>Waiting for GitHub…</span>
                 </div>
@@ -1028,7 +1262,7 @@ function GithubAppWizard({
                 {error}
               </InlineAlert>
             ) : (
-              <div className="flex items-center gap-2 text-supporting text-dim">
+              <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.textDim, typography.supporting)}>
                 <PulseDot size={7} />
                 <span>Starting…</span>
               </div>
@@ -1040,7 +1274,7 @@ function GithubAppWizard({
                   if (flow) onCancelFlow();
                   setStep(3);
                 }}
-                className="mr-auto"
+                {...stylex.props(sx.mrAuto)}
               >
                 Back
               </Button>
@@ -1245,14 +1479,14 @@ setError(e.message);
     // desktop. Three short stacked lines — what to do, the two controls, what
     // we're waiting for — never wrap badly and let the code be the thing the eye
     // lands on.
-    <div className="flex flex-col gap-2.5 px-5 py-3.5">
-      <div className="text-supporting text-dim">
+    <div {...stylex.props(sx.flex, sx.flexCol, sx.gap25, sx.px5, sx.py35)}>
+      <div {...stylex.props(sx.textDim, typography.supporting)}>
         Enter this code at{" "}
-        <span className="font-medium text-fg">
+        <span {...stylex.props(sx.fontMedium, sx.textFg)}>
           {flow.verificationUri.replace(/^https:\/\//, "")}
         </span>
       </div>
-      <div className="flex flex-wrap items-center gap-2.5">
+      <div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap25)}>
         <DeviceCode code={flow.userCode} />
         <Button
           size="sm"
@@ -1263,20 +1497,20 @@ setError(e.message);
           Open GitHub
         </Button>
       </div>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-supporting text-dim">
+      <div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gapX2, sx.gapY1, sx.textDim, typography.supporting)}>
         {/* Dot and status are one item: as two siblings of a wrapping row, a
             phone breaks between them and leaves the dot orphaned on its own
             line. */}
-        <span className="flex min-w-0 flex-1 items-center gap-2">
+        <span {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2)}>
           <PulseDot size={7} />
-          <span className="min-w-0">
+          <span {...stylex.props(sx.minW0)}>
             Waiting for GitHub. Sign in as the account you want to connect.
           </span>
         </span>
         <Button
           size="sm"
           variant="ghost"
-          className="ml-auto"
+          {...stylex.props(sx.mlAuto)}
           onClick={() => {
             setFlow(null);
             setFlowState("idle");
@@ -1302,9 +1536,9 @@ setError(e.message);
         <SectionHeading>GitHub</SectionHeading>
         {error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
         <SettingCard>
-          <SettingRow className="items-start gap-x-3">
+          <SettingRow {...stylex.props(sx.itemsStart, sx.gapX3)}>
             {connected ? (
-              <span className="flex size-[30px] shrink-0 items-center justify-center">
+              <span {...stylex.props(sx.flex, sx.size30px, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>
                 <UserAvatar
                   name={account.name || account.login}
                   login={account.login}
@@ -1315,21 +1549,21 @@ setError(e.message);
               <IconTile name="github" size={30} />
             )}
             <SettingRowText>
-              <SettingRowTitle className="truncate">
+              <SettingRowTitle {...stylex.props(sx.truncate)}>
                 {connected ? account.name || account.login : "GitHub"}
                 {connected && (
-                  <span className="ml-2 text-label font-normal text-faint">
+                  <span {...stylex.props(sx.ml2, sx.fontNormal, sx.textFaint, typography.label)}>
                     @{account.login}
                   </span>
                 )}
               </SettingRowTitle>
-              <SettingRowDescription className="leading-snug">
+              <SettingRowDescription {...stylex.props(sx.leadingSnug)}>
                 {connected
                   ? `All sessions clone and open pull requests as @${account.login}.`
                   : "Connect a GitHub App to clone your private repositories and open pull requests."}
               </SettingRowDescription>
             </SettingRowText>
-            <SettingRowControl className="flex items-center gap-3">
+            <SettingRowControl {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3)}>
               <StatusChip
                 label={connected ? "Connected" : "Not connected"}
                 dot={
@@ -1351,13 +1585,13 @@ setError(e.message);
                         a configured App. */}
                     {data.connectAvailable && (
                       <Menu.Item onClick={startConnect} disabled={flowState !== "idle"}>
-                        <IconPlug size={16} className="text-faint" />
+                        <IconPlug size={16} {...stylex.props(sx.textFaint)} />
                         Reconnect
                       </Menu.Item>
                     )}
                     <Menu.Item
                       onClick={() => disconnect(account.login)}
-                      className="text-red data-[highlighted]:bg-red-soft"
+                      className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
                     >
                       <IconTrash size={16} />
                       Disconnect
@@ -1375,8 +1609,8 @@ setError(e.message);
           {!connected &&
             (data.connectAvailable
               ? flowState !== "waiting" && (
-                  <div className="flex flex-col gap-2.5 px-5 py-3.5">
-                    <div className="flex flex-wrap items-center gap-2.5">
+                  <div {...stylex.props(sx.flex, sx.flexCol, sx.gap25, sx.px5, sx.py35)}>
+                    <div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap25)}>
                       <Button
                         variant="primary"
                         onClick={startConnect}
@@ -1401,7 +1635,7 @@ setError(e.message);
                         </Button>
                       )}
                     </div>
-                    <div className="text-meta leading-snug text-faint">
+                    <div {...stylex.props(sx.leadingSnug, sx.textFaint, typography.meta)}>
                       Authorize with a one-time code. No sign-in here, so every
                       session shares the connected account.
                     </div>
@@ -1410,15 +1644,15 @@ setError(e.message);
                     {data.appConfigSource === "config" ? (
                       <button
                         type="button"
-                        className="self-start text-meta text-dim underline hover:text-fg"
+                        className="hover:text-fg" {...stylex.props(sx.selfStart, sx.textDim, sx.underline, typography.meta)}
                         onClick={removeApp}
                       >
                         Remove app
                       </button>
                     ) : (
-                      <div className="text-meta leading-snug text-faint">
+                      <div {...stylex.props(sx.leadingSnug, sx.textFaint, typography.meta)}>
                         Set via{" "}
-                        <code className="rounded-sm bg-surface px-1 py-0.5 font-mono text-[0.92em] text-dim">
+                        <code {...stylex.props(sx.roundedSm, sx.bgSurface, sx.px1, sx.py05, sx.fontMono, sx.text092em, sx.textDim)}>
                           OPENSESSION_GITHUB_CLIENT_ID
                         </code>
                         . Unset and restart to change.
@@ -1427,18 +1661,18 @@ setError(e.message);
                   </div>
                 )
               : (
-                  <div className="flex flex-col gap-4 px-5 py-3.5">
-                    <div className="text-meta leading-snug text-faint">
+                  <div {...stylex.props(sx.flex, sx.flexCol, sx.gap4, sx.px5, sx.py35)}>
+                    <div {...stylex.props(sx.leadingSnug, sx.textFaint, typography.meta)}>
                       No sign-in here, so every session shares one GitHub account.
                       Turn on GitHub sign-in for per-person accounts.
                     </div>
-                    <div className="flex flex-col gap-2">
-                      <div className="text-label font-medium text-fg">GitHub App</div>
-                      <div className="text-meta leading-snug text-faint">
+                    <div {...stylex.props(sx.flex, sx.flexCol, sx.gap2)}>
+                      <div {...stylex.props(sx.fontMedium, sx.textFg, typography.label)}>GitHub App</div>
+                      <div {...stylex.props(sx.leadingSnug, sx.textFaint, typography.meta)}>
                         Install your own app on the repos you choose, then authorize
                         with a one-time code.
                       </div>
-                      <div className="flex flex-wrap items-center gap-2.5">
+                      <div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap25)}>
                         <Button variant="primary" onClick={() => setWizardOpen(true)}>
                           Set up GitHub App
                         </Button>
@@ -1453,12 +1687,12 @@ setError(e.message);
               is installed on, so managing the install is ongoing. A quiet link
               once connected, not a pending step. */}
           {connected && data.appInstallUrl && (
-            <div className="px-5 py-3.5">
+            <div {...stylex.props(sx.px5, sx.py35)}>
               <a
                 href={data.appInstallUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 text-meta text-dim underline hover:text-fg"
+                className="hover:text-fg" {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap1, sx.textDim, sx.underline, typography.meta)}
               >
                 Manage which repositories the app can access
                 <IconArrowUpRight size={14} />
@@ -1532,7 +1766,7 @@ setError(e.message);
           {signedIn ? (
             // Same 30px slot as the brand tile, so the row's text column does
             // not shift when the tile gives way to the avatar.
-            <span className="flex size-[30px] shrink-0 items-center justify-center">
+            <span {...stylex.props(sx.flex, sx.size30px, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>
               <UserAvatar name={own!.name} login={own!.github} size={28} />
             </span>
           ) : (
@@ -1542,18 +1776,18 @@ setError(e.message);
             <SettingRowTitle className={cn(personal && "truncate")}>
               {signedIn ? own!.name : personal ? "GitHub" : "Per-user GitHub auth"}
               {signedIn && (
-                <span className="ml-2 text-label font-normal text-faint">@{own!.github}</span>
+                <span {...stylex.props(sx.ml2, sx.fontNormal, sx.textFaint, typography.label)}>@{own!.github}</span>
               )}
             </SettingRowTitle>
             {!personal && (
-              <SettingRowDescription className="leading-snug">
+              <SettingRowDescription {...stylex.props(sx.leadingSnug)}>
                 {active
                   ? "Interactive sessions of a connected teammate open PRs as their own GitHub account. Everyone else (and all automations) keeps the bot."
                   : "Off. Sessions open PRs as the bot account. Opt in via config: integrations.github { userPrAuth: true, oauthClientId } in ~/.opensession/config.json."}
               </SettingRowDescription>
             )}
             {personal && active && (
-              <SettingRowDescription className="text-meta text-faint">
+              <SettingRowDescription {...stylex.props(sx.textFaint, typography.meta)}>
                 {signedIn && ownAccount
                   ? `since ${new Date(ownAccount.connectedAt).toLocaleDateString()}`
                   : signedIn
@@ -1562,7 +1796,7 @@ setError(e.message);
               </SettingRowDescription>
             )}
           </SettingRowText>
-          <SettingRowControl className="flex items-center gap-3">
+          <SettingRowControl {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3)}>
             {/* Personal: the chip reports YOUR connection, and an unconnected
                 row says so with its Connect button alone, the way every tool
                 row above it does. The admin row reports the workspace switch. */}
@@ -1622,12 +1856,12 @@ setError(e.message);
                 </Menu.Trigger>
                 <Menu.Popup align="end" sideOffset={4}>
                   <Menu.Item onClick={startConnect} disabled={flowState !== "idle"}>
-                    <IconPlug size={16} className="text-faint" />
+                    <IconPlug size={16} {...stylex.props(sx.textFaint)} />
                     Reconnect
                   </Menu.Item>
                   <Menu.Item
                     onClick={() => disconnect(own!.github)}
-                    className="text-red data-[highlighted]:bg-red-soft"
+                    className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
                   >
                     <IconTrash size={16} />
                     Disconnect
@@ -1647,27 +1881,27 @@ setError(e.message);
               (a) => a.login.toLowerCase() === m.github.toLowerCase(),
             );
             return (
-              <SettingRow key={m.github} className="gap-x-3 py-3">
+              <SettingRow key={m.github} {...stylex.props(sx.gapX3, sx.py3)}>
                 {/* Keep the smaller settings-avatar step inside the same slot
                     as the GitHub tile so every row's text stays aligned. */}
-                <span className="flex size-[30px] shrink-0 items-center justify-center">
+                <span {...stylex.props(sx.flex, sx.size30px, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>
                   <UserAvatar name={m.name} login={m.github} size={28} />
                 </span>
                 <SettingRowText>
-                  <SettingRowTitle className="truncate">
+                  <SettingRowTitle {...stylex.props(sx.truncate)}>
                     {m.name}
-                    <span className="ml-2 text-label font-normal text-faint">@{m.github}</span>
+                    <span {...stylex.props(sx.ml2, sx.fontNormal, sx.textFaint, typography.label)}>@{m.github}</span>
                   </SettingRowTitle>
                   {/* Under the name rather than beside it: as a third column it
                       had nothing to shrink into on a phone and overlapped the
                       name it belongs to. */}
                   {account && (
-                    <SettingRowDescription className="text-meta text-faint">
+                    <SettingRowDescription {...stylex.props(sx.textFaint, typography.meta)}>
                       since {new Date(account.connectedAt).toLocaleDateString()}
                     </SettingRowDescription>
                   )}
                 </SettingRowText>
-                <SettingRowControl className="flex items-center gap-3">
+                <SettingRowControl {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3)}>
                   <StatusChip
                     label={
                       m.needsReconnect
@@ -1699,7 +1933,7 @@ setError(e.message);
                       <Menu.Popup align="end" sideOffset={4}>
                         <Menu.Item
                           onClick={() => disconnect(m.github)}
-                          className="text-red data-[highlighted]:bg-red-soft"
+                          className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
                         >
                           <IconTrash size={16} />
                           Disconnect
@@ -1811,11 +2045,11 @@ setError(e.message);
       <SectionHeading>Code Storage: branch-based repo host</SectionHeading>
       {error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
       <SettingCard>
-        <div className="flex items-center gap-3 px-5 py-3">
+        <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3, sx.px5, sx.py3)}>
           <IconTile name="codestorage" size={30} />
-          <div className="min-w-0 flex-1">
-            <div className="text-item-title font-medium text-fg">code.storage (Pierre)</div>
-            <div className="text-label leading-snug text-dim">
+          <div {...stylex.props(sx.minW0, sx.flex1)}>
+            <div {...stylex.props(sx.fontMedium, sx.textFg, typography.itemTitle)}>code.storage (Pierre)</div>
+            <div {...stylex.props(sx.leadingSnug, sx.textDim, typography.label)}>
               {!connected
                 ? "Host repos on code.storage, where sessions review branch diffs instead of PRs. Paste the org's signing key to connect; nothing else to configure."
                 : status.error
@@ -1840,7 +2074,7 @@ setError(e.message);
           {connected && (
             <Button
               size="sm"
-              className="flex-shrink-0 hover:border-red hover:text-red"
+              className="hover:border-red hover:text-red" {...stylex.props(sx.flexShrink0)}
               onClick={disconnect}
             >
               Disconnect
@@ -1848,10 +2082,10 @@ setError(e.message);
           )}
         </div>
 
-        {note && <div className="px-5 py-2.5 text-label text-dim">{note}</div>}
+        {note && <div {...stylex.props(sx.px5, sx.py25, sx.textDim, typography.label)}>{note}</div>}
 
         {!connected ? (
-          <div className="flex flex-col gap-3 border-t border-line px-5 py-3">
+          <div {...stylex.props(sx.flex, sx.flexCol, sx.gap3, sx.borderT, sx.borderLine, sx.px5, sx.py3)}>
             <SettingsFormRow>
               <SettingsField>
                 Organization
@@ -1879,7 +2113,7 @@ setError(e.message);
                 aria-label="code.storage private key PEM"
               />
             </SettingsField>
-            <div className="flex items-center gap-2.5">
+            <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25)}>
               <Button
                 variant="primary"
                 disabled={connecting || !org.trim() || !pem.trim()}
@@ -1887,7 +2121,7 @@ setError(e.message);
               >
                 {connecting ? "Connecting…" : "Connect"}
               </Button>
-              <span className="text-supporting text-faint">
+              <span {...stylex.props(sx.textFaint, typography.supporting)}>
                 The key is stored on this server (mode 0600) and never leaves it.
               </span>
             </div>
@@ -1895,15 +2129,15 @@ setError(e.message);
         ) : (
           <>
             {status.error && (
-              <div className="border-t border-line px-5 py-2.5 text-label leading-snug text-red">
+              <div {...stylex.props(sx.borderT, sx.borderLine, sx.px5, sx.py25, sx.leadingSnug, sx.textRed, typography.label)}>
                 {status.error}
               </div>
             )}
             {wh && (
-              <div className="flex flex-col gap-2 border-t border-line px-5 py-3">
-                <div className="text-label font-medium text-fg">Webhook receiver</div>
-                <div className="flex flex-wrap items-center gap-2 text-label text-dim">
-                  <code className="rounded-sm bg-active px-1.5 py-0.5 font-mono text-fg">
+              <div {...stylex.props(sx.flex, sx.flexCol, sx.gap2, sx.borderT, sx.borderLine, sx.px5, sx.py3)}>
+                <div {...stylex.props(sx.fontMedium, sx.textFg, typography.label)}>Webhook receiver</div>
+                <div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap2, sx.textDim, typography.label)}>
+                  <code {...stylex.props(sx.roundedSm, sx.bgActive, sx.px15, sx.py05, sx.fontMono, sx.textFg)}>
                     POST {wh.path}
                   </code>
                   <span>
@@ -1913,9 +2147,9 @@ setError(e.message);
                     {copied === "path" ? "Copied" : "Copy path"}
                   </Button>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-label text-dim">
+                <div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap2, sx.textDim, typography.label)}>
                   <span>Secret</span>
-                  <code className="max-w-[340px] truncate rounded-sm bg-active px-1.5 py-0.5 font-mono text-fg">
+                  <code {...stylex.props(sx.maxW340px, sx.truncate, sx.roundedSm, sx.bgActive, sx.px15, sx.py05, sx.fontMono, sx.textFg)}>
                     {showSecret ? wh.secret : "••••••••••••••••"}
                   </code>
                   <Button size="sm" variant="ghost" onClick={() => setShowSecret((s) => !s)}>
@@ -1925,7 +2159,7 @@ setError(e.message);
                     {copied === "secret" ? "Copied" : "Copy"}
                   </Button>
                 </div>
-                <div className="text-supporting leading-snug text-faint">
+                <div {...stylex.props(sx.leadingSnug, sx.textFaint, typography.supporting)}>
                   Paste your public URL for this path plus the secret into the Pierre
                   dashboard → Webhooks, subscribed to push and repo.sync events.
                 </div>
@@ -1942,7 +2176,7 @@ setError(e.message);
                       : `Last delivery failed (${last.error}), ${relativeTime(last.at)}`}
                 </div>
                 {wh.lastRejected && (
-                  <div className="text-supporting leading-snug text-red">
+                  <div {...stylex.props(sx.leadingSnug, sx.textRed, typography.supporting)}>
                     {wh.rejectedCount} unauthenticated request
                     {wh.rejectedCount === 1 ? "" : "s"} rejected ({wh.lastRejected.error}
                     ), last {relativeTime(wh.lastRejected.at)}. If these are your Pierre
@@ -1951,7 +2185,7 @@ setError(e.message);
                   </div>
                 )}
                 {wh.syncFailures.map((f) => (
-                  <div key={f.repo} className="text-meta text-red">
+                  <div key={f.repo} {...stylex.props(sx.textRed, typography.meta)}>
                     Sync failing for {f.repo}: {f.error} ({relativeTime(f.at)})
                   </div>
                 ))}
@@ -2034,17 +2268,17 @@ setError(e.message);
       {error && (
         <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
       )}
-      <SettingsSection className="min-w-0 max-w-[720px]">
-        <div className="mb-2 text-supporting leading-[1.45] text-dim">
+      <SettingsSection {...stylex.props(sx.minW0, sx.maxW720px)}>
+        <div {...stylex.props(sx.mb2, sx.leading145, sx.textDim, typography.supporting)}>
           Every new Plain ticket goes through one cheap Haiku call before triage: spam is skipped
           entirely, a very basic ask (simple refund, how-do-I) runs triage on the model below, and
           everything else runs on the triage automation's own model. Router errors fail open to
           full triage. Applies to the next ticket, with no restart.
         </div>
-        <div className="flex min-w-0 items-center gap-2.5 text-meta text-faint">
-          <span className="whitespace-nowrap">Model for basic tickets:</span>
+        <div {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap25, sx.textFaint, typography.meta)}>
+          <span {...stylex.props(sx.whitespaceNowrap)}>Model for basic tickets:</span>
           <OptionSelect
-            className="min-w-0 flex-1"
+            {...stylex.props(sx.minW0, sx.flex1)}
             label="Model for basic tickets"
             value={cfg.basicModel}
             disabled={saving}
@@ -2060,7 +2294,7 @@ setError(e.message);
           aria-label="Routing prompt"
           className={cn(settingsInputClass, "mt-2 resize-y text-body")}
         />
-        <div className="mt-1.5 flex min-w-0 items-center gap-2.5 text-meta text-faint">
+        <div {...stylex.props(sx.mt15, sx.flex, sx.minW0, sx.itemsCenter, sx.gap25, sx.textFaint, typography.meta)}>
           <Button
             variant="primary"
             disabled={saving || !dirty}
@@ -2075,7 +2309,7 @@ setError(e.message);
           >
             Reset to default
           </Button>
-          <span className="min-w-0 truncate whitespace-nowrap">
+          <span {...stylex.props(sx.minW0, sx.truncate, sx.whitespaceNowrap)}>
             {dirty
               ? "Unsaved changes"
               : savedAt
@@ -2162,12 +2396,12 @@ setSaving(false);
           title={`Connect ${displayName(server.name)} with an API token`}
           description="The token is checked with the provider, then stored for agent runs."
         />
-        <div className="flex flex-col gap-4">
+        <div {...stylex.props(sx.flex, sx.flexCol, sx.gap4)}>
           {tokenPage ? (
-            <div className="text-supporting leading-snug text-dim">
+            <div {...stylex.props(sx.leadingSnug, sx.textDim, typography.supporting)}>
               Create a token at{" "}
               <a
-                className="underline hover:text-fg"
+                className="hover:text-fg" {...stylex.props(sx.underline)}
                 href={tokenPage.url}
                 target="_blank"
                 rel="noreferrer"
@@ -2177,8 +2411,8 @@ setSaving(false);
               , then paste it here.
             </div>
           ) : null}
-          <div className="flex flex-col gap-1.5">
-            <span className="text-supporting text-dim">Connect as</span>
+          <div {...stylex.props(sx.flex, sx.flexCol, sx.gap15)}>
+            <span {...stylex.props(sx.textDim, typography.supporting)}>Connect as</span>
             <Segmented
               label="Connect as"
               size="sm"
@@ -2270,7 +2504,7 @@ setError(e.message);
     name.trim() && (transport === "http" ? url.trim() : command.trim());
 
   return (
-    <SettingsForm className="mb-[18px] flex flex-col gap-3.5">
+    <SettingsForm {...stylex.props(sx.mb18px, sx.flex, sx.flexCol, sx.gap35)}>
       <SettingsFormTitle>Add MCP server</SettingsFormTitle>
 
       <SettingsFormRow>

@@ -2,6 +2,52 @@ import type { ReviewAsker } from "../lib/review-queue";
 import { personNameForGithubLogin } from "../lib/people";
 import { UserAvatar } from "./UserAvatar";
 import { IconEye } from "./icons";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	relative: {
+			position: "relative"
+	},
+	ml1: {
+			marginLeft: "4px"
+	},
+	flex: {
+			display: "flex"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	Bottom1: {
+			bottom: "-4px"
+	},
+	Right1: {
+			right: "-4px"
+	},
+	size3: {
+			width: "12px",
+			height: "12px"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	bgBlue: {
+			backgroundColor: "var(--blue)"
+	},
+	textWhite: {
+			color: "var(--color-white)"
+	},
+	ringPanel: {},
+});
 
 /**
  * Whose review request this row is carrying: their face, badged so it cannot
@@ -25,7 +71,7 @@ export function ReviewAskerFace({ asker }: { asker: ReviewAsker }) {
 		: `${name} asked you to review this`;
 	return (
 		<span
-			className="relative ml-1 flex shrink-0 items-center"
+			{...stylex.props(sx.relative, sx.ml1, sx.flex, sx.shrink0, sx.itemsCenter)}
 			title={label}
 			aria-label={label}
 		>
@@ -33,13 +79,13 @@ export function ReviewAskerFace({ asker }: { asker: ReviewAsker }) {
 				name={name}
 				login={asker.login ?? undefined}
 				size={16}
-				className="shrink-0"
+				{...stylex.props(sx.shrink0)}
 			/>
 			{/* Same 12px corner mark the mention badge uses: big enough to read as
 			    deliberate, small enough to leave the face recognisable. */}
 			<span
 				aria-hidden="true"
-				className="absolute -bottom-1 -right-1 flex size-3 items-center justify-center rounded-full bg-blue text-white ring-2 ring-panel"
+				className="ring-2" {...stylex.props(sx.absolute, sx.Bottom1, sx.Right1, sx.flex, sx.size3, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgBlue, sx.textWhite, sx.ringPanel)}
 			>
 				<IconEye size={8} />
 			</span>

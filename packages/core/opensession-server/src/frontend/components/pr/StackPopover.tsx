@@ -12,6 +12,62 @@ import { cn } from "../../ui/cn";
 import { Popover } from "../../ui/popover";
 import { IconArrowUpRight, IconStack } from "../icons";
 import { StackNode, StackRail } from "./StackRail";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	py2: {
+			paddingBlock: "8px"
+	},
+	noUnderline: {
+			textDecorationLine: "none"
+	},
+	block: {
+			display: "block"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	leadingSnug: {
+			lineHeight: "var(--leading-snug)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	flex: {
+			display: "flex"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	p0: {
+			padding: "0"
+	},
+	m0: {
+			margin: "0"
+	},
+	listNone: {
+			listStyleType: "none"
+	},
+	overflowYAuto: {
+			overflowY: "auto"
+	},
+	fontMono: {
+			fontFamily: "var(--mono)"
+	},
+});
 
 /**
  * The stack, from the status strip: a chip reading `position/size` that opens
@@ -56,7 +112,7 @@ function StackRow({
 				<StackNode state={layer.state} isDraft={layer.isDraft} />
 			</StackRail>
 			<a
-				className="min-w-0 flex-1 py-2 no-underline"
+				{...stylex.props(sx.minW0, sx.flex1, sx.py2, sx.noUnderline)}
 				href={inApp || layer.url}
 				{...(inApp ? {} : { target: "_blank", rel: "noopener" })}
 				aria-current={current ? "true" : undefined}
@@ -77,7 +133,7 @@ function StackRow({
 				>
 					{layer.title}
 				</span>
-				<span className="block truncate text-meta leading-snug text-faint">
+				<span {...stylex.props(sx.block, sx.truncate, sx.leadingSnug, sx.textFaint, typography.meta)}>
 					#{layer.number} · {layer.headRefName}
 				</span>
 			</a>
@@ -141,7 +197,7 @@ export function PrStackChip({
 				side="bottom"
 				align="start"
 				sideOffset={6}
-				className="flex max-h-[min(560px,70vh,var(--available-height))] w-[min(460px,calc(100vw-24px))] flex-col overflow-hidden p-0"
+				className="max-h-[min(560px,70vh,var(--available-height))] w-[min(460px,calc(100vw-24px))]" {...stylex.props(sx.flex, sx.flexCol, sx.overflowHidden, sx.p0)}
 			>
 				{/* The strip's headline, in the strip's tone: the popup opens under a
 				    green chip and has to keep saying what the green means. */}
@@ -153,7 +209,7 @@ export function PrStackChip({
 				>
 					{headline}
 				</div>
-				<ul className="m-0 flex list-none flex-col overflow-y-auto p-0">
+				<ul {...stylex.props(sx.m0, sx.flex, sx.listNone, sx.flexCol, sx.overflowYAuto, sx.p0)}>
 					{layers.map((layer, i) => (
 						<StackRow
 							key={layer.number}
@@ -170,7 +226,7 @@ export function PrStackChip({
 						<StackRail last>
 							<StackNode />
 						</StackRail>
-						<span className="min-w-0 flex-1 truncate font-mono text-label text-faint">
+						<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.fontMono, sx.textFaint, typography.label)}>
 							{stack.baseRefName}
 						</span>
 					</li>

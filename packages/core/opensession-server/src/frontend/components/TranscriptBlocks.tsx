@@ -37,6 +37,35 @@ import {
 	type ShippedChangeComposerProps,
 } from "./ShippedChangeComposer";
 import { SessionContextMessage } from "./SessionContextMessage";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	mxAuto: {
+			marginInline: "auto"
+	},
+	mb3: {
+			marginBottom: "12px"
+	},
+	h12: {
+			height: "48px"
+	},
+	wFull: {
+			width: "100%"
+	},
+	maxWVarSessionCol: {
+			maxWidth: "var(--session-col)"
+	},
+	animatePulse: {
+			animation: "var(--animate-pulse)"
+	},
+	roundedLg: {
+			borderRadius: "calc(14px * var(--rf))"
+	},
+	bgHover45: {
+			backgroundColor: "var(--hover)"
+	},
+});
 
 type RenderBlock =
 	| { kind: "entry"; entry: TranscriptEntry }
@@ -943,7 +972,7 @@ function indexedItemEstimate(item: IndexedTimelineItem): number {
 function TranscriptRangeLoading() {
 	return (
 		<div
-			className="mx-auto mb-3 h-12 w-full max-w-[var(--session-col)] animate-pulse rounded-lg bg-hover/45"
+			{...stylex.props(sx.mxAuto, sx.mb3, sx.h12, sx.wFull, sx.maxWVarSessionCol, sx.animatePulse, sx.roundedLg, sx.bgHover45)}
 			aria-label="Loading messages"
 		/>
 	);

@@ -21,6 +21,31 @@ import { toast } from "../ui/toast";
 import { IconDotsHorizontal, IconPencil, IconPlus, IconTrash } from "./icons";
 import { setupRequest, type TeamMember } from "./setup-shared";
 import { UserAvatar } from "./UserAvatar";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	flex: {
+			display: "flex"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	fontMono: {
+			fontFamily: "var(--mono)"
+	},
+});
 
 // Settings → Setup → Team: the manageable roster. The identity table drives
 // commit attribution, `allowedUsers` MCP scoping, and GitHub sign-in, so each
@@ -206,7 +231,7 @@ function MemberRow({
 			<SettingRowText>
 				<SettingRowTitle>{member.name}</SettingRowTitle>
 				{!compact && details.length > 0 && (
-					<SettingRowDescription className="truncate">
+					<SettingRowDescription {...stylex.props(sx.truncate)}>
 						{details.join(" · ")}
 					</SettingRowDescription>
 				)}
@@ -260,7 +285,7 @@ toast(e.message, { variant: "error" });
 						Edit member
 					</Menu.Item>
 					<Menu.Item
-						className="text-red data-[highlighted]:bg-red-soft data-[highlighted]:text-red"
+						className="data-[highlighted]:bg-red-soft data-[highlighted]:text-red" {...stylex.props(sx.textRed)}
 						onClick={() => setConfirmOpen(true)}
 					>
 						<IconTrash size={16} />
@@ -360,7 +385,7 @@ setSaving(false);
 					title={title}
 					description="They can sign in with this GitHub account."
 				/>
-				<form className="flex flex-col gap-3" onSubmit={submit}>
+				<form {...stylex.props(sx.flex, sx.flexCol, sx.gap3)} onSubmit={submit}>
 					<Field label="GitHub username or profile link">
 						<Input
 							ref={githubRef}
@@ -495,7 +520,7 @@ setError(e.message);
 					title={member ? `Edit ${member.name}` : addLabel}
 					description="Commits, sessions, and access grants resolve through this person."
 				/>
-				<form className="flex flex-col gap-3" onSubmit={submit}>
+				<form {...stylex.props(sx.flex, sx.flexCol, sx.gap3)} onSubmit={submit}>
 					<Field label="Full name">
 						<Input
 							ref={nameRef}
@@ -529,7 +554,7 @@ setError(e.message);
 						</Field>
 						<Field label="Slack member id">
 							<Input
-								className="font-mono"
+								{...stylex.props(sx.fontMono)}
 								value={slackId}
 								onChange={(e) => setSlackId(e.target.value)}
 								placeholder="U01ABCDEF"

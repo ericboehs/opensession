@@ -4,6 +4,71 @@ import { Segmented, SegmentedOption } from "../ui/segmented";
 import { Button } from "../ui/button";
 import { Modal } from "../ui/modal";
 import { fieldClasses } from "../ui/input";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	wFull: {
+			width: "100%"
+	},
+	flex1: {
+			flex: "1"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	flex: {
+			display: "flex"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	textSm: {
+			fontSize: "var(--type-label)",
+			lineHeight: "var(--tw-leading,var(--text-sm--line-height))"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	roundedMd: {
+			borderRadius: "calc(7px * var(--rf))"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderRed30: {
+			borderColor: "var(--red)"
+	},
+	bgRedSoft: {
+			backgroundColor: "var(--red-soft)"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	py2: {
+			paddingBlock: "8px"
+	},
+	textXs: {
+			fontSize: "var(--type-label)",
+			lineHeight: "var(--tw-leading,var(--text-xs--line-height))"
+	},
+	leadingRelaxed: {
+			lineHeight: "var(--leading-relaxed)"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+});
 
 type AddMode = "clone" | "path";
 
@@ -66,7 +131,7 @@ setAdding(false);
 				/>
 
 				<Segmented
-					className="w-full"
+					{...stylex.props(sx.wFull)}
 					label="Repository source"
 					value={mode}
 					onValueChange={(next) => {
@@ -81,7 +146,7 @@ setAdding(false);
 						<SegmentedOption
 							key={nextMode}
 							value={nextMode}
-							className="flex-1 justify-center"
+							{...stylex.props(sx.flex1, sx.justifyCenter)}
 							disabled={adding}
 						>
 							{label}
@@ -89,8 +154,8 @@ setAdding(false);
 					))}
 				</Segmented>
 
-				<form className="flex flex-col gap-3" onSubmit={submit}>
-					<label className="flex flex-col gap-1.5 text-sm font-medium text-fg">
+				<form {...stylex.props(sx.flex, sx.flexCol, sx.gap3)} onSubmit={submit}>
+					<label {...stylex.props(sx.flex, sx.flexCol, sx.gap15, sx.textSm, sx.fontMedium, sx.textFg)}>
 						{mode === "clone" ? "Git clone URL" : "Absolute folder path"}
 						<input
 							ref={inputRef}
@@ -122,7 +187,7 @@ setAdding(false);
 
 					{error && (
 						<div
-							className="rounded-md border border-red/30 bg-red-soft px-3 py-2 text-xs leading-relaxed text-red"
+							{...stylex.props(sx.roundedMd, sx.border, sx.borderRed30, sx.bgRedSoft, sx.px3, sx.py2, sx.textXs, sx.leadingRelaxed, sx.textRed)}
 							role="alert"
 						>
 							{error}
@@ -130,7 +195,7 @@ setAdding(false);
 					)}
 
 					<Modal.Footer>
-						<div className="flex-1" />
+						<div {...stylex.props(sx.flex1)} />
 						<Button
 							variant="ghost"
 							onClick={() => onOpenChange(false)}

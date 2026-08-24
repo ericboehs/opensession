@@ -1,5 +1,23 @@
 import * as React from "react";
 import { cn } from "./cn";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	size15: {
+			width: "6px",
+			height: "6px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	bgCurrent: {
+			backgroundColor: "currentColor"
+	},
+});
 
 /**
  * Badge — a label that reports state, not an action.
@@ -85,7 +103,7 @@ export function Badge({
 		>
 			{dot && (
 				<span
-					className="size-1.5 shrink-0 rounded-full bg-current"
+					{...stylex.props(sx.size15, sx.shrink0, sx.roundedFull, sx.bgCurrent)}
 					aria-hidden="true"
 				/>
 			)}

@@ -25,6 +25,62 @@ import { AUTO_REPO } from "../../lib/session-repo";
 import { RepoTile } from "../RepoTile";
 import { IconSparkle } from "../icons";
 import { Radio, RadioGroup } from "../../ui/radio";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	mt9: {
+			marginTop: "36px"
+	},
+	flex: {
+			display: "flex"
+	},
+	minH11: {
+			minHeight: "44px"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	itemsStart: {
+			alignItems: "flex-start"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	px5: {
+			paddingInline: "20px"
+	},
+	py4: {
+			paddingBlock: "16px"
+	},
+	transitionBackgroundColor: {
+			transitionProperty: "background-color",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	mt05: {
+			marginTop: "2px"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	block: {
+			display: "block"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+});
 
 /**
  * Where a new session starts for everyone who hasn't set their own preference
@@ -51,12 +107,12 @@ function SharedCheckoutSetting() {
 
 	if (!settings) {
 		return error ? (
-			<InlineAlert className="mt-9">{error}</InlineAlert>
+			<InlineAlert {...stylex.props(sx.mt9)}>{error}</InlineAlert>
 		) : (
 			<SettingCardSkeleton
 				rows={1}
 				label="Loading worktree settings"
-				className="mt-9"
+				{...stylex.props(sx.mt9)}
 			/>
 		);
 	}
@@ -91,25 +147,25 @@ setSaving(false);
 					onValueChange={(mode) => void setMode(mode as SharedCheckoutMode)}
 					className="[&>*+*]:relative [&>*+*]:before:pointer-events-none [&>*+*]:before:absolute [&>*+*]:before:inset-x-5 [&>*+*]:before:top-0 [&>*+*]:before:h-px [&>*+*]:before:bg-line [&>*+*]:before:content-['']"
 				>
-					<label className="flex min-h-11 cursor-pointer items-start gap-3 px-5 py-4 transition-[background-color] hover:bg-hover">
-						<Radio value="shared" className="mt-0.5" />
-						<span className="min-w-0">
-							<span className="block text-item-title font-medium text-fg">
+					<label className="hover:bg-hover" {...stylex.props(sx.flex, sx.minH11, sx.cursorPointer, sx.itemsStart, sx.gap3, sx.px5, sx.py4, sx.transitionBackgroundColor)}>
+						<Radio value="shared" {...stylex.props(sx.mt05)} />
+						<span {...stylex.props(sx.minW0)}>
+							<span {...stylex.props(sx.block, sx.fontMedium, sx.textFg, typography.itemTitle)}>
 								Local checkout
 							</span>
-							<span className="mt-1 block text-supporting text-dim">
+							<span {...stylex.props(sx.mt1, sx.block, sx.textDim, typography.supporting)}>
 								Edit {repoNames} directly. Changes appear there right away, and
 								sessions share the same files.
 							</span>
 						</span>
 					</label>
-					<label className="flex min-h-11 cursor-pointer items-start gap-3 px-5 py-4 transition-[background-color] hover:bg-hover">
-						<Radio value="worktree" className="mt-0.5" />
-						<span className="min-w-0">
-							<span className="block text-item-title font-medium text-fg">
+					<label className="hover:bg-hover" {...stylex.props(sx.flex, sx.minH11, sx.cursorPointer, sx.itemsStart, sx.gap3, sx.px5, sx.py4, sx.transitionBackgroundColor)}>
+						<Radio value="worktree" {...stylex.props(sx.mt05)} />
+						<span {...stylex.props(sx.minW0)}>
+							<span {...stylex.props(sx.block, sx.fontMedium, sx.textFg, typography.itemTitle)}>
 								Separate pull request branch
 							</span>
-							<span className="mt-1 block text-supporting text-dim">
+							<span {...stylex.props(sx.mt1, sx.block, sx.textDim, typography.supporting)}>
 								Give each session an isolated Git worktree and branch. Changes
 								stay separate from the local checkout, ready for a pull request.
 							</span>
@@ -192,7 +248,7 @@ export function ReposPanel() {
 						{/* mt-9 stands in for the group label above the list, which
 						    counts the repos and so cannot be drawn before they
 						    arrive. */}
-						<SettingCardSkeleton rows={3} icon={28} className="mt-9" />
+						<SettingCardSkeleton rows={3} icon={28} {...stylex.props(sx.mt9)} />
 					</>
 				)
 			) : (

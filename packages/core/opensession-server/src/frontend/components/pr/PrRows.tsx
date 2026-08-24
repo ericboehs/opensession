@@ -8,6 +8,107 @@ import {
   IconMessage,
   IconX,
 } from "../icons";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	roundedRow: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderTransparent: {
+			borderColor: "#0000"
+	},
+	px15: {
+			paddingInline: "6px"
+	},
+	py15: {
+			paddingBlock: "6px"
+	},
+	size7: {
+			width: "28px",
+			height: "28px"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	objectCover: {
+			objectFit: "cover"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	bgSurface: {
+			backgroundColor: "var(--bg)"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	textSm: {
+			fontSize: "var(--type-label)",
+			lineHeight: "var(--tw-leading,var(--text-sm--line-height))"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	wFull: {
+			width: "100%"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	py1: {
+			paddingBlock: "4px"
+	},
+	textLeft: {
+			textAlign: "left"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	textGreen: {
+			color: "var(--green)"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+});
 
 export function ReviewerRow({ reviewer, provider }: { reviewer: PrReviewer; provider: Provider }) {
   const src = reviewer.isTeam ? null : avatarUrl(reviewer.login, provider, 40);
@@ -21,18 +122,18 @@ export function ReviewerRow({ reviewer, provider }: { reviewer: PrReviewer; prov
           ? "text-yellow"
           : "text-faint";
   return (
-    <div className="flex items-center gap-3 rounded-row border border-transparent px-1.5 py-1.5 hover:border-line hover:bg-hover/50">
+    <div className="hover:border-line hover:bg-hover/50" {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3, sx.roundedRow, sx.border, sx.borderTransparent, sx.px15, sx.py15)}>
       {src ? (
-        <img className="size-7 rounded-full object-cover" src={src} alt="" loading="lazy" />
+        <img {...stylex.props(sx.size7, sx.roundedFull, sx.objectCover)} src={src} alt="" loading="lazy" />
       ) : (
         <span
-          className="inline-flex size-7 items-center justify-center rounded-full border border-line bg-surface text-meta font-semibold text-faint"
+          {...stylex.props(sx.inlineFlex, sx.size7, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.border, sx.borderLine, sx.bgSurface, sx.fontSemibold, sx.textFaint, typography.meta)}
           aria-hidden
         >
           {reviewer.login.slice(0, 1).toUpperCase()}
         </span>
       )}
-      <span className="min-w-0 flex-1 truncate text-sm text-fg">{reviewer.login}</span>
+      <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.textSm, sx.textFg)}>{reviewer.login}</span>
       <span className={`shrink-0 ${toneClass}`} title={meta.label}>
         {meta.icon}
       </span>
@@ -72,16 +173,16 @@ export function FileRow({ file, onClick }: { file: PrFile; onClick?: () => void 
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-2 rounded-row border border-transparent px-1.5 py-1 text-left hover:border-line hover:bg-hover/50 disabled:cursor-default disabled:hover:border-transparent disabled:hover:bg-transparent"
+      className="hover:border-line hover:bg-hover/50 disabled:cursor-default disabled:hover:border-transparent disabled:hover:bg-transparent" {...stylex.props(sx.flex, sx.wFull, sx.itemsCenter, sx.gap2, sx.roundedRow, sx.border, sx.borderTransparent, sx.px15, sx.py1, sx.textLeft)}
       onClick={onClick}
       disabled={!onClick}
       title={file.path}
     >
-      <IconFile size={14} className="shrink-0 text-faint" />
-      <span className="min-w-0 flex-1 truncate text-label text-fg">{base}</span>
-      <span className="inline-flex shrink-0 items-center gap-1.5 text-meta">
-        {file.additions > 0 && <span className="text-green">+{file.additions}</span>}
-        {file.deletions > 0 && <span className="text-red">−{file.deletions}</span>}
+      <IconFile size={14} {...stylex.props(sx.shrink0, sx.textFaint)} />
+      <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.textFg, typography.label)}>{base}</span>
+      <span {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap15, typography.meta)}>
+        {file.additions > 0 && <span {...stylex.props(sx.textGreen)}>+{file.additions}</span>}
+        {file.deletions > 0 && <span {...stylex.props(sx.textRed)}>−{file.deletions}</span>}
       </span>
     </button>
   );

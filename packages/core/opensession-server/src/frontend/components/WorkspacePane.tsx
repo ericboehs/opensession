@@ -105,6 +105,154 @@ import {
 	workspaceSummaryOpen,
 	WS_SUMMARY_ROOM_W,
 } from "../lib/workspace-summary-open";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	px1: {
+			paddingInline: "4px"
+	},
+	minW240px: {
+			minWidth: "240px"
+	},
+	grow: {
+			flexGrow: "1"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	minW210px: {
+			minWidth: "210px"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	minH0: {
+			minHeight: "0"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	py5px: {
+			paddingBlock: "5px"
+	},
+	flex: {
+			display: "flex"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap7px: {
+			gap: "7px"
+	},
+	maxW180px: {
+			maxWidth: "180px"
+	},
+	TranslateYPx: {
+			translate: "0 -1px"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	Mx1: {
+			marginInline: "-4px"
+	},
+	Ml1: {
+			marginLeft: "-4px"
+	},
+	flexNone: {
+			flex: "none"
+	},
+	roundedControl: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	hFull: {
+			height: "100%"
+	},
+	flex1: {
+			flex: "1"
+	},
+	pointerEventsNone: {
+			pointerEvents: "none"
+	},
+	fixed: {
+			position: "fixed"
+	},
+	inset0: {
+			inset: "0"
+	},
+	z12000: {
+			zIndex: "12000"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	px6: {
+			paddingInline: "24px"
+	},
+	textCenter: {
+			textAlign: "center"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	mt4: {
+			marginTop: "16px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	srOnly: {
+			clipPath: "inset(50%)",
+			whiteSpace: "nowrap",
+			borderWidth: "0",
+			width: "1px",
+			height: "1px",
+			margin: "-1px",
+			padding: "0",
+			position: "absolute",
+			overflow: "hidden"
+	},
+	overflowYAuto: {
+			overflowY: "auto"
+	},
+	wFull: {
+			width: "100%"
+	},
+	maxW760px: {
+			maxWidth: "760px"
+	},
+	mxAuto: {
+			marginInline: "auto"
+	},
+	px5: {
+			paddingInline: "20px"
+	},
+	pb5: {
+			paddingBottom: "20px"
+	},
+	mt25: {
+			marginTop: "10px"
+	},
+});
 
 interface Props {
 	workspace: Workspace;
@@ -570,7 +718,7 @@ setStaging((current) => subtractStaging(current, batch));
 			<aside className={PANEL_SHELL} style={sidePanel.style}>
 				{sidePanel.resizeHandle}
 				<div className={PANEL_BODY}>
-					<div className="px-1">
+					<div {...stylex.props(sx.px1)}>
 						<WorkspaceInfo
 							sessionId={anchorSession?.id || ""}
 							workspaceId={workspace.id}
@@ -676,12 +824,12 @@ setDeleting(false);
 				<Menu.Popup
 					align={isPhone ? "end" : "start"}
 					sideOffset={6}
-					className="min-w-[240px] max-w-[min(300px,calc(100vw-24px))]"
+					className="max-w-[min(300px,calc(100vw-24px))]" {...stylex.props(sx.minW240px)}
 				>
 					{onRenameWorkspace && (
 						<Menu.Item onClick={() => setRenameDraft(workspace.name)}>
 							<IconPencil size={20} className={MENU_ICON} />
-							<span className="grow">Rename workspace</span>
+							<span {...stylex.props(sx.grow)}>Rename workspace</span>
 						</Menu.Item>
 					)}
 					{isPhone && (
@@ -692,7 +840,7 @@ setDeleting(false);
 								size={20}
 								className={MENU_ICON}
 							/>
-							<span className="grow">
+							<span {...stylex.props(sx.grow)}>
 								{workspaceCopy.copied ? "Copied" : "Share"}
 							</span>
 						</Menu.Item>
@@ -702,7 +850,7 @@ setDeleting(false);
 							<Menu.Separator />
 							<Menu.Item onClick={() => onNewSession()}>
 								<IconPlus size={20} className={MENU_ICON} />
-								<span className="grow">New session in workspace</span>
+								<span {...stylex.props(sx.grow)}>New session in workspace</span>
 							</Menu.Item>
 						</>
 					)}
@@ -719,7 +867,7 @@ setDeleting(false);
 								}}
 							>
 								<IconBranches size={20} className={MENU_ICON} />
-								<span className="grow">Fork session</span>
+								<span {...stylex.props(sx.grow)}>Fork session</span>
 							</Menu.Item>
 						)}
 					{presentationSession && onOpenNewSession && (
@@ -735,10 +883,10 @@ setDeleting(false);
 						<Menu.SubmenuRoot>
 							<Menu.SubmenuTrigger title="Copy this session's transcript">
 								<IconCopy size={20} className={MENU_ICON} />
-								<span className="grow">Copy transcript</span>
-								<IconChevronRight size={16} className="text-faint" />
+								<span {...stylex.props(sx.grow)}>Copy transcript</span>
+								<IconChevronRight size={16} {...stylex.props(sx.textFaint)} />
 							</Menu.SubmenuTrigger>
-							<Menu.Popup className="min-w-[210px]">
+							<Menu.Popup {...stylex.props(sx.minW210px)}>
 								<Menu.Item
 									onClick={() =>
 										void copySessionTranscript(
@@ -749,7 +897,7 @@ setDeleting(false);
 									}
 								>
 									<IconListCircles size={20} className={MENU_ICON} />
-									<span className="grow">Concise</span>
+									<span {...stylex.props(sx.grow)}>Concise</span>
 								</Menu.Item>
 								<Menu.Item
 									onClick={() =>
@@ -761,7 +909,7 @@ setDeleting(false);
 									}
 								>
 									<IconFile size={20} className={MENU_ICON} />
-									<span className="grow">Full</span>
+									<span {...stylex.props(sx.grow)}>Full</span>
 								</Menu.Item>
 							</Menu.Popup>
 						</Menu.SubmenuRoot>
@@ -779,7 +927,7 @@ setDeleting(false);
 							}
 						>
 							<IconArchive size={20} className={MENU_ICON} />
-							<span className="grow">
+							<span {...stylex.props(sx.grow)}>
 								{presentationSession.archived
 									? "Unarchive session"
 									: "Archive session"}
@@ -790,11 +938,11 @@ setDeleting(false);
 						(!showDeleteConfirm ? (
 							<Menu.Item
 								closeOnClick={false}
-								className="text-red data-[highlighted]:bg-red-soft data-[highlighted]:text-red"
+								className="data-[highlighted]:bg-red-soft data-[highlighted]:text-red" {...stylex.props(sx.textRed)}
 								onClick={() => setShowDeleteConfirm(true)}
 							>
 								<IconTrash size={20} />
-								<span className="grow">Delete session</span>
+								<span {...stylex.props(sx.grow)}>Delete session</span>
 							</Menu.Item>
 						) : (
 							<div className={VIEWER_DELETE_CONFIRM}>
@@ -803,7 +951,7 @@ setDeleting(false);
 										<Button
 											variant="danger"
 											size="sm"
-											className="min-h-0 px-3 py-[5px] text-label"
+											{...stylex.props(sx.minH0, sx.px3, sx.py5px, typography.label)}
 											onClick={() => void deletePresentationSession(true)}
 											disabled={deleting}
 										>
@@ -813,7 +961,7 @@ setDeleting(false);
 								<Button
 									variant="warning"
 									size="sm"
-									className="min-h-0 px-3 py-[5px] text-label"
+									{...stylex.props(sx.minH0, sx.px3, sx.py5px, typography.label)}
 									onClick={() => void deletePresentationSession(false)}
 									disabled={deleting}
 								>
@@ -822,7 +970,7 @@ setDeleting(false);
 								<Button
 									variant="soft"
 									size="sm"
-									className="min-h-0 px-3 py-[5px] text-label"
+									{...stylex.props(sx.minH0, sx.px3, sx.py5px, typography.label)}
 									onClick={() => setShowDeleteConfirm(false)}
 									disabled={deleting}
 								>
@@ -839,9 +987,9 @@ setDeleting(false);
 		<TopBar ref={headerRef} className={VIEWER_HEADER}>
 			<TopBarLeading className={VIEWER_TITLE}>
 				{workspace.repo && (
-					<span className="flex min-w-0 shrink-0 items-center gap-[7px]">
+					<span {...stylex.props(sx.flex, sx.minW0, sx.shrink0, sx.itemsCenter, sx.gap7px)}>
 						<RepoTile name={workspace.repo} />
-						<span className="max-w-[180px] -translate-y-px truncate">
+						<span {...stylex.props(sx.maxW180px, sx.TranslateYPx, sx.truncate)}>
 							{repoLabel(workspace.repo)}
 						</span>
 					</span>
@@ -849,7 +997,7 @@ setDeleting(false);
 				{workspace.repo && (
 					<IconChevronRight
 						size={18}
-						className="-mx-1 shrink-0 text-faint"
+						{...stylex.props(sx.Mx1, sx.shrink0, sx.textFaint)}
 						aria-hidden="true"
 					/>
 				)}
@@ -893,7 +1041,7 @@ setDeleting(false);
 						<Button
 							variant="ghost"
 							size="md"
-							className="-ml-1 flex-none rounded-control"
+							{...stylex.props(sx.Ml1, sx.flexNone, sx.roundedControl)}
 							onClick={(event) => {
 								const reduceMotion = window.matchMedia(
 									"(prefers-reduced-motion: reduce)",
@@ -941,7 +1089,7 @@ setDeleting(false);
 					<Button
 						variant="ghost"
 						size="md"
-						className="rounded-control text-dim hover:bg-hover hover:text-fg"
+						className="hover:bg-hover hover:text-fg" {...stylex.props(sx.roundedControl, sx.textDim)}
 						onClick={() => setPanelOpen(!panelOpen)}
 						aria-label="Toggle side panel"
 						icon={<IconSidebarRight size={22} />}
@@ -961,8 +1109,8 @@ setDeleting(false);
 			{isPhone && headerActionsEl
 				? createPortal(workspaceMenu, headerActionsEl)
 				: null}
-			<div className="flex h-full min-h-0">
-				<div className="flex-1 min-w-0 min-h-0">{main}</div>
+			<div {...stylex.props(sx.flex, sx.hFull, sx.minH0)}>
+				<div {...stylex.props(sx.flex1, sx.minW0, sx.minH0)}>{main}</div>
 			</div>
 			{rightPanelEl && infoPanel ? createPortal(infoPanel, rightPanelEl) : null}
 		</MarkdownRepoProvider>
@@ -1038,27 +1186,27 @@ setDeleting(false);
 				createPortal(
 					<>
 						<motion.div
-							className="pointer-events-none fixed inset-0 z-[12000] flex flex-col items-center justify-center bg-[color-mix(in_srgb,var(--bg-panel)_68%,transparent)] px-6 text-center"
+							className="bg-[color-mix(in_srgb,var(--bg-panel)_68%,transparent)]" {...stylex.props(sx.pointerEventsNone, sx.fixed, sx.inset0, sx.z12000, sx.flex, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.px6, sx.textCenter)}
 							initial={{ opacity: 0 }}
 							animate={{ opacity: 1 }}
 							transition={{ type: "tween", duration: duration.base, ease }}
 							aria-hidden="true"
 							data-file-drop-overlay
 						>
-							<IconArrowUpToLine size={40} className="text-fg" />
-							<div className="mt-4 text-title font-semibold text-fg">Add files</div>
-							<div className="mt-1 text-label text-dim">
+							<IconArrowUpToLine size={40} {...stylex.props(sx.textFg)} />
+							<div className="text-title" {...stylex.props(sx.mt4, sx.fontSemibold, sx.textFg)}>Add files</div>
+							<div {...stylex.props(sx.mt1, sx.textDim, typography.label)}>
 								Drop here to attach them to your message.
 							</div>
 						</motion.div>
-						<span className="sr-only" role="status">
+						<span {...stylex.props(sx.srOnly)} role="status">
 							Drop files to attach
 						</span>
 					</>,
 					document.body,
 				)}
-			<div className="flex-1 min-h-0 overflow-y-auto" />
-			<div className="w-full max-w-[760px] mx-auto px-5 pb-5 shrink-0">
+			<div {...stylex.props(sx.flex1, sx.minH0, sx.overflowYAuto)} />
+			<div {...stylex.props(sx.wFull, sx.maxW760px, sx.mxAuto, sx.px5, sx.pb5, sx.shrink0)}>
 				<Composer
 					value={prompt}
 					onChange={setPrompt}
@@ -1084,7 +1232,7 @@ setDeleting(false);
 					staging={staging}
 					onAddAttachments={addWorkspaceAttachments}
 				/>
-				{startError && <InlineAlert className="mt-2.5">{startError}</InlineAlert>}
+				{startError && <InlineAlert {...stylex.props(sx.mt25)}>{startError}</InlineAlert>}
 			</div>
 		</div>,
 	);

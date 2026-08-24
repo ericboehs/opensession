@@ -86,6 +86,129 @@ import {
 	IconPlus,
 	IconArchive,
 } from "./icons";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	size18px: {
+			width: "18px",
+			height: "18px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	translateY05px: {
+			translate: "0 .5px"
+	},
+	TextBoxTrimBothCapAlphabetic: {
+			textBox: "trim-both cap alphabetic"
+	},
+	noUnderline: {
+			textDecorationLine: "none"
+	},
+	grow: {
+			flexGrow: "1"
+	},
+	textGreen: {
+			color: "var(--green)"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	gap1: {
+			gap: "4px"
+	},
+	size4: {
+			width: "16px",
+			height: "16px"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	w58: {
+			width: "58%"
+	},
+	flex: {
+			display: "flex"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	ml15: {
+			marginLeft: "6px"
+	},
+	bgWhite20: {
+			backgroundColor: "#fff3"
+	},
+	px15: {
+			paddingInline: "6px"
+	},
+	block: {
+			display: "block"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	opacity0: {
+			opacity: "0"
+	},
+	transitionOpacity: {
+			transitionProperty: "opacity",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	duration150: {
+			transitionDuration: ".15s"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap05: {
+			gap: "2px"
+	},
+	fontNormal: {
+			fontWeight: "var(--font-weight-normal)"
+	},
+	textTooltipFg60: {
+			color: "var(--tooltip-fg)"
+	},
+	mx5: {
+			marginInline: "20px"
+	},
+	mb2: {
+			marginBottom: "8px"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	leadingSnug: {
+			lineHeight: "var(--leading-snug)"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	flex1: {
+			flex: "1"
+	},
+});
 
 /**
  * Conductor-style status strip at the top of the right Workspace panel: the PR
@@ -227,7 +350,7 @@ function PrBarButton({
 			{...props}
 		>
 			{icon && (
-				<span className="inline-flex size-[18px] shrink-0 items-center justify-center [&_svg]:block [&_svg]:stroke-[1.7]">
+				<span className="[&_svg]:block [&_svg]:stroke-[1.7]" {...stylex.props(sx.inlineFlex, sx.size18px, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>
 					{icon}
 				</span>
 			)}
@@ -243,7 +366,7 @@ function PrBarButton({
 			    the geometric center reads a touch high. It settles the label
 			    without going back to a nudge that has to carry the whole
 			    correction. */}
-			<span className="translate-y-[0.5px] [text-box:trim-both_cap_alphabetic]">
+			<span {...stylex.props(sx.translateY05px, sx.TextBoxTrimBothCapAlphabetic)}>
 				{children}
 			</span>
 		</button>
@@ -278,30 +401,30 @@ function PrCopyItems({ pr }: { pr: PrDetails }) {
 		<>
 			<ContextMenu.Item
 				render={
-					<a href={pr.url} target="_blank" rel="noopener" className="no-underline" />
+					<a href={pr.url} target="_blank" rel="noopener" {...stylex.props(sx.noUnderline)} />
 				}
 			>
 				<IconArrowUpRight size={20} className={MENU_ICON} />
-				<span className="grow">Open on {provider.name}</span>
+				<span {...stylex.props(sx.grow)}>Open on {provider.name}</span>
 			</ContextMenu.Item>
 			<ContextMenu.Item closeOnClick={false} onClick={() => copy("link", pr.url)}>
 				{copied === "link" ? (
-					<IconCheck size={20} className="text-green" />
+					<IconCheck size={20} {...stylex.props(sx.textGreen)} />
 				) : (
 					<IconCopy size={20} className={MENU_ICON} />
 				)}
-				<span className="grow">{copied === "link" ? "Copied" : "Copy link"}</span>
+				<span {...stylex.props(sx.grow)}>{copied === "link" ? "Copied" : "Copy link"}</span>
 			</ContextMenu.Item>
 			<ContextMenu.Item
 				closeOnClick={false}
 				onClick={() => copy("number", `#${pr.number}`)}
 			>
 				{copied === "number" ? (
-					<IconCheck size={20} className="text-green" />
+					<IconCheck size={20} {...stylex.props(sx.textGreen)} />
 				) : (
 					<IconHash size={20} className={MENU_ICON} />
 				)}
-				<span className="grow">{copied === "number" ? "Copied" : "Copy number"}</span>
+				<span {...stylex.props(sx.grow)}>{copied === "number" ? "Copied" : "Copy number"}</span>
 			</ContextMenu.Item>
 		</>
 	);
@@ -327,7 +450,7 @@ function PrNumberChip({
 	const prChord = useShortcutLabel("open-pr");
 
 	return (
-		<div className="inline-flex items-center">
+		<div {...stylex.props(sx.inlineFlex, sx.itemsCenter)}>
 			<ContextMenu.Root>
 				<ContextMenu.Trigger
 					render={
@@ -341,7 +464,7 @@ function PrNumberChip({
 				>
 					{/* Cap band plus the same half pixel as the action button beside
 					    it, so the pair reads level. */}
-					<span className="translate-y-[0.5px] [text-box:trim-both_cap_alphabetic]">
+					<span {...stylex.props(sx.translateY05px, sx.TextBoxTrimBothCapAlphabetic)}>
 						#{pr.number}
 					</span>
 				</ContextMenu.Trigger>
@@ -403,7 +526,7 @@ function PrRefChips({
 					? "green"
 					: "muted";
 	return (
-		<div className="inline-flex min-w-0 items-center gap-1">
+		<div {...stylex.props(sx.inlineFlex, sx.minW0, sx.itemsCenter, sx.gap1)}>
 			{inline.map((ref) => (
 				<Tooltip key={`${ref.repo} ${ref.branch}`} label={refLabel(ref)}>
 					<button
@@ -437,7 +560,7 @@ function PrRefChips({
 								<span
 								className={`${PR_SIB_DOT} ${PR_SIB_DOT_BG[refTone(ref)]}`}
 							/>
-								<span className="grow">
+								<span {...stylex.props(sx.grow)}>
 									{repoLabel(ref.repo)} #{ref.number}
 								</span>
 							</Menu.Item>
@@ -696,8 +819,8 @@ setBusy(null);
 				<div className={WS_SUMMARY_BAND}>
 					<Skeleton label="Loading PR status">
 						<div className={WS_SUMMARY_STATUS_ROW}>
-							<SkeletonBar className="size-4 shrink-0 rounded-full" />
-							<SkeletonBar className="w-[58%]" />
+							<SkeletonBar {...stylex.props(sx.size4, sx.shrink0, sx.roundedFull)} />
+							<SkeletonBar {...stylex.props(sx.w58)} />
 						</div>
 					</Skeleton>
 					{children}
@@ -756,7 +879,7 @@ setBusy(null);
 				const canArchive = !isArchived && openSiblings === 0;
 				if (!onNewSession && !canArchive && !isArchived) return null;
 				return (
-					<div className="flex items-center gap-2">
+					<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
 						{onNewSession && (
 							<PrBarButton
 								className={cn(actionBtn, "@max-[440px]:px-1.5 @max-[440px]:gap-0")}
@@ -948,7 +1071,7 @@ setBusy(null);
 								? "Merge stack"
 								: "Merge"}
 						{stackMerge && !merging && (
-							<span className="ml-1.5 rounded-full bg-white/20 px-1.5 tabular-nums">
+							<span className="tabular-nums" {...stylex.props(sx.ml15, sx.roundedFull, sx.bgWhite20, sx.px15)}>
 								{stackMerge.layers.length}
 							</span>
 						)}
@@ -989,13 +1112,13 @@ setBusy(null);
 		// competing with the state or the primary action.
 		const labelBody = (
 			<>
-				<span className="block truncate text-item-title text-fg">
+				<span {...stylex.props(sx.block, sx.truncate, sx.textFg, typography.itemTitle)}>
 					{headlineLabel}
 				</span>
 				{pr && provider && (
-					<span className="flex items-center gap-1 truncate text-meta text-faint group-hover/prsum:text-dim">
-						<BrandMark name={provider.key} size={12} className="shrink-0" />
-						<span className="shrink-0">#{pr.number}</span>
+					<span className="group-hover/prsum:text-dim" {...stylex.props(sx.flex, sx.itemsCenter, sx.gap1, sx.truncate, sx.textFaint, typography.meta)}>
+						<BrandMark name={provider.key} size={12} {...stylex.props(sx.shrink0)} />
+						<span {...stylex.props(sx.shrink0)}>#{pr.number}</span>
 						{checksPr && (
 							<>
 								<span aria-hidden="true">·</span>
@@ -1005,7 +1128,7 @@ setBusy(null);
 						<IconArrowUpRight
 							dense
 							size={12}
-							className="shrink-0 opacity-0 transition-opacity duration-150 group-hover/prsum:opacity-100 group-focus-visible/prsum:opacity-100"
+							className="group-hover/prsum:opacity-100 group-focus-visible/prsum:opacity-100" {...stylex.props(sx.shrink0, sx.opacity0, sx.transitionOpacity, sx.duration150)}
 						/>
 					</span>
 				)}
@@ -1058,10 +1181,10 @@ setBusy(null);
 				) : pr ? (
 					<Tooltip
 						label={
-							<span className="flex flex-col gap-0.5">
+							<span {...stylex.props(sx.flex, sx.flexCol, sx.gap05)}>
 								<span>Open review</span>
 								{externalHint && (
-									<span className="font-normal text-tooltip-fg/60">
+									<span {...stylex.props(sx.fontNormal, sx.textTooltipFg60)}>
 										{externalHint}
 									</span>
 								)}
@@ -1138,7 +1261,7 @@ setBusy(null);
 					<div className={summaryRowClass}>{rowBody}</div>
 				)}
 				{error && (
-					<p role="alert" className="mx-5 mb-2 mt-1 text-meta leading-snug text-red">
+					<p role="alert" {...stylex.props(sx.mx5, sx.mb2, sx.mt1, sx.leadingSnug, sx.textRed, typography.meta)}>
 						{error}
 					</p>
 				)}
@@ -1261,7 +1384,7 @@ setBusy(null);
 					</button>
 				</Tooltip>
 			)}
-			<span className="flex-1" />
+			<span {...stylex.props(sx.flex1)} />
 			{error && <span className={PR_BAR_ERROR} title={error}>{error}</span>}
 			{renderAction()}
 		</div>

@@ -2,6 +2,60 @@ import * as React from "react";
 import type { SessionUsage } from "../lib/types";
 import { Popover } from "../ui/popover";
 import { cn } from "../ui/cn";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	Rotate90: {
+			rotate: "-90deg"
+	},
+	strokeLine: {
+			stroke: "var(--border)"
+	},
+	flex: {
+			display: "flex"
+	},
+	itemsBaseline: {
+			alignItems: "baseline"
+	},
+	justifyBetween: {
+			justifyContent: "space-between"
+	},
+	gap6: {
+			gap: "24px"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	mb2: {
+			marginBottom: "8px"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	my2: {
+			marginBlock: "8px"
+	},
+	hPx: {
+			height: "1px"
+	},
+	bgLine: {
+			backgroundColor: "var(--border)"
+	},
+	w64: {
+			width: "256px"
+	},
+	p3: {
+			padding: "12px"
+	},
+	textXs: {
+			fontSize: "var(--type-label)",
+			lineHeight: "var(--tw-leading,var(--text-xs--line-height))"
+	},
+});
 
 /**
  * Compact live cost + context readout for the mobile session bar. Shows the
@@ -53,7 +107,7 @@ function ContextRing({
 			width={size}
 			height={size}
 			viewBox={`0 0 ${size} ${size}`}
-			className="-rotate-90"
+			{...stylex.props(sx.Rotate90)}
 			aria-hidden
 		>
 			<circle
@@ -62,7 +116,7 @@ function ContextRing({
 				r={r}
 				fill="none"
 				strokeWidth={sw}
-				className="stroke-line"
+				{...stylex.props(sx.strokeLine)}
 			/>
 			<circle
 				cx={size / 2}
@@ -89,8 +143,8 @@ function Row({
 	strong?: boolean;
 }) {
 	return (
-		<div className="flex items-baseline justify-between gap-6">
-			<span className="text-dim">{label}</span>
+		<div {...stylex.props(sx.flex, sx.itemsBaseline, sx.justifyBetween, sx.gap6)}>
+			<span {...stylex.props(sx.textDim)}>{label}</span>
 			<span className={cn("tabular-nums", strong && "text-fg")}>{value}</span>
 		</div>
 	);
@@ -131,9 +185,9 @@ export function UsageDetails({
 
 	return (
 		<div className={cn("text-xs", className)}>
-			<div className="mb-2 flex items-baseline justify-between">
-				<span className="font-medium text-fg">This conversation</span>
-				<span className="text-dim">
+			<div {...stylex.props(sx.mb2, sx.flex, sx.itemsBaseline, sx.justifyBetween)}>
+				<span {...stylex.props(sx.fontMedium, sx.textFg)}>This conversation</span>
+				<span {...stylex.props(sx.textDim)}>
 					{turns} turn{turns === 1 ? "" : "s"}
 				</span>
 			</div>
@@ -150,7 +204,7 @@ export function UsageDetails({
 					/>
 				)}
 			</div>
-			<div className="my-2 h-px bg-line" />
+			<div {...stylex.props(sx.my2, sx.hPx, sx.bgLine)} />
 			<div className="space-y-1.5">
 				<Row label="Input" value={fmtTokens(usage?.inputTokens ?? 0)} />
 				<Row label="Output" value={fmtTokens(usage?.outputTokens ?? 0)} />
@@ -200,7 +254,7 @@ export function UsageMeter({
 				)}
 				aria-label="Conversation cost & context"
 			>
-				<UsageCost usage={usage} className="text-fg" />
+				<UsageCost usage={usage} {...stylex.props(sx.textFg)} />
 				{window > 0 && <ContextRing frac={frac} tone={tone.stroke} />}
 				{showCacheRate && (
 					// Off by default, and the phone header's meter leaves it off: there
@@ -208,12 +262,12 @@ export function UsageMeter({
 					// name, and the cache rate is the one thing on that line nobody
 					// navigates by — it was pushing "Opus 5 + Fable oracle" down to
 					// "Opus 5 + …".
-					<span className="tabular-nums text-dim">
+					<span className="tabular-nums" {...stylex.props(sx.textDim)}>
 						{cacheHit}% cached
 					</span>
 				)}
 			</Popover.Trigger>
-			<Popover.Popup side="top" align="end" className="w-64 p-3 text-xs">
+			<Popover.Popup side="top" align="end" {...stylex.props(sx.w64, sx.p3, sx.textXs)}>
 				<UsageDetails usage={usage} />
 			</Popover.Popup>
 		</Popover.Root>

@@ -27,6 +27,14 @@ import {
 } from "../lib/workspace-summary-classes";
 import { cn } from "../ui/cn";
 import { IconArrowUpRight, IconPullRequest } from "./icons";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	textDim: {
+			color: "var(--text-dim)"
+	},
+});
 
 /**
  * The PRs a session owns beyond the one its own branch carries, stacked under
@@ -70,7 +78,7 @@ export function PrSeriesRow({
 				</span>
 				<span className={WS_SUMMARY_LABEL}>
 					{refChipText(prRef, primaryRepo)}
-					{prRef.title && <span className="text-dim"> · {prRef.title}</span>}
+					{prRef.title && <span {...stylex.props(sx.textDim)}> · {prRef.title}</span>}
 				</span>
 				<span className={cn(WS_SUMMARY_STATE, PR_STATE_TEXT[tone])}>
 					{refState(prRef)}

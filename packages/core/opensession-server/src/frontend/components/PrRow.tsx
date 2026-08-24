@@ -32,6 +32,20 @@ import {
 	useRowHoverCard,
 } from "./SidebarRowCards";
 import { useIsPhone } from "../hooks/useIsPhone";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	minW220px: {
+			minWidth: "220px"
+	},
+	grow: {
+			flexGrow: "1"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+});
 
 /**
  * A session-less open PR, rendered inside a project's status lanes (ported
@@ -209,9 +223,9 @@ export function PrRow({
 				</Tooltip>
 			</span>
 			</ContextMenu.Trigger>
-			<ContextMenu.Popup className="min-w-[220px]">
+			<ContextMenu.Popup {...stylex.props(sx.minW220px)}>
 				<ContextMenu.Item onClick={onOpen}>
-					<span className="grow">Open review</span>
+					<span {...stylex.props(sx.grow)}>Open review</span>
 				</ContextMenu.Item>
 				<ContextMenu.Item
 					render={
@@ -219,16 +233,16 @@ export function PrRow({
 					}
 				>
 					<IconArrowUpRight size={18} />
-					<span className="grow">Open on {providerFromUrl(item.pr.url).name}</span>
+					<span {...stylex.props(sx.grow)}>Open on {providerFromUrl(item.pr.url).name}</span>
 				</ContextMenu.Item>
 				<ContextMenu.Separator />
 				<ContextMenu.Item
-					className="text-red data-[highlighted]:bg-red-soft"
+					className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
 					disabled={closing}
 					onClick={onClose}
 				>
 					<IconX size={18} />
-					<span className="grow">{closing ? "Closing…" : "Close pull request…"}</span>
+					<span {...stylex.props(sx.grow)}>{closing ? "Closing…" : "Close pull request…"}</span>
 				</ContextMenu.Item>
 			</ContextMenu.Popup>
 		</ContextMenu.Root>

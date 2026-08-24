@@ -8,6 +8,165 @@ import {
 import { cn } from "../ui/cn";
 import { IconArrowUpRight } from "./icons";
 import { PanelPageHeader } from "./PanelPageHeader";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	px2: {
+			paddingInline: "8px"
+	},
+	py1: {
+			paddingBlock: "4px"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	size35: {
+			width: "14px",
+			height: "14px"
+	},
+	animateSpin: {
+			animation: "var(--animate-spin)"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	border2: {
+			borderStyle: "solid",
+			borderWidth: "2px"
+	},
+	borderLineStrong: {
+			borderColor: "var(--border-strong)"
+	},
+	borderTAccent: {
+			borderTopColor: "var(--accent)"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	px1: {
+			paddingInline: "4px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	grid: {
+			display: "grid"
+	},
+	gap4: {
+			gap: "16px"
+	},
+	pt2: {
+			paddingTop: "8px"
+	},
+	pb22px: {
+			paddingBottom: "22px"
+	},
+	roundedControl: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	bgRedSoft: {
+			backgroundColor: "var(--red-soft)"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	py2: {
+			paddingBlock: "8px"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	focusRing: {
+			":focus-visible": {
+					outline: "2px solid var(--accent-ink)",
+					outlineOffset: "2px"
+			}
+	},
+	minH11: {
+			minHeight: "44px"
+	},
+	wFull: {
+			width: "100%"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	py15: {
+			paddingBlock: "6px"
+	},
+	textLeft: {
+			textAlign: "left"
+	},
+	flex1: {
+			flex: "1"
+	},
+	block: {
+			display: "block"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	mt05: {
+			marginTop: "2px"
+	},
+	py5px: {
+			paddingBlock: "5px"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	size11: {
+			width: "44px",
+			height: "44px"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	opacity0: {
+			opacity: "0"
+	},
+	transitionOpacity: {
+			transitionProperty: "opacity",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	px15: {
+			paddingInline: "6px"
+	},
+	transitionColors: {
+			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	py7px: {
+			paddingBlock: "7px"
+	},
+});
 
 /** A plain divided list. Portal rows do not need a shared grey plate around
  * them: the panel itself is already their surface. */
@@ -31,8 +190,8 @@ function statusLabel(
 
 function DiscoveringRow() {
 	return (
-		<div className="flex items-center gap-2 px-2 py-1 text-supporting text-dim">
-			<span className="size-3.5 animate-spin rounded-full border-2 border-line-strong border-t-accent" />
+		<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.px2, sx.py1, sx.textDim, typography.supporting)}>
+			<span {...stylex.props(sx.size35, sx.animateSpin, sx.roundedFull, sx.border2, sx.borderLineStrong, sx.borderTAccent)} />
 			Discovering services…
 		</div>
 	);
@@ -80,16 +239,16 @@ export function PortalsPage({
 					onBack={onBack}
 					trailing={
 						liveCount > 0 && (
-							<span className="shrink-0 px-1 text-label font-semibold tabular-nums text-faint">
+							<span className="tabular-nums" {...stylex.props(sx.shrink0, sx.px1, sx.fontSemibold, sx.textFaint, typography.label)}>
 								{liveCount} live
 							</span>
 						)
 					}
 				/>
 			)}
-			<div className="grid gap-4 px-2 pt-2 pb-[22px]">
+			<div {...stylex.props(sx.grid, sx.gap4, sx.px2, sx.pt2, sx.pb22px)}>
 			{error ? (
-				<div role="alert" className="rounded-control bg-red-soft px-3 py-2 text-label text-red">
+				<div role="alert" {...stylex.props(sx.roundedControl, sx.bgRedSoft, sx.px3, sx.py2, sx.textRed, typography.label)}>
 					{error}
 				</div>
 			) : null}
@@ -127,15 +286,15 @@ export function PortalsPage({
 													.catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
 													.finally(() => setRequestedId(null));
 											}}
-											className="focus-ring flex min-h-11 w-full min-w-0 items-center gap-3 rounded-control px-2 py-1.5 text-left transition-[background-color,scale] hover:bg-hover active:scale-[0.96] disabled:cursor-default disabled:opacity-45"
+											className="transition-[background-color,scale] hover:bg-hover active:scale-[0.96] disabled:cursor-default disabled:opacity-45" {...stylex.props(sx.focusRing, sx.flex, sx.minH11, sx.wFull, sx.minW0, sx.itemsCenter, sx.gap3, sx.roundedControl, sx.px2, sx.py15, sx.textLeft)}
 										>
-											<span className="min-w-0 flex-1">
-												<span className="block truncate text-label font-medium text-fg">{recipe.name}</span>
+											<span {...stylex.props(sx.minW0, sx.flex1)}>
+												<span {...stylex.props(sx.block, sx.truncate, sx.fontMedium, sx.textFg, typography.label)}>{recipe.name}</span>
 												{recipe.description ? (
-													<span className="mt-0.5 block line-clamp-2 text-supporting text-dim">{recipe.description}</span>
+													<span className="line-clamp-2" {...stylex.props(sx.mt05, sx.block, sx.textDim, typography.supporting)}>{recipe.description}</span>
 												) : null}
 											</span>
-											<span className="shrink-0 text-label font-semibold text-faint">
+											<span {...stylex.props(sx.shrink0, sx.fontSemibold, sx.textFaint, typography.label)}>
 												{target ? "Open" : requestedId === recipe.id ? "Starting…" : "Start"}
 											</span>
 										</button>
@@ -168,7 +327,7 @@ export function PortalsPage({
 												type="button"
 												disabled={!target}
 												onClick={() => target && onOpenPortal?.(target)}
-												className="flex min-w-0 flex-1 items-center gap-2 rounded-control px-2 py-[5px] text-left disabled:cursor-default"
+												className="disabled:cursor-default" {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.px2, sx.py5px, sx.textLeft)}
 											>
 												<span
 													className={cn(
@@ -177,10 +336,10 @@ export function PortalsPage({
 													)}
 													aria-hidden="true"
 												/>
-												<span className="min-w-0 flex-1 truncate text-label text-fg">
+												<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.textFg, typography.label)}>
 													{service.name}
 												</span>
-												<span className="shrink-0 truncate text-label text-faint">
+												<span {...stylex.props(sx.shrink0, sx.truncate, sx.textFaint, typography.label)}>
 													{statusLabel(service, target, active)}
 												</span>
 											</button>
@@ -189,7 +348,7 @@ export function PortalsPage({
 													href={target.url}
 													target="_blank"
 													rel="noopener"
-													className="focus-ring inline-flex size-11 shrink-0 items-center justify-center rounded-control text-faint opacity-0 transition-[color,opacity] phone:opacity-100 hover:text-fg group-hover:opacity-100 focus-visible:opacity-100"
+													className="transition-[color,opacity] phone:opacity-100 hover:text-fg group-hover:opacity-100 focus-visible:opacity-100" {...stylex.props(sx.focusRing, sx.inlineFlex, sx.size11, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textFaint, sx.opacity0)}
 													aria-label={`Open ${service.name} in a separate browser window`}
 													title="Open in browser"
 												>
@@ -197,7 +356,7 @@ export function PortalsPage({
 												</a>
 											) : null}
 											{service.managed && onPortalAction ? (
-												<div className="flex shrink-0 items-center opacity-0 transition-opacity phone:opacity-100 group-hover:opacity-100 focus-within:opacity-100">
+												<div className="phone:opacity-100 group-hover:opacity-100 focus-within:opacity-100" {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.opacity0, sx.transitionOpacity)}>
 													<button
 														type="button"
 														disabled={working === service.name}
@@ -208,7 +367,7 @@ export function PortalsPage({
 																.catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
 																.finally(() => setWorking(null));
 														}}
-														className="focus-ring rounded-control px-1.5 py-1 text-label font-semibold text-faint transition-colors phone:min-h-11 hover:text-fg disabled:opacity-45"
+														className="phone:min-h-11 hover:text-fg disabled:opacity-45" {...stylex.props(sx.focusRing, sx.roundedControl, sx.px15, sx.py1, sx.fontSemibold, sx.textFaint, sx.transitionColors, typography.label)}
 													>
 														Restart
 													</button>
@@ -222,7 +381,7 @@ export function PortalsPage({
 																.catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
 																.finally(() => setWorking(null));
 														}}
-														className="focus-ring rounded-control px-1.5 py-1 text-label font-semibold text-red transition-colors phone:min-h-11 hover:text-red disabled:opacity-45"
+														className="phone:min-h-11 hover:text-red disabled:opacity-45" {...stylex.props(sx.focusRing, sx.roundedControl, sx.px15, sx.py1, sx.fontSemibold, sx.textRed, sx.transitionColors, typography.label)}
 													>
 														Stop
 													</button>
@@ -232,7 +391,7 @@ export function PortalsPage({
 									);
 								})
 							) : (
-								<div className="px-2 py-[7px] text-label text-dim">
+								<div {...stylex.props(sx.px2, sx.py7px, sx.textDim, typography.label)}>
 									{status.starting
 										? "Starting services…"
 										: "No Portals are running. Start one above, or ask the agent to expose a service."}

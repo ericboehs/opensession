@@ -116,6 +116,206 @@ import { motion, AnimatePresence } from "motion/react";
 import { composerMorph, composerChipMotion } from "../ui/motion";
 import { ModelEffortSelect, shortModelLabel } from "./ModelEffortSelect";
 import type { SessionUsage } from "../lib/types";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	minH120px: {
+			minHeight: "120px"
+	},
+	wFull: {
+			width: "100%"
+	},
+	resizeY: {
+			resize: "vertical"
+	},
+	roundedLg: {
+			borderRadius: "calc(14px * var(--rf))"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderLineStrong: {
+			borderColor: "var(--border-strong)"
+	},
+	bgSurface: {
+			backgroundColor: "var(--bg)"
+	},
+	px4: {
+			paddingInline: "16px"
+	},
+	py35: {
+			paddingBlock: "14px"
+	},
+	leadingRelaxed: {
+			lineHeight: "var(--leading-relaxed)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	outlineNone: {
+			outlineStyle: "none"
+	},
+	flex1: {
+			flex: "1"
+	},
+	px5: {
+			paddingInline: "20px"
+	},
+	gap5: {
+			gap: "20px"
+	},
+	p7: {
+			padding: "28px"
+	},
+	flex: {
+			display: "flex"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	m0: {
+			margin: "0"
+	},
+	textBalance: {
+			textWrap: "balance"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	leadingTight: {
+			lineHeight: "var(--leading-tight)"
+	},
+	tracking001em: {
+			letterSpacing: "-.01em"
+	},
+	mt2: {
+			marginTop: "8px"
+	},
+	textPretty: {
+			textWrap: "pretty"
+	},
+	textBase: {
+			fontSize: "var(--type-body)",
+			lineHeight: "var(--tw-leading,var(--text-base--line-height))"
+	},
+	fontNormal: {
+			fontWeight: "var(--font-weight-normal)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	mt3: {
+			marginTop: "12px"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	mxAuto: {
+			marginInline: "auto"
+	},
+	maxWCalcVarSessionCol40px: {
+			maxWidth: "calc(var(--session-col) + 40px)"
+	},
+	pointerEventsNone: {
+			pointerEvents: "none"
+	},
+	Absolute: {
+			position: "absolute!important"
+	},
+	inset0: {
+			inset: "0"
+	},
+	Z6: {
+			zIndex: "6!important"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	right3: {
+			right: "12px"
+	},
+	top2: {
+			top: "8px"
+	},
+	z2: {
+			zIndex: "2"
+	},
+	roundedSm: {
+			borderRadius: "calc(4px * var(--rf))"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	px15: {
+			paddingInline: "6px"
+	},
+	py05: {
+			paddingBlock: "2px"
+	},
+	trackingWider: {
+			letterSpacing: "var(--tracking-wider)"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	itemsStart: {
+			alignItems: "flex-start"
+	},
+	gapX1: {
+			columnGap: "4px"
+	},
+	srOnly: {
+			clipPath: "inset(50%)",
+			whiteSpace: "nowrap",
+			borderWidth: "0",
+			width: "1px",
+			height: "1px",
+			margin: "-1px",
+			padding: "0",
+			position: "absolute",
+			overflow: "hidden"
+	},
+	grow: {
+			flexGrow: "1"
+	},
+	whitespaceNowrap: {
+			whiteSpace: "nowrap"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	basis0: {
+			flexBasis: "0"
+	},
+	minW230px: {
+			minWidth: "230px"
+	},
+	mt15: {
+			marginTop: "6px"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	borderT: {
+			borderTopStyle: "solid",
+			borderTopWidth: "1px"
+	},
+	pt15: {
+			paddingTop: "6px"
+	},
+	mt7px: {
+			marginTop: "7px"
+	},
+	textCenter: {
+			textAlign: "center"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+});
 
 interface Props {
   /**
@@ -347,7 +547,7 @@ function GoalModal({
 
         <textarea
           ref={inputRef}
-          className="min-h-[120px] w-full resize-y rounded-lg border border-line-strong bg-surface px-4 py-3.5 text-body leading-relaxed text-fg outline-none"
+          {...stylex.props(sx.minH120px, sx.wFull, sx.resizeY, sx.roundedLg, sx.border, sx.borderLineStrong, sx.bgSurface, sx.px4, sx.py35, sx.leadingRelaxed, sx.textFg, sx.outlineNone, typography.body)}
           value={text}
           rows={3}
           {...noAutofill}
@@ -371,10 +571,10 @@ function GoalModal({
               Clear goal
             </Button>
           )}
-          <div className="flex-1" />
+          <div {...stylex.props(sx.flex1)} />
           <Button
             variant="primary"
-            className="px-5"
+            {...stylex.props(sx.px5)}
             onClick={() => onSubmit(text.trim() || null)}
             disabled={text.trim() === initial.trim()}
           >
@@ -404,17 +604,17 @@ function StopConfirmModal({
       <Modal.Content
         initialFocus={stopRef}
         widthClassName="max-w-[32rem]"
-        className="gap-5 p-7 phone:w-[calc(100vw-1.5rem)] phone:p-6"
+        className="phone:w-[calc(100vw-1.5rem)] phone:p-6" {...stylex.props(sx.gap5, sx.p7)}
       >
-        <div className="flex flex-col">
-          <Modal.Title className="m-0 text-balance text-section-title font-semibold leading-tight tracking-[-0.01em] text-fg">
+        <div {...stylex.props(sx.flex, sx.flexCol)}>
+          <Modal.Title {...stylex.props(sx.m0, sx.textBalance, sx.fontSemibold, sx.leadingTight, sx.tracking001em, sx.textFg, typography.sectionTitle)}>
             Stop this response?
           </Modal.Title>
-          <Modal.Description className="m-0 mt-2 text-pretty text-base font-normal leading-relaxed text-dim">
+          <Modal.Description {...stylex.props(sx.m0, sx.mt2, sx.textPretty, sx.textBase, sx.fontNormal, sx.leadingRelaxed, sx.textDim)}>
             You can ask again or send a follow-up anytime.
           </Modal.Description>
         </div>
-        <Modal.Footer className="mt-3 gap-3">
+        <Modal.Footer {...stylex.props(sx.mt3, sx.gap3)}>
           <Modal.Close render={<Button size="lg">Keep going</Button>} />
           <Button
             ref={stopRef}
@@ -1402,7 +1602,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
       : undefined;
 
   return (
-    <div className="mx-auto w-full max-w-[calc(var(--session-col)+40px)]">
+    <div {...stylex.props(sx.mxAuto, sx.wFull, sx.maxWCalcVarSessionCol40px)}>
       {/* Queued/steered messages fold out from behind the composer box —
           a sibling flap tucked under its top edge, not a box-in-box. */}
       {attached}
@@ -1479,13 +1679,13 @@ setLocalStaging((current) => subtractStaging(current, batch));
             toolbar cannot trap it at one-row height. */}
         <div
           ref={voiceOverlayRef}
-          className="pointer-events-none !absolute inset-0 !z-[6]"
+          {...stylex.props(sx.pointerEventsNone, sx.Absolute, sx.inset0, sx.Z6)}
         />
         {/* Vim mode indicator — only surfaces outside insert mode, so plain
             typing looks identical with the pref on. Sits above the input wrap's
             scroll-fade mask. */}
         {vimEnabled && vim.mode !== "insert" && (
-          <div className="pointer-events-none absolute right-3 top-2 z-[2] select-none rounded-sm border border-line bg-surface px-1.5 py-0.5 text-meta font-semibold tracking-wider text-dim">
+          <div className="select-none" {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.right3, sx.top2, sx.z2, sx.roundedSm, sx.border, sx.borderLine, sx.bgSurface, sx.px15, sx.py05, sx.fontSemibold, sx.trackingWider, sx.textDim, typography.meta)}>
             {vim.mode === "normal"
               ? "NORMAL"
               : vim.mode === "visual"
@@ -1493,7 +1693,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
                 : "V-LINE"}
           </div>
         )}
-        <div className="flex flex-wrap items-start gap-x-1">
+        <div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsStart, sx.gapX1)}>
           <AnimatePresence initial={false}>
             {/* Ask mode first: it encloses everything else in the row, being
                 the session's own state rather than something attached to the
@@ -1577,7 +1777,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
           disabled={disabled}
         />
         {attachingLabel(activeStaging) && (
-          <span className="sr-only" role="status">
+          <span {...stylex.props(sx.srOnly)} role="status">
             {attachingLabel(activeStaging)}
           </span>
         )}
@@ -1829,7 +2029,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
                       <span className={composerMenuIcon}>
                         <IconPaperclip size={22} />
                       </span>
-                      <span className="grow whitespace-nowrap">
+                      <span {...stylex.props(sx.grow, sx.whitespaceNowrap)}>
                         {canAttachFiles ? "Attach files" : "Attach an image"}
                       </span>
                       {!isPhone && attachChord && (
@@ -1849,7 +2049,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
                       <span className={composerMenuIcon}>
                         <IconAtSign size={22} />
                       </span>
-                      <span className="grow whitespace-nowrap">Reference a file</span>
+                      <span {...stylex.props(sx.grow, sx.whitespaceNowrap)}>Reference a file</span>
                       {/* Not a chord: typing @ in the field opens the same
                           picker, which is the faster way once you know it.
                           Hidden on phones, where there are no keys to press —
@@ -1869,7 +2069,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
                       <span className={composerMenuIcon}>
                         <IconCrosshair size={22} />
                       </span>
-                      <span className="grow whitespace-nowrap">
+                      <span {...stylex.props(sx.grow, sx.whitespaceNowrap)}>
                         {goal ? "Edit goal" : "Set a goal"}
                       </span>
                     </button>
@@ -1891,7 +2091,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
                       <span className={composerMenuIcon}>
                         <IconNote size={22} />
                       </span>
-                      <span className="grow whitespace-nowrap">
+                      <span {...stylex.props(sx.grow, sx.whitespaceNowrap)}>
                         {noteMode ? "Back to prompting" : "Write a team note"}
                       </span>
                       {!isPhone && (
@@ -1947,7 +2147,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
           {/* `grow basis-0 shrink-0` rather than `flex-1`: every direct child of
               the toolbar is pinned at flex-shrink 0 so the model pill is the
               only thing that gives way, and a shorthand would take that back. */}
-          {!minimized && <div className="shrink-0 grow basis-0" />}
+          {!minimized && <div {...stylex.props(sx.shrink0, sx.grow, sx.basis0)} />}
 
           {/* Model + effort live together on the right edge (ChatGPT-style):
               one pill, effort levels up top, the model behind a submenu.
@@ -2149,12 +2349,12 @@ setLocalStaging((current) => subtractStaging(current, batch));
                     )}
                   </ContextMenu.Trigger>
                 </Tooltip>
-                <ContextMenu.Popup className="min-w-[230px]">
+                <ContextMenu.Popup {...stylex.props(sx.minW230px)}>
                   <ContextMenu.Item
                     onClick={() => pickBusySend("queue")}
                   >
                     <IconReturn size={20} />
-                    <span className="grow">Queue after run finishes</span>
+                    <span {...stylex.props(sx.grow)}>Queue after run finishes</span>
                     {busySendKeys("queue") && (
                       <ContextMenu.Shortcut>
                         {busySendKeys("queue")}
@@ -2166,7 +2366,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
                     onClick={() => pickBusySend("steer")}
                   >
                     <IconArrowUp size={20} />
-                    <span className="grow">Steer into running turn</span>
+                    <span {...stylex.props(sx.grow)}>Steer into running turn</span>
                     {busySendKeys("steer") && (
                       <ContextMenu.Shortcut>
                         {busySendKeys("steer")}
@@ -2198,7 +2398,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
             focus is lost, so it can never vanish mid-interaction. */}
         {vimEnabled && isPhone && !minimized && (focused || vim.mode !== "insert") && (
           <div
-            className="mt-1.5 flex gap-1.5 border-t border-line pt-1.5"
+            {...stylex.props(sx.mt15, sx.flex, sx.gap15, sx.borderT, sx.borderLine, sx.pt15)}
             onPointerDown={(e) => e.preventDefault()}
             onMouseDown={(e) => e.preventDefault()}
           >
@@ -2232,7 +2432,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
       {/* The keyboard-shortcut hint is irrelevant on touch and eats vertical
           space right where the keyboard appears. */}
       {hint && (
-        <div className="mt-[7px] text-center text-meta text-faint phone:hidden">
+        <div className="phone:hidden" {...stylex.props(sx.mt7px, sx.textCenter, sx.textFaint, typography.meta)}>
           {hint}
         </div>
       )}

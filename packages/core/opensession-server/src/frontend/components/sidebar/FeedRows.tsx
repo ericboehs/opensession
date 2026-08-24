@@ -27,6 +27,74 @@ import { IconCheck, IconFilter, IconPin } from "../icons";
 import { SidebarCtxMenu } from "../sidebar/SidebarCtxMenu";
 import { SIDEBAR_ROW, SIDEBAR_ROW_TITLE } from "../sidebar/SidebarItem";
 import React, { useEffect, useState } from "react";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	size7px: {
+			width: "7px",
+			height: "7px"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	mt5px: {
+			marginTop: "5px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	leading13: {
+			lineHeight: "1.3"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	textXs: {
+			fontSize: "var(--type-label)",
+			lineHeight: "var(--tw-leading,var(--text-xs--line-height))"
+	},
+	leadingSnug: {
+			lineHeight: "var(--leading-snug)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	flex: {
+			display: "flex"
+	},
+	size4: {
+			width: "16px",
+			height: "16px"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	minW230px: {
+			minWidth: "230px"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	py1: {
+			paddingBlock: "4px"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+});
 
 // A Support row: one TODO Plain ticket, single-line in the workspace rows'
 // exact shape. The rail dot wears the linked session's status (the ticket's
@@ -89,7 +157,7 @@ export function SupportRow({
 			>
 				<span className={SIDEBAR_RAIL}>
 					<span
-						className="size-[7px] rounded-full"
+						{...stylex.props(sx.size7px, sx.roundedFull)}
 						style={{ backgroundColor: dot }}
 					/>
 				</span>
@@ -247,7 +315,7 @@ export function FeedRow({
 			>
 				<span className={SIDEBAR_RAIL}>
 					<span
-						className="size-[7px] rounded-full"
+						{...stylex.props(sx.size7px, sx.roundedFull)}
 						style={{ backgroundColor: dot }}
 					/>
 				</span>
@@ -292,9 +360,9 @@ export function FeedRow({
 				</span>
 			</Popover.Trigger>
 			<RowCardPopup>
-				<div className="mt-[5px] text-label font-semibold leading-[1.3]">{item.title}</div>
+				<div {...stylex.props(sx.mt5px, sx.fontSemibold, sx.leading13, typography.label)}>{item.title}</div>
 				{item.preview && (
-					<div className="selectable mt-1 line-clamp-4 text-xs leading-snug text-dim">
+					<div className="selectable line-clamp-4" {...stylex.props(sx.mt1, sx.textXs, sx.leadingSnug, sx.textDim)}>
 						{item.preview}
 					</div>
 				)}
@@ -303,7 +371,7 @@ export function FeedRow({
 					timeTitle={ts ? new Date(ts).toLocaleString() : undefined}
 				>
 					{session && (
-						<span className="shrink-0 text-xs text-dim">Linked session</span>
+						<span {...stylex.props(sx.shrink0, sx.textXs, sx.textDim)}>Linked session</span>
 					)}
 				</CardFooter>
 			</RowCardPopup>
@@ -372,10 +440,10 @@ export function FeedFilterMenu({
 		selected: boolean,
 	) => (
 		<Menu.Item key={`${key}:${value}`} onClick={() => onSet(key, selected ? "" : value)}>
-			<span className="flex size-4 shrink-0 items-center justify-center">
+			<span {...stylex.props(sx.flex, sx.size4, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>
 				{selected && <IconCheck size={13} />}
 			</span>
-			<span className="truncate">{label}</span>
+			<span {...stylex.props(sx.truncate)}>{label}</span>
 		</Menu.Item>
 	);
 	// meta options derived from the current items (plus static prepends);
@@ -418,7 +486,7 @@ export function FeedFilterMenu({
 			>
 				<IconFilter size={19} />
 			</Menu.Trigger>
-			<Menu.Popup align="end" sideOffset={5} className="min-w-[230px]">
+			<Menu.Popup align="end" sideOffset={5} {...stylex.props(sx.minW230px)}>
 				{metaSpecs.map((spec) => {
 					const options = metaOptions(spec);
 					const me = options.find(
@@ -444,7 +512,7 @@ export function FeedFilterMenu({
 							<Menu.GroupLabel>{spec.label}</Menu.GroupLabel>
 							{item(spec.key, "Any", "", sel === "")}
 							{options === undefined ? (
-								<div className="px-3 py-1 text-xs text-faint">Loading…</div>
+								<div {...stylex.props(sx.px3, sx.py1, sx.textXs, sx.textFaint)}>Loading…</div>
 							) : (
 								options.map((o) =>
 									item(spec.key, o.label, o.value, sel === o.value),

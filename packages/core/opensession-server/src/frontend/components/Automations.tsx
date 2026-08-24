@@ -43,6 +43,370 @@ import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
 import { WorkingPill } from "../ui/status";
 import { Switch } from "../ui/switch";
 import { formatDuration } from "../lib/time";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	relative: {
+			position: "relative"
+	},
+	flex: {
+			display: "flex"
+	},
+	minH0: {
+			minHeight: "0"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	borderT: {
+			borderTopStyle: "solid",
+			borderTopWidth: "1px"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	inset0: {
+			inset: "0"
+	},
+	roundedSm: {
+			borderRadius: "calc(4px * var(--rf))"
+	},
+	outlineNone: {
+			outlineStyle: "none"
+	},
+	srOnly: {
+			clipPath: "inset(50%)",
+			whiteSpace: "nowrap",
+			borderWidth: "0",
+			width: "1px",
+			height: "1px",
+			margin: "-1px",
+			padding: "0",
+			position: "absolute",
+			overflow: "hidden"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	leading5: {
+			lineHeight: "20px"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	pointerEventsNone: {
+			pointerEvents: "none"
+	},
+	flexAuto: {
+			flex: "auto"
+	},
+	borderL: {
+			borderLeftStyle: "solid",
+			borderLeftWidth: "1px"
+	},
+	bgPanel: {
+			backgroundColor: "var(--bg-panel)"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap25: {
+			gap: "10px"
+	},
+	borderB: {
+			borderBottomStyle: "solid",
+			borderBottomWidth: "1px"
+	},
+	borderDivider: {
+			borderColor: "var(--divider)"
+	},
+	px4: {
+			paddingInline: "16px"
+	},
+	py3: {
+			paddingBlock: "12px"
+	},
+	My1: {
+			marginBlock: "-4px"
+	},
+	Ml05: {
+			marginLeft: "-2px"
+	},
+	hidden: {
+			display: "none"
+	},
+	gap175: {
+			gap: "7px"
+	},
+	px15: {
+			paddingInline: "6px"
+	},
+	py1: {
+			paddingBlock: "4px"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	mlAuto: {
+			marginLeft: "auto"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	size7: {
+			width: "28px",
+			height: "28px"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	roundedMd: {
+			borderRadius: "calc(7px * var(--rf))"
+	},
+	gap35: {
+			gap: "14px"
+	},
+	overflowYAuto: {
+			overflowY: "auto"
+	},
+	px5: {
+			paddingInline: "20px"
+	},
+	pt45: {
+			paddingTop: "18px"
+	},
+	pb10: {
+			paddingBottom: "40px"
+	},
+	bgSurface: {
+			backgroundColor: "var(--bg)"
+	},
+	roundedPanel: {
+			borderRadius: "calc(var(--radius) * var(--rf))"
+	},
+	px35: {
+			paddingInline: "14px"
+	},
+	leadingRelaxed: {
+			lineHeight: "var(--leading-relaxed)"
+	},
+	whitespacePreWrap: {
+			whiteSpace: "pre-wrap"
+	},
+	grid: {
+			display: "grid"
+	},
+	gridColsMaxContent1fr: {
+			gridTemplateColumns: "max-content 1fr"
+	},
+	itemsBaseline: {
+			alignItems: "baseline"
+	},
+	gapX5: {
+			columnGap: "20px"
+	},
+	gapY2: {
+			rowGap: "8px"
+	},
+	textGreen: {
+			color: "var(--green)"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	leading17: {
+			lineHeight: "1.7"
+	},
+	whitespaceNowrap: {
+			whiteSpace: "nowrap"
+	},
+	pbPx: {
+			paddingBottom: "1px"
+	},
+	leadingNone: {
+			lineHeight: "1"
+	},
+	mt25: {
+			marginTop: "10px"
+	},
+	pt2: {
+			paddingTop: "8px"
+	},
+	gap1: {
+			gap: "4px"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	textYellow: {
+			color: "var(--yellow)"
+	},
+	wFull: {
+			width: "100%"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	itemsStart: {
+			alignItems: "flex-start"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	roundedRow: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	px25: {
+			paddingInline: "10px"
+	},
+	py225: {
+			paddingBlock: "9px"
+	},
+	textLeft: {
+			textAlign: "left"
+	},
+	transitionColors: {
+			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	size5: {
+			width: "20px",
+			height: "20px"
+	},
+	maxWNone: {
+			maxWidth: "none"
+	},
+	scale115: {
+			scale: "1.15"
+	},
+	gap075: {
+			gap: "3px"
+	},
+	leadingNormal: {
+			lineHeight: "var(--leading-normal)"
+	},
+	mt05: {
+			marginTop: "2px"
+	},
+	justifyEnd: {
+			justifyContent: "flex-end"
+	},
+	Mx25: {
+			marginInline: "-10px"
+	},
+	overscrollContain: {
+			overscrollBehavior: "contain"
+	},
+	underline: {
+			textDecorationLine: "underline"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	py2: {
+			paddingBlock: "8px"
+	},
+	bgTransparent: {
+			backgroundColor: "#0000"
+	},
+	border0: {
+			borderStyle: "solid",
+			borderWidth: "0"
+	},
+	maxH180px: {
+			maxHeight: "180px"
+	},
+	py15: {
+			paddingBlock: "6px"
+	},
+	ml2: {
+			marginLeft: "8px"
+	},
+	minH10: {
+			minHeight: "40px"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderDashed: {
+			borderStyle: "dashed"
+	},
+	p3: {
+			padding: "12px"
+	},
+	mb2: {
+			marginBottom: "8px"
+	},
+	maxW150px: {
+			maxWidth: "150px"
+	},
+	mt2: {
+			marginTop: "8px"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	gapY1: {
+			rowGap: "4px"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	w110px: {
+			width: "110px"
+	},
+	gridCols2: {
+			gridTemplateColumns: "repeat(2,minmax(0,1fr))"
+	},
+	leadingSnug: {
+			lineHeight: "var(--leading-snug)"
+	},
+	py25: {
+			paddingBlock: "10px"
+	},
+	ml15: {
+			marginLeft: "6px"
+	},
+	justifyBetween: {
+			justifyContent: "space-between"
+	},
+	fontNormal: {
+			fontWeight: "var(--font-weight-normal)"
+	},
+	mrAuto: {
+			marginRight: "auto"
+	},
+});
 
 /* The old .automation-form family, as utilities. Two of its rules reached in
    from the form to the fields inside it and have to stay descendant selectors:
@@ -283,7 +647,7 @@ setError(e.message);
   }
 
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1">
+    <div {...stylex.props(sx.relative, sx.flex, sx.minH0, sx.minW0, sx.flex1)}>
     {/* Drawer open: the list compresses to a narrow rail (Reviews-style), and
         on phones it steps aside entirely — Back returns to it. */}
     <div
@@ -308,7 +672,7 @@ setError(e.message);
 					variant="primary"
 					size="lg"
 					icon={<IconPlus size={20} />}
-					className="text-control-label font-medium"
+					{...stylex.props(sx.fontMedium, typography.controlLabel)}
 					onClick={() => setShowModal(true)}
 				>
 					New automation
@@ -327,7 +691,7 @@ setError(e.message);
           changelog drafts, flaky-test hunts…
         </EmptyState>
       ) : (
-        <div className="flex flex-col border-t border-line">
+        <div {...stylex.props(sx.flex, sx.flexCol, sx.borderT, sx.borderLine)}>
           {automations.map((a) => {
             const running = a.isRunning || a.lastRunStatus === "running";
             return (
@@ -346,10 +710,10 @@ setError(e.message);
                     keyboard-reachable without nesting one inside the other.
                     Content above it is inert unless it has its own tooltip. */}
                 <button
-                  className="absolute inset-0 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50"
+                  className="focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50" {...stylex.props(sx.absolute, sx.inset0, sx.roundedSm, sx.outlineNone)}
                   onClick={() => onSelect(a.id)}
                 >
-                  <span className="sr-only">Open {a.name}</span>
+                  <span {...stylex.props(sx.srOnly)}>Open {a.name}</span>
                 </button>
                 <TriggerIcon automation={a} />
                 <span
@@ -358,11 +722,11 @@ setError(e.message);
                     !a.enabled && "opacity-55",
                   )}
                 >
-                  <span className="truncate text-item-title font-semibold leading-5">{a.name}</span>
-                  <span className="truncate text-meta text-faint">{triggerSummary(a)}</span>
+                  <span {...stylex.props(sx.truncate, sx.fontSemibold, sx.leading5, typography.itemTitle)}>{a.name}</span>
+                  <span {...stylex.props(sx.truncate, sx.textFaint, typography.meta)}>{triggerSummary(a)}</span>
                 </span>
                 {running ? (
-                  <WorkingPill className="pointer-events-none relative max-[560px]:max-w-[92px] max-[560px]:overflow-hidden max-[560px]:text-ellipsis" />
+                  <WorkingPill className="max-[560px]:max-w-[92px] max-[560px]:overflow-hidden max-[560px]:text-ellipsis" {...stylex.props(sx.pointerEventsNone, sx.relative)} />
                 ) : a.lastRunStatus === "ok" || a.lastRunStatus === "error" ? (
                   // Its own click target rather than an inert glyph: keeping
                   // pointer events is what keeps the tooltip, and the click
@@ -408,7 +772,7 @@ setError(e.message);
                     here, so it sits on the edge, in a column of its own. */}
                 <Switch
                   size="sm"
-                  className="relative"
+                  {...stylex.props(sx.relative)}
                   checked={a.enabled}
                   onCheckedChange={() => handleToggle(a)}
                   aria-label={`${a.name} · ${a.enabled ? "on" : "off"}`}
@@ -422,24 +786,24 @@ setError(e.message);
     </div>
 
       {sel && (
-        <aside className="flex min-h-0 min-w-0 flex-auto flex-col border-l border-line bg-panel max-[900px]:border-l-0">
-          <div className="flex shrink-0 items-center gap-2.5 border-b border-divider px-4 py-3">
+        <aside className="max-[900px]:border-l-0" {...stylex.props(sx.flex, sx.minH0, sx.minW0, sx.flexAuto, sx.flexCol, sx.borderL, sx.borderLine, sx.bgPanel)}>
+          <div {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.gap25, sx.borderB, sx.borderDivider, sx.px4, sx.py3)}>
             {/* Phones get Back instead of Close: there the drawer is the page. */}
             <button
-              className="-my-1 -ml-0.5 hidden shrink-0 items-center gap-1.75 px-1.5 py-1 text-item-title font-medium text-fg max-[900px]:inline-flex"
+              className="max-[900px]:inline-flex" {...stylex.props(sx.My1, sx.Ml05, sx.hidden, sx.shrink0, sx.itemsCenter, sx.gap175, sx.px15, sx.py1, sx.fontMedium, sx.textFg, typography.itemTitle)}
               onClick={() => onSelect("")}
               title="Back to automations"
             >
-              <svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" className="text-dim" aria-hidden>
+              <svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" {...stylex.props(sx.textDim)} aria-hidden>
                 <path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.749.749 0 1 1 1.06 1.06L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z" />
               </svg>
               Automations
             </button>
-            <span className="min-w-0 truncate text-label font-semibold">
+            <span {...stylex.props(sx.minW0, sx.truncate, sx.fontSemibold, typography.label)}>
               {editMode ? `Edit ${sel.name}` : sel.name}
             </span>
             {!editMode && (
-              <div className="ml-auto flex shrink-0 gap-1.5">
+              <div {...stylex.props(sx.mlAuto, sx.flex, sx.shrink0, sx.gap15)}>
                 <Button
                   size="sm"
                   variant="soft"
@@ -462,7 +826,7 @@ setError(e.message);
               </div>
             )}
             <button
-              className="flex size-7 shrink-0 items-center justify-center rounded-md text-dim hover:bg-hover hover:text-fg max-[900px]:hidden"
+              className="hover:bg-hover hover:text-fg max-[900px]:hidden" {...stylex.props(sx.flex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.textDim)}
               onClick={() => onSelect("")}
               title="Close"
             >
@@ -471,7 +835,7 @@ setError(e.message);
               </svg>
             </button>
           </div>
-          <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-5 pt-4.5 pb-10">
+          <div {...stylex.props(sx.flex, sx.minH0, sx.flex1, sx.flexCol, sx.gap35, sx.overflowYAuto, sx.px5, sx.pt45, sx.pb10)}>
             {editMode ? (
               <div className={FORM_INLINE}>
                 <AutomationForm
@@ -489,20 +853,20 @@ setError(e.message);
               </div>
             ) : (
               <>
-                <div className="flex items-center gap-2.5">
+                <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25)}>
                   <Switch
                     checked={sel.enabled}
                     onCheckedChange={() => handleToggle(sel)}
                     aria-label={`${sel.name} · ${sel.enabled ? "on" : "off"}`}
                   />
-                  <span className="text-dim text-label">
+                  <span {...stylex.props(sx.textDim, typography.label)}>
                     {sel.enabled ? "Enabled" : "Disabled"}
                   </span>
                   {(sel.isRunning || sel.lastRunStatus === "running") && (
                     <WorkingPill />
                   )}
                   {sel.enabled && sel.nextRunAt && (
-                    <span className="text-faint text-label ml-auto shrink-0">
+                    <span {...stylex.props(sx.textFaint, sx.mlAuto, sx.shrink0, typography.label)}>
                       next run {formatNext(sel.nextRunAt)}
                     </span>
                   )}
@@ -510,16 +874,16 @@ setError(e.message);
 
                 <div>
                   <div className={SECTION_LABEL}>Instructions</div>
-                  <div className="bg-surface rounded-panel px-3.5 py-3 text-label leading-relaxed text-dim whitespace-pre-wrap">
+                  <div {...stylex.props(sx.bgSurface, sx.roundedPanel, sx.px35, sx.py3, sx.leadingRelaxed, sx.textDim, sx.whitespacePreWrap, typography.label)}>
                     {sel.prompt}
                   </div>
                 </div>
 
                 <div>
                   <div className={SECTION_LABEL}>Configuration</div>
-                  <div className="grid grid-cols-[max-content_1fr] items-baseline gap-x-5 gap-y-2 text-label">
+                  <div {...stylex.props(sx.grid, sx.gridColsMaxContent1fr, sx.itemsBaseline, sx.gapX5, sx.gapY2, typography.label)}>
                     <DetailKey>Trigger</DetailKey>
-                    <span className="text-dim min-w-0">
+                    <span {...stylex.props(sx.textDim, sx.minW0)}>
                       {sel.slackWatch?.channel ? (
                         <>
                           watches{" "}
@@ -548,7 +912,7 @@ setError(e.message);
                     </span>
 
                     <DetailKey>Mode</DetailKey>
-                    <span className="text-dim">
+                    <span {...stylex.props(sx.textDim)}>
                       {sel.mode === "ask"
                         ? sel.sandbox
                           ? "Ask · isolated MicroVM workspace"
@@ -559,18 +923,18 @@ setError(e.message);
                     </span>
 
                     <DetailKey>Environment</DetailKey>
-                    <span className="text-dim">
+                    <span {...stylex.props(sx.textDim)}>
                       {sel.sandbox
                         ? "MicroVM · pinned credentials and restricted egress"
                         : "Host worktree"}
                     </span>
 
                     <DetailKey>Model</DetailKey>
-                    <span className="text-dim">
+                    <span {...stylex.props(sx.textDim)}>
                       {sel.model || `${defaultModel || "default"} (default)`}
                       {sel.fallbackModel && sel.fallbackModel !== "none" && (
                         <span
-                          className="text-faint"
+                          {...stylex.props(sx.textFaint)}
                           title="Used only when every account for the primary model has hit its usage limit"
                         >
                           {" "}· falls back to {sel.fallbackModel}
@@ -581,13 +945,13 @@ setError(e.message);
                     {sel.accountId && (
                       <>
                         <DetailKey>Account</DetailKey>
-                        <span className="text-dim">
+                        <span {...stylex.props(sx.textDim)}>
                           {providerAccountLabel(
                             providerAccounts.find((x) => x.id === sel.accountId) ?? {
                               name: "pinned account",
                             },
                           )}
-                          <span className="text-faint">
+                          <span {...stylex.props(sx.textFaint)}>
                             {sel.accountStrict === false
                               ? " · preferred, falls back to the shared pool"
                               : " · hard pin (cost cap)"}
@@ -598,7 +962,7 @@ setError(e.message);
                     )}
 
                     <DetailKey>MCPs</DetailKey>
-                    <span className="text-dim min-w-0">
+                    <span {...stylex.props(sx.textDim, sx.minW0)}>
                       {sel.mcpServers === undefined
                         ? "all connectors"
                         : sel.mcpServers.length === 0
@@ -609,7 +973,7 @@ setError(e.message);
                     {sel.inputs?.length ? (
                       <>
                         <DetailKey>Inputs</DetailKey>
-                        <span className="text-dim min-w-0">
+                        <span {...stylex.props(sx.textDim, sx.minW0)}>
                           {sel.inputs.map((input) =>
                             input.label ||
                             (input.source.type === "slack_channel"
@@ -625,7 +989,7 @@ setError(e.message);
                     {sel.outputs?.length ? (
                       <>
                         <DetailKey>Outputs</DetailKey>
-                        <span className="text-dim min-w-0">
+                        <span {...stylex.props(sx.textDim, sx.minW0)}>
                           {sel.outputs.map((output) => {
                             if (output.type === "report")
                               return `Reports · ${output.publish || "always"}`;
@@ -643,7 +1007,7 @@ setError(e.message);
                     )}
 
                     <DetailKey>Created</DetailKey>
-                    <span className="text-dim">
+                    <span {...stylex.props(sx.textDim)}>
                       by {sel.createdBy}
                       {sel.createdAt &&
                         ` · ${new Date(sel.createdAt).toLocaleDateString(undefined, {
@@ -658,12 +1022,12 @@ setError(e.message);
                 <div>
                   <div className={SECTION_LABEL}>Activity</div>
                   {sel.lastRunAt ? (
-                    <div className="text-dim text-supporting">
+                    <div {...stylex.props(sx.textDim, typography.supporting)}>
                       last run {relativeTime(sel.lastRunAt)}
                       {sel.lastTrigger ? ` via ${sel.lastTrigger}` : ""}
-                      {sel.lastRunStatus === "ok" && <span className="text-green"> ✓</span>}
+                      {sel.lastRunStatus === "ok" && <span {...stylex.props(sx.textGreen)}> ✓</span>}
                       {sel.lastRunStatus === "error" && (
-                        <span className="text-red" title={sel.lastRunError}> ✗</span>
+                        <span {...stylex.props(sx.textRed)} title={sel.lastRunError}> ✗</span>
                       )}
                       {sel.lastRunSessionId && (
                         <>
@@ -682,7 +1046,7 @@ setError(e.message);
                       )}
                     </div>
                   ) : (
-                    <div className="text-faint text-supporting">No runs yet.</div>
+                    <div {...stylex.props(sx.textFaint, typography.supporting)}>No runs yet.</div>
                   )}
                   {(sel.runs?.length ?? 0) > 0 && (
                     <>
@@ -764,7 +1128,7 @@ function eventLabel(key: string): string {
 /** Left column of the drawer's Configuration grid. */
 function DetailKey({ children }: { children: React.ReactNode }) {
   return (
-    <span className="text-faint text-label leading-[1.7] whitespace-nowrap">{children}</span>
+    <span {...stylex.props(sx.textFaint, sx.leading17, sx.whitespaceNowrap, typography.label)}>{children}</span>
   );
 }
 
@@ -805,7 +1169,7 @@ function TriggerGraph({ runs, compact }: { runs: AutomationRun[]; compact?: bool
         height={PLOT_H + 1}
         role="img"
         aria-label={`Trigger history: ${total} runs in the last ${GRAPH_DAYS} days`}
-        className="shrink-0"
+        {...stylex.props(sx.shrink0)}
       >
         {/* baseline */}
         <rect x={0} y={PLOT_H} width={GRAPH_DAYS * SLOT - 2} height={1} fill="var(--border)" />
@@ -837,7 +1201,7 @@ function TriggerGraph({ runs, compact }: { runs: AutomationRun[]; compact?: bool
         })}
       </svg>
       {!compact && (
-        <span className="pb-px text-meta leading-none text-faint">
+        <span {...stylex.props(sx.pbPx, sx.leadingNone, sx.textFaint, typography.meta)}>
           {total} run{total === 1 ? "" : "s"} · last {GRAPH_DAYS}d
         </span>
       )}
@@ -856,25 +1220,25 @@ function RunLedger({
   onRetrigger: (sessionId: string) => void;
 }) {
   return (
-    <div className="mt-2.5 border-t border-line pt-2 flex flex-col gap-1">
+    <div {...stylex.props(sx.mt25, sx.borderT, sx.borderLine, sx.pt2, sx.flex, sx.flexCol, sx.gap1)}>
       {runs.map((r) => (
-        <div key={r.sessionId + r.at} className="flex items-baseline gap-2 text-label text-dim min-w-0">
+        <div key={r.sessionId + r.at} {...stylex.props(sx.flex, sx.itemsBaseline, sx.gap2, sx.textDim, sx.minW0, typography.label)}>
           {r.status === "running" ? (
-            <span className="text-yellow shrink-0">●</span>
+            <span {...stylex.props(sx.textYellow, sx.shrink0)}>●</span>
           ) : r.status === "ok" ? (
-            <span className="text-green shrink-0">✓</span>
+            <span {...stylex.props(sx.textGreen, sx.shrink0)}>✓</span>
           ) : (
-            <span className="text-red shrink-0" title={r.error}>✗</span>
+            <span {...stylex.props(sx.textRed, sx.shrink0)} title={r.error}>✗</span>
           )}
-          <span className="shrink-0" title={new Date(r.at).toLocaleString()}>
+          <span {...stylex.props(sx.shrink0)} title={new Date(r.at).toLocaleString()}>
             {relativeTime(r.at)}
           </span>
-          <span className="text-faint shrink-0">via {r.trigger}</span>
+          <span {...stylex.props(sx.textFaint, sx.shrink0)}>via {r.trigger}</span>
           {r.durationMs != null && (
-            <span className="text-faint shrink-0">{formatDuration(r.durationMs)}</span>
+            <span {...stylex.props(sx.textFaint, sx.shrink0)}>{formatDuration(r.durationMs)}</span>
           )}
           {r.error && (
-            <span className="text-red truncate" title={r.error}>
+            <span {...stylex.props(sx.textRed, sx.truncate)} title={r.error}>
               {r.error}
             </span>
           )}
@@ -913,14 +1277,14 @@ function WebhookUrl({ id, secret }: { id: string; secret: string }) {
   const url = `${WEBHOOK_BASE_URL}/automations/${id}/${secret}`;
 
   return (
-    <span className="flex items-center gap-2 min-w-0">
-      <span className="min-w-0 flex-1 truncate text-meta text-dim" title={url}>
+    <span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.minW0)}>
+      <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.textDim, typography.meta)} title={url}>
         POST {url.replace(secret, secret.slice(0, 6) + "…")}
       </span>
       <Button
         size="sm"
         variant="soft"
-        className="shrink-0"
+        {...stylex.props(sx.shrink0)}
         onClick={() => {
           navigator.clipboard.writeText(url).then(() => {
             setCopied(true);
@@ -1038,18 +1402,18 @@ function ChooserRow({
   return (
     <button
       type="button"
-      className="flex w-full cursor-pointer items-start gap-3 rounded-row px-2.5 py-2.25 text-left transition-colors hover:bg-hover"
+      className="hover:bg-hover" {...stylex.props(sx.flex, sx.wFull, sx.cursorPointer, sx.itemsStart, sx.gap3, sx.roundedRow, sx.px25, sx.py225, sx.textLeft, sx.transitionColors)}
       onClick={onClick}
     >
       {/* Normalize the drawn height, not the SVG box, the way the list rows do. */}
-      <span className="flex size-5 shrink-0 items-center justify-center text-faint">
-        <Icon size={20} className="max-w-none scale-[1.15]" />
+      <span {...stylex.props(sx.flex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textFaint)}>
+        <Icon size={20} {...stylex.props(sx.maxWNone, sx.scale115)} />
       </span>
-      <span className="flex min-w-0 flex-1 flex-col gap-0.75">
-        <span className="text-item-title font-semibold leading-5 text-fg">{title}</span>
-        <span className="text-supporting leading-normal text-faint">{description}</span>
+      <span {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.flexCol, sx.gap075)}>
+        <span {...stylex.props(sx.fontSemibold, sx.leading5, sx.textFg, typography.itemTitle)}>{title}</span>
+        <span {...stylex.props(sx.leadingNormal, sx.textFaint, typography.supporting)}>{description}</span>
       </span>
-      {meta && <span className="mt-0.5 shrink-0 text-meta text-faint">{meta}</span>}
+      {meta && <span {...stylex.props(sx.mt05, sx.shrink0, sx.textFaint, typography.meta)}>{meta}</span>}
     </button>
   );
 }
@@ -1090,7 +1454,7 @@ setError(e.message);
         description="Describe what you want, or start from a template. Everything stays editable."
       />
 
-      <div className="flex flex-col gap-2">
+      <div {...stylex.props(sx.flex, sx.flexCol, sx.gap2)}>
         <Textarea
           ref={describeRef}
           value={description}
@@ -1103,7 +1467,7 @@ setError(e.message);
           placeholder="Every weekday morning, check Sentry for new errors and rank them by impact"
         />
         {error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
-        <div className="flex justify-end">
+        <div {...stylex.props(sx.flex, sx.justifyEnd)}>
           <Button
             variant="primary"
             onClick={handleDraft}
@@ -1116,7 +1480,7 @@ setError(e.message);
 
       {/* Outdented by the rows' own padding, so each group's label shares an x
           with the rows under it (see src/frontend/AGENTS.md). */}
-      <div className="-mx-2.5">
+      <div {...stylex.props(sx.Mx25)}>
         <div className={cn(SECTION_LABEL, "px-2.5")}>Start from scratch</div>
         <ChooserRow
           icon={IconClock}
@@ -1133,11 +1497,11 @@ setError(e.message);
       </div>
 
       {templates.length > 0 && (
-        <div className="-mx-2.5 flex min-h-0 flex-col">
+        <div {...stylex.props(sx.Mx25, sx.flex, sx.minH0, sx.flexCol)}>
           <div className={cn(SECTION_LABEL, "px-2.5")}>Templates</div>
           {/* The gallery scrolls inside the dialog rather than growing it, so
               the describe field and the two blank starts stay on screen. */}
-          <div className="min-h-0 overflow-y-auto overscroll-contain phone:max-h-none desktop:max-h-[32dvh]">
+          <div className="phone:max-h-none desktop:max-h-[32dvh]" {...stylex.props(sx.minH0, sx.overflowYAuto, sx.overscrollContain)}>
             {templates.map((t) => (
               <ChooserRow
                 key={t.id}
@@ -1199,61 +1563,61 @@ function McpPicker({
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-baseline gap-2">
-        <span className="text-fg text-label font-medium">MCPs</span>
-        <span className="text-dim text-label">
+    <div {...stylex.props(sx.flex, sx.flexCol, sx.gap15)}>
+      <div {...stylex.props(sx.flex, sx.itemsBaseline, sx.gap2)}>
+        <span {...stylex.props(sx.textFg, sx.fontMedium, typography.label)}>MCPs</span>
+        <span {...stylex.props(sx.textDim, typography.label)}>
           Select which connectors this automation's runs can use
         </span>
         <a
-          className="text-dim text-label underline ml-auto shrink-0"
+          {...stylex.props(sx.textDim, sx.underline, sx.mlAuto, sx.shrink0, typography.label)}
           href={`${BASE_PATH}/settings`}
         >
           Manage MCPs
         </a>
       </div>
-      <div className="bg-surface rounded-panel overflow-hidden">
-        <div className="flex items-center gap-2 border-b border-divider px-3 py-2">
+      <div {...stylex.props(sx.bgSurface, sx.roundedPanel, sx.overflowHidden)}>
+        <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.borderB, sx.borderDivider, sx.px3, sx.py2)}>
           {/* Chrome-less on purpose: the picker's own panel is the surface, so
               a second well inside it would read as a box in a box. */}
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search MCPs…"
-            className="flex-1 bg-transparent border-0 outline-none text-label text-fg placeholder:text-faint"
+            className="placeholder:text-faint" {...stylex.props(sx.flex1, sx.bgTransparent, sx.border0, sx.outlineNone, sx.textFg, typography.label)}
             style={{ border: "none", padding: 0, background: "transparent" }}
           />
-          <span className="text-faint text-meta shrink-0">
+          <span {...stylex.props(sx.textFaint, sx.shrink0, typography.meta)}>
             {all ? "all connectors" : `${selected.length} selected`}
           </span>
         </div>
         <label
-          className="flex items-center gap-2.5 border-b border-line px-3 py-2 text-label cursor-pointer hover:bg-hover"
+          className="hover:bg-hover" {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25, sx.borderB, sx.borderLine, sx.px3, sx.py2, sx.cursorPointer, typography.label)}
         >
           <Checkbox checked={all} onCheckedChange={() => onChange(all ? [] : undefined)} />
-          <span className="text-fg">All connectors</span>
-          <span className="text-faint text-meta">
+          <span {...stylex.props(sx.textFg)}>All connectors</span>
+          <span {...stylex.props(sx.textFaint, typography.meta)}>
             every configured server (pre-least-privilege default)
           </span>
         </label>
-        <div className="max-h-[180px] overflow-y-auto">
+        <div {...stylex.props(sx.maxH180px, sx.overflowYAuto)}>
           {shown.map((s) => (
             <label
               key={s.name}
-              className="flex items-center gap-2.5 px-3 py-1.5 text-label cursor-pointer hover:bg-hover"
+              className="hover:bg-hover" {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25, sx.px3, sx.py15, sx.cursorPointer, typography.label)}
             >
               <Checkbox
                 checked={all || selected.includes(s.name)}
                 onCheckedChange={() => toggle(s.name)}
               />
-              <span className="text-fg">{s.name}</span>
+              <span {...stylex.props(sx.textFg)}>{s.name}</span>
               {s.status !== "connected" && s.status !== "ready" && (
-                <span className="text-yellow text-meta">{s.status}</span>
+                <span {...stylex.props(sx.textYellow, typography.meta)}>{s.status}</span>
               )}
             </label>
           ))}
           {shown.length === 0 && (
-            <div className="px-3 py-2 text-faint text-label">No connectors match.</div>
+            <div {...stylex.props(sx.px3, sx.py2, sx.textFaint, typography.label)}>No connectors match.</div>
           )}
         </div>
       </div>
@@ -1297,19 +1661,19 @@ function DataFlowEditor({
     onOutputsChange(outputs.map((output, at) => (at === index ? value : output)));
 
   return (
-    <div className="flex flex-col gap-2.5">
+    <div {...stylex.props(sx.flex, sx.flexCol, sx.gap25)}>
       <div>
-        <span className="text-label font-medium text-fg">Data flow</span>
-        <span className="ml-2 text-label text-dim">
+        <span {...stylex.props(sx.fontMedium, sx.textFg, typography.label)}>Data flow</span>
+        <span {...stylex.props(sx.ml2, sx.textDim, typography.label)}>
           Gather and flatten inputs before each run, then publish the result
         </span>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex min-h-10 items-center gap-2">
-          <span className="text-label font-medium text-dim">Inputs</span>
-          <span className="text-supporting text-faint">Each source is bounded and treated as untrusted data</span>
-          <div className="ml-auto flex gap-1.5">
+      <div {...stylex.props(sx.flex, sx.flexCol, sx.gap2)}>
+        <div {...stylex.props(sx.flex, sx.minH10, sx.itemsCenter, sx.gap2)}>
+          <span {...stylex.props(sx.fontMedium, sx.textDim, typography.label)}>Inputs</span>
+          <span {...stylex.props(sx.textFaint, typography.supporting)}>Each source is bounded and treated as untrusted data</span>
+          <div {...stylex.props(sx.mlAuto, sx.flex, sx.gap15)}>
             <Button
               size="sm"
               onClick={() =>
@@ -1352,7 +1716,7 @@ function DataFlowEditor({
         </div>
 
         {inputs.length === 0 ? (
-          <div className="rounded-panel border border-dashed border-line px-3 py-3 text-label text-faint">
+          <div {...stylex.props(sx.roundedPanel, sx.border, sx.borderDashed, sx.borderLine, sx.px3, sx.py3, sx.textFaint, typography.label)}>
             No collected inputs. The run receives only its instructions and trigger context.
           </div>
         ) : (
@@ -1360,10 +1724,10 @@ function DataFlowEditor({
             const slack = input.source.type === "slack_channel" ? input.source : null;
             const reports = input.source.type === "reports" ? input.source : null;
             return (
-              <div key={input.id} className="rounded-panel bg-surface p-3">
-                <div className="mb-2 flex min-h-10 items-center gap-2">
+              <div key={input.id} {...stylex.props(sx.roundedPanel, sx.bgSurface, sx.p3)}>
+                <div {...stylex.props(sx.mb2, sx.flex, sx.minH10, sx.itemsCenter, sx.gap2)}>
                   <Select
-                    className="max-w-[150px]"
+                    {...stylex.props(sx.maxW150px)}
                     value={input.source.type}
                     onChange={(e) => {
                       const source = e.target.value === "slack_channel"
@@ -1388,7 +1752,7 @@ function DataFlowEditor({
                   />
                   <Button
                     size="sm"
-                    className="shrink-0 text-dim hover:text-red"
+                    className="hover:text-red" {...stylex.props(sx.shrink0, sx.textDim)}
                     onClick={() => onInputsChange(inputs.filter((_, at) => at !== index))}
                   >
                     Remove
@@ -1441,8 +1805,8 @@ function DataFlowEditor({
                         />
                       </label>
                     </div>
-                    <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-label text-dim">
-                      <label className="flex min-h-10 items-center gap-2">
+                    <div {...stylex.props(sx.mt2, sx.flex, sx.flexWrap, sx.gapX5, sx.gapY1, sx.textDim, typography.label)}>
+                      <label {...stylex.props(sx.flex, sx.minH10, sx.itemsCenter, sx.gap2)}>
                         <Checkbox
                           checked={slack.includeThreads !== false}
                           onCheckedChange={(checked) =>
@@ -1454,7 +1818,7 @@ function DataFlowEditor({
                         />
                         Include thread replies
                       </label>
-                      <label className="flex min-h-10 items-center gap-2">
+                      <label {...stylex.props(sx.flex, sx.minH10, sx.itemsCenter, sx.gap2)}>
                         <Checkbox
                           checked={slack.includeBots === true}
                           onCheckedChange={(checked) =>
@@ -1509,11 +1873,11 @@ function DataFlowEditor({
         )}
       </div>
 
-      <div className="mt-1 flex flex-col gap-2">
-        <div className="flex min-h-10 items-center gap-2">
-          <span className="text-label font-medium text-dim">Outputs</span>
-          <span className="text-supporting text-faint">Reports are durable; Slack delivery is optional</span>
-          <div className="ml-auto flex gap-1.5">
+      <div {...stylex.props(sx.mt1, sx.flex, sx.flexCol, sx.gap2)}>
+        <div {...stylex.props(sx.flex, sx.minH10, sx.itemsCenter, sx.gap2)}>
+          <span {...stylex.props(sx.fontMedium, sx.textDim, typography.label)}>Outputs</span>
+          <span {...stylex.props(sx.textFaint, typography.supporting)}>Reports are durable; Slack delivery is optional</span>
+          <div {...stylex.props(sx.mlAuto, sx.flex, sx.gap15)}>
             {!outputs.some((output) => output.type === "report") && (
               <Button
                 size="sm"
@@ -1554,14 +1918,14 @@ function DataFlowEditor({
         </div>
 
         {outputs.length === 0 ? (
-          <div className="rounded-panel border border-dashed border-line px-3 py-3 text-label text-faint">
+          <div {...stylex.props(sx.roundedPanel, sx.border, sx.borderDashed, sx.borderLine, sx.px3, sx.py3, sx.textFaint, typography.label)}>
             No required output. The run behaves like a normal automation session.
           </div>
         ) : (
           outputs.map((output, index) => (
-            <div key={output.id} className="rounded-panel bg-surface p-3">
-              <div className="flex min-h-10 items-center gap-2">
-                <span className="w-[110px] shrink-0 text-label font-medium text-fg">
+            <div key={output.id} {...stylex.props(sx.roundedPanel, sx.bgSurface, sx.p3)}>
+              <div {...stylex.props(sx.flex, sx.minH10, sx.itemsCenter, sx.gap2)}>
+                <span {...stylex.props(sx.w110px, sx.shrink0, sx.fontMedium, sx.textFg, typography.label)}>
                   {output.type === "report" ? "Report" : "Slack"}
                 </span>
                 {output.type === "report" ? (
@@ -1587,7 +1951,7 @@ function DataFlowEditor({
                       }
                       placeholder="C0123456789"
                     />
-                    <label className="flex min-h-10 shrink-0 items-center gap-2 text-label text-dim">
+                    <label {...stylex.props(sx.flex, sx.minH10, sx.shrink0, sx.itemsCenter, sx.gap2, sx.textDim, typography.label)}>
                       <Checkbox
                         checked={output.enabled !== false}
                         onCheckedChange={(checked) =>
@@ -1600,14 +1964,14 @@ function DataFlowEditor({
                 )}
                 <Button
                   size="sm"
-                  className="shrink-0 text-dim hover:text-red"
+                  className="hover:text-red" {...stylex.props(sx.shrink0, sx.textDim)}
                   onClick={() => onOutputsChange(outputs.filter((_, at) => at !== index))}
                 >
                   Remove
                 </Button>
               </div>
               {output.type === "slack" && (
-                <div className="mt-2 grid grid-cols-2 gap-3 phone:grid-cols-1">
+                <div className="phone:grid-cols-1" {...stylex.props(sx.mt2, sx.grid, sx.gridCols2, sx.gap3)}>
                   <label className={FIELD_LABEL}>
                     Minimum urgency
                     <Select
@@ -1812,7 +2176,7 @@ setError(e.message);
         />
       </label>
 
-      <div className="flex gap-3">
+      <div {...stylex.props(sx.flex, sx.gap3)}>
         <label className={FIELD_LABEL}>
           Owner
           <Input
@@ -1820,7 +2184,7 @@ setError(e.message);
             onChange={(e) => setOwner(e.target.value)}
             placeholder={getCurrentUser() || "Kent"}
           />
-          <span className="mt-1 text-supporting leading-snug text-faint">
+          <span {...stylex.props(sx.mt1, sx.leadingSnug, sx.textFaint, typography.supporting)}>
             Who reviews what it does. It appears in their sidebar.
           </span>
         </label>
@@ -1837,7 +2201,7 @@ setError(e.message);
               </option>
             ))}
           </Select>
-          <span className="mt-1 text-supporting leading-snug text-faint">
+          <span {...stylex.props(sx.mt1, sx.leadingSnug, sx.textFaint, typography.supporting)}>
             Files the automation under a workspace. Its runs stay in the
             Automations section.
           </span>
@@ -1853,21 +2217,21 @@ setError(e.message);
             placeholder="C0123456789 (channel id)"
             className="mono-input"
           />
-          <span className="mt-1 text-supporting leading-snug text-faint">
+          <span {...stylex.props(sx.mt1, sx.leadingSnug, sx.textFaint, typography.supporting)}>
             Invite @{AGENT_NAME} to the channel first. The bot only receives messages
             for channels it's a member of. One run per top-level message; thread
             replies don't re-trigger. Channel id is in the channel's “About” tab.
           </span>
         </label>
       ) : (
-        <div className="flex flex-col gap-1.5">
+        <div {...stylex.props(sx.flex, sx.flexCol, sx.gap15)}>
           <div>
-            <span className="text-fg text-label font-medium">Triggers</span>
-            <span className="text-dim text-label ml-2">
+            <span {...stylex.props(sx.textFg, sx.fontMedium, typography.label)}>Triggers</span>
+            <span {...stylex.props(sx.textDim, sx.ml2, typography.label)}>
               Run the automation when any of these conditions are met
             </span>
           </div>
-          <div className="bg-surface rounded-panel px-3 py-2.5 flex flex-col gap-2.5">
+          <div {...stylex.props(sx.bgSurface, sx.roundedPanel, sx.px3, sx.py25, sx.flex, sx.flexCol, sx.gap25)}>
             <label className={FIELD_LABEL}>
               Schedule
               <Select value={preset} onChange={(e) => setPreset(e.target.value)}>
@@ -1900,14 +2264,14 @@ setError(e.message);
                 ))}
               </Select>
             </label>
-            <div className="text-supporting text-faint">
+            <div {...stylex.props(sx.textFaint, typography.supporting)}>
               Schedules and events can be combined. Manual “Run now” is always available.
             </div>
-            <label className="flex min-h-10 items-center gap-2.5 text-label text-dim">
+            <label {...stylex.props(sx.flex, sx.minH10, sx.itemsCenter, sx.gap25, sx.textDim, typography.label)}>
               <Checkbox checked={webhookEnabled} onCheckedChange={setWebhookEnabled} />
               <span>
                 Accept webhook triggers
-                <span className="ml-1.5 text-faint">Creates a secret external POST URL</span>
+                <span {...stylex.props(sx.ml15, sx.textFaint)}>Creates a secret external POST URL</span>
               </span>
             </label>
           </div>
@@ -1959,10 +2323,10 @@ setError(e.message);
             </Select>
           </label>
 
-          <label className="flex min-h-10 flex-1 items-center justify-between gap-3 text-label font-medium text-dim">
-            <span className="flex flex-col gap-1">
+          <label {...stylex.props(sx.flex, sx.minH10, sx.flex1, sx.itemsCenter, sx.justifyBetween, sx.gap3, sx.fontMedium, sx.textDim, typography.label)}>
+            <span {...stylex.props(sx.flex, sx.flexCol, sx.gap1)}>
               <span>Run in a MicroVM</span>
-              <span className="font-normal text-faint">
+              <span {...stylex.props(sx.fontNormal, sx.textFaint)}>
                 Pinned credentials, explicit MCP access, restricted network
               </span>
             </span>
@@ -2056,7 +2420,7 @@ setError(e.message);
         {onBack && (
           <Button
             variant="ghost"
-            className="mr-auto"
+            {...stylex.props(sx.mrAuto)}
             icon={<IconChevronLeft size={20} />}
             onClick={onBack}
             disabled={saving}

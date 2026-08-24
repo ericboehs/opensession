@@ -6,6 +6,42 @@ import { Field, Input } from "../../ui/input";
 import { Popover } from "../../ui/popover";
 import { toast } from "../../ui/toast";
 import type { LinkedPrEntry } from "../PrPanel";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	p4: {
+			padding: "16px"
+	},
+	flex: {
+			display: "flex"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap4: {
+			gap: "16px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	justifyEnd: {
+			justifyContent: "flex-end"
+	},
+	gap25: {
+			gap: "10px"
+	},
+});
 
 /**
  * Opens the link flow in an anchored modal instead of replacing the action row.
@@ -73,10 +109,10 @@ setBusy(false);
         side="bottom"
         align="start"
         initialFocus
-        className="w-[min(380px,calc(100vw-16px))] p-4"
+        className="w-[min(380px,calc(100vw-16px))]" {...stylex.props(sx.p4)}
       >
         <form
-          className="flex flex-col gap-4"
+          {...stylex.props(sx.flex, sx.flexCol, sx.gap4)}
           aria-label="Link pull request"
           onSubmit={(event) => {
             event.preventDefault();
@@ -84,10 +120,10 @@ setBusy(false);
           }}
         >
           <div>
-            <div className="text-label font-semibold text-fg">
+            <div {...stylex.props(sx.fontSemibold, sx.textFg, typography.label)}>
               Link pull request
             </div>
-            <div className="mt-1 text-meta text-dim">
+            <div {...stylex.props(sx.mt1, sx.textDim, typography.meta)}>
               Paste a GitHub pull request URL.
             </div>
           </div>
@@ -100,7 +136,7 @@ setBusy(false);
               onChange={(event) => setVal(event.target.value)}
             />
           </Field>
-          <div className="flex justify-end gap-2.5">
+          <div {...stylex.props(sx.flex, sx.justifyEnd, sx.gap25)}>
             <Popover.Close
               render={
                 <Button

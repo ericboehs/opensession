@@ -9,6 +9,14 @@ import {
 import { InlineAlert } from "../../ui/state";
 import { GithubAuthCard, IntegrationsList } from "../SetupIntegrations";
 import { SetupRestart } from "../SetupRestart";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	relative: {
+			position: "relative"
+	},
+});
 
 // Workspace → Integrations: the credentials the agent reaches other tools
 // with, plus GitHub sign-in. Same cards the Setup wizard shows, including its
@@ -19,7 +27,7 @@ export function IntegrationsPanel() {
 	const setup = useSetupStatus();
 	const { status, failed } = setup;
 	return (
-		<SettingsPanel className="relative">
+		<SettingsPanel {...stylex.props(sx.relative)}>
 			<SettingsHeader title="Integrations" />
 			{!status ? (
 				// A failure is an alert, not a quiet label under a spinner: it used

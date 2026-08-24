@@ -3,6 +3,20 @@ import { Button } from "../../ui/button";
 import { cn } from "../../ui/cn";
 import { Tooltip } from "../../ui/tooltip";
 import { IconUndo } from "../icons";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	shrink0: {
+			flexShrink: "0"
+	},
+	opacity60: {
+			opacity: ".6"
+	},
+	TextBoxTrimBothCapAlphabetic: {
+			textBox: "trim-both cap alphabetic"
+	},
+});
 
 /** The merge button's five-second inline result and its reversal. */
 export function MergeUndoControl({
@@ -45,8 +59,8 @@ export function MergeUndoControl({
               : "rounded-r-control phone:min-h-[26px] phone:px-1.5",
           )}
         >
-          <IconUndo size={20} className="shrink-0 opacity-60 phone:hidden" />
-          <span className="[text-box:trim-both_cap_alphabetic]">Undo</span>
+          <IconUndo size={20} className="phone:hidden" {...stylex.props(sx.shrink0, sx.opacity60)} />
+          <span {...stylex.props(sx.TextBoxTrimBothCapAlphabetic)}>Undo</span>
         </Button>
       </Tooltip>
     </div>

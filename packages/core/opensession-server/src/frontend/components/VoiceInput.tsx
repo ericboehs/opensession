@@ -23,6 +23,131 @@ import {
   startBrowserDictation,
   type BrowserDictation,
 } from "../lib/browser-dictation";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	h10: {
+			height: "40px"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	srOnly: {
+			clipPath: "inset(50%)",
+			whiteSpace: "nowrap",
+			borderWidth: "0",
+			width: "1px",
+			height: "1px",
+			margin: "-1px",
+			padding: "0",
+			position: "absolute",
+			overflow: "hidden"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	relative: {
+			position: "relative"
+	},
+	mx4: {
+			marginInline: "16px"
+	},
+	hFull: {
+			height: "100%"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	gap1: {
+			gap: "4px"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	z1: {
+			zIndex: "1"
+	},
+	block: {
+			display: "block"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	Absolute: {
+			position: "absolute!important"
+	},
+	inset0: {
+			inset: "0"
+	},
+	gap25: {
+			gap: "10px"
+	},
+	px1: {
+			paddingInline: "4px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	bottomCalc1008px: {
+			bottom: "calc(100% + 8px)"
+	},
+	right0: {
+			right: "0"
+	},
+	z7: {
+			zIndex: "7"
+	},
+	whitespaceNowrap: {
+			whiteSpace: "nowrap"
+	},
+	roundedControl: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	bgRedSoft: {
+			backgroundColor: "var(--red-soft)"
+	},
+	px11px: {
+			paddingInline: "11px"
+	},
+	py7px: {
+			paddingBlock: "7px"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+});
 
 type Phase = "idle" | "requesting" | "recording" | "cancelling" | "transcribing";
 
@@ -512,10 +637,10 @@ if (request === requestRef.current) {
       {phase === "recording" || phase === "requesting" || phase === "cancelling" ? (
         <motion.div
           key="recording"
-          className="flex h-10 min-w-0 flex-1 items-center gap-2 phone:gap-1.5"
+          className="phone:gap-1.5" {...stylex.props(sx.flex, sx.h10, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2)}
           {...ROW_MOTION}
         >
-          <span className="sr-only" role="status" aria-live="polite">
+          <span {...stylex.props(sx.srOnly)} role="status" aria-live="polite">
             {phase === "requesting" ? "Starting dictation" : "Recording"}
           </span>
           {/* Leading × puts the way out where a person's eye starts. The
@@ -530,7 +655,7 @@ if (request === requestRef.current) {
             >
               {cancelFromPlus ? (
                 <motion.span
-                  className="inline-flex"
+                  {...stylex.props(sx.inlineFlex)}
                   initial={PLUS_TO_CANCEL.initial}
                   animate={
                     phase === "cancelling"
@@ -550,7 +675,7 @@ if (request === requestRef.current) {
               bars accumulating on the right by the accept buttons. */}
           <div
             ref={waveformRef}
-            className="relative mx-4 flex h-full min-w-0 flex-1 items-center justify-center gap-1 overflow-hidden phone:mx-[18px]"
+            className="phone:mx-[18px]" {...stylex.props(sx.relative, sx.mx4, sx.flex, sx.hFull, sx.minW0, sx.flex1, sx.itemsCenter, sx.justifyCenter, sx.gap1, sx.overflowHidden)}
             aria-hidden="true"
           >
             <div
@@ -572,7 +697,7 @@ if (request === requestRef.current) {
               })}
             </div>
             {liveTranscript && (
-              <span className="relative z-[1] block min-w-0 truncate text-label text-fg">
+              <span {...stylex.props(sx.relative, sx.z1, sx.block, sx.minW0, sx.truncate, sx.textFg, typography.label)}>
                 {liveTranscript}
               </span>
             )}
@@ -588,14 +713,14 @@ if (request === requestRef.current) {
               {/* Start with the mic at the checkmark's resting position,
                   then blur the two glyphs through one another. */}
               <motion.span
-                className="!absolute inset-0 inline-flex items-center justify-center"
+                {...stylex.props(sx.Absolute, sx.inset0, sx.inlineFlex, sx.itemsCenter, sx.justifyCenter)}
                 {...MIC_OUT}
                 aria-hidden="true"
               >
                 <IconMic size={22} />
               </motion.span>
               <motion.span
-                className="inline-flex"
+                {...stylex.props(sx.inlineFlex)}
                 {...CHECK_IN}
                 aria-hidden="true"
               >
@@ -620,26 +745,26 @@ if (request === requestRef.current) {
       ) : (
         <motion.div
           key="transcribing"
-          className="flex h-10 min-w-0 flex-1 items-center gap-2.5 px-1"
+          {...stylex.props(sx.flex, sx.h10, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap25, sx.px1)}
           role="status"
           aria-live="polite"
           {...ROW_MOTION}
         >
-          <span className="sr-only">Transcribing</span>
+          <span {...stylex.props(sx.srOnly)}>Transcribing</span>
           {liveTranscript ? (
             <span
-              className="min-w-0 truncate text-label text-fg"
+              {...stylex.props(sx.minW0, sx.truncate, sx.textFg, typography.label)}
               aria-hidden="true"
             >
               {liveTranscript}
             </span>
           ) : (
             <span
-              className="shrink-0 text-label font-medium text-dim"
+              {...stylex.props(sx.shrink0, sx.fontMedium, sx.textDim, typography.label)}
               aria-hidden="true"
             >
               Transcribing
-              <span className="inline-flex">
+              <span {...stylex.props(sx.inlineFlex)}>
                 {TRANSCRIBING_DOT_STARTS.map((start, index) => (
                   <motion.span
                     key={index}
@@ -679,7 +804,7 @@ if (request === requestRef.current) {
       {error && phase === "idle" && (
         <div
           role="alert"
-          className="absolute bottom-[calc(100%+8px)] right-0 z-[7] whitespace-nowrap rounded-control border border-[color-mix(in_srgb,var(--red)_40%,transparent)] bg-red-soft px-[11px] py-[7px] text-supporting font-medium text-red"
+          className="border-[color-mix(in_srgb,var(--red)_40%,transparent)]" {...stylex.props(sx.absolute, sx.bottomCalc1008px, sx.right0, sx.z7, sx.whitespaceNowrap, sx.roundedControl, sx.border, sx.bgRedSoft, sx.px11px, sx.py7px, sx.fontMedium, sx.textRed, typography.supporting)}
         >
           {error}
         </div>

@@ -31,6 +31,94 @@ import {
 	undoLatestAction,
 	type UndoHandle,
 } from "../lib/undo";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	my0: {
+			marginBlock: "0"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	focusRing: {
+			":focus-visible": {
+					outline: "2px solid var(--accent-ink)",
+					outlineOffset: "2px"
+			}
+	},
+	relative: {
+			position: "relative"
+	},
+	My1: {
+			marginBlock: "-4px"
+	},
+	ml1: {
+			marginLeft: "4px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	roundedMd: {
+			borderRadius: "calc(7px * var(--rf))"
+	},
+	px2: {
+			paddingInline: "8px"
+	},
+	py1: {
+			paddingBlock: "4px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	textAccent: {
+			color: "var(--accent)"
+	},
+	duration150: {
+			transitionDuration: ".15s"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	grid: {
+			display: "grid"
+	},
+	size35: {
+			width: "14px",
+			height: "14px"
+	},
+	placeItemsCenter: {
+			placeItems: "center"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	pointerEventsNone: {
+			pointerEvents: "none"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	insetX0: {
+			insetInline: "0"
+	},
+	bottom0: {
+			bottom: "0"
+	},
+	h05: {
+			height: "2px"
+	},
+	originLeft: {
+			transformOrigin: "0"
+	},
+	bgDim35: {
+			backgroundColor: "var(--text-dim)"
+	},
+});
 
 export type ToastVariant = "default" | "success" | "error";
 
@@ -302,7 +390,7 @@ function ToastCard({ toast: item }: { toast: BaseToast.Root.ToastObject<ToastDat
 				{/* Description renders a <p>; remove its browser margins so the
 				    visible height comes from the pill padding alone. */}
 				<BaseToast.Description
-					className="my-0 min-w-0 line-clamp-2"
+					className="line-clamp-2" {...stylex.props(sx.my0, sx.minW0)}
 					title={data.message}
 				>
 					{data.message}
@@ -316,7 +404,7 @@ function ToastCard({ toast: item }: { toast: BaseToast.Root.ToastObject<ToastDat
 							}}
 							// The pill stays tight, so the action carries the finger
 							// target on its own: 28px of box inside a 44px tap area.
-							className="focus-ring relative -my-1 ml-1 shrink-0 cursor-pointer rounded-md px-2 py-1 text-supporting font-semibold text-accent transition-[background-color,transform] duration-150 hover:bg-hover active:scale-[0.96] phone:-my-1.5 phone:ml-0.5 phone:grid phone:min-h-7 phone:place-items-center phone:rounded-[999px] phone:px-2.5 phone:after:absolute phone:after:inset-x-0 phone:after:top-1/2 phone:after:h-11 phone:after:-translate-y-1/2 phone:after:content-['']"
+							className="transition-[background-color,transform] hover:bg-hover active:scale-[0.96] phone:-my-1.5 phone:ml-0.5 phone:grid phone:min-h-7 phone:place-items-center phone:rounded-[999px] phone:px-2.5 phone:after:absolute phone:after:inset-x-0 phone:after:top-1/2 phone:after:h-11 phone:after:-translate-y-1/2 phone:after:content-['']" {...stylex.props(sx.focusRing, sx.relative, sx.My1, sx.ml1, sx.shrink0, sx.cursorPointer, sx.roundedMd, sx.px2, sx.py1, sx.fontSemibold, sx.textAccent, sx.duration150, typography.supporting)}
 						>
 							{data.action.label}
 						</BaseToast.Action>
@@ -338,7 +426,7 @@ function ToastStatusIcon({
 	ongoing?: boolean;
 }) {
 	const className = "shrink-0 text-dim";
-	if (ongoing) return <Spinner className="text-dim" />;
+	if (ongoing) return <Spinner {...stylex.props(sx.textDim)} />;
 
 	switch (name) {
 		case "archive":
@@ -369,7 +457,7 @@ function ToastStatusIcon({
 			return (
 				<span
 					aria-hidden
-					className="grid size-3.5 shrink-0 place-items-center rounded-full text-meta font-semibold text-dim"
+					{...stylex.props(sx.grid, sx.size35, sx.shrink0, sx.placeItemsCenter, sx.roundedFull, sx.fontSemibold, sx.textDim, typography.meta)}
 				>
 					!
 				</span>
@@ -420,7 +508,7 @@ function ToastProgress({ duration }: { duration: number }) {
 		<span
 			ref={lineRef}
 			aria-hidden
-			className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 origin-left bg-dim/35"
+			{...stylex.props(sx.pointerEventsNone, sx.absolute, sx.insetX0, sx.bottom0, sx.h05, sx.originLeft, sx.bgDim35)}
 		/>
 	);
 }

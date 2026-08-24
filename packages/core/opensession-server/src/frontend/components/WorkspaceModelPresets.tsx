@@ -23,6 +23,127 @@ import {
 } from "../ui/settings";
 import { EFFORTS, shortModelLabel } from "./ModelEffortSelect";
 import { IconChevronDown, IconPlus, IconTrash } from "./icons";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	wFull: {
+			width: "100%"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	px5: {
+			paddingInline: "20px"
+	},
+	py3: {
+			paddingBlock: "12px"
+	},
+	textLeft: {
+			textAlign: "left"
+	},
+	transitionColors: {
+			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	block: {
+			display: "block"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	mt05: {
+			marginTop: "2px"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	pb4: {
+			paddingBottom: "16px"
+	},
+	mb0: {
+			marginBottom: "0"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	itemsEnd: {
+			alignItems: "flex-end"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	minW13rem: {
+			minWidth: "13rem"
+	},
+	w32: {
+			width: "128px"
+	},
+	grid: {
+			display: "grid"
+	},
+	colStart1: {
+			gridColumnStart: "1"
+	},
+	rowStart1: {
+			gridRowStart: "1"
+	},
+	colSpan2: {
+			gridColumn: "span 2/span 2"
+	},
+	wFit: {
+			width: "fit-content"
+	},
+	justifyEnd: {
+			justifyContent: "flex-end"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	gap25: {
+			gap: "10px"
+	},
+	roundedXl: {
+			borderRadius: "calc(18px * var(--rf))"
+	},
+	bgPanel: {
+			backgroundColor: "var(--bg-panel)"
+	},
+	px4: {
+			paddingInline: "16px"
+	},
+	py6: {
+			paddingBlock: "24px"
+	},
+	textCenter: {
+			textAlign: "center"
+	},
+});
 
 type Settings = NonNullable<Workspace["modelSettings"]>;
 type Preset = NonNullable<Settings["presets"]>[number];
@@ -110,13 +231,13 @@ function PresetRow({
 				type="button"
 				aria-expanded={open}
 				onClick={onToggle}
-				className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-hover"
+				className="hover:bg-hover" {...stylex.props(sx.flex, sx.wFull, sx.itemsCenter, sx.gap3, sx.px5, sx.py3, sx.textLeft, sx.transitionColors)}
 			>
-				<span className="min-w-0 flex-1">
-					<span className="block truncate text-item-title font-medium text-fg">
+				<span {...stylex.props(sx.minW0, sx.flex1)}>
+					<span {...stylex.props(sx.block, sx.truncate, sx.fontMedium, sx.textFg, typography.itemTitle)}>
 						{preset.label.trim() || "Untitled preset"}
 					</span>
-					<span className="mt-0.5 block truncate text-supporting text-dim">
+					<span {...stylex.props(sx.mt05, sx.block, sx.truncate, sx.textDim, typography.supporting)}>
 						{preset.lead.model
 							? [
 									labelFor(preset.lead.model),
@@ -135,8 +256,8 @@ function PresetRow({
 				/>
 			</button>
 			{open && (
-				<div className="flex flex-col gap-3 px-5 pb-4">
-					<SettingsField className="mb-0">
+				<div {...stylex.props(sx.flex, sx.flexCol, sx.gap3, sx.px5, sx.pb4)}>
+					<SettingsField {...stylex.props(sx.mb0)}>
 						Name
 						<input
 							className={settingsInputClass}
@@ -145,8 +266,8 @@ function PresetRow({
 							placeholder="Preset name"
 						/>
 					</SettingsField>
-					<div className="flex flex-wrap items-end gap-2">
-						<SettingsField className="mb-0 min-w-[13rem] flex-1">
+					<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsEnd, sx.gap2)}>
+						<SettingsField {...stylex.props(sx.mb0, sx.minW13rem, sx.flex1)}>
 							Lead model
 							<ModelSelect
 								items={modelItems("Choose a lead model")}
@@ -156,7 +277,7 @@ function PresetRow({
 							/>
 						</SettingsField>
 						{leadEfforts.length > 0 && (
-							<SettingsField className="mb-0 w-32">
+							<SettingsField {...stylex.props(sx.mb0, sx.w32)}>
 								Effort
 								<ModelSelect
 									items={leadEfforts.map((effort) => ({ value: effort.id, label: effort.label }))}
@@ -167,8 +288,8 @@ function PresetRow({
 							</SettingsField>
 						)}
 					</div>
-					<div className="flex flex-col gap-2">
-						<span className="text-label font-medium text-dim">Supporting models</span>
+					<div {...stylex.props(sx.flex, sx.flexCol, sx.gap2)}>
+						<span {...stylex.props(sx.fontMedium, sx.textDim, typography.label)}>Supporting models</span>
 						{supporting.map((member, index) => {
 							const memberEfforts = effortsFor(member.model);
 							return (
@@ -177,10 +298,10 @@ function PresetRow({
 								// effort under them, instead of four fields fighting over 200px.
 								<div
 									key={index}
-									className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 desktop:grid-cols-[minmax(0,1fr)_10rem_8rem_auto]"
+									className="grid-cols-[minmax(0,1fr)_auto] desktop:grid-cols-[minmax(0,1fr)_10rem_8rem_auto]" {...stylex.props(sx.grid, sx.itemsCenter, sx.gap2)}
 								>
 									<ModelSelect
-										className="col-start-1 row-start-1"
+										{...stylex.props(sx.colStart1, sx.rowStart1)}
 										items={modelItems("Choose a supporting model")}
 										value={member.model}
 										label="Supporting model"
@@ -203,7 +324,7 @@ function PresetRow({
 									/>
 									{memberEfforts.length > 0 && (
 										<ModelSelect
-											className="col-span-2 desktop:col-span-1 desktop:col-start-3 desktop:row-start-1"
+											className="desktop:col-span-1 desktop:col-start-3 desktop:row-start-1" {...stylex.props(sx.colSpan2)}
 											items={memberEfforts.map((effort) => ({ value: effort.id, label: effort.label }))}
 											value={member.effort || ""}
 											label="Supporting model effort"
@@ -216,13 +337,13 @@ function PresetRow({
 						<Button
 							size="sm"
 							icon={<IconPlus size={16} />}
-							className="w-fit"
+							{...stylex.props(sx.wFit)}
 							onClick={() => onPatch({ supporting: [...supporting, { model: "" }] })}
 						>
 							Add supporting model
 						</Button>
 					</div>
-					<SettingsField className="mb-0">
+					<SettingsField {...stylex.props(sx.mb0)}>
 						Instructions
 						<textarea
 							className={cn(settingsTextareaClass, "min-h-18")}
@@ -231,12 +352,12 @@ function PresetRow({
 							placeholder="When to use supporting models and how to integrate their work."
 						/>
 					</SettingsField>
-					<div className="flex justify-end">
+					<div {...stylex.props(sx.flex, sx.justifyEnd)}>
 						<Button
 							size="sm"
 							variant="ghost"
 							icon={<IconTrash size={16} />}
-							className="text-red hover:bg-red-soft hover:text-red"
+							className="hover:bg-red-soft hover:text-red" {...stylex.props(sx.textRed)}
 							onClick={onRemove}
 						>
 							Remove preset
@@ -320,7 +441,7 @@ setSaving(false);
 					title="Model presets"
 					description="A lead model, the supporting models it can delegate to, and how to use them. Sessions in this workspace pick one from the model menu."
 				/>
-				<div className="flex flex-col gap-2.5">
+				<div {...stylex.props(sx.flex, sx.flexCol, sx.gap25)}>
 					{presets.length > 0 ? (
 						<CardList>
 							{presets.map((preset, index) => (
@@ -341,11 +462,11 @@ setSaving(false);
 							))}
 						</CardList>
 					) : (
-						<div className="rounded-xl bg-panel px-4 py-6 text-center text-supporting text-dim">
+						<div {...stylex.props(sx.roundedXl, sx.bgPanel, sx.px4, sx.py6, sx.textCenter, sx.textDim, typography.supporting)}>
 							No presets yet.
 						</div>
 					)}
-					<Button icon={<IconPlus size={16} />} className="w-fit" onClick={addPreset}>
+					<Button icon={<IconPlus size={16} />} {...stylex.props(sx.wFit)} onClick={addPreset}>
 						Add preset
 					</Button>
 				</div>

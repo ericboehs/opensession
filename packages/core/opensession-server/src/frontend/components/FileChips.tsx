@@ -10,6 +10,50 @@ import {
   fileChipThumb,
 } from "../lib/composer-classes";
 import { cn } from "../ui/cn";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	absolute: {
+			position: "absolute"
+	},
+	top1: {
+			top: "4px"
+	},
+	right5px: {
+			right: "5px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	text15px: {
+			fontSize: "15px"
+	},
+	leadingNone: {
+			lineHeight: "1"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	h3: {
+			height: "12px"
+	},
+	w92px: {
+			width: "92px"
+	},
+	roundedSm: {
+			borderRadius: "calc(4px * var(--rf))"
+	},
+	bgHover: {
+			backgroundColor: "var(--hover)"
+	},
+	h25: {
+			height: "10px"
+	},
+	w46px: {
+			width: "46px"
+	},
+});
 
 interface Props {
   files: FileAttachment[];
@@ -38,7 +82,7 @@ export function FileChips({ files, onRemove, disabled, pending = 0 }: Props) {
           </span>
           <button
             type="button"
-            className="absolute top-1 right-[5px] shrink-0 text-[15px] leading-none text-faint enabled:hover:text-fg disabled:cursor-default disabled:opacity-50"
+            className="enabled:hover:text-fg disabled:cursor-default disabled:opacity-50" {...stylex.props(sx.absolute, sx.top1, sx.right5px, sx.shrink0, sx.text15px, sx.leadingNone, sx.textFaint)}
             onClick={() => onRemove(i)}
             disabled={disabled}
             title="Remove file"
@@ -56,8 +100,8 @@ export function FileChips({ files, onRemove, disabled, pending = 0 }: Props) {
         >
           <span className={cn(fileChipThumb, "bg-hover")} />
           <span className={fileChipMeta}>
-            <span className="h-3 w-[92px] rounded-sm bg-hover" />
-            <span className="h-2.5 w-[46px] rounded-sm bg-hover" />
+            <span {...stylex.props(sx.h3, sx.w92px, sx.roundedSm, sx.bgHover)} />
+            <span {...stylex.props(sx.h25, sx.w46px, sx.roundedSm, sx.bgHover)} />
           </span>
         </div>
       ))}

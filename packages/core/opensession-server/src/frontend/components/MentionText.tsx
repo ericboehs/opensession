@@ -2,6 +2,20 @@ import React from "react";
 import { parseMentions } from "../lib/mention-text";
 import { usePeople } from "../lib/people";
 import { githubLoginFor } from "./UserAvatar";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	textAccent: {
+			color: "var(--accent)"
+	},
+	underline: {
+			textDecorationLine: "underline"
+	},
+	underlineOffset2: {
+			textUnderlineOffset: "2px"
+	},
+});
 
 /**
  * Plain human text with @-mentions rendered as the person they name. Team
@@ -29,7 +43,7 @@ export function MentionText({ text }: { text: string }) {
 							href={token.text}
 							target="_blank"
 							rel="noreferrer"
-							className="text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
+							className="decoration-accent/40 hover:decoration-accent" {...stylex.props(sx.textAccent, sx.underline, sx.underlineOffset2)}
 						>
 							{token.text}
 						</a>

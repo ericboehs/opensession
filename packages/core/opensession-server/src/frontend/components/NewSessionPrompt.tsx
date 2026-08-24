@@ -29,6 +29,25 @@ import { ImageThumbs } from "./ImageThumbs";
 import { FileChips } from "./FileChips";
 import { cn } from "../ui/cn";
 import { getCurrentUser } from "./UserPicker";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	relative: {
+			position: "relative"
+	},
+	srOnly: {
+			clipPath: "inset(50%)",
+			whiteSpace: "nowrap",
+			borderWidth: "0",
+			width: "1px",
+			height: "1px",
+			margin: "-1px",
+			padding: "0",
+			position: "absolute",
+			overflow: "hidden"
+	},
+});
 
 /** One scroll surface for the prompt and its attachments. Keeping the image in
  *  this flow means it travels with the text instead of pinning over it.
@@ -358,7 +377,7 @@ export function NewSessionPrompt({
 			ref={attachPromptBody}
 		>
 			{mentions.popup}
-			<div className="relative">
+			<div {...stylex.props(sx.relative)}>
 				{sessionPill && (
 					// `composer-hl` stays as a hook: the pill spans inside this
 					// mirror are written as innerHTML by lib/composer-highlight.ts,
@@ -489,7 +508,7 @@ export function NewSessionPrompt({
 			    nothing out loud. This is the same news for a reader who cannot
 			    see them. */}
 			{attachingLabel(staging) && (
-				<span className="sr-only" role="status">
+				<span {...stylex.props(sx.srOnly)} role="status">
 					{attachingLabel(staging)}
 				</span>
 			)}

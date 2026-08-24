@@ -1,5 +1,25 @@
 import React from "react";
 import { cn } from "../ui/cn";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	overflowVisible: {
+			overflow: "visible"
+	},
+	flex: {
+			display: "flex"
+	},
+	translateYPx: {
+			translate: "0 1px"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+});
 
 /**
  * Brand marks for the file-type badge — a different family from the interface
@@ -51,7 +71,7 @@ function Mark({
       height={h * px}
       viewBox={viewBox}
       fill="currentColor"
-      className="overflow-visible"
+      {...stylex.props(sx.overflowVisible)}
       aria-hidden="true"
     >
       {children}
@@ -184,7 +204,7 @@ export function ExtBadge({
       )}
       style={{ color: `color-mix(in oklab, ${color} 75%, var(--text))` }}
     >
-      <span className="flex translate-y-px items-center justify-center">
+      <span {...stylex.props(sx.flex, sx.translateYPx, sx.itemsCenter, sx.justifyCenter)}>
         {Glyph ? <Glyph size={size} /> : extLabel(ext)}
       </span>
     </span>

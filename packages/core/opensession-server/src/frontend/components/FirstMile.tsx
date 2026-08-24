@@ -18,6 +18,279 @@ import { OrganizationProfileSection } from "./settings/GeneralPanel";
 import { ProviderAccountsSection } from "./settings/ModelAccounts";
 import { IconCheck, IconChevronLeft, IconGlobe, IconRepo } from "./icons";
 import { githubAuthState, type SetupStatus } from "./setup-shared";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	maxWFull: {
+			maxWidth: "100%"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	bgBg65: {
+			backgroundColor: "var(--bg)"
+	},
+	py1: {
+			paddingBlock: "4px"
+	},
+	pr2: {
+			paddingRight: "8px"
+	},
+	pl1: {
+			paddingLeft: "4px"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	size6: {
+			width: "24px",
+			height: "24px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	bgBg85: {
+			backgroundColor: "var(--bg)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	relative: {
+			position: "relative"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	Right05: {
+			right: "-2px"
+	},
+	Bottom05: {
+			bottom: "-2px"
+	},
+	size25: {
+			width: "10px",
+			height: "10px"
+	},
+	bgFg: {
+			backgroundColor: "var(--text)"
+	},
+	textBg: {
+			color: "var(--bg)"
+	},
+	ringBg: {},
+	size7: {
+			width: "28px",
+			height: "28px"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderBg: {
+			borderColor: "var(--bg)"
+	},
+	grid: {
+			display: "grid"
+	},
+	gridCols5: {
+			gridTemplateColumns: "repeat(5,minmax(0,1fr))"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	itemsStart: {
+			alignItems: "flex-start"
+	},
+	justifyBetween: {
+			justifyContent: "space-between"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	size2: {
+			width: "8px",
+			height: "8px"
+	},
+	bgCurrent: {
+			backgroundColor: "currentColor"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	leadingSnug: {
+			lineHeight: "var(--leading-snug)"
+	},
+	h100dvh: {
+			height: "100dvh"
+	},
+	wFull: {
+			width: "100%"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	bgBg: {
+			backgroundColor: "var(--bg)"
+	},
+	pointerEventsNone: {
+			pointerEvents: "none"
+	},
+	inset0: {
+			inset: "0"
+	},
+	opacity70: {
+			opacity: ".7"
+	},
+	z10: {
+			zIndex: "10"
+	},
+	gridCols1frAuto1fr: {
+			gridTemplateColumns: "1fr auto 1fr"
+	},
+	px8: {
+			paddingInline: "32px"
+	},
+	focusRing: {
+			":focus-visible": {
+					outline: "2px solid var(--accent-ink)",
+					outlineOffset: "2px"
+			}
+	},
+	colStart3: {
+			gridColumnStart: "3"
+	},
+	minH9: {
+			minHeight: "36px"
+	},
+	justifySelfEnd: {
+			justifySelf: "flex-end"
+	},
+	roundedControl: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	minH0: {
+			minHeight: "0"
+	},
+	overflowYAuto: {
+			overflowY: "auto"
+	},
+	px6: {
+			paddingInline: "24px"
+	},
+	ScrollbarWidthThin: {
+			scrollbarWidth: "thin"
+	},
+	hFull: {
+			height: "100%"
+	},
+	maxW560px: {
+			maxWidth: "560px"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	textCenter: {
+			textAlign: "center"
+	},
+	mb7: {
+			marginBottom: "28px"
+	},
+	size20: {
+			width: "80px",
+			height: "80px"
+	},
+	scale113: {
+			scale: "1.13"
+	},
+	m0: {
+			margin: "0"
+	},
+	fontTitle: {
+			fontWeight: "var(--title-weight)"
+	},
+	leading108: {
+			lineHeight: "1.08"
+	},
+	tracking003em: {
+			letterSpacing: "-.03em"
+	},
+	outlineNone: {
+			outlineStyle: "none"
+	},
+	mt3: {
+			marginTop: "12px"
+	},
+	maxW440px: {
+			maxWidth: "440px"
+	},
+	textPretty: {
+			textWrap: "pretty"
+	},
+	leadingRelaxed: {
+			lineHeight: "var(--leading-relaxed)"
+	},
+	mt7: {
+			marginTop: "28px"
+	},
+	maxW300px: {
+			maxWidth: "300px"
+	},
+	minH11: {
+			minHeight: "44px"
+	},
+	mb8: {
+			marginBottom: "32px"
+	},
+	maxW700px: {
+			maxWidth: "700px"
+	},
+	textBalance: {
+			textWrap: "balance"
+	},
+	tracking0035em: {
+			letterSpacing: "-.035em"
+	},
+	maxW820px: {
+			maxWidth: "820px"
+	},
+	pb8: {
+			paddingBottom: "32px"
+	},
+	mxAuto: {
+			marginInline: "auto"
+	},
+});
 
 interface FirstMileStep {
 	id: "welcome" | "github" | "organization" | "team" | "ai" | "repos" | "ready";
@@ -147,11 +420,11 @@ function FirstMileSummary({
 			ready: true,
 			label: "Online",
 			preview: (
-				<div className="flex max-w-full items-center gap-1.5 rounded-full bg-bg/65 py-1 pr-2 pl-1 text-meta font-medium text-fg">
-					<span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-bg/85 text-dim">
+				<div {...stylex.props(sx.flex, sx.maxWFull, sx.itemsCenter, sx.gap15, sx.roundedFull, sx.bgBg65, sx.py1, sx.pr2, sx.pl1, sx.fontMedium, sx.textFg, typography.meta)}>
+					<span {...stylex.props(sx.flex, sx.size6, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgBg85, sx.textDim)}>
 						<IconGlobe size={15} />
 					</span>
-					<span className="truncate">{serverHost}</span>
+					<span {...stylex.props(sx.truncate)}>{serverHost}</span>
 				</div>
 			),
 		},
@@ -161,25 +434,25 @@ function FirstMileSummary({
 			ready: github.tone === "on",
 			label: github.label,
 			preview: (
-				<div className="flex max-w-full items-center gap-1.5 rounded-full bg-bg/65 py-1 pr-2 pl-1 text-meta font-medium text-fg">
+				<div {...stylex.props(sx.flex, sx.maxWFull, sx.itemsCenter, sx.gap15, sx.roundedFull, sx.bgBg65, sx.py1, sx.pr2, sx.pl1, sx.fontMedium, sx.textFg, typography.meta)}>
 					{githubOrganization ? (
-						<span className="relative flex size-6 shrink-0">
+						<span {...stylex.props(sx.relative, sx.flex, sx.size6, sx.shrink0)}>
 							<UserAvatar
 								name={githubOrganization}
 								login={githubOrganization}
 								size={24}
-								className="rounded-full"
+								{...stylex.props(sx.roundedFull)}
 							/>
-							<span className="absolute -right-0.5 -bottom-0.5 flex size-2.5 items-center justify-center rounded-full bg-fg text-bg ring-1 ring-bg">
+							<span className="ring-1" {...stylex.props(sx.absolute, sx.Right05, sx.Bottom05, sx.flex, sx.size25, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgFg, sx.textBg, sx.ringBg)}>
 								<BrandMark name="github" size={7} />
 							</span>
 						</span>
 					) : (
-						<span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-fg text-bg">
+						<span {...stylex.props(sx.flex, sx.size6, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgFg, sx.textBg)}>
 							<BrandMark name="github" size={15} />
 						</span>
 					)}
-					<span className="truncate">{githubOrganization || "GitHub"}</span>
+					<span {...stylex.props(sx.truncate)}>{githubOrganization || "GitHub"}</span>
 				</div>
 			),
 		},
@@ -189,12 +462,12 @@ function FirstMileSummary({
 			ready: status.engine.ready,
 			label: `${accountCount} ${accountCount === 1 ? "account" : "accounts"} connected`,
 			preview: (
-				<div className="flex -space-x-2">
+				<div className="-space-x-2" {...stylex.props(sx.flex)}>
 					{accounts.slice(0, 4).map((account, index) => (
 						<span
 							key={`${account.provider}-${index}`}
 							title={account.label}
-							className="flex size-7 items-center justify-center rounded-full border border-bg bg-bg/85 text-fg"
+							{...stylex.props(sx.flex, sx.size7, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.border, sx.borderBg, sx.bgBg85, sx.textFg)}
 						>
 							<BrandMark name={account.provider} size={15} />
 						</span>
@@ -209,12 +482,12 @@ function FirstMileSummary({
 			ready: status.repos.length > 0,
 			label: status.repos.length > 0 ? `${status.repos.length} added` : "None added",
 			preview: (
-				<div className="flex -space-x-2">
+				<div className="-space-x-2" {...stylex.props(sx.flex)}>
 					{status.repos.slice(0, 4).map((repo) => (
 						<span
 							key={repo.id}
 							title={repo.label}
-							className="flex size-7 items-center justify-center rounded-full border border-bg bg-bg/85 text-dim"
+							{...stylex.props(sx.flex, sx.size7, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.border, sx.borderBg, sx.bgBg85, sx.textDim)}
 						>
 							<IconRepo size={14} />
 						</span>
@@ -232,9 +505,9 @@ function FirstMileSummary({
 					? `${status.team.count} ${status.team.count === 1 ? "member" : "members"}`
 					: "No members",
 			preview: (
-				<div className="flex -space-x-2">
+				<div className="-space-x-2" {...stylex.props(sx.flex)}>
 					{status.team.names.slice(0, 4).map((name) => (
-						<UserAvatar key={name} name={name} size={28} className="border border-bg" />
+						<UserAvatar key={name} name={name} size={28} {...stylex.props(sx.border, sx.borderBg)} />
 					))}
 					<PreviewOverflow count={status.team.names.length - 4} transparent />
 				</div>
@@ -243,7 +516,7 @@ function FirstMileSummary({
 	];
 
 	return (
-		<div className="grid grid-cols-5 gap-3 phone:grid-cols-2">
+		<div className="phone:grid-cols-2" {...stylex.props(sx.grid, sx.gridCols5, sx.gap3)}>
 			{tiles.map((tile) => {
 				const className = cn(
 					"flex aspect-square min-w-0 flex-col justify-between rounded-2xl border p-4 text-left backdrop-blur-xl phone:rounded-xl phone:p-3.5",
@@ -255,8 +528,8 @@ function FirstMileSummary({
 				);
 				const content = (
 					<>
-						<div className="flex min-w-0 items-start justify-between gap-2">
-							<div className="min-w-0">{tile.preview}</div>
+						<div {...stylex.props(sx.flex, sx.minW0, sx.itemsStart, sx.justifyBetween, sx.gap2)}>
+							<div {...stylex.props(sx.minW0)}>{tile.preview}</div>
 							<div
 								className={cn(
 									"flex size-8 shrink-0 items-center justify-center rounded-full",
@@ -266,13 +539,13 @@ function FirstMileSummary({
 								{tile.ready ? (
 									<IconCheck size={18} />
 								) : (
-									<span className="size-2 rounded-full bg-current" />
+									<span {...stylex.props(sx.size2, sx.roundedFull, sx.bgCurrent)} />
 								)}
 							</div>
 						</div>
-						<div className="min-w-0">
-							<div className="text-item-title font-semibold text-fg">{tile.title}</div>
-							<div className="mt-1 text-supporting leading-snug text-dim">{tile.label}</div>
+						<div {...stylex.props(sx.minW0)}>
+							<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>{tile.title}</div>
+							<div {...stylex.props(sx.mt1, sx.leadingSnug, sx.textDim, typography.supporting)}>{tile.label}</div>
 						</div>
 					</>
 				);
@@ -361,16 +634,16 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 	return (
 		<div
 			data-first-mile
-			className="relative grid h-[100dvh] w-full grid-rows-[76px_minmax(0,1fr)_84px] overflow-hidden bg-bg text-fg phone:grid-rows-[68px_minmax(0,1fr)_90px] phone:pb-[env(safe-area-inset-bottom)]"
+			className="grid-rows-[76px_minmax(0,1fr)_84px] phone:grid-rows-[68px_minmax(0,1fr)_90px] phone:pb-[env(safe-area-inset-bottom)]" {...stylex.props(sx.relative, sx.grid, sx.h100dvh, sx.wFull, sx.overflowHidden, sx.bgBg, sx.textFg)}
 		>
 			<div
-				className="pointer-events-none absolute inset-0 opacity-70 [background:radial-gradient(circle_at_18%_8%,var(--accent-soft),transparent_34%),radial-gradient(circle_at_82%_92%,var(--blue-soft),transparent_36%)]"
+				className="[background:radial-gradient(circle_at_18%_8%,var(--accent-soft),transparent_34%),radial-gradient(circle_at_82%_92%,var(--blue-soft),transparent_36%)]" {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.inset0, sx.opacity70)}
 				aria-hidden="true"
 			/>
 
 			<TopBar
 				as="header"
-				className="relative z-10 grid grid-cols-[1fr_auto_1fr] px-8 phone:px-4"
+				className="phone:px-4" {...stylex.props(sx.relative, sx.z10, sx.grid, sx.gridCols1frAuto1fr, sx.px8)}
 			>
 				<Button
 					variant="ghost"
@@ -417,21 +690,21 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 					<button
 						type="button"
 						onClick={() => goTo(index + 1)}
-						className="focus-ring col-start-3 min-h-9 justify-self-end rounded-control px-3 text-label font-medium text-dim hover:bg-hover hover:text-fg"
+						className="hover:bg-hover hover:text-fg" {...stylex.props(sx.focusRing, sx.colStart3, sx.minH9, sx.justifySelfEnd, sx.roundedControl, sx.px3, sx.fontMedium, sx.textDim, typography.label)}
 					>
 						Skip
 					</button>
 				) : (
-					<div className="col-start-3" />
+					<div {...stylex.props(sx.colStart3)} />
 				)}
 			</TopBar>
 
 			<main
 				ref={mainRef}
-				className="relative z-10 min-h-0 overflow-y-auto px-6 [scrollbar-width:thin] phone:px-4"
+				className="phone:px-4" {...stylex.props(sx.relative, sx.z10, sx.minH0, sx.overflowYAuto, sx.px6, sx.ScrollbarWidthThin)}
 			>
 				{!status ? (
-					<div className="flex h-full items-center justify-center">
+					<div {...stylex.props(sx.flex, sx.hFull, sx.itemsCenter, sx.justifyCenter)}>
 						<LoadingState>
 							{failed ? "Couldn't load setup." : "Preparing your workspace…"}
 						</LoadingState>
@@ -456,27 +729,27 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 							)}
 						>
 							{step.id === "welcome" ? (
-								<div className="flex max-w-[560px] flex-col items-center text-center">
+								<div {...stylex.props(sx.flex, sx.maxW560px, sx.flexCol, sx.itemsCenter, sx.textCenter)}>
 									<img
 										src={`${BASE_PATH}/mac-app-icon.png`}
 										alt=""
-										className="mb-7 size-20 scale-[1.13] [filter:drop-shadow(0_18px_28px_rgba(0,0,0,0.16))] phone:mb-6 phone:size-16"
+										className="[filter:drop-shadow(0_18px_28px_rgba(0,0,0,0.16))] phone:mb-6 phone:size-16" {...stylex.props(sx.mb7, sx.size20, sx.scale113)}
 									/>
 									<h1
 										ref={headingRef}
-										className="m-0 text-center text-[clamp(1.6rem,2vw,2.15rem)] font-title leading-[1.08] tracking-[-0.03em] text-fg outline-none"
+										className="text-[clamp(1.6rem,2vw,2.15rem)]" {...stylex.props(sx.m0, sx.textCenter, sx.fontTitle, sx.leading108, sx.tracking003em, sx.textFg, sx.outlineNone)}
 									>
 										{step.title}
 									</h1>
-									<p className="mt-3 max-w-[440px] text-pretty text-body leading-relaxed text-dim">
+									<p {...stylex.props(sx.mt3, sx.maxW440px, sx.textPretty, sx.leadingRelaxed, sx.textDim, typography.body)}>
 										{step.description}
 									</p>
-									<div className="mt-7 flex w-full max-w-[300px] flex-col gap-3">
+									<div {...stylex.props(sx.mt7, sx.flex, sx.wFull, sx.maxW300px, sx.flexCol, sx.gap3)}>
 										<Button
 											variant="primary"
 											size="lg"
 											onClick={() => goTo(1)}
-											className="min-h-11 w-full justify-center"
+											{...stylex.props(sx.minH11, sx.wFull, sx.justifyCenter)}
 										>
 											Create organization
 										</Button>
@@ -484,7 +757,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 											variant="soft"
 											size="lg"
 											onClick={onDone}
-											className="min-h-11 w-full justify-center"
+											{...stylex.props(sx.minH11, sx.wFull, sx.justifyCenter)}
 										>
 											Join organization
 										</Button>
@@ -492,20 +765,20 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 								</div>
 							) : (
 								<>
-									<div className="mb-8 max-w-[700px] text-center phone:mb-6">
+									<div className="phone:mb-6" {...stylex.props(sx.mb8, sx.maxW700px, sx.textCenter)}>
 										<h1
 											ref={headingRef}
 											tabIndex={-1}
-											className="m-0 text-balance text-[clamp(1.6rem,2.5vw,2.25rem)] font-title leading-[1.08] tracking-[-0.035em] text-fg outline-none"
+											className="text-[clamp(1.6rem,2.5vw,2.25rem)]" {...stylex.props(sx.m0, sx.textBalance, sx.fontTitle, sx.leading108, sx.tracking0035em, sx.textFg, sx.outlineNone)}
 										>
 											{step.title}
 										</h1>
-										<p className="mt-3 text-pretty text-body leading-relaxed text-dim">
+										<p {...stylex.props(sx.mt3, sx.textPretty, sx.leadingRelaxed, sx.textDim, typography.body)}>
 											{step.description}
 										</p>
 									</div>
 
-									<div className="w-full max-w-[820px] pb-8 [&_.bg-settings-plate]:rounded-2xl [&_.bg-settings-plate]:border-transparent [&_.bg-settings-plate]:bg-blue-soft/65 [&_.bg-settings-plate]:shadow-[inset_0_1px_0_color-mix(in_srgb,white_45%,transparent),0_18px_46px_-36px_color-mix(in_srgb,var(--blue)_48%,transparent)] [&_[data-setting-description]]:hidden [&_[data-settings-hint]]:hidden">
+									<div className="[&_.bg-settings-plate]:rounded-2xl [&_.bg-settings-plate]:border-transparent [&_.bg-settings-plate]:bg-blue-soft/65 [&_.bg-settings-plate]:shadow-[inset_0_1px_0_color-mix(in_srgb,white_45%,transparent),0_18px_46px_-36px_color-mix(in_srgb,var(--blue)_48%,transparent)] [&_[data-setting-description]]:hidden [&_[data-settings-hint]]:hidden" {...stylex.props(sx.wFull, sx.maxW820px, sx.pb8)}>
 										{step.id === "github" && (
 											<GithubAuthCard
 												github={status.github}
@@ -559,7 +832,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 					index === 0 && "invisible",
 				)}
 			>
-				<div className="mx-auto grid h-full w-full max-w-[820px] grid-cols-[1fr_auto_1fr] items-center phone:grid-cols-1 phone:items-start">
+				<div className="phone:grid-cols-1 phone:items-start" {...stylex.props(sx.mxAuto, sx.grid, sx.hFull, sx.wFull, sx.maxW820px, sx.gridCols1frAuto1fr, sx.itemsCenter)}>
 					<Button
 						variant="ghost"
 						size="lg"
@@ -580,7 +853,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 							else goTo(index + 1);
 						}}
 						disabled={!status}
-						className="justify-self-end phone:min-h-12 phone:w-full phone:justify-center phone:rounded-lg"
+						className="phone:min-h-12 phone:w-full phone:justify-center phone:rounded-lg" {...stylex.props(sx.justifySelfEnd)}
 					>
 						{index === 0
 							? "Continue"

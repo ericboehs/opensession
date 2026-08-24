@@ -3,6 +3,68 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import { IconArrowUpToLine } from "./icons";
 import { duration, ease } from "../ui/motion";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	pointerEventsNone: {
+			pointerEvents: "none"
+	},
+	fixed: {
+			position: "fixed"
+	},
+	inset0: {
+			inset: "0"
+	},
+	z12000: {
+			zIndex: "12000"
+	},
+	flex: {
+			display: "flex"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	px6: {
+			paddingInline: "24px"
+	},
+	textCenter: {
+			textAlign: "center"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	mt4: {
+			marginTop: "16px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	srOnly: {
+			clipPath: "inset(50%)",
+			whiteSpace: "nowrap",
+			borderWidth: "0",
+			width: "1px",
+			height: "1px",
+			margin: "-1px",
+			padding: "0",
+			position: "absolute",
+			overflow: "hidden"
+	},
+});
 
 interface FullPageFileDropOverlayProps {
   active: boolean;
@@ -21,7 +83,7 @@ export function FullPageFileDropOverlay({
       <AnimatePresence initial={false}>
         {active && (
           <motion.div
-            className="pointer-events-none fixed inset-0 z-[12000] flex flex-col items-center justify-center bg-[color-mix(in_srgb,var(--bg-panel)_68%,transparent)] px-6 text-center [backdrop-filter:blur(8px)]"
+            className="bg-[color-mix(in_srgb,var(--bg-panel)_68%,transparent)] [backdrop-filter:blur(8px)]" {...stylex.props(sx.pointerEventsNone, sx.fixed, sx.inset0, sx.z12000, sx.flex, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.px6, sx.textCenter)}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -29,16 +91,16 @@ export function FullPageFileDropOverlay({
             aria-hidden="true"
             data-composer-file-drop-overlay
           >
-            <IconArrowUpToLine size={40} className="text-fg" />
-            <div className="mt-4 text-title font-semibold text-fg">Add files</div>
-            <div className="mt-1 text-label text-dim">
+            <IconArrowUpToLine size={40} {...stylex.props(sx.textFg)} />
+            <div className="text-title" {...stylex.props(sx.mt4, sx.fontSemibold, sx.textFg)}>Add files</div>
+            <div {...stylex.props(sx.mt1, sx.textDim, typography.label)}>
               Drop anywhere to attach them to your message.
             </div>
           </motion.div>
         )}
       </AnimatePresence>
       {active && (
-        <span className="sr-only" role="status">
+        <span {...stylex.props(sx.srOnly)} role="status">
           Drop files anywhere to attach
         </span>
       )}

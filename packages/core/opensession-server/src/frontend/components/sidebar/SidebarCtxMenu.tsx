@@ -6,6 +6,33 @@ import { IconChevronRight, IconMoon, IconStatusRing } from "../icons";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { MenuCheck, MenuShortcut } from "../../ui/menu";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	px2: {
+			paddingInline: "8px"
+	},
+	pt1: {
+			paddingTop: "4px"
+	},
+	pb1: {
+			paddingBottom: "4px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	tracking001em: {
+			letterSpacing: "-.01em"
+	},
+});
 
 function CtxItem({
 	icon,
@@ -100,7 +127,7 @@ function CtxFlyoutRow({
 			</span>
 			<span style={{ flex: 1 }}>{label}</span>
 			{value && (
-				<span className="text-faint" style={{ flexShrink: 0 }}>
+				<span {...stylex.props(sx.textFaint)} style={{ flexShrink: 0 }}>
 					{value}
 				</span>
 			)}
@@ -164,7 +191,7 @@ export function SidebarCtxMenu({
 		(e): e is Extract<CtxEntry, { kind: "snooze" }> => e.kind === "snooze",
 	);
 	const check = (on: boolean) => (
-		<MenuCheck on={on} size={20} className="text-dim" />
+		<MenuCheck on={on} size={20} {...stylex.props(sx.textDim)} />
 	);
 
 	const SUB_W = 210;
@@ -203,7 +230,7 @@ export function SidebarCtxMenu({
 							// grouped right-click menu reads like every other menu.
 							<div
 								key={i}
-								className="px-2 pt-1 pb-1 text-meta font-semibold tracking-[-0.01em] text-faint"
+								{...stylex.props(sx.px2, sx.pt1, sx.pb1, sx.fontSemibold, sx.tracking001em, sx.textFaint, typography.meta)}
 							>
 								{entry.label}
 							</div>

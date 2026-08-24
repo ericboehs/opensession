@@ -415,6 +415,420 @@ import {
 	HEADER_SESSIONBAR_USAGE,
 	MOBILE_CONTROL_GLASS,
 } from "../lib/app-header-classes";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flexNone: {
+			flex: "none"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	flex: {
+			display: "flex"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	relative: {
+			position: "relative"
+	},
+	hFull: {
+			height: "100%"
+	},
+	minH0: {
+			minHeight: "0"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	inset0: {
+			inset: "0"
+	},
+	z30: {
+			zIndex: "30"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	gap14px: {
+			gap: "14px"
+	},
+	roundedXl: {
+			borderRadius: "calc(18px * var(--rf))"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	bgPanel: {
+			backgroundColor: "var(--bg-panel)"
+	},
+	px8: {
+			paddingInline: "32px"
+	},
+	py26px: {
+			paddingBlock: "26px"
+	},
+	smoothShadowLg: {
+			boxShadow: "0 4px 12px -4px var(--smooth-shadow-color), 0 18px 48px -14px var(--smooth-shadow-color)"
+	},
+	size30px: {
+			width: "30px",
+			height: "30px"
+	},
+	animateSpin08sLinearInfinite: {
+			animation: ".8s linear infinite spin"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	border2: {
+			borderStyle: "solid",
+			borderWidth: "2px"
+	},
+	borderLineStrong: {
+			borderColor: "var(--border-strong)"
+	},
+	borderTAccent: {
+			borderTopColor: "var(--accent)"
+	},
+	m0: {
+			margin: "0"
+	},
+	textPretty: {
+			textWrap: "pretty"
+	},
+	fontNormal: {
+			fontWeight: "var(--font-weight-normal)"
+	},
+	leadingRelaxed: {
+			lineHeight: "var(--leading-relaxed)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	grow: {
+			flexGrow: "1"
+	},
+	mr15: {
+			marginRight: "6px"
+	},
+	minW240px: {
+			minWidth: "240px"
+	},
+	maxW320px: {
+			maxWidth: "320px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	py5px: {
+			paddingBlock: "5px"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	Rotate90: {
+			rotate: "-90deg"
+	},
+	Mx1: {
+			marginInline: "-4px"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	Ml1: {
+			marginLeft: "-4px"
+	},
+	size6: {
+			width: "24px",
+			height: "24px"
+	},
+	roundedControl: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	transitionColors: {
+			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	durationVarDurMicro: {
+			transitionDuration: "var(--dur-micro)"
+	},
+	easeVarEase: {
+			transitionTimingFunction: "var(--ease)"
+	},
+	gap05: {
+			gap: "2px"
+	},
+	z1: {
+			zIndex: "1"
+	},
+	minH11: {
+			minHeight: "44px"
+	},
+	px15: {
+			paddingInline: "6px"
+	},
+	rounded2xl: {
+			borderRadius: "calc(22px * var(--rf))"
+	},
+	px5: {
+			paddingInline: "20px"
+	},
+	py2: {
+			paddingBlock: "8px"
+	},
+	maxWFull: {
+			maxWidth: "100%"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	textEllipsis: {
+			textOverflow: "ellipsis"
+	},
+	whitespaceNowrap: {
+			whiteSpace: "nowrap"
+	},
+	py3px: {
+			paddingBlock: "3px"
+	},
+	borderB: {
+			borderBottomStyle: "solid",
+			borderBottomWidth: "1px"
+	},
+	borderDivider: {
+			borderColor: "var(--divider)"
+	},
+	py15: {
+			paddingBlock: "6px"
+	},
+	textXs: {
+			fontSize: "var(--type-label)",
+			lineHeight: "var(--tw-leading,var(--text-xs--line-height))"
+	},
+	mlAuto: {
+			marginLeft: "auto"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	gap1: {
+			gap: "4px"
+	},
+	border0: {
+			borderStyle: "solid",
+			borderWidth: "0"
+	},
+	bgSurface: {
+			backgroundColor: "var(--bg)"
+	},
+	gap4: {
+			gap: "16px"
+	},
+	p8: {
+			padding: "32px"
+	},
+	textCenter: {
+			textAlign: "center"
+	},
+	textBase: {
+			fontSize: "var(--type-body)",
+			lineHeight: "var(--tw-leading,var(--text-base--line-height))"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	roundedMd: {
+			borderRadius: "calc(7px * var(--rf))"
+	},
+	px4: {
+			paddingInline: "16px"
+	},
+	textSm: {
+			fontSize: "var(--type-label)",
+			lineHeight: "var(--tw-leading,var(--text-sm--line-height))"
+	},
+	maxWXs: {
+			maxWidth: "var(--container-xs)"
+	},
+	pointerEventsNone: {
+			pointerEvents: "none"
+	},
+	fixed: {
+			position: "fixed"
+	},
+	z12000: {
+			zIndex: "12000"
+	},
+	px6: {
+			paddingInline: "24px"
+	},
+	mt4: {
+			marginTop: "16px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	srOnly: {
+			clipPath: "inset(50%)",
+			whiteSpace: "nowrap",
+			borderWidth: "0",
+			width: "1px",
+			height: "1px",
+			margin: "-1px",
+			padding: "0",
+			position: "absolute",
+			overflow: "hidden"
+	},
+	py10: {
+			paddingBlock: "40px"
+	},
+	minHFull: {
+			minHeight: "100%"
+	},
+	wFull: {
+			width: "100%"
+	},
+	maxW840px: {
+			maxWidth: "840px"
+	},
+	mxAuto: {
+			marginInline: "auto"
+	},
+	mb4: {
+			marginBottom: "16px"
+	},
+	maxW340px: {
+			maxWidth: "340px"
+	},
+	leadingSnug: {
+			lineHeight: "var(--leading-snug)"
+	},
+	mb3: {
+			marginBottom: "12px"
+	},
+	maxW200px: {
+			maxWidth: "200px"
+	},
+	mt3: {
+			marginTop: "12px"
+	},
+	maxWVarSessionCol: {
+			maxWidth: "var(--session-col)"
+	},
+	py3: {
+			paddingBlock: "12px"
+	},
+	transitionTransform: {
+			transitionProperty: "transform,translate,scale,rotate",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	mb2: {
+			marginBottom: "8px"
+	},
+	justifyBetween: {
+			justifyContent: "space-between"
+	},
+	py7px: {
+			paddingBlock: "7px"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	bgTransparent: {
+			backgroundColor: "#0000"
+	},
+	pointerEventsAuto: {
+			pointerEvents: "auto"
+	},
+	colStart2: {
+			gridColumnStart: "2"
+	},
+	rowStart1: {
+			gridRowStart: "1"
+	},
+	justifySelfCenter: {
+			justifySelf: "center"
+	},
+	colStart3: {
+			gridColumnStart: "3"
+	},
+	justifySelfEnd: {
+			justifySelf: "flex-end"
+	},
+	minH10: {
+			minHeight: "40px"
+	},
+	size11: {
+			width: "44px",
+			height: "44px"
+	},
+	CornerShapeSquircle: {
+			cornerShape: "squircle"
+	},
+	mx05: {
+			marginInline: "2px"
+	},
+	h5: {
+			height: "20px"
+	},
+	wPx: {
+			width: "1px"
+	},
+	bgDivider: {
+			backgroundColor: "var(--divider)"
+	},
+	mb1: {
+			marginBottom: "4px"
+	},
+	maxWCalcVarSessionCol40px: {
+			maxWidth: "calc(var(--session-col) + 40px)"
+	},
+	textYellow: {
+			color: "var(--yellow)"
+	},
+});
 
 type QueueReceipt = {
 	id?: string;
@@ -4301,7 +4715,7 @@ export function SessionViewer({
 			: classified.content;
 		return (
 			<div className={composerQueueContent}>
-				{isReview && <IconPullRequest size={18} className="flex-none text-faint" />}
+				{isReview && <IconPullRequest size={18} {...stylex.props(sx.flexNone, sx.textFaint)} />}
 				{firstImage && (
 					<div className={composerQueueImage}>
 						<img className={composerQueueImageThumb} src={firstImage} alt="" />
@@ -4789,8 +5203,8 @@ export function SessionViewer({
 							{ tone: "sending" },
 						)}
 						{item.state === "failed" && (
-							<div className="flex flex-wrap items-center gap-2">
-								<span className="min-w-0 flex-1 text-meta text-red" role="alert">
+							<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap2)}>
+								<span {...stylex.props(sx.minW0, sx.flex1, sx.textRed, typography.meta)} role="alert">
 									{item.error || "This message could not be delivered."}
 								</span>
 								<Button variant="soft" size="sm" onClick={() => promptOutbox.retry(item.clientId)}>
@@ -5583,7 +5997,7 @@ export function SessionViewer({
 	};
 
 	return (
-		<div className="relative flex h-full min-h-0 flex-col">
+		<div {...stylex.props(sx.relative, sx.flex, sx.hFull, sx.minH0, sx.flexCol)}>
 			{deleting && (
 				<div
 					/* `session-delete-overlay` stays on the markup as a bare hook with
@@ -5592,17 +6006,17 @@ export function SessionViewer({
 					   .session-delete-overlay')` whether a click landed on a blocking
 					   surface. Drop the name and a click through this overlay starts
 					   dismissing what's underneath it. */
-					className="session-delete-overlay absolute inset-0 z-30 flex items-center justify-center bg-[color-mix(in_srgb,var(--bg)_72%,transparent)] backdrop-blur-[2px]"
+					className="session-delete-overlay bg-[color-mix(in_srgb,var(--bg)_72%,transparent)] backdrop-blur-[2px]" {...stylex.props(sx.absolute, sx.inset0, sx.z30, sx.flex, sx.itemsCenter, sx.justifyCenter)}
 					role="status"
 					aria-live="polite"
 				>
-					<div className="flex flex-col items-center gap-[14px] rounded-xl border border-line bg-panel px-8 py-[26px] smooth-shadow-lg">
+					<div {...stylex.props(sx.flex, sx.flexCol, sx.itemsCenter, sx.gap14px, sx.roundedXl, sx.border, sx.borderLine, sx.bgPanel, sx.px8, sx.py26px, sx.smoothShadowLg)}>
 						{/* `rounded-full` rather than `rounded-[50%]`: base.css grants the
 						    squircle to every `rounded-*` class EXCEPT `rounded-full`, and
 						    this ring was a bare `border-radius: 50%` with no corner-shape.
 						    It serialises as a clamped huge px value instead of 50%, which
 						    on a square box is the same circle. */}
-					<div className="size-[30px] animate-[spin_0.8s_linear_infinite] rounded-full border-2 border-line-strong border-t-accent" />
+					<div {...stylex.props(sx.size30px, sx.animateSpin08sLinearInfinite, sx.roundedFull, sx.border2, sx.borderLineStrong, sx.borderTAccent)} />
 						<span className={SESSION_DELETE_LABEL}>{deleteLabel}</span>
 					</div>
 				</div>
@@ -5616,7 +6030,7 @@ export function SessionViewer({
 			>
 				<Modal.Content>
 					<Modal.Header title="Move to a branch?" />
-					<Modal.Description className="m-0 text-pretty text-supporting font-normal leading-relaxed text-dim">
+					<Modal.Description {...stylex.props(sx.m0, sx.textPretty, sx.fontNormal, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 						{branchConfirmMode === "create"
 							? "You need to move this session to a branch before you can create a PR."
 							: "Copies this session’s changes to a new branch without removing them from the shared checkout."}
@@ -5657,13 +6071,13 @@ export function SessionViewer({
 					(inMenu ? (
 						<Menu.Item onClick={addToSidebar} title="Keep this workspace in your sidebar">
 							<IconInbox size={20} className={MENU_ICON} />
-							<span className="grow">Add to sidebar</span>
+							<span {...stylex.props(sx.grow)}>Add to sidebar</span>
 						</Menu.Item>
 					) : (
 						<Button
 							size="md"
 							variant="default"
-							className="mr-1.5"
+							{...stylex.props(sx.mr15)}
 							icon={<IconInbox size={20} />}
 							onClick={addToSidebar}
 							title="Keep this workspace in your sidebar"
@@ -5681,7 +6095,7 @@ export function SessionViewer({
 					inMenu ? (
 						<Menu.Item onClick={handleShare} title="Copy a link to this session">
 							<CopyCheck copied={copied} idle={<IconLink size={20} />} size={20} className={MENU_ICON} />
-							<span className="grow">{copied ? "Copied" : "Share"}</span>
+							<span {...stylex.props(sx.grow)}>{copied ? "Copied" : "Share"}</span>
 						</Menu.Item>
 					) : (
 						<Button
@@ -5706,7 +6120,7 @@ export function SessionViewer({
 						title="Start a new session in this workspace"
 					>
 						<IconPlus size={20} className={MENU_ICON} />
-						<span className="grow">New session in workspace</span>
+						<span {...stylex.props(sx.grow)}>New session in workspace</span>
 					</Menu.Item>
 				);
 				// Closed sessions of this workspace. They normally hang off the tab
@@ -5721,10 +6135,10 @@ export function SessionViewer({
 						<Menu.SubmenuRoot>
 							<Menu.SubmenuTrigger title="Closed sessions in this workspace">
 								<IconHistory size={20} className={MENU_ICON} />
-								<span className="grow">Archived sessions</span>
-								<IconChevronRight size={16} className="text-faint" />
+								<span {...stylex.props(sx.grow)}>Archived sessions</span>
+								<IconChevronRight size={16} {...stylex.props(sx.textFaint)} />
 							</Menu.SubmenuTrigger>
-							<Menu.Popup className="min-w-[240px] max-w-[320px]">
+							<Menu.Popup {...stylex.props(sx.minW240px, sx.maxW320px)}>
 								<ArchivedSessionItems
 									sessions={archivedSessions}
 									onSelect={(s) => {
@@ -5749,8 +6163,8 @@ export function SessionViewer({
 					<Menu.SubmenuRoot>
 						<Menu.SubmenuTrigger title="Copy this session's transcript">
 							<IconCopy size={20} className={MENU_ICON} />
-							<span className="grow">Copy transcript</span>
-							<IconChevronRight size={16} className="text-faint" />
+							<span {...stylex.props(sx.grow)}>Copy transcript</span>
+							<IconChevronRight size={16} {...stylex.props(sx.textFaint)} />
 						</Menu.SubmenuTrigger>
 						<Menu.Popup>
 							<Menu.Item
@@ -5761,7 +6175,7 @@ export function SessionViewer({
 								title="Copy a trimmed transcript of this session"
 							>
 								<IconListCircles size={20} className={MENU_ICON} />
-								<span className="grow">Concise</span>
+								<span {...stylex.props(sx.grow)}>Concise</span>
 								{copyTranscriptLabel && (
 								<Menu.Shortcut>{copyTranscriptLabel}</Menu.Shortcut>
 							)}
@@ -5774,7 +6188,7 @@ export function SessionViewer({
 								title="Copy the complete transcript of this session"
 							>
 								<IconFile size={20} className={MENU_ICON} />
-								<span className="grow">Full</span>
+								<span {...stylex.props(sx.grow)}>Full</span>
 							</Menu.Item>
 						</Menu.Popup>
 					</Menu.SubmenuRoot>
@@ -5796,9 +6210,9 @@ export function SessionViewer({
 						}}
 					>
 						<IconGlobe size={20} className={MENU_ICON} />
-						<span className="grow">Portals</span>
+						<span {...stylex.props(sx.grow)}>Portals</span>
 						{livePortals > 0 && (
-							<span className="shrink-0 tabular-nums text-faint">
+							<span className="tabular-nums" {...stylex.props(sx.shrink0, sx.textFaint)}>
 								{livePortals} live
 							</span>
 						)}
@@ -5820,7 +6234,7 @@ export function SessionViewer({
 									title="Move this session into an isolated worktree"
 								>
 									<IconNewBranch size={20} className={MENU_ICON} />
-									<span className="grow">
+									<span {...stylex.props(sx.grow)}>
 										{branchActionBusy === "move" ? "Moving…" : "Move to branch"}
 									</span>
 								</Menu.Item>
@@ -5834,7 +6248,7 @@ export function SessionViewer({
 									title="Move to a branch and create a pull request"
 								>
 									<IconPullRequest size={20} className={MENU_ICON} />
-									<span className="grow">Create PR</span>
+									<span {...stylex.props(sx.grow)}>Create PR</span>
 								</Menu.Item>
 							</>
 						) : menuGit.branch ? (
@@ -5844,7 +6258,7 @@ export function SessionViewer({
 								title="Ask this session to create a pull request"
 							>
 								<IconPullRequest size={20} className={MENU_ICON} />
-								<span className="grow">Create PR</span>
+								<span {...stylex.props(sx.grow)}>Create PR</span>
 							</Menu.Item>
 						) : null
 					) : null;
@@ -5869,7 +6283,7 @@ export function SessionViewer({
 								}
 							>
 								<IconPencil size={20} className={MENU_ICON} />
-								<span className="grow">
+								<span {...stylex.props(sx.grow)}>
 									{workspaceName ? "Rename workspace" : "Rename session"}
 								</span>
 							</Menu.Item>
@@ -5893,7 +6307,7 @@ export function SessionViewer({
 						title="Start a new session from this one's history"
 					>
 						<IconBranches size={20} className={MENU_ICON} />
-						<span className="grow">Fork session</span>
+						<span {...stylex.props(sx.grow)}>Fork session</span>
 					</Menu.Item>
 				);
 				// Start something from this session. Renders nothing until the session
@@ -5925,7 +6339,7 @@ export function SessionViewer({
 						}
 					>
 						<IconArchive size={20} className={MENU_ICON} />
-						<span className="grow">
+						<span {...stylex.props(sx.grow)}>
 							{archiving
 								? session.archived
 									? "Unarchiving…"
@@ -5947,12 +6361,12 @@ export function SessionViewer({
 						// Red at rest, not only under the cursor. This is the one row in
 						// the menu that cannot be undone, and a row that looks ordinary
 						// until you are already on it announces that too late.
-						className="text-red data-[highlighted]:bg-red-soft data-[highlighted]:text-red"
+						className="data-[highlighted]:bg-red-soft data-[highlighted]:text-red" {...stylex.props(sx.textRed)}
 						onClick={() => setShowDeleteConfirm(true)}
 						title="Delete session"
 					>
 						<IconTrash size={20} />
-						<span className="grow">Delete session</span>
+						<span {...stylex.props(sx.grow)}>Delete session</span>
 					</Menu.Item>
 				) : (
 					<div className={VIEWER_DELETE_CONFIRM}>
@@ -5960,7 +6374,7 @@ export function SessionViewer({
 							<Button
 								variant="danger"
 								size="sm"
-								className="min-h-0 px-3 py-[5px] text-label"
+								{...stylex.props(sx.minH0, sx.px3, sx.py5px, typography.label)}
 								onClick={() => handleDelete(true)}
 								disabled={deleting}
 							>
@@ -5970,7 +6384,7 @@ export function SessionViewer({
 						<Button
 							variant="warning"
 							size="sm"
-							className="min-h-0 px-3 py-[5px] text-label"
+							{...stylex.props(sx.minH0, sx.px3, sx.py5px, typography.label)}
 							onClick={() => handleDelete(false)}
 							disabled={deleting}
 						>
@@ -5979,7 +6393,7 @@ export function SessionViewer({
 						<Button
 							variant="soft"
 							size="sm"
-							className="min-h-0 px-3 py-[5px] text-label"
+							{...stylex.props(sx.minH0, sx.px3, sx.py5px, typography.label)}
 							onClick={() => setShowDeleteConfirm(false)}
 							disabled={deleting}
 						>
@@ -6004,14 +6418,14 @@ export function SessionViewer({
 								title={session.automation}
 							>
 								<IconRobot size={20} className={MENU_ICON} />
-								<span className="grow">Automation</span>
+								<span {...stylex.props(sx.grow)}>Automation</span>
 							</Menu.Item>
 						)}
 						{session.linearIssue?.url && (inMenu ? (
 							<Menu.Item
 								render={<a href={session.linearIssue.url} target="_blank" rel="noopener" />}
 							>
-								<span className="grow">{session.linearIssue.identifier}</span>
+								<span {...stylex.props(sx.grow)}>{session.linearIssue.identifier}</span>
 							</Menu.Item>
 						) : (
 							<a
@@ -6025,7 +6439,7 @@ export function SessionViewer({
 						))}
 						{hasPlain && plainUrl && (inMenu ? (
 							<Menu.Item render={<a href={plainUrl} target="_blank" rel="noopener" />}>
-								<span className="grow">Plain ↗</span>
+								<span {...stylex.props(sx.grow)}>Plain ↗</span>
 							</Menu.Item>
 						) : (
 							<a
@@ -6039,7 +6453,7 @@ export function SessionViewer({
 						))}
 						{feedRef && (inMenu ? (
 							<Menu.Item render={<a href={feedRef.url} target="_blank" rel="noopener" />}>
-								<span className="grow">{feedRefLabel} ↗</span>
+								<span {...stylex.props(sx.grow)}>{feedRefLabel} ↗</span>
 							</Menu.Item>
 						) : (
 							<a
@@ -6096,7 +6510,7 @@ export function SessionViewer({
 								// left of the bar. Phones keep it flush with the right edge.
 								align={isPhone ? "end" : "start"}
 								sideOffset={6}
-								className="min-w-[240px] max-w-[min(300px,calc(100vw-24px))]"
+								className="max-w-[min(300px,calc(100vw-24px))]" {...stylex.props(sx.minW240px)}
 							>
 								{/* Quick session actions use the same focus, spacing, collision,
 								    and dismissal behavior as every other app menu. Each group is
@@ -6140,9 +6554,9 @@ export function SessionViewer({
 						// switch/attach menu: scratch names the feed it came from,
 						// an Ask session with the repo turned off says so.
 						(session.repoLess ? (
-							<span className="flex min-w-0 items-center gap-1.5">
+							<span {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap15)}>
 								<span
-									className="flex min-w-0 items-center gap-1.5 text-label font-medium text-dim"
+									{...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap15, sx.fontMedium, sx.textDim, typography.label)}
 									title={
 										session.mode === "scratch"
 											? "Scratch session · no repo"
@@ -6154,9 +6568,9 @@ export function SessionViewer({
 											name={session.externalRefs?.[0]?.kind || "scratch"}
 										/>
 									) : (
-										<IconEye size={16} className="shrink-0 text-faint" />
+										<IconEye size={16} {...stylex.props(sx.shrink0, sx.textFaint)} />
 									)}
-									<span className="truncate">
+									<span {...stylex.props(sx.truncate)}>
 										{session.mode === "scratch"
 											? session.externalRefs?.[0]?.kind || "scratch"
 											: "No repo"}
@@ -6164,7 +6578,7 @@ export function SessionViewer({
 								</span>
 								<IconChevronDown
 									size={18}
-									className="shrink-0 -rotate-90 text-faint"
+									{...stylex.props(sx.shrink0, sx.Rotate90, sx.textFaint)}
 								/>
 							</span>
 						) : (
@@ -6191,7 +6605,7 @@ export function SessionViewer({
 							</button>
 							<IconChevronDown
 								size={18}
-								className="-mx-1 shrink-0 -rotate-90 text-faint"
+								{...stylex.props(sx.Mx1, sx.shrink0, sx.Rotate90, sx.textFaint)}
 								aria-hidden="true"
 							/>
 						</>
@@ -6199,7 +6613,7 @@ export function SessionViewer({
 					{session.archived && (
 						<Tooltip label="Archived" side="bottom">
 							<span
-								className="inline-flex shrink-0 items-center justify-center text-dim"
+								{...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textDim)}
 								role="img"
 								aria-label="Archived"
 							>
@@ -6264,7 +6678,7 @@ export function SessionViewer({
 					{session.source !== "opensession" &&
 						(brandLogo(session.source) ? (
 							<span
-								className="flex shrink-0 items-center text-faint"
+								{...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.textFaint)}
 								title={`From ${sessionSourceName(session.source)}`}
 								aria-label={`From ${sessionSourceName(session.source)}`}
 								role="img"
@@ -6284,7 +6698,7 @@ export function SessionViewer({
 						<Tooltip label={`Automation · ${session.automation}`} side="bottom">
 							<a
 								href={`${BASE_PATH}/automations/${encodeURIComponent(session.automationId || session.automation)}`}
-								className="-ml-1 inline-flex size-6 shrink-0 items-center justify-center rounded-control text-faint transition-colors duration-[var(--dur-micro)] ease-[var(--ease)] hover:bg-hover hover:text-fg"
+								className="hover:bg-hover hover:text-fg" {...stylex.props(sx.Ml1, sx.inlineFlex, sx.size6, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textFaint, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase)}
 								aria-label={`Open ${session.automation} automation settings`}
 							>
 								<IconRobot size={18} />
@@ -6292,7 +6706,7 @@ export function SessionViewer({
 						</Tooltip>
 					) : sessionWasAgentStarted(session) ? (
 						<span
-							className="-ml-1 inline-flex size-6 shrink-0 items-center justify-center text-faint"
+							{...stylex.props(sx.Ml1, sx.inlineFlex, sx.size6, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textFaint)}
 							role="img"
 							aria-label="Started by an agent"
 							title="Started by an agent"
@@ -6323,7 +6737,7 @@ export function SessionViewer({
 					    as one pair, and the pair is pulled in a little because each
 					    button already pads its own glyph. */}
 					{!isPhone && (
-						<div className="-ml-1 flex flex-none items-center gap-0.5">
+						<div {...stylex.props(sx.Ml1, sx.flex, sx.flexNone, sx.itemsCenter, sx.gap05)}>
 							{overflowMenu}
 							{/* With no tab strip on screen the affordance to spawn a sibling
 							    session lives here beside the title (⌘⌥N does the same). The
@@ -6351,7 +6765,7 @@ export function SessionViewer({
 										<Button
 											variant="ghost"
 											size="md"
-											className="flex-none rounded-control"
+											{...stylex.props(sx.flexNone, sx.roundedControl)}
 											onClick={(event) => {
 												const animate =
 													event.detail > 0 &&
@@ -6527,7 +6941,7 @@ export function SessionViewer({
 								// from when both were narrow padded controls, and now that all
 								// three are equal squares it just made this gap 4px where the
 								// share → ⋯ one is the row's 8px.
-								className="rounded-control text-dim hover:bg-hover hover:text-fg phone:order-2 phone:h-[38px] phone:min-h-[38px] phone:w-[38px] phone:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] phone:text-accent"
+								className="hover:bg-hover hover:text-fg phone:order-2 phone:h-[38px] phone:min-h-[38px] phone:w-[38px] phone:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] phone:text-accent" {...stylex.props(sx.roundedControl, sx.textDim)}
 								onClick={() => setActivePanelOpen(!activePanelOpen)}
 								aria-label="Toggle side panel"
 								// Iconic sidebar-right glyph — reads as "right side panel".
@@ -6572,7 +6986,7 @@ export function SessionViewer({
 								>
 									<TopBarBack
 										floating
-										className="relative z-[1]"
+										{...stylex.props(sx.relative, sx.z1)}
 										onClick={() =>
 											panelPage
 												? setPanelPage(null)
@@ -6598,7 +7012,7 @@ export function SessionViewer({
 									</TopBarTitle>
 									{/* The same session menu moves with the person into Workspace
 									    details instead of remaining behind the full-screen page. */}
-									<TopBarActions className="relative z-[1]">
+									<TopBarActions {...stylex.props(sx.relative, sx.z1)}>
 										{overflowMenu}
 									</TopBarActions>
 								</TopBar>
@@ -6641,7 +7055,7 @@ export function SessionViewer({
 									<>
 										<div className={INFO_HERO}>
 											{session.desk ? (
-												<IconDesk size={40} className="text-dim" />
+												<IconDesk size={40} {...stylex.props(sx.textDim)} />
 											) : (
 												<RepoTile name={session.repo || "repository"} size={40} />
 											)}
@@ -6679,7 +7093,7 @@ export function SessionViewer({
 														variant="hero"
 													/>
 												) : models.length > 0 ? (
-													<span className="inline-flex min-h-11 items-center px-1.5">
+													<span {...stylex.props(sx.inlineFlex, sx.minH11, sx.itemsCenter, sx.px15)}>
 														{metadataModelLabel(effectiveModel, models)}
 													</span>
 												) : null}
@@ -6688,7 +7102,7 @@ export function SessionViewer({
 										<div className={INFO_CONTENT}>
 										<div className={INFO_SUMMARY_CARD}>
 											{session.sandbox && (
-												<div className="flex min-h-11 items-center rounded-2xl bg-panel px-5 py-2">
+												<div {...stylex.props(sx.flex, sx.minH11, sx.itemsCenter, sx.rounded2xl, sx.bgPanel, sx.px5, sx.py2)}>
 													<SandboxBadge
 														sessionId={session.id}
 														sandbox={session.sandbox}
@@ -6791,7 +7205,7 @@ export function SessionViewer({
 				createPortal(
 					session.archived ? (
 						<span role="img" aria-label="Archived" title="Archived">
-							<IconArchive size={20} className="text-dim" />
+							<IconArchive size={20} {...stylex.props(sx.textDim)} />
 						</span>
 					) : session.desk ? (
 						deskOwner && personKey(deskOwner) !== personKey(currentUser) ? (
@@ -6804,7 +7218,7 @@ export function SessionViewer({
 							// 20, not the tile's 18: these 24-grid glyphs are clamped
 							// at 20 (MIN_SIZE in icons.tsx) and only ink ~60% of
 							// their box, so the lamp still reads smaller than a face.
-							<IconDesk size={20} className="text-dim" />
+							<IconDesk size={20} {...stylex.props(sx.textDim)} />
 						)
 					) : (
 						<RepoTile name={session.repo || "repository"} size={18} round />
@@ -6878,7 +7292,7 @@ export function SessionViewer({
 				<div className={SESSION_BANNERS}>
 					{session.goal && (
 						<span
-							className="inline-flex max-w-full items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap rounded-full border border-line bg-panel px-3 py-[3px] text-label text-dim"
+							{...stylex.props(sx.inlineFlex, sx.maxWFull, sx.itemsCenter, sx.gap15, sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.roundedFull, sx.border, sx.borderLine, sx.bgPanel, sx.px3, sx.py3px, sx.textDim, typography.label)}
 							title="Cleared with /goal clear"
 						>
 							🎯 {session.goal}
@@ -6886,7 +7300,7 @@ export function SessionViewer({
 					)}
 					{session.loop && (
 						<span
-							className="inline-flex max-w-full items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap rounded-full border border-line bg-panel px-3 py-[3px] text-label text-dim"
+							{...stylex.props(sx.inlineFlex, sx.maxWFull, sx.itemsCenter, sx.gap15, sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.roundedFull, sx.border, sx.borderLine, sx.bgPanel, sx.px3, sx.py3px, sx.textDim, typography.label)}
 							title={`"${session.loop.prompt}" · stop with /loop stop`}
 						>
 							⟳ every {session.loop.intervalMinutes}m ·{" "}
@@ -6897,7 +7311,7 @@ export function SessionViewer({
 				</div>
 			)}
 
-			<div className="flex min-h-0 flex-1">
+			<div {...stylex.props(sx.flex, sx.minH0, sx.flex1)}>
 				<div
 					/* The last class is what the floating action band covers, paid for
 					   by the transcript's bottom padding and by the scroll-to-bottom
@@ -6938,22 +7352,22 @@ export function SessionViewer({
 							// WorkOS AuthKit, which refuses framing), so the header keeps a
 							// first-party "Open" break-out to log in, then come back.
 							<div className={VIEWER_REVIEW_MAIN}>
-								<div className="flex h-full flex-col">
-									<div className="flex items-center gap-2 border-b border-divider bg-panel px-3 py-1.5 text-xs text-dim">
+								<div {...stylex.props(sx.flex, sx.hFull, sx.flexCol)}>
+									<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.borderB, sx.borderDivider, sx.bgPanel, sx.px3, sx.py15, sx.textXs, sx.textDim)}>
 										<IconGlobe size={14} />
-										<span className="truncate">
+										<span {...stylex.props(sx.truncate)}>
 											Preview environment
 											{staging.status !== "Ready"
 												? ` · ${staging.status.toLowerCase()}…`
 												: ""}
 										</span>
-										<div className="ml-auto flex items-center gap-3">
+										<div {...stylex.props(sx.mlAuto, sx.flex, sx.itemsCenter, sx.gap3)}>
 											<button
 												type="button"
 												onClick={() =>
 													shareLink(stagingUrl, { toast: "Link copied" })
 												}
-												className="inline-flex items-center gap-1 transition-colors hover:text-fg"
+												className="hover:text-fg" {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap1, sx.transitionColors)}
 											>
 												<IconCopy size={13} />
 												Copy link
@@ -6963,7 +7377,7 @@ export function SessionViewer({
 												target="_blank"
 												rel="noopener"
 												title="Open first-party in a new tab. Needed if the frame is blank because you aren't logged in to the preview environment yet."
-												className="inline-flex items-center gap-1 transition-colors hover:text-fg"
+												className="hover:text-fg" {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap1, sx.transitionColors)}
 											>
 												Open
 												<IconArrowUpRight size={13} />
@@ -6974,7 +7388,7 @@ export function SessionViewer({
 										key={stagingUrl}
 										src={stagingUrl}
 										title="Preview environment"
-										className="min-h-0 flex-1 border-0 bg-surface"
+										{...stylex.props(sx.minH0, sx.flex1, sx.border0, sx.bgSurface)}
 										allow="camera; microphone; display-capture; fullscreen; autoplay; clipboard-write"
 									/>
 								</div>
@@ -6984,13 +7398,13 @@ export function SessionViewer({
 							// fusion CSP change hasn't reached it yet) — open it
 							// first-party in a new tab rather than show a blocked frame.
 							<div className={VIEWER_REVIEW_MAIN}>
-								<div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
-									<IconGlobe size={40} className="text-dim" />
-									<div className="flex flex-col items-center gap-1">
-										<div className="text-base font-medium text-fg">
+								<div {...stylex.props(sx.flex, sx.flex1, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.gap4, sx.p8, sx.textCenter)}>
+									<IconGlobe size={40} {...stylex.props(sx.textDim)} />
+									<div {...stylex.props(sx.flex, sx.flexCol, sx.itemsCenter, sx.gap1)}>
+										<div {...stylex.props(sx.textBase, sx.fontMedium, sx.textFg)}>
 											Preview environment
 										</div>
-										<div className="text-xs text-dim">
+										<div {...stylex.props(sx.textXs, sx.textDim)}>
 											{staging?.status === "Ready"
 												? "Test this PR on real infra"
 												: `Deploy is ${(staging?.status ?? "building").toLowerCase()}…`}
@@ -7000,7 +7414,7 @@ export function SessionViewer({
 										href={stagingUrl}
 										target="_blank"
 										rel="noopener"
-										className="inline-flex items-center gap-2 rounded-md border border-line bg-surface px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-panel"
+										className="hover:bg-panel" {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.border, sx.borderLine, sx.bgSurface, sx.px4, sx.py2, sx.textSm, sx.fontMedium, sx.textFg, sx.transitionColors)}
 									>
 										<IconGlobe size={16} />
 										Open staging
@@ -7011,12 +7425,12 @@ export function SessionViewer({
 										onClick={() =>
 											shareLink(stagingUrl, { toast: "Link copied" })
 										}
-										className="inline-flex items-center gap-1.5 text-xs text-dim transition-colors hover:text-fg"
+										className="hover:text-fg" {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap15, sx.textXs, sx.textDim, sx.transitionColors)}
 									>
 										<IconCopy size={14} />
 										Copy link
 									</button>
-									<div className="max-w-xs text-xs leading-relaxed text-dim">
+									<div {...stylex.props(sx.maxWXs, sx.textXs, sx.leadingRelaxed, sx.textDim)}>
 										Opens in a new tab. This deploy isn&apos;t set up to
 										embed here yet.
 									</div>
@@ -7115,25 +7529,25 @@ export function SessionViewer({
 								/>
 						</div>
 					) : (
-					<div className="relative flex min-h-0 flex-1 flex-col">
+					<div {...stylex.props(sx.relative, sx.flex, sx.minH0, sx.flex1, sx.flexCol)}>
 					{fileDragActive &&
 						createPortal(
 							<>
 								<motion.div
-									className="pointer-events-none fixed inset-0 z-[12000] flex flex-col items-center justify-center bg-[color-mix(in_srgb,var(--bg-panel)_68%,transparent)] px-6 text-center"
+									className="bg-[color-mix(in_srgb,var(--bg-panel)_68%,transparent)]" {...stylex.props(sx.pointerEventsNone, sx.fixed, sx.inset0, sx.z12000, sx.flex, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.px6, sx.textCenter)}
 									initial={{ opacity: 0 }}
 									animate={{ opacity: 1 }}
 									transition={{ type: "tween", duration: duration.base, ease }}
 									aria-hidden="true"
 									data-file-drop-overlay
 								>
-									<IconArrowUpToLine size={40} className="text-fg" />
-									<div className="mt-4 text-title font-semibold text-fg">Add files</div>
-									<div className="mt-1 text-label text-dim">
+									<IconArrowUpToLine size={40} {...stylex.props(sx.textFg)} />
+									<div className="text-title" {...stylex.props(sx.mt4, sx.fontSemibold, sx.textFg)}>Add files</div>
+									<div {...stylex.props(sx.mt1, sx.textDim, typography.label)}>
 										Drop here to attach them to your message.
 									</div>
 								</motion.div>
-								<span className="sr-only" role="status">
+								<span {...stylex.props(sx.srOnly)} role="status">
 									Drop files to attach
 								</span>
 							</>,
@@ -7190,24 +7604,24 @@ export function SessionViewer({
 								// sibling sessions, the canvas offers their transcripts as
 								// attachable context for the first message.
 								session.ran ? (
-									<div className="py-10 text-center text-faint">
+									<div {...stylex.props(sx.py10, sx.textCenter, sx.textFaint)}>
 										No transcript available for this session
 									</div>
 								) : contextSessionOptions.length > 0 ? (
 									// Simple centered empty state: the whole region centers the
 									// heading + attachable-context chips so a fresh session reads as a
 									// calm blank canvas rather than a top-left form.
-									<div className="min-h-full flex flex-col items-center justify-center text-center w-full max-w-[840px] mx-auto px-4">
-										<div className="mb-4">
-											<div className="text-label font-medium text-dim">
+									<div {...stylex.props(sx.minHFull, sx.flex, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.textCenter, sx.wFull, sx.maxW840px, sx.mxAuto, sx.px4)}>
+										<div {...stylex.props(sx.mb4)}>
+											<div {...stylex.props(sx.fontMedium, sx.textDim, typography.label)}>
 												New session in
 											</div>
-											<div className="max-w-[340px] mx-auto text-item-title font-semibold leading-snug text-fg">
+											<div {...stylex.props(sx.maxW340px, sx.mxAuto, sx.fontSemibold, sx.leadingSnug, sx.textFg, typography.itemTitle)}>
 												{workspaceName || session.branch || "this workspace"}
 											</div>
 										</div>
-										<div className="text-dim mb-3">Add session transcripts</div>
-										<div className="flex flex-wrap items-center justify-center gap-2">
+										<div {...stylex.props(sx.textDim, sx.mb3)}>Add session transcripts</div>
+										<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.justifyCenter, sx.gap2)}>
 											{(showAllContextSessions
 												? contextSessionOptions
 												: contextSessionOptions.slice(0, 4)
@@ -7249,7 +7663,7 @@ export function SessionViewer({
 																: "bg-hover/50"
 														}
 													>
-														<span className="max-w-[200px] truncate">
+														<span {...stylex.props(sx.maxW200px, sx.truncate)}>
 															{c.title || "Untitled session"}
 														</span>
 													</Button>
@@ -7269,7 +7683,7 @@ export function SessionViewer({
 									<EmptyState
 										icon={<IconMessage size={22} />}
 										title="Start a conversation"
-										className="min-h-full px-4"
+										{...stylex.props(sx.minHFull, sx.px4)}
 									>
 										Ask a question or describe your task.
 									</EmptyState>
@@ -7277,7 +7691,7 @@ export function SessionViewer({
 							) : entries.length === 0 &&
 								!hasLiveConversation &&
 								!inlineRunFailure ? (
-								<div className="py-10 text-center text-faint">Empty transcript</div>
+								<div {...stylex.props(sx.py10, sx.textCenter, sx.textFaint)}>Empty transcript</div>
 							) : (
 								<div
 									className={cn(
@@ -7344,7 +7758,7 @@ export function SessionViewer({
 							{inlineRunFailure && (
 								<InlineAlert
 									title="Run failed"
-									className="mx-auto mt-3 max-w-[var(--session-col)]"
+									{...stylex.props(sx.mxAuto, sx.mt3, sx.maxWVarSessionCol)}
 								>
 									{inlineRunFailure.message}
 								</InlineAlert>
@@ -7354,7 +7768,7 @@ export function SessionViewer({
 								<div
 									role="status"
 									aria-label="Loading more messages"
-									className="mx-auto flex max-w-[var(--session-col)] justify-center py-3 text-faint"
+									{...stylex.props(sx.mxAuto, sx.flex, sx.maxWVarSessionCol, sx.justifyCenter, sx.py3, sx.textFaint)}
 								>
 									<Spinner />
 								</div>
@@ -7464,7 +7878,7 @@ export function SessionViewer({
 										>
 											<IconArrowUp
 												size={13}
-												className="text-dim transition-transform group-hover:-translate-y-px"
+												className="group-hover:-translate-y-px" {...stylex.props(sx.textDim, sx.transitionTransform)}
 												aria-hidden
 											/>
 											Load all
@@ -7491,7 +7905,7 @@ export function SessionViewer({
 									>
 										<IconArrowDown
 											size={13}
-											className="text-dim transition-transform group-hover:translate-y-px"
+											className="group-hover:translate-y-px" {...stylex.props(sx.textDim, sx.transitionTransform)}
 											aria-hidden
 										/>
 									</button>
@@ -7510,19 +7924,19 @@ export function SessionViewer({
 								style={summaryStepStyle}
 							>
 								{noEngine ? (
-									<div className="mx-auto max-w-[var(--session-col)] text-label text-faint">
+									<div {...stylex.props(sx.mxAuto, sx.maxWVarSessionCol, sx.textFaint, typography.label)}>
 										No engine session to resume
 									</div>
 								) : (
 									<>
 										{forkFrom && (
-											<div className="mb-2 flex items-center justify-between gap-3 rounded-control border border-[color-mix(in_srgb,var(--accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] px-3 py-[7px] text-supporting text-fg">
+											<div className="border-[color-mix(in_srgb,var(--accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]" {...stylex.props(sx.mb2, sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap3, sx.roundedControl, sx.border, sx.px3, sx.py7px, sx.textFg, typography.supporting)}>
 												<span>
 													⑂ Forking a new session from the selected message. Type
 													the new direction.
 												</span>
 												<button
-													className="cursor-pointer bg-transparent text-label text-dim hover:text-fg"
+													className="hover:text-fg" {...stylex.props(sx.cursorPointer, sx.bgTransparent, sx.textDim, typography.label)}
 													onClick={() => setForkFrom(null)}
 												>
 											Cancel
@@ -7554,7 +7968,7 @@ export function SessionViewer({
 												/>
 											)}
 											{scrollAction && !isPhone && (
-												<div className="pointer-events-auto col-start-2 row-start-1 shrink-0 justify-self-center">
+												<div {...stylex.props(sx.pointerEventsAuto, sx.colStart2, sx.rowStart1, sx.shrink0, sx.justifySelfCenter)}>
 													<Tooltip
 														label="Scroll to the bottom"
 														shortcut={transcriptDownKeys ?? undefined}
@@ -7567,7 +7981,7 @@ export function SessionViewer({
 														>
 															<IconArrowDown
 																size={13}
-																className="text-dim transition-transform group-hover:translate-y-px"
+																className="group-hover:translate-y-px" {...stylex.props(sx.textDim, sx.transitionTransform)}
 																aria-hidden
 															/>
 														</button>
@@ -7575,14 +7989,14 @@ export function SessionViewer({
 												</div>
 											)}
 											{nextAction && !isPhone && (
-												<div className="pointer-events-auto col-start-3 row-start-1 shrink-0 justify-self-end">
+												<div {...stylex.props(sx.pointerEventsAuto, sx.colStart3, sx.rowStart1, sx.shrink0, sx.justifySelfEnd)}>
 													<Tooltip
 														label="Next chat"
 														shortcut={nextChatKeys ?? undefined}
 													>
 														<Button
 															size="lg"
-															className="min-h-10 shrink-0 border-divider hover:border-line"
+															className="hover:border-line" {...stylex.props(sx.minH10, sx.shrink0, sx.borderDivider)}
 															trailing={<IconChevronRight size={18} aria-hidden />}
 															aria-label="Next chat"
 															onClick={onNextChat}
@@ -7603,19 +8017,19 @@ export function SessionViewer({
 														<Button
 															variant="ghost"
 															size="lg"
-															className="size-11 min-h-11 rounded-control [corner-shape:squircle]"
+															{...stylex.props(sx.size11, sx.minH11, sx.roundedControl, sx.CornerShapeSquircle)}
 															icon={<IconArchive size={22} aria-hidden />}
 															aria-label="Archive and open next chat"
 															disabled={archiving}
 															onClick={() => void handleArchive()}
 														/>
 													)}
-													<div ref={setMobileActionMenuEl} className="inline-flex size-11" />
-													<span className="mx-0.5 h-5 w-px shrink-0 bg-divider" aria-hidden />
+													<div ref={setMobileActionMenuEl} {...stylex.props(sx.inlineFlex, sx.size11)} />
+													<span {...stylex.props(sx.mx05, sx.h5, sx.wPx, sx.shrink0, sx.bgDivider)} aria-hidden />
 													<Button
 														variant="ghost"
 														size="lg"
-														className="size-11 min-h-11 rounded-control [corner-shape:squircle]"
+														{...stylex.props(sx.size11, sx.minH11, sx.roundedControl, sx.CornerShapeSquircle)}
 														icon={<IconPlus size={22} aria-hidden />}
 														aria-label="New workspace"
 														disabled={!onNewWorkspace}
@@ -7625,7 +8039,7 @@ export function SessionViewer({
 														<Button
 															variant="ghost"
 															size="lg"
-															className="size-11 min-h-11 rounded-control [corner-shape:squircle]"
+															{...stylex.props(sx.size11, sx.minH11, sx.roundedControl, sx.CornerShapeSquircle)}
 															icon={<IconArrowRight size={22} aria-hidden />}
 															aria-label="Next chat"
 															disabled={!onNextChat}
@@ -7639,7 +8053,7 @@ export function SessionViewer({
 								)}
 								<TypingIndicator
 									users={typingUsers}
-									className="mx-auto mb-1 w-full max-w-[calc(var(--session-col)+40px)] px-5"
+									{...stylex.props(sx.mxAuto, sx.mb1, sx.wFull, sx.maxWCalcVarSessionCol40px, sx.px5)}
 								/>
 								<Composer
 									// Uncontrolled: the draft lives in the Composer (persisted
@@ -7721,7 +8135,7 @@ export function SessionViewer({
 												<span className={composerMenuIcon}>
 													<BrandMark name="slack" size={16} />
 												</span>
-												<span className="grow whitespace-nowrap">Send to Slack…</span>
+												<span {...stylex.props(sx.grow, sx.whitespaceNowrap)}>Send to Slack…</span>
 											</button>
 											{isAsk && session.source === "opensession" && (
 												<button
@@ -7845,7 +8259,7 @@ export function SessionViewer({
 									)}
 									onClick={() => setPanelPage("changes")}
 								>
-									<IconFile size={15} className="shrink-0" />
+									<IconFile size={15} {...stylex.props(sx.shrink0)} />
 									<span className="@max-[380px]:hidden">Changes</span>
 								</button>
 								<button
@@ -7857,10 +8271,10 @@ export function SessionViewer({
 									)}
 									onClick={() => setPanelPage("portals")}
 								>
-									<IconGlobe size={15} className="shrink-0" />
+									<IconGlobe size={15} {...stylex.props(sx.shrink0)} />
 									<span className="@max-[380px]:hidden">Portals</span>
 									{livePortals > 0 && (
-										<span className="shrink-0 tabular-nums text-faint @max-[380px]:hidden">
+										<span className="tabular-nums @max-[380px]:hidden" {...stylex.props(sx.shrink0, sx.textFaint)}>
 											{livePortals}
 										</span>
 									)}
@@ -7874,10 +8288,10 @@ export function SessionViewer({
 									)}
 									onClick={() => setPanelPage("agents")}
 								>
-									<IconStack size={15} className="shrink-0" />
+									<IconStack size={15} {...stylex.props(sx.shrink0)} />
 									<span className="@max-[380px]:hidden">Agents</span>
 									{runningAgents > 0 && (
-										<span className="shrink-0 tabular-nums text-yellow @max-[380px]:hidden">
+										<span className="tabular-nums @max-[380px]:hidden" {...stylex.props(sx.shrink0, sx.textYellow)}>
 											{runningAgents}
 										</span>
 									)}
@@ -7894,7 +8308,7 @@ export function SessionViewer({
 										setPanelPage("terminal");
 									}}
 								>
-									<IconTerminal size={15} className="shrink-0" />
+									<IconTerminal size={15} {...stylex.props(sx.shrink0)} />
 									<span className="@max-[380px]:hidden">Terminal</span>
 								</button>
 							</div>
@@ -7951,7 +8365,7 @@ export function SessionViewer({
 											: "hidden"
 									}
 								>
-									<div className="min-h-0 flex-1">
+									<div {...stylex.props(sx.minH0, sx.flex1)}>
 										<ShellPanel
 											sessionId={session.id}
 											send={send}

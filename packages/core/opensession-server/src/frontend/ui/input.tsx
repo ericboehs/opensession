@@ -1,5 +1,17 @@
 import * as React from "react";
 import { cn } from "./cn";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+});
 
 /**
  * Field primitive — the shared optics for single-line inputs, multi-line
@@ -108,7 +120,7 @@ export function Field({
 }) {
 	return (
 		<label className={cn("flex min-w-0 flex-col gap-1.5", className)} {...props}>
-			<span className="text-label font-medium text-dim">{label}</span>
+			<span {...stylex.props(sx.fontMedium, sx.textDim, typography.label)}>{label}</span>
 			{children}
 		</label>
 	);

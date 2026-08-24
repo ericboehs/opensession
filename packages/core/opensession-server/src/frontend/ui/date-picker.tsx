@@ -25,6 +25,115 @@ import { Button } from "./button";
 import { cn } from "./cn";
 import { Popover } from "./popover";
 import { Segmented, SegmentedKnob, SegmentedOption } from "./segmented";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	roundedNone: {
+			borderRadius: "0"
+	},
+	bgTransparent: {
+			backgroundColor: "#0000"
+	},
+	p0: {
+			padding: "0"
+	},
+	mx1: {
+			marginInline: "4px"
+	},
+	h35: {
+			height: "14px"
+	},
+	wPx: {
+			width: "1px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	bgLineStrong: {
+			backgroundColor: "var(--border-strong)"
+	},
+	relative: {
+			position: "relative"
+	},
+	flex: {
+			display: "flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	opacity55: {
+			opacity: ".55"
+	},
+	TextBoxTrimBothCapAlphabetic: {
+			textBox: "trim-both cap alphabetic"
+	},
+	p25: {
+			padding: "10px"
+	},
+	mb2: {
+			marginBottom: "8px"
+	},
+	wFull: {
+			width: "100%"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	textCenter: {
+			textAlign: "center"
+	},
+	gap4: {
+			gap: "16px"
+	},
+	w252px: {
+			width: "252px"
+	},
+	justifyBetween: {
+			justifyContent: "space-between"
+	},
+	gap1: {
+			gap: "4px"
+	},
+	pb15: {
+			paddingBottom: "6px"
+	},
+	size26px: {
+			width: "26px",
+			height: "26px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	grid: {
+			display: "grid"
+	},
+	gridCols7: {
+			gridTemplateColumns: "repeat(7,minmax(0,1fr))"
+	},
+	pb1: {
+			paddingBottom: "4px"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	h9: {
+			height: "36px"
+	},
+	placeItemsCenter: {
+			placeItems: "center"
+	},
+});
 
 /**
  * Date range field: the span a page is showing, as ONE control — the presets
@@ -123,7 +232,7 @@ export function DateRangeField({
 						onValueChange={(v) => onRangeChange(...presetRange(Number(v)))}
 						// The group contributes its options only; the well around them
 						// belongs to the whole control.
-						className="rounded-none bg-transparent p-0"
+						{...stylex.props(sx.roundedNone, sx.bgTransparent, sx.p0)}
 					>
 						{presets.map((p) => (
 							<SegmentedOption key={p.label} value={String(p.days)}>
@@ -136,7 +245,7 @@ export function DateRangeField({
 					    reading as the edge of a second box. */}
 					<span
 						aria-hidden
-						className="mx-1 h-3.5 w-px shrink-0 bg-line-strong phone:mx-1.5 phone:h-5"
+						className="phone:mx-1.5 phone:h-5" {...stylex.props(sx.mx1, sx.h35, sx.wPx, sx.shrink0, sx.bgLineStrong)}
 					/>
 				</>
 			)}
@@ -161,14 +270,14 @@ export function DateRangeField({
 				>
 					{rangeWearsKnob && <SegmentedKnob knobId={knobId} />}
 					{/* Above the knob, which fills the option. */}
-					<span className="relative flex items-center gap-1.5">
+					<span {...stylex.props(sx.relative, sx.flex, sx.itemsCenter, sx.gap15)}>
 						{/* Support, not the label: the dates are what is being read. `dense`
 						    is what keeps this option the height of the ones beside it —
 						    at the icon scale's own floor the glyph, not the text, would
 						    set it, and the control would stand a step taller than the
 						    presets it shares a track with. */}
-						<IconCalendar size={16} dense className="shrink-0 opacity-55" />
-						<span className="[text-box:trim-both_cap_alphabetic]">{rangeLabel}</span>
+						<IconCalendar size={16} dense {...stylex.props(sx.shrink0, sx.opacity55)} />
+						<span {...stylex.props(sx.TextBoxTrimBothCapAlphabetic)}>{rangeLabel}</span>
 					</span>
 				</Popover.Trigger>
 				<Popover.Popup align="end" sideOffset={6} initialFocus={false}>
@@ -363,7 +472,7 @@ function RangeCalendar({
 	const canGoForward = !max || max >= addMonths(months[months.length - 1], 1);
 
 	return (
-		<div className="p-2.5" role="group" aria-label={label}>
+		<div {...stylex.props(sx.p25)} role="group" aria-label={label}>
 			{presets.length > 0 && (
 				<Segmented
 					label="Preset ranges"
@@ -372,16 +481,16 @@ function RangeCalendar({
 					onValueChange={(v) => onPreset(Number(v))}
 					// Full width, so the options divide the popup rather than huddling
 					// in one corner of it.
-					className="mb-2 flex w-full [&>*]:flex-1"
+					className="[&>*]:flex-1" {...stylex.props(sx.mb2, sx.flex, sx.wFull)}
 				>
 					{presets.map((p) => (
-						<SegmentedOption key={p.label} value={String(p.days)} className="justify-center">
-							<span className="w-full text-center">{p.label}</span>
+						<SegmentedOption key={p.label} value={String(p.days)} {...stylex.props(sx.justifyCenter)}>
+							<span {...stylex.props(sx.wFull, sx.textCenter)}>{p.label}</span>
 						</SegmentedOption>
 					))}
 				</Segmented>
 			)}
-			<div ref={gridRef} onKeyDown={onKeyDown} className="flex gap-4">
+			<div ref={gridRef} onKeyDown={onKeyDown} {...stylex.props(sx.flex, sx.gap4)}>
 				{months.map((month, index) => {
 					const title = monthTitle(month);
 					const first = index === 0;
@@ -390,13 +499,13 @@ function RangeCalendar({
 						// Wider on a phone, where a day is a thumb target rather than a
 						// click: 308px puts the columns on 44px and still clears the
 						// 390px viewport.
-						<div key={month} className="w-[252px] phone:w-[308px]">
+						<div key={month} className="phone:w-[308px]" {...stylex.props(sx.w252px)}>
 							{/* The title is centred between the chevrons rather than sitting
 							    on the grid's left edge: with two grids side by side, a
 							    left-aligned title and one pair of chevrons can't say which
 							    month a step is about. Each grid keeps the step that leaves
 							    the pair, on its own outer edge. */}
-							<div className="flex items-center justify-between gap-1 pb-1.5">
+							<div {...stylex.props(sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap1, sx.pb15)}>
 								{first ? (
 									<MonthStep
 										label="Previous month"
@@ -405,11 +514,11 @@ function RangeCalendar({
 										icon={<IconChevronLeft size={20} />}
 									/>
 								) : (
-									<span aria-hidden className="size-[26px]" />
+									<span aria-hidden {...stylex.props(sx.size26px)} />
 								)}
 								{/* Live, because a chevron turns the month without moving
 								    focus. */}
-								<div aria-live="polite" className="text-item-title font-semibold text-fg">
+								<div aria-live="polite" {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>
 									{title}
 								</div>
 								{last ? (
@@ -420,7 +529,7 @@ function RangeCalendar({
 										icon={<IconChevronRight size={20} />}
 									/>
 								) : (
-									<span aria-hidden className="size-[26px]" />
+									<span aria-hidden {...stylex.props(sx.size26px)} />
 								)}
 							</div>
 
@@ -430,13 +539,13 @@ function RangeCalendar({
 							    42-cell grid, because `role="grid"` wants real rows between
 							    it and its cells. */}
 							<div role="grid" aria-label={title}>
-								<div role="row" className="grid grid-cols-7">
+								<div role="row" {...stylex.props(sx.grid, sx.gridCols7)}>
 									{headings.map((h) => (
 										<span
 											key={h.long}
 											role="columnheader"
 											aria-label={h.long}
-											className="pb-1 text-center text-meta font-medium text-faint"
+											{...stylex.props(sx.pb1, sx.textCenter, sx.fontMedium, sx.textFaint, typography.meta)}
 										>
 											{/* The initial is decoration: every cell below announces
 											    its own weekday, and a `title` here would raise the
@@ -446,14 +555,14 @@ function RangeCalendar({
 									))}
 								</div>
 								{monthGrid(month, weekStart).map((week) => (
-									<div key={week[0]} role="row" className="grid grid-cols-7">
+									<div key={week[0]} role="row" {...stylex.props(sx.grid, sx.gridCols7)}>
 										{week.map((day, i) => {
 											// A day from a neighbouring month is blank: with two
 											// grids on screen it would otherwise print the same date
 											// twice, once in each, and a range band would be painted
 											// across both copies.
 											if (!isSameMonth(day, month)) {
-												return <div key={day} role="gridcell" className="h-9 phone:h-12" />;
+												return <div key={day} role="gridcell" className="phone:h-12" {...stylex.props(sx.h9)} />;
 											}
 											const span = rangeSpanAt(day, week, i, bandFrom, bandTo);
 											return (
@@ -551,7 +660,7 @@ function Day({
 		<div
 			role="gridcell"
 			aria-selected={selected}
-			className="relative grid h-9 place-items-center phone:h-12"
+			className="phone:h-12" {...stylex.props(sx.relative, sx.grid, sx.h9, sx.placeItemsCenter)}
 		>
 			{span && (
 				<span

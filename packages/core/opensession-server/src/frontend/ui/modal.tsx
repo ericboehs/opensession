@@ -2,6 +2,96 @@ import * as React from "react";
 import { Dialog as BaseDialog } from "@base-ui/react/dialog";
 import { cn } from "./cn";
 import { IconX } from "../components/icons";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	m0: {
+			margin: "0"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	textBalance: {
+			textWrap: "balance"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	leadingTight: {
+			lineHeight: "var(--leading-tight)"
+	},
+	tracking001em: {
+			letterSpacing: "-.01em"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	focusRing: {
+			":focus-visible": {
+					outline: "2px solid var(--accent-ink)",
+					outlineOffset: "2px"
+			}
+	},
+	relative: {
+			position: "relative"
+	},
+	Mr15: {
+			marginRight: "-6px"
+	},
+	Mt1: {
+			marginTop: "-4px"
+	},
+	flex: {
+			display: "flex"
+	},
+	size8: {
+			width: "32px",
+			height: "32px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	roundedControl: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	p0: {
+			padding: "0"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	transitionColors: {
+			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	Mt05: {
+			marginTop: "-2px"
+	},
+	textPretty: {
+			textWrap: "pretty"
+	},
+	fontNormal: {
+			fontWeight: "var(--font-weight-normal)"
+	},
+	leadingRelaxed: {
+			lineHeight: "var(--leading-relaxed)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+});
 
 /**
  * Centered modal dialog on Base UI parts, styled with Tailwind tokens. The
@@ -303,12 +393,12 @@ function Header({
 				{/* Base UI renders Title as <h2> and Description as <p>; preflight
 				    isn't imported (base.css owns resets), so zero their UA margins
 				    or the <h2> top margin reads as phantom padding above the head. */}
-				<BaseDialog.Title className="m-0 min-w-0 flex-1 text-balance text-dialog-title font-semibold leading-tight tracking-[-0.01em] text-fg">
+				<BaseDialog.Title {...stylex.props(sx.m0, sx.minW0, sx.flex1, sx.textBalance, sx.fontSemibold, sx.leadingTight, sx.tracking001em, sx.textFg, typography.dialogTitle)}>
 					{title}
 				</BaseDialog.Title>
 				<BaseDialog.Close
 					aria-label="Close"
-					className="focus-ring relative -mr-1.5 -mt-1 flex size-8 shrink-0 items-center justify-center rounded-control p-0 text-faint transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-hover hover:text-fg"
+					className="after:absolute after:-inset-1 after:content-[''] hover:bg-hover hover:text-fg" {...stylex.props(sx.focusRing, sx.relative, sx.Mr15, sx.Mt1, sx.flex, sx.size8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.p0, sx.textFaint, sx.transitionColors)}
 				>
 					<IconX size={20} />
 				</BaseDialog.Close>
@@ -321,7 +411,7 @@ function Header({
 			    edge; the old -mt-2.5 moved its first 6px behind that opaque bar and
 			    clipped the tops of every standard modal description. */}
 			{description && (
-				<BaseDialog.Description className="m-0 -mt-0.5 text-pretty text-supporting font-normal leading-relaxed text-dim">
+				<BaseDialog.Description {...stylex.props(sx.m0, sx.Mt05, sx.textPretty, sx.fontNormal, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 					{description}
 				</BaseDialog.Description>
 			)}
@@ -333,7 +423,7 @@ function Header({
  *  shell's `gap-4` is what separates the actions from the body — 24px reads as
  *  its own zone, and the settings surfaces this borrows from deliberately have
  *  no dividers. A leading element (a destructive "Clear") sits left of the
- *  actions with `mr-auto`; the older `<div className="flex-1" />` spacer keeps
+ *  actions with `mr-auto`; the older `<div {...stylex.props(sx.flex1)} />` spacer keeps
  *  working under `justify-end`. */
 function Footer({
 	className,

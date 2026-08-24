@@ -3,6 +3,45 @@ import { Menu } from "../ui/menu";
 import { cn } from "../ui/cn";
 import { IconArrowDownRight } from "./icons";
 import { shortModelLabel } from "./ModelEffortSelect";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	size5: {
+			width: "20px",
+			height: "20px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	maxW300px: {
+			maxWidth: "300px"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	mlAuto: {
+			marginLeft: "auto"
+	},
+	pl2: {
+			paddingLeft: "8px"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+});
 
 /**
  * The DOWNWARD half of a session's orchestrator/executor tree: the workers this
@@ -45,7 +84,7 @@ export function SessionRelations({
 	const workerLabel = `${workers!.length} delegated worker${workers!.length > 1 ? "s" : ""}`;
 
 	return (
-		<div className="flex items-center gap-1.5">
+		<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap15)}>
 			{hasWorkers && (
 				<Menu.Root>
 					{/* Count only: the arrow already says "delegated to", so the word
@@ -57,10 +96,10 @@ export function SessionRelations({
 						aria-label={workerLabel}
 						title={workerLabel}
 					>
-						<IconArrowDownRight className="size-5 shrink-0" />
+						<IconArrowDownRight {...stylex.props(sx.size5, sx.shrink0)} />
 						<span className="tabular-nums">{workers!.length}</span>
 					</Menu.Trigger>
-					<Menu.Popup align="start" className="max-w-[300px]">
+					<Menu.Popup align="start" {...stylex.props(sx.maxW300px)}>
 						{/* GroupLabel MUST live inside a Group — bare it throws Base UI
 						    error #31 and white-screens the app on open. */}
 						<Menu.Group>
@@ -73,9 +112,9 @@ export function SessionRelations({
 											w.isRunning ? "bg-yellow" : "bg-line-strong",
 										)}
 									/>
-									<span className="truncate">{w.title}</span>
+									<span {...stylex.props(sx.truncate)}>{w.title}</span>
 									{shortModel(w.model, models) && (
-										<span className="ml-auto shrink-0 pl-2 text-meta text-faint">
+										<span {...stylex.props(sx.mlAuto, sx.shrink0, sx.pl2, sx.textFaint, typography.meta)}>
 											{shortModel(w.model, models)}
 										</span>
 									)}

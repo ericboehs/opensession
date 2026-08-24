@@ -14,6 +14,211 @@ import { ease } from "../ui/motion";
 import { IconChevronDown, IconPlay, IconPlayRectangle } from "./icons";
 import { MarkdownBody, useMarkdownRepo } from "./MarkdownBody";
 import { openLightbox, type LightboxItem } from "./MediaLightbox";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	M1: {
+			margin: "-4px"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	roundedControl: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	border0: {
+			borderStyle: "solid",
+			borderWidth: "0"
+	},
+	bgTransparent: {
+			backgroundColor: "#0000"
+	},
+	p1: {
+			padding: "4px"
+	},
+	textLeft: {
+			textAlign: "left"
+	},
+	fontSans: {
+			fontFamily: "var(--sans)"
+	},
+	leading5: {
+			lineHeight: "20px"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	outlineNone: {
+			outlineStyle: "none"
+	},
+	transitionColors: {
+			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	flexShrink0: {
+			flexShrink: "0"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	mlAuto: {
+			marginLeft: "auto"
+	},
+	maxW40: {
+			maxWidth: "160px"
+	},
+	flexShrink: {
+			flexShrink: "1"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	leading4: {
+			lineHeight: "16px"
+	},
+	block: {
+			display: "block"
+	},
+	mb2: {
+			marginBottom: "8px"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	textXs: {
+			fontSize: "var(--type-label)",
+			lineHeight: "var(--tw-leading,var(--text-xs--line-height))"
+	},
+	m0: {
+			margin: "0"
+	},
+	mt2: {
+			marginTop: "8px"
+	},
+	OverflowWrapAnywhere: {
+			overflowWrap: "anywhere"
+	},
+	TextWrapPretty: {
+			textWrap: "pretty"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	inset0: {
+			inset: "0"
+	},
+	grid: {
+			display: "grid"
+	},
+	placeItemsCenter: {
+			placeItems: "center"
+	},
+	bgBlack25: {
+			backgroundColor: "#00000040"
+	},
+	textWhite: {
+			color: "var(--color-white)"
+	},
+	ml05: {
+			marginLeft: "2px"
+	},
+	px05: {
+			paddingInline: "2px"
+	},
+	mb15: {
+			marginBottom: "6px"
+	},
+	maxW68ch: {
+			maxWidth: "68ch"
+	},
+	minH5: {
+			minHeight: "20px"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	size15: {
+			width: "6px",
+			height: "6px"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	bgBlue: {
+			backgroundColor: "var(--blue)"
+	},
+	fontNormal: {
+			fontWeight: "var(--font-weight-normal)"
+	},
+	pb2: {
+			paddingBottom: "8px"
+	},
+	relative: {
+			position: "relative"
+	},
+	wFull: {
+			width: "100%"
+	},
+	cursorZoomIn: {
+			cursor: "zoom-in"
+	},
+	itemsStart: {
+			alignItems: "flex-start"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	roundedMd: {
+			borderRadius: "calc(7px * var(--rf))"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	bgSurface: {
+			backgroundColor: "var(--bg)"
+	},
+	p0: {
+			padding: "0"
+	},
+	transitionFilter: {
+			transitionProperty: "filter",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+});
 
 /** Stream server-side media (staged under the uploads dir) through the
  *  existing scoped media route — same URL shape MessageBubble uses. */
@@ -197,7 +402,7 @@ export function WalkthroughCard({
 			)}
 		>
 			{session ? (
-				<div className="flex items-center gap-2">
+				<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
 					<button
 						type="button"
 						aria-expanded={expanded}
@@ -213,17 +418,17 @@ export function WalkthroughCard({
 						// and lighting a slab the size of the card. The chevron takes
 						// the rest of it, at its own scale — the whole row folds, but
 						// the chevron is what a reader is aiming at.
-						className="group -m-1 flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-control border-0 bg-transparent p-1 text-left font-sans text-item-title leading-5 text-dim outline-none transition-colors hover:bg-hover/40 focus-visible:shadow-[0_0_0_3px_var(--accent-soft)]"
+						className="group hover:bg-hover/40 focus-visible:shadow-[0_0_0_3px_var(--accent-soft)]" {...stylex.props(sx.M1, sx.flex, sx.minW0, sx.flex1, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.p1, sx.textLeft, sx.fontSans, sx.leading5, sx.textDim, sx.outlineNone, sx.transitionColors, typography.itemTitle)}
 					>
 						{/* The walkthrough's own icon leads the line, so the row is
 					    named before it is operated; the chevron trails at the far
 					    edge, where it reads as this card's disclosure rather than
 					    as another indent level in the transcript. */}
-						<IconPlayRectangle size={20} className="flex-shrink-0 text-faint" />
-						<span className="flex-shrink-0 font-semibold text-fg">
+						<IconPlayRectangle size={20} {...stylex.props(sx.flexShrink0, sx.textFaint)} />
+						<span {...stylex.props(sx.flexShrink0, sx.fontSemibold, sx.textFg)}>
 							Walkthrough
 						</span>
-						<span className="ml-auto max-w-40 flex-shrink truncate text-label leading-4 text-faint phone:max-w-24">
+						<span className="phone:max-w-24" {...stylex.props(sx.mlAuto, sx.maxW40, sx.flexShrink, sx.truncate, sx.leading4, sx.textFaint, typography.label)}>
 							{expanded
 								? walkthrough.publishedAt
 									? relativeTime(walkthrough.publishedAt)
@@ -236,14 +441,14 @@ export function WalkthroughCard({
 								!expanded && "-rotate-90",
 							)}
 						>
-							<IconChevronDown size={20} className="block" />
+							<IconChevronDown size={20} {...stylex.props(sx.block)} />
 						</span>
 					</button>
 				</div>
 			) : (
-				<div className="mb-2 flex items-center gap-1.5">
-					<IconPlayRectangle size={20} className="text-faint" />
-					<span className="text-xs font-semibold text-dim">Walkthrough</span>
+				<div {...stylex.props(sx.mb2, sx.flex, sx.itemsCenter, sx.gap15)}>
+					<IconPlayRectangle size={20} {...stylex.props(sx.textFaint)} />
+					<span {...stylex.props(sx.textXs, sx.fontSemibold, sx.textDim)}>Walkthrough</span>
 				</div>
 			)}
 
@@ -254,7 +459,7 @@ export function WalkthroughCard({
 				// transcript. Three lines is what the paragraph usually is; the
 				// rest of the writeup stays behind the fold, which is what the
 				// fold is for.
-				<p className="m-0 mt-2 line-clamp-3 text-supporting leading-5 text-dim [overflow-wrap:anywhere] [text-wrap:pretty]">
+				<p className="line-clamp-3" {...stylex.props(sx.m0, sx.mt2, sx.leading5, sx.textDim, sx.OverflowWrapAnywhere, sx.TextWrapPretty, typography.supporting)}>
 					{lede}
 				</p>
 			)}
@@ -315,8 +520,8 @@ export function WalkthroughCard({
 											)
 										}
 									/>
-									<span className="absolute inset-0 grid place-items-center bg-black/25 text-white">
-										<IconPlay size={18} className="ml-0.5" />
+									<span {...stylex.props(sx.absolute, sx.inset0, sx.grid, sx.placeItemsCenter, sx.bgBlack25, sx.textWhite)}>
+										<IconPlay size={18} {...stylex.props(sx.ml05)} />
 									</span>
 									{/* After the scrim, so the pill keeps its own contrast
 									    rather than sitting under a wash of black. */}
@@ -436,23 +641,23 @@ export function WalkthroughCard({
 						    and open, the header and the writeup read as parts of it.
 						    The gap does the separating. */}
 						<div className={cn("space-y-5", session ? "mt-4" : "mt-3")}>
-							<section className="px-0.5">
-								<h3 className="m-0 mb-1.5 text-meta font-semibold leading-4 text-faint">
+							<section {...stylex.props(sx.px05)}>
+								<h3 {...stylex.props(sx.m0, sx.mb15, sx.fontSemibold, sx.leading4, sx.textFaint, typography.meta)}>
 									Summary
 								</h3>
 								<MarkdownBody
 									html={summaryHtml}
-									className="markdown max-w-[68ch] text-label leading-5 text-dim [overflow-wrap:anywhere] [text-wrap:pretty]"
+									className="markdown" {...stylex.props(sx.maxW68ch, sx.leading5, sx.textDim, sx.OverflowWrapAnywhere, sx.TextWrapPretty, typography.label)}
 								/>
 							</section>
 
 							{walkthrough.video && (
-								<figure className="m-0">
-									<figcaption className="mb-2 flex min-h-5 items-center gap-2 px-0.5 text-xs font-medium text-fg">
-										<span className="size-1.5 flex-shrink-0 rounded-full bg-blue" />
-										<span className="flex-shrink-0">Demo</span>
+								<figure {...stylex.props(sx.m0)}>
+									<figcaption {...stylex.props(sx.mb2, sx.flex, sx.minH5, sx.itemsCenter, sx.gap2, sx.px05, sx.textXs, sx.fontMedium, sx.textFg)}>
+										<span {...stylex.props(sx.size15, sx.flexShrink0, sx.roundedFull, sx.bgBlue)} />
+										<span {...stylex.props(sx.flexShrink0)}>Demo</span>
 										{walkthrough.videoTitle && (
-											<span className="min-w-0 truncate font-normal text-faint">
+											<span {...stylex.props(sx.minW0, sx.truncate, sx.fontNormal, sx.textFaint)}>
 												{walkthrough.videoTitle}
 											</span>
 										)}
@@ -475,7 +680,7 @@ export function WalkthroughCard({
 								return (
 									<section key={i}>
 										{shot.caption && (
-											<h3 className="m-0 px-0.5 pb-2 text-xs font-medium leading-5 text-fg">
+											<h3 {...stylex.props(sx.m0, sx.px05, sx.pb2, sx.textXs, sx.fontMedium, sx.leading5, sx.textFg)}>
 												{shot.caption}
 											</h3>
 										)}
@@ -490,7 +695,7 @@ export function WalkthroughCard({
 											{(["before", "after"] as const).map(
 												(side) =>
 													shot[side] && (
-														<figure className="m-0 min-w-0" key={side}>
+														<figure {...stylex.props(sx.m0, sx.minW0)} key={side}>
 															<button
 																type="button"
 																// The hairline is the edge of the picture, not a
@@ -498,7 +703,7 @@ export function WalkthroughCard({
 																// UI ends nowhere on a white card. The folded
 																// tiles and the demo video above carry the same
 																// one, so open is where it was missing.
-																className="relative flex w-full cursor-zoom-in items-start justify-center overflow-hidden rounded-md border border-line bg-surface p-0 text-left outline-none transition-[filter] hover:brightness-[0.98] focus-visible:shadow-[inset_0_0_0_3px_var(--accent-soft)]"
+																className="hover:brightness-[0.98] focus-visible:shadow-[inset_0_0_0_3px_var(--accent-soft)]" {...stylex.props(sx.relative, sx.flex, sx.wFull, sx.cursorZoomIn, sx.itemsStart, sx.justifyCenter, sx.overflowHidden, sx.roundedMd, sx.border, sx.borderLine, sx.bgSurface, sx.p0, sx.textLeft, sx.outlineNone, sx.transitionFilter)}
 																onClick={(event) =>
 																	open(`${i}:${side}`, event.currentTarget)
 																}

@@ -1,6 +1,29 @@
 import * as React from "react";
 import { cn } from "./cn";
 import { PageDescription, PageHeader, PageTitle } from "./page-header";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	Mt15: {
+			marginTop: "-6px"
+	},
+	mb18px: {
+			marginBottom: "18px"
+	},
+	flex: {
+			display: "flex"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap25: {
+			gap: "10px"
+	},
+});
 
 export type PageContentWidth = "narrow" | "default" | "wide" | "full";
 
@@ -59,7 +82,7 @@ export function PageLayout({
 					)}
 				</PageHeader>
 				{filters !== undefined && (
-					<div className="-mt-1.5 mb-[18px] flex flex-wrap items-center gap-2.5">
+					<div {...stylex.props(sx.Mt15, sx.mb18px, sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap25)}>
 						{filters}
 					</div>
 				)}

@@ -17,19 +17,121 @@ import {
 	setupRequest,
 	type SetupAccess,
 } from "./setup-shared";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	relative: {
+			position: "relative"
+	},
+	roundedLg: {
+			borderRadius: "calc(14px * var(--rf))"
+	},
+	bgSurface: {
+			backgroundColor: "var(--bg)"
+	},
+	m0: {
+			margin: "0"
+	},
+	overflowXAuto: {
+			overflowX: "auto"
+	},
+	whitespacePre: {
+			whiteSpace: "pre"
+	},
+	p3: {
+			padding: "12px"
+	},
+	pr20: {
+			paddingRight: "80px"
+	},
+	fontMono: {
+			fontFamily: "var(--mono)"
+	},
+	leadingRelaxed: {
+			lineHeight: "var(--leading-relaxed)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	right2: {
+			right: "8px"
+	},
+	top2: {
+			top: "8px"
+	},
+	flex: {
+			display: "flex"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap5: {
+			gap: "20px"
+	},
+	wFull: {
+			width: "100%"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	justifyBetween: {
+			justifyContent: "space-between"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	mt15: {
+			marginTop: "6px"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	justifyEnd: {
+			justifyContent: "flex-end"
+	},
+	mt3: {
+			marginTop: "12px"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textBlue: {
+			color: "var(--blue)"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	px2: {
+			paddingInline: "8px"
+	},
+	py1: {
+			paddingBlock: "4px"
+	},
+});
 
 function CaddyConfigBlock({ value }: { value: string }) {
 	const { copied, copy } = useCopy();
 	return (
-		<div className="relative rounded-lg bg-surface">
-			<pre className="m-0 overflow-x-auto whitespace-pre p-3 pr-20 font-mono text-meta leading-relaxed text-fg">
+		<div {...stylex.props(sx.relative, sx.roundedLg, sx.bgSurface)}>
+			<pre {...stylex.props(sx.m0, sx.overflowXAuto, sx.whitespacePre, sx.p3, sx.pr20, sx.fontMono, sx.leadingRelaxed, sx.textFg, typography.meta)}>
 				{value}
 			</pre>
 			<Button
 				type="button"
 				variant="soft"
 				size="sm"
-				className="absolute right-2 top-2 phone:min-h-11"
+				className="phone:min-h-11" {...stylex.props(sx.absolute, sx.right2, sx.top2)}
 				onClick={() => copy(value, { toast: "Caddy config copied" })}
 			>
 				<CopyCheck copied={copied} size={14} idle={<IconCopy size={14} />} />
@@ -97,7 +199,7 @@ setSaving(false);
 		<>
 			<SettingsSection>
 				<form
-					className="flex flex-col gap-5"
+					{...stylex.props(sx.flex, sx.flexCol, sx.gap5)}
 					onSubmit={(event) => {
 						event.preventDefault();
 						void save();
@@ -106,7 +208,7 @@ setSaving(false);
 					<div>
 						<Field
 							label={
-								<span className="flex w-full items-center justify-between gap-3">
+								<span {...stylex.props(sx.flex, sx.wFull, sx.itemsCenter, sx.justifyBetween, sx.gap3)}>
 									<span>App address</span>
 									<StateChip tone={appState.tone} label={appState.label} />
 								</span>
@@ -117,7 +219,7 @@ setSaving(false);
 								value={appAddress}
 								placeholder="https://os.example.com"
 								disabled={saving}
-								className="font-mono phone:min-h-11"
+								className="phone:min-h-11" {...stylex.props(sx.fontMono)}
 								autoCapitalize="none"
 								autoCorrect="off"
 								spellCheck={false}
@@ -127,7 +229,7 @@ setSaving(false);
 								}}
 							/>
 						</Field>
-						<p className="m-0 mt-1.5 text-supporting leading-relaxed text-faint">
+						<p {...stylex.props(sx.m0, sx.mt15, sx.leadingRelaxed, sx.textFaint, typography.supporting)}>
 							Where you open Open Session. Its DNS record should point to the server&apos;s Tailscale address so the app stays private.
 						</p>
 					</div>
@@ -135,7 +237,7 @@ setSaving(false);
 					<div>
 						<Field
 							label={
-								<span className="flex w-full items-center justify-between gap-3">
+								<span {...stylex.props(sx.flex, sx.wFull, sx.itemsCenter, sx.justifyBetween, sx.gap3)}>
 									<span>Webhook address</span>
 									<StateChip
 										tone={webhookAddress.trim() ? "on" : "off"}
@@ -149,7 +251,7 @@ setSaving(false);
 								value={webhookAddress}
 								placeholder="https://hooks.example.com"
 								disabled={saving}
-								className="font-mono phone:min-h-11"
+								className="phone:min-h-11" {...stylex.props(sx.fontMono)}
 								autoCapitalize="none"
 								autoCorrect="off"
 								spellCheck={false}
@@ -159,14 +261,14 @@ setSaving(false);
 								}}
 							/>
 						</Field>
-						<p className="m-0 mt-1.5 text-supporting leading-relaxed text-faint">
+						<p {...stylex.props(sx.m0, sx.mt15, sx.leadingRelaxed, sx.textFaint, typography.supporting)}>
 							A public HTTPS address for GitHub and other signed webhooks. It must use a different hostname and expose only the webhook listener.
 						</p>
 					</div>
 
 					{error && <InlineAlert>{error}</InlineAlert>}
 
-					<div className="flex justify-end">
+					<div {...stylex.props(sx.flex, sx.justifyEnd)}>
 						<Button
 							type="submit"
 							variant="primary"
@@ -182,14 +284,14 @@ setSaving(false);
 				Saving updates the addresses Open Session uses in links and setup guides. DNS and Caddy are configured separately below.
 			</SettingsHint>
 
-			<SettingsSection className="mt-3">
+			<SettingsSection {...stylex.props(sx.mt3)}>
 				<Disclosure
 					title="Configure Caddy on this server"
 					defaultOpen={appState.tone !== "on" || !access.webhookBaseUrl}
 					className="phone:[&_button]:min-h-11"
 				>
-					<div className="flex flex-col gap-5">
-						<p className="m-0 text-supporting leading-relaxed text-dim">
+					<div {...stylex.props(sx.flex, sx.flexCol, sx.gap5)}>
+						<p {...stylex.props(sx.m0, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 							Run Caddy on the Open Session machine. It owns HTTPS and forwards to the two loopback listeners.
 						</p>
 						<SetupSteps
@@ -220,7 +322,7 @@ setSaving(false);
 												href="https://caddyserver.com/docs/install"
 												target="_blank"
 												rel="noreferrer"
-												className="font-medium text-blue hover:underline"
+												className="hover:underline" {...stylex.props(sx.fontMedium, sx.textBlue)}
 											>
 												Install Caddy
 											</a>{" "}
@@ -246,17 +348,17 @@ setSaving(false);
 						</GuideBlock>
 
 						<GuideBlock title="Apply">
-							<div className="flex flex-wrap gap-2">
-								<Code className="px-2 py-1 text-meta">
+							<div {...stylex.props(sx.flex, sx.flexWrap, sx.gap2)}>
+								<Code {...stylex.props(sx.px2, sx.py1, typography.meta)}>
 									sudo caddy validate --config /etc/caddy/Caddyfile
 								</Code>
-								<Code className="px-2 py-1 text-meta">
+								<Code {...stylex.props(sx.px2, sx.py1, typography.meta)}>
 									sudo systemctl reload caddy
 								</Code>
 							</div>
 						</GuideBlock>
 
-						<p className="m-0 text-meta leading-relaxed text-faint">
+						<p {...stylex.props(sx.m0, sx.leadingRelaxed, sx.textFaint, typography.meta)}>
 							No public port 443 is available? Use a named Cloudflare Tunnel for the webhook hostname to <strong>http://127.0.0.1:{access.webhookPort}</strong>. Never point a public hostname at port {access.port}.
 						</p>
 					</div>

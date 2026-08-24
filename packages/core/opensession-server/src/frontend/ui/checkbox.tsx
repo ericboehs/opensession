@@ -1,6 +1,27 @@
 import * as React from "react";
 import { Checkbox as BaseCheckbox } from "@base-ui/react/checkbox";
 import { cn } from "./cn";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	textOnAccentControl: {
+			color: "var(--on-accent-control,var(--on-accent))"
+	},
+	size3: {
+			width: "12px",
+			height: "12px"
+	},
+});
 
 type CheckboxProps = Omit<React.ComponentProps<typeof BaseCheckbox.Root>, "size"> & {
 	className?: string;
@@ -15,7 +36,7 @@ type CheckboxProps = Omit<React.ComponentProps<typeof BaseCheckbox.Root>, "size"
  * It is labelable, so the existing pattern still works and the whole row stays
  * clickable:
  *
- *   <label className="flex items-center gap-2">
+ *   <label {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
  *     <Checkbox checked={x} onCheckedChange={setX} />
  *     Include thread replies
  *   </label>
@@ -34,10 +55,10 @@ export function Checkbox({ className, ...props }: CheckboxProps) {
 			)}
 			{...props}
 		>
-			<BaseCheckbox.Indicator className="flex text-on-accent-control data-[unchecked]:hidden">
+			<BaseCheckbox.Indicator className="data-[unchecked]:hidden" {...stylex.props(sx.flex, sx.textOnAccentControl)}>
 				<svg
 					viewBox="0 0 12 12"
-					className="size-3"
+					{...stylex.props(sx.size3)}
 					fill="none"
 					stroke="currentColor"
 					strokeWidth="2"

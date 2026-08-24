@@ -1,5 +1,22 @@
 import type { PlanItem } from "@tellahq/opensession-protocol/todo-plan";
 import { cn } from "../ui/cn";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	pl22px: {
+			paddingLeft: "22px"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+});
 
 /**
  * The model's plan rendered as a checklist — shared by the status flap above
@@ -37,10 +54,10 @@ export function PlanChecklist({ items, max, live = false, className }: Props) {
 					)}
 				>
 					<PlanMark status={item.status} live={live} />
-					<span className="min-w-0 flex-1">{item.content}</span>
+					<span {...stylex.props(sx.minW0, sx.flex1)}>{item.content}</span>
 				</li>
 			))}
-			{hidden > 0 && <li className="pl-[22px] text-faint">+{hidden} more</li>}
+			{hidden > 0 && <li {...stylex.props(sx.pl22px, sx.textFaint)}>+{hidden} more</li>}
 		</ol>
 	);
 }

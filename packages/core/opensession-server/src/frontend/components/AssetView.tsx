@@ -60,6 +60,219 @@ import {
 	IconTrash,
 	IconX,
 } from "./icons";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	minH7: {
+			minHeight: "28px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	gap1: {
+			gap: "4px"
+	},
+	minW10: {
+			minWidth: "40px"
+	},
+	px1: {
+			paddingInline: "4px"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	border0: {
+			borderStyle: "solid",
+			borderWidth: "0"
+	},
+	bgTransparent: {
+			backgroundColor: "#0000"
+	},
+	p1: {
+			padding: "4px"
+	},
+	leadingNone: {
+			lineHeight: "1"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	textRed: {
+			color: "var(--red)"
+	},
+	maxWFull: {
+			maxWidth: "100%"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap05: {
+			gap: "2px"
+	},
+	textCenter: {
+			textAlign: "center"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	textWhite55: {
+			color: "#ffffff8c"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	leadingSnug: {
+			lineHeight: "var(--leading-snug)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	size7: {
+			width: "28px",
+			height: "28px"
+	},
+	px0: {
+			paddingInline: "0"
+	},
+	hFull: {
+			height: "100%"
+	},
+	wFull: {
+			width: "100%"
+	},
+	bgWhite: {
+			backgroundColor: "var(--color-white)"
+	},
+	overflowAuto: {
+			overflow: "auto"
+	},
+	p3: {
+			padding: "12px"
+	},
+	maxHFull: {
+			maxHeight: "100%"
+	},
+	cursorZoomIn: {
+			cursor: "zoom-in"
+	},
+	objectContain: {
+			objectFit: "contain"
+	},
+	p4: {
+			padding: "16px"
+	},
+	px4: {
+			paddingInline: "16px"
+	},
+	py3: {
+			paddingBlock: "12px"
+	},
+	whitespacePreWrap: {
+			whiteSpace: "pre-wrap"
+	},
+	breakWords: {
+			overflowWrap: "break-word"
+	},
+	fontMono: {
+			fontFamily: "var(--mono)"
+	},
+	leading15: {
+			lineHeight: "1.5"
+	},
+	minH10: {
+			minHeight: "40px"
+	},
+	px12: {
+			paddingInline: "48px"
+	},
+	pb2: {
+			paddingBottom: "8px"
+	},
+	minH0: {
+			minHeight: "0"
+	},
+	px6: {
+			paddingInline: "24px"
+	},
+	textWhite60: {
+			color: "#fff9"
+	},
+	px5: {
+			paddingInline: "20px"
+	},
+	pt2: {
+			paddingTop: "8px"
+	},
+	pb4: {
+			paddingBottom: "16px"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	right3: {
+			right: "12px"
+	},
+	top3: {
+			top: "12px"
+	},
+	z20: {
+			zIndex: "20"
+	},
+	grid: {
+			display: "grid"
+	},
+	size11: {
+			width: "44px",
+			height: "44px"
+	},
+	placeItemsCenter: {
+			placeItems: "center"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	bgWhite15: {
+			backgroundColor: "#ffffff26"
+	},
+	textWhite: {
+			color: "var(--color-white)"
+	},
+	right0: {
+			right: "0"
+	},
+	top0: {
+			top: "0"
+	},
+	size10: {
+			width: "40px",
+			height: "40px"
+	},
+});
 
 type AssetNavigation = {
 	index: number;
@@ -84,7 +297,7 @@ function AssetPager({
 	return (
 		<nav
 			aria-label="Asset navigation"
-			className="flex min-h-7 shrink-0 items-center justify-center gap-1"
+			{...stylex.props(sx.flex, sx.minH7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.gap1)}
 		>
 			{arrows && (
 				<Tooltip label="Previous asset (Left arrow)">
@@ -104,7 +317,7 @@ function AssetPager({
 			<div
 				aria-label={positionLabel}
 				title={positionLabel}
-				className="flex min-w-10 items-center justify-center px-1"
+				{...stylex.props(sx.flex, sx.minW10, sx.itemsCenter, sx.justifyCenter, sx.px1)}
 			>
 				{count <= 10 ? (
 					Array.from({ length: count }, (_, dot) => (
@@ -114,7 +327,7 @@ function AssetPager({
 							onClick={() => onSelect(dot)}
 							aria-label={`Show ${dot + 1} of ${count}`}
 							aria-current={dot === index ? "true" : undefined}
-							className="group shrink-0 cursor-pointer border-0 bg-transparent p-1 leading-none"
+							className="group" {...stylex.props(sx.shrink0, sx.cursorPointer, sx.border0, sx.bgTransparent, sx.p1, sx.leadingNone)}
 						>
 							<span
 								className={cn(
@@ -272,7 +485,7 @@ toast("Could not delete that file");
 								? { onClick: onDownload }
 								: { render: <a href={sessionAssetDownloadUrl(sessionId, file)} /> })}
 						>
-							<IconArrowDown size={18} className="text-faint" />
+							<IconArrowDown size={18} {...stylex.props(sx.textFaint)} />
 							Download
 						</Menu.Item>
 						<Menu.Item
@@ -280,7 +493,7 @@ toast("Could not delete that file");
 								? { onClick: onOpen }
 								: { render: <a href={rawUrl} target="_blank" rel="noreferrer" /> })}
 						>
-							<IconArrowUpRight size={18} className="text-faint" />
+							<IconArrowUpRight size={18} {...stylex.props(sx.textFaint)} />
 							{nativeShare ? "Open or share" : "Open in a browser tab"}
 						</Menu.Item>
 						<Menu.Item
@@ -288,13 +501,13 @@ toast("Could not delete that file");
 								copyToClipboard(absoluteLink(stableUrl), () => toast("Link copied"))
 							}
 						>
-							<IconCopy size={18} className="text-faint" />
+							<IconCopy size={18} {...stylex.props(sx.textFaint)} />
 							Copy link
 						</Menu.Item>
 						<Menu.Separator />
 					</>
 				)}
-				<Menu.Item onClick={onDelete} className="text-red">
+				<Menu.Item onClick={onDelete} {...stylex.props(sx.textRed)}>
 					<IconTrash size={18} />
 					Delete
 				</Menu.Item>
@@ -496,8 +709,8 @@ function AssetOverlayFooter({
 				!phone && "absolute left-0 right-0 top-full mt-2",
 			)}
 		>
-			<div className="flex max-w-full flex-col items-center gap-0.5 text-center">
-				<div className="flex max-w-full items-center justify-center gap-2">
+			<div {...stylex.props(sx.flex, sx.maxWFull, sx.flexCol, sx.itemsCenter, sx.gap05, sx.textCenter)}>
+				<div {...stylex.props(sx.flex, sx.maxWFull, sx.itemsCenter, sx.justifyCenter, sx.gap2)}>
 					<div
 						className={cn(
 							"max-w-full truncate font-medium text-white",
@@ -509,7 +722,7 @@ function AssetOverlayFooter({
 					</div>
 					{showSize && (
 						<span
-							className="shrink-0 text-meta text-white/55"
+							{...stylex.props(sx.shrink0, sx.textWhite55, typography.meta)}
 						>
 							{formatAssetSize(file.size)}
 						</span>
@@ -526,7 +739,7 @@ function AssetOverlayFooter({
 					</div>
 				)}
 			</div>
-			<div className="flex max-w-full items-center justify-center gap-2">
+			<div {...stylex.props(sx.flex, sx.maxWFull, sx.itemsCenter, sx.justifyCenter, sx.gap2)}>
 				{navigation && (
 					<AssetPager navigation={navigation} arrows={phone} onDark />
 				)}
@@ -580,19 +793,19 @@ export function AssetActions({
 				className,
 			)}
 		>
-			<div className="min-w-0 flex-1" title={file.path}>
-				<div className="truncate text-label font-medium text-fg">{name}</div>
+			<div {...stylex.props(sx.minW0, sx.flex1)} title={file.path}>
+				<div {...stylex.props(sx.truncate, sx.fontMedium, sx.textFg, typography.label)}>{name}</div>
 				{file.description && (
-					<div className="line-clamp-2 text-supporting leading-snug text-dim">
+					<div className="line-clamp-2" {...stylex.props(sx.leadingSnug, sx.textDim, typography.supporting)}>
 						{file.description}
 					</div>
 				)}
 				{folder && (
-					<div className="truncate text-meta text-faint">{folder}</div>
+					<div {...stylex.props(sx.truncate, sx.textFaint, typography.meta)}>{folder}</div>
 				)}
 			</div>
 			{showSize && (
-				<span className="shrink-0 text-meta text-faint">
+				<span {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}>
 					{formatAssetSize(file.size)}
 				</span>
 			)}
@@ -600,7 +813,7 @@ export function AssetActions({
 				<Button
 					variant="ghost"
 					size="sm"
-					className="shrink-0"
+					{...stylex.props(sx.shrink0)}
 					onClick={onOpenAsTab}
 				>
 					Open as tab
@@ -619,7 +832,7 @@ export function AssetActions({
 					variant="ghost"
 					size="sm"
 					aria-label="Close"
-					className="size-7 shrink-0 justify-center px-0"
+					{...stylex.props(sx.size7, sx.shrink0, sx.justifyCenter, sx.px0)}
 					onClick={onClose}
 				>
 					<IconX size={16} />
@@ -696,7 +909,7 @@ export function AssetPreview({
 							onOpenNewSession(prefill);
 						});
 					}}
-					className="h-full w-full border-0 bg-white"
+					{...stylex.props(sx.hFull, sx.wFull, sx.border0, sx.bgWhite)}
 				/>
 			) : kind === "pdf" ? (
 				// No sandbox: Chrome's built-in PDF viewer won't render in a
@@ -705,16 +918,16 @@ export function AssetPreview({
 					key={rawUrl}
 					title={file.path}
 					src={rawUrl}
-					className="h-full w-full border-0"
+					{...stylex.props(sx.hFull, sx.wFull, sx.border0)}
 				/>
 			) : kind === "image" ? (
 				<div
-					className="flex h-full items-center justify-center overflow-auto p-3"
+					{...stylex.props(sx.flex, sx.hFull, sx.itemsCenter, sx.justifyCenter, sx.overflowAuto, sx.p3)}
 					onClick={onBackdropClick}
 				>
 					<button
 						type="button"
-						className="flex max-h-full max-w-full cursor-zoom-in border-0 bg-transparent"
+						{...stylex.props(sx.flex, sx.maxHFull, sx.maxWFull, sx.cursorZoomIn, sx.border0, sx.bgTransparent)}
 						onClick={(event) => {
 							event.stopPropagation();
 							openLightbox(
@@ -735,40 +948,40 @@ export function AssetPreview({
 						<img
 							src={rawUrl}
 							alt={file.path}
-							className="max-h-full max-w-full object-contain"
+							{...stylex.props(sx.maxHFull, sx.maxWFull, sx.objectContain)}
 						/>
 					</button>
 				</div>
 			) : kind === "video" ? (
-				<video src={rawUrl} controls className="h-full w-full" />
+				<video src={rawUrl} controls {...stylex.props(sx.hFull, sx.wFull)} />
 			) : kind === "audio" ? (
-				<div className="p-4">
-					<audio src={rawUrl} controls className="w-full" />
+				<div {...stylex.props(sx.p4)}>
+					<audio src={rawUrl} controls {...stylex.props(sx.wFull)} />
 				</div>
 			) : kind === "markdown" ? (
 				textFailed ? (
-					<div className="p-4 text-label text-faint">Could not load this file.</div>
+					<div {...stylex.props(sx.p4, sx.textFaint, typography.label)}>Could not load this file.</div>
 				) : text === null ? (
-					<div className="p-4 text-label text-faint">Loading…</div>
+					<div {...stylex.props(sx.p4, sx.textFaint, typography.label)}>Loading…</div>
 				) : (
 					<MarkdownBody
-						className="markdown px-4 py-3 text-label"
+						className="markdown" {...stylex.props(sx.px4, sx.py3, typography.label)}
 						html={marked.parse(text, { async: false }) as string}
 					/>
 				)
 			) : kind === "text" ? (
 				textFailed ? (
-					<div className="p-4 text-label text-faint">Could not load this file.</div>
+					<div {...stylex.props(sx.p4, sx.textFaint, typography.label)}>Could not load this file.</div>
 				) : text === null ? (
-					<div className="p-4 text-label text-faint">Loading…</div>
+					<div {...stylex.props(sx.p4, sx.textFaint, typography.label)}>Loading…</div>
 				) : (
-					<pre className="whitespace-pre-wrap break-words px-4 py-3 font-mono text-label leading-[1.5] text-fg">
+					<pre {...stylex.props(sx.whitespacePreWrap, sx.breakWords, sx.px4, sx.py3, sx.fontMono, sx.leading15, sx.textFg, typography.label)}>
 						{text}
 						{file.size > ASSET_TEXT_CAP ? "\n… (truncated preview)" : ""}
 					</pre>
 				)
 			) : (
-				<div className="flex h-full items-center justify-center text-label text-faint">
+				<div {...stylex.props(sx.flex, sx.hFull, sx.itemsCenter, sx.justifyCenter, sx.textFaint, typography.label)}>
 					No inline preview for this file type. Use Download.
 				</div>
 			)}
@@ -940,7 +1153,7 @@ export function AssetOverlay({
 				{/* Desktop keeps the centered action bar above the asset. Phones put
 				    the same controls at the bottom, beside the caption and pager. */}
 				{!isPhone && (
-					<div className="flex min-h-10 shrink-0 items-center justify-center px-12 pb-2">
+					<div {...stylex.props(sx.flex, sx.minH10, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.px12, sx.pb2)}>
 						{actions}
 					</div>
 				)}
@@ -951,7 +1164,7 @@ export function AssetOverlay({
 					)}
 				>
 					{missingPath === file.path ? (
-						<div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-label text-white/60">
+						<div {...stylex.props(sx.flex, sx.minH0, sx.flex1, sx.itemsCenter, sx.justifyCenter, sx.px6, sx.textCenter, sx.textWhite60, typography.label)}>
 							This file is no longer available.
 						</div>
 					) : (
@@ -968,7 +1181,7 @@ export function AssetOverlay({
 				</div>
 				{isPhone && footer}
 				{isPhone && (
-					<div className="flex shrink-0 items-center justify-center px-5 pt-2 pb-4">
+					<div {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.px5, sx.pt2, sx.pb4)}>
 						{actions}
 					</div>
 				)}
@@ -978,7 +1191,7 @@ export function AssetOverlay({
 				<button
 					type="button"
 					aria-label="Close"
-					className="absolute right-3 top-3 z-20 grid size-11 place-items-center rounded-full border-0 bg-white/15 text-white backdrop-blur-xl transition-[transform,background-color] active:scale-[0.96] hover:bg-white/20"
+					className="backdrop-blur-xl transition-[transform,background-color] active:scale-[0.96] hover:bg-white/20" {...stylex.props(sx.absolute, sx.right3, sx.top3, sx.z20, sx.grid, sx.size11, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgWhite15, sx.textWhite)}
 					onClick={onClose}
 				>
 					<IconX size={24} />
@@ -988,7 +1201,7 @@ export function AssetOverlay({
 					<button
 						type="button"
 						aria-label="Close"
-						className="absolute right-0 top-0 z-20 grid size-10 place-items-center rounded-full border-0 bg-white/15 text-white backdrop-blur-xl transition-[transform,background-color] active:scale-[0.96] hover:bg-white/20"
+						className="backdrop-blur-xl transition-[transform,background-color] active:scale-[0.96] hover:bg-white/20" {...stylex.props(sx.absolute, sx.right0, sx.top0, sx.z20, sx.grid, sx.size10, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgWhite15, sx.textWhite)}
 						onClick={onClose}
 					>
 						<IconX size={20} />

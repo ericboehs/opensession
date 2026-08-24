@@ -42,6 +42,75 @@ import {
 } from "./filter-options";
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	justifyBetween: {
+			justifyContent: "space-between"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	truncate: {
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			overflow: "hidden"
+	},
+	flex: {
+			display: "flex"
+	},
+	flexNone: {
+			flex: "none"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	mlAuto: {
+			marginLeft: "auto"
+	},
+	grow: {
+			flexGrow: "1"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	Mr05: {
+			marginRight: "-2px"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	size19px: {
+			width: "19px",
+			height: "19px"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	leadingNone: {
+			lineHeight: "1"
+	},
+});
 
 // ── Filter popover ─────────────────────────────────────────────────────────
 // A small floating panel (anchored under the filter button) holding the view
@@ -81,12 +150,12 @@ function FilterSubmenu({
 	const current = options.find((option) => option.value === value);
 	return (
 		<Menu.SubmenuRoot>
-			<Menu.SubmenuTrigger className="justify-between gap-3">
-				<span className="truncate">{label}</span>
-				<span className="flex flex-none items-center gap-2 text-dim">
+			<Menu.SubmenuTrigger {...stylex.props(sx.justifyBetween, sx.gap3)}>
+				<span {...stylex.props(sx.truncate)}>{label}</span>
+				<span {...stylex.props(sx.flex, sx.flexNone, sx.itemsCenter, sx.gap2, sx.textDim)}>
 					{current?.icon && <span className={SETTING_GLYPH}>{current.icon}</span>}
-					<span className="truncate">{current?.label ?? value}</span>
-					<IconChevronRight className="shrink-0 text-faint" size={17} />
+					<span {...stylex.props(sx.truncate)}>{current?.label ?? value}</span>
+					<IconChevronRight {...stylex.props(sx.shrink0, sx.textFaint)} size={17} />
 				</span>
 			</Menu.SubmenuTrigger>
 			<Menu.Popup>
@@ -163,8 +232,8 @@ export function FilterPopover({
 					className={cn(SETTING_ROW, SETTING_ROW_PRESSABLE)}
 					onClick={() => onChange({ byProject: !filter.byProject })}
 				>
-					<span className="shrink-0 text-dim">Group by project</span>
-					<span className="ml-auto">
+					<span {...stylex.props(sx.shrink0, sx.textDim)}>Group by project</span>
+					<span {...stylex.props(sx.mlAuto)}>
 						<SwitchIndicator on={filter.byProject} />
 					</span>
 				</button>
@@ -186,7 +255,7 @@ export function FilterPopover({
 								onChange({ emptyProjects: hide ? "hide" : "show" })
 							}
 						>
-							<span className="grow truncate">Hide when empty</span>
+							<span {...stylex.props(sx.grow, sx.truncate)}>Hide when empty</span>
 							<SwitchIndicator on={filter.emptyProjects === "hide"} />
 						</Menu.CheckboxItem>
 					}
@@ -209,16 +278,16 @@ export function FilterPopover({
 				    part of that count. */}
 				<Menu.Root>
 					<Menu.Trigger className={cn(SETTING_ROW, SETTING_ROW_PRESSABLE, "mt-1")}>
-						<span className="shrink-0 text-dim">Advanced</span>
-						<span className="ml-auto flex min-w-0 items-center gap-2 text-fg">
+						<span {...stylex.props(sx.shrink0, sx.textDim)}>Advanced</span>
+						<span {...stylex.props(sx.mlAuto, sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.textFg)}>
 							{advancedChanged > 0 && (
-								<span className="truncate text-dim">
+								<span {...stylex.props(sx.truncate, sx.textDim)}>
 									{advancedChanged} changed
 								</span>
 							)}
 							<IconChevronRight
 								size={16}
-								className="-mr-0.5 shrink-0 text-faint"
+								{...stylex.props(sx.Mr05, sx.shrink0, sx.textFaint)}
 							/>
 						</span>
 					</Menu.Trigger>
@@ -272,7 +341,7 @@ export function FilterPopover({
 								onChange({ autoCreated: shown ? "show" : "hide" })
 							}
 						>
-							<span className="grow truncate">Show auto created</span>
+							<span {...stylex.props(sx.grow, sx.truncate)}>Show auto created</span>
 							<SwitchIndicator on={filter.autoCreated === "show"} />
 						</Menu.CheckboxItem>
 						{/* A registered project with no work in it still draws a band,
@@ -290,7 +359,7 @@ export function FilterPopover({
 								onChange({ emptyProjects: hide ? "hide" : "show" })
 							}
 						>
-							<span className="grow truncate">Hide empty projects</span>
+							<span {...stylex.props(sx.grow, sx.truncate)}>Hide empty projects</span>
 							<SwitchIndicator on={filter.emptyProjects === "hide"} />
 						</Menu.CheckboxItem>
 						{/* Display preferences stay beside the filters they affect and also
@@ -344,7 +413,7 @@ export const RepoFilterChip = React.forwardRef<
 	const body = (
 		<>
 			<RepoTile name={repo} size={17} />
-			<span className="min-w-0 truncate text-dim">{repoLabel(repo)}</span>
+			<span {...stylex.props(sx.minW0, sx.truncate, sx.textDim)}>{repoLabel(repo)}</span>
 		</>
 	);
 	const bodyClass =
@@ -377,13 +446,13 @@ export const RepoFilterChip = React.forwardRef<
 							<Menu.RadioItem
 								value="all"
 								closeOnClick
-								className="justify-between gap-3"
+								{...stylex.props(sx.justifyBetween, sx.gap3)}
 							>
-								<span className="flex min-w-0 items-center gap-2">
+								<span {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
 									<span className={SETTING_GLYPH}>
 										<IconRepo size={16} />
 									</span>
-									<span className="min-w-0 truncate">All repos</span>
+									<span {...stylex.props(sx.minW0, sx.truncate)}>All repos</span>
 								</span>
 								<Menu.Check on={repo === "all"} />
 							</Menu.RadioItem>
@@ -392,13 +461,13 @@ export const RepoFilterChip = React.forwardRef<
 									key={name}
 									value={name}
 									closeOnClick
-									className="justify-between gap-3"
+									{...stylex.props(sx.justifyBetween, sx.gap3)}
 								>
-									<span className="flex min-w-0 items-center gap-2">
+									<span {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
 										<span className={SETTING_GLYPH}>
 											<RepoTile name={name} size={16} />
 										</span>
-										<span className="min-w-0 truncate">{repoLabel(name)}</span>
+										<span {...stylex.props(sx.minW0, sx.truncate)}>{repoLabel(name)}</span>
 									</span>
 									<Menu.Check on={name === repo} />
 								</Menu.RadioItem>
@@ -409,7 +478,7 @@ export const RepoFilterChip = React.forwardRef<
 			)}
 			<button
 				type="button"
-				className="inline-flex size-[19px] shrink-0 items-center justify-center rounded-full text-item-title leading-none text-faint hover:bg-hover hover:text-fg"
+				className="hover:bg-hover hover:text-fg" {...stylex.props(sx.inlineFlex, sx.size19px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.leadingNone, sx.textFaint, typography.itemTitle)}
 				title="Clear repo filter"
 				tabIndex={probe ? -1 : undefined}
 				onClick={probe ? undefined : onClear}

@@ -29,6 +29,96 @@ import {
 	type SetupIntegration,
 	type SetupScopeGroup,
 } from "./setup-shared";
+import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	mt15: {
+			marginTop: "6px"
+	},
+	block: {
+			display: "block"
+	},
+	flex: {
+			display: "flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap25: {
+			gap: "10px"
+	},
+	p4: {
+			padding: "16px"
+	},
+	gap4: {
+			gap: "16px"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flex1: {
+			flex: "1"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	mt05: {
+			marginTop: "2px"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	minW12rem: {
+			minWidth: "12rem"
+	},
+	mlAuto: {
+			marginLeft: "auto"
+	},
+	mt3: {
+			marginTop: "12px"
+	},
+	m0: {
+			margin: "0"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	mt0: {
+			marginTop: "0"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	mt25: {
+			marginTop: "10px"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	pl5: {
+			paddingLeft: "20px"
+	},
+	leadingRelaxed: {
+			lineHeight: "var(--leading-relaxed)"
+	},
+	roundedLg: {
+			borderRadius: "calc(14px * var(--rf))"
+	},
+	bgSurface: {
+			backgroundColor: "var(--bg)"
+	},
+	p3: {
+			padding: "12px"
+	},
+});
 
 // One integration's whole configuration, in the order you work through it:
 // the switch and the credential fields first, the provider's recipe behind a
@@ -39,7 +129,7 @@ import {
 
 function Value({ value }: { value: string }) {
 	return (
-		<span className="mt-1.5 block">
+		<span {...stylex.props(sx.mt15, sx.block)}>
 			<CopyableCode value={value} />
 		</span>
 	);
@@ -327,7 +417,7 @@ setSaving(false);
 			<Modal.Content widthClassName="max-w-[34rem]">
 				<Modal.Header
 					title={
-						<span className="flex items-center gap-2.5">
+						<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25)}>
 							<IconTile name={integration.id} size={28} />
 							{integration.label}
 						</span>
@@ -336,14 +426,14 @@ setSaving(false);
 				/>
 
 				{(canToggle || integration.env.length > 0) && (
-					<SettingsSection className="p-4">
+					<SettingsSection {...stylex.props(sx.p4)}>
 						{canToggle && (
-							<div className="flex items-center gap-4">
-								<div className="min-w-0 flex-1">
-									<div className="text-item-title font-medium text-fg">
+							<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap4)}>
+								<div {...stylex.props(sx.minW0, sx.flex1)}>
+									<div {...stylex.props(sx.fontMedium, sx.textFg, typography.itemTitle)}>
 										Enable {integration.label}
 									</div>
-									<div className="mt-0.5 text-supporting text-dim">
+									<div {...stylex.props(sx.mt05, sx.textDim, typography.supporting)}>
 										Takes effect after you restart Open Session.
 									</div>
 								</div>
@@ -357,10 +447,10 @@ setSaving(false);
 						)}
 						{integration.id === "slack" && (
 							<div className={canToggle ? "mt-4 border-t border-line pt-4" : undefined}>
-								<div className="flex flex-wrap items-center gap-4">
-									<div className="min-w-[12rem] flex-1">
-										<div className="text-item-title font-medium text-fg">Event delivery</div>
-										<div className="mt-0.5 text-supporting text-dim">
+								<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap4)}>
+									<div {...stylex.props(sx.minW12rem, sx.flex1)}>
+										<div {...stylex.props(sx.fontMedium, sx.textFg, typography.itemTitle)}>Event delivery</div>
+										<div {...stylex.props(sx.mt05, sx.textDim, typography.supporting)}>
 											{transport === "socket"
 												? "Uses an outbound connection and needs no public webhook URL."
 												: "Slack posts events to this instance's public webhook URL."}
@@ -370,7 +460,7 @@ setSaving(false);
 										label="Slack event delivery"
 										value={transport}
 										onValueChange={(next) => pickTransport(next as SlackTransport)}
-										className="ml-auto phone:ml-0 phone:w-full"
+										className="phone:ml-0 phone:w-full" {...stylex.props(sx.mlAuto)}
 									>
 										<SegmentedOption value="socket" disabled={saving} className="phone:min-h-11 phone:flex-1">
 											Socket Mode
@@ -381,7 +471,7 @@ setSaving(false);
 									</Segmented>
 								</div>
 								{transport === "http" && !httpAvailable && (
-									<InlineAlert variant="warn" className="mt-3">
+									<InlineAlert variant="warn" {...stylex.props(sx.mt3)}>
 										This instance has no public webhook URL. Choose Socket Mode or configure a public URL first.
 									</InlineAlert>
 								)}
@@ -429,7 +519,7 @@ setSaving(false);
 										}}
 									/>
 								))}
-								<p className="m-0 text-supporting text-faint">
+								<p {...stylex.props(sx.m0, sx.textFaint, typography.supporting)}>
 									Credentials stay on this server and are never shown back.
 								</p>
 							</div>
@@ -442,22 +532,22 @@ setSaving(false);
 				<Disclosure
 					title="Setup guide"
 					defaultOpen={!configured}
-					actions={<LinkChips links={integration.links} className="mt-0" />}
+					actions={<LinkChips links={integration.links} {...stylex.props(sx.mt0)} />}
 				>
-					<div className="flex flex-col gap-4">
+					<div {...stylex.props(sx.flex, sx.flexCol, sx.gap4)}>
 						{guide.intro}
 						<SetupSteps steps={guide.steps} />
 						{guide.scopes && (
 							<GuideBlock title="Bot scopes">
 								<ScopeGroups groups={guide.scopes} />
 								{guide.scopesNote && (
-									<p className="m-0 mt-2.5 text-supporting text-dim">{guide.scopesNote}</p>
+									<p {...stylex.props(sx.m0, sx.mt25, sx.textDim, typography.supporting)}>{guide.scopesNote}</p>
 								)}
 							</GuideBlock>
 						)}
 						{guide.permissions && (
 							<GuideBlock title="Permissions">
-								<ul className="m-0 flex flex-col gap-1.5 pl-5 text-supporting leading-relaxed text-dim">
+								<ul {...stylex.props(sx.m0, sx.flex, sx.flexCol, sx.gap15, sx.pl5, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 									{guide.permissions.map((permission, index) => (
 										<li key={index}>{permission}</li>
 									))}
@@ -465,7 +555,7 @@ setSaving(false);
 							</GuideBlock>
 						)}
 						{guide.note && (
-							<div className="rounded-lg bg-surface p-3 text-supporting leading-relaxed text-dim">
+							<div {...stylex.props(sx.roundedLg, sx.bgSurface, sx.p3, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 								{guide.note}
 							</div>
 						)}

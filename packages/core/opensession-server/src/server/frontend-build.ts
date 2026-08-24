@@ -11,7 +11,7 @@ import type { BunFile, BunPlugin } from "bun";
 import { transformSync } from "oxc-transform-react";
 import { EMBEDDED_FRONTEND } from "./embedded-frontend";
 import { activeRunRecords } from "./run-journal";
-import { newStylexCollector, stylexBunPlugin, stylexCss } from "./stylex-build";
+import { newStylexCollector, stylexTransform, stylexCss } from "./stylex-build";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { gitIdentityFor } from "./shared/user-mappings";
 import { broadcastToAll } from "./ws-hub";
@@ -204,7 +204,11 @@ function reactCompilerPlugin(count: { n: number }): BunPlugin {
 				// Only our own sources: vendored deps ship pre-built and must keep
 				// their exact published output.
 				if (!args.path.startsWith(FRONTEND_SRC)) return undefined;
-				const sourceText = readFileSync(args.path, "utf8");
+				const raw = readFileSync(args.path, "utf8");
+				// StyleX compiles first (it needs the authored tree); its output —
+				// TypeScript still intact — feeds the React Compiler below. Rule
+				// CSS lands in the shared collector and is written after the build.
+				const sourceText = stylexTransform(args.path, raw, stylexCollector);
 				const lang = args.path.endsWith(".tsx") ? "tsx" : args.path.endsWith(".ts") ? "ts" : args.path.endsWith(".jsx") ? "jsx" : "js";
 				const result = transformSync(args.path, sourceText, {
 					lang,
@@ -232,6 +236,8 @@ function reactCompilerPlugin(count: { n: number }): BunPlugin {
 // Lowered + compiler-memoized file counter, shared with the plugin below so
 // compileAssets can report one summary line per build.
 const compilerCount = { n: 0 };
+// StyleX rules collected during the current build (see stylex-build.ts).
+const stylexCollector = newStylexCollector();
 
 /**
  * Compile the SPA assets into .frontend-dist: the split JS bundle, the
@@ -248,7 +254,7 @@ export async function compileAssets(): Promise<BundleMeta> {
 	// the next boot rather than being masked by a post-build stamp.
 	const inputsHash = frontendInputsHash();
 	compilerCount.n = 0;
-	const stylexCollector = newStylexCollector();
+	stylexCollector.rules.clear();
 	const result = await Bun.build({
 		entrypoints: [`${FRONTEND_SRC}/App.tsx`],
 		outdir: FRONTEND_DIST,
@@ -264,7 +270,7 @@ export async function compileAssets(): Promise<BundleMeta> {
 			chunk: "[name]-[hash].[ext]",
 			asset: "[name]-[hash].[ext]",
 		},
-		plugins: [stylexBunPlugin(stylexCollector), reactCompilerPlugin(compilerCount)],
+		plugins: [reactCompilerPlugin(compilerCount)],
 	});
 	if (!result.success) {
 		throw new AggregateError(result.logs, "frontend build failed");
