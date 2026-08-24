@@ -11,7 +11,9 @@ import {
   remoteRunNeedsOpenai,
   injectCloneCredential,
   selectedCloneToken,
+  warmRemoteWorkspace,
 } from "./bootstrap";
+import type { RemoteDriver } from "./bootstrap";
 
 describe("GitHub clone credential cutover", () => {
   test("App mode never falls back to a persisted PAT", () => {
@@ -19,6 +21,32 @@ describe("GitHub clone credential cutover", () => {
     expect(selectedCloneToken("fresh-app", "retired-pat", true, "app")).toBe("fresh-app");
     expect(selectedCloneToken(undefined, "active-pat", true, "pat")).toBe("active-pat");
     expect(selectedCloneToken(undefined, "other-host", false, "app")).toBe("other-host");
+  });
+
+  test("scrubs a warm origin before repository dependency code runs", async () => {
+    const commands: string[] = [];
+    const driver = {
+      exec: async (command: string) => {
+        commands.push(command);
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    await warmRemoteWorkspace(
+      driver as unknown as RemoteDriver,
+      {
+        id: "opensession",
+        repo: "/host/opensession",
+        ghRepo: "tellahq/opensession",
+        defaultBranch: "main",
+      },
+      "test",
+    );
+
+    const scrub = commands.findIndex((command) => command.includes("remote set-url origin"));
+    const deps = commands.findIndex((command) => command.includes("install --frozen-lockfile"));
+    expect(scrub).toBeGreaterThanOrEqual(0);
+    expect(deps).toBeGreaterThan(scrub);
   });
 
   test("resolves the selected GitHub credential without a legacy clone credential", async () => {

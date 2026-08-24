@@ -1271,11 +1271,14 @@ export async function warmRemoteWorkspace(
       return false;
     }
   }
+  // Repository code must never observe the short-lived clone token through
+  // remote.origin.url. Scrub before setup hooks or dependency installers run,
+  // including when adopting an existing partially prepared warm checkout.
+  await scrubRemoteWarmWorkspaceAuthority(driver, repo, dir);
   if (opts?.runSetup) {
     await runRemoteLifecycleHook(driver, dir, "setup", "fresh", repo.id, opts.identity);
   }
   if (opts?.installDeps === false) {
-    await scrubRemoteWarmWorkspaceAuthority(driver, repo, dir);
     log(opts.runSetup ? "ready (post-setup)" : "ready (clone only)");
     return true;
   }
@@ -1292,7 +1295,6 @@ export async function warmRemoteWorkspace(
   } else {
     log("ready");
   }
-  await scrubRemoteWarmWorkspaceAuthority(driver, repo, dir);
   return true;
 }
 

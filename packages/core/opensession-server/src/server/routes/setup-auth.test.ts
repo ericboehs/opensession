@@ -112,6 +112,7 @@ describe("GitHub App onboarding link", () => {
 			issues: "write",
 			pull_requests: "write",
 			members: "read",
+			deployments: "read",
 			metadata: "read",
 			device_flow_enabled: "true",
 		});
