@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
 import { join } from "path";
 import {
   projectRemoteClaudeAccounts,
@@ -8,6 +9,7 @@ import {
   remoteModelProviderId,
   remoteRunNeedsAnthropic,
   remoteRunNeedsOpenai,
+  injectCloneCredential,
   selectedCloneToken,
 } from "./bootstrap";
 
@@ -17,6 +19,38 @@ describe("GitHub clone credential cutover", () => {
     expect(selectedCloneToken("fresh-app", "retired-pat", true, "app")).toBe("fresh-app");
     expect(selectedCloneToken(undefined, "active-pat", true, "pat")).toBe("active-pat");
     expect(selectedCloneToken(undefined, "other-host", false, "app")).toBe("other-host");
+  });
+
+  test("resolves the selected GitHub credential without a legacy clone credential", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opensession-clone-credential-"));
+    const previous = {
+      config: process.env.OPENSESSION_CONFIG,
+      sandbox: process.env.OPENSESSION_SANDBOX_CONFIG,
+      token: process.env.GITHUB_API_TOKEN,
+    };
+    try {
+      const config = join(dir, "config.json");
+      const sandbox = join(dir, "sandbox.json");
+      writeFileSync(config, JSON.stringify({ integrations: { github: { botCredential: "pat" } } }));
+      writeFileSync(sandbox, JSON.stringify({ provider: "daytona" }));
+      process.env.OPENSESSION_CONFIG = config;
+      process.env.OPENSESSION_SANDBOX_CONFIG = sandbox;
+      process.env.GITHUB_API_TOKEN = "live-selected-token";
+
+      expect(
+        await injectCloneCredential("https://github.com/tellahq/opensession.git"),
+      ).toBe(
+        "https://x-access-token:live-selected-token@github.com/tellahq/opensession.git",
+      );
+    } finally {
+      if (previous.config === undefined) delete process.env.OPENSESSION_CONFIG;
+      else process.env.OPENSESSION_CONFIG = previous.config;
+      if (previous.sandbox === undefined) delete process.env.OPENSESSION_SANDBOX_CONFIG;
+      else process.env.OPENSESSION_SANDBOX_CONFIG = previous.sandbox;
+      if (previous.token === undefined) delete process.env.GITHUB_API_TOKEN;
+      else process.env.GITHUB_API_TOKEN = previous.token;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

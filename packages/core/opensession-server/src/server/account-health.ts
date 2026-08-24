@@ -313,6 +313,15 @@ async function githubAppIssues(): Promise<Issue[]> {
   ];
 }
 
+/** Check only the credential selected for bot traffic. Unselected credentials
+ * may deliberately be absent or retired and must not trigger outage alerts. */
+export async function selectedGithubCredentialIssues(): Promise<Issue[]> {
+  const { githubBotCredentialMode } = await import("./github-app");
+  return githubBotCredentialMode() === "app"
+    ? githubAppIssues()
+    : githubPatIssues();
+}
+
 /** One sweep: detect, dedupe against state, DM, persist. Exported for tests/manual runs. */
 export async function sweepAccountHealth(): Promise<Issue[]> {
   // Repair before detecting: refresh idle codex accounts' ChatGPT tokens so
@@ -322,8 +331,7 @@ export async function sweepAccountHealth(): Promise<Issue[]> {
   );
   const issues = [
     ...detectAccountIssues(),
-    ...(await githubPatIssues()),
-    ...(await githubAppIssues()),
+    ...(await selectedGithubCredentialIssues()),
   ];
   const state = readState();
   const now = Date.now();

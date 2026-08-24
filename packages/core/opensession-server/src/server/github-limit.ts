@@ -136,9 +136,12 @@ export function noteGhRateLimited(source: string, resetEpochMs?: number): void {
  * for the process lifetime.
  */
 export async function botGhToken(): Promise<string | null> {
-  const { githubToken } = await import("./github-app");
+  const { githubBotCredentialMode, githubToken } = await import("./github-app");
   const primary = await githubToken();
   if (primary) return primary;
+  // App mode is an explicit credential boundary. Do not silently resume with
+  // a user login or retired PAT cached by gh when App token minting fails.
+  if (githubBotCredentialMode() === "app") return null;
   if (state.botToken !== undefined) return state.botToken;
   try {
     const proc = Bun.spawn(["gh", "auth", "token"], {

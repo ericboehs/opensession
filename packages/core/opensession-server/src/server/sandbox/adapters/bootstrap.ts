@@ -615,37 +615,36 @@ export function selectedCloneToken(
 
 export async function injectCloneCredential(httpsUrl: string): Promise<string> {
   const cred = sandboxConfig().cloneCredential;
-  if (cred?.type === "https-token") {
-    // GitHub clones get a freshly resolved credential — used only for the
-    // bounded clone/fetch, then stripped (the origin is left credential-free),
-    // so a short-lived token is fine here. Prefer the App installation token
-    // (repo-scoped write), then the org-scoped bot PAT. Both are resolved live
-    // per bootstrap, never the config's persisted token, which goes stale and
-    // fails days later. Self-hosters without either keep cloneCredential.token;
-    // non-GitHub origins never receive our GitHub-specific credential.
-    let liveGithubToken: string | undefined;
-    const ghMatch = httpsUrl.match(/^https:\/\/github\.com\/(.+?)(?:\.git)?$/i);
-    if (ghMatch) {
-      const { githubAppRepositoryToken, githubToken } = await import(
-        "../../github-app"
-      );
-      liveGithubToken =
-        (await githubAppRepositoryToken(ghMatch[1])) ||
-        (await githubToken()) ||
-        undefined;
-    }
-    const { githubBotCredentialMode } = await import("../../github-app");
-    const token = selectedCloneToken(
-      liveGithubToken,
-      cred.token,
-      !!ghMatch,
+  const ghMatch = httpsUrl.match(/^https:\/\/github\.com\/(.+?)(?:\.git)?$/i);
+  let token: string | undefined;
+
+  if (ghMatch) {
+    // GitHub authentication follows the selected live credential even when no
+    // legacy cloneCredential is configured. The token is used only for the
+    // bounded clone/fetch and then stripped from the sandbox origin.
+    const {
+      githubAppRepositoryToken,
+      githubBotCredentialMode,
+      githubToken,
+    } = await import("../../github-app");
+    const liveToken =
+      (await githubAppRepositoryToken(ghMatch[1])) ||
+      (await githubToken()) ||
+      undefined;
+    token = selectedCloneToken(
+      liveToken,
+      cred?.type === "https-token" ? cred.token : undefined,
+      true,
       githubBotCredentialMode(),
     );
-    if (token) {
-      return httpsUrl.replace(/^https:\/\//, `https://x-access-token:${token}@`);
-    }
+  } else if (cred?.type === "https-token") {
+    // Explicit credentials for non-GitHub hosts keep their existing behavior.
+    token = cred.token;
   }
-  return httpsUrl;
+
+  return token
+    ? httpsUrl.replace(/^https:\/\//, `https://x-access-token:${token}@`)
+    : httpsUrl;
 }
 
 /**

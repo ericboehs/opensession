@@ -31,6 +31,7 @@ import {
   startGithubDeviceFlow,
   validateGithubTokenLogin,
 } from "./github-auth";
+import { botGhToken } from "./github-limit";
 import {
 	ensureAutomationWebSession,
   keypadBearerAuthorized,
@@ -48,6 +49,7 @@ const ENV_KEYS = [
   GITHUB_RUN_AUTH_FILE_ENV,
   "OPENSESSION_WEB_SESSIONS_STORE",
   "KEYPAD_TOKEN",
+  "GITHUB_API_TOKEN",
 ] as const;
 const saved: Record<string, string | undefined> = {};
 for (const k of ENV_KEYS) saved[k] = process.env[k];
@@ -112,6 +114,20 @@ function seedToken(login = "alice", token = "gho_test123"): void {
     }),
   );
 }
+
+
+describe("selected bot credential boundary", () => {
+  test("App mode does not fall back to the PAT or ambient gh login", async () => {
+    const path = join(dir, "config.json");
+    writeFileSync(
+      path,
+      JSON.stringify({ integrations: { github: { botCredential: "app" } } }),
+    );
+    process.env.OPENSESSION_CONFIG = path;
+    process.env.GITHUB_API_TOKEN = "retired-pat";
+    expect(await botGhToken()).toBeNull();
+  });
+});
 
 describe("githubUserAuthSettings", () => {
   test("off by default (no config)", () => {
