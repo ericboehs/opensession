@@ -30,6 +30,9 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } fr
 import { isIP } from "net";
 import { stateDir } from "./paths";
 import { writeFileAtomic, writeJsonAtomic } from "./shared/atomic-write";
+import { isBlockedAddress } from "./shared/network-address";
+
+export { isBlockedAddress } from "./shared/network-address";
 
 export const MAX_REDIRECTS = 5;
 export const FETCH_TIMEOUT_MS = 30_000;
@@ -75,28 +78,6 @@ export interface FetchedSlice {
 }
 
 // ── Address safety ──────────────────────────────────────────────────────────
-
-/** RFC1918 + loopback + link-local (cloud metadata) + CGNAT/tailnet +
- *  multicast/reserved, and the IPv6 equivalents. */
-export function isBlockedAddress(ip: string): boolean {
-	const v = ip.toLowerCase().replace(/^\[|\]$/g, "").split("%")[0];
-	if (isIP(v) === 4) {
-		const [a, b] = v.split(".").map(Number);
-		if (a === 0 || a === 10 || a === 127) return true;
-		if (a === 169 && b === 254) return true; // link-local incl. 169.254.169.254
-		if (a === 172 && b >= 16 && b <= 31) return true;
-		if (a === 192 && b === 168) return true;
-		if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT / tailnet
-		if (a >= 224) return true; // multicast + reserved
-		return false;
-	}
-	if (v === "::1" || v === "::") return true;
-	if (v.startsWith("::ffff:")) return isBlockedAddress(v.slice(7));
-	if (v.startsWith("fe80") || v.startsWith("fec0")) return true; // link/site-local
-	if (/^f[cd]/.test(v)) return true; // unique-local
-	if (/^ff/.test(v)) return true; // multicast
-	return false;
-}
 
 const BLOCKED_NAMES = /(^|\.)(localhost|local|internal|intranet|home\.arpa)$/i;
 

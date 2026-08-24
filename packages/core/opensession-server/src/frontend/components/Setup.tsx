@@ -7,7 +7,6 @@ import {
   SettingCard,
   SettingsGroupLabel,
   SettingsHeader,
-  SettingsHint,
   SettingsPanel,
 } from "../ui/settings";
 import { LoadingState } from "../ui/state";
@@ -16,13 +15,14 @@ import { IdentityCard } from "./SetupIdentity";
 import { IntegrationsList } from "./SetupIntegrations";
 import { ReposSection } from "./SetupRepos";
 import { SetupRestart } from "./SetupRestart";
+import { SetupServerAccess } from "./SetupServerAccess";
 import {
   ClaudeAccountsSection,
   CodexAccountsSection,
 } from "./settings/ModelAccounts";
 import { ModelProvidersPanel } from "./ModelProviders";
 import { ModelDefaultsSection } from "./Models";
-import { IconArrowUpRight, IconCheck, IconGlobe } from "./icons";
+import { IconCheck } from "./icons";
 import {
   integrationState,
   publicUrlState,
@@ -153,38 +153,13 @@ export function SetupPanel({
           <div className="min-w-0 desktop:col-start-1 desktop:row-start-1">
             <SetupPageSection
               title="Server access"
-              description="Keep the instance private and make it reachable from your devices."
+              description="Add a private app domain and a separate public address for signed webhooks."
               className="mt-0"
             >
-              <SettingCard>
-                <div className="flex items-start gap-3 px-5 py-4">
-                  <IconGlobe
-                    size={22}
-                    className="mt-0.5 shrink-0 text-dim"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-row-title font-medium text-fg">
-                      Private server setup
-                    </div>
-                    <p className="m-0 mt-1 text-supporting leading-relaxed text-dim">
-                      Create a VPS, connect it through Tailscale, and install Open
-                      Session.
-                    </p>
-                    <a
-                      href="https://opensession.com/setup"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-3 inline-flex min-h-11 items-center gap-1.5 text-label font-medium text-blue hover:underline desktop:min-h-0"
-                    >
-                      Set up a server <IconArrowUpRight size={16} />
-                    </a>
-                  </div>
-                </div>
-              </SettingCard>
-              <SettingsHint>
-                This instance currently opens at {status.publicBaseUrl}. Keep
-                ports 3848 and 3850 closed to the public internet.
-              </SettingsHint>
+              <SetupServerAccess
+                access={status.access}
+                onSaved={setup.applyAccess}
+              />
             </SetupPageSection>
 
             <SetupPageSection

@@ -76,8 +76,20 @@ export interface SetupEngine {
 	fixableInApp: boolean;
 }
 
-export interface SetupStatus {
+export interface SetupAccess {
 	publicBaseUrl: string;
+	/** The separate public webhook origin, or null when integrations fall back to the app. */
+	webhookBaseUrl: string | null;
+	port: number;
+	webhookPort: number;
+	tailnetIp: string | null;
+	caddyInstalled: boolean;
+}
+
+export interface SetupStatus {
+	/** Kept at the top level for tolerant native clients on the shared snapshot. */
+	publicBaseUrl: string;
+	access: SetupAccess;
 	repos: SetupRepo[];
 	engine: SetupEngine;
 	team: { count: number; names: string[] };
@@ -167,10 +179,17 @@ export function publicUrlState(publicBaseUrl: string): {
 				description: `Configured for Tailscale at ${publicBaseUrl}.`,
 			};
 		}
+		if (url.protocol === "https:") {
+			return {
+				tone: "on",
+				label: "Custom address",
+				description: `Configured at ${publicBaseUrl}. Verify that the app remains private.`,
+			};
+		}
 		return {
 			tone: "warn",
-			label: "Check access",
-			description: `${publicBaseUrl} is configured, but setup cannot verify that it is private or reachable.`,
+			label: "HTTPS needed",
+			description: `${publicBaseUrl} is configured without HTTPS.`,
 		};
 	} catch {
 		return {

@@ -2,8 +2,8 @@
  * Serialized mutation of the instance config.json (and the secrets env file).
  *
  * Every write to config.json — repo registration (routes/local-repos.ts,
- * routes/setup-repos.ts), team roster edits, integration toggles, GitHub
- * auth settings (routes/setup.ts) — funnels through ONE promise-chain lock so
+ * routes/setup-repos.ts), server origins, team roster edits, integration
+ * toggles, and GitHub auth settings — funnels through ONE promise-chain lock so
  * concurrent read-modify-write cycles can't clobber each other. The chain is
  * parked on globalThis (under the key the local-repos lock historically used)
  * so a bun --hot reload keeps the same queue.

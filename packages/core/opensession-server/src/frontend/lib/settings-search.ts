@@ -96,7 +96,16 @@ export const SETTINGS_KEYWORDS: Record<string, string[]> = {
 		"persona",
 		"default repo",
 	],
-	setup: ["onboarding", "getting started", "checklist", "first run"],
+	setup: [
+		"onboarding",
+		"getting started",
+		"checklist",
+		"first run",
+		"domain",
+		"server address",
+		"webhook",
+		"caddy",
+	],
 	repos: ["repositories", "projects", "checkout", "worktree", "branch", "clone"],
 	members: ["team", "people", "teammates", "access"],
 	providers: [
