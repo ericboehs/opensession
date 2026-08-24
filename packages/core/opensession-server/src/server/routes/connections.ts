@@ -788,11 +788,29 @@ export async function handleConnectionsRoutes(
 				{ error: "clientId, slug and secret are required" },
 				{ status: 400 },
 			);
-		if (privateKey && !/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(privateKey))
-			return Response.json(
-				{ error: "privateKey must be a PEM private key" },
-				{ status: 400 },
-			);
+		if (privateKey) {
+			// A complete PEM block, and it must actually parse — a header-only or
+			// truncated value would otherwise overwrite a working key on disk.
+			const wellFormed =
+				/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]+-----END [A-Z ]*PRIVATE KEY-----/.test(
+					privateKey,
+				);
+			let parses = false;
+			if (wellFormed) {
+				try {
+					const { createPrivateKey } = await import("node:crypto");
+					createPrivateKey(privateKey);
+					parses = true;
+				} catch {
+					parses = false;
+				}
+			}
+			if (!parses)
+				return Response.json(
+					{ error: "privateKey must be a valid PEM private key" },
+					{ status: 400 },
+				);
+		}
 		// Store the key first: if it is env-managed writeGithubAppKey refuses, and
 		// we surface that before touching config rather than half-configuring.
 		if (privateKey) {
