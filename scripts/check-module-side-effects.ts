@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
- * Guard: no module under src/server may bind a socket, arm a timer or spawn a
- * process just by being imported.
+ * Guard: no server or executor module may bind a socket, arm a timer or spawn
+ * a process just by being imported.
  *
  * Why this exists. interactive-mcp.ts called startRunRpcServer() at module
  * scope, and that file sits on the import chain of most of the server graph —
@@ -33,8 +33,8 @@
  * a hole in the only check that sees through a start function three files away.
  *
  * Usage: bun scripts/check-module-side-effects.ts [--json]
- * Exit 1 when anything is created at import time. src/server/module-side-effects.test.ts
- * runs it, so `bun test` fails too.
+ * Exit 1 when anything is created at import time.
+ * scripts/check-module-side-effects.test.ts runs it, so `bun test` fails too.
  */
 
 import { mkdtempSync, rmSync } from "fs";
@@ -58,12 +58,28 @@ export interface SideEffectScan {
 	failed: { module: string; error: string }[];
 }
 
+
+export const EXECUTABLE_ENTRYPOINT_EXEMPTIONS = new Set([
+	"packages/core/opensession-server/src/runner-host/host.ts",
+	"packages/core/opensession-server/src/runner-host/mcp-proxy.ts",
+	// Bun Worker entrypoints do not report import.meta.main; importing this file
+	// intentionally starts the actor worker.
+	"packages/core/opensession-server/src/session-kernel-worker.ts",
+]);
+
 /** Every module a server process could plausibly pull in. Tests and test
  *  helpers are excluded: they are not on any live import chain. */
 export function serverModules(root = REPO_ROOT): string[] {
-	const glob = new Bun.Glob("src/server/**/*.ts");
-	return [...glob.scanSync({ cwd: root })]
-		.filter((p) => !p.endsWith(".test.ts") && !p.includes("/testing/"))
+	const glob = new Bun.Glob(
+		"packages/core/opensession-server/src/{server,executor,runner-host}/**/*.ts",
+	);
+	return [...glob.scanSync({ cwd: root }),
+		"packages/core/opensession-server/src/session-kernel-worker.ts"]
+		.filter((p) =>
+			!p.endsWith(".test.ts") &&
+			!p.includes("/testing/") &&
+			!EXECUTABLE_ENTRYPOINT_EXEMPTIONS.has(p)
+		)
 		.sort();
 }
 
@@ -123,7 +139,7 @@ if (import.meta.main) {
 	}
 	if (scan.hits.length === 0 && scan.failed.length === 0) {
 		console.log(
-			`ok — ${scan.scanned} modules under src/server import cleanly (no listener, timer or subprocess at import time)`,
+			`ok — ${scan.scanned} server/executor modules import cleanly (no listener, timer or subprocess at import time)`,
 		);
 		process.exit(0);
 	}

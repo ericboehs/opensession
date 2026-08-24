@@ -1,0 +1,218 @@
+/* The shell's own pages: the server prompt (setup.html) and the status page
+   (offline.html). Both load from file://, and both appear exactly when the app
+   itself is not on screen, so neither can pull the frontend's stylesheet. They
+   carry a copy of its tokens instead. Keep in sync with
+   src/frontend/styles/base.css and tailwind.css.
+
+   The page gradient and the 76px mark are the splash in
+   src/frontend/index.html, so a launch that stalls, or pauses to ask which
+   server to use, resolves onto the surface it was already showing instead of
+   cutting to a black slab. */
+:root {
+  color-scheme: dark;
+  --page: radial-gradient(120% 90% at 50% 35%, #262626 0%, #1b1b1b 70%);
+  --bg: #1c1c1c;
+  --text: #e9e9e9;
+  --text-dim: #a2a2a2;
+  --text-faint: #767676;
+  --border: #333333;
+  /* A wash rather than a picked grey: these pages sit on a gradient, so an
+     absolute fill would be right at one end of it and wrong at the other. */
+  --field: rgb(255 255 255 / 0.04);
+  --hover: rgb(255 255 255 / 0.06);
+  --accent: var(--text);
+  --on-accent: var(--bg);
+  --accent-hover: color-mix(in srgb, var(--accent) 86%, var(--bg));
+  --title-weight: 500;
+  --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+  /* The radius multiplier and corner shape base.css flips together: a
+     superellipse hugs the corner tighter than an arc, so a browser that can
+     draw one carries the larger radius, and a browser without `corner-shape`
+     takes the 1.75x smaller circular corner that cuts the same amount off.
+     These pages only ever render in Electron, which has corner-shape, so the
+     fallback is here to stay in step with base.css rather than because
+     anything draws it. */
+  --rf: 0.771;
+  --cs: round;
+}
+/* The shell cannot read the app's stored theme (its own origin), so it follows
+   the system, which is what the app's System setting does. */
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --page: radial-gradient(120% 90% at 50% 35%, #ffffff 0%, #f3f1ee 70%);
+    --bg: #ffffff;
+    --text: #1a1a1a;
+    --text-dim: #646464;
+    --text-faint: #949494;
+    --border: #e2e2e2;
+    --field: rgb(0 0 0 / 0.03);
+    --hover: rgb(0 0 0 / 0.05);
+    --title-weight: 600;
+  }
+}
+@supports (corner-shape: squircle) {
+  :root {
+    --rf: 1.35;
+    --cs: squircle;
+  }
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+/* This sheet gives the buttons a `display`, and an author rule beats the
+   browser's own `[hidden] { display: none }`. Without this line every action
+   these pages keep in reserve is on screen from the start. */
+[hidden] {
+  display: none !important;
+}
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--page);
+  color: var(--text);
+  font: 15px/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  /* The window has no titlebar of its own, so the page is the drag handle. */
+  -webkit-app-region: drag;
+}
+main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 24px;
+  text-align: center;
+  -webkit-app-region: no-drag;
+}
+.mark {
+  display: block;
+  width: 76px;
+  height: 76px;
+}
+h1 {
+  margin: 20px 0 0;
+  font-size: 24px;
+  font-weight: var(--title-weight);
+  letter-spacing: -0.01em;
+}
+.message {
+  margin: 8px 0 0;
+  max-width: 46ch;
+  line-height: 1.375;
+  color: var(--text-dim);
+}
+.host {
+  margin: 10px 0 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-faint);
+}
+.field {
+  margin: 22px 0 0;
+  width: 320px;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: calc(10px * var(--rf));
+  corner-shape: var(--cs);
+  background: var(--field);
+  color: var(--text);
+  font: 15px/1 var(--sans);
+  text-align: center;
+  /* The body is a drag region and selects nothing; a text field has to opt
+     both back out or it cannot be clicked into or selected within. */
+  -webkit-app-region: no-drag;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.field::placeholder {
+  color: var(--text-faint);
+}
+.field:focus {
+  outline: none;
+  border-color: var(--text-faint);
+}
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 22px;
+}
+/* The Button primitive's `primary` at `lg`: an ink plate with the top-down
+   sheen that keeps a solid fill from reading as printed. */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: calc(12px * var(--rf));
+  corner-shape: var(--cs);
+  background-color: var(--accent);
+  background-image: linear-gradient(
+    to bottom,
+    transparent,
+    rgb(255 255 255 / 0.035) 35%,
+    rgb(255 255 255 / 0.01) 55%,
+    rgb(0 0 0 / 0.05)
+  );
+  box-shadow:
+    0 1px 2px -1px rgb(0 0 0 / 0.05),
+    0 2px 5px -3px rgb(0 0 0 / 0.07);
+  color: var(--on-accent);
+  font: 500 15px/1 var(--sans);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    scale 0.15s ease;
+}
+.button:hover {
+  background-color: var(--accent-hover);
+}
+.button:active {
+  scale: 0.96;
+}
+.button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.button:disabled {
+  opacity: 0.5;
+  cursor: default;
+  scale: 1;
+}
+/* The second action on a page that has two. It is an alternative, not a
+   lesser copy of the first, so it takes the page's own ink on a hairline. */
+.button.ghost {
+  border-color: var(--border);
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  color: var(--text);
+}
+.button.ghost:hover {
+  background-color: var(--hover);
+}
+#status {
+  margin: 14px 0 0;
+  min-height: 1.2em;
+  max-width: 46ch;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition: none;
+  }
+}

@@ -1,0 +1,227 @@
+name: OS1
+options:
+  bundleIdPrefix: dev.tella
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "26.0"
+  createIntermediateGroups: true
+packages:
+  SwiftStreamingMarkdown:
+    url: https://github.com/microsoft/SwiftStreamingMarkdown
+    # v0.6.0 depends on HighlightSwift by revision, so SwiftPM rejects it
+    # under a stable semver rule. Pin the release tag's commit instead.
+    revision: c7b12f7b3d77caa188fd1fc056d0f7ce305ef5cd
+  HighlightSwift:
+    url: https://github.com/appstefan/highlightswift
+    # Keep the direct product on the revision SwiftStreamingMarkdown resolves.
+    revision: 99c431b38a1444a5fd6a4978307fbbefe3a7af53
+targets:
+  OS1:
+    type: application
+    platform: iOS
+    info:
+      # XcodeGen writes this plist on every generation. The document type is
+      # what puts OS in Files' Open in menu; public.data accepts ordinary files
+      # without claiming folders the upload route cannot read.
+      path: OS1-Info.plist
+      properties:
+        CFBundleDisplayName: OS
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        OS1DefaultServerURL: http://127.0.0.1:3850
+        UIApplicationSupportsIndirectInputEvents: true
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSCameraUsageDescription: Attach a photo you take to a message.
+        NSMicrophoneUsageDescription: Dictate messages, and talk to your Desk on a live voice call.
+        NSSpeechRecognitionUsageDescription: Turn what you say into text in the message box.
+        NSSupportsLiveActivities: true
+        LSSupportsOpeningDocumentsInPlace: true
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: File
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.data
+    entitlements:
+      path: OS1.entitlements
+      properties:
+        aps-environment: $(APS_ENVIRONMENT)
+    sources:
+      - OS1
+      # mermaid's browser bundle and the offscreen page that drives it. Listed
+      # as resources explicitly: XcodeGen would otherwise put a .js file in
+      # Compile Sources, where it does nothing.
+      - path: Resources/mermaid
+        buildPhase: resources
+        excludes:
+          - README.md
+    dependencies:
+      - package: SwiftStreamingMarkdown
+        product: SwiftStreamingMarkdown
+      - package: HighlightSwift
+        product: HighlightSwift
+      # Embedded into the app's PlugIns — Home Screen / Lock Screen widget and
+      # the Control Center control, both of which just open "Start an Agent".
+      - target: OS1Widgets
+    settings:
+      base:
+        # PRODUCT_NAME deliberately stays OS1: it names the bundle, archive and
+        # .ipa that CI refers to. The Home Screen label lives in `info` above.
+        PRODUCT_BUNDLE_IDENTIFIER: dev.tella.os1
+        DEVELOPMENT_TEAM: 6GUXT43C8B
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1"
+        CURRENT_PROJECT_VERSION: 2
+        MARKETING_VERSION: 0.1.0
+        APS_ENVIRONMENT: development
+      configs:
+        # Release = App Store signing, scoped to the app target only. These
+        # used to ride the CI xcodebuild command line, but command-line
+        # settings apply to EVERY target — and SwiftPM package targets
+        # (SwiftStreamingMarkdown and friends) reject provisioning profiles,
+        # failing the archive. Debug stays Automatic for local dev.
+        Release:
+          APS_ENVIRONMENT: production
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: OS1 App Store Push
+  # Widget extension: the Home Screen / Lock Screen widget and the Control
+  # Center control. iOS only — a macOS widget would need its own target, and
+  # the Mac app has no Action Button or Control Center to put one in.
+  OS1Widgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: OS1Widgets
+        excludes:
+          # Referenced as INFOPLIST_FILE below; listing it as a source would
+          # also copy it into the bundle as a resource.
+          - Info.plist
+      # The one file shared with the app. The widget's button and control both
+      # run this intent, and an intent must be compiled into every target that
+      # references it.
+      - path: OS1/Intents/StartAgentIntent.swift
+      - path: OS1/Intents/OpenSessionIntent.swift
+      - path: OS1/Models/ActiveSessionsActivity.swift
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: OS1Widgets/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: dev.tella.os1.widgets
+        DEVELOPMENT_TEAM: 6GUXT43C8B
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1"
+        # App Store validation rejects an extension whose version differs from
+        # its host app's. CI passes CURRENT_PROJECT_VERSION on the command
+        # line, which applies to every target, so only the marketing version
+        # has to be kept in step with the OS1 target by hand.
+        CURRENT_PROJECT_VERSION: 2
+        MARKETING_VERSION: 0.1.0
+      configs:
+        # Its own App Store profile: an extension is a separate bundle id, so
+        # the app's profile cannot sign it. CI fetches "OS1 Widgets App Store"
+        # from App Store Connect at build time (see os1-ios-testflight.yml).
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: OS1 Widgets App Store
+  OS1Mac:
+    type: application
+    platform: macOS
+    sources:
+      - OS1
+      # See the iOS target: the diagram renderer's page and mermaid itself.
+      - path: Resources/mermaid
+        buildPhase: resources
+        excludes:
+          - README.md
+    dependencies:
+      - package: SwiftStreamingMarkdown
+        product: SwiftStreamingMarkdown
+      - package: HighlightSwift
+        product: HighlightSwift
+    entitlements:
+      path: OS1Mac.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        # Image attachments picked via the open panel (fileImporter).
+        com.apple.security.files.user-selected.read-only: true
+        # Desk voice mode: live mic capture for the Realtime voice call.
+        com.apple.security.device.audio-input: true
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        # The Finder and Dock label. The app MENU title is CFBundleName, which
+        # only PRODUCT_NAME below can set, so the Mac target is the one place
+        # the label reaches the bundle and executable names too.
+        INFOPLIST_KEY_CFBundleDisplayName: OS
+        INFOPLIST_KEY_OS1DefaultServerURL: http://127.0.0.1:3850
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+        # Mic capture for two features: composer dictation and the Desk's
+        # Realtime voice call.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Dictate messages, and talk to your Desk on a live voice call.
+        # Composer dictation. Transcription runs on device where the hardware
+        # supports it, but the permission is required either way.
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: Turn what you say into text in the message box.
+        # Drives CFBundleName (the app menu title) as well as the .app and
+        # executable names, so the whole Mac bundle reads OS. Renaming this is
+        # free: everything this app stores is keyed on
+        # PRODUCT_BUNDLE_IDENTIFIER (sandbox container, defaults domain,
+        # keychain items), never on the name. The Electron shell is the
+        # opposite case, where the name IS the storage key — see
+        # packages/clients/mac/src/main.js. The export step's .pkg is named from this, which
+        # is why the TestFlight workflow globs for it rather than naming
+        # OS1.pkg.
+        PRODUCT_NAME: OS
+        # PRODUCT_MODULE_NAME defaults to PRODUCT_NAME, so without this the
+        # Swift module became `Open_Session` and OS1Tests' `@testable import
+        # OS1` stopped resolving. The module is an identifier: it stays OS1.
+        PRODUCT_MODULE_NAME: OS1
+        # Same id as the iOS target: one App Store Connect record (universal
+        # purchase) hosts both platforms. The Electron shell (os1-mac) moved
+        # to dev.tella.os1.shell so no two Mac apps share a bundle id.
+        PRODUCT_BUNDLE_IDENTIFIER: dev.tella.os1
+        DEVELOPMENT_TEAM: 6GUXT43C8B
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIconMac
+        SWIFT_VERSION: "5.9"
+        CURRENT_PROJECT_VERSION: 2
+        MARKETING_VERSION: 0.1.0
+      configs:
+        # See the OS1 target: manual App Store signing must be target-scoped,
+        # not passed globally on the CI command line, because SwiftPM package
+        # targets reject provisioning profiles.
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: OS1 Mac App Store
+    # The test sources are pure logic. Hosting them in the native macOS app
+    # avoids booting and installing into an iOS simulator on every CI run.
+    scheme:
+      testTargets:
+        - OS1Tests
+  OS1Tests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - OS1Tests
+    dependencies:
+      - target: OS1Mac
+    settings:
+      base:
+        BUNDLE_LOADER: $(TEST_HOST)
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: dev.tella.os1.tests
+        SWIFT_VERSION: "5.9"
+        # Follows OS1Mac's PRODUCT_NAME.
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/OS.app/Contents/MacOS/OS

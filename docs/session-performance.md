@@ -12,6 +12,6 @@ Budgets:
 - no long task over 100 ms during a 100-delta/s fixture
 
 Deterministic fixtures live in
-`src/frontend/lib/session-performance-fixtures.ts` for 200, 2,000, and 10,000
+`packages/core/opensession-server/src/frontend/lib/session-performance-fixtures.ts` for 200, 2,000, and 10,000
 entries plus a configurable delta stream. Compare `stream_frames_received`
 with `stream_paints`; paints should remain bounded by the display frame rate.

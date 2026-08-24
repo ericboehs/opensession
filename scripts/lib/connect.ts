@@ -18,18 +18,84 @@
  */
 
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
-import { arch, cpus, hostname, platform, tmpdir, totalmem } from "os";
+import { arch, cpus, hostname, platform, tmpdir, totalmem, userInfo } from "os";
 import { dirname, join, resolve } from "path";
 import { OPENSESSION_HOME } from "./paths";
 import { bold, dim, fail, heading, info, ok, run, warn } from "./ui";
 import { localAutomationToken } from "./local-auth";
+import { isCompiledBinary, runnerHostArgv } from "../../packages/core/opensession-server/src/runner-host/exe";
 
 const IDENTITY_PATH = join(OPENSESSION_HOME, "runner.json");
 const HEARTBEAT_MS = 60_000;
-const RUNNER_HOST_ENTRY = resolve(import.meta.dir, "../../src/runner-host/host.ts");
+const RUNNER_HOST_ENTRY = resolve(import.meta.dir, "../../packages/core/opensession-server/src/runner-host/host.ts");
 const RUNNER_SERVICE_LABEL = "dev.tella.opensession.runner";
+export const RUNNER_TASK_NAME = "OpenSessionRunner";
 
 type Identity = { server: string; id: string; token: string; name: string };
+
+/**
+ * Windows ships PowerShell, schtasks and the rest of its core tools at a fixed
+ * location under %SystemRoot%\System32. Looking them up through PATH makes the
+ * Runner's core function depend on a variable that any installer, group policy
+ * or truncated `setx` can damage, and the failures are miserable: every
+ * delegated command dies at spawn with `ENOENT ... uv_spawn 'powershell.exe'`,
+ * and the sign-in scheduled task launches nothing at all, so the Runner just
+ * never appears online with no error anywhere. Build the path instead.
+ *
+ * The segments are joined with backslashes by hand rather than path.join, so
+ * the result is the same string when these functions are unit tested on Linux.
+ * Exported for that reason: no Windows box runs the suite locally.
+ */
+export function windowsSystem32(binary: string, systemRoot?: string): string {
+	const root = (systemRoot ?? process.env.SystemRoot ?? process.env.SYSTEMROOT ?? "C:\\Windows").replace(/[\\/]+$/, "");
+	return `${root}\\System32\\${binary.replace(/^[\\/]+/, "")}`;
+}
+
+/** The fully qualified Windows PowerShell, which is what the scheduled task's
+ * <Command> has to name. Task Scheduler resolves a bare name through whatever
+ * PATH the logon session happens to have. */
+export function windowsPowerShellPath(systemRoot?: string): string {
+	return windowsSystem32("WindowsPowerShell\\v1.0\\powershell.exe", systemRoot);
+}
+
+export type WindowsBinaryProbe = {
+	systemRoot?: string;
+	exists?: (path: string) => boolean;
+	which?: (binary: string) => string | null;
+};
+
+/**
+ * Resolution order for the shell every delegated command runs under: the fully
+ * qualified Windows PowerShell if it is really there, then PowerShell 7 if
+ * PATH can find it, then the bare name as a last resort. The last step keeps
+ * today's behaviour rather than regressing a machine that works.
+ */
+export function resolveWindowsShell(probe: WindowsBinaryProbe = {}): string {
+	const exists = probe.exists ?? existsSync;
+	const which = probe.which ?? ((binary: string) => Bun.which(binary));
+	const qualified = windowsPowerShellPath(probe.systemRoot);
+	if (exists(qualified)) return qualified;
+	return which("pwsh.exe") || which("pwsh") || "powershell.exe";
+}
+
+/** Same idea for schtasks.exe, which installRunnerService needs before it can
+ * register anything. Undefined means neither the known path nor PATH has it,
+ * which is worth saying out loud rather than skipping in silence. */
+export function resolveWindowsSchtasks(probe: WindowsBinaryProbe = {}): string | undefined {
+	const exists = probe.exists ?? existsSync;
+	const which = probe.which ?? ((binary: string) => Bun.which(binary));
+	const qualified = windowsSystem32("schtasks.exe", probe.systemRoot);
+	if (exists(qualified)) return qualified;
+	return which("schtasks.exe") || which("schtasks") || undefined;
+}
+
+/** The argv behind every delegated command. Exported so CI can spawn exactly
+ * what the exec path spawns, with a deliberately broken PATH. */
+export function runnerExecCommand(command: string, host: string = platform()): string[] {
+	return host === "win32"
+		? [resolveWindowsShell(), "-NoProfile", "-NonInteractive", "-Command", command]
+		: ["bash", "-lc", command];
+}
 
 async function readIdentity(): Promise<Identity | undefined> {
   if (!existsSync(IDENTITY_PATH)) return undefined;
@@ -60,6 +126,7 @@ async function detectCapabilities(): Promise<string[]> {
     ["cargo", "rust"],
     ["go", "go"],
     ["bun", "bun"],
+    ["dotnet", "dotnet"],
     ["ffmpeg", "ffmpeg"],
     ["ollama", "ollama"],
     ["vllm", "vllm"],
@@ -84,12 +151,18 @@ async function detectResources(): Promise<Record<string, unknown>> {
 		cpuCores: cpus().length,
 		memoryGb: Math.round((totalmem() / 1024 ** 3) * 10) / 10,
 	};
-	const disk = platform() === "win32"
-		? ""
-		: await commandOutput(["df", "-Pk", "."]);
-	const diskLine = disk.split("\n").at(-1)?.trim().split(/\s+/);
-	if (diskLine && Number.isFinite(Number(diskLine.at(-3)))) {
-		resources.freeDiskGb = Math.round((Number(diskLine.at(-3)) * 1024 / 1024 ** 3) * 10) / 10;
+	if (platform() === "win32") {
+		const probe = runnerExecCommand("(Get-PSDrive ((Get-Location).Drive.Name)).Free");
+		const free = Number(await commandOutput(probe));
+		if (Number.isFinite(free) && free > 0) resources.freeDiskGb = Math.round((free / 1024 ** 3) * 10) / 10;
+		// Silence here used to register a Runner with no freeDiskGb and no clue why.
+		else warn("free disk space was not measured", `${probe[0]} did not report it`);
+	} else {
+		const disk = await commandOutput(["df", "-Pk", "."]);
+		const diskLine = disk.split("\n").at(-1)?.trim().split(/\s+/);
+		if (diskLine && Number.isFinite(Number(diskLine.at(-3)))) {
+			resources.freeDiskGb = Math.round((Number(diskLine.at(-3)) * 1024 / 1024 ** 3) * 10) / 10;
+		}
 	}
 	const nvidia = await commandOutput(["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader,nounits"]);
 	if (nvidia) {
@@ -206,7 +279,67 @@ function runnerCommandPath(): string {
 	return process.argv[1] || "opensession";
 }
 
+/** Env keys a Windows child process cannot function without. PowerShell fails
+ * to start with no SystemRoot, git resolves its config through USERPROFILE and
+ * APPDATA, and PATHEXT is how .cmd/.bat resolution works at all. Everything
+ * else (tokens, keys) is deliberately withheld, matching the Unix branch. */
+const WINDOWS_ENV_KEYS = new Set([
+	"PATH", "PATHEXT", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC",
+	"TEMP", "TMP", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA",
+	"LOCALAPPDATA", "PROGRAMDATA", "PROGRAMFILES", "PROGRAMFILES(X86)",
+	"PROGRAMW6432", "ALLUSERSPROFILE", "PUBLIC", "USERNAME", "USERDOMAIN",
+	"NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "OS",
+]);
+
+/** The three System32 directories a Windows shell session cannot work without:
+ * the tools themselves, Windows PowerShell, and WMI (which `Get-CimInstance`
+ * and much of what people write in a delegated command reach for). */
+function windowsCorePathDirs(systemRoot?: string): string[] {
+	return [
+		windowsSystem32("", systemRoot).replace(/\\$/, ""),
+		windowsSystem32("WindowsPowerShell\\v1.0", systemRoot),
+		windowsSystem32("Wbem", systemRoot),
+	];
+}
+
+/**
+ * Put the core System32 directories back on a PATH that is missing them.
+ *
+ * Resolving our own spawn at a known path fixes the spawn, and nothing else:
+ * the command we then hand to PowerShell is written by a person or an agent and
+ * will say `git`, `where`, `robocopy`, `Get-CimInstance`. On the machine that
+ * prompted this, all of those would still fail inside a shell that started
+ * fine. Repairing the child's PATH is what makes one bootstrap command enough,
+ * with no registry edit and no elevation. The machine's own PATH is left
+ * untouched; this only shapes what the Runner's children inherit.
+ *
+ * Exported and pure so it is testable off Windows.
+ */
+export function repairWindowsPath(current: string | undefined, systemRoot?: string): string {
+	const present = new Set(
+		(current || "").split(";").map((part) => part.trim().replace(/[\\/]+$/, "").toLowerCase()).filter(Boolean),
+	);
+	const missing = windowsCorePathDirs(systemRoot).filter((dir) => !present.has(dir.toLowerCase()));
+	if (!missing.length) return current || "";
+	return current ? `${missing.join(";")};${current}` : missing.join(";");
+}
+
+/** Matched case-insensitively because Windows environments mix Path, PATH and
+ * SystemRoot freely; the original spelling is kept on the way through.
+ * Exported for tests: no Windows box runs this suite locally. */
+export function windowsRunnerEnvironment(source: Record<string, string | undefined> = process.env): Record<string, string> {
+	const env: Record<string, string> = {};
+	for (const [key, value] of Object.entries(source)) {
+		if (value && WINDOWS_ENV_KEYS.has(key.toUpperCase())) env[key] = value;
+	}
+	const systemRoot = Object.entries(env).find(([key]) => key.toUpperCase() === "SYSTEMROOT")?.[1];
+	const pathKey = Object.keys(env).find((key) => key.toUpperCase() === "PATH") ?? "Path";
+	env[pathKey] = repairWindowsPath(env[pathKey], systemRoot);
+	return env;
+}
+
 function runnerEnvironment(): Record<string, string> {
+	if (platform() === "win32") return windowsRunnerEnvironment();
 	return {
 		PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
 		HOME: process.env.HOME || "/tmp",
@@ -221,6 +354,27 @@ export function runnerLaunchdPlist(command = runnerCommandPath(), bun = process.
 
 export function runnerSystemdUnit(command = runnerCommandPath(), bun = process.execPath): string {
 	return `[Unit]\nDescription=Open Session Runner\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nExecStart=${bun} ${command} runner run\nRestart=always\nRestartSec=5\nEnvironment=HOME=${process.env.HOME || "/tmp"}\nEnvironment=PATH=${process.env.PATH || "/usr/local/bin:/usr/bin:/bin"}\n\n[Install]\nWantedBy=default.target\n`;
+}
+
+function windowsTaskUser(): string {
+	let name = process.env.USERNAME || "";
+	if (!name) { try { name = userInfo().username; } catch {} }
+	const domain = process.env.USERDOMAIN;
+	return domain && name ? `${domain}\\${name}` : name;
+}
+
+/** Render the Windows per-user Scheduled Task (registered via
+ * `schtasks /Create /XML`). Task Scheduler is the launchd/systemd-user
+ * equivalent here: no admin rights, starts at sign-in, and RestartOnFailure
+ * re-arms the channel if the process itself dies. The action goes through a
+ * hidden PowerShell so a console window does not land on the desktop at every
+ * sign-in, and `*>>` appends all streams to the runner log. */
+export function runnerScheduledTaskXml(command = runnerCommandPath(), bun = process.execPath, user = windowsTaskUser(), shell = windowsPowerShellPath()): string {
+	const xml = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+	const single = (value: string) => `'${value.replaceAll("'", "''")}'`;
+	const action = `& ${single(bun)} ${single(command)} runner run *>> ${single(join(OPENSESSION_HOME, "runner.log"))}`;
+	const args = `-NoProfile -NonInteractive -WindowStyle Hidden -Command "${action}"`;
+	return `<?xml version="1.0" encoding="UTF-16"?>\n<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">\n  <RegistrationInfo>\n    <Description>Open Session Runner: holds the outbound control channel open.</Description>\n  </RegistrationInfo>\n  <Triggers>\n    <LogonTrigger>\n      <Enabled>true</Enabled>\n      <UserId>${xml(user)}</UserId>\n    </LogonTrigger>\n  </Triggers>\n  <Principals>\n    <Principal id="Author">\n      <UserId>${xml(user)}</UserId>\n      <LogonType>InteractiveToken</LogonType>\n      <RunLevel>LeastPrivilege</RunLevel>\n    </Principal>\n  </Principals>\n  <Settings>\n    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\n    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>\n    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>\n    <StartWhenAvailable>true</StartWhenAvailable>\n    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>\n    <RestartOnFailure>\n      <Interval>PT1M</Interval>\n      <Count>10</Count>\n    </RestartOnFailure>\n  </Settings>\n  <Actions Context="Author">\n    <Exec>\n      <Command>${xml(shell)}</Command>\n      <Arguments>${xml(args)}</Arguments>\n    </Exec>\n  </Actions>\n</Task>\n`;
 }
 
 /** Install a per-user service. Runner credentials and workspaces stay owned by
@@ -238,7 +392,11 @@ export async function installRunnerService(): Promise<boolean> {
 			ok("Runner service installed", "LaunchAgent reconnects after restart");
 			return true;
 		}
-		if (platform() === "linux" && Bun.which("systemctl")) {
+		if (platform() === "linux") {
+			if (!Bun.which("systemctl")) {
+				fail("Runner service was not installed", "systemctl is not on this machine, so there is no user service manager to install into");
+				return false;
+			}
 			const path = join(process.env.XDG_CONFIG_HOME || join(process.env.HOME || "/tmp", ".config"), "systemd", "user", "opensession-runner.service");
 			mkdirSync(dirname(path), { recursive: true });
 			await Bun.write(path, runnerSystemdUnit());
@@ -248,6 +406,27 @@ export async function installRunnerService(): Promise<boolean> {
 			ok("Runner service installed", "systemd user service reconnects after restart");
 			return true;
 		}
+		if (platform() === "win32") {
+			const schtasks = resolveWindowsSchtasks();
+			if (!schtasks) {
+				fail("Runner service was not installed", "schtasks.exe was not found");
+				info(dim(`  looked at ${windowsSystem32("schtasks.exe")} and on PATH`));
+				info(dim("  PATH is probably missing %SystemRoot%\\System32. Repair it, then run this again."));
+				return false;
+			}
+			mkdirSync(OPENSESSION_HOME, { recursive: true });
+			const path = join(OPENSESSION_HOME, "runner-task.xml");
+			// UTF-16 LE with a BOM: the one encoding every Windows build's
+			// schtasks accepts for /XML.
+			const body = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(runnerScheduledTaskXml(), "utf16le")]);
+			await Bun.write(path, new Uint8Array(body));
+			const created = await run([schtasks, "/Create", "/TN", RUNNER_TASK_NAME, "/XML", path, "/F"], { quiet: true });
+			if (created.code !== 0) throw new Error(created.stderr || created.stdout || "schtasks create failed");
+			await run([schtasks, "/Run", "/TN", RUNNER_TASK_NAME], { quiet: true });
+			ok("Runner service installed", "scheduled task reconnects after sign-in");
+			return true;
+		}
+		fail("Runner service was not installed", `${platform()} has no supported per-user service manager`);
 	} catch (error) {
 		warn("Runner service was not installed", error instanceof Error ? error.message : String(error));
 	}
@@ -344,9 +523,7 @@ export async function runnerRun(): Promise<number> {
         const id = String(msg.id);
         info(dim(`exec ${id}: ${String(msg.command).slice(0, 80)}`));
         try {
-		  const command = platform() === "win32"
-			? ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", String(msg.command)]
-			: ["bash", "-lc", String(msg.command)];
+		  const command = runnerExecCommand(String(msg.command));
 		  const proc = Bun.spawn(command, {
             cwd: typeof msg.cwd === "string" && msg.cwd ? msg.cwd : undefined,
 			env: runnerEnvironment(),
@@ -614,7 +791,7 @@ async function startRunnerPortal(workspacePath: string, msg: any): Promise<Runne
 	writeRunnerPortalRegistry(workspacePath, runnerPortalUpsert(records, base));
 	const env = { ...runnerEnvironment(), PORT: String(port), PORTAL_URL: typeof msg.portalUrl === "string" ? msg.portalUrl : "", OPENSESSION_PORTAL: name };
 	const child = platform() === "win32"
-		? Bun.spawn(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command], { cwd: workspacePath, env, stdin: "ignore", stdout: "ignore", stderr: "ignore" })
+		? Bun.spawn(runnerExecCommand(command), { cwd: workspacePath, env, stdin: "ignore", stdout: "ignore", stderr: "ignore" })
 		: Bun.spawn(["setsid", "bash", "-lc", `exec ${command}`], { cwd: workspacePath, env, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
 	child.unref();
 	const running = { ...base, pid: child.pid };
@@ -796,7 +973,7 @@ async function handleRunnerTerminal(socket: WebSocket, terminals: Map<string, Ru
 		const workspacePath = typeof msg.workspacePath === "string" ? msg.workspacePath : "";
 		if (!workspacePath || workspacePath.includes("\0") || !existsSync(workspacePath)) throw new Error("Invalid Runner terminal workspace.");
 		if (terminals.has(id)) throw new Error("Runner terminal already exists.");
-		const shell = platform() === "win32" ? "powershell.exe" : (process.env.SHELL || "/bin/bash");
+		const shell = platform() === "win32" ? resolveWindowsShell() : (process.env.SHELL || "/bin/bash");
 		const argv = platform() === "win32" ? [shell, "-NoLogo"] : [shell, "-il"];
 		const proc = Bun.spawn(argv, {
 			cwd: workspacePath,
@@ -825,7 +1002,10 @@ async function startRunHost(socket: WebSocket, persistent: Map<string, ReturnTyp
 	try {
 		const spec = msg.spec;
 		if (!spec || typeof spec !== "object" || typeof spec.hostId !== "string" || typeof spec.cwd !== "string" || !spec.wsToken) throw new Error("Invalid run-host request");
-		if (!existsSync(RUNNER_HOST_ENTRY)) throw new Error("This Runner installation does not include the run-host entrypoint");
+		// The compiled binary carries the run host as a subcommand, so there is
+		// no source entrypoint file to check for; only the source install ships
+		// host.ts on disk.
+		if (!isCompiledBinary() && !existsSync(RUNNER_HOST_ENTRY)) throw new Error("This Runner installation does not include the run-host entrypoint");
 		const stateDir = join(spec.cwd, ".opensession-run-hosts", spec.hostId);
 		mkdirSync(stateDir, { recursive: true });
 		const specPath = join(stateDir, "spec.json");
@@ -841,7 +1021,8 @@ async function startRunHost(socket: WebSocket, persistent: Map<string, ReturnTyp
 			OPENSESSION_RPC_WS_AUTH: String(spec.wsToken),
 		};
 		const bun = Bun.which("bun") || process.execPath;
-		const command = platform() === "win32" ? [bun, "run", RUNNER_HOST_ENTRY, specPath] : ["setsid", bun, "run", RUNNER_HOST_ENTRY, specPath];
+		const launch = runnerHostArgv(bun, RUNNER_HOST_ENTRY, specPath);
+		const command = platform() === "win32" ? launch : ["setsid", ...launch];
 		const proc = Bun.spawn(command, { cwd: spec.cwd, env, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
 		proc.unref();
 		await Bun.write(join(stateDir, "pid"), `${proc.pid}\n`);
@@ -977,6 +1158,7 @@ export async function runnersPair(): Promise<number> {
   info(dim(`  valid for 10 minutes, single use`));
   heading("On the machine you want to attach");
   info(dim("  curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash"));
+  info(dim("  (Windows: irm https://raw.githubusercontent.com/tellahq/opensession/main/install.ps1 | iex)"));
   info(`  opensession connect --server ${(await localApi()).replace("/api/runners", "")} --code ${result.code}`);
   return 0;
 }

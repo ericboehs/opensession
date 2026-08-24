@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
-import type { InstalledArtifact, PackageManifest } from "../../src/server/plugins";
+import type { InstalledArtifact, PackageManifest } from "../../packages/core/opensession-server/src/server/plugins";
 import {
 	applyPlan,
 	automationKey,

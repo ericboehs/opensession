@@ -5,7 +5,7 @@
     "With no `repos` configured, a server install registers this Open Session checkout itself as a shared `opensession` repo. Set `repos` for real team projects.",
     "External integrations and instance seed routines are opt-in (`enabled: true`).",
     "selfDev controls sessions on the self-hosted Open Session repo itself: 'shared' (default) = all sessions edit the live shared checkout on the default branch; 'worktree' = self-sessions get isolated worktrees + the normal branch/PR flow like every other repo.",
-    "Repos are GitHub-hosted by default. To host one on code.storage instead, set host: 'codestorage' and csRepo (the repo id/path) on the repo entry — see the 'widget-cs' example — and configure integrations.codestorage (org + PKCS8 private key that signs the customer-issued JWTs)."
+    "Repos are GitHub-hosted by default. To host one on code.storage instead, set host: 'codestorage' and csRepo (the repo id/path) on the repo entry \u2014 see the 'widget-cs' example \u2014 and configure integrations.codestorage (org + PKCS8 private key that signs the customer-issued JWTs)."
   ],
   "selfDev": "shared",
   "server": {
@@ -13,12 +13,12 @@
     "port": 3850,
     "webhookPort": 3848,
     "publicBaseUrl": "https://sessions.example.com",
+    "webhookBaseUrl": "https://ingress.example.com",
     "previewHost": "preview.example.com",
     "caddyAdmin": "http://localhost:2019"
   },
   "paths": {
     "claudeBin": "claude",
-    "opencodeBin": "opencode",
     "worktreesDir": "/srv/opensession/worktrees",
     "mcpConfig": "/srv/opensession/mcp-config.json"
   },
@@ -48,7 +48,9 @@
       "worktreeSetup": "git submodule update --init --depth 1",
       "depsInstall": "bun install",
       "previewCommand": "/srv/opensession/bin/start-widget-preview",
-      "warmCachePaths": ["dist/generated-client.js"],
+      "warmCachePaths": [
+        "dist/generated-client.js"
+      ],
       "previewAwsProfile": "widget-dev",
       "deploymentTracking": true,
       "securityInstructions": "Read SECURITY.md before triaging findings; run bun test for changed packages.",
@@ -65,7 +67,7 @@
       "sharedCheckout": true
     },
     "widget-cs": {
-      "_comment": "Example code.storage-hosted repo (delete or fill in): no ghRepo/PRs — branches are reviewed against defaultBranch and merged via the code.storage merge API. Requires integrations.codestorage below.",
+      "_comment": "Example code.storage-hosted repo (delete or fill in): no ghRepo/PRs \u2014 branches are reviewed against defaultBranch and merged via the code.storage merge API. Requires integrations.codestorage below.",
       "label": "Widget (code.storage)",
       "repo": "/srv/repos/widget-cs",
       "defaultBranch": "main",
@@ -79,10 +81,14 @@
       {
         "name": "Alice Example",
         "email": "alice@example.com",
-        "aliases": ["alice"],
+        "aliases": [
+          "alice"
+        ],
         "slackId": "U012345",
         "github": "alice",
-        "linearEmails": ["alice@example.com"],
+        "linearEmails": [
+          "alice@example.com"
+        ],
         "timezone": "UTC"
       }
     ],
@@ -90,25 +96,37 @@
       {
         "name": "Platform reviewers",
         "github": "acme/platform-reviewers",
-        "members": ["Alice"]
+        "members": [
+          "Alice"
+        ]
       }
     ],
     "slackNames": {}
   },
   "policy": {
-    "githubWriteOwners": ["acme"],
-    "githubBotLogins": ["acme-automation"]
+    "githubWriteOwners": [
+      "acme"
+    ],
+    "githubBotLogins": [
+      "acme-automation"
+    ]
   },
   "integrations": {
     "github": {
       "enabled": false,
       "userPrAuth": false,
       "oauthClientId": "",
-      "mentionHandles": ["assistant", "acme-automation"],
+      "appSlug": "",
+      "mentionHandles": [
+        "assistant",
+        "acme-automation"
+      ],
       "previewEnvironment": "Preview",
       "shippedChangesChannel": "C0123456789"
     },
-    "slack": {"enabled": false},
+    "slack": {
+      "enabled": false
+    },
     "linear": {
       "enabled": false,
       "oauthRedirectUrl": "https://sessions.example.com/oauth/callback"
@@ -120,8 +138,12 @@
       "workspaceId": "w_01ABCDEFGHJKMNPQRSTVWXYZ00",
       "apiUrl": "https://core-api.uk.plain.com/graphql/v1"
     },
-    "stripe": {"enabled": false},
-    "grafana": {"enabled": false},
+    "stripe": {
+      "enabled": false
+    },
+    "grafana": {
+      "enabled": false
+    },
     "codestorage": {
       "_comment": "code.storage git host (docs/setup/codestorage.md). org = the <org>.code.storage subdomain and JWT issuer; privateKeyPath = PKCS8 PEM (ES256 or RS256) whose public key is registered with code.storage; apiBase is optional and defaults to https://api.<org>.code.storage/api; webhookSecret (optional) verifies inbound POST /codestorage/webhook deliveries.",
       "enabled": false,
@@ -135,7 +157,7 @@
       "slackChannel": "D012345"
     },
     "runnersBootstrap": {
-      "_comment": "Optional protected operator inventory for Settings → Runners migration. SSH needs a pinned SHA256 host fingerprint and a dedicated known-hosts file. Kubernetes credentials must be restricted to the named Runner namespace/workload and a reviewed Deployment plus persistent-volume manifest. Do not put private keys, kubeconfig content, pairing tokens, or arbitrary commands here.",
+      "_comment": "Optional protected operator inventory for Settings \u2192 Runners migration. SSH needs a pinned SHA256 host fingerprint and a dedicated known-hosts file. Kubernetes credentials must be restricted to the named Runner namespace/workload and a reviewed Deployment plus persistent-volume manifest. Do not put private keys, kubeconfig content, pairing tokens, or arbitrary commands here.",
       "ssh": [
         {
           "id": "office-mac-mini",

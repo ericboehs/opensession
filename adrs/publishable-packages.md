@@ -85,8 +85,8 @@ store:
 
 | In the manifest | Installs into | Existing writer |
 | --- | --- | --- |
-| `mcpServers` | `mcp-config.json` | `src/server/connections.ts` |
-| `feeds` | `~/.opensession-feeds.json` | `src/server/feeds-config.ts` |
+| `mcpServers` | `mcp-config.json` | `packages/core/opensession-server/src/server/connections.ts` |
+| `feeds` | `~/.opensession-feeds.json` | `packages/core/opensession-server/src/server/feeds-config.ts` |
 | `automations` | `integrations.seeds.automations` in `config.json` | `scripts/lib/recipes.ts` |
 | `skills` | `.agents/skills/<name>/` | a directory copy |
 
@@ -269,7 +269,7 @@ list would be safer and would also mean every third party has to open a pull
 request against us before their work is findable, which is the difference
 between an ecosystem and a queue.
 
-Installed packages appear in the existing Library catalog (`src/server/library.ts`)
+Installed packages appear in the existing Library catalog (`packages/core/opensession-server/src/server/library.ts`)
 as one entry each, rather than in a parallel list. The library is already the
 front door for "what can this instance be extended with", and a package that
 did not show up there would be the second catalog the module's own doc warns
@@ -315,7 +315,7 @@ its own explicit consent, and everything above keeps working unchanged.
 
 The minimal path, and nothing beyond it:
 
-- `src/server/plugins.ts`: the manifest type, its validator, and the ledger.
+- `packages/core/opensession-server/src/server/plugins.ts`: the manifest type, its validator, and the ledger.
 - `scripts/lib/plugins.ts`: fetch, plan, apply, remove, and the review summary.
 - `opensession plugins add|update|remove` plus the bare listing verb.
 - One Library entry per installed package.

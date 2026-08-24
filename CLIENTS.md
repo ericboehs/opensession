@@ -5,12 +5,11 @@ everything else is optional and talks to the same instance.
 
 | Client | Where | Needs building? |
 | --- | --- | --- |
-| Web UI | `src/frontend/` | no — the server builds and serves it |
+| Web UI | `packages/core/opensession-server/src/frontend/` | no — the server builds and serves it |
 | PWA | same web UI, installed to a home screen | no |
-| Electron desktop shell | `os1-mac/` | yes |
-| Native Swift app (iOS + macOS) | `os1-ios/` | yes, with Xcode |
-| Chrome extension | `os1-chrome/` | no — load unpacked |
-| Terminal client (`os`) — work in progress | `os1-tui/` | yes, one `bun build` |
+| Electron desktop shell | `packages/clients/mac/` | yes |
+| Native Swift app (iOS + macOS) | `packages/clients/ios/` | yes, with Xcode |
+| Chrome extension | `packages/clients/chrome/` | no — load unpacked |
 
 **All of them let you set the server address**, and the versions in this
 repository default to `http://127.0.0.1:3850` rather than anyone else's
@@ -40,15 +39,18 @@ is why it feels like an app rather than a website in a frame.
 
 ## Electron desktop shell
 
-`os1-mac/` — a thin native window around the web UI. It exists for the things a
+`packages/clients/mac/` — a thin native window around the web UI. It exists for the things a
 browser tab cannot do: a dock icon, native window materials, deep links
 (`opensession://`), and staying out of the way of your browser's tab bar.
 
-It renders the *server's* frontend, so it does not lag behind the web UI. Server
-selection is `OS1_URL` / `OS1_CLOUD_URL`, falling back to the packaged default.
+It renders the *server's* frontend, so it does not lag behind the web UI. It
+asks which server on the first launch, with the packaged default prefilled, and
+keeps the answer in its profile; Change Server in the app menu, and a button on
+the status page, bring the question back. `OS1_URL` overrides the stored answer
+for one run.
 
 ```sh
-cd os1-mac && bun install && bun start
+cd packages/clients/mac && bun install && bun start
 ```
 
 Despite the directory name it is an ordinary Electron app; the macOS-specific
@@ -56,7 +58,7 @@ parts are signing and notarisation, not the runtime.
 
 ## Native Swift app (iOS and macOS)
 
-`os1-ios/` — one SwiftUI codebase, two targets. This is *not* a web view: it is
+`packages/clients/ios/` — one SwiftUI codebase, two targets. This is *not* a web view: it is
 a native client against the REST and WebSocket surface, which is why it feels
 different from the PWA and why it can do things like native settings panes and
 proper background behaviour.
@@ -64,7 +66,7 @@ proper background behaviour.
 Set the server under Settings → Server. There are `OS1_SERVER` / `OS1_TOKEN`
 environment overrides for simulator runs, which are deliberately not persisted.
 
-Read `os1-ios/AGENTS.md` before changing it — the build and verification
+Read `packages/clients/ios/AGENTS.md` before changing it — the build and verification
 workflow, the release trigger, and some load-bearing performance invariants live
 there rather than being obvious from the code.
 
@@ -73,7 +75,7 @@ come from `.github/workflows/os1-ios-testflight.yml`.
 
 ## Chrome extension
 
-`os1-chrome/` — an MV3 side panel. Its job is capturing context from the page
+`packages/clients/chrome/` — an MV3 side panel. Its job is capturing context from the page
 you are looking at: a screenshot, or a picked element complete with its React
 fiber info, handed straight into a new session. For debugging a web app with an
 agent, that is a much better starting prompt than a description.
@@ -81,40 +83,17 @@ agent, that is a much better starting prompt than a description.
 Loaded unpacked, never from the Web Store:
 
 ```
-chrome://extensions → Developer mode → Load unpacked → os1-chrome/
+chrome://extensions → Developer mode → Load unpacked → packages/clients/chrome/
 ```
 
 Set the server in the side panel's Server field. It authenticates with a Bearer
 token and talks to the same REST surface as everything else.
 
-## Terminal client
-
-**Work in progress** — usable, but the roughest of the clients; expect gaps.
-
-`os1-tui/` — Open Session in a terminal. A TUI with a workspace sidebar, live
-transcripts, tabs and tmux keys, for when you are already in a terminal and do
-not want to reach for a browser.
-
-```sh
-os                          # loopback
-os --host os.company.dev    # a specific server (remembered afterwards)
-```
-
-Host resolution is `--host` → `OPENSESSION_HOST` → saved config → loopback.
-
-It is **a client and nothing else**: HTTP plus one WebSocket per watched session.
-It never spawns an agent, never touches a worktree, and imports nothing from the
-server — which is what lets it compile to a standalone binary you can drop on any
-machine that can reach your instance. `opensession tui` is an alias.
-
-Read `os1-tui/AGENTS.md` before changing it.
-
 ## Which to use
 
 Start with the web UI. Add the PWA if you want notifications on your phone. The
 Electron shell is a comfort upgrade, the Swift app is the good phone experience,
-the terminal client is the one to reach for if you live in tmux, and the Chrome
-extension is worth it specifically if you debug web front ends.
+and the Chrome extension is worth it specifically if you debug web front ends.
 
 None of them add capability the web UI lacks — they add ergonomics, native
 integration, and in the extension's case a much better way to point an agent at

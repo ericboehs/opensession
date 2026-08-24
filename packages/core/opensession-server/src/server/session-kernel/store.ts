@@ -1,0 +1,2510 @@
+/**
+ * Durable state for the session actor boundary.
+ *
+ * The SQLite file is a journal for decisions, not a second transcript store.
+ * A SessionKernel is the only writer. Read projections may consume changes,
+ * but they never participate in admission or recovery decisions.
+ */
+import { Database } from "bun:sqlite";
+import {
+  nextRunState,
+  type RunEvent,
+  type RunState,
+} from "./run-state-machine";
+import {
+  nextCreationState,
+  type CreationEvent,
+  type CreationState,
+} from "./creation-state-machine";
+import type { StagedCreationActorEffect } from "./creation-effect-protocol";
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync } from "fs";
+import { dirname } from "path";
+import { sessionsDir } from "../paths";
+
+export type DurableCommandStatus =
+  "pending" | "processing" | "completed" | "failed" | "indeterminate";
+
+export interface DurableCommandRecord {
+	sessionId: string;
+	requestId: string;
+	type: string;
+	payload: unknown;
+	payloadHash: string;
+	status: DurableCommandStatus;
+	result?: unknown;
+	error?: string;
+	createdAt: number;
+	updatedAt: number;
+	replaySafe: boolean;
+	retryable?: boolean;
+	acknowledgedAt?: number;
+	resultHash?: string;
+	terminalFailure: boolean;
+}
+
+export interface DurableRunState {
+	state: string;
+	since: string;
+	lastEvent?: string;
+	generation: number;
+	currentRunId?: string;
+	changeSeq: number;
+}
+
+export interface DurableTimer {
+	sessionId: string;
+	timerId: string;
+	kind: string;
+	dueAt: number;
+	token: string;
+	payload: unknown;
+	attempts: number;
+	nextAttemptAt: number;
+	lastError?: string;
+	deadLetteredAt?: number;
+	createdAt: number;
+}
+
+export type DurableDeliveryState = {
+  revision: number;
+  queued: unknown[];
+  dispatch?: unknown;
+  steered: unknown[];
+  pendingSteers: Array<{ item: unknown; index: number; preparedAt: number }>;
+  updatedAt: number;
+};
+
+export type DeliverySlot = "queued" | "dispatch" | "steered";
+
+export interface DurableOutboxItem {
+	id: number;
+	effectId: string;
+	effectKey: string;
+	sessionId: string;
+	kind: string;
+	payload: unknown;
+	attempts: number;
+	nextAttemptAt: number;
+	lastError?: string;
+	deadLetteredAt?: number;
+	createdAt: number;
+}
+
+const json = (value: unknown): string => JSON.stringify(value ?? null);
+const digest = (text: string): string =>
+	new Bun.CryptoHasher("sha256").update(text).digest("hex");
+const resultRecord = (value: unknown) => {
+	const text = json(value);
+	return {
+		text,
+		hash: digest(text),
+		terminalFailure:
+			!!value &&
+			typeof value === "object" &&
+			(value as Record<string, unknown>).__sessionKernelFailure === true,
+	};
+};
+const parsed = <T>(value: string | null | undefined): T | undefined => {
+	if (value == null) return undefined;
+	return JSON.parse(value) as T;
+};
+type ProcessOwnerIdentity = { token: string; bootId?: string; start?: string };
+function linuxBootId(): string | undefined {
+  try {
+    return readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
+  } catch {
+    return undefined;
+  }
+}
+function linuxProcessStart(pid: number): string | undefined {
+	try {
+		const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const fields = stat
+      .slice(stat.lastIndexOf(")") + 2)
+      .trim()
+      .split(/\s+/);
+		return fields[19];
+  } catch {
+    return undefined;
+  }
+}
+function parseOwnerIdentity(value: string): ProcessOwnerIdentity | undefined {
+	try {
+		const parsed = JSON.parse(value) as ProcessOwnerIdentity;
+		return typeof parsed?.token === "string" ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+function plausibleLegacyOwner(pid: number): boolean {
+	try {
+    const command = readFileSync(`/proc/${pid}/cmdline`, "utf8").replace(
+      /\0/g,
+      " ",
+    );
+		if (!command.includes("opensession.ts")) return false;
+    const environment = readFileSync(`/proc/${pid}/environ`, "utf8").split(
+      "\0",
+    );
+    const stateDir = environment
+      .find((entry) => entry.startsWith("OPENSESSION_STATE_DIR="))
+      ?.slice("OPENSESSION_STATE_DIR=".length);
+    const sessionOverride = environment
+      .find((entry) => entry.startsWith("OPENSESSION_SESSIONS_DIR="))
+      ?.slice("OPENSESSION_SESSIONS_DIR=".length);
+		if (sessionOverride && sessionOverride !== sessionsDir()) return false;
+		if (stateDir && !sessionsDir().startsWith(stateDir)) return false;
+		return true;
+	} catch {
+		// Non-Linux and unreadable process evidence fail closed during the one-time
+		// migration from pre-identity owner rows.
+		return true;
+	}
+}
+const ownerGlobal = globalThis as typeof globalThis & {
+	__opensessionSessionKernelOwnerId?: string;
+};
+const PROCESS_OWNER_ID = (ownerGlobal.__opensessionSessionKernelOwnerId ??=
+	JSON.stringify({
+		token: crypto.randomUUID(),
+		bootId: linuxBootId(),
+		start: linuxProcessStart(process.pid),
+	} satisfies ProcessOwnerIdentity));
+export const SESSION_KERNEL_SCHEMA_VERSION = 9;
+export const SESSION_KERNEL_MAX_CREATION_EFFECT_RECEIPTS = 256;
+
+export function sessionKernelDbPath(): string {
+	// Test processes must never open the live instance state. Tests that need
+	// restart persistence construct a store at an explicit temporary path.
+	if (process.env.NODE_ENV === "test") return ":memory:";
+	return `${sessionsDir()}/session-kernel.sqlite`;
+}
+
+export type RunEventDecision = {
+	sessionId: string;
+	event: RunEvent;
+	detail?: Record<string, unknown>;
+	runKey?: string;
+};
+
+export type CreationEventDecision = {
+  sessionId: string;
+  identity: string;
+  event: CreationEvent;
+  /** Effect result being applied, fenced against the current effect. */
+  effectId?: string;
+  /** Stable effect emitted by this reduction, when it advances physical work. */
+  nextEffectId?: string;
+  effect?: StagedCreationActorEffect;
+  detail?: Record<string, unknown>;
+};
+
+export type DurableCreationState = {
+  state: CreationState;
+  identity: string;
+  generation: number;
+  currentEffectId?: string;
+  completedEffectIds: string[];
+  changeSeq: number;
+  updatedAt: number;
+};
+
+export type CreationEventDecisionResult = {
+  accepted: boolean;
+  from?: CreationState;
+  to?: CreationState;
+  reason?:
+    | "invalid_transition"
+    | "identity_mismatch"
+    | "stale_effect"
+    | "invalid_effect"
+    | "effect_receipt_capacity";
+  state?: DurableCreationState;
+};
+
+export type RunEventDecisionResult = {
+	accepted: boolean;
+	from: RunState;
+	to: RunState;
+	reason?: "invalid_transition" | "stale_run";
+	currentRunId?: string;
+	rejectedRunId?: string;
+	state: DurableRunState;
+};
+
+export class SessionKernelStore {
+	private readonly db: Database;
+	private readonly closeable: boolean;
+	private readonly runStateCache = new Map<string, DurableRunState>();
+	private readonly dirtyChangeSessions = new Set<string>();
+	private readonly path: string;
+
+	constructor(path = sessionKernelDbPath()) {
+		this.path = path;
+		if (path !== ":memory:") {
+			const dir = dirname(path);
+			if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+		}
+		this.db = new Database(path);
+		this.closeable = true;
+		this.db.exec("PRAGMA journal_mode = WAL;");
+		this.db.exec("PRAGMA synchronous = FULL;");
+		this.db.exec("PRAGMA busy_timeout = 5000;");
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS session_kernel_owner (
+				singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+				owner_id TEXT NOT NULL,
+				pid INTEGER NOT NULL,
+				claimed_at INTEGER NOT NULL
+			);
+		`);
+		// Claim before inspecting or mutating any durable schema. A concurrent old
+		// actor must never observe migrations performed by a losing process.
+		this.claimWriter();
+		const schemaVersion = Number(
+			(this.db.query("PRAGMA user_version").get() as { user_version: number })
+				.user_version,
+		);
+		if (schemaVersion > SESSION_KERNEL_SCHEMA_VERSION)
+			throw new Error(
+				`Session kernel schema ${schemaVersion} is newer than supported ${SESSION_KERNEL_SCHEMA_VERSION}`,
+			);
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS session_kernel_owner (
+				singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+				owner_id TEXT NOT NULL,
+				pid INTEGER NOT NULL,
+				claimed_at INTEGER NOT NULL
+			);
+			CREATE TABLE IF NOT EXISTS session_kernel_migrations (
+				name TEXT PRIMARY KEY,
+				completed_at INTEGER NOT NULL
+			);
+			CREATE TABLE IF NOT EXISTS session_kernel_tombstones (
+				session_id TEXT PRIMARY KEY,
+				deleted_at INTEGER NOT NULL
+			);
+			CREATE TABLE IF NOT EXISTS session_kernel_state (
+				session_id TEXT PRIMARY KEY,
+				run_state TEXT NOT NULL DEFAULT 'idle',
+				run_since TEXT NOT NULL,
+				last_event TEXT,
+				generation INTEGER NOT NULL DEFAULT 0,
+				current_run_id TEXT,
+				change_seq INTEGER NOT NULL DEFAULT 0,
+				updated_at INTEGER NOT NULL
+			);
+			CREATE TABLE IF NOT EXISTS session_kernel_creation (
+				session_id TEXT PRIMARY KEY,
+				identity TEXT NOT NULL,
+				state TEXT NOT NULL,
+				generation INTEGER NOT NULL DEFAULT 0,
+				current_effect_id TEXT,
+				completed_effects TEXT NOT NULL DEFAULT '[]',
+				change_seq INTEGER NOT NULL DEFAULT 0,
+				updated_at INTEGER NOT NULL
+			);
+			CREATE TABLE IF NOT EXISTS session_kernel_asks (
+				session_id TEXT PRIMARY KEY,
+				revision INTEGER NOT NULL DEFAULT 0,
+				record TEXT NOT NULL,
+				updated_at INTEGER NOT NULL
+			);
+			CREATE TABLE IF NOT EXISTS session_kernel_delivery (
+				session_id TEXT PRIMARY KEY,
+				revision INTEGER NOT NULL DEFAULT 0,
+				queued TEXT NOT NULL DEFAULT '[]',
+				dispatch TEXT,
+				steered TEXT NOT NULL DEFAULT '[]',
+				pending_steers TEXT NOT NULL DEFAULT '[]',
+				updated_at INTEGER NOT NULL
+			);
+			CREATE TABLE IF NOT EXISTS session_kernel_commands (
+				session_id TEXT NOT NULL,
+				request_id TEXT NOT NULL,
+				type TEXT NOT NULL,
+				payload TEXT NOT NULL,
+				payload_hash TEXT,
+				status TEXT NOT NULL,
+				replay_safe INTEGER NOT NULL DEFAULT 0,
+				retryable INTEGER,
+				result TEXT,
+				result_hash TEXT,
+				terminal_failure INTEGER NOT NULL DEFAULT 0,
+				acknowledged_at INTEGER,
+				error TEXT,
+				created_at INTEGER NOT NULL,
+				updated_at INTEGER NOT NULL,
+				PRIMARY KEY (session_id, request_id)
+			);
+			CREATE TABLE IF NOT EXISTS session_kernel_changes (
+				session_id TEXT NOT NULL,
+				change_seq INTEGER NOT NULL,
+				kind TEXT NOT NULL,
+				payload TEXT NOT NULL,
+				created_at INTEGER NOT NULL,
+				PRIMARY KEY (session_id, change_seq)
+			);
+			CREATE TABLE IF NOT EXISTS session_kernel_timers (
+				session_id TEXT NOT NULL,
+				timer_id TEXT NOT NULL,
+				kind TEXT NOT NULL,
+				due_at INTEGER NOT NULL,
+				token TEXT,
+				payload TEXT NOT NULL,
+				attempts INTEGER NOT NULL DEFAULT 0,
+				next_attempt_at INTEGER NOT NULL DEFAULT 0,
+				last_error TEXT,
+				dead_lettered_at INTEGER,
+				created_at INTEGER NOT NULL DEFAULT 0,
+				PRIMARY KEY (session_id, timer_id)
+			);
+			CREATE INDEX IF NOT EXISTS idx_skt_due
+				ON session_kernel_timers(due_at);
+			CREATE TABLE IF NOT EXISTS session_kernel_outbox (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				effect_id TEXT NOT NULL,
+				effect_key TEXT NOT NULL,
+				session_id TEXT NOT NULL,
+				kind TEXT NOT NULL,
+				payload TEXT NOT NULL,
+				attempts INTEGER NOT NULL DEFAULT 0,
+				next_attempt_at INTEGER NOT NULL DEFAULT 0,
+				last_error TEXT,
+				dead_lettered_at INTEGER,
+				created_at INTEGER NOT NULL
+			);
+			CREATE INDEX IF NOT EXISTS idx_sko_session
+				ON session_kernel_outbox(session_id, id);
+		`);
+    const creationColumns = new Set(
+      (
+        this.db
+          .query("PRAGMA table_info(session_kernel_creation)")
+          .all() as Array<{ name: string }>
+      ).map((column) => column.name),
+    );
+    if (!creationColumns.has("completed_effects"))
+      this.db.exec(
+        "ALTER TABLE session_kernel_creation ADD COLUMN completed_effects TEXT NOT NULL DEFAULT '[]'",
+      );
+		const commandColumns = new Set(
+			(
+        this.db
+          .query("PRAGMA table_info(session_kernel_commands)")
+          .all() as Array<{ name: string }>
+			).map((column) => column.name),
+		);
+		if (!commandColumns.has("payload_hash"))
+      this.db.exec(
+        "ALTER TABLE session_kernel_commands ADD COLUMN payload_hash TEXT",
+      );
+		if (!commandColumns.has("replay_safe")) {
+      this.db.exec(
+        "ALTER TABLE session_kernel_commands ADD COLUMN replay_safe INTEGER NOT NULL DEFAULT 0",
+      );
+			// Pre-policy releases re-admitted every interrupted command. Preserve that
+			// contract across the upgrade instead of turning live receipts indeterminate.
+			this.db.run("UPDATE session_kernel_commands SET replay_safe = 1");
+		}
+		if (!commandColumns.has("retryable"))
+      this.db.exec(
+        "ALTER TABLE session_kernel_commands ADD COLUMN retryable INTEGER",
+      );
+		if (!commandColumns.has("result_hash"))
+      this.db.exec(
+        "ALTER TABLE session_kernel_commands ADD COLUMN result_hash TEXT",
+      );
+		if (!commandColumns.has("result_released"))
+      this.db.exec(
+        "ALTER TABLE session_kernel_commands ADD COLUMN result_released INTEGER NOT NULL DEFAULT 0",
+      );
+		if (schemaVersion < 6) {
+			this.db.exec("DROP INDEX IF EXISTS idx_skc_compact");
+			this.db.run(
+				`UPDATE session_kernel_commands SET result_released = 1
+				 WHERE result LIKE '%"__sessionKernelResultReleased":true%'`,
+			);
+		}
+		if (!commandColumns.has("terminal_failure")) {
+      this.db.exec(
+        "ALTER TABLE session_kernel_commands ADD COLUMN terminal_failure INTEGER NOT NULL DEFAULT 0",
+      );
+			this.db.run(
+				`UPDATE session_kernel_commands SET terminal_failure = 1
+				 WHERE result LIKE '%"__sessionKernelFailure":true%'`,
+			);
+		}
+		if (!commandColumns.has("acknowledged_at"))
+      this.db.exec(
+        "ALTER TABLE session_kernel_commands ADD COLUMN acknowledged_at INTEGER",
+      );
+		if (schemaVersion < 4) {
+		const unhashedCommands = this.db
+        .query(
+          "SELECT session_id, request_id, payload FROM session_kernel_commands WHERE payload_hash IS NULL",
+        )
+        .all() as Array<{
+        session_id: string;
+        request_id: string;
+        payload: string;
+      }>;
+			const setPayloadHash = this.db.query(
+				"UPDATE session_kernel_commands SET payload_hash = ? WHERE session_id = ? AND request_id = ?",
+			);
+			for (const command of unhashedCommands)
+				setPayloadHash.run(
+					digest(command.payload),
+					command.session_id,
+					command.request_id,
+				);
+			const unhashedResults = this.db
+        .query(
+          "SELECT session_id, request_id, result FROM session_kernel_commands WHERE result IS NOT NULL AND result_hash IS NULL",
+        )
+        .all() as Array<{
+        session_id: string;
+        request_id: string;
+        result: string;
+      }>;
+			const setResultHash = this.db.query(
+				"UPDATE session_kernel_commands SET result_hash = ? WHERE session_id = ? AND request_id = ?",
+			);
+			for (const command of unhashedResults)
+        setResultHash.run(
+          digest(command.result),
+          command.session_id,
+          command.request_id,
+        );
+		}
+
+		const outboxColumns = new Set(
+			(
+				this.db
+					.query("PRAGMA table_info(session_kernel_outbox)")
+					.all() as Array<{ name: string }>
+			).map((column) => column.name),
+		);
+		if (!outboxColumns.has("effect_id"))
+			this.db.exec(
+				"ALTER TABLE session_kernel_outbox ADD COLUMN effect_id TEXT",
+			);
+		if (!outboxColumns.has("effect_key"))
+			this.db.exec(
+				"ALTER TABLE session_kernel_outbox ADD COLUMN effect_key TEXT",
+			);
+		if (!outboxColumns.has("next_attempt_at"))
+			this.db.exec(
+				"ALTER TABLE session_kernel_outbox ADD COLUMN next_attempt_at INTEGER NOT NULL DEFAULT 0",
+			);
+		if (!outboxColumns.has("last_error"))
+			this.db.exec(
+				"ALTER TABLE session_kernel_outbox ADD COLUMN last_error TEXT",
+			);
+		if (!outboxColumns.has("dead_lettered_at"))
+			this.db.exec(
+				"ALTER TABLE session_kernel_outbox ADD COLUMN dead_lettered_at INTEGER",
+			);
+		const timerColumns = new Set(
+			(
+				this.db
+					.query("PRAGMA table_info(session_kernel_timers)")
+					.all() as Array<{ name: string }>
+			).map((column) => column.name),
+		);
+		if (!timerColumns.has("token")) {
+			this.db.exec("ALTER TABLE session_kernel_timers ADD COLUMN token TEXT");
+      this.db.run(
+        "UPDATE session_kernel_timers SET token = lower(hex(randomblob(16))) WHERE token IS NULL",
+      );
+		}
+		if (!timerColumns.has("attempts"))
+			this.db.exec(
+				"ALTER TABLE session_kernel_timers ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0",
+			);
+		if (!timerColumns.has("next_attempt_at"))
+			this.db.exec(
+				"ALTER TABLE session_kernel_timers ADD COLUMN next_attempt_at INTEGER NOT NULL DEFAULT 0",
+			);
+		if (!timerColumns.has("last_error"))
+			this.db.exec(
+				"ALTER TABLE session_kernel_timers ADD COLUMN last_error TEXT",
+			);
+		if (!timerColumns.has("dead_lettered_at"))
+			this.db.exec(
+				"ALTER TABLE session_kernel_timers ADD COLUMN dead_lettered_at INTEGER",
+			);
+		if (!timerColumns.has("created_at")) {
+			this.db.exec(
+				"ALTER TABLE session_kernel_timers ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0",
+			);
+      this.db.run(
+        "UPDATE session_kernel_timers SET created_at = due_at WHERE created_at = 0",
+      );
+		}
+		if (schemaVersion < 4)
+			this.db.run(
+				"UPDATE session_kernel_outbox SET effect_id = COALESCE(effect_id, 'legacy:' || id), effect_key = COALESCE(effect_key, 'legacy:' || id)",
+			);
+		this.db.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_sko_effect ON session_kernel_outbox(session_id, kind, effect_key)",
+    );
+		this.db.exec(`
+			CREATE INDEX IF NOT EXISTS idx_skc_active_created
+				ON session_kernel_commands(created_at)
+				WHERE status IN ('pending', 'processing', 'indeterminate');
+			CREATE INDEX IF NOT EXISTS idx_skc_compact
+				ON session_kernel_commands(acknowledged_at)
+				WHERE status = 'completed' AND terminal_failure = 0
+				  AND acknowledged_at IS NOT NULL AND result_hash IS NOT NULL
+				  AND result_released = 0 AND length(result) > 65536;
+			CREATE INDEX IF NOT EXISTS idx_skt_pending
+				ON session_kernel_timers(next_attempt_at, due_at)
+				WHERE dead_lettered_at IS NULL;
+			CREATE INDEX IF NOT EXISTS idx_skt_kind_pending
+				ON session_kernel_timers(kind, next_attempt_at, due_at)
+				WHERE dead_lettered_at IS NULL;
+			CREATE INDEX IF NOT EXISTS idx_skt_live_created
+				ON session_kernel_timers(created_at)
+				WHERE dead_lettered_at IS NULL;
+			CREATE INDEX IF NOT EXISTS idx_skt_dead
+				ON session_kernel_timers(dead_lettered_at DESC)
+				WHERE dead_lettered_at IS NOT NULL;
+			CREATE INDEX IF NOT EXISTS idx_sko_pending
+				ON session_kernel_outbox(next_attempt_at, id)
+				WHERE dead_lettered_at IS NULL;
+			CREATE INDEX IF NOT EXISTS idx_sko_kind_pending
+				ON session_kernel_outbox(kind, next_attempt_at, id)
+				WHERE dead_lettered_at IS NULL;
+			CREATE INDEX IF NOT EXISTS idx_sko_live_created
+				ON session_kernel_outbox(created_at)
+				WHERE dead_lettered_at IS NULL;
+			CREATE INDEX IF NOT EXISTS idx_sko_dead
+				ON session_kernel_outbox(dead_lettered_at DESC)
+				WHERE dead_lettered_at IS NOT NULL;
+		`);
+    this.db.exec(
+      "DROP INDEX IF EXISTS idx_skc_updated; DROP INDEX IF EXISTS idx_skc_status_created;",
+    );
+		this.db.exec(`PRAGMA user_version = ${SESSION_KERNEL_SCHEMA_VERSION}`);
+		if (path !== ":memory:") {
+			try {
+				chmodSync(path, 0o600);
+			} catch {}
+		}
+    // A processing execution dies with its actor. Keep replay-safe intent pending
+    // so the client's receipt outbox can re-admit the exact same command id.
+		this.db.run(
+			"UPDATE session_kernel_commands SET status = 'pending', error = 'actor restarted before acknowledgement', updated_at = ? WHERE status = 'processing' AND replay_safe = 1",
+			[Date.now()],
+		);
+		// Pending means the actor committed admission but never marked execution
+		// started. No physical effect can have run, so preserve the receipt as a
+		// retryable failure instead of leaving readiness degraded forever.
+		this.db.run(
+			`UPDATE session_kernel_commands
+			 SET status = 'failed', replay_safe = 1, retryable = 1,
+			     error = 'actor restarted before execution admission', updated_at = ?
+			 WHERE status = 'pending'`,
+			[Date.now()],
+		);
+		this.db.run(
+			"UPDATE session_kernel_commands SET status = 'indeterminate', error = 'actor restarted after execution began', retryable = 0, updated_at = ? WHERE status = 'processing'",
+			[Date.now()],
+		);
+		const stateRows = this.db
+      .query(
+        `SELECT session_id, run_state, run_since, last_event, generation,
+				current_run_id, change_seq FROM session_kernel_state`,
+      )
+			.all() as Record<string, unknown>[];
+		for (const row of stateRows) {
+			this.dirtyChangeSessions.add(String(row.session_id));
+			this.runStateCache.set(String(row.session_id), {
+				state: String(row.run_state),
+				since: String(row.run_since),
+				lastEvent: row.last_event == null ? undefined : String(row.last_event),
+				generation: Number(row.generation),
+				currentRunId:
+					row.current_run_id == null ? undefined : String(row.current_run_id),
+				changeSeq: Number(row.change_seq),
+			});
+		}
+	}
+
+	private claimWriter(): void {
+		const transaction = this.db.transaction(() => {
+			const current = this.db
+        .query(
+          "SELECT owner_id, pid FROM session_kernel_owner WHERE singleton = 1",
+        )
+				.get() as { owner_id: string; pid: number } | null;
+			if (current && current.owner_id !== PROCESS_OWNER_ID) {
+				let alive = false;
+				try {
+					process.kill(current.pid, 0);
+					alive = true;
+				} catch {}
+				if (alive) {
+					const recorded = parseOwnerIdentity(current.owner_id);
+					const bootId = linuxBootId();
+					const start = linuxProcessStart(current.pid);
+					if (
+            recorded?.bootId &&
+            recorded.start &&
+            bootId &&
+            start &&
+						(recorded.bootId !== bootId || recorded.start !== start)
+          )
+            alive = false;
+          else if (!recorded && !plausibleLegacyOwner(current.pid))
+            alive = false;
+				}
+				if (alive)
+					throw new Error(
+						`Session kernel already owned by live process ${current.pid}`,
+					);
+			}
+			this.db.run(
+				`INSERT INTO session_kernel_owner (singleton, owner_id, pid, claimed_at)
+				 VALUES (1, ?, ?, ?)
+				 ON CONFLICT(singleton) DO UPDATE SET owner_id = excluded.owner_id,
+					pid = excluded.pid, claimed_at = excluded.claimed_at`,
+				[PROCESS_OWNER_ID, process.pid, Date.now()],
+			);
+		});
+		transaction.immediate();
+	}
+
+	close(): void {
+		if (this.closeable) this.db.close();
+	}
+
+  command(
+    sessionId: string,
+    requestId: string,
+  ): DurableCommandRecord | undefined {
+		const row = this.db
+      .query(
+        `SELECT session_id, request_id, type, payload, payload_hash, status, replay_safe, retryable, result, result_hash, terminal_failure, acknowledged_at, error,
+				created_at, updated_at FROM session_kernel_commands
+				WHERE session_id = ? AND request_id = ?`,
+      )
+			.get(sessionId, requestId) as Record<string, unknown> | null;
+		if (!row) return undefined;
+		return {
+			sessionId: String(row.session_id),
+			requestId: String(row.request_id),
+			type: String(row.type),
+			payload: parsed(row.payload as string),
+			payloadHash: String(row.payload_hash),
+			status: row.status as DurableCommandStatus,
+			result: parsed(row.result as string | null),
+			error: row.error == null ? undefined : String(row.error),
+			createdAt: Number(row.created_at),
+			updatedAt: Number(row.updated_at),
+			replaySafe: Number(row.replay_safe) === 1,
+      retryable:
+        row.retryable == null ? undefined : Number(row.retryable) === 1,
+			acknowledgedAt:
+				row.acknowledged_at == null ? undefined : Number(row.acknowledged_at),
+			resultHash: row.result_hash == null ? undefined : String(row.result_hash),
+			terminalFailure: Number(row.terminal_failure) === 1,
+		};
+	}
+
+	acceptCommand(input: {
+		sessionId: string;
+		requestId: string;
+		type: string;
+		payload?: unknown;
+		replaySafe?: boolean;
+	}): DurableCommandRecord {
+		const now = Date.now();
+		const payloadText = json(input.payload);
+		const payloadHash = digest(payloadText);
+		this.db.run(
+			`INSERT INTO session_kernel_commands
+				(session_id, request_id, type, payload, payload_hash, status, replay_safe, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+			 ON CONFLICT(session_id, request_id) DO NOTHING`,
+      [
+        input.sessionId,
+        input.requestId,
+        input.type,
+        payloadText,
+        payloadHash,
+        input.replaySafe ? 1 : 0,
+        now,
+        now,
+      ],
+		);
+		let record = this.command(input.sessionId, input.requestId);
+		if (!record) throw new Error("Session command was not persisted");
+    if (record.type !== input.type || record.payloadHash !== payloadHash) {
+			throw new Error(
+				`Session command id ${input.requestId} was reused with another payload`,
+			);
+		}
+    if (
+      input.replaySafe &&
+      !record.replaySafe &&
+      record.status !== "indeterminate"
+    ) {
+			this.db.run(
+				"UPDATE session_kernel_commands SET replay_safe = 1 WHERE session_id = ? AND request_id = ?",
+				[input.sessionId, input.requestId],
+			);
+			record = this.command(input.sessionId, input.requestId)!;
+		}
+		return record;
+	}
+
+	markProcessing(sessionId: string, requestId: string): void {
+		this.db.run(
+			`UPDATE session_kernel_commands SET status = 'processing', payload = 'null', error = NULL, retryable = NULL,
+				updated_at = ? WHERE session_id = ? AND request_id = ?`,
+			[Date.now(), sessionId, requestId],
+		);
+	}
+
+	completeCommand(sessionId: string, requestId: string, result: unknown): void {
+		const stored = resultRecord(result);
+		this.db.run(
+			`UPDATE session_kernel_commands SET status = 'completed', payload = 'null',
+				result = ?, result_hash = ?, result_released = 0, terminal_failure = ?, error = NULL,
+				retryable = NULL, updated_at = ? WHERE session_id = ? AND request_id = ?`,
+      [
+        stored.text,
+        stored.hash,
+        stored.terminalFailure ? 1 : 0,
+        Date.now(),
+        sessionId,
+        requestId,
+      ],
+		);
+	}
+
+	failCommand(
+		sessionId: string,
+		requestId: string,
+		error: string,
+		retryable = false,
+	): void {
+		this.db.run(
+			`UPDATE session_kernel_commands SET status = 'failed', payload = 'null', error = ?, retryable = ?,
+				updated_at = ? WHERE session_id = ? AND request_id = ?`,
+      [
+        error.slice(0, 2_000),
+        retryable ? 1 : 0,
+        Date.now(),
+        sessionId,
+        requestId,
+      ],
+		);
+	}
+
+	runState(sessionId: string): DurableRunState {
+		const state = this.runStateCache.get(sessionId);
+		return state
+			? { ...state }
+			: {
+					state: "idle",
+					since: new Date(0).toISOString(),
+					generation: 0,
+					changeSeq: 0,
+				};
+	}
+
+	runStates(): Array<DurableRunState & { sessionId: string }> {
+		return [...this.runStateCache].map(([sessionId, state]) => ({
+			sessionId,
+			...state,
+		}));
+	}
+
+	appendChange(sessionId: string, kind: string, payload?: unknown): number {
+		const now = Date.now();
+		let changeSeq = 0;
+		const tx = this.db.transaction(() => {
+			const prior = this.runState(sessionId);
+			changeSeq = prior.changeSeq + 1;
+			this.db.run(
+				`INSERT INTO session_kernel_state
+					(session_id, run_state, run_since, last_event, generation,
+					 current_run_id, change_seq, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+				 ON CONFLICT(session_id) DO UPDATE SET
+					change_seq = excluded.change_seq,
+					updated_at = excluded.updated_at`,
+				[
+					sessionId,
+					prior.state,
+					prior.since === new Date(0).toISOString()
+						? new Date(now).toISOString()
+						: prior.since,
+					prior.lastEvent ?? null,
+					prior.generation,
+					prior.currentRunId ?? null,
+					changeSeq,
+					now,
+				],
+			);
+			this.db.run(
+				`INSERT INTO session_kernel_changes
+					(session_id, change_seq, kind, payload, created_at)
+				 VALUES (?, ?, ?, ?, ?)`,
+				[sessionId, changeSeq, kind, json(payload), now],
+			);
+		});
+		tx.immediate();
+		const prior = this.runState(sessionId);
+		this.runStateCache.set(sessionId, { ...prior, changeSeq });
+		this.dirtyChangeSessions.add(sessionId);
+		return changeSeq;
+	}
+
+	changesSince(
+		sessionId: string,
+		afterChangeSeq: number,
+		limit = 500,
+  ): Array<{
+    changeSeq: number;
+    kind: string;
+    payload: unknown;
+    createdAt: number;
+  }> {
+		const rows = this.db
+      .query(
+        `SELECT change_seq, kind, payload, created_at
+				FROM session_kernel_changes
+				WHERE session_id = ? AND change_seq > ?
+				ORDER BY change_seq LIMIT ?`,
+      )
+			.all(sessionId, afterChangeSeq, limit) as Record<string, unknown>[];
+		return rows.map((row) => ({
+			changeSeq: Number(row.change_seq),
+			kind: String(row.kind),
+			payload: parsed(row.payload as string),
+			createdAt: Number(row.created_at),
+		}));
+	}
+
+  creationState(sessionId: string): DurableCreationState | undefined {
+    const row = this.db
+      .query(
+        `SELECT identity, state, generation, current_effect_id, completed_effects, change_seq, updated_at
+         FROM session_kernel_creation WHERE session_id = ?`,
+      )
+      .get(sessionId) as Record<string, unknown> | null;
+    if (!row) return undefined;
+    return {
+      identity: String(row.identity),
+      state: String(row.state) as CreationState,
+      generation: Number(row.generation),
+      currentEffectId:
+        row.current_effect_id == null
+          ? undefined
+          : String(row.current_effect_id),
+      completedEffectIds: [
+        ...(parsed<string[]>(row.completed_effects as string) ?? []),
+      ],
+      changeSeq: Number(row.change_seq),
+      updatedAt: Number(row.updated_at),
+    };
+  }
+
+  applyCreationEvent(
+    input: CreationEventDecision,
+  ): CreationEventDecisionResult {
+    if (this.isTombstoned(input.sessionId))
+      throw new Error(`Session ${input.sessionId} was deleted`);
+    const now = Date.now();
+    let result!: CreationEventDecisionResult;
+    const tx = this.db.transaction(() => {
+      const prior = this.creationState(input.sessionId);
+      if (prior && prior.identity !== input.identity) {
+        result = {
+          accepted: false,
+          from: prior.state,
+          to: prior.state,
+          reason: "identity_mismatch",
+          state: prior,
+        };
+        return;
+      }
+      const requiresEffectResult =
+        !!prior?.currentEffectId &&
+        [
+          "preparation_started",
+          "opening_dispatched",
+          "succeeded",
+          "failed",
+        ].includes(input.event);
+      if (
+        (requiresEffectResult || input.effectId !== undefined) &&
+        prior?.currentEffectId !== input.effectId
+      ) {
+        result = {
+          accepted: false,
+          from: prior?.state,
+          to: prior?.state,
+          reason: "stale_effect",
+          state: prior,
+        };
+        return;
+      }
+      const from = prior?.state;
+      const to = nextCreationState(from, input.event);
+      if (!to) {
+        result = {
+          accepted: false,
+          from,
+          to: from,
+          reason: "invalid_transition",
+          state: prior,
+        };
+        return;
+      }
+      const run = this.runState(input.sessionId);
+      const changeSeq = run.changeSeq + 1;
+      const generation = prior?.generation ?? 1;
+      const effect = input.effect;
+      const completedEffectIds = [...(prior?.completedEffectIds ?? [])];
+      const completesNewEffect =
+        input.effectId !== undefined &&
+        !completedEffectIds.includes(input.effectId);
+      if (
+        (completesNewEffect || effect !== undefined) &&
+        completedEffectIds.length >=
+          SESSION_KERNEL_MAX_CREATION_EFFECT_RECEIPTS
+      ) {
+        result = {
+          accepted: false,
+          from,
+          to: from,
+          reason: "effect_receipt_capacity",
+          state: prior,
+        };
+        return;
+      }
+      if (completesNewEffect) completedEffectIds.push(input.effectId!);
+      const invalidEffect =
+        (input.nextEffectId !== undefined && !effect) ||
+        (!!effect && input.nextEffectId !== effect.effectKey) ||
+        (!!effect && completedEffectIds.includes(effect.effectKey)) ||
+        (!!effect &&
+          (effect.payload.creationIdentity !== input.identity ||
+            effect.payload.creationGeneration !== generation)) ||
+        (!!effect &&
+          input.event === "opening_dispatched" &&
+          effect.kind !== "creation_opening_turn") ||
+        (!!effect &&
+          input.event === "preparation_started" &&
+          effect.kind === "creation_opening_turn") ||
+        (!!effect &&
+          !["preparation_started", "opening_dispatched"].includes(input.event));
+      if (invalidEffect) {
+        result = {
+          accepted: false,
+          from,
+          to: from,
+          reason: "invalid_effect",
+          state: prior,
+        };
+        return;
+      }
+      const currentEffectId = ["ready", "failed"].includes(to)
+        ? undefined
+        : effect?.effectKey ??
+          (input.effectId === undefined ? prior?.currentEffectId : undefined);
+      this.db.run(
+        `INSERT INTO session_kernel_creation
+          (session_id, identity, state, generation, current_effect_id,
+           completed_effects, change_seq, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET
+          state = excluded.state,
+          generation = excluded.generation,
+          current_effect_id = excluded.current_effect_id,
+          completed_effects = excluded.completed_effects,
+          change_seq = excluded.change_seq,
+          updated_at = excluded.updated_at`,
+        [
+          input.sessionId,
+          input.identity,
+          to,
+          generation,
+          currentEffectId ?? null,
+          json(completedEffectIds),
+          changeSeq,
+          now,
+        ],
+      );
+      this.db.run(
+        `INSERT INTO session_kernel_state
+          (session_id, run_state, run_since, last_event, generation,
+           current_run_id, change_seq, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET
+          change_seq = excluded.change_seq,
+          updated_at = excluded.updated_at`,
+        [
+          input.sessionId,
+          run.state,
+          run.since === new Date(0).toISOString()
+            ? new Date(now).toISOString()
+            : run.since,
+          run.lastEvent ?? null,
+          run.generation,
+          run.currentRunId ?? null,
+          changeSeq,
+          now,
+        ],
+      );
+      if (effect)
+        this.enqueueOutbox(
+          input.sessionId,
+          effect.kind,
+          effect.payload,
+          effect.effectKey,
+        );
+      this.db.run(
+        `INSERT INTO session_kernel_changes
+          (session_id, change_seq, kind, payload, created_at)
+         VALUES (?, ?, 'creation_state', ?, ?)`,
+        [
+          input.sessionId,
+          changeSeq,
+          json({
+            identity: input.identity,
+            state: to,
+            event: input.event,
+            effectId: input.effectId,
+            nextEffectId: input.nextEffectId,
+            detail: input.detail,
+          }),
+          now,
+        ],
+      );
+      const state: DurableCreationState = {
+        identity: input.identity,
+        state: to,
+        generation,
+        currentEffectId,
+        completedEffectIds,
+        changeSeq,
+        updatedAt: now,
+      };
+      result = { accepted: true, from, to, state };
+    });
+    tx.immediate();
+    if (result.accepted) {
+      const run = this.runState(input.sessionId);
+      this.runStateCache.set(input.sessionId, {
+        ...run,
+        changeSeq: result.state!.changeSeq,
+      });
+      this.dirtyChangeSessions.add(input.sessionId);
+    }
+    return result;
+  }
+
+	applyRunEvent(input: RunEventDecision): RunEventDecisionResult {
+		const now = Date.now();
+		const since = new Date(now).toISOString();
+		let result!: RunEventDecisionResult;
+		const tx = this.db.transaction(() => {
+			const prior = this.runState(input.sessionId);
+			const from = prior.state as RunState;
+			const to = nextRunState(from, input.event);
+			if (!to) {
+        result = {
+          accepted: false,
+          from,
+          to: from,
+          reason: "invalid_transition",
+          state: prior,
+        };
+				return;
+			}
+			if (
+				input.event === "run_registered" &&
+				input.runKey &&
+				prior.currentRunId &&
+				prior.currentRunId !== input.runKey &&
+				["running", "ask_blocked", "interrupted", "reattaching"].includes(from)
+			) {
+				result = {
+					accepted: false,
+					from,
+					to: from,
+					reason: "stale_run",
+					currentRunId: prior.currentRunId,
+					rejectedRunId: input.runKey,
+					state: prior,
+				};
+				return;
+			}
+			const registers =
+				!!input.runKey &&
+        (input.event === "run_registered" ||
+          input.event === "boot_journal_found");
+      const generation =
+        registers && prior.currentRunId !== input.runKey
+				? prior.generation + 1
+				: prior.generation;
+			const currentRunId = ["idle", "stopped", "failed"].includes(to)
+				? undefined
+        : registers
+          ? input.runKey
+          : prior.currentRunId;
+			const changeSeq = prior.changeSeq + 1;
+			this.db.run(
+				`INSERT INTO session_kernel_state
+					(session_id, run_state, run_since, last_event, generation,
+					 current_run_id, change_seq, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+				 ON CONFLICT(session_id) DO UPDATE SET
+					run_state = excluded.run_state,
+					run_since = excluded.run_since,
+					last_event = excluded.last_event,
+					generation = excluded.generation,
+					current_run_id = excluded.current_run_id,
+					change_seq = excluded.change_seq,
+					updated_at = excluded.updated_at`,
+        [
+          input.sessionId,
+          to,
+          since,
+          input.event,
+          generation,
+          currentRunId ?? null,
+          changeSeq,
+          now,
+        ],
+			);
+			this.db.run(
+				`INSERT INTO session_kernel_changes
+					(session_id, change_seq, kind, payload, created_at)
+				 VALUES (?, ?, 'run_state', ?, ?)`,
+        [
+          input.sessionId,
+          changeSeq,
+          json({ state: to, event: input.event, detail: input.detail }),
+          now,
+        ],
+			);
+			const state: DurableRunState = {
+				state: to,
+				since,
+				lastEvent: input.event,
+				generation,
+				currentRunId,
+				changeSeq,
+			};
+			result = { accepted: true, from, to, state };
+		});
+		tx.immediate();
+		if (result.accepted) {
+			this.runStateCache.set(input.sessionId, result.state);
+			this.dirtyChangeSessions.add(input.sessionId);
+		}
+		return result;
+	}
+
+	setRunState(input: {
+		sessionId: string;
+		state: string;
+		event: string;
+		detail?: unknown;
+		generation?: number;
+		currentRunId?: string | null;
+	}): DurableRunState {
+		const now = Date.now();
+		const since = new Date(now).toISOString();
+		const tx = this.db.transaction(() => {
+			const prior = this.runState(input.sessionId);
+			const changeSeq = prior.changeSeq + 1;
+			this.db.run(
+				`INSERT INTO session_kernel_state
+					(session_id, run_state, run_since, last_event, generation,
+					 current_run_id, change_seq, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+				 ON CONFLICT(session_id) DO UPDATE SET
+					run_state = excluded.run_state,
+					run_since = excluded.run_since,
+					last_event = excluded.last_event,
+					generation = excluded.generation,
+					current_run_id = excluded.current_run_id,
+					change_seq = excluded.change_seq,
+					updated_at = excluded.updated_at`,
+				[
+					input.sessionId,
+					input.state,
+					since,
+					input.event,
+					input.generation ?? prior.generation,
+					["idle", "stopped", "failed"].includes(input.state)
+						? null
+						: ( input.currentRunId ?? prior.currentRunId ?? null),
+					changeSeq,
+					now,
+				],
+			);
+			this.db.run(
+				`INSERT INTO session_kernel_changes
+					(session_id, change_seq, kind, payload, created_at)
+				 VALUES (?, ?, 'run_state', ?, ?)`,
+				[
+					input.sessionId,
+					changeSeq,
+          json({
+            state: input.state,
+            event: input.event,
+            detail: input.detail,
+          }),
+					now,
+				],
+			);
+		});
+		tx.immediate();
+		const next: DurableRunState = {
+			state: input.state,
+			since,
+			lastEvent: input.event,
+			generation: input.generation ?? this.runState(input.sessionId).generation,
+			currentRunId: ["idle", "stopped", "failed"].includes(input.state)
+				? undefined
+				: ( input.currentRunId ?? this.runState(input.sessionId).currentRunId),
+			changeSeq: this.runState(input.sessionId).changeSeq + 1,
+		};
+		this.runStateCache.set(input.sessionId, next);
+		this.dirtyChangeSessions.add(input.sessionId);
+		return next;
+	}
+
+	isTombstoned(sessionId: string, now = Date.now()): boolean {
+		const row = this.db
+      .query(
+        "SELECT deleted_at FROM session_kernel_tombstones WHERE session_id = ?",
+      )
+			.get(sessionId) as { deleted_at: number } | null;
+		if (!row) return false;
+		void now;
+		return true;
+	}
+
+	tombstoneSession(sessionId: string): void {
+		const tx = this.db.transaction(() => {
+			for (const table of [
+				"session_kernel_state",
+        "session_kernel_creation",
+        "session_kernel_asks",
+        "session_kernel_delivery",
+				"session_kernel_commands",
+				"session_kernel_changes",
+				"session_kernel_timers",
+				"session_kernel_outbox",
+			])
+				this.db.run(`DELETE FROM ${table} WHERE session_id = ?`, [sessionId]);
+			this.db.run(
+				`INSERT INTO session_kernel_tombstones (session_id, deleted_at) VALUES (?, ?)
+				 ON CONFLICT(session_id) DO UPDATE SET deleted_at = excluded.deleted_at`,
+				[sessionId, Date.now()],
+			);
+		});
+		tx.immediate();
+		this.runStateCache.delete(sessionId);
+		this.dirtyChangeSessions.delete(sessionId);
+	}
+
+	clearSession(sessionId: string): void {
+		const tx = this.db.transaction(() => {
+			for (const table of [
+				"session_kernel_state",
+        "session_kernel_creation",
+        "session_kernel_asks",
+        "session_kernel_delivery",
+				"session_kernel_commands",
+				"session_kernel_changes",
+				"session_kernel_timers",
+				"session_kernel_outbox",
+			]) {
+				this.db.run(`DELETE FROM ${table} WHERE session_id = ?`, [sessionId]);
+			}
+		});
+		tx.immediate();
+		this.runStateCache.delete(sessionId);
+		this.dirtyChangeSessions.delete(sessionId);
+	}
+
+  askMigrationComplete(): boolean {
+    return !!this.db
+      .query("SELECT 1 FROM session_kernel_migrations WHERE name = 'ask_v1'")
+      .get();
+  }
+
+  markAskMigrationComplete(): void {
+    this.db.run(
+      "INSERT OR IGNORE INTO session_kernel_migrations (name, completed_at) VALUES ('ask_v1', ?)",
+      [Date.now()],
+    );
+  }
+
+  deliveryMigrationComplete(): boolean {
+    return !!this.db
+      .query(
+        "SELECT 1 FROM session_kernel_migrations WHERE name = 'delivery_v1'",
+      )
+      .get();
+  }
+
+  markDeliveryMigrationComplete(): void {
+    this.db.run(
+      "INSERT OR IGNORE INTO session_kernel_migrations (name, completed_at) VALUES ('delivery_v1', ?)",
+      [Date.now()],
+    );
+  }
+
+  askSnapshot(sessionId: string): unknown | undefined {
+    const row = this.db
+      .query("SELECT record FROM session_kernel_asks WHERE session_id = ?")
+      .get(sessionId) as { record: string } | null;
+    return row ? parsed(row.record) : undefined;
+  }
+
+  askEntries(): Array<[string, unknown]> {
+    return (
+      this.db
+        .query(
+          "SELECT session_id, record FROM session_kernel_asks ORDER BY session_id",
+        )
+        .all() as Array<{ session_id: string; record: string }>
+    ).map((row) => [row.session_id, parsed(row.record)]);
+  }
+
+  private mutateAskRecord(
+    sessionId: string,
+    value: unknown | undefined,
+  ): boolean {
+    if (value !== undefined && this.isTombstoned(sessionId))
+      throw new Error(`Session ${sessionId} was deleted`);
+    const existed = this.askSnapshot(sessionId) !== undefined;
+    if (value === undefined && !existed) return false;
+    const now = Date.now();
+    let nextRunState!: DurableRunState;
+    const tx = this.db.transaction(() => {
+      if (value === undefined)
+        this.db.run("DELETE FROM session_kernel_asks WHERE session_id = ?", [
+          sessionId,
+        ]);
+      else {
+        const prior = this.db
+          .query(
+            "SELECT revision FROM session_kernel_asks WHERE session_id = ?",
+          )
+          .get(sessionId) as { revision: number } | null;
+        this.db.run(
+          `INSERT INTO session_kernel_asks
+					 (session_id, revision, record, updated_at) VALUES (?, ?, ?, ?)
+					 ON CONFLICT(session_id) DO UPDATE SET revision = excluded.revision,
+					 record = excluded.record, updated_at = excluded.updated_at`,
+          [sessionId, Number(prior?.revision ?? 0) + 1, json(value), now],
+        );
+      }
+      const priorRun = this.runState(sessionId);
+      const changeSeq = priorRun.changeSeq + 1;
+      const since =
+        priorRun.since === new Date(0).toISOString()
+          ? new Date(now).toISOString()
+          : priorRun.since;
+      this.db.run(
+        `INSERT INTO session_kernel_state
+				 (session_id, run_state, run_since, last_event, generation,
+				  current_run_id, change_seq, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+				 ON CONFLICT(session_id) DO UPDATE SET
+				 change_seq = excluded.change_seq, updated_at = excluded.updated_at`,
+        [
+          sessionId,
+          priorRun.state,
+          since,
+          priorRun.lastEvent ?? null,
+          priorRun.generation,
+          priorRun.currentRunId ?? null,
+          changeSeq,
+          now,
+        ],
+      );
+      this.db.run(
+        `INSERT INTO session_kernel_changes
+				 (session_id, change_seq, kind, payload, created_at)
+				 VALUES (?, ?, 'ask_state', ?, ?)`,
+        [sessionId, changeSeq, json({ active: value !== undefined }), now],
+      );
+      nextRunState = { ...priorRun, since, changeSeq };
+    });
+    tx.immediate();
+    this.runStateCache.set(sessionId, nextRunState);
+    this.dirtyChangeSessions.add(sessionId);
+    return existed;
+  }
+
+  setAskRecord(sessionId: string, value: unknown): void {
+    this.mutateAskRecord(sessionId, value);
+  }
+
+  deleteAskRecord(sessionId: string): boolean {
+    return this.mutateAskRecord(sessionId, undefined);
+  }
+
+  clearAskRecords(): void {
+    for (const [sessionId] of this.askEntries())
+      this.deleteAskRecord(sessionId);
+  }
+
+  private deliveryRow(sessionId: string): DurableDeliveryState {
+    const row = this.db
+      .query(
+        "SELECT revision, queued, dispatch, steered, pending_steers, updated_at FROM session_kernel_delivery WHERE session_id = ?",
+      )
+      .get(sessionId) as Record<string, unknown> | null;
+    if (!row)
+      return {
+        revision: 0,
+        queued: [],
+        steered: [],
+        pendingSteers: [],
+        updatedAt: 0,
+      };
+    return {
+      revision: Number(row.revision),
+      queued: parsed<unknown[]>(String(row.queued)) ?? [],
+      dispatch: parsed(row.dispatch as string | null),
+      steered: parsed<unknown[]>(String(row.steered)) ?? [],
+      pendingSteers:
+        parsed<Array<{ item: unknown; index: number; preparedAt: number }>>(
+          String(row.pending_steers),
+        ) ?? [],
+      updatedAt: Number(row.updated_at),
+    };
+  }
+
+  deliverySnapshot(sessionId: string): DurableDeliveryState {
+    return this.deliveryRow(sessionId);
+  }
+
+  deliveryEntries(slot: DeliverySlot): Array<[string, unknown]> {
+    const column =
+      slot === "queued"
+        ? "queued"
+        : slot === "steered"
+          ? "steered"
+          : "dispatch";
+    const rows = this.db
+      .query(
+        `SELECT session_id, ${column} AS value FROM session_kernel_delivery
+			 WHERE ${column} IS NOT NULL${slot === "dispatch" ? "" : ` AND ${column} != '[]'`}`,
+      )
+      .all() as Array<{ session_id: string; value: string }>;
+    return rows.map((row) => [row.session_id, parsed(row.value)]);
+  }
+
+  private mutateDelivery(
+    sessionId: string,
+    kind: string,
+    mutate: (state: DurableDeliveryState) => unknown,
+  ): { state: DurableDeliveryState; result: unknown } {
+    if (this.isTombstoned(sessionId))
+      throw new Error(`Session ${sessionId} was deleted`);
+    let state!: DurableDeliveryState;
+    let result: unknown;
+    let nextRunState!: DurableRunState;
+    const now = Date.now();
+    const tx = this.db.transaction(() => {
+      const priorDelivery = this.deliveryRow(sessionId);
+      const working: DurableDeliveryState = {
+        ...priorDelivery,
+        queued: [...priorDelivery.queued],
+        steered: [...priorDelivery.steered],
+        pendingSteers: [...priorDelivery.pendingSteers],
+      };
+      result = mutate(working);
+      state = {
+        ...working,
+        revision: priorDelivery.revision + 1,
+        updatedAt: now,
+      };
+      this.db.run(
+        `INSERT INTO session_kernel_delivery
+				 (session_id, revision, queued, dispatch, steered, pending_steers, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?)
+				 ON CONFLICT(session_id) DO UPDATE SET
+				 revision = excluded.revision, queued = excluded.queued,
+				 dispatch = excluded.dispatch, steered = excluded.steered,
+				 pending_steers = excluded.pending_steers,
+				 updated_at = excluded.updated_at`,
+        [
+          sessionId,
+          state.revision,
+          json(state.queued),
+          state.dispatch === undefined ? null : json(state.dispatch),
+          json(state.steered),
+          json(state.pendingSteers),
+          now,
+        ],
+      );
+      const priorRun = this.runState(sessionId);
+      const changeSeq = priorRun.changeSeq + 1;
+      const since =
+        priorRun.since === new Date(0).toISOString()
+          ? new Date(now).toISOString()
+          : priorRun.since;
+      this.db.run(
+        `INSERT INTO session_kernel_state
+				 (session_id, run_state, run_since, last_event, generation,
+				  current_run_id, change_seq, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+				 ON CONFLICT(session_id) DO UPDATE SET
+				 change_seq = excluded.change_seq, updated_at = excluded.updated_at`,
+        [
+          sessionId,
+          priorRun.state,
+          since,
+          priorRun.lastEvent ?? null,
+          priorRun.generation,
+          priorRun.currentRunId ?? null,
+          changeSeq,
+          now,
+        ],
+      );
+      this.db.run(
+        `INSERT INTO session_kernel_changes
+				 (session_id, change_seq, kind, payload, created_at)
+				 VALUES (?, ?, ?, ?, ?)`,
+        [sessionId, changeSeq, kind, json({ revision: state.revision }), now],
+      );
+      nextRunState = { ...priorRun, since, changeSeq };
+    });
+    tx.immediate();
+    this.runStateCache.set(sessionId, nextRunState);
+    this.dirtyChangeSessions.add(sessionId);
+    return { state, result };
+  }
+
+  setDeliverySlot(sessionId: string, slot: DeliverySlot, value: unknown): void {
+    this.mutateDelivery(sessionId, `delivery_${slot}_set`, (state) => {
+      if (slot === "queued") state.queued = Array.isArray(value) ? value : [];
+      else if (slot === "steered")
+        state.steered = Array.isArray(value) ? value : [];
+      else state.dispatch = value;
+    });
+  }
+
+  deleteDeliverySlot(sessionId: string, slot: DeliverySlot): boolean {
+    const prior = this.deliveryRow(sessionId);
+    const existed =
+      slot === "dispatch"
+        ? prior.dispatch !== undefined
+        : (slot === "queued" ? prior.queued : prior.steered).length > 0;
+    if (!existed) return false;
+    this.mutateDelivery(sessionId, `delivery_${slot}_delete`, (state) => {
+      if (slot === "queued") state.queued = [];
+      else if (slot === "steered") state.steered = [];
+      else state.dispatch = undefined;
+    });
+    return true;
+  }
+
+  clearDeliverySlot(slot: DeliverySlot): void {
+    for (const [sessionId] of this.deliveryEntries(slot))
+      this.deleteDeliverySlot(sessionId, slot);
+  }
+
+  prepareSteerDelivery(
+    sessionId: string,
+    itemId: string,
+    directItem?: unknown,
+  ): unknown | undefined {
+    return this.mutateDelivery(sessionId, "delivery_steer_prepared", (state) => {
+      const queue = state.queued as Array<{ id?: string }>;
+      const index = queue.findIndex((item) => item.id === itemId);
+      if (index < 0 && directItem === undefined) return undefined;
+      const item =
+        index >= 0
+          ? queue.splice(index, 1)[0]
+          : directItem && typeof directItem === "object"
+            ? { ...(directItem as Record<string, unknown>), id: itemId }
+            : { id: itemId, value: directItem };
+      state.queued = queue;
+      state.pendingSteers.push({
+        item,
+        index: index >= 0 ? index : 0,
+        preparedAt: Date.now(),
+      });
+      return item;
+    }).result;
+  }
+
+  acceptSteerDelivery(sessionId: string, itemId: string): boolean {
+    const current = this.deliveryRow(sessionId).pendingSteers.find(
+      (pending) => (pending.item as { id?: string }).id === itemId,
+    );
+    if (!current) return false;
+    this.mutateDelivery(sessionId, "delivery_steer_accepted", (state) => {
+      const index = state.pendingSteers.findIndex(
+        (pending) => (pending.item as { id?: string }).id === itemId,
+      );
+      if (index < 0) throw new Error("Pending steer changed before acceptance");
+      const [pending] = state.pendingSteers.splice(index, 1);
+      state.steered.push({
+        ...(pending.item as Record<string, unknown>),
+        steeredAt: Date.now(),
+      });
+    });
+    return true;
+  }
+
+  rejectSteerDelivery(sessionId: string, itemId: string): boolean {
+    const current = this.deliveryRow(sessionId).pendingSteers.find(
+      (pending) => (pending.item as { id?: string }).id === itemId,
+    );
+    if (!current) return false;
+    this.mutateDelivery(sessionId, "delivery_steer_rejected", (state) => {
+      const index = state.pendingSteers.findIndex(
+        (pending) => (pending.item as { id?: string }).id === itemId,
+      );
+      if (index < 0) throw new Error("Pending steer changed before rejection");
+      const [pending] = state.pendingSteers.splice(index, 1);
+      state.queued.splice(
+        Math.min(pending.index, state.queued.length),
+        0,
+        pending.item,
+      );
+    });
+    return true;
+  }
+
+  requeueSteerDeliveries(sessionId: string, items: unknown[]): number {
+    if (items.length === 0 && this.deliveryRow(sessionId).steered.length === 0)
+      return 0;
+    this.mutateDelivery(sessionId, "delivery_steers_requeued", (state) => {
+      const ids = new Set(
+        (items as Array<{ id?: string }>).map((item) => item.id).filter(Boolean),
+      );
+      state.queued = [
+        ...items,
+        ...(state.queued as Array<{ id?: string }>).filter(
+          (item) => !item.id || !ids.has(item.id),
+        ),
+      ];
+      state.steered = [];
+    });
+    return items.length;
+  }
+
+  settlePendingSteers(): number {
+    const rows = this.db.query(
+      "SELECT session_id FROM session_kernel_delivery WHERE pending_steers != '[]'",
+    ).all() as Array<{ session_id: string }>;
+    let count = 0;
+    for (const row of rows) {
+      this.mutateDelivery(row.session_id, "delivery_steer_recovered", (state) => {
+        for (const pending of state.pendingSteers) {
+          state.steered.push({
+            ...(pending.item as Record<string, unknown>),
+            steeredAt: pending.preparedAt,
+          });
+          count += 1;
+        }
+        state.pendingSteers = [];
+      });
+    }
+    return count;
+  }
+
+  claimDeliveryDispatch(input: {
+    sessionId: string;
+    items: Array<{ id?: string; promptEntryId?: string } & Record<string, unknown>>;
+    promptEntryId: string;
+    kind?: "create";
+    requireQueued?: boolean;
+  }): { promptEntryId: string; items: unknown[]; revision: number } {
+    const mutation = this.mutateDelivery(
+      input.sessionId,
+      "delivery_dispatch_claimed",
+      (state) => {
+        const existing = state.dispatch as
+          { promptEntryId?: string; items?: unknown[] } | undefined;
+        if (existing?.promptEntryId === input.promptEntryId) return existing;
+        if (existing) throw new Error("A prompt dispatch is already active");
+        const ids = new Set(
+          input.items.flatMap(
+            (item) => [item.id, item.promptEntryId].filter(Boolean) as string[],
+          ),
+        );
+        const queued = state.queued as Array<{
+          id?: string;
+          promptEntryId?: string;
+        }>;
+        if (input.requireQueued) {
+          const queuedIds = new Set(
+            queued.flatMap(
+              (item) => [item.id, item.promptEntryId].filter(Boolean) as string[],
+            ),
+          );
+          if (
+            !input.items.every(
+              (item) =>
+                !!(item.id || item.promptEntryId) &&
+                !![item.id, item.promptEntryId].find(
+                  (id) => id && queuedIds.has(id),
+                ),
+            )
+          )
+            throw new Error("Queued prompt changed before dispatch claim");
+        }
+        const dispatchItems = input.items;
+        state.queued = queued.filter(
+          (item) =>
+            !(
+              (item.id && ids.has(item.id)) ||
+              (item.promptEntryId && ids.has(item.promptEntryId))
+            ),
+        );
+        state.dispatch = {
+          promptEntryId: input.promptEntryId,
+          items: dispatchItems,
+          ...(input.kind ? { kind: input.kind } : {}),
+        };
+        return state.dispatch;
+      },
+    );
+    const dispatch = mutation.result as {
+      promptEntryId: string;
+      items: unknown[];
+    };
+    return { ...dispatch, revision: mutation.state.revision };
+  }
+
+  ackDeliveryDispatch(sessionId: string, promptEntryId: string): boolean {
+    const current = this.deliveryRow(sessionId).dispatch as
+      { promptEntryId?: string } | undefined;
+    if (current?.promptEntryId !== promptEntryId) return false;
+    this.mutateDelivery(
+      sessionId,
+      "delivery_dispatch_acknowledged",
+      (state) => {
+        const dispatch = state.dispatch as
+          { promptEntryId?: string } | undefined;
+        if (dispatch?.promptEntryId !== promptEntryId)
+          throw new Error("Prompt dispatch changed before acknowledgement");
+        state.dispatch = undefined;
+      },
+    );
+    return true;
+  }
+
+  failDeliveryDispatch(sessionId: string, promptEntryId: string): boolean {
+    const current = this.deliveryRow(sessionId).dispatch as
+      { promptEntryId?: string } | undefined;
+    if (current?.promptEntryId !== promptEntryId) return false;
+    this.mutateDelivery(sessionId, "delivery_dispatch_failed", (state) => {
+      const dispatch = state.dispatch as
+        { promptEntryId?: string; items?: unknown[] } | undefined;
+      if (dispatch?.promptEntryId !== promptEntryId)
+        throw new Error("Prompt dispatch changed before failure settlement");
+      const restored = dispatch.items ?? [];
+      const restoredIds = new Set(
+        (restored as Array<{ id?: string }>)
+          .map((item) => item.id)
+          .filter(Boolean),
+      );
+      state.queued = [
+        ...restored,
+        ...(state.queued as Array<{ id?: string }>).filter(
+          (item) => !item.id || !restoredIds.has(item.id),
+        ),
+      ];
+      state.dispatch = undefined;
+    });
+    return true;
+  }
+
+	scheduleTimer(
+    timer: Omit<
+      DurableTimer,
+      | "token"
+      | "attempts"
+      | "nextAttemptAt"
+      | "lastError"
+      | "deadLetteredAt"
+      | "createdAt"
+    >,
+	): void {
+		const token = crypto.randomUUID();
+		this.db.run(
+			`INSERT INTO session_kernel_timers
+			 (session_id, timer_id, kind, due_at, token, payload, attempts, next_attempt_at, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+			 ON CONFLICT(session_id, timer_id) DO UPDATE SET
+			 kind = excluded.kind, due_at = excluded.due_at, token = excluded.token,
+			 payload = excluded.payload, attempts = 0,
+			 next_attempt_at = excluded.next_attempt_at, last_error = NULL,
+			 dead_lettered_at = NULL, created_at = excluded.created_at`,
+      [
+        timer.sessionId,
+        timer.timerId,
+        timer.kind,
+        timer.dueAt,
+        token,
+        json(timer.payload),
+        timer.dueAt,
+        Date.now(),
+      ],
+		);
+	}
+
+	timer(sessionId: string, timerId: string): DurableTimer | undefined {
+		const row = this.db
+			.query(
+				`SELECT session_id, timer_id, kind, due_at, token, payload, attempts, next_attempt_at, last_error, dead_lettered_at, created_at
+         FROM session_kernel_timers WHERE session_id = ? AND timer_id = ?`,
+      )
+			.get(sessionId, timerId) as Record<string, unknown> | null;
+		return row
+			? {
+				sessionId: String(row.session_id),
+				timerId: String(row.timer_id),
+				kind: String(row.kind),
+				dueAt: Number(row.due_at),
+				token: String(row.token),
+				payload: parsed(row.payload as string),
+					attempts: Number(row.attempts),
+					nextAttemptAt: Number(row.next_attempt_at),
+					lastError:
+						row.last_error == null ? undefined : String(row.last_error),
+          deadLetteredAt:
+            row.dead_lettered_at == null
+              ? undefined
+              : Number(row.dead_lettered_at),
+					createdAt: Number(row.created_at),
+			}
+			: undefined;
+	}
+
+	cancelTimer(sessionId: string, timerId: string): void {
+		this.db.run(
+			"DELETE FROM session_kernel_timers WHERE session_id = ? AND timer_id = ?",
+			[sessionId, timerId],
+		);
+	}
+
+  settleTimerSuccess(
+    sessionId: string,
+    timerId: string,
+    token: string,
+  ): boolean {
+    return (
+      this.db.run(
+			"DELETE FROM session_kernel_timers WHERE session_id = ? AND timer_id = ? AND token = ?",
+			[sessionId, timerId, token],
+      ).changes > 0
+    );
+	}
+
+	dueTimers(
+		now = Date.now(),
+		limit = 100,
+		kinds?: readonly string[],
+	): DurableTimer[] {
+		if (kinds && kinds.length === 0) return [];
+		const kindFilter = kinds?.length
+			? ` AND kind IN (${kinds.map(() => "?").join(",")})`
+			: "";
+		const rows = this.db
+			.query(
+				`SELECT session_id, timer_id, kind, due_at, token, payload, attempts, next_attempt_at,
+					last_error, dead_lettered_at, created_at
+				 FROM session_kernel_timers
+				 WHERE due_at <= ? AND next_attempt_at <= ? AND dead_lettered_at IS NULL${kindFilter}
+				 ORDER BY next_attempt_at, due_at LIMIT ?`,
+			)
+			.all(now, now, ...(kinds || []), limit) as Record<string, unknown>[];
+		return rows.map((row) => ({
+			sessionId: String(row.session_id),
+			timerId: String(row.timer_id),
+			kind: String(row.kind),
+			dueAt: Number(row.due_at),
+			token: String(row.token),
+			payload: parsed(row.payload as string),
+			attempts: Number(row.attempts),
+			nextAttemptAt: Number(row.next_attempt_at),
+			lastError: row.last_error == null ? undefined : String(row.last_error),
+			deadLetteredAt:
+				row.dead_lettered_at == null ? undefined : Number(row.dead_lettered_at),
+			createdAt: Number(row.created_at),
+		}));
+	}
+
+	noteTimerFailure(
+		sessionId: string,
+		timerId: string,
+		error: string,
+		maxAttempts = 20,
+		expectedToken?: string,
+	): { updated: boolean; deadLetteredNow: boolean } {
+		const row = this.timer(sessionId, timerId);
+		if (!row || (expectedToken !== undefined && row.token !== expectedToken))
+			return { updated: false, deadLetteredNow: false };
+		const attempts = row.attempts + 1;
+		const deadLetteredAt = attempts >= maxAttempts ? Date.now() : null;
+		const delay = Math.min(5 * 60_000, 1_000 * 2 ** Math.min(attempts - 1, 8));
+		this.db.run(
+			`UPDATE session_kernel_timers SET attempts = ?, next_attempt_at = ?, last_error = ?,
+				dead_lettered_at = ? WHERE session_id = ? AND timer_id = ? AND token = ?`,
+			[
+				attempts,
+				Date.now() + delay,
+				error.slice(0, 2_000),
+				deadLetteredAt,
+				sessionId,
+				timerId,
+				row.token,
+			],
+		);
+		return { updated: true, deadLetteredNow: deadLetteredAt !== null };
+	}
+
+  enqueueOutbox(
+    sessionId: string,
+    kind: string,
+    payload: unknown,
+    effectKey: string = crypto.randomUUID(),
+  ): number {
+		const effectId = `${sessionId}:${kind}:${effectKey}`;
+		this.db.run(
+			`INSERT INTO session_kernel_outbox
+				(effect_id, effect_key, session_id, kind, payload, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(session_id, kind, effect_key) DO NOTHING`,
+			[effectId, effectKey,sessionId, kind, json(payload), Date.now()],
+		);
+		const row = this.db.query(
+				"SELECT id FROM session_kernel_outbox WHERE session_id = ? AND kind = ? AND effect_key = ?",).get(sessionId, kind, effectKey) as { id: number } | null;
+		if (!row) throw new Error("Outbox effect was not persisted");
+		return Number(row.id);
+	}
+
+	enqueueOutboxMany(
+		sessionId: string,
+		effects: Array<{ kind: string; payload: unknown; effectKey: string }>,
+	): number[] {
+		if (effects.length === 0) return [];
+		const ids: number[] = [];
+		const tx = this.db.transaction(() => {
+			for (const effect of effects)
+        ids.push(
+          this.enqueueOutbox(
+            sessionId,
+            effect.kind,
+            effect.payload,
+            effect.effectKey,
+          ),
+        );
+		});
+		tx.immediate();
+		return ids;
+	}
+
+	completeCommandDecision(input: {
+		sessionId: string;
+		requestId: string;
+		type: string;
+		result: unknown;
+		effects: Array<{ kind: string; payload: unknown; effectKey: string }>;
+	}): void {
+		const now = Date.now();
+		const stored = resultRecord(input.result);
+		let changeSeq = 0;
+		const tx = this.db.transaction(() => {
+			this.db.run(
+				`UPDATE session_kernel_commands SET status = 'completed', payload = 'null',
+				 result = ?, result_hash = ?, result_released = 0, terminal_failure = ?, error = NULL,
+				 retryable = NULL, updated_at = ? WHERE session_id = ? AND request_id = ?`,
+				[
+					stored.text,
+					stored.hash,
+					stored.terminalFailure ? 1 : 0,
+					now,
+					input.sessionId,
+					input.requestId,
+				],
+			);
+			const prior = this.runState(input.sessionId);
+			changeSeq = prior.changeSeq + 1;
+			this.db.run(
+				`INSERT INTO session_kernel_state
+				 (session_id, run_state, run_since, last_event, generation, current_run_id, change_seq, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+				 ON CONFLICT(session_id) DO UPDATE SET change_seq = excluded.change_seq, updated_at = excluded.updated_at`,
+				[
+					input.sessionId,
+					prior.state,
+					prior.since === new Date(0).toISOString()
+						? new Date(now).toISOString()
+						: prior.since,
+					prior.lastEvent ?? null,
+					prior.generation,
+					prior.currentRunId ?? null,
+					changeSeq,
+					now,
+				],
+			);
+			this.db.run(
+				`INSERT INTO session_kernel_changes (session_id, change_seq, kind, payload, created_at)
+				 VALUES (?, ?, ?, ?, ?)`,
+				[
+					input.sessionId,
+					changeSeq,
+					`command:${input.type}`,
+					json({ requestId: input.requestId }),
+					now,
+				],
+			);
+			for (const effect of input.effects)
+				this.enqueueOutbox(
+					input.sessionId,
+					effect.kind,
+					effect.payload,
+					effect.effectKey,
+				);
+		});
+		tx.immediate();
+		const prior = this.runState(input.sessionId);
+		this.runStateCache.set(input.sessionId, { ...prior, changeSeq });
+		this.dirtyChangeSessions.add(input.sessionId);
+	}
+
+	pendingOutbox(
+		now = Date.now(),
+		limit = 100,
+		kinds?: readonly string[],
+	): DurableOutboxItem[] {
+		if (kinds && kinds.length === 0) return [];
+		const kindFilter = kinds?.length
+			? ` AND kind IN (${kinds.map(() => "?").join(",")})`
+			: "";
+		const rows = this.db
+			.query(
+				`SELECT id, effect_id, effect_key, session_id, kind, payload, attempts,
+         next_attempt_at, last_error, dead_lettered_at, created_at
+         FROM session_kernel_outbox
+         WHERE dead_lettered_at IS NULL AND next_attempt_at <= ?${kindFilter}
+         ORDER BY next_attempt_at, id LIMIT ?`,
+      )
+			.all(now, ...(kinds || []), limit) as Record<string, unknown>[];
+		return rows.map((row) => ({
+			id: Number(row.id),
+			effectId: String(row.effect_id),
+			effectKey: String(row.effect_key),
+			sessionId: String(row.session_id),
+			kind: String(row.kind),
+			payload: parsed(row.payload as string),
+			attempts: Number(row.attempts),
+			nextAttemptAt: Number(row.next_attempt_at),
+			lastError: row.last_error == null ? undefined : String(row.last_error),
+			deadLetteredAt:
+				row.dead_lettered_at == null ? undefined : Number(row.dead_lettered_at),
+			createdAt: Number(row.created_at),
+		}));
+	}
+
+	stats(): {
+		sessions: number;
+		pendingCommands: number;
+		indeterminateCommands: number;
+		pendingTimers: number;
+		pendingOutbox: number;
+		deadLetteredOutbox: number;
+		deadLetteredTimers: number;
+		oldestPendingCommandAt?: number;
+		oldestIndeterminateCommandAt?: number;
+		oldestPendingTimerAt?: number;
+		oldestPendingOutboxAt?: number;
+		dbBytes: number;
+		walBytes: number;
+		pageCount: number;
+		freePages: number;
+		schemaVersion: number;
+	} {
+		const count = (table: string, where = "") =>
+			Number(
+				(
+          this.db
+            .query(`SELECT COUNT(*) AS n FROM ${table} ${where}`)
+            .get() as {
+						n: number;
+					}
+				).n,
+			);
+    const oldest = (
+      table: string,
+      column: string,
+      where = "",
+    ): number | undefined => {
+			const row = this.db
+				.query(`SELECT MIN(${column}) AS oldest FROM ${table} ${where}`)
+				.get() as { oldest: number | null };
+			return row.oldest == null ? undefined : Number(row.oldest);
+		};
+    const pragma = (name: string) =>
+      Number(
+        Object.values(
+          this.db.query(`PRAGMA ${name}`).get() as Record<string, unknown>,
+        )[0] ?? 0,
+		);
+		const fileBytes = (path: string) => {
+      try {
+        return statSync(path).size;
+      } catch {
+        return 0;
+      }
+		};
+		return {
+			sessions: count("session_kernel_state"),
+			pendingCommands: count(
+				"session_kernel_commands",
+				"WHERE status IN ('pending', 'processing')",
+			),
+			indeterminateCommands: count(
+				"session_kernel_commands",
+				"WHERE status = 'indeterminate'",
+			),
+			pendingTimers: count("session_kernel_timers"),
+      pendingOutbox: count(
+        "session_kernel_outbox",
+				"WHERE dead_lettered_at IS NULL",
+			),
+			deadLetteredOutbox: count(
+				"session_kernel_outbox",
+        "WHERE dead_lettered_at IS NOT NULL",
+      ),
+			deadLetteredTimers: count(
+				"session_kernel_timers",
+				"WHERE dead_lettered_at IS NOT NULL",
+			),
+			oldestPendingCommandAt: oldest(
+				"session_kernel_commands",
+				"created_at",
+				"WHERE status IN ('pending', 'processing')",
+			),
+			oldestIndeterminateCommandAt: oldest(
+				"session_kernel_commands",
+				"created_at",
+				"WHERE status = 'indeterminate'",
+			),
+			oldestPendingTimerAt: oldest(
+				"session_kernel_timers",
+				"created_at",
+				"WHERE dead_lettered_at IS NULL",
+			),
+			oldestPendingOutboxAt: oldest(
+				"session_kernel_outbox",
+				"created_at",
+				"WHERE dead_lettered_at IS NULL",
+			),
+			dbBytes: this.path === ":memory:" ? 0 : fileBytes(this.path),
+			walBytes: this.path === ":memory:" ? 0 : fileBytes(`${this.path}-wal`),
+			pageCount: pragma("page_count"),
+			freePages: pragma("freelist_count"),
+			schemaVersion: pragma("user_version"),
+		};
+	}
+
+	acknowledgeCommand(sessionId: string, requestId: string): boolean {
+		const result = this.db.run(
+			`UPDATE session_kernel_commands SET acknowledged_at = COALESCE(acknowledged_at, ?)
+			 WHERE session_id = ? AND request_id = ? AND status = 'completed'`,
+			[Date.now(), sessionId, requestId],
+		);
+		return result.changes > 0;
+	}
+
+	compact(
+		now = Date.now(),
+		commandRetentionMs = 30 * 24 * 60 * 60_000,
+		changesPerSession = 5_000,
+	): void {
+		// Request fingerprints and completion state are permanent. Large semantic
+		// results stay replayable until the client confirms local receipt, then age
+		// into a bounded digest marker. Terminal failures always keep their message.
+		this.db.run(
+			`UPDATE session_kernel_commands
+			 SET result = '{"__sessionKernelResultReleased":true,"sha256":"' || result_hash || '"}',
+			     result_released = 1
+			 WHERE rowid IN (
+				SELECT rowid FROM session_kernel_commands
+				WHERE status = 'completed' AND terminal_failure = 0
+				  AND acknowledged_at IS NOT NULL AND acknowledged_at < ?
+				  AND result_hash IS NOT NULL AND result_released = 0 AND length(result) > ?
+				LIMIT 500
+			 )`,
+			[now - commandRetentionMs, 64 * 1024],
+		);
+		for (const sessionId of [...this.dirtyChangeSessions].slice(0, 100)) {
+			const result = this.db.run(
+				`DELETE FROM session_kernel_changes WHERE rowid IN (
+					SELECT rowid FROM session_kernel_changes
+					WHERE session_id = ? AND change_seq <= (
+						SELECT MAX(change_seq) - ? FROM session_kernel_changes WHERE session_id = ?
+					)
+					LIMIT 5000
+				 )`,
+				[sessionId, changesPerSession, sessionId],
+			);
+			if (result.changes < 5000) this.dirtyChangeSessions.delete(sessionId);
+		}
+	}
+
+	maintain(): void {
+		// Bounded semantic compaction only. VACUUM/optimize/checkpoint are offline
+		// operator work because this actor also serves synchronous compatibility RPCs.
+		this.compact();
+	}
+
+	deadLetters(limit = 100, offset = 0) {
+    const timers = this.db
+      .query(
+			`SELECT session_id, timer_id, kind, due_at, attempts, next_attempt_at, last_error, dead_lettered_at, created_at
+			 FROM session_kernel_timers WHERE dead_lettered_at IS NOT NULL
+			 ORDER BY dead_lettered_at DESC LIMIT ? OFFSET ?`,
+      )
+      .all(limit, offset) as Record<string, unknown>[];
+    const outbox = this.db
+      .query(
+			`SELECT id, effect_id, effect_key, session_id, kind, attempts, next_attempt_at, last_error, dead_lettered_at, created_at
+			 FROM session_kernel_outbox WHERE dead_lettered_at IS NOT NULL
+			 ORDER BY dead_lettered_at DESC LIMIT ? OFFSET ?`,
+      )
+      .all(limit, offset) as Record<string, unknown>[];
+		return {
+			timers: timers.map((row) => ({
+				sessionId: String(row.session_id),
+				timerId: String(row.timer_id),
+				kind: String(row.kind),
+				dueAt: Number(row.due_at),
+				nextAttemptAt: Number(row.next_attempt_at),
+				createdAt: Number(row.created_at),
+				attempts: Number(row.attempts),
+				lastError: row.last_error == null ? undefined : String(row.last_error),
+				deadLetteredAt: Number(row.dead_lettered_at),
+			})),
+			outbox: outbox.map((row) => ({
+				id: Number(row.id),
+				effectId: String(row.effect_id),
+				effectKey: String(row.effect_key),
+				nextAttemptAt: Number(row.next_attempt_at),
+				createdAt: Number(row.created_at),
+				sessionId: String(row.session_id),
+				kind: String(row.kind),
+				attempts: Number(row.attempts),
+				lastError: row.last_error == null ? undefined : String(row.last_error),
+				deadLetteredAt: Number(row.dead_lettered_at),
+			})),
+			totals: {
+        timers: Number(
+          (
+            this.db
+              .query(
+                "SELECT COUNT(*) AS n FROM session_kernel_timers WHERE dead_lettered_at IS NOT NULL",
+              )
+              .get() as { n: number }
+          ).n,
+        ),
+        outbox: Number(
+          (
+            this.db
+              .query(
+                "SELECT COUNT(*) AS n FROM session_kernel_outbox WHERE dead_lettered_at IS NOT NULL",
+              )
+              .get() as { n: number }
+          ).n,
+        ),
+			},
+			nextOffset:
+				timers.length === limit || outbox.length === limit
+					? offset + limit
+					: undefined,
+		};
+	}
+
+	discardDeadTimer(sessionId: string, timerId: string): boolean {
+		const result = this.db.run(
+			"DELETE FROM session_kernel_timers WHERE session_id = ? AND timer_id = ? AND dead_lettered_at IS NOT NULL",
+			[sessionId, timerId],
+		);
+		return result.changes > 0;
+	}
+
+	discardDeadOutbox(id: number): boolean {
+		const result = this.db.run(
+			"DELETE FROM session_kernel_outbox WHERE id = ? AND dead_lettered_at IS NOT NULL",
+			[id],
+		);
+		return result.changes > 0;
+	}
+
+	retryDeadTimer(sessionId: string, timerId: string): boolean {
+		const result = this.db.run(
+			`UPDATE session_kernel_timers SET attempts = 0, next_attempt_at = ?,
+			 last_error = NULL, dead_lettered_at = NULL
+			 WHERE session_id = ? AND timer_id = ? AND dead_lettered_at IS NOT NULL`,
+			[Date.now(), sessionId, timerId],
+		);
+		return result.changes > 0;
+	}
+
+	retryDeadOutbox(id: number): boolean {
+		const result = this.db.run(
+			`UPDATE session_kernel_outbox SET attempts = 0, next_attempt_at = ?,
+			 last_error = NULL, dead_lettered_at = NULL
+			 WHERE id = ? AND dead_lettered_at IS NOT NULL`,
+			[Date.now(), id],
+		);
+		return result.changes > 0;
+	}
+
+	/**
+	 * Re-admit branch effects rejected before physical work by compatibility bugs:
+	 * the former shared-checkout classifier and the old empty-base decoder. The
+	 * caller supplies trusted shared destinations; every other failure stays dead.
+	 */
+	retryCompatibleCreationBranchDeadLetters(
+		destinations: ReadonlyArray<{ project: string; worktreePath: string }>,
+		now = Date.now(),
+	): Array<{
+		id: number;
+		sessionId: string;
+		reason: "shared_checkout_destination_adoptable" | "legacy_empty_base_branch";
+	}> {
+		const allowed = new Set(
+			destinations.map(({ project, worktreePath }) =>
+				JSON.stringify([project, worktreePath]),
+			),
+		);
+		const rows = this.db
+			.query(
+				`SELECT outbox.id, outbox.session_id, outbox.payload, outbox.last_error
+				 FROM session_kernel_outbox AS outbox
+				 JOIN session_kernel_creation AS creation
+				   ON creation.session_id = outbox.session_id
+				  AND creation.state = 'preparing'
+				  AND creation.current_effect_id = outbox.effect_key
+				 WHERE outbox.kind = 'creation_branch_prepare'
+				   AND outbox.dead_lettered_at IS NOT NULL
+				 ORDER BY outbox.id
+				 LIMIT 1000`,
+			)
+			.all() as Array<{
+				id: number;
+				session_id: string;
+				payload: string;
+				last_error: string | null;
+			}>;
+		const retried: Array<{
+			id: number;
+			sessionId: string;
+			reason: "shared_checkout_destination_adoptable" | "legacy_empty_base_branch";
+		}> = [];
+		const tx = this.db.transaction(() => {
+			for (const row of rows) {
+				let payload: Record<string, unknown>;
+				try {
+					const parsed = JSON.parse(row.payload);
+					if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+						continue;
+					payload = parsed as Record<string, unknown>;
+				} catch {
+					continue;
+				}
+				if (
+					typeof payload.creationIdentity !== "string" ||
+					payload.creationIdentity.length === 0 ||
+					!Number.isSafeInteger(payload.creationGeneration) ||
+					Number(payload.creationGeneration) < 1 ||
+					typeof payload.project !== "string" ||
+					typeof payload.worktreePath !== "string" ||
+					typeof payload.branch !== "string" ||
+					payload.branch.length === 0 ||
+					payload.mode !== "adopt_or_create" ||
+					typeof payload.isolated !== "boolean"
+				)
+					continue;
+				const sharedCheckoutFalsePositive =
+					payload.isolated === false &&
+					allowed.has(
+						JSON.stringify([payload.project, payload.worktreePath]),
+					) &&
+					row.last_error ===
+						`Worktree destination ${payload.worktreePath} exists without a registered branch`;
+				// This decoder rejection happened before any executor or physical Git
+				// action. Current additive decoding treats the old empty sentinel as
+				// an omitted optional base, so replay cannot duplicate prior work.
+				const legacyEmptyBaseBranch =
+					payload.baseBranch === "" &&
+					row.last_error ===
+						"Invalid creation_branch_prepare effect payload: baseBranch";
+				if (!sharedCheckoutFalsePositive && !legacyEmptyBaseBranch) continue;
+				const result = this.db.run(
+					`UPDATE session_kernel_outbox
+					 SET attempts = 0, next_attempt_at = ?, last_error = NULL,
+					     dead_lettered_at = NULL
+					 WHERE id = ? AND dead_lettered_at IS NOT NULL`,
+					[now, row.id],
+				);
+				if (result.changes > 0)
+					retried.push({
+						id: Number(row.id),
+						sessionId: row.session_id,
+						reason: sharedCheckoutFalsePositive
+							? "shared_checkout_destination_adoptable"
+							: "legacy_empty_base_branch",
+					});
+			}
+		});
+		tx.immediate();
+		return retried;
+	}
+
+	ackOutbox(id: number): void {
+		this.db.run("DELETE FROM session_kernel_outbox WHERE id = ?", [id]);
+	}
+
+  noteOutboxFailure(
+    id: number,
+    error: string,
+    maxAttempts = 20,
+  ): { updated: boolean; deadLetteredNow: boolean } {
+		const row = this.db
+			.query("SELECT attempts FROM session_kernel_outbox WHERE id = ?")
+			.get(id) as { attempts: number } | null;
+		if (!row) return { updated: false, deadLetteredNow: false };
+		const attempts = Number(row.attempts) + 1;
+		const deadLetteredAt = attempts >= maxAttempts ? Date.now() : null;
+		const delay = Math.min(5 * 60_000, 1_000 * 2 ** Math.min(attempts - 1, 8));
+		this.db.run(
+			`UPDATE session_kernel_outbox SET attempts = ?, next_attempt_at = ?, last_error = ?,
+       dead_lettered_at = ? WHERE id = ?`,
+			[attempts, Date.now() + delay, error.slice(0, 2_000), deadLetteredAt,id],
+		);
+		return { updated: true, deadLetteredNow: deadLetteredAt !== null };
+	}
+}
+
+/** Structural store surface implemented locally in tests and by the actor proxy in production. */
+export type SessionKernelStoreApi = Pick<
+	SessionKernelStore,
+	keyof SessionKernelStore
+>;

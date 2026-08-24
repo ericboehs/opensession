@@ -1,0 +1,139 @@
+{
+  "engineCalls": [
+    {
+      "confirmTools": [
+        "mcp__stripe__cancel_subscription",
+        "mcp__stripe__create_refund",
+        "mcp__stripe__stripe_api_execute",
+        "mcp__stripe__stripe_api_write",
+        "mcp__stripe__update_subscription"
+      ],
+      "deniedTools": [],
+      "images": 0,
+      "inProcessMcp": [
+        "opensession-admin",
+        "opensession-ask",
+        "opensession-assets",
+        "opensession-goals",
+        "opensession-humans",
+        "opensession-keychain",
+        "opensession-memory",
+        "opensession-papercuts",
+        "opensession-portals",
+        "opensession-publish",
+        "opensession-repos",
+        "opensession-runners",
+        "opensession-search",
+        "opensession-self-deploy",
+        "opensession-sessions",
+        "opensession-slack",
+        "opensession-todos",
+        "opensession-walkthrough",
+        "opensession-web",
+        "opensession-workflows"
+      ],
+      "journalKind": "prompt",
+      "mcpScope": [
+        "snapshot-alpha"
+      ],
+      "mode": "scratch",
+      "model": "pi/anthropic/claude-sonnet-5",
+      "prompt": {
+        "injectedContext": [],
+        "visible": "what can you reach on this turn?"
+      },
+      "resumesEngineSession": false,
+      "seedTranscriptEntries": 0,
+      "sessionNote": null,
+      "user": "SnapshotOwner"
+    }
+  ],
+  "enginePolicy": [
+    {
+      "gateReason": null,
+      "mcpConfig": {
+        "snapshot-alpha": {
+          "args": [
+            "--alpha"
+          ],
+          "command": "/bin/true"
+        }
+      },
+      "mountedMcpServers": [
+        "snapshot-alpha"
+      ],
+      "sharedServerEligible": false,
+      "strippedTools": [
+        "*_cancel_subscription",
+        "*_create_refund",
+        "*_stripe_api_execute",
+        "*_stripe_api_write",
+        "*_update_subscription",
+        "cancel_subscription",
+        "create_refund",
+        "question",
+        "stripe_api_execute",
+        "stripe_api_write",
+        "stripe_cancel_subscription",
+        "stripe_create_refund",
+        "stripe_stripe_api_execute",
+        "stripe_stripe_api_write",
+        "stripe_update_subscription",
+        "update_subscription"
+      ],
+      "toolStripNotes": [
+        {
+          "message": "\"Create a refund\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action, tool name, and full parameters in your reply and ask the human to execute it.",
+          "tools": [
+            "mcp__stripe__create_refund"
+          ]
+        },
+        {
+          "message": "\"Cancel a subscription\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action, tool name, and full parameters in your reply and ask the human to execute it.",
+          "tools": [
+            "mcp__stripe__cancel_subscription"
+          ]
+        },
+        {
+          "message": "\"Update a subscription\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action, tool name, and full parameters in your reply and ask the human to execute it.",
+          "tools": [
+            "mcp__stripe__update_subscription"
+          ]
+        },
+        {
+          "message": "\"Execute a raw Stripe API call\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action, tool name, and full parameters in your reply and ask the human to execute it.",
+          "tools": [
+            "mcp__stripe__stripe_api_execute"
+          ]
+        },
+        {
+          "message": "\"Execute a mutating Stripe API call\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action, tool name, and full parameters in your reply and ask the human to execute it.",
+          "tools": [
+            "mcp__stripe__stripe_api_write"
+          ]
+        }
+      ],
+      "unattended": false
+    }
+  ],
+  "transcript": [
+    {
+      "content": "what can you reach on this turn?",
+      "seq": 1,
+      "type": "user"
+    },
+    {
+      "content": "{\n  \"confirmTools\": [\n    \"mcp__stripe__cancel_subscription\",\n    \"mcp__stripe__create_refund\",\n    \"mcp__stripe__stripe_api_execute\",\n    \"mcp__stripe__stripe_api_write\",\n    \"mcp__stripe__update_subscription\"\n  ],\n  \"deniedTools\": [],\n  \"inProcess\": [\n    \"opensession-admin\",\n    \"opensession-ask\",\n    \"opensession-assets\",\n    \"opensession-goals\",\n    \"opensession-humans\",\n    \"opensession-keychain\",\n    \"opensession-memory\",\n    \"opensession-papercuts\",\n    \"opensession-portals\",\n    \"opensession-publish\",\n    \"opensession-repos\",\n    \"opensession-runners\",\n    \"opensession-search\",\n    \"opensession-self-deploy\",\n    \"opensession-sessions\",\n    \"opensession-slack\",\n    \"opensession-todos\",\n    \"opensession-walkthrough\",\n    \"opensession-web\",\n    \"opensession-workflows\"\n  ],\n  \"localWorkspaceToolsDisabled\": false,\n  \"mcpScope\": [\n    \"snapshot-alpha\"\n  ],\n  \"mode\": \"scratch\"\n}",
+      "contextSource": "tools",
+      "noticeKind": "standing-context",
+      "seq": 2,
+      "type": "system"
+    },
+    {
+      "content": "Only alpha.",
+      "model": "pi/anthropic/claude-sonnet-5",
+      "seq": 3,
+      "type": "assistant"
+    }
+  ]
+}

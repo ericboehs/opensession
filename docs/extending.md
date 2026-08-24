@@ -49,9 +49,9 @@ Config is read per run, so adding a server does not need a restart. Changing the
 
 Open Session's own tools are different: the `opensession-*` servers run
 in-process and are handed to a run by code, not config —
-`src/server/interactive-mcp.ts` for interactive runs,
-`src/server/automations.ts` for unattended ones. Adding one means adding an
-entry to `src/server/mcp-catalog.ts` as well, which is what keeps
+`packages/core/opensession-server/src/server/interactive-mcp.ts` for interactive runs,
+`packages/core/opensession-server/src/server/automations.ts` for unattended ones. Adding one means adding an
+entry to `packages/core/opensession-server/src/server/mcp-catalog.ts` as well, which is what keeps
 [generated/mcp-tools.md](generated/mcp-tools.md) honest; the test suite fails
 until you do.
 
@@ -81,7 +81,7 @@ future output.
 An integration is an agent module that owns webhook routes and a background
 loop: Slack, Linear, Plain, GitHub, Stripe all work this way.
 
-Append an entry to `src/server/integrations/registry.ts`:
+Append an entry to `packages/core/opensession-server/src/server/integrations/registry.ts`:
 
 ```ts
 {
@@ -105,9 +105,9 @@ integrations enable mytool` to work, `opensession doctor` to report a missing
 credential by name, and `loadAgents()` to construct it. **Nothing in
 `opensession.ts` changes.**
 
-The agent itself implements `AgentModule` (`src/agents/types.ts`): a route map
+The agent itself implements `AgentModule` (`packages/core/opensession-server/src/agents/types.ts`): a route map
 for webhooks, and a `start()` for any polling. Model your first one on
-`src/agents/linear/` — it is the smallest complete example.
+`packages/core/opensession-server/src/agents/linear/` — it is the smallest complete example.
 
 Rules the registry enforces, and why:
 
@@ -123,7 +123,7 @@ This is a boot path, so it needs a real restart.
 
 ## 4. Sandbox providers — run sessions somewhere else
 
-`src/server/sandbox/` holds one file per provider — Docker (and the local host
+`packages/core/opensession-server/src/server/sandbox/` holds one file per provider — Docker (and the local host
 runner) at the root, with Daytona, E2B, Modal, Box and the MicroVM / Lambda
 MicroVM adapters under `adapters/`. Implement the `SandboxProvider` contract —
 create, exec, destroy, plus the dial-back plumbing for remote compute — and
@@ -143,10 +143,17 @@ code, no registration. This is the cheapest way to encode "how we do X here" —
 a review checklist, a deployment runbook, a design vocabulary.
 
 Generic skills shipped by Open Session live in this repository under
-`.agents/skills/`. The installer links them into
-`~/.config/opencode/skills/`, so every project can use them without keeping
-source files under `~/.claude/skills`. Product-specific workflows belong in
-that product's repository instead.
+`.agents/skills/`, and every run loads that directory whatever repo the
+session is working on. A session's own checkout adds to the set with its
+`.claude/skills/` or `.agents/skills/`, and a name the checkout defines beats
+the shipped one. Product-specific workflows belong in that product's
+repository instead.
+
+The list of directories is `src/server/skill-paths.ts`, read by both the runner
+and the composer's "/" menu so the menu cannot offer a skill a turn would not
+load. Start a message with a skill's name to run it: `/bro`, or `/skill:bro`
+if you prefer pi's own spelling. A skill with `disable-model-invocation: true`
+stays out of the system prompt and only runs when someone asks for it by name.
 
 If you catch yourself pasting the same three paragraphs into prompts, that is a
 skill.
@@ -162,7 +169,7 @@ publishable, and it deliberately carries no runtime code. See
 
 ## What not to extend
 
-**The runner.** `agent-runner.ts`, `opencode-runner.ts` and `host-client.ts` are
+**The runner.** `agent-runner.ts`, `pi-runner.ts` and `host-client.ts` are
 runner internals with a lot of load-bearing behaviour around restarts,
 reattachment and account rotation. Changes there need a real restart and are easy
 to get subtly wrong — a mistake usually shows up as sessions that look fine and

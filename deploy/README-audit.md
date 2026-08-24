@@ -1,11 +1,11 @@
 # Open Session audit logs
 
 Open Session keeps a structured audit trail of every agent run
-(`src/server/audit.ts`): one JSON line per event, in a daily file.
+(`packages/core/opensession-server/src/server/audit.ts`): one JSON line per event, in a daily file.
 
 ## What gets logged
 
-Every engine run (`src/server/opencode-runner.ts`) emits `claude_turn_event`
+Every engine run (`packages/core/opensession-server/src/server/pi-runner.ts`) emits `claude_turn_event`
 JSON lines (the event name predates the single-engine consolidation and is
 kept for log continuity) to `~/.opensession-audit/audit-YYYY-MM-DD.jsonl`.
 Every line carries the run key, session id, run kind, mode, and model; the
@@ -29,8 +29,12 @@ the retention in the example CloudWatch shipping config.
 
 The other engines keep the same discipline under their own event families:
 one `in`/`out` pair per turn, plus a denial event when the deny-by-default
-kind gate refuses a run. The pi engine logs `pi_turn` / `pi_gate_denied`
-(and `pi_mcp_call` per bridged MCP call), the Claude Agent SDK engine logs
+kind gate refuses a run. The pi engine logs `pi_turn` / `pi_gate_denied`,
+`pi_mcp_call` per bridged MCP call, and paired `pi_command_start` /
+`pi_command_finish` events for each local bash command. Command events retain
+only a sha256, byte count, safe command category, literal `sleep` duration
+when parseable, and execution outcome. They never retain command text. The
+Claude Agent SDK engine logs
 `claude_direct_turn` / `claude_direct_gate_denied`, and the Codex engine
 logs `codex_direct_turn` / `codex_direct_gate_denied`.
 

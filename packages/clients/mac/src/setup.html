@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Open Session</title>
+    <link rel="stylesheet" href="shell.css" />
+    <style>
+      /* The only thing this page adds to the shared chrome: its field and
+         actions stack the way the rest of `main` does. */
+      form {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img class="mark" src="mark.png" width="76" height="76" alt="" />
+      <h1 id="title">Connect to your server</h1>
+      <p class="message">Enter the address of the Open Session server you use.</p>
+      <form id="form" autocomplete="off">
+        <input
+          class="field"
+          id="field"
+          type="text"
+          inputmode="url"
+          spellcheck="false"
+          autocapitalize="off"
+          autocorrect="off"
+          placeholder="os.example.com"
+          aria-label="Server address"
+        />
+        <div class="actions">
+          <button class="button" id="submit" type="submit">Continue</button>
+          <button class="button ghost" id="anyway" type="button" hidden>Use anyway</button>
+          <button class="button ghost" id="cancel" type="button" hidden>Cancel</button>
+        </div>
+      </form>
+      <p id="status" role="status" aria-live="polite"></p>
+    </main>
+    <script>
+      // The address belongs to main.js, which reaches this page through
+      // preload.js and refuses the same calls from anywhere else.
+      const server = window.os1 && window.os1.server;
+      const params = new URLSearchParams(location.search);
+      // Someone who already has a server and came back through the app menu or
+      // the status page. The first run has nothing to go back to.
+      const mode = params.get("mode");
+      const changing = mode === "change" || mode === "add";
+
+      const field = document.getElementById("field");
+      const submit = document.getElementById("submit");
+      const anyway = document.getElementById("anyway");
+      const cancel = document.getElementById("cancel");
+      const status = document.getElementById("status");
+
+      field.value = params.get("url") || "";
+      if (changing) {
+        document.getElementById("title").textContent = mode === "add" ? "Add organization" : "Change server";
+        submit.textContent = mode === "add" ? "Connect" : "Save";
+        cancel.hidden = false;
+      } else {
+        status.textContent = "You can change this later in the app menu.";
+      }
+      field.focus();
+      field.select();
+
+      function host(value) {
+        try {
+          return new URL(/^https?:\/\//i.test(value) ? value : "https://" + value).host;
+        } catch {
+          return value;
+        }
+      }
+
+      let busy = false;
+
+      // `check` asks whether anything answers there first. A typo and a server
+      // that is simply down look identical from this screen, and only one of
+      // them is worth saving, so the answer decides which. It stays an offer
+      // rather than a gate, because an instance behind a VPN that is not up yet
+      // is a normal thing to be setting up for.
+      async function save(check) {
+        if (busy || !server) return;
+        const value = field.value.trim();
+        if (!value) {
+          field.focus();
+          return;
+        }
+        busy = true;
+        submit.disabled = true;
+        anyway.hidden = true;
+        status.textContent = check ? "Checking " + host(value) + "…" : "Connecting…";
+        try {
+          let address = value;
+          if (check) {
+            const reached = await server.probe(value);
+            if (!reached.ok) {
+              status.textContent = reached.error || "Couldn't reach " + host(value) + ".";
+              anyway.hidden = false;
+              return;
+            }
+            // What answered, which is not always what was typed: a bare host
+            // resolves to a scheme. Show it, so the address being saved is the
+            // one on screen.
+            if (reached.url) field.value = address = reached.url;
+          }
+          status.textContent = "Connecting…";
+          const saved = await server.save(address);
+          // On success the shell navigates away or restarts, so there is
+          // nothing left for this page to say.
+          if (!saved.ok) status.textContent = saved.error || "Couldn't save that address.";
+        } finally {
+          busy = false;
+          submit.disabled = false;
+        }
+      }
+
+      document.getElementById("form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        save(true);
+      });
+      anyway.addEventListener("click", () => save(false));
+      cancel.addEventListener("click", () => server && server.cancel());
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && changing && !busy) server && server.cancel();
+      });
+    </script>
+  </body>
+</html>

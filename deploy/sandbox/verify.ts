@@ -79,16 +79,16 @@ import { homedir } from "os";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 
 const { DockerProvider, containerNameFor, snapshotRepoForSandbox, snapshotSandboxImage, sweepIdleSandboxes } =
-  await import("../../src/server/sandbox/docker");
-const { workspaceExecFor } = await import("../../src/server/sandbox/workspace-exec");
-const { searchRepoEntries } = await import("../../src/server/file-index");
-const { getSessionDiff } = await import("../../src/server/git-diff");
-const { getGitStatus } = await import("../../src/server/git-status");
-const { worktreePathFor } = await import("../../src/server/worktree");
-const { rpcSocketPath } = await import("../../src/runner-host/protocol");
-const { OPENSESSION_SESSIONS_DIR } = await import("../../src/server/paths");
-const { statePath } = await import("../../src/server/paths");
-type RunHostSpec = import("../../src/runner-host/protocol").RunHostSpec;
+  await import("../../packages/core/opensession-server/src/server/sandbox/docker");
+const { workspaceExecFor } = await import("../../packages/core/opensession-server/src/server/sandbox/workspace-exec");
+const { searchRepoEntries } = await import("../../packages/core/opensession-server/src/server/file-index");
+const { getSessionDiff } = await import("../../packages/core/opensession-server/src/server/git-diff");
+const { getGitStatus } = await import("../../packages/core/opensession-server/src/server/git-status");
+const { worktreePathFor } = await import("../../packages/core/opensession-server/src/server/worktree");
+const { rpcSocketPath } = await import("../../packages/core/opensession-server/src/runner-host/protocol");
+const { OPENSESSION_SESSIONS_DIR } = await import("../../packages/core/opensession-server/src/server/paths");
+const { statePath } = await import("../../packages/core/opensession-server/src/server/paths");
+type RunHostSpec = import("../../packages/core/opensession-server/src/runner-host/protocol").RunHostSpec;
 
 const SESSION_ID = `sbxtest-${Date.now().toString(36)}`;
 const CONTAINER = containerNameFor(SESSION_ID);
@@ -156,7 +156,7 @@ async function cleanup(): Promise<void> {
   // Preview https-port allocations + Caddy routes (live chats dir + live
   // Caddy admin — must not leak sbxtest entries into either).
   try {
-    const { dropSandboxPreviewRoutes } = await import("../../src/server/preview");
+    const { dropSandboxPreviewRoutes } = await import("../../packages/core/opensession-server/src/server/preview");
     for (const id of [CONTAINER, VOL_CONTAINER, WS_CONTAINER, SNAP_CONTAINER, PRE_CONTAINER, COLLISION_SBX_ID]) {
       await dropSandboxPreviewRoutes(id);
     }
@@ -352,8 +352,8 @@ try {
   // abandon() — the cleanup launchRunEager/spawnHostRun run in their catch —
   // or hostRunBusy() stays true forever and every future prompt reads busy.
   console.log("\n── failed-launch cleanup (host-registry) ──");
-  const { HostHandle } = await import("../../src/server/host-client");
-  const { hostRunBusy } = await import("../../src/server/host-registry");
+  const { HostHandle } = await import("../../packages/core/opensession-server/src/server/host-client");
+  const { hostRunBusy } = await import("../../packages/core/opensession-server/src/server/host-registry");
   const failSession = `sbxtest-fail-${Date.now().toString(36)}`;
   const failDir = `${SCRATCH}/fail-run`;
   mkdirSync(failDir, { recursive: true });
@@ -494,9 +494,9 @@ try {
   // run-ws module opensession.ts wires), bound on 0.0.0.0 so the container can
   // reach it via the docker bridge gateway. No rpc-socket mount, no host.sock.
   console.log("\n══ ws transport ══");
-  const runWs = await import("../../src/server/run-ws");
+  const runWs = await import("../../packages/core/opensession-server/src/server/run-ws");
   const { registerRunToken: rpcRegister, unregisterRunToken: rpcUnregister } =
-    await import("../../src/server/run-rpc");
+    await import("../../packages/core/opensession-server/src/server/run-rpc");
   const gwRaw = await sh([
     "docker", "network", "inspect", "bridge",
     "-f", "{{(index .IPAM.Config 0).Gateway}}",
@@ -617,7 +617,7 @@ try {
 
     // Steer delivery + cancel over WS: a long generation we steer, then kill.
     console.log("\n── ws steer / cancel ──");
-    const { hostRunBusy: wsBusy } = await import("../../src/server/host-registry");
+    const { hostRunBusy: wsBusy } = await import("../../packages/core/opensession-server/src/server/host-registry");
     const cancelSpec: RunHostSpec = {
       hostId: `rh-wscancel-${Date.now().toString(36)}`,
       osSessionId: WS_SESSION_ID,
@@ -745,8 +745,8 @@ try {
   // and write the .tunnels.env contract. Uses the LIVE Caddy admin API — all
   // routes/allocations are cleaned up here and in cleanup().
   console.log("\n══ preview + lifecycle ══");
-  const previewMod = await import("../../src/server/preview");
-  const previewPortsMod = await import("../../src/server/sandbox/preview-ports");
+  const previewMod = await import("../../packages/core/opensession-server/src/server/preview");
+  const previewPortsMod = await import("../../packages/core/opensession-server/src/server/sandbox/preview-ports");
   await Bun.write(
     process.env.OPENSESSION_SANDBOX_CONFIG!,
     JSON.stringify({ provider: "docker", previewPorts: PRE_PORTS }),
@@ -867,7 +867,7 @@ exec bun -e 'Bun.serve({ port: Number(process.env.WEBAPP_PORT), hostname: "0.0.0
   // exercised against a cheap BARE sandbox (the terminal needs no runner
   // payload) only when credentials are present.
   console.log("\n══ terminal ══");
-  const termMod = await import("../../src/server/terminals");
+  const termMod = await import("../../packages/core/opensession-server/src/server/terminals");
   const termCollect = () => {
     const st = { out: "", notices: 0, exited: false, ready: null as any };
     return {

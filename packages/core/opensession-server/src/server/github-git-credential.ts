@@ -1,0 +1,49 @@
+/** Process-local Git credential wiring for trusted server-owned Git calls. */
+
+import { existsSync } from "fs";
+import { resolve } from "path";
+import { SHIM_PATH } from "../../../../../scripts/lib/paths";
+
+const GH_CREDENTIAL_SCRIPT = resolve(
+  import.meta.dir,
+  "../../../../../scripts/gh-credential.ts",
+);
+
+function shellQuoteWord(word: string): string {
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(word)) return word;
+  return `'${word.replaceAll("'", `'\\''`)}'`;
+}
+
+/**
+ * Use the stable installed command so compiled releases need neither Bun nor a
+ * scripts sidecar. The source-tree fallback keeps direct development runs
+ * useful before install.sh creates the shim.
+ */
+export function githubCredentialHelperCommand(
+  shimPath = SHIM_PATH,
+  shimExists = existsSync(shimPath),
+): string {
+  if (shimExists) return `!${shellQuoteWord(shimPath)} github-credential`;
+  return `!bun ${shellQuoteWord(GH_CREDENTIAL_SCRIPT)}`;
+}
+
+/**
+ * Authentication for one trusted server-owned Git subprocess. The token stays
+ * in the child environment. Git receives only a process-local, non-secret
+ * helper command, so existing checkouts work without mutating .git/config.
+ */
+export function githubGitCredentialEnv(
+  token: string,
+  helper = githubCredentialHelperCommand(),
+): Record<string, string> {
+  return {
+    GH_TOKEN: token,
+    GITHUB_TOKEN: token,
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_CONFIG_COUNT: "2",
+    GIT_CONFIG_KEY_0: "credential.https://github.com.helper",
+    GIT_CONFIG_VALUE_0: "",
+    GIT_CONFIG_KEY_1: "credential.https://github.com.helper",
+    GIT_CONFIG_VALUE_1: helper,
+  };
+}

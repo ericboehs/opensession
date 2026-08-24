@@ -5,7 +5,7 @@
 mcp-config.json
 
 # Instance-local operator instructions (appended to every engine run by
-# readLocalInstructions in src/server/opencode-runner.ts) — never tracked
+# readLocalInstructions in src/server/run-policy.ts) — never tracked
 AGENTS.local.md
 CLAUDE.local.md
 
@@ -21,7 +21,9 @@ node_modules/.bin/codex
 .frontend-dist/
 .website-dist/
 .website-dist-stage/
-website/.demo-tailwind.css
+packages/clients/website/.demo-tailwind.css
+packages/clients/website/.next/
+packages/clients/website/tsconfig.tsbuildinfo
 node_modules
 __pycache__/
 *.pyc
@@ -49,8 +51,8 @@ deploy/sandbox/microvm/.cache-busybox
 .DS_Store
 
 # Vendored third-party agent skills are instance-local. Open Session's own
-# generic skills are tracked below and linked into OpenCode's global skill dir
-# by install.sh.
+# generic skills are tracked below, and every run loads this directory
+# (src/server/skill-paths.ts).
 .agents/skills/
 !.agents/skills/
 .agents/skills/*
@@ -60,7 +62,16 @@ deploy/sandbox/microvm/.cache-busybox
 !.agents/skills/pr-autofix/**
 !.agents/skills/audit-codebase/
 !.agents/skills/audit-codebase/**
+!.agents/skills/bro/
+!.agents/skills/bro/**
 .claude/skills
 skills-lock.json
 .css-shots/
 .css-ab/
+
+# simple-mode harness work dir
+test/simple-mode/.work/
+test/simple-mode/.work-run.log
+
+# Compiled single-executable build (scripts/build-compile.ts)
+/opensession

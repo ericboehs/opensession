@@ -55,14 +55,14 @@ root. Pins are `ARG`s — override with `--build-arg` per build:
 
 | ARG | Default | Keep in lockstep with |
 | --- | --- | --- |
-| `BUN_VERSION` | 1.3.14 | host `bun --version` |
+| `BUN_VERSION` | 1.4.0 | host `bun --version` |
 | `CLAUDE_VERSION` | 2.1.218 | host `claude --version` |
 | `NODE_MAJOR` | 24 | host Node LTS |
-| `OPENCODE_VERSION` | 1.18.18 | host opencode |
+| `PI_VERSION` | 1.18.18 | host pi |
 
 Rebuild whenever: the host Claude CLI or bun is bumped, `bun.lock` changes
 (any dep, incl. the Agent SDK / vendored codex binary), or **anything under
-`src/runner-host/` changes** — sandboxed runs execute the image's copy of
+`packages/core/opensession-server/src/runner-host/` changes** — sandboxed runs execute the image's copy of
 the runner, not your checkout.
 
 ### Path parity is load-bearing (do not "tidy" it)
@@ -102,21 +102,31 @@ above before "tidying" any of it.
 
 ### Warm pools (prewarm)
 
-Remote providers take 30–45 seconds to hand back a usable sandbox, which is a
-long time to stare at a prompt box. The prewarm pool starts one *while you are
-still typing*, so the sandbox is ready when you hit send.
+Remote providers can take minutes to prepare a large repository. The default
+pool starts while you type and destroys an untouched sandbox after its TTL. For
+a project that must open quickly, explicitly keep a sandbox prepared:
 
 ```json
-"prewarm": { "enabled": true, "ttlMinutes": 10, "maxLive": 2 }
+"prewarm": {
+  "enabled": true,
+  "ttlMinutes": 10,
+  "maxLive": 2,
+  "keepReady": [
+    { "provider": "box", "repoId": "tella-fusion" },
+    { "provider": "daytona", "repoId": "tella-fusion" }
+  ]
+}
 ```
 
-`maxLive` is the setting that matters: prewarms are paid compute whether or not
-you use them, and an untouched one is destroyed after `ttlMinutes`. Default is
-deliberately 2.
+`maxLive` bounds both preparing and prepared sandboxes. It must be at least the
+number of keep-ready targets. Open Session parks prepared capacity when the
+provider retains its disk on stop, so Box and Daytona stop billing compute while
+waiting. A claim resumes that disk, and its replacement prepares in the
+background before parking again. Completed entries survive coordinator restarts.
+Without `keepReady`, the pool remains demand-driven and TTL-bound.
 
-Inert until a provider with prewarm support is configured (a Daytona/E2B API
-key, or the local Firecracker MicroVM provider) — then it defaults on. Docker
-starts fast enough locally that it does not need this.
+The pool is inert until a supported provider is configured. Docker starts fast
+enough locally that it does not need this.
 
 ### Snapshots
 
@@ -146,9 +156,9 @@ Honest status, because these are the newest parts:
   refs; the `quickSyncOnRestore` setting (a non-destructive `git fetch` +
   `git status` after a volume restore, default on) exists for exactly that. If
   a session starts confused about what branch it is on, suspect this first.
-- **Prewarm accounting** is crash-safe by cleanup rather than adoption: an
-  unclaimed prewarm left by a server restart is destroyed because the new
-  process cannot safely inherit its bootstrap promise.
+- **Prewarm restart recovery** restores completed, signature-matching entries.
+  Interrupted bootstraps are destroyed because their completion promise cannot
+  be resumed safely.
 - **The MicroVM backend is live-certified** for provisioning, engine launch,
   reconnect/replay, steering, cancellation, durable pause/wake, workspace
   survival and teardown. Each Firecracker process is unprivileged and jailed
@@ -320,21 +330,20 @@ to `provider: "local"` (today's host behavior). Env override for the path:
   // https URL (GitHub PAT / x-access-token).
   "cloneCredential": { "type": "https-token", "token": "ghp_…" },
 
-  // Warm-on-typing prewarm pool (src/server/sandbox/prewarm.ts): typing a
-  // new-session prompt with a prewarm-capable provider selected (daytona,
-  // microvm — e2b has no prewarm adapter yet) starts the runner bootstrap
-  // immediately; the session create ADOPTS the warmed sandbox, cutting
-  // first-turn sandbox latency from ~30-45s+ to seconds. Absent block =
-  // these defaults, with `enabled` true whenever a daytona/e2b API key or
-  // the microvm provider is configured.
+  // Demand-driven by default. Add explicit keepReady targets when a project
+  // must open in seconds. maxLive includes both preparing and ready entries.
   "prewarm": {
-    "enabled": true,           // default: see above
-    "ttlMinutes": 10,          // destroy an untouched prewarm after N minutes
-    "maxLive": 2               // max live prewarms across all repos (paid compute)
+    "enabled": true,
+    "ttlMinutes": 10,
+    "maxLive": 2,
+    "keepReady": [
+      { "provider": "box", "repoId": "tella-fusion" },
+      { "provider": "daytona", "repoId": "tella-fusion" }
+    ]
   },
 
   // Remote runner bootstrap. Sandbox-engine models install the full runner +
-  // model CLIs. OpenCode models (OpenAI, Claude and other providers) keep
+  // model CLIs. Pi models (OpenAI, Claude and other providers) keep
   // their engine/auth on the host and install only Git/Bun/ripgrep/core
   // workspace tools:
   "runnerBundleUrl": null,     // tarball of the runner bundle (preferred)
@@ -346,7 +355,7 @@ to `provider: "local"` (today's host behavior). Env override for the path:
 ### Local Firecracker MicroVM (brain and workspace inside)
 
 The `microvm` provider runs the normal runner payload and selected engine
-inside a per-session Firecracker guest. OpenCode, Pi and native Claude use the
+inside a per-session Firecracker guest. Pi, Pi and native Claude use the
 same brain-inside run-ws/rpc-ws transport as remote providers; only native
 Codex stays host-only because its writable rotating `CODEX_HOME` is not safe to
 project across the boundary. Per-launch credentials are scoped and copied into
@@ -420,7 +429,7 @@ Remote sandboxes (Daytona/E2B/Box/Modal/Lambda MicroVMs) run on remote compute a
 to opensession's `/run-ws/<hostId>` and `/rpc-ws`
 WebSocket routes from the **public internet**. The main server binds the
 tailnet and carries the whole app — never expose it. Instead,
-`src/server/public-ingress.ts` runs a **second, isolated Bun.serve** when
+`packages/core/opensession-server/src/server/public-ingress.ts` runs a **second, isolated Bun.serve** when
 `publicIngress.enabled` is set:
 
 **What it serves:**
@@ -497,9 +506,9 @@ so no ingress URL is reachable from inside.
   local and they're lost when the sandbox is destroyed**. Host-side you still
   get the launch/journal/run-ws lines; grep the sandbox itself (`exec`) while
   it lives if you need a remote run's turn-level audit. (The persisted
-  opencode transcript had the same gap and is now mirrored host-side from the
-  dial-back stream — see `withOpencodeTranscriptMirror` in
-  `src/server/sandbox/adapters/bootstrap.ts`; audit mirroring is a possible
+  pi transcript had the same gap and is now mirrored host-side from the
+  dial-back stream — see the transcript forwarder in
+  `packages/core/opensession-server/src/server/sandbox/adapters/bootstrap.ts`; audit mirroring is a possible
   follow-up on the same hook.)
 
 ## Kill switch
@@ -520,7 +529,7 @@ The config file's *values* are read fresh per run. Code changes to the sandbox
 path are **runner internals** and need a service restart:
 
 - First-time enablement, provider/transport code changes, anything under
-  `src/server/sandbox/`, `src/runner-host/`, run-ws/rpc-ws → real
+  `packages/core/opensession-server/src/server/sandbox/`, `packages/core/opensession-server/src/runner-host/`, run-ws/rpc-ws → real
   `systemctl restart opensession`.
 - The publicIngress listener starts once at boot: enabling/disabling it or
   changing `port`/`host` → restart (`publicBaseUrl` value tweaks apply to
@@ -564,13 +573,16 @@ matrix above for current certification.
 ### Daytona (implemented, live-certified 2026-08-11)
 
 Self-hostable sandbox platform (Helm/K8s) with a hosted cloud. The adapter
-(`src/server/sandbox/adapters/daytona.ts`) creates sandboxes over the
+(`packages/core/opensession-server/src/server/sandbox/adapters/daytona.ts`) creates sandboxes over the
 Daytona API/SDK: volume-style workspace cloned in-sandbox over https
 (`cloneCredential`), ws transport always, runner bootstrapped on first
 ensure. A prewarm clones the repo, runs `.agents/setup`, scrubs clone and
-model authority, and publishes a 24-hour Daytona snapshot. Later prewarms
-restore that provider artifact into a new sandbox and skip setup. Idle-stop
-is native (`autoStopInterval`).
+model authority, and publishes a Daytona snapshot. The image registry refreshes
+source snapshots every 30 minutes without discarding the old mapping until the
+replacement is ready. Later sessions restore that artifact, fetch only the
+small source delta, and skip setup. Preparation inputs such as `bun.lock` and
+`.agents/setup` invalidate the image separately. Idle-stop is
+native (`autoStopInterval`).
 
 - Connect in Workspace → Sandboxes with a Daytona API key and a reachable
   public callback origin. Settings owns region/resource/snapshot overrides;
@@ -594,7 +606,7 @@ is native (`autoStopInterval`).
 
 Firecracker microVM sandboxes; hosted cloud plus an OSS self-host stack
 (Terraform/Nomad, GCP full / AWS beta — heavyweight; we document it, we
-don't operate it). The adapter (`src/server/sandbox/adapters/e2b.ts`) is
+don't operate it). The adapter (`packages/core/opensession-server/src/server/sandbox/adapters/e2b.ts`) is
 written to the same contract as Daytona (volume-style workspace, ws
 transport, bootstrap on first ensure) but has **not been run against a live
 E2B account** — treat it as untested until the conformance suite passes.
@@ -622,7 +634,10 @@ Sandboxes**. It is stored as an opaque workspace secret; new Boxes use
   8 GB / at least 80 GB), or **Large** (8 / 16 GB / at least 100 GB) profile.
 - Warm-on-typing creates a Box while the user composes and the new session
   adopts it. Cold creation falls back cleanly when a named snapshot has gone
-  stale.
+  stale. The image registry replaces the named snapshot every 30 minutes. A
+  session then fetches only its requested branch and resets the lazy checkout
+  to that small delta, rather than fetching every ref and hydrating the 9.6 GB
+  filesystem. Feature-branch sessions therefore never begin on snapshot main.
 - The command API's synchronous limit is 600 seconds. Longer work and
   background commands use Box's native detached-process endpoint and poll its
   separate stdout/stderr and exit status.
@@ -650,7 +665,7 @@ Sandboxes**. It is stored as an opaque workspace secret; new Boxes use
 ### Modal (implemented, live-certified 2026-08-11)
 
 Modal sandboxes are ephemeral containers created through the official
-Apache-2.0 TypeScript SDK. The adapter (`src/server/sandbox/adapters/modal.ts`)
+Apache-2.0 TypeScript SDK. The adapter (`packages/core/opensession-server/src/server/sandbox/adapters/modal.ts`)
 uses the same volume-style workspace, remote bootstrap, and WebSocket dial-back
 contract as the other remote providers.
 
@@ -660,13 +675,17 @@ contract as the other remote providers.
 - Modal encrypted tunnel URLs are public Internet endpoints. Preview tunnels
   stay disabled unless `modal.publicPreviews` is explicitly `true`; only use
   that option for dev servers that are safe to expose publicly.
-- Modal caps a sandbox's lifetime at 24 hours. Idle timeout or lifetime expiry
-  terminates the container and deletes its workspace; the next turn creates a
-  fresh sandbox, so push code-mode work early.
-- The prewarm adapter publishes Modal filesystem Images after `.agents/setup`
-  and credential scrubbing (24-hour TTL). A restored prewarm preserves the
-  exact seal and setup output, then is adopted by the session. Shell-tab
-  remote PTY remains provider-dependent work.
+- Modal caps a sandbox's lifetime at 24 hours and deletes a terminated
+  container's filesystem. After each clean turn Open Session therefore writes
+  one session-private filesystem Image. An idle or near-lifetime follow-up
+  restores that exact workspace, including uncommitted work, before syncing
+  credentials and starting the runner. Each successful checkpoint replaces the
+  previous one; session deletion removes it.
+- The prewarm adapter publishes credential-free Modal filesystem Images after `.agents/setup`
+  and credential scrubbing. The image registry refreshes them every 30 minutes,
+  while input signatures rebuild immediately when setup or lockfiles change.
+  A restored prewarm preserves the exact seal and setup output, then is adopted
+  by the session. Shell-tab remote PTY remains provider-dependent work.
 - The 41/41 live conformance pass covered provisioning, bootstrap, git/exec,
   idempotent reuse, encrypted preview tunnels, a distinct filesystem-image
   restore, real agent execution, WS reconnect/steer/cancel, and cleanup.
@@ -679,7 +698,7 @@ contract as the other remote providers.
 ### AWS Lambda MicroVMs (experimental, NOT yet certified)
 
 AWS Lambda MicroVMs are Firecracker VMs purpose-built for agent sandboxes. The
-adapter (`src/server/sandbox/adapters/lambda-microvm.ts`) uses the AWS SDK
+adapter (`packages/core/opensession-server/src/server/sandbox/adapters/lambda-microvm.ts`) uses the AWS SDK
 control plane and authenticated HTTP requests to the structured command daemon
 in `deploy/sandbox/lambda-microvm/`.
 
@@ -724,7 +743,7 @@ hidden from the picker and rejected by session creation.
 - **AWS Lambda MicroVMs**: the AWS SDK client is Apache-2.0.
 - **Docker provider**: plain `docker` CLI against your own daemon; nothing
   vendored.
-- Core imports adapter SDKs only inside `src/server/sandbox/adapters/` —
+- Core imports adapter SDKs only inside `packages/core/opensession-server/src/server/sandbox/adapters/` —
   a build without those files carries no third-party sandbox code.
 
 ## Security posture (what a sandbox does and doesn't isolate)

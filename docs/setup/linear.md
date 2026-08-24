@@ -1,6 +1,6 @@
 # Linear
 
-The Linear agent (`src/agents/linear/`) turns Linear agent-session
+The Linear agent (`packages/core/opensession-server/src/agents/linear/`) turns Linear agent-session
 assignments into Open Session coding sessions: assign the app to an issue, it
 creates a worktree, offers plan/implement, runs the work, and opens a PR when
 implementation completes.
@@ -9,10 +9,10 @@ implementation completes.
 
 | Var | Required for | Notes |
 | --- | --- | --- |
-| `LINEAR_CLIENT_ID` | OAuth | your Linear OAuth app's client id (`src/agents/linear/oauth.ts`) |
+| `LINEAR_CLIENT_ID` | OAuth | your Linear OAuth app's client id (`packages/core/opensession-server/src/agents/linear/oauth.ts`) |
 | `LINEAR_CLIENT_SECRET` | OAuth | token exchange + refresh |
 | `LINEAR_WEBHOOK_SECRET` | webhooks | HMAC verification is **fail-closed**: unset/empty secret means every webhook is rejected with 401, not accepted |
-| `LINEAR_API_KEY` | optional | NOT used by the Linear agent itself — it's the Plain agent's fallback auth for creating/searching Linear issues when the OAuth token store is empty (`src/agents/plain/api.ts`) |
+| `LINEAR_API_KEY` | optional | NOT used by the Linear agent itself — it's the Plain agent's fallback auth for creating/searching Linear issues when the OAuth token store is empty (`packages/core/opensession-server/src/agents/plain/api.ts`) |
 
 The agent is off unless enabled: `integrations.linear.enabled: true` in
 `~/.opensession/config.json`, or the `ENABLE_LINEAR_AGENT` env flag (which
@@ -23,7 +23,7 @@ wins when set — see
 
 Create an OAuth application in Linear (with agent/app-actor capability). The
 code requests scopes `app:assignable read write` with `actor: "app"`
-(`src/agents/linear/oauth.ts`).
+(`packages/core/opensession-server/src/agents/linear/oauth.ts`).
 
 Routes (on the [webhook server](install.md#webhook-server), port 3848 behind
 your TLS proxy):
@@ -35,12 +35,13 @@ your TLS proxy):
 
 The OAuth `redirect_uri` is derived, not hardcoded: it is
 `integrations.linear.oauthRedirectUrl` if you set it, otherwise
-`<server.publicBaseUrl>/oauth/callback`. Register whichever one applies on your
+`<server.webhookBaseUrl>/oauth/callback` (falling back to `server.publicBaseUrl`
+when no separate webhook origin is configured). Register whichever one applies on your
 Linear OAuth app — they must match exactly, including the scheme and any
 trailing path.
 
 The stored OAuth token is also overlaid onto the `linear` MCP server config
-at run time (`withDynamicCredentials` in `src/server/connections.ts`), so
+at run time (`withDynamicCredentials` in `packages/core/opensession-server/src/server/connections.ts`), so
 sessions get authenticated Linear MCP tools from the same grant.
 
 ## Webhook intake
@@ -49,7 +50,7 @@ Point a Linear webhook at `POST /webhook` on the webhook server. Signature
 header: `linear-signature` (HMAC-SHA256 of the raw body with
 `LINEAR_WEBHOOK_SECRET`, timing-safe compare).
 
-Consumed event types (`src/agents/linear/index.ts`):
+Consumed event types (`packages/core/opensession-server/src/agents/linear/index.ts`):
 
 - `AgentSessionEvent` / `AgentSession`:
   - `created` — creates an isolated worktree + session, replies with an
@@ -66,5 +67,5 @@ IDs — team ids are fetched per issue. Session state is persisted to disk so
 in-flight Linear sessions survive restarts.
 
 Worktrees are cut at `<paths.worktreesDir>/<wtPrefix>-<branch>` against the
-instance's default repo (`src/agents/linear/session.ts` uses
+instance's default repo (`packages/core/opensession-server/src/agents/linear/session.ts` uses
 `defaultRepo()`), so nothing here is hardcoded to a particular repository.

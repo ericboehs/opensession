@@ -1,7 +1,8 @@
-# Tella's client release pipeline — fork and rebrand (see os1-mac/README).
+# Tella's client release pipeline — fork and rebrand (see packages/clients/mac/README).
 name: Release Open Session for Mac
 
-# Builds, signs, notarizes and publishes the vendored Electron shell.
+# Builds, signs, notarizes and uploads the vendored Electron shell to the
+# shared draft. release-finalize.yml publishes after every producer succeeds.
 on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
@@ -16,7 +17,7 @@ concurrency:
 
 defaults:
   run:
-    working-directory: os1-mac
+    working-directory: packages/clients/mac
 
 jobs:
   release:
@@ -26,10 +27,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prepare release draft
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if is_draft="$(gh release view "$TAG" --json isDraft --jq '.isDraft' 2>/dev/null)"; then
+            if [ "$is_draft" != "true" ]; then
+              echo "::error title=Release is already immutable::$TAG is already published. Push a new tag and let the release workflows publish it."
+              exit 1
+            fi
+          elif ! gh release create "$TAG" --verify-tag --draft --title "$TAG" --generate-notes; then
+            sleep 2
+            is_draft="$(gh release view "$TAG" --json isDraft --jq '.isDraft')"
+            test "$is_draft" = "true"
+          fi
+
       # SHA-pinned: this job runs with the Developer ID certificate and
       # notarisation credentials present, so a moved tag on a third-party
       # action would execute right next to them. (v2.2.0 at time of pinning.)
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.0
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -136,31 +157,20 @@ jobs:
           xcrun stapler validate dist/mac-arm64/*.app
           spctl --assess --type open --context context:primary-signature -v dist/*.dmg
 
-      - name: Publish GitHub Release
+      - name: Upload to release draft
         if: github.ref_type == 'tag'
-        # Everything above this point is ours and deterministic; this step is the
-        # one call to a service we do not control, and it arrives after ~90s of
-        # signing and a notarisation round trip. A partial GitHub API outage
-        # (2026-08-17) failed it three times on identical, notarised builds, once
-        # while creating the release and once while uploading to a release it had
-        # just created. So retry, and treat an existing release as something to
-        # finish rather than a collision: upload --clobber repairs a half-done
-        # attempt, which is also what makes a re-run of this job safe.
+        # Signing and notarisation finish before the upload. Retry transient API
+        # failures, but keep the release mutable until every producer succeeds.
         run: |
           for attempt in 1 2 3 4 5; do
-            if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-              if gh release upload "$GITHUB_REF_NAME" dist/*.dmg dist/*.zip --clobber; then
-                echo "uploaded assets to the existing $GITHUB_REF_NAME release"
-                exit 0
-              fi
-            elif gh release create "$GITHUB_REF_NAME" dist/*.dmg dist/*.zip --generate-notes; then
-              echo "created release $GITHUB_REF_NAME"
+            if gh release upload "$GITHUB_REF_NAME" dist/*.dmg dist/*.zip --clobber; then
+              echo "uploaded assets to the $GITHUB_REF_NAME draft"
               exit 0
             fi
-            echo "::warning::publishing $GITHUB_REF_NAME failed (attempt $attempt/5), retrying"
+            echo "::warning::uploading $GITHUB_REF_NAME failed (attempt $attempt/5), retrying"
             sleep $((attempt * 30))
           done
-          echo "::error::could not publish $GITHUB_REF_NAME after 5 attempts"
+          echo "::error::could not upload $GITHUB_REF_NAME after 5 attempts"
           exit 1
         env:
           GH_TOKEN: ${{ github.token }}
@@ -171,5 +181,5 @@ jobs:
         with:
           name: OS1
           path: |
-            os1-mac/dist/*.dmg
-            os1-mac/dist/*.zip
+            packages/clients/mac/dist/*.dmg
+            packages/clients/mac/dist/*.zip

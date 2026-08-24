@@ -38,16 +38,16 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = join(import.meta.dir, "..");
-const SHEET = join(ROOT, "src/frontend/styles/legacy.css");
+const SHEET = join(ROOT, "packages/core/opensession-server/src/frontend/styles/legacy.css");
 /** Scanned for identifiers — deliberately wide, so a class referenced from
  *  anywhere at all keeps its rule. Being wrong here deletes a live rule. */
-const SCAN_DIRS = ["src", "os1-chrome", "os1-tui", "website"];
+const SCAN_DIRS = ["packages/core/opensession-server/src", "packages/clients/chrome", "packages/clients/website"];
 /** Scanned for runtime-built class prefixes. Only the directories that render
  *  markup: `src/server` builds plenty of hyphenated strings that are not class
  *  names (`auto-${randomUUIDv7()}` for automation ids), and harvesting those
  *  as prefixes holds real dead rules hostage — `.auto-status-ok` was kept
  *  alive by an id generator. */
-const MARKUP_DIRS = ["src/frontend", "os1-chrome", "website"];
+const MARKUP_DIRS = ["packages/core/opensession-server/src/frontend", "packages/clients/chrome", "packages/clients/website"];
 const SCAN_EXT = /\.(tsx?|jsx?|html)$/;
 
 const argv = new Set(process.argv.slice(2));

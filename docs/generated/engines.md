@@ -5,52 +5,17 @@
 
 Which engine runs a turn, what turns it on, and where each model lands.
 The routing table below is computed by calling `routeModel()`
-(`src/server/models.ts`) against a clean instance — no per-model engine
+(`packages/core/opensession-server/src/server/models.ts`) against a clean instance — no per-model engine
 overrides configured — so it shows the shipped defaults.
 
-`routeModel()` resolves in one order, and this is the only place that
-order lives:
-
-1. an explicit engine prefix on the id (`pi/…`, `claude/…`, `codex/…`);
-   a leading `opencode/` is the picker's own id shape, not a choice;
-2. the per-model default engine — `modelEngines` in
-   `~/.opensession-engines.json`, keyed by the base model id, and applied
-   to INTERACTIVE runs only;
-3. opencode.
-
-A default naming a disabled or un-routable engine is ignored and the run
-stays on opencode; an explicit choice is never softened — it routes, and
-that engine's own gate reports why it cannot run.
+`routeModel()` sends every accepted model and preset to Pi.
+Native ids and provider/model paths normalize to `pi/<provider>/<model>`.
 
 ## Adapters
 
-### opencode · `opencode`
-
-- **Adapter** `src/server/opencode-runner.ts (policy in src/server/opencode-policy.ts)`
-- **Model ids** `opencode/<provider>/<model>`
-- **Gate** Always available; the Anthropic side additionally needs the Meridian bridge enabled (`bridgeEnabled()`, `~/.opensession-opencode.json`).
-- **Mid-turn steer** yes
-- **Note** The default engine and the only one eligible for the shared always-warm servers (`SHARED_INPROCESS_SERVERS` / `sharedOpencodeEligible`). Unattended runs are gated deny-by-default on journal kind (`opencodeGateReason`) and get the tool-strip policy.
-
-### claude-direct · `claude`
-
-- **Adapter** `src/server/engine/claude-direct-adapter.ts (policy in claude-direct-policy.ts)`
-- **Model ids** `claude/<provider>/<model>`
-- **Gate** `directEngineEnabled("claude")` — `claude.enabled` in `~/.opensession-engines.json`; `OPENSESSION_ENGINE_CLAUDE_DIRECT=1` is honoured as a legacy alias. Off by default.
-- **Mid-turn steer** yes
-- **Note** Vendor-scoped: Anthropic models only. Loads lazily on the first turn that routes to it. Ask mode denies the mutating built-ins in `ASK_MODE_DENIED_TOOLS`.
-
-### codex-direct · `codex`
-
-- **Adapter** `src/server/engine/codex-direct-adapter.ts (MCP wiring in codex-direct-mcp.ts)`
-- **Model ids** `codex/<provider>/<model>`
-- **Gate** `directEngineEnabled("codex")` — `codex.enabled` in `~/.opensession-engines.json`. Off by default.
-- **Mid-turn steer** yes
-- **Note** Vendor-scoped: OpenAI models only. Drives the `codex` binary's app-server JSON-RPC surface, with an isolated CODEX_HOME per account. The Dial's oracle reaches it as the `opensession-oracle` MCP server, because codex has no dynamic tool registration.
-
 ### pi · `pi`
 
-- **Adapter** `src/server/pi-runner.ts`
+- **Adapter** `packages/core/opensession-server/src/server/pi-runner.ts`
 - **Model ids** `pi/<provider>/<model>`
 - **Gate** `enabled` in `~/.opensession-pi.json` (`piConfigPath()`). Off by default.
 - **Mid-turn steer** yes
@@ -58,7 +23,7 @@ that engine's own gate reports why it cannot run.
 
 ### fake (tests only) · `fake`
 
-- **Adapter** `src/server/agent-runner.ts — the __setEngineForTest seam; fixtures in src/server/fake-engine.test.ts`
+- **Adapter** `packages/core/opensession-server/src/server/agent-runner.ts — the __setEngineForTest seam; fixtures in packages/core/opensession-server/src/server/fake-engine.test.ts`
 - **Model ids** – (intercepts every model id)
 - **Gate** Not config-gated and not reachable in production: it is a module-local test seam, set only by a test and cleared by any hot reload.
 - **Mid-turn steer** n/a
@@ -71,36 +36,32 @@ engine and dispatch id `routeModel()` returns for it.
 
 | Model id | Label | Engine | Dispatched as |
 | --- | --- | --- | --- |
-| `claude-fable-5` | Claude Fable 5 | opencode | `opencode/anthropic/claude-fable-5` |
-| `claude-opus-5` | Claude Opus 5 | opencode | `opencode/anthropic/claude-opus-5` |
-| `claude-opus-4-8` | Claude Opus 4.8 | opencode | `opencode/anthropic/claude-opus-4-8` |
-| `claude-sonnet-5` | Claude Sonnet 5 | opencode | `opencode/anthropic/claude-sonnet-5` |
-| `claude-sonnet-4-6` | Claude Sonnet 4.6 | opencode | `opencode/anthropic/claude-sonnet-4-6` |
-| `claude-haiku-4-5` | Claude Haiku 4.5 | opencode | `opencode/anthropic/claude-haiku-4-5` |
-| `codex-best-available` | Best available (Codex) | opencode | `opencode/openai/gpt-5.6-sol` |
-| `gpt-5.6-sol` | GPT-5.6 Sol | opencode | `opencode/openai/gpt-5.6-sol` |
-| `gpt-5.6-terra` | GPT-5.6 Terra | opencode | `opencode/openai/gpt-5.6-terra` |
-| `gpt-5.6-luna` | GPT-5.6 Luna | opencode | `opencode/openai/gpt-5.6-luna` |
-| `gpt-5.5` | GPT-5.5 (Codex) | opencode | `opencode/openai/gpt-5.6-sol` |
-| `gpt-5.4` | GPT-5.4 (Codex) | opencode | `opencode/openai/gpt-5.6-sol` |
-| `gpt-5.4-mini` | GPT-5.4 mini (Codex) | opencode | `opencode/openai/gpt-5.6-luna` |
-| `gpt-5.3-codex-spark` | GPT-5.3 Codex Spark | opencode | `opencode/openai/gpt-5.6-luna` |
-| `dial/ultra` | Dial · Ultra | opencode | `opencode/anthropic/claude-fable-5` |
-| `dial/high` | Dial · High | opencode | `opencode/openai/gpt-5.6-sol` |
-| `dial/medium` | Dial · Medium | opencode | `opencode/openai/gpt-5.6-sol` |
-| `dial/low` | Dial · Low | opencode | `opencode/openai/gpt-5.6-luna` |
-| `dial/opus-fable` | Opus 5 + Fable oracle | opencode | `opencode/anthropic/claude-opus-5` |
-| `orchestrator/fable` | Orchestrator · Fable 5 | opencode | `opencode/anthropic/claude-fable-5` |
-| `orchestrator/sol` | Orchestrator · Sol | opencode | `opencode/openai/gpt-5.6-sol` |
+| `claude-fable-5` | Claude Fable 5 | pi | `pi/anthropic/claude-fable-5` |
+| `claude-opus-5` | Claude Opus 5 | pi | `pi/anthropic/claude-opus-5` |
+| `claude-opus-4-8` | Claude Opus 4.8 | pi | `pi/anthropic/claude-opus-4-8` |
+| `claude-sonnet-5` | Claude Sonnet 5 | pi | `pi/anthropic/claude-sonnet-5` |
+| `claude-sonnet-4-6` | Claude Sonnet 4.6 | pi | `pi/anthropic/claude-sonnet-4-6` |
+| `claude-haiku-4-5` | Claude Haiku 4.5 | pi | `pi/anthropic/claude-haiku-4-5` |
+| `codex-best-available` | Best available (Codex) | pi | `pi/openai/gpt-5.6-sol` |
+| `gpt-5.6-sol` | GPT-5.6 Sol | pi | `pi/openai/gpt-5.6-sol` |
+| `gpt-5.6-terra` | GPT-5.6 Terra | pi | `pi/openai/gpt-5.6-terra` |
+| `gpt-5.6-luna` | GPT-5.6 Luna | pi | `pi/openai/gpt-5.6-luna` |
+| `gpt-5.5` | GPT-5.5 (Codex) | pi | `pi/openai/gpt-5.6-sol` |
+| `gpt-5.4` | GPT-5.4 (Codex) | pi | `pi/openai/gpt-5.6-sol` |
+| `gpt-5.4-mini` | GPT-5.4 mini (Codex) | pi | `pi/openai/gpt-5.6-luna` |
+| `gpt-5.3-codex-spark` | GPT-5.3 Codex Spark | pi | `pi/openai/gpt-5.6-luna` |
+| `dial/ultra` | Dial · Ultra | pi | `pi/anthropic/claude-fable-5` |
+| `dial/high` | Dial · High | pi | `pi/openai/gpt-5.6-sol` |
+| `dial/medium` | Dial · Medium | pi | `pi/openai/gpt-5.6-sol` |
+| `dial/low` | Dial · Low | pi | `pi/openai/gpt-5.6-luna` |
+| `dial/opus-fable` | Opus 5 + Fable oracle | pi | `pi/anthropic/claude-opus-5` |
+| `orchestrator/fable` | Orchestrator · Fable 5 | pi | `pi/anthropic/claude-fable-5` |
+| `orchestrator/sol` | Orchestrator · Sol | pi | `pi/openai/gpt-5.6-sol` |
 
-Prefixing any of those ids routes it to another engine, subject to that
-engine's gate and vendor scope — `toEngineModel()` returns nothing when an
-engine cannot serve a model, and the run stays where it was.
+Every accepted id resolves to Pi before dispatch.
 
 | Example id | Routes to |
 | --- | --- |
 | `pi/anthropic/claude-opus-5` | pi |
-| `claude/anthropic/claude-opus-5` | claude |
-| `codex/openai/gpt-5.6-sol` | codex |
-| `claude/dial/opus-fable` | claude |
-| `opencode/anthropic/claude-opus-5` | opencode |
+| `anthropic/claude-opus-5` | pi |
+| `openai/gpt-5.6-sol` | pi |

@@ -69,7 +69,7 @@ flow; agents can inspect it but do not manually maintain it.
 
 ## 2. `opensession-portals` MCP
 
-Move the interactive service implementation out of `src/agents/slack/` and
+Move the interactive service implementation out of `packages/core/opensession-server/src/agents/slack/` and
 replace `opensession-preview` with `opensession-portals`. Do not retain a
 compatibility alias.
 

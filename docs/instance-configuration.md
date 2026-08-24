@@ -13,7 +13,7 @@ point.
   deployment tracking, and security-scan guidance lives on each repo entry.
   A repo entry can also carry an `icon` — a PNG served as the repo's tile icon
   (absolute path, or relative to the checkout); unset falls back to the GitHub
-  org avatar (`src/server/routes/static-assets.ts`).
+  org avatar (`packages/core/opensession-server/src/server/routes/static-assets.ts`).
 - `identity.team` owns commit attribution, GitHub/Slack/Linear mappings,
   per-user connector access, and the team web-sign-in allowlist. There is no
   built-in company roster. `identity.defaultTimezone` controls the fallback
@@ -49,16 +49,16 @@ is an inconvenience rather than a dead end:
 
 | Client | Where the user changes it | Build-time default |
 | --- | --- | --- |
-| Chrome extension | the Server field in the side panel | `os1-chrome/deployment.json` |
-| Electron shell | `OS1_URL` / `OS1_CLOUD_URL` env | `os1-mac/package.json` → `opensession.defaultServer` |
-| Swift app (iOS/macOS) | Settings → Server | `OS1DefaultServerURL` in `os1-ios/project.yml` |
+| Chrome extension | the Server field in the side panel | `packages/clients/chrome/deployment.json` |
+| Electron shell | asked on first launch, then app menu → Change Server | `packages/clients/mac/package.json` → `opensession.defaultServer` |
+| Swift app (iOS/macOS) | Settings → Server | `OS1DefaultServerURL` in `packages/clients/ios/project.yml` |
 | Web UI / PWA | n/a — served by the server itself | n/a |
 
 Packaging configuration:
 
-- Chrome: `os1-chrome/deployment.json`
-- Electron: `os1-mac/package.json` → `opensession.defaultServer`
-- Swift: `OS1DefaultServerURL` in `os1-ios/project.yml`
+- Chrome: `packages/clients/chrome/deployment.json`
+- Electron: `packages/clients/mac/package.json` → `opensession.defaultServer`
+- Swift: `OS1DefaultServerURL` in `packages/clients/ios/project.yml`
 
 Bundle identifiers, signing teams, provisioning profiles, update feeds,
 entitlements, deployment scripts, and infrastructure log destinations are

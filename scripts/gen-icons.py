@@ -16,11 +16,13 @@ the icon URLs in src/frontend/index.html and the generated manifest route.
 import os
 from PIL import Image
 
-OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "src", "frontend")
+OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "packages", "core", "opensession-server", "src", "frontend")
 SOURCE = os.path.join(
     os.path.dirname(__file__),
     "..",
-    "os1-ios",
+    "packages",
+    "clients",
+    "ios",
     "OS1",
     "Assets.xcassets",
     "AppIcon.appiconset",

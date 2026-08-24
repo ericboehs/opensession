@@ -14,9 +14,9 @@
  * through to its other helpers instead of failing the whole operation.
  */
 
-import { mintCsJwt } from "../src/server/codestorage/auth";
-import { csRepoClaimFromPath } from "../src/server/codestorage/remote";
-import { codeStorageConfig } from "../src/server/config";
+import { mintCsJwt } from "../packages/core/opensession-server/src/server/codestorage/auth";
+import { csRepoClaimFromPath } from "../packages/core/opensession-server/src/server/codestorage/remote";
+import { codeStorageConfig } from "../packages/core/opensession-server/src/server/config";
 
 const action = process.argv[2];
 if (action !== "get") process.exit(0);

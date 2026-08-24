@@ -9,14 +9,13 @@ session's git worktree **bind-mounted at its identical host path**.
 
 | Component | Purpose | Pin |
 | --- | --- | --- |
-| `bun` | runs the runner bundle + Bun `$` exec | `1.3.14` (host) |
+| `bun` | runs the runner bundle + Bun `$` exec | `1.4.0` (host) |
 | Node.js LTS | native-dep builds, tooling | `24.x` |
 | `git`, `gh` | clone / status / diff / push / PR | apt latest |
 | `ripgrep` | @-mention file search | apt |
 | `python3`, `build-essential` | worktree `bun install` native deps | apt |
 | `just`, `direnv`, `lsof` | common repo dev-server bring-up chains (in-sandbox previews) | apt / pinned release |
 | Claude Code CLI | baked at the identical host CLI path for session-resume parity | `2.1.218` (host); build FAILS on version mismatch |
-| `opencode` | the engine — runs in-sandbox | `1.18.18` (host), npm -g, build asserts version |
 | runner bundle | `/home/ubuntu/projects/opensession` (`src/`, `opensession.ts`, `tsconfig.json`) + `node_modules` | from lockfile |
 | minimal `~/.claude/settings.json` | so `settingSources:["user"]` doesn't error | `{}` |
 
@@ -46,16 +45,16 @@ Tags `opensession-runner:latest` and `opensession-runner:<git-sha>` from the rep
 root context. Override the name with `IMAGE=... deploy/sandbox/build.sh`.
 
 Version pins are `ARG`s in the Dockerfile (`BUN_VERSION`, `CLAUDE_VERSION`,
-`NODE_MAJOR`, `OPENCODE_VERSION`) — override per build with `--build-arg` if
+`NODE_MAJOR`) — override per build with `--build-arg` if
 needed.
 
 ## Runtime design (Phase 1 — DockerProvider)
 
-`src/server/sandbox/docker.ts` runs one container per session
+`packages/core/opensession-server/src/server/sandbox/docker.ts` runs one container per session
 (`bks-sbx-<sessionId>`, labels `opensession.sandbox=1` +
 `opensession.session=<id>`, `--init`, `--restart no`, `--cpus`/`--memory` from
 `~/.opensession-sandbox.json`, defaults 4 / 8g). A run is the same runner-host
-entry the systemd path uses (`src/runner-host/host.ts`), `docker exec -d`'d
+entry the systemd path uses (`packages/core/opensession-server/src/runner-host/host.ts`), `docker exec -d`'d
 into the container; its unix socket + spec/meta/journal/log live in a
 bind-mounted per-session run dir (`~/.opensession-sessions/sandbox-runs/<id>`), so
 the server drives it with the normal HostHandle machinery and can reattach
@@ -78,13 +77,13 @@ Mounts (rationale in the docker.ts header):
 Known Phase 1 caveats: external MCP servers now spawn inside the container
 (host-only deps won't start); native Codex account homes are never mounted —
 the capability matrix keeps GPT (Codex) runs host-only, and GPT-in-a-sandbox
-goes through `opencode/openai/*` models. Sandboxes never inherit host cloud
+goes through `pi/openai/*` models. Sandboxes never inherit host cloud
 credentials or use IMDS. An operator may grant a lifecycle an OIDC audience;
 the repository then exchanges its per-launch lease with its cloud provider.
 
 ## Phase 2 — exec-routed surfaces, volume workspaces, preview ports
 
-- **workspace-exec choke point** (`src/server/sandbox/workspace-exec.ts`):
+- **workspace-exec choke point** (`packages/core/opensession-server/src/server/sandbox/workspace-exec.ts`):
   @-mention file search, the Changes diff/discard, and git status/pull/push
   take an optional exec from `workspaceExecFor(session, dir)` — host Bun `$`
   unless the session's sandbox is ACTIVE (materialized + config docker +
@@ -128,7 +127,7 @@ sandboxes) can hold the same webapp port number. Sandbox routes therefore use
 a dedicated allocated range **[20000, 28000)**, keyed by
 `(sandboxId, containerPort)` and persisted in
 `~/.opensession-sessions/sandbox-preview-ports.json`
-(src/server/sandbox/preview-ports.ts): host-vs-sandbox collisions are
+(packages/core/opensession-server/src/server/sandbox/preview-ports.ts): host-vs-sandbox collisions are
 impossible by range disjointness, sandbox-vs-sandbox by the allocator's
 uniqueness probe. Allocations survive restarts/recreations (stable preview
 URL) and are released by `destroy()`.
@@ -219,7 +218,7 @@ background-agents "snapshot after every turn" warm-restore behavior.
 ## Terminals in sandboxes (Shell tab)
 
 The session viewer's **Shell tab** (xterm.js ↔ server-side PTY over the
-tailnet-gated session WS — `src/server/terminals.ts`) is sandbox-aware:
+tailnet-gated session WS — `packages/core/opensession-server/src/server/terminals.ts`) is sandbox-aware:
 `startSessionTerminal` lands the PTY where the session's work actually
 happens.
 
@@ -249,7 +248,7 @@ container recreation to roll it out. The UI signals where a shell landed via
 `term_ready` (dim `[shell inside docker sandbox — <cwd>]` banner).
 
 Terminal code is reached through the server's WebSocket handlers
-(`src/server/ws-handlers.ts`), which do NOT hot-apply — a real restart is
+(`packages/core/opensession-server/src/server/ws-handlers.ts`), which do NOT hot-apply — a real restart is
 needed after changing it.
 
 ## Phase 3 — WS transport + remote adapters
@@ -263,18 +262,18 @@ needed after changing it.
   rpc socket. `callbackBaseUrl` must be reachable FROM the sandbox (Tailscale
   URL for self-hosters; 127.0.0.1 never works). For remote providers that
   means the PUBLIC internet: enable the isolated `publicIngress` listener
-  (src/server/public-ingress.ts — serves run-ws/rpc-ws, health, and the
+  (packages/core/opensession-server/src/server/public-ingress.ts — serves run-ws/rpc-ws, health, and the
   narrowly scoped workload-identity OIDC endpoints; see docs/self-hosting-sandboxes.md "Public dial-back
   ingress") instead of exposing the main server. Transport code is runner
   internals — restart + image rebuild to take effect.
 - **Remote adapters** (`provider: "daytona"` / `"e2b"` / `"box"` / `"modal"`,
-  src/server/sandbox/adapters/): always volume-style workspaces cloned
+  packages/core/opensession-server/src/server/sandbox/adapters/): always volume-style workspaces cloned
   in-sandbox over https (`cloneCredential`), always ws transport, runner
   payload installed on first ensure by `bootstrapRemoteSandbox` for engines
-  that run inside the sandbox. OpenCode engines (OpenAI, Claude and other
+  that run inside the sandbox. Pi engines (OpenAI, Claude and other
   providers) stay on the host and use `bootstrapRemoteWorkspaceRuntime`
   instead (Git/Bun/ripgrep/core tools only; no runner checkout,
-  Claude/OpenCode CLI, credentials, or dial-back requirement). Daytona
+  Claude CLI, credentials, or dial-back requirement). Daytona
   idle-stops natively (`autoStopInterval`); E2B lives on a countdown that
   activity extends — expiry KILLS the sandbox and its workspace. NOTE:
   Daytona Tier 1/2 orgs restrict sandbox egress, which blocks the WS
@@ -288,7 +287,7 @@ needed after changing it.
   that builds `Dockerfile.workspace` (the minimal guest tool baseline: Git,
   Bun, Node, ripgrep, jq, sqlite3, iproute2, Python, native-build basics) and
   then `Dockerfile.runner` on top — the full runner payload in the BOOTSTRAP
-  layout (`~/.bun/bin/bun`, `~/.local/bin/claude`, `~/.bun/bin/opencode`, a
+  layout (`~/.bun/bin/bun`, `~/.local/bin/claude`, and a
   shallow git clone of the runner repo at the pinned `runnerSha` +
   `bun install`, and the exact `~/.bks-bootstrapped` /
   `~/.bks-workspace-runtime` marker strings), so `bootstrapRemoteSandbox` at
@@ -297,7 +296,7 @@ needed after changing it.
   the clone URL (which may carry a token) rides into the build as a BuildKit
   secret and the baked origin is scrubbed back to plain https — the golden
   stays credential-free (all credentials arrive per launch). The refresh also
-  writes `<store>/golden.json` (`{ signature, builtAt, opencode, runnerSha }`)
+  writes `<store>/golden.json` (`{ signature, builtAt, runnerSha }`)
   as build metadata for staleness reporting; the in-VM marker remains the
   runtime source of truth, and a pin bump between refreshes just re-runs the
   incremental in-VM bootstrap (private runner repos: the scrubbed origin can't
@@ -327,21 +326,6 @@ needed after changing it.
   WS transport, snapshots, and the sandboxed preview/lifecycle flow. Uses
   only `sbxtest-*` scratch resources and a redirected run journal; safe next
   to the live server.
-- `deploy/sandbox/verify-opencode-sandbox.ts` — the opencode-engine sibling of
-  verify.ts (`bun run deploy/sandbox/verify-opencode-sandbox.ts`): proves the
-  opencode engine runs INSIDE a docker sandbox end-to-end against the real
-  DockerProvider + `opensession-runner` image. Checks the transcript/bridge-config
-  mounts, in-container `opencode` binary resolution, then a real two-turn
-  opencode/anthropic run (haiku, meridian bridge) via `sandbox.launchRun` —
-  session resume across turns, `bks-sbx-*` sandboxId in the run journal,
-  `opencode serve` living only in-container and reaped at exit, the host-visible
-  JSONL transcript, and `opencode_meridian_run` audit events — before
-  `destroy()` teardown. Costs two haiku turns on the meridian bridge; dry-runs
-  (mount/binary checks only) when the account pool or bridge config is
-  absent/disabled. Uses `octest-*` scratch resources and a redirected journal;
-  safe next to the live server. Rebuild the image first if
-  `opencode-runner`/`host.ts` changed — the container runs the baked src, not
-  this checkout.
 - `deploy/sandbox/verify-external-engine.ts` — legacy boundary certification
   retained for regression coverage. The shipped path is now brain-inside; use
   `conformance.ts` for current provider certification. This script creates a disposable
@@ -356,7 +340,7 @@ needed after changing it.
   ```
 
   It defaults to OpenAI GPT-5.6 Sol. Use `--model
-  opencode/anthropic/claude-sonnet-5` to certify the Claude path instead. For
+  pi/anthropic/claude-sonnet-5` to certify the Claude path instead. For
   a UI-driven smoke test, paste
   `deploy/sandbox/external-engine-test-prompt.md` into a new code session.
 
@@ -365,14 +349,12 @@ needed after changing it.
 - **Claude CLI bump** on the host (`claude --version` changes) → bump
   `CLAUDE_VERSION`. The in-container CLI must match host session-resume behavior
   (the build asserts the installed version and fails on drift).
-- **opencode bump** on the host (`opencode --version` changes) → bump
-  `OPENCODE_VERSION` (same parity rule; build asserts it).
 - **Lockfile change** (`bun.lock`) — any dependency add/upgrade → rebuild
   (the deps layer re-installs).
 - **Bun bump** on the host → bump `BUN_VERSION` to keep parity.
 - Source changes to `src/` / `opensession.ts` that the runner-host path uses →
   rebuild (fast: only the final COPY layers change). In particular ANY change
-  under `src/runner-host/` (protocol/entry) must be rebuilt before the next
+  under `packages/core/opensession-server/src/runner-host/` (protocol/entry) must be rebuilt before the next
   sandboxed run — the container executes the image's copy, not the checkout.
 
 Keep the image's pins in lockstep with the host; parity is the whole point.

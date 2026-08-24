@@ -4,7 +4,7 @@
  *
  * Reachable as `opensession` once install.sh has put the shim on PATH, and as
  * `bun run scripts/cli.ts` from a checkout. The surface mirrors what the
- * reference self-hosted tools (opencode, openclaw) expose, because that is the
+ * reference self-hosted tools (self-hosted tools, openclaw) expose, because that is the
  * bar this install experience is being measured against: onboard, update,
  * start/stop, doctor.
  *
@@ -14,20 +14,22 @@
  */
 
 import { existsSync } from "fs";
+import { isCompiledBinary } from "../packages/core/opensession-server/src/runner-host/exe";
 import { bind } from "./lib/bind";
 import { doctor } from "./lib/doctor";
 import { onboard } from "./lib/onboard";
 import { repos } from "./lib/repos";
 import { team } from "./lib/team";
-import { ENV_PATH, REPO_ROOT, STAGED_UNIT_PATH } from "./lib/paths";
+import { ENV_PATH, REPO_ROOT } from "./lib/paths";
 import * as service from "./lib/service";
 import { update } from "./lib/update";
 import { bold, dim, fail, green, heading, info, ok, run, runInherit, warn } from "./lib/ui";
-import { INTEGRATIONS, findIntegration } from "../src/server/integrations/registry";
+import { INTEGRATIONS, findIntegration } from "../packages/core/opensession-server/src/server/integrations/registry";
 import { findRecipe, installRecipe, installedKeys, listRecipes, removeRecipe } from "./lib/recipes";
 import { plugins } from "./lib/plugins";
 import { connect, installRunnerService, runnerRun, runnerStatus, runnersList, runnersPair, runnersRemove } from "./lib/connect";
 import { sandbox } from "./lib/sandbox";
+import { configuredServerUrl } from "./lib/server-url";
 
 const argv = process.argv.slice(2);
 const command = argv[0] ?? "help";
@@ -44,13 +46,16 @@ function usage(): void {
 ${bold("opensession")} — self-hosted agent infrastructure
 
 ${bold("Setup")}
-  onboard [--force]        configure this box (writes config + env + unit)
+  onboard [--force]        configure this box (writes config + env + service)
+                           --defaults: no questions, the installer's path
+                           --org <name>: set up an org App + per-user sign-in
   bind [address]           move the server to a new bind address and restart
                            (no address: this box's tailnet IP)
   team [add|remove]        manage the identity roster (attribution, sign-in)
   repos [add <spec>]       register repositories; owner/name clones via gh
   doctor                   check tooling, config, integrations and the server
-  service install          install and enable the systemd unit
+  service install          install and start the user service (--system: root unit)
+  service uninstall        stop and remove it
   sandbox enable docker    install, configure and qualify local Docker
   sandbox enable microvm   install, configure and qualify Local MicroVM
   sandbox test <provider>  re-run a connection qualification
@@ -63,9 +68,6 @@ ${bold("Running")}
   restart                  restart the service
   status                   is it running?
   logs [-f] [-n N]         tail the service journal
-
-${bold("Client")}
-  tui [--host <url>]       open the terminal client (the 'os' binary)
 
 ${bold("Maintenance")}
   update [--channel <ref>] pull upstream (ff, or merge on a fork with local
@@ -101,7 +103,19 @@ Docs: docs/setup/README.md
 }
 
 async function version(): Promise<number> {
-  const pkg = JSON.parse(await Bun.file(`${REPO_ROOT}/package.json`).text());
+  // A release install (binary or tarball) carries release.json; a source
+  // checkout has package.json + a live git tree. Neither read may throw.
+  const rel = await Bun.file(`${REPO_ROOT}/release.json`)
+    .json()
+    .catch(() => null as { version?: string; commit?: string } | null);
+  if (rel?.version) {
+    console.log(`opensession ${rel.version}${rel.commit ? ` (${rel.commit})` : ""}`);
+    console.log(dim(`  ${REPO_ROOT}`));
+    return 0;
+  }
+  const pkg = await Bun.file(`${REPO_ROOT}/package.json`)
+    .json()
+    .catch(() => ({ version: "unknown" }) as { version?: string });
   const { stdout: sha } = await run(["git", "rev-parse", "--short", "HEAD"], { cwd: REPO_ROOT });
   const { stdout: branch } = await run(["git", "rev-parse", "--abbrev-ref", "HEAD"], {
     cwd: REPO_ROOT,
@@ -112,30 +126,20 @@ async function version(): Promise<number> {
 }
 
 async function start(): Promise<number> {
+  const publicUrl = await configuredServerUrl();
   if (flags.has("--foreground") || flags.has("-f") || !(await service.isInstalled())) {
-    info(dim(`starting in the foreground — ${REPO_ROOT}`));
-    return await runInherit(["bun", "run", "opensession.ts"], REPO_ROOT);
+    info(dim(`starting in the foreground · ${REPO_ROOT}`));
+    info(`Open ${bold(publicUrl)}`);
+    // Compiled binary: re-exec ourselves as the server subcommand (there is no
+    // `bun`/opensession.ts on disk). From source: run the entry under bun.
+    const command = isCompiledBinary()
+      ? [process.execPath, "server"]
+      : ["bun", "run", "packages/core/opensession-server/opensession.ts"];
+    return await runInherit(command, REPO_ROOT);
   }
-  return await service.control("start");
-}
-
-/**
- * `opensession tui` — hand off to the `os` client (os1-tui).
- *
- * A thin alias, not a reimplementation: `os` is a separate binary because it's a
- * *client* (fetch + WebSocket, runs on your laptop) while this CLI is a
- * *server-admin* tool that imports server modules and manages the unit. Prefer
- * `os` directly; this exists for discoverability from `opensession --help`.
- */
-async function tui(): Promise<number> {
-  const onPath = Bun.which("os");
-  if (onPath) return await runInherit([onPath, ...argv.slice(1)], process.cwd());
-  const entry = `${REPO_ROOT}/os1-tui/src/index.ts`;
-  if (!existsSync(entry)) {
-    fail("no TUI found", "expected the `os` binary on PATH or os1-tui/ in this checkout");
-    return 1;
-  }
-  return await runInherit(["bun", entry, ...argv.slice(1)], REPO_ROOT);
+  const code = await service.control("start");
+  if (code === 0) info(`Open ${bold(publicUrl)}`);
+  return code;
 }
 
 /**
@@ -275,7 +279,11 @@ async function main(): Promise<number> {
   switch (command) {
     case "onboard":
     case "setup":
-      return await onboard({ force: flags.has("--force") });
+      return await onboard({
+        force: flags.has("--force"),
+        defaults: flags.has("--defaults"),
+        org: flagValue("--org"),
+      });
 
     case "bind":
       return await bind(positional[0]);
@@ -310,12 +318,10 @@ async function main(): Promise<number> {
 
     case "service":
       if (positional[0] === "install") {
-        if (service.supervisor() === "systemd") {
-          await Bun.write(STAGED_UNIT_PATH, await service.renderUnit());
-        }
-        return (await service.install(STAGED_UNIT_PATH)) ? 0 : 1;
+        return (await service.install({ scope: flags.has("--system") ? "system" : "user" })) ? 0 : 1;
       }
-      fail("usage: opensession service install");
+      if (positional[0] === "uninstall") return (await service.uninstall()) ? 0 : 1;
+      fail("usage: opensession service install [--system] | uninstall");
       return 1;
 
     case "update":
@@ -352,9 +358,21 @@ async function main(): Promise<number> {
 
     case "runner":
       if (positional[0] === "run") return await runnerRun();
-			if (positional[0] === "service" && positional[1] === "install") return (await installRunnerService()) ? 0 : 1;
+			if (positional[0] === "service" && positional[1] === "install") {
+				if (await installRunnerService()) return 0;
+				info(dim("  run `opensession runner run` in the foreground to hold the channel open meanwhile"));
+				return 1;
+			}
       if (positional[0] === "status" || !positional[0]) return await runnerStatus();
-		fail("usage: opensession runner run|status|service install");
+			// The pairing UI and docs both say `opensession runner connect`; keep
+			// that spelling working alongside the top-level `connect`.
+			if (positional[0] === "connect") return await connect({
+				server: flagValue("--server"),
+				code: flagValue("--code"),
+				name: flagValue("--name"),
+				label: flagValue("--label"),
+			});
+		fail("usage: opensession runner run|status|connect|service install");
       return 1;
 
     case "runners":
@@ -362,8 +380,13 @@ async function main(): Promise<number> {
       if (positional[0] === "remove") return await runnersRemove(positional[1] ?? "");
       return await runnersList();
 
-    case "tui":
-      return await tui();
+    // Internal git credential-helper entrypoint. It stays out of --help, but is
+    // routed through the installed command so compiled releases need no Bun or
+    // source-tree sidecar.
+    case "github-credential": {
+      const { githubCredentialHelper } = await import("./lib/github-credential");
+      return await githubCredentialHelper(positional[0]);
+    }
 
     case "version":
     case "--version":

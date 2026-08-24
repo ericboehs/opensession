@@ -30,9 +30,11 @@ small team.
 
 ### 1. Install it on the box
 
-**The Open Session installer already did this** unless you passed
-`--no-tailscale`. Check with `tailscale ip -4`; if it prints a `100.x` address
-you are already on a tailnet and can skip to step 3.
+**The Open Session installer does this with `--tailscale`** (it is off by
+default: the default install binds loopback only). Otherwise
+`curl -fsSL https://tailscale.com/install.sh | sh`. Check with `tailscale ip
+-4`; if it prints a `100.x` address you are already on a tailnet and can skip
+to step 3.
 
 To install it by hand:
 
@@ -240,6 +242,21 @@ Expose 3848 only, never 3850, and only through something that terminates TLS.
 Every webhook route verifies a signature (`GITHUB_WEBHOOK_SECRET`,
 `LINEAR_WEBHOOK_SECRET`, `PLAIN_WEBHOOK_SECRET`, `STRIPE_WEBHOOK_SECRET`), so
 set those — an unsigned webhook endpoint is an open door into your automations.
+
+When the UI stays on a private hostname, give callbacks their own public origin:
+
+```json
+{
+  "server": {
+    "publicBaseUrl": "https://sessions.tailnet.example.com",
+    "webhookBaseUrl": "https://ingress.example.com"
+  }
+}
+```
+
+`OPENSESSION_WEBHOOK_BASE` overrides the config value. Setup guides, secret
+automation URLs, and Linear's default OAuth callback use this origin; session
+links and authenticated app callbacks continue to use `publicBaseUrl`.
 
 If you do not use inbound webhooks, leave 3848 on `127.0.0.1` and forget it
 exists.

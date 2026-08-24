@@ -32,7 +32,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import spaEntry from "../src/frontend/index.html";
+import spaEntry from "../packages/core/opensession-server/src/frontend/index.html";
 
 const UPSTREAM = process.env.OS1_UPSTREAM || "http://127.0.0.1:3850";
 const WS_UPSTREAM = UPSTREAM.replace(/^http/, "ws") + "/ws";
@@ -166,7 +166,7 @@ async function tailwindCss(): Promise<Response> {
 		[
 			"node_modules/.bin/tailwindcss",
 			"-i",
-			"src/frontend/styles/tailwind.css",
+			"packages/core/opensession-server/src/frontend/styles/tailwind.css",
 			"-o",
 			out,
 		],

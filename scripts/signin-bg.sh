@@ -2,7 +2,7 @@
 #
 # Regenerate the sign-in screen's backdrop from the landing page's master.
 #
-# The site (website/TellaBackground.tsx) streams "Silver Silk" straight from
+# The site (packages/clients/website/TellaBackground.tsx) streams "Silver Silk" straight from
 # its CDN at 3840x2160, 7.4MB, with an audio track it never plays. A login
 # screen cannot do that: it is the one surface that has to render before
 # anything is trusted, on a server that is usually private, so it ships from
@@ -27,7 +27,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-OUT=src/frontend
+OUT=packages/core/opensession-server/src/frontend
 MASTER=${1:-}
 MASTER_URL=https://ucarecdn.com/b8c1a712-87c2-4884-8034-77e71fa4d7ac/
 

@@ -39,12 +39,11 @@ git clone https://github.com/tellahq/opensession.git
 cd opensession
 bun install
 bun run setup          # writes ~/.opensession/config.json and ~/.opensession.env
-bun run opensession.ts # or: opensession start --foreground
+bun run packages/core/opensession-server/opensession.ts # or: opensession start --foreground
 ```
 
 You need [Bun](https://bun.sh) and `git`. Everything else is optional until you
-touch the feature that needs it — `gh` for pull-request work, the
-[OpenCode](https://opencode.ai) binary to actually execute agent turns, Docker
+touch the feature that needs it — `gh` for pull-request work, the bundled Pi runtime for agent turns, and Docker
 only if you are working on sandboxes.
 
 The UI comes up at `http://127.0.0.1:3850`. There is no login by default; see
@@ -59,10 +58,8 @@ bun run test           # must be green
 bun run test:snapshots # the run-pipeline fixtures, which only work run alone
 ```
 
-`bun run test` is `bun test src scripts`, which is where every server-side test
-lives. A bare `bun test` also sweeps `os1-tui/`, a separate package with its own
-`node_modules`, and fails to resolve its imports unless you installed there too;
-that client has its own suite (`cd os1-tui && bun test`) and its own CI job.
+`bun run test` is `bun test packages/core/opensession-server/src scripts`, which is where every server-side test
+lives.
 
 The snapshot suite needs its own command because it redirects module state that
 an earlier file in a sweep may already have frozen, in which case it skips
@@ -85,7 +82,7 @@ reload can permanently stop timer delivery while HTTP keeps serving, which
 looks like "sessions are running but never progress".
 
 **Integrations are declared, not hand-wired.** Adding one means appending an
-entry to `src/server/integrations/registry.ts` — config key, env flag,
+entry to `packages/core/opensession-server/src/server/integrations/registry.ts` — config key, env flag,
 credentials, constructor. `loadAgents()` is a loop over that array; you should
 not need to touch `opensession.ts`. The array order is boot order, because
 agents register webhook routes in sequence.

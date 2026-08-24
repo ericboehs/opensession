@@ -1,0 +1,47 @@
+name: Native client CI
+
+on:
+  pull_request:
+    paths:
+      - "packages/clients/ios/**"
+      - ".github/workflows/os1-native-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: macos-26
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: packages/clients/ios
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate --quiet
+      - name: Build iOS
+        run: >-
+          xcodebuild -quiet build -skipMacroValidation
+          -project OS1.xcodeproj -scheme OS1
+          -destination "generic/platform=iOS Simulator"
+          -derivedDataPath "$RUNNER_TEMP/os1-derived"
+          CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO
+      - name: Build macOS
+        run: >-
+          xcodebuild -quiet build -skipMacroValidation
+          -project OS1.xcodeproj -scheme OS1Mac
+          -destination "platform=macOS"
+          -derivedDataPath "$RUNNER_TEMP/os1-derived"
+          CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO
+      - name: Test macOS
+        run: >-
+          xcodebuild -quiet test -skipMacroValidation
+          -project OS1.xcodeproj -scheme OS1Mac
+          -destination "platform=macOS"
+          -derivedDataPath "$RUNNER_TEMP/os1-derived"
+          CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO

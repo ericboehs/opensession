@@ -14,13 +14,15 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="${OPENSESSION_REPO_DIR:-$(dirname "$SCRIPT_DIR")}"
-HEALTH_URL="${OPENSESSION_HEALTH_URL:-http://127.0.0.1:3850/api/health}"
+HEALTH_URL="${OPENSESSION_HEALTH_URL:-http://127.0.0.1:3850/ready}"
+DRAIN_URL="${OPENSESSION_DRAIN_URL:-http://127.0.0.1:3850/api/health}"
 SERVICE_USER="${OPENSESSION_SERVICE_USER:-$(stat -c '%U' "$REPO_DIR")}"
 SERVICE_UID="${OPENSESSION_SERVICE_UID:-$(id -u "$SERVICE_USER")}"
 SERVICE_GROUP="${OPENSESSION_SERVICE_GROUP:-$(id -gn "$SERVICE_USER")}"
 SERVICE_HOME_DIR="${OPENSESSION_SERVICE_HOME_DIR:-$(getent passwd "$SERVICE_USER" | cut -d: -f6)}"
 TARGET_SHA="${1:-origin/main}"
 MAX_DRAIN_WAIT="${MAX_DRAIN_WAIT:-480}"   # wait up to 8 min for idle before forcing the restart
+PREVIOUS_HEAD="$(runuser -u "$SERVICE_USER" -- git -C "$REPO_DIR" rev-parse HEAD)"
 
 case "$SERVICE_HOME_DIR" in
   ""|"/")
@@ -30,6 +32,24 @@ case "$SERVICE_HOME_DIR" in
 esac
 
 run_as_service_user() { runuser -u "$SERVICE_USER" -- "$@"; }
+
+read_env_value() {
+  local name="$1" file="$2" value
+  [ -r "$file" ] || return 0
+  value="$(sed -n "s/^${name}=//p" "$file" | tail -n 1)"
+  case "$value" in
+    \"*\") value="${value#\"}"; value="${value%\"}" ;;
+    \'*\') value="${value#\'}"; value="${value%\'}" ;;
+  esac
+  printf '%s' "$value"
+}
+
+executor_ready() {
+  local ready_pid main_pid
+  ready_pid="$(cat /run/opensession-executor/ready 2>/dev/null || true)"
+  main_pid="$(systemctl show -p MainPID --value opensession-executor.service 2>/dev/null || true)"
+  [ -n "$ready_pid" ] && [ "$ready_pid" = "$main_pid" ]
+}
 
 echo "[deploy] fetching origin, fast-forwarding to ${TARGET_SHA}"
 run_as_service_user git -C "$REPO_DIR" fetch --prune origin
@@ -43,6 +63,33 @@ if ! run_as_service_user git -C "$REPO_DIR" merge --ff-only "$TARGET_SHA"; then
   echo "[deploy] The checkout has local commits or uncommitted changes. On the box:" >&2
   echo "[deploy]   cd $REPO_DIR && git status   # then commit+push, or stash, then re-run the deploy" >&2
   exit 1
+fi
+
+# Runtime restart scope. Executor-only changes restart the executor without
+# touching browser sockets, actor state, schedulers, or active run hosts.
+RESTART_EXECUTOR=0
+RESTART_GATEWAY=0
+CHANGED_FILES="$(run_as_service_user git -C "$REPO_DIR" diff --name-only "$PREVIOUS_HEAD" HEAD)"
+while IFS= read -r changed; do
+  case "$changed" in
+    packages/core/opensession-server/src/executor/auth.ts|packages/core/opensession-server/src/executor/host-unit.ts|packages/core/opensession-server/src/runner-host/host.ts|packages/core/opensession-server/src/runner-host/protocol.ts|packages/core/opensession-server/src/runner-host/socket-write-queue.ts|packages/core/opensession-server/src/server/paths.ts|packages/core/opensession-server/src/server/shared/atomic-write.ts|packages/core/protocol/src/executor.ts|packages/core/protocol/src/runner.ts|packages/core/protocol/package.json)
+      RESTART_EXECUTOR=1
+      RESTART_GATEWAY=1
+      ;;
+    packages/core/opensession-server/src/executor/*|opensession-executor.service)
+      RESTART_EXECUTOR=1
+      ;;
+    *.test.ts|docs/*|deploy/deploy.sh)
+      ;;
+    *)
+      RESTART_GATEWAY=1
+      ;;
+  esac
+done <<< "$CHANGED_FILES"
+if [ "$PREVIOUS_HEAD" = "$(run_as_service_user git -C "$REPO_DIR" rev-parse HEAD)" ]; then
+  # An explicit same-SHA deploy is normally a request to recover/restart.
+  RESTART_EXECUTOR=1
+  RESTART_GATEWAY=1
 fi
 
 # (Re)install the shared-checkout tripwire hook: warns loudly if this live
@@ -63,6 +110,116 @@ if ! cmp -s "$REPO_DIR/opensession.service" /etc/systemd/system/opensession.serv
   echo "[deploy] opensession.service changed — syncing unit + daemon-reload"
   cp "$REPO_DIR/opensession.service" /etc/systemd/system/opensession.service
   systemctl daemon-reload
+fi
+
+EXECUTOR_TOKEN_PATH="/etc/opensession/executor-token"
+"$REPO_DIR/deploy/install-executor-credential.sh" "$EXECUTOR_TOKEN_PATH"
+
+EXECUTOR_CREDENTIAL_DROPIN="/etc/systemd/system/opensession.service.d/executor-credential.conf"
+[ ! -L "$(dirname "$EXECUTOR_CREDENTIAL_DROPIN")" ] || {
+  echo "[deploy] ERROR: gateway drop-in directory cannot be a symlink" >&2
+  exit 1
+}
+install -d -o root -g root -m 0755 "$(dirname "$EXECUTOR_CREDENTIAL_DROPIN")"
+[ ! -L "$EXECUTOR_CREDENTIAL_DROPIN" ] || {
+  echo "[deploy] ERROR: gateway credential drop-in cannot be a symlink" >&2
+  exit 1
+}
+printf '%s\n' \
+  '[Service]' \
+  'LoadCredential=executor-token:/etc/opensession/executor-token' \
+  > "$EXECUTOR_CREDENTIAL_DROPIN.tmp"
+install -o root -g root -m 0644 \
+  "$EXECUTOR_CREDENTIAL_DROPIN.tmp" "$EXECUTOR_CREDENTIAL_DROPIN"
+rm -f "$EXECUTOR_CREDENTIAL_DROPIN.tmp"
+systemctl daemon-reload
+
+EXECUTOR_UNIT_SOURCE="$REPO_DIR/opensession-executor.service"
+EXECUTOR_BUN="$(sed -n 's/^ExecStart=\([^ ]*\) run .*/\1/p' "$EXECUTOR_UNIT_SOURCE")"
+EXECUTOR_PATH="$(sed -n 's/^Environment="PATH=\(.*\)"$/\1/p' "$EXECUTOR_UNIT_SOURCE")"
+RUN_HOST_ENV_FILE="$(sed -n 's/^EnvironmentFile=//p' "$REPO_DIR/opensession.service")"
+if [ -z "$RUN_HOST_ENV_FILE" ]; then
+  echo "[deploy] ERROR: gateway EnvironmentFile is required for run hosts" >&2
+  exit 1
+fi
+SESSIONS_DIR="$(read_env_value OPENSESSION_SESSIONS_DIR "$RUN_HOST_ENV_FILE")"
+STATE_DIR="$(read_env_value OPENSESSION_STATE_DIR "$RUN_HOST_ENV_FILE")"
+if [ -z "$SESSIONS_DIR" ]; then
+  if [ -n "$STATE_DIR" ]; then
+    SESSIONS_DIR="$STATE_DIR/.opensession-sessions"
+  else
+    SESSIONS_DIR="$SERVICE_HOME_DIR/.opensession-sessions"
+  fi
+fi
+case "$SESSIONS_DIR" in
+  /*) ;;
+  *) echo "[deploy] ERROR: session state directory must be absolute" >&2; exit 1 ;;
+esac
+"$REPO_DIR/deploy/install-run-host-helper.sh" \
+  "$SERVICE_USER" "$REPO_DIR" "$EXECUTOR_BUN" "$SERVICE_HOME_DIR" \
+  "$RUN_HOST_ENV_FILE" \
+  "$SESSIONS_DIR/run-hosts" "$EXECUTOR_PATH" \
+  "$REPO_DIR" "$SERVICE_HOME_DIR/.opensession-deploy" \
+  "${OPENSESSION_DEPLOY_ALLOW_RESET:-0}" "$HEALTH_URL" \
+  source "$EXECUTOR_BUN"
+run_as_service_user sudo -n /usr/local/libexec/opensession-run-host check
+
+EXECUTOR_UNIT_RENDERED="$(mktemp)"
+awk -v home="$SERVICE_HOME_DIR" -v state="$STATE_DIR" -v sessions="$SESSIONS_DIR" '
+  /^# EXECUTOR_PATH_ENV$/ {
+    print "Environment=\"HOME=" home "\""
+    if (state != "") print "Environment=\"OPENSESSION_STATE_DIR=" state "\""
+    if (sessions != "") print "Environment=\"OPENSESSION_SESSIONS_DIR=" sessions "\""
+    next
+  }
+  { print }
+' "$REPO_DIR/opensession-executor.service" > "$EXECUTOR_UNIT_RENDERED"
+if ! cmp -s "$EXECUTOR_UNIT_RENDERED" /etc/systemd/system/opensession-executor.service; then
+  echo "[deploy] opensession-executor.service changed - syncing unit + daemon-reload"
+  cp "$EXECUTOR_UNIT_RENDERED" /etc/systemd/system/opensession-executor.service
+  systemctl daemon-reload
+  RESTART_EXECUTOR=1
+fi
+rm -f "$EXECUTOR_UNIT_RENDERED"
+
+if [ "$RESTART_GATEWAY" = "1" ]; then
+  # Drain before replacing the executor. The old gateway must not spend the
+  # drain window talking to a newer, potentially incompatible launcher.
+  echo "[deploy] waiting for idle (max ${MAX_DRAIN_WAIT}s)"
+  deadline=$(( $(date +%s) + MAX_DRAIN_WAIT ))
+  while :; do
+    active=$(curl -s --max-time 4 "$DRAIN_URL" \
+      | python3 -c 'import sys,json; print(json.load(sys.stdin).get("activeRuns","?"))' 2>/dev/null || echo "?")
+    if [ "$active" = "0" ]; then echo "[deploy] idle - restarting"; break; fi
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      echo "[deploy] still ${active} run(s) active after ${MAX_DRAIN_WAIT}s - restarting anyway (journal resumes the rest)"
+      break
+    fi
+    echo "[deploy] ${active} run(s) in flight - waiting"
+    sleep 10
+  done
+fi
+
+if [ "$RESTART_EXECUTOR" = "1" ]; then
+  echo "[deploy] restarting executor launcher (active run hosts are unaffected)"
+  systemctl enable opensession-executor.service
+  systemctl restart opensession-executor.service
+elif ! systemctl is-active --quiet opensession-executor.service; then
+  echo "[deploy] starting executor launcher"
+  systemctl enable --now opensession-executor.service
+fi
+
+for _ in $(seq 1 30); do
+  if systemctl is-active --quiet opensession-executor.service \
+    && executor_ready; then
+    break
+  fi
+  sleep 1
+done
+if ! systemctl is-active --quiet opensession-executor.service \
+  || ! executor_ready; then
+  echo "[deploy] ERROR: executor launcher did not become healthy" >&2
+  exit 1
 fi
 
 # Host safety fuses: the coordinator gets its own ceiling, while detached
@@ -108,23 +265,11 @@ if systemctl cat caddy.service >/dev/null 2>&1 \
   fi
 fi
 
-# Drain-aware restart: wait until the service reports no in-flight runs, so the
-# restart kills as few runs / background tasks / subagents as possible. Anything
-# still running after the cap is caught by the graceful SIGTERM drain + the run
-# journal (resumed on boot), so nothing is lost — we're only minimizing churn.
-echo "[deploy] waiting for idle (max ${MAX_DRAIN_WAIT}s)"
-deadline=$(( $(date +%s) + MAX_DRAIN_WAIT ))
-while :; do
-  active=$(curl -s --max-time 4 "$HEALTH_URL" \
-    | python3 -c 'import sys,json; print(json.load(sys.stdin).get("activeRuns","?"))' 2>/dev/null || echo "?")
-  if [ "$active" = "0" ]; then echo "[deploy] idle — restarting"; break; fi
-  if [ "$(date +%s)" -ge "$deadline" ]; then
-    echo "[deploy] still ${active} run(s) active after ${MAX_DRAIN_WAIT}s — restarting anyway (journal resumes the rest)"
-    break
-  fi
-  echo "[deploy] ${active} run(s) in flight — waiting…"
-  sleep 10
-done
+# Executor-only releases stop here. The gateway keeps its sockets and actors.
+if [ "$RESTART_GATEWAY" = "0" ]; then
+  echo "[deploy] no gateway runtime changes - executor deploy complete"
+  exit 0
+fi
 
 systemctl restart opensession.service
 

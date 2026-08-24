@@ -50,13 +50,13 @@ model fallback graph can still move a run.
 | Section | Answers |
 | --- | --- |
 | `execution` | Host, sandbox or Runner. Working directory, branch, mode, and what the mode costs you. |
-| `gate` | Whether the engine will run this kind of turn at all (`opencodeGateReason`, deny by default). |
+| `gate` | Whether the engine will run this kind of turn at all (`piGateReason`, deny by default). |
 | `model` | Requested id → engine → dispatch id, which config chose the engine, the preset behind a `dial/…` id, effort, fallback. |
 | `account` | Bridge mode, pinned/sticky/predicted account and why, every model the pick has to satisfy, and the pool-dry circuit. |
 | `mcp` | The allowlist and where it came from, then every configured server with `included` and the gate that decided it. Plus the in-process `opensession-*` set. |
 | `tools` | The unattended policy flag, and every tool stripped from the model's list with the catalog it came from. |
 | `agents` | The oracle and orchestrator-worker subagents, resolved for this run's bridge. |
-| `memory` | The `~/.michael-memory` scopes injected into the system prompt, or why none are. |
+| `memory` | The `~/.opensession-memory` scopes injected into the system prompt, or why none are. |
 | `placement` | Shared always-warm engine server vs per-session, the reason, and the pool key. |
 | `identity` | The run user, the OAuth grant user, the GitHub login whose token rides along, the commit author. |
 | `instructions` | Which sources compose the system prompt. Contents are never returned: `AGENTS.local.md` is instance-private. |
@@ -77,20 +77,20 @@ rule that keeps a resume from handing an automation session every MCP server.
 
 The endpoint composes the real resolvers rather than restating them:
 `routeModel` for the engine, `filterMcpServers` for MCP visibility,
-`opencodeRunPolicy` for tool stripping, `sharedOpencodeEligible` for placement,
+`runToolPolicy` for tool stripping, the detached-host resolver for placement,
 `sessionMemoryScopes` for memory, `pickMeridianAccount` for the account.
 
 The one decision that used to live inline in `run-session.ts` — the
 automation / session / feed branch that picks the MCP allowlist, the denials
-and the run user — was extracted to `src/server/session-run-inputs.ts`, which
+and the run user — was extracted to `packages/core/opensession-server/src/server/session-run-inputs.ts`, which
 `runSessionPromptInner` now calls. One decision, two readers, so the dump
 cannot drift from the turn.
 
 The two things this file computes itself are attributions, not decisions:
 `explainMcpServers` is handed `filterMcpServers`' output and only says why each
 server is in or out, and `describeStrippedTools` is handed
-`opencodeRunPolicy`'s disable list and only says which catalog each entry came
-from. Both are pure and tested (`src/server/effective-config.test.ts`).
+`runToolPolicy`'s disable list and only says which catalog each entry came
+from. Both are pure and tested (`packages/core/opensession-server/src/server/effective-config.test.ts`).
 
 ## Calling it from a script
 

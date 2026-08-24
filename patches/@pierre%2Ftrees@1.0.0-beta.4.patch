@@ -1,0 +1,7 @@
+diff --git a/dist/render/FileTreeView.js b/dist/render/FileTreeView.js
+index 648639b4b..62470501e 100644
+--- a/dist/render/FileTreeView.js
++++ b/dist/render/FileTreeView.js
+@@ -377 +377 @@ function renderFileTreeRowContent(row, resolveIcon, { actionLaneEnabled = false,
+-				split: "extension",
++				split: "center",

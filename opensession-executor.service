@@ -1,0 +1,30 @@
+# ============================================================================
+# TEMPLATE - installed and rewritten by `opensession service install`.
+# The executor is deliberately independent from opensession.service: restarting
+# launch policy must not drop browser sockets, session actors, or active hosts.
+# ============================================================================
+[Unit]
+Description=Open Session executor launcher
+After=network.target
+
+[Service]
+Environment="PATH=/home/ubuntu/.cargo/bin:/home/ubuntu/.bun/bin:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/projects/opensession
+# EXECUTOR_PATH_ENV
+LoadCredential=executor-token:/etc/opensession/executor-token
+Environment="NODE_ENV=production"
+RuntimeDirectory=opensession-executor
+Environment="OPENSESSION_EXECUTOR_READY_FILE=/run/opensession-executor/ready"
+# No application EnvironmentFile: launch policy receives no integration secrets.
+ExecStart=/home/ubuntu/.bun/bin/bun run packages/core/opensession-server/src/executor/main.ts
+Restart=always
+RestartSec=1
+TimeoutStopSec=30
+KillMode=mixed
+UMask=0077
+IPAddressDeny=any
+
+[Install]
+WantedBy=multi-user.target

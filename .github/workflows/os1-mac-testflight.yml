@@ -1,8 +1,8 @@
-# Tella's client release pipeline — fork and rebrand (see os1-ios/README).
+# Tella's client release pipeline — fork and rebrand (see packages/clients/ios/README).
 name: Release OS1 for macOS (TestFlight)
 
 # Builds, signs and uploads the native SwiftUI OS1 client's macOS target
-# (OS1Mac in os1-ios/project.yml) to TestFlight whenever os1-ios code lands on
+# (OS1Mac in packages/clients/ios/project.yml) to TestFlight whenever os1-ios code lands on
 # main — the sibling of os1-ios-testflight.yml, sharing the same app record
 # (dev.tella.os1, universal purchase) and the same Apple Distribution cert.
 #
@@ -21,9 +21,9 @@ on:
     branches: [main]
     paths:
       # Build inputs only — docs (AGENTS.md/CLAUDE.md/README.md) land in
-      # os1-ios/ constantly and must not each ship a TestFlight build.
-      - "os1-ios/**"
-      - "!os1-ios/**.md"
+      # packages/clients/ios/ constantly and must not each ship a TestFlight build.
+      - "packages/clients/ios/**"
+      - "!packages/clients/ios/**.md"
       - ".github/workflows/os1-mac-testflight.yml"
   workflow_dispatch:
 
@@ -36,7 +36,7 @@ concurrency:
 
 defaults:
   run:
-    working-directory: os1-ios
+    working-directory: packages/clients/ios
 
 jobs:
   testflight:
@@ -67,7 +67,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.OS1_DERIVED_DATA }}/SourcePackages
-          key: os1-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('os1-ios/project.yml') }}
+          key: os1-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/clients/ios/project.yml') }}
           restore-keys: |
             os1-packages-v1-${{ runner.os }}-${{ runner.arch }}-
 
@@ -78,9 +78,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.OS1_COMPILATION_CACHE }}
-          key: os1-cas-v1-macos-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('os1-ios/project.yml') }}-${{ github.sha }}
+          key: os1-cas-v1-macos-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('packages/clients/ios/project.yml') }}-${{ github.sha }}
           restore-keys: |
-            os1-cas-v1-macos-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('os1-ios/project.yml') }}-
+            os1-cas-v1-macos-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('packages/clients/ios/project.yml') }}-
             os1-cas-v1-macos-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-
 
       - name: Build signing keychain (both identities, -A key access)
@@ -214,14 +214,14 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ env.OS1_DERIVED_DATA }}/SourcePackages
-          key: os1-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('os1-ios/project.yml') }}
+          key: os1-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/clients/ios/project.yml') }}
 
       - name: Save Xcode compilation cache
         if: steps.compilation-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ env.OS1_COMPILATION_CACHE }}
-          key: os1-cas-v1-macos-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('os1-ios/project.yml') }}-${{ github.sha }}
+          key: os1-cas-v1-macos-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('packages/clients/ios/project.yml') }}-${{ github.sha }}
 
       - name: Upload to TestFlight
         env:

@@ -66,7 +66,7 @@ If you do not need sessions to edit the running server, do not use this mode.
 
 ## What cleans up on its own
 
-A background sweep (`src/server/disk-gc.ts`) runs hourly:
+A background sweep (`packages/core/opensession-server/src/server/disk-gc.ts`) runs hourly:
 
 - **Cold caches** — Rust `target/` build caches in worktrees untouched for more
   than 7 days are reclaimed unconditionally.

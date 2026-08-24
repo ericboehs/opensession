@@ -3,6 +3,28 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = join(import.meta.dir, "../..");
+/** Same fallback the server side uses for its own user scopes
+ *  (src/server/systemd-scopes.ts SYSTEMD_USER_RUNTIME). Kept local because
+ *  scripts/lib deliberately holds its own copies of the systemd knobs. */
+const UID = process.getuid?.() ?? 1000;
+
+/**
+ * Environment for a `systemd-run --user` / `systemctl --user` spawn.
+ *
+ * systemd addresses the user bus through XDG_RUNTIME_DIR, and a process
+ * started by a systemd SYSTEM service inherits none. That is every
+ * agent-driven capture, because they run from opensession.service: each of
+ * these calls died on `Failed to connect to bus: No medium found`, which
+ * reads as a broken browser rig rather than one missing variable, so sessions
+ * kept rediscovering it and setting the variable by hand (2026-08-19). An
+ * interactive shell already exports it, so this only ever fills the gap.
+ */
+export function systemdUserEnv(): Record<string, string | undefined> {
+	return {
+		...process.env,
+		XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR || `/run/user/${UID}`,
+	};
+}
 
 export function boundedCdpSystemdArgs(): string[] {
 	return [
@@ -48,7 +70,7 @@ export async function acquireCdpBrowser(): Promise<CdpBrowserLease> {
 		ownerName(),
 		"--state",
 		state,
-	], { stdout: "pipe", stderr: "pipe" });
+	], { stdout: "pipe", stderr: "pipe", env: systemdUserEnv() });
 	const [code, stdout, stderr] = await Promise.all([
 		proc.exited,
 		new Response(proc.stdout).text(),
@@ -62,7 +84,7 @@ export async function acquireCdpBrowser(): Promise<CdpBrowserLease> {
 export async function releaseCdpBrowser(lease: CdpBrowserLease): Promise<void> {
 	if (!lease.owned || !lease.unit) return;
 	const proc = Bun.spawn(["systemctl", "--user", "stop", lease.unit], {
-		stdin: "ignore", stdout: "ignore", stderr: "ignore",
+		stdin: "ignore", stdout: "ignore", stderr: "ignore", env: systemdUserEnv(),
 	});
 	await proc.exited;
 }

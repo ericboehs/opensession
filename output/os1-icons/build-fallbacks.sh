@@ -4,7 +4,7 @@
 set -e
 
 cd "$(dirname "$0")"
-source_dir="../../os1-ios/OS1/Assets.xcassets/AppIconMac.appiconset"
+source_dir="../../packages/clients/ios/OS1/Assets.xcassets/AppIconMac.appiconset"
 iconset="fallback-os1-meridian.iconset"
 
 rm -rf "$iconset"

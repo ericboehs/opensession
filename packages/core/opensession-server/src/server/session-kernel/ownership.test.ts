@@ -1,0 +1,423 @@
+import { describe, expect, test } from "bun:test";
+import { existsSync, readdirSync, readFileSync, statSync } from "fs";
+import { join, resolve } from "path";
+import {
+	LEGACY_GATEWAY_EFFECT_OPERATIONS,
+	LEGACY_GATEWAY_EFFECT_SITE_BASELINE,
+} from "./lifecycle-protocol";
+
+const serverDir = resolve(import.meta.dir, "..");
+const read = (relative: string) => readFileSync(join(serverDir, relative), "utf8");
+
+function sourceFiles(dir: string): string[] {
+	const out: string[] = [];
+	for (const name of readdirSync(dir)) {
+		const path = join(dir, name);
+		if (statSync(path).isDirectory()) out.push(...sourceFiles(path));
+		else if (name.endsWith(".ts") && !name.endsWith(".test.ts")) out.push(path);
+	}
+	return out;
+}
+
+describe("single session ownership", () => {
+	test("legacy gateway effects cannot grow without changing the migration fence", () => {
+		const production = sourceFiles(serverDir).filter(
+			(path) => !path.endsWith(".test.ts"),
+		);
+		const sites = production.reduce((count, path) => {
+			const source = readFileSync(path, "utf8");
+			return count + (source.match(/\.dispatchLegacy\(/g)?.length ?? 0);
+		}, 0);
+		expect(sites).toBe(LEGACY_GATEWAY_EFFECT_SITE_BASELINE);
+		expect(LEGACY_GATEWAY_EFFECT_OPERATIONS).toEqual([
+			"answer_question",
+			"cancel_session",
+			"create_session",
+			"delete_session",
+			"session_file_updated",
+			"submit_prompt",
+			"timer_fired",
+			"websocket_command",
+		]);
+		expect(read("session-kernel/kernel.ts")).not.toContain("async dispatch<");
+	});
+
+	test("run, queue, ask and session-file state delegate to SessionKernel", () => {
+		expect(read("run-state.ts")).toContain("sessionKernel(sessionId)");
+		expect(read("queue-state.ts")).toContain("new DeliveryOwnedMap");
+		expect(read("queue-state.ts")).toContain("sessionDelivery");
+		expect(read("queue-state.ts")).not.toContain("new SessionOwnedMap");
+		expect(read("queue-state.ts")).toContain("new EphemeralSessionSet");
+		expect(read("asks.ts")).toContain("new AskOwnedMap");
+		expect(read("asks.ts")).toContain("new EphemeralSessionMap");
+		expect(read("queue-state.ts") + read("asks.ts")).not.toContain("SessionOwnedMap");
+		expect(read("session-kernel/kernel.ts")).not.toContain("getRuntime<");
+		expect(read("session-kernel/kernel.ts")).not.toContain("setRuntime<");
+		expect(read("session-cache.ts")).toContain(
+			'runExclusive("session_file_updated"',
+		);
+		expect(read("session-cache.ts")).toContain("sessionDeliveryProjection");
+		expect(read("session-cache.ts")).not.toContain("__promptQueues");
+	});
+
+	test("delivery and ask JSON are one-time imports, never post-migration writers", () => {
+		const queue = read("queue-state.ts");
+		const asks = read("asks.ts");
+		expect(queue).toContain("removeLegacyQueueStore(storePath)");
+		expect(queue).toContain("deliveryMigrationComplete()");
+		expect(asks).toContain("removeLegacyAskStore(storePath)");
+		expect(asks).toContain("askMigrationComplete()");
+		expect(queue.indexOf("deliveryMigrationComplete()"))
+			.toBeLessThan(queue.indexOf("writeJsonAtomic("));
+		expect(asks.indexOf("askMigrationComplete()"))
+			.toBeLessThan(asks.indexOf("writeJsonAtomic("));
+	});
+
+	test("delivery and ask writes fail closed without the actor in production", () => {
+		const kernel = read("session-kernel/kernel.ts");
+		expect(kernel).toContain("compatibilityStoreForTest");
+		expect(kernel).toContain('process.env.NODE_ENV !== "test"');
+		expect(kernel).toContain("requires the authoritative actor");
+		expect(kernel).toContain("projection.delete(request.sessionId)");
+		expect(kernel).not.toContain(
+			'actor.decideDelivery({ op: "snapshot", sessionId: request.sessionId })',
+		);
+	});
+
+	test("creation decisions enter a typed actor reducer", () => {
+		const protocol = read("session-kernel/lifecycle-protocol.ts");
+		const creationEffects = read("session-kernel/creation-effect-protocol.ts");
+		const actor = read("session-kernel/actor-worker.ts");
+		const store = read("session-kernel/store.ts");
+		expect(protocol).toContain('kind: "creation_event"');
+		expect(actor).toContain('command.kind === "creation_event"');
+		expect(actor).toContain("store.applyCreationEvent(command.decision)");
+		expect(read("session-kernel/creation-state-machine.ts")).toContain(
+			"export function nextCreationState",
+		);
+		for (const kind of [
+			"creation_workspace_prepare",
+			"creation_branch_prepare",
+			"creation_sandbox_prepare",
+			"creation_credential_resolve",
+			"creation_attachment_stage",
+			"creation_opening_turn",
+		]) expect(creationEffects).toContain(`kind: "${kind}"`);
+		expect(creationEffects).not.toContain("dataUrl");
+		expect(creationEffects).not.toContain("token:");
+		const creationReduction = store.slice(
+			store.indexOf("applyCreationEvent("),
+			store.indexOf("applyRunEvent("),
+		);
+		expect(creationReduction).toContain("this.enqueueOutbox(");
+		expect(creationReduction).toContain("completedEffectIds.push(input.effectId!)");
+		expect(store).toContain("SESSION_KERNEL_MAX_CREATION_EFFECT_RECEIPTS");
+		expect(creationReduction.indexOf("this.enqueueOutbox(")).toBeLessThan(
+			creationReduction.indexOf("tx.immediate()"),
+		);
+		expect(read("session-kernel/kernel.ts")).toContain(
+			'msg: "session_creation_stale_result_rejected"',
+		);
+		const creationExecutors = read(
+			"session-kernel/creation-effect-executors.ts",
+		);
+		expect(creationExecutors).toContain(
+			'registerSessionEffectExecutor(\n      "creation_workspace_prepare"',
+		);
+		expect(creationExecutors).toContain(
+			'registerSessionEffectExecutor(\n      "creation_branch_prepare"',
+		);
+		expect(creationExecutors).toContain(
+			'"creation_sandbox_prepare",\n      executeCreationSandboxPrepare',
+		);
+		expect(creationExecutors).toContain(
+			'"creation_credential_resolve",\n      executeCreationCredentialResolve',
+		);
+		expect(creationExecutors).toContain(
+			"payload.sandboxKey !== item.sessionId",
+		);
+		expect(creationExecutors).toContain("resolveCurrentCredential");
+		expect(creationExecutors).not.toContain("payload.gitEnv");
+		expect(creationExecutors).toContain("assertAdoptableWorkspace(workspace, item)");
+		expect(creationExecutors.indexOf("dependencies.result(item)")).toBeGreaterThan(
+			creationExecutors.indexOf("dependencies.createWorkspace({"),
+		);
+	});
+
+	test("run-state decisions execute atomically inside the actor", () => {
+		const facade = read("run-state.ts");
+		const actor = read("session-kernel/actor-worker.ts");
+		expect(facade).toContain(".applyRunEvent({");
+		expect(actor).toContain('request.t === "reduce"');
+		expect(actor).toContain('command.kind === "run_event"');
+		expect(actor).toContain("store.applyRunEvent(command.decision)");
+		expect(read("session-kernel/run-state-machine.ts")).toContain(
+			"export function nextRunState",
+		);
+	});
+
+	test("every transcript mutation enters the session owner", () => {
+		const source = read("transcript-store.ts");
+		for (const operation of [
+			"transcript_append",
+			"transcript_import",
+			"transcript_replace",
+			"transcript_delete",
+		]) {
+			expect(source).toContain(`applySync("${operation}"`);
+		}
+	});
+
+	test("all shared prompt delivery uses the durable command mailbox", () => {
+		const control = read("session-control-wiring.ts");
+		expect(control).toContain('legacyGatewayEffect("submit_prompt"');
+		expect(control).toContain("sessionKernel(id).dispatchLegacy");
+		expect(read("routes/sessions.ts")).not.toContain("promptReceipt(");
+		expect(existsSync(join(serverDir, "prompt-receipts.ts"))).toBe(false);
+		const steerEligibility = control.indexOf('opts?.busy !== "queue"');
+		const steerItem = control.indexOf("const steerItem = durableQueueItem(id");
+		expect(steerEligibility).toBeGreaterThan(-1);
+		expect(steerItem).toBeGreaterThan(steerEligibility);
+		expect(control.indexOf("prepareQueuedSteer(id", steerItem)).toBeGreaterThan(steerItem);
+	});
+
+	test("sandbox prompts are visible before remote startup can fail", () => {
+		const source = read("run-session.ts");
+		expect(source).toContain("if (content?.trim()) {");
+		expect(source).not.toContain(
+			"if (!session.sandbox && content?.trim()) {",
+		);
+	});
+
+	test("interactive remote runs do not launch host-only external MCP servers", () => {
+		expect(read("run-session.ts")).toContain(
+			"mcpServers: opts.isAutomationSession ? (opts.mcpServers ?? []) : []",
+		);
+	});
+
+	test("no server module writes session JSON outside the owner facade", () => {
+		const offenders: string[] = [];
+		for (const path of sourceFiles(serverDir)) {
+			const relative = path.slice(serverDir.length + 1);
+			if (relative === "session-cache.ts") continue;
+			const source = readFileSync(path, "utf8");
+			if (
+				/writeJsonAtomic\(`\$\{(?:OPENSESSION_)?SESSIONS_DIR\}/.test(source) ||
+        /writeFileSync\(`\$\{(?:OPENSESSION_)?SESSIONS_DIR\}/.test(source)
+			) {
+				offenders.push(relative);
+			}
+		}
+		expect(offenders).toEqual([]);
+	});
+
+	test("the gateway boots an IPC actor before hydrating session projections", () => {
+		const entry = read("../../opensession.ts");
+		expect(entry.indexOf("await startSessionKernelActor()")).toBeLessThan(
+			entry.indexOf("initHumanAsks()"),
+		);
+		const actor = read("session-kernel/actor-worker.ts");
+		expect(actor).toContain("const store = new SessionKernelStore()");
+		expect(read("session-kernel/actor-client.ts")).toContain(
+			"SharedArrayBuffer",
+		);
+	});
+
+	test("Slack ask delivery is a durable production outbox effect", () => {
+		const source = read("human-asks.ts");
+		expect(source).toContain(
+			'registerSessionEffectExecutor("human_ask_deliver"',
+		);
+		expect(source).toContain('"human_ask_deliver",');
+		expect(source.match(/deliverAsk\(/g)?.length).toBe(2);
+	});
+
+	test("create and cancel retries keep stable ownership targets", () => {
+		const ws = read("ws-handlers.ts");
+		expect(ws).toContain('legacyGatewayEffect("websocket_command"');
+		expect(ws).toContain("sessionIdForRequest");
+		expect(ws).toContain('typeof msg.sessionId === "string"');
+		const routes = read("routes/sessions.ts");
+		expect(routes).toContain('legacyGatewayEffect("create_session"');
+		expect(routes).toContain("id: targetId");
+		expect(read("../../../protocol/src/session.ts")).toContain(
+			'type: "cancel"; sessionId?: string; requestId?: string',
+		);
+	});
+
+	test("interrupted creates resume their environment setup, not only their prompt", () => {
+		const create = read("session-create.ts");
+		expect(create).toContain("const recoveringSession = findSession(bksId)");
+		expect(create).toContain('existingBranch: restored.worktreeKind === "existing"');
+		expect(create).toContain("identity: plan.identity");
+		expect(create.indexOf("openingPromptEntryId = beginPromptDispatch"))
+			.toBeLessThan(create.indexOf("await persist()"));
+		// The direct host run must use the create dispatch's stable transcript id.
+		// Otherwise every cold recovery mints a new user row for the same prompt.
+		expect(create).toMatch(
+			/runAgent\(\{[\s\S]*?prompt: openingPromptForRun,[\s\S]*?promptEntryId: openingPromptEntryId,/,
+		);
+		expect(create).not.toContain("if (requeuePromptDispatch(bksId))");
+		const routes = read("routes/sessions.ts");
+		expect(routes).not.toContain("requeuePromptDispatch(targetId)");
+	});
+
+	test("create plans and MCP controls retain stable request identity", () => {
+		const wiring = read("session-control-wiring.ts");
+		expect(wiring).toContain("updateCreatePlan(bksId, createIdentity)");
+		expect(wiring).toContain("createPlan.resolved");
+		expect(wiring).toContain("ensureCreationPlanned(bksId, createIdentity)");
+		expect(wiring).toContain("await requestCreationWorkspace({");
+		expect(wiring.match(/await requestCreationCredential\(\{/g)?.length).toBe(2);
+		expect(wiring.match(/await requestCreationBranch\(\{/g)?.length).toBe(2);
+		expect(wiring.match(/baseBranch: .*defaultBranch/g)?.length).toBe(2);
+		expect(wiring).not.toMatch(/\bcreateWorkspace\(/);
+		expect(wiring).not.toMatch(/\bcreateWorktree\(/);
+		const create = read("session-create.ts");
+		expect(create).toContain("createPlan.resolved");
+		expect(create).toContain("ensureCreationPlanned(bksId, createIdentity)");
+		expect(create.match(/await requestCreationWorkspace\(\{/g)?.length).toBe(2);
+		expect(create).toContain("actorWorktreeMaterializer({");
+		expect(create).toContain("await requestCreationCredential({");
+		expect(create).toContain("await requestCreationBranch({");
+		expect(create).toContain("await requestCreationSandbox({");
+		expect(create.indexOf("await requestCreationSandbox({")).toBeLessThan(
+			create.indexOf("await maybeLaunchSandboxedRun("),
+		);
+		expect(create.match(/markCreationOpeningDispatched\(/g)?.length).toBe(3);
+		expect(create).toMatch(
+			/requestCreationSandbox\([\s\S]*?markCreationOpeningDispatched\([\s\S]*?maybeLaunchSandboxedRun\(/,
+		);
+		expect(create).toMatch(
+			/prepareRunnerWorkspace\([\s\S]*?markCreationOpeningDispatched\([\s\S]*?maybeLaunchRunnerRun\(/,
+		);
+		expect(create).toContain("settleCreationSucceeded(bksId, creationIdentity)");
+		expect(create).toContain("settleCreationFailed(bksId, creationIdentity, e)");
+		expect(create).toContain(
+			"baseBranch: input.baseBranch || getRepo(input.project).defaultBranch",
+		);
+		expect(create).not.toMatch(/\bcreateWorkspace\(/);
+		expect(create).not.toMatch(/\bcreateWorktree\(/);
+		expect(create).not.toMatch(/\bcreateWorktreeForExistingBranch\(/);
+		expect(create).toContain("spec.openingPromptEntryId");
+		expect(wiring).toContain('legacyGatewayEffect("cancel_session"');
+		expect(wiring).toContain('legacyGatewayEffect("answer_question"');
+		const tools = read("../agents/slack/sessions-tools.ts");
+		expect(tools).toContain("durableToolRequestId");
+		expect(tools).toContain('durableToolRequestId(ctx, "create_session", extra');
+		const native = readFileSync(
+			resolve(serverDir, "../../../../clients/ios/OS1/Networking/SessionCreateIntent.swift"),
+			"utf8",
+		);
+		expect(native).toContain('identityBody.removeValue(forKey: "requestId")');
+	});
+
+	test("unresolved client and automation intents are never silently replaced", () => {
+		const web = read("../frontend/lib/ws-command-outbox.ts");
+		expect(web).not.toContain("RETENTION_MS");
+		expect(web).not.toContain("MAX_ITEMS");
+		const chrome = readFileSync(
+			resolve(serverDir, "../../../../clients/chrome/sidepanel.js"),
+			"utf8",
+		);
+		expect(chrome).toContain("version: 3, id");
+		const workflow = read("workflow-runner.ts");
+		expect(workflow).toContain("`workflow:${snap.runId}:${snap.status}`");
+	});
+
+	test("durable client replay is negotiated before commands are resent", () => {
+		expect(read("ws-handlers.ts")).toContain("capabilities: { commandResults: true }");
+		const hook = read("../frontend/hooks/useWebSocket.ts");
+		expect(hook).toContain("commandResultsRef.current = false");
+		expect(hook).toContain("msg.capabilities?.commandResults === true");
+	});
+
+	test("taking back a steer is receipt-idempotent on every client", () => {
+		expect(read("ws-handlers.ts")).toContain('"take_steered_prompt",');
+		expect(read("../frontend/lib/ws-request-id.ts")).toContain(
+			'"take_steered_prompt",',
+		);
+		const native = readFileSync(
+			resolve(serverDir, "../../../../clients/ios/OS1/Networking/SocketMutationOutbox.swift"),
+			"utf8",
+		);
+		expect(native).toContain('"take_steered_prompt",');
+	});
+
+	test("run-targeting retries and deletion cannot cross generations", () => {
+		const ws = read("ws-handlers.ts");
+		expect(ws).toContain("const targetRunId =");
+		expect(ws).toContain("The run targeted by this command has already changed");
+		expect(ws).toContain("sessionId: commandSessionId");
+		expect(ws).toContain('`stop-${msg.requestId}`');
+		const routes = read("routes/sessions.ts");
+		expect(routes).toContain("await cancelAgentRunAndWait(runIds)");
+		expect(routes).toMatch(/\.runExclusive\(\s*"delete_session"/);
+	});
+
+	test("create and sandbox recovery establish one execution owner", () => {
+		const queue = read("queue-state.ts");
+		expect(queue).toContain('kind?: "create"');
+		expect(read("run-session.ts")).toContain("resumePlannedCreate(sessionId)");
+		for (const relative of [
+			"sandbox/docker.ts",
+			"sandbox/adapters/bootstrap.ts",
+		]) {
+			const source = read(relative);
+			const eager = source.indexOf("launchRunEager");
+			const record = source.indexOf("journalSet(record);", eager);
+			const specWrite = relative === "sandbox/docker.ts"
+				? source.indexOf("writeJsonAtomic(`${dir}/${HOST_SPEC_NAME}`, spec)", eager)
+				: source.indexOf("launcher.writeSpec!(dir, spec)", eager);
+			const launch = source.indexOf("launcher.launch", record);
+			const launching = source.indexOf('record.launchPhase = "launching"', launch);
+			const connect = source.indexOf("new HostHandle", launching);
+			const dispatchCallback = source.indexOf("onDispatching?.()");
+			const processDispatch = relative === "sandbox/docker.ts"
+				? source.indexOf("await docker(args)", dispatchCallback)
+				: source.indexOf("driver.execBackground(", dispatchCallback);
+			expect(specWrite).toBeGreaterThan(0);
+			expect(specWrite).toBeLessThan(record);
+			expect(record).toBeGreaterThan(0);
+			expect(record).toBeLessThan(launch);
+			expect(launch).toBeLessThan(launching);
+			expect(launching).toBeLessThan(connect);
+			expect(dispatchCallback).toBeGreaterThan(0);
+			expect(dispatchCallback).toBeLessThan(processDispatch);
+			expect(source).toContain("decideSandboxHostRecovery");
+			expect(source).toContain("uncertainLaunch");
+			expect(source).toContain("reconcileUncertainHostEvents");
+			expect(source).not.toContain("pgrep -f");
+			expect(source).toContain("evidence(dir)");
+			if (relative.includes("bootstrap"))
+				expect(source).toContain("if (!dispatchAttempted) unregisterRunWsHost(hostId)");
+			expect(source).toContain('recovery.kind === "replay"');
+			expect(source).toContain("...(oldSpec as RunHostSpec)");
+		}
+	});
+
+	test("opening runs settle session-file writes before continuing", () => {
+		const create = read("session-create.ts");
+		const writes = create
+			.split("\n")
+			.filter((line) => line.includes("touchNativeSession("));
+		expect(writes.length).toBeGreaterThan(0);
+		for (const line of writes) expect(line).toContain("await touchNativeSession(");
+
+		const cache = read("session-cache.ts");
+		const outcome = cache.indexOf("if (errorMessage) {");
+		const transcript = cache.indexOf("persistRunFailureNotice(", outcome);
+		const sessionFile = cache.indexOf("void touchNativeSession(id", outcome);
+		expect(transcript).toBeGreaterThan(outcome);
+		expect(sessionFile).toBeGreaterThan(transcript);
+	});
+
+	test("WebSocket session mutations enter the mailbox before dispatch", () => {
+		const source = read("ws-handlers.ts");
+		expect(source).toContain("kernelCommands.has(msg.type)");
+		expect(source).toContain("kernelDispatchTokens.delete");
+		expect(source).toContain("__sessionKernelToken");
+		expect(source).not.toContain("__sessionKernelOwned");
+		expect(source).toContain('source: "websocket"');
+	});
+});

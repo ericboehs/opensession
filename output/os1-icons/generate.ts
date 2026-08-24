@@ -6,7 +6,7 @@ import { join } from "node:path";
 const root = import.meta.dir;
 const source = join(
   root,
-  "../../os1-ios/OS1/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
+  "../../packages/clients/ios/OS1/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
 );
 const iconDir = join(root, "OS1Meridian.icon");
 const assetsDir = join(iconDir, "Assets");

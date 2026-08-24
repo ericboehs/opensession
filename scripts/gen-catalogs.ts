@@ -17,7 +17,7 @@
  * than a doc nobody trusts.
  *
  * How the tool data is obtained: every server in MCP_SERVER_CATALOG
- * (src/server/mcp-catalog.ts) is BUILT — the same call the runtime makes — and
+ * (packages/core/opensession-server/src/server/mcp-catalog.ts) is BUILT — the same call the runtime makes — and
  * asked for tools/list over an in-memory MCP transport. Nothing is parsed out
  * of source, so a tool cannot exist without appearing here.
  *
@@ -125,17 +125,15 @@ const RUN_CLASS_LABEL: Record<string, string> = {
   automation: "automation",
   slack: "Slack loop",
   goal: "goal wake",
-  "codex-dial": "codex Dial",
   unwired: "**unwired**",
 };
 
 async function renderMcpTools(): Promise<string> {
-  const { MCP_SERVER_CATALOG } = await import(`${REPO_ROOT}/src/server/mcp-catalog.ts`);
+  const { MCP_SERVER_CATALOG } = await import(`${REPO_ROOT}/packages/core/opensession-server/src/server/mcp-catalog.ts`);
   const { AUTOMATION_DENIED_TOOLS } = await import(
-    `${REPO_ROOT}/src/server/automation-denied-tools.ts`
+    `${REPO_ROOT}/packages/core/opensession-server/src/server/automation-denied-tools.ts`
   );
-  const { STRIPE_CONFIRM_TOOLS } = await import(`${REPO_ROOT}/src/server/runner-shared.ts`);
-  const { SHARED_INPROCESS_SERVERS } = await import(`${REPO_ROOT}/src/server/opencode-policy.ts`);
+  const { STRIPE_CONFIRM_TOOLS } = await import(`${REPO_ROOT}/packages/core/opensession-server/src/server/runner-shared.ts`);
 
   const out: string[] = [
     header(
@@ -145,32 +143,32 @@ async function renderMcpTools(): Promise<string> {
         "`opensession-*` servers — with the gating that decides which runs can",
         "call it. Tool names and inputs are read from the live server objects",
         "(`tools/list`), so this file cannot drift from the code; the run classes",
-        "and conditions are declared in `src/server/mcp-catalog.ts` beside each",
+        "and conditions are declared in `packages/core/opensession-server/src/server/mcp-catalog.ts` beside each",
         "entry and checked against the real wiring by `mcp-catalog.test.ts`.",
         "",
         "External MCP servers (`mcp-config.json`) are NOT listed here: they are",
         "per-instance configuration, and their per-user `allowedUsers` scoping is",
-        "enforced in `filterMcpServers` (`src/server/runner-shared.ts`).",
+        "enforced in `filterMcpServers` (`packages/core/opensession-server/src/server/runner-shared.ts`).",
         "",
         "**How gating works.** An in-process server reaches a run only if a call",
         "site hands it over, so the *run class* column is the real permission",
         "boundary:",
         "",
         "- **interactive** — the web UI and native clients, via",
-        "  `interactiveMcpServers()` (`src/server/interactive-mcp.ts`).",
+        "  `interactiveMcpServers()` (`packages/core/opensession-server/src/server/interactive-mcp.ts`).",
         "- **automation** — unattended runs on untrusted text. They receive only",
         "  the servers `automations.ts` builds for them; the run-rpc fallback",
         "  resolver fails closed for automation-owned sessions, so asking for an",
         "  interactive server yields nothing.",
-        "- **Slack loop**, **goal wake**, **codex Dial** — their own narrow sets.",
+        "- **Slack loop**, **goal wake** — their own narrow sets.",
         "",
         "Two further layers apply to every run, and neither currently touches an",
         "in-process tool (both name external MCP tools):",
         "",
-        "- `AUTOMATION_DENIED_TOOLS` (`src/server/automation-denied-tools.ts`) —",
+        "- `AUTOMATION_DENIED_TOOLS` (`packages/core/opensession-server/src/server/automation-denied-tools.ts`) —",
         "  stripped from automation runs and from interactive resumes of",
         "  automation-owned sessions.",
-        "- `STRIPE_CONFIRM_TOOLS` (`src/server/runner-shared.ts`) — money movers,",
+        "- `STRIPE_CONFIRM_TOOLS` (`packages/core/opensession-server/src/server/runner-shared.ts`) — money movers,",
         "  stripped from every run's tool list.",
       ].join("\n"),
     ),
@@ -178,8 +176,8 @@ async function renderMcpTools(): Promise<string> {
 
   // Summary table.
   out.push("## Servers", "");
-  out.push("| Server | Tools | Runs | Shared server | Condition |");
-  out.push("| --- | --- | --- | --- | --- |");
+  out.push("| Server | Tools | Runs | Condition |");
+  out.push("| --- | --- | --- | --- |");
   const built: Array<{ entry: any; tools: ListedTool[]; variants: Array<{ label: string; tools: ListedTool[]; runClasses: string[] }> }> = [];
   for (const entry of MCP_SERVER_CATALOG) {
     const tools = await listTools(entry.build());
@@ -191,7 +189,7 @@ async function renderMcpTools(): Promise<string> {
     out.push(
       `| [\`${entry.name}\`](#${entry.name}) | ${tools.length} | ${entry.runClasses
         .map((r: string) => RUN_CLASS_LABEL[r] || r)
-        .join(", ")} | ${SHARED_INPROCESS_SERVERS.includes(entry.name) ? "yes" : "no"} | ${
+        .join(", ")} | ${
         entry.condition ? entry.condition.replace(/\|/g, "\\|") : "–"
       } |`,
     );
@@ -199,9 +197,7 @@ async function renderMcpTools(): Promise<string> {
   const total = built.reduce((n, b) => n + b.tools.length, 0);
   out.push(
     "",
-    `${built.length} servers, ${total} tools. "Shared server" is membership of`,
-    "`SHARED_INPROCESS_SERVERS` (`src/server/opencode-policy.ts`): a run carrying",
-    "any server outside that list falls back to a per-session engine server.",
+    `${built.length} servers, ${total} tools.`,
     "",
   );
 
@@ -258,42 +254,9 @@ export const ENGINE_NOTES: Record<
   string,
   { title: string; adapter: string; prefix: string; gate: string; note: string }
 > = {
-  opencode: {
-    title: "opencode",
-    adapter: "src/server/opencode-runner.ts (policy in src/server/opencode-policy.ts)",
-    prefix: "`opencode/<provider>/<model>`",
-    gate:
-      "Always available; the Anthropic side additionally needs the Meridian bridge enabled " +
-      "(`bridgeEnabled()`, `~/.opensession-opencode.json`).",
-    note:
-      "The default engine and the only one eligible for the shared always-warm servers " +
-      "(`SHARED_INPROCESS_SERVERS` / `sharedOpencodeEligible`). Unattended runs are gated " +
-      "deny-by-default on journal kind (`opencodeGateReason`) and get the tool-strip policy.",
-  },
-  claude: {
-    title: "claude-direct",
-    adapter: "src/server/engine/claude-direct-adapter.ts (policy in claude-direct-policy.ts)",
-    prefix: "`claude/<provider>/<model>`",
-    gate:
-      "`directEngineEnabled(\"claude\")` — `claude.enabled` in `~/.opensession-engines.json`; " +
-      "`OPENSESSION_ENGINE_CLAUDE_DIRECT=1` is honoured as a legacy alias. Off by default.",
-    note:
-      "Vendor-scoped: Anthropic models only. Loads lazily on the first turn that routes to it. " +
-      "Ask mode denies the mutating built-ins in `ASK_MODE_DENIED_TOOLS`.",
-  },
-  codex: {
-    title: "codex-direct",
-    adapter: "src/server/engine/codex-direct-adapter.ts (MCP wiring in codex-direct-mcp.ts)",
-    prefix: "`codex/<provider>/<model>`",
-    gate: "`directEngineEnabled(\"codex\")` — `codex.enabled` in `~/.opensession-engines.json`. Off by default.",
-    note:
-      "Vendor-scoped: OpenAI models only. Drives the `codex` binary's app-server JSON-RPC surface, " +
-      "with an isolated CODEX_HOME per account. The Dial's oracle reaches it as the " +
-      "`opensession-oracle` MCP server, because codex has no dynamic tool registration.",
-  },
   pi: {
     title: "pi",
-    adapter: "src/server/pi-runner.ts",
+    adapter: "packages/core/opensession-server/src/server/pi-runner.ts",
     prefix: "`pi/<provider>/<model>`",
     gate: "`enabled` in `~/.opensession-pi.json` (`piConfigPath()`). Off by default.",
     note:
@@ -302,7 +265,7 @@ export const ENGINE_NOTES: Record<
   },
   fake: {
     title: "fake (tests only)",
-    adapter: "src/server/agent-runner.ts — the __setEngineForTest seam; fixtures in src/server/fake-engine.test.ts",
+    adapter: "packages/core/opensession-server/src/server/agent-runner.ts — the __setEngineForTest seam; fixtures in packages/core/opensession-server/src/server/fake-engine.test.ts",
     prefix: "– (intercepts every model id)",
     gate:
       "Not config-gated and not reachable in production: it is a module-local test seam, set only " +
@@ -314,11 +277,11 @@ export const ENGINE_NOTES: Record<
 };
 
 async function renderEngines(): Promise<string> {
-  const models = await import(`${REPO_ROOT}/src/server/models.ts`);
-  const { ENGINE_IDS } = await import(`${REPO_ROOT}/src/server/engine/engines-config.ts`);
+  const models = await import(`${REPO_ROOT}/packages/core/opensession-server/src/server/models.ts`);
+  const ENGINE_IDS = ["pi"] as const;
   // Read the ids from the engine registry so a new one cannot be missed, but
   // lead with the default engine rather than the union's alphabetical order.
-  const lead = ["opencode", "claude", "codex", "pi"];
+  const lead = ["pi"];
   const ids: string[] = [
     ...lead.filter((id) => (ENGINE_IDS as readonly string[]).includes(id)),
     ...[...ENGINE_IDS].filter((id: string) => !lead.includes(id)).sort(),
@@ -331,22 +294,11 @@ async function renderEngines(): Promise<string> {
       [
         "Which engine runs a turn, what turns it on, and where each model lands.",
         "The routing table below is computed by calling `routeModel()`",
-        "(`src/server/models.ts`) against a clean instance — no per-model engine",
+        "(`packages/core/opensession-server/src/server/models.ts`) against a clean instance — no per-model engine",
         "overrides configured — so it shows the shipped defaults.",
         "",
-        "`routeModel()` resolves in one order, and this is the only place that",
-        "order lives:",
-        "",
-        "1. an explicit engine prefix on the id (`pi/…`, `claude/…`, `codex/…`);",
-        "   a leading `opencode/` is the picker's own id shape, not a choice;",
-        "2. the per-model default engine — `modelEngines` in",
-        "   `~/.opensession-engines.json`, keyed by the base model id, and applied",
-        "   to INTERACTIVE runs only;",
-        "3. opencode.",
-        "",
-        "A default naming a disabled or un-routable engine is ignored and the run",
-        "stays on opencode; an explicit choice is never softened — it routes, and",
-        "that engine's own gate reports why it cannot run.",
+        "`routeModel()` sends every accepted model and preset to Pi.",
+        "Native ids and provider/model paths normalize to `pi/<provider>/<model>`.",
       ].join("\n"),
     ),
   ];
@@ -385,19 +337,15 @@ async function renderEngines(): Promise<string> {
   }
   out.push(
     "",
-    "Prefixing any of those ids routes it to another engine, subject to that",
-    "engine's gate and vendor scope — `toEngineModel()` returns nothing when an",
-    "engine cannot serve a model, and the run stays where it was.",
+    "Every accepted id resolves to Pi before dispatch.",
     "",
     "| Example id | Routes to |",
     "| --- | --- |",
   );
   for (const example of [
     "pi/anthropic/claude-opus-5",
-    "claude/anthropic/claude-opus-5",
-    "codex/openai/gpt-5.6-sol",
-    "claude/dial/opus-fable",
-    "opencode/anthropic/claude-opus-5",
+    "anthropic/claude-opus-5",
+    "openai/gpt-5.6-sol",
   ]) {
     const route = models.routeModel(example);
     out.push(`| \`${example}\` | ${route.engine} |`);
@@ -409,9 +357,6 @@ async function renderEngines(): Promise<string> {
 function steerLabel(models: any, id: string): string {
   if (id === "fake") return "n/a";
   const probe: Record<string, string> = {
-    opencode: "opencode/anthropic/claude-opus-5",
-    claude: "claude/anthropic/claude-opus-5",
-    codex: "codex/openai/gpt-5.6-sol",
     pi: "pi/anthropic/claude-opus-5",
   };
   return models.modelSupportsSteer(probe[id]) ? "yes" : "no";
