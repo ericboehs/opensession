@@ -6,6 +6,8 @@
  *                                   see, for the registration picker.
  *   POST /api/setup/repos         — clone `owner/name` and register it in
  *                                   config.repos.
+ *   PATCH /api/setup/repos/:id     — change its default branch or make it the
+ *                                    instance's default repository.
  */
 
 import { existsSync, mkdirSync, rmSync } from "fs";
@@ -16,13 +18,20 @@ import { cloneCsCheckout } from "../codestorage/remote";
 import {
   persistRawConfig,
   rawConfig,
+  reposForMutation,
+  repoSectionForMutation,
   withConfigMutationLock,
 } from "../config-mutation";
 import { githubCredentialForLogin } from "../github-auth";
 import { homeDir } from "../paths";
 import { fetchWithTimeout } from "../shared/fetch-with-timeout";
 import type { RouteContext } from "./context";
-import { inspectRepo, repoIdFromName } from "./repo-inspection";
+import {
+  inspectRepo,
+  repoCurrentBranch,
+  repoHasBranch,
+  repoIdFromName,
+} from "./repo-inspection";
 
 /** Strict: this value reaches a spawn argv (always array-spawned, never a
  *  shell string — the regex is belt AND suspenders). */
@@ -30,6 +39,19 @@ export const GITHUB_FULL_NAME_RE = /^[\w.-]+\/[\w.-]+$/;
 
 export function validGithubFullName(value: unknown): value is string {
   return typeof value === "string" && GITHUB_FULL_NAME_RE.test(value);
+}
+
+/** Normalize a branch name through git's own ref validator so the editor
+ * accepts exactly the branch grammar the rest of the git layer supports. */
+export async function normalizeDefaultBranch(value: unknown): Promise<string | null> {
+  if (typeof value !== "string") return null;
+  const branch = value.trim();
+  if (!branch) return null;
+  const checked = Bun.spawn(["git", "check-ref-format", "--branch", branch], {
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  return (await checked.exited) === 0 ? branch : null;
 }
 
 // ── GitHub repo listing ──────────────────────────────────────────────────────
@@ -250,11 +272,7 @@ async function registerGithubRepo(input: {
     await cloneGithubRepo(input.fullName, dest);
     const inspected = await inspectRepo(dest);
     const config = rawConfig();
-    const repos = {
-      ...((config.repos && typeof config.repos === "object" && !Array.isArray(config.repos)
-        ? config.repos
-        : {}) as Record<string, RepoSection>),
-    };
+    const repos = reposForMutation(config) as Record<string, RepoSection>;
     const entry: RepoSection = {
       label: name,
       repo: inspected.path,
@@ -299,6 +317,15 @@ async function registerCodestorageRepo(input: {
     (err as any).status = 409;
     throw err;
   }
+  if (
+    Object.values(configuredRepos()).some(
+      (repo) => repo.host === "codestorage" && repo.csRepo === csRepo,
+    )
+  ) {
+    const err = new Error(`code.storage repository already registered: ${csRepo}`);
+    (err as any).status = 409;
+    throw err;
+  }
   const root = checkoutsRoot();
   const dest = `${root}/${id}`;
   if (existsSync(dest)) {
@@ -311,11 +338,7 @@ async function registerCodestorageRepo(input: {
     await cloneCsCheckout(csRepo, dest);
     const inspected = await inspectRepo(dest);
     const config = rawConfig();
-    const repos = {
-      ...((config.repos && typeof config.repos === "object" && !Array.isArray(config.repos)
-        ? config.repos
-        : {}) as Record<string, RepoSection>),
-    };
+    const repos = reposForMutation(config) as Record<string, RepoSection>;
     const entry: RepoSection = {
       label: name,
       repo: inspected.path,
@@ -473,6 +496,115 @@ export async function handleSetupRepoRoutes(
       return Response.json(
         { error: e instanceof Error ? e.message : String(e) },
         { status },
+      );
+    }
+  }
+
+  const updateMatch = path.match(/^\/api\/setup\/repos\/([^/]+)$/);
+  if (updateMatch && req.method === "PATCH") {
+    let id: string;
+    try {
+      id = decodeURIComponent(updateMatch[1]);
+    } catch {
+      return Response.json({ error: "Invalid repository id" }, { status: 400 });
+    }
+    if (["__proto__", "prototype", "constructor"].includes(id)) {
+      return Response.json({ error: "Invalid repository id" }, { status: 400 });
+    }
+    const body = (await req.json().catch(() => null)) as {
+      defaultBranch?: unknown;
+      default?: unknown;
+    } | null;
+    const hasDefaultBranch = !!body && Object.hasOwn(body, "defaultBranch");
+    const makeDefault = body?.default === true;
+    if (!hasDefaultBranch && !makeDefault) {
+      return Response.json(
+        { error: "Provide defaultBranch or default: true" },
+        { status: 400 },
+      );
+    }
+    if (body?.default !== undefined && !makeDefault) {
+      return Response.json({ error: "default must be true" }, { status: 400 });
+    }
+    const defaultBranch = hasDefaultBranch
+      ? await normalizeDefaultBranch(body?.defaultBranch)
+      : undefined;
+    if (hasDefaultBranch && !defaultBranch) {
+      return Response.json({ error: "defaultBranch must be a valid Git branch" }, { status: 400 });
+    }
+    const repo = configuredRepos();
+    if (!Object.hasOwn(repo, id)) {
+      return Response.json({ error: `Unknown repository: ${id}` }, { status: 404 });
+    }
+    if (defaultBranch) {
+      if (!(await repoHasBranch(repo[id].repo, defaultBranch))) {
+        return Response.json(
+          { error: `Branch not found on ${id}'s origin: ${defaultBranch}` },
+          { status: 400 },
+        );
+      }
+      if (repo[id].sharedCheckout) {
+        const current = await repoCurrentBranch(repo[id].repo);
+        if (current !== defaultBranch) {
+          return Response.json(
+            {
+              error: `The shared checkout is on ${current || "a detached HEAD"}. Switch it to ${defaultBranch} before changing the default branch.`,
+            },
+            { status: 400 },
+          );
+        }
+      }
+    }
+    try {
+      const updated = await withConfigMutationLock(async () => {
+        const config = rawConfig();
+        const section = repoSectionForMutation(config, id);
+        if (!section) return null;
+        if (defaultBranch) section.defaultBranch = defaultBranch;
+        if (makeDefault) {
+          const sections = reposForMutation(config);
+          for (const candidate of Object.values(sections)) {
+            if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+              delete (candidate as Record<string, unknown>).default;
+            }
+          }
+          section.default = true;
+        }
+        persistRawConfig(config);
+        const currentRepos = configuredRepos();
+        const current = currentRepos[id];
+        const effectiveDefault =
+          Object.values(currentRepos).find((candidate) => candidate.default) ||
+          Object.values(currentRepos)[0];
+        audit({
+          kind: "setup_repo_update",
+          id,
+          ...(defaultBranch ? { defaultBranch } : {}),
+          ...(makeDefault ? { default: true } : {}),
+        });
+        return {
+          id,
+          defaultBranch: current.defaultBranch,
+          default: id === effectiveDefault?.id,
+        };
+      });
+      if (!updated) {
+        return Response.json({ error: `Unknown repository: ${id}` }, { status: 404 });
+      }
+      if (defaultBranch && process.env.NODE_ENV !== "test") {
+        const [{ scheduleSandboxEnvironmentInvalidation }, { invalidateAskCheckoutRefresh }] =
+          await Promise.all([
+            import("../sandbox/environments"),
+            import("../worktree"),
+          ]);
+        invalidateAskCheckoutRefresh(id);
+        scheduleSandboxEnvironmentInvalidation(id);
+      }
+      return Response.json(updated);
+    } catch (e) {
+      return Response.json(
+        { error: e instanceof Error ? e.message : String(e) },
+        { status: 400 },
       );
     }
   }

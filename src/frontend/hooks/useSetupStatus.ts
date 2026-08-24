@@ -3,6 +3,7 @@ import {
 	setupRequest,
 	type SetupGithub,
 	type SetupIntegration,
+	type SetupRepo,
 	type SetupStatus,
 } from "../components/setup-shared";
 import { BASE_PATH } from "../lib/base";
@@ -32,6 +33,10 @@ export interface SetupController {
 	/** Fold a saved integration back into the cached status. */
 	applyIntegration: (updated: SetupIntegration, restartRequired: boolean) => void;
 	applyGithub: (updated: SetupGithub, restartRequired: boolean) => void;
+	applyRepo: (
+		updated: Pick<SetupRepo, "id" | "defaultBranch" | "default">,
+		restartRequired?: boolean,
+	) => void;
 }
 
 export function useSetupStatus(): SetupController {
@@ -82,6 +87,27 @@ export function useSetupStatus(): SetupController {
 		},
 		[],
 	);
+
+	const applyRepo = useCallback((
+		updated: Pick<SetupRepo, "id" | "defaultBranch" | "default">,
+		restartRequired = false,
+	) => {
+		setStatus((s) =>
+			s
+				? {
+						...s,
+						repos: s.repos.map((repo) =>
+							repo.id === updated.id
+								? { ...repo, ...updated }
+								: updated.default
+									? { ...repo, default: false }
+									: repo,
+						),
+					}
+				: s,
+		);
+		if (restartRequired) setRestartNeeded(true);
+	}, []);
 
 	const restartServer = useCallback(
 		async (post = true) => {
@@ -135,5 +161,6 @@ export function useSetupStatus(): SetupController {
 		restartServer,
 		applyIntegration,
 		applyGithub,
+		applyRepo,
 	};
 }

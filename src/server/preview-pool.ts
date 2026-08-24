@@ -57,6 +57,7 @@ import { authedRemoteUrl } from "./codestorage/auth";
 import { homeDir, OPENSESSION_SESSIONS_DIR } from "./paths";
 import { isDevInstance } from "./dev-mode";
 import { sandboxConfig } from "./sandbox/config";
+import { shellQuoteWord } from "./sandbox/adapters/bootstrap";
 import { redactUrl } from "./shared/redact";
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -1067,7 +1068,7 @@ async function spawnDaytonaWarm(repo: Repo): Promise<void> {
     await refreshContainerCreds(c);
     const clone = await poolExec(
       c,
-      `[ -d ${WORKSPACE}/.git ] || git clone --depth 1 --branch ${repo.defaultBranch} ${JSON.stringify(cloneUrl)} ${WORKSPACE}`,
+      `[ -d ${WORKSPACE}/.git ] || git clone --depth 1 --branch ${shellQuoteWord(repo.defaultBranch)} ${JSON.stringify(cloneUrl)} ${WORKSPACE}`,
       8 * 60_000,
     );
     if (!clone.ok) return void (await fail(`clone: ${clone.out.slice(-400)}`));
@@ -1222,12 +1223,12 @@ async function doRefreshGolden(repoId: string, force: boolean): Promise<void> {
     // to origin/<default> over https so the golden never lags the remote.
     // Depth 1: the workspace never needs history (worktree->container sync is
     // computed host-side; the container only ever resets to a fetched tip).
-    let r = await dockerExec(name, `git clone --depth 1 --branch ${repo.defaultBranch} file:///src ${WORKSPACE}`, 5 * 60_000);
+    let r = await dockerExec(name, `git clone --depth 1 --branch ${shellQuoteWord(repo.defaultBranch)} file:///src ${WORKSPACE}`, 5 * 60_000);
     if (!r.ok) return void (await fail(`clone: ${r.out.slice(-500)}`));
     if (cloneUrl) {
       r = await dockerExec(
         name,
-        `cd ${WORKSPACE} && git fetch --depth 1 ${JSON.stringify(cloneUrl)} ${repo.defaultBranch} && git reset --hard FETCH_HEAD`,
+        `cd ${WORKSPACE} && git fetch --depth 1 ${JSON.stringify(cloneUrl)} ${shellQuoteWord(repo.defaultBranch)} && git reset --hard FETCH_HEAD`,
         5 * 60_000,
       );
       if (!r.ok) return void (await fail(`fetch/reset: ${r.out.slice(-500)}`));
@@ -1354,7 +1355,7 @@ async function spawnWarmContainer(repo: Repo): Promise<void> {
   // session branch, a `docker restart` (the big-delta clean-reboot path) must
   // NOT reset it back to the default branch.
   const advance = cloneUrl
-    ? `{ [ -f ${WORKSPACE}/${CLAIMED_MARKER} ] || (git fetch --depth 1 ${JSON.stringify(cloneUrl)} ${repo.defaultBranch} && git reset --hard FETCH_HEAD) || true; } && `
+    ? `{ [ -f ${WORKSPACE}/${CLAIMED_MARKER} ] || (git fetch --depth 1 ${JSON.stringify(cloneUrl)} ${shellQuoteWord(repo.defaultBranch)} && git reset --hard FETCH_HEAD) || true; } && `
     : "";
   // create + seed + start rather than `run`: the golden image carries the env
   // files that were current when it was committed, and the boot command reads
@@ -2085,4 +2086,3 @@ export function previewPoolStatus(): PreviewPoolStatusEntry[] {
       };
     });
 }
-

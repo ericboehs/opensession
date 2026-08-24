@@ -160,7 +160,7 @@ export async function handleSetupRoutes(
   if (forbidden) return forbidden;
 
   if (path === "/api/setup/status" && req.method === "GET") {
-    const { configuredServer, configuredRepos, configuredIdentity } =
+    const { configuredServer, configuredRepos, configuredIdentity, defaultRepo } =
       await import("../config");
     const { INTEGRATIONS } = await import("../integrations/registry");
     // The env FILE, not process.env: a credential saved via PUT must keep
@@ -179,6 +179,8 @@ export async function handleSetupRoutes(
         id: r.id,
         label: r.label,
         path: r.repo,
+        defaultBranch: r.defaultBranch,
+        default: r.id === defaultRepo().id,
         // Can sessions in this repo provision and boot themselves? Read off
         // the main checkout — worktrees carry the same committed files.
         lifecycle: {

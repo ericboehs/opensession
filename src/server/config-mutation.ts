@@ -13,7 +13,7 @@
  */
 
 import { chmodSync, copyFileSync, existsSync, readFileSync } from "fs";
-import { configPath } from "./config";
+import { configPath, configuredRepos } from "./config";
 import { writeJsonAtomic } from "./shared/atomic-write";
 
 const mutationState: { chain: Promise<unknown> } = ((globalThis as any)
@@ -63,4 +63,50 @@ export function persistRawConfig(config: Record<string, unknown>): void {
   try {
     chmodSync(path, 0o600);
   } catch {}
+}
+
+/**
+ * Return one raw repository section for mutation without changing the meaning
+ * of the registry. When the instance still uses its implicit built-in repos,
+ * materialize the full resolved set first because a raw `repos` object is
+ * authoritative rather than additive.
+ *
+ * Call only from inside withConfigMutationLock.
+ */
+export function repoSectionForMutation(
+  config: Record<string, unknown>,
+  id: string,
+): Record<string, unknown> | null {
+  const resolvedRepos = configuredRepos();
+  if (!Object.hasOwn(resolvedRepos, id)) return null;
+
+  const repos = reposForMutation(config, resolvedRepos);
+  const existing = Object.hasOwn(repos, id) ? repos[id] : undefined;
+  if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+    return existing as Record<string, unknown>;
+  }
+
+  const { id: _id, ...section } = resolvedRepos[id];
+  repos[id] = section;
+  return section;
+}
+
+/** Materialize the effective registry before adding or changing raw entries. */
+export function reposForMutation(
+  config: Record<string, unknown>,
+  resolvedRepos = configuredRepos(),
+): Record<string, unknown> {
+  let repos: Record<string, unknown>;
+  if (config.repos && typeof config.repos === "object" && !Array.isArray(config.repos)) {
+    repos = config.repos as Record<string, unknown>;
+  } else {
+    repos = Object.fromEntries(
+      Object.values(resolvedRepos).map((repo) => {
+        const { id: _id, ...section } = repo;
+        return [repo.id, section];
+      }),
+    );
+    config.repos = repos;
+  }
+  return repos;
 }

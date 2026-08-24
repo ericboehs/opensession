@@ -59,6 +59,8 @@ export interface SetupRepo {
 	id: string;
 	label: string;
 	path: string;
+	defaultBranch: string;
+	default: boolean;
 	lifecycle: SetupRepoLifecycle;
 }
 

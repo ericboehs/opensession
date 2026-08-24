@@ -25,7 +25,7 @@ export function SetupRestart({ setup }: { setup: SetupController }) {
 									Still not back. Check <Code>opensession logs</Code>.
 								</>
 							) : (
-								"The server reads credentials and enable flags on boot. Restarts take a few seconds; running engine turns keep going."
+								"The server reads some workspace settings on boot. Restarts take a few seconds; running engine turns keep going."
 							)}
 						</div>
 					</div>

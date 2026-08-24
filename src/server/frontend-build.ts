@@ -268,7 +268,9 @@ export async function buildFrontend(): Promise<string> {
 		indexHtml.slice(0, headClose) +
 		`  <link rel="stylesheet" href="/${cssName}">${twLink}\n` +
 		indexHtml.slice(headClose);
-	const version = `${entryName}|${cssName}|${twName ?? "no-tw"}`;
+	// The instance blob lives in HTML rather than the hashed JS/CSS assets. Keep
+	// it in the version so config-only rebuilds notify already-open clients.
+	const version = `${entryName}|${cssName}|${twName ?? "no-tw"}|i-${Bun.hash(instance).toString(36)}`;
 
 	const store: FrontendBundle = (g.__opensessionFrontend ??= {
 		indexHtml: "",

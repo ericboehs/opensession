@@ -222,7 +222,11 @@ export function SetupPanel({ onDone }: { onDone?: () => void }) {
 						)}
 						{step.id === "identity" && <IdentityCard />}
 						{step.id === "repos" && (
-							<ReposSection repos={status.repos} onChanged={refetch} />
+							<ReposSection
+								repos={status.repos}
+								onChanged={refetch}
+								onRepoUpdated={setup.applyRepo}
+							/>
 						)}
 						{step.id === "team" && <TeamSection onChanged={refetch} />}
 						{step.id === "integrations" && (

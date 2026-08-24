@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "../ui/button";
+import { Field, Input } from "../ui/input";
 import { Modal } from "../ui/modal";
 import { Popover } from "../ui/popover";
 import { Switch } from "../ui/switch";
@@ -49,9 +50,14 @@ import { Badge } from "../ui/badge";
 export function ReposSection({
 	repos,
 	onChanged,
+	onRepoUpdated,
 }: {
 	repos: SetupStatus["repos"];
 	onChanged: () => void | Promise<void>;
+	onRepoUpdated: (
+		updated: { id: string; defaultBranch: string; default: boolean },
+		restartRequired?: boolean,
+	) => void;
 }) {
 	const [pickerOpen, setPickerOpen] = useState(false);
 	// Focused when the picker opens, so a long list is one keystroke from
@@ -61,13 +67,14 @@ export function ReposSection({
 	// same payload every tile in the app reads, so what this page shows and
 	// what the sidebar paints can't drift apart.
 	const [appearance, setAppearance] = useState<Map<string, RepoInfo>>(new Map());
+	const repoIds = repos.map((repo) => repo.id).join("\0");
 	const loadAppearance = useCallback(async () => {
 		const list = await fetchRepos().catch(() => []);
 		setAppearance(new Map(list.map((r) => [r.id, r])));
 	}, []);
 	useEffect(() => {
 		loadAppearance();
-	}, [loadAppearance, repos]);
+	}, [loadAppearance, repoIds]);
 	return (
 		<>
 			{/* The label is the count: the page and the wizard step are both
@@ -110,39 +117,160 @@ export function ReposSection({
 						in, so add one above.
 					</EmptyState>
 				) : (
-					repos.map((r) => {
-						const lifecycle = repoLifecycleState(r);
-						return (
-							<SettingRow key={r.id}>
-								<RepoTileButton
-									repo={appearance.get(r.id)}
-									id={r.id}
-									onChanged={loadAppearance}
-								/>
-								<SettingRowText>
-									<SettingRowTitle>{r.label}</SettingRowTitle>
-									<SettingRowDescription className="truncate font-mono text-meta">
-										{r.path}
-									</SettingRowDescription>
-									<SettingRowDescription>
-										{lifecycle.description}
-									</SettingRowDescription>
-								</SettingRowText>
-								<StateChip tone={lifecycle.tone} label={lifecycle.label} />
-							</SettingRow>
-						);
-					})
+					repos.map((repo) => (
+						<RepositoryRow
+							key={repo.id}
+							repo={repo}
+							appearance={appearance.get(repo.id)}
+							onAppearanceChanged={loadAppearance}
+							onRepoUpdated={onRepoUpdated}
+						/>
+					))
 				)}
 			</SettingCard>
 			<SettingsHint>
-				Registering clones the repo onto the server; sessions then branch into
-				isolated worktrees of it. New repos are usable right away, with no restart.
+				The default repository is used when a session does not name one. Registering
+				clones a repo onto the server; sessions then branch into isolated worktrees
+				of it. Changes apply without a restart.
 				A repo that commits <code>.agents/setup</code> and{" "}
 				<code>.agents/start.sh</code> provisions its own worktrees and
 				boots its dev server, so previews work and agents can check their UI
 				changes in a real browser. See docs/repo-lifecycle.md.
 			</SettingsHint>
 		</>
+	);
+}
+
+function RepositoryRow({
+	repo,
+	appearance,
+	onAppearanceChanged,
+	onRepoUpdated,
+}: {
+	repo: SetupStatus["repos"][number];
+	appearance: RepoInfo | undefined;
+	onAppearanceChanged: () => Promise<void>;
+	onRepoUpdated: (
+		updated: { id: string; defaultBranch: string; default: boolean },
+		restartRequired?: boolean,
+	) => void;
+}) {
+	const lifecycle = repoLifecycleState(repo);
+	const [branch, setBranch] = useState(repo.defaultBranch);
+	const [saving, setSaving] = useState<"branch" | "default" | null>(null);
+	const [error, setError] = useState<string | null>(null);
+	const errorId = useId();
+
+	useEffect(() => {
+		setBranch(repo.defaultBranch);
+	}, [repo.defaultBranch]);
+
+	const normalized = branch.trim();
+	const changed = normalized !== repo.defaultBranch;
+
+	async function saveBranch(event: React.FormEvent) {
+		event.preventDefault();
+		if (!normalized || !changed || saving) return;
+		setSaving("branch");
+		setError(null);
+		try {
+			const updated = await setupRequest<{
+				id: string;
+				defaultBranch: string;
+				default: boolean;
+			}>(
+				`/api/setup/repos/${encodeURIComponent(repo.id)}`,
+				{
+				method: "PATCH",
+				json: { defaultBranch: normalized },
+				},
+			);
+			setBranch(updated.defaultBranch);
+			onRepoUpdated(updated);
+			toast(`${repo.label} default branch updated`);
+		} catch (e: any) {
+			setError(e.message);
+		} finally {
+			setSaving(null);
+		}
+	}
+
+	async function makeDefault() {
+		if (repo.default || saving) return;
+		setSaving("default");
+		setError(null);
+		try {
+			const updated = await setupRequest<{
+				id: string;
+				defaultBranch: string;
+				default: boolean;
+			}>(`/api/setup/repos/${encodeURIComponent(repo.id)}`, {
+				method: "PATCH",
+				json: { default: true },
+			});
+			onRepoUpdated(updated, true);
+			toast(`${repo.label} saved as the default repository`);
+		} catch (e: any) {
+			setError(e.message);
+		} finally {
+			setSaving(null);
+		}
+	}
+
+	return (
+		<SettingRow className="items-start">
+			<RepoTileButton
+				repo={appearance}
+				id={repo.id}
+				onChanged={onAppearanceChanged}
+			/>
+			<SettingRowText>
+				<SettingRowTitle className="flex flex-wrap items-center gap-2">
+					{repo.label}
+					{repo.default && <Badge tone="accent">Default repository</Badge>}
+				</SettingRowTitle>
+				<SettingRowDescription className="truncate font-mono text-meta">
+					{repo.path}
+				</SettingRowDescription>
+				<SettingRowDescription>{lifecycle.description}</SettingRowDescription>
+				<form className="mt-2 flex flex-wrap items-end gap-2" onSubmit={saveBranch}>
+					<Field label="Default branch" className="w-44">
+						<Input
+							className="font-mono"
+							value={branch}
+							onChange={(event) => {
+								setBranch(event.target.value);
+								setError(null);
+							}}
+							disabled={!!saving}
+							aria-invalid={!!error}
+							aria-describedby={error ? errorId : undefined}
+							autoCapitalize="none"
+							autoCorrect="off"
+							spellCheck={false}
+						/>
+					</Field>
+					<Button
+						type="submit"
+						size="sm"
+						disabled={!normalized || !changed || !!saving}
+					>
+						{saving === "branch" ? "Saving…" : "Save"}
+					</Button>
+					{!repo.default && (
+						<Button type="button" size="sm" disabled={!!saving} onClick={makeDefault}>
+							{saving === "default" ? "Saving…" : "Make default"}
+						</Button>
+					)}
+				</form>
+				{error && (
+					<InlineAlert id={errorId} className="mt-1.5">
+						{error}
+					</InlineAlert>
+				)}
+			</SettingRowText>
+			<StateChip tone={lifecycle.tone} label={lifecycle.label} />
+		</SettingRow>
 	);
 }
 
@@ -517,8 +645,10 @@ function AddRepoPicker({
 			// code.storage repos reuse the same submit shape with a source marker.
 			await setupRequest("/api/setup/repos", {
 				method: "POST",
-				json:
-					source === "codestorage" ? { source, fullName } : { fullName },
+				json: {
+					...(source === "codestorage" ? { source } : {}),
+					fullName,
+				},
 			});
 			setAdded((prev) => new Set(prev).add(key));
 			setManual("");

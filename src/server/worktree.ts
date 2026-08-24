@@ -338,6 +338,12 @@ export function ensureScratchDir(key: string): string {
  */
 const askCheckoutRefreshedAt = new Map<string, number>();
 const ASK_REFRESH_MS = 5 * 60_000;
+
+/** Force the next Ask session to re-pin this repo's shared read-only checkout. */
+export function invalidateAskCheckoutRefresh(repoId: string): void {
+  askCheckoutRefreshedAt.delete(repoId);
+}
+
 export async function ensureAskCheckout(repoId?: string): Promise<string> {
   const repo = getRepo(repoId);
   if (sharedCheckoutForNewSessions(repo)) return repo.repo;
