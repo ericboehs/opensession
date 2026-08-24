@@ -613,38 +613,62 @@ export function selectedCloneToken(
   return liveToken || (github && mode === "app" ? undefined : persistedToken);
 }
 
+/** App sandboxes require a repository-scoped mint. Never widen a failed mint
+ * to an installation-wide token; PAT mode uses only its selected PAT. */
+export function selectedGithubCloneLiveToken(
+  mode: "pat" | "app",
+  repositoryToken: string | undefined,
+  patToken: string | undefined,
+): string | undefined {
+  return mode === "app" ? repositoryToken : patToken;
+}
+
 export async function injectCloneCredential(httpsUrl: string): Promise<string> {
   const cred = sandboxConfig().cloneCredential;
-  const ghMatch = httpsUrl.match(/^https:\/\/github\.com\/(.+?)(?:\.git)?$/i);
+  let parsed: URL;
+  try {
+    parsed = new URL(httpsUrl);
+  } catch {
+    return httpsUrl;
+  }
+  const github =
+    parsed.protocol === "https:" && parsed.hostname.toLowerCase() === "github.com";
   let token: string | undefined;
 
-  if (ghMatch) {
-    // GitHub authentication follows the selected live credential even when no
-    // legacy cloneCredential is configured. The token is used only for the
-    // bounded clone/fetch and then stripped from the sandbox origin.
+  if (github) {
+    // Always discard authority embedded in a persisted GitHub origin before
+    // applying the operator-selected credential.
+    parsed.username = "";
+    parsed.password = "";
+    const repository = parsed.pathname.replace(/^\/+|\.git$/g, "");
     const {
       githubAppRepositoryToken,
       githubBotCredentialMode,
       githubToken,
     } = await import("../../github-app");
-    const liveToken =
-      (await githubAppRepositoryToken(ghMatch[1])) ||
-      (await githubToken()) ||
-      undefined;
+    const mode = githubBotCredentialMode();
+    const liveToken = selectedGithubCloneLiveToken(
+      mode,
+      mode === "app"
+        ? (await githubAppRepositoryToken(repository)) || undefined
+        : undefined,
+      mode === "pat" ? (await githubToken()) || undefined : undefined,
+    );
     token = selectedCloneToken(
       liveToken,
       cred?.type === "https-token" ? cred.token : undefined,
       true,
-      githubBotCredentialMode(),
+      mode,
     );
   } else if (cred?.type === "https-token") {
     // Explicit credentials for non-GitHub hosts keep their existing behavior.
     token = cred.token;
   }
 
-  return token
-    ? httpsUrl.replace(/^https:\/\//, `https://x-access-token:${token}@`)
-    : httpsUrl;
+  if (!token) return parsed.toString();
+  parsed.username = "x-access-token";
+  parsed.password = token;
+  return parsed.toString();
 }
 
 /**

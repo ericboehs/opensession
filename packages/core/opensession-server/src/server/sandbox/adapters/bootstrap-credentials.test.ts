@@ -11,6 +11,7 @@ import {
   remoteRunNeedsOpenai,
   injectCloneCredential,
   selectedCloneToken,
+  selectedGithubCloneLiveToken,
   warmRemoteWorkspace,
 } from "./bootstrap";
 import type { RemoteDriver } from "./bootstrap";
@@ -21,6 +22,9 @@ describe("GitHub clone credential cutover", () => {
     expect(selectedCloneToken("fresh-app", "retired-pat", true, "app")).toBe("fresh-app");
     expect(selectedCloneToken(undefined, "active-pat", true, "pat")).toBe("active-pat");
     expect(selectedCloneToken(undefined, "other-host", false, "app")).toBe("other-host");
+    expect(selectedGithubCloneLiveToken("app", "repo-app", "wide-token")).toBe("repo-app");
+    expect(selectedGithubCloneLiveToken("app", undefined, "wide-token")).toBeUndefined();
+    expect(selectedGithubCloneLiveToken("pat", "unselected-app", "selected-pat")).toBe("selected-pat");
   });
 
   test("scrubs a warm origin before repository dependency code runs", async () => {
@@ -67,6 +71,13 @@ describe("GitHub clone credential cutover", () => {
 
       expect(
         await injectCloneCredential("https://github.com/tellahq/opensession.git"),
+      ).toBe(
+        "https://x-access-token:live-selected-token@github.com/tellahq/opensession.git",
+      );
+      expect(
+        await injectCloneCredential(
+          "https://x-access-token:retired-pat@github.com/tellahq/opensession.git",
+        ),
       ).toBe(
         "https://x-access-token:live-selected-token@github.com/tellahq/opensession.git",
       );
