@@ -10,7 +10,6 @@ import {
 	registerTranscriptVirtualNavigation,
 	type TranscriptVirtualNavigation,
 } from "../lib/transcript-virtual-navigation";
-import { cn } from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -21,6 +20,9 @@ const sx = stylex.create({
 	wFull: {
 			width: "100%"
 	},
+	absolute: { position: "absolute" },
+	left0: { left: 0 },
+	top0: { top: 0 },
 });
 
 export interface VirtualTranscriptItem {
@@ -227,14 +229,16 @@ export function VirtualTranscriptList({
 				{virtualItems.map((virtualItem) => {
 					const item = items[virtualItem.index];
 					if (!item) return null;
+					const rowStyles = stylex.props(sx.absolute, sx.left0, sx.top0, sx.wFull);
 					return (
 						<div
 							key={item.key}
 							ref={item.measure === false ? undefined : rowRef(item.key)}
 							data-index={virtualItem.index}
 							data-eid={item.anchorId}
-							className={cn("absolute left-0 top-0 w-full", item.className)}
-							style={{ transform: `translateY(${virtualItem.start}px)` }}
+							{...rowStyles}
+							className={[rowStyles.className, item.className].filter(Boolean).join(" ")}
+							style={{ ...rowStyles.style, transform: `translateY(${virtualItem.start}px)` }}
 						>
 							{item.content}
 						</div>

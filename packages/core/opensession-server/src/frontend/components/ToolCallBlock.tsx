@@ -223,9 +223,26 @@ const sx = stylex.create({
 	py1: {
 			paddingBlock: "4px"
 	},
-	fontSans: {
-			fontFamily: "var(--sans)"
-	},
+	fontSans: { fontFamily: "var(--sans)" },
+	wFull: { width: "100%" },
+	cursorPointer: { cursor: "pointer" },
+	gap2: { gap: "8px" },
+	textLeft: { textAlign: "left" },
+	rowHover: { ":hover": { backgroundColor: "color-mix(in srgb, var(--hover) 40%, transparent)" } },
+	absolute: { position: "absolute" },
+	opacity0: { opacity: 0 },
+	transitionOpacityTransform: { transitionProperty: "opacity, transform" },
+	rotate180: { transform: "rotate(180deg)" },
+	fontNormal: { fontWeight: "var(--font-weight-normal)" },
+	phoneHidden: { "@media (max-width: 720px)": { display: "none" } },
+	phoneShrink0: { "@media (max-width: 720px)": { flexShrink: 0 } },
+	py3px: { paddingBlock: "3px" },
+	inputPanel: { overflow: "hidden", borderRadius: "calc(14px * var(--rf))", backgroundColor: "var(--bg-panel)", padding: "6px" },
+	mt0: { marginTop: 0 },
+	my0: { marginBlock: 0 },
+	opacity100: { opacity: 1 },
+	subagentTransition: { transitionProperty: "opacity, color, background-color", ":focus": { opacity: 1 } },
+	desktopHoverReveal: { "@media (min-width: 721px)": { opacity: 0, ":hover": { opacity: 1 } } },
 });
 
 interface Props {
@@ -589,14 +606,8 @@ export const ToolCallBlock = function ToolCallBlock({
         type="button"
         aria-expanded={expanded}
         onClick={() => rememberExpansion(!expanded)}
-        className={cn(
-          // Baseline, not centre: the 14px tool name, the 13px mono path and
-          // the 11px trailing meta all ride this row, and centring aligns
-          // their boxes rather than their text. Items with no text baseline
-          // (the glyph, the spinner, the failure mark) opt back into centring.
-          "group flex w-full min-w-0 cursor-pointer items-baseline gap-2 rounded-control border-0 bg-transparent px-1 py-[3px] text-left font-sans transition-colors",
-          "hover:bg-hover/40"
-        )}
+        className="group"
+        {...stylex.props(sx.flex, sx.wFull, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px1, sx.py3px, sx.textLeft, sx.fontSans, sx.transitionColors, sx.rowHover)}
       >
         <span {...stylex.props(sx.relative, sx.z1, sx.flex, sx.size22px, sx.flexShrink0, sx.selfCenter, sx.itemsCenter, sx.justifyCenter, sx.textFaint)}>
           <span className="group-hover:opacity-0" {...stylex.props(sx.transitionOpacity, sx.duration150)}>
@@ -604,10 +615,8 @@ export const ToolCallBlock = function ToolCallBlock({
           </span>
           <IconChevronDown
             size={20}
-            className={cn(
-              "absolute block text-dim opacity-0 transition-[opacity,transform] duration-150 group-hover:opacity-100",
-              expanded && "rotate-180"
-            )}
+            className="group-hover:opacity-100"
+            {...stylex.props(sx.absolute, sx.block, sx.textDim, sx.opacity0, sx.transitionOpacityTransform, sx.duration150, expanded && sx.rotate180)}
           />
         </span>
 
@@ -626,21 +635,13 @@ export const ToolCallBlock = function ToolCallBlock({
                 <React.Fragment key={i}>
                   {i > 0 && (
                     <span
-                      className={cn(
-                        "flex-shrink-0 text-faint",
-                        scopedOpenSession && i === 1 && "phone:hidden"
-                      )}
+                      {...stylex.props(sx.flexShrink0, sx.textFaint, scopedOpenSession && i === 1 && sx.phoneHidden)}
                     >
                       ·
                     </span>
                   )}
                   <span
-                    className={cn(
-                      context
-                        ? "flex-shrink-0 font-normal opacity-70"
-                        : "truncate phone:flex-shrink-0",
-                      scopedOpenSession && i === 0 && "phone:hidden"
-                    )}
+                    {...stylex.props(context ? sx.flexShrink0 : sx.truncate, context && sx.fontNormal, context && sx.opacity70, !context && sx.phoneShrink0, scopedOpenSession && i === 0 && sx.phoneHidden)}
                   >
                     {part}
                   </span>
@@ -659,18 +660,12 @@ export const ToolCallBlock = function ToolCallBlock({
             Nothing grows into spare room here: changes and duration should
             follow the tool summary instead of lining up against the right edge. */}
         <span
-          className={cn(
-            "flex min-w-0 items-baseline gap-2",
-            mcp && "phone:hidden"
-          )}
+          {...stylex.props(sx.flex, sx.minW0, sx.itemsBaseline, sx.gap2, mcp && sx.phoneHidden)}
         >
           <span {...stylex.props(sx.flex, sx.minW0, sx.itemsBaseline, sx.gap15)}>
             {fileMark && <ExtBadge name={fileMark} {...stylex.props(sx.selfCenter)} />}
             <span
-              className={cn(
-                "min-w-0 text-label leading-4 text-dim",
-                isFileTool ? "flex overflow-hidden" : "truncate"
-              )}
+              {...stylex.props(sx.minW0, typography.label, sx.leading4, sx.textDim, isFileTool ? sx.flex : sx.truncate, isFileTool && sx.overflowHidden)}
             >
               {isFileTool ? <PathSummary path={summary} /> : summary}
             </span>
@@ -715,11 +710,8 @@ export const ToolCallBlock = function ToolCallBlock({
           <span
             role="button"
             tabIndex={0}
-            className={cn(
-              TOOL_ROW_CHIP,
-              "opacity-100 transition-[opacity,color,background-color] focus:opacity-100",
-              !subagentLive && "md:opacity-0 md:group-hover:opacity-100"
-            )}
+            className={`${stylex.props(sx.opacity100, sx.subagentTransition, !subagentLive && sx.desktopHoverReveal).className} ${TOOL_ROW_CHIP}`}
+            style={stylex.props(sx.opacity100, sx.subagentTransition, !subagentLive && sx.desktopHoverReveal).style}
             onClick={(e) => {
               e.stopPropagation();
               onOpenSubagent!(agentId!, summary);
@@ -764,9 +756,7 @@ export const ToolCallBlock = function ToolCallBlock({
         <div className="space-y-1.5" {...stylex.props(sx.relative, sx.z1, sx.mb15, sx.ml30px, sx.mt1)}>
           {inputNode && (
             <div
-              className={cn(
-                inputNeedsPanel && "overflow-hidden rounded-lg bg-panel p-1.5"
-              )}
+              {...stylex.props(inputNeedsPanel && sx.inputPanel)}
             >
               {inputNode}
             </div>
@@ -785,13 +775,13 @@ export const ToolCallBlock = function ToolCallBlock({
                 </div>
               )}
               {shownResult.images && shownResult.images.length > 0 && (
-                <div className={cn(TOOL_RESULT_MEDIA, !resultContent && "!mt-0")}>
+                <div className={`${stylex.props(!resultContent && sx.mt0).className} ${TOOL_RESULT_MEDIA}`} style={stylex.props(!resultContent && sx.mt0).style}>
                   {shownResult.images.map((raw, i) => {
                     const src = resolveEntryImageSrc(raw, sessionId);
                     return (
                       <a key={i} href={src} target="_blank" rel="noopener noreferrer" className="md-image-link">
                         <img
-                          className={cn("md-image", !resultContent && "!my-0")}
+                          className={`${stylex.props(!resultContent && sx.my0).className} md-image`} style={stylex.props(!resultContent && sx.my0).style}
                           src={src}
                           alt=""
                           loading="lazy"

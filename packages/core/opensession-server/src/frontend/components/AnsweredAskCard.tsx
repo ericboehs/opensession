@@ -5,7 +5,6 @@ import {
 } from "../lib/answered-ask";
 import { renderMarkdown } from "../lib/markdown";
 import { msgRow } from "../lib/msg-classes";
-import { cn } from "../ui/cn";
 import { IconCheck } from "./icons";
 import { useMarkdownRepo } from "./MarkdownBody";
 import * as stylex from "@stylexjs/stylex";
@@ -109,9 +108,22 @@ const sx = stylex.create({
 	mt2: {
 			marginTop: "8px"
 	},
-	gap05: {
-			gap: "2px"
-	},
+	gap05: { gap: "2px" },
+	minH9: { minHeight: "36px" },
+	itemsStart: { alignItems: "flex-start" },
+	gap25: { gap: "10px" },
+	roundedMd: { borderRadius: "calc(7px * var(--rf))" },
+	px25: { paddingInline: "10px" },
+	py2: { paddingBlock: "8px" },
+	bgControl: { backgroundColor: "var(--bg-control)" },
+	block: { display: "block" },
+	fontMedium: { fontWeight: "var(--font-weight-medium)" },
+	textFg: { color: "var(--text)" },
+	leading145: { lineHeight: 1.45 },
+	textTransparent: { color: "transparent" },
+	mt05: { marginTop: "2px" },
+	h5: { height: "20px" },
+	w5: { width: "20px" },
 });
 
 function ChoiceRow({
@@ -130,29 +142,23 @@ function ChoiceRow({
 			role="listitem"
 			aria-label={`${label}${selected ? ", selected" : ""}`}
 			data-selected={selected ? "" : undefined}
-			className={cn(
-				"flex min-h-9 items-start gap-2.5 rounded-md px-2.5 py-2 [corner-shape:var(--cs)]",
-				selected ? "bg-control" : "text-dim",
-			)}
+			className="[corner-shape:var(--cs)]"
+			{...stylex.props(sx.flex, sx.minH9, sx.itemsStart, sx.gap25, sx.roundedMd, sx.px25, sx.py2, selected ? sx.bgControl : sx.textDim)}
 		>
 			<span {...stylex.props(sx.w35, sx.shrink0, sx.ptPx, sx.leading5, sx.textFaint, typography.meta)}>
 				{letter}
 			</span>
 			<span {...stylex.props(sx.minW0, sx.flex1)}>
 				<span
-					className={cn(
-						"block text-control-label leading-5 [overflow-wrap:anywhere]",
-						selected ? "font-semibold text-fg" : "font-medium",
-					)}
+					className="[overflow-wrap:anywhere]"
+					{...stylex.props(sx.block, typography.controlLabel, sx.leading5, selected ? sx.fontSemibold : sx.fontMedium, selected && sx.textFg)}
 				>
 					{label}
 				</span>
 				{description && (
 					<span
-						className={cn(
-							"mt-0.5 block text-supporting leading-[1.45] [overflow-wrap:anywhere]",
-							selected ? "text-dim" : "text-faint",
-						)}
+						className="[overflow-wrap:anywhere]"
+						{...stylex.props(sx.mt05, sx.block, typography.supporting, sx.leading145, selected ? sx.textDim : sx.textFaint)}
 					>
 						{description}
 					</span>
@@ -160,10 +166,7 @@ function ChoiceRow({
 			</span>
 			<span
 				aria-hidden="true"
-				className={cn(
-					"flex h-5 w-5 shrink-0 items-center justify-center rounded-full",
-					selected ? "bg-green-soft text-green" : "text-transparent",
-				)}
+				{...stylex.props(sx.flex, sx.h5, sx.w5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, selected ? sx.bgGreenSoft : sx.textTransparent, selected && sx.textGreen)}
 			>
 				<IconCheck size={16} />
 			</span>

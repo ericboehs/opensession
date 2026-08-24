@@ -2,7 +2,6 @@ import React, { useId } from "react";
 import type { CodeFlowNode, CodeFlowResult } from "../lib/types";
 import { Button } from "../ui/button";
 import { InlineAlert, LoadingState } from "../ui/state";
-import { cn } from "../ui/cn";
 import { IconBranches } from "./icons";
 import { Badge } from "../ui/badge";
 import * as stylex from "@stylexjs/stylex";
@@ -167,16 +166,23 @@ const sx = stylex.create({
 	py1: {
 			paddingBlock: "4px"
 	},
-	mt3: {
-			marginTop: "12px"
-	},
+	mt3: { marginTop: "12px" },
+	relative: { position: "relative" },
+	listNone: { listStyleType: "none" },
+	depth: { marginLeft: "16px", borderLeftStyle: "solid", borderLeftWidth: "1px", borderColor: "color-mix(in srgb, var(--border) 70%, transparent)", paddingLeft: "12px" },
+	w3: { width: "12px" },
+	fontBold: { fontWeight: "var(--font-weight-bold)" },
+	bgTransparent: { backgroundColor: "transparent" },
+	textGreen: { color: "var(--green)" },
+	textRed: { color: "var(--red)" },
+	textYellow: { color: "var(--yellow)" },
 });
 
-const TONE: Record<CodeFlowNode["status"], string> = {
-	same: "text-dim",
-	added: "text-green",
-	removed: "text-red",
-	modified: "text-yellow",
+const TONE = {
+	same: sx.textDim,
+	added: sx.textGreen,
+	removed: sx.textRed,
+	modified: sx.textYellow,
 };
 
 const MARK: Record<CodeFlowNode["status"], string> = {
@@ -214,12 +220,12 @@ function FlowNode({
 		</Button>
 	);
 	return (
-		<li className={cn("relative list-none", depth > 0 && "ml-4 border-l border-line/70 pl-3")}>
+		<li {...stylex.props(sx.relative, sx.listNone, depth > 0 && sx.depth)}>
 			<div {...stylex.props(sx.flex, sx.minH8, sx.minW0, sx.itemsCenter, sx.gap2, sx.py05)}>
-				<span className={cn("w-3 shrink-0 text-center font-mono text-xs font-bold", TONE[node.status])} aria-hidden="true">
+				<span {...stylex.props(sx.w3, sx.shrink0, sx.textCenter, sx.fontMono, typography.label, sx.fontBold, TONE[node.status])} aria-hidden="true">
 					{MARK[node.status]}
 				</span>
-				<code className={cn("min-w-0 truncate bg-transparent p-0 text-label leading-5", TONE[node.status])} title={node.label}>
+				<code {...stylex.props(sx.minW0, sx.truncate, sx.bgTransparent, sx.p0, typography.label, sx.leading5, TONE[node.status])} title={node.label}>
 					<span {...stylex.props(sx.srOnly)}>{node.status}: </span>
 					{node.label}
 				</code>

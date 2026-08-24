@@ -214,9 +214,21 @@ const sx = stylex.create({
 	minW0: {
 			minWidth: "0"
 	},
-	flexCol: {
-			flexDirection: "column"
-	},
+	flexCol: { flexDirection: "column" },
+	my1: { marginBlock: "4px" },
+	maxH70vh: { maxHeight: "70vh" },
+	overflowAuto: { overflow: "auto" },
+	whitespacePreWrap: { whiteSpace: "pre-wrap" },
+	breakWords: { overflowWrap: "break-word" },
+	bgSurface: { backgroundColor: "var(--bg)" },
+	p3: { padding: "12px" },
+	leadingRelaxed: { lineHeight: "var(--leading-relaxed)" },
+	italic: { fontStyle: "italic" },
+	justifyEnd: { justifyContent: "flex-end" },
+	hoverBorderAccent: { ":hover": { borderColor: "var(--accent)" } },
+	mb875: { marginBottom: "35px" },
+	hoverMb875: { "@media (hover: hover)": { marginBottom: "35px" } },
+	textFg: { color: "var(--text)" },
 });
 
 // Only this much of a message is markdown-parsed eagerly. marked is
@@ -305,9 +317,7 @@ setFetching(false);
 				// `font-sans` is load-bearing — the app ships no Tailwind Preflight,
 				// so the UA's `pre { font-family: monospace }` applies otherwise.
 				<pre
-					className={
-						"my-1 max-h-[70vh] overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface p-3 font-sans text-label leading-relaxed text-fg"
-					}
+					{...stylex.props(sx.my1, sx.maxH70vh, sx.overflowAuto, sx.whitespacePreWrap, sx.breakWords, sx.roundedMd, sx.bgSurface, sx.p3, sx.fontSans, typography.label, sx.leadingRelaxed, sx.textFg)}
 				>
 					{shown}
 				</pre>
@@ -362,7 +372,7 @@ function NoticeRow({
 	if (notice.body === "inline") {
 		return (
 			<div className={msgSystemRow} data-eid={entry.id}>
-				<span className={cn(msgSystemInline, "text-left italic")}>
+				<span className={`${stylex.props(sx.textLeft, sx.italic).className} ${msgSystemInline}`} style={stylex.props(sx.textLeft, sx.italic).style}>
 					<span {...stylex.props(sx.fontSemibold, sx.notItalic)}>{notice.title}: </span>
 					{entry.content}
 				</span>
@@ -626,7 +636,7 @@ export function EntryImages({
 }) {
 	if (!images || images.length === 0) return null;
 	return (
-		<div className={cn(msgMedia, right && "justify-end")}>
+		<div className={`${stylex.props(right && sx.justifyEnd).className} ${msgMedia}`} style={stylex.props(right && sx.justifyEnd).style}>
 			{images.map((raw, i) => {
 				const src = resolveEntryImageSrc(raw, sessionId);
 				return (
@@ -664,7 +674,7 @@ export function EntryVideos({
 	const asset = useOpenAsset();
 	if (!videos || videos.length === 0) return null;
 	return (
-		<div className={cn(msgMedia, right && "justify-end")}>
+		<div className={`${stylex.props(right && sx.justifyEnd).className} ${msgMedia}`} style={stylex.props(right && sx.justifyEnd).style}>
 			{videos.map((src, i) => {
 				const assetPath = assetPathForMediaSrc(src, assetPaths);
 				const opensAsset = Boolean(assetPath) && asset.available;
@@ -711,15 +721,12 @@ function EntryFiles({
 }) {
 	if (!files || files.length === 0) return null;
 	return (
-		<div className={cn(msgMedia, right && "justify-end")}>
+		<div className={`${stylex.props(right && sx.justifyEnd).className} ${msgMedia}`} style={stylex.props(right && sx.justifyEnd).style}>
 			{files.map((f, i) => (
 				<a
 					key={i}
-					className={cn(
-						fileChipCard,
-						fileChipCardPadding,
-						"no-underline hover:border-accent",
-					)}
+					className={`${stylex.props(sx.noUnderline, sx.hoverBorderAccent).className} ${fileChipCard} ${fileChipCardPadding}`}
+					style={stylex.props(sx.noUnderline, sx.hoverBorderAccent).style}
 					href={`/media?path=${encodeURIComponent(f.path)}`}
 					download={f.name}
 					title={f.name}
@@ -822,15 +829,12 @@ export const MessageBubble = function MessageBubble({
 		return (
 			<div
 				className={cn(
+					stylex.props(!fromOther && (onEdit ? sx.mb875 : sx.hoverMb875)).className,
 					msgRow,
 					"msg-user",
 					msgOwnTurn,
-					// Your own turns hang their quiet actions below the bubble. The
-					// edit button is always visible to touch pointers, while a row
-					// with only a timestamp needs the clearance on hover devices.
-					!fromOther &&
-						(onEdit ? "mb-8.75" : "[@media(hover:hover)]:mb-8.75"),
 				)}
+				style={stylex.props(!fromOther && (onEdit ? sx.mb875 : sx.hoverMb875)).style}
 				data-eid={e.id}
 			>
 				{fromOther && (
@@ -869,7 +873,7 @@ export const MessageBubble = function MessageBubble({
 	return (
 		<div className={msgRow} data-eid={e.id}>
 			<ClampedBody
-				className={cn(msgBody, "markdown text-fg")}
+				className={`${stylex.props(sx.textFg).className} ${msgBody} markdown`}
 				content={displayContent}
 				entry={e}
 				sessionId={sessionId}

@@ -4,7 +4,6 @@ import { RAIL_EDGE, RAIL_GUTTER, RAIL_W } from "../lib/message-rail";
 import { relativeTime } from "../lib/api";
 import { IconGitCommit, IconPencil, IconPullRequest } from "./icons";
 import { Popover } from "../ui/popover";
-import { cn } from "../ui/cn";
 import { scrollToVirtualTranscriptEntry } from "../lib/transcript-virtual-navigation";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -84,9 +83,26 @@ const sx = stylex.create({
 	mlAuto: {
 			marginLeft: "auto"
 	},
-	shrink0: {
-			flexShrink: "0"
-	},
+	shrink0: { flexShrink: "0" },
+	absolute: { position: "absolute" },
+	topHalf: { top: "50%" },
+	z4: { zIndex: 4 },
+	hidden: { display: "none" },
+	translateYHalf: { transform: "translateY(-50%)" },
+	cursorPointer: { cursor: "pointer" },
+	roundedMd: { borderRadius: "calc(7px * var(--rf))" },
+	border0: { borderStyle: "solid", borderWidth: 0 },
+	bgTransparent: { backgroundColor: "transparent" },
+	p0: { padding: 0 },
+	focusRing: { ":focusVisible": { outline: "2px solid var(--accent-ink)", outlineOffset: "2px" } },
+	desktopHoverBlock: { "@media (min-width: 721px)": { "@media (hover: hover)": { display: "block" } } },
+	left0: { left: 0 },
+	block: { display: "block" },
+	originLeft: { transformOrigin: "left" },
+	roundedPill: { borderRadius: "999px" },
+	bgFg: { backgroundColor: "var(--text)" },
+	transitionTick: { transitionProperty: "transform, opacity", transitionDuration: "200ms", transitionTimingFunction: "var(--ease)" },
+	reducedMotion: { "@media (prefers-reduced-motion: reduce)": { transitionProperty: "none" } },
 });
 
 /**
@@ -424,14 +440,7 @@ export function MessageRail({ messages, containerRef, leaveLatest }: Props) {
 				delay={220}
 				closeDelay={140}
 				aria-label="Jump to a message"
-				className={cn(
-					"absolute top-1/2 z-[4] hidden -translate-y-1/2 cursor-pointer",
-					"rounded-md border-0 bg-transparent p-0 focus-ring",
-					// Both conditions on one stacked variant, so neither can
-					// out-order the other. It matches the gutter the transcript
-					// reserves (lib/message-rail.ts).
-					"desktop:[@media(hover:hover)]:block",
-				)}
+				{...stylex.props(sx.absolute, sx.topHalf, sx.z4, sx.hidden, sx.translateYHalf, sx.cursorPointer, sx.roundedMd, sx.border0, sx.bgTransparent, sx.p0, sx.focusRing, sx.desktopHoverBlock)}
 				style={{ left: RAIL_EDGE, width: RAIL_W, height: boxH }}
 				onPointerEnter={(event) => {
 					if (event.pointerType === "touch") return;
@@ -490,11 +499,7 @@ export function MessageRail({ messages, containerRef, leaveLatest }: Props) {
 						<span
 							key={message.id}
 							aria-hidden
-							className={cn(
-								"absolute left-0 block origin-left rounded-[999px] bg-fg",
-								"transition-[transform,opacity] duration-200 ease-[var(--ease)]",
-								"motion-reduce:transition-none",
-							)}
+							{...stylex.props(sx.absolute, sx.left0, sx.block, sx.originLeft, sx.roundedPill, sx.bgFg, sx.transitionTick, sx.reducedMotion)}
 							style={{
 								top: tickY(index) - TICK_MAX_H / 2,
 								width: TICK_MAX_W,

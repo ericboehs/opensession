@@ -4,7 +4,6 @@ import { AGENT_NAME } from "../lib/brand";
 import { renderMarkdown } from "../lib/markdown";
 import type { AskQuestion } from "../lib/types";
 import { Button } from "../ui/button";
-import { cn } from "../ui/cn";
 import { IconCheck, IconReturn } from "./icons";
 import { useMarkdownRepo } from "./MarkdownBody";
 import { ASK_CARD_SHELL, ASK_CHOICE_ROW } from "../lib/ask-card-classes";
@@ -130,9 +129,32 @@ const sx = stylex.create({
 	mrAuto: {
 			marginRight: "auto"
 	},
-	pl1: {
-			paddingLeft: "4px"
-	},
+	pl1: { paddingLeft: "4px" },
+	mtPx: { marginTop: "1px" },
+	h5: { height: "20px" },
+	w5: { width: "20px" },
+	justifyCenter: { justifyContent: "center" },
+	border: { borderStyle: "solid", borderWidth: "1px" },
+	transitionColors: { transitionProperty: "background-color, border-color, color" },
+	roundedCheckbox: { borderRadius: "calc(6px * var(--rf))" },
+	borderTransparent: { borderColor: "transparent" },
+	bgFg: { backgroundColor: "var(--text)" },
+	textBg: { color: "var(--bg)" },
+	borderLineStrong: { borderColor: "var(--border-strong)" },
+	textTransparent: { color: "transparent" },
+	h11: { height: "44px" },
+	wFull: { width: "100%" },
+	roundedControl: { borderRadius: "calc(12px * var(--rf))" },
+	bgControl: { backgroundColor: "var(--control-surface)" },
+	px3: { paddingInline: "12px" },
+	outlineNone: { outlineStyle: "none" },
+	placeholderFaint: { "::placeholder": { color: "var(--text-faint)" } },
+	disabledOpacity60: { ":disabled": { opacity: 0.6 } },
+	mt15: { marginTop: "6px" },
+	desktopControlText: { "@media (min-width: 721px)": { fontSize: "var(--type-label)" } },
+	h15Dot: { height: "6px", width: "6px" },
+	transitionBackground: { transitionProperty: "background-color" },
+	bgFg30: { backgroundColor: "color-mix(in srgb, var(--text) 30%, transparent)" },
 });
 
 interface Props {
@@ -417,14 +439,12 @@ export function AskCard({ questions, onAnswer }: Props) {
 									</Questionnaire.ChoiceLabel>
 									<span
 										aria-hidden="true"
-										className={cn(
-											"mt-px flex h-5 w-5 shrink-0 items-center justify-center border transition-[background-color,border-color,color]",
-											q.multiSelect
-												? "rounded-[calc(6px*var(--rf))] [corner-shape:var(--cs)]"
-												: "rounded-full",
-											active
-												? "border-transparent bg-fg text-bg"
-												: "border-line-strong text-transparent",
+										className={q.multiSelect ? "[corner-shape:var(--cs)]" : undefined}
+										{...stylex.props(
+											sx.mtPx, sx.flex, sx.h5, sx.w5, sx.shrink0, sx.itemsCenter, sx.justifyCenter,
+											sx.border, sx.transitionColors, q.multiSelect ? sx.roundedCheckbox : sx.roundedFull,
+											active ? sx.borderTransparent : sx.borderLineStrong,
+											active ? sx.bgFg : sx.textTransparent, active && sx.textBg,
 										)}
 									>
 										<IconCheck size={20} />
@@ -443,10 +463,8 @@ export function AskCard({ questions, onAnswer }: Props) {
 							   No ring on focus either — same call the composer makes: it read
 							   as an error state on a field you're simply typing in, and the
 							   caret is affordance enough. */
-							className={cn(
-								"h-11 w-full rounded-[calc(12px*var(--rf))] border-0 bg-control px-3 text-base text-fg outline-none placeholder:text-faint disabled:opacity-60 sm:text-control-label [corner-shape:var(--cs)]",
-								q.options?.length && "mt-1.5",
-							)}
+							className="[corner-shape:var(--cs)]"
+							{...stylex.props(sx.h11, sx.wFull, sx.roundedControl, sx.border0, sx.bgControl, sx.px3, typography.inputPhone, sx.desktopControlText, sx.textFg, sx.outlineNone, sx.placeholderFaint, sx.disabledOpacity60, Boolean(q.options?.length) && sx.mt15)}
 							placeholder={
 								q.options?.length ? "Or type your own answer…" : "Type your answer…"
 							}
@@ -484,18 +502,9 @@ export function AskCard({ questions, onAnswer }: Props) {
 									<span
 										key={i}
 										aria-hidden="true"
-										className={cn(
-											"h-1.5 w-1.5 rounded-full transition-[background-color]",
-											// Two states, the way page dots work: here, and not
-											// here. Marking answered ones a third way would put
-											// three greys in a 6px dot, which nobody can read.
-											//
-											// 30% rather than the 20% a resting dot would take:
-											// the dots exist to say HOW MANY questions there are,
-											// so an unreachable inactive dot leaves you looking at
-											// one dot and none the wiser. Measured on the card's
-											// own surface, 20% resolved to #c9c9c9 on #f6f6f6.
-											i + 1 === state.current ? "bg-fg" : "bg-fg/30",
+										{...stylex.props(
+											sx.h15Dot, sx.roundedFull, sx.transitionBackground,
+											i + 1 === state.current ? sx.bgFg : sx.bgFg30,
 										)}
 									/>
 								))}

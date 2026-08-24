@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { IconChevronDown, IconCheckCircle, IconX } from "./icons";
-import { cn } from "../ui/cn";
 import type { ReviewLoopResult } from "../lib/review-loop";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -143,9 +142,21 @@ const sx = stylex.create({
 	px1: {
 			paddingInline: "4px"
 	},
-	py3px: {
-			paddingBlock: "3px"
-	},
+	py3px: { paddingBlock: "3px" },
+	grid: { display: "grid" },
+	size5: { width: "20px", height: "20px" },
+	placeItemsCenter: { placeItems: "center" },
+	leadingNone: { lineHeight: 1 },
+	transitionTransform: { transitionProperty: "transform" },
+	duration150: { transitionDuration: "150ms" },
+	translateUpPx: { transform: "translateY(-1px)" },
+	rotateNeg90: { transform: "rotate(-90deg)" },
+	relative: { position: "relative" },
+	z1: { zIndex: 1 },
+	size22px: { width: "22px", height: "22px" },
+	justifyCenter: { justifyContent: "center" },
+	textRed: { color: "var(--red)" },
+	itemsCenter: { alignItems: "center" },
 });
 
 /**
@@ -197,10 +208,7 @@ export function ReviewLoopBlock({
 				className="hover:bg-hover/40 hover:text-fg phone:min-h-10" {...stylex.props(sx.Mx2, sx.flex, sx.wCalc10016px, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px3, sx.py1, sx.textLeft, sx.fontSans, sx.leading5, sx.textDim, sx.transitionColors, typography.itemTitle)}
 			>
 				<span
-					className={cn(
-						"grid size-5 flex-none self-center place-items-center leading-none text-faint transition-transform duration-150",
-						open ? "-translate-y-px" : "-rotate-90",
-					)}
+					{...stylex.props(sx.grid, sx.size5, sx.flexNone, sx.selfCenter, sx.placeItemsCenter, sx.leadingNone, sx.textFaint, sx.transitionTransform, sx.duration150, open ? sx.translateUpPx : sx.rotateNeg90)}
 				>
 					<IconChevronDown size={20} {...stylex.props(sx.block)} />
 				</span>
@@ -263,10 +271,7 @@ function ReviewLoopResultRow({
 			aria-label={passed ? "Review passed" : "Review failed"}
 		>
 			<span
-				className={cn(
-					"relative z-[1] flex size-[22px] flex-none self-center items-center justify-center",
-					passed ? "text-faint" : "text-red",
-				)}
+				{...stylex.props(sx.relative, sx.z1, sx.flex, sx.size22px, sx.flexNone, sx.selfCenter, sx.itemsCenter, sx.justifyCenter, passed ? sx.textFaint : sx.textRed)}
 			>
 				{passed ? <IconCheckCircle size={20} /> : <IconX size={20} />}
 			</span>

@@ -5,7 +5,6 @@ import { TranscriptSkeleton } from "../../ui/state";
 import { PageLoader } from "../../ui/page-loader";
 import { Spinner } from "../../ui/spinner";
 import { PulseDot } from "../../ui/status";
-import { cn } from "../../ui/cn";
 import { msgRow } from "../../lib/msg-classes";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
@@ -97,9 +96,12 @@ const sx = stylex.create({
 	shrink0: {
 			flexShrink: "0"
 	},
-	placeItemsCenter: {
-			placeItems: "center"
-	},
+	placeItemsCenter: { placeItems: "center" },
+	mt05: { marginTop: "2px" },
+	flexRow: { flexDirection: "row" },
+	px1: { paddingInline: "4px" },
+	py125: { paddingBlock: "5px" },
+	gap2: { gap: "8px" },
 });
 
 /** The chat canvas while a new session's worktree is being prepared. The
@@ -260,10 +262,8 @@ export function BusyInline({
 }) {
 	return (
 		<div
-			className={cn(
-				msgRow,
-				"mt-0.5 flex-row items-center gap-2 px-1 py-1.25 text-dim",
-			)}
+			{...stylex.props(sx.mt05, sx.flexRow, sx.itemsCenter, sx.gap2, sx.px1, sx.py125, sx.textDim)}
+			className={`${stylex.props(sx.mt05, sx.flexRow, sx.itemsCenter, sx.gap2, sx.px1, sx.py125, sx.textDim).className} ${msgRow}`}
 		>
 			{/* The 8px pull hangs off the DOT, not off the row: msgRow centres
 			    itself in the reading column with `mx-auto`, and a `-ml-2` on the

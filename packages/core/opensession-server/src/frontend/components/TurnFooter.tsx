@@ -3,7 +3,6 @@ import type { TranscriptEntry } from "../lib/types";
 import { Menu } from "../ui/menu";
 import { Popover } from "../ui/popover";
 import { Tooltip } from "../ui/tooltip";
-import { cn } from "../ui/cn";
 import { CodeHighlight } from "./LazyCode";
 import { TOOL_CODE_WELL } from "../lib/tool-classes";
 import {
@@ -125,9 +124,32 @@ const sx = stylex.create({
 	px15: {
 			paddingInline: "6px"
 	},
-	textRed: {
-			color: "var(--red)"
-	},
+	textRed: { color: "var(--red)" },
+	mxAuto: { marginInline: "auto" },
+	mb18px: { marginBottom: "18px" },
+	wFull: { width: "100%" },
+	maxWSessionCol: { maxWidth: "var(--session-col)" },
+	flexWrap: { flexWrap: "wrap" },
+	gapX05: { columnGap: "2px" },
+	gapY15: { rowGap: "6px" },
+	size6: { width: "24px", height: "24px" },
+	cursorPointer: { cursor: "pointer" },
+	justifyCenter: { justifyContent: "center" },
+	roundedSm: { borderRadius: "calc(4px * var(--rf))" },
+	border0: { borderStyle: "solid", borderWidth: 0 },
+	bgTransparent: { backgroundColor: "transparent" },
+	p0: { padding: 0 },
+	buttonTone: { color: "var(--text-faint)", ":hover": { backgroundColor: "var(--hover)", color: "var(--text-dim)" } },
+	gap05: { gap: "2px" },
+	maxW180px: { maxWidth: "180px" },
+	pr1: { paddingRight: "4px" },
+	hoverBg: { ":hover": { backgroundColor: "var(--hover)" } },
+	chip: { marginLeft: "4px", display: "flex", height: "24px", minWidth: 0, alignItems: "center", gap: "6px", overflow: "hidden", borderRadius: "calc(12px * var(--rf))", borderStyle: "solid", borderWidth: 0, backgroundColor: "color-mix(in srgb, var(--text) 3%, transparent)", paddingBlock: 0, paddingLeft: "4px", textAlign: "left" },
+	pr15: { paddingRight: "6px" },
+	diffCard: { width: "min(620px, calc(100vw - 24px))", padding: "8px" },
+	footerText: { fontWeight: "var(--font-weight-medium)", lineHeight: "16px" },
+	turnFooterLift: { marginTop: "-10px" },
+	lineStats: { display: "flex", flexShrink: 0, alignItems: "center", gap: "4px", fontWeight: "var(--font-weight-medium)", lineHeight: "16px" },
 });
 
 export interface TouchedFile {
@@ -152,7 +174,7 @@ export interface TouchedFile {
  * measurement does not move the row's own start. On the measured wrapper the
  * same class shifts the whole row and remains part of its virtual position.
  */
-export const TURN_FOOTER_LIFT = "-mt-2.5";
+export const TURN_FOOTER_LIFT = stylex.props(sx.turnFooterLift).className;
 
 interface Props {
   /** The turn's final answer entry — copy copies its markdown, fork forks from it. */
@@ -198,12 +220,11 @@ export const TurnFooter = function TurnFooter({
 
   const duration = formatDuration(durationMs);
 
+  const rootStyles = stylex.props(sx.mxAuto, sx.mb18px, sx.flex, sx.wFull, sx.maxWSessionCol, sx.flexWrap, sx.itemsCenter, sx.gapX05, sx.gapY15);
   return (
     <div
-      className={cn(
-        "mx-auto mb-[18px] flex w-full max-w-[var(--session-col)] flex-wrap items-center gap-x-0.5 gap-y-1.5",
-        className
-      )}
+      {...rootStyles}
+      className={[rootStyles.className, className].filter(Boolean).join(" ")}
     >
       {duration && (
         <span {...stylex.props(sx.mr15, sx.pl1, sx.fontMedium, sx.leading4, sx.textFaint, typography.meta)}>
@@ -213,12 +234,12 @@ export const TurnFooter = function TurnFooter({
       {assets.map((path) => (
         <AssetChip key={path} path={path} />
       ))}
-      <div className={ACTIONS}>
+      <div {...ACTIONS}>
         <Tooltip label={copied ? "Copied" : "Copy message"}>
           <button
             type="button"
             onClick={doCopy}
-            className={BTN}
+            {...BTN}
             aria-label={copied ? "Copied" : "Copy message"}
           >
             {copied ? (
@@ -230,7 +251,7 @@ export const TurnFooter = function TurnFooter({
         </Tooltip>
         <Menu.Root>
           <Menu.Trigger
-            className={BTN + " data-[popup-open]:bg-hover data-[popup-open]:text-dim"}
+            {...BTN} className={`${BTN.className} data-[popup-open]:bg-hover data-[popup-open]:text-dim`}
             aria-label="More message actions"
           >
             <IconDotsHorizontal size={20} />
@@ -358,14 +379,13 @@ function turnFooterPropsEqual(prev: Props, next: Props): boolean {
   return true;
 }
 
-const BTN =
-  "flex size-6 flex-shrink-0 cursor-pointer items-center justify-center rounded-sm border-0 bg-transparent p-0 text-faint hover:bg-hover hover:text-dim";
+const BTN = stylex.props(sx.flex, sx.size6, sx.flexShrink0, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.border0, sx.bgTransparent, sx.p0, sx.buttonTone);
 
 /** The whole row is always on the page, and muted rather than hidden: an
  * action you can see is one you know exists, and `text-faint` on a transparent
  * button is quiet enough to read past. The colour is the only thing separating
  * it from the answer — hover and focus still bring both up. */
-const ACTIONS = "flex items-center gap-0.5";
+const ACTIONS = stylex.props(sx.flex, sx.itemsCenter, sx.gap05);
 
 /** Named files in the row; the rest collapse into MoreChip. A phone seats one;
  * the ⋯ menu is the complete list either way. */
@@ -387,7 +407,6 @@ function messageModelLabel(id: string): string {
 }
 
 /** Shared line box for asset names and the expanded work summary's stats. */
-const FOOTER_TEXT = "text-label font-medium leading-4";
 
 /**
  * One scratch file the turn wrote. Clicking lifts it over the conversation;
@@ -406,7 +425,7 @@ function AssetChip({ path }: { path: string }) {
   const body = (
     <>
       <ExtBadge name={name} />
-      <span className={cn("max-w-[180px] truncate text-dim", FOOTER_TEXT)}>
+      <span {...stylex.props(sx.maxW180px, sx.truncate, sx.textDim, typography.label, sx.footerText)}>
         {name}
       </span>
       <IconArrowUpRight size={20} {...stylex.props(sx.size4, sx.flexShrink0, sx.textFaint)} />
@@ -414,7 +433,7 @@ function AssetChip({ path }: { path: string }) {
   );
   if (!asset.available)
     return (
-      <span className={cn(CHIP, "pr-1")}>
+      <span {...stylex.props(sx.chip, sx.pr1)}>
         {body}
       </span>
     );
@@ -423,7 +442,7 @@ function AssetChip({ path }: { path: string }) {
       <button
         type="button"
         onClick={() => asset.open(path)}
-        className={cn(CHIP, "cursor-pointer pr-1 hover:bg-hover")}
+        {...stylex.props(sx.chip, sx.cursorPointer, sx.pr1, sx.hoverBg)}
       >
         {body}
       </button>
@@ -433,8 +452,6 @@ function AssetChip({ path }: { path: string }) {
 
 /** The shared chip shell: the footer's file and asset chips are the same
  * object with different tails (± counts, or a way in). */
-const CHIP =
-  "ml-1 flex h-6 min-w-0 items-center gap-1.5 overflow-hidden rounded-control border-0 bg-fg/[0.03] py-0 pl-1 text-left";
 
 /**
  * One file the turn wrote, with the ±lines it moved there, and on click the
@@ -465,7 +482,7 @@ function FileChip({
   const body = (
     <>
       <ExtBadge name={name} />
-      <span className={cn("max-w-[180px] truncate text-dim", FOOTER_TEXT)}>
+      <span {...stylex.props(sx.maxW180px, sx.truncate, sx.textDim, typography.label, sx.footerText)}>
         {name}
       </span>
       <LineStats additions={file.additions} deletions={file.deletions} />
@@ -474,7 +491,7 @@ function FileChip({
   if (!diff)
     return (
       <Tooltip label={path}>
-        <span className={cn(CHIP, "pr-1.5")}>{body}</span>
+        <span {...stylex.props(sx.chip, sx.pr15)}>{body}</span>
       </Tooltip>
     );
   return (
@@ -483,15 +500,13 @@ function FileChip({
         openOnHover
         delay={300}
         closeDelay={120}
-        className={cn(
-          CHIP,
-          "cursor-pointer pr-1.5 hover:bg-hover data-[popup-open]:bg-hover"
-        )}
+        {...stylex.props(sx.chip, sx.cursorPointer, sx.pr15, sx.hoverBg)}
+        className={`${stylex.props(sx.chip, sx.cursorPointer, sx.pr15, sx.hoverBg).className} data-[popup-open]:bg-hover`}
         aria-label={`Show what this turn wrote to ${name}`}
       >
         {body}
       </Popover.Trigger>
-      <Popover.Popup side="top" align="start" elevation="lg" className={DIFF_CARD}>
+      <Popover.Popup side="top" align="start" elevation="lg" {...DIFF_CARD}>
         <FileDiffCard file={file} roots={roots} />
       </Popover.Popup>
     </Popover.Root>
@@ -507,7 +522,7 @@ function turnDiff(file: TouchedFile): string {
 
 /** Wide enough for real code, still a card. Shared, so the file chip and the
  * fold header's counts open the same object rather than two sizes of it. */
-const DIFF_CARD = "w-[min(620px,calc(100vw-24px))] p-2";
+const DIFF_CARD = stylex.props(sx.diffCard);
 
 /** One file inside a diff card: its path over what the turn wrote there. A
  * file whose tool only reported a path keeps the heading and drops the well. */
@@ -526,7 +541,7 @@ function FileDiffCard({
       <div {...stylex.props(sx.mb15, sx.flex, sx.itemsCenter, sx.gap15, sx.px1)}>
         <ExtBadge name={name} />
         <span
-          className={cn("min-w-0 flex-1 truncate text-dim", FOOTER_TEXT)}
+          {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.textDim, typography.label, sx.footerText)}
           title={path}
         >
           {path}
@@ -625,7 +640,7 @@ export function TurnLineStatsCard({
             align="start"
             elevation="lg"
             anchor={anchor}
-            className={DIFF_CARD}
+            {...DIFF_CARD}
           >
             <div
               className="max-h-[min(60vh,420px)]" {...stylex.props(sx.flex, sx.flexCol, sx.gap2, sx.overflowYAuto)}
@@ -636,7 +651,7 @@ export function TurnLineStatsCard({
                 <FileDiffCard key={f.path} file={f} roots={roots} />
               ))}
               {rest > 0 && (
-                <div className={cn("px-1 text-faint", FOOTER_TEXT)}>
+                <div {...stylex.props(sx.px1, sx.textFaint, typography.label, sx.footerText)}>
                   +{rest} more {rest === 1 ? "file" : "files"}
                 </div>
               )}
@@ -660,7 +675,7 @@ function MoreChip({ files }: { files: TouchedFile[] }) {
       }
     >
       <span {...stylex.props(sx.ml1, sx.flex, sx.h6, sx.flexShrink0, sx.itemsCenter, sx.gap15, sx.roundedMd, sx.px15)}>
-        <span className={cn("text-faint", FOOTER_TEXT)}>
+        <span {...stylex.props(sx.textFaint, typography.label, sx.footerText)}>
           +{files.length} more
         </span>
         <LineStats additions={additions} deletions={deletions} />
@@ -678,12 +693,11 @@ export function LineStats({
   deletions: number;
   className?: string;
 }) {
+  const statsStyles = stylex.props(sx.lineStats, typography.label);
   return (
     <span
-      className={cn(
-        "flex flex-shrink-0 items-center gap-1 text-label font-medium leading-4",
-        className
-      )}
+      {...statsStyles}
+      className={[statsStyles.className, className].filter(Boolean).join(" ")}
     >
       <span {...stylex.props(sx.textGreen)}>+{additions}</span>
       <span {...stylex.props(sx.textRed)}>-{deletions}</span>

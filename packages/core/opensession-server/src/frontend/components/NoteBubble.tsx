@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { SessionNote } from "../lib/types";
-import { cn } from "../ui/cn";
 import { Menu } from "../ui/menu";
 import { toast } from "../ui/toast";
 import { deleteSessionNoteApi, editSessionNoteApi } from "../lib/api";
@@ -143,8 +142,18 @@ const sx = stylex.create({
 	borderLineStrong: {
 			borderColor: "var(--border-strong)"
 	},
-	objectContain: {
-			objectFit: "contain"
+	objectContain: { objectFit: "contain" },
+	mlAuto: { marginLeft: "auto" },
+	size7: { width: "28px", height: "28px" },
+	shrink0: { flexShrink: 0 },
+	justifyCenter: { justifyContent: "center" },
+	border0: { borderStyle: "solid", borderWidth: 0 },
+	bgTransparent: { backgroundColor: "transparent" },
+	opacity0: { opacity: 0 },
+	transitionOpacity: { transitionProperty: "opacity" },
+	menuInteractive: {
+		":hover": { backgroundColor: "var(--hover)", color: "var(--text)" },
+		":focusVisible": { opacity: 1 },
 	},
 });
 
@@ -255,11 +264,8 @@ setBusy(false);
 							// Quiet until you want it: visible on hover, on keyboard
 							// focus, and while its own menu is open — never hover-only,
 							// which would strand touch and keyboard.
-							className={cn(
-								"ml-auto flex size-7 shrink-0 items-center justify-center rounded-control border-0 bg-transparent text-dim opacity-0 transition-opacity",
-								"hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover:opacity-100",
-								"data-[popup-open]:bg-hover data-[popup-open]:text-fg data-[popup-open]:opacity-100",
-							)}
+							className="group-hover:opacity-100 data-[popup-open]:bg-hover data-[popup-open]:text-fg data-[popup-open]:opacity-100"
+							{...stylex.props(sx.mlAuto, sx.flex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.border0, sx.bgTransparent, sx.textDim, sx.opacity0, sx.transitionOpacity, sx.menuInteractive)}
 						>
 							<IconDotsHorizontal size={16} />
 						</Menu.Trigger>

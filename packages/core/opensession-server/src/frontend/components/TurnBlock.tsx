@@ -12,7 +12,6 @@ import {
 } from "./ToolCallBlock";
 import { ClampedBody, EntryImages, EntryVideos } from "./MessageBubble";
 import { IconChevronDown, IconStack } from "./icons";
-import { cn } from "../ui/cn";
 import { msgBody } from "../lib/msg-classes";
 import { formatDuration } from "../lib/time";
 import {
@@ -210,9 +209,26 @@ const sx = stylex.create({
 	ml3: {
 			marginLeft: "12px"
 	},
-	my2: {
-			marginBlock: "8px"
-	},
+	my2: { marginBlock: "8px" },
+	size5: { width: "20px", height: "20px" },
+	selfCenter: { alignSelf: "center" },
+	leadingNone: { lineHeight: 1 },
+	transitionTransform: { transitionProperty: "transform" },
+	duration150: { transitionDuration: "150ms" },
+	rotateNeg90: { transform: "rotate(-90deg)" },
+	mt05: { marginTop: "2px" },
+	mb2: { marginBottom: "8px" },
+	ml5px: { marginLeft: "5px" },
+	borderL: { borderLeftStyle: "solid", borderLeftWidth: "1px" },
+	borderLine: { borderColor: "var(--border)" },
+	pl25: { paddingLeft: "10px" },
+	inset0: { inset: 0 },
+	opacity0: { opacity: 0 },
+	opacity100: { opacity: 1 },
+	transitionOpacity: { transitionProperty: "opacity" },
+	transitionOpacityTransform: { transitionProperty: "opacity, transform" },
+	rotateNeg90Opacity0: { transform: "rotate(-90deg)", opacity: 0 },
+	textFg: { color: "var(--text)" },
 });
 
 interface Props {
@@ -388,10 +404,7 @@ export const TurnBlock = function TurnBlock({
         className="hover:bg-hover/40 hover:text-fg" {...stylex.props(sx.Mx2, sx.flex, sx.wCalc10016px, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.py1, sx.pl1, sx.pr3, sx.textLeft, sx.fontSans, sx.leading5, sx.textDim, sx.transitionColors, typography.itemTitle)}
       >
         <span
-          className={cn(
-            "grid size-5 flex-shrink-0 self-center place-items-center leading-none text-faint transition-transform duration-150",
-            !expanded && "-rotate-90"
-          )}
+          {...stylex.props(sx.grid, sx.size5, sx.flexShrink0, sx.selfCenter, sx.placeItemsCenter, sx.leadingNone, sx.textFaint, sx.transitionTransform, sx.duration150, !expanded && sx.rotateNeg90)}
         >
           <IconChevronDown size={20} {...stylex.props(sx.block)} />
         </span>
@@ -432,18 +445,7 @@ export const TurnBlock = function TurnBlock({
 
       {expanded && (
         <div
-          className={cn(
-            "mt-0.5",
-            // Open, the work wears a rail: a hairline dropping from the
-            // chevron, with every row nudged in under the header's own text.
-            // The turn's final answer sits back at the column edge with no
-            // rail beside it, so where the work ends and the answer begins
-            // stays legible however long the fold runs (a divider only marks
-            // the seam; the rail says "still inside the work" from any
-            // scroll position). The 5px puts the hairline under the chevron's
-            // center after the disclosure line's 8px left shift.
-            "relative mb-2 ml-[5px] border-l border-line pl-2.5"
-          )}
+          {...stylex.props(sx.mt05, sx.relative, sx.mb2, sx.ml5px, sx.borderL, sx.borderLine, sx.pl25)}
         >
           <button
             type="button"
@@ -626,19 +628,15 @@ function ToolRunBlock({
             the stack stands in until a hover offers the chevron. */}
         <span {...stylex.props(sx.relative, sx.grid, sx.size22px, sx.flexShrink0, sx.placeItemsCenter, sx.textFaint)}>
           <span
-            className={cn(
-              "absolute inset-0 transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0",
-              expanded && "opacity-0"
-            )}
+            className="group-hover:opacity-0 group-focus-visible:opacity-0"
+            {...stylex.props(sx.absolute, sx.inset0, sx.transitionOpacity, sx.duration150, expanded && sx.opacity0)}
           >
             <IconStack size={18} {...stylex.props(sx.absolute, sx.left12, sx.top12, sx.TranslateX12, sx.TranslateY12)} />
           </span>
           <IconChevronDown
             size={20}
-            className={cn(
-              "absolute block transition-[opacity,transform] duration-150 group-hover:opacity-100 group-focus-visible:opacity-100",
-              expanded ? "opacity-100" : "-rotate-90 opacity-0"
-            )}
+            className="group-hover:opacity-100 group-focus-visible:opacity-100"
+            {...stylex.props(sx.absolute, sx.block, sx.transitionOpacityTransform, sx.duration150, expanded ? sx.opacity100 : sx.rotateNeg90Opacity0)}
           />
         </span>
         {/* Just the count. Which tools ran is what the row is folding away,
@@ -844,7 +842,7 @@ function TurnMessage({
       data-eid={entry.id}
     >
       <ClampedBody
-        className={cn(msgBody, "markdown text-fg")}
+        className={`${stylex.props(sx.textFg).className} ${msgBody} markdown`}
         content={entry.content}
         entry={entry}
         sessionId={sessionId}

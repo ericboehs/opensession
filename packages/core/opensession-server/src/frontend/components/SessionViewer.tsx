@@ -825,9 +825,23 @@ const sx = stylex.create({
 	maxWCalcVarSessionCol40px: {
 			maxWidth: "calc(var(--session-col) + 40px)"
 	},
-	textYellow: {
-			color: "var(--yellow)"
-	},
+	textYellow: { color: "var(--yellow)" },
+	itemsStretch: { alignItems: "stretch" },
+	phoneMenuButton: { width: "44px", height: "44px", minHeight: "44px", borderRadius: "calc(12px * var(--rf))", borderColor: "transparent", color: "var(--text-dim)", boxShadow: "none" },
+	menuOpen: { backgroundColor: "var(--hover)", color: "var(--text)" },
+	viewerColumn: { display: "flex", minHeight: 0, minWidth: 0, flex: 1, flexDirection: "column" },
+	sessionUnder: { "--session-under": "16px" },
+	textGreen: { color: "var(--green)" },
+	contextSelected: { backgroundColor: "var(--hover-strong)", color: "var(--text)", ":hover": { backgroundColor: "var(--hover-strong)" } },
+	contextIdle: { backgroundColor: "color-mix(in srgb, var(--hover) 50%, transparent)" },
+	transitionOpacitySafe: { "@media (prefers-reduced-motion: no-preference)": { transitionProperty: "opacity", transitionDuration: "150ms" } },
+	opacity0: { opacity: 0 },
+	phoneScrollBottom: { bottom: "calc(24px + var(--suggestions-under, 0px))", left: "50%", zIndex: 5 },
+	desktopSuggestionGrid: { "@media (min-width: 721px)": { gridColumnStart: 1, gridRowStart: 1, width: "100%" } },
+	phoneSuggestionRow: { width: "100%", flex: "none", alignSelf: "stretch" },
+	mobileControls: { pointerEvents: "auto", marginInline: "auto", display: "none", height: "48px", flexShrink: 0, alignItems: "center", borderRadius: "999px", borderStyle: "solid", borderWidth: "1px", borderColor: "var(--mobile-header-control-border)", paddingInline: "2px", color: "var(--text-dim)", boxShadow: "var(--mobile-header-control-shadow)", "@media (max-width: 720px)": { display: "flex" } },
+	panelTabActive: { backgroundColor: "var(--hover)", color: "var(--text)" },
+	hidden: { display: "none" },
 });
 
 type QueueReceipt = {
@@ -5178,7 +5192,7 @@ export function SessionViewer({
 						key={item.clientId}
 						className={cn(
 							composerQueueItem,
-							item.state === "failed" && "flex-col items-stretch gap-1.5",
+							item.state === "failed" && stylex.props(sx.flexCol, sx.itemsStretch, sx.gap15).className,
 							(i > 0 || pendingQueue.length > 0) && composerQueueItemSeparated,
 						)}
 					>
@@ -6495,13 +6509,8 @@ export function SessionViewer({
 										/>
 									)
 								}
-								className={cn(
-									!infoPageOpen && "[corner-shape:squircle]",
-									!infoPageOpen &&
-										isPhone &&
-										"size-11 min-h-11 rounded-control border-transparent text-dim shadow-none [corner-shape:squircle]",
-									overflowOpen && "bg-hover text-fg",
-								)}
+								className={!infoPageOpen ? "[corner-shape:squircle]" : undefined}
+								{...stylex.props(!infoPageOpen && isPhone && sx.phoneMenuButton, overflowOpen && sx.menuOpen)}
 								title="More actions"
 								aria-label="More actions"
 							/>
@@ -7316,9 +7325,7 @@ export function SessionViewer({
 					/* The last class is what the floating action band covers, paid for
 					   by the transcript's bottom padding and by the scroll-to-bottom
 					   pill's offset. Set here so both read one value. */
-					className={cn(
-						"flex min-h-0 min-w-0 flex-1 flex-col [--session-under:16px]",
-						actionBand &&
+					className={cn(actionBand &&
 							(nextAction || isPhone
 								? isPhone && quickReplies
 									? ACTION_WITH_REPLIES_CLEARANCE
@@ -7327,6 +7334,7 @@ export function SessionViewer({
 									? SCROLL_ACTION_CLEARANCE
 									: SUGGESTIONS_CLEARANCE),
 					)}
+					{...stylex.props(sx.viewerColumn, sx.sessionUnder)}
 				>
 					{showPortal && portalTarget ? (
 						<div className={VIEWER_REVIEW_MAIN}>
@@ -7642,7 +7650,7 @@ export function SessionViewer({
 														icon={
 															<ChipIcon
 																size={16}
-																className={selected ? "text-green" : undefined}
+																{...stylex.props(selected && sx.textGreen)}
 															/>
 														}
 														onClick={() =>
@@ -7657,11 +7665,7 @@ export function SessionViewer({
 																? "Attached · its transcript rides along with your first message"
 																: "Attach this session's transcript as context"
 														}
-														className={
-															selected
-																? "bg-pressed text-fg hover:bg-pressed"
-																: "bg-hover/50"
-														}
+														{...stylex.props(selected ? sx.contextSelected : sx.contextIdle)}
 													>
 														<span {...stylex.props(sx.maxW200px, sx.truncate)}>
 															{c.title || "Untitled session"}
@@ -7694,10 +7698,7 @@ export function SessionViewer({
 								<div {...stylex.props(sx.py10, sx.textCenter, sx.textFaint)}>Empty transcript</div>
 							) : (
 								<div
-									className={cn(
-										"w-full shrink-0 motion-safe:transition-opacity motion-safe:duration-150",
-										openSettlePending && "opacity-0",
-									)}
+									{...stylex.props(sx.wFull, sx.shrink0, sx.transitionOpacitySafe, openSettlePending && sx.opacity0)}
 								>
 									<OpenAssetPathsProvider value={assetPaths}>
 										<React.Profiler
@@ -7871,10 +7872,8 @@ export function SessionViewer({
 										<button
 											type="button"
 											onClick={loadAllHistory}
-											className={cn(
-												TRANSCRIPT_PILL_BUTTON,
-												"pointer-events-auto",
-											)}
+											className={TRANSCRIPT_PILL_BUTTON}
+											{...stylex.props(sx.pointerEventsAuto)}
 										>
 											<IconArrowUp
 												size={13}
@@ -7895,10 +7894,8 @@ export function SessionViewer({
 									shortcut={transcriptDownKeys ?? undefined}
 								>
 									<button
-										className={cn(
-											TRANSCRIPT_ICON_BUTTON,
-											`absolute bottom-[calc(24px+var(--suggestions-under,0px))] left-1/2 z-[5] ${PILL_CENTRED}`,
-										)}
+										className={cn(TRANSCRIPT_ICON_BUTTON, PILL_CENTRED)}
+										{...stylex.props(sx.absolute, sx.phoneScrollBottom)}
 										type="button"
 										aria-label="Scroll to the bottom"
 										onClick={() => scrollToLatest("auto")}
@@ -7956,13 +7953,7 @@ export function SessionViewer({
 										>
 											{quickReplies && (
 												<ReplySuggestions
-													className={cn(
-														nextAction && !isPhone
-															? VIEWER_SUGGESTIONS_ROW_INLINE
-															: VIEWER_SUGGESTIONS_ROW,
-														"desktop:col-start-1 desktop:row-start-1 desktop:w-full",
-														isPhone && "w-full flex-none self-stretch",
-													)}
+													className={cn(nextAction && !isPhone ? VIEWER_SUGGESTIONS_ROW_INLINE : VIEWER_SUGGESTIONS_ROW, stylex.props(sx.desktopSuggestionGrid, isPhone && sx.phoneSuggestionRow).className)}
 													suggestions={replySuggestions}
 													onPick={pickReplySuggestion}
 												/>
@@ -8008,10 +7999,8 @@ export function SessionViewer({
 											)}
 											{isPhone && (
 												<div
-													className={cn(
-														"pointer-events-auto mx-auto hidden h-12 shrink-0 items-center rounded-full border border-[color:var(--mobile-header-control-border)] px-0.5 text-dim shadow-[var(--mobile-header-control-shadow)] phone:flex phone:[body.kb-open_&]:hidden",
-														MOBILE_CONTROL_GLASS,
-													)}
+													className={cn(MOBILE_CONTROL_GLASS, "phone:[body.kb-open_&]:hidden")}
+													{...stylex.props(sx.mobileControls)}
 												>
 													{!session.archived && (
 														<Button
@@ -8224,7 +8213,7 @@ export function SessionViewer({
 					    surface is in front. Closing the tab unmounts them, which is what
 					    tears the PTYs down; they also die with the socket. */}
 					{hasWorkspace && !waitingForWorkspace && terminalTabOpen ? (
-						<div className={showTerminal ? VIEWER_REVIEW_MAIN : "hidden"}>
+						<div className={showTerminal ? VIEWER_REVIEW_MAIN : stylex.props(sx.hidden).className}>
 							<ShellPanel
 								sessionId={session.id}
 								send={send}
@@ -8253,10 +8242,8 @@ export function SessionViewer({
 								<button
 									type="button"
 									aria-pressed={desktopPanelPage === "changes"}
-									className={cn(
-										PANEL_TAB,
-										desktopPanelPage === "changes" && "bg-hover text-fg",
-									)}
+									className={PANEL_TAB}
+									{...stylex.props(desktopPanelPage === "changes" && sx.panelTabActive)}
 									onClick={() => setPanelPage("changes")}
 								>
 									<IconFile size={15} {...stylex.props(sx.shrink0)} />
@@ -8265,10 +8252,8 @@ export function SessionViewer({
 								<button
 									type="button"
 									aria-pressed={desktopPanelPage === "portals"}
-									className={cn(
-										PANEL_TAB,
-										desktopPanelPage === "portals" && "bg-hover text-fg",
-									)}
+									className={PANEL_TAB}
+									{...stylex.props(desktopPanelPage === "portals" && sx.panelTabActive)}
 									onClick={() => setPanelPage("portals")}
 								>
 									<IconGlobe size={15} {...stylex.props(sx.shrink0)} />
@@ -8282,10 +8267,8 @@ export function SessionViewer({
 								<button
 									type="button"
 									aria-pressed={desktopPanelPage === "agents"}
-									className={cn(
-										PANEL_TAB,
-										desktopPanelPage === "agents" && "bg-hover text-fg",
-									)}
+									className={PANEL_TAB}
+									{...stylex.props(desktopPanelPage === "agents" && sx.panelTabActive)}
 									onClick={() => setPanelPage("agents")}
 								>
 									<IconStack size={15} {...stylex.props(sx.shrink0)} />
@@ -8299,10 +8282,8 @@ export function SessionViewer({
 								<button
 									type="button"
 									aria-pressed={desktopPanelPage === "terminal"}
-									className={cn(
-										PANEL_TAB,
-										desktopPanelPage === "terminal" && "bg-hover text-fg",
-									)}
+									className={PANEL_TAB}
+									{...stylex.props(desktopPanelPage === "terminal" && sx.panelTabActive)}
 									onClick={() => {
 										setPanelTerminalMounted(true);
 										setPanelPage("terminal");
@@ -8359,11 +8340,7 @@ export function SessionViewer({
 							    survive. Closing the panel still closes its terminals. */}
 							{hasWorkspace && panelTerminalMounted && (
 								<div
-									className={
-										desktopPanelPage === "terminal"
-											? "flex h-full min-h-0 flex-col"
-											: "hidden"
-									}
+									{...stylex.props(desktopPanelPage === "terminal" ? [sx.flex, sx.hFull, sx.minH0, sx.flexCol] : sx.hidden)}
 								>
 									<div {...stylex.props(sx.minH0, sx.flex1)}>
 										<ShellPanel
