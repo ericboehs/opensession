@@ -3,7 +3,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs
 import { tmpdir } from "os";
 import { join } from "path";
 import { bootstrapUserAuthOnConnect, handleConnectionsRoutes } from "./connections";
-import { __setGithubAppKeyPathForTest } from "../github-app";
+import {
+  __setGithubAppKeyPathForTest,
+  commitGithubAppKeyMutation,
+} from "../github-app";
 import type { RouteContext } from "./context";
 
 // The GitHub connect routes behave differently by mode: operator mode (web
@@ -16,6 +19,7 @@ const ENV_KEYS = [
   "OPENSESSION_CONFIG",
   "OPENSESSION_GITHUB_CLIENT_ID",
   "OPENSESSION_GITHUB_APP_SLUG",
+  "OPENSESSION_GITHUB_APP_KEY",
   "OPENSESSION_GITHUB_AUTH_STORE",
   "OPENSESSION_WEB_SESSIONS_STORE",
 ] as const;
@@ -78,6 +82,34 @@ function context(
 }
 
 const DEVICE = "/api/connections/github/device";
+
+
+describe("GitHub App key transaction", () => {
+  test("restores the previous key when config persistence fails", async () => {
+    const keyPath = join(dir, "github-app.pem");
+    writeFileSync(keyPath, "working-key\n", { mode: 0o600 });
+
+    await expect(
+      commitGithubAppKeyMutation("replacement-key", () => {
+        throw new Error("config volume full");
+      }),
+    ).rejects.toThrow("config volume full");
+    expect(readFileSync(keyPath, "utf-8")).toBe("working-key\n");
+  });
+
+  test("removes config while preserving an ops-managed key", async () => {
+    const keyPath = join(dir, "github-app.pem");
+    writeFileSync(keyPath, "ops-key\n", { mode: 0o600 });
+    process.env.OPENSESSION_GITHUB_APP_KEY = keyPath;
+    let committed = false;
+
+    await commitGithubAppKeyMutation(null, () => {
+      committed = true;
+    });
+    expect(committed).toBe(true);
+    expect(readFileSync(keyPath, "utf-8")).toBe("ops-key\n");
+  });
+});
 
 describe("GitHub connect gating", () => {
   test("simple mode without a configured app rejects the connect (400)", async () => {

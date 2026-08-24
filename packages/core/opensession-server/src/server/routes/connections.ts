@@ -811,19 +811,6 @@ export async function handleConnectionsRoutes(
 					{ status: 400 },
 				);
 		}
-		// Store the key first: if it is env-managed writeGithubAppKey refuses, and
-		// we surface that before touching config rather than half-configuring.
-		if (privateKey) {
-			const { writeGithubAppKey } = await import("../github-app");
-			try {
-				writeGithubAppKey(privateKey);
-			} catch (e) {
-				return Response.json(
-					{ error: String((e as Error)?.message || e) },
-					{ status: 409 },
-				);
-			}
-		}
 		const { rawConfig, persistRawConfig, withConfigMutationLock } =
 			await import("../config-mutation");
 		return withConfigMutationLock(async () => {
@@ -847,7 +834,18 @@ export async function handleConnectionsRoutes(
 				delete github.webhookForwardLogin;
 				delete github.webhookForwardLogin;
 			}
-			persistRawConfig(config);
+			try {
+				const { commitGithubAppKeyMutation } = await import("../github-app");
+				await commitGithubAppKeyMutation(
+					privateKey || undefined,
+					() => persistRawConfig(config),
+				);
+			} catch (e) {
+				return Response.json(
+					{ error: String((e as Error)?.message || e) },
+					{ status: 409 },
+				);
+			}
 			return Response.json({ ok: true });
 		});
 	}
@@ -868,15 +866,6 @@ export async function handleConnectionsRoutes(
 				},
 				{ status: 409 },
 			);
-		try {
-			const { removeGithubAppKey } = await import("../github-app");
-			removeGithubAppKey();
-		} catch (e) {
-			return Response.json(
-				{ error: String((e as Error)?.message || e) },
-				{ status: 409 },
-			);
-		}
 		const { rawConfig, persistRawConfig, withConfigMutationLock } =
 			await import("../config-mutation");
 		return withConfigMutationLock(async () => {
@@ -893,7 +882,15 @@ export async function handleConnectionsRoutes(
 				delete github.appOrg;
 				delete github.authOnConnect;
 			}
-			persistRawConfig(config);
+			try {
+				const { commitGithubAppKeyMutation } = await import("../github-app");
+				await commitGithubAppKeyMutation(null, () => persistRawConfig(config));
+			} catch (e) {
+				return Response.json(
+					{ error: String((e as Error)?.message || e) },
+					{ status: 409 },
+				);
+			}
 			return Response.json({ ok: true });
 		});
 	}

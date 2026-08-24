@@ -415,20 +415,6 @@ export async function handleSetupRoutes(
     ) {
       return Response.json({ error: "Nothing to change" }, { status: 400 });
     }
-    // Store the key first: writeGithubAppKey refuses an env-managed key, and we
-    // surface that before writing config rather than half-configuring.
-    if (privateKey) {
-      const { writeGithubAppKey } = await import("../github-app");
-      try {
-        writeGithubAppKey(privateKey);
-      } catch (e) {
-        return Response.json(
-          { error: String((e as Error)?.message || e) },
-          { status: 409 },
-        );
-      }
-    }
-
     const { rawConfig, persistRawConfig, withConfigMutationLock } =
       await import("../config-mutation");
 
@@ -514,7 +500,18 @@ export async function handleSetupRoutes(
         if (value === "") delete github[field]; // empty string clears
         else github[field] = value;
       }
-      persistRawConfig(config);
+      try {
+        const { commitGithubAppKeyMutation } = await import("../github-app");
+        await commitGithubAppKeyMutation(
+          privateKey || undefined,
+          () => persistRawConfig(config),
+        );
+      } catch (e) {
+        return Response.json(
+          { error: String((e as Error)?.message || e) },
+          { status: 409 },
+        );
+      }
       audit({
         kind: "setup_github_update",
         fields: (["userPrAuth", "oauthClientId", "oauthClientSecret", "botCredential"] as const).filter(
