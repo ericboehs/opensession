@@ -138,6 +138,18 @@ export interface FilterState {
 	emptyProjects: EmptyProjectsFilter;
 }
 
+/** Whether registered repos without visible rows belong in project grouping. */
+export function includesEmptyRepoBands(
+	filter: FilterState,
+	search: string,
+): boolean {
+	return (
+		!search &&
+		filter.person === "me" &&
+		(filter.repo !== "all" || filter.emptyProjects === "show")
+	);
+}
+
 /** What either grouping axis can be on disk: a pick, or auto when unpicked. */
 export type StoredGroupBy = GroupBy | "auto";
 export type StoredByProject = boolean | "auto";

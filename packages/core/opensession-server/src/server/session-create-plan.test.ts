@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { __setSessionsDirForTest } from "./paths";
@@ -7,14 +7,24 @@ import { SessionKernelStore } from "./session-kernel/store";
 import {
   clearCreatePlan,
   createPlanWorkspaceId,
+  type DurableCreatePlan,
   readCreatePlan,
   pruneCreatePlans,
   restoreResolvedCreate,
+  snapshotOpeningCreate,
   snapshotResolvedCreate,
-  updateCreatePlan,
 } from "./session-create-plan";
 
 const roots: string[] = [];
+function writeLegacyPlan(root: string, plan: DurableCreatePlan) {
+  const dir = join(root, "create-plans");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, `${String(plan.sessionId).replace(/[^a-zA-Z0-9._-]/g, "_")}.json`),
+    JSON.stringify(plan),
+  );
+  return plan;
+}
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
@@ -35,6 +45,28 @@ describe("durable create plan", () => {
     expect(JSON.stringify(snapshot)).not.toContain("gho_secret");
   });
 
+  test("opening recovery excludes bodies, functions, and workspace drafts", () => {
+    const snapshot = snapshotOpeningCreate({
+      id: "os-opening",
+      images: [{ mediaType: "image/png", data: "base64-secret" }],
+      materializeWorktree: () => {},
+      gitEnv: { GH_TOKEN: "gho_secret" },
+      autoNameWorkspace: {
+        id: "ws-opening",
+        name: "Provisional workspace",
+        draft: { files: [{ dataUrl: "data:text/plain;base64,c2VjcmV0" }] },
+      },
+    });
+    expect(snapshot).toEqual({
+      id: "os-opening",
+      autoNameWorkspace: {
+        id: "ws-opening",
+        name: "Provisional workspace",
+      },
+    });
+    expect(JSON.stringify(snapshot)).not.toContain("secret");
+  });
+
   test("preserves explicitly absent resolved decisions", () => {
     const snapshot = snapshotResolvedCreate({
       model: "pi/openai/gpt-5.5",
@@ -53,7 +85,12 @@ describe("durable create plan", () => {
     const previous = __setSessionsDirForTest(root);
     const store = new SessionKernelStore(":memory:");
     try {
-      const plan = updateCreatePlan("os-terminal", "request", {});
+      const plan = writeLegacyPlan(root, {
+        version: 1,
+        sessionId: "os-terminal",
+        identity: "request",
+        createdAt: new Date().toISOString(),
+      });
       store.acceptCommand({
         sessionId: plan.sessionId,
         requestId: plan.identity,
@@ -68,7 +105,12 @@ describe("durable create plan", () => {
       ).toBe(1);
       expect(readCreatePlan(plan.sessionId, plan.identity)).toBeUndefined();
 
-      const retryable = updateCreatePlan("os-retryable", "retry", {});
+      const retryable = writeLegacyPlan(root, {
+        version: 1,
+        sessionId: "os-retryable",
+        identity: "retry",
+        createdAt: new Date().toISOString(),
+      });
       store.acceptCommand({
         sessionId: retryable.sessionId,
         requestId: retryable.identity,
@@ -98,9 +140,19 @@ describe("durable create plan", () => {
     roots.push(root);
     const previous = __setSessionsDirForTest(root);
     try {
-      const first = updateCreatePlan("os-create", "same", {
+      const first = writeLegacyPlan(root, {
+        version: 1,
+        sessionId: "os-create",
+        identity: "same",
+        createdAt: new Date().toISOString(),
         branch: "feature/stable",
         workspaceId: createPlanWorkspaceId("os-create"),
+        attachments: [{
+          attachmentId: "attachment-one",
+          name: "brief.pdf",
+          sourceRef: "uploads:staged%2Fbrief.pdf",
+          digest: "sha256:brief",
+        }],
         resolved: {
           model: "pi/openai/gpt-5.5",
           sandboxProvider: "docker",

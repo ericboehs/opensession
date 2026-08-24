@@ -183,7 +183,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 	// that centralization only runSessionPromptInner wrote it, and a resumed
 	// run's death left the conversation ending mid-turn with no explanation
 	// (bks-019fb757, 2026-07-31).
-	test("failed run: the failure lands in the transcript as a system chip", () => {
+	test("failed opening run: the failure lands in the transcript before an engine session exists", () => {
 		if (!redirected) return;
 		// The store is a globalThis singleton — if an earlier suite file opened
 		// it against the real sessions dir, skip rather than write to it.
@@ -191,14 +191,10 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		if (!store.dbPath.startsWith(tmp)) return;
 
 		const sid = "bks-zz-error-chip";
-		const engineId = "ses_zz_error_chip";
 		writeSessionFile(sid);
 		sessionCache.invalidateSessionsCache();
-		ocTranscript.recordEngineSessionOwner(engineId, sid);
 
-		sessionCache.recordRunOutcome(sid, "boom: unrecoverable test failure", {
-			engineSessionId: engineId,
-		});
+		sessionCache.recordRunOutcome(sid, "boom: unrecoverable test failure");
 
 		const chip = store
 			.readTail(sid, 50)

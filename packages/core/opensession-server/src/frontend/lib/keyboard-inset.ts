@@ -7,11 +7,10 @@
 // the sheet, the composer under it is off screen, and the page reads as
 // pannable because dragging the visible strip is the only way to reach it.
 //
-// Two readings can tell where the strip ends, and neither is available on
-// every client, so the larger coverage wins. window.innerHeight is the one a
-// standalone iOS window shrinks (index.html leans on the same fact), and
-// visualViewport is the one a browser tab shrinks. When neither moves, the var
-// stays 0px, which is the layout every other client already had.
+// visualViewport reports the visible strip's bottom including WebKit's focus
+// pan (`height + offsetTop`), so it is authoritative when available.
+// window.innerHeight is the fallback for clients without that API. When neither
+// moves, the var stays 0px, which is the layout every other client already had.
 
 import { isTouchPrimary } from "./platform";
 
@@ -35,10 +34,14 @@ function measure() {
 	const frame = probe.clientHeight;
 	if (!frame) return;
 	const viewport = window.visualViewport;
-	const visible = Math.min(
-		window.innerHeight || frame,
-		viewport ? viewport.height + viewport.offsetTop : Number.POSITIVE_INFINITY,
-	);
+	// visualViewport wins whenever it exists: it is the only reading that
+	// accounts for WebKit's focus pan (`offsetTop`). window.innerHeight reports
+	// the shrunk height WITHOUT the pan, so taking the smaller of the two
+	// counted the pan a second time and lifted a bottom-anchored surface above
+	// the keyboard, leaving a gap the page could then be scrolled inside.
+	const visible = viewport
+		? viewport.height + viewport.offsetTop
+		: window.innerHeight || frame;
 	// A reading that claims most of the window is covered is a bad reading, not
 	// a keyboard.
 	write(Math.round(Math.min(Math.max(frame - visible, 0), frame * 0.8)));

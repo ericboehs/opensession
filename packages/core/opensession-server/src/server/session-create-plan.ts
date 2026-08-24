@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "fs";
+import { existsSync, readFileSync, readdirSync, rmSync } from "fs";
 import { join } from "path";
 import { OPENSESSION_SESSIONS_DIR } from "./paths";
-import { writeJsonAtomic } from "./shared/atomic-write";
 import type { SessionKernelStoreApi } from "./session-kernel/store";
+import type { CreationAttachmentSource } from "./uploads";
 
 export interface DurableCreatePlan {
   version: 1;
@@ -11,7 +11,9 @@ export interface DurableCreatePlan {
   createdAt: string;
   branch?: string;
   workspaceId?: string;
-  /** Serializable ResolvedCreate decisions; attachments and functions stay external. */
+  /** Durable source identities only. Attachment bodies remain in the upload spool. */
+  attachments?: CreationAttachmentSource[];
+  /** Serializable ResolvedCreate decisions; attachment bodies and functions stay external. */
   resolved?: Record<string, unknown>;
 }
 
@@ -43,27 +45,6 @@ export function readCreatePlan(
   if (plan.identity !== identity) {
     throw new Error(`Create request id for ${sessionId} was reused with another payload`);
   }
-  return plan;
-}
-
-export function updateCreatePlan(
-  sessionId: string,
-  identity: string,
-  patch: Partial<
-    Pick<DurableCreatePlan, "branch" | "workspaceId" | "resolved">
-  > = {},
-): DurableCreatePlan {
-  const prior = readCreatePlan(sessionId, identity);
-  const plan: DurableCreatePlan = {
-    version: 1,
-    sessionId,
-    identity,
-    createdAt: prior?.createdAt || new Date().toISOString(),
-    ...prior,
-    ...patch,
-  };
-  mkdirSync(planDir(), { recursive: true, mode: 0o700 });
-  writeJsonAtomic(planPath(sessionId), plan, true, 0o600);
   return plan;
 }
 
@@ -147,6 +128,29 @@ export function snapshotResolvedCreate(
   // non-secret gitPrincipal and resolves its current token during recovery.
   const { gitEnv: _ephemeralGitEnv, ...durable } = value;
   return snapshotValue(durable) as Record<string, unknown>;
+}
+
+export function snapshotOpeningCreate(value: object): Record<string, unknown> {
+  const {
+    images: _images,
+    materializeWorktree: _materializeWorktree,
+    autoNameWorkspace,
+    ...durable
+  } = value as Record<string, unknown>;
+  const renameTarget =
+    autoNameWorkspace &&
+    typeof autoNameWorkspace === "object" &&
+    !Array.isArray(autoNameWorkspace) &&
+    typeof (autoNameWorkspace as Record<string, unknown>).id === "string"
+      ? {
+          id: (autoNameWorkspace as Record<string, unknown>).id,
+          name: (autoNameWorkspace as Record<string, unknown>).name,
+        }
+      : autoNameWorkspace;
+  return snapshotResolvedCreate({
+    ...durable,
+    autoNameWorkspace: renameTarget,
+  });
 }
 
 export function restoreResolvedCreate<T>(

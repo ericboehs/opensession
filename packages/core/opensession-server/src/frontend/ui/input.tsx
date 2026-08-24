@@ -26,11 +26,13 @@ import { cn } from "./cn";
 
 type Size = "sm" | "md" | "lg";
 
-/** Height/padding/type per step — mirrors `Button`'s `sizes`. */
+/** Height/padding/type per step — mirrors `Button`'s `sizes`.
+ * Inputs take the exact step height rather than only a minimum, so their
+ * single line can be centered consistently across Chromium and WebKit. */
 const sizes: Record<Size, string> = {
-	sm: "min-h-[26px] px-2 text-xs",
-	md: "min-h-8 px-2.5 text-sm",
-	lg: "min-h-9 px-3 text-base",
+	sm: "min-h-[26px] px-2 text-xs [&:where(input)]:h-[26px]",
+	md: "min-h-8 px-2.5 text-sm [&:where(input)]:h-8",
+	lg: "min-h-9 px-3 text-base [&:where(input)]:h-9",
 };
 
 /**
@@ -40,7 +42,9 @@ const sizes: Record<Size, string> = {
  * appearance reset, a contenteditable).
  */
 export const fieldClass =
-	"w-full rounded-control border border-line bg-surface text-fg outline-none transition-colors placeholder:text-faint focus:border-accent disabled:cursor-default disabled:opacity-40";
+	// Block padding and a one-line box center input text vertically. The element
+	// selector deliberately leaves multiline textareas and native selects alone.
+	"w-full rounded-control border border-line bg-surface text-fg outline-none transition-colors placeholder:text-faint focus:border-accent disabled:cursor-default disabled:opacity-40 [&:where(input)]:py-0 [&:where(input)]:leading-none";
 
 export function fieldClasses(size: Size = "md", className?: string) {
 	return cn(fieldClass, sizes[size], className);

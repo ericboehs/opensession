@@ -75,3 +75,30 @@ export function prStatusMark(pr: PrStatusInput): {
 		return { className: "text-green", bgClassName: MARK_BG.green, label: "PR approved", tone: "green", quiet: false };
 	return { className: "text-green", bgClassName: MARK_BG.green, label: "PR open", tone: "green", quiet: true };
 }
+
+const STATUS_TEXT: Record<string, string> = {
+	"PR has conflicts": "Conflicts",
+	"PR changes requested": "Changes requested",
+	"PR checks failing": "Checks failing",
+	"PR checks running": "Checks running",
+	"Draft PR": "Draft",
+};
+
+/** Short status copy shared by compact PR references and their hover cards. */
+export function prStatusDisplay(pr: PrStatusInput): {
+	label: string;
+	state: string;
+	tone: PrTone;
+} {
+	const mark = prStatusMark(pr);
+	const label =
+		mark.label === "PR open" && pr.mergeable === "MERGEABLE"
+			? "Mergeable"
+			: (STATUS_TEXT[mark.label] ??
+				mark.label.replace(/^PR /, "").replace(/^./, (c) => c.toUpperCase()));
+	return {
+		label,
+		state: label.toLowerCase().replaceAll(" ", "-"),
+		tone: mark.tone,
+	};
+}

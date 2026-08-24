@@ -451,6 +451,14 @@ export async function handleSessionGitRoutes(
 				{ error: "Session has no worktree" },
 				{ status: 400 },
 			);
+		// Nobody owns a shared checkout's HEAD. Pulling it from one session can
+		// rewrite the live tree under every other session, so fail closed even for
+		// an old client that still offers the action.
+		if (isSharedCheckoutDir(target.dir))
+			return Response.json(
+				{ error: "Pull isn't available because this checkout is shared with other sessions." },
+				{ status: 409 },
+			);
 		const result = await gitPull(
 			target.dir,
 			body?.base ? target.defaultBranch : undefined,

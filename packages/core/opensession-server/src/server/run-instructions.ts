@@ -77,6 +77,10 @@ export function buildRunInstructions(input: {
     "## Finish your turns\nComplete promised actions, then briefly report the outcome and " +
       "relevant links."
   );
+  parts.push(
+    "## References\nFor PRs outside the current primary repository, write " +
+      "`<repo>#<number>`, never bare `#<number>`."
+  );
 
   if (input.isScratch) {
     parts.push(

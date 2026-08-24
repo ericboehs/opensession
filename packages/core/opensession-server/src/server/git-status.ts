@@ -111,6 +111,22 @@ export function gitCredentialEnvForExec(
 const FETCH_TTL = 90_000;
 const lastFetch = new Map<string, number>();
 
+/** Prefer Git's actionable final diagnostic over fetch progress such as
+ * `From github.com:…`, which otherwise consumes the UI's whole error line. */
+export function gitFailureMessage(output: string, fallback: string): string {
+  const lines = output
+    .trim()
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const diagnostic = [...lines]
+    .reverse()
+    .find((line) => /^(?:fatal|error):\s*/i.test(line));
+  return (diagnostic || lines.at(-1) || fallback)
+    .replace(/^(?:fatal|error):\s*/i, "")
+    .slice(0, 300);
+}
+
 async function refreshBase(dir: string, baseBranch: string, exec?: WorkspaceExec): Promise<void> {
   const last = lastFetch.get(dir) || 0;
   if (Date.now() - last < FETCH_TTL) return;
@@ -245,7 +261,7 @@ export async function gitPull(
       if (!fromBase) {
         const result = await run(["git", "-C", dir, "pull", "--ff-only"]);
         if (result.code !== 0)
-          return { error: (result.stderr || "git pull failed").trim().slice(0, 300) } as const;
+          return { error: gitFailureMessage(result.stderr, "Git pull failed") } as const;
         return { ok: true } as const;
       }
 
@@ -257,7 +273,9 @@ export async function gitPull(
 
       const fetch = await run(["git", "-C", dir, "fetch", "origin", fromBase, "--no-tags", "--quiet"]);
       if (fetch.code !== 0)
-        return { error: (fetch.stderr || `Could not fetch origin/${fromBase}`).trim().slice(0, 300) } as const;
+        return {
+          error: gitFailureMessage(fetch.stderr, `Could not fetch origin/${fromBase}`),
+        } as const;
 
       const merge = await run([
         "git",
@@ -330,7 +348,7 @@ export async function gitPush(
           proc.exited,
         ]);
       }
-      if (code !== 0) return { error: (err || "git push failed").slice(0, 300) } as const;
+      if (code !== 0) return { error: gitFailureMessage(err, "Git push failed") } as const;
       return { ok: true } as const;
     }
   );

@@ -229,6 +229,7 @@ import {
 	FEED_FILTERS_KEY,
 	SUPPORT_PRIORITY_GROUPS,
 	dget,
+	includesEmptyRepoBands,
 	personLensFilter,
 	personLensValue,
 	readExpanded,
@@ -3972,14 +3973,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		// unrelated empty projects, and so does the whole list once "Empty
 		// projects" is set to hidden — except when the list is scoped to one
 		// project, where the band is what was asked for rather than clutter.
-		const emptyBands =
-			filter.repo !== "all" || filter.emptyProjects === "show";
-		if (
-			emptyBands &&
-			!search &&
-			filter.person === "me" &&
-			filter.autoCreated === "show"
-		) {
+		if (includesEmptyRepoBands(filter, search)) {
 			for (const repo of registeredRepos) {
 				if (filter.repo === "all" || filter.repo === repo) present.add(repo);
 			}
@@ -4603,7 +4597,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				// The organization row leads this rail on desktop now that the old
 				// heading is gone. Pull it slightly closer to the fixed top bar there;
 				// phones keep the original spacing because their first row is a tool.
-				"flex flex-col gap-0.5 px-[var(--sidebar-nav-x)] pt-2 pb-1.5 desktop:pt-1",
+				"flex flex-col gap-0.5 px-[var(--sidebar-nav-x)] pt-2 pb-1.5 desktop:pt-0.5",
 			)}
 		>
 			<div className="phone:hidden">

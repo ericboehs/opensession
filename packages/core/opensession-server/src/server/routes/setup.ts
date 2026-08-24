@@ -2,8 +2,8 @@
  * Setup routes — what the Settings → Setup page renders and writes.
  *
  * GET /api/setup/status stays the read-only snapshot. The write endpoints
- * (integrations env/enable, GitHub auth settings, team CRUD, repo clone +
- * register, self-restart) implement web-based instance configuration:
+ * (server origins, integrations env/enable, GitHub auth settings, team CRUD,
+ * repo clone + register, self-restart) implement web-based instance configuration:
  * secrets go to the env file (~/.opensession.env — the systemd
  * EnvironmentFile, shared with the CLI; env-file-edit.ts), everything else
  * to config.json, all serialized under the shared config mutation lock
@@ -24,8 +24,10 @@
 import { audit } from "../audit";
 import { GITHUB_APP_GRANT_PERMISSIONS } from "../../shared/github-app-permissions";
 import { envRequired, type IntegrationSpec } from "../integrations/registry";
+import { setupAccessSnapshot } from "../setup-access";
 import { requireWorkspaceAdmin } from "../workspace-auth";
 import type { RouteContext } from "./context";
+import { handleSetupAccessRoutes } from "./setup-access";
 import { handleSetupCodestorageRoutes } from "./setup-codestorage";
 import { handleSetupRepoRoutes } from "./setup-repos";
 import { handleSetupTeamRoutes } from "./setup-team";
@@ -198,8 +200,7 @@ export async function handleSetupRoutes(
   if (forbidden) return forbidden;
 
   if (path === "/api/setup/status" && req.method === "GET") {
-    const { configuredServer, configuredRepos, configuredIdentity } =
-      await import("../config");
+    const { configuredRepos, configuredIdentity } = await import("../config");
     const { INTEGRATIONS } = await import("../integrations/registry");
     // The env FILE, not process.env: a credential saved via PUT must keep
     // reading as present on every later status refetch, not flap back to
@@ -207,16 +208,21 @@ export async function handleSetupRoutes(
     const { readEnvFileValues } = await import("../env-file-edit");
     const { repoLifecycle } = await import("../preview");
     const { engineStatus } = await import("../engine-status");
-    const envValues = readEnvFileValues();
+    const { sharedCheckoutForNewSessions } = await import("../worktree");
+    const envValues = readEnvFileValues({ includeUnset: true });
 
-    const publicBaseUrl = configuredServer().publicBaseUrl.replace(/\/$/, "");
+    const access = setupAccessSnapshot({ persistedEnv: envValues });
 
     return Response.json({
-      publicBaseUrl,
+      // Compatibility field for the native app's tolerant setup snapshot.
+      publicBaseUrl: access.publicBaseUrl,
+      access,
       repos: Object.values(configuredRepos()).map((r) => ({
         id: r.id,
         label: r.label,
         path: r.repo,
+        defaultBranch: r.defaultBranch,
+        isolatedWorktrees: !sharedCheckoutForNewSessions(r),
         // Can sessions in this repo provision and boot themselves? Read off
         // the main checkout — worktrees carry the same committed files.
         lifecycle: {
@@ -556,9 +562,10 @@ export async function handleSetupRoutes(
     return Response.json({ restarting: true });
   }
 
-  // ── Sibling modules: /api/setup/team*, /api/setup/{github/repos,repos},
+  // ── Sibling modules: /api/setup/{access,team*,github/repos,repos},
   //    /api/setup/codestorage/{connect,status,disconnect} ───────────────────
   return (
+    (await handleSetupAccessRoutes(ctx)) ??
     (await handleSetupTeamRoutes(ctx)) ??
     (await handleSetupRepoRoutes(ctx)) ??
     (await handleSetupCodestorageRoutes(ctx))

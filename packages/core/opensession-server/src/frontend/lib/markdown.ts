@@ -1,7 +1,7 @@
 import { Marked } from "marked";
 import { BASE_PATH } from "./base";
 import { sanitizeHtmlFragment } from "./html-sanitize";
-import { prStatusMark, type PrStatusInput } from "./pr-status";
+import { prStatusDisplay, type PrStatusInput } from "./pr-status";
 import { repoLabel } from "./repo-label";
 import { cleanSessionTitle } from "./session-title";
 import { INTERNAL_ORIGINS, UUIDV7, internalUrlTarget } from "./session-url";
@@ -738,25 +738,10 @@ type PrDisplayState = {
   label: string;
   state: string;
   tone: PrTone;
+  terminal: boolean;
 };
 
 type PrTone = "green" | "purple" | "red" | "yellow" | "muted";
-
-const PR_MARK_TONE: Record<string, PrTone> = {
-  "text-green": "green",
-  "text-purple": "purple",
-  "text-red": "red",
-  "text-yellow": "yellow",
-  "text-faint": "muted",
-};
-
-const PR_MARK_LABEL: Record<string, string> = {
-  "PR has conflicts": "Conflicts",
-  "PR changes requested": "Changes requested",
-  "PR checks failing": "Checks failing",
-  "PR checks running": "Checks running",
-  "Draft PR": "Draft",
-};
 
 let knownPrStates = new Map<string, PrDisplayState>();
 let sessionPrStates = new Map<string, PrDisplayState>();
@@ -767,19 +752,12 @@ function prStateKey(repo: string, number: string | number): string {
 }
 
 function displayPrState(pr: PrStateInput): PrDisplayState | null {
-  if (!pr.state) return null;
-  const mark = prStatusMark(pr);
-  const tone = PR_MARK_TONE[mark.className] ?? "muted";
-  const label =
-    mark.label === "PR open" && pr.mergeable === "MERGEABLE"
-      ? "Mergeable"
-      : (PR_MARK_LABEL[mark.label] ??
-        mark.label.replace(/^PR /, "").replace(/^./, (c) => c.toUpperCase()));
-  return {
-    label,
-    state: label.toLowerCase().replaceAll(" ", "-"),
-    tone,
-  };
+  return pr.state
+    ? {
+        ...prStatusDisplay(pr),
+        terminal: pr.state === "MERGED" || pr.state === "CLOSED",
+      }
+    : null;
 }
 
 function prRefTitle(repo: string, number: string, state?: PrDisplayState): string {
@@ -788,15 +766,57 @@ function prRefTitle(repo: string, number: string, state?: PrDisplayState): strin
   }`;
 }
 
+/**
+ * A bare number normally belongs to the rendering repo. If that repo has no
+ * such known PR and exactly one other configured repo does, use the unique
+ * match instead. This repairs agent shorthand without guessing when numbers
+ * overlap across repos.
+ */
+function resolveBarePrRepo(contextRepo: string, number: string): string {
+  if (knownPrStates.has(prStateKey(contextRepo, number))) return contextRepo;
+  const suffix = `\u0000${number}`;
+  let match: string | null = null;
+  for (const key of knownPrStates.keys()) {
+    if (!key.endsWith(suffix)) continue;
+    const repo = key.slice(0, -suffix.length);
+    if (match && match !== repo) return contextRepo;
+    match = repo;
+  }
+  return match ?? contextRepo;
+}
+
+function syncPrAnchorTarget(
+  anchor: HTMLAnchorElement,
+  repo: string,
+  number: string,
+): void {
+  anchor.dataset.prRepo = repo;
+  anchor.setAttribute(
+    "href",
+    `${BASE_PATH}/pr/${encodeURIComponent(repo)}/${number}`,
+  );
+  const ghRepo = knownRepos.get(repo);
+  if (ghRepo) anchor.dataset.prGh = ghRepo;
+  else delete anchor.dataset.prGh;
+}
+
 /** Keep already-rendered transcript chips in sync with the bulk PR cache. */
 function syncRenderedPrStates(): void {
   if (typeof document === "undefined") return;
   for (const anchor of document.querySelectorAll<HTMLAnchorElement>(
     "a.pr-ref[data-pr-repo][data-pr-number]",
   )) {
-    const repo = anchor.dataset.prRepo;
+    let repo = anchor.dataset.prRepo;
     const number = anchor.dataset.prNumber;
     if (!repo || !number) continue;
+    const contextRepo = anchor.dataset.prContextRepo;
+    if (contextRepo) {
+      const resolvedRepo = resolveBarePrRepo(contextRepo, number);
+      if (resolvedRepo !== repo) {
+        syncPrAnchorTarget(anchor, resolvedRepo, number);
+        repo = resolvedRepo;
+      }
+    }
     const state = knownPrStates.get(prStateKey(repo, number));
     if (!state) {
       delete anchor.dataset.prState;
@@ -822,9 +842,14 @@ function collectPrStates(prs: Iterable<PrStateInput>): Map<string, PrDisplayStat
 }
 
 function syncKnownPrStates(): void {
-  // Repo-wide lists fill references no loaded session owns. Session state wins
-  // when both know a PR because it also carries richer linked-workspace data.
-  const next = new Map([...repoPrStates, ...sessionPrStates]);
+  // Session state carries richer checks/conflict data. A terminal repo-wide
+  // state is the exception: an older live-session snapshot must not resurrect
+  // a PR that recent history already knows was merged or closed.
+  const next = new Map(repoPrStates);
+  for (const [key, state] of sessionPrStates) {
+    if (next.get(key)?.terminal && !state.terminal) continue;
+    next.set(key, state);
+  }
   if (
     next.size === knownPrStates.size &&
     [...next].every(
@@ -917,7 +942,14 @@ function bareMentionLinks(repo: string, number: string): boolean {
   );
 }
 
-function prMentionLink(repo: string, number: string, label: string): string {
+function prMentionLink(
+  repo: string,
+  number: string,
+  label: string,
+  unqualified = false,
+): string {
+  const contextRepo = repo;
+  if (unqualified) repo = resolveBarePrRepo(contextRepo, number);
   const href = `${BASE_PATH}/pr/${encodeURIComponent(repo)}/${number}`;
   // `data-pr-gh` is the escape hatch, not the destination: a plain click
   // stays in the review here, cmd/ctrl-click leaves for github.com.
@@ -926,6 +958,7 @@ function prMentionLink(repo: string, number: string, label: string): string {
   return (
     `<a href="${attr(href)}" class="pr-ref" data-pr-repo="${attr(repo)}"` +
     ` data-pr-number="${attr(number)}"` +
+    (unqualified ? ` data-pr-context-repo="${attr(contextRepo)}"` : "") +
     (ghRepo ? ` data-pr-gh="${attr(ghRepo)}"` : "") +
     (state
       ? ` data-pr-state="${state.state}" data-pr-tone="${state.tone}"`
@@ -1429,14 +1462,26 @@ md.use({
         // Same for a short number with nothing but its digits to go on.
         if (!cue && !qualifier && !bareMentionLinks(repo, number))
           return { type: "text", raw, text: raw };
-        return { type: "prMention", raw, cue, repo, number };
+        return {
+          type: "prMention",
+          raw,
+          cue,
+          repo,
+          number,
+          unqualified: !qualifier,
+        };
       },
       renderer(token: any) {
         // The cue stays prose: it reads as `PR` + a chip labelled `#92`, so a
         // chip already carrying a PR icon doesn't also spell the word out.
         return (
           attr(token.cue) +
-          prMentionLink(token.repo, token.number, token.raw.slice(token.cue.length))
+          prMentionLink(
+            token.repo,
+            token.number,
+            token.raw.slice(token.cue.length),
+            token.unqualified,
+          )
         );
       },
     },

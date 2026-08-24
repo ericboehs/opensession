@@ -19,7 +19,12 @@
 
 import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "fs";
 import { configuredRepos } from "./config";
-import { persistRawConfig, rawConfig, withConfigMutationLock } from "./config-mutation";
+import {
+	persistRawConfig,
+	rawConfig,
+	repoSectionForMutation,
+	withConfigMutationLock,
+} from "./config-mutation";
 import { stateDir } from "./paths";
 import { trimIconMargin } from "./png-trim";
 import { REPO_TILE_COLORS, currentTileColor } from "./repo-tile-colors";
@@ -107,8 +112,8 @@ function persistAppearance(
 ): Promise<RepoAppearance> {
 	return withConfigMutationLock(async () => {
 		const config = rawConfig();
-		const repos = (config.repos ??= {}) as Record<string, Record<string, unknown>>;
-		const section = (repos[id] ??= {});
+		const section = repoSectionForMutation(config, id);
+		if (!section) throw new RepoAppearanceError(`Unknown repository: ${id}`);
 
 		if (edits.color !== undefined) {
 			if (edits.color === null) delete section.color;

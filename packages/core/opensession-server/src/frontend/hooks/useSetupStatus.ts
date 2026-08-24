@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	setupRequest,
+	type SetupAccess,
 	type SetupGithub,
 	type SetupIntegration,
+	type SetupRepo,
 	type SetupStatus,
 } from "../components/setup-shared";
 import { BASE_PATH } from "../lib/base";
@@ -31,7 +33,12 @@ export interface SetupController {
 	restartServer: (post?: boolean) => Promise<void>;
 	/** Fold a saved integration back into the cached status. */
 	applyIntegration: (updated: SetupIntegration, restartRequired: boolean) => void;
+	applyAccess: (updated: SetupAccess, restartRequired: boolean) => void;
 	applyGithub: (updated: SetupGithub, restartRequired: boolean) => void;
+	applyRepo: (
+		updated: Pick<SetupRepo, "id"> &
+			Partial<Pick<SetupRepo, "defaultBranch" | "isolatedWorktrees">>,
+	) => void;
 }
 
 export function useSetupStatus(): SetupController {
@@ -75,10 +82,45 @@ export function useSetupStatus(): SetupController {
 		[],
 	);
 
+	const applyAccess = useCallback(
+		(updated: SetupAccess, restartRequired: boolean) => {
+			setStatus((status) =>
+				status
+					? {
+							...status,
+							publicBaseUrl: updated.publicBaseUrl,
+							access: updated,
+						}
+					: status,
+			);
+			if (restartRequired) setRestartNeeded(true);
+		},
+		[],
+	);
+
 	const applyGithub = useCallback(
 		(updated: SetupGithub, restartRequired: boolean) => {
 			setStatus((s) => (s ? { ...s, github: updated } : s));
 			if (restartRequired) setRestartNeeded(true);
+		},
+		[],
+	);
+
+	const applyRepo = useCallback(
+		(
+			updated: Pick<SetupRepo, "id"> &
+				Partial<Pick<SetupRepo, "defaultBranch" | "isolatedWorktrees">>,
+		) => {
+			setStatus((s) =>
+				s
+					? {
+							...s,
+							repos: s.repos.map((repo) =>
+								repo.id === updated.id ? { ...repo, ...updated } : repo,
+							),
+						}
+					: s,
+			);
 		},
 		[],
 	);
@@ -134,6 +176,8 @@ export function useSetupStatus(): SetupController {
 		restartState,
 		restartServer,
 		applyIntegration,
+		applyAccess,
 		applyGithub,
+		applyRepo,
 	};
 }

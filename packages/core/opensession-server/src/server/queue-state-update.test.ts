@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { classifyEntry } from "@tellahq/opensession-protocol/notices";
 import {
 	acknowledgePromptDispatch,
+	beginNextPromptDispatch,
 	beginPromptDispatch,
 	clientVisibleQueuedCount,
 	isDelegatedQueueItem,
 	isEditableQueueItem,
 	isWorkerQueueItem,
+	isWorkflowQueueItem,
 	promptDispatches,
 	promptQueues,
 	queueDisplayState,
@@ -30,6 +32,27 @@ describe("takeQueuedPrompt", () => {
 				files: [{ name: "brief.pdf", path: "/tmp/brief.pdf" }],
 			},
 			{ id: "q2", content: "second", user: "Michiel" },
+		]);
+	});
+
+	test("selects and claims through the compatibility actor store", () => {
+		const claim = beginNextPromptDispatch(
+			SESSION,
+			{ soloId: "q2", interruptMark: true, stillWorking: true },
+			false,
+		);
+		expect(claim).toMatchObject({
+			kind: "deliver",
+			batch: [{ id: "q2", content: "second", user: "Michiel" }],
+		});
+		expect(promptQueues.get(SESSION)).toEqual([
+			{
+				id: "q1",
+				content: "first",
+				user: "Kent",
+				images: [PNG],
+				files: [{ name: "brief.pdf", path: "/tmp/brief.pdf" }],
+			},
 		]);
 	});
 
@@ -140,6 +163,31 @@ describe("delegated messages are not user messages", () => {
 		const mine = { id: "q1", content: "ship it", user: "Kent" };
 		expect(isWorkerQueueItem(mine)).toBe(false);
 		expect(isEditableQueueItem(mine)).toBe(true);
+	});
+
+	test("a workflow result never enters the client message surface", () => {
+		const workflowSession = `${SESSION}-workflow`;
+		const result = {
+			id: "workflow:wf-1:done",
+			content:
+				'<!--os:workflow-notice:wf-1-->\n✅ Workflow "review" finished',
+			user: "Kent",
+		};
+		expect(isWorkflowQueueItem(result)).toBe(true);
+		expect(isEditableQueueItem(result)).toBe(false);
+
+		promptQueues.set(workflowSession, [result]);
+		steeredReceipts.set(workflowSession, [result]);
+		expect(clientVisibleQueuedCount(workflowSession)).toBe(0);
+		expect(queueDisplayState(workflowSession)).toEqual({
+			queued: [],
+			steered: [],
+		});
+		// Filtering is presentation-only: delivery still owns the nudge.
+		expect(promptQueues.get(workflowSession)).toEqual([result]);
+		expect(steeredReceipts.get(workflowSession)).toEqual([result]);
+		promptQueues.delete(workflowSession);
+		steeredReceipts.delete(workflowSession);
 	});
 
 	test("a peer agent message is delegated but not a worker report", () => {

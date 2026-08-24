@@ -50,7 +50,9 @@ cross-repo change lines up. Attaching never reuses another repo's main checkout.
 A repository can be marked as a *shared checkout*, meaning its sessions all work
 directly in the main clone instead of getting worktrees. Open Session's own
 repository is configured this way, so that sessions improving Open Session are
-editing the thing that is running.
+editing the thing that is running. Settings → Repositories exposes this as a
+per-repository **Use isolated worktrees** switch. The choice applies to new
+sessions; existing sessions keep their current checkout.
 
 It is a deliberate trade and it has sharp edges. In a shared checkout:
 

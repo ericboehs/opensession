@@ -1,7 +1,7 @@
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { EmptyState } from "../ui/state";
-import { BrandMark, IconTile } from "./BrandTile";
+import { BrandMark } from "./BrandTile";
 
 export function GithubConnectEmptyState({
 	onConnect,
@@ -12,8 +12,11 @@ export function GithubConnectEmptyState({
 }) {
 	return (
 		<EmptyState
-			icon={<IconTile name="github" size={44} />}
-			title="Connect GitHub"
+			title={
+				<div className="text-section-title leading-[1.15] font-semibold tracking-[-0.02em] text-balance">
+					Start your first session
+				</div>
+			}
 			action={
 				<Button
 					variant="primary"
@@ -27,7 +30,7 @@ export function GithubConnectEmptyState({
 			}
 			className={cn("px-6", className)}
 		>
-			Choose a repository to start your first session.
+			Connect a repository to get started.
 		</EmptyState>
 	);
 }

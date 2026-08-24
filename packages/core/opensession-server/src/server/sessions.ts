@@ -1202,6 +1202,7 @@ function* assembleSessionSteps(
           title: pr.title,
           isDraft: pr.isDraft,
           reviewDecision: pr.reviewDecision,
+          mergeable: pr.mergeable,
           additions: pr.additions,
           deletions: pr.deletions,
           checks: pr.checks,

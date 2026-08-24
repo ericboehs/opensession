@@ -699,7 +699,7 @@ struct SessionView: View {
             .toolbar {
             #if os(iOS)
             ToolbarItem(placement: .principal) {
-                sessionIdentityButton
+                sessionHeaderLane
             }
             #endif
             // Whoever else has this session open, right before the actions
@@ -756,8 +756,6 @@ struct SessionView: View {
                     }
                 }
             }
-            #endif
-            #if os(macOS)
             ToolbarItem(placement: .principal) { macSessionTitle }
             if !workspaceHistoryRows.isEmpty, onRestoreArchivedSession != nil {
                 ToolbarItem(placement: .topTrailingCompat) {
@@ -1109,13 +1107,25 @@ struct SessionView: View {
     #endif
 
     #if os(iOS)
+    /// Use the principal lane for its flexible width, but anchor the title at
+    /// its leading edge so it follows Back and can consume the open right side.
+    private var sessionHeaderLane: some View {
+        sessionIdentityButton
+            .frame(width: sessionHeaderLaneWidth, alignment: .leading)
+    }
+
+    private var sessionHeaderLaneWidth: CGFloat {
+        let surfaceWidth = viewportWidth > 0 ? viewportWidth : 390
+        return min(560, max(200, surfaceWidth - 160))
+    }
+
     /// Mobile web opens workspace details when its title is tapped. Keep the
     /// same identity in native navigation and present a SwiftUI details sheet.
     private var sessionIdentityButton: some View {
         Button {
             showWorktreeInfo = true
         } label: {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 0) {
                 // No run dot up here: the bar is identity and navigation,
                 // and the running state now reads where the work is, in the
                 // clock at the end of the transcript.
@@ -1136,26 +1146,24 @@ struct SessionView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if !dynamicTypeSize.isAccessibilitySize {
-                    Text(headerSubtitle)
+                    headerSubtitleText
                         .font(.footnote)
                         .foregroundStyle(OS1VisualStyle.textDim)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            // Like WhatsApp, identity begins after Back and takes the room up
-            // to the actions. Its 44pt minimum matches the controls on both
-            // sides while still allowing Dynamic Type to make it taller.
-            .padding(.leading, 10)
-            .padding(.trailing, 12)
-            .padding(.vertical, 1)
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            // Keep the glass visually tighter than its toolbar-owned 44pt tap
+            // target while leaving enough height for both identity lines.
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
             .contentShape(Capsule())
         }
-        // Let the toolbar own this control's Liquid Glass and separation
-        // shadow, exactly as it does for Back. Applying a glass effect inside
-        // ToolbarItem would nest another surface in the bar's morph group.
+        // Opt this custom identity control into the same Liquid Glass style as
+        // the system Back button.
+        .buttonStyle(.glass)
         .buttonBorderShape(.capsule)
+        .controlSize(.small)
         .tint(.primary)
         .frame(width: sessionIdentityWidth, alignment: .leading)
         .accessibilityLabel("Workspace details")
@@ -1163,9 +1171,18 @@ struct SessionView: View {
 
     private var sessionIdentityWidth: CGFloat {
         let surfaceWidth = viewportWidth > 0 ? viewportWidth : 390
-        return min(360, max(140, surfaceWidth - 148))
+        return min(360, max(128, surfaceWidth - 128))
     }
     #endif
+
+    private func pullRequestButton(number: Int) -> some View {
+        Button {
+            showPrPanel = true
+        } label: {
+            PrChipLabel(number: number, summary: viewModel.prDetails?.summary)
+        }
+        .accessibilityLabel(Text(verbatim: "Pull request #\(number)"))
+    }
 
     private var currentModel: String {
         viewModel.model.isEmpty ? (catalog?.defaultModel ?? "") : viewModel.model
@@ -1183,10 +1200,28 @@ struct SessionView: View {
     }
 
     private var headerSubtitle: String {
-        let label = catalog?.label(for: currentModel) ?? currentModel
-        return [RepoTile.label(for: viewModel.session.effectiveRepo), label]
+        let repo = RepoTile.label(for: viewModel.session.effectiveRepo)
+        let model = catalog?.label(for: currentModel) ?? currentModel
+        let prNumber = viewModel.prDetails?.number ?? viewModel.session.prNumber
+        var parts: [String] = []
+        if let prNumber {
+            parts.append("#\(prNumber)")
+        }
+        parts.append(repo)
+        parts.append(model)
+        return parts
             .filter { !$0.isEmpty }
-            .joined(separator: " · ")
+            .joined(separator: " • ")
+    }
+
+    private var headerSubtitleText: Text {
+        var subtitle = AttributedString(headerSubtitle)
+        if let pr = viewModel.prDetails,
+           let range = subtitle.range(of: "#\(pr.number)")
+        {
+            subtitle[range].foregroundColor = pr.summary.color
+        }
+        return Text(subtitle)
     }
 
     /// Re-pin to the latest for a beat while the transcript settles.

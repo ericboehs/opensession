@@ -34,9 +34,12 @@ test("the keyboard inset is measured against the fixed viewport, not the documen
 	// as a keyboard; a fixed probe reports what `position: fixed` actually gets.
 	expect(source).toContain("position:fixed;inset:0");
 	expect(source).toContain("const frame = probe.clientHeight;");
-	// Both readings that can shrink are considered, and neither is required.
+	// visualViewport is authoritative when present: it is the only reading that
+	// includes WebKit's focus pan, so innerHeight cannot count that pan again as
+	// extra keyboard. innerHeight stays as the fallback for clients without it.
+	expect(source).toContain("viewport.height + viewport.offsetTop");
 	expect(source).toContain("window.innerHeight || frame");
-	expect(source).toContain("viewport ? viewport.height + viewport.offsetTop");
+	expect(source).not.toContain("const visible = Math.min(");
 	// Nothing is left behind for the next surface to inherit.
 	expect(source).toContain("write(0);");
 });

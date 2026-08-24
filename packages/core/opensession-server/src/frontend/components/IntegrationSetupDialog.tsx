@@ -8,6 +8,7 @@ import { Segmented, SegmentedOption } from "../ui/segmented";
 import { Switch } from "../ui/switch";
 import { toast } from "../ui/toast";
 import { WEBHOOK_BASE_URL } from "../lib/brand";
+import { SLACK_SCOPE_GROUPS } from "../lib/slack-manifest";
 import {
 	publicWebhookAvailable,
 	savedSlackTransport,
@@ -15,6 +16,7 @@ import {
 	type SlackTransport,
 } from "../lib/slack-setup";
 import { IconTile } from "./BrandTile";
+import { SlackManifestGuide } from "./SlackManifestGuide";
 import {
 	Code,
 	CopyableCode,
@@ -45,6 +47,9 @@ function Value({ value }: { value: string }) {
 
 type Guide = {
 	description: string;
+	/** Rendered above the numbered steps, for a provider that can be set up
+	 *  from generated config rather than transcription — Slack's manifest. */
+	intro?: ReactNode;
 	steps: ReactNode[];
 	/** Permission tokens you transcribe into the provider's own form. Data,
 	 *  rather than bold runs inside a sentence — see ScopeGroups. */
@@ -110,56 +115,32 @@ function guideFor(
 
 		case "slack": {
 			const socket = transport === "socket";
-			const transportSteps: ReactNode[] = socket
-				? [
-						<>Turn on Socket Mode in your Slack app.</>,
-						<>Create an app-level token with the <strong>connections:write</strong> scope under Basic Information. It starts with <code>xapp-</code>.</>,
-						<>Under Event Subscriptions, subscribe to <strong>message.im</strong>, <strong>app_mention</strong>, and <strong>message</strong>. Enable Interactivity too. Socket Mode needs no request URLs.</>,
-						<>Paste the bot token and app-level token into the fields above.</>,
-					]
-				: [
-						<>
-							Under Event Subscriptions, subscribe to <strong>message.im</strong>, <strong>app_mention</strong>, and <strong>message</strong>. Set the request URL to:
-							<Value value={url("/slack/events")} />
-						</>,
-						<>
-							Enable Interactivity and set its request URL to:
-							<Value value={url("/slack/actions")} />
-						</>,
-						<>Paste the bot token and signing secret into the fields above.</>,
-					];
 			return {
 				description: "Create a Slack bot for DMs, mentions, session channels, and interactive controls.",
+				intro: <SlackManifestGuide transport={transport} />,
 				steps: [
-					<>Create a Slack app, add the bot scopes below, and install it to your workspace.</>,
-					...transportSteps,
-					<>Set an allowed Slack user id so admin tools are not open to every workspace member.</>,
+					<>Create the app from the manifest above, then install it to your workspace.</>,
+					socket ? (
+						<>
+							Open <strong>Basic Information → App-Level Tokens</strong>, generate a token with the <strong>connections:write</strong> scope, and paste the <Code>xapp-</Code> value into <Code>SLACK_APP_TOKEN</Code> above.
+						</>
+					) : (
+						<>
+							Copy the signing secret from <strong>Basic Information</strong> into <Code>SLACK_SIGNING_SECRET</Code> above. The manifest already includes the event and interactivity request URLs.
+						</>
+					),
+					<>Copy the bot token from <strong>OAuth &amp; Permissions</strong> after installing, and set an allowed Slack user id so admin tools are not open to every workspace member.</>,
 					<>Enable Slack, save, restart Open Session, and invite the bot to every existing channel it should read.</>,
 				],
-				scopes: [
-					{
-						label: "Writing",
-						items: ["chat:write", "chat:write.customize", "files:write", "reactions:write", "assistant:write"],
-					},
-					{
-						label: "History",
-						items: ["channels:history", "groups:history", "im:history", "mpim:history"],
-					},
-					{
-						label: "Channels and people",
-						items: [
-							"channels:read",
-							"groups:read",
-							"im:read",
-							"channels:manage",
-							"groups:write",
-							"channels:join",
-							"im:write",
-							"users:read",
-						],
-					},
-				],
-				scopesNote: socket ? <>The app-level token only needs <strong>connections:write</strong>.</> : undefined,
+				// Same list the manifest carries, so the chips and the generated app
+				// can never drift apart. Keep it visible for someone reviewing an
+				// existing app rather than creating a new one.
+				scopes: SLACK_SCOPE_GROUPS,
+				scopesNote: socket ? (
+					<>The manifest grants all of these. The app-level token only needs <strong>connections:write</strong>.</>
+				) : (
+					<>The manifest grants all of these and enables interactivity.</>
+				),
 			};
 		}
 
@@ -464,6 +445,7 @@ export function IntegrationSetupDialog({
 					actions={<LinkChips links={integration.links} className="mt-0" />}
 				>
 					<div className="flex flex-col gap-4">
+						{guide.intro}
 						<SetupSteps steps={guide.steps} />
 						{guide.scopes && (
 							<GuideBlock title="Bot scopes">

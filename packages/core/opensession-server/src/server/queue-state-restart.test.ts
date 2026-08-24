@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
+	beginNextPromptDispatch,
+	deleteQueuedPrompt,
 	hydratePersistedQueueState,
 	persistQueues,
 	promptDispatches,
@@ -153,7 +155,7 @@ describe("steer receipt restart persistence", () => {
 		expect(steeredReceipts.has(SESSION)).toBe(false);
 	});
 
-	test("an ordinary unjournaled dispatch is still requeued", () => {
+	test("an ordinary multi-item dispatch keeps its identity after a crash", () => {
 		scratch = mkdtempSync(join(tmpdir(), "os-ordinary-dispatch-"));
 		const storePath = join(scratch, "prompt-queues.json");
 		writeFileSync(
@@ -162,7 +164,10 @@ describe("steer receipt restart persistence", () => {
 				dispatching: {
 					[SESSION]: {
 						promptEntryId: "ordinary-entry",
-						items: [{ id: "ordinary", content: "retry me" }],
+						items: [
+							{ id: "ordinary-one", content: "retry me" },
+							{ id: "ordinary-two", content: "and me" },
+						],
 					},
 				},
 			}),
@@ -175,12 +180,28 @@ describe("steer receipt restart persistence", () => {
 			deliveredUserTexts: () => [],
 			effects: false,
 		});
-		expect(restored.queuedCount).toBe(1);
+		expect(restored.queuedCount).toBe(2);
 		expect(promptQueues.get(SESSION)?.[0]?.promptEntryId).toBe("ordinary-entry");
 		expect(promptDispatches.has(SESSION)).toBe(false);
+		expect(deleteQueuedPrompt(SESSION, "ordinary-one", undefined, false)).toBe(
+			true,
+		);
+		expect(
+			beginNextPromptDispatch(
+				SESSION,
+				{ soloId: "ordinary-two", interruptMark: true },
+				false,
+			),
+		).toMatchObject({
+			kind: "deliver",
+			promptEntryId: "ordinary-entry",
+			batch: [
+				{ id: "ordinary-two", retryDispatchId: "ordinary-entry" },
+			],
+		});
 	});
 
-	test("a cold restart preserves a create dispatch for plan recovery", () => {
+	test("a cold restart preserves an actor-owned create dispatch even after journaling", () => {
 		scratch = mkdtempSync(join(tmpdir(), "os-create-dispatch-adopt-"));
 		const storePath = join(scratch, "prompt-queues.json");
 		writeFileSync(
@@ -198,7 +219,9 @@ describe("steer receipt restart persistence", () => {
 		const restored = restorePersistedQueueState({
 			storePath,
 			sessionExists: () => true,
-			journalOwnsPrompt: () => false,
+			journalOwnsPrompt: () => true,
+			creationOwnsPrompt: (_sessionId, promptEntryId) =>
+				promptEntryId === "create-request-1",
 			runOwnsSteers: () => false,
 			deliveredUserTexts: () => [],
 			effects: false,

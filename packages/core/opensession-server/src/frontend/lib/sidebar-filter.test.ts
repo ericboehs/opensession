@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import type { FilterState } from "./sidebar-filter";
 
 const store = new Map<string, string>();
 (globalThis as any).localStorage = {
@@ -13,6 +14,7 @@ const {
 	FILTER_VERSION,
 	defaultByProject,
 	defaultGroupBy,
+	includesEmptyRepoBands,
 	readStoredFilter,
 } = await import("./sidebar-filter");
 
@@ -35,6 +37,48 @@ describe("the default grouping", () => {
 		expect(defaultByProject()).toBeFalse();
 		rememberRepoCount(4);
 		expect(defaultByProject()).toBeTrue();
+	});
+});
+
+describe("empty project bands", () => {
+	const filter: FilterState = {
+		groupBy: "inbox",
+		byProject: true,
+		repo: "all",
+		person: "me",
+		sort: "updated",
+		prs: "none",
+		autoCreated: "hide",
+		emptyProjects: "show",
+	};
+
+	test("show all registered repos when empty projects are shown", () => {
+		expect(includesEmptyRepoBands(filter, "")).toBeTrue();
+	});
+
+	test("agent-created row visibility does not hide empty repos", () => {
+		expect(
+			includesEmptyRepoBands({ ...filter, autoCreated: "show" }, ""),
+		).toBeTrue();
+		expect(
+			includesEmptyRepoBands({ ...filter, autoCreated: "hide" }, ""),
+		).toBeTrue();
+	});
+
+	test("searches and teammate views remain result-driven", () => {
+		expect(includesEmptyRepoBands(filter, "query")).toBeFalse();
+		expect(
+			includesEmptyRepoBands({ ...filter, person: "teammate" }, ""),
+		).toBeFalse();
+	});
+
+	test("a selected repo can keep its empty band", () => {
+		expect(
+			includesEmptyRepoBands(
+				{ ...filter, repo: "acme", emptyProjects: "hide" },
+				"",
+			),
+		).toBeTrue();
 	});
 });
 

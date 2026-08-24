@@ -1,11 +1,11 @@
 /**
- * Server-side repository setup — part of the /api/setup family (dispatched
- * from setup.ts):
+ * Server-side repository setup, part of the /api/setup family dispatched from
+ * setup.ts:
  *
- *   GET  /api/setup/github/repos  — repos the instance's GitHub credential can
- *                                   see, for the registration picker.
- *   POST /api/setup/repos         — clone `owner/name` and register it in
- *                                   config.repos.
+ *   GET  /api/setup/github/repos: repos the instance's GitHub credential can
+ *                                  see, for the registration picker.
+ *   POST /api/setup/repos: clone `owner/name` and register it in config.repos.
+ *   PATCH /api/setup/repos/:id: change its default branch or worktree policy.
  */
 
 import { $ } from "bun";
@@ -13,20 +13,34 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } 
 import { tmpdir } from "os";
 import { join } from "path";
 import { audit } from "../audit";
-import { codeStorageConfig, configuredRepos, type RepoSection } from "../config";
+import {
+  codeStorageConfig,
+  configuredRepos,
+  configuredSelfDev,
+  type Repo,
+  type RepoSection,
+} from "../config";
 import { getRepo as getCsRepo, listRepos as listCsRepos } from "../codestorage/client";
 import { cloneCsCheckout } from "../codestorage/remote";
 import {
   persistRawConfig,
   rawConfig,
+  reposForMutation,
+  repoSectionForMutation,
   withConfigMutationLock,
 } from "../config-mutation";
 import { githubCredentialForLogin, soleGithubAccount, type GithubCredential } from "../github-auth";
 import { githubCredentialHelperCommand } from "../github-git-credential";
 import { homeDir } from "../paths";
 import { fetchWithTimeout } from "../shared/fetch-with-timeout";
+import { shellSafeDefaultBranch } from "../repo-branch";
 import type { RouteContext } from "./context";
-import { inspectRepo, repoIdFromName } from "./repo-inspection";
+import {
+  inspectRepo,
+  repoCurrentBranch,
+  repoHasBranch,
+  repoIdFromName,
+} from "./repo-inspection";
 
 /** Strict: this value reaches a spawn argv (always array-spawned, never a
  *  shell string — the regex is belt AND suspenders). */
@@ -38,11 +52,31 @@ export function validGithubFullName(value: unknown): value is string {
   return typeof value === "string" && GITHUB_FULL_NAME_RE.test(value);
 }
 
+/** After the shared shell/Markdown boundary check, let Git enforce the
+ * remaining ref grammar. */
+export async function normalizeDefaultBranch(value: unknown): Promise<string | null> {
+  const branch = shellSafeDefaultBranch(value);
+  if (!branch) return null;
+  const checked = Bun.spawn(["git", "check-ref-format", "--branch", branch], {
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  return (await checked.exited) === 0 ? branch : null;
+}
+
+async function normalizeInspectedDefaultBranch(value: unknown): Promise<string> {
+  const branch = await normalizeDefaultBranch(value);
+  if (branch) return branch;
+  throw new Error(
+    "Repository default branch may use only letters, numbers, '.', '_', '@', '%', '+', '=', ':', ',', '/', and '-'",
+  );
+}
+
 /**
  * The GitHub credential to act with for listing and cloning: the signed-in
  * user's stored token when web sign-in is active (operator mode), else the
- * single connected account in simple mode (soleGithubAccount — no authUser to
- * scope by there). Null falls back to the bot PAT / anonymous access.
+ * single connected account in simple mode (soleGithubAccount, no authUser to
+ * scope by there). Null falls back to the bot PAT or anonymous access.
  */
 function actingGithubCredential(ctx: RouteContext): GithubCredential | null {
   return (
@@ -389,17 +423,14 @@ async function registerGithubRepo(input: {
     // left by a previous install authenticates with the current credential.
     if (input.credential) await configureGithubCredentialHelper(dest);
     const inspected = adopted ?? (await inspectRepo(dest));
+    const defaultBranch = await normalizeInspectedDefaultBranch(inspected.defaultBranch);
     const config = rawConfig();
-    const repos = {
-      ...((config.repos && typeof config.repos === "object" && !Array.isArray(config.repos)
-        ? config.repos
-        : {}) as Record<string, RepoSection>),
-    };
+    const repos = reposForMutation(config) as Record<string, RepoSection>;
     const entry: RepoSection = {
       label: name,
       repo: inspected.path,
       wtPrefix: id,
-      defaultBranch: inspected.defaultBranch,
+      defaultBranch,
       ghRepo: inspected.ghRepo || input.fullName,
       ...(Object.keys(configuredRepos()).length === 0 ? { default: true } : {}),
     };
@@ -457,6 +488,15 @@ async function registerCodestorageRepo(input: {
     (err as any).status = 409;
     throw err;
   }
+  if (
+    Object.values(configuredRepos()).some(
+      (repo) => repo.host === "codestorage" && repo.csRepo === csRepo,
+    )
+  ) {
+    const err = new Error(`code.storage repository already registered: ${csRepo}`);
+    (err as any).status = 409;
+    throw err;
+  }
   const root = checkoutsRoot();
   const dest = `${root}/${id}`;
   const adopted = await adoptExistingCheckout(
@@ -471,17 +511,16 @@ async function registerCodestorageRepo(input: {
     // every configured code.storage repo).
     if (!adopted) await cloneCsCheckout(csRepo, dest);
     const inspected = adopted ?? (await inspectRepo(dest));
+    const defaultBranch = await normalizeInspectedDefaultBranch(
+      inspected.defaultBranch || resolved.default_branch || "main",
+    );
     const config = rawConfig();
-    const repos = {
-      ...((config.repos && typeof config.repos === "object" && !Array.isArray(config.repos)
-        ? config.repos
-        : {}) as Record<string, RepoSection>),
-    };
+    const repos = reposForMutation(config) as Record<string, RepoSection>;
     const entry: RepoSection = {
       label: name,
       repo: inspected.path,
       wtPrefix: id,
-      defaultBranch: inspected.defaultBranch || resolved.default_branch || "main",
+      defaultBranch,
       host: "codestorage",
       csRepo,
       ...(Object.keys(configuredRepos()).length === 0 ? { default: true } : {}),
@@ -501,6 +540,30 @@ async function registerCodestorageRepo(input: {
     if (!adopted) rmSync(dest, { recursive: true, force: true });
     throw error;
   }
+}
+
+/**
+ * `selfDev` was the first, instance-wide escape hatch for shared checkouts.
+ * Once someone edits one repository in the UI, preserve every repository's
+ * effective behavior as a per-repo `sharedCheckout` value and retire the
+ * global override. That makes later toggles independent without changing any
+ * repository the person did not touch.
+ */
+function migrateLegacySelfDev(
+  config: Record<string, unknown>,
+  resolvedRepos: Record<string, Repo>,
+): void {
+  if (config.selfDev === undefined) return;
+  const legacyIsolated = config.selfDev === "worktree";
+  const sections = reposForMutation(config, resolvedRepos);
+  for (const repo of Object.values(resolvedRepos)) {
+    if (!repo.sharedCheckout) continue;
+    const section = sections[repo.id];
+    if (section && typeof section === "object" && !Array.isArray(section)) {
+      (section as Record<string, unknown>).sharedCheckout = !legacyIsolated;
+    }
+  }
+  delete config.selfDev;
 }
 
 // ── Routes ───────────────────────────────────────────────────────────────────
@@ -651,6 +714,116 @@ export async function handleSetupRepoRoutes(
       return Response.json(
         { error: e instanceof Error ? e.message : String(e) },
         { status },
+      );
+    }
+  }
+
+  const updateMatch = path.match(/^\/api\/setup\/repos\/([^/]+)$/);
+  if (updateMatch && req.method === "PATCH") {
+    let id: string;
+    try {
+      id = decodeURIComponent(updateMatch[1]);
+    } catch {
+      return Response.json({ error: "Invalid repository id" }, { status: 400 });
+    }
+    if (["__proto__", "prototype", "constructor"].includes(id)) {
+      return Response.json({ error: "Invalid repository id" }, { status: 400 });
+    }
+
+    const body = (await req.json().catch(() => null)) as {
+      defaultBranch?: unknown;
+      isolatedWorktrees?: unknown;
+    } | null;
+    if (!body) {
+      return Response.json({ error: "expected a JSON body" }, { status: 400 });
+    }
+    const changesBranch = body.defaultBranch !== undefined;
+    const changesWorktrees = body.isolatedWorktrees !== undefined;
+    if (!changesBranch && !changesWorktrees) {
+      return Response.json({ error: "No repository setting provided" }, { status: 400 });
+    }
+    if (changesWorktrees && typeof body.isolatedWorktrees !== "boolean") {
+      return Response.json(
+        { error: "isolatedWorktrees must be a boolean" },
+        { status: 400 },
+      );
+    }
+    const defaultBranch = changesBranch
+      ? await normalizeDefaultBranch(body.defaultBranch)
+      : null;
+    if (changesBranch && !defaultBranch) {
+      return Response.json(
+        { error: "defaultBranch must be a shell-safe Git branch" },
+        { status: 400 },
+      );
+    }
+
+    const repos = configuredRepos();
+    if (!Object.hasOwn(repos, id)) {
+      return Response.json({ error: `Unknown repository: ${id}` }, { status: 404 });
+    }
+    const repo = repos[id];
+    if (defaultBranch && !(await repoHasBranch(repo.repo, defaultBranch))) {
+      return Response.json(
+        { error: `Branch not found on ${id}'s origin: ${defaultBranch}` },
+        { status: 400 },
+      );
+    }
+    if (defaultBranch && repo.sharedCheckout) {
+      const current = await repoCurrentBranch(repo.repo);
+      if (current !== defaultBranch) {
+        return Response.json(
+          {
+            error: `The shared checkout is on ${current || "a detached HEAD"}. Switch it to ${defaultBranch} before changing the default branch.`,
+          },
+          { status: 400 },
+        );
+      }
+    }
+
+    try {
+      const updated = await withConfigMutationLock(async () => {
+        const config = rawConfig();
+        if (changesWorktrees) migrateLegacySelfDev(config, repos);
+        const section = repoSectionForMutation(config, id);
+        if (!section) return null;
+        if (defaultBranch) section.defaultBranch = defaultBranch;
+        if (changesWorktrees) {
+          section.sharedCheckout = !(body.isolatedWorktrees as boolean);
+        }
+        persistRawConfig(config);
+        const result = {
+          id,
+          defaultBranch: defaultBranch || repo.defaultBranch,
+          isolatedWorktrees: changesWorktrees
+            ? (body.isolatedWorktrees as boolean)
+            : !repo.sharedCheckout || configuredSelfDev() === "worktree",
+        };
+        audit({ kind: "setup_repo_update", ...result });
+        return result;
+      });
+      if (!updated) {
+        return Response.json({ error: `Unknown repository: ${id}` }, { status: 404 });
+      }
+      if (defaultBranch && process.env.NODE_ENV !== "test") {
+        const [
+          { scheduleSandboxEnvironmentInvalidation },
+          { invalidateAskCheckoutRefresh },
+          { invalidatePreviewPoolDefaultBranch },
+        ] = await Promise.all([
+          import("../sandbox/environments"),
+          import("../worktree"),
+          import("../preview-pool"),
+        ]);
+        invalidateAskCheckoutRefresh(id);
+        scheduleSandboxEnvironmentInvalidation(id);
+        invalidatePreviewPoolDefaultBranch(id);
+      }
+      return Response.json(updated);
+    } catch (e) {
+      return Response.json(
+        { error: e instanceof Error ? e.message : String(e) },
+        { status: 400 },
       );
     }
   }
