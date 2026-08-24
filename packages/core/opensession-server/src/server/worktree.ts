@@ -609,15 +609,38 @@ export async function reviveWorktree(branch: string, repoId?: string): Promise<s
  * Explicit refspecs bypass the remote config. Found on a repo cloned
  * single-branch during node provisioning; `--unshallow` fixes depth, not this.
  */
+/**
+ * Git env that authenticates a server-side fetch/push against `ghRepo` with the
+ * App installation token (contents scope), so the code-mode PR worktrees below
+ * resolve on PRIVATE repos with no bot PAT. Empty when the App can't mint — a
+ * public repo fetches anonymously, and the injected env just re-passes the
+ * process env. The token is cached in github-app.ts, so this does not re-mint
+ * per call.
+ */
+async function gitAppCredentialEnv(
+  ghRepo: string | undefined,
+): Promise<Record<string, string>> {
+  if (!ghRepo) return {};
+  const { githubAppRepositoryToken } = await import("./github-app");
+  const { githubGitCredentialEnv } = await import("./github-git-credential");
+  const token = await githubAppRepositoryToken(ghRepo);
+  return token ? githubGitCredentialEnv(token) : {};
+}
+
 async function fetchBranchesWithTracking(
   gitDir: string,
+  ghRepo: string | undefined,
   ...branches: (string | undefined)[]
 ): Promise<void> {
   const specs = [...new Set(branches.filter((b): b is string => !!b))].map(
     (b) => `+refs/heads/${b}:refs/remotes/origin/${b}`,
   );
   if (specs.length === 0) return;
-  await $`git -C ${gitDir} fetch origin ${specs} --quiet`;
+  const env = await gitAppCredentialEnv(ghRepo);
+  await $`git -C ${gitDir} fetch origin ${specs} --quiet`.env({
+    ...process.env,
+    ...env,
+  });
 }
 
 /**
@@ -633,9 +656,11 @@ export async function createWorktreeForPrBranch(headRef: string, repoId?: string
   const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${headRef}-os`;
 
   const reused = await withGitLock(async () => {
-    await fetchBranchesWithTracking(repo.repo, headRef);
+    await fetchBranchesWithTracking(repo.repo, repo.ghRepo, headRef);
     if (existsSync(wtPath)) {
-      await $`git -C ${wtPath} fetch origin ${headRef} --quiet`.nothrow();
+      await $`git -C ${wtPath} fetch origin ${headRef} --quiet`
+        .env({ ...process.env, ...(await gitAppCredentialEnv(repo.ghRepo)) })
+        .nothrow();
       await $`git -C ${wtPath} reset --hard origin/${headRef}`.quiet().nothrow();
       return true;
     }
@@ -669,7 +694,7 @@ export async function createReviewWorktreeForPrHead(
   const repo = getRepo(repoId);
   const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${headRef}-os-review`;
   return withGitLock(async () => {
-    await fetchBranchesWithTracking(repo.repo, headRef, baseRef || repo.defaultBranch);
+    await fetchBranchesWithTracking(repo.repo, repo.ghRepo, headRef, baseRef || repo.defaultBranch);
     if (existsSync(wtPath)) {
       // A code session recovering from a deleted worktree may have borrowed this
       // path and switched it onto the source branch. Restore review ownership.

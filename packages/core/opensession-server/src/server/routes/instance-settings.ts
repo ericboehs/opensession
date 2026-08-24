@@ -106,11 +106,12 @@ async function githubOrganizationProfile(
 	ctx: RouteContext,
 	login: string,
 ): Promise<Response> {
+	const { githubToken } = await import("../github-app");
 	const tokens = [
 		ctx.authUser?.login
 			? githubCredentialForLogin(ctx.authUser.login)?.env.GH_TOKEN
 			: undefined,
-		process.env.GITHUB_API_TOKEN,
+		await githubToken(),
 	].filter((token): token is string => !!token);
 	const response = await fetchWithTimeout(
 		`https://api.github.com/orgs/${encodeURIComponent(login)}`,
