@@ -609,6 +609,8 @@ function GithubAppWizard({
   setSlug,
   secret,
   setSecret,
+  privateKey,
+  setPrivateKey,
   onSaveApp,
   saving,
   configured,
@@ -629,6 +631,8 @@ function GithubAppWizard({
   setSlug: (v: string) => void;
   secret: string;
   setSecret: (v: string) => void;
+  privateKey: string;
+  setPrivateKey: (v: string) => void;
   onSaveApp: (appOrg: string) => void;
   saving: boolean;
   configured: boolean;
@@ -891,10 +895,25 @@ function GithubAppWizard({
                   copy it (shown once). Required.
                 </span>
               </div>
-            </div>
-            <div className="text-meta leading-snug text-faint">
-              Ignore GitHub's “generate a private key” banner. Open Session uses
-              device flow and doesn't need one.
+              <div className="flex flex-col gap-1">
+                <label className="text-supporting text-fg">Private key (PEM)</label>
+                <textarea
+                  className={cn(settingsInputClass, "min-h-20 resize-y font-mono")}
+                  value={privateKey}
+                  onChange={(e) => setPrivateKey(e.target.value)}
+                  placeholder="-----BEGIN RSA PRIVATE KEY-----"
+                  aria-label="GitHub App private key (PEM)"
+                  autoCapitalize="none"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <span className="text-meta leading-snug text-faint">
+                  In <span className="text-dim">Private keys</span>, click{" "}
+                  <span className="text-dim">Generate a private key</span>, then paste
+                  the downloaded .pem here. Lets the bot and PR checks run on the App;
+                  leave blank for sign-in only.
+                </span>
+              </div>
             </div>
             <Modal.Footer>
               <Button
@@ -1022,6 +1041,7 @@ export function GithubAccounts({ personal = false }: { personal?: boolean } = {}
   const [appClientId, setAppClientId] = useState("");
   const [appSlug, setAppSlug] = useState("");
   const [appSecret, setAppSecret] = useState("");
+  const [appPrivateKey, setAppPrivateKey] = useState("");
   const [savingApp, setSavingApp] = useState(false);
   // The guided "create your app on GitHub, then paste + install + connect"
   // wizard, launched from the App option below.
@@ -1103,6 +1123,7 @@ export function GithubAccounts({ personal = false }: { personal?: boolean } = {}
     const clientId = appClientId.trim();
     const slug = appSlug.trim();
     const secret = appSecret.trim();
+    const privateKey = appPrivateKey.trim();
     // The secret is required: the device-flow token expires and is refreshed
     // with it, so without one the connection would stop after ~8h.
     if (!clientId || !slug || !secret) return;
@@ -1113,14 +1134,16 @@ export function GithubAccounts({ personal = false }: { personal?: boolean } = {}
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // An org owner also records the sign-in intent server-side; a blank org
-        // is a personal, single-user App.
-        body: JSON.stringify({ clientId, slug, secret, appOrg }),
+        // is a personal, single-user App. The private key is optional but is
+        // what lets the bot/agent and checks-read mint installation tokens.
+        body: JSON.stringify({ clientId, slug, secret, appOrg, privateKey }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
       setAppClientId("");
       setAppSlug("");
       setAppSecret("");
+      setAppPrivateKey("");
       // getConfig() re-reads on the file change, so the reload shows the App as
       // configured and switches the card to its device-flow connect.
       load();
@@ -1426,6 +1449,8 @@ export function GithubAccounts({ personal = false }: { personal?: boolean } = {}
           setSlug={setAppSlug}
           secret={appSecret}
           setSecret={setAppSecret}
+          privateKey={appPrivateKey}
+          setPrivateKey={setAppPrivateKey}
           onSaveApp={saveApp}
           saving={savingApp}
           configured={data.connectAvailable}
