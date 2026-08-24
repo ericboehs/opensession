@@ -7,8 +7,7 @@
  * fire-and-forget (GitHub's 10s webhook timeout).
  */
 import { listAutomations, fireAutomationsForEvent } from "../../server/automations";
-import { BOT_LOGIN } from "./github-rest";
-import { defaultRepo } from "../../server/config";
+import { defaultRepo, isGithubBotLogin } from "../../server/config";
 import {
   PR_EVENT_KEY,
   PR_MERGED_EVENT_KEY,
@@ -98,7 +97,7 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
     // push (auto-fix/simplify/mention commits land as a `synchronize`). We must not
     // react to those self-triggers — but we DO want to review PRs the bot *opens*
     // (e.g. automated security fixes). So apply the guard per-event below, not blanket.
-    const senderIsBot = !!payload?.sender?.login && payload.sender.login === BOT_LOGIN;
+    const senderIsBot = !!payload?.sender?.login && isGithubBotLogin(payload.sender.login);
 
     // @mention replies on PR comments (inline + conversation). Never react to our own
     // comments/reviews (mention.ts also re-checks the author + our hidden markers).

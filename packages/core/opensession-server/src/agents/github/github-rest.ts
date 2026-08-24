@@ -9,7 +9,7 @@
  * an installation token is short-lived and refreshes, unlike a static PAT.
  */
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
-import { defaultRepo, githubBotLogins, personaName } from "../../server/config";
+import { defaultRepo, githubBotLogins, isGithubBotLogin, personaName } from "../../server/config";
 import { githubAppConfigured, githubToken } from "../../server/github-app";
 import { ghRateLimited, isGhRateLimitMsg, noteGhRateLimited } from "../../server/github-limit";
 /** The PR agent's target — the instance's default repo (config-driven). */
@@ -416,7 +416,7 @@ export async function resolveReviewThread(threadId: string): Promise<boolean> {
 /** A thread the auto-fixer addressed: it left a "Fixed in <sha>" reply (not the root). */
 function threadWasFixed(t: ReviewThread): boolean {
   return t.comments.slice(1).some(
-    (c) => c.login === BOT_LOGIN && (c.body.includes(FIXED_REPLY_MARKER) || /(^|\s)fixed in\b/i.test(c.body)),
+    (c) => isGithubBotLogin(c.login) && (c.body.includes(FIXED_REPLY_MARKER) || /(^|\s)fixed in\b/i.test(c.body)),
   );
 }
 
@@ -440,7 +440,7 @@ export async function resolveAddressedThreads(
   let resolved = 0;
   for (const t of threads) {
     if (t.isResolved) continue;
-    const staleBot = alsoOutdatedBotThreads && t.isOutdated && t.rootAuthor === BOT_LOGIN;
+    const staleBot = alsoOutdatedBotThreads && t.isOutdated && isGithubBotLogin(t.rootAuthor);
     if (!threadWasFixed(t) && !staleBot) continue;
     if (await resolveReviewThread(t.id)) resolved++;
   }
@@ -519,7 +519,7 @@ export async function fetchReviewFindings(prNumber: number, ghRepo?: string): Pr
   for (const rv of reviews) {
     // Skip the agent's own short review boilerplate. Inline comments already
     // carry its findings.
-    if (rv.login === BOT_LOGIN && rv.body.trim().startsWith(`${personaName()} review`)) continue;
+    if (isGithubBotLogin(rv.login) && rv.body.trim().startsWith(`${personaName()} review`)) continue;
     const state = rv.state ? ` ${rv.state.toLowerCase().replace(/_/g, " ")}` : "";
     lines.push(`- [@${rv.login} review${state}] ${rv.body.replace(/\s+/g, " ").trim().slice(0, 600)}`);
   }

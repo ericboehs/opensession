@@ -54,13 +54,13 @@ Judge the diff against this stated goal: flag work that does not serve it (scope
  */
 export function prDiscussionSection(
   pr: Pick<PrDetails, "comments">,
-  botLogin: string,
+  isBot: (login: string) => boolean,
   reviewMarker: string,
 ): string {
   const humans = (pr.comments || []).filter(
     (c) =>
       c.author &&
-      c.author !== botLogin &&
+      !isBot(c.author) &&
       !c.body.includes(reviewMarker) &&
       c.body.trim(),
   );
@@ -84,10 +84,10 @@ export interface PriorFinding {
 }
 
 /** Human replies in a bot-rooted thread (excluding the bot's own follow-ups). */
-function humanReplies(t: ReviewThread, botLogin: string): string[] {
+function humanReplies(t: ReviewThread, isBot: (login: string) => boolean): string[] {
   return t.comments
     .slice(1)
-    .filter((c) => c.login && c.login !== botLogin && c.body.trim())
+    .filter((c) => c.login && !isBot(c.login) && c.body.trim())
     .map((c) => c.body);
 }
 
@@ -100,9 +100,9 @@ export function classifyPriorFindings(
   records: FeedbackRecord[],
   prNumber: number,
   threads: ReviewThread[],
-  botLogin: string,
+  isBot: (login: string) => boolean,
 ): PriorFinding[] {
-  const botThreads = threads.filter((t) => t.rootAuthor === botLogin);
+  const botThreads = threads.filter((t) => isBot(t.rootAuthor));
   const out: PriorFinding[] = [];
   for (const r of records) {
     if (r.pr !== prNumber || r.falseNegative || !r.title) continue;
@@ -112,7 +112,7 @@ export function classifyPriorFindings(
     let status: PriorFindingStatus;
     let reply: string | undefined;
     if (thread) {
-      const replies = humanReplies(thread, botLogin);
+      const replies = humanReplies(thread, isBot);
       if (replies.length && !thread.isResolved) {
         status = "pushback";
         reply = clip(replies[replies.length - 1], REPLY_CAP);
@@ -130,9 +130,9 @@ export function classifyPriorFindings(
 }
 
 /** Open inline threads started by human reviewers — their concerns, verbatim-ish. */
-export function openHumanThreadLines(threads: ReviewThread[], botLogin: string): string[] {
+export function openHumanThreadLines(threads: ReviewThread[], isBot: (login: string) => boolean): string[] {
   return threads
-    .filter((t) => t.rootAuthor && t.rootAuthor !== botLogin && !t.isResolved && t.comments[0]?.body.trim())
+    .filter((t) => t.rootAuthor && !isBot(t.rootAuthor) && !t.isResolved && t.comments[0]?.body.trim())
     .slice(0, MAX_HUMAN_THREADS)
     .map(
       (t) =>

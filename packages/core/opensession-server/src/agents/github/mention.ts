@@ -33,7 +33,7 @@ import {
 } from "./github-rest";
 import { PR_EVENT_KEY } from "./constants";
 import { classifyPrActionIntent } from "../slack/mention-intent";
-import { configuredIntegration, personaName } from "../../server/config";
+import { configuredIntegration, isGithubBotLogin, personaName } from "../../server/config";
 
 const configuredMentionHandles = configuredIntegration("github").mentionHandles;
 const defaultMentionHandles = [
@@ -81,7 +81,7 @@ export async function handleMention(kind: MentionKind, payload: any): Promise<vo
   if (!mentionsAgent(body)) return;
 
   const authorLogin: string = comment?.user?.login || "";
-  if (authorLogin === BOT_LOGIN) return; // the bot's own pushes' account
+  if (isGithubBotLogin(authorLogin)) return; // the bot's own pushes' account
 
   // Multi-repo: resolve which configured repo this comment belongs to; events
   // for unconfigured repos are dropped (mirrors the webhook gate).

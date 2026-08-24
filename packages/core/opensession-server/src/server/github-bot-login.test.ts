@@ -1,16 +1,20 @@
 // When the GitHub PR agent posts on the App installation token, its comments
-// are authored by "<app-slug>[bot]", not the bot PAT's login. githubBotLogins()
-// must list that identity so the agent recognises its own App-posted comments
-// as ours and never treats them as human replies to answer.
+// are authored by "<app-slug>[bot]", not the bot PAT's login. The agent must
+// recognise that identity as ours, from either the config slug or the env slug,
+// and identity checks must match ANY of our bot logins (App bot, PAT bot, policy
+// logins), not just the first — otherwise App-authored threads read as human.
 
 import { describe, test, expect, afterEach } from "bun:test";
 import { mkdtempSync, writeFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { githubBotLogins } from "./config";
+import { githubBotLogins, isGithubBotLogin } from "./config";
 
-const savedConfig = process.env.OPENSESSION_CONFIG;
-const savedBotLogin = process.env.GITHUB_BOT_LOGIN;
+const saved = {
+	config: process.env.OPENSESSION_CONFIG,
+	botLogin: process.env.GITHUB_BOT_LOGIN,
+	appSlug: process.env.OPENSESSION_GITHUB_APP_SLUG,
+};
 const dirs: string[] = [];
 
 // The loader caches by path+mtime, so each case gets a fresh path.
@@ -21,13 +25,15 @@ function withConfig(obj: unknown): void {
 	writeFileSync(path, JSON.stringify(obj));
 	process.env.OPENSESSION_CONFIG = path;
 	delete process.env.GITHUB_BOT_LOGIN;
+	delete process.env.OPENSESSION_GITHUB_APP_SLUG;
 }
 
 afterEach(() => {
-	if (savedConfig === undefined) delete process.env.OPENSESSION_CONFIG;
-	else process.env.OPENSESSION_CONFIG = savedConfig;
-	if (savedBotLogin === undefined) delete process.env.GITHUB_BOT_LOGIN;
-	else process.env.GITHUB_BOT_LOGIN = savedBotLogin;
+	const restore = (k: string, v: string | undefined) =>
+		v === undefined ? delete process.env[k] : (process.env[k] = v);
+	restore("OPENSESSION_CONFIG", saved.config);
+	restore("GITHUB_BOT_LOGIN", saved.botLogin);
+	restore("OPENSESSION_GITHUB_APP_SLUG", saved.appSlug);
 	for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
@@ -37,8 +43,39 @@ describe("githubBotLogins with a GitHub App", () => {
 		expect(githubBotLogins()).toContain("open-session-v6a6[bot]");
 	});
 
+	test("resolves the slug from the env with precedence over config", () => {
+		withConfig({ integrations: { github: { appSlug: "config-slug" } } });
+		process.env.OPENSESSION_GITHUB_APP_SLUG = "env-slug";
+		expect(githubBotLogins()).toContain("env-slug[bot]");
+		expect(githubBotLogins()).not.toContain("config-slug[bot]");
+	});
+
+	test("resolves the slug from the env even with no config slug", () => {
+		withConfig({ integrations: { github: {} } });
+		process.env.OPENSESSION_GITHUB_APP_SLUG = "env-only";
+		expect(githubBotLogins()).toContain("env-only[bot]");
+	});
+
 	test("no App slug configured contributes no App bot login", () => {
 		withConfig({ integrations: { github: {} } });
 		expect(githubBotLogins()).toEqual([]);
+	});
+});
+
+describe("isGithubBotLogin", () => {
+	test("matches any of our bot logins, not just the first", () => {
+		withConfig({
+			policy: { githubBotLogins: ["acme-automation"] },
+			integrations: { github: { appSlug: "open-session-v6a6" } },
+		});
+		// Both are ours — the PAT bot login (first) and the App bot (appended).
+		expect(isGithubBotLogin("acme-automation")).toBe(true);
+		expect(isGithubBotLogin("open-session-v6a6[bot]")).toBe(true);
+		// Case-insensitive.
+		expect(isGithubBotLogin("Open-Session-v6a6[bot]")).toBe(true);
+		// A human is not ours.
+		expect(isGithubBotLogin("some-human")).toBe(false);
+		expect(isGithubBotLogin("")).toBe(false);
+		expect(isGithubBotLogin(null)).toBe(false);
 	});
 });

@@ -10,6 +10,7 @@ import {
 } from "./review-context";
 
 const BOT = "tella-butler";
+const isBot = (l: string) => l === BOT;
 const MARKER = "<!-- os-review -->";
 
 function rec(overrides: Partial<FeedbackRecord> = {}): FeedbackRecord {
@@ -62,7 +63,7 @@ describe("prDiscussionSection", () => {
           { author: "alice", body: "The flaky test is known, ignore it" },
         ],
       },
-      BOT,
+      isBot,
       MARKER,
     );
     expect(s).toContain("The flaky test is known");
@@ -71,7 +72,7 @@ describe("prDiscussionSection", () => {
   });
 
   test("empty without human comments", () => {
-    expect(prDiscussionSection({ comments: [{ author: BOT, body: "bot" }] }, BOT, MARKER)).toBe("");
+    expect(prDiscussionSection({ comments: [{ author: BOT, body: "bot" }] }, isBot, MARKER)).toBe("");
   });
 });
 
@@ -93,7 +94,7 @@ describe("classifyPriorFindings", () => {
       }),
       thread({ path: "src/c.ts", comments: [{ login: BOT, body: "**P2** — Missing await" }] }),
     ];
-    const out = classifyPriorFindings(records, 42, threads, BOT);
+    const out = classifyPriorFindings(records, 42, threads, isBot);
     expect(out.map((f) => f.status)).toEqual(["addressed", "pushback", "open"]);
     expect(out[1].reply).toContain("intentional");
   });
@@ -107,7 +108,7 @@ describe("classifyPriorFindings", () => {
       ],
       42,
       [],
-      BOT,
+      isBot,
     );
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({ status: "addressed", title: "Old finding" });
@@ -145,7 +146,7 @@ describe("openHumanThreadLines", () => {
         thread({ rootAuthor: "bob", comments: [{ login: "bob", body: "why sync here?" }] }),
         thread({ rootAuthor: "bob", isResolved: true, comments: [{ login: "bob", body: "resolved one" }] }),
       ],
-      BOT,
+      isBot,
     );
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("why sync here?");
