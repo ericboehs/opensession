@@ -195,7 +195,8 @@ enum ServerEvent: Sendable {
                     requestId: requestId,
                     status: status,
                     channel: channel,
-                    permalink: frame.permalink
+                    permalink: frame.permalink,
+                    ts: frame.ts
                 )
             )
         case "workflow_update":
@@ -261,6 +262,22 @@ struct SlackComposeReceipt: Equatable, Sendable, Identifiable {
     let status: Status
     let channel: Channel?
     let permalink: String?
+    /// Slack's message timestamp. Older servers omit it, so Undo stays unavailable.
+    let ts: String?
+
+    init(
+        requestId: String,
+        status: Status,
+        channel: Channel?,
+        permalink: String?,
+        ts: String? = nil
+    ) {
+        self.requestId = requestId
+        self.status = status
+        self.channel = channel
+        self.permalink = permalink
+        self.ts = ts
+    }
 
     var id: String { requestId }
 }
@@ -457,6 +474,7 @@ private struct RawFrame: Decodable {
     let status: String?
     let channel: WireSlackChannel?
     let permalink: String?
+    let ts: String?
     let run: WorkflowRun?
     let repo: String?
     let branch: String?

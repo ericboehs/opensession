@@ -21,6 +21,8 @@ enum SlackAPI {
         let status: String
         let channel: Channel?
         let permalink: String?
+        /// Optional for compatibility with servers predating sent-message Undo.
+        let ts: String?
     }
 
     private struct UploadResponse: Decodable, Sendable {
@@ -128,6 +130,15 @@ enum SlackAPI {
             ]
         )
         return try JSONDecoder().decode(ComposerResponse.self, from: data)
+    }
+
+    static func undoComposer(sessionId: String, channelId: String, ts: String) async throws {
+        let session = encodePath(sessionId)
+        _ = try await request(
+            "/api/sessions/\(session)/slack-composer/undo",
+            method: "POST",
+            body: ["channel": channelId, "ts": ts]
+        )
     }
 
     static func cancelComposer(sessionId: String, requestId: String) async throws {

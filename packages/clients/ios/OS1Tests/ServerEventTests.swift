@@ -194,8 +194,8 @@ final class ServerEventTests: XCTestCase {
         }
     }
 
-    func testSlackComposerSentReceiptDecodesDestinationAndPermalink() {
-        let json = #"{"type":"slack_composer_resolved","sessionId":"bks-1","requestId":"slack-1","status":"sent","channel":{"id":"C123","name":"shipping"},"permalink":"https://tella.slack.com/archives/C123/p1700000000000000"}"#
+    func testSlackComposerSentReceiptDecodesDestinationPermalinkAndTimestamp() {
+        let json = #"{"type":"slack_composer_resolved","sessionId":"bks-1","requestId":"slack-1","status":"sent","channel":{"id":"C123","name":"shipping"},"permalink":"https://tella.slack.com/archives/C123/p1700000000000000","ts":"1700000000.000000"}"#
         guard case .slackComposerResolved(let sessionId, let receipt) = parse(json) else {
             return XCTFail("expected .slackComposerResolved")
         }
@@ -207,6 +207,16 @@ final class ServerEventTests: XCTestCase {
             receipt.permalink,
             "https://tella.slack.com/archives/C123/p1700000000000000"
         )
+        XCTAssertEqual(receipt.ts, "1700000000.000000")
+    }
+
+    func testOlderSlackComposerSentReceiptDecodesWithoutTimestamp() {
+        guard case .slackComposerResolved(_, let receipt) = parse(
+            #"{"type":"slack_composer_resolved","sessionId":"bks-1","requestId":"slack-old","status":"sent","channel":{"id":"C123","name":"shipping"}}"#
+        ) else {
+            return XCTFail("expected .slackComposerResolved")
+        }
+        XCTAssertNil(receipt.ts)
     }
 
     func testSlackComposerCancelledReceiptDecodesWithoutDestination() {

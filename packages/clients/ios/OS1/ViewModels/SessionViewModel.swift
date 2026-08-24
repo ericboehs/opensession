@@ -92,6 +92,9 @@ final class SessionViewModel {
     private(set) var replySuggestions: [ReplySuggestion] = []
     private(set) var pendingSlackComposer: SlackComposeRequest?
     private(set) var slackComposeReceipt: SlackComposeReceipt?
+    /// The request id currently being removed from Slack. Keeping the receipt
+    /// visible while this is set makes a failed Undo recoverable.
+    private(set) var undoingSlackComposeReceiptId: String?
     private(set) var connectionState: ConnectionState = .connecting
     private(set) var isLoadingConversation = true
     /// A watch that never receives transcript_init is not a loading state
@@ -130,6 +133,34 @@ final class SessionViewModel {
         slackComposeReceipt = receipt
     }
 
+    /// Delete the sent message with the same person's Slack grant. The receipt
+    /// disappears only after success, so a rejected request can be retried.
+    func undoSlackComposeReceipt() async {
+        guard let receipt = slackComposeReceipt,
+              receipt.status == .sent,
+              let channelId = receipt.channel?.id,
+              let ts = receipt.ts,
+              undoingSlackComposeReceiptId == nil
+        else { return }
+
+        undoingSlackComposeReceiptId = receipt.requestId
+        defer {
+            if undoingSlackComposeReceiptId == receipt.requestId {
+                undoingSlackComposeReceiptId = nil
+            }
+        }
+        do {
+            try await slackComposerUndoer(session.id, channelId, ts)
+            if slackComposeReceipt?.requestId == receipt.requestId {
+                slackComposeReceipt = nil
+            }
+            notice = "Removed from Slack"
+        } catch {
+            notice = (error as? LocalizedError)?.errorDescription
+                ?? error.localizedDescription
+        }
+    }
+
     // ── Pull request ──
     /// PR details for the session's branch (toolbar chip + PR panel).
     /// nil until the first fetch lands — the chip falls back to the sessions
@@ -141,6 +172,7 @@ final class SessionViewModel {
     private var prTask: Task<Void, Never>?
     private var prLoadGeneration = 0
     private let prLoader: @MainActor (String) async throws -> PrDetails?
+    private let slackComposerUndoer: @MainActor (String, String, String) async throws -> Void
     private var notesTask: Task<Void, Never>?
 
     // ── Workflow runs ──
@@ -406,6 +438,9 @@ final class SessionViewModel {
         prLoader: @escaping @MainActor (String) async throws -> PrDetails? = {
             try await OS1API.pr(sessionId: $0)
         },
+        slackComposerUndoer: @escaping @MainActor (String, String, String) async throws -> Void = {
+            try await SlackAPI.undoComposer(sessionId: $0, channelId: $1, ts: $2)
+        },
         workflowLoader: @escaping @MainActor (String) async throws -> [WorkflowRun] = {
             try await OS1API.workflowRuns(sessionId: $0)
         }
@@ -415,6 +450,7 @@ final class SessionViewModel {
         self.outbox = outbox
         self.conversationLoadTimeout = conversationLoadTimeout
         self.prLoader = prLoader
+        self.slackComposerUndoer = slackComposerUndoer
         self.workflowLoader = workflowLoader
         self.isRunning = session.isRunning ?? false
         self.usage = session.usage
