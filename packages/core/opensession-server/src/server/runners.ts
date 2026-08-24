@@ -12,6 +12,12 @@ import { existsSync, readFileSync } from "fs";
 import { randomUUIDv7 } from "bun";
 import { statePath } from "./paths";
 import { writeJsonAtomic } from "./shared/atomic-write";
+import {
+	isTailnetAddress,
+	normalizeAddress,
+} from "./shared/network-address";
+
+export { isTailnetAddress, normalizeAddress } from "./shared/network-address";
 
 export type RunnerPlatform = "darwin" | "linux" | "win32";
 export type RunnerState = "online" | "busy" | "offline" | "maintenance";
@@ -223,22 +229,6 @@ function normalizeRunner(value: Runner): Runner {
 
 function hashToken(token: string): string {
 	return createHash("sha256").update(token).digest("hex");
-}
-
-export function normalizeAddress(address: string): string {
-	let ip = (address || "").trim();
-	if (ip.startsWith("::ffff:")) ip = ip.slice(7);
-	const lastColon = ip.lastIndexOf(":");
-	if (lastColon > 0 && ip.indexOf(":") === lastColon) ip = ip.slice(0, lastColon);
-	return ip;
-}
-
-/** Tailscale CGNAT plus loopback for a self-hosted single-box installation. */
-export function isTailnetAddress(address: string): boolean {
-	const ip = normalizeAddress(address);
-	if (ip === "127.0.0.1" || ip === "::1") return true;
-	const octets = ip.split(".").map(Number);
-	return octets.length === 4 && octets.every((n) => Number.isInteger(n) && n >= 0 && n <= 255) && octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127;
 }
 
 const g = globalThis as Record<string, unknown>;

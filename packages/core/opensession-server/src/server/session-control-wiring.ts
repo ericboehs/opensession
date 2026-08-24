@@ -25,7 +25,7 @@ import { SESSION_EFFORTS, type SessionEffort, providerFor, resolveModel } from "
 import { configuredInteractiveDefaultModel } from "./model-catalog";
 import { deliveryQueueState, durableQueueItem, liftUserStop, promptQueues, acceptQueuedSteer, prepareQueuedSteer, rejectQueuedSteer, requeueSteerReceipts, stoppedSessions } from "./queue-state";
 import { drainQueue, enqueuePrompt, runSessionPrompt, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
-import { parseImageDataUrls, stageFileAttachments, withUploadsNote } from "./uploads";
+import { creationAttachmentPath, parseImageDataUrls, prepareCreationAttachmentSources, withUploadsNote } from "./uploads";
 import { type Sandbox } from "./sandbox";
 import { isRemoteSandboxProvider, resolveRequestedSandbox } from "./sandbox/config";
 import { resolveInteractiveSandbox } from "./sandbox/defaults";
@@ -38,7 +38,7 @@ import {
 	type SessionSummary,
 	registerSessionControl,
 } from "./session-control";
-import { type ResolvedCreate, forkHandoffContext, runOpeningCreateOnce, resolveForkContext, resolvePinnedAccountId } from "./session-create";
+import { type ResolvedCreate, actorCreationSetupPlan, forkHandoffContext, runOpeningCreateOnce, resolveForkContext, resolvePinnedAccountId, waitForCreatedSessionProjection } from "./session-create";
 import { resolveSessionRepoContext, workspaceOwningWorktree } from "./session-repos";
 import { engineUserTexts, getAllSessions, mergedSessionTranscript } from "./sessions";
 import { rebuildIndex } from "./slack-links";
@@ -50,8 +50,9 @@ import { ensureAskCheckout, ensureScratchDir, getRepo, isRegisteredWorktree, lis
 import { broadcastToSession } from "./ws-hub";
 import { randomUUIDv7 } from "bun";
 import {
-	ensureCreationPlanned,
 	legacyGatewayEffect,
+	patchCreationSetupPlan,
+	requestCreationAttachment,
 	requestCreationBranch,
 	requestCreationCredential,
 	requestCreationWorkspace,
@@ -66,8 +67,7 @@ import {
 	clearCreatePlan,
 	createPlanWorkspaceId,
 	restoreResolvedCreate,
-	snapshotResolvedCreate,
-	updateCreatePlan,
+	snapshotOpeningCreate,
 } from "./session-create-plan";
 import {
 	githubCredentialForLogin,
@@ -407,27 +407,14 @@ registerSessionControl({
 		const requestId = input.requestId || randomUUIDv7();
 		const actorScope = input.requestScope || input.user || "automation";
 		const requestedId = input.id || sessionIdForRequest(actorScope, requestId);
-		const commandOwner = requestedId;
 		const ownedInput: CreateSessionOpts = {
 			...input,
 			id: requestedId,
 			requestId,
 		};
-		if (!sessionKernelOwnsCurrentCommand(commandOwner)) {
-			const identity = new Bun.CryptoHasher("sha256")
-				.update(canonicalCommandPayload(ownedInput))
-				.digest("hex");
-			const accepted = await sessionKernel(commandOwner).dispatchLegacy(
-				legacyGatewayEffect("create_session", {
-					requestId,
-					payload: { targetId: requestedId, identity },
-					source: "session_control",
-					replaySafe: true,
-				}),
-				() => getSessionControl().createSession(ownedInput),
-			);
-			return accepted.result;
-		}
+		// The creation FSM below is the durable/idempotent owner. Do not put a
+		// second create_session command around it: the outer command would wait for
+		// projection while the opening effect waits for its session-file command.
 		const {
 			prompt,
 			branch,
@@ -455,8 +442,33 @@ registerSessionControl({
 		const createIdentity = new Bun.CryptoHasher("sha256")
 			.update(canonicalCommandPayload(ownedInput))
 			.digest("hex");
-		let createPlan = updateCreatePlan(bksId, createIdentity);
-		const completedCreate = findSession(requestedId);
+		const durableCreation = sessionKernel(bksId).creationState();
+		if (durableCreation && durableCreation.identity !== createIdentity)
+			throw new Error("Create request identity crossed durable session ownership");
+		let completedCreate = findSession(requestedId);
+		if (
+			durableCreation?.state === "opening_dispatched" ||
+			durableCreation?.state === "ready" ||
+			durableCreation?.state === "failed"
+		) {
+			completedCreate = await waitForCreatedSessionProjection(
+				bksId,
+				createIdentity,
+			);
+			if (durableCreation.state === "ready") clearCreatePlan(bksId);
+			return {
+				id: bksId,
+				createdBy:
+					completedCreate.createdBy ||
+					completedCreate.startedBy ||
+					user ||
+					"Anonymous",
+				createdAt:
+					completedCreate.createdAt ||
+					new Date(durableCreation.updatedAt).toISOString(),
+			};
+		}
+		let createPlan = actorCreationSetupPlan(bksId, createIdentity);
 		if (
 			completedCreate?.claudeSessionId ||
 			completedCreate?.codexThreadId
@@ -468,7 +480,6 @@ registerSessionControl({
 				createdAt: completedCreate.createdAt || new Date().toISOString(),
 			};
 		}
-		ensureCreationPlanned(bksId, createIdentity);
 		// Fork: branch a new session off an existing one — same rules as the
 		// web create (shares the source's cwd/branch/model; Claude sources are
 		// cloned via SDK forkSession, others get a transcript handoff). An
@@ -644,7 +655,7 @@ registerSessionControl({
 					else {
 						sessionBranch = await branchNameFromPrompt(prompt);
 						sessionBranch = await resolveUniqueBranch(sessionBranch, repo.id);
-						createPlan = updateCreatePlan(bksId, createIdentity, {
+						createPlan = patchCreationSetupPlan(bksId, createIdentity, {
 							branch: sessionBranch,
 						});
 					}
@@ -771,7 +782,7 @@ registerSessionControl({
 				const plannedWorkspaceId =
 					createPlan.workspaceId || createPlanWorkspaceId(bksId);
 				if (!createPlan.workspaceId)
-					createPlan = updateCreatePlan(bksId, createIdentity, {
+					createPlan = patchCreationSetupPlan(bksId, createIdentity, {
 						workspaceId: plannedWorkspaceId,
 					});
 				const branchForWs = wsParent?.branch || sessionBranch;
@@ -817,9 +828,28 @@ registerSessionControl({
 		// prompts on existing sessions — this create path bypasses
 		// runSessionPromptInner.
 		const createMentionsNote = sessionMentionsNote(prompt);
+		const attachmentSources =
+			createPlan.attachments ?? prepareCreationAttachmentSources(bksId, rawFiles);
+		if (!createPlan.attachments && attachmentSources.length)
+			createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+				attachments: attachmentSources,
+			});
+		for (const attachment of attachmentSources)
+			await requestCreationAttachment({
+				sessionId: bksId,
+				identity: createIdentity,
+				...attachment,
+			});
 		let openingPrompt = withUploadsNote(
 			prompt,
-			stageFileAttachments(bksId, rawFiles),
+			attachmentSources.map((attachment) => ({
+				name: attachment.name,
+				path: creationAttachmentPath(
+					bksId,
+					attachment.attachmentId,
+					attachment.name,
+				),
+			})),
 		);
 		if (createMentionsNote) openingPrompt += `
 
@@ -997,10 +1027,8 @@ ${createMentionsNote}`;
 				}
 			: computedSpec;
 		if (!createPlan.resolved) {
-			const { images: _images, materializeWorktree: _materialize, ...durable } =
-				computedSpec;
-			createPlan = updateCreatePlan(bksId, createIdentity, {
-				resolved: snapshotResolvedCreate(durable),
+			createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+				resolved: snapshotOpeningCreate(computedSpec),
 			});
 		}
 
@@ -1025,7 +1053,11 @@ ${createMentionsNote}`;
 					resolve({
 						id: bksId,
 						createdBy: existing?.createdBy || user || "Anonymous",
-						createdAt: existing?.createdAt || createPlan.createdAt,
+						createdAt:
+							existing?.createdAt ||
+							new Date(
+								sessionKernel(bksId).creationState()?.updatedAt ?? Date.now(),
+							).toISOString(),
 					});
 					return;
 				}

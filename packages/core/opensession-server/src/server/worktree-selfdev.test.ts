@@ -7,9 +7,11 @@ import {
   createWorktree,
   ensureAskCheckout,
   getRepo,
+  invalidateAskCheckoutRefresh,
   isSharedCheckoutDir,
   prepareAttachedWorktree,
   sharedCheckoutForNewSessions,
+  withGitLock,
   worktreePathFor,
 } from "./worktree";
 
@@ -134,6 +136,101 @@ describe("selfDev absent/shared — byte-identical current behavior", () => {
     expect(worktreePathFor("feat-x")).toBe(OPENSESSION_ROOT);
     expect(await createWorktree("feat-x")).toBe(OPENSESSION_ROOT);
     expect(await ensureAskCheckout()).toBe(OPENSESSION_ROOT);
+  });
+});
+
+describe("Ask checkout default branch invalidation", () => {
+  let sequence = 0;
+
+  function setupAskRepo() {
+    const dir = mkdtempSync(join(tmpdir(), "bks-ask-checkout-test-"));
+    dirs.push(dir);
+    const repoId = `app-${++sequence}`;
+    const repo = join(dir, "repo");
+    const remote = join(dir, "remote.git");
+    const worktrees = join(dir, "worktrees");
+    const config = join(dir, "config.json");
+    const git = (...args: string[]) => {
+      expect(Bun.spawnSync(["git", ...args]).exitCode).toBe(0);
+    };
+
+    git("init", "-q", "-b", "main", repo);
+    writeFileSync(join(repo, "README.md"), "main\n");
+    git("-C", repo, "add", "README.md");
+    git(
+      "-C", repo,
+      "-c", "user.name=Test",
+      "-c", "user.email=test@example.com",
+      "commit", "-q", "-m", "main",
+    );
+    git("-C", repo, "checkout", "-q", "-b", "release");
+    writeFileSync(join(repo, "README.md"), "release\n");
+    git("-C", repo, "add", "README.md");
+    git(
+      "-C", repo,
+      "-c", "user.name=Test",
+      "-c", "user.email=test@example.com",
+      "commit", "-q", "-m", "release",
+    );
+    git("-C", repo, "checkout", "-q", "main");
+    git("init", "-q", "--bare", remote);
+    git("-C", repo, "remote", "add", "origin", remote);
+    git("-C", repo, "push", "-q", "-u", "origin", "main", "release");
+
+    const writeConfig = (defaultBranch: string) => {
+      writeFileSync(
+        config,
+        JSON.stringify({
+          paths: { worktreesDir: worktrees },
+          repos: {
+            [repoId]: { repo, wtPrefix: repoId, defaultBranch, default: true },
+          },
+        }),
+      );
+      process.env.OPENSESSION_CONFIG = config;
+    };
+    const branchHead = (dir: string, branch: string) =>
+      Bun.spawnSync(["git", "-C", dir, "rev-parse", branch]).stdout.toString().trim();
+
+    return { branchHead, repo, repoId, writeConfig };
+  }
+
+  test("waits for the checkout to move to the new default before returning", async () => {
+    const { branchHead, repo, repoId, writeConfig } = setupAskRepo();
+    writeConfig("main");
+    const askDir = await ensureAskCheckout(repoId);
+    expect(branchHead(askDir, "HEAD")).toBe(branchHead(repo, "origin/main"));
+
+    writeConfig("release");
+    invalidateAskCheckoutRefresh(repoId);
+    expect(await ensureAskCheckout(repoId)).toBe(askDir);
+    expect(branchHead(askDir, "HEAD")).toBe(branchHead(repo, "origin/release"));
+  });
+
+  test("applies an invalidation queued while another call creates the checkout", async () => {
+    const { branchHead, repo, repoId, writeConfig } = setupAskRepo();
+    writeConfig("main");
+
+    let releaseLock!: () => void;
+    let enteredLock!: () => void;
+    const entered = new Promise<void>((resolve) => (enteredLock = resolve));
+    const blocked = new Promise<void>((resolve) => (releaseLock = resolve));
+    const blocker = withGitLock(async () => {
+      enteredLock();
+      await blocked;
+    });
+    await entered;
+
+    const creating = ensureAskCheckout(repoId);
+    writeConfig("release");
+    invalidateAskCheckoutRefresh(repoId);
+    const afterChange = ensureAskCheckout(repoId);
+    releaseLock();
+    await blocker;
+
+    const askDir = await creating;
+    expect(await afterChange).toBe(askDir);
+    expect(branchHead(askDir, "HEAD")).toBe(branchHead(repo, "origin/release"));
   });
 });
 

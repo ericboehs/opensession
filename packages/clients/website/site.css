@@ -31,14 +31,12 @@
 	--card: #fafafb;
 	--line: rgba(var(--ink-rgb), 0.06);
 	--muted: #787878;
-	/* The product's accent with more chroma, so the one filled control on the
-	   page carries some voltage: the app's own #1f82bb reads muted at this size
-	   on white. The life comes from saturation rather than lightness, which is
-	   what keeps the label readable. The foot is the darker of the pair on
-	   purpose, so white gains contrast as the fill deepens: 4.2:1 on the top
-	   stop, 5.1:1 at the foot. */
+	/* Blue remains the setup flow's link accent. The landing page's one filled
+	   ask uses the field's acid yellow instead, so it is distinct from both the
+	   cobalt ground and the neutral product stage. */
 	--accent-blue: #1280cf;
-	--accent-blue-deep: #0f72b9;
+	--cta-yellow: #f2e137;
+	--cta-yellow-deep: #e8d51f;
 	/* Corner treatment. A superellipse hugs the corner tighter than a circular
 	   arc, so a browser that can draw one carries a larger radius: every corner
 	   here is authored at its circular value and multiplied by --rf, and the
@@ -110,9 +108,44 @@ summary:focus-visible {
 	outline-offset: 3px;
 }
 
+/* ── The field ───────────────────────────────────────────────────────── */
+
+/* The marbled ground the whole page sits on. Fixed rather than in flow, so
+   scrolling composites one already-painted layer instead of re-running the
+   turbulence filter, and the page reads as one continuous surface rather than
+   a stack of panels. */
+.field {
+	position: fixed;
+	z-index: 0;
+	inset: 0;
+	overflow: hidden;
+	/* The deepest blue in the palette, so an overscroll or a frame drawn before
+	   the paint lands never flashes the page white. */
+	background: #0b1a44;
+	pointer-events: none;
+}
+
+.field-paint,
+.field-grain {
+	position: absolute;
+	inset: 0;
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+/* Canvas grain over the bands. Overlay keeps it reading as tooth in the paint
+   rather than as a grey veil on top of it. */
+.field-grain {
+	opacity: 0.3;
+	mix-blend-mode: overlay;
+}
+
 /* ── The page: a rail that stays, a feed that scrolls ─────────────────── */
 
 .shell {
+	position: relative;
+	z-index: 1;
 	display: grid;
 	width: min(100% - 96px, 1400px);
 	margin-inline: auto;
@@ -126,6 +159,12 @@ summary:focus-visible {
    the bottom, which is what keeps the ask on screen at every scroll position
    without a floating bar. */
 .rail {
+	/* The rail sits directly on the field, so its ink flips to cream and every
+	   hairline and wash on it switches channel with one token. Nothing here
+	   depends on the colour scheme: the field is the same in both. */
+	--ink: #f4efe6;
+	--muted: rgba(244, 239, 230, 0.66);
+	--ink-rgb: 255, 255, 255;
 	display: flex;
 	position: sticky;
 	top: 0;
@@ -161,6 +200,7 @@ summary:focus-visible {
 	font-weight: 600;
 	letter-spacing: -0.012em;
 	line-height: 1.12;
+	text-shadow: 0 1px 16px rgba(3, 10, 40, 0.5);
 	text-wrap: balance;
 }
 
@@ -191,6 +231,9 @@ summary:focus-visible {
 	color: var(--muted);
 	font-size: 14px;
 	line-height: 1.5;
+	text-shadow:
+		0 1px 2px rgba(3, 10, 40, 0.55),
+		0 1px 14px rgba(3, 10, 40, 0.45);
 }
 
 
@@ -203,12 +246,23 @@ summary:focus-visible {
 
 /* ── Cards ───────────────────────────────────────────────────────────── */
 
+/* Near-white on the field, with just enough blur to let the bands bleed
+   through the edge. The ink tokens are re-declared locally rather than
+   inherited, because the page keeps one appearance in both colour schemes and
+   the tokens at :root still serve the setup page. */
 .card {
+	--ink: #0a0a0a;
+	--muted: #5c5f66;
+	--ink-rgb: 0, 0, 0;
+	--line: rgba(0, 0, 0, 0.08);
 	padding: 34px;
-	border: 1px solid var(--line);
+	border: 1px solid rgba(255, 255, 255, 0.6);
 	border-radius: calc(28px * var(--rf));
 	corner-shape: var(--cs);
-	background: var(--card);
+	background: rgba(255, 255, 255, 0.93);
+	backdrop-filter: blur(6px) saturate(115%);
+	color: var(--ink);
+	box-shadow: 0 24px 60px rgba(4, 14, 50, 0.18);
 }
 
 .card h2 {
@@ -255,11 +309,13 @@ summary:focus-visible {
 	height: 100%;
 }
 
+/* Silver Silk stays neutral against the marbled field while adding the gentle
+   movement the static wash was missing. The gradient is its first-paint and
+   reduced-motion fallback. */
 .gradient-fallback {
 	background:
-		radial-gradient(circle at 26% 16%, #eceae4 0, transparent 40%),
-		radial-gradient(circle at 74% 34%, #dedcd6 0, transparent 44%),
-		linear-gradient(145deg, #d9d7d1 0%, #cdcbc6 52%, #b8b6b2 100%);
+		radial-gradient(circle at 28% 14%, #f2f3f5 0, transparent 44%),
+		linear-gradient(150deg, #e6e7ea 0%, #d8dade 54%, #c8cad0 100%);
 }
 
 .hero-video {
@@ -502,7 +558,7 @@ summary:focus-visible {
 	justify-content: flex-end;
 	gap: 8px;
 	padding: 2px 6px;
-	color: rgba(var(--ink-rgb), 0.38);
+	color: rgba(244, 239, 230, 0.55);
 	font-size: 13px;
 }
 
@@ -528,35 +584,36 @@ summary:focus-visible {
 	transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), filter 160ms ease;
 }
 
-/* The filled control uses the product's blue at the top edge, shading one
-   step deeper at the foot. Still no cast shadow, which is what used to make it
-   read as a marketing badge; the relief comes from the fill itself plus the
-   lit top edge. */
+/* Acid yellow is the one non-field colour allowed to shout. A shallow shade
+   at the foot gives the control relief without adding another cast shadow. */
 .button-primary {
 	border: 0;
-	background-color: var(--accent-blue);
+	background-color: var(--cta-yellow);
 	background-image: linear-gradient(
 		180deg,
-		var(--accent-blue) 0%,
-		var(--accent-blue-deep) 100%
+		var(--cta-yellow) 0%,
+		var(--cta-yellow-deep) 100%
 	);
-	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
-	color: #fff;
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+	color: #171500;
 }
 
 .button-primary:hover {
 	filter: brightness(1.06);
 }
 
-/* The second ask, under the first. Same control, no fill: it carries the same
-   height and corner as the primary so the pair reads as one stack, and only
-   the hairline tells them apart. */
+/* The second ask, beside the first. A hairline on white was enough; on the
+   field it vanished, so it carries a real surface of its own: a light wash
+   that picks up the bands behind it, a bright rim, and the same height and
+   corner as the primary so the pair still reads as one control. */
 .button-secondary {
-	/* Tighter than the filled control: it carries no fill, so the same 24px of
-	   air read as a much wider object beside it. */
+	/* Tighter than the filled control: it carries a lighter fill, so the same
+	   24px of air read as a much wider object beside it. */
 	padding: 0 18px;
-	border-color: rgba(var(--ink-rgb), 0.14);
-	background: transparent;
+	border-color: rgba(var(--ink-rgb), 0.72);
+	background: rgba(var(--ink-rgb), 0.22);
+	backdrop-filter: blur(8px) saturate(120%);
+	box-shadow: inset 0 1px 0 rgba(var(--ink-rgb), 0.28);
 	color: var(--ink);
 	transition:
 		transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
@@ -565,8 +622,8 @@ summary:focus-visible {
 }
 
 .button-secondary:hover {
-	border-color: rgba(var(--ink-rgb), 0.24);
-	background: rgba(var(--ink-rgb), 0.04);
+	border-color: rgba(var(--ink-rgb), 0.86);
+	background: rgba(var(--ink-rgb), 0.31);
 }
 
 .button:active {
@@ -707,9 +764,9 @@ summary:focus-visible {
 /* Dark mode follows the system rather than offering a switch: the page has one
    screen of content and no settings, so a preference the visitor already set
    is the whole answer. The product preview reads the same signal from inside
-   its iframe, and the hero swaps Tella's Silver Silk loop for Midnight Dust.
-   The blue is deliberately unchanged: it is the product's accent, it already
-   clears its contrast on white, and it only gains presence on a dark page. */
+   its iframe, so the stage's wash and the window inside it move together. The
+   rail, the cards and the field do not: they sit on the marbled ground, which
+   is the same paint in both schemes. */
 @media (prefers-color-scheme: dark) {
 	:root {
 		color-scheme: dark;
@@ -732,17 +789,6 @@ summary:focus-visible {
 
 	.gradient-fallback {
 		background:
-			radial-gradient(circle at 26% 16%, #262b38 0, transparent 40%),
-			radial-gradient(circle at 74% 34%, #1a1f2b 0, transparent 44%),
-			linear-gradient(145deg, #161a23 0%, #12151c 52%, #0a0b0f 100%);
-	}
-
-	/* Cobalt Veil is one of Tella's daylight silks, so it arrives far too
-	   bright for a dark page. Dimming the clip keeps its movement and its blue
-	   while letting the window on top stay the lightest thing in the frame.
-	   0.6 is measured rather than picked: the panel lands around 110 in
-	   luminance against the window's 30, so the blue is unmistakable and the
-	   product still sits in front of it. */
-	.hero-video {
-		filter: brightness(0.6) saturate(1.12);
+			radial-gradient(circle at 28% 14%, #2a2d33 0, transparent 44%),
+			linear-gradient(150deg, #23262b 0%, #1a1d22 54%, #121418 100%);
 	}

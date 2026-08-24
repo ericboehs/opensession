@@ -484,6 +484,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 										{step.id === "organization" && (
 											<OrganizationProfileSection
 												githubOrganization={connectedGithubOrganization(status)}
+												showDomain={false}
 											/>
 										)}
 										{step.id === "team" && (

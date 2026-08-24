@@ -21,7 +21,7 @@
  */
 import { audited } from "../audit";
 import { createHash } from "node:crypto";
-import { codeStorageConfig, personaName } from "../config";
+import { codeStorageConfig, configuredRepos, personaName } from "../config";
 import type { GithubCredential } from "../github-auth";
 import type {
 	MutationPrMeta,
@@ -94,6 +94,10 @@ const diffInflight = new Map<string, Promise<PrDiffData | null>>();
 const REPO_TTL = 10 * 60_000;
 const defaultBranchCache = new Map<string, { name: string; ts: number }>();
 async function defaultBranchOf(repoId: string): Promise<string> {
+	const configured = Object.values(configuredRepos()).find(
+		(repo) => repo.host === "codestorage" && repo.csRepo === repoId,
+	)?.defaultBranch;
+	if (configured) return configured;
 	const hit = defaultBranchCache.get(repoId);
 	if (hit && Date.now() - hit.ts < REPO_TTL) return hit.name;
 	const info = await getCsRepo(repoId);

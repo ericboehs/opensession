@@ -587,11 +587,71 @@ describe("renderMarkdown PR mentions", () => {
     expect(html).toContain('data-pr-tone="green"');
   });
 
+  it("repairs a bare cross-repo number when exactly one known PR matches", () => {
+    setKnownRepos([
+      { id: "opensession", ghRepo: "tellahq/opensession" },
+      { id: "tella-fusion", ghRepo: "tellahq/tella-fusion" },
+    ]);
+    setKnownRepoPrStates([
+      {
+        repo: "tella-fusion",
+        number: 5596,
+        state: "OPEN",
+        mergeable: "CONFLICTING",
+      },
+    ]);
+    const html = renderMarkdown("PR #5596 has conflicts.", {
+      repo: "opensession",
+    });
+    expect(html).toContain('href="/pr/tella-fusion/5596"');
+    expect(html).toContain('data-pr-repo="tella-fusion"');
+    expect(html).toContain('data-pr-context-repo="opensession"');
+    expect(html).toContain('data-pr-state="conflicts"');
+  });
+
+  it("does not guess a cross-repo number when several known PRs match", () => {
+    setKnownRepoPrStates([
+      { repo: "tella-fusion", number: 5596, state: "OPEN" },
+      { repo: "tella-web", number: 5596, state: "MERGED" },
+    ]);
+    const html = renderMarkdown("PR #5596 changed.", { repo: "opensession" });
+    expect(html).toContain('href="/pr/opensession/5596"');
+    expect(html).toContain('data-pr-repo="opensession"');
+    expect(html).not.toContain("data-pr-tone");
+  });
+
+  it("never rewrites an explicitly qualified PR", () => {
+    setKnownRepos([
+      { id: "opensession", ghRepo: "tellahq/opensession" },
+      { id: "tella-fusion", ghRepo: "tellahq/tella-fusion" },
+    ]);
+    setKnownRepoPrStates([
+      { repo: "tella-fusion", number: 5596, state: "OPEN" },
+    ]);
+    const html = renderMarkdown("opensession#5596 changed.", {
+      repo: "opensession",
+    });
+    expect(html).toContain('href="/pr/opensession/5596"');
+    expect(html).not.toContain("data-pr-context-repo");
+  });
+
   it("prefers richer session state over the repo-wide open list", () => {
     setKnownRepoPrStates([
       { repo: "tella-fusion", number: 5528, state: "OPEN" },
     ]);
     setKnownPrStates([
+      { repo: "tella-fusion", number: 5528, state: "MERGED" },
+    ]);
+    const html = renderMarkdown("Fixed in #5528.", fusion);
+    expect(html).toContain('data-pr-state="merged"');
+    expect(html).toContain('data-pr-tone="purple"');
+  });
+
+  it("does not let stale session state resurrect an archived PR", () => {
+    setKnownPrStates([
+      { repo: "tella-fusion", number: 5528, state: "OPEN" },
+    ]);
+    setKnownRepoPrStates([
       { repo: "tella-fusion", number: 5528, state: "MERGED" },
     ]);
     const html = renderMarkdown("Fixed in #5528.", fusion);

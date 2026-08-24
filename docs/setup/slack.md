@@ -4,6 +4,25 @@ The Slack agent (`packages/core/opensession-server/src/agents/slack/`) is the ma
 @-mentions become agent runs, worktree channels drive coding sessions, and
 watched channels fire automations.
 
+## Creating the app (manifest)
+
+Don't tick scopes by hand. **Settings → Setup → Slack** generates an
+app manifest from this instance's own configuration and opens Slack's
+"Create new app → From a manifest" flow with it pre-loaded
+(`src/frontend/lib/slack-manifest.ts`). The manifest carries the bot scopes,
+the bot event subscriptions, interactivity, the public UI domain for session-link
+unfurls, and — for the HTTP transport — the two request URLs derived from the
+instance's webhook base.
+
+Pick the transport in that dialog before creating the app: **Socket Mode**
+emits `socket_mode_enabled: true` and no request URLs, **HTTP** emits
+both `/slack/events` and `/slack/actions`. The JSON is also copyable, for
+pasting into an existing app under **App Manifest**.
+
+A manifest cannot carry credentials. After creating and installing the app you
+still paste the bot token (and either the app-level token or the signing
+secret) into the setup dialog by hand.
+
 ## Tokens and env vars
 
 Outbound Web API calls always use the **bot token** (`xoxb-…`). Event intake
@@ -33,8 +52,9 @@ The agent picks its transport from configuration. Both feed the same shared
 dispatch (`dispatchSlackEvent` / `dispatchSlackInteractive` in
 `agents/slack/index.ts`), so the two paths behave identically once a payload
 arrives. The event subscriptions the code consumes are the same either way:
-`message.im` (DMs), `app_mention`, and plain `message` events in channels (for
-session-linked mirroring and watched-channel automations).
+`message.im` (DMs), `app_mention`, `link_shared` (session-link unfurls), and
+plain `message` events in channels (for session-linked mirroring and
+watched-channel automations).
 
 ### Socket Mode (recommended for simple installs)
 
@@ -93,6 +113,9 @@ Bot token scopes to grant:
 - `chat:write`, `chat:write.customize`
 - `files:write` (merged visual-change screenshots)
 - `reactions:write`
+- `app_mentions:read`
+- `links:read`, `links:write` (session-link unfurls)
+- `emoji:read` (custom workspace emoji)
 - `channels:history`, `groups:history`, `im:history`, `mpim:history`
 - `channels:read`, `groups:read`, `im:read`
 - `channels:manage`, `groups:write` (create/archive/topic/invite worktree

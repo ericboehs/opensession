@@ -1,0 +1,64 @@
+import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { inspectRepo, repoHasBranch } from "./repo-inspection";
+
+function git(...args: string[]): void {
+  expect(Bun.spawnSync(["git", ...args]).exitCode).toBe(0);
+}
+
+describe("inspectRepo", () => {
+  test("uses the remote HEAD when the local origin/HEAD is stale", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opensession-repo-inspection-"));
+    try {
+      const source = join(dir, "source");
+      const remote = join(dir, "remote.git");
+      const checkout = join(dir, "checkout");
+      git("init", "-q", "-b", "master", source);
+      writeFileSync(join(source, "README.md"), "test\n");
+      git("-C", source, "add", "README.md");
+      git(
+        "-C", source,
+        "-c", "user.name=Test",
+        "-c", "user.email=test@example.com",
+        "commit", "-q", "-m", "initial",
+      );
+      git("clone", "-q", "--bare", source, remote);
+      git("clone", "-q", remote, checkout);
+      git("-C", checkout, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+
+      expect((await inspectRepo(checkout)).defaultBranch).toBe("master");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("repoHasBranch", () => {
+  test("requires the branch to exist on origin", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opensession-repo-branch-"));
+    try {
+      const source = join(dir, "source");
+      const remote = join(dir, "remote.git");
+      git("init", "-q", "-b", "main", source);
+      writeFileSync(join(source, "README.md"), "test\n");
+      git("-C", source, "add", "README.md");
+      git(
+        "-C", source,
+        "-c", "user.name=Test",
+        "-c", "user.email=test@example.com",
+        "commit", "-q", "-m", "initial",
+      );
+      git("-C", source, "branch", "local-only");
+      git("init", "-q", "--bare", remote);
+      git("-C", source, "remote", "add", "origin", remote);
+      git("-C", source, "push", "-q", "-u", "origin", "main");
+
+      expect(await repoHasBranch(source, "main")).toBe(true);
+      expect(await repoHasBranch(source, "local-only")).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

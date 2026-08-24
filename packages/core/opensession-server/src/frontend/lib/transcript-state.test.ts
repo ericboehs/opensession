@@ -126,6 +126,21 @@ describe("transcript client state", () => {
 		expect(classified.content).not.toContain("os:review-handoff");
 	});
 
+	test("classifies a queued workflow result as system traffic", () => {
+		const classified = classifyQueuedContent(
+			'<!--os:workflow-notice:wf-1-->\n✅ Workflow "review" finished',
+			"Kent",
+		);
+
+		expect(classified.content).toBe('Workflow "review" finished');
+		expect(classified.notice).toMatchObject({
+			kind: "workflow",
+			title: 'Workflow "review" finished',
+		});
+		expect(classified.sender).toBeUndefined();
+		expect(queueAttribution(classified, "Michiel")).toBeNull();
+	});
+
 	test("classifies queued peer-session messages as notices", () => {
 		const id = "os-01a01e56-a1fc-7000-bb91-bc99b916c4ad";
 		for (const content of [

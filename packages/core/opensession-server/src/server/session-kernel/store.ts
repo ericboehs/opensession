@@ -20,6 +20,8 @@ import type { StagedCreationActorEffect } from "./creation-effect-protocol";
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync } from "fs";
 import { dirname } from "path";
 import { sessionsDir } from "../paths";
+import { selectQueueBatch } from "./queue-batch-reducer";
+import type { QueueItem } from "../queue-state";
 
 export type DurableCommandStatus =
   "pending" | "processing" | "completed" | "failed" | "indeterminate";
@@ -170,8 +172,61 @@ const PROCESS_OWNER_ID = (ownerGlobal.__opensessionSessionKernelOwnerId ??=
 		bootId: linuxBootId(),
 		start: linuxProcessStart(process.pid),
 	} satisfies ProcessOwnerIdentity));
-export const SESSION_KERNEL_SCHEMA_VERSION = 9;
+export const SESSION_KERNEL_SCHEMA_VERSION = 11;
 export const SESSION_KERNEL_MAX_CREATION_EFFECT_RECEIPTS = 256;
+export const SESSION_KERNEL_MAX_OPENING_PLAN_BYTES = 16 * 1024 * 1024;
+
+function validCreationSetupPatch(patch: Record<string, unknown>): boolean {
+  const keys = Object.keys(patch);
+  if (
+    keys.some(
+      (key) =>
+        !["branch", "workspaceId", "attachments", "resolved"].includes(key) ||
+        patch[key] === undefined,
+    )
+  ) return false;
+  if (
+    patch.branch !== undefined &&
+    (typeof patch.branch !== "string" || !patch.branch || patch.branch.length > 512)
+  ) return false;
+  if (
+    patch.workspaceId !== undefined &&
+    (typeof patch.workspaceId !== "string" ||
+      !patch.workspaceId ||
+      patch.workspaceId.length > 256)
+  ) return false;
+  if (patch.attachments !== undefined) {
+    if (!Array.isArray(patch.attachments) || patch.attachments.length > 32)
+      return false;
+    for (const item of patch.attachments) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+      const attachment = item as Record<string, unknown>;
+      if (
+        typeof attachment.attachmentId !== "string" ||
+        !/^[A-Za-z0-9_-]{8,128}$/.test(attachment.attachmentId) ||
+        typeof attachment.name !== "string" ||
+        !attachment.name ||
+        attachment.name.length > 1024 ||
+        typeof attachment.sourceRef !== "string" ||
+        !attachment.sourceRef.startsWith("uploads:") ||
+        attachment.sourceRef.length > 8192 ||
+        typeof attachment.digest !== "string" ||
+        !/^sha256:[a-f0-9]{64}$/.test(attachment.digest)
+      ) return false;
+    }
+  }
+  if (patch.resolved !== undefined) {
+    if (
+      !patch.resolved ||
+      typeof patch.resolved !== "object" ||
+      Array.isArray(patch.resolved)
+    ) return false;
+    const resolved = patch.resolved as Record<string, unknown>;
+    if (["gitEnv", "images", "materializeWorktree"].some((key) => key in resolved))
+      return false;
+  }
+  return true;
+}
 
 export function sessionKernelDbPath(): string {
 	// Test processes must never open the live instance state. Tests that need
@@ -196,6 +251,10 @@ export type CreationEventDecision = {
   /** Stable effect emitted by this reduction, when it advances physical work. */
   nextEffectId?: string;
   effect?: StagedCreationActorEffect;
+  /** Write-once setup decisions retained until opening launch is committed. */
+  planPatch?: Record<string, unknown>;
+  /** Serializable, non-secret opening input committed with its launch effect. */
+  openingPlan?: Record<string, unknown>;
   detail?: Record<string, unknown>;
 };
 
@@ -205,6 +264,8 @@ export type DurableCreationState = {
   generation: number;
   currentEffectId?: string;
   completedEffectIds: string[];
+  setupPlan?: Record<string, unknown>;
+  openingPlan?: Record<string, unknown>;
   changeSeq: number;
   updatedAt: number;
 };
@@ -218,6 +279,9 @@ export type CreationEventDecisionResult = {
     | "identity_mismatch"
     | "stale_effect"
     | "invalid_effect"
+    | "invalid_setup_plan"
+    | "setup_plan_conflict"
+    | "invalid_opening_plan"
     | "effect_receipt_capacity";
   state?: DurableCreationState;
 };
@@ -301,6 +365,8 @@ export class SessionKernelStore {
 				generation INTEGER NOT NULL DEFAULT 0,
 				current_effect_id TEXT,
 				completed_effects TEXT NOT NULL DEFAULT '[]',
+				setup_plan TEXT,
+				opening_plan TEXT,
 				change_seq INTEGER NOT NULL DEFAULT 0,
 				updated_at INTEGER NOT NULL
 			);
@@ -387,6 +453,14 @@ export class SessionKernelStore {
     if (!creationColumns.has("completed_effects"))
       this.db.exec(
         "ALTER TABLE session_kernel_creation ADD COLUMN completed_effects TEXT NOT NULL DEFAULT '[]'",
+      );
+    if (!creationColumns.has("opening_plan"))
+      this.db.exec(
+        "ALTER TABLE session_kernel_creation ADD COLUMN opening_plan TEXT",
+      );
+    if (!creationColumns.has("setup_plan"))
+      this.db.exec(
+        "ALTER TABLE session_kernel_creation ADD COLUMN setup_plan TEXT",
       );
 		const commandColumns = new Set(
 			(
@@ -893,7 +967,8 @@ export class SessionKernelStore {
   creationState(sessionId: string): DurableCreationState | undefined {
     const row = this.db
       .query(
-        `SELECT identity, state, generation, current_effect_id, completed_effects, change_seq, updated_at
+        `SELECT identity, state, generation, current_effect_id, completed_effects,
+                setup_plan, opening_plan, change_seq, updated_at
          FROM session_kernel_creation WHERE session_id = ?`,
       )
       .get(sessionId) as Record<string, unknown> | null;
@@ -909,6 +984,8 @@ export class SessionKernelStore {
       completedEffectIds: [
         ...(parsed<string[]>(row.completed_effects as string) ?? []),
       ],
+      setupPlan: parsed<Record<string, unknown>>(row.setup_plan as string),
+      openingPlan: parsed<Record<string, unknown>>(row.opening_plan as string),
       changeSeq: Number(row.change_seq),
       updatedAt: Number(row.updated_at),
     };
@@ -990,6 +1067,7 @@ export class SessionKernelStore {
       }
       if (completesNewEffect) completedEffectIds.push(input.effectId!);
       const invalidEffect =
+        (input.event === "opening_dispatched" && !effect) ||
         (input.nextEffectId !== undefined && !effect) ||
         (!!effect && input.nextEffectId !== effect.effectKey) ||
         (!!effect && completedEffectIds.includes(effect.effectKey)) ||
@@ -1014,6 +1092,78 @@ export class SessionKernelStore {
         };
         return;
       }
+      let setupPlan = prior?.setupPlan;
+      if (input.planPatch !== undefined) {
+        const invalidPatch =
+          input.event !== "plan" ||
+          !input.planPatch ||
+          Array.isArray(input.planPatch) ||
+          !validCreationSetupPatch(input.planPatch);
+        if (invalidPatch) {
+          result = {
+            accepted: false,
+            from,
+            to: from,
+            reason: "invalid_setup_plan",
+            state: prior,
+          };
+          return;
+        }
+        const nextSetupPlan = { ...(setupPlan ?? {}) };
+        for (const [key, value] of Object.entries(input.planPatch)) {
+          if (
+            Object.hasOwn(nextSetupPlan, key) &&
+            json(nextSetupPlan[key]) !== json(value)
+          ) {
+            result = {
+              accepted: false,
+              from,
+              to: from,
+              reason: "setup_plan_conflict",
+              state: prior,
+            };
+            return;
+          }
+          nextSetupPlan[key] = value;
+        }
+        if (
+          Buffer.byteLength(json(nextSetupPlan)) >
+          SESSION_KERNEL_MAX_OPENING_PLAN_BYTES
+        ) {
+          result = {
+            accepted: false,
+            from,
+            to: from,
+            reason: "invalid_setup_plan",
+            state: prior,
+          };
+          return;
+        }
+        setupPlan = nextSetupPlan;
+      }
+      const openingPlanText =
+        input.openingPlan === undefined ? undefined : json(input.openingPlan);
+      const invalidOpeningPlan =
+        (input.event === "opening_dispatched" &&
+          (!openingPlanText ||
+            Buffer.byteLength(openingPlanText) >
+              SESSION_KERNEL_MAX_OPENING_PLAN_BYTES)) ||
+        (input.event !== "opening_dispatched" && input.openingPlan !== undefined);
+      if (invalidOpeningPlan) {
+        result = {
+          accepted: false,
+          from,
+          to: from,
+          reason: "invalid_opening_plan",
+          state: prior,
+        };
+        return;
+      }
+      if (["opening_dispatched", "ready", "failed"].includes(to))
+        setupPlan = undefined;
+      const openingPlan = ["ready", "failed"].includes(to)
+        ? undefined
+        : input.openingPlan ?? prior?.openingPlan;
       const currentEffectId = ["ready", "failed"].includes(to)
         ? undefined
         : effect?.effectKey ??
@@ -1021,13 +1171,15 @@ export class SessionKernelStore {
       this.db.run(
         `INSERT INTO session_kernel_creation
           (session_id, identity, state, generation, current_effect_id,
-           completed_effects, change_seq, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           completed_effects, setup_plan, opening_plan, change_seq, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(session_id) DO UPDATE SET
           state = excluded.state,
           generation = excluded.generation,
           current_effect_id = excluded.current_effect_id,
           completed_effects = excluded.completed_effects,
+          setup_plan = excluded.setup_plan,
+          opening_plan = excluded.opening_plan,
           change_seq = excluded.change_seq,
           updated_at = excluded.updated_at`,
         [
@@ -1037,6 +1189,8 @@ export class SessionKernelStore {
           generation,
           currentEffectId ?? null,
           json(completedEffectIds),
+          setupPlan === undefined ? null : json(setupPlan),
+          openingPlan === undefined ? null : json(openingPlan),
           changeSeq,
           now,
         ],
@@ -1093,6 +1247,8 @@ export class SessionKernelStore {
         generation,
         currentEffectId,
         completedEffectIds,
+        setupPlan,
+        openingPlan,
         changeSeq,
         updatedAt: now,
       };
@@ -1724,6 +1880,82 @@ export class SessionKernelStore {
     return count;
   }
 
+  claimNextDeliveryDispatch(input: {
+    sessionId: string;
+    promptEntryId: string;
+    soloId?: string;
+    interruptMark?: boolean;
+    stillWorking?: boolean;
+  }):
+    | { kind: "empty"; revision: number }
+    | { kind: "hold"; heldCount: number; revision: number }
+    | {
+        kind: "deliver";
+        promptEntryId: string;
+        items: QueueItem[];
+        revision: number;
+      } {
+    if (
+      !input.promptEntryId ||
+      input.promptEntryId.length > 256 ||
+      (input.soloId !== undefined &&
+        (!input.soloId || input.soloId.length > 256))
+    ) throw new Error("Invalid next prompt dispatch identity");
+    const mutation = this.mutateDelivery(
+      input.sessionId,
+      "delivery_next_dispatch_claimed",
+      (state) => {
+        if (state.dispatch) throw new Error("A prompt dispatch is already active");
+        const queued = state.queued as QueueItem[];
+        if (!queued.length) return { kind: "empty" as const };
+        const retryDispatchId = queued.find(
+          (item) => item.retryDispatchId,
+        )?.retryDispatchId;
+        const plan = retryDispatchId
+          ? {
+              kind: "deliver" as const,
+              batch: queued.filter(
+                (item) => item.retryDispatchId === retryDispatchId,
+              ),
+              rest: queued.filter(
+                (item) => item.retryDispatchId !== retryDispatchId,
+              ),
+            }
+          : selectQueueBatch(queued, {
+              soloId: input.soloId,
+              interruptMark: input.interruptMark,
+              stillWorking: input.stillWorking,
+            });
+        if (plan.kind === "hold") return plan;
+        const promptEntryId =
+          retryDispatchId || plan.batch[0]?.promptEntryId || input.promptEntryId;
+        if (!promptEntryId || promptEntryId.length > 256)
+          throw new Error("Invalid claimed prompt dispatch identity");
+        state.queued = plan.rest;
+        state.dispatch = {
+          promptEntryId,
+          items: plan.batch,
+        };
+        return {
+          kind: "deliver" as const,
+          promptEntryId,
+          items: plan.batch,
+        };
+      },
+    );
+    return {
+      ...(mutation.result as
+        | { kind: "empty" }
+        | { kind: "hold"; heldCount: number }
+        | {
+            kind: "deliver";
+            promptEntryId: string;
+            items: QueueItem[];
+          }),
+      revision: mutation.state.revision,
+    };
+  }
+
   claimDeliveryDispatch(input: {
     sessionId: string;
     items: Array<{ id?: string; promptEntryId?: string } & Record<string, unknown>>;
@@ -1815,7 +2047,15 @@ export class SessionKernelStore {
         { promptEntryId?: string; items?: unknown[] } | undefined;
       if (dispatch?.promptEntryId !== promptEntryId)
         throw new Error("Prompt dispatch changed before failure settlement");
-      const restored = dispatch.items ?? [];
+      const restored = (dispatch.items ?? []).map((item, index) =>
+        item && typeof item === "object" && !Array.isArray(item)
+          ? {
+              ...(item as Record<string, unknown>),
+              retryDispatchId: promptEntryId,
+              ...(index === 0 ? { promptEntryId } : {}),
+            }
+          : item,
+      );
       const restoredIds = new Set(
         (restored as Array<{ id?: string }>)
           .map((item) => item.id)

@@ -9,6 +9,8 @@
 import type { RouteContext } from "./context";
 import {
 	configPath,
+	configuredRepos,
+	configuredSelfDev,
 	getConfig,
 	organizationDomain,
 	organizationName,
@@ -16,6 +18,7 @@ import {
 	productName,
 	productMark,
 	type ResolvedAssetStorage,
+	type SelfDevMode,
 } from "../config";
 import {
 	persistRawConfig,
@@ -88,6 +91,15 @@ function generalDto(publicPrefix: string) {
 				: `${publicPrefix}/organization-icon.png?v=${revision}`,
 		organizationIconRevision: revision,
 		configPath: configPath(),
+	};
+}
+
+function worktreeSettingsDto() {
+	return {
+		mode: configuredSelfDev(),
+		repos: Object.values(configuredRepos())
+			.filter((repo) => repo.sharedCheckout)
+			.map((repo) => ({ id: repo.id, label: repo.label })),
 	};
 }
 
@@ -299,6 +311,35 @@ export async function handleInstanceSettingsRoutes(
 
 	if (path === "/api/settings/general" && req.method === "GET") {
 		return Response.json(generalDto(publicPrefix));
+	}
+
+	if (path === "/api/settings/worktrees" && req.method === "GET") {
+		return Response.json(worktreeSettingsDto());
+	}
+
+	if (path === "/api/settings/worktrees" && req.method === "PUT") {
+		const forbidden = requireWorkspaceAdmin(ctx);
+		if (forbidden) return forbidden;
+		const body = (await req.json().catch(() => null)) as Record<
+			string,
+			unknown
+		> | null;
+		if (!body) {
+			return Response.json({ error: "expected a JSON body" }, { status: 400 });
+		}
+		if (body.mode !== "shared" && body.mode !== "worktree") {
+			return Response.json(
+				{ error: "mode must be shared or worktree" },
+				{ status: 400 },
+			);
+		}
+		const mode: SelfDevMode = body.mode;
+		await withConfigMutationLock(async () => {
+			const config = rawConfig();
+			config.selfDev = mode;
+			persistRawConfig(config);
+		});
+		return Response.json(worktreeSettingsDto());
 	}
 
 	if (

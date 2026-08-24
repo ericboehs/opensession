@@ -308,10 +308,6 @@ const ASSETS_SHOWN = 6;
 /** How many screenshots the strip carries. It scrolls, so this is about how
  *  many pictures the card is willing to load, not about the room it has. */
 const ASSET_FRAMES_SHOWN = 6;
-/** Past this many commits the card stops listing titles and states the count
- *  instead. A long session commits dozens of times and the list, unbounded,
- *  becomes the card. */
-const COMMIT_ROW_LIMIT = 5;
 const NO_LIVE_MEDIA: WorkspaceMediaItem[] = [];
 
 export function WorkspaceSummary({
@@ -396,19 +392,6 @@ export function WorkspaceSummary({
 		localStorage.setItem(WS_SUMMARY_OPEN_KEY, String(nextOpen));
 		window.dispatchEvent(new Event(WS_SUMMARY_OPEN_EVENT));
 	}
-	/**
-	 * What a row does to the card after it routes somewhere.
-	 *
-	 * An overlay has to go: it is lying across the pane it just navigated, and
-	 * nothing else would dismiss it. A pinned card does not. It is a standing
-	 * view of the workspace, the same one that survives switching sessions, and
-	 * the surface it opens (Review above all) shows it too. Closing it here also
-	 * wrote the preference off, so opening Review from the card un-pinned it in
-	 * every other window and every session opened afterwards.
-	 */
-	function dismissAfterRouting() {
-		if (!canStand) changeOpen(false);
-	}
 	return (
 		<Popover.Root
 			open={open}
@@ -484,7 +467,7 @@ export function WorkspaceSummary({
 					session={session}
 					{...body}
 					reviewMode={reviewMode}
-					close={dismissAfterRouting}
+					close={() => changeOpen(false)}
 				/>
 			</Popover.Popup>
 		</Popover.Root>
@@ -858,9 +841,10 @@ export function WorkspaceSummaryBody({
 	}
 
 	/** A long session commits dozens of times, and the card would spend its whole
-	 *  height listing them. Past a handful the count IS the fact — "16 commits" —
-	 *  so the list stays closed behind one row. */
+	 *  height listing them. Closed, the count IS the fact — "16 commits" — and
+	 *  the row opens the list like the heading's chevron does. */
 	function committedSummaryRow() {
+		if (commits.length === 0) return null;
 		const files = commits.reduce((sum, c) => sum + c.filesChanged, 0);
 		return (
 			<button
@@ -871,7 +855,9 @@ export function WorkspaceSummaryBody({
 				<span className={WS_SUMMARY_RAIL}>
 					<IconGitCommit size={20} className={WS_SUMMARY_ICON} />
 				</span>
-				<span className={WS_SUMMARY_LABEL}>{commits.length} commits</span>
+				<span className={WS_SUMMARY_LABEL}>
+					{commits.length} commit{commits.length === 1 ? "" : "s"}
+				</span>
 				<span className={cn(WS_SUMMARY_STATE, "text-dim tabular-nums")}>
 					{files} file{files === 1 ? "" : "s"}
 				</span>
@@ -1172,7 +1158,7 @@ export function WorkspaceSummaryBody({
 
 			{(diffIsCommitted || commits.length > 0) && (
 				<div className={groupClass}>
-					{commits.length > COMMIT_ROW_LIMIT ? (
+					{commits.length > 0 ? (
 						/* The heading owns the toggle: it names the band the list belongs
 						   to, so it is the one place to open and close the whole band. The
 						   chevron waits for the cursor, so a card at rest keeps a plain
@@ -1203,9 +1189,7 @@ export function WorkspaceSummaryBody({
 						diffChangeRow(
 							`${changedFiles} file${changedFiles === 1 ? "" : "s"} committed`,
 						)}
-					{commits.length > COMMIT_ROW_LIMIT && !commitsOpen
-						? committedSummaryRow()
-						: commits.map(committedRow)}
+					{commitsOpen ? commits.map(committedRow) : committedSummaryRow()}
 				</div>
 			)}
 

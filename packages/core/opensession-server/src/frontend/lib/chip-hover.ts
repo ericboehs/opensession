@@ -1,9 +1,11 @@
 import {
 	fetchCommit,
 	fetchOpenPrs,
+	fetchRecentPr,
 	fetchSession,
 	type CommitDetails,
 	type OpenPr,
+	type RecentPr,
 } from "./api";
 import type { OsReview, UnifiedSession } from "./types";
 
@@ -67,6 +69,7 @@ export type ChipPr = {
 	state?: "OPEN" | "MERGED" | "CLOSED";
 	isDraft?: boolean;
 	reviewDecision?: string;
+	mergeable?: string;
 	checks?: { total: number; passed: number; failed: number; pending: number };
 	osReview?: OsReview;
 	reviewRequested?: string[];
@@ -97,6 +100,7 @@ function prFromSessions(
 			state: s.prState,
 			isDraft: s.prIsDraft,
 			reviewDecision: s.prReviewDecision,
+			mergeable: s.prMergeable,
 			checks: s.prChecks,
 			osReview: s.prOsReview,
 			reviewRequested: s.prReviewRequested,
@@ -118,6 +122,7 @@ function prFromSessions(
 				state: ref.state,
 				isDraft: ref.isDraft,
 				reviewDecision: ref.reviewDecision,
+				mergeable: ref.mergeable,
 				checks: ref.checks,
 				additions: ref.additions,
 				deletions: ref.deletions,
@@ -129,37 +134,45 @@ function prFromSessions(
 }
 
 /**
- * Everything known about the PR a chip names. The repo-wide open-PR list is
- * the richer half (author, title, review requests, automated review) and the
- * session list is the fresher one, so lifecycle comes from the session: a PR
- * that merged a minute ago can still sit in the cached open list.
+ * Everything known about the PR a chip names. The open-PR list is the rich
+ * half (review requests and automated review), while recent history is the
+ * lifecycle authority and keeps merged/closed PRs available after their
+ * workspace leaves the live session list.
  */
 export function chipPr(
 	repo: string,
 	number: number,
 	sessions: UnifiedSession[],
 	openPrs: OpenPr[],
+	recentPrs: RecentPr[] = [],
 ): ChipPr | null {
 	const mine = prFromSessions(repo, number, sessions);
 	const open = openPrs.find((p) => p.repo === repo && p.number === number);
-	if (!mine && !open) return null;
+	const recent = recentPrs.find((p) => p.repo === repo && p.number === number);
+	const terminal =
+		recent?.state === "MERGED" || recent?.state === "CLOSED" ? recent : null;
+	if (!mine && !open && !recent) return null;
 	return {
 		repo,
 		number,
-		title: mine?.title || open?.title,
-		url: mine?.url || open?.url,
-		branch: mine?.branch || open?.branch,
-		author: mine?.author || open?.author,
-		state: mine?.state ?? (open ? "OPEN" : undefined),
-		isDraft: mine?.isDraft ?? open?.isDraft,
-		reviewDecision: mine?.reviewDecision || open?.reviewDecision,
-		checks: mine?.checks ?? open?.checks,
-		osReview: mine?.osReview ?? open?.osReview,
-		reviewRequested: mine?.reviewRequested ?? open?.reviewRequested,
-		createdAt: open?.createdAt,
-		updatedAt: mine?.updatedAt || open?.updatedAt,
-		additions: mine?.additions,
-		deletions: mine?.deletions,
+		title: recent?.title || mine?.title || open?.title,
+		url: recent?.url || mine?.url || open?.url,
+		branch: recent?.branch || mine?.branch || open?.branch,
+		author: recent?.author || mine?.author || open?.author,
+		state:
+			terminal?.state ?? mine?.state ?? recent?.state ?? (open ? "OPEN" : undefined),
+		isDraft: terminal ? terminal.isDraft : (mine?.isDraft ?? recent?.isDraft ?? open?.isDraft),
+		reviewDecision:
+			mine?.reviewDecision || recent?.reviewDecision || open?.reviewDecision,
+		mergeable: mine?.mergeable || recent?.mergeable || open?.mergeable,
+		checks: mine?.checks ?? recent?.checks ?? open?.checks,
+		osReview: mine?.osReview ?? open?.osReview ?? recent?.osReview,
+		reviewRequested:
+			recent?.reviewRequested ?? mine?.reviewRequested ?? open?.reviewRequested,
+		createdAt: recent?.createdAt || open?.createdAt,
+		updatedAt: recent?.updatedAt || mine?.updatedAt || open?.updatedAt,
+		additions: recent?.additions ?? mine?.additions,
+		deletions: recent?.deletions ?? mine?.deletions,
 		session: mine?.session,
 	};
 }
@@ -176,10 +189,12 @@ export function chipPrIsWorthShowing(pr: ChipPr | null): pr is ChipPr {
 // both cache: a pointer crossing a paragraph of chips must not become a burst
 // of requests.
 
-const OPEN_PRS_TTL_MS = 60_000;
+const PRS_TTL_MS = 60_000;
 let openPrs: OpenPr[] = [];
 let openPrsAt = 0;
 let openPrsInFlight: Promise<OpenPr[]> | null = null;
+const recentPrs = new Map<string, { pr: RecentPr | null; at: number }>();
+const recentPrsInFlight = new Map<string, Promise<RecentPr | null>>();
 
 /** The open PRs already fetched, for the synchronous first look. */
 export function cachedOpenPrs(): OpenPr[] {
@@ -187,7 +202,7 @@ export function cachedOpenPrs(): OpenPr[] {
 }
 
 export function loadOpenPrs(): Promise<OpenPr[]> {
-	if (Date.now() - openPrsAt < OPEN_PRS_TTL_MS) return Promise.resolve(openPrs);
+	if (Date.now() - openPrsAt < PRS_TTL_MS) return Promise.resolve(openPrs);
 	if (!openPrsInFlight)
 		openPrsInFlight = fetchOpenPrs()
 			.then((prs) => {
@@ -199,6 +214,49 @@ export function loadOpenPrs(): Promise<OpenPr[]> {
 				openPrsInFlight = null;
 			});
 	return openPrsInFlight;
+}
+
+function recentPrKey(repo: string, number: number): string {
+	return `${repo}#${number}`;
+}
+
+/** Recent history already fetched for the synchronous first look on hover. */
+export function cachedRecentPr(repo: string, number: number): RecentPr | null {
+	return recentPrs.get(recentPrKey(repo, number))?.pr ?? null;
+}
+
+export function cachedRecentPrs(): RecentPr[] {
+	return [...recentPrs.values()]
+		.map(({ pr }) => pr)
+		.filter((pr): pr is RecentPr => pr !== null);
+}
+
+/** Fold the periodic recent list into the same per-PR cache lazy hover uses. */
+export function cacheRecentPrs(prs: RecentPr[]): void {
+	const at = Date.now();
+	for (const pr of prs) recentPrs.set(recentPrKey(pr.repo, pr.number), { pr, at });
+}
+
+export function loadRecentPr(
+	repo: string,
+	number: number,
+): Promise<RecentPr | null> {
+	const key = recentPrKey(repo, number);
+	const cached = recentPrs.get(key);
+	if (cached && Date.now() - cached.at < PRS_TTL_MS)
+		return Promise.resolve(cached.pr);
+	const pending = recentPrsInFlight.get(key);
+	if (pending) return pending;
+	const request = fetchRecentPr(repo, number)
+		.then((pr) => {
+			recentPrs.set(key, { pr, at: Date.now() });
+			return pr;
+		})
+		.finally(() => {
+			recentPrsInFlight.delete(key);
+		});
+	recentPrsInFlight.set(key, request);
+	return request;
 }
 
 // Sessions the list doesn't carry (archived, or someone else's standalone).

@@ -33,6 +33,29 @@ export interface RepoInfo {
 	iconRev?: number | null;
 }
 
+export type SharedCheckoutMode = "shared" | "worktree";
+
+export interface WorktreeSettings {
+	mode: SharedCheckoutMode;
+	repos: Array<{ id: string; label: string }>;
+}
+
+export function fetchWorktreeSettings(): Promise<WorktreeSettings> {
+	return request("/settings/worktrees", {
+		label: "Failed to load worktree settings",
+	});
+}
+
+export function setSharedCheckoutMode(
+	mode: SharedCheckoutMode,
+): Promise<WorktreeSettings> {
+	return request("/settings/worktrees", {
+		method: "PUT",
+		body: { mode },
+		label: "Failed to save worktree settings",
+	});
+}
+
 /**
  * Set the workspace's default repository for new sessions — a repo id, "auto",
  * or "" to clear it back to the fallback. Admin-facing (Settings →

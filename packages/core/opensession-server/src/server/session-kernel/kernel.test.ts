@@ -525,6 +525,22 @@ describe("SessionKernel", () => {
 	});
 
 	test("owns creation transitions and rejects stale effect results", () => {
+		store.applyCreationEvent({
+			sessionId: "create-opening-requires-effect",
+			identity: "request-direct",
+			event: "plan",
+		});
+		store.applyCreationEvent({
+			sessionId: "create-opening-requires-effect",
+			identity: "request-direct",
+			event: "preparation_started",
+		});
+		expect(store.applyCreationEvent({
+			sessionId: "create-opening-requires-effect",
+			identity: "request-direct",
+			event: "opening_dispatched",
+		})).toMatchObject({ accepted: false, reason: "invalid_effect" });
+
 		expect(store.applyCreationEvent({
 			sessionId: "create-fsm",
 			identity: "request-one",
@@ -621,9 +637,36 @@ describe("SessionKernel", () => {
 				},
 			},
 		})).toMatchObject({
+			accepted: false,
+			reason: "invalid_opening_plan",
+		});
+		expect(store.applyCreationEvent({
+			sessionId: "create-fsm",
+			identity: "request-one",
+			event: "opening_dispatched",
+			effectId: "prepare-one",
+			openingPlan: { id: "create-fsm", openingPrompt: "durable" },
+			nextEffectId: "opening-one",
+			effect: {
+				kind: "creation_opening_turn",
+				effectKey: "opening-one",
+				payload: {
+					creationIdentity: "request-one",
+					creationGeneration: 1,
+					openingPromptEntryId: "entry-one",
+					runId: "run-one",
+					runGeneration: 1,
+					mode: "adopt_or_launch",
+				},
+			},
+		})).toMatchObject({
 			accepted: true,
 			to: "opening_dispatched",
-			state: { currentEffectId: "opening-one", changeSeq: 3 },
+			state: {
+				currentEffectId: "opening-one",
+				openingPlan: { id: "create-fsm", openingPrompt: "durable" },
+				changeSeq: 3,
+			},
 		});
 		expect(store.applyCreationEvent({
 			sessionId: "create-fsm",
@@ -633,7 +676,11 @@ describe("SessionKernel", () => {
 		})).toMatchObject({
 			accepted: true,
 			to: "ready",
-			state: { currentEffectId: undefined, changeSeq: 4 },
+			state: {
+				currentEffectId: undefined,
+				openingPlan: undefined,
+				changeSeq: 4,
+			},
 		});
 		expect(store.applyCreationEvent({
 			sessionId: "create-fsm",
@@ -648,6 +695,67 @@ describe("SessionKernel", () => {
 			{ kind: "creation_workspace_prepare", effectKey: "prepare-one" },
 			{ kind: "creation_opening_turn", effectKey: "opening-one" },
 		]);
+	});
+
+	test("settles an actor opening from an exactly journaled local recovery", async () => {
+		const sessionId = "local-opening-recovery";
+		const identity = "local-opening-request";
+		const promptEntryId = "local-opening-prompt";
+		const effectId = `opening:${promptEntryId}`;
+		expect(
+			store.applyCreationEvent({ sessionId, identity, event: "plan" }).accepted,
+		).toBe(true);
+		const preparationEffectId = "local-opening-preparation";
+		expect(
+			store.applyCreationEvent({
+				sessionId,
+				identity,
+				event: "preparation_started",
+				nextEffectId: preparationEffectId,
+				effect: {
+					kind: "creation_workspace_prepare",
+					effectKey: preparationEffectId,
+					payload: {
+						creationIdentity: identity,
+						creationGeneration: 1,
+						workspaceId: "local-opening-workspace",
+						dedupeKey: "local-opening-dedupe",
+						name: "Local opening",
+						createdBy: "Alice",
+						mode: "adopt_or_create",
+					},
+				},
+			}).accepted,
+		).toBe(true);
+		expect(
+			store.applyCreationEvent({
+				sessionId,
+				identity,
+				event: "opening_dispatched",
+				effectId: preparationEffectId,
+				openingPlan: { id: sessionId, openingPrompt: "durable" },
+				nextEffectId: effectId,
+				effect: {
+					kind: "creation_opening_turn",
+					effectKey: effectId,
+					payload: {
+						creationIdentity: identity,
+						creationGeneration: 1,
+						openingPromptEntryId: promptEntryId,
+						runId: `opening:${sessionId}:${promptEntryId}`,
+						runGeneration: 1,
+						mode: "adopt_or_launch",
+					},
+				},
+			}).accepted,
+		).toBe(true);
+		const { settleRecoveredCreationOpening } = await import("../run-session");
+		expect(
+			settleRecoveredCreationOpening(sessionId, promptEntryId),
+		).toBe(true);
+		const settled = store.creationState(sessionId);
+		expect(settled?.state).toBe("ready");
+		expect(settled?.completedEffectIds).toContain(effectId);
 	});
 
 	test("clears an accepted creation effect so replay is a stale no-op", () => {
@@ -756,6 +864,72 @@ describe("SessionKernel", () => {
 				currentEffectId: undefined,
 				completedEffectIds: ["workspace-receipt-restart"],
 			});
+		} finally {
+			durableStore.close();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("persists opening recovery input with its effect and clears it terminally", () => {
+		const dir = mkdtempSync(join(tmpdir(), "session-kernel-opening-plan-"));
+		const path = join(dir, "kernel.sqlite");
+		let durableStore = new SessionKernelStore(path);
+		try {
+			const sessionId = "create-opening-plan-restart";
+			const identity = "request-opening-plan-restart";
+			const effectId = "opening:entry-restart";
+			const openingPlan = {
+				id: sessionId,
+				openingPrompt: "survives actor restart",
+				openingPromptEntryId: "entry-restart",
+			};
+			durableStore.applyCreationEvent({ sessionId, identity, event: "plan" });
+			durableStore.applyCreationEvent({
+				sessionId,
+				identity,
+				event: "preparation_started",
+			});
+			durableStore.applyCreationEvent({
+				sessionId,
+				identity,
+				event: "plan",
+				planPatch: { resolved: openingPlan },
+			});
+			expect(durableStore.creationState(sessionId)?.setupPlan).toEqual({
+				resolved: openingPlan,
+			});
+			expect(durableStore.applyCreationEvent({
+				sessionId,
+				identity,
+				event: "opening_dispatched",
+				openingPlan,
+				nextEffectId: effectId,
+				effect: {
+					kind: "creation_opening_turn",
+					effectKey: effectId,
+					payload: {
+						creationIdentity: identity,
+						creationGeneration: 1,
+						openingPromptEntryId: "entry-restart",
+						runId: `opening:${sessionId}:entry-restart`,
+						runGeneration: 1,
+						mode: "adopt_or_launch",
+					},
+				},
+			})).toMatchObject({ accepted: true });
+			durableStore.close();
+			durableStore = new SessionKernelStore(path);
+			expect(durableStore.creationState(sessionId)).toMatchObject({
+				setupPlan: undefined,
+				openingPlan,
+			});
+			durableStore.applyCreationEvent({
+				sessionId,
+				identity,
+				event: "succeeded",
+				effectId,
+			});
+			expect(durableStore.creationState(sessionId)?.openingPlan).toBeUndefined();
 		} finally {
 			durableStore.close();
 			rmSync(dir, { recursive: true, force: true });
@@ -895,6 +1069,126 @@ describe("SessionKernel", () => {
 			],
 		});
 		expect(store.deliverySnapshot("delivery").dispatch).toBeUndefined();
+	});
+
+	test("selects and claims the next queue batch in one actor transaction", () => {
+		store.setDeliverySlot("next-delivery", "queued", [
+			{ id: "held", content: "wait", hold: true },
+			{
+				id: "solo",
+				promptEntryId: "stable-solo-entry",
+				content: "send now",
+				hold: true,
+			},
+		]);
+		expect(store.claimNextDeliveryDispatch({
+			sessionId: "next-delivery",
+			promptEntryId: "unused-entry",
+			stillWorking: true,
+		})).toMatchObject({ kind: "hold", heldCount: 2 });
+		expect(store.deliverySnapshot("next-delivery").queued).toHaveLength(2);
+		expect(store.claimNextDeliveryDispatch({
+			sessionId: "next-delivery",
+			promptEntryId: "solo-entry",
+			soloId: "solo",
+			interruptMark: true,
+			stillWorking: true,
+		})).toMatchObject({
+			kind: "deliver",
+			promptEntryId: "stable-solo-entry",
+			items: [
+				{
+					id: "solo",
+					promptEntryId: "stable-solo-entry",
+					content: "send now",
+					hold: true,
+				},
+			],
+		});
+		expect(store.deliverySnapshot("next-delivery")).toMatchObject({
+			queued: [{ id: "held", content: "wait", hold: true }],
+			dispatch: {
+				promptEntryId: "stable-solo-entry",
+				items: [
+					{
+						id: "solo",
+						promptEntryId: "stable-solo-entry",
+						content: "send now",
+						hold: true,
+					},
+				],
+			},
+		});
+	});
+
+	test("reuses a failed multi-item dispatch identity", () => {
+		store.setDeliverySlot("failed-multi-dispatch", "queued", [
+			{ id: "one", content: "first" },
+			{ id: "two", content: "second" },
+		]);
+		expect(store.claimNextDeliveryDispatch({
+			sessionId: "failed-multi-dispatch",
+			promptEntryId: "stable-batch-entry",
+		})).toMatchObject({
+			kind: "deliver",
+			promptEntryId: "stable-batch-entry",
+			items: [{ id: "one" }, { id: "two" }],
+		});
+		expect(
+			store.failDeliveryDispatch(
+				"failed-multi-dispatch",
+				"stable-batch-entry",
+			),
+		).toBe(true);
+		const restored = store.deliverySnapshot("failed-multi-dispatch").queued;
+		store.setDeliverySlot("failed-multi-dispatch", "queued", [
+			...restored,
+			{ id: "later", content: "must stay later" },
+		]);
+		expect(store.claimNextDeliveryDispatch({
+			sessionId: "failed-multi-dispatch",
+			promptEntryId: "replacement-must-not-win",
+			soloId: "two",
+			interruptMark: true,
+		})).toMatchObject({
+			kind: "deliver",
+			promptEntryId: "stable-batch-entry",
+			items: [
+				{
+					id: "one",
+					promptEntryId: "stable-batch-entry",
+					retryDispatchId: "stable-batch-entry",
+				},
+				{ id: "two", retryDispatchId: "stable-batch-entry" },
+			],
+		});
+		expect(store.deliverySnapshot("failed-multi-dispatch").queued).toEqual([
+			{ id: "later", content: "must stay later" },
+		]);
+
+		expect(
+			store.failDeliveryDispatch(
+				"failed-multi-dispatch",
+				"stable-batch-entry",
+			),
+		).toBe(true);
+		store.setDeliverySlot(
+			"failed-multi-dispatch",
+			"queued",
+			store
+				.deliverySnapshot("failed-multi-dispatch")
+				.queued.filter((item) => (item as { id?: string }).id !== "one"),
+		);
+		expect(store.claimNextDeliveryDispatch({
+			sessionId: "failed-multi-dispatch",
+			promptEntryId: "replacement-still-must-not-win",
+			soloId: "two",
+			interruptMark: true,
+		})).toMatchObject({
+			kind: "deliver",
+			promptEntryId: "stable-batch-entry",
+			items: [{ id: "two", retryDispatchId: "stable-batch-entry" }],
+		});
 	});
 
 	test("recovers an ambiguous prepared steer without duplicate queue delivery", () => {

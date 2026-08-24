@@ -36,6 +36,9 @@ export type QueueItem = {
    * Reusing it lets a recovery upsert the existing visible user line instead
    * of rendering the message twice. */
 	promptEntryId?: string;
+	/** Actor-internal identity for a previously accepted multi-item dispatch.
+	 * The restored group drains atomically before later queue policy can split it. */
+	retryDispatchId?: string;
 	content: string;
 	user?: string;
 	images?: string[];
@@ -116,13 +119,24 @@ export function isDelegatedQueueItem(item?: QueueItem): boolean {
 	return delegatedActorParent(item?.user) !== null;
 }
 
+/** A workflow completion nudge is attributed to the person who launched the
+ * workflow so the model receives the right identity, but it is still system
+ * traffic. The sentinel is the durable origin marker shared with transcript
+ * classification; do not let that attribution turn the nudge into an editable
+ * composer message while it is waiting to land. */
+export function isWorkflowQueueItem(item?: QueueItem): boolean {
+	return /^\s*<!--os:workflow-notice(?::[^\s>]+)?-->/.test(item?.content ?? "");
+}
+
 /** Only ordinary composer messages can be moved back into a draft. Routed
  * items carry queue-only metadata that a composer send cannot reconstruct. */
 export function isEditableQueueItem(item?: QueueItem): boolean {
-	return ( !!item &&
+	return (
+		!!item &&
 		!!item.user &&
 		!isGitHubQueueItem(item) &&
 		!isDelegatedQueueItem(item) &&
+		!isWorkflowQueueItem(item) &&
 		item.user !== AUTO_CONTINUE_USER &&
 		!item.contextSessions?.length &&
 		!item.slackReplyTo &&
@@ -389,6 +403,7 @@ export function restorePersistedQueueState(options: {
 	storePath?: string;
 	sessionExists: (sessionId: string) => boolean;
 	journalOwnsPrompt: (sessionId: string, promptEntryId: string) => boolean;
+	creationOwnsPrompt?: (sessionId: string, promptEntryId: string) => boolean;
 	runOwnsSteers: (sessionId: string) => boolean;
 	deliveredUserTexts: (sessionId: string) => string[];
 	effects?: boolean;
@@ -423,7 +438,8 @@ export function restorePersistedQueueState(options: {
 		if (
 			dispatch?.kind === "create" &&
 			dispatch.promptEntryId &&
-			!options.journalOwnsPrompt(sessionId, dispatch.promptEntryId)
+			(options.creationOwnsPrompt?.(sessionId, dispatch.promptEntryId) ||
+				!options.journalOwnsPrompt(sessionId, dispatch.promptEntryId))
 		) {
 			const createDispatch: PromptDispatch =
 				live?.kind === "create" && live.promptEntryId === dispatch.promptEntryId
@@ -451,9 +467,11 @@ export function restorePersistedQueueState(options: {
 		) {
 			continue;
 		}
-		const items = dispatch.items.map((item, index) =>
-			index === 0 ? { ...item, promptEntryId: dispatch.promptEntryId } : item,
-		);
+		const items = dispatch.items.map((item, index) => ({
+			...item,
+			retryDispatchId: dispatch.promptEntryId,
+			...(index === 0 ? { promptEntryId: dispatch.promptEntryId } : {}),
+		}));
 		queued.set(sessionId, [...items, ...(queued.get(sessionId) || [])]);
 	}
 
@@ -495,6 +513,34 @@ export function restorePersistedQueueState(options: {
       0,
     ),
 		steeredCount,
+	};
+}
+
+/** Let the actor select and claim the next queue batch in one transaction. */
+export function beginNextPromptDispatch(
+	sessionId: string,
+	opts: {
+		soloId?: string;
+		interruptMark?: boolean;
+		stillWorking?: boolean;
+	},
+	effects = true,
+):
+	| { kind: "empty" }
+	| { kind: "hold"; heldCount: number }
+	| { kind: "deliver"; promptEntryId: string; batch: QueueItem[] } {
+	const claimed = sessionDelivery({
+		op: "claim_next_dispatch",
+		sessionId,
+		promptEntryId: crypto.randomUUID(),
+		...opts,
+	});
+	if (claimed.kind !== "deliver") return claimed;
+	if (effects) persistQueues();
+	return {
+		kind: "deliver",
+		promptEntryId: claimed.promptEntryId,
+		batch: claimed.items as QueueItem[],
 	};
 }
 
@@ -562,11 +608,16 @@ export function failPromptDispatch(
   return restored;
 }
 
-/** Review handoffs drive an automated turn. They use the prompt queue for
- * ordering and crash recovery, but they are not messages a person sent and
- * must not contribute to any client-facing message count. */
+/** Automated turns stay durable in the queue but are not messages a person
+ * sent. Review handoffs have their own Agents surface; workflow completion
+ * nudges are model-routing plumbing whose eventual transcript row is already
+ * classified as a system notice. Neither belongs in message counts or chips. */
+function isClientVisibleQueueItem(item: QueueItem): boolean {
+	return !item.reviewHandoff && !isWorkflowQueueItem(item);
+}
+
 export function clientVisibleQueuedCount(sessionId: string): number {
-	return (promptQueues.get(sessionId) ?? []).filter((item) => !item.reviewHandoff)
+	return (promptQueues.get(sessionId) ?? []).filter(isClientVisibleQueueItem)
 		.length;
 }
 
@@ -578,7 +629,7 @@ export function clientVisibleQueuedCounts(): Map<string, number> {
 		slot: "queued",
 	})) {
 		const items = value as QueueItem[];
-		const visible = items.filter((item) => !item.reviewHandoff).length;
+		const visible = items.filter(isClientVisibleQueueItem).length;
 		if (visible) counts.set(sessionId, visible);
 	}
 	return counts;
@@ -589,13 +640,13 @@ export function queueDisplayState(sessionId: string) {
 	const steered = queueWithIds(steeredReceipts.get(sessionId));
 	if (queued.length > 0) promptQueues.set(sessionId, queued);
 	if (steered.length > 0) steeredReceipts.set(sessionId, steered);
-	// Display copy only: automated review handoffs remain in the internal queue
-	// until dispatch but never enter a client's message surface. Fenced
+	// Display copy only: automated turns remain in the internal queue until
+	// dispatch but never enter a client's message surface. Fenced
 	// <opensession:context> blocks (e.g. the queued auto-continue nudge) are
 	// model plumbing too, so strip them from the remaining rows. The stored
 	// items keep their full content for delivery.
 	const forDisplay = (items: typeof queued) =>
-		items.filter((i) => !i.reviewHandoff).map((i) => {
+		items.filter(isClientVisibleQueueItem).map((i) => {
 			const shown = stripContext(i.content);
 			return {
 				...i,

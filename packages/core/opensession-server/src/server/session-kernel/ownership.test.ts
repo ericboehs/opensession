@@ -32,7 +32,6 @@ describe("single session ownership", () => {
 		expect(LEGACY_GATEWAY_EFFECT_OPERATIONS).toEqual([
 			"answer_question",
 			"cancel_session",
-			"create_session",
 			"delete_session",
 			"session_file_updated",
 			"submit_prompt",
@@ -111,6 +110,9 @@ describe("single session ownership", () => {
 		);
 		expect(creationReduction).toContain("this.enqueueOutbox(");
 		expect(creationReduction).toContain("completedEffectIds.push(input.effectId!)");
+		expect(creationReduction).toContain(
+			'input.event === "opening_dispatched" && !effect',
+		);
 		expect(store).toContain("SESSION_KERNEL_MAX_CREATION_EFFECT_RECEIPTS");
 		expect(creationReduction.indexOf("this.enqueueOutbox(")).toBeLessThan(
 			creationReduction.indexOf("tx.immediate()"),
@@ -134,14 +136,34 @@ describe("single session ownership", () => {
 			'"creation_credential_resolve",\n      executeCreationCredentialResolve',
 		);
 		expect(creationExecutors).toContain(
+			'"creation_attachment_stage",\n      executeCreationAttachmentStage',
+		);
+		expect(creationExecutors).toContain(
+			'"creation_opening_turn",\n      executeCreationOpeningTurn',
+		);
+		expect(creationExecutors).toContain(
 			"payload.sandboxKey !== item.sessionId",
 		);
 		expect(creationExecutors).toContain("resolveCurrentCredential");
+		expect(creationExecutors).toContain("stageCreationAttachment");
 		expect(creationExecutors).not.toContain("payload.gitEnv");
+		expect(read("session-create.ts")).not.toContain("stageFileAttachments(");
+		expect(read("session-control-wiring.ts")).not.toContain(
+			"stageFileAttachments(",
+		);
 		expect(creationExecutors).toContain("assertAdoptableWorkspace(workspace, item)");
 		expect(creationExecutors.indexOf("dependencies.result(item)")).toBeGreaterThan(
 			creationExecutors.indexOf("dependencies.createWorkspace({"),
 		);
+	});
+
+	test("queue selection and dispatch claim execute atomically inside the actor", () => {
+		const run = read("run-session.ts");
+		const actor = read("session-kernel/actor-worker.ts");
+		expect(run).toContain("beginNextPromptDispatch(sessionId");
+		expect(run).not.toContain("selectQueueBatch(queue");
+		expect(actor).toContain('delivery.op === "claim_next_dispatch"');
+		expect(actor).toContain("store.claimNextDeliveryDispatch(delivery)");
 	});
 
 	test("run-state decisions execute atomically inside the actor", () => {
@@ -232,13 +254,20 @@ describe("single session ownership", () => {
 		expect(source.match(/deliverAsk\(/g)?.length).toBe(2);
 	});
 
-	test("create and cancel retries keep stable ownership targets", () => {
+	test("creation uses its FSM without nesting inside a legacy mailbox", () => {
 		const ws = read("ws-handlers.ts");
 		expect(ws).toContain('legacyGatewayEffect("websocket_command"');
 		expect(ws).toContain("sessionIdForRequest");
 		expect(ws).toContain('typeof msg.sessionId === "string"');
+		const mailboxCommands = ws.slice(
+			ws.indexOf("const kernelCommands"),
+			ws.indexOf("const requestId"),
+		);
 		const routes = read("routes/sessions.ts");
-		expect(routes).toContain('legacyGatewayEffect("create_session"');
+		const wiring = read("session-control-wiring.ts");
+		expect(mailboxCommands).not.toContain('"create_session"');
+		expect(routes).not.toContain('legacyGatewayEffect("create_session"');
+		expect(wiring).not.toContain('legacyGatewayEffect("create_session"');
 		expect(routes).toContain("id: targetId");
 		expect(read("../../../protocol/src/session.ts")).toContain(
 			'type: "cancel"; sessionId?: string; requestId?: string',
@@ -247,9 +276,11 @@ describe("single session ownership", () => {
 
 	test("interrupted creates resume their environment setup, not only their prompt", () => {
 		const create = read("session-create.ts");
-		expect(create).toContain("const recoveringSession = findSession(bksId)");
+		expect(create).toContain("let recoveringSession = findSession(bksId)");
 		expect(create).toContain('existingBranch: restored.worktreeKind === "existing"');
-		expect(create).toContain("identity: plan.identity");
+		expect(create).toContain("const actorPlan =");
+		expect(create).toContain("creation?.setupPlan?.resolved");
+		expect(create).toContain("const identity = actorPlan");
 		expect(create.indexOf("openingPromptEntryId = beginPromptDispatch"))
 			.toBeLessThan(create.indexOf("await persist()"));
 		// The direct host run must use the create dispatch's stable transcript id.
@@ -262,11 +293,31 @@ describe("single session ownership", () => {
 		expect(routes).not.toContain("requeuePromptDispatch(targetId)");
 	});
 
-	test("create plans and MCP controls retain stable request identity", () => {
+	test("create replay waits for a resolvable projection before success", () => {
+		const create = read("session-create.ts");
 		const wiring = read("session-control-wiring.ts");
-		expect(wiring).toContain("updateCreatePlan(bksId, createIdentity)");
+		for (const source of [create, wiring]) {
+			expect(source).toContain("waitForCreatedSessionProjection(");
+			expect(source.indexOf("sessionKernel(bksId).creationState()"))
+				.toBeLessThan(source.indexOf("actorCreationSetupPlan(bksId, createIdentity)"));
+		}
+		expect(create).toContain("failCreate(error instanceof Error");
+		expect(create).toContain("if (projected) return projected");
+		expect(create.indexOf("if (projected) return projected")).toBeLessThan(
+			create.indexOf('if (state.state === "failed")'),
+		);
+		const ws = read("ws-handlers.ts");
+		expect(ws).toContain("const kernelDispatchErrors = new Map<string, Error>()");
+		expect(ws).toContain("if (dispatchError) throw dispatchError");
+		expect(ws).toContain("kernelDispatchErrors.set(");
+	});
+
+	test("actor setup plans and MCP controls retain stable request identity", () => {
+		const wiring = read("session-control-wiring.ts");
+		expect(wiring).toContain("patchCreationSetupPlan(bksId, createIdentity");
 		expect(wiring).toContain("createPlan.resolved");
-		expect(wiring).toContain("ensureCreationPlanned(bksId, createIdentity)");
+		expect(wiring).toContain("actorCreationSetupPlan(bksId, createIdentity)");
+		expect(wiring).not.toContain("updateCreatePlan(");
 		expect(wiring).toContain("await requestCreationWorkspace({");
 		expect(wiring.match(/await requestCreationCredential\(\{/g)?.length).toBe(2);
 		expect(wiring.match(/await requestCreationBranch\(\{/g)?.length).toBe(2);
@@ -275,24 +326,28 @@ describe("single session ownership", () => {
 		expect(wiring).not.toMatch(/\bcreateWorktree\(/);
 		const create = read("session-create.ts");
 		expect(create).toContain("createPlan.resolved");
-		expect(create).toContain("ensureCreationPlanned(bksId, createIdentity)");
+		expect(create).toContain("patchCreationSetupPlan(bksId, createIdentity");
+		expect(create).not.toContain("updateCreatePlan(");
+		expect(read("session-create-plan.ts")).not.toContain(
+			"function updateCreatePlan",
+		);
 		expect(create.match(/await requestCreationWorkspace\(\{/g)?.length).toBe(2);
 		expect(create).toContain("actorWorktreeMaterializer({");
 		expect(create).toContain("await requestCreationCredential({");
 		expect(create).toContain("await requestCreationBranch({");
 		expect(create).toContain("await requestCreationSandbox({");
+		expect(create).toContain("requestCreationOpening({");
+		expect(create).toContain("executeCreationOpeningEffect(");
 		expect(create.indexOf("await requestCreationSandbox({")).toBeLessThan(
 			create.indexOf("await maybeLaunchSandboxedRun("),
 		);
-		expect(create.match(/markCreationOpeningDispatched\(/g)?.length).toBe(3);
+		expect(create).not.toContain("markCreationOpeningDispatched");
 		expect(create).toMatch(
-			/requestCreationSandbox\([\s\S]*?markCreationOpeningDispatched\([\s\S]*?maybeLaunchSandboxedRun\(/,
+			/executeCreationOpeningEffect\([\s\S]*?openCreatedSession\(/,
 		);
-		expect(create).toMatch(
-			/prepareRunnerWorkspace\([\s\S]*?markCreationOpeningDispatched\([\s\S]*?maybeLaunchRunnerRun\(/,
-		);
-		expect(create).toContain("settleCreationSucceeded(bksId, creationIdentity)");
-		expect(create).toContain("settleCreationFailed(bksId, creationIdentity, e)");
+		expect(create).toContain("settleCreationSucceeded(");
+		expect(create).toContain("settleCreationFailed(");
+		expect(create).toContain("creationEffectId,");
 		expect(create).toContain(
 			"baseBranch: input.baseBranch || getRepo(input.project).defaultBranch",
 		);
@@ -358,7 +413,44 @@ describe("single session ownership", () => {
 	test("create and sandbox recovery establish one execution owner", () => {
 		const queue = read("queue-state.ts");
 		expect(queue).toContain('kind?: "create"');
-		expect(read("run-session.ts")).toContain("resumePlannedCreate(sessionId)");
+		expect(queue).toContain("options.creationOwnsPrompt?.(");
+		const runSession = read("run-session.ts");
+		expect(runSession).toContain("resumePlannedCreate(sessionId)");
+		expect(runSession).toContain("creationOwnsPrompt(record.osSessionId");
+		const boot = read("../../opensession.ts");
+		expect(boot).toContain(
+			"creationOwnsPrompt(run.osSessionId, run.promptEntryId)",
+		);
+		expect(boot).toContain("!!(run.runnerId || run.sandboxId)");
+		expect(boot).toContain("settleRecoveredCreationOpening(");
+		const create = read("session-create.ts");
+		expect(create).toContain("const openingJournal = activeRunRecords().find(");
+		expect(create).toContain("Recovered local opening lost durable ownership");
+		const runner = read("runner-session.ts");
+		expect(runner).toContain("promptEntryId: opts.promptEntryId");
+		expect(runner).toContain("const hostId = opts.hostId ||");
+		expect(runner).toContain('run.launchPhase === "prepared"');
+		expect(runner).toContain('launchPhase: "launching"');
+		const durableLaunching = runner.indexOf(
+			'writeJsonAtomic(launchStatePath, launchState)',
+			runner.indexOf('phase: "launching"'),
+		);
+		const physicalLaunch = runner.indexOf(
+			"await launcher.launch(hostId, hostDir)",
+			durableLaunching,
+		);
+		expect(durableLaunching).toBeGreaterThan(0);
+		expect(physicalLaunch).toBeGreaterThan(durableLaunching);
+		expect(runner).toContain('launchPhase: "started"');
+		expect(runner).toContain('phase: "rejected"');
+		expect(runner).toContain('reason: "ambiguous_runner_launch"');
+		expect(runner).toContain("setRunnerWorkload(runner.id, undefined, session.id)");
+		expect(runner).toContain("has no adoptable remote evidence");
+		expect(read("runner-ws.ts")).toContain("RunnerHostLaunchRejectedError");
+		expect(runner).toContain("candidate.hostId === run.hostId");
+		const runtime = read("session-kernel/runtime.ts");
+		expect(runtime).toContain('item.kind === "creation_opening_turn"');
+		expect(runtime).toContain("activeOpeningOutbox");
 		for (const relative of [
 			"sandbox/docker.ts",
 			"sandbox/adapters/bootstrap.ts",
@@ -396,13 +488,41 @@ describe("single session ownership", () => {
 		}
 	});
 
-	test("opening runs settle session-file writes before continuing", () => {
+	test("opening runs settle actor receipts before owner retirement and follow-ups", () => {
 		const create = read("session-create.ts");
 		const writes = create
 			.split("\n")
 			.filter((line) => line.includes("touchNativeSession("));
 		expect(writes.length).toBeGreaterThan(0);
 		for (const line of writes) expect(line).toContain("await touchNativeSession(");
+		const creationSettlement = create.indexOf("settleCreationSucceeded(");
+		const dispatchAck = create.indexOf(
+			"acknowledgePromptDispatch(bksId, openingPromptEntryId)",
+			creationSettlement,
+		);
+		expect(creationSettlement).toBeGreaterThan(0);
+		expect(dispatchAck).toBeGreaterThan(creationSettlement);
+		expect(create).toContain(
+			'if (event.type === "done" || event.type === "error")',
+		);
+		expect(create).toContain("await settlePhysicalCompletion()");
+		expect(create).toContain(
+			"Terminal-event handling settles the actor before backend generators may",
+		);
+		expect(create).toContain(
+			'throw new Error("Opening run ended without a terminal event")',
+		);
+		expect(create).toContain("openingJournal?.terminalFailure");
+		for (const backend of [
+			"host-client.ts",
+			"runner-session.ts",
+			"sandbox/docker.ts",
+			"sandbox/adapters/bootstrap.ts",
+		]) {
+			const source = read(backend);
+			expect(source).toContain("journalRecordAbnormalCompletion(");
+			expect(source).toContain("sourceCompleted && sawTerminal");
+		}
 
 		const cache = read("session-cache.ts");
 		const outcome = cache.indexOf("if (errorMessage) {");
@@ -415,7 +535,8 @@ describe("single session ownership", () => {
 	test("WebSocket session mutations enter the mailbox before dispatch", () => {
 		const source = read("ws-handlers.ts");
 		expect(source).toContain("kernelCommands.has(msg.type)");
-		expect(source).toContain("kernelDispatchTokens.delete");
+		expect(source).toContain("isInternalKernelDispatch(");
+		expect(source).toContain("kernelDispatchTokens.delete(kernelToken)");
 		expect(source).toContain("__sessionKernelToken");
 		expect(source).not.toContain("__sessionKernelOwned");
 		expect(source).toContain('source: "websocket"');

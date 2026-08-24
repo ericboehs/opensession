@@ -20,6 +20,8 @@ export interface OpenPr {
 	createdAt: string;
 	updatedAt: string;
 	checks: { total: number; passed: number; failed: number; pending: number };
+	/** MERGEABLE | CONFLICTING | UNKNOWN — the provider's conflict probe. */
+	mergeable?: string;
 	/** Person keys of teammates with a pending review request on this PR. */
 	reviewRequested?: string[];
 	/** An automated Open Session review is still running for this PR. */
@@ -60,6 +62,18 @@ export async function fetchRecentPrs(
 		label: "Failed to fetch recent PRs",
 	});
 	return data?.prs || [];
+}
+
+/** One PR from the same open + archived history that powers the PRs page. */
+export async function fetchRecentPr(
+	repo: string,
+	number: number,
+): Promise<RecentPr | null> {
+	const query = new URLSearchParams({ repo, number: String(number) });
+	const data = await request<{ prs: RecentPr[] }>(`/recent-prs?${query}`, {
+		label: "Failed to fetch PR",
+	});
+	return data?.prs?.[0] || null;
 }
 
 /** One commit on the default branch of a repo that ships without PRs. */

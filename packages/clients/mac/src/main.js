@@ -135,6 +135,7 @@ let zoomLevel = 0;
 
 const serverFile = () => path.join(app.getPath("userData"), "server.json");
 let addingAccount = false;
+let setupReturnDestination = "app";
 let backgroundAccountWindows = new Map();
 let badgeByOrigin = new Map();
 
@@ -310,8 +311,9 @@ async function resolveServer(raw) {
   return { ...reached, url };
 }
 
-function showSetup() {
+function showSetup(returnDestination = "app") {
   if (!win || win.isDestroyed()) return;
+  setupReturnDestination = returnDestination;
   clearStallGuard();
   win.loadFile(path.join(__dirname, "setup.html"), {
     query: {
@@ -1245,13 +1247,13 @@ app.whenReady().then(async () => {
   const fromShellPage = (e) => (e.senderFrame?.url ?? "").startsWith("file://");
 
   ipcMain.on("os1:server-open", (e) => {
-    if (fromShellPage(e)) showSetup();
+    if (fromShellPage(e)) showSetup("status");
   });
   ipcMain.on("os1:server-cancel", (e) => {
-    if (fromShellPage(e) && APP_URL) {
-      addingAccount = false;
-      loadApp(APP_URL);
-    }
+    if (!fromShellPage(e) || !APP_URL) return;
+    addingAccount = false;
+    if (setupReturnDestination === "status") showStatusPage();
+    else loadApp(APP_URL);
   });
   ipcMain.handle("os1:server-probe", async (e, raw) => {
     if (!fromShellPage(e)) return { ok: false };

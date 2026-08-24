@@ -3,7 +3,7 @@ import { $ } from "bun";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gitPull, gitPush, porcelainPaths } from "./git-status";
+import { gitFailureMessage, gitPull, gitPush, porcelainPaths } from "./git-status";
 import type { WorkspaceExec } from "./sandbox/workspace-exec";
 
 const roots: string[] = [];
@@ -93,6 +93,24 @@ describe("gitPull from base", () => {
     });
     expect(await git(repo, "rev-parse", "HEAD")).toBe(before);
     expect(await git(repo, "status", "--porcelain")).toContain("shared.txt");
+  });
+});
+
+describe("gitFailureMessage", () => {
+  test("shows Git's final diagnostic instead of fetch progress", () => {
+    expect(
+      gitFailureMessage(
+        "From github.com:tellahq/opensession\n   abc..def  main -> origin/main\nfatal: Not possible to fast-forward, aborting.\n",
+        "Git pull failed",
+      ),
+    ).toBe("Not possible to fast-forward, aborting.");
+  });
+
+  test("keeps a useful final line and falls back for empty output", () => {
+    expect(gitFailureMessage("remote: Permission denied\n", "Git push failed")).toBe(
+      "remote: Permission denied",
+    );
+    expect(gitFailureMessage("", "Git push failed")).toBe("Git push failed");
   });
 });
 

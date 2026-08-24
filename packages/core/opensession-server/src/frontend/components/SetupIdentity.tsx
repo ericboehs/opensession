@@ -7,18 +7,16 @@ import {
 import { AGENT_NAME, PRODUCT_NAME } from "../lib/brand";
 import { cn } from "../ui/cn";
 import {
-	SettingCard,
 	SettingRow,
 	SettingRowDescription,
 	SettingRowText,
 	SettingRowTitle,
-	SettingsHint,
 	settingsInputClass,
 } from "../ui/settings";
 import { toast } from "../ui/toast";
 
-// What this instance and its agent are called: a Setup step and a group in
-// Workspace > General, rendered from the same card.
+// What this instance and its agent are called. These rows sit inside the
+// organization card, so Setup and Workspace > General both show one section.
 
 const IDENTITY_INPUT_CLASS = cn(settingsInputClass, "w-[140px]");
 
@@ -70,7 +68,9 @@ function IdentityInput({
 	);
 }
 
-export function IdentityCard() {
+/** The instance's own names, as rows. They live inside the organization card
+ *  so setup and settings show one section rather than two near-identical ones. */
+export function IdentityRows() {
 	const [identity, setIdentity] = useState<InstanceIdentityDto | null>(null);
 	useEffect(() => {
 		let cancelled = false;
@@ -97,39 +97,34 @@ export function IdentityCard() {
 
 	return (
 		<>
-			<SettingCard>
-				<SettingRow>
-					<SettingRowText>
-						<SettingRowTitle>Agent name</SettingRowTitle>
-						<SettingRowDescription>
-							Shown in prompts, Slack messages, and the app.
-						</SettingRowDescription>
-					</SettingRowText>
-					<IdentityInput
-						label="Agent name"
-						value={identity?.personaName ?? AGENT_NAME}
-						placeholder="Assistant"
-						onSave={(next) => save({ personaName: next })}
-					/>
-				</SettingRow>
-				<SettingRow>
-					<SettingRowText>
-						<SettingRowTitle>Product name</SettingRowTitle>
-						<SettingRowDescription>
-							Shown in titles and headings.
-						</SettingRowDescription>
-					</SettingRowText>
-					<IdentityInput
-						label="Product name"
-						value={identity?.productName ?? PRODUCT_NAME}
-						placeholder="Open Session"
-						onSave={(next) => save({ productName: next })}
-					/>
-				</SettingRow>
-			</SettingCard>
-			<SettingsHint>
-				Shared with everyone on this instance. Clear a field to use the default.
-			</SettingsHint>
+			<SettingRow>
+				<SettingRowText>
+					<SettingRowTitle>Agent name</SettingRowTitle>
+					<SettingRowDescription>
+						Shown in prompts, Slack messages, and the app.
+					</SettingRowDescription>
+				</SettingRowText>
+				<IdentityInput
+					label="Agent name"
+					value={identity?.personaName ?? AGENT_NAME}
+					placeholder="Assistant"
+					onSave={(next) => save({ personaName: next })}
+				/>
+			</SettingRow>
+			<SettingRow>
+				<SettingRowText>
+					<SettingRowTitle>Product name</SettingRowTitle>
+					<SettingRowDescription>
+						Shown in titles and headings.
+					</SettingRowDescription>
+				</SettingRowText>
+				<IdentityInput
+					label="Product name"
+					value={identity?.productName ?? PRODUCT_NAME}
+					placeholder="Open Session"
+					onSave={(next) => save({ productName: next })}
+				/>
+			</SettingRow>
 		</>
 	);
 }
