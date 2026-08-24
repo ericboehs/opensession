@@ -25,6 +25,10 @@ import { LABEL_AUTOFIX, labelAliases, repoForFullName } from "./constants";
 import { personaName } from "../../server/config";
 import type { PrRef, ReviewResult } from "./review";
 import { defaultRepo } from "../../server/config";
+import {
+  resolveGithubCredential,
+  serviceGithubCredential,
+} from "../../server/github-auth";
 
 const MAX_ITERATIONS = 5;
 const WALL_CLOCK_MS = 60 * 60 * 1000; // abandon a loop running longer than an hour
@@ -44,7 +48,11 @@ const REPO = defaultRepo().ghRepo;
 
 async function headSha(headRef: string, ghRepo: string = REPO): Promise<string> {
   try {
-    const raw = await $`gh pr view ${headRef} --repo ${ghRepo} --json headRefOid`.quiet().text();
+    const credential = await resolveGithubCredential(serviceGithubCredential);
+    const raw = await $`gh pr view ${headRef} --repo ${ghRepo} --json headRefOid`
+      .env({ ...process.env, ...credential.env })
+      .quiet()
+      .text();
     return JSON.parse(raw).headRefOid || "";
   } catch {
     return "";

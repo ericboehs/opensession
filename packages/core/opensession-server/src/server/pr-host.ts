@@ -12,7 +12,11 @@
  * pr-info.ts and are host-agnostic.
  */
 import type { Repo } from "./config";
-import type { GithubCredential } from "./github-auth";
+import {
+  resolveGithubCredential,
+  serviceGithubCredential,
+  type GithubCredential,
+} from "./github-auth";
 import {
 	botGhToken,
 	ghRateLimited,
@@ -155,7 +159,12 @@ export interface PrHost {
 export async function ghJson<T>(args: string[]): Promise<T | null> {
 	if (ghRateLimited()) return null;
 	try {
-		const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe" });
+		const credential = await resolveGithubCredential(serviceGithubCredential);
+		const proc = Bun.spawn(["gh", ...args], {
+			stdout: "pipe",
+			stderr: "pipe",
+			env: { ...process.env, ...credential.env },
+		});
 		const [raw, err] = await Promise.all([
 			new Response(proc.stdout).text(),
 			new Response(proc.stderr).text(),

@@ -26,6 +26,8 @@ import {
   pollGithubDeviceFlow,
   refreshExpiringGithubTokens,
   removeGithubAccount,
+  resolveGithubCredential,
+  serviceGithubCredential,
   soleGithubAccount,
   soleGithubLogin,
   startGithubDeviceFlow,
@@ -126,6 +128,9 @@ describe("selected bot credential boundary", () => {
     process.env.OPENSESSION_CONFIG = path;
     process.env.GITHUB_API_TOKEN = "retired-pat";
     expect(await botGhToken()).toBeNull();
+    await expect(resolveGithubCredential(serviceGithubCredential)).rejects.toThrow(
+      "selected GitHub bot credential is unavailable",
+    );
   });
 });
 

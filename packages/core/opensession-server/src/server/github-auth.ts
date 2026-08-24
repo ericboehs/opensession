@@ -854,6 +854,22 @@ export const serviceGithubCredential: GithubCredential = {
   env: {},
 };
 
+/** Materialize the operator-selected credential for server-owned gh calls.
+ * Interactive user credentials pass through unchanged. */
+export async function resolveGithubCredential(
+  credential: GithubCredential,
+  opts: { write?: boolean } = {},
+): Promise<GithubCredential> {
+  if (credential.kind !== "service" || credential.env.GH_TOKEN) return credential;
+  const { githubToken } = await import("./github-app");
+  const token = await githubToken(opts);
+  if (!token) throw new Error("The selected GitHub bot credential is unavailable");
+  return {
+    ...credential,
+    env: githubProcessEnv({ GH_TOKEN: token, GITHUB_TOKEN: token }),
+  };
+}
+
 function credentialForAccount(account: StoredAccount): GithubCredential {
   return {
     kind: "user",

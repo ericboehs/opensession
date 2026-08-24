@@ -29,7 +29,11 @@
  * already own their branches and worktrees. There are no stack mutations in
  * the GraphQL schema, so the extension is the only write surface.
  */
-import { serviceGithubCredential, type GithubCredential } from "./github-auth";
+import {
+  resolveGithubCredential,
+  serviceGithubCredential,
+  type GithubCredential,
+} from "./github-auth";
 import { ghRateLimited, noteGhRateLimited, isGhRateLimitMsg } from "./github-limit";
 import { audited } from "./audit";
 import type { PrStack, PrStackLayer } from "./pr-contract";
@@ -133,6 +137,11 @@ export async function getPrStack(
   if (ghRateLimited()) return null;
   const repo = splitRepo(ghRepo);
   if (!repo) return null;
+  try {
+    credential = await resolveGithubCredential(credential);
+  } catch {
+    return null;
+  }
 
   const head = await graphql(
     STACK_QUERY,
@@ -371,6 +380,7 @@ export async function linkPrStack(
   cwd: string,
   credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true } | { error: string }> {
+  credential = await resolveGithubCredential(credential, { write: true });
   if (prUrls.length < 2)
     return { error: "A stack needs at least two pull requests" };
 
@@ -419,6 +429,7 @@ export async function mergePrStack(
   opts: { method?: "merge" | "squash" | "rebase" } = {},
   credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true } | { error: string }> {
+  credential = await resolveGithubCredential(credential, { write: true });
   const method = opts.method || "squash";
   return audited(
     {

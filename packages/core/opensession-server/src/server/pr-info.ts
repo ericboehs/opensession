@@ -13,7 +13,11 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "fs";
 import { audited } from "./audit";
 import { ghRateLimited, noteGhRateLimited, isGhRateLimitMsg } from "./github-limit";
-import { serviceGithubCredential, type GithubCredential } from "./github-auth";
+import {
+  resolveGithubCredential,
+  serviceGithubCredential,
+  type GithubCredential,
+} from "./github-auth";
 import { githubBotCredentialMode, githubToken } from "./github-app";
 import { reviewRequestRemovalSpecs } from "./github-review-requests";
 import { getPrStack, unmergedLayersBelow } from "./pr-stack";
@@ -323,15 +327,6 @@ async function selectedGhEnv(
   return { GH_TOKEN: token, GITHUB_TOKEN: token };
 }
 
-async function resolvedGithubCredential(
-  credential: GithubCredential,
-  opts: { write?: boolean } = {},
-): Promise<GithubCredential> {
-  return credential.kind === "service" && !credential.env.GH_TOKEN
-    ? { ...credential, env: await selectedGhEnv(opts) }
-    : credential;
-}
-
 function spawnGh(args: string[], credential: GithubCredential, stdin?: "pipe") {
   return Bun.spawn(["gh", ...args], {
     ...(stdin ? { stdin } : {}),
@@ -422,7 +417,7 @@ async function getMutationPrMeta(
   repo: string,
   credential: GithubCredential,
 ): Promise<MutationPrMeta | null> {
-  const resolvedCredential = await resolvedGithubCredential(credential);
+  const resolvedCredential = await resolveGithubCredential(credential);
   const proc = spawnGh(
     ["pr", "view", branch, "--repo", repo, "--json", "number,headRefOid,state,isDraft,url"],
     resolvedCredential,
@@ -569,7 +564,7 @@ export async function postPrComment(
   credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true; url?: string } | { error: string }> {
   try {
-    credential = await resolvedGithubCredential(credential, { write: true });
+    credential = await resolveGithubCredential(credential, { write: true });
     if (input.path && input.line) {
       const meta = await getMutationPrMeta(branch, repo, credential);
       if (!meta) return { error: "No PR found for this branch" };
@@ -634,7 +629,7 @@ export async function submitPrReview(
   repo: string = DEFAULT_REPO(),
   credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true; url?: string } | { error: string }> {
-  credential = await resolvedGithubCredential(credential, { write: true });
+  credential = await resolveGithubCredential(credential, { write: true });
   if (!input.comments.length && !input.body?.trim()) {
     return { error: "Nothing to submit" };
   }
@@ -706,7 +701,7 @@ export async function closePr(
   repo: string = DEFAULT_REPO(),
   credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true; url?: string; number: number } | { error: string }> {
-  credential = await resolvedGithubCredential(credential, { write: true });
+  credential = await resolveGithubCredential(credential, { write: true });
   const pr = await getMutationPrMeta(branch, repo, credential);
   if (!pr) return { error: "No PR found for this branch" };
   if (pr.state !== "OPEN") return { error: `PR #${pr.number} is ${pr.state.toLowerCase()}, not open` };
@@ -747,7 +742,7 @@ export async function mergePr(
   repo: string = DEFAULT_REPO(),
   credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true; url?: string } | { error: string }> {
-  credential = await resolvedGithubCredential(credential, { write: true });
+  credential = await resolveGithubCredential(credential, { write: true });
   const pr = await getMutationPrMeta(branch, repo, credential);
   if (!pr) return { error: "No PR found for this branch" };
   if (pr.state !== "OPEN") return { error: `PR #${pr.number} is ${pr.state.toLowerCase()}, not open` };
@@ -823,7 +818,7 @@ export async function editPrReviewers(
   repo: string = DEFAULT_REPO(),
   credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true } | { error: string }> {
-  credential = await resolvedGithubCredential(credential, { write: true });
+  credential = await resolveGithubCredential(credential, { write: true });
   const args = ["pr", "edit", branch, "--repo", repo];
   if (opts.add) args.push("--add-reviewer", opts.add);
   // A list, because withdrawing a request made on GitHub rather than here can
@@ -860,7 +855,7 @@ export async function prReviewerSpecs(
   repo: string = DEFAULT_REPO(),
   credential: GithubCredential = serviceGithubCredential,
 ): Promise<string[] | null> {
-  credential = await resolvedGithubCredential(credential);
+  credential = await resolveGithubCredential(credential);
   const proc = spawnGh(
     ["pr", "view", branch, "--repo", repo, "--json", "reviewRequests"],
     credential,
