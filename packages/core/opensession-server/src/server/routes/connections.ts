@@ -818,6 +818,12 @@ export async function handleConnectionsRoutes(
 			const github = githubIntegrationSection(config, true)!;
 			const keyMutation = privateKey ||
 				(github.oauthClientId !== clientId ? null : undefined);
+			if (keyMutation === null && github.botCredential === "app") {
+				return Response.json(
+					{ error: "Switch bot actions to the PAT before changing the GitHub App without a replacement key" },
+					{ status: 409 },
+				);
+			}
 			github.oauthClientId = clientId;
 			github.appSlug = slug;
 			github.oauthClientSecret = secret;
@@ -873,6 +879,12 @@ export async function handleConnectionsRoutes(
 		return withConfigMutationLock(async () => {
 			const config = rawConfig();
 			const github = githubIntegrationSection(config, false);
+			if (github?.botCredential === "app") {
+				return Response.json(
+					{ error: "Switch bot actions to the PAT before removing the GitHub App" },
+					{ status: 409 },
+				);
+			}
 			if (github) {
 				// Drop the repo-App keys and the captured sign-in intent
 				// (appOrg/authOnConnect) — removing the App is also how the wizard
