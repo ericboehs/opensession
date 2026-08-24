@@ -1085,6 +1085,17 @@ async function spawnDaytonaWarm(repo: Repo): Promise<void> {
       8 * 60_000,
     );
     if (!clone.ok) return void (await fail(`clone: ${clone.out.slice(-400)}`));
+    if (repo.host !== "codestorage") {
+      // git clone persists its authority in remote.origin.url. Remove the
+      // repository-scoped App token before any repository-owned setup/start
+      // code can inspect it.
+      const safeOrigin = `https://github.com/${repo.ghRepo}.git`;
+      const scrub = await poolExec(
+        c,
+        `git -C ${WORKSPACE} remote set-url origin ${shellQuoteWord(safeOrigin)}`,
+      );
+      if (!scrub.ok) return void (await fail(`credential scrub: ${scrub.out.slice(-400)}`));
+    }
 
     for (const rel of SEED_ENV_FILES) {
       const content = envSeedContent(repo, rel);
