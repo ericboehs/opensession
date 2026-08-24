@@ -143,9 +143,11 @@ export function noteGhRateLimited(source: string, resetEpochMs?: number): void {
  * that the REST helpers use, else the gh CLI's own token, probed once and cached
  * for the process lifetime.
  */
-export async function botGhToken(): Promise<string | null> {
+export async function botGhToken(
+  opts: { write?: boolean } = {},
+): Promise<string | null> {
   const { githubBotCredentialMode, githubToken } = await import("./github-app");
-  const primary = await githubToken();
+  const primary = await githubToken(opts);
   if (primary) return primary;
   // App mode is an explicit credential boundary. Do not silently resume with
   // a user login or retired PAT cached by gh when App token minting fails.

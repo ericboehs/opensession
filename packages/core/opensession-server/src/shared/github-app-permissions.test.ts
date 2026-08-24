@@ -6,6 +6,7 @@
 
 import { describe, test, expect } from "bun:test";
 import {
+	GITHUB_APP_CODE_PERMISSIONS,
 	GITHUB_APP_GRANT_PERMISSIONS,
 	GITHUB_APP_READ_PERMISSIONS,
 	GITHUB_APP_WRITE_PERMISSIONS,
@@ -27,6 +28,13 @@ describe("github app permission sets", () => {
 
 	test("the write mint is within the grant", () => {
 		expect(uncoveredScopes(GITHUB_APP_WRITE_PERMISSIONS)).toEqual([]);
+	});
+
+	test("the repository code mint is within the grant", () => {
+		expect(uncoveredScopes(GITHUB_APP_CODE_PERMISSIONS)).toEqual([]);
+		expect(GITHUB_APP_CODE_PERMISSIONS.actions).toBe("read");
+		expect(GITHUB_APP_CODE_PERMISSIONS.checks).toBe("read");
+		expect(GITHUB_APP_CODE_PERMISSIONS.issues).toBe("write");
 	});
 
 	test("the grant includes the scopes the two capabilities depend on", () => {

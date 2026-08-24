@@ -106,6 +106,7 @@ describe("GitHub App onboarding link", () => {
 			// The canonical grant set — checks + statuses (the App-only CI rollup)
 			// and issues (PR/issue comments) included, so a created App holds every
 			// scope the installation-token mints request.
+			actions: "read",
 			checks: "read",
 			statuses: "read",
 			contents: "write",

@@ -16,6 +16,7 @@
 /** The full set the App is granted at creation — the create-URL permission
  *  params, and the superset of every mint. */
 export const GITHUB_APP_GRANT_PERMISSIONS: Record<string, string> = {
+	actions: "read", // workflow runs/logs for trusted autofix diagnosis
 	checks: "read", // CI check runs — App-only; no PAT can read them
 	statuses: "read", // commit statuses, the other half of the status rollup
 	contents: "write", // push fixes, clone
@@ -49,4 +50,14 @@ export const GITHUB_APP_WRITE_PERMISSIONS: Record<string, string> = {
 	issues: "write",
 	contents: "write",
 	metadata: "read",
+};
+
+/** Repository-scoped token projected only to trusted GitHub code workflows.
+ * It can push/reply and inspect the failing checks and workflow logs it must
+ * diagnose, but remains bound to the one owner-verified repository. */
+export const GITHUB_APP_CODE_PERMISSIONS: Record<string, string> = {
+	...GITHUB_APP_WRITE_PERMISSIONS,
+	actions: "read",
+	checks: "read",
+	statuses: "read",
 };

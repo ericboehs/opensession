@@ -26,6 +26,7 @@ import { configuredIntegration } from "./config";
 import { githubGitCredentialEnv } from "./github-git-credential";
 import { writeFileAtomic } from "./shared/atomic-write";
 import {
+  GITHUB_APP_CODE_PERMISSIONS as CODE_PERMISSIONS,
   GITHUB_APP_READ_PERMISSIONS as READ_PERMISSIONS,
   GITHUB_APP_WRITE_PERMISSIONS as WRITE_PERMISSIONS,
 } from "../shared/github-app-permissions";
@@ -315,9 +316,9 @@ export async function githubAppRepositoryToken(ghRepo: string): Promise<string |
         },
         body: JSON.stringify({
           repositories: [repo],
-          // Trusted repository code runs need the same write surface as the
-          // PR agent, including issue comments used by autofix threads.
-          permissions: WRITE_PERMISSIONS,
+          // Trusted repository code runs can push/reply and inspect the
+          // failing checks and Actions logs they are expected to repair.
+          permissions: CODE_PERMISSIONS,
         }),
       },
     );
