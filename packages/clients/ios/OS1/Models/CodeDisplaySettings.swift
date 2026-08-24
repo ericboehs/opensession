@@ -93,7 +93,7 @@ struct CodeDisplaySettingsControls: View {
                     Text(option.label).tag(option)
                 }
             }
-            .pickerStyle(.inline)
+            .pickerStyle(.menu)
         }
     }
 
