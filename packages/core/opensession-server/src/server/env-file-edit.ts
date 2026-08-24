@@ -11,9 +11,9 @@
  * Line handling: an existing `KEY=...` (or commented-out `# KEY=...`) line is
  * replaced in place; a new key is appended at the end under a
  * `# --- added via web setup ---` marker. Setting a key to the empty string
- * unsets it by commenting the line out (so the systemd EnvironmentFile stops
- * defining it after the next restart, but the operator can still see what was
- * there).
+ * unsets it by commenting the line out with a web-setup tombstone (so the
+ * systemd EnvironmentFile stops defining it after the next restart, but the
+ * operator can still see what was there).
  */
 
 import { chmodSync, existsSync, readFileSync, rmSync } from "fs";
@@ -31,6 +31,7 @@ export function envFilePath(): string {
 }
 
 export const WEB_SETUP_MARKER = "# --- added via web setup ---";
+export const WEB_SETUP_UNSET_SUFFIX = " # unset via web setup";
 
 const MAX_ENV_VALUE_LENGTH = 4096;
 
@@ -83,7 +84,9 @@ export function applyEnvEdits(
     const commented = commentedLineRe(key);
     if (value === "") {
       for (let i = 0; i < lines.length; i++) {
-        if (active.test(lines[i])) lines[i] = `# ${lines[i].trim()}`;
+        if (active.test(lines[i])) {
+          lines[i] = `# ${lines[i].trim()}${WEB_SETUP_UNSET_SUFFIX}`;
+        }
       }
       continue;
     }
@@ -162,9 +165,9 @@ export function applyEnvFileEdits(edits: Record<string, string>): void {
   prepareEnvFileEdits(edits).commit();
 }
 
-/** Parse the env file's active definitions. With `includeUnset`, a commented
- * definition is represented as an empty string so status snapshots can tell a
- * pending clear from an unchanged boot-time process.env value. */
+/** Parse the env file's active definitions. With `includeUnset`, only a
+ * web-setup tombstone is represented as an empty string, so example comments
+ * remain inert while pending clears override boot-time process.env values. */
 export function readEnvFileValues(options?: {
   includeUnset?: boolean;
 }): Record<string, string> {
@@ -186,10 +189,11 @@ export function readEnvFileValues(options?: {
       continue;
     }
     if (!options?.includeUnset) continue;
-    const commented = line.match(
+    if (!line.endsWith(WEB_SETUP_UNSET_SUFFIX)) continue;
+    const tombstone = line.match(
       /^\s*#\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/,
     );
-    if (commented && !(commented[1] in values)) values[commented[1]] = "";
+    if (tombstone && !(tombstone[1] in values)) values[tombstone[1]] = "";
   }
   return values;
 }

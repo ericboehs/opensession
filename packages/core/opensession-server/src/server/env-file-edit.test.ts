@@ -10,6 +10,7 @@ import {
   readEnvFileValues,
   validateEnvValue,
   WEB_SETUP_MARKER,
+  WEB_SETUP_UNSET_SUFFIX,
 } from "./env-file-edit";
 
 const savedEnvFile = process.env.OPENSESSION_ENV_FILE;
@@ -62,7 +63,9 @@ describe("applyEnvEdits", () => {
   test("empty value comments the active line out (unset)", () => {
     const before = "A=1\nSLACK_BOT_TOKEN=secret\nB=2\n";
     const after = applyEnvEdits(before, { SLACK_BOT_TOKEN: "" });
-    expect(after).toBe("A=1\n# SLACK_BOT_TOKEN=secret\nB=2\n");
+    expect(after).toBe(
+      `A=1\n# SLACK_BOT_TOKEN=secret${WEB_SETUP_UNSET_SUFFIX}\nB=2\n`,
+    );
   });
 
   test("unsetting an absent key is a no-op", () => {
@@ -117,6 +120,11 @@ describe("applyEnvFileEdits (disk)", () => {
     applyEnvFileEdits({ KEY: "" });
     expect(readEnvFileValues().KEY).toBeUndefined();
     expect(readEnvFileValues({ includeUnset: true }).KEY).toBe("");
+  });
+
+  test("ordinary commented examples are not treated as pending clears", () => {
+    writeFileSync(file, "# KEY=example\n");
+    expect(readEnvFileValues({ includeUnset: true }).KEY).toBeUndefined();
   });
 
   test("prepared edits can roll back after a later config write fails", () => {

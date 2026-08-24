@@ -131,6 +131,24 @@ describe("setup access route", () => {
     });
   });
 
+  test("ignores example comments when a webhook origin is configured", async () => {
+    const paths = fixture();
+    const config = JSON.parse(readFileSync(paths.config, "utf-8"));
+    config.server.webhookBaseUrl = "https://ingress.example.com";
+    writeFileSync(paths.config, JSON.stringify(config));
+    writeFileSync(
+      paths.env,
+      `${readFileSync(paths.env, "utf-8")}# OPENSESSION_WEBHOOK_BASE=https://hooks.example.com\n`,
+    );
+    delete process.env.OPENSESSION_WEBHOOK_BASE;
+
+    const response = await handleSetupRoutes(statusContext());
+
+    expect(await response?.json()).toMatchObject({
+      access: { webhookBaseUrl: "https://ingress.example.com" },
+    });
+  });
+
   test("clears the separate webhook origin from both stores", async () => {
     const paths = fixture();
     await handleSetupAccessRoutes(
