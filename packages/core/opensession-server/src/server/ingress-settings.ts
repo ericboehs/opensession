@@ -2,6 +2,7 @@
 import { randomBytes } from "crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { networkInterfaces } from "os";
+import { isIP } from "net";
 import { join } from "path";
 import { tmpdir } from "os";
 import { resolve4, resolve6 } from "dns/promises";
@@ -32,9 +33,10 @@ export interface IngressStatus {
   canManage: boolean;
   publicBaseUrl: string;
   exposure: IngressExposure | null;
-  health: "ready" | "unreachable" | "not_configured";
+  health: "ready" | "waiting_dns" | "unreachable" | "not_configured";
   localUrl: string;
   hostname: string;
+  server: { ipv4: string[]; ipv6: string[] };
   dns: { a: string[]; aaaa: string[]; suggested: string[] };
   tailscale: { installed: boolean; dnsName: string; suggestedUrl: string };
   cloudflare: {
@@ -87,6 +89,13 @@ export function normalizeIngressOrigin(value: string): string {
   return parsed.origin;
 }
 
+/** Custom-domain setup asks for a domain, not URL syntax. HTTPS is fixed by
+ * the ingress contract and Caddy provisions it, so adding a scheme is busywork. */
+export function normalizeCustomIngressOrigin(value: string): string {
+  const trimmed = value.trim();
+  return normalizeIngressOrigin(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
+}
+
 async function command(argv: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   const child = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe", env: process.env });
   const [stdout, stderr, code] = await Promise.all([
@@ -113,8 +122,8 @@ async function tailscaleDnsName(): Promise<string> {
 function publicInterfaceAddresses(): { a: string[]; aaaa: string[] } {
   const a = new Set<string>();
   const aaaa = new Set<string>();
-  if (process.env.OPENSESSION_PUBLIC_IPV4) a.add(process.env.OPENSESSION_PUBLIC_IPV4);
-  if (process.env.OPENSESSION_PUBLIC_IPV6) aaaa.add(process.env.OPENSESSION_PUBLIC_IPV6);
+  if (process.env.OPENSESSION_PUBLIC_IPV4) a.add(process.env.OPENSESSION_PUBLIC_IPV4.trim());
+  if (process.env.OPENSESSION_PUBLIC_IPV6) aaaa.add(process.env.OPENSESSION_PUBLIC_IPV6.trim());
   for (const entries of Object.values(networkInterfaces())) {
     for (const entry of entries || []) {
       if (entry.internal || isBlockedAddress(entry.address)) continue;
@@ -122,7 +131,60 @@ function publicInterfaceAddresses(): { a: string[]; aaaa: string[] } {
       else if (entry.family === "IPv6") aaaa.add(entry.address);
     }
   }
-  return { a: [...a], aaaa: [...aaaa] };
+  return {
+    a: [...a].filter((address) => isIP(address) === 4 && !isBlockedAddress(address)),
+    aaaa: [...aaaa].filter((address) => isIP(address) === 6 && !isBlockedAddress(address)),
+  };
+}
+
+async function metadataValue(url: string, headers: Record<string, string> = {}, method = "GET"): Promise<string> {
+  try {
+    const response = await fetch(url, {
+      method,
+      headers,
+      signal: AbortSignal.timeout(700),
+    });
+    if (!response.ok) return "";
+    return (await response.text()).trim();
+  } catch {
+    return "";
+  }
+}
+
+/** Discover a NATed cloud VM's public address without sending instance data to
+ * an internet "what is my IP" service. These are fixed link-local metadata
+ * endpoints for AWS, GCP, and Azure; unsupported providers simply time out. */
+async function cloudMetadataPublicIpv4(): Promise<string[]> {
+  const aws = (async () => {
+    const token = await metadataValue(
+      "http://169.254.169.254/latest/api/token",
+      { "X-aws-ec2-metadata-token-ttl-seconds": "60" },
+      "PUT",
+    );
+    return metadataValue(
+      "http://169.254.169.254/latest/meta-data/public-ipv4",
+      token ? { "X-aws-ec2-metadata-token": token } : {},
+    );
+  })();
+  const [awsAddress, gcpAddress, azureAddress] = await Promise.all([
+    aws,
+    metadataValue(
+      "http://169.254.169.254/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip",
+      { "Metadata-Flavor": "Google" },
+    ),
+    metadataValue(
+      "http://169.254.169.254/metadata/instance/network/interface/0/ipv4/ipAddress/0/publicIpAddress?api-version=2021-02-01&format=text",
+      { Metadata: "true" },
+    ),
+  ]);
+  return [...new Set([awsAddress, gcpAddress, azureAddress])]
+    .filter((address) => isIP(address) === 4 && !isBlockedAddress(address));
+}
+
+async function publicServerAddresses(): Promise<{ a: string[]; aaaa: string[] }> {
+  const direct = publicInterfaceAddresses();
+  const metadata = direct.a.length ? [] : await cloudMetadataPublicIpv4();
+  return { a: [...new Set([...direct.a, ...metadata])], aaaa: direct.aaaa };
 }
 
 async function currentDns(hostname: string): Promise<{ a: string[]; aaaa: string[] }> {
@@ -134,7 +196,7 @@ async function currentDns(hostname: string): Promise<{ a: string[]; aaaa: string
   return { a, aaaa };
 }
 
-async function ingressHealth(origin: string): Promise<IngressStatus["health"]> {
+async function ingressHealth(origin: string): Promise<"ready" | "unreachable" | "not_configured"> {
   if (!origin) return "not_configured";
   try {
     const response = await fetch(`${origin}/ingress-health`, {
@@ -146,19 +208,32 @@ async function ingressHealth(origin: string): Promise<IngressStatus["health"]> {
   }
 }
 
+export function publicIngressHealth(
+  exposure: IngressExposure | null,
+  probed: "ready" | "unreachable" | "not_configured",
+  dns: { a: string[]; aaaa: string[] },
+  server: { a: string[]; aaaa: string[] },
+): IngressStatus["health"] {
+  if (exposure !== "custom" || probed !== "unreachable") return probed;
+  const expectedAddresses = [...server.a, ...server.aaaa];
+  const resolvedAddresses = [...dns.a, ...dns.aaaa];
+  const dnsPointsHere = expectedAddresses.length
+    ? resolvedAddresses.some((address) => expectedAddresses.includes(address))
+    : resolvedAddresses.length > 0;
+  return dnsPointsHere ? probed : "waiting_dns";
+}
+
 export async function publicIngressStatus(canManage: boolean): Promise<IngressStatus> {
   const configured = configuredIngress();
   let hostname = "";
   try { hostname = new URL(configured.publicBaseUrl).hostname; } catch {}
-  const [dns, tsName, health] = await Promise.all([
+  const [dns, tsName, probedHealth, serverAddresses] = await Promise.all([
     currentDns(hostname),
     tailscaleDnsName(),
     ingressHealth(configured.publicBaseUrl),
+    publicServerAddresses(),
   ]);
-  const direct = publicInterfaceAddresses();
-  // Existing DNS is a useful exact answer on cloud hosts whose public address
-  // is NATed and therefore absent from networkInterfaces (EC2 is common).
-  const suggestedAddresses = direct.a.length || direct.aaaa.length ? direct : dns;
+  const health = publicIngressHealth(configured.exposure, probedHealth, dns, serverAddresses);
   const tunnelId = configured.cloudflareTunnelId;
   return {
     canManage,
@@ -167,11 +242,12 @@ export async function publicIngressStatus(canManage: boolean): Promise<IngressSt
     health,
     localUrl: `http://127.0.0.1:${PUBLIC_INGRESS_PORT}`,
     hostname,
+    server: { ipv4: serverAddresses.a, ipv6: serverAddresses.aaaa },
     dns: {
       ...dns,
       suggested: [
-        ...suggestedAddresses.a.map((address) => `A ${hostname || "ingress.example.com"} ${address}`),
-        ...suggestedAddresses.aaaa.map((address) => `AAAA ${hostname || "ingress.example.com"} ${address}`),
+        ...serverAddresses.a.map((address) => `A ${hostname || "ingress.example.com"} ${address}`),
+        ...serverAddresses.aaaa.map((address) => `AAAA ${hostname || "ingress.example.com"} ${address}`),
       ],
     },
     tailscale: {
@@ -247,15 +323,9 @@ export async function enableTailscaleFunnel(): Promise<string> {
   ]);
   if (result.code !== 0) throw new Error(result.stderr.trim() || "Could not enable Tailscale Funnel");
   const origin = normalizeIngressOrigin(`https://${dnsName}`);
-  let healthy = false;
-  for (let attempt = 0; attempt < 8; attempt++) {
-    if (await ingressHealth(origin) === "ready") {
-      healthy = true;
-      break;
-    }
-    await Bun.sleep(1_000);
-  }
-  if (!healthy) throw new Error("Funnel started, but the public health check did not become ready");
+  // Funnel starting and its public edge becoming reachable are separate facts.
+  // Persist the successful command immediately so a slow edge does not leave a
+  // running Funnel reported as an entirely failed setup. The UI probes health.
   await savePublicIngress({ publicBaseUrl: origin, exposure: "tailscale" });
   return origin;
 }
@@ -313,7 +383,7 @@ export async function configureCloudflareTunnel(input: {
 }
 
 export async function installManagedCaddy(originValue: string): Promise<void> {
-  const origin = normalizeIngressOrigin(originValue);
+  const origin = normalizeCustomIngressOrigin(originValue);
   const caddy = Bun.which("caddy");
   const sudo = Bun.which("sudo");
   if (!caddy || !sudo) throw new Error("Caddy and sudo are required for managed custom domains");
@@ -347,19 +417,16 @@ export async function installManagedCaddy(originValue: string): Promise<void> {
       await rollback();
       throw new Error(reload.stderr.trim() || "Caddy reload failed");
     }
-    let healthy = false;
-    for (let attempt = 0; attempt < 5; attempt++) {
-      if (await ingressHealth(origin) === "ready") {
-        healthy = true;
-        break;
-      }
-      await Bun.sleep(1_000);
-    }
-    if (!healthy) {
+    try {
+      await savePublicIngress({ publicBaseUrl: origin, exposure: "custom" });
+    } catch (error) {
       await rollback();
-      throw new Error("The public health check failed; the prior Caddyfile was restored");
+      throw error;
     }
-    await savePublicIngress({ publicBaseUrl: origin, exposure: "custom" });
+    // DNS may intentionally be the operator's next step. Caddy keeps retrying
+    // certificate issuance after propagation, while status reports waiting_dns.
+    // Do not roll back a valid listener merely because the public edge is not
+    // reachable in the first few seconds.
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

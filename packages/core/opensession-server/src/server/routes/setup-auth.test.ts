@@ -120,6 +120,19 @@ describe("GitHub App onboarding link", () => {
 			device_flow_enabled: "true",
 		});
 	});
+
+	test("does not point a webhook at the private app when ingress is absent", () => {
+		const url = new URL(
+			buildOnboardingGithubAppCreateUrl(
+				undefined,
+				"https://private.example.test",
+				"",
+				"Open Session",
+			),
+		);
+		expect(url.searchParams.has("hook_url")).toBe(false);
+		expect(url.searchParams.has("webhook_active")).toBe(false);
+	});
 });
 
 describe("setup status github snapshot exposes install intent", () => {

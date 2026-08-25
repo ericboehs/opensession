@@ -6,9 +6,10 @@ export interface PublicIngressSettings {
 	canManage: boolean;
 	publicBaseUrl: string;
 	exposure: IngressExposure | null;
-	health: "ready" | "unreachable" | "not_configured";
+	health: "ready" | "waiting_dns" | "unreachable" | "not_configured";
 	localUrl: string;
 	hostname: string;
+	server: { ipv4: string[]; ipv6: string[] };
 	dns: { a: string[]; aaaa: string[]; suggested: string[] };
 	tailscale: { installed: boolean; dnsName: string; suggestedUrl: string };
 	cloudflare: {

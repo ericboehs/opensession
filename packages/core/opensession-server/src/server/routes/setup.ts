@@ -118,8 +118,12 @@ export function buildOnboardingGithubAppCreateUrl(
     name: appName,
     url: homepageUrl.trim() || "http://localhost:3850",
     public: "false",
-    hook_url: `${ingressUrl.replace(/\/$/, "")}/github/webhook`,
-    webhook_active: "true",
+    ...(ingressUrl.trim()
+      ? {
+          hook_url: `${ingressUrl.replace(/\/$/, "")}/github/webhook`,
+          webhook_active: "true",
+        }
+      : {}),
     // The canonical grant set (checks + statuses + issues included) — the same
     // permissions the installation token mints request, so a created App is
     // never born missing a scope the server needs.
@@ -144,7 +148,7 @@ async function githubSnapshot() {
   } = await import("../github-auth");
   const { githubAppConfigured, githubAppPrivateKeyConfigured } =
     await import("../github-app");
-  const { configuredIntegration, configuredServer, personaName } = await import("../config");
+  const { configuredIngress, configuredIntegration, configuredServer, personaName } = await import("../config");
   const github = githubUserAuthSettings();
   const app = githubAppIdentity();
   const integration = configuredIntegration("github");
@@ -177,7 +181,7 @@ async function githubSnapshot() {
     appCreateUrl: buildOnboardingGithubAppCreateUrl(
       org,
       configuredServer().publicBaseUrl,
-      configuredServer().webhookBaseUrl,
+      configuredIngress().publicBaseUrl,
     ),
   };
 }

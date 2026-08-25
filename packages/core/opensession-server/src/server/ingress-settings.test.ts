@@ -2,7 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { normalizeIngressOrigin, savePublicIngress } from "./ingress-settings";
+import {
+  normalizeCustomIngressOrigin,
+  normalizeIngressOrigin,
+  publicIngressHealth,
+  savePublicIngress,
+} from "./ingress-settings";
 
 const previous = process.env.OPENSESSION_CONFIG;
 const dirs: string[] = [];
@@ -36,6 +41,21 @@ describe("public ingress settings", () => {
     expect(() => normalizeIngressOrigin("http://ingress.example.test")).toThrow("must use HTTPS");
     expect(() => normalizeIngressOrigin("https://app.example.test")).toThrow("different hostname");
     expect(() => normalizeIngressOrigin("https://127.0.0.1")).toThrow("public internet");
+  });
+
+  test("custom domains do not require URL syntax", () => {
+    fixture();
+    expect(normalizeCustomIngressOrigin("ingress.example.test")).toBe("https://ingress.example.test");
+    expect(normalizeCustomIngressOrigin("https://ingress.example.test/")).toBe("https://ingress.example.test");
+    expect(() => normalizeCustomIngressOrigin("http://ingress.example.test")).toThrow("must use HTTPS");
+  });
+
+  test("reports DNS propagation separately from a broken listener", () => {
+    const server = { a: ["203.0.113.10"], aaaa: [] };
+    expect(publicIngressHealth("custom", "unreachable", { a: [], aaaa: [] }, server)).toBe("waiting_dns");
+    expect(publicIngressHealth("custom", "unreachable", { a: ["203.0.113.20"], aaaa: [] }, server)).toBe("waiting_dns");
+    expect(publicIngressHealth("custom", "unreachable", { a: ["203.0.113.10"], aaaa: [] }, server)).toBe("unreachable");
+    expect(publicIngressHealth("cloudflare", "unreachable", { a: [], aaaa: [] }, server)).toBe("unreachable");
   });
 
   test("writes one canonical owner and removes retired server fields", async () => {

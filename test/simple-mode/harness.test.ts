@@ -254,12 +254,14 @@ describe("simple mode install", () => {
         `exit \${PIPESTATUS[0]}`,
     );
     expectOk(r, "install.sh");
-    const doneAt = r.stdout.lastIndexOf("Done");
-    const urlAt = r.stdout.lastIndexOf(`Open http://127.0.0.1:${PORT}`);
-    expect(doneAt).toBeGreaterThanOrEqual(0);
-    expect(urlAt).toBeGreaterThan(doneAt);
+    const installedAt = r.stdout.lastIndexOf("Installed");
+    const startedAt = r.stdout.lastIndexOf("Started");
+    const urlAt = r.stdout.lastIndexOf(`Open Session is running at http://127.0.0.1:${PORT}`);
+    expect(installedAt).toBeGreaterThanOrEqual(0);
+    expect(startedAt).toBeGreaterThan(installedAt);
+    expect(urlAt).toBeGreaterThan(startedAt);
     if (!commandWasOnPath) {
-      expect(r.stdout).toContain("Run this in your current shell: source ~/.bashrc");
+      expect(r.stdout).toContain("To use opensession in this shell, run:\n    source ~/.bashrc");
     }
   }, 30 * MINUTES);
 

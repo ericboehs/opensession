@@ -57,6 +57,7 @@ export function ReposSection({
 	onChanged,
 	onRepoUpdated,
 	compact = false,
+	showLifecycleStatus = true,
 }: {
 	repos: SetupStatus["repos"];
 	onChanged: () => void | Promise<void>;
@@ -65,6 +66,7 @@ export function ReposSection({
 			Partial<Pick<SetupRepo, "defaultBranch" | "isolatedWorktrees">>,
 	) => void;
 	compact?: boolean;
+	showLifecycleStatus?: boolean;
 }) {
 	const [pickerOpen, setPickerOpen] = useState(false);
 	const [pendingRepo, setPendingRepo] = useState<PendingRepo | null>(null);
@@ -171,7 +173,9 @@ export function ReposSection({
 								<SettingRowText>
 									<SettingRowTitle>{repo.label}</SettingRowTitle>
 								</SettingRowText>
-								<StateChip tone={lifecycle.tone} label={lifecycle.label} />
+								{showLifecycleStatus && (
+									<StateChip tone={lifecycle.tone} label={lifecycle.label} />
+								)}
 							</SettingRow>
 						);
 					})

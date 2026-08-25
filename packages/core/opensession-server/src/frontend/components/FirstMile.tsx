@@ -16,20 +16,24 @@ import { TeamSection } from "./SetupTeam";
 import { UserAvatar } from "./UserAvatar";
 import { OrganizationProfileSection } from "./settings/GeneralPanel";
 import { ProviderAccountsSection } from "./settings/ModelAccounts";
+import { IngressPanel } from "./settings/IngressPanel";
 import { IconCheck, IconChevronLeft, IconGlobe, IconRepo } from "./icons";
 import { githubAuthState, type SetupStatus } from "./setup-shared";
 
 interface FirstMileStep {
-	id: "welcome" | "github" | "organization" | "team" | "ai" | "repos" | "ready";
+	id: "welcome" | "ingress" | "github" | "organization" | "team" | "ai" | "repos" | "ready";
 	label: string;
 	title: string;
 	description: string;
 }
 
-// GitHub comes first because it supplies the next step's answers: the
-// organization is named and marked from the org you just connected rather than
-// asked for cold. Members sit after repositories, since an invite
-// is worth more once there is something to join.
+// Public ingress comes before GitHub so the generated App form carries a
+// working webhook URL. GitHub then supplies the organization step's answers:
+// the organization is named and marked from the org you just connected rather
+// than asked for cold. Members sit after repositories, since an invite is worth
+// more once there is something to join. The members step is removed
+// when GitHub sign-in is not connected, because that step imports and invites
+// people through the connected GitHub organization.
 const STEPS: FirstMileStep[] = [
 	{
 		id: "welcome",
@@ -38,10 +42,16 @@ const STEPS: FirstMileStep[] = [
 		description: "Set up this server before you start using Open Session.",
 	},
 	{
+		id: "ingress",
+		label: "Ingress",
+		title: "Set up public ingress",
+		description: "Create the narrow public endpoint GitHub webhooks and remote Sandboxes use to reach this server. The app itself stays private.",
+	},
+	{
 		id: "github",
 		label: "GitHub",
 		title: "Connect GitHub",
-		description: "GitHub signs you in and lets sessions access repositories, push changes, and create and review pull requests.",
+		description: "GitHub signs you in and lets sessions access repositories, push changes, and create and review pull requests. The App form includes your public webhook URL.",
 	},
 	{
 		id: "organization",
@@ -74,6 +84,10 @@ const STEPS: FirstMileStep[] = [
 		description: "Review your setup before entering Open Session.",
 	},
 ];
+
+function githubTeamOnboardingEnabled(status: SetupStatus | null): boolean {
+	return Boolean(status?.github.userPrAuth && status.github.clientIdConfigured);
+}
 
 /** The GitHub organization this instance is wired to, for the organization
  *  step's defaults. Reads the App's own owner first, then falls back to the
@@ -118,6 +132,7 @@ function FirstMileSummary({
 	onSelect: (step: FirstMileStep["id"]) => void;
 }) {
 	const github = githubAuthState(status.github);
+	const showTeam = githubTeamOnboardingEnabled(status);
 	let serverHost = status.publicBaseUrl;
 	try {
 		serverHost = new URL(status.publicBaseUrl).host;
@@ -240,10 +255,15 @@ function FirstMileSummary({
 				</div>
 			),
 		},
-	];
+	].filter((tile) => tile.step !== "team" || showTeam);
 
 	return (
-		<div className="grid grid-cols-5 gap-3 phone:grid-cols-2">
+		<div
+			className={cn(
+				"grid gap-3 phone:grid-cols-2",
+				showTeam ? "grid-cols-5" : "grid-cols-4",
+			)}
+		>
 			{tiles.map((tile) => {
 				const className = cn(
 					"flex aspect-square min-w-0 flex-col justify-between rounded-2xl border p-4 text-left backdrop-blur-xl phone:rounded-xl phone:p-3.5",
@@ -303,10 +323,14 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 	const [direction, setDirection] = useState(1);
 	const [footerSeparated, setFooterSeparated] = useState(false);
 	const [finishing, setFinishing] = useState(false);
+	const [ingressReady, setIngressReady] = useState(false);
 	const headingRef = useRef<HTMLHeadingElement>(null);
 	const mainRef = useRef<HTMLElement>(null);
 	const reducedMotion = useReducedMotion();
-	const step = STEPS[index]!;
+	const steps = githubTeamOnboardingEnabled(status)
+		? STEPS
+		: STEPS.filter((item) => item.id !== "team");
+	const step = steps[index]!;
 
 	useEffect(() => {
 		document.title = `Welcome to ${PRODUCT_NAME}`;
@@ -340,8 +364,9 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 	}, [index, status]);
 
 	function goTo(next: number) {
-		const nextIndex = Math.min(Math.max(next, 0), STEPS.length - 1);
+		const nextIndex = Math.min(Math.max(next, 0), steps.length - 1);
 		if (nextIndex === index) return;
+		if (step.id === "ingress" && nextIndex > index && !ingressReady) return;
 		setDirection(nextIndex > index ? 1 : -1);
 		setIndex(nextIndex);
 		void refetch();
@@ -399,7 +424,7 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 					)}
 					aria-label="Onboarding progress"
 				>
-					{STEPS.slice(1).map((item, itemIndex) => {
+					{steps.slice(1).map((item, itemIndex) => {
 						const stepIndex = itemIndex + 1;
 						return (
 							<button
@@ -421,7 +446,7 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 					})}
 				</nav>
 
-				{index > 0 && index < STEPS.length - 1 ? (
+				{index > 0 && index < steps.length - 1 && step.id !== "ingress" ? (
 					<button
 						type="button"
 						onClick={() => goTo(index + 1)}
@@ -506,6 +531,19 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 									</div>
 
 									<div className="w-full max-w-[820px] pb-8 [&_.bg-settings-plate]:rounded-2xl [&_.bg-settings-plate]:border-transparent [&_.bg-settings-plate]:bg-blue-soft/65 [&_.bg-settings-plate]:shadow-[inset_0_1px_0_color-mix(in_srgb,white_45%,transparent),0_18px_46px_-36px_color-mix(in_srgb,var(--blue)_48%,transparent)] [&_[data-setting-description]]:hidden [&_[data-settings-hint]]:hidden">
+										{step.id === "ingress" && (
+											<IngressPanel
+												onboarding
+												onChanged={refetch}
+												onStatusChange={(ingress) => {
+													if (ingress.health !== "ready") {
+														setIngressReady(false);
+														return;
+													}
+													void refetch().then(() => setIngressReady(true));
+												}}
+											/>
+										)}
 										{step.id === "github" && (
 											<GithubAuthCard
 												github={status.github}
@@ -531,13 +569,18 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 											<ProviderAccountsSection onboarding onChanged={refetch} />
 										)}
 										{step.id === "repos" && (
-											<ReposSection repos={status.repos} onChanged={refetch} compact />
+											<ReposSection
+												repos={status.repos}
+												onChanged={refetch}
+												compact
+												showLifecycleStatus={false}
+											/>
 										)}
 										{step.id === "ready" && (
 											<FirstMileSummary
 												status={status}
 												onSelect={(stepId) =>
-													goTo(STEPS.findIndex((item) => item.id === stepId))
+													goTo(steps.findIndex((item) => item.id === stepId))
 												}
 											/>
 										)}
@@ -575,19 +618,19 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 						variant="primary"
 						size="lg"
 						onClick={() => {
-							if (index === STEPS.length - 1) void finish();
+							if (index === steps.length - 1) void finish();
 							else goTo(index + 1);
 						}}
-						disabled={!status || finishing}
+						disabled={!status || finishing || (step.id === "ingress" && !ingressReady)}
 						className="justify-self-end phone:min-h-12 phone:w-full phone:justify-center phone:rounded-lg"
 					>
 						{index === 0
 							? "Continue"
-							: index === STEPS.length - 1
+							: index === steps.length - 1
 								? finishing
 									? "Finishing…"
 									: `Enter ${PRODUCT_NAME}`
-								: index === STEPS.length - 2
+								: index === steps.length - 2
 									? "Review"
 									: "Next"}
 					</Button>
