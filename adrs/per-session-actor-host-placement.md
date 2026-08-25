@@ -53,7 +53,7 @@ The typed effect union is session-owned: `human_ask_deliver`, `delivery_interrup
 
 ### Actor host and bounded pool
 
-The independently supervised actor-host service owns a bounded set of Worker isolates. The service router owns a mailbox per canonical session ID. It never dispatches two turns for one session concurrently. A free Worker runs one short synchronous reduction at a time; logical actors are not permanently mapped to Workers. This prevents one SQLite busy wait, corruption fault, or poison reduction from occupying every execution lane.
+The independently supervised actor-host service owns a bounded set of Worker isolates. The service router owns a mailbox per canonical session ID. It never dispatches two turns for one session concurrently. Each logical actor has stable affinity to one Worker lane while many actors share every lane; the database connection itself activates lazily and passivates under an LRU bound. Stable affinity keeps process-local reducer caches coherent without creating a Worker or process per session. A short isolated SQLite busy bound prevents one wait from indefinitely occupying its lane, while unrelated lanes continue.
 
 Activation opens only the routed session database and validates its writer/route epoch. Passivation closes the connection after an idle deadline or under an LRU bound. A Worker crash rejects only its current turn as retryable/ambiguous according to the durable request journal, replaces that Worker, and leaves the actor-host service and other mailboxes alive. A critical settlement whose commit cannot be proven quarantines that session. A system-catalog ambiguity fail-stops the service.
 
