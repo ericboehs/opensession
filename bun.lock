@@ -138,6 +138,7 @@
     },
   },
   "patchedDependencies": {
+    "@stylexjs/stylex@0.19.0": "patches/@stylexjs%2Fstylex@0.19.0.patch",
     "@pierre/trees@1.0.0-beta.4": "patches/@pierre%2Ftrees@1.0.0-beta.4.patch",
     "@base-ui/react@1.6.0": "patches/@base-ui%2Freact@1.6.0.patch",
   },

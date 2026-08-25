@@ -1,0 +1,17 @@
+diff --git a/lib/es/stylex.mjs b/lib/es/stylex.mjs
+index 5a8fe56..4e4956c 100644
+--- a/lib/es/stylex.mjs
++++ b/lib/es/stylex.mjs
+@@ -133,10 +133,10 @@ var styleqExports = /*@__PURE__*/ requireStyleq();
+ const errorForFn = name => new Error(`Unexpected 'stylex.${name}' call at runtime. Styles must be compiled by '@stylexjs/babel-plugin'.`);
+ const errorForType = key => errorForFn(`types.${key}`);
+ const create = function stylexCreate(_styles) {
+-  throw errorForFn('create');
++  return _styles;
+ };
+ const createTheme = (_baseTokens, _overrides) => {
+-  throw errorForFn('createTheme');
++  return _overrides;
+ };
+ const defineConsts = function stylexDefineConsts(_styles) {
+   throw errorForFn('defineConsts');
