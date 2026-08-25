@@ -45,6 +45,8 @@ describe("GitHub integration status", () => {
             enabled: true,
             botCredential: "app",
             oauthClientId: "Iv-test-client",
+            appSlug: "open-session-test",
+            installationOwner: "acme",
           },
         },
         identity: { team: [{ name: "Admin", github: "admin", admin: true }] },
@@ -74,6 +76,11 @@ describe("GitHub integration status", () => {
     const response = await handleSetupRoutes(context);
     expect(response?.status).toBe(200);
     const body = await response?.json() as any;
+    expect(body.github).toMatchObject({
+      appSlug: "open-session-test",
+      installationOwner: "acme",
+      appCredentialConfigured: true,
+    });
     const github = body.integrations.find((item: any) => item.id === "github");
     expect(github.missingRequired).toEqual([]);
     expect(github.env.find((item: any) => item.name === "GITHUB_API_TOKEN")).toMatchObject({

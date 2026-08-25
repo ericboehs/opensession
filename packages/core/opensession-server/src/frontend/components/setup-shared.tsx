@@ -41,6 +41,8 @@ export interface SetupGithub {
 	botTokenPresent: boolean;
 	botCredential: "pat" | "app";
 	appCredentialConfigured: boolean;
+	appSlug: string | null;
+	installationOwner: string | null;
 	appOrg?: string | null;
 	appCreateUrl: string;
 }
@@ -244,8 +246,19 @@ export function integrationState(i: SetupIntegration): {
 }
 
 export function githubAuthState(g: SetupGithub): { tone: ChipTone; label: string } {
+	if (
+		g.botCredential === "app" &&
+		g.appCredentialConfigured &&
+		g.appSlug &&
+		(!g.userPrAuth || g.clientSecretConfigured)
+	)
+		return { tone: "on", label: g.userPrAuth ? "Active" : "App active" };
+	if (g.botCredential === "app" && !g.appCredentialConfigured)
+		return { tone: "warn", label: "Missing App credential" };
+	if (g.botCredential === "app" && !g.appSlug)
+		return { tone: "warn", label: "Missing App slug" };
 	if (g.userPrAuth && g.clientIdConfigured && g.clientSecretConfigured)
-		return { tone: "on", label: "Active" };
+		return { tone: "on", label: "Sign-in active" };
 	if (g.userPrAuth && g.clientIdConfigured)
 		return { tone: "warn", label: "Missing client secret" };
 	if (g.userPrAuth) return { tone: "warn", label: "Missing client id" };

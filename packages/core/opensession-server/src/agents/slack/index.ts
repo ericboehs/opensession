@@ -6,6 +6,10 @@
  */
 
 import { configuredIntegration, defaultRepo, personaName } from "../../server/config";
+import {
+  githubConfiguredCredential,
+  githubBotCredentialMode,
+} from "../../server/github-app";
 import { mkdirSync, existsSync, unlinkSync } from "fs";
 import { timingSafeEqual } from "crypto";
 import type { AgentModule } from "../types";
@@ -831,7 +835,12 @@ export class SlackAgent implements AgentModule {
     const githubWebhookHealth = githubWebhookCompatibilityFallbackEnabled()
       ? {
           githubWebhookConfigured: !!process.env.GITHUB_WEBHOOK_SECRET,
+          // Keep the legacy PAT presence field for health consumers that know it,
+          // and expose the selected credential separately so App mode does not
+          // look broken merely because the retired PAT is absent.
           githubApiTokenConfigured: !!process.env.GITHUB_API_TOKEN,
+          githubCredentialConfigured: githubConfiguredCredential(),
+          githubCredentialMode: githubBotCredentialMode(),
           githubWebhooksReceived: githubWebhookCount(),
         }
       : {};

@@ -1,21 +1,17 @@
 /**
  * GitHub App installation tokens (server-to-server).
  *
- * An org-scoped fine-grained PAT can never read check runs: GitHub
- * doesn't offer the Checks permission on PATs at all (App-only). The org's
- * GitHub App (the same one behind per-user sign-in, github-auth.ts) has
- * checks:read, so this module mints short-lived installation access tokens
- * from its private key for the reads the PAT can't do (pr-info's
- * statusCheckRollup). Server-to-server tokens also have their own 5000/hr
- * rate-limit bucket, separate from the bot PAT's.
+ * The org's GitHub App (the same one behind per-user sign-in,
+ * github-auth.ts) mints short-lived installation access tokens from its
+ * private key. Separate read, write, and repository-scoped permission sets
+ * come from shared/github-app-permissions.ts.
  *
- * Key file: ~/.opensession-github-app.pem (0600), override with
- * OPENSESSION_GITHUB_APP_KEY. No key file = feature off (getters return
- * null and callers keep their PAT behavior). The JWT issuer is the app
- * client id from the same config as github-auth.ts. Token + installation id
- * are cached on globalThis so hot reloads don't re-mint; tokens live 1h and
- * refresh 5 min early. Scoped to the app's single org installation:
- * same containment story as the App user tokens.
+ * Key file: ~/.opensession/github-app.pem (0600), override with
+ * OPENSESSION_GITHUB_APP_KEY (a file path). The JWT issuer is the App client
+ * id from github-auth.ts. Token + installation id are cached on globalThis;
+ * tokens live 1h and refresh 5 min early. App mode fails closed when identity,
+ * key, installation selection, or permissions are invalid. It never falls
+ * back to the retired PAT, ambient gh login, or a connected human.
  */
 import { createSign } from "node:crypto";
 import { existsSync, rmSync } from "node:fs";

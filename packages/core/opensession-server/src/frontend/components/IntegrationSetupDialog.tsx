@@ -180,21 +180,21 @@ function guideFor(
 
 		case "github":
 			return {
-				description: "Connect the machine user that handles PR comments, reviews, webhooks, and fallback PR authorship.",
+				description: "Connect the GitHub App that handles PR comments, reviews, clones, and pushes.",
 				steps: [
-					<>Create a dedicated GitHub machine user and give it access to the repositories Open Session works in.</>,
-					<>Create a fine-grained personal access token for that user and paste it into the fields above.</>,
-					<>On the Open Session host, sign the GitHub CLI into the same machine user with <strong>gh auth login</strong>. CLI authentication is separate from the token above.</>,
+					<>Configure the App client id, slug, client secret, installation owner, and private key in the GitHub sign-in card below.</>,
+					<>Install the App only on the organization and repositories Open Session should reach.</>,
 					<>
-						Add a repository or organization webhook with content type <strong>application/json</strong> and this payload URL:
+						Add an organization webhook with content type <strong>application/json</strong> and this payload URL:
 						<Value value={url("/github/webhook")} />
 					</>,
-					<>Create a webhook secret, paste it both into GitHub and into the fields above, then enter the bot login and any @handles that should wake the PR agent.</>,
+					<>Create a webhook secret, paste it both into GitHub and above, then add any legacy @handles that should also wake the PR agent.</>,
 					<>Enable GitHub, save, restart Open Session, and send a webhook test delivery.</>,
+					<>Keep <strong>GITHUB_API_TOKEN</strong> empty in App mode. It is only the explicit legacy PAT credential.</>,
 				],
 				permissions: [
-					<>Fine-grained token: <strong>Pull requests: read and write</strong> and <strong>Issues: read and write</strong> for only the target repositories.</>,
-					<>The machine user and gh CLI need repository write access; add merge permission only if you use the UI&rsquo;s merge flows.</>,
+					<>Repository: <strong>Actions, Checks, Commit statuses, Deployments</strong> read; <strong>Contents, Issues, Pull requests</strong> read and write; Metadata read.</>,
+					<>Organization: <strong>Members</strong> read.</>,
 					<>Webhook events: issue comments, pull requests, pull-request reviews and review comments, and workflow runs.</>,
 				],
 			};

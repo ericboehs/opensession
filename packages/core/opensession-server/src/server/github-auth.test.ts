@@ -22,7 +22,6 @@ import {
   githubUserAuthActive,
   githubUserAuthSettings,
   githubUserLoginForRun,
-  githubWebhookForwardCredential,
   pollGithubDeviceFlow,
   refreshExpiringGithubTokens,
   removeGithubAccount,
@@ -376,31 +375,6 @@ describe("token lookups + runner env", () => {
     expect(recovered?.env.GH_TOKEN).toBe("gho_refreshed");
     expect(JSON.stringify(recovered)).not.toContain("gho_old");
     expect(githubCredentialForPrincipal("user:bob")).toBeNull();
-  });
-
-  test("uses the designated stored account for operator-mode webhook intake", () => {
-    enableFeature();
-    const path = process.env.OPENSESSION_CONFIG!;
-    const config = JSON.parse(readFileSync(path, "utf-8"));
-    config.integrations.github.webhookForwardLogin = "alice";
-    writeFileSync(path, JSON.stringify(config));
-    seedToken("alice", "gho_forwarder");
-    expect(githubWebhookForwardCredential()).toMatchObject({
-      kind: "user",
-      principal: "user:alice",
-      env: { GH_TOKEN: "gho_forwarder", GITHUB_TOKEN: "gho_forwarder" },
-    });
-  });
-
-  test("falls back to the first connected admin for pre-designation configs", () => {
-    enableFeature();
-    const path = process.env.OPENSESSION_CONFIG!;
-    const config = JSON.parse(readFileSync(path, "utf-8"));
-    config.identity.team[0].admin = true;
-    writeFileSync(path, JSON.stringify(config));
-    seedToken("alice", "gho_admin");
-    expect(githubWebhookForwardCredential()?.env.GH_TOKEN).toBe("gho_admin");
-
   });
 
   test("rejects a device-flow login that differs from the signed-in user", () => {

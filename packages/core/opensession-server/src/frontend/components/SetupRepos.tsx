@@ -767,12 +767,9 @@ setAddingRepo(null);
 						) : (
 							<>
 								No GitHub credential yet, so the repo list can&rsquo;t be browsed.
-								Connect your GitHub account under Settings → Connections to list
-								your private repos here. (Operators can instead set{" "}
-								<code className="rounded-sm bg-surface px-1.5 py-0.5 font-mono text-[0.92em] text-fg">
-									GITHUB_API_TOKEN
-								</code>{" "}
-								via the GitHub integration card below.)
+								Connect your GitHub account under Settings → Connections, or
+								configure the GitHub App client id, slug, installation owner, and
+								private key in the GitHub sign-in card below.
 							</>
 						)}{" "}
 						You can still register a repo by name:

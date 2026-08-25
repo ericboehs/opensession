@@ -70,7 +70,6 @@ describe("enabling GitHub sign-in", () => {
 		const written = JSON.parse(readFileSync(config, "utf8"));
 		expect(written.integrations.github).toMatchObject({
 			userPrAuth: true,
-			webhookForwardLogin: "jasmoony",
 		});
 		expect(written.identity.team).toEqual([
 			{ name: "Jas Moony", github: "jasmoony", admin: true },
@@ -89,5 +88,33 @@ describe("enabling GitHub sign-in", () => {
 		const written = JSON.parse(readFileSync(config, "utf8"));
 		expect(written.integrations.github.userPrAuth).toBeUndefined();
 		expect(written.identity).toBeUndefined();
+	});
+});
+
+describe("GitHub App identity settings", () => {
+	test("persists the slug and installation owner with the existing client id", async () => {
+		const config = setupFiles();
+		const url = new URL("http://localhost/api/setup/github");
+		const response = await handleSetupRoutes({
+			req: new Request(url, {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					appSlug: "open-session-acme",
+					installationOwner: "acme",
+				}),
+			}),
+			url,
+			path: url.pathname,
+			publicPrefix: "",
+		});
+
+		expect(response?.status).toBe(200);
+		const written = JSON.parse(readFileSync(config, "utf8"));
+		expect(written.integrations.github).toMatchObject({
+			oauthClientId: "client-id",
+			appSlug: "open-session-acme",
+			installationOwner: "acme",
+		});
 	});
 });

@@ -199,25 +199,15 @@ export const INTEGRATIONS: IntegrationSpec[] = [
       {
         name: "GITHUB_API_TOKEN",
         required: true,
-        description: "token for PR reads/writes via the gh CLI",
+        description: "legacy PAT bot credential; leave empty when the GitHub App is selected",
       },
-      { name: "GITHUB_WEBHOOK_SECRET", description: "verifies inbound webhook signatures (and signs the outbound gh-forwarded deliveries)" },
-      {
-        name: "GITHUB_WEBHOOK_FORWARD",
-        description:
-          "\"true\"/\"false\" to force the outbound `gh webhook forward` delivery on/off. Unset auto-selects: on when no public webhook URL is configured (simple mode), off when one is",
-      },
-      {
-        name: "GITHUB_WEBHOOK_FORWARD_ORG",
-        description:
-          "forward org-wide with one `gh webhook forward --org` process instead of one per configured repo",
-      },
-      { name: "GITHUB_BOT_LOGIN", description: "login PRs are attributed to" },
+      { name: "GITHUB_WEBHOOK_SECRET", description: "verifies inbound webhook signatures" },
+      { name: "GITHUB_BOT_LOGIN", description: "legacy machine-user login recognised as our own" },
       { name: "GITHUB_MENTION_HANDLES", description: "handles that trigger the PR agent" },
     ],
     links: [
       {
-        label: "Create fine-grained token",
+        label: "Create legacy fine-grained token",
         url: "https://github.com/settings/personal-access-tokens/new",
       },
     ],

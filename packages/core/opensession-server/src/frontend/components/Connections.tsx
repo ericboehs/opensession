@@ -826,8 +826,8 @@ function GithubAppWizard({
             <div className="text-meta leading-snug text-faint">
               Pre-filled: name{" "}
               <span className="font-mono text-dim">{appName}</span>, permissions
-              (Contents + Pull requests, read &amp; write; Members, read), private,
-              no webhook.
+              (Actions, Checks, statuses, and Deployments read; Contents, Issues,
+              and Pull requests write; Members read), private, no webhook.
               Names are unique on GitHub, so tweak it if it's taken.
             </div>
             <Modal.Footer>
@@ -1549,8 +1549,8 @@ setError(e.message);
             {!personal && (
               <SettingRowDescription className="leading-snug">
                 {active
-                  ? "Interactive sessions of a connected teammate open PRs as their own GitHub account. Everyone else (and all automations) keeps the bot."
-                  : "Off. Sessions open PRs as the bot account. Opt in via config: integrations.github { userPrAuth: true, oauthClientId } in ~/.opensession/config.json."}
+                  ? "Interactive sessions of a connected teammate open PRs as their own GitHub account. Trusted GitHub automations use the repository-scoped App credential."
+                  : "Off. Interactive sessions use the workspace credential. Configure userPrAuth, client id, slug, owner, secret, and private key in Settings → Integrations."}
               </SettingRowDescription>
             )}
             {personal && active && (

@@ -33,7 +33,7 @@ const INTEGRATION_DESCRIPTIONS: Record<string, string> = {
 	slack: "DMs, mentions, session channels, and interactive controls.",
 	stripe: "Dispute webhooks routed into scoped automations.",
 	grafana: "Loki failure signatures routed into investigation automations.",
-	github: "PR comments, reviews, webhooks, and fallback PR authorship.",
+	github: "PR comments, reviews, webhooks, and bot-authored work.",
 	codestorage: "Git hosting with branch-based reviews and local signing keys.",
 };
 
@@ -223,13 +223,13 @@ function githubSetupSteps(): React.ReactNode[] {
 			Tick <strong>Enable Device Flow</strong>. Signing in is a device code, so without it nobody can sign in at all.
 		</>,
 		<>
-			Under Repository permissions, grant <strong>Contents: read and write</strong>, <strong>Pull requests: read and write</strong>, and <strong>Issues: read and write</strong>. Under Organization permissions, grant <strong>Members: read-only</strong> so setup can import your team. Metadata remains read-only.
+			Under Repository permissions, grant <strong>Actions, Checks, Commit statuses, and Deployments: read-only</strong>; <strong>Contents, Pull requests, and Issues: read and write</strong>; and <strong>Metadata: read-only</strong>. Under Organization permissions, grant <strong>Members: read-only</strong>.
 		</>,
 		<>
 			Install the app only on your organization. Choose all repositories, or select only the repositories Open Session should work in.
 		</>,
 		<>
-			Paste the client id and the client secret above. Sign-in is a device code and needs no secret, but renewing a teammate&rsquo;s token does, and without it their access stops after a few hours.
+			Paste the client id, app slug, installation owner, client secret, and private key above. The private key mints short-lived installation tokens for bot work; the client secret refreshes teammates&rsquo; device-flow tokens.
 		</>,
 		<>
 			Enable GitHub sign-in, save, restart Open Session, then have each teammate connect under Team → Account.
@@ -249,9 +249,9 @@ const GITHUB_ONBOARDING_STEPS: React.ReactNode[] = [
 	<>
 		Turn on <strong>Device Flow</strong>.
 	</>,
-	<>Grant Contents, Pull requests and Issues write, Members read.</>,
+	<>Grant the full permission set shown in the setup guide.</>,
 	<>Install it on your organization.</>,
-	<>Paste the client id and secret below.</>,
+	<>Paste the client id, slug, owner, secret, and private key below.</>,
 	<>Save, then restart.</>,
 ];
 
@@ -271,6 +271,10 @@ export function GithubAuthCard({
 	const [userPrAuth, setUserPrAuth] = useState(github.userPrAuth);
 	const [botCredential, setBotCredential] = useState(github.botCredential);
 	const [clientId, setClientId] = useState("");
+	const [appSlug, setAppSlug] = useState(github.appSlug ?? "");
+	const [installationOwner, setInstallationOwner] = useState(
+		github.installationOwner ?? github.appOrg ?? "",
+	);
 	const [clientSecret, setClientSecret] = useState("");
 	const [privateKey, setPrivateKey] = useState("");
 	const [clearId, setClearId] = useState(false);
@@ -282,7 +286,15 @@ export function GithubAuthCard({
 	useEffect(() => {
 		setUserPrAuth(github.userPrAuth);
 		setBotCredential(github.botCredential);
-	}, [github.userPrAuth, github.botCredential]);
+		setAppSlug(github.appSlug ?? "");
+		setInstallationOwner(github.installationOwner ?? github.appOrg ?? "");
+	}, [
+		github.userPrAuth,
+		github.botCredential,
+		github.appSlug,
+		github.installationOwner,
+		github.appOrg,
+	]);
 
 	const idCleared = github.clientIdConfigured && clearId && !clientId.trim();
 	const secretCleared = secretConfigured && clearSecret && !clientSecret.trim();
@@ -290,6 +302,9 @@ export function GithubAuthCard({
 		userPrAuth !== github.userPrAuth ||
 		botCredential !== github.botCredential ||
 		clientId.trim() !== "" ||
+		appSlug.trim() !== (github.appSlug ?? "") ||
+		installationOwner.trim() !==
+			(github.installationOwner ?? github.appOrg ?? "") ||
 		clientSecret.trim() !== "" ||
 		privateKey.trim() !== "" ||
 		idCleared ||
@@ -313,6 +328,13 @@ const body = await setupRequest<{
 						: idCleared
 							? { oauthClientId: "" }
 							: {}),
+					...(appSlug.trim() !== (github.appSlug ?? "")
+						? { appSlug: appSlug.trim() }
+						: {}),
+					...(installationOwner.trim() !==
+						(github.installationOwner ?? github.appOrg ?? "")
+						? { installationOwner: installationOwner.trim() }
+						: {}),
 					...(clientSecret.trim()
 						? { oauthClientSecret: clientSecret.replace(/\s+/g, "") }
 						: secretCleared
@@ -326,7 +348,7 @@ const body = await setupRequest<{
 			setPrivateKey("");
 			setClearId(false);
 			setClearSecret(false);
-			toast("GitHub sign-in settings saved");
+			toast("GitHub App settings saved");
 			onSaved(body.github, body.restartRequired === true);
 			setSetupOpen(false);
 })().catch(async (e: any) => {
@@ -417,6 +439,43 @@ setSaving(false);
 						setClientId("");
 					}}
 				/>
+				<label className="flex flex-col gap-1">
+					<span className="text-supporting text-fg">App slug</span>
+					<input
+						type="text"
+						className="w-full rounded-md border border-line bg-surface px-2.5 py-1.5 font-mono text-supporting text-fg outline-none focus-ring"
+						value={appSlug}
+						onChange={(event) => setAppSlug(event.target.value)}
+						placeholder="open-session-example"
+						aria-label="GitHub App slug"
+						disabled={saving}
+						autoCapitalize="none"
+						autoComplete="off"
+						spellCheck={false}
+					/>
+					<span className="text-meta leading-snug text-faint">
+						From github.com/apps/&lt;slug&gt;. Identifies App-authored comments
+						and provides the installation link.
+					</span>
+				</label>
+				<label className="flex flex-col gap-1">
+					<span className="text-supporting text-fg">Installation owner</span>
+					<input
+						type="text"
+						className="w-full rounded-md border border-line bg-surface px-2.5 py-1.5 font-mono text-supporting text-fg outline-none focus-ring"
+						value={installationOwner}
+						onChange={(event) => setInstallationOwner(event.target.value)}
+						placeholder="my-organization"
+						aria-label="GitHub App installation owner"
+						disabled={saving}
+						autoCapitalize="none"
+						autoComplete="off"
+						spellCheck={false}
+					/>
+					<span className="text-meta leading-snug text-faint">
+						The organization or account that owns the selected installation.
+					</span>
+				</label>
 				<SecretField
 					name="Client secret"
 					description="Renews teammates' tokens before they expire. Signing in works without it; staying signed in does not."
@@ -474,14 +533,14 @@ setSaving(false);
 							)}
 						>
 							<div className="text-item-title font-semibold text-fg">
-								{onboarding ? "GitHub" : "GitHub sign-in"}
+								{onboarding ? "GitHub" : "GitHub App and sign-in"}
 							</div>
 							<StateChip tone={state.tone} label={state.label} />
 						</div>
 						{!onboarding && (
 							<div className="col-start-2 row-start-2 min-w-0 phone:col-span-2 phone:col-start-1 phone:mt-3">
 								<p className="m-0 text-supporting leading-relaxed text-dim">
-									Interactive sessions open PRs as their connected owner instead of the bot.
+									The App handles bot work; connected teammates keep their identity in interactive sessions.
 								</p>
 								{/* The Device Flow switch lives on GitHub, so nothing here can
 								    report whether it is on. It is also the only way in now, so
@@ -510,7 +569,8 @@ setSaving(false);
 											aria-label={`${github.userPrAuth ? "Disable" : "Enable"} GitHub sign-in`}
 										/>
 									</div>
-									<div className="phone:hidden">
+									<div className="flex items-center gap-2 phone:hidden">
+										<span className="text-label font-medium text-dim">Sign-in</span>
 										<Switch
 											checked={github.userPrAuth}
 											onCheckedChange={(next) => void handleToggle(next)}

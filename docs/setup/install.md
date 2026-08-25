@@ -307,7 +307,7 @@ agent-started compilers, MCP proxies, and dev servers—not only `pi`.
 | Feature | Vars | Page |
 | --- | --- | --- |
 | Slack | `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `ALLOWED_SLACK_USER_ID`, `WORKTREE_HOOK_SECRET`, `SLACK_MENTION_INTENT_MODEL`, `SCHEDULE_WHEN_MODEL` | [slack.md](slack.md) |
-| GitHub | `GITHUB_API_TOKEN`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_BOT_LOGIN`, `GITHUB_MENTION_HANDLES` | [github.md](github.md) |
+| GitHub | App: `OPENSESSION_GITHUB_CLIENT_ID`, `OPENSESSION_GITHUB_CLIENT_SECRET`, `OPENSESSION_GITHUB_APP_SLUG`, `OPENSESSION_GITHUB_APP_KEY`; webhook: `GITHUB_WEBHOOK_SECRET`; legacy PAT: `GITHUB_API_TOKEN` | [github.md](github.md) |
 | Linear | `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_WEBHOOK_SECRET`, `LINEAR_API_KEY` | [linear.md](linear.md) |
 | Plain | `PLAIN_API_KEY`, `PLAIN_WEBHOOK_SECRET`, `PLAIN_*_MODEL` ×2 | [plain.md](plain.md) |
 | Stripe | `STRIPE_WEBHOOK_SECRET` | [integrations-misc.md](integrations-misc.md#stripe) |

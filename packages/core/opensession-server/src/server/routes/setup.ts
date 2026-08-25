@@ -148,12 +148,18 @@ export function buildOnboardingGithubAppCreateUrl(
 }
 
 async function githubSnapshot() {
-  const { githubUserAuthSettings, githubAppOrg, githubAuthOnConnect } =
-    await import("../github-auth");
+  const {
+    githubAppIdentity,
+    githubUserAuthSettings,
+    githubAppOrg,
+    githubAuthOnConnect,
+  } = await import("../github-auth");
   const { githubAppConfigured, githubBotCredentialMode } =
     await import("../github-app");
-  const { configuredServer } = await import("../config");
+  const { configuredIntegration, configuredServer } = await import("../config");
   const github = githubUserAuthSettings();
+  const app = githubAppIdentity();
+  const integration = configuredIntegration("github");
   const org = await primaryGithubOrg();
   return {
     userPrAuth: github.enabled,
@@ -162,6 +168,11 @@ async function githubSnapshot() {
     botTokenPresent: !!process.env.GITHUB_API_TOKEN,
     botCredential: githubBotCredentialMode(),
     appCredentialConfigured: githubAppConfigured(),
+    appSlug: app.slug,
+    installationOwner:
+      typeof integration.installationOwner === "string"
+        ? integration.installationOwner
+        : null,
     // Captured install/app-setup intent: the org the App is owned by, and
     // whether connecting should turn on per-user sign-in. Both are inert until
     // the simple-mode connect handler consumes authOnConnect.
@@ -362,6 +373,8 @@ export async function handleSetupRoutes(
       userPrAuth?: unknown;
       oauthClientId?: unknown;
       oauthClientSecret?: unknown;
+      appSlug?: unknown;
+      installationOwner?: unknown;
       botCredential?: unknown;
       privateKey?: unknown;
     } | null;
@@ -386,7 +399,12 @@ export async function handleSetupRoutes(
           { status: 409 },
         );
     }
-    for (const field of ["oauthClientId", "oauthClientSecret"] as const) {
+    for (const field of [
+      "oauthClientId",
+      "oauthClientSecret",
+      "appSlug",
+      "installationOwner",
+    ] as const) {
       if (body[field] === undefined) continue;
       const invalid = await validateSetting(body[field]);
       if (invalid) {
@@ -423,6 +441,8 @@ export async function handleSetupRoutes(
       body.userPrAuth === undefined &&
       body.oauthClientId === undefined &&
       body.oauthClientSecret === undefined &&
+      body.appSlug === undefined &&
+      body.installationOwner === undefined &&
       body.botCredential === undefined &&
       !privateKey
     ) {
@@ -454,6 +474,17 @@ export async function handleSetupRoutes(
           ? null
           : undefined);
       const effectiveBotCredential = body.botCredential ?? github.botCredential ?? "pat";
+      const { githubAppIdentity } = await import("../github-auth");
+      const effectiveAppSlug =
+        body.appSlug !== undefined
+          ? String(body.appSlug).trim()
+          : githubAppIdentity().slug;
+      if (effectiveBotCredential === "app" && !effectiveAppSlug) {
+        return Response.json(
+          { error: "Configure the GitHub App slug before selecting App bot actions" },
+          { status: 409 },
+        );
+      }
       if (keyMutation === null && effectiveBotCredential === "app") {
         return Response.json(
           { error: "Switch bot actions to the PAT before changing the GitHub App without a replacement key" },
@@ -515,12 +546,16 @@ export async function handleSetupRoutes(
             team.push({ name: displayName, github: login, admin: true });
           }
           (config.identity as Record<string, unknown>).team = team;
-          github.webhookForwardLogin = login;
         }
       }
       if (body.userPrAuth !== undefined) github.userPrAuth = body.userPrAuth;
       if (body.botCredential !== undefined) github.botCredential = body.botCredential;
-      for (const field of ["oauthClientId", "oauthClientSecret"] as const) {
+      for (const field of [
+        "oauthClientId",
+        "oauthClientSecret",
+        "appSlug",
+        "installationOwner",
+      ] as const) {
         const value = body[field];
         if (value === undefined) continue;
         if (value === "") delete github[field]; // empty string clears
@@ -540,7 +575,14 @@ export async function handleSetupRoutes(
       }
       audit({
         kind: "setup_github_update",
-        fields: (["userPrAuth", "oauthClientId", "oauthClientSecret", "botCredential"] as const).filter(
+        fields: ([
+          "userPrAuth",
+          "oauthClientId",
+          "oauthClientSecret",
+          "appSlug",
+          "installationOwner",
+          "botCredential",
+        ] as const).filter(
           (f) => body[f] !== undefined,
         ),
       });

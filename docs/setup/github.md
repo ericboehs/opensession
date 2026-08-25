@@ -1,73 +1,98 @@
 # GitHub
 
-The GitHub integration has three parts: a PAT the PR agent posts with, a
-webhook intake on the [webhook server](install.md#webhook-server), and the
-`gh` CLI for PR operations from sessions. The deploy script (last section)
-is optional and replaceable. (Repos don't have to live on GitHub — see
-[codestorage.md](codestorage.md) for code.storage as an alternative host.)
+The GitHub integration has three parts: one GitHub App for bot and teammate
+credentials, webhook intake on the [webhook server](install.md#webhook-server),
+and the `gh` CLI used inside trusted runs. A legacy fine-grained PAT remains an
+explicit fallback mode, but new installs should use the App.
 
-## The bot account (machine user)
+## GitHub App
 
-Create a **dedicated GitHub machine-user account** for your instance (Tella's
-is `tella-butler`) — a normal GitHub account, invited to your org with write
-access to the repos the agent works on. Everything bot-shaped hangs off it:
+Create one organization-owned GitHub App. The same App provides:
 
-1. its PAT is `GITHUB_API_TOKEN` (scoping below),
-2. the box's `gh` CLI is signed in as it (`gh auth login`),
-3. its SSH key is what `git push` uses from session worktrees,
-4. its login goes in `policy.githubBotLogins` in `~/.opensession/config.json`
-   (the `GITHUB_BOT_LOGIN` env var is merged in too; the first configured
-   login is the bot) — the self-trigger guard (skip our own comments/pushes/
-   reviews) keys on this,
-5. `integrations.github.mentionHandles` (or `GITHUB_MENTION_HANDLES` env) —
-   which `@name`s in PR comments wake the mention flow (default: your
-   `persona.name` plus the bot login).
+- short-lived installation tokens for reviews, comments, merges, clones,
+  pushes, previews, sandboxes, and trusted GitHub automations;
+- device-flow user tokens so interactive sessions act as the signed-in person;
+- the bot identity `<app-slug>[bot]` for self-trigger protection and attribution.
 
-Using one account for all four keeps attribution coherent: PRs, comments,
-reviews, and pushes all read as the same bot. A GitHub App would avoid
-burning a seat, but the current code assumes a plain account (gh CLI +
-git-over-SSH don't speak App installation tokens) — machine user is the
-supported path.
+Configure it from Settings → Integrations → GitHub App and sign-in, or under
+`integrations.github` in `~/.opensession/config.json`:
 
-With [per-user GitHub auth](#per-user-github-auth-prs-as-the-session-owner)
-enabled, the bot becomes the *fallback* author: interactive sessions whose
-owner connected their own account open PRs as that person instead.
+```jsonc
+{
+  "integrations": {
+    "github": {
+      "enabled": true,
+      "botCredential": "app",
+      "oauthClientId": "Iv…",
+      "oauthClientSecret": "…",
+      "appSlug": "open-session-example",
+      "installationOwner": "your-org",
+      "userPrAuth": true
+    }
+  }
+}
+```
 
-## GITHUB_API_TOKEN
+The private key is not stored in JSON. Paste the PEM in Settings; Open Session
+writes it atomically with mode 0600 to `~/.opensession/github-app.pem`. Operators
+may instead set `OPENSESSION_GITHUB_APP_KEY` to an externally managed PEM path.
+The UI will not overwrite or delete an operator-managed key.
 
-Read in `packages/core/opensession-server/src/agents/github/github-rest.ts` (write-capable REST/GraphQL client
-for the PR agent) and `packages/core/opensession-server/src/agents/slack/github-reviews.ts` (read-only PR
-lookups for Slack). Always sent as `Authorization: Bearer <token>` against
-`api.github.com` — the code never runs `gh auth` with it.
+Environment overrides for the App identity are
+`OPENSESSION_GITHUB_CLIENT_ID`, `OPENSESSION_GITHUB_CLIENT_SECRET`,
+`OPENSESSION_GITHUB_APP_SLUG`, and `OPENSESSION_GITHUB_APP_KEY` (a path, not PEM
+contents). Environment values win over config. `installationId` may pin a known
+numeric installation; normally `installationOwner` selects it by organization.
 
-What the token actually does (so you can scope the PAT):
+### Required permissions
 
-- read PR issue comments, review comments, and reviews
-- **write**: post/edit issue comments, reply to inline review threads, submit
-  formal reviews (event `COMMENT`), delete labels
-- GraphQL: read review threads, mutate `resolveReviewThread`
+The create-App link in Settings is generated from the same canonical permission
+set used when tokens are minted:
 
-So: a token with read+write on issues/PRs (classic `repo` scope, or
-fine-grained "Pull requests: read+write" + "Issues: read+write") for the
-target repo. The agent is loaded even without the token — it just warns and
-can't post (`packages/core/opensession-server/src/agents/github/index.ts` startup).
-
-Related settings (`packages/core/opensession-server/src/agents/github/`, resolved in `packages/core/opensession-server/src/server/config.ts`):
-
-| Setting | Default | Meaning |
+| Scope | Access | Why |
 | --- | --- | --- |
-| `policy.githubBotLogins` (config) / `GITHUB_BOT_LOGIN` (env, merged in) | none | the GitHub account the token posts as; used to skip the bot's own comments/pushes (self-trigger guard) |
-| `integrations.github.mentionHandles` (config) / `GITHUB_MENTION_HANDLES` (env, wins) | `<persona.name>,<bot login>` | handles (comma-separated in the env var); a PR comment matching `@<handle>` triggers the mention flow |
+| Actions | Read | failing workflow logs for trusted fixes |
+| Checks | Read | check runs |
+| Commit statuses | Read | status rollups |
+| Contents | Read and write | clone and push |
+| Deployments | Read | preview deployment state |
+| Issues | Read and write | issue and PR comments |
+| Metadata | Read | GitHub baseline |
+| Pull requests | Read and write | reviews, PRs, merges |
+| Members (organization) | Read | roster and attribution |
 
-## gh CLI auth is separate
+Enable **Device Flow**, generate a client secret and private key, then install
+the App only on the organization and repositories Open Session should reach.
+When permissions change, approve the updated installation permissions too.
 
-`packages/core/opensession-server/src/server/pr-info.ts` and session prompts shell out to `gh` (`gh pr view`,
-`gh pr diff`, `gh pr comment`, `gh pr merge`, `gh api`) with **no token passed
-in code** — they use the box's ambient `gh` authentication (`gh auth login`,
-or `GH_TOKEN` in `~/.opensession.env`, which systemd loads as the service's
-`EnvironmentFile`). That identity needs write (and merge, if you use PR-merge
-flows) rights on your repos. Set both up: the PAT for the API client, `gh`
-auth for the CLI.
+`botCredential: "app"` is fail-closed. A missing key, wrong installation owner,
+unapproved permission, or failed token mint never falls back to a PAT, ambient
+`gh` account, or connected human. Installation tokens remain process-local and
+short-lived; repository code runs receive a token scoped to that one verified
+repository.
+
+### Bot identity and mention handles
+
+Set `appSlug` even though token minting itself only needs the client id and key.
+App-authored activity appears as `<app-slug>[bot]`; Open Session adds that login
+to its own-author set so comments and pushes cannot trigger loops. The App slug
+itself is the preferred PR mention handle. Keep old names in
+`integrations.github.mentionHandles` only as compatibility aliases.
+
+## Legacy PAT mode
+
+Set `botCredential: "pat"` and `GITHUB_API_TOKEN` only when an installation
+cannot use a GitHub App. The PAT needs repository-scoped Contents, Issues, and
+Pull requests read/write plus the reads required by your workflows. PAT mode is
+also explicit: App credentials do not silently take over until the setting is
+changed.
+
+`policy.githubBotLogins` / `GITHUB_BOT_LOGIN` identify legacy machine accounts
+and historical activity. `GITHUB_MENTION_HANDLES` overrides the configured
+mention-handle list. Host `gh auth login` is not a bot credential source in App
+mode; server-owned `gh` calls receive the selected token in their process
+environment. HTTPS Git operations use a process-local credential helper and do
+not write tokens into remotes or Git config.
 
 ## Webhook intake
 
@@ -122,45 +147,13 @@ non-default repos (the default repo keeps its historical bare-number keys).
 Merge side effects (docs-sync, SEO tracking, session deploy notifications)
 run for the **default repo only**.
 
-## GitHub events without a public URL
+## Webhook reachability
 
-A simple install has no public hostname and no TLS proxy, so GitHub cannot POST
-to `/github/webhook`. The **outbound** analogue of Slack Socket Mode covers this
-case: the `cli/gh-webhook` gh extension opens an outbound connection to GitHub
-and forwards received deliveries to the loopback handler.
-
-```
-gh webhook forward --repo=<owner/name> \
-  --events=pull_request,pull_request_review,pull_request_review_comment,issue_comment,workflow_run \
-  --url=http://127.0.0.1:${WEBHOOK_PORT}/github/webhook \
-  --secret=$GITHUB_WEBHOOK_SECRET
-```
-
-Delivery becomes GitHub to gh (outbound) to the same `/github/webhook` handler a
-public webhook would hit, signed with the same `GITHUB_WEBHOOK_SECRET` so the
-handler's HMAC check passes unchanged. No inbound port is opened.
-
-The github agent arms this from its `startup()`
-(`packages/core/opensession-server/src/agents/github/webhook-forward.ts`): it
-spawns one forwarder per configured repo that has a `ghRepo`, restarts each on
-exit with capped backoff, and kills them on shutdown. Set
-`GITHUB_WEBHOOK_FORWARD_ORG` (or `integrations.github.webhookForwardOrg`) to
-forward a whole org with a single `--org` process instead.
-
-**Gating.** The forwarder runs when no public webhook URL is configured
-(`server.publicBaseUrl` is loopback, the simple-mode default) and stays off when
-a public URL is set, where the inbound HTTP webhook above stays authoritative.
-`GITHUB_WEBHOOK_FORWARD=true` or `=false` overrides that auto-selection. Under
-either transport the reconcile sweep
-(`packages/core/opensession-server/src/agents/github/reconcile.ts`) remains the
-fire-once backstop, so a dropped or missed delivery is still recovered.
-
-**Prerequisites.** The forwarder needs `gh` authenticated (`gh auth login`) and
-the `cli/gh-webhook` extension. On startup the agent checks for both; if `gh` is
-present but the extension is missing it attempts a one-time
-`gh extension install cli/gh-webhook`. If `gh` is absent or the install fails it
-logs one line with the fix and falls back to the reconcile sweep rather than
-crashing.
+PR comments, labels, and other event-driven behavior need GitHub to reach the
+public webhook URL. Set `server.webhookBaseUrl` (or the webhook origin in
+Settings), terminate TLS there, and configure the organization webhook above.
+A private-only instance can still reconcile missed PR reviews by polling, but
+it cannot discover conversational comments without webhook delivery.
 
 ## Behavior toggles
 
@@ -238,9 +231,9 @@ session instead of the bot, and the web UI's name picker becomes a real
 GitHub sign-in. Off by default — without it everything above is the whole
 story.
 
-1. Create one **OAuth App** in your org (Settings → Developer settings →
-   OAuth Apps): tick **"Enable Device Flow"** and generate a client secret. If
-   the org restricts third-party OAuth apps, approve it.
+1. Use the same organization-owned **GitHub App** configured above: tick
+   **"Enable Device Flow"** and generate a client secret. If the organization
+   restricts GitHub Apps, approve its installation and updated permissions.
 
    Device Flow is not an option here. It is the only sign-in there is, so an
    app without it refuses every attempt (`device_flow_disabled`) and nobody
@@ -252,16 +245,18 @@ story.
    "integrations": {
      "github": {
        "userPrAuth": true,
+       "botCredential": "app",
        "oauthClientId": "<client id>",
-       "oauthClientSecret": "<client secret>"
+       "oauthClientSecret": "<client secret>",
+       "appSlug": "<app slug>",
+       "installationOwner": "<organization>"
      }
    }
    ```
 
-   (env `OPENSESSION_GITHUB_CLIENT_ID` / `OPENSESSION_GITHUB_CLIENT_SECRET`
-   win over config. Signing in needs only the client id; the secret is what
-   renews a GitHub App's user tokens, and without it everyone is dropped at
-   the first ~8h expiry.)
+   The private key is stored separately as described above. Environment
+   `OPENSESSION_GITHUB_*` values win over config. Signing in needs the client
+   id; the secret renews user tokens; the key mints bot installation tokens.
 3. Restart the service to load the runner-internal token injection.
 
 What turns on (`packages/core/opensession-server/src/server/github-auth.ts`, `web-auth.ts`, `routes/auth.ts`):
@@ -278,12 +273,13 @@ What turns on (`packages/core/opensession-server/src/server/github-auth.ts`, `we
   organization, the People step adds every organization member to
   `identity.team`. Existing profile details are preserved, and the import is
   recorded so removing someone later is not undone on the next page load.
-- **PRs as the owner**: signing in also stores the person's OAuth token
-  (scopes `repo read:org`, `~/.opensession-github-auth.json`, 0600). The
-  `read:org` scope lets initial setup list organization members. The runner
+- **PRs as the owner**: signing in also stores the person's GitHub App
+  user-to-server token (`~/.opensession/github-auth.json`, 0600). The App's
+  Members permission lets initial setup list organization members. The runner
   injects it as `GH_TOKEN`/`GITHUB_TOKEN` into interactive,
   non-least-privilege runs only — automations, unattended kinds, and any
-  run carrying a deny-set keep the bot credential, fail-closed. Manage
+  run carrying a deny-set stay credential-free. Trusted GitHub code workflows
+  receive the repository-scoped App credential instead. Manage
   connections (per-teammate status, disconnect) in the Connections UI.
 - `GET /api/health` stays un-gated (deploy polls / restart detection).
 
@@ -298,29 +294,28 @@ create**, configured entirely in the UI: no file editing, no restart.
 1. **Create the app.** Settings → Connections → **GitHub App** opens a wizard
    whose link lands on `github.com/settings/apps/new` pre-filled: a generated,
    likely-unique name, private, no webhook, **Device Flow enabled**, permissions
-   **Contents: Read & write**, **Pull requests: Read & write**, and organization
-   **Members: Read** (Metadata: Read is automatic). The Members permission lets
-   org setup import private memberships into the sign-in roster. Pick the owner:
+   the complete permission set in [Required permissions](#required-permissions).
+   The Members permission lets org setup import private memberships into the
+   sign-in roster. Pick the owner:
    your personal account, or an organization (a
    team's app should be org-owned so the org owns it and can reach org repos).
    On that page, **generate a client secret** and copy it, then create the app.
-2. **Paste the details.** Back in the wizard, paste the **Client ID**, the app
-   **slug** (from the app's URL), and the **client secret**. All three are
-   required. The secret is stored 0600 so Open Session can refresh the ~8h
-   user-to-server token; without it the connection would lapse.
+2. **Paste the details.** Back in the wizard, paste the **Client ID**, app
+   **slug**, **client secret**, and generated **private key**. The secret refreshes
+   ~8h user-to-server tokens; the 0600 private key mints installation tokens for
+   bot work. Select the installation owner when more than one installation exists.
 3. **Install on your repositories.** Follow the install link and pick the repos
    to expose. A user-to-server token only reaches repos the app is installed on.
 4. **Connect.** Enter the one-time code at `github.com/login/device`. The token
-   is stored under the login GitHub reports (`~/.opensession-github-auth.json`,
-   0600, never shown again). Private clones use it through a temporary
-   `GIT_ASKPASS` (never written into the remote), and a per-checkout credential
-   helper keeps later `fetch`/`push` authenticated. No `gh` CLI or
-   `GITHUB_API_TOKEN` is involved.
+   is stored under the login GitHub reports (`~/.opensession/github-auth.json`,
+   0600, never shown again). Interactive HTTPS clones and pushes receive it
+   through a process-local credential helper. No `GITHUB_API_TOKEN` is involved.
 
 The single connected account is *the* account for this install (there is no
 roster in simple mode; the one connected account is the acting identity).
 **Disconnect** removes it; **Remove app** clears the configured client id, slug,
-and secret and returns the section to unconfigured. There is no personal-access-
+secret, private key, and installation intent, then returns the section to
+unconfigured. There is no personal-access-
 token path: the App is the only simple-mode connect.
 
 ### Graduating to per-user sign-in

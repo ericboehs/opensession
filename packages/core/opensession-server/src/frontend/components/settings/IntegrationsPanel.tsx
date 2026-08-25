@@ -11,7 +11,7 @@ import { GithubAuthCard, IntegrationsList } from "../SetupIntegrations";
 import { SetupRestart } from "../SetupRestart";
 
 // Workspace → Integrations: the credentials the agent reaches other tools
-// with, plus GitHub sign-in. Same cards the Setup wizard shows, including its
+// with, plus the GitHub App and sign-in. Same cards the Setup wizard shows, including its
 // restart banner — a credential saved here needs the same reboot to take
 // effect as one saved there.
 
@@ -41,7 +41,7 @@ export function IntegrationsPanel() {
 						onSaved={setup.applyIntegration}
 					/>
 
-					<SettingsGroupLabel>GitHub sign-in</SettingsGroupLabel>
+					<SettingsGroupLabel>GitHub App and sign-in</SettingsGroupLabel>
 					<GithubAuthCard github={status.github} onSaved={setup.applyGithub} />
 					<SettingsHint>
 						After setup, teammates connect their own accounts under Team → Account.

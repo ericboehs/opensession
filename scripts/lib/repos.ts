@@ -2,9 +2,10 @@
  * `opensession repos` — list and register the repositories sessions run in.
  *
  * `repos add` takes either a local checkout path or a GitHub `owner/name`.
- * The GitHub form clones via the gh CLI — which brings its own auth, so
- * "connect a repo from GitHub" is one command once `gh auth login` has
- * happened. Registration itself is a config.json edit and is live on the
+ * The GitHub form is an operator bootstrap command and clones through the
+ * operator's gh CLI login. Runtime sessions do not inherit that login: they
+ * receive the selected App or connected-user credential process-locally.
+ * Registration itself is a config.json edit and is live on the
  * next config re-read; no restart.
  */
 
@@ -117,11 +118,11 @@ async function add(spec?: string): Promise<number> {
     // set up, and the failure mode for a signed-out box is instructive.
     const auth = await run(["gh", "auth", "status"]);
     if (auth.code !== 0) {
-      fail("gh is not signed in to GitHub", "run `gh auth login` first");
+      fail("gh is not signed in to GitHub", "run `gh auth login` for this bootstrap command");
       info(
         dim(
-          "  a dedicated machine-user account is best — see docs/setup/github.md,\n" +
-            "  and scope its token to your org so sessions cannot write elsewhere",
+          "  Or configure the GitHub App in Settings and add repositories from the UI.\n" +
+            "  Runtime bot and session credentials never come from this gh login.",
         ),
       );
       return 1;

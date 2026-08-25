@@ -146,30 +146,36 @@ human GitHub commands rather than making the integration public.
 ## GitHub credential scoping (out-of-org writes fail server-side)
 
 The "repositories outside your org require confirmation" rule in AGENTS.md is
-enforced with credential scope, not just prompts: run the bot on a fine-grained
-token whose resource owner is your org (no Administration/Secrets, no gists,
-cannot fork or create repos outside the org), and give teammates GitHub App user
-tokens limited to the app's installation on that org. Then any GitHub write
-outside the org, from ANY code path including raw API calls and CLI/tmux
-sessions, fails at GitHub's side with 403 "Resource not accessible". Caveat:
-`gh auth switch` to another hosts.yml account would sidestep the scoping —
-keep unscoped human logins out of the host's gh config.
+enforced with credential scope, not just prompts. The selected GitHub App
+installation belongs to `integrations.github.installationOwner`; server reads
+and writes use short-lived installation tokens, while trusted repository code
+runs receive a token narrowed to the owner-verified `owner/repo`. Teammate
+device-flow tokens are limited by both that App installation and the person's
+own GitHub access. Out-of-installation writes therefore fail at GitHub's side.
+
+App mode is a fail-closed boundary: token-mint failure never consults the legacy
+`GITHUB_API_TOKEN`, ambient `gh` hosts.yml accounts, SSH credentials, or a
+connected human. PAT mode remains an explicit legacy option and should use a
+fine-grained token whose resource owner is the configured organization.
 
 ## Per-user GitHub auth + web sign-in (opt-in, config `integrations.github`)
 
-Off by default — with no config the bot-PR + localStorage-name-picker behavior
-is byte-identical. Opting in (`integrations.github: { userPrAuth: true,
-oauthClientId: "<GitHub App client id>" }`; env OPENSESSION_GITHUB_CLIENT_ID
-wins over the config id) activates BOTH halves at once:
+Off by default. Opting in uses the same App identity as bot traffic:
+`integrations.github` carries `userPrAuth`, `oauthClientId`,
+`oauthClientSecret`, `appSlug`, and `installationOwner`; the private key lives
+at `~/.opensession/github-app.pem` (or the path in
+`OPENSESSION_GITHUB_APP_KEY`). Environment App identity values win over config.
+Enabling `userPrAuth` activates both halves below:
 
 - **PRs as the session owner** (packages/core/opensession-server/src/server/github-auth.ts): teammates connect
   their GitHub account via the OAuth *device flow* (Connections UI card, or
   implicitly by signing in). Tokens live per-login in
-  `~/.opensession-github-auth.json` (0600, never returned by any API). The
+  `~/.opensession/github-auth.json` (0600, never returned by any API). The
   runner injects them as GH_TOKEN/GITHUB_TOKEN into the engine-server env —
   interactive kinds only and never a least-privilege run
-  (`policy.unattended`: automations, deniedTools carriers incl. the
-  Slack/Linear loops keep the bot credential, fail-closed). The run user
+  (`policy.unattended`: automations and deniedTools carriers including the
+  Slack/Linear loops stay credential-free; trusted GitHub code workflows alone
+  receive a repository-scoped App token). The run user
   resolves to a login through the SAME identity table as commit attribution,
   so the mapping is config (identity.team[].github), not code. The
   PR-attribution instructions swap the `--assignee` bot wording for "authored
@@ -196,14 +202,14 @@ suspended phone doesn't lose the outcome). There is deliberately no
 authorization-code redirect. A redirect has to return to the exact origin it
 left, and on the iOS PWA it comes back in Safari rather than the installed
 app; native apps can't take one at all. GitHub side: one
-org-owned **GitHub App** with "Enable Device Flow" checked, installed on your
-org → All repositories, installable only on that account. GitHub App user
+org-owned **GitHub App** with "Enable Device Flow" checked, installed only on
+the repositories Open Session should reach. GitHub App user
 tokens are what scopes teammates' tokens to your org (see the previous
 section): they can't reach public/third-party repos, they expire ~8h, and
 github-auth.ts refreshes them via a rotating refresh token (20-min ticker
 parked on globalThis + refresh-on-boot; getters never hand out an expired
-token: runs fall back to the bot credential, web mutations 403 to "connect
-your account"). A refresh rotates the token string, which changes the
+token: interactive runs receive no GitHub credential and web mutations return
+403 to "connect your account"). A refresh rotates the token string, which changes the
 shared-server config hash → drain-respawn at next run start, by design.
 `oauthClientSecret` is what that refresh grant needs. Signing in never uses
 it, so an instance without one signs people in and then drops them at the

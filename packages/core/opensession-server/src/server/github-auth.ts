@@ -6,12 +6,18 @@
  * Opt-in via config (`integrations.github` in ~/.opensession/config.json):
  *
  *   "integrations": {
- *     "github": { "userPrAuth": true, "oauthClientId": "<GitHub App client id>" }
+ *     "github": {
+ *       "userPrAuth": true,
+ *       "oauthClientId": "<GitHub App client id>",
+ *       "oauthClientSecret": "<GitHub App client secret>",
+ *       "appSlug": "<GitHub App slug>",
+ *       "installationOwner": "<organization>"
+ *     }
  *   }
  *
- * Both keys are required for the feature to activate; absent/false = today's
- * bot behavior, byte-identical. The client id may also come from
- * OPENSESSION_GITHUB_CLIENT_ID (env wins, per config.ts precedence).
+ * userPrAuth + client id activate sign-in. The same App's slug, installation
+ * owner, secret, and private key complete bot identity, token refresh, and
+ * installation-token auth. OPENSESSION_GITHUB_* environment values win.
  *
  * Tokens come from GitHub's OAuth device flow (the same mechanism `gh auth
  * login` uses), and that is the only sign-in there is: start → the person
@@ -19,7 +25,7 @@
  * app must have "Enable Device Flow" checked. Getting a token needs no client
  * secret; keeping one alive does, because the refresh grant below is
  * confidential. Tokens are stored per GitHub login
- * in ~/.opensession-github-auth.json (0600), are never returned by the API,
+ * in ~/.opensession/github-auth.json (0600), are never returned by the API,
  * and are injected only as GH_TOKEN/GITHUB_TOKEN into interactive,
  * non-least-privilege runs (see pi-runner.ts) — automation runs and
  * anything carrying deniedTools never see them, the same fail-closed posture
@@ -917,31 +923,6 @@ export function githubCredentialForRun(
 /** The usable stored accounts (token present and not expired). */
 function usableAccounts(): StoredAccount[] {
   return Object.values(readStore().users).filter((a) => a.token && tokenUsable(a));
-}
-
-/**
- * Credential used by the process-wide webhook forwarder. Simple mode has one
- * connected identity. Operator mode uses the login designated when the org App
- * enabled sign-in, with the first connected admin as a migration fallback for
- * configs written before that field existed. This is server-owned intake, not a
- * user-scoped action, so choosing one stable admin is deliberate.
- */
-export function githubWebhookForwardCredential(): GithubCredential | null {
-  if (!githubUserAuthActive()) return soleGithubAccount();
-  const designated = trimmedConfig(
-    githubIntegrationConfig(),
-    "webhookForwardLogin",
-  );
-  if (designated) {
-    const credential = githubCredentialForLogin(designated);
-    if (credential) return credential;
-  }
-  for (const member of configuredIdentity().team) {
-    if (member.admin !== true || !member.github) continue;
-    const credential = githubCredentialForLogin(member.github);
-    if (credential) return credential;
-  }
-  return null;
 }
 
 /**
