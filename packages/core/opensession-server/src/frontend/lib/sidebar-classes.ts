@@ -1,3 +1,744 @@
+
+import * as stylex from "@stylexjs/stylex";
+import { mergeStylexClassName } from "../ui/cn";
+import { type as typography } from "../styles/typography.stylex";
+
+const sx = stylex.create({
+	SidebarRowPad7px: {
+		"--sidebar-row-pad": "7px"
+	},
+	SidebarToolPad5px: {
+		"--sidebar-tool-pad": "5px"
+	},
+	SidebarLineH36px: {
+		"--sidebar-line-h": "36px"
+	},
+	SidebarCapH28px: {
+		"--sidebar-cap-h": "28px"
+	},
+	SidebarBandSlot32px: {
+		"--sidebar-band-slot": "32px"
+	},
+	SidebarGroupGap14px: {
+		"--sidebar-group-gap": "14px"
+	},
+	SidebarRowAction26px: {
+		"--sidebar-row-action": "26px"
+	},
+	SidebarNavX6px: {
+		"--sidebar-nav-x": "6px"
+	},
+	desktopSidebarNavX10px: {
+		"@media (min-width: 721px)": {
+			"--sidebar-nav-x": "10px"
+		}
+	},
+	relative: {
+		"position": "relative"
+	},
+	flex: {
+		"display": "flex"
+	},
+	size22px: {
+		"width": "22px",
+		"height": "22px"
+	},
+	flex0022px: {
+		"flex": "0 0 22px"
+	},
+	itemsCenter: {
+		"alignItems": "center"
+	},
+	justifyCenter: {
+		"justifyContent": "center"
+	},
+	gap7px: {
+		"gap": "7px"
+	},
+	flexNone: {
+		"flex": "none"
+	},
+	overflowYVisible: {
+		"overflowY": "visible"
+	},
+	px3: {
+		"paddingInline": "12px"
+	},
+	ptPx: {
+		"paddingTop": "1px"
+	},
+	pb0: {
+		"paddingBottom": "0"
+	},
+	desktopPxVarSidebarNavX: {
+		"@media (min-width: 721px)": {
+			"paddingInline": "var(--sidebar-nav-x)"
+		}
+	},
+	block: {
+		"display": "block"
+	},
+	minW0: {
+		"minWidth": "0"
+	},
+	mx3: {
+		"marginInline": "12px"
+	},
+	desktopMxVarSidebarNavX: {
+		"@media (min-width: 721px)": {
+			"marginInline": "var(--sidebar-nav-x)"
+		}
+	},
+	pb15: {
+		"paddingBottom": "6px"
+	},
+	hoverBgVarRowChip: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--row-chip)"
+			}
+		}
+	},
+	mbVarSidebarGroupGap: {
+		"marginBottom": "var(--sidebar-group-gap)"
+	},
+	opacity55: {
+		"opacity": ".55"
+	},
+	roundedRow: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	bgPressed: {
+		"backgroundColor": "var(--hover-strong)"
+	},
+	opacity100: {
+		"opacity": "1"
+	},
+	z5: {
+		"zIndex": "5"
+	},
+	bgBg: {
+		"backgroundColor": "var(--bg)"
+	},
+	size18px: {
+		"width": "18px",
+		"height": "18px"
+	},
+	shrink0: {
+		"flexShrink": "0"
+	},
+	desktopHVarSidebarLineH: {
+		"@media (min-width: 721px)": {
+			"height": "var(--sidebar-line-h)"
+		}
+	},
+	desktopMinHVarSidebarLineH: {
+		"@media (min-width: 721px)": {
+			"minHeight": "var(--sidebar-line-h)"
+		}
+	},
+	desktopTextItemTitle: {
+		"@media (min-width: 721px)": {
+			"fontSize": "var(--type-item-title)"
+		}
+	},
+	gap5px: {
+		"gap": "5px"
+	},
+	pt9px: {
+		"paddingTop": "9px"
+	},
+	pb5px: {
+		"paddingBottom": "5px"
+	},
+	fontSemibold: {
+		"--tw-font-weight": "var(--font-weight-semibold)",
+		"fontWeight": "var(--font-weight-semibold)"
+	},
+	desktopHVarSidebarCapH: {
+		"@media (min-width: 721px)": {
+			"height": "var(--sidebar-cap-h)"
+		}
+	},
+	desktopMinHVarSidebarCapH: {
+		"@media (min-width: 721px)": {
+			"minHeight": "var(--sidebar-cap-h)"
+		}
+	},
+	desktopPt1: {
+		"@media (min-width: 721px)": {
+			"paddingTop": "4px"
+		}
+	},
+	desktopPb1: {
+		"@media (min-width: 721px)": {
+			"paddingBottom": "4px"
+		}
+	},
+	truncate: {
+		"textOverflow": "ellipsis",
+		"whiteSpace": "nowrap",
+		"overflow": "hidden"
+	},
+	textLeft: {
+		"textAlign": "left"
+	},
+	pl05: {
+		"paddingLeft": "2px"
+	},
+	desktopPl0: {
+		"@media (min-width: 721px)": {
+			"paddingLeft": "0"
+		}
+	},
+	textFaint: {
+		"color": "var(--text-faint)"
+	},
+	opacity0: {
+		"opacity": "0"
+	},
+	fontMedium: {
+		"--tw-font-weight": "var(--font-weight-medium)",
+		"fontWeight": "var(--font-weight-medium)"
+	},
+	size7px: {
+		"width": "7px",
+		"height": "7px"
+	},
+	roundedFull: {
+		"borderRadius": "3.40282e38px"
+	},
+	opacity85: {
+		"opacity": ".85"
+	},
+	My1: {
+		"marginBlock": "-4px"
+	},
+	mlAuto: {
+		"marginLeft": "auto"
+	},
+	hidden: {
+		"display": "none"
+	},
+	w6: {
+		"width": "24px"
+	},
+	cursorPointer: {
+		"cursor": "pointer"
+	},
+	selfStretch: {
+		"alignSelf": "stretch"
+	},
+	textDim: {
+		"color": "var(--text-dim)"
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	beforeAbsolute: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	beforeTop12: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"top": "50%"
+		}
+	},
+	beforeLeft12: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"left": "50%"
+		}
+	},
+	beforeZ0: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"zIndex": "0"
+		}
+	},
+	beforeSize7: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"width": "28px",
+			"height": "28px"
+		}
+	},
+	beforeTranslateX12: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"--tw-translate-x": "calc(calc(1 / 2 * 100%) * -1)",
+			"translate": "var(--tw-translate-x) var(--tw-translate-y)"
+		}
+	},
+	beforeTranslateY12: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"--tw-translate-y": "calc(calc(1 / 2 * 100%) * -1)",
+			"translate": "var(--tw-translate-x) var(--tw-translate-y)"
+		}
+	},
+	beforeRoundedCalc6pxVarRf: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"borderRadius": "calc(6px * var(--rf))"
+		}
+	},
+	beforeCornerShapeVarCs: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"cornerShape": "var(--cs)"
+		}
+	},
+	beforeTransitionBackground: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"transitionProperty": "background",
+			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+		}
+	},
+	beforeContent: {
+		"::before": {
+			"--tw-content": "\"\"",
+			"content": "var(--tw-content)"
+		}
+	},
+	hoverBeforeBgPressed: {
+		"@media (hover: hover)": {
+			":hover": {
+				"::before": {
+					"content": "var(--tw-content)",
+					"backgroundColor": "var(--hover-strong)"
+				}
+			}
+		}
+	},
+	afterAbsolute: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	afterInsetX1: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"insetInline": "-4px"
+		}
+	},
+	afterInsetY0: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"insetBlock": "0"
+		}
+	},
+	afterContent: {
+		"::after": {
+			"--tw-content": "\"\"",
+			"content": "var(--tw-content)"
+		}
+	},
+	SidebarIconLeft28px: {
+		"--sidebar-icon-left": "28px"
+	},
+	desktopSticky: {
+		"@media (min-width: 721px)": {
+			"position": "sticky"
+		}
+	},
+	desktopTop0: {
+		"@media (min-width: 721px)": {
+			"top": "0"
+		}
+	},
+	desktopZ20: {
+		"@media (min-width: 721px)": {
+			"zIndex": "20"
+		}
+	},
+	desktopMt0: {
+		"@media (min-width: 721px)": {
+			"marginTop": "0"
+		}
+	},
+	desktopFlex: {
+		"@media (min-width: 721px)": {
+			"display": "flex"
+		}
+	},
+	desktopHVarSidebarBandSlot: {
+		"@media (min-width: 721px)": {
+			"height": "var(--sidebar-band-slot)"
+		}
+	},
+	desktopMinHVarSidebarBandSlot: {
+		"@media (min-width: 721px)": {
+			"minHeight": "var(--sidebar-band-slot)"
+		}
+	},
+	desktopItemsCenter: {
+		"@media (min-width: 721px)": {
+			"alignItems": "center"
+		}
+	},
+	desktopPy0: {
+		"@media (min-width: 721px)": {
+			"paddingBlock": "0"
+		}
+	},
+	desktopTopVarSidebarBandSlot: {
+		"@media (min-width: 721px)": {
+			"top": "var(--sidebar-band-slot)"
+		}
+	},
+	desktopZ15: {
+		"@media (min-width: 721px)": {
+			"zIndex": "15"
+		}
+	},
+	desktopTopCalcVarSidebarBandSlotVarSidebarLineH: {
+		"@media (min-width: 721px)": {
+			"top": "calc(var(--sidebar-band-slot) + var(--sidebar-line-h))"
+		}
+	},
+	desktopZ14: {
+		"@media (min-width: 721px)": {
+			"zIndex": "14"
+		}
+	},
+	m0: {
+		"margin": "0"
+	},
+	minHVarSidebarCapH: {
+		"minHeight": "var(--sidebar-cap-h)"
+	},
+	wFull: {
+		"width": "100%"
+	},
+	roundedCalc8pxVarRf: {
+		"borderRadius": "calc(8px * var(--rf))"
+	},
+	borderNone: {
+		"--tw-border-style": "none",
+		"borderStyle": "none"
+	},
+	bgTransparent: {
+		"backgroundColor": "#0000"
+	},
+	py1: {
+		"paddingBlock": "4px"
+	},
+	textInherit: {
+		"color": "inherit"
+	},
+	FontInherit: {
+		"font": "inherit"
+	},
+	invisible: {
+		"visibility": "hidden"
+	},
+	visible: {
+		"visibility": "visible"
+	},
+	roundedControl: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	size38px: {
+		"width": "38px",
+		"height": "38px"
+	},
+	text22px: {
+		"fontSize": "22px"
+	},
+	leadingNone: {
+		"--tw-leading": "1",
+		"lineHeight": "1"
+	},
+	size34px: {
+		"width": "34px",
+		"height": "34px"
+	},
+	text20px: {
+		"fontSize": "20px"
+	},
+	inlineFlex: {
+		"display": "inline-flex"
+	},
+	size7: {
+		"width": "28px",
+		"height": "28px"
+	},
+	afterTop5px: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"top": "5px"
+		}
+	},
+	afterRight5px: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"right": "5px"
+		}
+	},
+	afterSize15: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"width": "6px",
+			"height": "6px"
+		}
+	},
+	afterRoundedFull: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"borderRadius": "3.40282e38px"
+		}
+	},
+	afterBgAccent: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"backgroundColor": "var(--accent)"
+		}
+	},
+	minW4: {
+		"minWidth": "16px"
+	},
+	flex00Auto: {
+		"flex": "none"
+	},
+	px1: {
+		"paddingInline": "4px"
+	},
+	textCenter: {
+		"textAlign": "center"
+	},
+	text10px: {
+		"fontSize": "10px"
+	},
+	leading4: {
+		"--tw-leading": "calc(4px * 4)",
+		"lineHeight": "16px"
+	},
+	textWhite: {
+		"color": "var(--color-white)"
+	},
+	absolute: {
+		"position": "absolute"
+	},
+	top12: {
+		"top": "50%"
+	},
+	right7px: {
+		"right": "7px"
+	},
+	TranslateY12: {
+		"--tw-translate-y": "calc(calc(1 / 2 * 100%) * -1)",
+		"translate": "var(--tw-translate-x) var(--tw-translate-y)"
+	},
+	gap1: {
+		"gap": "4px"
+	},
+	roundedSm: {
+		"borderRadius": "calc(4px * var(--rf))"
+	},
+	MediaHoverNoneInlineFlex: {
+		"@media (hover: none)": {
+			"display": "inline-flex"
+		}
+	},
+	minW28px: {
+		"minWidth": "28px"
+	},
+	justifyEnd: {
+		"justifyContent": "flex-end"
+	},
+	pr15: {
+		"paddingRight": "6px"
+	},
+	textRight: {
+		"textAlign": "right"
+	},
+	desktopMinW34px: {
+		"@media (min-width: 721px)": {
+			"minWidth": "34px"
+		}
+	},
+	desktopPr1: {
+		"@media (min-width: 721px)": {
+			"paddingRight": "4px"
+		}
+	},
+	pr05: {
+		"paddingRight": "2px"
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	textYellow: {
+		"color": "var(--yellow)"
+	},
+	mt05: {
+		"marginTop": "2px"
+	},
+	overflowHidden: {
+		"overflow": "hidden"
+	},
+	top0: {
+		"top": "0"
+	},
+	bottom0: {
+		"bottom": "0"
+	},
+	z0: {
+		"zIndex": "0"
+	},
+	flexCol: {
+		"flexDirection": "column"
+	},
+	gap05: {
+		"gap": "2px"
+	},
+	willChangeWidth: {
+		"willChange": "width"
+	},
+	MediaHoverNoneFlex: {
+		"@media (hover: none)": {
+			"display": "flex"
+		}
+	},
+	transitionWidth: {
+		"transitionProperty": "width",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	durationDur: {
+		"--tw-duration": "var(--dur)",
+		"transitionDuration": "var(--dur)"
+	},
+	easeEase: {
+		"--tw-ease": "var(--ease)",
+		"transitionTimingFunction": "var(--ease)"
+	},
+	right0: {
+		"right": "0"
+	},
+	bgRed: {
+		"backgroundColor": "var(--red)"
+	},
+	bgActive: {
+		"backgroundColor": "var(--bg-active)"
+	},
+	textFg: {
+		"color": "var(--text)"
+	},
+	left0: {
+		"left": "0"
+	},
+	bgYellow: {
+		"backgroundColor": "var(--yellow)"
+	},
+	text17130a: {
+		"color": "#17130a"
+	},
+	bgAccent: {
+		"backgroundColor": "var(--accent)"
+	},
+	textOnAccent: {
+		"color": "var(--on-accent)"
+	},
+	animatePulse14sEaseInOutInfinite: {
+		"animation": "1.4s ease-in-out infinite pulse"
+	},
+	motionReduceAnimationDuration14s: {
+		"@media (prefers-reduced-motion: reduce)": {
+			"animationDuration": "1.4s"
+		}
+	},
+	motionReduceAnimationIterationCountInfinite: {
+		"@media (prefers-reduced-motion: reduce)": {
+			"animationIterationCount": "infinite"
+		}
+	},
+	shadow006pxVarRed: {
+		"--tw-shadow": "0 0 6px var(--tw-shadow-color,var(--red))",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	bgBlue: {
+		"backgroundColor": "var(--blue)"
+	},
+	shadow006pxVarBlue: {
+		"--tw-shadow": "0 0 6px var(--tw-shadow-color,var(--blue))",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	animatePulse12sEaseInOutInfinite: {
+		"animation": "1.2s ease-in-out infinite pulse"
+	},
+	motionReduceAnimationDuration12s: {
+		"@media (prefers-reduced-motion: reduce)": {
+			"animationDuration": "1.2s"
+		}
+	},
+	bgFaint: {
+		"backgroundColor": "var(--text-faint)"
+	},
+
+	roundedCalc10pxVarRf: {
+		"borderRadius": "calc(10px * var(--rf))"
+	},
+	tracking0px: {
+		"--tw-tracking": "0px",
+		"letterSpacing": "0"
+	},
+	pt11px: {
+		"paddingTop": "11px"
+	},
+	pr1: {
+		"paddingRight": "4px"
+	},
+	pb11px: {
+		"paddingBottom": "11px"
+	},
+	pl1: {
+		"paddingLeft": "4px"
+	},
+	desktopPr15: {
+		"@media (min-width: 721px)": {
+			"paddingRight": "6px"
+		}
+	},
+	pl2: {
+		"paddingLeft": "8px"
+	},
+	desktopPr2: {
+		"@media (min-width: 721px)": {
+			"paddingRight": "8px"
+		}
+	},
+	hoverPr98px: {
+		"@media (hover: hover)": {
+			":hover": {
+				"paddingRight": "98px"
+			}
+		}
+	},
+	roundedMd: {
+		"borderRadius": "calc(7px * var(--rf))"
+	},
+});
+
 /**
  * Class strings shared by the sidebar's row families, kept out of the
  * components so Sidebar, SidebarItem, FeedRows and PrRow can all wear the same
@@ -101,7 +842,7 @@
  * otherwise be settled by.
  */
 export const SIDEBAR_DENSITY_VARS =
-	"[--sidebar-row-pad:7px] [--sidebar-tool-pad:5px] [--sidebar-line-h:36px] [--sidebar-cap-h:28px] [--sidebar-band-slot:32px] [--sidebar-group-gap:14px] [--sidebar-row-action:26px] " +
+	mergeStylexClassName("", sx.SidebarRowPad7px, sx.SidebarToolPad5px, sx.SidebarLineH36px, sx.SidebarCapH28px, sx.SidebarBandSlot32px, sx.SidebarGroupGap14px, sx.SidebarRowAction26px) + " " +
 	"desktop:data-[density=compact]:[--sidebar-row-pad:4px] desktop:data-[density=compact]:[--sidebar-tool-pad:4px] desktop:data-[density=compact]:[--sidebar-line-h:30px] desktop:data-[density=compact]:[--sidebar-cap-h:24px] desktop:data-[density=compact]:[--sidebar-band-slot:28px] desktop:data-[density=compact]:[--sidebar-group-gap:8px] desktop:data-[density=compact]:[--sidebar-row-action:24px]";
 
 /**
@@ -126,7 +867,7 @@ export const SIDEBAR_DENSITY_VARS =
  * other — and a truncating title faded out 14px short of that seam, which read
  * as the sidebar running out of room rather than as a margin.
  */
-export const SIDEBAR_NAV_X = "[--sidebar-nav-x:6px] desktop:[--sidebar-nav-x:10px]";
+export const SIDEBAR_NAV_X = mergeStylexClassName("", sx.SidebarNavX6px, sx.desktopSidebarNavX10px);
 
 /**
  * The left padding a box inside that inset takes to put its leading mark back
@@ -155,7 +896,7 @@ export const SIDEBAR_RAIL_PAD_DESKTOP =
  * where a 22px box would be wrong.
  */
 export const SIDEBAR_RAIL =
-	"relative flex size-[22px] flex-[0_0_22px] items-center justify-center";
+	mergeStylexClassName("", sx.relative, sx.flex, sx.size22px, sx.flex0022px, sx.itemsCenter, sx.justifyCenter);
 
 /**
  * The air between that rail and the title after it — one value, shared by
@@ -170,7 +911,7 @@ export const SIDEBAR_RAIL =
  * closed up. Tightening the shared gap keeps that difference where it belongs
  * (inside the rail, centred) instead of adding to it.
  */
-export const SIDEBAR_RAIL_GAP = "gap-[7px]";
+export const SIDEBAR_RAIL_GAP = mergeStylexClassName("", sx.gap7px);
 
 /**
  * ── Containers ──────────────────────────────────────────────────────────────
@@ -194,7 +935,7 @@ export const SIDEBAR_RAIL_GAP = "gap-[7px]";
  * class name would read as styling.
  */
 export const SIDEBAR_LIST =
-	"flex-none overflow-y-visible px-3 pt-px pb-0 desktop:px-[var(--sidebar-nav-x)]";
+	mergeStylexClassName("", sx.flexNone, sx.overflowYVisible, sx.px3, sx.ptPx, sx.pb0, sx.desktopPxVarSidebarNavX);
 
 /**
  * Bands that are siblings of the workspace list (Automations, People) but
@@ -202,10 +943,10 @@ export const SIDEBAR_LIST =
  * scroll panes.
  */
 export const SIDEBAR_INDEPENDENT_SECTION =
-	"block min-w-0 flex-none mx-3 desktop:mx-[var(--sidebar-nav-x)]";
+	mergeStylexClassName("", sx.block, sx.minW0, sx.flexNone, sx.mx3, sx.desktopMxVarSidebarNavX);
 
 /** The scroll flow inside one of those bands — visible, not a nested pane. */
-export const SIDEBAR_INDEPENDENT_SCROLL = "min-w-0 overflow-y-visible pb-1.5";
+export const SIDEBAR_INDEPENDENT_SCROLL = mergeStylexClassName("", sx.minW0, sx.overflowYVisible, sx.pb15);
 
 /**
  * A hover painted as a background LAYER rather than a background colour — the
@@ -244,10 +985,10 @@ export const SIDEBAR_HOVER_LAYER =
  * of through its alpha, and it is never more see-through than the sidebar it
  * sits on.
  */
-export const SIDEBAR_ROW_CHIP = "hover:bg-[var(--row-chip)]";
+export const SIDEBAR_ROW_CHIP = mergeStylexClassName("", sx.hoverBgVarRowChip);
 
 /** A top-level group in the workspace list, and the gap after it. */
-export const SIDEBAR_GROUP = "mb-[var(--sidebar-group-gap)]";
+export const SIDEBAR_GROUP = mergeStylexClassName("", sx.mbVarSidebarGroupGap);
 
 /**
  * A status lane. Consecutive lanes open with 8px of their own, which was an
@@ -263,12 +1004,12 @@ export const SIDEBAR_STATUS_GROUP = "[[data-status-group]+&]:mt-2";
  * the pointer wears a pill + accent ring, and lanes that only materialized for
  * the drag (they were empty) sit dimmed.
  */
-export const SIDEBAR_LANE_EMPTY = "opacity-55";
+export const SIDEBAR_LANE_EMPTY = mergeStylexClassName("", sx.opacity55);
 export const SIDEBAR_LANE_DROP_HOVER =
-	"rounded-row bg-pressed opacity-100 shadow-[inset_0_0_0_1px_var(--accent,#6b8afd)]";
+	mergeStylexClassName("shadow-[inset_0_0_0_1px_var(--accent,#6b8afd)]", sx.roundedRow, sx.bgPressed, sx.opacity100);
 
 /** The drag-to-reorder wrapper around each Pinned row (Motion Reorder.Item). */
-export const SIDEBAR_PIN_ENTRY = "relative";
+export const SIDEBAR_PIN_ENTRY = mergeStylexClassName("", sx.relative);
 
 /**
  * While a row is being dragged it floats over its neighbours, so it needs a
@@ -282,7 +1023,7 @@ export const SIDEBAR_PIN_ENTRY = "relative";
  * list-level selector did — so the list needs no class of its own.
  */
 export const SIDEBAR_PIN_ENTRY_DRAGGING =
-	"z-[5] rounded-row bg-bg smooth-shadow-ring-sm";
+	mergeStylexClassName("smooth-shadow-ring-sm", sx.z5, sx.roundedRow, sx.bgBg);
 export const SIDEBAR_PIN_DRAG_ACTIVE = "[&>*]:pointer-events-none";
 
 /**
@@ -302,7 +1043,7 @@ export const SIDEBAR_PIN_DRAG_ACTIVE = "[&>*]:pointer-events-none";
  * arbitrary rather than `text-xs` because it is the tile's geometry — it tracks
  * the 18px box, not the sidebar's type scale.
  */
-export const SIDEBAR_REPO_TILE = "size-[18px] shrink-0 text-meta";
+export const SIDEBAR_REPO_TILE = mergeStylexClassName("", sx.size18px, sx.shrink0, typography.meta);
 
 /**
  * ── Group headers ───────────────────────────────────────────────────────────
@@ -327,7 +1068,7 @@ export const SIDEBAR_REPO_TILE = "size-[18px] shrink-0 text-meta";
    it stopped reading as the same app as the transcript. On a phone the sidebar
    IS the page, so its rows are the thing being read and stay at body. */
 export const SIDEBAR_GROUP_HEADER =
-	`group/gh flex w-full items-center ${SIDEBAR_RAIL_GAP} rounded-[calc(10px*var(--rf))] border-none bg-transparent font-medium tracking-[0px] text-dim hover:text-fg`;
+	[mergeStylexClassName("group/gh", sx.flex, sx.wFull, sx.itemsCenter), SIDEBAR_RAIL_GAP, mergeStylexClassName("", sx.roundedCalc10pxVarRf, sx.borderNone, sx.bgTransparent, sx.fontMedium, sx.tracking0px, sx.textDim, sx.hoverTextFg)].filter(Boolean).join(" ");
 
 /**
  * A FULL-LINE heading — a repo or feed band, an automation group, Archived.
@@ -346,11 +1087,11 @@ export const SIDEBAR_GROUP_HEADER =
  * gives it.
  */
 export const SIDEBAR_HEADER_ROW =
-	"text-body desktop:h-[var(--sidebar-line-h)] desktop:min-h-[var(--sidebar-line-h)] desktop:text-item-title";
+	mergeStylexClassName("", typography.body, sx.desktopHVarSidebarLineH, sx.desktopMinHVarSidebarLineH, sx.desktopTextItemTitle);
 
 /** Left pad puts the icon on the shared rail, whatever the list's inset is. */
 export const SIDEBAR_GROUP_HEADER_INSET =
-	`pt-[11px] pr-1 pb-[11px] pl-1 desktop:pt-1 desktop:pr-1.5 desktop:pb-1 ${SIDEBAR_RAIL_PAD_DESKTOP}`;
+	[mergeStylexClassName("", sx.pt11px, sx.pr1, sx.pb11px, sx.pl1, sx.desktopPt1, sx.desktopPr15, sx.desktopPb1), SIDEBAR_RAIL_PAD_DESKTOP].filter(Boolean).join(" ");
 
 /**
  * Status lanes, inbox bands and Snoozed — the groups nested inside a list or a
@@ -368,28 +1109,28 @@ export const SIDEBAR_GROUP_HEADER_INSET =
  * rows that lead nowhere between the rows that do.
  */
 export const SIDEBAR_LANE_HEADER =
-	"gap-[5px] pt-[9px] pb-[5px] text-label font-semibold desktop:h-[var(--sidebar-cap-h)] desktop:min-h-[var(--sidebar-cap-h)] desktop:pt-1 desktop:pb-1";
+	mergeStylexClassName("", sx.gap5px, sx.pt9px, sx.pb5px, typography.label, sx.fontSemibold, sx.desktopHVarSidebarCapH, sx.desktopMinHVarSidebarCapH, sx.desktopPt1, sx.desktopPb1);
 
 /**
  * The heading's own name. `truncate` before any width utility: it is the pair
  * of overflow rules that makes the ellipsis, and a min-width of 0 is what lets
  * a flex child shrink far enough to need one.
  */
-export const SIDEBAR_GROUP_NAME = "min-w-0 truncate text-left";
+export const SIDEBAR_GROUP_NAME = mergeStylexClassName("", sx.minW0, sx.truncate, sx.textLeft);
 
 /**
  * Phone lane captions keep a slight 2px inset for arm's-length reading.
  * Desktop captions sit directly on the header's content rail, while the hover
  * pill still runs the sidebar's full width.
  */
-export const SIDEBAR_LANE_NAME = "pl-0.5 desktop:pl-0";
+export const SIDEBAR_LANE_NAME = mergeStylexClassName("", sx.pl05, sx.desktopPl0);
 
 /**
  * The collapse chevron. Revealed by the header's hover, and rotated to mark the
  * collapsed state by the call site's inline transform.
  */
 export const SIDEBAR_GROUP_CHEVRON =
-	"shrink-0 text-faint opacity-0 transition-[transform,opacity] group-hover/gh:text-fg group-hover/gh:opacity-100";
+	mergeStylexClassName("transition-[transform,opacity] group-hover/gh:text-fg group-hover/gh:opacity-100", sx.shrink0, sx.textFaint, sx.opacity0);
 
 /**
  * A collapsed heading keeps its chevron out of hover. Expanded, the rows below
@@ -402,7 +1143,7 @@ export const SIDEBAR_GROUP_CHEVRON =
  * loud. Muting the label instead would say the opposite of what is true: a
  * collapsed group is hiding work, which is worth more attention, not less.
  */
-export const SIDEBAR_GROUP_CHEVRON_COLLAPSED = "opacity-100";
+export const SIDEBAR_GROUP_CHEVRON_COLLAPSED = mergeStylexClassName("", sx.opacity100);
 
 /**
  * The count on a group or band heading. Written phone-first for the same
@@ -421,17 +1162,17 @@ export const SIDEBAR_GROUP_CHEVRON_COLLAPSED = "opacity-100";
  * numeral has no ascender, so the same nominal gap costs it more than it costs
  * a word.
  */
-export const SIDEBAR_GROUP_COUNT = "font-medium text-faint";
+export const SIDEBAR_GROUP_COUNT = mergeStylexClassName("", sx.fontMedium, sx.textFaint);
 
 /**
  * The same count on a status-lane heading. Identical to
  * {@link SIDEBAR_GROUP_COUNT} today and kept as its own name because the two
  * headings are free to diverge; neither sets a size.
  */
-export const SIDEBAR_LANE_COUNT = "font-medium text-faint";
+export const SIDEBAR_LANE_COUNT = mergeStylexClassName("", sx.fontMedium, sx.textFaint);
 
 /** The 7px liveness dot a lane or automation heading leads with. */
-export const SIDEBAR_GROUP_DOT = "size-[7px] shrink-0 rounded-full opacity-85";
+export const SIDEBAR_GROUP_DOT = mergeStylexClassName("", sx.size7px, sx.shrink0, sx.roundedFull, sx.opacity85);
 
 /* The 22px glyph a top-level heading used to lead with is gone: Needs review,
    Approved, Awaiting review and Pinned are groupings rather than
@@ -466,9 +1207,9 @@ export const SIDEBAR_GROUP_DOT = "size-[7px] shrink-0 rounded-full opacity-85";
  * as a second, already-lit control rather than as the row's own hover.
  */
 export const SIDEBAR_AUTO_COG =
-	"relative -my-1 ml-auto hidden w-6 shrink-0 cursor-pointer items-center justify-center self-stretch text-dim group-hover/gh:inline-flex hover:text-fg " +
-	"before:absolute before:top-1/2 before:left-1/2 before:z-0 before:size-7 before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-[calc(6px*var(--rf))] before:[corner-shape:var(--cs)] before:transition-[background] before:content-[''] hover:before:bg-pressed " +
-	"after:absolute after:-inset-x-1 after:inset-y-0 after:content-[''] " +
+	mergeStylexClassName("group-hover/gh:inline-flex", sx.relative, sx.My1, sx.mlAuto, sx.hidden, sx.w6, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.selfStretch, sx.textDim, sx.hoverTextFg) + " " +
+	mergeStylexClassName("", sx.beforeAbsolute, sx.beforeTop12, sx.beforeLeft12, sx.beforeZ0, sx.beforeSize7, sx.beforeTranslateX12, sx.beforeTranslateY12, sx.beforeRoundedCalc6pxVarRf, sx.beforeCornerShapeVarCs, sx.beforeTransitionBackground, sx.beforeContent, sx.hoverBeforeBgPressed) + " " +
+	mergeStylexClassName("", sx.afterAbsolute, sx.afterInsetX1, sx.afterInsetY0, sx.afterContent) + " " +
 	"[&>svg]:relative [&>svg]:z-[1]";
 
 /**
@@ -494,7 +1235,7 @@ export const SIDEBAR_AUTO_COG =
  * also how a nested row reads in Finder and the Xcode navigator. Indenting the
  * row box instead would leave one ragged left edge in a column of pills.
  */
-export const SIDEBAR_AUTOMATION_RUNS = "[--sidebar-icon-left:28px]";
+export const SIDEBAR_AUTOMATION_RUNS = mergeStylexClassName("", sx.SidebarIconLeft28px);
 
 /**
  * ── Sticky machinery ────────────────────────────────────────────────────────
@@ -511,7 +1252,7 @@ export const SIDEBAR_AUTOMATION_RUNS = "[--sidebar-icon-left:28px]";
 
 /** Tier 1 — a band heading pinned at the top of the rail. */
 export const SIDEBAR_STICKY_BAND =
-	"desktop:sticky desktop:top-0 desktop:z-20";
+	mergeStylexClassName("", sx.desktopSticky, sx.desktopTop0, sx.desktopZ20);
 
 /**
  * One invariant row height for the tier-1 headings, which is what stops the
@@ -528,7 +1269,7 @@ export const SIDEBAR_STICKY_BAND =
  * what every tier-2 header pins under, so the offsets below start from it.
  */
 export const SIDEBAR_STICKY_BAND_ROW =
-	"desktop:mt-0 desktop:flex desktop:h-[var(--sidebar-band-slot)] desktop:min-h-[var(--sidebar-band-slot)] desktop:items-center desktop:py-0";
+	mergeStylexClassName("", sx.desktopMt0, sx.desktopFlex, sx.desktopHVarSidebarBandSlot, sx.desktopMinHVarSidebarBandSlot, sx.desktopItemsCenter, sx.desktopPy0);
 
 /**
  * Tier 2: a lane / repo / status header, pinned one band-row lower. Once
@@ -543,7 +1284,7 @@ export const SIDEBAR_STICKY_BAND_ROW =
  * rows around them instead of with each other.
  */
 export const SIDEBAR_STICKY_LANE =
-	"desktop:sticky desktop:top-[var(--sidebar-band-slot)] desktop:z-[15] " +
+	mergeStylexClassName("", sx.desktopSticky, sx.desktopTopVarSidebarBandSlot, sx.desktopZ15) + " " +
 	"desktop:[&.is-stuck::after]:pointer-events-none desktop:[&.is-stuck::after]:absolute desktop:[&.is-stuck::after]:top-[calc(100%-8px)] desktop:[&.is-stuck::after]:left-[-400px] desktop:[&.is-stuck::after]:right-[-400px] desktop:[&.is-stuck::after]:z-[-1] desktop:[&.is-stuck::after]:h-5 desktop:[&.is-stuck::after]:content-[''] desktop:[&.is-stuck::after]:[background:linear-gradient(to_bottom,var(--sidebar-material),transparent),linear-gradient(to_bottom,var(--sidebar-bg),transparent)]";
 
 /**
@@ -559,7 +1300,7 @@ export const SIDEBAR_STICKY_LANE =
  * number is what keeps it right at both densities.
  */
 export const SIDEBAR_STICKY_LANE_NESTED =
-	"desktop:top-[calc(var(--sidebar-band-slot)+var(--sidebar-line-h))] desktop:z-[14]";
+	mergeStylexClassName("", sx.desktopTopCalcVarSidebarBandSlotVarSidebarLineH, sx.desktopZ14);
 
 /**
  * ── Band headings ───────────────────────────────────────────────────────────
@@ -577,7 +1318,7 @@ export const SIDEBAR_STICKY_LANE_NESTED =
  * made Automations and Earlier read as two different kinds of thing in the same
  * column.
  */
-export const SIDEBAR_BAND_LABEL = "text-label font-semibold text-dim";
+export const SIDEBAR_BAND_LABEL = mergeStylexClassName("", typography.label, sx.fontSemibold, sx.textDim);
 
 /**
  * The heading's toggle button. Horizontal padding is NOT here: each band sits
@@ -596,14 +1337,14 @@ export const SIDEBAR_BAND_TOGGLE =
 	// inside the 32px slot SIDEBAR_STICKY_BAND_ROW reserves, so the caption keeps
 	// a little air around it without the pinned slot growing. Compact takes the
 	// pair to 24 inside 28, which is the same 4px of air.
-	"group/band m-0 flex min-h-[var(--sidebar-cap-h)] w-full cursor-pointer items-center gap-[5px] rounded-[calc(8px*var(--rf))] border-none bg-transparent py-1 text-left text-inherit [font:inherit] hover:text-fg";
+	mergeStylexClassName("group/band", sx.m0, sx.flex, sx.minHVarSidebarCapH, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap5px, sx.roundedCalc8pxVarRf, sx.borderNone, sx.bgTransparent, sx.py1, sx.textLeft, sx.textInherit, sx.FontInherit, sx.hoverTextFg);
 
 /**
  * The inset the Automations and People headings take. The desktop value lands
  * the glyphless labels on the same 16px rail as Tools, Workspaces and lane
  * captions. The phone layout keeps its tighter base inset.
  */
-export const SIDEBAR_BAND_TOGGLE_INSET = `pr-1 pl-2 desktop:pr-2 ${SIDEBAR_RAIL_PAD_DESKTOP}`;
+export const SIDEBAR_BAND_TOGGLE_INSET = [mergeStylexClassName("", sx.pr1, sx.pl2, sx.desktopPr2), SIDEBAR_RAIL_PAD_DESKTOP].filter(Boolean).join(" ");
 
 /**
  * The chevron reveals on hover but stays IN LAYOUT at all times (visibility,
@@ -612,10 +1353,10 @@ export const SIDEBAR_BAND_TOGGLE_INSET = `pr-1 pl-2 desktop:pr-2 ${SIDEBAR_RAIL_
  * and nudge the whole list below. Reserved-but-hidden costs only trailing
  * space at the row's right edge, which is invisible.
  */
-export const SIDEBAR_BAND_CHEVRON = "invisible shrink-0 text-faint";
+export const SIDEBAR_BAND_CHEVRON = mergeStylexClassName("", sx.invisible, sx.shrink0, sx.textFaint);
 
 /** The band heading's counterpart to {@link SIDEBAR_GROUP_CHEVRON_COLLAPSED}. */
-export const SIDEBAR_BAND_CHEVRON_COLLAPSED = "visible";
+export const SIDEBAR_BAND_CHEVRON_COLLAPSED = mergeStylexClassName("", sx.visible);
 
 /**
  * The full-width surface a header paints once it is actually pinned. It uses
@@ -658,7 +1399,7 @@ export const SIDEBAR_STUCK_BACKING =
  * ordering rather than to the call site.
  */
 export const SIDEBAR_CHROME_BTN =
-	"shrink-0 items-center justify-center rounded-control text-faint transition-[color,background] hover:bg-hover hover:text-fg";
+	mergeStylexClassName("transition-[color,background]", sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textFaint, sx.hoverBgHover, sx.hoverTextFg);
 
 /**
  * The square icon buttons in the workspace header — the filter and the new
@@ -667,7 +1408,7 @@ export const SIDEBAR_CHROME_BTN =
  * by the call site rather than baked in, because the filter button's `active`
  * state paints a stronger wash that hovering must NOT wash back out.
  */
-export const SIDEBAR_HEADER_BTN = "shrink-0 rounded-control font-medium";
+export const SIDEBAR_HEADER_BTN = mergeStylexClassName("", sx.shrink0, sx.roundedControl, sx.fontMedium);
 /**
  * Size and type step together, so each viewport carries its whole pair rather
  * than overriding half of the other's. `leading-none` has to sit AFTER the
@@ -675,8 +1416,8 @@ export const SIDEBAR_HEADER_BTN = "shrink-0 rounded-control font-medium";
  * as a conflict of `font-size`, so a later type size silently drops an earlier
  * line-height and the glyph starts riding on `normal`.
  */
-export const SIDEBAR_HEADER_BTN_PHONE = "size-[38px] text-[22px] leading-none";
-export const SIDEBAR_HEADER_BTN_DESKTOP = "size-[34px] text-[20px] leading-none";
+export const SIDEBAR_HEADER_BTN_PHONE = mergeStylexClassName("", sx.size38px, sx.text22px, sx.leadingNone);
+export const SIDEBAR_HEADER_BTN_DESKTOP = mergeStylexClassName("", sx.size34px, sx.text20px, sx.leadingNone);
 
 /**
  * The trailing icon button on a band heading (the feed filter). Carries no
@@ -685,7 +1426,7 @@ export const SIDEBAR_HEADER_BTN_DESKTOP = "size-[34px] text-[20px] leading-none"
  * not by which one you wrote last.
  */
 export const SIDEBAR_BAND_ACTION =
-	"ml-auto inline-flex size-7 shrink-0 items-center justify-center rounded-control hover:bg-hover hover:text-fg";
+	mergeStylexClassName("", sx.mlAuto, sx.inlineFlex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.hoverBgHover, sx.hoverTextFg);
 
 /**
  * The dot a filter button wears while a non-default filter is applied — the
@@ -695,7 +1436,7 @@ export const SIDEBAR_BAND_ACTION =
  * correct spelling here.
  */
 export const SIDEBAR_FILTER_DOT =
-	"relative after:absolute after:top-[5px] after:right-[5px] after:size-1.5 after:rounded-full after:bg-accent after:content-['']";
+	mergeStylexClassName("", sx.relative, sx.afterAbsolute, sx.afterTop5px, sx.afterRight5px, sx.afterSize15, sx.afterRoundedFull, sx.afterBgAccent, sx.afterContent);
 
 /**
  * The attention count on a COLLAPSED band — urgent rows must not vanish inside
@@ -707,7 +1448,7 @@ export const SIDEBAR_FILTER_DOT =
  * rounded-full is the one radius spelling base.css leaves un-squircled.
  */
 export const SIDEBAR_ATTN_COUNT =
-	"min-w-4 flex-[0_0_auto] rounded-full px-1 text-center text-[10px] leading-4 font-semibold text-white";
+	mergeStylexClassName("", sx.minW4, sx.flex00Auto, sx.roundedFull, sx.px1, sx.textCenter, sx.text10px, sx.leading4, sx.fontSemibold, sx.textWhite);
 
 /**
  * ── Workspace rows: the trailing cluster ────────────────────────────────────
@@ -746,7 +1487,7 @@ export const SIDEBAR_ATTN_COUNT =
  * title truncates at one place in the rail rather than 12px
  * earlier on the families that share this row.
  */
-export const SIDEBAR_WS_ROW = `flex items-center ${SIDEBAR_RAIL_GAP} hover:pr-[98px]`;
+export const SIDEBAR_WS_ROW = [mergeStylexClassName("", sx.flex, sx.itemsCenter), SIDEBAR_RAIL_GAP, mergeStylexClassName("", sx.hoverPr98px)].filter(Boolean).join(" ");
 
 /**
  * Pin + snooze + archive, floated over the row's right edge so revealing them can never
@@ -761,7 +1502,7 @@ export const SIDEBAR_WS_ROW = `flex items-center ${SIDEBAR_RAIL_GAP} hover:pr-[9
  * (never) and an archived row on touch (always).
  */
 export const SIDEBAR_WS_ACTIONS =
-	"absolute top-1/2 right-[7px] -translate-y-1/2 items-center gap-1 rounded-sm";
+	mergeStylexClassName("", sx.absolute, sx.top12, sx.right7px, sx.TranslateY12, sx.itemsCenter, sx.gap1, sx.roundedSm);
 
 /**
  * The hover-only reveal. `group-hover` is gated to real hover devices by
@@ -769,7 +1510,7 @@ export const SIDEBAR_WS_ACTIONS =
  * rule was for: on touch a sticky first-tap `:hover` would otherwise expose
  * actions that live behind the swipe gesture there.
  */
-export const SIDEBAR_WS_ACTIONS_HOVER = "hidden group-hover:inline-flex";
+export const SIDEBAR_WS_ACTIONS_HOVER = mergeStylexClassName("group-hover:inline-flex", sx.hidden);
 
 /**
  * An archived row carries no swipe gesture — that is a live-row affordance —
@@ -778,7 +1519,7 @@ export const SIDEBAR_WS_ACTIONS_HOVER = "hidden group-hover:inline-flex";
  * (which would read as a chip on every row) and the title reserves the space
  * instead.
  */
-export const SIDEBAR_WS_ACTIONS_TOUCH = "[@media(hover:none)]:inline-flex";
+export const SIDEBAR_WS_ACTIONS_TOUCH = mergeStylexClassName("", sx.MediaHoverNoneInlineFlex);
 
 /**
  * One icon button in that cluster — the same box the session rows' pin and
@@ -800,7 +1541,7 @@ export const SIDEBAR_WS_ACTIONS_TOUCH = "[@media(hover:none)]:inline-flex";
  * in the sheet relative to each other.
  */
 export const SIDEBAR_WS_ACTION =
-	`inline-flex size-[var(--sidebar-row-action,26px)] cursor-pointer items-center justify-center rounded-md ${SIDEBAR_ROW_CHIP}`;
+	[mergeStylexClassName("size-[var(--sidebar-row-action,26px)]", sx.inlineFlex, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedMd), SIDEBAR_ROW_CHIP].filter(Boolean).join(" ");
 
 /**
  * Compact last-activity time. It has no `display` of its own on purpose: as a
@@ -811,12 +1552,12 @@ export const SIDEBAR_WS_ACTION =
  * would split the free space and strand one of them mid-row.
  */
 export const SIDEBAR_WS_TIME =
-	"ml-auto min-w-[28px] flex-[0_0_auto] justify-end pr-1.5 text-right text-meta text-faint desktop:min-w-[34px] desktop:pr-1";
+	mergeStylexClassName("", sx.mlAuto, sx.minW28px, sx.flex00Auto, sx.justifyEnd, sx.pr15, sx.textRight, typography.meta, sx.textFaint, sx.desktopMinW34px, sx.desktopPr1);
 
 /** Hidden at rest and revealed on row hover. The room for the action cluster is
  *  the row's own (see {@link SIDEBAR_WS_ROW}), so this no longer carries a
  *  margin of its own. Call sites that need an always-visible time omit this. */
-export const SIDEBAR_WS_TIME_HOVER = "hidden group-hover:inline-flex";
+export const SIDEBAR_WS_TIME_HOVER = mergeStylexClassName("group-hover:inline-flex", sx.hidden);
 
 /**
  * Live "in progress" elapsed ticker — it sits where the time badge would, in
@@ -831,7 +1572,7 @@ export const SIDEBAR_WS_TIME_HOVER = "hidden group-hover:inline-flex";
  * stands in for instead of growing a clock's worth of digits.
  */
 export const SIDEBAR_WS_TICKER =
-	"ml-auto min-w-[28px] flex-[0_0_auto] justify-end pr-0.5 text-right text-meta tabular-nums text-yellow group-hover:hidden desktop:min-w-[34px] desktop:pr-1";
+	mergeStylexClassName("group-hover:hidden", sx.mlAuto, sx.minW28px, sx.flex00Auto, sx.justifyEnd, sx.pr05, sx.textRight, typography.meta, sx.tabularNums, sx.textYellow, sx.desktopMinW34px, sx.desktopPr1);
 
 /**
  * Teammates focused on this row's work, as an overlapping pile: whoever came
@@ -849,7 +1590,7 @@ export const SIDEBAR_WS_TICKER =
  * beneath, while the ring follows the top face's own silhouette and leaves
  * both squircles whole.
  */
-export const SIDEBAR_WS_FACES = "flex shrink-0 items-center";
+export const SIDEBAR_WS_FACES = mergeStylexClassName("", sx.flex, sx.shrink0, sx.itemsCenter);
 export const SIDEBAR_WS_FACE =
 	"[&:not(:first-child)]:-ml-1.5 " +
 	"[&:not(:first-child)]:[box-shadow:-2px_0_0_0_var(--sidebar-bg)]";
@@ -859,7 +1600,7 @@ export const SIDEBAR_WS_FACE =
  * workspace row it pins itself to the right edge, unless a ticker or a snooze
  * countdown already did that pushing.
  */
-export const SIDEBAR_WS_DRAFT = "inline-flex flex-[0_0_auto] items-center text-dim";
+export const SIDEBAR_WS_DRAFT = mergeStylexClassName("", sx.inlineFlex, sx.flex00Auto, sx.itemsCenter, sx.textDim);
 
 /**
  * Wake countdown on a snoozed workspace row (moon + "1h"). It stands in for
@@ -867,7 +1608,7 @@ export const SIDEBAR_WS_DRAFT = "inline-flex flex-[0_0_auto] items-center text-d
  * type, and yields to the pin/archive actions like every other trailing badge.
  */
 export const SIDEBAR_WS_SNOOZE =
-	"ml-auto inline-flex flex-[0_0_auto] items-center gap-1 text-meta tabular-nums text-faint group-hover:hidden";
+	mergeStylexClassName("group-hover:hidden", sx.mlAuto, sx.inlineFlex, sx.flex00Auto, sx.itemsCenter, sx.gap1, typography.meta, sx.tabularNums, sx.textFaint);
 
 /**
  * ── Swipe rows ──────────────────────────────────────────────────────────────
@@ -881,7 +1622,7 @@ export const SIDEBAR_WS_SNOOZE =
  * class, it is also what lets this name drop out of the hand-written list of
  * legacy classes base.css squircles there.
  */
-export const SIDEBAR_SWIPE_ROW = "relative mt-0.5 overflow-hidden rounded-row";
+export const SIDEBAR_SWIPE_ROW = mergeStylexClassName("", sx.relative, sx.mt05, sx.overflowHidden, sx.roundedRow);
 
 /**
  * One revealed action behind the row. Hidden until the gesture opens its side,
@@ -893,15 +1634,15 @@ export const SIDEBAR_SWIPE_ACTION =
 	// `border-none`, not `border-0`: the latter zeroes the width but leaves
 	// the style at Tailwind's `solid` default, where the `border: 0` this
 	// replaced computed to `none`. Width resolves to 0 under either.
-	"absolute top-0 bottom-0 z-0 hidden w-[var(--swipe-action-w,82px)] flex-col items-center justify-center gap-0.5 border-none text-meta font-semibold will-change-[width] [&>svg]:shrink-0";
+	mergeStylexClassName("w-[var(--swipe-action-w,82px)] [&>svg]:shrink-0", sx.absolute, sx.top0, sx.bottom0, sx.z0, sx.hidden, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.gap05, sx.borderNone, typography.meta, sx.fontSemibold, sx.willChangeWidth);
 
 /** Revealed because the gesture opened this side. Touch only, as above. */
-export const SIDEBAR_SWIPE_ACTION_OPEN = "[@media(hover:none)]:flex";
+export const SIDEBAR_SWIPE_ACTION_OPEN = mergeStylexClassName("", sx.MediaHoverNoneFlex);
 
 /** The action grows and shrinks with the finger, except while the finger is
  *  actually down — a transition there would lag the drag by a frame. */
 export const SIDEBAR_SWIPE_ACTION_TRANSITION =
-	"transition-[width] duration-(--dur) ease-(--ease)";
+	mergeStylexClassName("", sx.transitionWidth, sx.durationDur, sx.easeEase);
 
 /**
  * Each side carries its own fill AND its own ink, so exactly one `text-*` ever
@@ -912,25 +1653,25 @@ export const SIDEBAR_SWIPE_ACTION_TRANSITION =
  */
 
 /** Destructive, and on the trailing edge because the swipe travels left. */
-export const SIDEBAR_SWIPE_ACTION_ARCHIVE = "right-0 bg-red text-white";
+export const SIDEBAR_SWIPE_ACTION_ARCHIVE = mergeStylexClassName("", sx.right0, sx.bgRed, sx.textWhite);
 
 /** Reversible snooze filing on the trailing edge. Quieter than Archive. */
-export const SIDEBAR_SWIPE_ACTION_SNOOZE = "right-0 bg-active text-fg";
+export const SIDEBAR_SWIPE_ACTION_SNOOZE = mergeStylexClassName("", sx.right0, sx.bgActive, sx.textFg);
 
 /** Pin, on the leading edge. Dark ink: the yellow is too light for white. */
-export const SIDEBAR_SWIPE_ACTION_STAR = "left-0 bg-yellow text-[#17130a]";
+export const SIDEBAR_SWIPE_ACTION_STAR = mergeStylexClassName("", sx.left0, sx.bgYellow, sx.text17130a);
 
 /** Already pinned — the same action in the accent, so the swipe reads as a
  *  toggle rather than as a second way to pin. */
-export const SIDEBAR_SWIPE_ACTION_STAR_ON = "left-0 bg-accent text-on-accent";
+export const SIDEBAR_SWIPE_ACTION_STAR_ON = mergeStylexClassName("", sx.left0, sx.bgAccent, sx.textOnAccent);
 
 export const SIDEBAR_STATUS_DOT = {
 	/** Yellow to match the "In progress" lane — green means "In review". */
 	running:
-		"bg-yellow animate-[pulse_1.4s_ease-in-out_infinite] motion-reduce:[animation-duration:1.4s]! motion-reduce:[animation-iteration-count:infinite]!",
+		mergeStylexClassName("", sx.bgYellow, sx.animatePulse14sEaseInOutInfinite, sx.motionReduceAnimationDuration14s, sx.motionReduceAnimationIterationCountInfinite),
 	/** A stopped run is actionable, but it is not a question for the person. */
-	failed: "bg-red shadow-[0_0_6px_var(--red)]",
+	failed: mergeStylexClassName("", sx.bgRed, sx.shadow006pxVarRed),
 	waiting:
-		"bg-blue shadow-[0_0_6px_var(--blue)] animate-[pulse_1.2s_ease-in-out_infinite] motion-reduce:[animation-duration:1.2s]! motion-reduce:[animation-iteration-count:infinite]!",
-	idle: "bg-faint",
+		mergeStylexClassName("", sx.bgBlue, sx.shadow006pxVarBlue, sx.animatePulse12sEaseInOutInfinite, sx.motionReduceAnimationDuration12s, sx.motionReduceAnimationIterationCountInfinite),
+	idle: mergeStylexClassName("", sx.bgFaint),
 } as const;
