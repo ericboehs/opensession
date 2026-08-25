@@ -32,6 +32,10 @@ ternaries, maps over class strings, and the exported string constants in
 4. **Variant keys are exact.** Pseudos: `":hover"`, `":focus"`,
    `":focusVisible"`, `":focusWithin"`, `":active"`, `":disabled"`,
    `"::before"`, `"::after"` (`::before`/`::after` need `content: '""'`).
+   Every Tailwind `hover:` rule was emitted inside `@media (hover: hover)`;
+   preserve that gate in StyleX by nesting the `":hover"` block under
+   `"@media (hover: hover)"`. A bare `":hover"` changes sticky-hover behavior
+   on touch devices and is not parity.
    Media queries, spelled EXACTLY: `"@media (max-width: 720px)"` (phone),
    `"@media (min-width: 721px)"` (desktop), plus prefers-reduced-motion /
    pointer-coarse queries as needed. These two width literals are pinned by a
