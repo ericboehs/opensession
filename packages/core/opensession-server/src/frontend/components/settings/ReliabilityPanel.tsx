@@ -74,7 +74,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgButton: {
 			backgroundColor: "var(--button-surface)"
 	},

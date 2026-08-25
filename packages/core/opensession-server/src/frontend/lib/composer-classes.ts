@@ -39,7 +39,8 @@ const sx = stylex.create({
 	},
 	roundedVarComposerRadius: {
 		"borderRadius": "var(--composer-radius)"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	px35: {
 		"paddingInline": "14px"
 	},
@@ -86,7 +87,8 @@ const sx = stylex.create({
 	},
 	rounded999px: {
 		"borderRadius": "999px"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	p1: {
 		"padding": "4px"
 	},
@@ -274,7 +276,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	px9px: {
 		"paddingInline": "9px"
 	},
@@ -314,7 +317,8 @@ const sx = stylex.create({
 	},
 	roundedLg: {
 		"borderRadius": "calc(14px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgPopupGlass: {
 		"backgroundColor": "var(--popup-glass)"
 	},
@@ -340,7 +344,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 		"borderRadius": "3.40282e38px"
-	},
+	,
+		cornerShape: "round"},
 	leadingNone: {
 		"--tw-leading": "1",
 		"lineHeight": "1"
@@ -445,7 +450,8 @@ const sx = stylex.create({
 	roundedTVarComposerRadius: {
 		"borderTopLeftRadius": "var(--composer-radius)",
 		"borderTopRightRadius": "var(--composer-radius)"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	borderX: {
 		"borderInlineStyle": "var(--tw-border-style)",
 		"borderInlineWidth": "1px"
@@ -594,7 +600,8 @@ const sx = stylex.create({
 	},
 	roundedCalc8pxVarRf: {
 		"borderRadius": "calc(8px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	objectCover: {
 		"objectFit": "cover"
 	},

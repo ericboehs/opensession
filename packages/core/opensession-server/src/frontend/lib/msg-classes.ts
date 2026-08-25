@@ -118,7 +118,8 @@ const sx = stylex.create({
 	},
 	roundedLg: {
 		"borderRadius": "calc(14px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgPanel: {
 		"backgroundColor": "var(--bg-panel)"
 	},
@@ -130,7 +131,8 @@ const sx = stylex.create({
 	},
 	roundedRow: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	py225: {
 		"paddingBlock": "9px"
 	},

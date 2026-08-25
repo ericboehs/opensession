@@ -114,7 +114,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	bgActive: {
 			backgroundColor: "var(--bg-active)"
 	},
@@ -161,7 +162,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgSurface: {
 			backgroundColor: "var(--bg)"
 	},

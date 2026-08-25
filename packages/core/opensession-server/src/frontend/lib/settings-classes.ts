@@ -262,7 +262,8 @@ const sx = stylex.create({
 	},
 	roundedRow: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	borderNone: {
 		"--tw-border-style": "none",
 		"borderStyle": "none"

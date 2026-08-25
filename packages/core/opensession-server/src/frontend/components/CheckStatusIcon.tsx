@@ -19,7 +19,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"

@@ -35,7 +35,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	textSm: {
 			fontSize: "var(--type-label)",
 			lineHeight: "var(--tw-leading,var(--text-sm--line-height))"

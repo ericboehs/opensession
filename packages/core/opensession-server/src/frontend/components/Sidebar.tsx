@@ -338,7 +338,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"
@@ -391,7 +392,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	bgAccent: {
 			backgroundColor: "var(--accent)"
 	},
@@ -618,7 +620,8 @@ const sx = stylex.create({
 	phoneHidden: { "@media (max-width: 720px)": { display: "none" } },
 	wFull: { width: "100%" },
 	textLeft: { textAlign: "left" },
-	roundedRow: { borderRadius: tokens.radiusRow },
+	roundedRow: { borderRadius: tokens.radiusRow ,
+		cornerShape: "var(--cs)"},
 	pxSidebarNav: { paddingInline: "var(--sidebar-nav-x)" },
 	pxSidebarTool: { paddingInline: "calc(var(--sidebar-icon-left) - var(--sidebar-nav-x))" },
 	pySidebarTool: { paddingBlock: "var(--sidebar-tool-pad)" },

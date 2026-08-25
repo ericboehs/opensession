@@ -21,7 +21,8 @@ const sx = stylex.create({
 	},
 	roundedXs: {
 		"borderRadius": "calc(2px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	durationVarDurMicro: {
 		"--tw-duration": "var(--dur-micro)",
 		"transitionDuration": "var(--dur-micro)"

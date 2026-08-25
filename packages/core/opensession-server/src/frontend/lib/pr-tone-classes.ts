@@ -37,7 +37,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 		"borderRadius": "3.40282e38px"
-	},
+	,
+		cornerShape: "round"},
 	flex: {
 		"display": "flex"
 	},
@@ -76,7 +77,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 		"borderRadius": "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	fontSemibold: {
 		"--tw-font-weight": "var(--font-weight-semibold)",
 		"fontWeight": "var(--font-weight-semibold)"
@@ -212,17 +214,20 @@ const sx = stylex.create({
 	roundedSControl: {
 		"borderStartStartRadius": "calc(12px * var(--rf))",
 		"borderEndStartRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	roundedENone: {
 		"borderStartEndRadius": "0",
 		"borderEndEndRadius": "0"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	px25: {
 		"paddingInline": "10px"
 	},
 	roundedControl: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	cursorInherit: {
 		"cursor": "inherit"
 	},
@@ -244,11 +249,13 @@ const sx = stylex.create({
 	roundedEControl: {
 		"borderStartEndRadius": "calc(12px * var(--rf))",
 		"borderEndEndRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	roundedSNone: {
 		"borderStartStartRadius": "0",
 		"borderEndStartRadius": "0"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	activeScale096: {
 		":active": {
 			"scale": ".96"

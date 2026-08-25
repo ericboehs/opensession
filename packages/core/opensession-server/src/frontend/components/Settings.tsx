@@ -124,7 +124,8 @@ const sx = stylex.create({
 	},
 	rounded2xl: {
 			borderRadius: "calc(22px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"

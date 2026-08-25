@@ -25,7 +25,8 @@ const sx = stylex.create({
 	},
 	roundedRow: {
 			borderRadius: "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"
@@ -45,7 +46,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	objectCover: {
 			objectFit: "cover"
 	},

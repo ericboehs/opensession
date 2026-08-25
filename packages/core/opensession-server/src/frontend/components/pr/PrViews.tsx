@@ -9,7 +9,8 @@ import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 const sx = stylex.create({
 	roundedXl: {
 			borderRadius: "calc(18px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"
@@ -76,7 +77,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	bgActive: {
 			backgroundColor: "var(--bg-active)"
 	},
@@ -115,7 +117,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border0: {
 			borderStyle: "solid",
 			borderWidth: "0"

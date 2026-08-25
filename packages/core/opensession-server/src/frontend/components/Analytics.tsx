@@ -64,7 +64,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	textDim: {
 			color: "var(--text-dim)"
 	},
@@ -153,7 +154,8 @@ const sx = stylex.create({
 	},
 	rounded999px: {
 			borderRadius: "999px"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	block: {
 			display: "block"
 	},
@@ -262,7 +264,8 @@ const sx = stylex.create({
 	},
 	roundedRow: {
 			borderRadius: "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	px2: {
 			paddingInline: "8px"
 	},
@@ -284,7 +287,8 @@ const sx = stylex.create({
 	},
 	roundedPopup: {
 		"borderRadius": "calc(16px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	CornerShapeSquircle: {
 		"cornerShape": "squircle"
 	},

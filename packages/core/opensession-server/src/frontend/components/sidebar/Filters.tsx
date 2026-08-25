@@ -110,7 +110,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	leadingNone: {
 			lineHeight: "1"
 	},

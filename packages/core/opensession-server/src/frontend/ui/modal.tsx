@@ -64,7 +64,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 			borderRadius: "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	p0: {
 			padding: "0"
 	},
@@ -201,7 +202,8 @@ const sx = stylex.create({
 	},
 	roundedCalc22pxVarRf: {
 		"borderRadius": "calc(22px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgPaletteGlass: {
 		"backgroundColor": "var(--palette-glass)"
 	},

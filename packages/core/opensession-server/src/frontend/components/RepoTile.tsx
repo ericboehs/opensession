@@ -28,7 +28,8 @@ const sx = stylex.create({
 	shrink0: { flexShrink: "0" },
 	itemsCenter: { alignItems: "center" },
 	justifyCenter: { justifyContent: "center" },
-	roundedSm: { borderRadius: "calc(4px * var(--rf))" },
+	roundedSm: { borderRadius: "calc(4px * var(--rf))" ,
+		cornerShape: "var(--cs)"},
 	fontBold: { fontWeight: "var(--font-weight-bold)" },
 });
 

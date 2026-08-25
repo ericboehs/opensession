@@ -54,7 +54,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 			borderRadius: "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgTransparent: {
 			backgroundColor: "transparent"
 	},
@@ -84,7 +85,8 @@ const sx = stylex.create({
 	},
 	roundedSm: {
 			borderRadius: "calc(4px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	minW0: {
 			minWidth: "0"
 	},
@@ -120,7 +122,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	block: {
 			display: "block"
 	},
@@ -132,7 +135,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	bgAccent: {
 			backgroundColor: "var(--accent)"
 	},
@@ -160,7 +164,8 @@ const sx = stylex.create({
 	},
 	roundedRow: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	pxCalcVarSidebarIconLeftVarSidebarNavX: {
 		"paddingInline": "calc(var(--sidebar-icon-left) - var(--sidebar-nav-x))"
 	},

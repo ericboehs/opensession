@@ -111,7 +111,8 @@ const sx = stylex.create({
 	roundedTLg: {
 			borderTopLeftRadius: "calc(14px * var(--rf))",
 			borderTopRightRadius: "calc(14px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	size5: {
 			width: "20px",
 			height: "20px"
@@ -215,7 +216,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgGreenSoft: {
 			backgroundColor: "var(--green-soft)"
 	},
@@ -296,7 +298,8 @@ const sx = stylex.create({
 	},
 	roundedSm: {
 			borderRadius: "calc(4px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgYellowSoft: {
 			backgroundColor: "var(--yellow-soft)"
 	},
@@ -472,7 +475,8 @@ const sx = stylex.create({
 	},
 	roundedLg: {
 		"borderRadius": "calc(14px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	relative: {
 		"position": "relative"
 	},

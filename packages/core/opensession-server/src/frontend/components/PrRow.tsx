@@ -65,7 +65,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 		"borderRadius": "3.40282e38px"
-	},
+	,
+		cornerShape: "round"},
 	textAccent: {
 		"color": "var(--accent-ink)"
 	},

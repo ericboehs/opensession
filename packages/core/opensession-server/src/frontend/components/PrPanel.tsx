@@ -339,7 +339,8 @@ const sx = stylex.create({
 	},
 	roundedSm: {
 			borderRadius: "calc(4px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"
@@ -434,7 +435,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	borderLineStrong: {
 			borderColor: "var(--border-strong)"
 	},
@@ -485,7 +487,8 @@ const sx = stylex.create({
 	},
 	roundedRow: {
 			borderRadius: "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	py25: {
 			paddingBlock: "10px"
 	},
@@ -504,7 +507,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	transitionColors: {
 			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
 			transitionTimingFunction: "var(--tw-ease,var(--ease))",
@@ -639,7 +643,8 @@ const sx = stylex.create({
   },
   mr15: { marginRight: "6px" },
   h6: { height: "24px" },
-  roundedControl: { borderRadius: "calc(12px * var(--rf))" },
+  roundedControl: { borderRadius: "calc(12px * var(--rf))" ,
+    cornerShape: "var(--cs)"},
   textPurple: { color: "var(--purple)" },
   textYellow: { color: "var(--yellow)" },
   textGreen: { color: "var(--green)" },

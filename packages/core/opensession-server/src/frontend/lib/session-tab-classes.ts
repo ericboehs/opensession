@@ -7,7 +7,8 @@ import { motionStyles } from "../styles/animations.stylex";
 const sx = stylex.create({
 	roundedCalc8pxVarRf: {
 		"borderRadius": "calc(8px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	desktopRoundedMd: {
 		"@media (min-width: 721px)": {
 			"borderRadius": "calc(7px * var(--rf))"
@@ -402,7 +403,8 @@ const sx = stylex.create({
 	},
 	roundedXs: {
 		"borderRadius": "calc(2px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border: {
 		"borderStyle": "var(--tw-border-style)",
 		"borderWidth": "1px"
@@ -432,7 +434,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 		"borderRadius": "3.40282e38px"
-	},
+	,
+		cornerShape: "round"},
 	motionReduceAnimationDuration12s: {
 		"@media (prefers-reduced-motion: reduce)": {
 			"animationDuration": "1.2s"
@@ -476,7 +479,8 @@ const sx = stylex.create({
 	},
 	roundedSm: {
 		"borderRadius": "calc(4px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border0: {
 		"borderStyle": "var(--tw-border-style)",
 		"borderWidth": "0"

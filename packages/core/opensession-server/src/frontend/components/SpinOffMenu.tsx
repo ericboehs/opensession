@@ -94,7 +94,8 @@ const sx = stylex.create({
 	},
 	roundedNone: {
 		"borderRadius": "0"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	borderB: {
 		"borderBottomStyle": "var(--tw-border-style)",
 		"borderBottomWidth": "1px"

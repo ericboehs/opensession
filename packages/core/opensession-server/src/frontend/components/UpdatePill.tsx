@@ -66,7 +66,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 		"borderRadius": "3.40282e38px"
-	},
+	,
+		cornerShape: "round"},
 	CornerShapeSquircle: {
 		"cornerShape": "squircle"
 	},
@@ -127,7 +128,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	px3: {
 		"paddingInline": "12px"
 	},

@@ -33,7 +33,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	minW0: {
 			minWidth: "0"
 	},
@@ -99,7 +100,8 @@ const sx = stylex.create({
 	},
 	roundedRow: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border0: {
 		"borderStyle": "var(--tw-border-style)",
 		"borderWidth": "0"

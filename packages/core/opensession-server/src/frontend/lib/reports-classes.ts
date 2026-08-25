@@ -156,7 +156,8 @@ const sx = stylex.create({
 	},
 	roundedRow: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border0: {
 		"borderStyle": "var(--tw-border-style)",
 		"borderWidth": "0"

@@ -45,7 +45,8 @@ const sx = stylex.create({
 	},
 	rounded999px: {
 			borderRadius: "999px"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgPopup: {
 			backgroundColor: "var(--popup-surface)"
 	},
@@ -61,7 +62,8 @@ const sx = stylex.create({
 	},
 	roundedNone: {
 			borderRadius: "0"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	borderLLineStrong: {
 			borderLeftColor: "var(--border-strong)"
 	},

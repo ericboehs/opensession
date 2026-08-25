@@ -35,7 +35,8 @@ const sx = stylex.create({
 	roundedTLg: {
 			borderTopLeftRadius: "calc(14px * var(--rf))",
 			borderTopRightRadius: "calc(14px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgSurface: {
 			backgroundColor: "var(--bg)"
 	},

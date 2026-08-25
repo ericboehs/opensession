@@ -255,7 +255,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	bgWhite15: {
 			backgroundColor: "color-mix(in srgb, var(--color-white) 15%, transparent)"
 	},
@@ -395,7 +396,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	hoverBgHover: {
 		"@media (hover: hover)": {
 			":hover": {
@@ -474,7 +476,8 @@ const sx = stylex.create({
 	},
 	roundedXl: {
 		"borderRadius": "calc(18px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgSurface: {
 		"backgroundColor": "var(--bg)"
 	},

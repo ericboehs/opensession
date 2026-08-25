@@ -40,7 +40,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	bgBlue: {
 			backgroundColor: "var(--blue)"
 	},

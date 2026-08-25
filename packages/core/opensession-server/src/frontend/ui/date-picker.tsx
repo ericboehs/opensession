@@ -32,7 +32,8 @@ import { type as typography } from "../styles/typography.stylex";
 const sx = stylex.create({
 	roundedNone: {
 			borderRadius: "0"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgTransparent: {
 			backgroundColor: "transparent"
 	},
@@ -138,7 +139,8 @@ const sx = stylex.create({
 	},
 	roundedLg: {
 			borderRadius: "calc(14px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgHover: {
 			backgroundColor: "var(--hover)"
 	},
@@ -150,7 +152,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 			borderRadius: "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	py1: {
 			paddingBlock: "4px"
 	},
@@ -201,17 +204,20 @@ const sx = stylex.create({
 	roundedLMd: {
 			borderTopLeftRadius: "calc(7px * var(--rf))",
 			borderBottomLeftRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	roundedRMd: {
 			borderTopRightRadius: "calc(7px * var(--rf))",
 			borderBottomRightRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	h8: {
 			height: "32px"
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	ringLineStrong: { "--tw-ring-color": "var(--border-strong)" },
 	ringInset: { "--tw-ring-inset": "inset" },
 	bgAccent: {

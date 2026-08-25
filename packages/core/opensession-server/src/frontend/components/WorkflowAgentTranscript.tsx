@@ -55,7 +55,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 			borderRadius: "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	px1: {
 			paddingInline: "4px"
 	},
@@ -110,7 +111,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	bgYellow: {
 			backgroundColor: "var(--yellow)"
 	},

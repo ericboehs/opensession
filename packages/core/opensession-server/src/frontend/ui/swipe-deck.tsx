@@ -29,7 +29,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border2: {
 			borderStyle: "solid",
 			borderWidth: "2px"
@@ -113,7 +114,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 			borderRadius: "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"
@@ -135,7 +137,8 @@ const sx = stylex.create({
 	},
 	roundedXl: {
 			borderRadius: "calc(18px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	smoothShadowSoft: {
 			boxShadow: "0 3px 10px -3px var(--smooth-shadow-color), 0 20px 56px -16px var(--smooth-shadow-color)"
 	},

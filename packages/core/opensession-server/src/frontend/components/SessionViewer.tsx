@@ -477,7 +477,8 @@ const sx = stylex.create({
 	},
 	roundedXl: {
 			borderRadius: "calc(18px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"
@@ -506,7 +507,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	border2: {
 			borderStyle: "solid",
 			borderWidth: "2px"
@@ -582,7 +584,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 			borderRadius: "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	transitionColors: {
 			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
 			transitionTimingFunction: "var(--tw-ease,var(--ease))",
@@ -608,7 +611,8 @@ const sx = stylex.create({
 	},
 	rounded2xl: {
 			borderRadius: "calc(22px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	px5: {
 			paddingInline: "20px"
 	},
@@ -678,7 +682,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	px4: {
 			paddingInline: "16px"
 	},

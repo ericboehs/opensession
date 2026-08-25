@@ -82,7 +82,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 			borderRadius: "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	p0: {
 			padding: "0"
 	},
@@ -149,7 +150,8 @@ const sx = stylex.create({
 	},
 	inlineFlex: { display: "inline-flex" },
 	minW6: { minWidth: "24px" },
-	roundedMd: { borderRadius: "calc(7px * var(--rf))" },
+	roundedMd: { borderRadius: "calc(7px * var(--rf))" ,
+		cornerShape: "var(--cs)"},
 	border: { borderStyle: "solid", borderWidth: "1px" },
 	borderLineStrong: { borderColor: "var(--border-strong)" },
 	bgHover: { backgroundColor: "var(--hover)" },

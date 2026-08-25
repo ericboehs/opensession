@@ -67,7 +67,8 @@ const sx = stylex.create({
 	},
 	roundedSm: {
 			borderRadius: "calc(4px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	underline: {
 			textDecorationLine: "underline"
 	},
@@ -90,7 +91,8 @@ const sx = stylex.create({
 	},
 	roundedVarComposerRadius: {
 			borderRadius: "var(--composer-radius)"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"
@@ -173,7 +175,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	h16: {
 			height: "64px"
 	},
@@ -218,7 +221,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 			borderRadius: "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	flex1: {
 			flex: "1"
 	},

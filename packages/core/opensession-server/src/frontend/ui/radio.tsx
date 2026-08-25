@@ -12,7 +12,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	bgOnAccentControl: {
 			backgroundColor: "var(--on-accent-control,var(--on-accent))"
 	},

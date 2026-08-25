@@ -9,7 +9,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 		"borderRadius": "3.40282e38px"
-	},
+	,
+		cornerShape: "round"},
 	px2: {
 		"paddingInline": "8px"
 	},

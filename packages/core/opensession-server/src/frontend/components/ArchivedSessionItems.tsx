@@ -37,7 +37,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 			borderRadius: "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border0: {
 			borderStyle: "solid",
 			borderWidth: "0"

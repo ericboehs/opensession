@@ -44,7 +44,8 @@ const sx = stylex.create({
 	},
 	roundedAvatar: {
 			borderRadius: "calc(32% * var(--rp))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	mt4: {
 			marginTop: "16px"
 	},
@@ -90,7 +91,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	bgWhite: {
 			backgroundColor: "var(--color-white)"
 	},

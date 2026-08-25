@@ -173,7 +173,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 			borderRadius: "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	textDim: {
 			color: "var(--text-dim)"
 	},

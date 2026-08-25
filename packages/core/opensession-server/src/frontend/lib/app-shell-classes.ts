@@ -110,7 +110,8 @@ const sx = stylex.create({
 	},
 	roundedCalc10pxVarRf: {
 		"borderRadius": "calc(10px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	CornerShapeVarCs: {
 		"cornerShape": "var(--cs)"
 	},

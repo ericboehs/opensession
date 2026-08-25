@@ -67,7 +67,8 @@ const sx = stylex.create({
 	},
 	roundedPanel: {
 			borderRadius: "calc(var(--radius) * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	smoothShadowLg: {
 			boxShadow: "0 4px 12px -4px var(--smooth-shadow-color), 0 18px 48px -14px var(--smooth-shadow-color)"
 	},
@@ -106,7 +107,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	gap2: {
 			gap: "8px"
 	},
@@ -130,7 +132,8 @@ const sx = stylex.create({
 	},
 	roundedXs: {
 			borderRadius: "calc(2px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgControl: {
 			backgroundColor: "var(--control-surface)"
 	},
@@ -243,11 +246,13 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 			borderRadius: "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	roundedLNone: {
 			borderTopLeftRadius: "0",
 			borderBottomLeftRadius: "0"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	outlineNone: {
 			outlineStyle: "none"
 	},
@@ -280,7 +285,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	borderTransparent: {
 			borderColor: "transparent"
 	},
@@ -384,7 +390,8 @@ const sx = stylex.create({
 	roundedLCalc5pxVarRf: {
 		"borderTopLeftRadius": "calc(5px * var(--rf))",
 		"borderBottomLeftRadius": "calc(5px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	px11px: {
 		"paddingInline": "11px"
 	},
@@ -435,7 +442,8 @@ const sx = stylex.create({
 	roundedRCalc5pxVarRf: {
 		"borderTopRightRadius": "calc(5px * var(--rf))",
 		"borderBottomRightRadius": "calc(5px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	z1: {
 		"zIndex": "1"
 	},
@@ -602,7 +610,8 @@ const sx = stylex.create({
 	roundedRNone: {
 		"borderTopRightRadius": "0",
 		"borderBottomRightRadius": "0"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	py2: {
 		"paddingBlock": "8px"
 	},

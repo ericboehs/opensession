@@ -272,7 +272,8 @@ const sx = stylex.create({
 	},
 	rounded2xl: {
 		"borderRadius": "calc(22px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	invisible: {
 		"visibility": "hidden"
 	},
@@ -427,7 +428,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	py5px: {
 		"paddingBlock": "5px"
 	},
@@ -519,7 +521,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 		"borderRadius": "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgRedSoft: {
 		"backgroundColor": "var(--red-soft)"
 	},
@@ -694,7 +697,8 @@ const sx = stylex.create({
 	roundedRControl: {
 		"borderTopRightRadius": "calc(12px * var(--rf))",
 		"borderBottomRightRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	phoneMinW11: {
 		"@media (max-width: 720px)": {
 			"minWidth": "44px"

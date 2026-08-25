@@ -41,13 +41,15 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 		"borderRadius": "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	minH26px: {
 		"minHeight": "26px"
 	},
 	roundedControl: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	textXs: {
 		"fontSize": "var(--type-label)",
 		"lineHeight": "var(--tw-leading,var(--text-xs--line-height))"
@@ -84,7 +86,8 @@ const sx = stylex.create({
 	roundedLNone: {
 		"borderTopLeftRadius": "0",
 		"borderBottomLeftRadius": "0"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	beforeAbsolute: {
 		"::before": {
 			"content": "var(--tw-content)",
@@ -118,11 +121,13 @@ const sx = stylex.create({
 	roundedRMd: {
 		"borderTopRightRadius": "calc(7px * var(--rf))",
 		"borderBottomRightRadius": "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	roundedRControl: {
 		"borderTopRightRadius": "calc(12px * var(--rf))",
 		"borderBottomRightRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 
 	phoneHidden: {
 		"@media (max-width: 720px)": {

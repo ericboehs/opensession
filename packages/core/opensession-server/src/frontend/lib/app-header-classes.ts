@@ -293,7 +293,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 		"borderRadius": "3.40282e38px"
-	},
+	,
+		cornerShape: "round"},
 	border2: {
 		"borderStyle": "var(--tw-border-style)",
 		"borderWidth": "2px"

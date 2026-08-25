@@ -66,7 +66,8 @@ const sx = stylex.create({
 	},
 	rounded999px: {
 		"borderRadius": "999px"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	px3: {
 		"paddingInline": "12px"
 	},

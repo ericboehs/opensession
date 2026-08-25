@@ -103,7 +103,8 @@ const sx = stylex.create({
 	},
 	roundedSm: {
 			borderRadius: "calc(4px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgHover: {
 			backgroundColor: "var(--hover)"
 	},
@@ -155,7 +156,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	bgCurrent: {
 			backgroundColor: "currentColor"
 	},
@@ -188,7 +190,8 @@ const sx = stylex.create({
 	},
 	roundedLg: {
 			borderRadius: "calc(14px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	px3: {
 			paddingInline: "12px"
 	},
@@ -257,7 +260,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	selfStart: {
 			alignSelf: "flex-start"
 	},
@@ -326,7 +330,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	textLeft: {
 		"textAlign": "left"
 	},

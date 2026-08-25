@@ -175,7 +175,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	bgBlack45: {
 			backgroundColor: "color-mix(in srgb, var(--color-black) 45%, transparent)"
 	},

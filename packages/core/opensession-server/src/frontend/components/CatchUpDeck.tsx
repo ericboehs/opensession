@@ -120,7 +120,8 @@ const sx = stylex.create({
 	},
 	roundedXl: {
 			borderRadius: "calc(18px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgPanel: {
 			backgroundColor: "var(--bg-panel)"
 	},
@@ -191,7 +192,8 @@ const sx = stylex.create({
 	},
 	rounded: {
 			borderRadius: "var(--radius-xs)"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	w45: {
 			width: "80%"
 	},

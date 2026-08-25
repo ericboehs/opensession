@@ -39,7 +39,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	bgGreen: {
 			backgroundColor: "var(--green)"
 	},
@@ -137,7 +138,8 @@ const sx = stylex.create({
 	justifyCenter: { justifyContent: "center" },
 	border: { borderStyle: "solid", borderWidth: "1px" },
 	transitionColors: { transitionProperty: "background-color, border-color, color" },
-	roundedCheckbox: { borderRadius: "calc(6px * var(--rf))" },
+	roundedCheckbox: { borderRadius: "calc(6px * var(--rf))" ,
+		cornerShape: "var(--cs)"},
 	borderTransparent: { borderColor: "transparent" },
 	bgFg: { backgroundColor: "var(--text)" },
 	textBg: { color: "var(--bg)" },
@@ -145,7 +147,8 @@ const sx = stylex.create({
 	textTransparent: { color: "transparent" },
 	h11: { height: "44px" },
 	wFull: { width: "100%" },
-	roundedControl: { borderRadius: "calc(12px * var(--rf))" },
+	roundedControl: { borderRadius: "calc(12px * var(--rf))" ,
+		cornerShape: "var(--cs)"},
 	bgControl: { backgroundColor: "var(--control-surface)" },
 	px3: { paddingInline: "12px" },
 	outlineNone: { outlineStyle: "none" },

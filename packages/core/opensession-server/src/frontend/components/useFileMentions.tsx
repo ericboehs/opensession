@@ -49,7 +49,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgActive: {
 			backgroundColor: "var(--bg-active)"
 	},
@@ -98,7 +99,8 @@ const sx = stylex.create({
 	},
 	roundedXl: {
 		"borderRadius": "calc(18px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgPopupGlass: {
 		"backgroundColor": "var(--popup-glass)"
 	},
@@ -132,7 +134,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	py2: {
 		"paddingBlock": "8px"
 	},

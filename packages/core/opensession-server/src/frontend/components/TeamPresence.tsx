@@ -22,7 +22,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	relative: {
 			position: "relative"
 	},
@@ -48,7 +49,8 @@ const sx = stylex.create({
 	},
 	roundedSm: {
 			borderRadius: "calc(4px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	px2: {
 			paddingInline: "8px"
 	},
@@ -112,7 +114,8 @@ const sx = stylex.create({
 	},
 	rounded999px: {
 		"borderRadius": "999px"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	py05: {
 		"paddingBlock": "2px"
 	},
@@ -148,7 +151,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	p1: {
 		"padding": "4px"
 	},

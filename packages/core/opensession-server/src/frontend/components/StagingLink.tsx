@@ -44,7 +44,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	px25: {
 			paddingInline: "10px"
 	},
@@ -129,7 +130,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border: {
 		"borderStyle": "var(--tw-border-style)",
 		"borderWidth": "1px"
@@ -209,7 +211,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 		"borderRadius": "3.40282e38px"
-	},
+	,
+		cornerShape: "round"},
 	borderTCurrent: {
 		"borderTopColor": "currentColor"
 	},

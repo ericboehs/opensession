@@ -9,7 +9,8 @@ import { mergeStylexProps } from "../ui/cn";
 const sx = stylex.create({
 	block: { display: "block" },
 	size11: { width: "44px", height: "44px" },
-	roundedControl: { borderRadius: "var(--radius-control)" },
+	roundedControl: { borderRadius: "var(--radius-control)" ,
+		cornerShape: "var(--cs)"},
 	objectCover: { objectFit: "cover" },
 });
 

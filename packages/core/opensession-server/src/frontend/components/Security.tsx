@@ -132,7 +132,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	textFg: {
 			color: "var(--text)"
 	},

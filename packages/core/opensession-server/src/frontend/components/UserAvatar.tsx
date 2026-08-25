@@ -16,7 +16,8 @@ const sx = stylex.create({
 	},
 	roundedInherit: {
 			borderRadius: "inherit"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	CornerShapeInherit: {
 			cornerShape: "inherit"
 	},
@@ -28,7 +29,8 @@ const sx = stylex.create({
 	shrink0: { flexShrink: "0" },
 	itemsCenter: { alignItems: "center" },
 	justifyCenter: { justifyContent: "center" },
-	roundedAvatar: { borderRadius: "var(--radius-avatar)" },
+	roundedAvatar: { borderRadius: "var(--radius-avatar)" ,
+		cornerShape: "var(--cs)"},
 	bgActive: { backgroundColor: "var(--bg-active)" },
 	fontBold: { fontWeight: "var(--font-weight-bold)" },
 	textDim: { color: "var(--text-dim)" },

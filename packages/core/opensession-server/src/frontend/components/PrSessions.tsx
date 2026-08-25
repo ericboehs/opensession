@@ -43,7 +43,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	textFg: {
 			color: "var(--text)"
 	},
@@ -85,7 +86,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 		"borderRadius": "3.40282e38px"
-	},
+	,
+		cornerShape: "round"},
 
 	bgYellow: {
 		"backgroundColor": "var(--yellow)"

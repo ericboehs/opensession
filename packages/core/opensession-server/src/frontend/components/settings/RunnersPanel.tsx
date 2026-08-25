@@ -23,7 +23,8 @@ const sx = stylex.create({
 	},
 	roundedLg: {
 			borderRadius: "calc(14px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgRaised: {
 			backgroundColor: "var(--bg-raised)"
 	},

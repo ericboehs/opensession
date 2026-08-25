@@ -79,7 +79,8 @@ const sx = stylex.create({
 	},
 	roundedLg: {
 			borderRadius: "calc(14px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	fontSemibold: {
 			fontWeight: "var(--font-weight-semibold)"
 	},
@@ -110,7 +111,8 @@ const sx = stylex.create({
 	},
 	roundedInherit: {
 			borderRadius: "inherit"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgBlack50: {
 			backgroundColor: "color-mix(in srgb, var(--color-black) 50%, transparent)"
 	},

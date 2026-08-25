@@ -62,7 +62,8 @@ const sx = stylex.create({
 	},
 	roundedLg: {
 			borderRadius: "calc(14px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgHover45: {
 			backgroundColor: "var(--hover)"
 	},

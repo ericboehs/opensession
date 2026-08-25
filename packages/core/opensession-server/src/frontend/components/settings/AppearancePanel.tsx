@@ -120,7 +120,8 @@ const sx = stylex.create({
 	},
 	roundedSm: {
 			borderRadius: "calc(4px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgMkPill: {
 			backgroundColor: "var(--mk-pill)"
 	},
@@ -145,7 +146,8 @@ const sx = stylex.create({
 	roundedTMd: {
 			borderTopLeftRadius: "calc(7px * var(--rf))",
 			borderTopRightRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgMkPanel: {
 			backgroundColor: "var(--mk-panel)"
 	},
@@ -160,7 +162,8 @@ const sx = stylex.create({
 	},
 	roundedXs: {
 			borderRadius: "calc(2px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgMkLine: {
 			backgroundColor: "var(--mk-line)"
 	},
@@ -199,7 +202,8 @@ const sx = stylex.create({
 	},
 	roundedRow: {
 			borderRadius: "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border2: {
 			borderStyle: "solid",
 			borderWidth: "2px"
@@ -224,7 +228,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	p1: {
 			padding: "4px"
 	},
@@ -245,7 +250,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"

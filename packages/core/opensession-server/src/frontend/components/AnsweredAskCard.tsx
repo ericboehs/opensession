@@ -39,7 +39,8 @@ const sx = stylex.create({
 	},
 	rounded2xl: {
 			borderRadius: "calc(22px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgPanel: {
 			backgroundColor: "var(--bg-panel)"
 	},
@@ -78,7 +79,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	bgGreenSoft: {
 			backgroundColor: "var(--green-soft)"
 	},
@@ -113,7 +115,8 @@ const sx = stylex.create({
 	minH9: { minHeight: "36px" },
 	itemsStart: { alignItems: "flex-start" },
 	gap25: { gap: "10px" },
-	roundedMd: { borderRadius: "calc(7px * var(--rf))" },
+	roundedMd: { borderRadius: "calc(7px * var(--rf))" ,
+		cornerShape: "var(--cs)"},
 	px25: { paddingInline: "10px" },
 	py2: { paddingBlock: "8px" },
 	bgControl: { backgroundColor: "var(--bg-control)" },

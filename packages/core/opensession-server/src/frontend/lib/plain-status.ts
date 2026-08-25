@@ -50,7 +50,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgColorMixInSrgbVarBlue18Transparent: {
 		"backgroundColor": "var(--blue)",
 		"@supports (color: color-mix(in lab, red, red))": {

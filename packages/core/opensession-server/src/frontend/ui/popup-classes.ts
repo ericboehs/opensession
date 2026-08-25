@@ -15,7 +15,8 @@ const sx = stylex.create({
 	},
 	roundedPopup: {
 		"borderRadius": "calc(16px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	CornerShapeSquircle: {
 		"cornerShape": "squircle"
 	},
@@ -85,7 +86,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 		"borderRadius": "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	px2: {
 		"paddingInline": "8px"
 	},

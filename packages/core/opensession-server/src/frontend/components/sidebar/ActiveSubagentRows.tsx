@@ -30,7 +30,8 @@ const sx = stylex.create({	relative: {
 	},
 	roundedRow: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border0: {
 		"borderStyle": "var(--tw-border-style)",
 		"borderWidth": "0"
@@ -70,7 +71,8 @@ const sx = stylex.create({	relative: {
 	},
 	roundedFull: {
 		"borderRadius": "3.40282e38px"
-	},
+	,
+		cornerShape: "round"},
 	bgYellow: {
 		"backgroundColor": "var(--yellow)"
 	},

@@ -46,7 +46,8 @@ const sx = stylex.create({
 	},
 	roundedLg: {
 			borderRadius: "calc(14px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"
@@ -99,7 +100,8 @@ const sx = stylex.create({
 			opacity: ".8"
 	},
 	size30px: { width: "30px", height: "30px" },
-	roundedFull: { borderRadius: "calc(infinity * 1px)" },
+	roundedFull: { borderRadius: "calc(infinity * 1px)" ,
+		cornerShape: "round"},
 	border2: { borderStyle: "solid", borderWidth: "2px" },
 	borderGreen: { borderColor: "var(--green)" },
 	borderTopGreen: { borderTopColor: "var(--green)" },

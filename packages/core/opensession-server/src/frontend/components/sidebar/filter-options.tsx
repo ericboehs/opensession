@@ -27,7 +27,8 @@ const sx = stylex.create({
 	},
 	roundedAvatar: {
 			borderRadius: "calc(32% * var(--rp))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgActive: {
 			backgroundColor: "var(--bg-active)"
 	},

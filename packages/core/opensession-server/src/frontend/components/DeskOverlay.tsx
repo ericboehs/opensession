@@ -99,7 +99,8 @@ const sx = stylex.create({
 	roundedBVarComposerRadius: {
 		"borderBottomRightRadius": "var(--composer-radius)",
 		"borderBottomLeftRadius": "var(--composer-radius)"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	duration100ms: {
 		"--tw-duration": ".1s",
 		"transitionDuration": ".1s"

@@ -47,7 +47,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	bgPanel: {
 			backgroundColor: "var(--bg-panel)"
 	},

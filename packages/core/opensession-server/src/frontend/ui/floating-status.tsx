@@ -19,7 +19,8 @@ const sx = stylex.create({
 	},
 	rounded999px: {
 			borderRadius: "999px"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgPopupGlass: {
 			backgroundColor: "var(--popup-glass)"
 	},

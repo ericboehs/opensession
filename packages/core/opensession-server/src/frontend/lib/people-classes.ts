@@ -44,7 +44,8 @@ const sx = stylex.create({
 	},
 	rounded999px: {
 		"borderRadius": "999px"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border0: {
 		"borderStyle": "var(--tw-border-style)",
 		"borderWidth": "0"
@@ -131,7 +132,8 @@ const sx = stylex.create({
 	},
 	roundedAvatar: {
 		"borderRadius": "calc(32% * var(--rp))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgHover: {
 		"backgroundColor": "var(--hover)"
 	},

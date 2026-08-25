@@ -130,7 +130,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 			borderRadius: "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"
@@ -198,7 +199,8 @@ const sx = stylex.create({
 	},
 	roundedVarComposerRadius: {
 		"borderRadius": "var(--composer-radius)"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	phoneGap15: {
 		"@media (max-width: 720px)": {
 			"gap": "6px"
@@ -213,7 +215,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 		"borderRadius": "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	borderNone: {
 		"--tw-border-style": "none",
 		"borderStyle": "none"
@@ -263,7 +266,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 		"borderRadius": "3.40282e38px"
-	},
+	,
+		cornerShape: "round"},
 	bgDim: {
 		"backgroundColor": "var(--text-dim)"
 	},

@@ -108,7 +108,8 @@ const sx = stylex.create({
 	},
 	roundedRow: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgPressed: {
 		"backgroundColor": "var(--hover-strong)"
 	},
@@ -208,7 +209,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 		"borderRadius": "3.40282e38px"
-	},
+	,
+		cornerShape: "round"},
 	opacity85: {
 		"opacity": ".85"
 	},
@@ -424,7 +426,8 @@ const sx = stylex.create({
 	},
 	roundedCalc8pxVarRf: {
 		"borderRadius": "calc(8px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	borderNone: {
 		"--tw-border-style": "none",
 		"borderStyle": "none"
@@ -449,7 +452,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	hoverBgHover: {
 		"@media (hover: hover)": {
 			":hover": {
@@ -553,7 +557,8 @@ const sx = stylex.create({
 	},
 	roundedSm: {
 		"borderRadius": "calc(4px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	MediaHoverNoneInlineFlex: {
 		"@media (hover: none)": {
 			"display": "inline-flex"
@@ -698,7 +703,8 @@ const sx = stylex.create({
 
 	roundedCalc10pxVarRf: {
 		"borderRadius": "calc(10px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	tracking0px: {
 		"--tw-tracking": "0px",
 		"letterSpacing": "0"
@@ -737,7 +743,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 		"borderRadius": "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 
 	shadowInset0001pxVarAccent6b8afd: {
 		"--tw-shadow": "inset 0 0 0 1px var(--tw-shadow-color,var(--accent))",

@@ -33,7 +33,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	bgActive: {
 			backgroundColor: "var(--bg-active)"
 	},
@@ -125,7 +126,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 			borderRadius: "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	px35: {
 			paddingInline: "14px"
 	},
@@ -163,7 +165,8 @@ const sx = stylex.create({
 	},
 	roundedNone: {
 		"borderRadius": "0"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgSurface: {
 		"backgroundColor": "var(--bg)"
 	},
@@ -211,7 +214,8 @@ const sx = stylex.create({
 	},
 	roundedCalc18pxVarRf: {
 		"borderRadius": "calc(18px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgRaised: {
 		"backgroundColor": "var(--bg-raised)"
 	},
@@ -253,7 +257,8 @@ const sx = stylex.create({
 	roundedTCalcVarSheetRadius34pxVarRf: {
 		"borderTopLeftRadius": "calc(var(--sheet-radius,34px) * var(--rf))",
 		"borderTopRightRadius": "calc(var(--sheet-radius,34px) * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	shadow012px40pxRgba000035: {
 		"--tw-shadow": "0 -12px 40px var(--tw-shadow-color,color-mix(in srgb, var(--color-black) 35%, transparent))",
 		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"

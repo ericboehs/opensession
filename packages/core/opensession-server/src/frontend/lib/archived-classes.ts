@@ -90,7 +90,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	SwipeActionW0px: {
 		"--swipe-action-w": "0px"
 	},
@@ -311,7 +312,8 @@ const sx = stylex.create({
 	},
 	roundedSm: {
 		"borderRadius": "calc(4px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgTransparent: {
 		"backgroundColor": "transparent"
 	},

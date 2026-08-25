@@ -68,7 +68,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	truncate: {
 			textOverflow: "ellipsis",
 			whiteSpace: "nowrap",
@@ -157,7 +158,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	gap35: {
 			gap: "14px"
 	},
@@ -188,7 +190,8 @@ const sx = stylex.create({
 	},
 	roundedPanel: {
 			borderRadius: "calc(var(--radius) * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	px35: {
 			paddingInline: "14px"
 	},

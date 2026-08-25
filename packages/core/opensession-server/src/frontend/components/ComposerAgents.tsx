@@ -99,7 +99,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"
@@ -164,7 +165,8 @@ const sx = stylex.create({
 	roundedTVarComposerRadius: {
 		"borderTopLeftRadius": "var(--composer-radius)",
 		"borderTopRightRadius": "var(--composer-radius)"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	borderX: {
 		"borderInlineStyle": "var(--tw-border-style)",
 		"borderInlineWidth": "1px"

@@ -28,7 +28,8 @@ const sx = stylex.create({
 	},
 	roundedSm: {
 			borderRadius: "calc(4px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	px3px: {
 			paddingInline: "3px"
 	},
@@ -71,7 +72,8 @@ const sx = stylex.create({
 	},
 	roundedPanel: {
 		"borderRadius": "calc(var(--radius) * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgTooltip: {
 		"backgroundColor": "var(--tooltip-bg)"
 	},

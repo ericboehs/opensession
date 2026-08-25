@@ -113,7 +113,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 			borderRadius: "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	opacity60: {
 			opacity: ".6"
 	},
@@ -134,7 +135,8 @@ const sx = stylex.create({
 	},
 	roundedSm: {
 			borderRadius: "calc(4px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgHover: {
 			backgroundColor: "var(--hover)"
 	},
@@ -162,13 +164,15 @@ const sx = stylex.create({
 	},
 	roundedLg: {
 			borderRadius: "calc(14px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	itemsStart: {
 			alignItems: "flex-start"
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	px3: {
 			paddingInline: "12px"
 	},
@@ -204,7 +208,8 @@ const sx = stylex.create({
 	},
 	rounded2xl: {
 		"borderRadius": "calc(22px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgRaised: {
 		"backgroundColor": "var(--bg-raised)"
 	},

@@ -38,7 +38,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	bgActive: {
 			backgroundColor: "var(--bg-active)"
 	},
@@ -75,7 +76,8 @@ const sx = stylex.create({
 	},
 	roundedXs: {
 			borderRadius: "calc(2px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	bgLineStrong: {
 			backgroundColor: "var(--border-strong)"
 	},
@@ -109,7 +111,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 			borderRadius: "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border0: {
 			borderStyle: "solid",
 			borderWidth: "0"
@@ -183,7 +186,8 @@ const sx = stylex.create({
 	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"
@@ -231,7 +235,8 @@ const sx = stylex.create({
 	},
 	roundedSm: {
 			borderRadius: "calc(4px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	p05: {
 			padding: "2px"
 	},
@@ -264,7 +269,8 @@ const sx = stylex.create({
 	},
 	roundedAvatar: {
 			borderRadius: "calc(32% * var(--rp))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	fontSemibold: {
 			fontWeight: "var(--font-weight-semibold)"
 	},

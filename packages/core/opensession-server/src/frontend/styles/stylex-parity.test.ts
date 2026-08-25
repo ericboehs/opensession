@@ -127,6 +127,7 @@ describe("stylex port guards", () => {
 
 	test("stylex.create contains no silently empty converted entries", () => {
 		const empty: string[] = [];
+		const missingCornerShape: string[] = [];
 		for (const f of sources) {
 			const src = readFileSync(f, "utf8");
 			if (!src.includes("stylex.create")) continue;
@@ -145,13 +146,17 @@ describe("stylex port guards", () => {
 					ts.isObjectLiteralExpression(node.arguments[0])
 				) {
 					for (const prop of node.arguments[0].properties) {
+						if (!ts.isPropertyAssignment(prop) || !ts.isObjectLiteralExpression(prop.initializer)) continue;
+						const styleName = prop.name.getText(file).replace(/^['"]|['"]$/g, "");
+						if (prop.initializer.properties.length === 0) empty.push(`${f}: ${styleName}`);
+						const keys = prop.initializer.properties
+							.filter(ts.isPropertyAssignment)
+							.map((entry) => entry.name.getText(file).replace(/^['"]|['"]$/g, ""));
 						if (
-							ts.isPropertyAssignment(prop) &&
-							ts.isObjectLiteralExpression(prop.initializer) &&
-							prop.initializer.properties.length === 0
-						) {
-							empty.push(`${f}: ${prop.name.getText(file)}`);
-						}
+							/rounded/i.test(styleName) &&
+							keys.some((key) => /border.*radius/i.test(key)) &&
+							!keys.includes("cornerShape")
+						) missingCornerShape.push(`${f}: ${styleName}`);
 					}
 				}
 				ts.forEachChild(node, visit);
@@ -159,6 +164,7 @@ describe("stylex port guards", () => {
 			visit(file);
 		}
 		expect(empty).toEqual([]);
+		expect(missingCornerShape).toEqual([]);
 	});
 
 	test("tokens.stylex.ts only references custom properties that base.css defines", () => {

@@ -27,7 +27,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
-	},
+	,
+		cornerShape: "round"},
 	mlAuto: {
 			marginLeft: "auto"
 	},

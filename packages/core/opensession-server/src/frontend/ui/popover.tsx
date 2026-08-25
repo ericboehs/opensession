@@ -15,7 +15,8 @@ const sx = stylex.create({
 	},
 	roundedPopup: {
 			borderRadius: "calc(16px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	CornerShapeSquircle: {
 			cornerShape: "squircle"
 	},

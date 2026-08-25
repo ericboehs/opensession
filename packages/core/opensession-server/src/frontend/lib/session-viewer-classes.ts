@@ -123,7 +123,8 @@ const sx = stylex.create({
 	},
 	roundedCalc6pxVarRf: {
 		"borderRadius": "calc(6px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	px2: {
 		"paddingInline": "8px"
 	},
@@ -171,7 +172,8 @@ const sx = stylex.create({
 	},
 	roundedCalc8pxVarRf: {
 		"borderRadius": "calc(8px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	border: {
 		"borderStyle": "var(--tw-border-style)",
 		"borderWidth": "1px"
@@ -220,7 +222,8 @@ const sx = stylex.create({
 	},
 	roundedControl: {
 		"borderRadius": "calc(12px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	borderLineStrong: {
 		"borderColor": "var(--border-strong)"
 	},
@@ -435,7 +438,8 @@ const sx = stylex.create({
 	},
 	roundedFull: {
 		"borderRadius": "3.40282e38px"
-	},
+	,
+		cornerShape: "round"},
 	borderLine: {
 		"borderColor": "var(--border)"
 	},
@@ -453,7 +457,8 @@ const sx = stylex.create({
 	},
 	rounded999px: {
 		"borderRadius": "999px"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	pr35: {
 		"paddingRight": "14px"
 	},
@@ -726,7 +731,8 @@ const sx = stylex.create({
 	},
 	roundedLg: {
 		"borderRadius": "calc(14px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	minH320px: {
 		"minHeight": "320px"
 	},
@@ -756,7 +762,8 @@ const sx = stylex.create({
 	},
 	rounded2xl: {
 		"borderRadius": "calc(22px * var(--rf))"
-	},
+	,
+		cornerShape: "var(--cs)"},
 	p2: {
 		"padding": "8px"
 	},
