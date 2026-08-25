@@ -136,7 +136,7 @@ const sx = stylex.create({
 			flexDirection: "column"
 	},
 	bgBlack85: {
-			backgroundColor: "transparent00d9"
+			backgroundColor: "color-mix(in srgb, var(--color-black) 85%, transparent)"
 	},
 	flex1: {
 			flex: "1"
@@ -255,7 +255,7 @@ const sx = stylex.create({
 			borderColor: "color-mix(in srgb, var(--color-white) 10%, transparent)"
 	},
 	bgBlack55: {
-			backgroundColor: "transparent008c"
+			backgroundColor: "color-mix(in srgb, var(--color-black) 55%, transparent)"
 	},
 	py1: {
 			paddingBlock: "4px"
@@ -441,7 +441,7 @@ const sx = stylex.create({
 		"--tw-gradient-stops": "var(--tw-gradient-via-stops,var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position))"
 	},
 	viaBlack85: {
-		"--tw-gradient-via": "transparent00d9",
+		"--tw-gradient-via": "color-mix(in srgb, var(--color-black) 85%, transparent)",
 		"@supports (color: color-mix(in lab, red, red))": {
 			"--tw-gradient-via": "color-mix(in oklab, var(--color-black) 85%, transparent)"
 		},

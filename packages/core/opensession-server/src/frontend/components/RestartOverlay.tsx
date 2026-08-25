@@ -30,7 +30,7 @@ const sx = stylex.create({
 			justifyContent: "center"
 	},
 	bgBlack82: {
-			backgroundColor: "transparent00d1"
+			backgroundColor: "color-mix(in srgb, var(--color-black) 82%, transparent)"
 	},
 	p6: {
 			padding: "24px"

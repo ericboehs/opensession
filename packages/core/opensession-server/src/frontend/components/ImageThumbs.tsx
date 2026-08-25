@@ -2,6 +2,7 @@ import React from "react";
 import { openLightbox } from "./MediaLightbox";
 import { IconX } from "./icons";
 import * as stylex from "@stylexjs/stylex";
+import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -162,7 +163,7 @@ export function ImageThumbs({ images, onRemove, disabled, pending = 0 }: Props) 
       {Array.from({ length: pending }, (_, i) => (
         <div
           key={`staging-${i}`}
-          {...stylex.props(sx.h14, sx.w100px, sx.animatePulse, sx.roundedControl, sx.border, sx.borderLineStrong, sx.bgHover)}
+          {...stylex.props(sx.h14, sx.w100px, motionStyles.pulse, sx.roundedControl, sx.border, sx.borderLineStrong, sx.bgHover)}
         />
       ))}
     </div>

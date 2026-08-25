@@ -118,7 +118,7 @@ const sx = stylex.create({
 			zIndex: "10000"
 	},
 	bgBlack25: {
-			backgroundColor: "transparent0040"
+			backgroundColor: "color-mix(in srgb, var(--color-black) 25%, transparent)"
 	},
 	durationVarDur: {
 			transitionDuration: "var(--dur)"

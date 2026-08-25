@@ -78,6 +78,7 @@ import {
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -176,7 +177,7 @@ const sx = stylex.create({
 			borderRadius: "calc(infinity * 1px)"
 	},
 	bgBlack45: {
-			backgroundColor: "transparent0073"
+			backgroundColor: "color-mix(in srgb, var(--color-black) 45%, transparent)"
 	},
   textWhite: { color: "var(--color-white)" },
   trigger: {
@@ -1208,7 +1209,7 @@ setFixBusy(false);
 						<span className={WS_SUMMARY_RAIL}>
 							<IconRobot
 								size={20}
-                  {...mergeStylexProps(WS_SUMMARY_ICON, osReviewActive && sx.animatePulse)}
+                  {...mergeStylexProps(WS_SUMMARY_ICON, osReviewActive && motionStyles.pulse)}
 							/>
 						</span>
 						<span className={WS_SUMMARY_LABEL}>

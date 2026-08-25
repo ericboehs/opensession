@@ -39,23 +39,23 @@ export const BRANDS: Record<string, { bg: string; fg?: string }> = {
   brex: { bg: "#212121" },
   posthog: { bg: "#f54e00" },
   tella: { bg: "#5e51f8" },
-  elevenlabs: { bg: "transparent00" },
+  elevenlabs: { bg: "#000000" },
   figma: { bg: "#1e1e1e" },
-  dub: { bg: "transparent00" },
+  dub: { bg: "#000000" },
   // Model providers. Same registry as the services: a provider row in
   // Settings and a group header in the model picker draw one brand one way.
-  xai: { bg: "transparent00" },
+  xai: { bg: "#000000" },
   moonshotai: { bg: "#16162e" },
   cerebras: { bg: "#f15a29" },
-  wafer: { bg: "transparent00" },
-  openrouter: { bg: "transparent00", fg: "#c8ff00" },
+  wafer: { bg: "#000000" },
+  openrouter: { bg: "#000000", fg: "#c8ff00" },
   deepseek: { bg: "#4d6bfe" },
   // Engines. Not connectable services, but the same marks under the same
   // registry: an engine picker and a connection row should not draw one brand
   // two ways.
   claude: { bg: "#d97757" },
-  codex: { bg: "transparent00" },
-  pi: { bg: "transparent00" },
+  codex: { bg: "#000000" },
+  pi: { bg: "#000000" },
 };
 
 /** Pretty display names for the handful that don't title-case cleanly. */

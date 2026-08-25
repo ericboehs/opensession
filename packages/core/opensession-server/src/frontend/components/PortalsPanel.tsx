@@ -14,6 +14,7 @@ import { PanelPageHeader } from "./PanelPageHeader";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -304,7 +305,7 @@ function DiscoveringRow() {
       <span
         {...stylex.props(
           sx.size35,
-          sx.animateSpin,
+          motionStyles.spin,
           sx.roundedFull,
           sx.border2,
           sx.borderLineStrong,

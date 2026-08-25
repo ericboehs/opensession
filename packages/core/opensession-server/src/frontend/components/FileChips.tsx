@@ -11,6 +11,7 @@ import {
 } from "../lib/composer-classes";
 import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
+import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -119,7 +120,7 @@ export function FileChips({ files, onRemove, disabled, pending = 0 }: Props) {
       {Array.from({ length: pending }, (_, i) => (
         <div
           key={`staging-${i}`}
-          className={cn(fileChipCard, fileChipCardPaddingRemovable, mergeStylexClassName("", sx.animatePulse))}
+          className={cn(fileChipCard, fileChipCardPaddingRemovable, mergeStylexClassName("", motionStyles.pulse))}
         >
           <span className={cn(fileChipThumb, mergeStylexClassName("", sx.bgHover))} />
           <span className={fileChipMeta}>

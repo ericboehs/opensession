@@ -68,8 +68,8 @@ export function getAccentTheme(): AccentTheme {
 export function getOnAccentInk(
 	theme: AccentTheme,
 	tone: "light" | "dark",
-): "transparent00" | "#ffffff" {
-	return theme === "mono" && tone === "dark" ? "transparent00" : "#ffffff";
+): "#000000" | "#ffffff" {
+	return theme === "mono" && tone === "dark" ? "#000000" : "#ffffff";
 }
 
 export function applyAccentTheme(theme: AccentTheme = getAccentTheme()) {

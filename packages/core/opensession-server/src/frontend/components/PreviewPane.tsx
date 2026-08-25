@@ -8,6 +8,7 @@ import { PageLoader } from "../ui/page-loader";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 import { mergeStylexClassName } from "../ui/cn";
+import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -192,7 +193,7 @@ setStopping(false);
 		<div {...stylex.props(sx.flex, sx.hFull, sx.minH0, sx.flexCol)}>
 			<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.borderB, sx.borderDivider, sx.bgPanel, sx.px3, sx.py15)}>
 				<span
-					className={[mergeStylexClassName("", sx.h2, sx.w2, sx.shrink0, sx.roundedFull), url ? mergeStylexClassName("", sx.bgGreen500) : mergeStylexClassName("", sx.animatePulse, sx.bgAmber400)].filter(Boolean).join(" ")}
+					className={[mergeStylexClassName("", sx.h2, sx.w2, sx.shrink0, sx.roundedFull), url ? mergeStylexClassName("", sx.bgGreen500) : mergeStylexClassName("", motionStyles.pulse, sx.bgAmber400)].filter(Boolean).join(" ")}
 					aria-hidden="true"
 				/>
 				<div {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.fontMedium, sx.textDim, typography.supporting)}>

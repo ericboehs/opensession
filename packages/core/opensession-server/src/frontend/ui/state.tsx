@@ -5,6 +5,7 @@ import { PageLoader } from "./page-loader";
 import { Spinner } from "./spinner";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -451,7 +452,7 @@ export function Skeleton({
 			{...stylex.props(sx.AnimationGhostInVarDurVarEase180msBoth)}
 			{...props}
 		>
-			<div {...mergeStylexProps(cn(className), sx.animatePulse)}>{children}</div>
+			<div {...mergeStylexProps(cn(className), motionStyles.pulse)}>{children}</div>
 		</div>
 	);
 }

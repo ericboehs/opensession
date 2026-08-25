@@ -6,6 +6,7 @@ import { TranscriptBlocks } from "./TranscriptBlocks";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -241,7 +242,7 @@ if (cancelled) return;
 						{agent.label}
 					</span>
 					{agent.status === "running" && (
-						<span {...stylex.props(sx.size15, sx.shrink0, sx.animatePulse, sx.roundedFull, sx.bgYellow)} />
+						<span {...stylex.props(sx.size15, sx.shrink0, motionStyles.pulse, sx.roundedFull, sx.bgYellow)} />
 					)}
 				</button>
 				<div {...mergeStylexProps("", sx.tabularNums, sx.mt05, sx.pl18px, sx.textFaint, typography.meta)}>

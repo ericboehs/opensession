@@ -4,6 +4,7 @@ import type { checkClass } from "./pr-status-derive";
 import * as stylex from "@stylexjs/stylex";
 import { mergeStylexClassName } from "../ui/cn";
 import { type as typography } from "../styles/typography.stylex";
+import { motionStyles } from "../styles/animations.stylex";
 
 const sx = stylex.create({
 	bgGreen: {

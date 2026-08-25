@@ -105,7 +105,7 @@ const sx = stylex.create({
 	},
 
 	shadow01px3pxRgba0000220001pxRgba000007: {
-		"--tw-shadow": "0 1px 3px var(--tw-shadow-color,color-mix(in srgb, var(--color-black) 22%, transparent)), 0 0 0 1px var(--tw-shadow-color,transparent0012)",
+		"--tw-shadow": "0 1px 3px var(--tw-shadow-color,color-mix(in srgb, var(--color-black) 22%, transparent)), 0 0 0 1px var(--tw-shadow-color,color-mix(in srgb, var(--color-black) 7%, transparent))",
 		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
 	},
 	transitionTranslateBackgroundColor: {

@@ -41,7 +41,7 @@ const sx = stylex.create({
 			zIndex: "300"
 	},
 	bgBlack60: {
-			backgroundColor: "var(--color-black)9"
+			backgroundColor: "color-mix(in srgb, var(--color-black) 60%, transparent)"
 	},
 	flex: {
 			display: "flex"

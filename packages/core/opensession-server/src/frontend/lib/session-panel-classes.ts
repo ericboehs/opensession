@@ -276,7 +276,7 @@ const sx = stylex.create({
 	},
 	max920pxBgRgba000045: {
 		"@media not all and (min-width: 920px)": {
-			"backgroundColor": "transparent0073"
+			"backgroundColor": "color-mix(in srgb, var(--color-black) 45%, transparent)"
 		}
 	},
 	phoneBgRgba00005: {

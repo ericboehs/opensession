@@ -22,6 +22,7 @@ import { WorkflowAgentTranscript } from "./WorkflowAgentTranscript";
 import { Badge } from "../ui/badge";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -438,7 +439,7 @@ function StatusMark({ status }: { status: WorkflowAgentSnapshot["status"] }) {
 			<span
 				className={cn(
 					mergeStylexClassName("", sx.size2, sx.roundedFull),
-					status === "running" ? mergeStylexClassName("", sx.bgYellow, sx.animatePulse) : mergeStylexClassName("", sx.bgLineStrong),
+					status === "running" ? mergeStylexClassName("", sx.bgYellow, motionStyles.pulse) : mergeStylexClassName("", sx.bgLineStrong),
 				)}
 			/>
 		</span>
@@ -656,7 +657,7 @@ export function WorkflowPanel({
 						onBack={onBack}
 						trailing={
 							anyRunning && (
-								<Badge tone="warning" dot {...stylex.props(sx.mr1, sx.animatePulse)}>
+								<Badge tone="warning" dot {...stylex.props(sx.mr1, motionStyles.pulse)}>
 									running
 								</Badge>
 							)
@@ -683,7 +684,7 @@ export function WorkflowPanel({
 				<span>Agents</span>
 				{anyRunning && (
 					<span {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap15, sx.textYellow)}>
-						<span {...stylex.props(sx.size15, sx.animatePulse, sx.roundedFull, sx.bgCurrent)} />
+						<span {...stylex.props(sx.size15, motionStyles.pulse, sx.roundedFull, sx.bgCurrent)} />
 						running
 					</span>
 				)}
@@ -724,7 +725,7 @@ function SubagentsCard({
 						Sub-agents
 					</span>
 					{runningN > 0 && (
-						<Badge tone="warning" dot {...stylex.props(sx.animatePulse)}>
+						<Badge tone="warning" dot {...stylex.props(motionStyles.pulse)}>
 							running
 						</Badge>
 					)}
@@ -966,7 +967,7 @@ setDetails((prev) => ({ ...prev, [seq]: "missing" }));
 							<Badge
 								tone={tone}
 								dot={run.status === "running"}
-								className={cn(run.status === "running" && mergeStylexClassName("", sx.animatePulse))}
+								className={cn(run.status === "running" && mergeStylexClassName("", motionStyles.pulse))}
 							>
 								{run.status}
 							</Badge>

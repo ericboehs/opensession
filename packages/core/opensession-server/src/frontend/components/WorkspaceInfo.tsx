@@ -81,6 +81,7 @@ import {
 } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -388,7 +389,7 @@ const sx = stylex.create({
 			height: "32px"
 	},
 	bgBlack45: {
-			backgroundColor: "transparent0073"
+			backgroundColor: "color-mix(in srgb, var(--color-black) 45%, transparent)"
 	},
 	gap4: {
 			gap: "16px"
@@ -1477,7 +1478,7 @@ setBusy(null);
 							    row leads with a face rather than the state dot the Git
 							    status rows use: the state's colour is on the words. */}
 							<span
-                {...mergeStylexProps(REVIEW_FACE, sx.textDim, active && sx.animatePulse)}
+                {...mergeStylexProps(REVIEW_FACE, sx.textDim, active && motionStyles.pulse)}
 								aria-hidden
 							>
 								<IconRobot size={18} />

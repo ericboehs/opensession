@@ -1,5 +1,6 @@
 import type { CheckVisual } from "../lib/pr-checks";
 import * as stylex from "@stylexjs/stylex";
+import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -39,7 +40,7 @@ export function CheckStatusIcon({ kind }: { kind: CheckVisual }) {
 	if (kind === "pending")
 		return (
 			<span
-				{...stylex.props(sx.m15px, sx.block, sx.size13px, sx.animateSpin, sx.roundedFull, sx.border, sx.borderCurrent30, sx.borderTCurrent)}
+				{...stylex.props(sx.m15px, sx.block, sx.size13px, motionStyles.spin, sx.roundedFull, sx.border, sx.borderCurrent30, sx.borderTCurrent)}
 				aria-hidden
 			/>
 		);

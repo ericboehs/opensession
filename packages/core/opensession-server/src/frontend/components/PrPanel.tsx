@@ -406,7 +406,7 @@ const sx = stylex.create({
 			cursor: "default"
 	},
 	bgBlack25: {
-			backgroundColor: "transparent0040"
+			backgroundColor: "color-mix(in srgb, var(--color-black) 25%, transparent)"
 	},
 	mb2: {
 			marginBottom: "8px"

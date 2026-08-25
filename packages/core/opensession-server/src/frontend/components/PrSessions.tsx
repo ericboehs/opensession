@@ -9,6 +9,7 @@ import { Badge } from "../ui/badge";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -267,7 +268,7 @@ export function PrSessionsList({
 					}} {...mergeStylexProps("", sx.hoverBgSurface, sx.Mx2, sx.flex, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px2, sx.py15, sx.textFg, sx.noUnderline, typography.itemTitle)}
 				>
 					<span
-						className={[mergeStylexClassName("", sx.w15, sx.h15, sx.roundedFull, sx.shrink0), s.isRunning ? mergeStylexClassName("", sx.bgYellow, sx.animatePulse) : mergeStylexClassName("", sx.bgLine)].filter(Boolean).join(" ")}
+						className={[mergeStylexClassName("", sx.w15, sx.h15, sx.roundedFull, sx.shrink0), s.isRunning ? mergeStylexClassName("", sx.bgYellow, motionStyles.pulse) : mergeStylexClassName("", sx.bgLine)].filter(Boolean).join(" ")}
 					/>
 					<span {...stylex.props(sx.truncate)}>{s.title}</span>
 					{s.id === currentSessionId && (

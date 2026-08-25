@@ -209,7 +209,7 @@ const sx = stylex.create({
 			color: "var(--color-white)"
 	},
 	bgBlack55: {
-			backgroundColor: "transparent008c"
+			backgroundColor: "color-mix(in srgb, var(--color-black) 55%, transparent)"
 	},
 	textXs: {
 			fontSize: "var(--type-label)",

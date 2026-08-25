@@ -38,6 +38,7 @@ import {
 } from "./ShippedChangeComposer";
 import { SessionContextMessage } from "./SessionContextMessage";
 import * as stylex from "@stylexjs/stylex";
+import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -972,7 +973,7 @@ function indexedItemEstimate(item: IndexedTimelineItem): number {
 function TranscriptRangeLoading() {
 	return (
 		<div
-			{...stylex.props(sx.mxAuto, sx.mb3, sx.h12, sx.wFull, sx.maxWVarSessionCol, sx.animatePulse, sx.roundedLg, sx.bgHover45)}
+			{...stylex.props(sx.mxAuto, sx.mb3, sx.h12, sx.wFull, sx.maxWVarSessionCol, motionStyles.pulse, sx.roundedLg, sx.bgHover45)}
 			aria-label="Loading messages"
 		/>
 	);

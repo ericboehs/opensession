@@ -35,6 +35,7 @@ import { IconChevronLeft, IconPlus } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -710,9 +711,9 @@ function CardBody({
 				<div ref={setContentEl}>
 					{entries === null ? (
 						<div className="space-y-2">
-							<div {...stylex.props(sx.h3, sx.w13, sx.animatePulse, sx.rounded, sx.bgSurface)} />
-							<div {...stylex.props(sx.h3, sx.wFull, sx.animatePulse, sx.rounded, sx.bgSurface)} />
-							<div {...stylex.props(sx.h3, sx.w45, sx.animatePulse, sx.rounded, sx.bgSurface)} />
+							<div {...stylex.props(sx.h3, sx.w13, motionStyles.pulse, sx.rounded, sx.bgSurface)} />
+							<div {...stylex.props(sx.h3, sx.wFull, motionStyles.pulse, sx.rounded, sx.bgSurface)} />
+							<div {...stylex.props(sx.h3, sx.w45, motionStyles.pulse, sx.rounded, sx.bgSurface)} />
 						</div>
 					) : entries.length === 0 ? (
 						<div {...stylex.props(sx.textSm, sx.textFaint)}>No messages yet.</div>

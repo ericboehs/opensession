@@ -41,6 +41,7 @@ import { RAIL_GUTTER_CLASS } from "./message-rail";
 import * as stylex from "@stylexjs/stylex";
 import { mergeStylexClassName } from "../ui/cn";
 import { type as typography } from "../styles/typography.stylex";
+import { motionStyles } from "../styles/animations.stylex";
 
 const sx = stylex.create({
 	flex: {
@@ -1315,7 +1316,7 @@ export const PILL_CENTRED =
 export const TRANSCRIPT_PILL_LOADING = [PILL_BASE, mergeStylexClassName("", sx.gap2)].filter(Boolean).join(" ");
 export const FLOATING_PILL_LOADING = [PILL_LID, mergeStylexClassName("", sx.gap2)].filter(Boolean).join(" ");
 export const TRANSCRIPT_PILL_SPINNER =
-	mergeStylexClassName("", sx.size3, sx.shrink0, sx.animateSpin, sx.roundedFull, sx.border, sx.borderCurrent25, sx.borderTCurrent, sx.textDim);
+	mergeStylexClassName("", sx.size3, sx.shrink0, motionStyles.spin, sx.roundedFull, sx.border, sx.borderCurrent25, sx.borderTCurrent, sx.textDim);
 
 /**
  * Where the top pill ("Load all", and the loading state it swaps to) floats.

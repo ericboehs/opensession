@@ -65,6 +65,7 @@ import {
 } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -767,7 +768,7 @@ export const ToolCallBlock = function ToolCallBlock({
           // still end in a red × reads as a verdict instead of a state. Border
           // written one side at a time — a `border-color` shorthand next to a
           // `border-top-color` is a two-utilities-one-property race.
-          <span {...stylex.props(sx.size11px, sx.flexShrink0, sx.selfCenter, sx.animateSpin, sx.roundedFull, sx.border, sx.borderBLineStrong, sx.borderLLineStrong, sx.borderRLineStrong, sx.borderTDim)} />
+          <span {...stylex.props(sx.size11px, sx.flexShrink0, sx.selfCenter, motionStyles.spin, sx.roundedFull, sx.border, sx.borderBLineStrong, sx.borderLLineStrong, sx.borderRLineStrong, sx.borderTDim)} />
         ) : failed ? (
           <span {...stylex.props(sx.flexShrink0, sx.selfCenter, sx.textFaint, sx.opacity70)}>
             <IconX size={18} />

@@ -140,7 +140,7 @@ const sx = stylex.create({
 			placeItems: "center"
 	},
 	bgBlack25: {
-			backgroundColor: "transparent0040"
+			backgroundColor: "color-mix(in srgb, var(--color-black) 25%, transparent)"
 	},
 	textWhite: {
 			color: "var(--color-white)"

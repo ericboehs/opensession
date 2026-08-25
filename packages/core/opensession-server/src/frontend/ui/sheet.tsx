@@ -56,7 +56,7 @@ const sx = stylex.create({
 			position: "absolute"
 	},
 	bgBlack45: {
-			backgroundColor: "transparent0073"
+			backgroundColor: "color-mix(in srgb, var(--color-black) 45%, transparent)"
 	},
 	flexCol: {
 			flexDirection: "column"
@@ -255,7 +255,7 @@ const sx = stylex.create({
 		"borderTopRightRadius": "calc(var(--sheet-radius,34px) * var(--rf))"
 	},
 	shadow012px40pxRgba000035: {
-		"--tw-shadow": "0 -12px 40px var(--tw-shadow-color,transparent0059)",
+		"--tw-shadow": "0 -12px 40px var(--tw-shadow-color,color-mix(in srgb, var(--color-black) 35%, transparent))",
 		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
 	},
 	transitionTransformOpacity: {

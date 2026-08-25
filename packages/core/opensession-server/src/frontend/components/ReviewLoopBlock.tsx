@@ -4,6 +4,7 @@ import type { ReviewLoopResult } from "../lib/review-loop";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -249,7 +250,7 @@ export function ReviewLoopBlock({
 				)}
 				{live && (
 					<span
-						{...stylex.props(sx.mlAuto, sx.size11px, sx.flexNone, sx.selfCenter, sx.animateSpin, sx.roundedFull, sx.border, sx.borderBLineStrong, sx.borderLLineStrong, sx.borderRLineStrong, sx.borderTDim)}
+						{...stylex.props(sx.mlAuto, sx.size11px, sx.flexNone, sx.selfCenter, motionStyles.spin, sx.roundedFull, sx.border, sx.borderBLineStrong, sx.borderLLineStrong, sx.borderRLineStrong, sx.borderTDim)}
 						aria-label="Review in progress"
 					/>
 				)}

@@ -166,7 +166,7 @@ const sx = stylex.create({
 			justifyContent: "center"
 	},
 	bgBlack40: {
-			backgroundColor: "var(--color-black)6"
+			backgroundColor: "color-mix(in srgb, var(--color-black) 40%, transparent)"
 	},
 	p5: {
 			padding: "20px"
