@@ -774,13 +774,13 @@ private struct PrReviewSplitRowView: View {
         HStack(spacing: 0) {
             Text(number.map(String.init) ?? "")
                 .frame(width: 40, alignment: .trailing)
-            // Both columns keep the same width so the two sides of a change
-            // stay on one line together; a line too long for its column is
-            // what "wrap long lines" is for.
+            // Wrapped columns share the available width. Unwrapped columns
+            // keep a readable minimum but grow to the line's intrinsic width,
+            // so the enclosing horizontal scroll view never clips long lines.
             Text((line?.text).flatMap { $0.isEmpty ? " " : $0 } ?? " ")
                 .lineLimit(wraps ? nil : 1)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: !wraps, vertical: true)
+                .frame(maxWidth: wraps ? .infinity : nil, alignment: .leading)
                 .padding(.leading, 8)
             if let anchor, let comment {
                 Button { comment(anchor) } label: {
@@ -793,7 +793,11 @@ private struct PrReviewSplitRowView: View {
                 Color.clear.frame(width: 26)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(
+            minWidth: wraps ? 0 : 520,
+            maxWidth: wraps ? .infinity : nil,
+            alignment: .leading
+        )
         .foregroundStyle(PrDiffInk.foreground(line?.kind ?? .context))
         .background(
             highlightsEdits ? PrDiffInk.background(line?.kind ?? .context) : .clear
