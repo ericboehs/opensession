@@ -153,7 +153,7 @@ const sx = stylex.create({
 	opacity0: { opacity: 0 },
 	transitionOpacity: { transitionProperty: "opacity" },
 	menuInteractive: {
-		":hover": { backgroundColor: "var(--hover)", color: "var(--text)" },
+		":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)", color: "var(--text)" } },
 		":focusVisible": { opacity: 1 },
 	},
 });

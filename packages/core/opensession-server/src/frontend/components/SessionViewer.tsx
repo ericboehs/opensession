@@ -832,7 +832,7 @@ const sx = stylex.create({
 	viewerColumn: { display: "flex", minHeight: 0, minWidth: 0, flex: 1, flexDirection: "column" },
 	sessionUnder: { "--session-under": "16px" },
 	textGreen: { color: "var(--green)" },
-	contextSelected: { backgroundColor: "var(--hover-strong)", color: "var(--text)", ":hover": { backgroundColor: "var(--hover-strong)" } },
+	contextSelected: { backgroundColor: "var(--hover-strong)", color: "var(--text)", ":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover-strong)" } } },
 	contextIdle: { backgroundColor: "color-mix(in srgb, var(--hover) 50%, transparent)" },
 	transitionOpacitySafe: { "@media (prefers-reduced-motion: no-preference)": { transitionProperty: "opacity", transitionDuration: "150ms" } },
 	opacity0: { opacity: 0 },

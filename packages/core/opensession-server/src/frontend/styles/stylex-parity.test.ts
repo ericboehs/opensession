@@ -81,6 +81,50 @@ describe("stylex port guards", () => {
 		expect(offenders).toEqual([]);
 	});
 
+	test("Tailwind hover semantics remain gated to hover-capable pointers", () => {
+		const bare: string[] = [];
+		for (const f of sources) {
+			const src = readFileSync(f, "utf8");
+			if (!src.includes("stylex.create") || !src.includes(":hover")) continue;
+			const file = ts.createSourceFile(
+				f,
+				src,
+				ts.ScriptTarget.Latest,
+				true,
+				f.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+			);
+			const name = (node: ts.PropertyName) =>
+				ts.isStringLiteral(node) || ts.isIdentifier(node) ? node.text : node.getText(file);
+			function scan(node: ts.Node, hoverGate = false) {
+				if (ts.isPropertyAssignment(node)) {
+					const key = name(node.name);
+					const gated = hoverGate || key === "@media (hover: hover)";
+					if (key === ":hover" && !gated) {
+						const childGate =
+							ts.isObjectLiteralExpression(node.initializer) &&
+							node.initializer.properties.some(
+								(prop) => ts.isPropertyAssignment(prop) && name(prop.name) === "@media (hover: hover)",
+							);
+						if (!childGate) bare.push(`${f}:${file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1}`);
+					}
+					ts.forEachChild(node, (child) => scan(child, gated));
+					return;
+				}
+				ts.forEachChild(node, (child) => scan(child, hoverGate));
+			}
+			function visit(node: ts.Node) {
+				if (
+					ts.isCallExpression(node) &&
+					node.expression.getText(file) === "stylex.create" &&
+					node.arguments[0]
+				) scan(node.arguments[0]);
+				else ts.forEachChild(node, visit);
+			}
+			visit(file);
+		}
+		expect(bare).toEqual([]);
+	});
+
 	test("stylex.create contains no silently empty converted entries", () => {
 		const empty: string[] = [];
 		for (const f of sources) {

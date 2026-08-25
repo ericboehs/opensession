@@ -138,7 +138,7 @@ const sx = stylex.create({
     color: "var(--text-dim)",
     outlineStyle: "none",
     transitionProperty: "color, background-color, scale",
-    ":hover": { backgroundColor: "var(--hover)", color: "var(--text)" },
+    ":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)", color: "var(--text)" } },
     ":focusVisible": { backgroundColor: "var(--hover)", color: "var(--text)" },
     ":active": { scale: 0.96 },
     ":disabled": { pointerEvents: "none", opacity: 0.45 },

@@ -260,7 +260,7 @@ const sx = stylex.create({
 		outlineStyle: "none",
 		transitionProperty: "transform",
 		transitionDuration: "var(--dur-micro)",
-		":hover": { transform: "scale(1.1)" },
+		":hover": { "@media (hover: hover)": { transform: "scale(1.1)" } },
 		":focus-visible": {
 			outline: "2px solid var(--accent-ink)",
 			outlineOffset: "2px",

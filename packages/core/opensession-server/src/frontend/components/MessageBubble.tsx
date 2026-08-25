@@ -225,7 +225,7 @@ const sx = stylex.create({
 	leadingRelaxed: { lineHeight: "var(--leading-relaxed)" },
 	italic: { fontStyle: "italic" },
 	justifyEnd: { justifyContent: "flex-end" },
-	hoverBorderAccent: { ":hover": { borderColor: "var(--accent)" } },
+	hoverBorderAccent: { ":hover": { "@media (hover: hover)": { borderColor: "var(--accent)" } } },
 	mb875: { marginBottom: "35px" },
 	hoverMb875: { "@media (hover: hover)": { marginBottom: "35px" } },
 	textFg: { color: "var(--text)" },

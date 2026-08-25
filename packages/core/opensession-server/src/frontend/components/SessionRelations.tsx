@@ -50,7 +50,7 @@ const sx = stylex.create({
     fontWeight: "var(--font-weight-medium)",
     color: "var(--text-dim)",
     transitionProperty: "color, background-color",
-    ":hover": { backgroundColor: "var(--hover)", color: "var(--text)" },
+    ":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)", color: "var(--text)" } },
 	},
   tabularNums: { fontVariantNumeric: "tabular-nums" },
   dot: { width: "6px", height: "6px", flexShrink: 0, borderRadius: "50%" },

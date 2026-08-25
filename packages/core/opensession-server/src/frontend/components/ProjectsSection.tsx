@@ -129,7 +129,7 @@ const sx = stylex.create({
   removeButton: {
     opacity: 0,
     transitionProperty: "color, opacity, background",
-    ":hover": { color: "var(--red)" },
+    ":hover": { "@media (hover: hover)": { color: "var(--red)" } },
 	},
 });
 

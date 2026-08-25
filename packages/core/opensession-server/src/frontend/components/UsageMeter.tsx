@@ -79,7 +79,7 @@ const sx = stylex.create({
     userSelect: "none",
     outlineStyle: "none",
     transitionProperty: "color, background-color",
-    ":hover": { backgroundColor: "var(--hover)", color: "var(--text)" },
+    ":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)", color: "var(--text)" } },
   },
 });
 

@@ -215,10 +215,10 @@ const sx = stylex.create({
 		borderStyle: "none",
 		backgroundColor: "transparent",
 		color: "var(--text-faint)",
-		":hover": {
+		":hover": { "@media (hover: hover)": {
 			backgroundColor: "var(--hover)",
 			color: "var(--text)",
-		},
+		} },
 	},
 	clearSearchSheet: {
 		right: "6px",

@@ -125,7 +125,7 @@ const sx = stylex.create({
 	chipBody: {
 		display: "inline-flex", minWidth: 0, alignItems: "center", gap: "7px",
 		borderRadius: "calc(infinity * 1px)", paddingInline: "3px", paddingBlock: "2px",
-		lineHeight: "1.15", ":hover": { backgroundColor: "var(--hover)" },
+		lineHeight: "1.15", ":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)" } },
 	},
 	filterChip: {
 		display: "inline-flex", minWidth: 0, maxWidth: "100%", alignItems: "center", gap: "1px",

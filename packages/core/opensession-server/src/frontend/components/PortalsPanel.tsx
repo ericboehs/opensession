@@ -180,7 +180,7 @@ const sx = stylex.create({
     transitionProperty: "color, background-color",
 	},
   active: { backgroundColor: "var(--hover)" },
-  inactive: { ":hover": { backgroundColor: "var(--hover)" } },
+  inactive: { ":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)" } } },
   serviceDot: {
     width: "7px",
     height: "7px",

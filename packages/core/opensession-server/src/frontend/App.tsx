@@ -433,7 +433,7 @@ const sx = stylex.create({
 			width: "2px",
 			backgroundColor: {
 				default: "transparent",
-				":hover": "var(--border-strong)",
+				":hover": { "@media (hover: hover)": "var(--border-strong)" },
 			},
 			transitionProperty: "background",
 			transitionTimingFunction: "var(--ease)",

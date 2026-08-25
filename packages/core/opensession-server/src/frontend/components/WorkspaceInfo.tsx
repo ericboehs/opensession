@@ -454,7 +454,7 @@ const sx = stylex.create({
     borderRadius: "calc(7px * var(--rf))",
     color: "var(--text-faint)",
     transitionProperty: "color, background-color",
-    ":hover": { backgroundColor: "var(--hover)", color: "var(--text)" },
+    ":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)", color: "var(--text)" } },
   },
   mediaFrame: {
     display: "flex",
@@ -485,7 +485,7 @@ const sx = stylex.create({
     textAlign: "left",
     color: "var(--text)",
     transitionProperty: "color, background-color",
-    ":hover": { backgroundColor: "var(--hover)" },
+    ":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)" } },
   },
   itemsStartLocal: { alignItems: "flex-start" },
   assetThumb: {

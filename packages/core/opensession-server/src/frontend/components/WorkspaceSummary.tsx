@@ -192,7 +192,7 @@ const sx = stylex.create({
     backgroundColor: "transparent",
     padding: 0,
     color: "var(--text-dim)",
-    ":hover": { backgroundColor: "var(--hover)", color: "var(--text)" },
+    ":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)", color: "var(--text)" } },
 	},
   chevron: {
     flexShrink: 0,

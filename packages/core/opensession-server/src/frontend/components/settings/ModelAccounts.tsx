@@ -222,11 +222,11 @@ const sx = stylex.create({
 		boxShadow: "none",
 		transitionProperty: "color, background-color, border-color, box-shadow",
 		transitionDuration: "var(--dur-micro)",
-		":hover": {
+		":hover": { "@media (hover: hover)": {
 			borderColor: "transparent",
 			backgroundColor: "var(--hover)",
 			boxShadow: "none",
-		},
+		} },
 		":focus": { borderColor: "transparent" },
 		"@media (max-width: 720px)": { minHeight: "44px" },
 	},

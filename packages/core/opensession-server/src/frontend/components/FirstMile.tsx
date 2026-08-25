@@ -309,7 +309,7 @@ const sx = stylex.create({
 		transitionTimingFunction: "var(--ease)",
 		":focusVisible": { outline: "2px solid var(--accent-ink)", outlineOffset: "2px" },
 		"@media (forced-colors: active)": { ":focusVisible": { outlineColor: "Highlight" } },
-		":hover": { filter: "brightness(0.98)" },
+		":hover": { "@media (hover: hover)": { filter: "brightness(0.98)" } },
 		":active": { transform: "scale(0.96)" },
 		"@media (prefers-reduced-motion: reduce)": { transform: "none" },
 	},
@@ -342,7 +342,7 @@ const sx = stylex.create({
 	progressComplete: { width: "8px", backgroundColor: "color-mix(in oklab, var(--text) 45%, transparent)" },
 	progressUpcoming: {
 		width: "8px", backgroundColor: "color-mix(in oklab, var(--text-faint) 35%, transparent)",
-		":hover": { backgroundColor: "color-mix(in oklab, var(--text-faint) 60%, transparent)" },
+		":hover": { "@media (hover: hover)": { backgroundColor: "color-mix(in oklab, var(--text-faint) 60%, transparent)" } },
 	},
 	stepSection: {
 		marginInline: "auto", display: "flex", minHeight: "100%", width: "100%", maxWidth: "960px",

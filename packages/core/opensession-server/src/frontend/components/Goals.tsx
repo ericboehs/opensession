@@ -285,7 +285,7 @@ const sx = stylex.create({
     },
   },
   goalRowSelected: { backgroundColor: "var(--selected)" },
-  goalRowIdle: { ":hover": { backgroundColor: "var(--hover)" } },
+  goalRowIdle: { ":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)" } } },
   goalRowNarrow: { gap: "10px", paddingInline: "12px", paddingBlock: "10px" },
   statusActive: { backgroundColor: "var(--green)" },
   statusPaused: { backgroundColor: "var(--yellow)" },
@@ -318,7 +318,7 @@ const sx = stylex.create({
     cursor: "pointer",
     color: "var(--link)",
     textDecorationLine: "none",
-    ":hover": { textDecorationLine: "underline" },
+    ":hover": { "@media (hover: hover)": { textDecorationLine: "underline" } },
   },
   textWhite: { color: "var(--color-white)" },
 });

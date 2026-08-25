@@ -27,7 +27,7 @@ const sx = stylex.create({
 	touchNone: { touchAction: "none" },
 	bgLine: { backgroundColor: "var(--border)" },
 	transitionBackground: { transitionProperty: "background-color" },
-	dividerHover: { ":hover": { backgroundColor: "var(--accent)" } },
+	dividerHover: { ":hover": { "@media (hover: hover)": { backgroundColor: "var(--accent)" } } },
 	dividerAfter: { "::after": { content: '""', position: "absolute", insetBlock: 0, left: "-4px", right: "-4px" } },
 });
 

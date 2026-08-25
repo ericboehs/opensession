@@ -148,9 +148,9 @@ const sx = stylex.create({
   checkPending: {
     borderColor: "var(--border-strong)",
     color: "transparent",
-    ":hover": {
+    ":hover": { "@media (hover: hover)": {
       borderColor: "color-mix(in srgb, var(--text) 50%, transparent)",
-    },
+    } },
   },
   taskTitle: { fontWeight: "var(--font-weight-medium)", color: "var(--text)" },
   done: { color: "var(--text-dim)", textDecorationLine: "line-through" },

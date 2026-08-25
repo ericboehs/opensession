@@ -219,7 +219,7 @@ const sx = stylex.create({
 	scopeIdle: {
 		backgroundColor: "var(--bg)",
 		color: "var(--text)",
-		":hover": { backgroundColor: "var(--bg-active)" },
+		":hover": { "@media (hover: hover)": { backgroundColor: "var(--bg-active)" } },
 	},
 	secretInput: {
 		marginTop: "2px",

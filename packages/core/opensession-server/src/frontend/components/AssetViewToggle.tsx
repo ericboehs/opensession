@@ -34,7 +34,7 @@ const sx = stylex.create({
 	},
 	inactive: {
 		color: "var(--text-faint)",
-		":hover": { color: "var(--text-dim)" },
+		":hover": { "@media (hover: hover)": { color: "var(--text-dim)" } },
 	},
 });
 

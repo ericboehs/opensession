@@ -214,10 +214,10 @@ const sx = stylex.create({
 		textDecorationLine: "none",
 		transitionProperty: "color, background-color, border-color",
 		transitionDuration: "var(--dur-micro)",
-		":hover": {
+		":hover": { "@media (hover: hover)": {
 			borderColor: "var(--border-strong)",
 			color: "var(--text)",
-		},
+		} },
 	},
 	mt2: { marginTop: "8px" },
 	h25: { height: "10px" },

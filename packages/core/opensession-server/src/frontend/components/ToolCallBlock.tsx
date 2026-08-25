@@ -228,7 +228,7 @@ const sx = stylex.create({
 	cursorPointer: { cursor: "pointer" },
 	gap2: { gap: "8px" },
 	textLeft: { textAlign: "left" },
-	rowHover: { ":hover": { backgroundColor: "color-mix(in srgb, var(--hover) 40%, transparent)" } },
+	rowHover: { ":hover": { "@media (hover: hover)": { backgroundColor: "color-mix(in srgb, var(--hover) 40%, transparent)" } } },
 	absolute: { position: "absolute" },
 	opacity0: { opacity: 0 },
 	transitionOpacityTransform: { transitionProperty: "opacity, transform" },
@@ -242,7 +242,7 @@ const sx = stylex.create({
 	my0: { marginBlock: 0 },
 	opacity100: { opacity: 1 },
 	subagentTransition: { transitionProperty: "opacity, color, background-color", ":focus": { opacity: 1 } },
-	desktopHoverReveal: { "@media (min-width: 721px)": { opacity: 0, ":hover": { opacity: 1 } } },
+	desktopHoverReveal: { "@media (min-width: 721px)": { opacity: 0, ":hover": { "@media (hover: hover)": { opacity: 1 } } } },
 });
 
 interface Props {

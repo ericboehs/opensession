@@ -542,7 +542,7 @@ const sx = stylex.create({
     "@media (max-width: 720px)": { maxWidth: "104px" },
   },
   minH10: { minHeight: "40px" },
-  hoverBgHover: { ":hover": { backgroundColor: "var(--hover)" } },
+  hoverBgHover: { ":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)" } } },
   phoneMinH11: {
     "@media (max-width: 720px)": { minHeight: "44px" },
   },
@@ -607,7 +607,7 @@ const sx = stylex.create({
   phoneGap2: {
     "@media (max-width: 720px)": { gap: "8px" },
   },
-  hoverTextFg: { ":hover": { color: "var(--text)" } },
+  hoverTextFg: { ":hover": { "@media (hover: hover)": { color: "var(--text)" } } },
   minW5: { minWidth: "20px" },
   px7px: { paddingInline: "7px" },
   pyPx: { paddingBlock: "1px" },
@@ -651,7 +651,7 @@ const sx = stylex.create({
     backgroundColor: "color-mix(in srgb, var(--yellow) 9%, transparent)",
   },
   bgGreenSoft: { backgroundColor: "var(--green-soft)" },
-  hoverTextLink: { ":hover": { color: "var(--link)" } },
+  hoverTextLink: { ":hover": { "@media (hover: hover)": { color: "var(--link)" } } },
   inlineFlex: { display: "inline-flex" },
   size8: { width: "32px", height: "32px" },
   mrMinus15: { marginRight: "-6px" },
