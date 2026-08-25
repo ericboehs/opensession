@@ -34,7 +34,7 @@ afterEach(() => {
 });
 
 describe("scheduled prompt kernel timers", () => {
-	test("creation and deletion update the durable timer", () => {
+	test("creation and deletion update the durable timer", async () => {
 		const created = createScheduledPrompt({
 			sessionId: "s1",
 			prompt: "continue",
@@ -44,7 +44,7 @@ describe("scheduled prompt kernel timers", () => {
 		if ("error" in created) throw new Error(created.error);
 		expect(store.timer("s1", created.id)?.kind).toBe("scheduled_prompt");
 		expect(listScheduledPrompts("s1")).toHaveLength(1);
-		expect(deleteScheduledPrompt(created.id)).toBe(true);
+		expect(await deleteScheduledPrompt(created.id)).toBe(true);
 		expect(store.timer("s1", created.id)).toBeUndefined();
 	});
 

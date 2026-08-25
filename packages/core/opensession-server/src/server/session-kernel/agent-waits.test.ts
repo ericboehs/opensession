@@ -121,7 +121,7 @@ describe("agent wait registration", () => {
       repo: "example",
       branch: "feature",
     });
-    expect(cancelAgentWait("s1")).toBe(true);
+    expect(await cancelAgentWait("s1")).toBe(true);
     expect(getAgentWait("s1")).toBeUndefined();
   });
 

@@ -162,7 +162,7 @@ export function transitionRunState(
 }
 
 /** Drop tracking for a deleted session. */
-export function clearRunState(sessionId: string): void {
+export async function clearRunState(sessionId: string): Promise<void> {
 	if (detachedRunHost()) detachedHostStates.delete(sessionId);
-	else clearSessionKernel(sessionId);
+	else await clearSessionKernel(sessionId);
 }

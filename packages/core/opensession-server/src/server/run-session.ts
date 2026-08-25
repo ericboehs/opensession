@@ -307,7 +307,7 @@ if (!interruptExecutorGlobal.__opensessionTurnCancelExecutorRegistered) {
       await settle("confirmed");
       return;
     }
-    const cancelledWait = cancelAgentWait(item.sessionId);
+    const cancelledWait = await cancelAgentWait(item.sessionId);
     const cancelledRun = await cancelAgentRunTokenAndWait(dispatchId);
     if (!cancelledRun && decision === "retry")
       throw new Error(

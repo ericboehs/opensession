@@ -687,7 +687,7 @@ export function createSessionsMcpServer(
                   prompt: args.prompt,
                   waitId,
                 })
-              : registerPrChecksAgentWait({
+              : await registerPrChecksAgentWait({
                   sessionId,
                   user: ctx.createdBy,
                   repo: args.repo || current?.repo || "",
@@ -738,7 +738,7 @@ export function createSessionsMcpServer(
         async () => {
           const sessionId = ctx.currentSessionId;
           if (!sessionId) return text("This run has no Open Session id.");
-          const cancelled = cancelAgentWait(sessionId);
+          const cancelled = await cancelAgentWait(sessionId);
           if (cancelled)
             audit({ msg: "agent_wait_cancelled", session_id: sessionId });
           return text(

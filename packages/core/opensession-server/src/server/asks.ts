@@ -156,11 +156,11 @@ export function persistPendingAsks(storePath = pendingAskStorePath()): void {
 	}
 }
 
-function clearAskTimer(sessionId: string): void {
+async function clearAskTimer(sessionId: string): Promise<void> {
 	const timer = pendingAskTimers.get(sessionId);
 	if (timer) clearTimeout(timer.handle);
 	pendingAskTimers.delete(sessionId);
-	sessionKernel(sessionId).cancelTimer("ask_escalation");
+	await sessionKernel(sessionId).cancelTimer("ask_escalation");
 }
 
 async function retirePendingAsk(sessionId: string, questionId: string): Promise<void> {
@@ -519,12 +519,12 @@ registerSessionTimerHandler("ask_escalation", async (timer) => {
 	await escalatePendingAsk(timer.sessionId, payload.questionId);
 });
 
-function armAskEscalation(
+async function armAskEscalation(
 	sessionId: string,
 	ask: PendingAsk,
 	questions: AskQuestionInput[],
 	now = Date.now(),
-): void {
+): Promise<void> {
 	clearAskTimer(sessionId);
 	if (!ask.askedAt) return;
 	if (ask.escalatedAskId) {
@@ -541,7 +541,7 @@ function armAskEscalation(
 		return;
 	}
 	const dueAt = ask.askedAt + ASK_UI_TIMEOUT_MS;
-	sessionKernel(sessionId).scheduleTimer({
+	await sessionKernel(sessionId).scheduleTimer({
 		timerId: "ask_escalation",
 		kind: "ask_escalation",
 		dueAt,
