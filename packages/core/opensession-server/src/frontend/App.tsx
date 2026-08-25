@@ -389,6 +389,63 @@ const sx = stylex.create({
 	maxW680px: {
 			maxWidth: "680px"
 	},
+	bgSidebar: { backgroundColor: "var(--sidebar-bg)" },
+	sidebarIconLeft: { "--sidebar-icon-left": "16px" },
+	desktopSidebarMaterial: {
+		background: {
+			default: null,
+			"@media (min-width: 721px)": "linear-gradient(var(--sidebar-material), var(--sidebar-material)), var(--sidebar-bg)",
+		},
+	},
+	absolute: { position: "absolute" },
+	inset0: { inset: "0" },
+	z1: { zIndex: 1 },
+	relative: { position: "relative" },
+	wSidebar: { width: "var(--sidebar-w, 280px)" },
+	desktopHidden: {
+		display: { default: null, "@media (min-width: 721px)": "none" },
+	},
+	hidden: { display: "none" },
+	hDesktopHeader: { height: "var(--desktop-header-h)" },
+	minW0: { minWidth: "0" },
+	justifyStart: { justifyContent: "flex-start" },
+	py0: { paddingBlock: "0" },
+	pr3: { paddingRight: "12px" },
+	plSidebarBrand: { paddingLeft: "calc(var(--sidebar-icon-left) - 8px)" },
+	inlineFlex: { display: "inline-flex" },
+	px5px: { paddingInline: "5px" },
+	py3px: { paddingBlock: "3px" },
+	top0: { top: "0" },
+	rightNeg3px: { right: "-3px" },
+	z30: { zIndex: 30 },
+	hFull: { height: "100%" },
+	w7px: { width: "7px" },
+	cursorColResize: { cursor: "col-resize" },
+	afterResizeLine: {
+		"::after": {
+			content: '""',
+			position: "absolute",
+			top: "0",
+			right: "3px",
+			height: "100%",
+			width: "2px",
+			backgroundColor: {
+				default: "transparent",
+				":hover": "var(--border-strong)",
+			},
+			transitionProperty: "background",
+			transitionTimingFunction: "var(--ease)",
+			transitionDuration: "var(--dur-micro)",
+		},
+	},
+	topSidebarReopen: { top: "calc((var(--desktop-header-h) - 35px) / 2)" },
+	left2: { left: "8px" },
+	z20: { zIndex: 20 },
+	size34px: { width: "34px", height: "34px" },
+	p0: { padding: "0" },
+	desktopInlineFlex: {
+		display: { default: null, "@media (min-width: 721px)": "inline-flex" },
+	},
 });
 
 function deferred<T extends React.ComponentType<any>>(
@@ -5277,8 +5334,14 @@ console.error("Rename workspace failed:", error);
 					    fallback) paints this surface by name. */}
 					<div
 						ref={sidebarColRef}
-						className={cn(
-							"sidebar-container flex min-h-0 shrink-0 flex-col bg-sidebar [--sidebar-icon-left:16px]",
+						className="sidebar-container"
+						{...stylex.props(
+							sx.flex,
+							sx.minH0,
+							sx.shrink0,
+							sx.flexCol,
+							sx.bgSidebar,
+							sx.sidebarIconLeft,
 							// Desktop and the exposed workspace gutter share one chrome
 							// material, so opaque sticky headers scroll over the exact same
 							// surface instead of revealing a gradient seam. No
@@ -5286,16 +5349,16 @@ console.error("Rename workspace failed:", error);
 							// nothing but our own flat background while forcing the
 							// compositor to re-rasterize the whole sidebar on any repaint
 							// behind it (a scroll-flash amplifier).
-							"desktop:[background:linear-gradient(var(--sidebar-material),var(--sidebar-material)),var(--sidebar-bg)]",
+							sx.desktopSidebarMaterial,
 							// On phones the sidebar is the root PAGE of the iOS-style
 							// stack — full bleed under the pushed detail pane — rather than
 							// a fixed-width column.
 							isPhone
-								? "absolute inset-0 z-[1] w-full"
-								: "relative w-[var(--sidebar-w,280px)]",
+								? [sx.absolute, sx.inset0, sx.z1, sx.wFull]
+								: [sx.relative, sx.wSidebar],
 							// Collapsed hides the whole left column; on phones the page
 							// stack owns the sidebar and the class is inert.
-							sidebarCollapsed && "desktop:hidden",
+							sidebarCollapsed && sx.desktopHidden,
 						)}
 						style={
 							{ "--sidebar-w": `${sidebarWidth}px` } as React.CSSProperties
@@ -5315,8 +5378,17 @@ console.error("Rename workspace failed:", error);
 						    row pulls its own in to keep the logo on the list icons'
 						    --sidebar-icon-left column. */}
 						<div
-							className={cn(
-								"sidebar-brand wco-chrome h-[var(--desktop-header-h)] min-w-0 shrink-0 items-center justify-start gap-2 py-0 pr-3 pl-[calc(var(--sidebar-icon-left)-8px)]",
+							className="sidebar-brand wco-chrome"
+							{...stylex.props(
+								sx.hDesktopHeader,
+								sx.minW0,
+								sx.shrink0,
+								sx.itemsCenter,
+								sx.justifyStart,
+								sx.gap2,
+								sx.py0,
+								sx.pr3,
+								sx.plSidebarBrand,
 								// No scroll hairline: the tools sit fixed below this row and
 								// only the workspace list scrolls, so nothing passes under it.
 								// The brand row (and its account menu) is a desktop
@@ -5324,7 +5396,7 @@ console.error("Rename workspace failed:", error);
 								// instead. Gated in JS rather than at `phone:` because
 								// Tailwind's max-* is `width < 720`, one pixel short of the
 								// `max-width: 720px` the rest of the app means by "phone".
-								isPhone ? "hidden" : "flex",
+								isPhone ? sx.hidden : sx.flex,
 							)}
 						>
 							<div className="sidebar-brand-actions" {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.gap2)}>
@@ -5337,10 +5409,8 @@ console.error("Rename workspace failed:", error);
 									    sidebar's chrome row and the session header's icon
 									    cluster read as one system. */}
 									<button
-										className={cn(
-											SIDEBAR_CHROME_BTN,
-											"inline-flex px-[5px] py-[3px]",
-										)}
+										className={SIDEBAR_CHROME_BTN}
+										{...stylex.props(sx.inlineFlex, sx.px5px, sx.py3px)}
 										onClick={toggleSidebarCollapsed}
 										aria-label="Hide sidebar"
 									>
