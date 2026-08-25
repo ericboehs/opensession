@@ -1,6 +1,7 @@
 import * as React from "react";
 import { cn } from "./cn";
 import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -16,6 +17,27 @@ const sx = stylex.create({
 	},
 	bgCurrent: {
 			backgroundColor: "currentColor"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap1: {
+			gap: "4px"
+	},
+	roundedSm: {
+			borderRadius: "calc(4px * var(--rf))"
+	},
+	px15: {
+			paddingInline: "6px"
+	},
+	py05: {
+			paddingBlock: "2px"
+	},
+	whitespaceNowrap: {
+			whiteSpace: "nowrap"
 	},
 });
 
@@ -93,12 +115,7 @@ export function Badge({
 }: BadgeProps) {
 	return (
 		<span
-			className={cn(
-				"inline-flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5",
-				"text-meta whitespace-nowrap",
-				variant === "outline" ? outline[tone] : soft[tone],
-				className,
-			)}
+			className={cn(variant === "outline" ? outline[tone] : soft[tone], className)} {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap1, sx.roundedSm, sx.px15, sx.py05, typography.meta, sx.whitespaceNowrap)}
 			{...rest}
 		>
 			{dot && (

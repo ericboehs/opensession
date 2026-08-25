@@ -21,6 +21,44 @@ const sx = stylex.create({
 			width: "12px",
 			height: "12px"
 	},
+	size4: {
+			width: "16px",
+			height: "16px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	roundedSm: {
+			borderRadius: "calc(4px * var(--rf))"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderLineStrong: {
+			borderColor: "var(--border-strong)"
+	},
+	bgSurface: {
+			backgroundColor: "var(--bg)"
+	},
+	p0: {
+			padding: "0"
+	},
+	outlineNone: {
+			outlineStyle: "none"
+	},
+	durationVarDurMicro: {
+			transitionDuration: "var(--dur-micro)"
+	},
+	easeVarEase: {
+			transitionTimingFunction: "var(--ease)"
+	},
 });
 
 type CheckboxProps = Omit<React.ComponentProps<typeof BaseCheckbox.Root>, "size"> & {
@@ -44,15 +82,7 @@ type CheckboxProps = Omit<React.ComponentProps<typeof BaseCheckbox.Root>, "size"
 export function Checkbox({ className, ...props }: CheckboxProps) {
 	return (
 		<BaseCheckbox.Root
-			className={cn(
-				"flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm border border-line-strong bg-surface p-0 outline-none",
-				"transition-[background-color,border-color] duration-[var(--dur-micro)] ease-[var(--ease)]",
-				"hover:border-faint",
-				"data-[checked]:border-accent-control data-[checked]:bg-accent-control data-[checked]:hover:border-accent-control",
-				"focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
-				"data-[disabled]:cursor-default data-[disabled]:opacity-40",
-				className,
-			)}
+			className={cn("transition-[background-color,border-color]", "hover:border-faint", "data-[checked]:border-accent-control data-[checked]:bg-accent-control data-[checked]:hover:border-accent-control", "focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-bg", "data-[disabled]:cursor-default data-[disabled]:opacity-40", className)} {...stylex.props(sx.flex, sx.size4, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.border, sx.borderLineStrong, sx.bgSurface, sx.p0, sx.outlineNone, sx.durationVarDurMicro, sx.easeVarEase)}
 			{...props}
 		>
 			<BaseCheckbox.Indicator className="data-[unchecked]:hidden" {...stylex.props(sx.flex, sx.textOnAccentControl)}>

@@ -1,5 +1,28 @@
 import * as React from "react";
 import { cn } from "./cn";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	inlineBlock: {
+			display: "inline-block"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	animateSpin: {
+			animation: "var(--animate-spin)"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	borderCurrent25: {
+			borderColor: "currentColor"
+	},
+	borderTCurrent: {
+			borderTopColor: "currentColor"
+	},
+});
 
 /**
  * The waiting spinner: a turning ring, for anything that is fetching,
@@ -33,11 +56,7 @@ export function Spinner({
 	return (
 		<span
 			aria-hidden
-			className={cn(
-				"inline-block shrink-0 animate-spin rounded-full border-current/25 border-t-current",
-				sizes[size],
-				className,
-			)}
+			className={cn(sizes[size], className)} {...stylex.props(sx.inlineBlock, sx.shrink0, sx.animateSpin, sx.roundedFull, sx.borderCurrent25, sx.borderTCurrent)}
 			{...props}
 		/>
 	);

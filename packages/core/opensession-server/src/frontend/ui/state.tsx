@@ -116,6 +116,77 @@ const sx = stylex.create({
 	opacity60: {
 			opacity: ".6"
 	},
+	leadingSnug: {
+			lineHeight: "var(--leading-snug)"
+	},
+	maxW46ch: {
+			maxWidth: "46ch"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	animatePulse: {
+			animation: "var(--animate-pulse)"
+	},
+	h3: {
+			height: "12px"
+	},
+	roundedSm: {
+			borderRadius: "calc(4px * var(--rf))"
+	},
+	bgHover: {
+			backgroundColor: "var(--hover)"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	bgPanel: {
+			backgroundColor: "var(--bg-panel)"
+	},
+	px35: {
+			paddingInline: "14px"
+	},
+	py11px: {
+			paddingBlock: "11px"
+	},
+	py13px: {
+			paddingBlock: "13px"
+	},
+	selfEnd: {
+			alignSelf: "flex-end"
+	},
+	roundedLg: {
+			borderRadius: "calc(14px * var(--rf))"
+	},
+	itemsStart: {
+			alignItems: "flex-start"
+	},
+	roundedMd: {
+			borderRadius: "calc(7px * var(--rf))"
+	},
+	px3: {
+			paddingInline: "12px"
+	},
+	py25: {
+			paddingBlock: "10px"
+	},
+	textSm: {
+			fontSize: "var(--type-label)",
+			lineHeight: "var(--tw-leading,var(--text-sm--line-height))"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	mt05: {
+			marginTop: "2px"
+	},
+	opacity90: {
+			opacity: ".9"
+	},
 });
 
 /**
@@ -194,11 +265,11 @@ export function EmptyState({
 			{block && icon && <span {...stylex.props(sx.textFaint)}>{icon}</span>}
 			{title && <div {...stylex.props(sx.fontMedium, sx.textFg, typography.controlLabel)}>{title}</div>}
 			{children && (
-				<div className={cn("text-supporting leading-snug text-dim", block && "max-w-[46ch]")}>
+				<div {...stylex.props(typography.supporting, sx.leadingSnug, sx.textDim, block && sx.maxW46ch)}>
 					{children}
 				</div>
 			)}
-			{action && <div className={cn(block ? "mt-1" : "mt-2")}>{action}</div>}
+			{action && <div {...stylex.props(block && sx.mt1, !(block) && sx.mt2)}>{action}</div>}
 		</div>
 	);
 }
@@ -269,7 +340,7 @@ export function Skeleton({
 			{...stylex.props(sx.AnimationGhostInVarDurVarEase180msBoth)}
 			{...props}
 		>
-			<div className={cn("animate-pulse", className)}>{children}</div>
+			<div className={cn(className)} {...stylex.props(sx.animatePulse)}>{children}</div>
 		</div>
 	);
 }
@@ -284,7 +355,7 @@ export function SkeletonBar({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("h-3 rounded-sm bg-hover", className)} {...props} />;
+	return <div className={cn(className)} {...stylex.props(sx.h3, sx.roundedSm, sx.bgHover)} {...props} />;
 }
 
 /**
@@ -341,26 +412,17 @@ export function ListSkeleton({
 	return (
 		<Skeleton
 			label={label}
-			className={cn(
-				"flex flex-col",
-				cards
+			className={cn(cards
 					? "gap-1.5"
 					: divided
 						? "[&>*+*]:border-t [&>*+*]:border-line"
-						: "gap-0.5",
-				className,
-			)}
+						: "gap-0.5", className)} {...stylex.props(sx.flex, sx.flexCol)}
 			{...props}
 		>
 			{Array.from({ length: rows }, (_, i) => (
 				<div
 					key={i}
-					className={cn(
-						cards
-							? "rounded-control border border-line bg-panel px-3.5 py-[11px]"
-							: "px-3.5 py-[13px]",
-						rowClassName,
-					)}
+					className={cn(rowClassName)} {...stylex.props(cards && sx.roundedControl, cards && sx.border, cards && sx.borderLine, cards && sx.bgPanel, cards && sx.px35, cards && sx.py11px, !(cards) && sx.px35, !(cards) && sx.py13px)}
 				>
 					<SkeletonBar className={SKELETON_WIDTHS[i % SKELETON_WIDTHS.length]} />
 					{cards && <SkeletonBar {...stylex.props(sx.mt2, sx.h25, sx.w26)} />}
@@ -401,11 +463,11 @@ export function TranscriptSkeleton({
 	...props
 }: React.ComponentPropsWithoutRef<"div"> & { label?: string }) {
 	return (
-		<Skeleton label={label} className={cn("flex flex-col", className)} {...props}>
+		<Skeleton label={label} className={cn(className)} {...stylex.props(sx.flex, sx.flexCol)} {...props}>
 			{TRANSCRIPT_GHOST_TURNS.map((turn) => (
 				<React.Fragment key={turn.bubble}>
 					<div {...stylex.props(sx.mxAuto, sx.mb45, sx.flex, sx.wFull, sx.maxWVarSessionCol, sx.flexCol)}>
-						<SkeletonBar className={cn("self-end rounded-lg", turn.bubble)} />
+						<SkeletonBar className={cn(turn.bubble)} {...stylex.props(sx.selfEnd, sx.roundedLg)} />
 					</div>
 					<div {...stylex.props(sx.mxAuto, sx.mb45, sx.flex, sx.wFull, sx.maxWVarSessionCol, sx.flexCol, sx.gap25)}>
 						{turn.lines.map((width) => (
@@ -453,12 +515,7 @@ export function InlineAlert({
 	return (
 		<div
 			role="alert"
-			className={cn(
-				"flex items-start gap-2 rounded-md border px-3 py-2.5 text-sm",
-				alertVariants[variant],
-				onDismiss && "cursor-pointer",
-				className,
-			)}
+			className={cn(alertVariants[variant], className)} {...stylex.props(sx.flex, sx.itemsStart, sx.gap2, sx.roundedMd, sx.border, sx.px3, sx.py25, sx.textSm, onDismiss && sx.cursorPointer)}
 			onClick={(e) => {
 				onClick?.(e);
 				onDismiss?.();
@@ -467,7 +524,7 @@ export function InlineAlert({
 		>
 			<div {...stylex.props(sx.minW0, sx.flex1)}>
 				{title && <div {...stylex.props(sx.fontMedium)}>{title}</div>}
-				<div className={cn("min-w-0", title && "mt-0.5 opacity-90")}>{children}</div>
+				<div {...stylex.props(sx.minW0, Boolean(title) && sx.mt05, Boolean(title) && sx.opacity90)}>{children}</div>
 			</div>
 			{onRetry && (
 				<button

@@ -5,6 +5,7 @@ import * as React from "react";
 import { cn } from "./cn";
 import { duration, ease } from "./motion";
 import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -41,6 +42,51 @@ const sx = stylex.create({
 	},
 	smoothShadowSm: {
 			boxShadow: "0 1px 3px -1px var(--smooth-shadow-color), 0 4px 10px -4px var(--smooth-shadow-color)"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	roundedLg: {
+			borderRadius: "calc(14px * var(--rf))"
+	},
+	bgHover: {
+			backgroundColor: "var(--hover)"
+	},
+	p05: {
+			padding: "2px"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	border0: {
+			borderStyle: "solid",
+			borderWidth: "0"
+	},
+	bgTransparent: {
+			backgroundColor: "#0000"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	whitespaceNowrap: {
+			whiteSpace: "nowrap"
+	},
+	transitionColors: {
+			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	durationVarDurMicro: {
+			transitionDuration: "var(--dur-micro)"
+	},
+	easeVarEase: {
+			transitionTimingFunction: "var(--ease)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
 	},
 });
 
@@ -141,7 +187,7 @@ export function Segmented({
 					const picked = next[0];
 					if (picked !== undefined && picked !== value) onValueChange(picked);
 				}}
-				className={cn("inline-flex rounded-lg bg-hover p-0.5", className)}
+				className={cn(className)} {...stylex.props(sx.inlineFlex, sx.roundedLg, sx.bgHover, sx.p05)}
 				{...props}
 			>
 				{children}
@@ -161,18 +207,7 @@ export function SegmentedOption({
 	return (
 		<Toggle
 			value={value}
-			className={cn(
-				"relative cursor-pointer rounded-control border-0 bg-transparent text-control-label font-medium",
-				optionSizes[size],
-				"whitespace-nowrap transition-colors duration-[var(--dur-micro)] ease-[var(--ease)]",
-				// Phones get the tap box; the desktop control is a reading size.
-				"phone:px-3 phone:py-2 phone:text-item-title",
-				selected ? "text-fg" : "text-dim hover:text-fg",
-				// An option the data can't offer yet stays in place, greyed: taking
-				// it out would shift the ones beside it as the page loads.
-				"disabled:cursor-default disabled:text-faint disabled:hover:text-faint",
-				className,
-			)}
+			className={cn(optionSizes[size], "phone:px-3 phone:py-2 phone:text-item-title", selected ? "" : "hover:text-fg", "disabled:cursor-default disabled:text-faint disabled:hover:text-faint", className)} {...stylex.props(sx.relative, sx.cursorPointer, sx.roundedControl, sx.border0, sx.bgTransparent, typography.controlLabel, sx.fontMedium, sx.whitespaceNowrap, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase, selected && sx.textFg, !(selected) && sx.textDim)}
 			{...props}
 		>
 			{selected && <SegmentedKnob knobId={knobId} />}

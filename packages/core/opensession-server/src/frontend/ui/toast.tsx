@@ -118,6 +118,85 @@ const sx = stylex.create({
 	bgDim35: {
 			backgroundColor: "var(--text-dim)"
 	},
+	fixed: {
+			position: "fixed"
+	},
+	mxAuto: {
+			marginInline: "auto"
+	},
+	hVarToastFrontmostHeight: {
+			height: "var(--toast-frontmost-height)"
+	},
+	outlineNone: {
+			outlineStyle: "none"
+	},
+	pointerEventsAuto: {
+			pointerEvents: "auto"
+	},
+	left12: {
+			left: "50%"
+	},
+	wMax: {
+			width: "max-content"
+	},
+	maxWFull: {
+			maxWidth: "100%"
+	},
+	duration200: {
+			transitionDuration: ".2s"
+	},
+	flex: {
+			display: "flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	whitespaceNormal: {
+			whiteSpace: "normal"
+	},
+	rounded999px: {
+			borderRadius: "999px"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderDividerSoft: {
+			borderColor: "var(--divider-soft)"
+	},
+	bgPopup: {
+			backgroundColor: "var(--popup-surface)"
+	},
+	py15: {
+			paddingBlock: "6px"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	leadingTight: {
+			lineHeight: "var(--leading-tight)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	pl25: {
+			paddingLeft: "10px"
+	},
+	pl3: {
+			paddingLeft: "12px"
+	},
+	pr15: {
+			paddingRight: "6px"
+	},
+	pr3: {
+			paddingRight: "12px"
+	},
 });
 
 export type ToastVariant = "default" | "success" | "error";

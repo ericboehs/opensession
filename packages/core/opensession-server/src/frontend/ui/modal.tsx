@@ -91,6 +91,103 @@ const sx = stylex.create({
 	textDim: {
 			color: "var(--text-dim)"
 	},
+	fixed: {
+			position: "fixed"
+	},
+	inset0: {
+			inset: "0"
+	},
+	transitionOpacity: {
+			transitionProperty: "opacity",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	easeOut: {
+			transitionTimingFunction: "var(--ease)"
+	},
+	z6000: {
+			zIndex: "6000"
+	},
+	bgBlack22: {
+			backgroundColor: "#00000038"
+	},
+	durationVarDurMicro: {
+			transitionDuration: "var(--dur-micro)"
+	},
+	z10000: {
+			zIndex: "10000"
+	},
+	bgBlack25: {
+			backgroundColor: "#00000040"
+	},
+	durationVarDur: {
+			transitionDuration: "var(--dur)"
+	},
+	z6001: {
+			zIndex: "6001"
+	},
+	itemsStart: {
+			alignItems: "flex-start"
+	},
+	px4: {
+			paddingInline: "16px"
+	},
+	pb4: {
+			paddingBottom: "16px"
+	},
+	pt11vh: {
+			paddingTop: "11vh"
+	},
+	sticky: {
+			position: "sticky"
+	},
+	Top6: {
+			top: "-24px"
+	},
+	z10: {
+			zIndex: "10"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	bgRaised: {
+			backgroundColor: "var(--bg-raised)"
+	},
+	Mx6: {
+			marginInline: "-24px"
+	},
+	Mb3: {
+			marginBottom: "-12px"
+	},
+	Mt6: {
+			marginTop: "-24px"
+	},
+	px6: {
+			paddingInline: "24px"
+	},
+	pb3: {
+			paddingBottom: "12px"
+	},
+	pt6: {
+			paddingTop: "24px"
+	},
+	transitionBoxShadow: {
+			transitionProperty: "box-shadow",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	mt2: {
+			marginTop: "8px"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	justifyEnd: {
+			justifyContent: "flex-end"
+	},
+	gap25: {
+			gap: "10px"
+	},
 });
 
 /**
@@ -242,42 +339,11 @@ function Content({
 	return (
 		<BaseDialog.Portal keepMounted={keepMounted}>
 			<BaseDialog.Backdrop
-				className={cn(
-					"fixed inset-0 transition-opacity ease-out",
-					"data-[starting-style]:opacity-0 data-[ending-style]:opacity-0",
-					// Palettes sit on their own, lower tier so anything that has
-					// always floated above them (the caret-anchored mention popup at
-					// 10500, the modal tier at 10000) keeps doing so.
-					// A lighter tint than the opaque shell needed, over a heavier
-					// blur: the palette is glass now, so the scrim composites
-					// THROUGH it — at the old 42% the page's dimming showed up
-					// inside the palette as a grey wash over its own fill.
-					palette
-						? "z-[6000] bg-black/22 backdrop-blur-[6px] duration-[var(--dur-micro)]"
-						: "z-[10000] bg-black/25 backdrop-blur-[1px] duration-[var(--dur)]",
-					// `palette-backdrop` rides along purely as a runtime marker, and
-					// nothing styles it any more: the window-level chords (archive,
-					// pin, team note, tab switching, open pull request) decline a
-					// keystroke while one is open, via `blockingOverlayOpen()` in
-					// lib/blocking-overlay, and a palette must keep matching it.
-					// That helper qualifies every marker with `:not([hidden])`, which
-					// is load-bearing rather than tidy: a `keepMounted` palette (the
-					// Desk) is in the DOM from boot, so the unqualified selector read
-					// true forever and every one of those chords was dead. The stylesheet rule it used to carry
-					// said the same z-index/tint/blur written above, plus flex and
-					// padding that are inert on a childless backdrop, so deleting it
-					// changed nothing visually. The NAME is removable once those two
-					// guards move to `[role=dialog]`, which App already uses for its
-					// bare-"n" check.
-					palette && "palette-backdrop",
-				)}
+				className={cn("data-[starting-style]:opacity-0 data-[ending-style]:opacity-0", palette ? "backdrop-blur-[6px]" : "backdrop-blur-[1px]", palette && "palette-backdrop")} {...stylex.props(sx.fixed, sx.inset0, sx.transitionOpacity, sx.easeOut, palette && sx.z6000, palette && sx.bgBlack22, palette && sx.durationVarDurMicro, !(palette) && sx.z10000, !(palette) && sx.bgBlack25, !(palette) && sx.durationVarDur)}
 			/>
 			{palette ? (
 				<BaseDialog.Viewport
-					className={cn(
-						"fixed inset-0 z-[6001] flex items-start justify-center px-4 pb-4 pt-[11vh] max-[560px]:pt-[7vh] [&[hidden]]:hidden",
-						viewportClassName,
-					)}
+					className={cn("max-[560px]:pt-[7vh] [&[hidden]]:hidden", viewportClassName)} {...stylex.props(sx.fixed, sx.inset0, sx.z6001, sx.flex, sx.itemsStart, sx.justifyCenter, sx.px4, sx.pb4, sx.pt11vh)}
 				>
 					{popup}
 				</BaseDialog.Viewport>
@@ -370,25 +436,7 @@ function Header({
 		<>
 			<div
 				ref={setNode}
-				className={cn(
-					// `-top-6` cancels `-mt-6`, and the two must stay a pair: sticky
-					// pins the MARGIN box, so with `top-0` the negative margin lands
-					// the bar 24px down the shell and leaves a strip of content
-					// sliding past above it (measured). Both are the shell's `p-6`.
-					"sticky -top-6 z-10 flex items-start gap-3 bg-raised",
-					// `pb-3` is the air the bar keeps under the title, so text
-					// passing beneath disappears with a gap rather than touching it.
-					// `-mb-3` hands it straight back, leaving the resting header the
-					// height it has always had.
-					"-mx-6 -mb-3 -mt-6 px-6 pb-3 pt-6",
-					// The seam is an inset shadow rather than a border, the way the
-					// other sticky bars in the app draw theirs (PrPanel's file strip):
-					// it costs no layout, so a dialog that never scrolls is not 1px
-					// taller than it was for the sake of a line it will never show.
-					"transition-[box-shadow] duration-[var(--dur-micro)]",
-					scrolled && "shadow-[inset_0_-1px_0_var(--divider)]",
-					className,
-				)}
+				className={cn(scrolled && "shadow-[inset_0_-1px_0_var(--divider)]", className)} {...stylex.props(sx.sticky, sx.Top6, sx.z10, sx.flex, sx.itemsStart, sx.gap3, sx.bgRaised, sx.Mx6, sx.Mb3, sx.Mt6, sx.px6, sx.pb3, sx.pt6, sx.transitionBoxShadow, sx.durationVarDurMicro)}
 			>
 				{/* Base UI renders Title as <h2> and Description as <p>; preflight
 				    isn't imported (base.css owns resets), so zero their UA margins
@@ -434,10 +482,7 @@ function Footer({
 }) {
 	return (
 		<div
-			className={cn(
-				"mt-2 flex flex-wrap items-center justify-end gap-2.5",
-				className,
-			)}
+			className={cn(className)} {...stylex.props(sx.mt2, sx.flex, sx.flexWrap, sx.itemsCenter, sx.justifyEnd, sx.gap25)}
 		>
 			{children}
 		</div>

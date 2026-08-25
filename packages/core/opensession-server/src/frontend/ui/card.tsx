@@ -1,5 +1,13 @@
 import * as React from "react";
 import { cn } from "./cn";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	overflowHidden: {
+			overflow: "hidden"
+	},
+});
 
 type CardElement = "article" | "div" | "section" | "ul";
 
@@ -37,10 +45,7 @@ export function Card({ as: Component = "div", className, ...props }: CardProps) 
 export function CardList({ className, ...props }: CardProps) {
 	return (
 		<Card
-			className={cn(
-				"overflow-hidden [&>*+*]:border-t [&>*+*]:border-line",
-				className,
-			)}
+			className={cn("[&>*+*]:border-t [&>*+*]:border-line", className)} {...stylex.props(sx.overflowHidden)}
 			{...props}
 		/>
 	);

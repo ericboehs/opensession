@@ -32,6 +32,15 @@ const sx = stylex.create({
 	placeItemsCenter: {
 			placeItems: "center"
 	},
+	relative: {
+			position: "relative"
+	},
+	inlineGrid: {
+			display: "inline-grid"
+	},
+	textGreen: {
+			color: "var(--green)"
+	},
 });
 
 /**
@@ -100,14 +109,14 @@ export function CopyCheck({
 	const box = Math.max(size, MIN_ICON_SIZE);
 	return (
 		<span
-			className={cn("relative inline-grid place-items-center", className)}
+			className={cn(className)} {...stylex.props(sx.relative, sx.inlineGrid, sx.placeItemsCenter)}
 			style={{ width: box, height: box }}
 		>
 			<AnimatePresence initial={false} mode="popLayout">
 				{copied ? (
 					<motion.span
 						key="check"
-						className={cn("col-start-1 row-start-1 grid place-items-center text-green", checkClassName)}
+						className={cn(checkClassName)} {...stylex.props(sx.colStart1, sx.rowStart1, sx.grid, sx.placeItemsCenter, sx.textGreen)}
 						initial={{ opacity: 0, scale: 0.4, rotate: -12 }}
 						animate={{ opacity: 1, scale: 1, rotate: 0 }}
 						exit={{ opacity: 0, scale: 0.6 }}

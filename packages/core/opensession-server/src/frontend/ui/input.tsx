@@ -11,6 +11,27 @@ const sx = stylex.create({
 	textDim: {
 			color: "var(--text-dim)"
 	},
+	flex: {
+			display: "flex"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	grid: {
+			display: "grid"
+	},
+	gridCols2: {
+			gridTemplateColumns: "repeat(2,minmax(0,1fr))"
+	},
+	gap3: {
+			gap: "12px"
+	},
 });
 
 /**
@@ -119,7 +140,7 @@ export function Field({
 	children: React.ReactNode;
 }) {
 	return (
-		<label className={cn("flex min-w-0 flex-col gap-1.5", className)} {...props}>
+		<label className={cn(className)} {...stylex.props(sx.flex, sx.minW0, sx.flexCol, sx.gap15)} {...props}>
 			<span {...stylex.props(sx.fontMedium, sx.textDim, typography.label)}>{label}</span>
 			{children}
 		</label>
@@ -134,6 +155,6 @@ export function FieldGrid({
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
-		<div className={cn("grid grid-cols-2 gap-3 phone:grid-cols-1", className)} {...props} />
+		<div className={cn("phone:grid-cols-1", className)} {...stylex.props(sx.grid, sx.gridCols2, sx.gap3)} {...props} />
 	);
 }

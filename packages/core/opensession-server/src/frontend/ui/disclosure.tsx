@@ -121,7 +121,7 @@ export function Disclosure({
 	children: React.ReactNode;
 }) {
 	return (
-		<Collapsible.Root defaultOpen={defaultOpen} className={cn("min-w-0", className)}>
+		<Collapsible.Root defaultOpen={defaultOpen} className={cn(className)} {...stylex.props(sx.minW0)}>
 			<div {...stylex.props(sx.flex, sx.minW0, sx.flexWrap, sx.itemsCenter, sx.justifyBetween, sx.gapX3, sx.gapY15)}>
 				{/* -mx-2 lets the row's hover wash bleed past the text without
 				    indenting the title away from the content it labels. */}

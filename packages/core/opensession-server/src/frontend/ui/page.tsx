@@ -23,6 +23,30 @@ const sx = stylex.create({
 	gap25: {
 			gap: "10px"
 	},
+	minH0: {
+			minHeight: "0"
+	},
+	wFull: {
+			width: "100%"
+	},
+	flex1: {
+			flex: "1"
+	},
+	overflowYAuto: {
+			overflowY: "auto"
+	},
+	mxAuto: {
+			marginInline: "auto"
+	},
+	px6: {
+			paddingInline: "24px"
+	},
+	pb60px: {
+			paddingBottom: "60px"
+	},
+	pt7: {
+			paddingTop: "28px"
+	},
 });
 
 export type PageContentWidth = "narrow" | "default" | "wide" | "full";
@@ -58,17 +82,11 @@ export function PageLayout({
 			// title once this page has travelled under it. Read by App.tsx through
 			// hooks/useScrollEdge.ts; it styles nothing.
 			data-page-scroll
-			className={cn(
-				"min-h-0 w-full flex-1 overflow-y-auto",
-				className,
-			)}
+			className={cn(className)} {...stylex.props(sx.minH0, sx.wFull, sx.flex1, sx.overflowYAuto)}
 			{...props}
 		>
 			<div
-				className={cn(
-					"mx-auto w-full px-6 pb-[60px] pt-7 max-[560px]:px-3.5 max-[560px]:pb-12 max-[560px]:pt-[18px]",
-					contentWidths[contentWidth],
-				)}
+				className={cn("max-[560px]:px-3.5 max-[560px]:pb-12 max-[560px]:pt-[18px]", contentWidths[contentWidth])} {...stylex.props(sx.mxAuto, sx.wFull, sx.px6, sx.pb60px, sx.pt7)}
 			>
 				<PageHeader>
 					<div>
@@ -101,5 +119,5 @@ export function PageSection({
 	className,
 	...props
 }: PageSectionProps) {
-	return <div className={cn("mx-auto w-full", contentWidths[contentWidth], className)} {...props} />;
+	return <div className={cn(contentWidths[contentWidth], className)} {...stylex.props(sx.mxAuto, sx.wFull)} {...props} />;
 }

@@ -1,4 +1,51 @@
 import { cn } from "./cn";
+import { type as typography } from "../styles/typography.stylex";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	shrink0: {
+			flexShrink: "0"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	bgYellow: {
+			backgroundColor: "var(--yellow)"
+	},
+	size2: {
+			width: "8px",
+			height: "8px"
+	},
+	size7px: {
+			width: "7px",
+			height: "7px"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	bgYellowSoft: {
+			backgroundColor: "var(--yellow-soft)"
+	},
+	px25: {
+			paddingInline: "10px"
+	},
+	py3px: {
+			paddingBlock: "3px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	textYellow: {
+			color: "var(--yellow)"
+	},
+});
 
 /**
  * Liveness indicators — the pulsing dot and the "Running" pill.
@@ -53,12 +100,7 @@ export function PulseDot({
 	return (
 		<span
 			aria-hidden
-			className={cn(
-				"shrink-0 rounded-full bg-yellow",
-				size === 8 ? "size-2" : "size-[7px]",
-				PULSE,
-				className,
-			)}
+			className={cn(PULSE, className)} {...stylex.props(sx.shrink0, sx.roundedFull, sx.bgYellow, size === 8 && sx.size2, !(size === 8) && sx.size7px)}
 		/>
 	);
 }
@@ -72,10 +114,7 @@ export function WorkingPill({
 }) {
 	return (
 		<span
-			className={cn(
-				"inline-flex shrink-0 items-center gap-1.5 rounded-full bg-yellow-soft px-2.5 py-[3px] text-meta font-semibold text-yellow",
-				className,
-			)}
+			className={cn(className)} {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap15, sx.roundedFull, sx.bgYellowSoft, sx.px25, sx.py3px, typography.meta, sx.fontSemibold, sx.textYellow)}
 		>
 			<PulseDot size={7} />
 			{children}

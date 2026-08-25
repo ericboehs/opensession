@@ -16,6 +16,47 @@ const sx = stylex.create({
 	bgOnAccentControl: {
 			backgroundColor: "var(--on-accent-control,var(--on-accent))"
 	},
+	flex: {
+			display: "flex"
+	},
+	size4: {
+			width: "16px",
+			height: "16px"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderLineStrong: {
+			borderColor: "var(--border-strong)"
+	},
+	bgSurface: {
+			backgroundColor: "var(--bg)"
+	},
+	p0: {
+			padding: "0"
+	},
+	outlineNone: {
+			outlineStyle: "none"
+	},
+	durationVarDurMicro: {
+			transitionDuration: "var(--dur-micro)"
+	},
+	easeVarEase: {
+			transitionTimingFunction: "var(--ease)"
+	},
 });
 
 type RadioProps = React.ComponentProps<typeof BaseRadio.Root>;
@@ -25,15 +66,7 @@ type RadioGroupProps = React.ComponentProps<typeof BaseRadioGroup>;
 export function Radio({ className, ...props }: RadioProps) {
 	return (
 		<BaseRadio.Root
-			className={cn(
-				"flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full border border-line-strong bg-surface p-0 outline-none",
-				"transition-[background-color,border-color] duration-[var(--dur-micro)] ease-[var(--ease)]",
-				"hover:border-faint",
-				"data-[checked]:border-accent-control data-[checked]:bg-accent-control data-[checked]:hover:border-accent-control",
-				"focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
-				"data-[disabled]:cursor-default data-[disabled]:opacity-40",
-				className,
-			)}
+			className={cn("transition-[background-color,border-color]", "hover:border-faint", "data-[checked]:border-accent-control data-[checked]:bg-accent-control data-[checked]:hover:border-accent-control", "focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-bg", "data-[disabled]:cursor-default data-[disabled]:opacity-40", className)} {...stylex.props(sx.flex, sx.size4, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.border, sx.borderLineStrong, sx.bgSurface, sx.p0, sx.outlineNone, sx.durationVarDurMicro, sx.easeVarEase)}
 			{...props}
 		>
 			<BaseRadio.Indicator {...stylex.props(sx.size15, sx.roundedFull, sx.bgOnAccentControl)} />

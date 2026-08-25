@@ -104,7 +104,7 @@ export function SwitchRow({
 		>
 			{/* A setting that cannot apply yet dims its name too: a live label
 			    over a faded switch reads as a switch that failed to draw. */}
-			<span className={cn("shrink-0", disabled ? "text-faint" : "text-dim")}>
+			<span {...stylex.props(sx.shrink0, disabled && sx.textFaint, !(disabled) && sx.textDim)}>
 				{label}
 			</span>
 			<Switch

@@ -3,6 +3,7 @@ import { cn } from "./cn";
 import { CopyCheck, useCopy } from "./copy";
 import { Tooltip } from "./tooltip";
 import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -25,6 +26,52 @@ const sx = stylex.create({
 			transitionProperty: "opacity",
 			transitionTimingFunction: "var(--tw-ease,var(--ease))",
 			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap15: {
+			gap: "6px"
+	},
+	roundedControl: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	border: {
+			borderStyle: "solid",
+			borderWidth: "1px"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	bgControl: {
+			backgroundColor: "var(--control-surface)"
+	},
+	px25: {
+			paddingInline: "10px"
+	},
+	py1: {
+			paddingBlock: "4px"
+	},
+	fontMono: {
+			fontFamily: "var(--mono)"
+	},
+	fontBold: {
+			fontWeight: "var(--font-weight-bold)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	smoothShadowSm: {
+			boxShadow: "0 1px 3px -1px var(--smooth-shadow-color), 0 4px 10px -4px var(--smooth-shadow-color)"
+	},
+	focusRing: {
+			":focus-visible": {
+					outline: "2px solid var(--accent-ink)",
+					outlineOffset: "2px"
+			}
 	},
 });
 
@@ -57,13 +104,7 @@ export function DeviceCode({
 				type="button"
 				aria-label={`${label} ${code}`}
 				onClick={() => copy(code, { toast: "Code copied" })}
-				className={cn(
-					"group inline-flex items-center gap-1.5 rounded-control border border-line bg-control px-2.5 py-1",
-					"font-mono text-item-title font-bold text-fg smooth-shadow-sm",
-					"transition-[background-color,border-color,scale] active:scale-[0.98]",
-					"hover:border-line-strong hover:bg-hover focus-ring",
-					className,
-				)}
+				className={cn("group", "transition-[background-color,border-color,scale] active:scale-[0.98]", "hover:border-line-strong hover:bg-hover", className)} {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.border, sx.borderLine, sx.bgControl, sx.px25, sx.py1, sx.fontMono, typography.itemTitle, sx.fontBold, sx.textFg, sx.smoothShadowSm, sx.focusRing)}
 			>
 				{/* Cap-band centered against the copy glyph: `text-box` trims the
 				    line box to cap height and baseline, so the code's own ink sits

@@ -12,6 +12,7 @@ import {
 } from "./popup-classes";
 import { restoreSelectFocusAfterClose } from "./select-focus";
 import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -57,6 +58,57 @@ const sx = stylex.create({
 	},
 	textAccent: {
 			color: "var(--accent)"
+	},
+	invisible: {
+			visibility: "hidden"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	colStart3: {
+			gridColumnStart: "3"
+	},
+	colStart2: {
+			gridColumnStart: "2"
+	},
+	outlineNone: {
+			outlineStyle: "none"
+	},
+	minWVarAnchorWidth: {
+			minWidth: "var(--anchor-width)"
+	},
+	justifyBetween: {
+			justifyContent: "space-between"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	px2: {
+			paddingInline: "8px"
+	},
+	pb1: {
+			paddingBottom: "4px"
+	},
+	pt15: {
+			paddingTop: "6px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	tracking001em: {
+			letterSpacing: "-.01em"
+	},
+	Mx15: {
+			marginInline: "-6px"
+	},
+	my15: {
+			marginBlock: "6px"
+	},
+	hPx: {
+			height: "1px"
+	},
+	bgLine: {
+			backgroundColor: "var(--border)"
 	},
 });
 
@@ -178,21 +230,21 @@ function Trigger(triggerProps: TriggerProps) {
 					{icon}
 				</span>
 			)}
-			<span className={cn("row-start-1 truncate", label)}>
+			<span className={cn(label)} {...stylex.props(sx.rowStart1, sx.truncate)}>
 				{children ?? <BaseSelect.Value placeholder={placeholder} />}
 			</span>
 			{sizeTo?.map((text, index) => (
 				<span
 					key={index}
 					aria-hidden
-					className={cn("invisible row-start-1 truncate", label)}
+					className={cn(label)} {...stylex.props(sx.invisible, sx.rowStart1, sx.truncate)}
 				>
 					{text}
 				</span>
 			))}
 			<IconChevronDown
 				size={16}
-				className={cn("row-start-1 shrink-0 text-faint", iconSlot ? "col-start-3" : "col-start-2")}
+				{...stylex.props(sx.rowStart1, sx.shrink0, sx.textFaint, iconSlot && sx.colStart3, !(iconSlot) && sx.colStart2)}
 			/>
 		</BaseSelect.Trigger>
 	);
@@ -225,11 +277,11 @@ function Popup({
 				// would give this one popup two open behaviours and no
 				// animation. Anchor it below the trigger like every menu.
 				alignItemWithTrigger={false}
-				className={cn(FLOATING_OVERLAY_LAYER, "outline-none")}
+				className={cn(FLOATING_OVERLAY_LAYER)} {...stylex.props(sx.outlineNone)}
 			>
 				<BaseSelect.Popup
 					finalFocus={() => restoreFocusRef?.current ?? true}
-					className={cn(POPUP_HOOK, popupSurfaceClasses, "min-w-[var(--anchor-width)]", className)}
+					className={cn(POPUP_HOOK, popupSurfaceClasses, className)} {...stylex.props(sx.minWVarAnchorWidth)}
 				>
 					<BaseSelect.List className={popupScrollClasses}>{children}</BaseSelect.List>
 				</BaseSelect.Popup>
@@ -251,11 +303,7 @@ function Item(itemProps: ItemProps) {
 	return (
 		<BaseSelect.Item
 			{...props}
-			className={cn(
-				popupItemClasses,
-				"justify-between gap-3 data-[disabled]:cursor-default data-[disabled]:opacity-40",
-				className,
-			)}
+			className={cn(popupItemClasses, "data-[disabled]:cursor-default data-[disabled]:opacity-40", className)} {...stylex.props(sx.justifyBetween, sx.gap3)}
 		>
 			<span {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
 				{iconSlot && (
@@ -287,16 +335,13 @@ function GroupLabel({
 	return (
 		<BaseSelect.GroupLabel
 			{...props}
-			className={cn(
-				"px-2 pb-1 pt-1.5 text-meta font-semibold tracking-[-0.01em] text-faint",
-				className,
-			)}
+			className={cn(className)} {...stylex.props(sx.px2, sx.pb1, sx.pt15, typography.meta, sx.fontSemibold, sx.tracking001em, sx.textFaint)}
 		/>
 	);
 }
 
 function Separator({ className }: { className?: string }) {
-	return <BaseSelect.Separator className={cn("-mx-1.5 my-1.5 h-px bg-line", className)} />;
+	return <BaseSelect.Separator className={cn(className)} {...stylex.props(sx.Mx15, sx.my15, sx.hPx, sx.bgLine)} />;
 }
 
 export const Select = {

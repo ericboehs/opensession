@@ -130,6 +130,15 @@ const sx = stylex.create({
 	py25: {
 			paddingBlock: "10px"
 	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	roundedXl: {
+			borderRadius: "calc(18px * var(--rf))"
+	},
+	smoothShadowSoft: {
+			boxShadow: "0 3px 10px -3px var(--smooth-shadow-color), 0 20px 56px -16px var(--smooth-shadow-color)"
+	},
 });
 
 /**
@@ -208,10 +217,7 @@ export function SwipeCard<A extends string>({
 
 	return (
 		<motion.div
-			className={cn(
-				"flex touch-pan-y flex-col overflow-hidden rounded-xl bg-panel smooth-shadow-soft",
-				className,
-			)}
+			className={cn("touch-pan-y", className)} {...stylex.props(sx.flex, sx.flexCol, sx.overflowHidden, sx.roundedXl, sx.bgPanel, sx.smoothShadowSoft)}
 			style={{ x, rotate }}
 			drag="x"
 			dragConstraints={{ left: 0, right: 0 }}

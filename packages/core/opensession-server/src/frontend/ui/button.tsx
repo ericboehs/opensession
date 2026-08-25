@@ -323,10 +323,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 			<>
 				{icon != null && (
 					<span
-						className={cn(
-							"inline-flex shrink-0 items-center",
-							!iconOnly && iconDim[variant],
-						)}
+						className={cn(!iconOnly && iconDim[variant])} {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter)}
 					>
 						{icon}
 					</span>

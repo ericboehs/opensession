@@ -6,6 +6,58 @@ import {
 import { IconChevronLeft } from "../components/icons";
 import { Button, type ButtonProps } from "./button";
 import { cn } from "./cn";
+import { type as typography } from "../styles/typography.stylex";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	flex: {
+			display: "flex"
+	},
+	minW0: {
+			minWidth: "0"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap2: {
+			gap: "8px"
+	},
+	mlAuto: {
+			marginLeft: "auto"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	fontTitle: {
+			fontWeight: "var(--title-weight)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	size11: {
+			width: "44px",
+			height: "44px"
+	},
+	minH11: {
+			minHeight: "44px"
+	},
+	touchManipulation: {
+			touchAction: "manipulation"
+	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)"
+	},
+	bgPanel: {
+			backgroundColor: "var(--bg-panel)"
+	},
+	p0: {
+			padding: "0"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+});
 
 /**
  * Shared application top-bar structure. Feature bars keep their own position,
@@ -34,7 +86,7 @@ export const TopBarLeading = React.forwardRef<
 	return (
 		<div
 			ref={ref}
-			className={cn("flex min-w-0 items-center gap-2", className)}
+			className={cn(className)} {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}
 			{...props}
 		/>
 	);
@@ -44,7 +96,7 @@ export const TopBarTitle = React.forwardRef<
 	HTMLDivElement,
 	React.ComponentPropsWithoutRef<"div">
 >(function TopBarTitle({ className, ...props }, ref) {
-	return <div ref={ref} className={cn("min-w-0", className)} {...props} />;
+	return <div ref={ref} className={cn(className)} {...stylex.props(sx.minW0)} {...props} />;
 });
 
 export const TopBarActions = React.forwardRef<
@@ -54,7 +106,7 @@ export const TopBarActions = React.forwardRef<
 	return (
 		<div
 			ref={ref}
-			className={cn("ml-auto flex shrink-0 items-center", className)}
+			className={cn(className)} {...stylex.props(sx.mlAuto, sx.flex, sx.shrink0, sx.itemsCenter)}
 			{...props}
 		/>
 	);
@@ -90,7 +142,7 @@ export const PhoneTopBarTitle = React.forwardRef<
 	return (
 		<TopBarTitle
 			ref={ref}
-			className={cn("text-body font-title text-fg", className)}
+			className={cn(className)} {...stylex.props(typography.body, sx.fontTitle, sx.textFg)}
 			{...props}
 		/>
 	);
@@ -106,10 +158,7 @@ export const PhoneTopBarAction = React.forwardRef<
 			ref={ref}
 			variant="ghost"
 			size="md"
-			className={cn(
-				"size-11 min-h-11 shrink-0 touch-manipulation rounded-full bg-panel p-0 text-dim shadow-none hover:bg-pressed active:scale-[0.96] [&_svg]:size-6",
-				className,
-			)}
+			className={cn("shadow-none hover:bg-pressed active:scale-[0.96] [&_svg]:size-6", className)} {...stylex.props(sx.size11, sx.minH11, sx.shrink0, sx.touchManipulation, sx.roundedFull, sx.bgPanel, sx.p0, sx.textDim)}
 			{...props}
 		/>
 	);

@@ -60,13 +60,115 @@ const sx = stylex.create({
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"
 	},
+	wFull: {
+			width: "100%"
+	},
+	maxW720px: {
+			maxWidth: "720px"
+	},
+	mb5: {
+			marginBottom: "20px"
+	},
+	itemsStart: {
+			alignItems: "flex-start"
+	},
+	justifyBetween: {
+			justifyContent: "space-between"
+	},
+	gap4: {
+			gap: "16px"
+	},
+	px5: {
+			paddingInline: "20px"
+	},
+	mb2: {
+			marginBottom: "8px"
+	},
+	mt9: {
+			marginTop: "36px"
+	},
+	minH6: {
+			minHeight: "24px"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	gapX2: {
+			columnGap: "8px"
+	},
+	gapY15: {
+			rowGap: "6px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	overflowHidden: {
+			overflow: "hidden"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap3: {
+			gap: "12px"
+	},
+	mt2: {
+			marginTop: "8px"
+	},
+	h25: {
+			height: "10px"
+	},
+	p5: {
+			padding: "20px"
+	},
+	gapX4: {
+			columnGap: "16px"
+	},
+	gapY25: {
+			rowGap: "10px"
+	},
+	py4: {
+			paddingBlock: "16px"
+	},
+	flex1: {
+			flex: "1"
+	},
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
+	},
+	mt1: {
+			marginTop: "4px"
+	},
+	mlAuto: {
+			marginLeft: "auto"
+	},
+	mb3: {
+			marginBottom: "12px"
+	},
+	gap35: {
+			gap: "14px"
+	},
+	mb4: {
+			marginBottom: "16px"
+	},
+	grid: {
+			display: "grid"
+	},
+	gridCols2: {
+			gridTemplateColumns: "repeat(2,minmax(0,1fr))"
+	},
+	justifyEnd: {
+			justifyContent: "flex-end"
+	},
 });
 
 export function SettingsPanel({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("w-full max-w-[720px]", className)} {...props} />;
+	return <div className={cn(className)} {...stylex.props(sx.wFull, sx.maxW720px)} {...props} />;
 }
 
 /**
@@ -88,7 +190,7 @@ export function SettingsHeader({
 }) {
 	return (
 		<header
-			className={cn("mb-5 flex items-start justify-between gap-4 px-5", className)}
+			className={cn(className)} {...stylex.props(sx.mb5, sx.flex, sx.itemsStart, sx.justifyBetween, sx.gap4, sx.px5)}
 			{...props}
 		>
 			<div {...stylex.props(sx.minW0)}>
@@ -120,12 +222,7 @@ export function SettingsGroupLabel({
 }: React.ComponentPropsWithoutRef<"div"> & { actions?: React.ReactNode }) {
 	return (
 		<div
-			className={cn(
-				// mt-9: a group's card and the hint under it read as one block, so
-				// the space above the next label is what separates the groups.
-				"mb-2 mt-9 flex min-h-6 flex-wrap items-center justify-between gap-x-2 gap-y-1.5 px-5 text-label font-semibold text-faint",
-				className,
-			)}
+			className={cn(className)} {...stylex.props(sx.mb2, sx.mt9, sx.flex, sx.minH6, sx.flexWrap, sx.itemsCenter, sx.justifyBetween, sx.gapX2, sx.gapY15, sx.px5, typography.label, sx.fontSemibold, sx.textFaint)}
 			{...props}
 		>
 			<span {...stylex.props(sx.minW0)}>{children}</span>
@@ -196,12 +293,7 @@ export function SettingCard({
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
 		<Card
-			className={cn(
-				settingsSurface,
-				"overflow-hidden",
-				settingGroupRule,
-				className,
-			)}
+			className={cn(settingsSurface, settingGroupRule, className)} {...stylex.props(sx.overflowHidden)}
 			{...props}
 		/>
 	);
@@ -216,7 +308,7 @@ export function SettingGroup({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("flex flex-col", className)} {...props} />;
+	return <div className={cn(className)} {...stylex.props(sx.flex, sx.flexCol)} {...props} />;
 }
 
 /**
@@ -264,7 +356,7 @@ export function SettingCardSkeleton({
 		<Skeleton label={label} className={className} {...props}>
 			<SettingCard>
 				{GHOST_ROWS.slice(0, rows).map((row) => (
-					<SettingRow key={row.title} className={cn(icon !== undefined && "gap-3")}>
+					<SettingRow key={row.title} {...stylex.props(icon !== undefined && sx.gap3)}>
 						{icon !== undefined && (
 							// Inline size, like IconTile's own: the tile scale is a
 							// number a caller passes, not a step in the class scale.
@@ -275,7 +367,7 @@ export function SettingCardSkeleton({
 						)}
 						<SettingRowText>
 							<SkeletonBar className={row.title} />
-							<SkeletonBar className={cn("mt-2 h-2.5", row.description)} />
+							<SkeletonBar className={cn(row.description)} {...stylex.props(sx.mt2, sx.h25)} />
 						</SettingRowText>
 					</SettingRow>
 				))}
@@ -307,7 +399,7 @@ export function SettingsSection({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <Card className={cn(settingsSurface, "p-5", className)} {...props} />;
+	return <Card className={cn(settingsSurface, className)} {...stylex.props(sx.p5)} {...props} />;
 }
 
 /**
@@ -329,7 +421,7 @@ export function SettingRow({
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
 		<div
-			className={cn("flex flex-wrap items-center gap-x-4 gap-y-2.5 px-5 py-4", className)}
+			className={cn(className)} {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gapX4, sx.gapY25, sx.px5, sx.py4)}
 			{...props}
 		/>
 	);
@@ -339,14 +431,14 @@ export function SettingRowText({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("min-w-0 flex-1 max-sm:min-w-[55%]", className)} {...props} />;
+	return <div className={cn("max-sm:min-w-[55%]", className)} {...stylex.props(sx.minW0, sx.flex1)} {...props} />;
 }
 
 export function SettingRowTitle({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("text-item-title font-medium text-fg", className)} {...props} />;
+	return <div className={cn(className)} {...stylex.props(typography.itemTitle, sx.fontMedium, sx.textFg)} {...props} />;
 }
 
 export function SettingRowDescription({
@@ -356,7 +448,7 @@ export function SettingRowDescription({
 	return (
 		<div
 			data-setting-description=""
-			className={cn("mt-1 text-supporting text-dim", className)}
+			className={cn(className)} {...stylex.props(sx.mt1, typography.supporting, sx.textDim)}
 			{...props}
 		/>
 	);
@@ -366,7 +458,7 @@ export function SettingRowControl({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("ml-auto shrink-0", className)} {...props} />;
+	return <div className={cn(className)} {...stylex.props(sx.mlAuto, sx.shrink0)} {...props} />;
 }
 
 /**
@@ -401,7 +493,7 @@ export function SettingsHint({
 	return (
 		<div
 			data-settings-hint=""
-			className={cn("mt-2 px-5 text-supporting text-faint", className)}
+			className={cn(className)} {...stylex.props(sx.mt2, sx.px5, typography.supporting, sx.textFaint)}
 			{...props}
 		/>
 	);
@@ -428,7 +520,7 @@ export function SettingsForm({
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
 		<div
-			className={cn(settingsSurface, "mb-3 flex flex-col gap-3.5 p-5", className)}
+			className={cn(settingsSurface, className)} {...stylex.props(sx.mb3, sx.flex, sx.flexCol, sx.gap35, sx.p5)}
 			{...props}
 		/>
 	);
@@ -438,14 +530,14 @@ export function SettingsFormTitle({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("mb-4 text-item-title font-semibold text-fg", className)} {...props} />;
+	return <div className={cn(className)} {...stylex.props(sx.mb4, typography.itemTitle, sx.fontSemibold, sx.textFg)} {...props} />;
 }
 
 export function SettingsFormRow({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("grid grid-cols-2 gap-3 max-sm:grid-cols-1", className)} {...props} />;
+	return <div className={cn("max-sm:grid-cols-1", className)} {...stylex.props(sx.grid, sx.gridCols2, sx.gap3)} {...props} />;
 }
 
 export function SettingsField({
@@ -454,7 +546,7 @@ export function SettingsField({
 }: React.ComponentPropsWithoutRef<"label">) {
 	return (
 		<label
-			className={cn("mb-3 flex min-w-0 flex-col gap-1.5 text-label font-medium text-dim", className)}
+			className={cn(className)} {...stylex.props(sx.mb3, sx.flex, sx.minW0, sx.flexCol, sx.gap15, typography.label, sx.fontMedium, sx.textDim)}
 			{...props}
 		/>
 	);
@@ -470,5 +562,5 @@ export function SettingsFormActions({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("mt-1 flex justify-end gap-2", className)} {...props} />;
+	return <div className={cn(className)} {...stylex.props(sx.mt1, sx.flex, sx.justifyEnd, sx.gap2)} {...props} />;
 }

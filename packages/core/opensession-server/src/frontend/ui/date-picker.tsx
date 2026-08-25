@@ -133,6 +133,93 @@ const sx = stylex.create({
 	placeItemsCenter: {
 			placeItems: "center"
 	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	roundedLg: {
+			borderRadius: "calc(14px * var(--rf))"
+	},
+	bgHover: {
+			backgroundColor: "var(--hover)"
+	},
+	p05: {
+			padding: "2px"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	roundedControl: {
+			borderRadius: "calc(12px * var(--rf))"
+	},
+	py1: {
+			paddingBlock: "4px"
+	},
+	pr25: {
+			paddingRight: "10px"
+	},
+	pl15: {
+			paddingLeft: "6px"
+	},
+	whitespaceNowrap: {
+			whiteSpace: "nowrap"
+	},
+	transitionColors: {
+			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+			transitionTimingFunction: "var(--tw-ease,var(--ease))",
+			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+	durationVarDurMicro: {
+			transitionDuration: "var(--dur-micro)"
+	},
+	easeVarEase: {
+			transitionTimingFunction: "var(--ease)"
+	},
+	focusRing: {
+			":focus-visible": {
+					outline: "2px solid var(--accent-ink)",
+					outlineOffset: "2px"
+			}
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	pointerEventsNone: {
+			pointerEvents: "none"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	insetX0: {
+			insetInline: "0"
+	},
+	insetY05: {
+			insetBlock: "2px"
+	},
+	bgAccentSoft: {
+			backgroundColor: "var(--accent-soft)"
+	},
+	roundedLMd: {
+			borderTopLeftRadius: "calc(7px * var(--rf))",
+			borderBottomLeftRadius: "calc(7px * var(--rf))"
+	},
+	roundedRMd: {
+			borderTopRightRadius: "calc(7px * var(--rf))",
+			borderBottomRightRadius: "calc(7px * var(--rf))"
+	},
+	h8: {
+			height: "32px"
+	},
+	roundedMd: {
+			borderRadius: "calc(7px * var(--rf))"
+	},
+	ringLineStrong: {},
+	ringInset: {},
+	bgAccent: {
+			backgroundColor: "var(--accent)"
+	},
+	textOnAccent: {
+			color: "var(--on-accent)"
+	},
 });
 
 /**
@@ -221,7 +308,7 @@ export function DateRangeField({
 		<div
 			role="group"
 			aria-label={label}
-			className={cn("inline-flex items-center rounded-lg bg-hover p-0.5", className)}
+			className={cn(className)} {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.roundedLg, sx.bgHover, sx.p05)}
 		>
 			{presetsOnTrack && (
 				<>
@@ -255,18 +342,7 @@ export function DateRangeField({
 					// the spoken one: a bare "Date range, button" says nothing about
 					// what is being charted.
 					aria-label={`${label}, ${rangeLabel}`}
-					className={cn(
-						"relative inline-flex cursor-pointer select-none items-center",
-						// The glyph's side is pulled in by the whitespace it carries,
-						// the way ui/button balances a leading icon.
-						"rounded-control py-1 pr-2.5 pl-1.5",
-						"text-control-label font-medium whitespace-nowrap",
-						"transition-colors duration-[var(--dur-micro)] ease-[var(--ease)] focus-ring",
-						// Phones get the tap box the options beside it take.
-						"phone:py-2 phone:pr-3 phone:pl-2.5 phone:text-item-title",
-						rangeWearsKnob ? "text-fg" : "text-dim hover:text-fg",
-						"data-[popup-open]:text-fg",
-					)}
+					className={cn("select-none", "phone:py-2 phone:pr-3 phone:pl-2.5 phone:text-item-title", rangeWearsKnob ? "" : "hover:text-fg", "data-[popup-open]:text-fg")} {...stylex.props(sx.relative, sx.inlineFlex, sx.cursorPointer, sx.itemsCenter, sx.roundedControl, sx.py1, sx.pr25, sx.pl15, typography.controlLabel, sx.fontMedium, sx.whitespaceNowrap, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase, sx.focusRing, rangeWearsKnob && sx.textFg, !(rangeWearsKnob) && sx.textDim)}
 				>
 					{rangeWearsKnob && <SegmentedKnob knobId={knobId} />}
 					{/* Above the knob, which fills the option. */}
@@ -665,11 +741,7 @@ function Day({
 			{span && (
 				<span
 					aria-hidden
-					className={cn(
-						"pointer-events-none absolute inset-x-0 inset-y-0.5 bg-accent-soft",
-						span.open && "rounded-l-md",
-						span.close && "rounded-r-md",
-					)}
+					{...stylex.props(sx.pointerEventsNone, sx.absolute, sx.insetX0, sx.insetY05, sx.bgAccentSoft, span.open && sx.roundedLMd, span.close && sx.roundedRMd)}
 				/>
 			)}
 			<button
@@ -685,19 +757,7 @@ function Day({
 				onClick={() => onPick(day)}
 				onPointerEnter={onPreview}
 				onFocus={onFocus}
-				className={cn(
-					"relative grid h-8 w-full cursor-pointer place-items-center rounded-md",
-					"text-control-label tabular-nums phone:h-11 phone:text-item-title",
-					"transition-[color,background-color] duration-[var(--dur-micro)] ease-[var(--ease)]",
-					"focus-ring text-fg",
-					// Today is marked by an edge rather than a fill: a second filled
-					// day in the month would compete with the ends of the range.
-					today && !selected && "font-semibold ring-1 ring-line-strong ring-inset",
-					selected
-						? "bg-accent font-semibold text-on-accent hover:bg-accent-hover"
-						: "hover:bg-hover",
-					"disabled:cursor-default disabled:text-faint disabled:opacity-45 disabled:hover:bg-transparent",
-				)}
+				className={cn("tabular-nums phone:h-11 phone:text-item-title", "transition-[color,background-color]", today && !selected && "ring-1", selected ? "hover:bg-accent-hover" : "hover:bg-hover", "disabled:cursor-default disabled:text-faint disabled:opacity-45 disabled:hover:bg-transparent")} {...stylex.props(sx.relative, sx.grid, sx.h8, sx.wFull, sx.cursorPointer, sx.placeItemsCenter, sx.roundedMd, typography.controlLabel, sx.durationVarDurMicro, sx.easeVarEase, sx.focusRing, sx.textFg, today && !selected && sx.fontSemibold, today && !selected && sx.ringLineStrong, today && !selected && sx.ringInset, selected && sx.bgAccent, selected && sx.fontSemibold, selected && sx.textOnAccent)}
 			>
 				{dayOfMonth(day)}
 			</button>
