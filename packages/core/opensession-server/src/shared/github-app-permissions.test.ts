@@ -41,6 +41,8 @@ describe("github app permission sets", () => {
 		// checks:read is required for check runs;
 		// issues+pull_requests+contents:write are the agent's write path.
 		expect(GITHUB_APP_GRANT_PERMISSIONS.checks).toBe("read");
+		// statusCheckRollup traverses CheckSuite.workflowRun, which is Actions-gated.
+		expect(GITHUB_APP_READ_PERMISSIONS.actions).toBe("read");
 		expect(GITHUB_APP_GRANT_PERMISSIONS.issues).toBe("write");
 		expect(GITHUB_APP_GRANT_PERMISSIONS.pull_requests).toBe("write");
 		expect(GITHUB_APP_GRANT_PERMISSIONS.contents).toBe("write");
