@@ -38,6 +38,756 @@
  */
 
 import { RAIL_GUTTER_CLASS } from "./message-rail";
+import * as stylex from "@stylexjs/stylex";
+import { mergeStylexClassName } from "../ui/cn";
+import { type as typography } from "../styles/typography.stylex";
+
+const sx = stylex.create({
+	flex: {
+		"display": "flex"
+	},
+	hVarDesktopHeaderH: {
+		"height": "var(--desktop-header-h)"
+	},
+	minW0: {
+		"minWidth": "0"
+	},
+	shrink0: {
+		"flexShrink": "0"
+	},
+	itemsCenter: {
+		"alignItems": "center"
+	},
+	justifyBetween: {
+		"justifyContent": "space-between"
+	},
+	gap3: {
+		"gap": "12px"
+	},
+	bgSurface: {
+		"backgroundColor": "var(--bg)"
+	},
+	px4: {
+		"paddingInline": "16px"
+	},
+	gap25: {
+		"gap": "10px"
+	},
+	fontMedium: {
+		"--tw-font-weight": "var(--font-weight-medium)",
+		"fontWeight": "var(--font-weight-medium)"
+	},
+	phoneHidden: {
+		"@media (max-width: 720px)": {
+			"display": "none"
+		}
+	},
+	maxW420px: {
+		"maxWidth": "420px"
+	},
+	TranslateYPx: {
+		"--tw-translate-y": "-1px",
+		"translate": "var(--tw-translate-x) var(--tw-translate-y)"
+	},
+	selectText: {
+		"WebkitUserSelect": "text",
+		"userSelect": "text"
+	},
+	overflowHidden: {
+		"overflow": "hidden"
+	},
+	whitespaceNowrap: {
+		"whiteSpace": "nowrap"
+	},
+	WebkitTouchCalloutDefault: {
+		"WebkittouchCallout": "default"
+	},
+	Mx2: {
+		"marginInline": "-8px"
+	},
+	My5px: {
+		"marginBlock": "-5px"
+	},
+	maxW240px: {
+		"maxWidth": "240px"
+	},
+	shrink: {
+		"flexShrink": "1"
+	},
+	cursorPointer: {
+		"cursor": "pointer"
+	},
+	textEllipsis: {
+		"textOverflow": "ellipsis"
+	},
+	roundedCalc6pxVarRf: {
+		"borderRadius": "calc(6px * var(--rf))"
+	},
+	px2: {
+		"paddingInline": "8px"
+	},
+	py5px: {
+		"paddingBlock": "5px"
+	},
+	textDim: {
+		"color": "var(--text-dim)"
+	},
+	transitionColors: {
+		"transitionProperty": "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	durationVarDurMicro: {
+		"--tw-duration": "var(--dur-micro)",
+		"transitionDuration": "var(--dur-micro)"
+	},
+	easeVarEase: {
+		"--tw-ease": "var(--ease)",
+		"transitionTimingFunction": "var(--ease)"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	cursorText: {
+		"cursor": "text"
+	},
+	my2px: {
+		"marginBlock": "-2px"
+	},
+	maxW280px: {
+		"maxWidth": "280px"
+	},
+	roundedCalc8pxVarRf: {
+		"borderRadius": "calc(8px * var(--rf))"
+	},
+	border: {
+		"borderStyle": "var(--tw-border-style)",
+		"borderWidth": "1px"
+	},
+	borderAccent: {
+		"borderColor": "var(--accent)"
+	},
+	px1: {
+		"paddingInline": "4px"
+	},
+	pyPx: {
+		"paddingBlock": "1px"
+	},
+	fontInherit: {
+		"fontFamily": "inherit"
+	},
+	textInherit: {
+		"color": "inherit"
+	},
+	outlineNone: {
+		"--tw-outline-style": "none",
+		"outlineStyle": "none"
+	},
+	relative: {
+		"position": "relative"
+	},
+	z1: {
+		"zIndex": "1"
+	},
+	gap05: {
+		"gap": "2px"
+	},
+	phoneJustifyEnd: {
+		"@media (max-width: 720px)": {
+			"justifyContent": "flex-end"
+		}
+	},
+	mx15: {
+		"marginInline": "6px"
+	},
+	Ml2: {
+		"marginLeft": "-8px"
+	},
+	mr15: {
+		"marginRight": "6px"
+	},
+	roundedControl: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	borderLineStrong: {
+		"borderColor": "var(--border-strong)"
+	},
+	px11px: {
+		"paddingInline": "11px"
+	},
+	fontSemibold: {
+		"--tw-font-weight": "var(--font-weight-semibold)",
+		"fontWeight": "var(--font-weight-semibold)"
+	},
+	noUnderline: {
+		"textDecorationLine": "none"
+	},
+	phoneInlineFlex: {
+		"@media (max-width: 720px)": {
+			"display": "inline-flex"
+		}
+	},
+	phoneMinH11: {
+		"@media (max-width: 720px)": {
+			"minHeight": "44px"
+		}
+	},
+	phoneItemsCenter: {
+		"@media (max-width: 720px)": {
+			"alignItems": "center"
+		}
+	},
+	phonePy7px: {
+		"@media (max-width: 720px)": {
+			"paddingBlock": "7px"
+		}
+	},
+	phoneTextLabel: {
+		"@media (max-width: 720px)": {
+			"fontSize": "var(--type-label)"
+		}
+	},
+	text7b86e8: {
+		"color": "#7b86e8"
+	},
+	text5eead4: {
+		"color": "#5eead4"
+	},
+	inlineFlex: {
+		"display": "inline-flex"
+	},
+	gap15: {
+		"gap": "6px"
+	},
+	minH0: {
+		"minHeight": "0"
+	},
+	flex1: {
+		"flex": "1"
+	},
+	flexCol: {
+		"flexDirection": "column"
+	},
+	overflowXHidden: {
+		"overflowX": "hidden"
+	},
+	overflowYAuto: {
+		"overflowY": "auto"
+	},
+	overscrollContain: {
+		"overscrollBehavior": "contain"
+	},
+	OverflowAnchorAuto: {
+		"overflowAnchor": "auto"
+	},
+	px5: {
+		"paddingInline": "20px"
+	},
+	pt0: {
+		"paddingTop": "0"
+	},
+	desktopPt3: {
+		"@media (min-width: 721px)": {
+			"paddingTop": "12px"
+		}
+	},
+	phonePx3: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "12px"
+		}
+	},
+	mtCalc1VarSessionUnder: {
+		"marginTop": "calc(-1 * var(--session-under))"
+	},
+	pt1: {
+		"paddingTop": "4px"
+	},
+	pb35: {
+		"paddingBottom": "14px"
+	},
+	wFull: {
+		"width": "100%"
+	},
+	maxWCalcVarSessionCol40px: {
+		"maxWidth": "calc(var(--session-col) + 40px)"
+	},
+	justifyEnd: {
+		"justifyContent": "flex-end"
+	},
+	pr5: {
+		"paddingRight": "20px"
+	},
+	phoneFlexCol: {
+		"@media (max-width: 720px)": {
+			"flexDirection": "column"
+		}
+	},
+	phoneGap2: {
+		"@media (max-width: 720px)": {
+			"gap": "8px"
+		}
+	},
+	phonePr0: {
+		"@media (max-width: 720px)": {
+			"paddingRight": "0"
+		}
+	},
+	desktopGrid: {
+		"@media (min-width: 721px)": {
+			"display": "grid"
+		}
+	},
+	pointerEventsNone: {
+		"pointerEvents": "none"
+	},
+	absolute: {
+		"position": "absolute"
+	},
+	insetX0: {
+		"insetInline": "0"
+	},
+	bottomFull: {
+		"bottom": "100%"
+	},
+	justifyCenter: {
+		"justifyContent": "center"
+	},
+	pb15: {
+		"paddingBottom": "6px"
+	},
+	SuggestionsUnder34px: {
+		"--suggestions-under": "34px"
+	},
+	SuggestionsUnder38px: {
+		"--suggestions-under": "38px"
+	},
+	SuggestionsUnder46px: {
+		"--suggestions-under": "46px"
+	},
+	phoneSuggestionsUnder54px: {
+		"@media (max-width: 720px)": {
+			"--suggestions-under": "54px"
+		}
+	},
+	phoneSuggestionsUnder90px: {
+		"@media (max-width: 720px)": {
+			"--suggestions-under": "90px"
+		}
+	},
+	My1: {
+		"marginBlock": "-4px"
+	},
+	Ml1: {
+		"marginLeft": "-4px"
+	},
+	py1: {
+		"paddingBlock": "4px"
+	},
+	pr1: {
+		"paddingRight": "4px"
+	},
+	pl19px: {
+		"paddingLeft": "19px"
+	},
+	phonePl17px: {
+		"@media (max-width: 720px)": {
+			"paddingLeft": "17px"
+		}
+	},
+	phonePl10px: {
+		"@media (max-width: 720px)": {
+			"paddingLeft": "10px"
+		}
+	},
+	flexWrap: {
+		"flexWrap": "wrap"
+	},
+	gap2: {
+		"gap": "8px"
+	},
+	borderB: {
+		"borderBottomStyle": "var(--tw-border-style)",
+		"borderBottomWidth": "1px"
+	},
+	borderDivider: {
+		"borderColor": "var(--divider)"
+	},
+	bgRaised: {
+		"backgroundColor": "var(--bg-raised)"
+	},
+	py7px: {
+		"paddingBlock": "7px"
+	},
+	maxWFull: {
+		"maxWidth": "100%"
+	},
+	roundedFull: {
+		"borderRadius": "3.40282e38px"
+	},
+	borderLine: {
+		"borderColor": "var(--border)"
+	},
+	bgPanel: {
+		"backgroundColor": "var(--bg-panel)"
+	},
+	px3: {
+		"paddingInline": "12px"
+	},
+	py3px: {
+		"paddingBlock": "3px"
+	},
+	minH8: {
+		"minHeight": "32px"
+	},
+	rounded999px: {
+		"borderRadius": "999px"
+	},
+	pr35: {
+		"paddingRight": "14px"
+	},
+	pl25: {
+		"paddingLeft": "10px"
+	},
+	textFg: {
+		"color": "var(--text)"
+	},
+	SmoothRingColorVarPopupRing: {
+		"--smooth-ring-color": "var(--popup-ring)"
+	},
+	transitionScale: {
+		"transitionProperty": "scale",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	beforePointerEventsNone: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"pointerEvents": "none"
+		}
+	},
+	beforeAbsolute: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	beforeInset0: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"inset": "0"
+		}
+	},
+	beforeRoundedInherit: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"borderRadius": "inherit"
+		}
+	},
+	beforeCornerShapeInherit: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"cornerShape": "inherit"
+		}
+	},
+	beforeBgTransparent: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"backgroundColor": "#0000"
+		}
+	},
+	beforeTransitionColors: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"transitionProperty": "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+		}
+	},
+	beforeContent: {
+		"::before": {
+			"--tw-content": "\"\"",
+			"content": "var(--tw-content)"
+		}
+	},
+	afterAbsolute: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	afterContent: {
+		"::after": {
+			"--tw-content": "\"\"",
+			"content": "var(--tw-content)"
+		}
+	},
+	hoverBeforeBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"::before": {
+					"content": "var(--tw-content)",
+					"backgroundColor": "var(--hover)"
+				}
+			}
+		}
+	},
+	focusVisibleOutline2: {
+		":focusVisible": {
+			"outlineStyle": "var(--tw-outline-style)",
+			"outlineWidth": "2px"
+		}
+	},
+	focusVisibleOutlineOffset2: {
+		":focusVisible": {
+			"outlineOffset": "2px"
+		}
+	},
+	focusVisibleOutlineFg: {
+		":focusVisible": {
+			"outlineColor": "var(--text)"
+		}
+	},
+	activeScale096: {
+		":active": {
+			"scale": ".96"
+		}
+	},
+	size8: {
+		"width": "32px",
+		"height": "32px"
+	},
+	bgPopupGlass: {
+		"backgroundColor": "var(--popup-glass)"
+	},
+	BackdropFilterVarPopupBlur: {
+		"WebkitBackdropFilter": "var(--popup-blur)",
+		"backdropFilter": "var(--popup-blur)"
+	},
+	size3: {
+		"width": "12px",
+		"height": "12px"
+	},
+	animateSpin: {
+		"animation": "var(--animate-spin)"
+	},
+	borderCurrent25: {
+		"borderColor": "currentColor",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in oklab, currentcolor 25%, transparent)"
+		}
+	},
+	borderTCurrent: {
+		"borderTopColor": "currentColor"
+	},
+	phoneTransitionPropertyTransform: {
+		"@media (max-width: 720px)": {
+			"transitionProperty": "transform"
+		}
+	},
+	phoneDurationVarDurLg: {
+		"@media (max-width: 720px)": {
+			"--tw-duration": "var(--dur-lg)",
+			"transitionDuration": "var(--dur-lg)"
+		}
+	},
+	phoneEaseVarEase: {
+		"@media (max-width: 720px)": {
+			"--tw-ease": "var(--ease)",
+			"transitionTimingFunction": "var(--ease)"
+		}
+	},
+	fixed: {
+		"position": "fixed"
+	},
+	inset0: {
+		"inset": "0"
+	},
+	z60: {
+		"zIndex": "60"
+	},
+	AnimationSessionInfoInVarDurVarEase: {
+		"animation": "session-info-in var(--dur) var(--ease)"
+	},
+	sticky: {
+		"position": "sticky"
+	},
+	top0: {
+		"top": "0"
+	},
+	z4: {
+		"zIndex": "4"
+	},
+	pb0: {
+		"paddingBottom": "0"
+	},
+	TransitionBackgroundColorVarDurVarEase: {
+		"transition": "background-color var(--dur) var(--ease)"
+	},
+	backdropBlur18px: {
+		"--tw-backdrop-blur": "blur(18px)",
+		"WebkitBackdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)",
+		"backdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+	},
+	backdropSaturate135: {
+		"--tw-backdrop-saturate": "saturate(1.35)",
+		"WebkitBackdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)",
+		"backdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+	},
+	bgTransparent: {
+		"backgroundColor": "#0000"
+	},
+	right14: {
+		"right": "56px"
+	},
+	bottom0: {
+		"bottom": "0"
+	},
+	left14: {
+		"left": "56px"
+	},
+	block: {
+		"display": "block"
+	},
+	h52px: {
+		"height": "52px"
+	},
+	textCenter: {
+		"textAlign": "center"
+	},
+	leading52px: {
+		"--tw-leading": "52px",
+		"lineHeight": "52px"
+	},
+	tracking001em: {
+		"--tw-tracking": "-.01em",
+		"letterSpacing": "-.01em"
+	},
+	opacity100: {
+		"opacity": "1"
+	},
+	TransformTranslateY0: {
+		"transform": "translateY(0)"
+	},
+	opacity0: {
+		"opacity": "0"
+	},
+	TransformTranslateY5px: {
+		"transform": "translateY(5px)"
+	},
+	gap0: {
+		"gap": "0"
+	},
+	pt05: {
+		"paddingTop": "2px"
+	},
+	pb5: {
+		"paddingBottom": "20px"
+	},
+	mt9px: {
+		"marginTop": "9px"
+	},
+	leading12: {
+		"--tw-leading": "1.2",
+		"lineHeight": "1.2"
+	},
+	tracking002em: {
+		"--tw-tracking": "-.02em",
+		"letterSpacing": "-.02em"
+	},
+	breakWords: {
+		"overflowWrap": "break-word"
+	},
+	minH11: {
+		"minHeight": "44px"
+	},
+	gapX1: {
+		"columnGap": "4px"
+	},
+	px6: {
+		"paddingInline": "24px"
+	},
+	mx3: {
+		"marginInline": "12px"
+	},
+	mb3: {
+		"marginBottom": "12px"
+	},
+	roundedLg: {
+		"borderRadius": "calc(14px * var(--rf))"
+	},
+	minH320px: {
+		"minHeight": "320px"
+	},
+	pb2: {
+		"paddingBottom": "8px"
+	},
+	mt2: {
+		"marginTop": "8px"
+	},
+	mt4: {
+		"marginTop": "16px"
+	},
+	grid: {
+		"display": "grid"
+	},
+	gap5px: {
+		"gap": "5px"
+	},
+	textFaint: {
+		"color": "var(--text-faint)"
+	},
+	gapPx: {
+		"gap": "1px"
+	},
+	p1: {
+		"padding": "4px"
+	},
+	rounded2xl: {
+		"borderRadius": "calc(22px * var(--rf))"
+	},
+	p2: {
+		"padding": "8px"
+	},
+	pt4: {
+		"paddingTop": "16px"
+	},
+
+	bgPopup: {
+		"backgroundColor": "var(--popup-surface)"
+	},
+	afterInset1: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"inset": "-4px"
+		}
+	},
+	afterInset15: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"inset": "-6px"
+		}
+	},
+	top3: {
+		"top": "12px"
+	},
+	left12: {
+		"left": "50%"
+	},
+	z5: {
+		"zIndex": "5"
+	},
+});
 
 /* ── Top bar ────────────────────────────────────────────────────────────── */
 
@@ -57,8 +807,8 @@ import { RAIL_GUTTER_CLASS } from "./message-rail";
  * rests on.
  */
 export const VIEWER_HEADER =
-	"viewer-header wco-chrome flex h-[var(--desktop-header-h)] min-w-0 shrink-0 items-center justify-between gap-3 " +
-	"bg-surface px-4 " +
+	mergeStylexClassName("viewer-header wco-chrome", sx.flex, sx.hVarDesktopHeaderH, sx.minW0, sx.shrink0, sx.itemsCenter, sx.justifyBetween, sx.gap3) + " " +
+	mergeStylexClassName("", sx.bgSurface, sx.px4) +
 	// Collapsed desktop sidebar: the floating re-open + nav cluster overlays the
 	// pane's left edge, so the row's text starts past it.
 	"desktop:[.app-body.sidebar-collapsed_&]:pl-[148px] " +
@@ -71,7 +821,7 @@ export const VIEWER_HEADER =
 /** Workspace name + origin chip + status. Hidden on phones, where the ⋯ menu
  *  carries what it holds. */
 export const VIEWER_TITLE =
-	"flex min-w-0 items-center gap-2.5 font-medium phone:hidden";
+	mergeStylexClassName("", sx.flex, sx.minW0, sx.itemsCenter, sx.gap25, sx.fontMedium, sx.phoneHidden);
 
 /**
  * The workspace name. Capped so a long one clips instead of eating the whole
@@ -80,8 +830,8 @@ export const VIEWER_TITLE =
  * stays selectable and copyable.
  */
 export const VIEWER_BRANCH =
-	"min-w-0 max-w-[420px] -translate-y-px select-text overflow-hidden whitespace-nowrap text-item-title " +
-	"[-webkit-touch-callout:default] " +
+	mergeStylexClassName("", sx.minW0, sx.maxW420px, sx.TranslateYPx, sx.selectText, sx.overflowHidden, sx.whitespaceNowrap, typography.itemTitle) + " " +
+	mergeStylexClassName("", sx.WebkitTouchCalloutDefault) + " " +
 	"[html.wco_&]:[-webkit-app-region:no-drag] [html.wco_&]:[app-region:no-drag] " +
 	"[html.desktop-shell_&]:[-webkit-app-region:no-drag] [html.desktop-shell_&]:[app-region:no-drag]";
 
@@ -92,18 +842,18 @@ export const VIEWER_BRANCH =
  * precedes, since the name is what the bar is about.
  */
 export const VIEWER_CRUMB_UP =
-	"-mx-2 -my-[5px] max-w-[240px] shrink cursor-pointer overflow-hidden text-ellipsis rounded-[calc(6px*var(--rf))] px-2 py-[5px] " +
-	"text-label font-medium text-dim transition-colors duration-[var(--dur-micro)] ease-[var(--ease)] " +
-	"hover:bg-hover hover:text-fg";
+	mergeStylexClassName("", sx.Mx2, sx.My5px, sx.maxW240px, sx.shrink, sx.cursorPointer, sx.overflowHidden, sx.textEllipsis, sx.roundedCalc6pxVarRf, sx.px2, sx.py5px) + " " +
+	mergeStylexClassName("", typography.label, sx.fontMedium, sx.textDim, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase) + " " +
+	mergeStylexClassName("", sx.hoverBgHover, sx.hoverTextFg);
 
 /** Double-clickable to rename — hinted on hover without shifting the row. */
 export const VIEWER_BRANCH_EDITABLE =
-	"-mx-2 -my-[5px] cursor-text rounded-[calc(6px*var(--rf))] px-2 py-[5px] hover:bg-hover";
+	mergeStylexClassName("", sx.Mx2, sx.My5px, sx.cursorText, sx.roundedCalc6pxVarRf, sx.px2, sx.py5px, sx.hoverBgHover);
 
 /** Inline rename input, sized to sit in place of the name. */
 export const VIEWER_BRANCH_RENAME =
-	"my-[-2px] min-w-0 max-w-[280px] rounded-[calc(8px*var(--rf))] border border-accent bg-surface " +
-	"px-1 py-px font-[inherit] text-item-title text-[inherit] outline-none";
+	mergeStylexClassName("", sx.my2px, sx.minW0, sx.maxW280px, sx.roundedCalc8pxVarRf, sx.border, sx.borderAccent, sx.bgSurface) + " " +
+	mergeStylexClassName("", sx.px1, sx.pyPx, sx.fontInherit, typography.itemTitle, sx.textInherit, sx.outlineNone);
 
 /**
  * The trailing controls. Icon buttons sit in a tight cluster so they read as
@@ -117,7 +867,7 @@ export const VIEWER_HEADER_ACTIONS =
 	// The tab strip overlaps the header's lower edge to tighten the two rows.
 	// Keep every header action above that overlap so its bottom edge and hit area
 	// remain intact.
-	"viewer-header-actions pwa-header-actions relative z-[1] flex shrink-0 items-center gap-0.5 phone:justify-end " +
+	mergeStylexClassName("viewer-header-actions pwa-header-actions", sx.relative, sx.z1, sx.flex, sx.shrink0, sx.itemsCenter, sx.gap05, sx.phoneJustifyEnd) +
 	// Phones give every control in the row a 44px touch target. Keyed off the
 	// row rather than written on each control because these are shared
 	// primitives (Button, and the source links below). A descendant selector also
@@ -130,7 +880,7 @@ export const VIEWER_HEADER_ACTIONS =
 /** The presence facepile (Figma/Notion-style), just before Share. Labelled
  *  items in the row space themselves off the icon cluster; the icons keep the
  *  row's tight 2px gap. */
-export const VIEWER_PRESENCE = "mx-1.5 flex items-center";
+export const VIEWER_PRESENCE = mergeStylexClassName("", sx.mx15, sx.flex, sx.itemsCenter);
 
 /**
  * One face in it. They overlap by 8px so the pile reads as a stack, and the
@@ -143,7 +893,7 @@ export const VIEWER_PRESENCE = "mx-1.5 flex items-center";
  * than reintroduced here, which would be a visual change dressed up as a
  * migration.
  */
-export const VIEWER_PRESENCE_AVATAR = "-ml-2 first:ml-0";
+export const VIEWER_PRESENCE_AVATAR = mergeStylexClassName("first:ml-0", sx.Ml2);
 
 /**
  * The Linear / Plain / feed links in the header: quiet outlined pills that
@@ -156,8 +906,8 @@ export const VIEWER_PRESENCE_AVATAR = "-ml-2 first:ml-0";
  * for and swapping in one would be a redesign.
  */
 export const SESSION_LINK =
-	"session-link mr-1.5 rounded-control border border-line-strong px-[11px] py-[5px] " +
-	"text-label font-semibold text-dim no-underline " +
+	mergeStylexClassName("session-link", sx.mr15, sx.roundedControl, sx.border, sx.borderLineStrong, sx.px11px, sx.py5px) + " " +
+	mergeStylexClassName("", typography.label, sx.fontSemibold, sx.textDim, sx.noUnderline) +
 	// Phones give it the same 44px touch target as the buttons beside it. These
 	// sit on the link rather than on the row, where the buttons' copy lives,
 	// because this is the element's own styling and nothing else wears the class
@@ -165,13 +915,13 @@ export const SESSION_LINK =
 	// 11px sides are already the resting value. A `phone:` variant beats the
 	// unprefixed `py-[5px]` and `text-label` on the same element because Tailwind
 	// emits every breakpoint variant after the unprefixed utilities.
-	"phone:inline-flex phone:min-h-11 phone:items-center phone:py-[7px] phone:text-label";
-export const SESSION_LINK_LINEAR = "border-[rgba(94,106,210,0.5)] text-[#7b86e8]";
-export const SESSION_LINK_PLAIN = "border-[rgba(13,148,136,0.5)] text-[#5eead4]";
+	mergeStylexClassName("", sx.phoneInlineFlex, sx.phoneMinH11, sx.phoneItemsCenter, sx.phonePy7px, sx.phoneTextLabel);
+export const SESSION_LINK_LINEAR = mergeStylexClassName("border-[rgba(94,106,210,0.5)]", sx.text7b86e8);
+export const SESSION_LINK_PLAIN = mergeStylexClassName("border-[rgba(13,148,136,0.5)]", sx.text5eead4);
 
 /** ⋯ overflow: the secondary actions collapse into the shared Menu popup when
  *  they would otherwise crowd the title. */
-export const VIEWER_OVERFLOW = "relative inline-flex";
+export const VIEWER_OVERFLOW = mergeStylexClassName("", sx.relative, sx.inlineFlex);
 
 /**
  * A rule between two groups of the ⋯ menu. Most of that menu is conditional, so
@@ -185,7 +935,7 @@ export const VIEWER_OVERFLOW = "relative inline-flex";
 export const VIEWER_MENU_SEP =
 	"session-menu-sep first:hidden [.session-menu-sep+&]:hidden";
 
-export const VIEWER_DELETE_CONFIRM = "flex gap-1.5";
+export const VIEWER_DELETE_CONFIRM = mergeStylexClassName("", sx.flex, sx.gap15);
 
 /* ── Panes ──────────────────────────────────────────────────────────────── */
 
@@ -196,7 +946,7 @@ export const VIEWER_DELETE_CONFIRM = "flex gap-1.5";
  * bar, so it is pushed below them instead.
  */
 export const VIEWER_REVIEW_MAIN =
-	"flex min-h-0 flex-1 flex-col " +
+	mergeStylexClassName("", sx.flex, sx.minH0, sx.flex1, sx.flexCol) + " " +
 	"phone:pt-[calc(var(--pane-header-h)+var(--strip-clearance,0px))]";
 
 /* ── Transcript ─────────────────────────────────────────────────────────── */
@@ -213,7 +963,7 @@ export const VIEWER_REVIEW_MAIN =
  * VIEWER_MESSAGES), where the chrome overlays the content instead of sitting
  * above it.
  */
-export const VIEWER_MESSAGES_REGION = "relative flex min-h-0 flex-1 flex-col";
+export const VIEWER_MESSAGES_REGION = mergeStylexClassName("", sx.relative, sx.flex, sx.minH0, sx.flex1, sx.flexCol);
 
 /**
  * The scroll container.
@@ -236,9 +986,9 @@ export const VIEWER_MESSAGES_REGION = "relative flex min-h-0 flex-1 flex-col";
  * session column by SessionViewer, sized by SUGGESTIONS_CLEARANCE).
  */
 export const VIEWER_MESSAGES =
-	"viewer-messages flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-contain " +
+	mergeStylexClassName("viewer-messages", sx.flex, sx.minH0, sx.flex1, sx.flexCol, sx.overflowXHidden, sx.overflowYAuto, sx.overscrollContain) +
 	// Keep the reader's place when content loads or expands above them.
-	"[overflow-anchor:auto] px-5 pt-0 " +
+	mergeStylexClassName("", sx.OverflowAnchorAuto, sx.px5, sx.pt0) + " " +
 	"pb-[calc(var(--session-under)_+_var(--suggestions-under,0px)_+_16px)] " +
 	// A focused phone composer is fixed and no longer reserves flow height,
 	// while the transcript's layout viewport still extends behind the keyboard.
@@ -253,11 +1003,11 @@ export const VIEWER_MESSAGES =
 	// than against it, and so a tab strip's baseline rule (the only line that
 	// still sits above the transcript) has nothing resting on it. Only at rest:
 	// scrolled content still runs right up under the chrome.
-	"desktop:pt-3 " +
+	mergeStylexClassName("", sx.desktopPt3) +
 	// Phone: clear the floating pills at rest, then scroll under them.
 	// --strip-clearance is 0 by default and the docked tab bar's height on a
 	// multi-session workspace.
-	"phone:px-3 " +
+	mergeStylexClassName("", sx.phonePx3) + " " +
 	"phone:pt-[calc(var(--pane-header-h)+var(--strip-clearance,0px)+8px)] " +
 	// Dissolve the transcript into the header as it scrolls up under the pills.
 	// A non-linear fade mirrored into mask alpha:
@@ -277,7 +1027,7 @@ export const VIEWER_MESSAGES =
  * the input, then disappears behind the composer itself without a blank band.
  */
 export const VIEWER_INPUT =
-	"relative z-[1] mt-[calc(-1*var(--session-under))] shrink-0 px-5 pt-1 pb-3.5 " +
+	mergeStylexClassName("", sx.relative, sx.z1, sx.mtCalc1VarSessionUnder, sx.shrink0, sx.px5, sx.pt1, sx.pb35) +
 	// The same gutter the transcript keeps, so the input stays on the column's
 	// edges rather than reaching past them.
 	`${RAIL_GUTTER_CLASS} ` +
@@ -288,7 +1038,7 @@ export const VIEWER_INPUT =
 	// Phone: clear the home indicator rather than jamming the composer against
 	// the very bottom edge. That gap is also all the room the composer's shadow
 	// gets in mobile Safari, where there is no safe-area inset.
-	"phone:px-3 phone:pb-[max(16px,env(safe-area-inset-bottom,0px))] " +
+	mergeStylexClassName("phone:pb-[max(16px,env(safe-area-inset-bottom,0px))]", sx.phonePx3) +
 	// Keyboard up: pin the input to Safari's fixed viewport instead of relying on
 	// its focus pan, which can stop with the toolbar floating above the keyboard.
 	// Fixed bottom already follows the visible keyboard edge on iOS Safari, so do
@@ -321,14 +1071,14 @@ export const VIEWER_SUMMARY_STEP =
  * here is the composer's own box. Desktop keeps the input's 20px right inset.
  */
 export const VIEWER_ACTION_ROW =
-	"flex w-full max-w-[calc(var(--session-col)+40px)] items-center justify-end gap-3 pr-5 " +
-	"phone:flex-col phone:gap-2 phone:pr-0";
+	mergeStylexClassName("", sx.flex, sx.wFull, sx.maxWCalcVarSessionCol40px, sx.itemsCenter, sx.justifyEnd, sx.gap3, sx.pr5) + " " +
+	mergeStylexClassName("", sx.phoneFlexCol, sx.phoneGap2, sx.phonePr0);
 
 /** Keep the reading action centred between replies and Next when all three
  * share the desktop row. Equal side tracks let either side yield and scroll
  * without moving the middle control off the conversation's centre line. */
 export const VIEWER_ACTION_ROW_WITH_SCROLL =
-	"desktop:grid desktop:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]";
+	mergeStylexClassName("desktop:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]", sx.desktopGrid);
 
 /**
  * The band the session's own offers hang in: the quick-reply chips and the
@@ -354,8 +1104,8 @@ export const VIEWER_ACTION_ROW_WITH_SCROLL =
  * of the band is transcript you should still be able to select.
  */
 export const VIEWER_SUGGESTIONS =
-	"pointer-events-none absolute inset-x-0 bottom-full flex justify-center px-5 pb-1.5 " +
-	`${RAIL_GUTTER_CLASS} phone:px-3`;
+	mergeStylexClassName("", sx.pointerEventsNone, sx.absolute, sx.insetX0, sx.bottomFull, sx.flex, sx.justifyCenter, sx.px5, sx.pb15) +
+	[RAIL_GUTTER_CLASS, mergeStylexClassName("", sx.phonePx3)].filter(Boolean).join(" ");
 
 /**
  * The room the transcript keeps clear while that band is up, set on the session
@@ -369,10 +1119,10 @@ export const VIEWER_SUGGESTIONS =
  * the reading stops the same 16px clear of the pills that it normally stops
  * clear of the input. ReplySuggestions.test.tsx holds the two together.
  */
-export const SUGGESTIONS_CLEARANCE = "[--suggestions-under:34px]";
+export const SUGGESTIONS_CLEARANCE = mergeStylexClassName("", sx.SuggestionsUnder34px);
 
 /** A 32px reading action plus the action band's 6px standoff. */
-export const SCROLL_ACTION_CLEARANCE = "[--suggestions-under:38px]";
+export const SCROLL_ACTION_CLEARANCE = mergeStylexClassName("", sx.SuggestionsUnder38px);
 
 /**
  * The same clearance once Next shares the band and gives it its height: a 40px
@@ -382,12 +1132,12 @@ export const SCROLL_ACTION_CLEARANCE = "[--suggestions-under:38px]";
  * can find spelled in the source.
  */
 export const ACTION_CLEARANCE =
-	"[--suggestions-under:46px] phone:[--suggestions-under:54px] phone:[body.kb-open_&]:[--suggestions-under:0px]";
+	mergeStylexClassName("phone:[body.kb-open_&]:[--suggestions-under:0px]", sx.SuggestionsUnder46px, sx.phoneSuggestionsUnder54px);
 
 /** Phone stacks quick replies above the 48px action bar. With the keyboard up,
  * only the 28px reply row and its 6px standoff remain. */
 export const ACTION_WITH_REPLIES_CLEARANCE =
-	"[--suggestions-under:46px] phone:[--suggestions-under:90px] phone:[body.kb-open_&]:[--suggestions-under:34px]";
+	mergeStylexClassName("phone:[body.kb-open_&]:[--suggestions-under:34px]", sx.SuggestionsUnder46px, sx.phoneSuggestionsUnder90px);
 
 /**
  * The chips themselves, filling the action row beside Next.
@@ -411,7 +1161,7 @@ export const ACTION_WITH_REPLIES_CLEARANCE =
  * holds the two together.
  */
 export const VIEWER_SUGGESTIONS_ROW =
-	"min-w-0 flex-1 -my-1 -ml-1 py-1 pr-1 pl-[19px] phone:pl-[17px]";
+	mergeStylexClassName("", sx.minW0, sx.flex1, sx.My1, sx.Ml1, sx.py1, sx.pr1, sx.pl19px, sx.phonePl17px);
 
 /**
  * The same chips once Next shares the row with them.
@@ -423,25 +1173,25 @@ export const VIEWER_SUGGESTIONS_ROW =
  * `min-w-0` still lets longer choices scroll sideways instead of pushing Next.
  */
 export const VIEWER_SUGGESTIONS_ROW_INLINE =
-	"min-w-0 flex-1 -my-1 -ml-1 py-1 pr-1 pl-[19px] phone:pl-[10px]";
+	mergeStylexClassName("", sx.minW0, sx.flex1, sx.My1, sx.Ml1, sx.py1, sx.pr1, sx.pl19px, sx.phonePl10px);
 
 /* ── Banners and the delete overlay ─────────────────────────────────────── */
 
 export const SESSION_BANNERS =
-	"flex flex-wrap gap-2 border-b border-divider bg-raised px-4 py-[7px]";
+	mergeStylexClassName("", sx.flex, sx.flexWrap, sx.gap2, sx.borderB, sx.borderDivider, sx.bgRaised, sx.px4, sx.py7px);
 
 /** A single notice pill. It carries no ink of its own: the caller supplies the
  *  tone, because two text-colour utilities on one element are resolved by
  *  Tailwind's output order rather than the order they are written. 12px in the
  *  old sheet; it is interface copy, so it snaps to `text-label`. */
 export const SESSION_BANNER =
-	"inline-flex max-w-full items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap " +
-	"rounded-full border border-line bg-panel px-3 py-[3px] text-label";
+	mergeStylexClassName("", sx.inlineFlex, sx.maxWFull, sx.itemsCenter, sx.gap15, sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap) + " " +
+	mergeStylexClassName("", sx.roundedFull, sx.border, sx.borderLine, sx.bgPanel, sx.px3, sx.py3px, typography.label);
 
 /** Shown while a delete (optionally + worktree) is in flight — worktree
  *  cleanup can take a few seconds, so the view shows progress instead of
  *  looking frozen. */
-export const SESSION_DELETE_LABEL = "text-label text-dim";
+export const SESSION_DELETE_LABEL = mergeStylexClassName("", typography.label, sx.textDim);
 
 /* ── Floating transcript pills ──────────────────────────────────────────────
  *
@@ -464,11 +1214,11 @@ export const SESSION_DELETE_LABEL = "text-label text-dim";
  *  one property resolve by Tailwind's output order, not by the order they are
  *  written in. */
 const PILL_SHAPE =
-	"inline-flex min-h-8 items-center rounded-[999px] pr-3.5 pl-2.5 " +
-	"text-label font-semibold text-fg " +
-	"[--smooth-ring-color:var(--popup-ring)] smooth-shadow-ring-sm";
+	mergeStylexClassName("", sx.inlineFlex, sx.minH8, sx.itemsCenter, sx.rounded999px, sx.pr35, sx.pl25) + " " +
+	mergeStylexClassName("", typography.label, sx.fontSemibold, sx.textFg) + " " +
+	mergeStylexClassName("smooth-shadow-ring-sm", sx.SmoothRingColorVarPopupRing);
 
-const PILL_BASE = `${PILL_SHAPE} bg-popup-glass [backdrop-filter:var(--popup-blur)]`;
+const PILL_BASE = [PILL_SHAPE, mergeStylexClassName("", sx.bgPopupGlass, sx.BackdropFilterVarPopupBlur)].filter(Boolean).join(" ");
 
 /**
  * The same pill, opaque — a lid rather than glass.
@@ -486,10 +1236,10 @@ const PILL_BASE = `${PILL_SHAPE} bg-popup-glass [backdrop-filter:var(--popup-blu
  * Tailwind's output order, and `bg-popup` is emitted BEFORE `bg-popup-glass`,
  * so writing it after would silently lose.
  */
-const PILL_LID = `${PILL_SHAPE} bg-popup`;
+const PILL_LID = [PILL_SHAPE, mergeStylexClassName("", sx.bgPopup)].filter(Boolean).join(" ");
 
-export const TRANSCRIPT_PILL = `${PILL_BASE} gap-1.5`;
-export const FLOATING_PILL = `${PILL_LID} gap-1.5`;
+export const TRANSCRIPT_PILL = [PILL_BASE, mergeStylexClassName("", sx.gap15)].filter(Boolean).join(" ");
+export const FLOATING_PILL = [PILL_LID, mergeStylexClassName("", sx.gap15)].filter(Boolean).join(" ");
 
 /**
  * The button form. The hover wash paints on a pseudo-element so it layers over
@@ -505,20 +1255,20 @@ export const FLOATING_PILL = `${PILL_LID} gap-1.5`;
  * square off the corners it extends past.
  */
 const PILL_PRESSABLE =
-	"group relative cursor-pointer transition-[scale] " +
-	"before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] " +
-	"before:[corner-shape:inherit] before:bg-transparent before:transition-colors before:content-[''] " +
-	"after:absolute after:content-[''] hover:before:bg-hover " +
-	"focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg active:scale-[0.96]";
+	mergeStylexClassName("group", sx.relative, sx.cursorPointer, sx.transitionScale) + " " +
+	mergeStylexClassName("", sx.beforePointerEventsNone, sx.beforeAbsolute, sx.beforeInset0, sx.beforeRoundedInherit) + " " +
+	mergeStylexClassName("", sx.beforeCornerShapeInherit, sx.beforeBgTransparent, sx.beforeTransitionColors, sx.beforeContent) + " " +
+	mergeStylexClassName("", sx.afterAbsolute, sx.afterContent, sx.hoverBeforeBgHover) + " " +
+	mergeStylexClassName("", sx.focusVisibleOutline2, sx.focusVisibleOutlineOffset2, sx.focusVisibleOutlineFg, sx.activeScale096);
 
-export const TRANSCRIPT_PILL_BUTTON = `${TRANSCRIPT_PILL} ${PILL_PRESSABLE} after:-inset-1`;
-export const FLOATING_PILL_BUTTON = `${FLOATING_PILL} ${PILL_PRESSABLE} after:-inset-1`;
+export const TRANSCRIPT_PILL_BUTTON = [TRANSCRIPT_PILL, PILL_PRESSABLE, mergeStylexClassName("", sx.afterInset1)].filter(Boolean).join(" ");
+export const FLOATING_PILL_BUTTON = [FLOATING_PILL, PILL_PRESSABLE, mergeStylexClassName("", sx.afterInset1)].filter(Boolean).join(" ");
 
 /** A compact transcript action whose visible surface is only the glyph. */
 export const TRANSCRIPT_ICON_BUTTON =
-	"inline-flex size-8 items-center justify-center rounded-full bg-popup-glass text-fg " +
-	"[backdrop-filter:var(--popup-blur)] [--smooth-ring-color:var(--popup-ring)] smooth-shadow-ring-sm " +
-	`${PILL_PRESSABLE} after:-inset-1.5`;
+	mergeStylexClassName("", sx.inlineFlex, sx.size8, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgPopupGlass, sx.textFg) + " " +
+	mergeStylexClassName("smooth-shadow-ring-sm", sx.BackdropFilterVarPopupBlur, sx.SmoothRingColorVarPopupRing) +
+	[PILL_PRESSABLE, mergeStylexClassName("", sx.afterInset15)].filter(Boolean).join(" ");
 
 /**
  * Centring for a pill that floats over the transcript.
@@ -542,10 +1292,10 @@ export const PILL_CENTRED =
 /** The loading state's leading spinner, and the wider gap it asks for: an arrow
  *  glyph carries side bearing of its own, a bare 12px ring carries none, so at
  *  the label's own spacing the two sit on top of each other. */
-export const TRANSCRIPT_PILL_LOADING = `${PILL_BASE} gap-2`;
-export const FLOATING_PILL_LOADING = `${PILL_LID} gap-2`;
+export const TRANSCRIPT_PILL_LOADING = [PILL_BASE, mergeStylexClassName("", sx.gap2)].filter(Boolean).join(" ");
+export const FLOATING_PILL_LOADING = [PILL_LID, mergeStylexClassName("", sx.gap2)].filter(Boolean).join(" ");
 export const TRANSCRIPT_PILL_SPINNER =
-	"size-3 shrink-0 animate-spin rounded-full border border-current/25 border-t-current text-dim";
+	mergeStylexClassName("", sx.size3, sx.shrink0, sx.animateSpin, sx.roundedFull, sx.border, sx.borderCurrent25, sx.borderTCurrent, sx.textDim);
 
 /**
  * Where the top pill ("Load all", and the loading state it swaps to) floats.
@@ -565,10 +1315,10 @@ export const TRANSCRIPT_PILL_SPINNER =
  * with the `translate` property doing the centring and costs no layout.
  */
 export const TRANSCRIPT_PILL_TOP =
-	`pointer-events-none absolute top-3 left-1/2 z-[5] ${PILL_CENTRED} ` +
+	[mergeStylexClassName("", sx.pointerEventsNone, sx.absolute, sx.top3, sx.left12, sx.z5), PILL_CENTRED].filter(Boolean).join(" ") +
 	"phone:top-[calc(var(--pane-header-h)+var(--strip-clearance,0px)+8px)] " +
-	"phone:[transition-property:transform] phone:duration-[var(--dur-lg)] " +
-	"phone:ease-[var(--ease)] " +
+	mergeStylexClassName("", sx.phoneTransitionPropertyTransform, sx.phoneDurationVarDurLg) + " " +
+	mergeStylexClassName("", sx.phoneEaseVarEase) + " " +
 	"phone:[body.chrome-collapsed_&]:[transform:translateY(calc(4px-var(--pane-header-h)-var(--strip-clearance,0px)))]";
 
 /* ── Session info page (phone) ──────────────────────────────────────────────
@@ -598,15 +1348,15 @@ export const TRANSCRIPT_PILL_TOP =
  *  height first and clipped the strip inside it, down to nothing on a short
  *  viewport, while the sections that cannot shrink kept theirs. */
 export const INFO_PAGE =
-	"fixed inset-0 z-[60] flex flex-col gap-0.5 overflow-y-auto overscroll-contain bg-surface " +
+	mergeStylexClassName("", sx.fixed, sx.inset0, sx.z60, sx.flex, sx.flexCol, sx.gap05, sx.overflowYAuto, sx.overscrollContain, sx.bgSurface) + " " +
 	"pb-[max(16px,env(safe-area-inset-bottom,0px))] [&>*]:shrink-0 " +
-	"[animation:session-info-in_var(--dur)_var(--ease)]";
+	mergeStylexClassName("", sx.AnimationSessionInfoInVarDurVarEase);
 
 const INFO_TOPBAR =
-	"session-info-topbar sticky top-0 z-[4] flex items-center " +
+	mergeStylexClassName("session-info-topbar", sx.sticky, sx.top0, sx.z4, sx.flex, sx.itemsCenter) + " " +
 	"min-h-[calc(env(safe-area-inset-top,0px)+52px)] " +
-	"pt-[env(safe-area-inset-top,0px)] px-2 pb-0 " +
-	"[transition:background-color_var(--dur)_var(--ease)]";
+	mergeStylexClassName("pt-[env(safe-area-inset-top,0px)]", sx.px2, sx.pb0) + " " +
+	mergeStylexClassName("", sx.TransitionBackgroundColorVarDurVarEase);
 
 /** Transparent until the page scrolls, then a frosted surface. The fill and
  *  blur separate the fixed chrome without drawing a grey rule across it. */
@@ -614,12 +1364,12 @@ export const infoTopbarClass = (scrolled: boolean) =>
 	`${INFO_TOPBAR} ` +
 	(scrolled
 		? "bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] " +
-			"backdrop-blur-[18px] backdrop-saturate-[1.35]"
-		: "bg-transparent");
+			mergeStylexClassName("", sx.backdropBlur18px, sx.backdropSaturate135)
+		: mergeStylexClassName("", sx.bgTransparent));
 
 const INFO_TOPBAR_TITLE =
-	"pointer-events-none absolute right-14 bottom-0 left-14 block h-[52px] " +
-	"overflow-hidden text-ellipsis whitespace-nowrap text-center text-item-title font-semibold leading-[52px] tracking-[-0.01em] text-fg " +
+	mergeStylexClassName("", sx.pointerEventsNone, sx.absolute, sx.right14, sx.bottom0, sx.left14, sx.block, sx.h52px) + " " +
+	mergeStylexClassName("", sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.textCenter, typography.itemTitle, sx.fontSemibold, sx.leading52px, sx.tracking001em, sx.textFg) +
 	// `transform`, not Tailwind's `translate` property: that is what the
 	// transition beside it names.
 	"[transition:opacity_var(--dur)_var(--ease),transform_var(--dur)_var(--ease)]";
@@ -628,20 +1378,20 @@ const INFO_TOPBAR_TITLE =
  * compact summary starts immediately below it. */
 export const infoTopbarTitleClass = (scrolled: boolean) =>
 	`${INFO_TOPBAR_TITLE} ` +
-	(scrolled ? "opacity-100 [transform:translateY(0)]" : "opacity-0 [transform:translateY(5px)]");
+	(scrolled ? mergeStylexClassName("", sx.opacity100, sx.TransformTranslateY0) : mergeStylexClassName("", sx.opacity0, sx.TransformTranslateY5px));
 
 /** Identity block: repo tile, name, and the repo · model line. The tile gets a
  *  soft key shadow here that it doesn't carry elsewhere. */
 export const INFO_HERO =
-	"flex flex-col items-center gap-0 px-5 pt-0.5 pb-5 text-center " +
+	mergeStylexClassName("", sx.flex, sx.flexCol, sx.itemsCenter, sx.gap0, sx.px5, sx.pt05, sx.pb5, sx.textCenter) + " " +
 	"[&_.repo-tile]:smooth-shadow-ring-sm";
 
 /** 20px in the old sheet — the page's one heading, so it snaps to
  *  `text-page-title` (22px). */
 export const INFO_NAME =
-	"mt-[9px] max-w-full text-page-title font-semibold leading-[1.2] tracking-[-0.02em] break-words text-fg";
+	mergeStylexClassName("", sx.mt9px, sx.maxWFull, typography.pageTitle, sx.fontSemibold, sx.leading12, sx.tracking002em, sx.breakWords, sx.textFg);
 export const INFO_SUB =
-	"flex min-h-11 w-full max-w-full items-center justify-center gap-x-1 px-6 text-label font-medium text-dim";
+	mergeStylexClassName("", sx.flex, sx.minH11, sx.wFull, sx.maxWFull, sx.itemsCenter, sx.justifyCenter, sx.gapX1, sx.px6, typography.label, sx.fontMedium, sx.textDim);
 
 /** Phone PR strip frame: spacing + clipping only. The status tone itself
  * reaches the outer radius, so the row does not become a card inside a card. */
@@ -651,20 +1401,20 @@ export const INFO_STATUS =
 	// only a margin left in it is a gap with no row above it.
 	//
 	// `mx-3` + `rounded-lg`, like every plate under it: the page has one edge.
-	"session-info-status mx-3 mb-3 overflow-hidden rounded-lg empty:hidden";
+	mergeStylexClassName("session-info-status empty:hidden", sx.mx3, sx.mb3, sx.overflowHidden, sx.roundedLg);
 
-export const INFO_CONTENT = "min-h-[320px] pb-2";
+export const INFO_CONTENT = mergeStylexClassName("", sx.minH320px, sx.pb2);
 
 /** The phone Workspace summary's card stack. Each semantic section supplies
  * its own quiet background, so Review, Changes and media can be scanned as
  * separate groups without returning to the old bordered dashboard. */
-export const INFO_SUMMARY_CARD = "mx-3 mt-2 flex flex-col gap-2.5";
+export const INFO_SUMMARY_CARD = mergeStylexClassName("", sx.mx3, sx.mt2, sx.flex, sx.flexCol, sx.gap25);
 
 /** A section rendered by a component of its own (Agents, Reports) rather than
  *  by WorkspaceInfo. It gets the page's inset and the same 16px gap the panel
  *  puts between its own sections, and no rule above it: a section is separated
  *  by its plate, never by a hairline. */
-export const INFO_SECTION = "mt-4 px-3";
+export const INFO_SECTION = mergeStylexClassName("", sx.mt4, sx.px3);
 
 /**
  * The Info panel's section grammar, shared by everything that renders into it
@@ -674,7 +1424,7 @@ export const INFO_SECTION = "mt-4 px-3";
  * never takes a border — a hairline there would turn a column of them into a
  * form. Rows go straight into the plate and are divided by `gap-px`.
  */
-export const INFO_SECTION_CLASS = "grid gap-[5px]";
+export const INFO_SECTION_CLASS = mergeStylexClassName("", sx.grid, sx.gap5px);
 /**
  * One inset for the whole panel: content sits 12px from the plate's edge, and
  * the label sits over it rather than over the plate. A list gets there as 4 of
@@ -685,14 +1435,14 @@ export const INFO_SECTION_CLASS = "grid gap-[5px]";
  * the kind of thing nobody can name and everybody can feel.
  */
 export const INFO_LABEL_CLASS =
-	"px-3 text-label font-semibold tracking-[-0.01em] text-faint";
-export const INFO_LIST_CLASS = "grid gap-px overflow-hidden rounded-lg bg-panel p-1";
+	mergeStylexClassName("", sx.px3, typography.label, sx.fontSemibold, sx.tracking001em, sx.textFaint);
+export const INFO_LIST_CLASS = mergeStylexClassName("", sx.grid, sx.gapPx, sx.overflowHidden, sx.roundedLg, sx.bgPanel, sx.p1);
 
 /** Repo and model controls at the top of the phone summary card. They keep
  * their labelled two-line content, but give up the separate plate and border
  * now that the summary card supplies one shared surface. */
 export const INFO_LIST =
-	"session-info-list grid gap-px overflow-hidden rounded-2xl bg-panel p-2 " +
+	mergeStylexClassName("session-info-list", sx.grid, sx.gapPx, sx.overflowHidden, sx.rounded2xl, sx.bgPanel, sx.p2) + " " +
 	"[&>button]:min-h-11 [&>button]:w-full [&>button]:justify-start [&>button]:gap-2 [&>button]:text-left " +
 	"[&>button]:rounded-row [&>button]:border-0 " +
 	"[&>button]:bg-transparent [&>button]:px-3 [&>button]:py-2 [&>button]:text-label [&>button]:text-fg " +
@@ -705,4 +1455,4 @@ export const INFO_LIST =
  *  wrapper, so it names its own 12px here and every plate on the page lands on
  *  the same edge as the strip and the repo list above them. */
 export const INFO_OVERVIEW =
-	"pt-4 [&_.workspace-info-panel]:pt-0 [&_.workspace-info-panel]:px-3";
+	mergeStylexClassName("[&_.workspace-info-panel]:pt-0 [&_.workspace-info-panel]:px-3", sx.pt4);
