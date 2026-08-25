@@ -119,7 +119,7 @@ function PrivateAppSetup({
 				<SettingRow>
 					<SettingRowText>
 						<SettingRowTitle>Current address</SettingRowTitle>
-						<SettingRowDescription className="break-all font-mono">{settings.app.publicBaseUrl}</SettingRowDescription>
+						<div className="mt-1 break-all font-mono text-supporting text-dim">{settings.app.publicBaseUrl}</div>
 					</SettingRowText>
 				</SettingRow>
 			</SettingCard>
@@ -356,8 +356,8 @@ export function IngressPanel({
 								</SettingRow>
 								<SettingRow>
 									<SettingRowText>
-										<SettingRowTitle>What it exposes</SettingRowTitle>
-										<SettingRowDescription>Only signed webhooks, Sandbox callbacks, and workload identity. Sessions, APIs, and the app UI stay private.</SettingRowDescription>
+										<SettingRowTitle>Public services</SettingRowTitle>
+										<SettingRowDescription>Webhooks, remote Sandbox callbacks, and workload identity. Never the app.</SettingRowDescription>
 									</SettingRowText>
 								</SettingRow>
 							</SettingCard>
