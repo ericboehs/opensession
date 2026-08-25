@@ -1,7 +1,9 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
+import { newStylexCollector, stylexCss, stylexTransform } from "../../server/stylex-build";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { composerBoxExpanded } from "../lib/composer-classes";
+
 import type { ReplySuggestion } from "../lib/reply-suggestions";
 import {
 	ACTION_CLEARANCE,
@@ -16,6 +18,14 @@ import {
 } from "../lib/session-viewer-classes";
 
 const { ReplySuggestions } = await import("./ReplySuggestions");
+const COMPOSER_SOURCE = new URL("../lib/composer-classes.ts", import.meta.url).pathname;
+const composerCollector = newStylexCollector();
+stylexTransform(
+	COMPOSER_SOURCE,
+	readFileSync(COMPOSER_SOURCE, "utf8"),
+	composerCollector,
+);
+const composerCss = stylexCss(composerCollector);
 
 const suggestions: ReplySuggestion[] = [
 	{
@@ -63,11 +73,15 @@ describe("ReplySuggestions", () => {
 			Number(pattern.exec(source)?.[1]);
 		const SHADOW_PAD = 4;
 
+		const insets = [...composerCss.matchAll(/--composer-inset-left:(\d+)px/g)].map(
+			(match) => Number(match[1]),
+		);
+		expect(insets).toEqual(expect.arrayContaining([15, 13]));
 		expect(px(VIEWER_SUGGESTIONS_ROW, /(?:^|\s)pl-\[(\d+)px\]/)).toBe(
-			SHADOW_PAD + px(composerBoxExpanded, /(?:^|\s)\[--composer-inset-left:(\d+)px\]/),
+			SHADOW_PAD + 15,
 		);
 		expect(px(VIEWER_SUGGESTIONS_ROW, /\sphone:pl-\[(\d+)px\]/)).toBe(
-			SHADOW_PAD + px(composerBoxExpanded, /\sphone:\[--composer-inset-left:(\d+)px\]/),
+			SHADOW_PAD + 13,
 		);
 	});
 

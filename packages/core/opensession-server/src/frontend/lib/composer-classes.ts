@@ -1,3 +1,634 @@
+
+import * as stylex from "@stylexjs/stylex";
+import { mergeStylexClassName } from "../ui/cn";
+import { type as typography } from "../styles/typography.stylex";
+
+const sx = stylex.create({
+	relative: {
+		"position": "relative"
+	},
+	border: {
+		"borderStyle": "var(--tw-border-style)",
+		"borderWidth": "1px"
+	},
+	bgVarComposerSurface: {
+		"backgroundColor": "var(--composer-surface)"
+	},
+	shadowVarComposerShadow: {
+		"--tw-shadow": "var(--composer-shadow)",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	desktopBorderTransparent: {
+		"@media (min-width: 721px)": {
+			"borderColor": "#0000"
+		}
+	},
+	desktopSmoothRingColorVarComposerBorder: {
+		"@media (min-width: 721px)": {
+			"--smooth-ring-color": "var(--composer-border)"
+		}
+	},
+	desktopSmoothShadowRingSoft: {
+		"@media (min-width: 721px)": {
+			"--smooth-shadow-color": "var(--tw-shadow-color,black)",
+			"boxShadow": "0 3px 10px -3px var(--smooth-shadow-color), 0 20px 56px -16px var(--smooth-shadow-color), 0 0 0 var(--smooth-ring-width,1px) var(--smooth-ring-color)",
+			"@supports (color: color-mix(in lab, red, red))": {
+				"boxShadow": "0 3px 10px -3px color-mix(in srgb, var(--smooth-shadow-color) 4%, transparent), 0 20px 56px -16px color-mix(in srgb, var(--smooth-shadow-color) 12%, transparent), 0 0 0 var(--smooth-ring-width,1px) color-mix(in srgb, var(--smooth-ring-color) 35%, transparent)"
+			}
+		}
+	},
+	roundedVarComposerRadius: {
+		"borderRadius": "var(--composer-radius)"
+	},
+	px35: {
+		"paddingInline": "14px"
+	},
+	pt35: {
+		"paddingTop": "14px"
+	},
+	pb25: {
+		"paddingBottom": "10px"
+	},
+	ComposerInsetLeft15px: {
+		"--composer-inset-left": "15px"
+	},
+	phonePx3: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "12px"
+		}
+	},
+	phonePt25: {
+		"@media (max-width: 720px)": {
+			"paddingTop": "10px"
+		}
+	},
+	phonePb9px: {
+		"@media (max-width: 720px)": {
+			"paddingBottom": "9px"
+		}
+	},
+	phoneComposerInsetLeft13px: {
+		"@media (max-width: 720px)": {
+			"--composer-inset-left": "13px"
+		}
+	},
+	mx35: {
+		"marginInline": "14px"
+	},
+	flex: {
+		"display": "flex"
+	},
+	itemsCenter: {
+		"alignItems": "center"
+	},
+	gap1: {
+		"gap": "4px"
+	},
+	rounded999px: {
+		"borderRadius": "999px"
+	},
+	p1: {
+		"padding": "4px"
+	},
+	ComposerInsetLeft5px: {
+		"--composer-inset-left": "5px"
+	},
+	block: {
+		"display": "block"
+	},
+	maxH320px: {
+		"maxHeight": "320px"
+	},
+	minH0: {
+		"minHeight": "0"
+	},
+	wFull: {
+		"width": "100%"
+	},
+	resizeNone: {
+		"resize": "none"
+	},
+	borderNone: {
+		"--tw-border-style": "none",
+		"borderStyle": "none"
+	},
+	bgTransparent: {
+		"backgroundColor": "#0000"
+	},
+	leading155: {
+		"--tw-leading": "1.55",
+		"lineHeight": "1.55"
+	},
+	outlineNone: {
+		"--tw-outline-style": "none",
+		"outlineStyle": "none"
+	},
+	phoneMaxH240px: {
+		"@media (max-width: 720px)": {
+			"maxHeight": "240px"
+		}
+	},
+	phoneTextInputPhone: {
+		"@media (max-width: 720px)": {
+			"fontSize": "var(--type-input-phone)"
+		}
+	},
+	WordSpacing35px: {
+		"wordSpacing": "3.5px"
+	},
+	px0: {
+		"paddingInline": "0"
+	},
+	pt05: {
+		"paddingTop": "2px"
+	},
+	pb1: {
+		"paddingBottom": "4px"
+	},
+	px1: {
+		"paddingInline": "4px"
+	},
+	py0: {
+		"paddingBlock": "0"
+	},
+	mt25: {
+		"marginTop": "10px"
+	},
+	gap2: {
+		"gap": "8px"
+	},
+	phoneMt15: {
+		"@media (max-width: 720px)": {
+			"marginTop": "6px"
+		}
+	},
+	phoneGap15: {
+		"@media (max-width: 720px)": {
+			"gap": "6px"
+		}
+	},
+	beforePointerEventsNone: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"pointerEvents": "none"
+		}
+	},
+	beforeAbsolute: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	beforeInsetX35: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"insetInline": "-14px"
+		}
+	},
+	beforeTop25: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"top": "-10px"
+		}
+	},
+	beforeHPx: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"height": "1px"
+		}
+	},
+	beforeBgDivider: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"backgroundColor": "var(--divider)"
+		}
+	},
+	beforeOpacity0: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"opacity": "0"
+		}
+	},
+	beforeTransitionOpacity: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"transitionProperty": "opacity",
+			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+		}
+	},
+	beforeContent: {
+		"::before": {
+			"--tw-content": "\"\"",
+			"content": "var(--tw-content)"
+		}
+	},
+	phoneBeforeInsetX3: {
+		"@media (max-width: 720px)": {
+			"::before": {
+				"content": "var(--tw-content)",
+				"insetInline": "-12px"
+			}
+		}
+	},
+	phoneBeforeTop15: {
+		"@media (max-width: 720px)": {
+			"::before": {
+				"content": "var(--tw-content)",
+				"top": "-6px"
+			}
+		}
+	},
+	contents: {
+		"display": "contents"
+	},
+	inlineFlex: {
+		"display": "inline-flex"
+	},
+	minW0: {
+		"minWidth": "0"
+	},
+	shrink: {
+		"flexShrink": "1"
+	},
+	phoneOrder1: {
+		"@media (max-width: 720px)": {
+			"order": "-1"
+		}
+	},
+	minW34px: {
+		"minWidth": "34px"
+	},
+	phoneMaxW136px: {
+		"@media (max-width: 720px)": {
+			"maxWidth": "136px"
+		}
+	},
+	phonePx9px: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "9px"
+		}
+	},
+	gap9px: {
+		"gap": "9px"
+	},
+	roundedControl: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	px9px: {
+		"paddingInline": "9px"
+	},
+	py7px: {
+		"paddingBlock": "7px"
+	},
+	textLeft: {
+		"textAlign": "left"
+	},
+	textFg: {
+		"color": "var(--text)"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	w5: {
+		"width": "20px"
+	},
+	justifyCenter: {
+		"justifyContent": "center"
+	},
+	textDim: {
+		"color": "var(--text-dim)"
+	},
+	absolute: {
+		"position": "absolute"
+	},
+	bottomCalc1006px: {
+		"bottom": "calc(100% + 6px)"
+	},
+	z40: {
+		"zIndex": "40"
+	},
+	roundedLg: {
+		"borderRadius": "calc(14px * var(--rf))"
+	},
+	bgPopupGlass: {
+		"backgroundColor": "var(--popup-glass)"
+	},
+	BackdropFilterVarPopupBlur: {
+		"WebkitBackdropFilter": "var(--popup-blur)",
+		"backdropFilter": "var(--popup-blur)"
+	},
+	SmoothRingColorVarPopupRing: {
+		"--smooth-ring-color": "var(--popup-ring)"
+	},
+	minW172px: {
+		"minWidth": "172px"
+	},
+	right0: {
+		"right": "0"
+	},
+	size8: {
+		"width": "32px",
+		"height": "32px"
+	},
+	shrink0: {
+		"flexShrink": "0"
+	},
+	roundedFull: {
+		"borderRadius": "3.40282e38px"
+	},
+	leadingNone: {
+		"--tw-leading": "1",
+		"lineHeight": "1"
+	},
+	disabledCursorDefault: {
+		":disabled": {
+			"cursor": "default"
+		}
+	},
+	disabledOpacity35: {
+		":disabled": {
+			"opacity": ".35"
+		}
+	},
+	phoneSize10: {
+		"@media (max-width: 720px)": {
+			"width": "40px",
+			"height": "40px"
+		}
+	},
+	bgAccent: {
+		"backgroundColor": "var(--accent)"
+	},
+	textOnAccent: {
+		"color": "var(--on-accent)"
+	},
+	bgRed: {
+		"backgroundColor": "var(--red)"
+	},
+	textWhite: {
+		"color": "var(--color-white)"
+	},
+	phoneBgClipContent: {
+		"@media (max-width: 720px)": {
+			"backgroundClip": "content-box"
+		}
+	},
+	phoneP1: {
+		"@media (max-width: 720px)": {
+			"padding": "4px"
+		}
+	},
+	mb2: {
+		"marginBottom": "8px"
+	},
+	flexWrap: {
+		"flexWrap": "wrap"
+	},
+	maxW240px: {
+		"maxWidth": "240px"
+	},
+	borderLineStrong: {
+		"borderColor": "var(--border-strong)"
+	},
+	bgVarBgHover: {
+		"backgroundColor": "var(--bg-hover)"
+	},
+	py15: {
+		"paddingBlock": "6px"
+	},
+	pl15: {
+		"paddingLeft": "6px"
+	},
+	pr26px: {
+		"paddingRight": "26px"
+	},
+	size34px: {
+		"width": "34px",
+		"height": "34px"
+	},
+	text10px: {
+		"fontSize": "10px"
+	},
+	fontBold: {
+		"--tw-font-weight": "var(--font-weight-bold)",
+		"fontWeight": "var(--font-weight-bold)"
+	},
+	tracking002em: {
+		"--tw-tracking": ".02em",
+		"letterSpacing": ".02em"
+	},
+	textAccent: {
+		"color": "var(--accent-ink)"
+	},
+	flexCol: {
+		"flexDirection": "column"
+	},
+	gapPx: {
+		"gap": "1px"
+	},
+	truncate: {
+		"textOverflow": "ellipsis",
+		"whiteSpace": "nowrap",
+		"overflow": "hidden"
+	},
+	textFaint: {
+		"color": "var(--text-faint)"
+	},
+	Mb35: {
+		"marginBottom": "-14px"
+	},
+	roundedTVarComposerRadius: {
+		"borderTopLeftRadius": "var(--composer-radius)",
+		"borderTopRightRadius": "var(--composer-radius)"
+	},
+	borderX: {
+		"borderInlineStyle": "var(--tw-border-style)",
+		"borderInlineWidth": "1px"
+	},
+	borderT: {
+		"borderTopStyle": "var(--tw-border-style)",
+		"borderTopWidth": "1px"
+	},
+	pt25: {
+		"paddingTop": "10px"
+	},
+	pb26px: {
+		"paddingBottom": "26px"
+	},
+	fontSemibold: {
+		"--tw-font-weight": "var(--font-weight-semibold)",
+		"fontWeight": "var(--font-weight-semibold)"
+	},
+	minHCalc13px145: {
+		"minHeight": "18.85px"
+	},
+	borderLine: {
+		"borderColor": "var(--border)"
+	},
+	pt2: {
+		"paddingTop": "8px"
+	},
+	cursorGrab: {
+		"cursor": "grab"
+	},
+	touchNone: {
+		"touchAction": "none"
+	},
+	activeCursorGrabbing: {
+		":active": {
+			"cursor": "grabbing"
+		}
+	},
+	order1: {
+		"order": "1"
+	},
+	z1: {
+		"zIndex": "1"
+	},
+	Mt11px: {
+		"marginTop": "-11px"
+	},
+	Mb25: {
+		"marginBottom": "-10px"
+	},
+	gap05: {
+		"gap": "2px"
+	},
+	size9: {
+		"width": "36px",
+		"height": "36px"
+	},
+	beforeInset3px: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"inset": "3px"
+		}
+	},
+	beforeZ0: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"zIndex": "0"
+		}
+	},
+	beforeRoundedCalc9pxVarRf: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"borderRadius": "calc(9px * var(--rf))"
+		}
+	},
+	beforeCornerShapeVarCs: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"cornerShape": "var(--cs)"
+		}
+	},
+	beforeTransitionBackground: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"transitionProperty": "background",
+			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+		}
+	},
+	h8: {
+		"height": "32px"
+	},
+	gap15: {
+		"gap": "6px"
+	},
+	borderTransparent: {
+		"borderColor": "#0000"
+	},
+	bgAccentSoft: {
+		"backgroundColor": "var(--accent-soft)"
+	},
+	px13px: {
+		"paddingInline": "13px"
+	},
+	px2: {
+		"paddingInline": "8px"
+	},
+	fontMedium: {
+		"--tw-font-weight": "var(--font-weight-medium)",
+		"fontWeight": "var(--font-weight-medium)"
+	},
+	bgClipText: {
+		"WebkitbackgroundClip": "text",
+		"backgroundClip": "text"
+	},
+	textTransparent: {
+		"color": "#0000"
+	},
+	WebkitBackgroundClipText: {
+		"WebkitbackgroundClip": "text"
+	},
+	BackgroundSize200100: {
+		"backgroundSize": "200% 100%"
+	},
+	BackgroundRepeatNoRepeat: {
+		"backgroundRepeat": "no-repeat"
+	},
+	animateTextShimmer18sLinearInfinite: {
+		"animation": "1.8s linear infinite text-shimmer"
+	},
+	flex1: {
+		"flex": "1"
+	},
+	h34px: {
+		"height": "34px"
+	},
+	w46px: {
+		"width": "46px"
+	},
+	flexNone: {
+		"flex": "none"
+	},
+	sizeFull: {
+		"width": "100%",
+		"height": "100%"
+	},
+	roundedCalc8pxVarRf: {
+		"borderRadius": "calc(8px * var(--rf))"
+	},
+	objectCover: {
+		"objectFit": "cover"
+	},
+	Right1: {
+		"right": "-4px"
+	},
+	Bottom1: {
+		"bottom": "-4px"
+	},
+	h18px: {
+		"height": "18px"
+	},
+	minW18px: {
+		"minWidth": "18px"
+	},
+	bgRaised: {
+		"backgroundColor": "var(--bg-raised)"
+	},
+	textCenter: {
+		"textAlign": "center"
+	},
+	leading4: {
+		"--tw-leading": "calc(4px * 4)",
+		"lineHeight": "16px"
+	},
+	leading145: {
+		"--tw-leading": "1.45",
+		"lineHeight": "1.45"
+	},
+	mr15: {
+		"marginRight": "6px"
+	},
+});
+
 /**
  * Shared Tailwind class maps for the composer family (the `composer-*` block
  * that used to live in styles/legacy.css).
@@ -23,14 +654,14 @@
    .palette-icon-btn`, whose ::before wash is styled from the stylesheet). The
    declarations below are what that rule used to paint. */
 export const composerBox =
-	"relative border border-[color:color-mix(in_srgb,var(--composer-border)_35%,transparent)] bg-[var(--composer-surface)] shadow-[var(--composer-shadow)] transition-[border-color,box-shadow] " +
-	"desktop:border-transparent desktop:[--smooth-ring-color:var(--composer-border)] desktop:smooth-shadow-ring-soft";
+	mergeStylexClassName("border-[color:color-mix(in_srgb,var(--composer-border)_35%,transparent)] transition-[border-color,box-shadow]", sx.relative, sx.border, sx.bgVarComposerSurface, sx.shadowVarComposerShadow) + " " +
+	mergeStylexClassName("", sx.desktopBorderTransparent, sx.desktopSmoothRingColorVarComposerBorder, sx.desktopSmoothShadowRingSoft);
 
 /** Resting/expanded box. `--composer-inset-left` is read by the "+" menu to
  *  line its left edge up with the composer's outer edge rather than the
  *  button's, so it travels with the padding it describes. */
 export const composerBoxExpanded =
-	"rounded-[var(--composer-radius)] px-3.5 pt-3.5 pb-2.5 [--composer-inset-left:15px] phone:px-3 phone:pt-2.5 phone:pb-[9px] phone:[--composer-inset-left:13px]";
+	mergeStylexClassName("", sx.roundedVarComposerRadius, sx.px35, sx.pt35, sx.pb25, sx.ComposerInsetLeft15px, sx.phonePx3, sx.phonePt25, sx.phonePb9px, sx.phoneComposerInsetLeft13px);
 
 /** Phone resting pill: one row, even 4px inset, held well clear of the screen
  *  edges. The inset is wider than the expanded box's on purpose: at rest the
@@ -52,7 +683,7 @@ export const composerBoxExpanded =
  *  way; only the corner curve differs. Installed phone PWAs override that
  *  curve to `round` in base.css, while keeping this same capsule geometry. */
 export const composerBoxMinimized =
-	"mx-3.5 flex items-center gap-1 rounded-[999px] p-1 [--composer-inset-left:5px]";
+	mergeStylexClassName("", sx.mx35, sx.flex, sx.itemsCenter, sx.gap1, sx.rounded999px, sx.p1, sx.ComposerInsetLeft5px);
 
 /* ── The draft field ──────────────────────────────────────────────
    `.composer-textarea` stays on the markup as a hook too: it is read as a
@@ -66,7 +697,7 @@ export const composerBoxMinimized =
 /** The draft field and the code/mention mirror behind it both take this, which
  *  is what keeps them glyph-identical. */
 export const composerTextarea =
-	"block max-h-[320px] min-h-0 w-full resize-none border-none bg-transparent text-body leading-[1.55] outline-none phone:max-h-[240px] phone:text-input-phone";
+	mergeStylexClassName("", sx.block, sx.maxH320px, sx.minH0, sx.wFull, sx.resizeNone, sx.borderNone, sx.bgTransparent, typography.body, sx.leading155, sx.outlineNone, sx.phoneMaxH240px, sx.phoneTextInputPhone);
 /** The only room a mention pill can take is the space character beside it: its
  *  wash is painted rather than laid out, and 3.7px of natural space has to
  *  cover both the pill's own padding and the gap to the next word. Widening
@@ -83,11 +714,11 @@ export const composerTextarea =
  *  Session pills deliberately do not wear it. A pasted link often sits inside
  *  a full sentence, where widening every space is more distracting than the
  *  extra pixel of air buys the pill. */
-export const composerMentionSpacing = "[word-spacing:3.5px]";
-export const composerTextareaPadding = "px-0 pt-0.5 pb-1";
+export const composerMentionSpacing = mergeStylexClassName("", sx.WordSpacing35px);
+export const composerTextareaPadding = mergeStylexClassName("", sx.px0, sx.pt05, sx.pb1);
 /** In the resting pill the field is one row inside a 4px-inset box, so it
  *  carries the horizontal breathing room and no vertical padding at all. */
-export const composerTextareaPaddingMinimized = "px-1 py-0";
+export const composerTextareaPaddingMinimized = mergeStylexClassName("", sx.px1, sx.py0);
 
 /* ── The toolbar row ──────────────────────────────────────────────
    The row under the draft: "+", the mode marker, a spacer, the model pill,
@@ -101,7 +732,7 @@ export const composerTextareaPaddingMinimized = "px-1 py-0";
    utility and a child's own `shrink` are the same specificity, so the pill's
    opt-back-in would have depended on the compiled sheet's order. */
 export const composerToolbar =
-	"relative mt-2.5 flex items-center gap-2 phone:mt-1.5 phone:gap-1.5";
+	mergeStylexClassName("", sx.relative, sx.mt25, sx.flex, sx.itemsCenter, sx.gap2, sx.phoneMt15, sx.phoneGap15);
 /** The seam a scrolling draft earns.
  *
  *  Past the field's cap the draft scrolls inside the composer, and the last
@@ -133,27 +764,27 @@ export const composerToolbar =
  *  lands the line a frame late, which during momentum scroll reads as a
  *  flicker. */
 export const composerToolbarScrollDivider =
-	"before:pointer-events-none before:absolute before:-inset-x-3.5 before:-top-2.5 " +
-	"before:h-px before:bg-divider before:opacity-0 before:transition-opacity " +
-	"before:content-[''] data-[scroll-under]:before:opacity-100 " +
-	"phone:before:-inset-x-3 phone:before:-top-1.5";
+	mergeStylexClassName("", sx.beforePointerEventsNone, sx.beforeAbsolute, sx.beforeInsetX35, sx.beforeTop25) + " " +
+	mergeStylexClassName("", sx.beforeHPx, sx.beforeBgDivider, sx.beforeOpacity0, sx.beforeTransitionOpacity) + " " +
+	mergeStylexClassName("data-[scroll-under]:before:opacity-100", sx.beforeContent) + " " +
+	mergeStylexClassName("", sx.phoneBeforeInsetX3, sx.phoneBeforeTop15);
 /** Resting phone pill: `display: contents` lifts the toolbar's buttons into
  *  the composer's own flex row, so the textarea can sit between the "+" and
  *  the mic/send and `order` can sequence them. Combine through `cn()` —
  *  tailwind-merge is what drops the `flex` above. */
-export const composerToolbarMinimized = "contents";
+export const composerToolbarMinimized = mergeStylexClassName("", sx.contents);
 /** The one flexible item in the row, and the wrapper it has to be granted to:
  *  the model pill sits inside a Motion layout box, and pinning the shrink on
  *  the pill itself left the WRAPPER rigid — the row stayed wider than the
  *  composer and pushed the send button off its right edge on phones. Phones
  *  also pull it to the front of the row, next to the "+". */
 export const composerToolbarSelect =
-	"inline-flex min-w-0 shrink phone:order-[-1]";
+	mergeStylexClassName("", sx.inlineFlex, sx.minW0, sx.shrink, sx.phoneOrder1);
 /** The pill's toolbar-only metrics: it may shrink to a 34px stub here (the
  *  new-session footer lets it go to 0 instead), and phones tighten its
  *  padding and cap it so the whole row fits without clipping the send. */
 export const composerToolbarPill =
-	"shrink min-w-[34px] phone:max-w-[136px] phone:px-[9px]";
+	mergeStylexClassName("", sx.shrink, sx.minW34px, sx.phoneMaxW136px, sx.phonePx9px);
 
 /* ── Toolbar popover menus ─────────────────────────────────────────
    The popup surface for the "+" add menu and the send-later menu, and the
@@ -167,24 +798,24 @@ export const composerToolbarPill =
  *  written: that already supplies `cursor: pointer`, `background: none`,
  *  `border: none` and zero padding. */
 export const composerMenuItem =
-	"flex w-full items-center gap-[9px] rounded-control px-[9px] py-[7px] text-left text-control-label text-fg hover:bg-hover";
+	mergeStylexClassName("", sx.flex, sx.wFull, sx.itemsCenter, sx.gap9px, sx.roundedControl, sx.px9px, sx.py7px, sx.textLeft, typography.controlLabel, sx.textFg, sx.hoverBgHover);
 /** The row's leading glyph. A fixed 20px column so the labels line up however
  *  wide the icons draw. */
 export const composerMenuIcon =
-	"inline-flex w-5 items-center justify-center text-label text-dim";
+	mergeStylexClassName("", sx.inlineFlex, sx.w5, sx.itemsCenter, sx.justifyCenter, typography.label, sx.textDim);
 /** The surface those rows sit on. Edge and cast come from the same ring the
  *  Base UI menus use (ui/menu.tsx) rather than a `border-line-strong` hairline:
  *  that line is drawn for a control resting IN the page, and on a floating
  *  popup it read a step darker than every other menu on screen. */
 export const composerMenuPopup =
-	"absolute bottom-[calc(100%+6px)] z-40 rounded-lg bg-popup-glass [backdrop-filter:var(--popup-blur)] [--smooth-ring-color:var(--popup-ring)] p-1 smooth-shadow-ring-md";
+	mergeStylexClassName("smooth-shadow-ring-md", sx.absolute, sx.bottomCalc1006px, sx.z40, sx.roundedLg, sx.bgPopupGlass, sx.BackdropFilterVarPopupBlur, sx.SmoothRingColorVarPopupRing, sx.p1);
 /** The menu's own floor width. Kept out of the surface above because a second
  *  `min-w-*` on the same element would not compose — the send-later menu is
  *  wider (it lists pending messages), and whichever Tailwind emitted last would
  *  win rather than the one written last. */
-export const composerMenuWidth = "min-w-[172px]";
+export const composerMenuWidth = mergeStylexClassName("", sx.minW172px);
 /** Default anchoring: the menu hangs off the right edge of its trigger. */
-export const composerMenuAnchorRight = "right-0";
+export const composerMenuAnchorRight = mergeStylexClassName("", sx.right0);
 /** The "+" sits at the LEFT of the toolbar, so its menu grows rightward from
  *  the composer's outer left edge (not the button's — the toolbar lives inside
  *  the composer's padding, which left the menu inset and off-axis). */
@@ -200,11 +831,11 @@ export const composerMenuAnchorLeft =
    40px phone size is what the last of the three (!) competing phone blocks in
    legacy.css resolved to. */
 export const composerSend =
-	"inline-flex size-8 shrink-0 items-center justify-center rounded-full leading-none transition-[background-color,border-color,color,filter,scale] enabled:active:scale-[0.96] disabled:cursor-default disabled:opacity-35 phone:size-10";
+	mergeStylexClassName("transition-[background-color,border-color,color,filter,scale] enabled:active:scale-[0.96]", sx.inlineFlex, sx.size8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.leadingNone, sx.disabledCursorDefault, sx.disabledOpacity35, sx.phoneSize10);
 /** Ordinary send: the accent plate. Hover takes `--accent-hover` rather than
  *  brightening — brightening a wash read as a disabled state. */
 export const composerSendDefault =
-	"bg-accent text-on-accent enabled:hover:bg-accent-hover";
+	mergeStylexClassName("enabled:hover:bg-accent-hover", sx.bgAccent, sx.textOnAccent);
 /** Busy + queue keeps the send plate and changes the glyph. The old 2px ring
  *  read like a selected toggle, then hovered to dark-on-dark because its ink
  *  did not invert with the fill. */
@@ -214,34 +845,34 @@ export const composerSendQueue = composerSendDefault;
 export const composerSendSteer = composerSendDefault;
 /** Stop: the only full-strength red plate. */
 export const composerSendStop =
-	"bg-red text-white enabled:hover:brightness-[1.12]";
+	mergeStylexClassName("enabled:hover:brightness-[1.12]", sx.bgRed, sx.textWhite);
 /** Inside the 50px resting pill a 40px disc is a blob against the hairline
  *  glyphs beside it. Keep the target, shrink the fill: padding plus
  *  background-clip paints a 32px disc without moving the hit area. */
-export const composerSendMinimizedFill = "phone:bg-clip-content phone:p-1";
+export const composerSendMinimizedFill = mergeStylexClassName("", sx.phoneBgClipContent, sx.phoneP1);
 
 /* ── File attachment chips ────────────────────────────────────────
    Shared by the composer's staged attachments (removable) and a user turn's
    download chips in the transcript (a link). The right padding is deliberately
    not part of the card: the composer needs room for its × button. */
-export const fileChipRow = "mb-2 flex flex-wrap gap-2";
+export const fileChipRow = mergeStylexClassName("", sx.mb2, sx.flex, sx.flexWrap, sx.gap2);
 export const fileChipCard =
-	"relative inline-flex max-w-[240px] items-center gap-[9px] rounded-lg border border-line-strong bg-[var(--bg-hover)] py-1.5 pl-1.5";
+	mergeStylexClassName("", sx.relative, sx.inlineFlex, sx.maxW240px, sx.itemsCenter, sx.gap9px, sx.roundedLg, sx.border, sx.borderLineStrong, sx.bgVarBgHover, sx.py15, sx.pl15);
 /** Composer: leaves room for the absolutely-placed remove button. */
-export const fileChipCardPaddingRemovable = "pr-[26px]";
+export const fileChipCardPaddingRemovable = mergeStylexClassName("", sx.pr26px);
 /** Transcript: nothing to remove there, and `.msg-file-card` asked for 10px —
  *  but that rule sat ABOVE `.composer-file-card`'s padding shorthand in the
  *  stylesheet at equal specificity, so it never applied. This keeps what the
  *  chip has always rendered; closing it up is a design change, not a migration. */
-export const fileChipCardPadding = "pr-[26px]";
+export const fileChipCardPadding = mergeStylexClassName("", sx.pr26px);
 export const fileChipThumb =
-	"inline-flex size-[34px] shrink-0 items-center justify-center rounded-control bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] text-[10px] font-bold tracking-[0.02em] text-accent";
-export const fileChipMeta = "flex min-w-0 flex-col gap-px";
+	mergeStylexClassName("bg-[color-mix(in_srgb,var(--accent)_16%,transparent)]", sx.inlineFlex, sx.size34px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.text10px, sx.fontBold, sx.tracking002em, sx.textAccent);
+export const fileChipMeta = mergeStylexClassName("", sx.flex, sx.minW0, sx.flexCol, sx.gapPx);
 /** The chip's title. 13px (text-label) rather than the stylesheet's off-scale
  *  12px — it is interface copy, and the card's height comes from the 34px
  *  badge, so nothing reflows. */
-export const fileChipName = "truncate text-label text-fg";
-export const fileChipSub = "text-meta text-faint";
+export const fileChipName = mergeStylexClassName("", sx.truncate, typography.label, sx.textFg);
+export const fileChipSub = mergeStylexClassName("", typography.meta, sx.textFaint);
 
 /* ── Flap edges ───────────────────────────────────────────────────
    Shared by both flaps that tuck under the composer (the queue flap below and
@@ -268,11 +899,11 @@ export const composerFlapBorder =
    to be `border-bottom-style: none`, not a zero-width solid, because the
    composer's own hairline continues it. `border-b-0` leaves the style behind. */
 export const composerQueue =
-	"relative -mb-3.5 flex flex-col gap-2 rounded-t-[var(--composer-radius)] border-x border-t " +
+	mergeStylexClassName("", sx.relative, sx.Mb35, sx.flex, sx.flexCol, sx.gap2, sx.roundedTVarComposerRadius, sx.borderX, sx.borderT) +
 	composerFlapBorder +
-	" bg-[color-mix(in_srgb,var(--bg-panel)_80%,var(--composer-surface))] px-3.5 pt-2.5 pb-[26px]";
-export const composerQueueTitle = "text-meta font-semibold text-faint";
-export const composerQueueList = "flex flex-col gap-2";
+	mergeStylexClassName("bg-[color-mix(in_srgb,var(--bg-panel)_80%,var(--composer-surface))]", sx.px35, sx.pt25, sx.pb26px);
+export const composerQueueTitle = mergeStylexClassName("", typography.meta, sx.fontSemibold, sx.textFaint);
+export const composerQueueList = mergeStylexClassName("", sx.flex, sx.flexCol, sx.gap2);
 /** One queued/steered row. The floor is one line of body text, so a row whose
  *  point is a single message does not inherit the 40px action cluster's
  *  height. Centered rather than top-aligned: the body is a single truncated
@@ -281,17 +912,17 @@ export const composerQueueList = "flex flex-col gap-2";
  *  and the actions. Nothing here ever wraps, so there is no first-line to
  *  align to. */
 export const composerQueueItem =
-	"relative flex min-h-[calc(13px*1.45)] items-center gap-2";
+	mergeStylexClassName("", sx.relative, sx.flex, sx.minHCalc13px145, sx.itemsCenter, sx.gap2);
 /** The hairline between rows. The stylesheet drew it with
  *  `.composer-queue-item + .composer-queue-item`, which a utility cannot
  *  spell against itself — so each list applies it from its own index. The
  *  three groups (steered, queued, sending) are separated by non-row elements,
  *  so "not first in ITS group" is exactly what the sibling selector matched. */
-export const composerQueueItemSeparated = "border-t border-line pt-2";
+export const composerQueueItemSeparated = mergeStylexClassName("", sx.borderT, sx.borderLine, sx.pt2);
 /** Drag-to-reorder: the whole row is the grab surface. The action buttons
  *  still take clicks — a drag only starts once the pointer actually moves. */
 export const composerQueueItemDraggable =
-	"cursor-grab touch-none active:cursor-grabbing";
+	mergeStylexClassName("", sx.cursorGrab, sx.touchNone, sx.activeCursorGrabbing);
 /** In flow at the row's trailing edge, so each row reserves exactly the width
  *  its own actions need — it used to be absolutely positioned over a fixed
  *  128px of padding, which clipped the rows carrying a pill into the text.
@@ -299,14 +930,14 @@ export const composerQueueItemDraggable =
  *  painted after it, hence `order-1`. The negative block margins keep the 36px
  *  cluster from setting the height of a one-line row. */
 export const composerQueueActions =
-	"order-1 z-[1] -mt-[11px] -mb-2.5 inline-flex shrink-0 items-center gap-0.5";
+	mergeStylexClassName("", sx.order1, sx.z1, sx.Mt11px, sx.Mb25, sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap05);
 /** A compact 36px action with the same `rounded-control` corner and inset
  *  hover wash as the composer's toolbar buttons. It remains a separate
  *  constant because the wash sits 3px in rather than 4px, there is no
  *  transparent border holding layout, and disabled actions fade further. */
 export const composerQueueAction =
-	"relative inline-flex size-9 items-center justify-center rounded-control text-dim disabled:cursor-default disabled:opacity-35 enabled:hover:text-fg " +
-	"before:absolute before:inset-[3px] before:z-0 before:rounded-[calc(9px*var(--rf))] before:[corner-shape:var(--cs)] before:transition-[background] before:content-[''] enabled:hover:before:bg-hover " +
+	mergeStylexClassName("enabled:hover:text-fg", sx.relative, sx.inlineFlex, sx.size9, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textDim, sx.disabledCursorDefault, sx.disabledOpacity35) + " " +
+	mergeStylexClassName("enabled:hover:before:bg-hover", sx.beforeAbsolute, sx.beforeInset3px, sx.beforeZ0, sx.beforeRoundedCalc9pxVarRf, sx.beforeCornerShapeVarCs, sx.beforeTransitionBackground, sx.beforeContent) + " " +
 	"[&>*]:relative [&>*]:z-[1]";
 /** Destructive action: the wash goes red rather than neutral. */
 export const composerQueueActionDanger =
@@ -314,16 +945,16 @@ export const composerQueueActionDanger =
 /** Steer stays accent at rest AND under the cursor — it is the one action on
  *  the row that is not a correction, and the shared hover would have dropped
  *  it back to plain ink. */
-export const composerQueueActionSteer = "text-accent enabled:hover:text-accent";
+export const composerQueueActionSteer = mergeStylexClassName("enabled:hover:text-accent", sx.textAccent);
 /** A status readout, not a control: "Steered". Genuinely
  *  round (the stylesheet spelled a bare 999px with no `corner-shape`), so
  *  `rounded-full` rather than `rounded-[999px]`. */
 export const composerQueuePill =
-	"inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-transparent bg-accent-soft px-[13px] text-label font-semibold text-accent";
+	mergeStylexClassName("", sx.inlineFlex, sx.h8, sx.shrink0, sx.itemsCenter, sx.gap15, sx.roundedFull, sx.border, sx.borderTransparent, sx.bgAccentSoft, sx.px13px, typography.label, sx.fontSemibold, sx.textAccent);
 /** Optimistic busy send: a transient readout, not a badge or control. Keeping
  *  it borderless prevents the in-flight state from reading as a pill button. */
 export const composerQueueSendingStatus =
-	"inline-flex h-8 shrink-0 items-center px-2 text-label font-medium text-faint";
+	mergeStylexClassName("", sx.inlineFlex, sx.h8, sx.shrink0, sx.itemsCenter, sx.px2, typography.label, sx.fontMedium, sx.textFaint);
 /** The label carries its own motion instead of standing next to a spinner: a
  *  highlight crosses the word, which reads as "not settled yet" without adding
  *  a second moving thing to a row that already sits in a list. The letters are
@@ -332,30 +963,30 @@ export const composerQueueSendingStatus =
  *  from the resting `--text-faint` in both themes. Settled states ("Queued")
  *  do not take it. */
 export const composerQueueSendingShimmer =
-	"bg-clip-text text-transparent [-webkit-background-clip:text] " +
+	mergeStylexClassName("", sx.bgClipText, sx.textTransparent, sx.WebkitBackgroundClipText) + " " +
 	"[background-image:linear-gradient(100deg,var(--text-faint)_38%,var(--text-dim)_50%,var(--text-faint)_62%)] " +
-	"[background-size:200%_100%] [background-repeat:no-repeat] " +
-	"animate-[text-shimmer_1.8s_linear_infinite]";
-export const composerQueueContent = "flex min-w-0 flex-1 items-center gap-2";
+	mergeStylexClassName("", sx.BackgroundSize200100, sx.BackgroundRepeatNoRepeat) + " " +
+	mergeStylexClassName("", sx.animateTextShimmer18sLinearInfinite);
+export const composerQueueContent = mergeStylexClassName("", sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2);
 /** The thumbnail keeps its size — shrunk to the 19px line box it stops being a
  *  recognizable preview, and the `+N` badge below is nearly as tall as the
  *  image it counts. The row centers on it instead. */
-export const composerQueueImage = "relative h-[34px] w-[46px] flex-none";
+export const composerQueueImage = mergeStylexClassName("", sx.relative, sx.h34px, sx.w46px, sx.flexNone);
 export const composerQueueImageThumb =
-	"block size-full rounded-[calc(8px*var(--rf))] border border-line object-cover";
+	mergeStylexClassName("", sx.block, sx.sizeFull, sx.roundedCalc8pxVarRf, sx.border, sx.borderLine, sx.objectCover);
 export const composerQueueImageCount =
-	"absolute -right-1 -bottom-1 h-[18px] min-w-[18px] rounded-full border border-line bg-raised px-1 text-center text-[10px] font-bold leading-4 text-dim";
+	mergeStylexClassName("", sx.absolute, sx.Right1, sx.Bottom1, sx.h18px, sx.minW18px, sx.roundedFull, sx.border, sx.borderLine, sx.bgRaised, sx.px1, sx.textCenter, sx.text10px, sx.fontBold, sx.leading4, sx.textDim);
 /** The message itself, one line with an ellipsis. Size and leading stay in one
  *  string with leading last: tailwind-merge files `leading` as a conflict of
  *  `font-size`, so a later `text-*` would drop an earlier `leading-*`. */
-export const composerQueueBody = "min-w-0 flex-1 truncate text-label leading-[1.45]";
+export const composerQueueBody = mergeStylexClassName("", sx.minW0, sx.flex1, sx.truncate, typography.label, sx.leading145);
 /** Whose message it is. `github` outranks `human` — both were equally specific
  *  in the stylesheet and github came last. */
 export const composerQueueBodyTone = {
-	default: "text-fg",
+	default: mergeStylexClassName("", sx.textFg),
 	human: "text-[color-mix(in_srgb,var(--text)_88%,#1f9e8a)]",
-	github: "text-dim",
-	sending: "text-dim",
+	github: mergeStylexClassName("", sx.textDim),
+	sending: mergeStylexClassName("", sx.textDim),
 } as const;
 /** The "from" label ahead of the body — a teammate's name, or "GitHub". */
-export const composerQueueFrom = "mr-1.5 font-semibold text-faint";
+export const composerQueueFrom = mergeStylexClassName("", sx.mr15, sx.fontSemibold, sx.textFaint);
