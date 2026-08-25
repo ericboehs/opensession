@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
 import { bootstrapRunner, createRunnerPairing, fetchRunnerBootstrapTargets, fetchRunners, revokeRunner, updateRunner, type RunnerBootstrapTarget, type RunnerInfo } from "../../lib/api/runners";
 import { Button } from "../../ui/button";
-import { cn } from "../../ui/cn";
 import { Field, Input } from "../../ui/input";
 import { Modal } from "../../ui/modal";
 import { OptionSelect } from "../../ui/select";
@@ -142,14 +141,36 @@ const sx = stylex.create({
 	gap4: {
 			gap: "16px"
 	},
+	stateChip: {
+		borderRadius: "calc(infinity * 1px)",
+		paddingInline: "8px",
+		paddingBlock: "2px",
+		fontWeight: "var(--font-weight-medium)",
+		textTransform: "capitalize",
+	},
+	capitalize: {
+		textTransform: "capitalize",
+	},
+	stateOnline: {
+		backgroundColor: "var(--green-soft)",
+		color: "var(--green)",
+	},
+	stateBusy: {
+		backgroundColor: "var(--yellow-soft)",
+		color: "var(--yellow)",
+	},
+	stateOffline: {
+		backgroundColor: "var(--hover)",
+		color: "var(--text-dim)",
+	},
 });
 
-const stateStyle: Record<RunnerInfo["state"], string> = {
-	online: "bg-green-soft text-green",
-	busy: "bg-yellow-soft text-yellow",
-	offline: "bg-hover text-dim",
-	maintenance: "bg-hover text-dim",
-};
+const stateStyle = {
+	online: sx.stateOnline,
+	busy: sx.stateBusy,
+	offline: sx.stateOffline,
+	maintenance: sx.stateOffline,
+} as const;
 
 function resourceSummary(runner: RunnerInfo): string {
 	const values = [
@@ -340,7 +361,7 @@ function RunnerRow({ runner, admin, busy, onChange, onRevoke }: { runner: Runner
 					<div {...stylex.props(sx.minW0, sx.flex1)}>
 						<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap2)}>
 							<span {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>{runner.label || runner.name}</span>
-							<span className={cn("rounded-full px-2 py-0.5 text-meta font-medium capitalize", stateStyle[runner.state])}>{runner.state}</span>
+							<span {...stylex.props(sx.stateChip, typography.meta, stateStyle[runner.state])}>{runner.state}</span>
 						</div>
 						<div {...stylex.props(sx.mt1, sx.leadingRelaxed, sx.textDim, typography.supporting)}>{runner.platform} · {runner.arch} · {resourceSummary(runner)}</div>
 						{runner.workload && <div {...stylex.props(sx.mt2, sx.textDim, typography.supporting)}>Working: {runner.workload.operation || runner.workload.sessionId || "session work"}</div>}
@@ -396,7 +417,7 @@ function RunnerDetails({ runner, busy, labelRef, onChange, onRevoke, onSaved }: 
 	return <>
 		<Modal.Header
 			title={runner.label || runner.name}
-			description={<><span className={`capitalize ${stateStyle[runner.state]}`}>{runner.state}</span> · {runner.platform} · {runner.arch} · {resourceSummary(runner)}</>}
+			description={<><span {...stylex.props(sx.capitalize, stateStyle[runner.state])}>{runner.state}</span> · {runner.platform} · {runner.arch} · {resourceSummary(runner)}</>}
 		/>
 		{/* Every field here is a comma-separated LIST, and a list clips in a
 		    half-dialog column (the same reason SetupTeam runs its email and

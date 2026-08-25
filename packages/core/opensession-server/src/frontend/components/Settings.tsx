@@ -184,6 +184,70 @@ const sx = stylex.create({
 	mt6: {
 			marginTop: "24px"
 	},
+	leadingNormal: { lineHeight: "var(--leading-normal)" },
+	searchIcon: {
+		pointerEvents: "none",
+		position: "absolute",
+		top: "50%",
+		transform: "translateY(-50%)",
+		color: "var(--text-faint)",
+	},
+	searchIconSheet: { left: "14px" },
+	searchIconDesktop: { left: "8px" },
+	searchInputSheet: {
+		height: "40px",
+		borderRadius: "calc(infinity * 1px)",
+		borderColor: "transparent",
+		backgroundColor: "var(--bg-raised)",
+		paddingLeft: "44px",
+	},
+	searchInputDesktop: { paddingLeft: "32px" },
+	searchInputValueSheet: { paddingRight: "44px" },
+	searchInputValueDesktop: { paddingRight: "32px" },
+	clearSearch: {
+		position: "absolute",
+		top: "50%",
+		display: "flex",
+		transform: "translateY(-50%)",
+		cursor: "pointer",
+		alignItems: "center",
+		justifyContent: "center",
+		borderStyle: "none",
+		backgroundColor: "transparent",
+		color: "var(--text-faint)",
+		":hover": {
+			backgroundColor: "var(--hover)",
+			color: "var(--text)",
+		},
+	},
+	clearSearchSheet: {
+		right: "6px",
+		width: "32px",
+		height: "32px",
+		borderRadius: "calc(infinity * 1px)",
+	},
+	clearSearchDesktop: {
+		right: "4px",
+		width: "24px",
+		height: "24px",
+		borderRadius: "calc(7px * var(--rf))",
+	},
+	pageEase: {
+		transitionProperty: "transform",
+		transitionDuration: "var(--dur-lg)",
+		transitionTimingFunction: "var(--ease)",
+	},
+	insetPage: { position: "absolute", inset: 0 },
+	rootPageBack: { transform: "translateX(-33.333333%)" },
+	detailPage: {
+		position: "absolute",
+		inset: 0,
+		display: "flex",
+		flexDirection: "column",
+		backgroundColor: "var(--bg)",
+	},
+	detailVisible: { transform: "translateX(0)" },
+	detailHidden: { transform: "translateX(100%)" },
 });
 
 // The full-window Settings surface: a left sub-nav + a scrolling body, reached
@@ -216,7 +280,7 @@ const GALLERY_SECTIONS = new Set<SettingsSectionKey>(["library", "setup"]);
 // roles stay compact at 110%. The descendant rules deliberately beat local
 // one-off leading utilities so every section follows the page-level rhythm.
 const SETTINGS_LEADING =
-	"leading-normal [&_*]:!leading-normal " +
+	"[&_*]:!leading-normal " +
 	"[&_h1]:!leading-[1.1] [&_h2]:!leading-[1.1] [&_h3]:!leading-[1.1] " +
 	"[&_h4]:!leading-[1.1] [&_h5]:!leading-[1.1] [&_h6]:!leading-[1.1] " +
 	"[&_.font-title]:!leading-[1.1] [&_.text-item-title]:!leading-[1.1] " +
@@ -275,9 +339,9 @@ function NavSearch({
 			<div {...stylex.props(sx.relative)}>
 				<IconSearch
 					size={sheet ? 20 : 18}
-					className={cn(
-						"pointer-events-none absolute top-1/2 -translate-y-1/2 text-faint",
-						sheet ? "left-3.5" : "left-2",
+					{...stylex.props(
+						sx.searchIcon,
+						sheet ? sx.searchIconSheet : sx.searchIconDesktop,
 					)}
 				/>
 				<Input
@@ -295,13 +359,12 @@ function NavSearch({
 					size={sheet ? "lg" : "md"}
 					className={cn(
 						"[&::-webkit-search-cancel-button]:hidden",
-						// `rounded-full`, not the app's squircle corner: a capsule is what
-						// iOS puts a search field in, and base.css grants the squircle to
-						// every `rounded-*` EXCEPT this one, so it is also the spelling
-						// that gets true round ends rather than a superellipse.
-						sheet
-							? cn("h-10 rounded-full border-transparent bg-raised pl-11 text-input-phone", value && "pr-11")
-							: cn("pl-8", value && "pr-8"),
+						stylex.props(
+							// A true capsule, rather than the app's squircle corner.
+							sheet ? sx.searchInputSheet : sx.searchInputDesktop,
+							sheet && typography.inputPhone,
+							Boolean(value) && (sheet ? sx.searchInputValueSheet : sx.searchInputValueDesktop),
+						).className,
 					)}
 					onChange={(e) => onChange(e.target.value)}
 					onKeyDown={(e) => {
@@ -319,10 +382,10 @@ function NavSearch({
 					<button
 						type="button"
 						aria-label="Clear search"
-						className={cn(
-							"absolute top-1/2 flex -translate-y-1/2 cursor-pointer items-center justify-center border-none bg-transparent text-faint hover:bg-hover hover:text-fg",
+						{...stylex.props(
+							sx.clearSearch,
 							// Round inside a capsule; the desktop field keeps the app's corner.
-							sheet ? "right-1.5 size-8 rounded-full" : "right-1 size-6 rounded-md",
+							sheet ? sx.clearSearchSheet : sx.clearSearchDesktop,
 						)}
 						onClick={() => onChange("")}
 					>
@@ -448,7 +511,7 @@ export function Settings({
 	const firstHit = shown[0]?.hits[0]?.item;
 
 	return (
-		<div className={cn(SETTINGS_PAGE, SETTINGS_LEADING)}>
+		<div className={cn(SETTINGS_PAGE, SETTINGS_LEADING, stylex.props(sx.leadingNormal).className)}>
 			{/* Back and search stay put; only the section list scrolls, so neither
 			    they nor the account footer are lost once the list outgrows the nav. */}
 			<aside className={SETTINGS_NAV}>
@@ -579,13 +642,11 @@ function MobileSettings({
 	const detail = section ?? null;
 	const shownSection = detail ?? lastSection;
 	const shownLabel = SECTIONS.find((s) => s.key === shownSection)?.label;
-	const pageEase = "transition-transform duration-[var(--dur-lg)] ease-[var(--ease)]";
-
 	return (
 		<PhonePage
 			onClose={onBack}
 			label="Settings"
-			className={cn("settings-sheet", SETTINGS_LEADING)}
+			className={cn("settings-sheet", SETTINGS_LEADING, stylex.props(sx.leadingNormal).className)}
 		>
 			{(dismiss) => (
 				<>
@@ -619,7 +680,7 @@ function MobileSettings({
 						{/* Root page: grouped section list over a bottom search bar.
 						    Parked slightly left while a detail page covers it, iOS-style. */}
 						<div
-							className={cn("absolute inset-0", pageEase, detail && "-translate-x-1/3")}
+							{...stylex.props(sx.insetPage, sx.pageEase, detail && sx.rootPageBack)}
 							aria-hidden={!!detail}
 						>
 							<div className={SETTINGS_SHEET_LIST}>
@@ -675,10 +736,10 @@ function MobileSettings({
 
 						{/* Detail page: the picked section's panel, slid in from the right. */}
 						<div
-							className={cn(
-								"absolute inset-0 flex flex-col bg-surface",
-								pageEase,
-								detail ? "translate-x-0" : "translate-x-full",
+							{...stylex.props(
+								sx.detailPage,
+								sx.pageEase,
+								detail ? sx.detailVisible : sx.detailHidden,
 							)}
 							aria-hidden={!detail}
 						>

@@ -286,6 +286,22 @@ const sx = stylex.create({
 	gap35: {
 			gap: "14px"
 	},
+	spinning: {
+		animationName: stylex.keyframes({ to: { transform: "rotate(360deg)" } }),
+		animationDuration: "1s",
+		animationTimingFunction: "linear",
+		animationIterationCount: "infinite",
+	},
+	menuReveal: {
+		opacity: 0,
+		transitionProperty: "color, opacity, background",
+		transitionDuration: "var(--dur-micro)",
+	},
+	minH20: { minHeight: "80px" },
+	resizeY: { resize: "vertical" },
+	mt2: { marginTop: "8px" },
+	lastDeliveryBad: { color: "var(--red)" },
+	lastDeliveryIdle: { color: "var(--text-faint)" },
 });
 
 interface McpConnection {
@@ -539,7 +555,7 @@ setRemoveError(e.message);
           <>
             <Button
               variant="soft"
-              icon={<IconHistory size={16} className={refreshing ? "animate-spin" : ""} />}
+              icon={<IconHistory size={16} {...stylex.props(refreshing && sx.spinning)} />}
               onClick={() => load(true)}
               disabled={refreshing}
             >
@@ -668,7 +684,8 @@ setRemoveError(e.message);
                     <Menu.Trigger
                       className={cn(
                         rowMenuTriggerClasses,
-                        "opacity-0 transition-[color,opacity,background] group-hover:opacity-100 data-[popup-open]:opacity-100",
+                        stylex.props(sx.menuReveal).className,
+                        "group-hover:opacity-100 data-[popup-open]:opacity-100",
                       )}
                       aria-label={`Manage ${s.name}`}
                     >
@@ -1002,7 +1019,7 @@ function GithubAppWizard({
                 <>
                   <input
                     type="text"
-                    className={cn(settingsInputClass, "font-mono")}
+                    className={cn(settingsInputClass, stylex.props(sx.fontMono).className)}
                     value={appOrg}
                     onChange={(e) => setAppOrg(e.target.value)}
                     placeholder="my-org"
@@ -1098,7 +1115,7 @@ function GithubAppWizard({
                 <input
                   ref={setStepFocus}
                   type="text"
-                  className={cn(settingsInputClass, "font-mono")}
+                  className={cn(settingsInputClass, stylex.props(sx.fontMono).className)}
                   value={clientId}
                   onChange={(e) => setClientId(e.target.value)}
                   placeholder="Iv23…"
@@ -1117,7 +1134,7 @@ function GithubAppWizard({
                 <label {...stylex.props(sx.textFg, typography.supporting)}>App slug</label>
                 <input
                   type="text"
-                  className={cn(settingsInputClass, "font-mono")}
+                  className={cn(settingsInputClass, stylex.props(sx.fontMono).className)}
                   value={slug}
                   onChange={(e) => setSlug(e.target.value)}
                   placeholder={previewSlug}
@@ -1138,7 +1155,7 @@ function GithubAppWizard({
                 <label {...stylex.props(sx.textFg, typography.supporting)}>Client secret</label>
                 <input
                   type="password"
-                  className={cn(settingsInputClass, "font-mono")}
+                  className={cn(settingsInputClass, stylex.props(sx.fontMono).className)}
                   value={secret}
                   onChange={(e) => setSecret(e.target.value)}
                   placeholder="Client secret"
@@ -1156,7 +1173,7 @@ function GithubAppWizard({
               <div {...stylex.props(sx.flex, sx.flexCol, sx.gap1)}>
                 <label {...stylex.props(sx.textFg, typography.supporting)}>Private key (PEM)</label>
                 <textarea
-                  className={cn(settingsInputClass, "min-h-20 resize-y font-mono")}
+                  className={cn(settingsInputClass, stylex.props(sx.minH20, sx.resizeY, sx.fontMono).className)}
                   value={privateKey}
                   onChange={(e) => setPrivateKey(e.target.value)}
                   placeholder="-----BEGIN RSA PRIVATE KEY-----"
@@ -1762,7 +1779,7 @@ setError(e.message);
             into a one-word column. The admin row is top-aligned because its
             description runs several lines; the compact personal row stays
             centered with its button. */}
-        <SettingRow className={cn("gap-x-3", !personal && "items-start")}>
+        <SettingRow {...stylex.props(sx.gapX3, !personal && sx.itemsStart)}>
           {signedIn ? (
             // Same 30px slot as the brand tile, so the row's text column does
             // not shift when the tile gives way to the avatar.
@@ -1773,7 +1790,7 @@ setError(e.message);
             <IconTile name="github" size={30} />
           )}
           <SettingRowText>
-            <SettingRowTitle className={cn(personal && "truncate")}>
+            <SettingRowTitle {...stylex.props(personal && sx.truncate)}>
               {signedIn ? own!.name : personal ? "GitHub" : "Per-user GitHub auth"}
               {signedIn && (
                 <span {...stylex.props(sx.ml2, sx.fontNormal, sx.textFaint, typography.label)}>@{own!.github}</span>
@@ -2104,7 +2121,7 @@ setError(e.message);
               Private key (PKCS8 PEM, its public half registered with the org in the
               Pierre dashboard)
               <textarea
-                className={cn(settingsInputClass, "resize-y font-mono")}
+                className={cn(settingsInputClass, stylex.props(sx.resizeY, sx.fontMono).className)}
                 value={pem}
                 onChange={(e) => setPem(e.target.value)}
                 rows={5}
@@ -2164,9 +2181,9 @@ setError(e.message);
                   dashboard → Webhooks, subscribed to push and repo.sync events.
                 </div>
                 <div
-                  className={cn(
-                    "text-meta",
-                    last && !last.ok ? "text-red" : "text-faint",
+                  {...stylex.props(
+                    typography.meta,
+                    last && !last.ok ? sx.lastDeliveryBad : sx.lastDeliveryIdle,
                   )}
                 >
                   {!last
@@ -2292,7 +2309,7 @@ setError(e.message);
           rows={12}
           spellCheck={false}
           aria-label="Routing prompt"
-          className={cn(settingsInputClass, "mt-2 resize-y text-body")}
+          className={cn(settingsInputClass, stylex.props(sx.mt2, sx.resizeY, typography.body).className)}
         />
         <div {...stylex.props(sx.mt15, sx.flex, sx.minW0, sx.itemsCenter, sx.gap25, sx.textFaint, typography.meta)}>
           <Button
@@ -2425,7 +2442,7 @@ setSaving(false);
           </div>
           <input
             type="password"
-            className={cn(settingsInputClass, "font-mono")}
+            className={cn(settingsInputClass, stylex.props(sx.fontMono).className)}
             value={token}
             onChange={(e) => setToken(e.target.value)}
             placeholder="Paste API token"
@@ -2561,7 +2578,7 @@ setError(e.message);
           <SettingsField>
             Env (KEY=VALUE, one per line, stored in mcp-config.json)
             <textarea
-              className={cn(settingsInputClass, "resize-y font-mono")}
+              className={cn(settingsInputClass, stylex.props(sx.resizeY, sx.fontMono).className)}
               value={env}
               onChange={(e) => setEnv(e.target.value)}
               rows={2}

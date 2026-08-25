@@ -184,6 +184,48 @@ const sx = stylex.create({
 	whitespaceNormal: {
 			whiteSpace: "normal"
 	},
+	code: {
+		whiteSpace: "nowrap",
+		borderRadius: "calc(4px * var(--rf))",
+		backgroundColor: "var(--bg)",
+		paddingInline: "6px",
+		paddingBlock: "2px",
+		fontFamily: "var(--mono)",
+		fontSize: ".92em",
+		color: "var(--text)",
+	},
+	linkChips: {
+		marginTop: "8px",
+		display: "flex",
+		flexWrap: "wrap",
+		gap: "6px",
+	},
+	scopeChip: {
+		borderRadius: "calc(4px * var(--rf))",
+		paddingInline: "6px",
+		paddingBlock: "2px",
+		fontFamily: "var(--mono)",
+		transitionProperty: "color, background-color, border-color, text-decoration-color, fill, stroke",
+		transitionDuration: "var(--dur-micro)",
+		":focus-visible": {
+			outline: "2px solid var(--accent-ink)",
+			outlineOffset: "2px",
+		},
+	},
+	scopeCopied: {
+		backgroundColor: "var(--green-soft)",
+		color: "var(--green)",
+	},
+	scopeIdle: {
+		backgroundColor: "var(--bg)",
+		color: "var(--text)",
+		":hover": { backgroundColor: "var(--bg-active)" },
+	},
+	secretInput: {
+		marginTop: "2px",
+		fontFamily: "var(--mono)",
+		"::placeholder": { fontFamily: "var(--sans)" },
+	},
 });
 
 // Shared vocabulary for the Settings → Setup page (Setup.tsx) and its section
@@ -474,12 +516,7 @@ export function Code({
 	children: React.ReactNode;
 }) {
 	return (
-		<code
-			className={cn(
-				"whitespace-nowrap rounded-sm bg-surface px-1.5 py-0.5 font-mono text-[0.92em] text-fg",
-				className,
-			)}
-		>
+		<code className={cn(stylex.props(sx.code).className, className)}>
 			{children}
 		</code>
 	);
@@ -495,7 +532,7 @@ export function LinkChips({
 }) {
 	if (!links.length) return null;
 	return (
-		<div className={cn("mt-2 flex flex-wrap gap-1.5", className)}>
+		<div className={cn(stylex.props(sx.linkChips).className, className)}>
 			{links.map((link) => (
 				<a
 					key={link.url}
@@ -565,9 +602,10 @@ function ScopeChip({ value }: { value: string }) {
 			type="button"
 			title="Copy"
 			onClick={() => copy(value)}
-			className={cn(
-				"focus-ring rounded-sm px-1.5 py-0.5 font-mono text-meta transition-colors",
-				copied ? "bg-green-soft text-green" : "bg-surface text-fg hover:bg-active",
+			{...stylex.props(
+				sx.scopeChip,
+				typography.meta,
+				copied ? sx.scopeCopied : sx.scopeIdle,
 			)}
 		>
 			{value}
@@ -683,7 +721,7 @@ export function SecretField({
 				// Mono for the value you paste, but not for the placeholder: every
 				// placeholder here is a sentence, and a sentence set in mono reads
 				// as a literal string to type rather than as a hint.
-				className={fieldClasses("md", "mt-0.5 font-mono placeholder:font-sans")}
+				className={cn(fieldClasses("md"), stylex.props(sx.secretInput).className)}
 				value={value}
 				disabled={disabled}
 				onChange={(event) => onChange(event.target.value)}

@@ -118,6 +118,18 @@ const sx = stylex.create({
 	p3: {
 			padding: "12px"
 	},
+	withDivider: {
+		marginTop: "16px",
+		borderTopStyle: "solid",
+		borderTopWidth: "1px",
+		borderColor: "var(--border)",
+		paddingTop: "16px",
+	},
+	envFields: {
+		display: "flex",
+		flexDirection: "column",
+		gap: "16px",
+	},
 });
 
 // One integration's whole configuration, in the order you work through it:
@@ -446,7 +458,7 @@ setSaving(false);
 							</div>
 						)}
 						{integration.id === "slack" && (
-							<div className={canToggle ? "mt-4 border-t border-line pt-4" : undefined}>
+							<div {...stylex.props(canToggle && sx.withDivider)}>
 								<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap4)}>
 									<div {...stylex.props(sx.minW12rem, sx.flex1)}>
 										<div {...stylex.props(sx.fontMedium, sx.textFg, typography.itemTitle)}>Event delivery</div>
@@ -478,13 +490,7 @@ setSaving(false);
 							</div>
 						)}
 						{visibleEnv.length > 0 && (
-							<div
-								className={
-									canToggle
-										? "mt-4 flex flex-col gap-4 border-t border-line pt-4"
-										: "flex flex-col gap-4"
-								}
-							>
+							<div {...stylex.props(sx.envFields, canToggle && sx.withDivider)}>
 								{visibleEnv.map((envVar) => (
 									<SecretField
 										key={envVar.name}

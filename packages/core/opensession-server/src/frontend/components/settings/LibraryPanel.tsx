@@ -44,6 +44,7 @@ import {
 	SettingsPanel,
 } from "../../ui/settings";
 import { Input } from "../../ui/input";
+import { cn } from "../../ui/cn";
 import { Badge } from "../../ui/badge";
 import { Segmented, SegmentedOption } from "../../ui/segmented";
 import { EmptyState, InlineAlert, Skeleton, SkeletonBar } from "../../ui/state";
@@ -197,6 +198,41 @@ const sx = stylex.create({
 	px0: {
 			paddingInline: "0"
 	},
+	installLink: {
+		display: "inline-flex",
+		minHeight: "26px",
+		flexShrink: 0,
+		alignItems: "center",
+		borderRadius: "calc(12px * var(--rf))",
+		borderStyle: "solid",
+		borderWidth: "1px",
+		borderColor: "var(--border)",
+		backgroundColor: "var(--button)",
+		paddingInline: "10px",
+		fontWeight: "var(--font-weight-medium)",
+		color: "var(--text-dim)",
+		textDecorationLine: "none",
+		transitionProperty: "color, background-color, border-color",
+		transitionDuration: "var(--dur-micro)",
+		":hover": {
+			borderColor: "var(--border-strong)",
+			color: "var(--text)",
+		},
+	},
+	mt2: { marginTop: "8px" },
+	h25: { height: "10px" },
+	w23pct: { width: "23%" },
+	w26pct: { width: "26%" },
+	w31pct: { width: "31%" },
+	w35pct: { width: "35%" },
+	w38pct: { width: "38%" },
+	w44pct: { width: "44%" },
+	w58pct: { width: "58%" },
+	w62pct: { width: "62%" },
+	w69pct: { width: "69%" },
+	w74pct: { width: "74%" },
+	w76pct: { width: "76%" },
+	w83pct: { width: "83%" },
 });
 
 // ── The library: one browsable catalog over the things this instance can be
@@ -336,8 +372,6 @@ function EntryIcon({ entry, size = 34 }: { entry: LibraryEntry; size?: number })
 /** A card's action: a raised pill, the Button primitive's `default` recipe at
  *  `sm`. It is an anchor rather than a button because every install path is a
  *  place (the automation form, Setup), and a link is what a place takes. */
-const installLinkClass =
-	"inline-flex min-h-[26px] shrink-0 items-center rounded-control border border-line bg-button px-2.5 text-xs font-medium text-dim no-underline smooth-shadow-xs transition-colors hover:border-line-strong hover:text-fg";
 
 function EntryControl({
 	entry,
@@ -365,7 +399,10 @@ function EntryControl({
 		);
 
 	return (
-		<a className={installLinkClass} href={`${BASE_PATH}${entry.href}`}>
+		<a
+			className={cn(stylex.props(sx.installLink, typography.label).className, "smooth-shadow-xs")}
+			href={`${BASE_PATH}${entry.href}`}
+		>
 			{entry.install === "guided"
 				? "Set up"
 				: entry.install === "draft"
@@ -400,12 +437,12 @@ function CatalogSkeleton() {
 			<SkeletonBar {...stylex.props(sx.mb4, sx.h4, sx.w22, sx.borderB, sx.borderDivider, sx.pb3)} />
 			<div className="@container">
 				<div className="@[560px]:grid-cols-2" {...stylex.props(sx.grid, sx.gridCols1, sx.gapX12)}>
-					{CATALOG_GHOST_ROWS.map((row) => (
-						<div key={row.name} {...stylex.props(sx.flex, sx.itemsCenter, sx.gap35, sx.py35)}>
+					{CATALOG_GHOST_ROWS.map((row, index) => (
+						<div key={index} {...stylex.props(sx.flex, sx.itemsCenter, sx.gap35, sx.py35)}>
 							<SkeletonBar {...stylex.props(sx.size9, sx.shrink0, sx.roundedControl)} />
 							<div {...stylex.props(sx.minW0, sx.flex1)}>
-								<SkeletonBar className={row.name} />
-								<SkeletonBar className={`mt-2 h-2.5 ${row.description}`} />
+								<SkeletonBar {...stylex.props(row.name)} />
+								<SkeletonBar {...stylex.props(sx.mt2, sx.h25, row.description)} />
 							</div>
 						</div>
 					))}
@@ -417,12 +454,12 @@ function CatalogSkeleton() {
 
 /** Ragged, and a name always shorter than the line under it — see ui/state. */
 const CATALOG_GHOST_ROWS = [
-	{ name: "w-[38%]", description: "w-[76%]" },
-	{ name: "w-[26%]", description: "w-[58%]" },
-	{ name: "w-[44%]", description: "w-[69%]" },
-	{ name: "w-[31%]", description: "w-[83%]" },
-	{ name: "w-[35%]", description: "w-[62%]" },
-	{ name: "w-[23%]", description: "w-[74%]" },
+	{ name: sx.w38pct, description: sx.w76pct },
+	{ name: sx.w26pct, description: sx.w58pct },
+	{ name: sx.w44pct, description: sx.w69pct },
+	{ name: sx.w31pct, description: sx.w83pct },
+	{ name: sx.w35pct, description: sx.w62pct },
+	{ name: sx.w23pct, description: sx.w74pct },
 ];
 
 function SectionHeading({

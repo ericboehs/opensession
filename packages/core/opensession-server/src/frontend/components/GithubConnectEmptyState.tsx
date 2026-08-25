@@ -22,6 +22,9 @@ const sx = stylex.create({
 	minH10: {
 			minHeight: "40px"
 	},
+	px6: {
+		paddingInline: "24px",
+	},
 });
 
 export function GithubConnectEmptyState({
@@ -49,7 +52,7 @@ export function GithubConnectEmptyState({
 					Connect GitHub
 				</Button>
 			}
-			className={cn("px-6", className)}
+			className={cn(stylex.props(sx.px6).className, className)}
 		>
 			Connect a repository to get started.
 		</EmptyState>

@@ -1,3 +1,4 @@
+import * as stylex from "@stylexjs/stylex";
 import React, { useEffect, useState } from "react";
 import {
 	fetchInstanceIdentity,
@@ -18,7 +19,11 @@ import { toast } from "../ui/toast";
 // What this instance and its agent are called. These rows sit inside the
 // organization card, so Setup and Workspace > General both show one section.
 
-const IDENTITY_INPUT_CLASS = cn(settingsInputClass, "w-[140px]");
+const sx = stylex.create({
+	identityInput: {
+		width: "140px",
+	},
+});
 
 /** One identity field: saves on blur or Enter, reverts on Escape or failure. */
 function IdentityInput({
@@ -53,7 +58,7 @@ setSaving(false);
 	};
 	return (
 		<input
-			className={IDENTITY_INPUT_CLASS}
+			className={cn(settingsInputClass, stylex.props(sx.identityInput).className)}
 			value={draft}
 			disabled={saving}
 			onChange={(e) => setDraft(e.target.value)}

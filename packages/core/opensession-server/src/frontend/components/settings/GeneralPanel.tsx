@@ -134,9 +134,11 @@ const sx = stylex.create({
 	hidden: {
 			display: "none"
 	},
+	nameInput: {
+		width: "220px",
+		maxWidth: "100%",
+	},
 });
-
-const NAME_INPUT_CLASS = cn(settingsInputClass, "w-[220px] max-w-full");
 
 /**
  * The organization's name, mark and email domain.
@@ -359,7 +361,7 @@ setBusy(false);
 								<SettingRowTitle>Organization name</SettingRowTitle>
 							</SettingRowText>
 							<input
-								className={NAME_INPUT_CLASS}
+								className={cn(settingsInputClass, stylex.props(sx.nameInput).className)}
 								value={draft}
 								maxLength={80}
 								disabled={busy}
@@ -378,7 +380,7 @@ setBusy(false);
 									<SettingRowTitle>Email domain</SettingRowTitle>
 								</SettingRowText>
 								<input
-									className={NAME_INPUT_CLASS}
+									className={cn(settingsInputClass, stylex.props(sx.nameInput).className)}
 									value={domainDraft}
 									maxLength={80}
 									disabled={busy}

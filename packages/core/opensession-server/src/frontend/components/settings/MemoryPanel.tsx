@@ -399,6 +399,22 @@ const sx = stylex.create({
 			transitionTimingFunction: "var(--tw-ease,var(--ease))",
 			transitionDuration: "var(--tw-duration,var(--dur-micro))"
 	},
+	collapsedMemory: {
+		maxHeight: "7.5em",
+		overflow: "hidden",
+	},
+	lineClamp5: {
+		overflow: "hidden",
+		display: "-webkit-box",
+		WebkitBoxOrient: "vertical",
+		WebkitLineClamp: 5,
+	},
+	phoneHidden: {
+		"@media (max-width: 720px)": { display: "none" },
+	},
+	phoneMinH11: {
+		"@media (max-width: 720px)": { minHeight: "44px" },
+	},
 });
 
 // Settings maintenance for structured repo, user, workspace, and Slack channel
@@ -713,10 +729,17 @@ setBusy(false);
 							<Badge tone={statusTone(state)}>{STATE_LABELS[state]}</Badge>
 							{review ? <Badge tone="warning">Needs review</Badge> : row.entry.lastConfirmedAt ? <Badge tone="success">Confirmed</Badge> : null}
 						</div>
-						<div className={expanded ? "relative" : "relative max-h-[7.5em] overflow-hidden"}>
+						<div {...stylex.props(sx.relative, !expanded && sx.collapsedMemory)}>
 							<div
 								ref={textRef}
-								className={`whitespace-pre-wrap break-words text-supporting leading-relaxed text-fg ${expanded ? "" : "line-clamp-5"}`}
+								{...stylex.props(
+									sx.whitespacePreWrap,
+									sx.breakWords,
+									sx.leadingRelaxed,
+									sx.textFg,
+									typography.supporting,
+									!expanded && sx.lineClamp5,
+								)}
 							>
 								{summary}
 							</div>
@@ -1157,7 +1180,7 @@ function CategoryPage({
 					)}
 					<Button
 						size="sm"
-						className={selectedIds.size >= 2 ? "phone:hidden" : "phone:min-h-11"}
+						{...stylex.props(selectedIds.size >= 2 ? sx.phoneHidden : sx.phoneMinH11)}
 						icon={<IconPlus size={16} />}
 						disabled={!canAdd}
 						onClick={() => setAdding(true)}

@@ -4,7 +4,9 @@ import { Segmented, SegmentedOption } from "../ui/segmented";
 import { Button } from "../ui/button";
 import { Modal } from "../ui/modal";
 import { fieldClasses } from "../ui/input";
+import { cn } from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -67,6 +69,11 @@ const sx = stylex.create({
 	},
 	textRed: {
 			color: "var(--red)"
+	},
+	repoInput: {
+		height: "40px",
+		borderColor: "var(--border-strong)",
+		":focus": { boxShadow: "0 0 0 3px var(--accent-soft)" },
 	},
 });
 
@@ -163,9 +170,9 @@ setAdding(false);
 							/* Raw element for the ref; optics from the field primitive. The
 							   40px height is the dialog's own — this is the modal's single
 							   affordance and has no control beside it to match. */
-							className={fieldClasses(
-								"lg",
-								"h-10 border-line-strong text-sm focus:shadow-[0_0_0_3px_var(--accent-soft)]",
+							className={cn(
+								fieldClasses("lg"),
+								stylex.props(sx.repoInput, typography.label).className,
 							)}
 							value={value}
 							onChange={(event) =>

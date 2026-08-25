@@ -112,6 +112,9 @@ const sx = stylex.create({
 	mt2: {
 			marginTop: "8px"
 	},
+	bgPressed: {
+		backgroundColor: "var(--hover-strong)",
+	},
 });
 
 /** Summarize one audit event for its row (the details live in the expand). */
@@ -222,7 +225,7 @@ export function AuditPanel() {
 					const t = String(e.kind || e.msg || "event");
 					const sid = typeof e.bks_session_id === "string" ? e.bks_session_id : "";
 					return (
-						<div key={i} className={expanded === i ? "bg-pressed" : ""}>
+						<div key={i} {...stylex.props(expanded === i && sx.bgPressed)}>
 							<button
 								className="hover:bg-hover" {...stylex.props(sx.flex, sx.wFull, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.px5, sx.py15, sx.textLeft, typography.label)}
 								onClick={() => setExpanded(expanded === i ? null : i)}

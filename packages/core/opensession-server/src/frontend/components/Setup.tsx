@@ -131,6 +131,36 @@ const sx = stylex.create({
 	mt0: {
 			marginTop: "0"
 	},
+	statusIcon: {
+		display: "flex",
+		width: "20px",
+		height: "20px",
+		flexShrink: 0,
+		alignItems: "center",
+		justifyContent: "center",
+		borderRadius: "calc(infinity * 1px)",
+	},
+	statusComplete: {
+		backgroundColor: "var(--green-soft)",
+		color: "var(--green)",
+	},
+	statusIncomplete: {
+		backgroundColor: "var(--hover)",
+		color: "var(--text-faint)",
+	},
+	stepLabel: {
+		minWidth: 0,
+	},
+	stepComplete: {
+		fontWeight: "var(--font-weight-medium)",
+		color: "var(--text)",
+	},
+	stepIncomplete: {
+		color: "var(--text-dim)",
+	},
+	scrollMt4: {
+		scrollMarginTop: "16px",
+	},
 });
 
 // Settings → Setup: every part of a new instance, in the order someone fills
@@ -213,18 +243,19 @@ function SetupSummary({
             className="hover:bg-hover" {...stylex.props(sx.focusRing, sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap25, sx.px4, sx.py3, sx.textLeft)}
           >
             <span
-              className={cn(
-                "flex size-5 shrink-0 items-center justify-center rounded-full",
-                step.complete ? "bg-green-soft text-green" : "bg-hover text-faint",
+              {...stylex.props(
+                sx.statusIcon,
+                step.complete ? sx.statusComplete : sx.statusIncomplete,
               )}
               aria-hidden="true"
             >
               <IconCheck size={14} />
             </span>
             <span
-              className={cn(
-                "min-w-0 text-label",
-                step.complete ? "font-medium text-fg" : "text-dim",
+              {...stylex.props(
+                sx.stepLabel,
+                typography.label,
+                step.complete ? sx.stepComplete : sx.stepIncomplete,
               )}
             >
               {step.label}
@@ -244,7 +275,7 @@ function SetupPageSection({
   title,
   description,
   children,
-  className = "mt-10",
+  className,
 }: {
   id: SectionId;
   title: string;
@@ -253,8 +284,13 @@ function SetupPageSection({
   className?: string;
 }) {
   return (
-    <section id={sectionAnchor(id)} className={cn("scroll-mt-4", className)}>
-      <div {...stylex.props(sx.mb3, sx.px5)}>
+    <section
+      id={sectionAnchor(id)}
+      className={cn(
+        stylex.props(sx.scrollMt4, !className && sx.mt10).className,
+        className,
+      )}
+    >      <div {...stylex.props(sx.mb3, sx.px5)}>
         <h2 {...stylex.props(sx.m0, sx.fontTitle, sx.tracking0015em, sx.textFg, typography.sectionTitle)}>
           {title}
         </h2>

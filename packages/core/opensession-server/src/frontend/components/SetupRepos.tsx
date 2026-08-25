@@ -245,6 +245,30 @@ const sx = stylex.create({
 	maxH240px: {
 			maxHeight: "240px"
 	},
+	colorGrid: {
+		display: "grid",
+		gridTemplateColumns: "repeat(6,minmax(0,1fr))",
+		gap: "8px",
+		transitionProperty: "opacity",
+		transitionDuration: "150ms",
+	},
+	opacity40: { opacity: 0.4 },
+	tileChoice: {
+		width: "28px",
+		height: "28px",
+		borderRadius: "calc(12px * var(--rf))",
+		outlineStyle: "none",
+		transitionProperty: "transform",
+		transitionDuration: "var(--dur-micro)",
+		":hover": { transform: "scale(1.1)" },
+		":focus-visible": {
+			outline: "2px solid var(--accent-ink)",
+			outlineOffset: "2px",
+		},
+	},
+	tileChoiceActive: {
+		boxShadow: "0 0 0 2px var(--bg-panel), 0 0 0 4px var(--text)",
+	},
 });
 
 // Settings → Setup → Repositories: the registered repos sessions work in,
@@ -609,12 +633,7 @@ setBusy(false);
 				{/* Faded while automatic is on: these choices aren't in effect.
 				    Still live, though — picking one is how you leave automatic,
 				    so the fade never becomes a mode you have to escape first. */}
-				<div
-					className={cn(
-						"grid grid-cols-6 gap-2 transition-opacity duration-150",
-						autoActive && "opacity-40",
-					)}
-				>
+				<div {...stylex.props(sx.colorGrid, autoActive && sx.opacity40)}>
 					{REPO_TILE_COLORS.map((color) => (
 						<TileChoice
 							key={color}
@@ -735,11 +754,7 @@ function TileChoice({
 			aria-pressed={!!active}
 			disabled={disabled}
 			onClick={onClick}
-			className={cn(
-				"h-7 w-7 rounded-control outline-none transition-transform",
-				"hover:scale-110 focus-visible:ring-2 focus-visible:ring-[var(--accent,#6b8afd)]",
-				active && "ring-2 ring-fg ring-offset-2 ring-offset-panel",
-			)}
+			{...stylex.props(sx.tileChoice, active && sx.tileChoiceActive)}
 		>
 			{children}
 		</button>
@@ -986,7 +1001,7 @@ setAddingRepo(null);
 					<div {...stylex.props(sx.mt25, sx.flex, sx.itemsCenter, sx.gap2)}>
 						<input
 							ref={inputRef}
-							className={cn(settingsInputClass, "flex-1 font-mono")}
+							className={cn(settingsInputClass, stylex.props(sx.flex1, sx.fontMono).className)}
 							value={manual}
 							onChange={(e) => setManual(e.target.value)}
 							placeholder="owner/name"

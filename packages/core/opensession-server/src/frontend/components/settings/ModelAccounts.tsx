@@ -213,6 +213,62 @@ const sx = stylex.create({
 	whitespacePreWrap: {
 			whiteSpace: "pre-wrap"
 	},
+	quietOwner: {
+		width: "auto",
+		borderColor: "transparent",
+		backgroundColor: "transparent",
+		paddingInline: "8px",
+		color: "var(--text-dim)",
+		boxShadow: "none",
+		transitionProperty: "color, background-color, border-color, box-shadow",
+		transitionDuration: "var(--dur-micro)",
+		":hover": {
+			borderColor: "transparent",
+			backgroundColor: "var(--hover)",
+			boxShadow: "none",
+		},
+		":focus": { borderColor: "transparent" },
+		"@media (max-width: 720px)": { minHeight: "44px" },
+	},
+	meterFill: {
+		height: "100%",
+		borderRadius: "calc(infinity * 1px)",
+		transitionProperty: "width",
+		transitionDuration: "300ms",
+	},
+	usageUnknown: { backgroundColor: "var(--border)" },
+	usageHigh: { backgroundColor: "var(--red)" },
+	usageWarn: { backgroundColor: "var(--yellow)" },
+	usageNormal: { backgroundColor: "var(--text-faint)" },
+	accountStatus: {
+		display: "inline-flex",
+		flexShrink: 0,
+		alignItems: "center",
+		gap: "6px",
+		fontWeight: "var(--font-weight-medium)",
+	},
+	statusRed: { color: "var(--red)" },
+	statusYellow: { color: "var(--yellow)" },
+	statusMuted: {
+		borderRadius: "calc(infinity * 1px)",
+		backgroundColor: "var(--yellow-soft)",
+		paddingInline: "8px",
+		paddingBlock: "2px",
+		color: "var(--yellow)",
+	},
+	statusDot: {
+		width: "6px",
+		height: "6px",
+		borderRadius: "calc(infinity * 1px)",
+	},
+	bgRed: { backgroundColor: "var(--red)" },
+	bgYellow: { backgroundColor: "var(--yellow)" },
+	spinning: {
+		animationName: stylex.keyframes({ to: { transform: "rotate(360deg)" } }),
+		animationDuration: "1s",
+		animationTimingFunction: "linear",
+		animationIterationCount: "infinite",
+	},
 });
 
 // The Claude and Codex subscription accounts runs draw from, and how full each
@@ -327,8 +383,8 @@ function OwnerSelect({
 					quiet ? <span {...stylex.props(sx.flex, sx.h4, sx.itemsCenter, sx.leadingNone)}>{value || "Shared pool"}</span> : undefined
 				}
 				className={cn(
-					quiet &&
-						"w-auto border-transparent bg-transparent px-2 text-dim shadow-none transition-colors hover:border-transparent hover:bg-hover enabled:hover:shadow-none focus:border-transparent data-[popup-open]:border-transparent data-[popup-open]:bg-hover phone:min-h-11 [&>svg]:size-4",
+					quiet && stylex.props(sx.quietOwner).className,
+					quiet && "data-[popup-open]:border-transparent data-[popup-open]:bg-hover [&>svg]:size-4",
 					className,
 				)}
 			/>
@@ -360,39 +416,39 @@ function AccountProviderMark({ name }: { name: "claude" | "codex" }) {
  * to look at. Colour here means "this one is running out" — so the two
  * accounts near a limit are the only things that catch the eye.
  */
-const usageToneClasses = {
-	unknown: "bg-line",
-	high: "bg-red",
-	warn: "bg-yellow",
-	normal: "bg-faint",
+const usageToneStyles = {
+	unknown: sx.usageUnknown,
+	high: sx.usageHigh,
+	warn: sx.usageWarn,
+	normal: sx.usageNormal,
 } as const;
 
 /** Utilization → tone. Shared so a meter and its neighbours can't drift. */
-function usageTone(pct: number | null): keyof typeof usageToneClasses {
+function usageTone(pct: number | null): keyof typeof usageToneStyles {
 	return pct === null ? "unknown" : pct >= 90 ? "high" : pct >= 70 ? "warn" : "normal";
 }
 
-const statusToneClasses = {
-	red: { dot: "bg-red", text: "text-red" },
-	yellow: { dot: "bg-yellow", text: "text-yellow" },
-	muted: { dot: null, text: "rounded-full bg-yellow-soft px-2 py-[2px] text-yellow" },
+const statusToneStyles = {
+	red: { dot: sx.bgRed, text: sx.statusRed },
+	yellow: { dot: sx.bgYellow, text: sx.statusYellow },
+	muted: { dot: null, text: sx.statusMuted },
 } as const;
 
 function AccountStatus({
 	tone,
 	children,
 	...props
-}: React.ComponentPropsWithoutRef<"span"> & { tone: keyof typeof statusToneClasses }) {
+}: React.ComponentPropsWithoutRef<"span"> & { tone: keyof typeof statusToneStyles }) {
 	return (
 		<span
-			className={cn(
-				"inline-flex shrink-0 items-center gap-1.5 text-meta font-medium",
-				statusToneClasses[tone].text,
-			)}
 			{...props}
+			className={cn(
+				stylex.props(sx.accountStatus, typography.meta, statusToneStyles[tone].text).className,
+				props.className,
+			)}
 		>
-			{statusToneClasses[tone].dot && (
-				<span aria-hidden className={cn("size-1.5 rounded-full", statusToneClasses[tone].dot)} />
+			{statusToneStyles[tone].dot && (
+				<span aria-hidden {...stylex.props(sx.statusDot, statusToneStyles[tone].dot)} />
 			)}
 			{children}
 		</span>
@@ -478,10 +534,7 @@ function Meter({
 			</span>
 			<div className="desktop:col-span-2 desktop:row-start-2 phone:col-start-2 phone:row-start-1" {...stylex.props(sx.h1, sx.overflowHidden, sx.roundedFull, sx.bgActive)}>
 				<div
-					className={cn(
-						"h-full rounded-full transition-[width] duration-300",
-						usageToneClasses[usageTone(pct)],
-					)}
+					{...stylex.props(sx.meterFill, usageToneStyles[usageTone(pct)])}
 					style={{ width: `${Math.min(100, Math.max(0, pct ?? 0))}%` }}
 				/>
 			</div>
@@ -1235,7 +1288,7 @@ export function ProviderAccountsSection({
 							size="sm"
 							variant="ghost"
 							className="phone:min-h-11"
-							icon={<IconHistory size={16} className={refreshing ? "animate-spin" : ""} />}
+							icon={<IconHistory size={16} {...stylex.props(refreshing && sx.spinning)} />}
 							onClick={refreshUsage}
 							disabled={refreshing}
 						>

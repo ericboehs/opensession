@@ -23,6 +23,10 @@ const sx = stylex.create({
 	mt0: {
 			marginTop: "0"
 	},
+	saving: {
+		pointerEvents: "none",
+		opacity: 0.6,
+	},
 });
 
 type Scope = "workspace" | "personal";
@@ -107,7 +111,7 @@ setSaving(false);
 					: "The environment new sessions use unless a person or session chooses another."
 			}
 			control={
-				<div className={saving ? "pointer-events-none opacity-60" : undefined}>
+				<div {...stylex.props(saving && sx.saving)}>
 					<Select
 						label={`${scope === "personal" ? "Personal" : "Workspace"} default sandbox`}
 						value={value}

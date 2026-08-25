@@ -19,7 +19,6 @@ import {
 	updateSandboxConnection,
 } from "../../lib/api/sandboxes";
 import { Button } from "../../ui/button";
-import { cn } from "../../ui/cn";
 import { Field, Input, Select } from "../../ui/input";
 import { Modal } from "../../ui/modal";
 import {
@@ -251,6 +250,34 @@ const sx = stylex.create({
 	durationVarDur: {
 			transitionDuration: "var(--dur)"
 	},
+	statusChip: {
+		borderRadius: "calc(infinity * 1px)",
+		paddingInline: "8px",
+		paddingBlock: "2px",
+		fontWeight: "var(--font-weight-medium)",
+	},
+	statusReady: {
+		backgroundColor: "var(--green-soft)",
+		color: "var(--green)",
+	},
+	statusNeedsAttention: {
+		backgroundColor: "var(--red-soft)",
+		color: "var(--red)",
+	},
+	statusChecking: {
+		backgroundColor: "var(--accent-soft)",
+		color: "var(--accent)",
+	},
+	statusNeutral: {
+		backgroundColor: "var(--hover)",
+		color: "var(--text-dim)",
+	},
+	textRed: {
+		color: "var(--red)",
+	},
+	mt05: {
+		marginTop: "2px",
+	},
 });
 
 const PROVIDERS: Array<{
@@ -299,11 +326,11 @@ const STATE_LABEL: Record<SandboxConnectionInfo["state"], string> = {
 	disabled: "Disabled",
 };
 
-function statusClasses(state: SandboxConnectionInfo["state"]): string {
-	if (state === "ready") return "bg-green-soft text-green";
-	if (state === "needs_attention") return "bg-red-soft text-red";
-	if (state === "checking") return "bg-accent-soft text-accent";
-	return "bg-hover text-dim";
+function statusStyle(state: SandboxConnectionInfo["state"]) {
+	if (state === "ready") return sx.statusReady;
+	if (state === "needs_attention") return sx.statusNeedsAttention;
+	if (state === "checking") return sx.statusChecking;
+	return sx.statusNeutral;
 }
 
 function latestOperation(
@@ -685,13 +712,13 @@ setBusy(false);
 						<div {...stylex.props(sx.minW0, sx.flex1)}>
 							<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap2)}>
 								<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>{provider.label}</div>
-								<span className={cn("rounded-full px-2 py-0.5 text-meta font-medium", statusClasses(checking ? "checking" : connection.state))}>
+								<span {...stylex.props(sx.statusChip, typography.meta, statusStyle(checking ? "checking" : connection.state))}>
 									{checking ? "Checking" : STATE_LABEL[connection.state]}
 								</span>
 							</div>
 							<p {...stylex.props(sx.m0, sx.mt1, sx.leadingRelaxed, sx.textDim, typography.supporting)}>{provider.description}</p>
 							{summary && (
-								<p className={cn("m-0 mt-2 text-supporting", connection.state === "needs_attention" ? "text-red" : "text-dim")}>
+								<p {...stylex.props(sx.m0, sx.mt2, typography.supporting, connection.state === "needs_attention" ? sx.textRed : sx.textDim)}>
 									{summary}
 								</p>
 							)}
@@ -1070,9 +1097,10 @@ export function SandboxesPanel() {
 												<div {...stylex.props(sx.minW0, sx.flex1)}>
 													<div {...stylex.props(sx.fontMedium, sx.textFg, typography.itemTitle)}>{environment.repo}</div>
 													<div
-														className={cn(
-															"mt-0.5 text-supporting",
-															environment.state === "failed" && !running ? "text-red" : "text-dim",
+														{...stylex.props(
+															sx.mt05,
+															typography.supporting,
+															environment.state === "failed" && !running ? sx.textRed : sx.textDim,
 														)}
 													>
 														{provider.label} · {status}

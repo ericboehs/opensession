@@ -238,6 +238,17 @@ const sx = stylex.create({
 	justifyEnd: {
 			justifyContent: "flex-end"
 	},
+	headingRow: {
+		gridColumnStart: "2",
+		display: "flex",
+		minWidth: 0,
+		flexWrap: "wrap",
+		alignItems: "center",
+		gap: "8px",
+	},
+	selfCenter: {
+		alignSelf: "center",
+	},
 });
 
 // The configuration forms behind the integration registry: paste the
@@ -680,15 +691,15 @@ setSaving(false);
 	return (
 		<>
 			<div className="phone:px-0" {...stylex.props(sx.grid, sx.px4)}>
-				<SettingCard className={onboarding && !active ? "hidden" : undefined}>
+				<SettingCard {...stylex.props(onboarding && !active && sx.hidden)}>
 					<div className="grid-cols-[auto_minmax(0,1fr)_auto] phone:grid-cols-[auto_minmax(0,1fr)] phone:px-3 phone:py-2" {...stylex.props(sx.grid, sx.itemsStart, sx.gapX3, sx.gapY1, sx.px5, sx.py4)}>
 						<IconTile name="github" size={40} />
 						<div
-							className={cn(
-								"col-start-2 flex min-w-0 flex-wrap items-center gap-2",
+							{...stylex.props(
+								sx.headingRow,
 								// Onboarding drops the description under this row, so the name
 								// is alone beside a 40px tile and has to center against it.
-								onboarding && "self-center",
+								onboarding && sx.selfCenter,
 							)}
 						>
 							<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>

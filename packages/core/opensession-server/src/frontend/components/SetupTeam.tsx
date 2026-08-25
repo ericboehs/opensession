@@ -45,6 +45,9 @@ const sx = stylex.create({
 	fontMono: {
 			fontFamily: "var(--mono)"
 	},
+	mt0: {
+		marginTop: 0,
+	},
 });
 
 // Settings → Setup → Team: the manageable roster. The identity table drives
@@ -121,7 +124,7 @@ await load();
 	return (
 		<>
 			<SettingsGroupLabel
-				className={title ? undefined : "mt-0"}
+				{...stylex.props(!title && sx.mt0)}
 				actions={
 					<Button
 						size="sm"

@@ -154,6 +154,29 @@ const sx = stylex.create({
 	gap2: {
 			gap: "8px"
 	},
+	pictureOverlay: {
+		position: "absolute",
+		inset: 0,
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "center",
+		justifyContent: "center",
+		gap: "4px",
+		borderRadius: "calc(32% * var(--rp))",
+		backgroundColor: "color-mix(in srgb, var(--color-black) 45%, transparent)",
+		color: "var(--color-white)",
+		transitionProperty: "opacity",
+		transitionDuration: "150ms",
+	},
+	opacity100: {
+		opacity: 1,
+	},
+	opacity0: {
+		opacity: 0,
+	},
+	minH11: {
+		minHeight: "44px",
+	},
 });
 
 /**
@@ -446,10 +469,11 @@ setBusy(null);
 								    page. */}
 								<span
 									className={cn(
-										"absolute inset-0 flex flex-col items-center justify-center gap-1 rounded-avatar bg-black/45 text-white transition-opacity",
-										busy === "picture" || isTouchPrimary
-											? "opacity-100"
-											: "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100",
+										stylex.props(
+											sx.pictureOverlay,
+											busy === "picture" || isTouchPrimary ? sx.opacity100 : sx.opacity0,
+										).className,
+										"group-hover:opacity-100 group-focus-visible:opacity-100",
 									)}
 									aria-hidden
 								>
@@ -529,14 +553,14 @@ setBusy(null);
 						<div {...stylex.props(sx.mt1, sx.flex, sx.justifyEnd, sx.gap2)}>
 							<Button
 								variant="ghost"
-								className={isPhone ? "min-h-11" : undefined}
+								{...stylex.props(isPhone && sx.minH11)}
 								onClick={dismiss}
 							>
 								Cancel
 							</Button>
 							<Button
 								variant="primary"
-								className={isPhone ? "min-h-11" : undefined}
+								{...stylex.props(isPhone && sx.minH11)}
 								type="submit"
 								disabled={!name.trim() || !dirty || busy !== null}
 							>
