@@ -340,7 +340,7 @@ const sx = stylex.create({
 	pb1: {
 			paddingBottom: "4px"
 	},
-	snapMandatory: {},
+	snapMandatory: { "--tw-scroll-snap-strictness": "mandatory" },
 	overflowXAuto: {
 			overflowX: "auto"
 	},

@@ -47,7 +47,7 @@ const sx = stylex.create({
 	textWhite: {
 			color: "var(--color-white)"
 	},
-	ringPanel: {},
+	ringPanel: { "--tw-ring-color": "var(--bg-panel)" },
 });
 
 /**

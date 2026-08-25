@@ -81,6 +81,42 @@ describe("stylex port guards", () => {
 		expect(offenders).toEqual([]);
 	});
 
+	test("stylex.create contains no silently empty converted entries", () => {
+		const empty: string[] = [];
+		for (const f of sources) {
+			const src = readFileSync(f, "utf8");
+			if (!src.includes("stylex.create")) continue;
+			const file = ts.createSourceFile(
+				f,
+				src,
+				ts.ScriptTarget.Latest,
+				true,
+				f.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+			);
+			function visit(node: ts.Node) {
+				if (
+					ts.isCallExpression(node) &&
+					node.expression.getText(file) === "stylex.create" &&
+					node.arguments[0] &&
+					ts.isObjectLiteralExpression(node.arguments[0])
+				) {
+					for (const prop of node.arguments[0].properties) {
+						if (
+							ts.isPropertyAssignment(prop) &&
+							ts.isObjectLiteralExpression(prop.initializer) &&
+							prop.initializer.properties.length === 0
+						) {
+							empty.push(`${f}: ${prop.name.getText(file)}`);
+						}
+					}
+				}
+				ts.forEachChild(node, visit);
+			}
+			visit(file);
+		}
+		expect(empty).toEqual([]);
+	});
+
 	test("tokens.stylex.ts only references custom properties that base.css defines", () => {
 		const base = readFileSync(join(STYLES, "base.css"), "utf8");
 		const definedVars = new Set([...base.matchAll(/(--[a-z0-9-]+)\s*:/g)].map((m) => m[1]));

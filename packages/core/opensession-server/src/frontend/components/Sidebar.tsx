@@ -407,7 +407,7 @@ const sx = stylex.create({
 	textOnAccent: {
 			color: "var(--on-accent)"
 	},
-	ringPanel: {},
+	ringPanel: { "--tw-ring-color": "var(--bg-panel)" },
 	mb2: {
 			marginBottom: "8px"
 	},
@@ -474,7 +474,7 @@ const sx = stylex.create({
 	TranslateY12: {
 			translate: "0 calc(calc(1 / 2 * 100%) * -1)"
 	},
-	TeamFaceRingVarSidebarBg: {},
+	TeamFaceRingVarSidebarBg: { "--team-face-ring": "var(--sidebar-bg)" },
 	gap2: {
 			gap: "8px"
 	},

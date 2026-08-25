@@ -130,7 +130,7 @@ const sx = stylex.create({
 	Mr13px: {
 			marginRight: "-13px"
 	},
-	snapMandatory: {},
+	snapMandatory: { "--tw-scroll-snap-strictness": "mandatory" },
 	gap15: {
 			gap: "6px"
 	},

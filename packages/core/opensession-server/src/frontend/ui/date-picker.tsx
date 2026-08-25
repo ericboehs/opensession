@@ -212,8 +212,8 @@ const sx = stylex.create({
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))"
 	},
-	ringLineStrong: {},
-	ringInset: {},
+	ringLineStrong: { "--tw-ring-color": "var(--border-strong)" },
+	ringInset: { "--tw-ring-inset": "inset" },
 	bgAccent: {
 			backgroundColor: "var(--accent)"
 	},

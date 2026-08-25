@@ -54,7 +54,7 @@ const sx = stylex.create({
 	flexCol: {
 			flexDirection: "column"
 	},
-	DeskUnder18px: {},
+	DeskUnder18px: { "--desk-under": "18px" },
 	z1: {
 			zIndex: "1"
 	},

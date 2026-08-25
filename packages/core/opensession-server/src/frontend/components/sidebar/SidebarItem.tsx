@@ -143,7 +143,7 @@ const sx = stylex.create({
 	textOnAccent: {
 			color: "var(--on-accent)"
 	},
-	ringPanel: {},
+	ringPanel: { "--tw-ring-color": "var(--bg-panel)" },
 	opacity50: {
 			opacity: ".5"
 	},

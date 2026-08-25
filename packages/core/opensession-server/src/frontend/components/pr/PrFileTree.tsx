@@ -103,14 +103,14 @@ const sx = stylex.create({
 	ColorSchemeDark: {
 			colorScheme: "dark"
 	},
-	TreesAccentOverrideVarAccent: {},
-	TreesBgOverrideTransparent: {},
-	TreesBorderColorOverrideVarDivider: {},
-	TreesFgMutedOverrideVarTextFaint: {},
-	TreesFgOverrideVarTextDim: {},
-	TreesFocusRingColorOverrideVarAccent: {},
-	TreesSelectedBgOverrideVarSelected: {},
-	TreesSelectedFgOverrideVarText: {},
+	TreesAccentOverrideVarAccent: { "--trees-accent-override": "var(--accent)" },
+	TreesBgOverrideTransparent: { "--trees-bg-override": "transparent" },
+	TreesBorderColorOverrideVarDivider: { "--trees-border-color-override": "var(--divider)" },
+	TreesFgMutedOverrideVarTextFaint: { "--trees-fg-muted-override": "var(--text-faint)" },
+	TreesFgOverrideVarTextDim: { "--trees-fg-override": "var(--text-dim)" },
+	TreesFocusRingColorOverrideVarAccent: { "--trees-focus-ring-color-override": "var(--accent)" },
+	TreesSelectedBgOverrideVarSelected: { "--trees-selected-bg-override": "var(--selected)" },
+	TreesSelectedFgOverrideVarText: { "--trees-selected-fg-override": "var(--text)" },
 	gap05: {
 			gap: "2px"
 	},

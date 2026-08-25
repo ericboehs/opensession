@@ -181,7 +181,7 @@ const sx = stylex.create({
 	h12: {
 			height: "48px"
 	},
-	snapMandatory: {},
+	snapMandatory: { "--tw-scroll-snap-strictness": "mandatory" },
 	gap1: {
 			gap: "4px"
 	},

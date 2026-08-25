@@ -99,7 +99,7 @@ const sx = stylex.create({
 	textBg: {
 			color: "var(--bg)"
 	},
-	ringBg: {},
+	ringBg: { "--tw-ring-color": "var(--bg)" },
 	size7: {
 			width: "28px",
 			height: "28px"

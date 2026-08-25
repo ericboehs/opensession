@@ -22,7 +22,7 @@ const sx = stylex.create({
 	bgPopupGlass: {
 			backgroundColor: "var(--popup-glass)"
 	},
-	SmoothRingColorVarPopupRing: {},
+	SmoothRingColorVarPopupRing: { "--smooth-ring-color": "var(--popup-ring)" },
 	originVarTransformOrigin: {
 			transformOrigin: "var(--transform-origin)"
 	},

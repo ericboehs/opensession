@@ -55,7 +55,7 @@ const sx = stylex.create({
 	textFg: {
 			color: "var(--text)"
 	},
-	SmoothRingColorVarPopupRing: {},
+	SmoothRingColorVarPopupRing: { "--smooth-ring-color": "var(--popup-ring)" },
 	smoothShadowRingSm: {
 			boxShadow: "0 1px 3px -1px var(--smooth-shadow-color), 0 4px 10px -4px var(--smooth-shadow-color), 0 0 0 var(--smooth-ring-width,1px) var(--smooth-ring-color)"
 	},
