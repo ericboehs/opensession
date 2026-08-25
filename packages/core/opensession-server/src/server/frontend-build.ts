@@ -290,13 +290,13 @@ export async function compileAssets(): Promise<BundleMeta> {
 	// which knocks out the mobile overlay layer. Bypass it: write the source CSS
 	// unmodified with a content-hashed name and serve it ourselves.
 	// base.css is the permanent foundation (tokens, reset, platform chrome);
-	// legacy.css is the component styling being migrated to Tailwind and is
-	// meant to reach zero. Concatenated in this order so the split is purely
-	// organisational — every rule keeps the cascade position it had when the
-	// two were one file. Each has its own doc header explaining the contract.
+	// legacy.css remains empty; smooth-shadow.css carries its custom utility
+	// primitives and residual.css carries selectors StyleX cannot express.
+	// Concatenate them in authored cascade order before Tailwind during the
+	// migration and before the generated StyleX sheet after cutover.
 	let cssSrc = (
 		await Promise.all(
-			["base", "legacy"].map((n) =>
+			["base", "legacy", "smooth-shadow", "residual"].map((n) =>
 				Bun.file(`${FRONTEND_SRC}/styles/${n}.css`).text(),
 			),
 		)

@@ -302,6 +302,8 @@ import type { UnifiedSession } from "./lib/types";
 // a home. Utilities are linked after both, so they win source-order ties.
 import "./styles/base.css";
 import "./styles/legacy.css";
+import "./styles/smooth-shadow.css";
+import "./styles/residual.css";
 import { EmptyState, LoadingState } from "./ui/state";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "./styles/typography.stylex";
