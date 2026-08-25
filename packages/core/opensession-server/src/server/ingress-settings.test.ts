@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
+  displayedServerAddresses,
   normalizeCustomIngressOrigin,
   normalizeIngressOrigin,
   publicIngressHealth,
@@ -56,6 +57,12 @@ describe("public ingress settings", () => {
     expect(publicIngressHealth("custom", "unreachable", { a: ["203.0.113.20"], aaaa: [] }, server)).toBe("waiting_dns");
     expect(publicIngressHealth("custom", "unreachable", { a: ["203.0.113.10"], aaaa: [] }, server)).toBe("unreachable");
     expect(publicIngressHealth("cloudflare", "unreachable", { a: [], aaaa: [] }, server)).toBe("unreachable");
+  });
+
+  test("uses proven healthy DNS when a NATed server cannot detect its public IP", () => {
+    const dns = { a: ["203.0.113.10"], aaaa: [] };
+    expect(displayedServerAddresses({ a: [], aaaa: [] }, dns, "ready")).toEqual(dns);
+    expect(displayedServerAddresses({ a: [], aaaa: [] }, dns, "unreachable")).toEqual({ a: [], aaaa: [] });
   });
 
   test("writes one canonical owner and removes retired server fields", async () => {

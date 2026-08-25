@@ -1905,6 +1905,20 @@ export function SessionViewer({
 	const settledIndexRef = useRef<TranscriptIndexEntry[] | null>(null);
 	const onVisibleRangesSettled = useCallback(() => {
 		setOpenSettlePending(false);
+		// Keep the pre-refresh message anchor through the final row measurements.
+		// Two paints later every visible real row has reported its geometry, so the
+		// bounded index hold can retire without letting a last correction jump the
+		// reader. The identity guard cannot cancel a newer refresh's hold.
+		const settledHold = indexAnchorHoldCancelRef.current;
+		if (settledHold) {
+			requestAnimationFrame(() =>
+				requestAnimationFrame(() => {
+					if (indexAnchorHoldCancelRef.current !== settledHold) return;
+					settledHold();
+					indexAnchorHoldCancelRef.current = null;
+				}),
+			);
+		}
 		if (settledIndexRef.current === transcriptIndex) return;
 		settledIndexRef.current = transcriptIndex;
 		if (readFollowingLive(followingLive)) scrollToLatest("auto");
@@ -1960,6 +1974,7 @@ export function SessionViewer({
 						if (indexAnchorHoldCancelRef.current === cancelIndexHold)
 							indexAnchorHoldCancelRef.current = null;
 					},
+					15_000,
 				);
 				indexAnchorHoldCancelRef.current = cancelIndexHold;
 			}

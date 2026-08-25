@@ -526,29 +526,40 @@ export function useSessionScroll(initialFollowing = true): SessionScroll {
     };
   }, [container, relayout, setFollowing]);
 
-  // The container can change height with no content change at all: the composer
+  // The viewport can change height with no content change at all: the composer
   // grows a line as the reader types, the queue flap folds out, a panel opens.
-  // relayout() only runs on content changes, so a following reader was silently
-  // left behind — every line typed pushed the live edge further below the fold
-  // (measured: ~22px of drift per line, accumulating). Re-glue on the
-  // container's own resize instead. Guarded to following/pinned readers so a
-  // resize never moves someone who is deliberately reading history, and never
-  // announces "new messages" for content that didn't arrive.
+  // The inverse matters too: cached/indexed transcript content can replace its
+  // estimates with real rows while the viewport itself stays the same size.
+  // That changes scrollHeight without changing the container's border box, so
+  // observing only `el` silently stranded a following reader above the edge.
+  // Observe the direct content layers as well and keep the set current across
+  // loading → transcript swaps. Guarded to following/pinned readers so resize
+  // never moves someone deliberately reading history or announces new content.
   useEffect(() => {
     const el = container;
     if (!el || typeof ResizeObserver === "undefined") return;
-    let first = true;
+    let mounted = false;
     const ro = new ResizeObserver(() => {
-      // The observer fires once on observe(); that initial callback describes
-      // the mount, not a resize.
-      if (first) {
-        first = false;
+      // The initial batch describes observation setup, not a resize. relayout's
+      // layout effect owns the opening position; skipping this also avoids a
+      // second mount-time scroll after a cached position has been restored.
+      if (!mounted) {
+        mounted = true;
         return;
       }
       if (followingRef.current || pinnedRef.current) relayout();
     });
-    ro.observe(el);
-    return () => ro.disconnect();
+    const observeLayers = () => {
+      ro.observe(el);
+      for (const child of el.children) ro.observe(child);
+    };
+    observeLayers();
+    const mutations = new MutationObserver(observeLayers);
+    mutations.observe(el, { childList: true });
+    return () => {
+      mutations.disconnect();
+      ro.disconnect();
+    };
   }, [container, relayout]);
 
   // While a turn is pinned, keyboard open/close (visual-viewport pan/resize on

@@ -223,6 +223,14 @@ export function publicIngressHealth(
   return dnsPointsHere ? probed : "waiting_dns";
 }
 
+export function displayedServerAddresses(
+  server: { a: string[]; aaaa: string[] },
+  dns: { a: string[]; aaaa: string[] },
+  health: IngressStatus["health"],
+): { a: string[]; aaaa: string[] } {
+  return server.a.length || server.aaaa.length || health !== "ready" ? server : dns;
+}
+
 export async function publicIngressStatus(canManage: boolean): Promise<IngressStatus> {
   const configured = configuredIngress();
   let hostname = "";
@@ -234,6 +242,11 @@ export async function publicIngressStatus(canManage: boolean): Promise<IngressSt
     publicServerAddresses(),
   ]);
   const health = publicIngressHealth(configured.exposure, probedHealth, dns, serverAddresses);
+  // A healthy direct Caddy origin proves its resolved addresses reach this
+  // listener. Reuse that exact answer on NATed hosts whose cloud metadata is
+  // disabled, so an already-working setup still tells the operator which
+  // public address to use for another custom-domain record.
+  const displayedAddresses = displayedServerAddresses(serverAddresses, dns, health);
   const tunnelId = configured.cloudflareTunnelId;
   return {
     canManage,
@@ -242,12 +255,12 @@ export async function publicIngressStatus(canManage: boolean): Promise<IngressSt
     health,
     localUrl: `http://127.0.0.1:${PUBLIC_INGRESS_PORT}`,
     hostname,
-    server: { ipv4: serverAddresses.a, ipv6: serverAddresses.aaaa },
+    server: { ipv4: displayedAddresses.a, ipv6: displayedAddresses.aaaa },
     dns: {
       ...dns,
       suggested: [
-        ...serverAddresses.a.map((address) => `A ${hostname || "ingress.example.com"} ${address}`),
-        ...serverAddresses.aaaa.map((address) => `AAAA ${hostname || "ingress.example.com"} ${address}`),
+        ...displayedAddresses.a.map((address) => `A ${hostname || "ingress.example.com"} ${address}`),
+        ...displayedAddresses.aaaa.map((address) => `AAAA ${hostname || "ingress.example.com"} ${address}`),
       ],
     },
     tailscale: {

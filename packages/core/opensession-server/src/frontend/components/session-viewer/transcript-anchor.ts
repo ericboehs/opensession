@@ -41,6 +41,7 @@ export function holdTranscriptAnchor(
 	bottomGap: number,
 	onFound: () => void,
 	onStop?: () => void,
+	settleMs = 2500,
 ): () => void {
 	let raf = 0;
 	let stopped = false;
@@ -86,7 +87,7 @@ export function holdTranscriptAnchor(
 			);
 		}
 		if (
-			(foundAt !== null && now - foundAt >= 2500) ||
+			(foundAt !== null && now - foundAt >= settleMs) ||
 			(foundAt === null && now - startedAt >= 6000)
 		) {
 			stop();
