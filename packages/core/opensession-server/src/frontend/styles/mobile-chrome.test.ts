@@ -7,14 +7,12 @@ import {
 	HEADER_TITLE_PILL,
 	MOBILE_BACK,
 	MOBILE_CONTROL_GLASS,
-	MOBILE_CONTROL_GLASS_EFFECTS,
 	MOBILE_SEARCH_BTN,
 	MOBILE_TOP_BAR_CONTROL,
 	appHeader,
 	mobileFilterBtn,
 } from "../lib/app-header-classes";
 import {
-	TAB_ITEM,
 	TAB_STRIP,
 	tabClass,
 } from "../lib/session-tab-classes";
@@ -26,6 +24,10 @@ const HEADER_SOURCE = new URL("../lib/app-header-classes.ts", import.meta.url).p
 const headerCollector = newStylexCollector();
 stylexTransform(HEADER_SOURCE, readFileSync(HEADER_SOURCE, "utf8"), headerCollector);
 const headerCss = stylexCss(headerCollector);
+const TAB_SOURCE = new URL("../lib/session-tab-classes.ts", import.meta.url).pathname;
+const tabCollector = newStylexCollector();
+stylexTransform(TAB_SOURCE, readFileSync(TAB_SOURCE, "utf8"), tabCollector);
+const tabCss = stylexCss(tabCollector);
 
 test("floating phone navigation stays pinned while chat chrome collapses", () => {
 	const floatingHeader = appHeader({ detail: true, floating: true });
@@ -54,8 +56,8 @@ test("phone navigation chrome has no hard divider bars", async () => {
 	);
 	expect(TAB_STRIP).not.toContain("phone:border-b");
 	expect(TAB_STRIP).not.toContain("phone:shadow-[");
-	expect(TAB_STRIP).toContain("phone:bg-transparent");
-	expect(TAB_ITEM).toContain("phone:after:hidden");
+	expect(tabCss).toContain("background-color:#0000");
+	expect(tabCss).toContain("::after{display:none}");
 	expect(infoTopbarClass(true)).not.toContain("border-b");
 	expect(infoTopbarClass(false)).not.toContain("border-b");
 	expect(REPORTS_COLUMN_HEADER).not.toMatch(/(?<!desktop:)border-b/);
@@ -97,10 +99,11 @@ test("every floating phone header control is made of the same glass", async () =
 	// Both phone states are blurred pills, and both fills are OPAQUE: the
 	// selected tab is the bright plate, the rest the grey a step under it.
 	// A thinned fill here let the transcript read through the tab labels.
-	expect(inactiveTab).toContain(MOBILE_CONTROL_GLASS_EFFECTS);
-	expect(inactiveTab).toContain("phone:bg-[var(--mobile-tab-surface)]");
-	expect(activeTab).toContain(MOBILE_CONTROL_GLASS_EFFECTS);
-	expect(activeTab).toContain("phone:bg-[var(--mobile-tab-surface-selected)]");
+	expect(inactiveTab).not.toContain("phone:bg-surface");
+	expect(activeTab).not.toContain("phone:bg-surface");
+	expect(headerCss).toContain("backdrop-filter:var(--mobile-header-control-blur)");
+	expect(tabCss).toContain("background-color:var(--mobile-tab-surface)");
+	expect(tabCss).toContain("background-color:var(--mobile-tab-surface-selected)");
 	expect(css).toContain("--mobile-tab-surface-selected: var(--bg-hover);");
 	expect(css).toContain("--mobile-tab-surface-selected: var(--bg);");
 	expect(css).toContain("--mobile-tab-surface: var(--bg-raised);");
