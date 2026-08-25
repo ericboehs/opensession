@@ -1,4 +1,10 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, {
+	useEffect,
+	useEffectEvent,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import {
   useShortcutKeys,
   useShortcutLabel,
@@ -611,9 +617,11 @@ export function Composer({
     });
   }, [isControlled, draftKey, textareaRef]);
   // One-shot prefill (see the prop doc): each new seq folds the given text
-  // into the draft and focuses the field for immediate editing.
+  // into the draft and focuses the field for immediate editing. The fold
+  // itself reads the latest draft through an effect event, so the trigger
+  // stays just the prefill sequence.
   const prefillSeqRef = useRef(0);
-  useEffect(() => {
+  const applyPrefill = useEffectEvent(() => {
     if (!prefill || prefill.seq === prefillSeqRef.current) return;
     prefillSeqRef.current = prefill.seq;
     const next = !prefill.replace && text.trim()
@@ -634,6 +642,9 @@ export function Composer({
         el.selectionStart = el.selectionEnd = at;
       }
     });
+  });
+  useEffect(() => {
+    applyPrefill();
   }, [prefill]);
   // Fire a send handler with the current draft; in uncontrolled mode a `true`
   // return means "consumed" — clear the draft (falsy keeps it, e.g. offline).
@@ -814,7 +825,7 @@ export function Composer({
     if (asked === lastStopRequest.current) return;
     lastStopRequest.current = asked;
     if (busy && onStop && !disabled) requestStop();
-  }, [stopRequest]);
+  }, [stopRequest, busy, onStop, disabled]);
 
   // Which toolbar popover is open ("add" menu or "goal" editor). Closed on an
   // outside click or after an action.
@@ -1084,7 +1095,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
     appliedHeight.current = height;
     // Height (and thus clip state) just changed — re-evaluate both edges.
     updateScrollEdges(el);
-  }, [displayText, isPhone, minimized]);
+  }, [displayText, isPhone, minimized, textareaRef]);
 
   // The draft can also start or stop clipping without a keystroke: the pane is
   // resized, a split opens, the phone keyboard takes the field's cap down. The
@@ -1095,7 +1106,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
     const observer = new ResizeObserver(() => updateScrollEdges(el));
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [textareaRef]);
 
   // Live code styling: when the draft contains a backtick, a metrics-identical
   // mirror div paints `inline` / ```fence``` tints behind a transparent-text

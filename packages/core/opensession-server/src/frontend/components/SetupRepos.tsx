@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Button } from "../ui/button";
 import { Field, Input } from "../ui/input";
 import { Modal } from "../ui/modal";
@@ -73,10 +73,12 @@ export function ReposSection({
 	// what the sidebar paints can't drift apart.
 	const [appearance, setAppearance] = useState<Map<string, RepoInfo>>(new Map());
 	const repoIds = repos.map((repo) => repo.id).join("\0");
-	const loadAppearance = async () => {
+	// Stable identity: only setters and module functions are captured, so the
+	// effect can list it and still refire only when repoIds changes.
+	const loadAppearance = useCallback(async () => {
 		const list = await fetchRepos().catch(() => []);
 		setAppearance(new Map(list.map((r) => [r.id, r])));
-	};
+	}, []);
 	useEffect(() => {
 		loadAppearance();
 	}, [loadAppearance, repoIds]);

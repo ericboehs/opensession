@@ -1,4 +1,10 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, {
+	useEffect,
+	useEffectEvent,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import { flushSync } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type WorkspaceMediaItem } from "../lib/api";
@@ -804,6 +810,11 @@ function ZoomableMedia({
 	// The item is keyed by src, so a page turn mounts a fresh surface: slide it
 	// in from the side the drag was heading, which is the only cue that the
 	// picture changed rather than reloaded.
+	// Interaction helpers are read through effect events so the effects that
+	// reach them keep their narrow triggers without listing unstable closures.
+	const effectApplyDrag = useEffectEvent(applyDrag);
+	const effectZoomAt = useEffectEvent(zoomAt);
+	const effectOnZoomChange = useEffectEvent(onZoomChange);
 	useEffect(() => {
 		const wrap = wrapRef.current;
 		if (!enterFrom || !wrap) return;
@@ -811,8 +822,8 @@ function ZoomableMedia({
 		// The wrapper is translated for the length of this, so the img's rect is
 		// in motion and must not be cached from it.
 		layout.current = null;
-		applyDrag(enterFrom * Math.min(140, window.innerWidth * 0.25));
-		const frame = requestAnimationFrame(() => applyDrag(0, 0, true));
+		effectApplyDrag(enterFrom * Math.min(140, window.innerWidth * 0.25));
+		const frame = requestAnimationFrame(() => effectApplyDrag(0, 0, true));
 		return () => cancelAnimationFrame(frame);
 	}, [enterFrom, src]);
 
@@ -875,7 +886,7 @@ function ZoomableMedia({
 		// Reset before measuring. A transformed getBoundingClientRect would map
 		// the selection against the old zoom level until the next resize.
 		t.current = { s: 1, tx: 0, ty: 0 };
-		const media = mediaEl();
+		const media = diagram ? boxRef.current : imgRef.current;
 		if (media) {
 			media.style.transition = "none";
 			media.style.transform = "translate(0px, 0px) scale(1)";
@@ -883,7 +894,7 @@ function ZoomableMedia({
 		if (zoomedRef.current) {
 			zoomedRef.current = false;
 			setZoomed(false);
-			onZoomChange(false);
+			effectOnZoomChange(false);
 		}
 		const measure = () => {
 			const wrap = wrapRef.current;
@@ -1301,7 +1312,7 @@ function ZoomableMedia({
 				MAX_SCALE,
 				Math.max(1, t.current.s * Math.exp(-e.deltaY * 0.0022)),
 			);
-			zoomAt({ x: e.clientX, y: e.clientY }, sNew);
+			effectZoomAt({ x: e.clientX, y: e.clientY }, sNew);
 		}
 		wrap.addEventListener("wheel", onWheel, { passive: false });
 		return () => wrap.removeEventListener("wheel", onWheel);
@@ -1577,6 +1588,7 @@ function MediaLightbox({
 		field.style.height = "0px";
 		field.style.height = `${Math.min(Math.max(field.scrollHeight, min), 132)}px`;
 	};
+	const effectFitCommentField = useEffectEvent(fitCommentField);
 	const reduceMotion = useReducedMotion();
 	const resetComment = () => {
 		setChromeVisible(true);
@@ -1781,7 +1793,7 @@ sendingCommentRef.current = false;
 			if (!field) return;
 			// Before focus, so the bar is never one frame taller or shorter than
 			// the words already in it.
-			fitCommentField(field);
+			effectFitCommentField(field);
 			field.focus({ preventScroll: true });
 		});
 		return () => cancelAnimationFrame(frame);

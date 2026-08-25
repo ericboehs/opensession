@@ -211,12 +211,15 @@ async function compileBinary(
 			join(REPO_ROOT, "packages", "core", "opensession-server", "src", "main.ts"),
 			"--outfile",
 			outfile,
-			// sharp's platform native is resolved at runtime and can't be embedded;
-			// keep it (and its @img/* backends) out of the trace.
+			// Native dependencies cannot be embedded. Sharp ships as a runtime
+			// sidecar; the React compiler is build-only and compileAssets loads it
+			// lazily, a path embedded releases never execute.
 			"--external",
 			"sharp",
 			"--external",
 			"@img/*",
+			"--external",
+			"oxc-transform-react",
 		];
 		console.log(`[compile] ${cmd.join(" ")}`);
 		const proc = Bun.spawn(cmd, { cwd: REPO_ROOT, stdout: "inherit", stderr: "inherit" });

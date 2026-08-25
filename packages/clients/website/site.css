@@ -307,6 +307,23 @@ summary:focus-visible {
 	white-space: nowrap;
 }
 
+.landing-setup-app-download {
+	display: inline-flex;
+	min-height: 40px;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	padding: 0 12px;
+	border-radius: calc(10px * var(--rf));
+	corner-shape: var(--cs);
+	background: #0a0a0a;
+	color: #fff;
+}
+
+.landing-setup-app-download svg {
+	flex: none;
+}
+
 .landing-setup-apps {
 	display: grid;
 	min-width: 0;
@@ -325,7 +342,7 @@ summary:focus-visible {
 	border: 0;
 	border-radius: calc(15px * var(--rf));
 	corner-shape: var(--cs);
-	background: rgba(var(--ink-rgb), 0.04);
+	background: transparent;
 	color: var(--ink);
 	cursor: pointer;
 	text-align: left;
@@ -347,7 +364,7 @@ summary:focus-visible {
 }
 
 .landing-setup-app[aria-disabled="true"]:hover {
-	background: rgba(var(--ink-rgb), 0.04);
+	background: transparent;
 }
 
 .landing-setup-app[aria-disabled="true"]:active {

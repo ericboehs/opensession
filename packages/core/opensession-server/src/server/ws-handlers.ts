@@ -24,6 +24,7 @@ import { deleteQueuedPrompt, editableSteerReceipt, liftUserStop, persistQueues, 
 import { abortTurnAndDrain, drainQueue, enqueuePrompt, interruptQueuedPrompt, requestTurnCancel, runSessionPrompt, runSessionPromptAndDrain, steerQueuedPrompt, watchExternalRunAndDrain, } from "./run-session";
 import { sandboxWsClose, sandboxWsMessage, sandboxWsOpen } from "./run-ws";
 import { handleCreateSessionMessage } from "./session-create";
+import { markReplayedCommandResult } from "./command-replay";
 import { sessionIdForRequest } from "./session-request-id";
 import { runnerWsClose, runnerWsMessage, runnerWsOpen } from "./runner-ws";
 import { sandboxPortalRelayClose, sandboxPortalRelayMessage, sandboxPortalRelayOpen, } from "./sandbox-portal-relay";
@@ -702,7 +703,9 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						accepted.result &&
 						typeof accepted.result === "object"
 					)
-						ws.send(JSON.stringify(accepted.result));
+						ws.send(
+							JSON.stringify(markReplayedCommandResult(accepted.result)),
+						);
 					ws.send(
 						JSON.stringify({
 							type: "command_result",

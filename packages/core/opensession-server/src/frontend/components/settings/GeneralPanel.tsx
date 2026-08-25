@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useEffectEvent, useState } from "react";
 import {
 	fetchGithubOrganizationProfile,
 	fetchOrganizationSettings,
@@ -123,7 +123,9 @@ setBusy(false);
 
 	// Fill only what is still unset. A fresh install has no icon, no domain, and
 	// a name that is still the product's own.
-	useEffect(() => {
+	// The body reads `update` through an effect event: the trigger set stays the
+	// org/settings state, while the call always reaches the latest closure.
+	const maybePrefillFromGithub = useEffectEvent(() => {
 		const login = githubOrganization?.trim();
 		if (!login || !settings || prefilled.current || busy) return;
 		const needsName =
@@ -147,6 +149,9 @@ setBusy(false);
 				});
 			}, `Filled in from ${login} on GitHub.`);
 		})();
+	});
+	useEffect(() => {
+		maybePrefillFromGithub();
 	}, [githubOrganization, settings, busy]);
 
 	async function commitDomain() {

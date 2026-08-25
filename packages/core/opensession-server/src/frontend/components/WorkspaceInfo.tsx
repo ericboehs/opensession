@@ -1,7 +1,7 @@
 import { AGENT_NAME, GITHUB_BOT_NAME } from "../lib/brand";
 import { BASE_PATH } from "../lib/base";
 import { commitPrompt } from "../lib/commit-prompt";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
 import { parsePatchFiles } from "@pierre/diffs";
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
@@ -952,10 +952,20 @@ function ReviewerChip({
 	const [error, setError] = useState<string | null>(null);
 	// Follow the polled session as it refreshes (another viewer may re-assign or
 	// sign off). Track accepted's timestamp too so the sign-off lands live.
-	useEffect(() => {
+	const reqKey = [
+		reviewRequest?.to,
+		reviewRequest?.at,
+		reviewRequest?.accepted?.at,
+	].join("\0");
+	// Content-keyed resync: the trigger is the request's identity fields; the
+	// copy lands through an effect event so the object itself stays out of deps.
+	const syncRequest = useEffectEvent(() => {
 		setReq(reviewRequest ?? null);
 		setError(null);
-	}, [reviewRequest?.to, reviewRequest?.at, reviewRequest?.accepted?.at]);
+	});
+	useEffect(() => {
+		syncRequest();
+	}, [reqKey]);
 
 	// The session that owns an existing request; a brand-new one anchors to the open session.
 	const owner = (req && requestSessionId) || sessionId;
@@ -967,9 +977,13 @@ function ReviewerChip({
 	const me = personKey(currentUser);
 	// Local so clearing them lands immediately; the polled session confirms.
 	const [ghRequested, setGhRequested] = useState(prReviewRequested || []);
-	useEffect(() => {
+	const ghRequestedKey = (prReviewRequested || []).join("\n");
+	const syncGhRequested = useEffectEvent(() => {
 		setGhRequested(prReviewRequested || []);
-	}, [(prReviewRequested || []).join("\n")]);
+	});
+	useEffect(() => {
+		syncGhRequested();
+	}, [ghRequestedKey]);
 	const githubRequested = ghRequested.map((person) => person.toLowerCase());
 	const githubRequestsMe = githubRequested.some((person) => person === me);
 	const needsMyReview =

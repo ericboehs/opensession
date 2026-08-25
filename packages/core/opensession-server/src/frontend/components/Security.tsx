@@ -1,6 +1,6 @@
 import { repoLabel } from "../lib/repo-label";
 import { BASE_PATH } from "../lib/base";
-import React, { useEffect, useState, } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   fetchSecurity,
   startScanApi,
@@ -103,7 +103,9 @@ export function Security({ onOpenSession }: Props) {
   const [editProfile, setEditProfile] = useState<ScanProfile | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = async () => {
+  // Stable identity: only setters and module functions are captured, so the
+  // polling effect can list `load` without ever refiring from re-renders.
+  const load = useCallback(async () => {
     await (async () => {
 const data = await fetchSecurity();
       setScans(data.scans);
@@ -123,7 +125,7 @@ const autos = await fetchAutomations();
 })().catch(async () => {
 
 });
-  };
+  }, []);
 
   useEffect(() => {
     document.title = docTitle("Security");
@@ -440,18 +442,19 @@ function NewScanModal({
   const canRecur = singleRepo && !interactive;
   const canInteractive = singleRepo && recurrence === "none";
 
+  const firstRepo = repos[0] || "";
   // The dialog stays mounted, so each opening starts from a clean draft.
   useEffect(() => {
     if (!open) return;
     setScope("single");
-    setRepo(repos[0] || "");
+    setRepo(firstRepo);
     setProfileId("");
     setInstructions("");
     setRecurrence("none");
     setInteractive(false);
     setStarting(false);
     setError(null);
-  }, [open, repos[0]]);
+  }, [open, firstRepo]);
 
   async function handleStart() {
     setStarting(true);

@@ -30,17 +30,25 @@ small team.
 
 ### 1. Install it on the box
 
-**The Open Session installer does this with `--tailscale`** (it is off by
-default: the default install binds loopback only). Otherwise
-`curl -fsSL https://tailscale.com/install.sh | sh`. Check with `tailscale ip
--4`; if it prints a `100.x` address you are already on a tailnet and can skip
-to step 3.
+For a fresh Open Session install on Linux, pass `--tailscale` to the downloaded
+script after `bash -s --`:
 
-To install it by hand:
+```sh
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale
+```
+
+The Open Session installer only installs Tailscale automatically when
+passwordless `sudo` is available. If it reports that `sudo` is needed, or if
+Open Session is already installed, add Tailscale directly. You do not need to
+reinstall Open Session:
 
 ```sh
 curl -fsSL https://tailscale.com/install.sh | sh
 ```
+
+On macOS, use the [Tailscale download page](https://tailscale.com/download/mac).
+Check with `tailscale ip -4`; if it prints a `100.x` address, you are already on
+a tailnet and can skip to step 3.
 
 ### 2. Join your network
 
@@ -51,18 +59,36 @@ sudo tailscale up
 It prints a URL — open it and authenticate. On a headless box, use
 `sudo tailscale up --ssh` if you also want Tailscale SSH.
 
-This is the step the installer cannot do for you, because it needs your
-account. It *can* if you give it an
-[auth key](https://tailscale.com/kb/1085/auth-keys) as `TS_AUTHKEY` — see
-[install.md](install.md#why-tailscale-is-installed-by-default).
+This is the step the installer cannot do without your account. For an
+unattended fresh install, it can join with a Tailscale [auth
+key](https://tailscale.com/kb/1085/auth-keys):
 
-### 3. Find the tailnet address
+```sh
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | TS_AUTHKEY=tskey-auth-... bash -s -- --tailscale
+```
+
+The environment variable belongs before `bash`, not before `curl`, so the
+installer receives it. See [Install with Tailscale](install.md#install-with-tailscale).
+
+### 3. Disable key expiry for the server
+
+Tailscale node keys expire by default, which can disconnect an unattended
+server until someone signs in again. In the [Tailscale admin
+console](https://login.tailscale.com/admin/machines), open **Machines**, find
+the Open Session server, open its **…** menu, and choose **Disable key
+expiry**.
+
+Do this for the trusted server, not automatically for every device. Disabling
+expiry means a stolen server identity remains valid until you revoke it. See
+[Tailscale's key expiry documentation](https://tailscale.com/kb/1028/key-expiry).
+
+### 4. Find the tailnet address
 
 ```sh
 tailscale ip -4        # e.g. 100.64.12.34
 ```
 
-### 4. Bind Open Session to it
+### 5. Bind Open Session to it
 
 If you joined the tailnet *before* onboarding, this is already done — the
 wizard offers the tailnet address as the bind default. Otherwise:
@@ -84,7 +110,7 @@ If you manage the files by hand instead, change `HOST` in
 `OPENSESSION_UI_BASE` to match — or links posted into Slack, Linear and notes
 will point somewhere unreachable — and restart.
 
-### 5. Install Tailscale on the devices you want to use
+### 6. Install Tailscale on the devices you want to use
 
 Phone, laptop, whatever. They must be on the same tailnet. That is the whole
 access-control story — adding a device to the tailnet grants access, removing

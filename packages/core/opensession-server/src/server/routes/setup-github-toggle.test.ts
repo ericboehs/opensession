@@ -50,13 +50,13 @@ function setupFiles(account?: { login: string; name?: string }) {
 	return config;
 }
 
-function enableRequest(): RouteContext {
+function githubRequest(body: Record<string, unknown>): RouteContext {
 	const url = new URL("http://localhost/api/setup/github");
 	return {
 		req: new Request(url, {
 			method: "PUT",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ userPrAuth: true }),
+			body: JSON.stringify(body),
 		}),
 		url,
 		path: url.pathname,
@@ -79,7 +79,7 @@ describe("enabling GitHub sign-in", () => {
 	test("rosters the sole connected account as admin on a personal install", async () => {
 		const config = setupFiles({ login: "jasmoony", name: "Jas Moony" });
 
-		const response = await handleSetupRoutes(enableRequest());
+		const response = await handleSetupRoutes(githubRequest({ userPrAuth: true }));
 		expect(response?.status).toBe(200);
 		const written = JSON.parse(readFileSync(config, "utf8"));
 		expect(written.integrations.github).toMatchObject({
@@ -93,7 +93,7 @@ describe("enabling GitHub sign-in", () => {
 	test("refuses to lock an empty personal install behind sign-in", async () => {
 		const config = setupFiles();
 
-		const response = await handleSetupRoutes(enableRequest());
+		const response = await handleSetupRoutes(githubRequest({ userPrAuth: true }));
 		expect(response?.status).toBe(409);
 		expect(await response?.json()).toEqual({
 			error:
@@ -102,6 +102,16 @@ describe("enabling GitHub sign-in", () => {
 		const written = JSON.parse(readFileSync(config, "utf8"));
 		expect(written.integrations.github.userPrAuth).toBeUndefined();
 		expect(written.identity).toBeUndefined();
+	});
+
+	test("saves the mention handle used by the GitHub agent", async () => {
+		const config = setupFiles();
+
+		const response = await handleSetupRoutes(githubRequest({ mentionHandle: "@session-bot" }));
+		expect(response?.status).toBe(200);
+		expect(await response?.json()).toMatchObject({ restartRequired: true });
+		const written = JSON.parse(readFileSync(config, "utf8"));
+		expect(written.integrations.github.mentionHandles).toEqual(["session-bot"]);
 	});
 });
 

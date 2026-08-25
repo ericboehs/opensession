@@ -66,6 +66,7 @@ describe("transition table shape", () => {
 			"run_registered",
 			"start_failed",
 			"start_aborted",
+			"stop_lifted",
 			"ask_posed",
 			"ask_resolved",
 			"steer",
@@ -110,9 +111,11 @@ describe("lifecycle paths", () => {
 		expect(walk("ask_blocked", ["prompt", "steer"])).toBe("ask_blocked");
 	});
 
-	test("user Stop parks the session until the next explicit prompt", () => {
+	test("user Stop parks the session until intake releases it for a new run", () => {
 		expect(walk("running", ["cancel"])).toBe("stopped");
-		expect(walk("stopped", ["prompt", "run_registered"])).toBe("running");
+		expect(
+			walk("stopped", ["stop_lifted", "prompt", "run_registered"]),
+		).toBe("running");
 	});
 
 	test("stopped absorbs the cancelled run's own teardown", () => {

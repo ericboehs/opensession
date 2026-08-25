@@ -246,7 +246,12 @@ export function isUserStopped(sessionId: string): boolean {
 export function liftUserStop(sessionId: string): void {
   stoppedSessions.delete(sessionId);
   if (sessionKernelStore().runState(sessionId).state === "stopped")
-    sessionKernelStore().applyRunEvent({ sessionId, event: "prompt" });
+    // Intake only releases the durable Stop latch. The later physical run
+    // reservation owns `prompt` -> `starting` and supplies its run token.
+    // Advancing to `starting` here makes the intake busy-check observe its own
+    // half-created run, queue the message, and wait forever for an engine owner
+    // that was never started.
+    sessionKernelStore().applyRunEvent({ sessionId, event: "stop_lifted" });
 }
 
 // Both maps are persisted to disk so a real restart/crash (not just a hot

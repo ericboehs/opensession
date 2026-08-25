@@ -1,5 +1,5 @@
 import { repoLabel } from "../lib/repo-label";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import type { PrDetails } from "../lib/types";
 import {
 	deriveHeadline,
@@ -488,6 +488,8 @@ export function PrStatusBar({
 	});
 	const pr = prResource.data ?? null;
 	const git = gitResource.data ?? null;
+	const { mutate: reloadPr } = prResource;
+	const { mutate: reloadGit } = gitResource;
 	const mergeKey = deferredMergeKey(pr?.url);
 	const mergePhase = useDeferredMergePhase(mergeKey);
 	const loaded =
@@ -499,12 +501,15 @@ export function PrStatusBar({
 
 	useEffect(() => setIsArchived(!!archived), [archived]);
 
-	const load = async () => {
+	// SWR's mutate is stable, so the refetch effects below can list `load`
+	// without re-arming on every render.
+	const hasPromoted = promoted != null;
+	const load = useCallback(async () => {
 		await Promise.all([
-			prResource.mutate(),
-			promoted ? Promise.resolve() : gitResource.mutate(),
+			reloadPr(),
+			hasPromoted ? Promise.resolve() : reloadGit(),
 		]);
-	};
+	}, [reloadPr, reloadGit, hasPromoted]);
 
 	// Refetch the instant a turn ends (running→idle) or an auto-push lands
 	// (refreshTick bump), so "Ahead by N commits" clears without waiting on a

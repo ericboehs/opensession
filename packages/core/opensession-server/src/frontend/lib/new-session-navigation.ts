@@ -1,3 +1,16 @@
+export function shouldApplyCreatedSessionReply(
+	replayed: boolean | undefined,
+	hasPendingDraft: boolean,
+): boolean {
+	// A completed create command remains in the durable browser outbox until its
+	// acknowledgement round-trip finishes. If the socket drops first, reconnect
+	// replays the command and the server returns its stored session_created result.
+	// Without the matching in-memory draft this is historical confirmation, not a
+	// new optimistic session. Applying it would fabricate a sticky "New session"
+	// row with no repo, which then falls into the instance-default repo lane.
+	return replayed !== true || hasPendingDraft;
+}
+
 export function shouldOpenCreatedSession(
 	draft: { originPath: string; background?: boolean } | null,
 	currentPath: string,

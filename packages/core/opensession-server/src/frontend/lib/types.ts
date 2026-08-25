@@ -824,6 +824,9 @@ export type WSServerMessage =
 			viewing: Array<{ user: string; sessionId: string }>;
 	  }
 	| { type: "pins_changed"; user: string; pins: string[] }
+	// The materialized session list changed. Web clients refetch their scoped
+	// sidebar projection; older and native clients safely ignore this frame.
+	| { type: "sessions_invalidated" }
 	// term_* frames carry the termId of the shell tab (PTY) they belong to;
 	// absent on frames from servers that predate multi-tab shells.
 	| { type: "term_data"; termId?: string; data: string }

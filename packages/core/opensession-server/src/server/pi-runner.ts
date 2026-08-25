@@ -57,6 +57,7 @@ import {
 import { markCodexExhausted, type CodexAccount } from "./codex-accounts";
 import { pickAccount as pickClaudeAccount } from "./claude-accounts";
 import {
+  enableOpenaiFastMode,
   pickOpenaiAccount,
   buildSeededOpenaiAuth,
   maskOpenaiAccount,
@@ -2304,6 +2305,14 @@ async function* runPiAttempt(
       settingsManager,
     });
     session = created.session;
+    // Pi's provider supports `service_tier`, but its simple-stream adapter
+    // drops that option before building the Codex request. Patch the final
+    // payload instead. Restrict this to seeded ChatGPT OAuth credentials: API
+    // key accounts use ordinary OpenAI billing and are not the subscription
+    // fast mode exposed by the clients.
+    if (opts.fastMode && seededOpenaiCredential) {
+      enableOpenaiFastMode(session.agent);
+    }
     // The first complete provider input only exists after Pi has combined its
     // base prompt with Open Session instructions, AGENTS.md, skills and active
     // tool guidance. Record it once for the collapsed transcript-start audit

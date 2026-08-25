@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentUser } from "./UserPicker";
 import { Button } from "../ui/button";
 import { noAutofill } from "../lib/composer-autofill";
@@ -33,12 +33,12 @@ export function SelectionToSession({ sessionId, label, send, children }: Props) 
   const [message, setMessage] = useState("");
   const [sent, setSent] = useState(false);
 
-  const dismiss = () => {
+  const dismiss = useCallback(() => {
     setSel(null);
     setComposing(false);
     setMessage("");
     setSent(false);
-  };
+  }, []);
 
   const onMouseUp = () => {
     if (!send) return;

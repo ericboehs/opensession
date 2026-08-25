@@ -1,5 +1,5 @@
 import React, {
-	
+	useCallback,
 	useEffect,
 	useImperativeHandle,
 	useLayoutEffect,
@@ -183,17 +183,18 @@ export function NewSessionPrompt({
 	// Non-null exactly while the store is behind the field, which is what makes
 	// "nothing pending" a safe reason for a flush to do nothing.
 	const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const writeDraftNow = () => {
+	// Stable identity: only refs and the module-level draft store are touched.
+	const writeDraftNow = useCallback(() => {
 		if (draftTimer.current == null) return;
 		clearTimeout(draftTimer.current);
 		draftTimer.current = null;
 		saveDraft(DRAFT_KEY, draft.current);
-	};
-	const dropPendingDraftWrite = () => {
+	}, []);
+	const dropPendingDraftWrite = useCallback(() => {
 		if (draftTimer.current == null) return;
 		clearTimeout(draftTimer.current);
 		draftTimer.current = null;
-	};
+	}, []);
 
 	useEffect(() => {
 		if (draftTimer.current != null) clearTimeout(draftTimer.current);

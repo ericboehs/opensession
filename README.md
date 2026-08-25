@@ -25,6 +25,17 @@ first.
 curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash
 ```
 
+To install Tailscale at the same time on Linux, pass the option after Bash's
+stdin argument separator:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale
+```
+
+Already installed Open Session? You do not need to reinstall it. Follow [Add
+Tailscale after a normal
+install](docs/setup/install.md#add-tailscale-after-a-normal-install).
+
 On a fresh box this downloads the compiled release for your OS and
 architecture, unpacks it under `~/.opensession`, installs the `claude` CLI,
 puts an `opensession` command on your `PATH`, writes a default configuration,

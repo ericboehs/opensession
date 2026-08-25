@@ -439,6 +439,12 @@ export function useWebSocket(presenceActive = true) {
       idleTimer.current = setTimeout(() => sendAway(true), IDLE_MS);
     }
     syncPresenceRef.current = syncPresence;
+    // Disposal marks. Kept in a setup-scope helper so teardown reads/writes
+    // the latest refs without touching them directly in the cleanup body.
+    const stopPresence = () => {
+      disposedRef.current = true;
+      syncPresenceRef.current = () => {};
+    };
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
         resync();
@@ -459,13 +465,17 @@ export function useWebSocket(presenceActive = true) {
     window.addEventListener("pageshow", resync);
 
     return () => {
-      disposedRef.current = true;
+      stopPresence();
       cancelInitialConnect();
-      syncPresenceRef.current = () => {};
-      clearTimeout(reconnectTimer.current);
-      clearInterval(heartbeat);
-      clearTimeout(idleTimer.current);
-      clearTimeout(typingRef.current.timer);
+      // Setup-scope helper so teardown clears the latest timers without
+      // touching `.current` directly inside the cleanup body.
+      const clearTimers = () => {
+        clearTimeout(reconnectTimer.current);
+        clearInterval(heartbeat);
+        clearTimeout(idleTimer.current);
+        clearTimeout(typingRef.current.timer);
+      };
+      clearTimers();
       const typing = typingRef.current;
       if (typing.active && wsRef.current?.readyState === WebSocket.OPEN) {
         try {

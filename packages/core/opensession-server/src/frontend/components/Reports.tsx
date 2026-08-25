@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { docTitle } from "../lib/brand";
 import { fetchReportGroups, fetchReports } from "../lib/api";
 import type { ReportGroup, ReportMeta } from "../lib/types";
@@ -92,19 +92,23 @@ setError(e?.message || "Failed to load reports");
 });
 	}
 
+	// Effect-event wrapper: effects can call it with a stable trigger set
+	// while always reaching the latest props.
+	const loadGroupsEvent = useEffectEvent(() => loadGroups());
+
 	useEffect(() => {
 		document.title = docTitle("Reports");
-		loadGroups();
+		loadGroupsEvent();
 		return addHandler((message) => {
 			if (message.type !== "reports_changed") return;
-			loadGroups();
+			loadGroupsEvent();
 			const selectedId = selectionRef.current;
 			if (selectedId && message.automationId === selectedId)
 				fetchReports(selectedId).then(setHistory).catch(() => {});
 		});
 	}, [addHandler]);
 
-	useEffect(() => {
+	const syncHistory = useEffectEvent(() => {
 		if (!selectedAutomationId) {
 			setHistory([]);
 			return;
@@ -121,6 +125,9 @@ setError(e?.message || "Failed to load reports");
 		return () => {
 			alive = false;
 		};
+	});
+	useEffect(() => {
+		syncHistory();
 	}, [selectedAutomationId]);
 
 	const selected = history.find((report) => report.id === selectedReportId) || history[0];

@@ -1,6 +1,6 @@
 import { repoLabel } from "../lib/repo-label";
 import { BASE_PATH } from "../lib/base";
-import React, { useEffect, useState, } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   fetchGoals,
   fetchGoal,
@@ -108,14 +108,16 @@ export function Goals({ onOpenSession, selectedId, onSelect }: Props) {
       .catch(() => {});
   }, []);
 
-  const load = async () => {
+  // Stable identity: only setters and module functions are captured, so the
+  // polling effect can list `load` without ever refiring from re-renders.
+  const load = useCallback(async () => {
     await (async () => {
 setGoals(await fetchGoals());
       setLoading(false);
 })().catch(async () => {
 
 });
-  };
+  }, []);
 
   useEffect(() => {
     document.title = docTitle("Goals");
@@ -136,8 +138,9 @@ setGoals(await fetchGoals());
   useEffect(() => setEditMode(false), [sel?.id]);
 
   // Escape backs out one layer: inline edit → read view → closed.
+  const hasSelection = !!sel;
   useEffect(() => {
-    if (!sel) return;
+    if (!hasSelection) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       const t = e.target as HTMLElement | null;
@@ -147,7 +150,7 @@ setGoals(await fetchGoals());
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [!!sel, editMode, onSelect]);
+  }, [hasSelection, editMode, onSelect]);
 
   async function act(fn: () => Promise<unknown>, refreshDelay = 400) {
     await (async () => {

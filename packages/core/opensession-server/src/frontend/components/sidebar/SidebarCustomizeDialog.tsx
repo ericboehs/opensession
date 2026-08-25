@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Reorder } from "motion/react";
 import { useIsPhone } from "../../hooks/useIsPhone";
 import type { SidebarToolId } from "../../lib/sidebar-tools";
@@ -30,11 +30,14 @@ function OrderSection<T extends string>({
 	const committedRef = useRef(signature);
 	const [announcement, setAnnouncement] = useState("");
 
-	useEffect(() => {
+	const resyncFromItems = useEffectEvent(() => {
 		const next = items.map((item) => item.id);
 		setOrder(next);
 		orderRef.current = next;
 		committedRef.current = signature;
+	});
+	useEffect(() => {
+		resyncFromItems();
 	}, [signature]);
 
 	const byId = new Map(items.map((item) => [item.id, item]));

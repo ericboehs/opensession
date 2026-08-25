@@ -318,7 +318,12 @@ async function main(): Promise<number> {
 
     case "service":
       if (positional[0] === "install") {
-        return (await service.install({ scope: flags.has("--system") ? "system" : "user" })) ? 0 : 1;
+        const installed = await service.install({
+          scope: flags.has("--system") ? "system" : "user",
+        });
+        if (!installed) return 1;
+        info(`Open ${bold(await configuredServerUrl())}`);
+        return 0;
       }
       if (positional[0] === "uninstall") return (await service.uninstall()) ? 0 : 1;
       fail("usage: opensession service install [--system] | uninstall");

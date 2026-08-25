@@ -24,6 +24,7 @@ import {
 } from "./delivery-protocol";
 import type { AskActorRequest, AskActorResult } from "./ask-protocol";
 import type { TurnActorRequest, TurnActorResult } from "./turn-protocol";
+import type { TimerActorRequest, TimerActorResult } from "./timer-protocol";
 import {
   SESSION_KERNEL_ACTOR_VERSION,
   type KernelActorAsyncRequest,
@@ -333,6 +334,16 @@ export class SessionKernelActorClient {
       (this.store as RemoteStore).noteChange(request.sessionId);
     }
     return result;
+  }
+
+  decideTimer<T extends TimerActorRequest>(request: T): TimerActorResult<T> {
+    return this.callSync<TimerActorResult<T>>(
+      {
+        t: "reduce",
+        command: { kind: "timer", commandId: crypto.randomUUID(), request },
+      },
+      `timer ${request.op}`,
+    );
   }
 
   decideDelivery<T extends DeliveryActorRequest>(
@@ -685,6 +696,30 @@ class RemoteStore implements SessionKernelStoreApi {
   turnSnapshot(sessionId: string) {
     return this.actor.decideTurn({ op: "snapshot", sessionId });
   }
+  requestTurnCancelCommand(
+    input: Parameters<SessionKernelStoreApi["requestTurnCancelCommand"]>[0],
+  ): ReturnType<SessionKernelStoreApi["requestTurnCancelCommand"]> {
+    return this.actor.decideTurn({
+      op: "request_cancel_command",
+      ...input,
+    }) as ReturnType<SessionKernelStoreApi["requestTurnCancelCommand"]>;
+  }
+  completeTurnCancelCommand(
+    input: Parameters<SessionKernelStoreApi["completeTurnCancelCommand"]>[0],
+  ): ReturnType<SessionKernelStoreApi["completeTurnCancelCommand"]> {
+    return this.actor.decideTurn({
+      op: "complete_cancel_command",
+      ...input,
+    }) as ReturnType<SessionKernelStoreApi["completeTurnCancelCommand"]>;
+  }
+  failTurnCancelCommand(
+    input: Parameters<SessionKernelStoreApi["failTurnCancelCommand"]>[0],
+  ): ReturnType<SessionKernelStoreApi["failTurnCancelCommand"]> {
+    return this.actor.decideTurn({
+      op: "fail_cancel_command",
+      ...input,
+    }) as ReturnType<SessionKernelStoreApi["failTurnCancelCommand"]>;
+  }
   prepareTurnCancel(
     input: Parameters<SessionKernelStoreApi["prepareTurnCancel"]>[0],
   ): ReturnType<SessionKernelStoreApi["prepareTurnCancel"]> {
@@ -820,6 +855,26 @@ class RemoteStore implements SessionKernelStoreApi {
       sessionId,
       promptEntryId,
     });
+  }
+  beginTimerExecution(
+    input: Parameters<SessionKernelStoreApi["beginTimerExecution"]>[0],
+  ): ReturnType<SessionKernelStoreApi["beginTimerExecution"]> {
+    return this.actor.decideTimer({ op: "begin", ...input });
+  }
+  completeTimerExecution(
+    input: Parameters<SessionKernelStoreApi["completeTimerExecution"]>[0],
+  ): ReturnType<SessionKernelStoreApi["completeTimerExecution"]> {
+    return this.actor.decideTimer({ op: "complete", ...input });
+  }
+  failTimerExecution(
+    input: Parameters<SessionKernelStoreApi["failTimerExecution"]>[0],
+  ): ReturnType<SessionKernelStoreApi["failTimerExecution"]> {
+    return this.actor.decideTimer({ op: "fail", ...input });
+  }
+  recordTimerRuntimeFailure(
+    input: Parameters<SessionKernelStoreApi["recordTimerRuntimeFailure"]>[0],
+  ): ReturnType<SessionKernelStoreApi["recordTimerRuntimeFailure"]> {
+    return this.actor.decideTimer({ op: "record_runtime_failure", ...input });
   }
   scheduleTimer(timer: Parameters<SessionKernelStoreApi["scheduleTimer"]>[0]) {
     this.call("scheduleTimer", timer);

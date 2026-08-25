@@ -1,5 +1,5 @@
 import { BASE_PATH } from "../lib/base";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import {
@@ -240,7 +240,8 @@ export function SlackChannelPane({
 		};
 	}, []);
 
-	const loadNewest = async () => {
+	// Depends on channelId: the poll effect refires when the channel changes.
+	const loadNewest = useCallback(async () => {
 		await (async () => {
 const res = await fetch(
 				`${BASE_PATH}/api/slack/channels/${encodeURIComponent(channelId)}/messages`,
@@ -279,7 +280,7 @@ if (aliveRef.current) setError(e.message);
 }).finally(async () => {
 if (aliveRef.current) setLoading(false);
 });
-	};
+	}, [channelId]);
 
 	useEffect(() => {
 		setMessages([]);

@@ -19,6 +19,7 @@ export type RunEvent =
 	| "run_registered"
 	| "start_failed"
 	| "start_aborted"
+	| "stop_lifted"
 	| "ask_posed"
 	| "ask_resolved"
 	| "steer"
@@ -105,6 +106,7 @@ export const RUN_STATE_TRANSITIONS: Record<
 	},
 	stopped: {
 		boot_journal_found: "interrupted",
+		stop_lifted: "idle",
 		prompt: "starting",
 		run_registered: "running",
 		turn_end: "stopped",

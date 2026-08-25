@@ -17,6 +17,7 @@ import { platform } from "os";
 import {
   LAUNCHD_LABEL,
   LAUNCHD_LAUNCHER,
+  metadataInstallBlockGuidance,
   renderExecutorUnit,
   renderLauncher,
   renderPlist,
@@ -30,6 +31,21 @@ import { ENV_PATH, HOME } from "./paths";
 // manager exists there, so skip rather than loosen assertions that catch a
 // real regression on the platforms that install them.
 const onServiceHost = platform() !== "win32";
+
+describe("cloud metadata install refusal", () => {
+  test("explains the EC2 risk, safe block, explicit bypass, and rerun", () => {
+    const guidance = metadataInstallBlockGuidance(1234).join("\n");
+
+    expect(guidance).toContain("EC2");
+    expect(guidance).toContain("IAM role credentials");
+    expect(guidance).toContain(
+      "sudo iptables -I OUTPUT -d 169.254.169.254 -m owner --uid-owner 1234 -j REJECT",
+    );
+    expect(guidance).toContain("rerun the same Open Session installation command");
+    expect(guidance).toContain("OPENSESSION_ALLOW_IMDS=1");
+    expect(guidance).toContain("explicitly skip this safety check");
+  });
+});
 
 describe.skipIf(!onServiceHost)("systemd unit", () => {
   test("user scope: no User=, no IPAddressDeny=, wants default.target", async () => {

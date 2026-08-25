@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
 	fetchModels,
 	fetchPersonalOutputStyle,
@@ -319,7 +319,9 @@ function PersonalPromptPanel() {
 		latest.current = { prompt, savedPrompt, user };
 	});
 
-	const commit = async () => {
+	// Stable identity: reads the latest-values ref, so the unmount effect can
+	// list it and still only run its cleanup once.
+	const commit = useCallback(async () => {
 		const { prompt: draft, savedPrompt: saved, user: who } = latest.current;
 		if (draft === null || draft === saved) return;
 		setStatus("saving");
@@ -333,7 +335,7 @@ setStatus("idle");
 				variant: "error",
 			});
 });
-	};
+	}, []);
 
 	useEffect(() => {
 		// Fire-and-forget on the way out — nothing is left to render a result to.

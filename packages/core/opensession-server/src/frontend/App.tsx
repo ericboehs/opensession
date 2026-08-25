@@ -19,7 +19,9 @@ import {
 } from "./lib/sidebar-collapse";
 import { openWorkspaceSummary } from "./lib/workspace-summary-open";
 import React, {
+	useCallback,
 	useEffect,
+	useEffectEvent,
 	useLayoutEffect,
 	useRef,
 	useState,
@@ -84,7 +86,10 @@ import { dropStagingAttachments } from "./lib/attachments";
 import { IconTile } from "./components/BrandTile";
 import { displayName } from "./brand-logos";
 import type { NewSessionPrefill } from "./lib/new-session-link";
-import { shouldOpenCreatedSession } from "./lib/new-session-navigation";
+import {
+	shouldApplyCreatedSessionReply,
+	shouldOpenCreatedSession,
+} from "./lib/new-session-navigation";
 import { primeSoftKeyboard } from "./lib/soft-keyboard";
 import { trackKeyboardInset } from "./lib/keyboard-inset";
 import {
@@ -111,12 +116,7 @@ import { UserGate, getCurrentUser, useAuthStatus, useCurrentUser } from "./compo
 import { PreviewWait, matchPreviewWaitRoute } from "./components/PreviewWait";
 import { TitleBar } from "./components/TitleBar";
 import { FirstMile } from "./components/FirstMile";
-import { GithubConnectEmptyState } from "./components/GithubConnectEmptyState";
-import {
-	completeFirstMile,
-	firstMileComplete,
-	onFirstMileChanged,
-} from "./lib/first-mile-pref";
+import { useOnboarding } from "./hooks/useOnboarding";
 import {
 	settingsPaletteActions,
 	type SettingsSectionKey,
@@ -773,6 +773,7 @@ export function App(
 		archivedLoaded,
 		refreshArchived,
 		refresh,
+		refreshInvalidated,
 		inject,
 		unstick,
 		patch,
@@ -786,12 +787,19 @@ export function App(
 	// chips need the registered set to resolve, so without it the first paint of
 	// a transcript renders `opensession#128` as plain text and relinks a beat later.
 	const [registeredRepoInfo, setRegisteredRepoInfo] = useState(cachedRepos);
-	const [firstMileIsComplete, setFirstMileIsComplete] =
-		useState(firstMileComplete);
+	const onboarding = useOnboarding();
 	const [forceFirstMile, setForceFirstMile] = useState(landedOnFirstMile);
 	const auth = useAuthStatus();
 	const githubConnectionState = useGithubConnectionState(route.view);
 	const { connected, send, setTyping, addHandler } = useWebSocket();
+	// A disconnected socket may miss list invalidations. The first connection
+	// races the initial list load and needs no extra fetch; later reconnects do.
+	const webSocketConnectedOnceRef = useRef(false);
+	useEffect(() => {
+		if (!connected) return;
+		if (webSocketConnectedOnceRef.current) refresh();
+		else webSocketConnectedOnceRef.current = true;
+	}, [connected, refresh]);
 	const sessionsRef = useRef(sessions);
 	useLayoutEffect(() => {
 	sessionsRef.current = sessions;
@@ -812,9 +820,9 @@ export function App(
 	// turn") route through the global toast store — stacked, animated, and
 	// firable from anywhere without threading a prop. This wrapper keeps the
 	// existing `onToast`/`showToast` call sites working.
-	const showToast = (message: string) => {
+	const showToast = useCallback((message: string) => {
 		toast(message);
-	};
+	}, []);
 	// Session-reference chips in transcripts (`bks-…`), and the pill the
 	// composer projects a draft id into, label themselves from this registry.
 	// markdown.ts renders to an HTML string rather than React nodes, so it
@@ -1106,14 +1114,7 @@ export function App(
 		workspacesLoaded &&
 		sessions.length === 0 &&
 		workspaces.length === 0;
-	const githubConnectionRequired =
-		productEmpty && githubConnectionState === "disconnected";
-	const firstMileActive =
-		forceFirstMile ||
-		(auth?.admin !== false &&
-			productEmpty &&
-			githubConnectionState === "connected" &&
-			!firstMileIsComplete);
+	const firstMileActive = forceFirstMile || onboarding.state === "required";
 	// This identity is observable: both subscriptions below depend on it. Keep it
 	// stable even if the compiler bails out on this large component, otherwise a
 	// completed fetch updates state, retriggers the effect, and starts another fetch.
@@ -1135,11 +1136,12 @@ export function App(
 		return () => window.removeEventListener("opensession:workspaces-changed", onWorkspaceSettingsChanged);
 	}, [refreshWorkspaces]);
 	useEffect(() => {
-		const sync = () => setFirstMileIsComplete(firstMileComplete());
-		const unsubscribe = onFirstMileChanged(sync);
-		sync();
-		return unsubscribe;
-	}, []);
+		if (onboarding.state !== "required" || forceFirstMile) return;
+		// The onboarding gate owns the first incomplete load, including deep links.
+		// Replace rather than push so Back cannot escape a required walkthrough.
+		history.replaceState(history.state ?? navState(0), "", `${BASE_PATH}/welcome`);
+		setForceFirstMile(true);
+	}, [onboarding.state, forceFirstMile]);
 
 	function openFirstMile() {
 		// Keep the settings entry below the walkthrough so browser Back returns to
@@ -1149,8 +1151,15 @@ export function App(
 		setForceFirstMile(true);
 	}
 
-	function finishFirstMile() {
-		completeFirstMile();
+	async function finishFirstMile() {
+		try {
+			await onboarding.complete();
+		} catch (cause) {
+			toast(cause instanceof Error ? cause.message : "Could not finish onboarding", {
+				variant: "error",
+			});
+			return;
+		}
 		if (forceFirstMile) {
 			const url = new URL(location.href);
 			url.searchParams.delete("firstmile");
@@ -1973,6 +1982,11 @@ const path = await resolveAnonymousUserPath(
 	// Esc closes whichever palette is open (search's
 	// own input also handles Esc, but this covers the case where focus has left
 	// it).
+	// The three component handlers are read through effect events, so the
+	// listener subscribes once and still reaches the latest closures.
+	const hotkeyOpenPalette = useEffectEvent(() => openPalette());
+	const hotkeyClosePalette = useEffectEvent(() => closePalette());
+	const hotkeyToast = useEffectEvent((message: string) => showToast(message));
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			if (matchesShortcut(e, "command-menu")) {
@@ -2012,7 +2026,7 @@ const path = await resolveAnonymousUserPath(
 				// are already in. ⌘S is free to take because there is no document
 				// here to save, so the browser's Save does nothing worth keeping.
 				e.preventDefault();
-				openPalette();
+				hotkeyOpenPalette();
 				return;
 			}
 			if (matchesShortcut(e, "session-copy-link")) {
@@ -2023,12 +2037,12 @@ const path = await resolveAnonymousUserPath(
 				const path = copyLinkPathRef.current;
 				if (!path) return;
 				e.preventDefault();
-				copyToClipboard(absoluteLink(path), () => showToast("Link copied"));
+				copyToClipboard(absoluteLink(path), () => hotkeyToast("Link copied"));
 				return;
 			}
 			if (e.key === "Escape") {
 				if (searchOpenRef.current) setSearchOpen(false);
-				else if (paletteOpenRef.current) closePalette();
+				else if (paletteOpenRef.current) hotkeyClosePalette();
 				else if (leaveSettingsRef.current) {
 					// A field, a menu or a modal inside Settings owns the keystroke
 					// first: only an unclaimed Escape closes the whole surface.
@@ -2047,7 +2061,7 @@ const path = await resolveAnonymousUserPath(
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [openPalette, closePalette, showToast]);
+	}, []);
 
 	// Remember the last session so a cold relaunch can restore it (see above);
 	// clear it when the user deliberately goes home so we don't force them back in.
@@ -2138,8 +2152,16 @@ const path = await resolveAnonymousUserPath(
 	}, [shellLoading]);
 
 	// When a session is created from the New Session form or Ask box, jump straight into it
+	// The handler reads `inject`/`navigate` through effect events, so the
+	// subscription doesn't re-arm just because their closures moved.
+	const socketInject = useEffectEvent(inject);
+	const socketNavigate = useEffectEvent(navigate);
 	useEffect(() => {
 		return addHandler((msg) => {
+			if (msg.type === "sessions_invalidated") {
+				refreshInvalidated();
+				return;
+			}
 			if (msg.type === "error") {
 				const draft = pendingCreateDraftRef.current;
 				const errorSessionId = "sessionId" in msg ? msg.sessionId : undefined;
@@ -2206,6 +2228,14 @@ const path = await resolveAnonymousUserPath(
 				const roomScoped = "sessionId" in msg;
 				const draft = pendingDraft?.id === msg.id ? pendingDraft : null;
 				if (draft) pendingCreateDraftRef.current = null;
+				if (!shouldApplyCreatedSessionReply(msg.replayed, !!draft)) {
+					// The durable command outbox replayed a create that this page already
+					// finished. Its real row may be live or archived; either way the lists,
+					// not a repo-less optimistic shell, are the authority now.
+					refresh();
+					refreshWorkspaces();
+					return;
+				}
 				const openedOptimistically =
 					draft?.openImmediately === true && draft.id === msg.id;
 				if (openedOptimistically) {
@@ -2243,7 +2273,7 @@ const path = await resolveAnonymousUserPath(
 					const now = new Date().toISOString();
 					const user = draft?.user || getCurrentUser();
 					const createdAt = draft?.startedAt || now;
-					inject({
+					socketInject({
 						id: msg.id,
 						claudeSessionId: null,
 						source: "opensession",
@@ -2308,10 +2338,18 @@ const path = await resolveAnonymousUserPath(
 				}
 				refresh();
 				refreshWorkspaces();
-				if (stillOwnsForeground) navigate({ view: "session", id: msg.id });
+				if (stillOwnsForeground) socketNavigate({ view: "session", id: msg.id });
 			}
 		});
-	}, [addHandler, navigate, patch, refresh, refreshWorkspaces, remove, unstick]);
+	}, [
+		addHandler,
+		patch,
+		refresh,
+		refreshInvalidated,
+		refreshWorkspaces,
+		remove,
+		unstick,
+	]);
 
 	// Drop the pending flag once we've navigated away from the pending session (its
 	// fallback timeout clears it otherwise). We deliberately DON'T clear it the
@@ -2373,10 +2411,10 @@ const path = await resolveAnonymousUserPath(
 		reviewDismissed,
 		wsHasLiveSession,
 	);
-	function setActiveViewTab(tab: ActiveViewTab) {
+	const setActiveViewTab = useCallback((tab: ActiveViewTab) => {
 		setActiveViewTabState(tab);
 		if (wsKey) saveActiveViewTab(wsKey, tab);
-	}
+	}, [wsKey]);
 	// Return each workspace to its last foregrounded tab. A workspace without a
 	// saved selection still starts on its normal default surface. Switching sessions
 	// within a workspace records session as the selection via the tab-strip handler.
@@ -2392,7 +2430,7 @@ const path = await resolveAnonymousUserPath(
 					? defaultSessionView
 					: remembered,
 		);
-	}, [wsKey, defaultSessionView]);
+	}, [wsKey, defaultSessionView, routeSubagentStack.length]);
 	// ...unless we just opened Review for that workspace from the sidebar: once
 	// it lands (this render or the one after navigation), foreground Review and
 	// consume the pulse. Runs after the reset effect above, so it wins.
@@ -2401,7 +2439,7 @@ const path = await resolveAnonymousUserPath(
 			setActiveViewTab("review");
 			setPendingReviewOpen(null);
 		}
-	}, [wsKey, pendingReviewOpen]);
+	}, [wsKey, pendingReviewOpen, setActiveViewTab]);
 	// Add the Review view-tab for a workspace. Presence is the OR of reviewOpen
 	// and "PR-backed and not in reviewClosed", but reviewClosed alone feeds
 	// reviewDismissed (and through it defaultSessionWorkspaceView) — so adding
@@ -2421,9 +2459,14 @@ const path = await resolveAnonymousUserPath(
 	// session (or the main session on first visit). A session-less PR workspace still
 	// opens Review. Declared after the wsKey reset effect above so the landing
 	// choice wins the same commit.
+	// Scalars derived from the route so the effect keys on exactly the values
+	// it reacts to (workspace id + explicit tab), not every route object.
+	const landingWsKey = route.view === "workspace" ? route.id : null;
+	const landingExplicitTab =
+		route.view === "workspace" ? (route.tab ?? null) : null;
 	useEffect(() => {
 		if (
-			route.view !== "workspace" ||
+			landingWsKey === null ||
 			!workspaceLandingReady(workspacesLoaded, loading)
 		)
 			return;
@@ -2434,7 +2477,9 @@ const path = await resolveAnonymousUserPath(
 			suppressWsSeedRef.current = false;
 			return;
 		}
-		const p = workspaces.find((x) => x.id === route.id) || null;
+		// Ref read: the trigger set is the route + readiness, and the freshest
+		// committed list is what a landing decision wants anyway.
+		const p = workspacesRef.current.find((x) => x.id === landingWsKey) || null;
 		// Default pane by workspace shape: ticket workspaces open on the
 		// Conversation; everything else — PR-backed included — lands in its
 		// main/last-open session. A PR workspace only defaults to Review when it
@@ -2445,11 +2490,11 @@ const path = await resolveAnonymousUserPath(
 		// no session to land in. Explicit /conversation-/video URLs still win.
 		const hasSession = !!pickLandingSession(
 			sessionsRef.current,
-			route.id,
-			getWorkspaceLastSession(route.id),
+			landingWsKey,
+			getWorkspaceLastSession(landingWsKey),
 		);
 		const tab =
-			route.tab ??
+			landingExplicitTab ??
 			(hasSession
 				? null
 				: p?.plainThreadId
@@ -2457,7 +2502,7 @@ const path = await resolveAnonymousUserPath(
 					: p?.externalRefs?.some((r) => refWebPanel(r))
 						? "video"
 						: null);
-		const key = route.id;
+		const key = landingWsKey;
 		// Landing in the workspace's first session keeps the full session chrome —
 		// including the right sidebar — around the foregrounded pane (wsKey is
 		// unchanged, so the view-tab reset effect doesn't fire). Session-less
@@ -2532,9 +2577,11 @@ const path = await resolveAnonymousUserPath(
 			}
 		}
 	}, [
-		route.view === "workspace" ? `${route.id}:${route.tab ?? ""}` : null,
+		landingWsKey,
+		landingExplicitTab,
 		workspacesLoaded,
 		loading,
+		setActiveViewTab,
 	]);
 	// A PR reference (`/pr/<repo>/<number>`) that GitHub doesn't know: the
 	// number came out of prose, so it can be a typo or an invention.
@@ -2544,6 +2591,9 @@ const path = await resolveAnonymousUserPath(
 	// The old components keep rendering as the in-flight/failure fallback, so
 	// a failed resolve degrades to the previous behavior instead of a dead
 	// link. Bare /reviews goes home — the sidebar bands are the inbox now.
+	// Read through an effect event so the redirect doesn't re-run when the
+	// refresh closure moves.
+	const redirectRefreshWorkspaces = useEffectEvent(refreshWorkspaces);
 	useEffect(() => {
 		let stale = false;
 		const toWorkspace = (
@@ -2551,7 +2601,7 @@ const path = await resolveAnonymousUserPath(
 			tab: "review" | "conversation",
 		) => {
 			if (stale) return;
-			refreshWorkspaces();
+			redirectRefreshWorkspaces();
 			navigate({ view: "workspace", id: workspaceId, tab }, { replace: true });
 		};
 		if (route.view === "pr") {
@@ -3114,7 +3164,9 @@ const path = await resolveAnonymousUserPath(
 		route.view === "session" && route.subagent?.length
 			? `${route.id}${subagentSuffix(route.subagent)}`
 			: null;
-	useEffect(() => {
+	// The sync reads the live route through an effect event, so the trigger
+	// stays the derived sub-agent key rather than every route field.
+	const syncRouteSubagents = useEffectEvent(() => {
 		if (route.view !== "session" || !route.subagent?.length) return;
 		const ids = route.subagent;
 		setSubagentTabs((prev) => {
@@ -3136,6 +3188,10 @@ const path = await resolveAnonymousUserPath(
 			};
 		});
 		setActiveViewTabState("subagent");
+	});
+	useEffect(() => {
+		if (!routeSubagentKey) return;
+		syncRouteSubagents();
 	}, [routeSubagentKey]);
 	// Dropping the last breadcrumb (or switching to a session with no sub-agent
 	// open) leaves nothing to show — fall back to the session itself. Read from
@@ -3251,10 +3307,12 @@ navigate({ view: "support", threadId: t.id });
 	// Mark the open session read up to its latest activity — both when it's first
 	// opened and as new activity streams in while it stays open — so the sidebar's
 	// unread flag clears for whatever you're currently looking at.
+	const currentSessionId = currentSession?.id;
+	const currentSessionActivity = currentSession?.lastActivity;
 	useEffect(() => {
-		if (currentSession)
-			markRead(currentSession.id, currentSession.lastActivity);
-	}, [currentSession?.id, currentSession?.lastActivity]);
+		if (currentSessionId && currentSessionActivity !== undefined)
+			markRead(currentSessionId, currentSessionActivity);
+	}, [currentSessionId, currentSessionActivity]);
 
 	// The tab strip is scoped to the open session's workspace: its sibling sessions
 	// (same workspaceId), oldest first. Sessions with no workspace (slack/linear
@@ -5017,7 +5075,16 @@ console.error("Rename workspace failed:", error);
 				</Modal.Content>
 			</Modal.Root>
 			<div className="app">
-				{firstMileActive ? (
+				{!forceFirstMile && onboarding.state === "loading" ? (
+					<div className="flex h-[100dvh] items-center justify-center bg-bg">
+						<LoadingState>Preparing Open Session…</LoadingState>
+					</div>
+				) : !forceFirstMile && onboarding.state === "failed" ? (
+					<div className="flex h-[100dvh] flex-col items-center justify-center gap-4 bg-bg px-6 text-center">
+						<LoadingState>Couldn&rsquo;t check onboarding.</LoadingState>
+						<Button onClick={() => void onboarding.refetch()}>Try again</Button>
+					</div>
+				) : firstMileActive ? (
 					<FirstMile onDone={finishFirstMile} />
 				) : (
 				<>
@@ -5340,19 +5407,12 @@ console.error("Rename workspace failed:", error);
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onOpenReview={openReviewForSession}
 							onOpenTicket={openTicketWorkspace}
-						onOpenFeedItem={openFeedItemWorkspace}
-							onNewSession={() =>
-								githubConnectionRequired
-									? navigate({ view: "settings", section: "myAccounts" })
-									: openPalette()
-							}
+							onOpenFeedItem={openFeedItemWorkspace}
+							onNewSession={() => openPalette()}
 							showDraftRow={
-								productEmpty &&
-								githubConnectionState !== "loading" &&
-								!githubConnectionRequired
+								productEmpty && githubConnectionState !== "loading"
 							}
 							draftRowActive={productEmpty && route.view === "prs"}
-							githubConnectionRequired={githubConnectionRequired}
 							onOpenDraft={() => {
 								// The row and the panel's card are one unstarted session, so
 								// pressing the row is "put me back in it": return to the panel
@@ -5903,13 +5963,6 @@ console.error("Archive failed:", e);
 							>
 								Check the connection to this server.
 							</EmptyState>
-						) : githubConnectionRequired ? (
-							<GithubConnectEmptyState
-								onConnect={() =>
-									navigate({ view: "settings", section: "myAccounts" })
-								}
-								className="min-h-0 flex-1"
-							/>
 						) : productEmpty && githubConnectionState === "loading" ? (
 							<LoadingState className="min-h-0 flex-1">Checking GitHub…</LoadingState>
 						) : productEmpty ? (

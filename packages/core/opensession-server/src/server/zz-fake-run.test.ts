@@ -453,7 +453,15 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		]);
 		agentRunner.__setEngineForTest(fake.engine);
 
-		// The user pressed Stop: the latch parks the queue (ws-handlers "cancel").
+		// The user pressed Stop: both the durable actor state and the hot-path
+		// latch park the queue (ws-handlers "cancel"). This actor state is
+		// load-bearing: advancing it to `starting` during intake makes the drain
+		// mistake the new message for an already-owned run and park forever.
+		runState.transitionRunState(sid, "prompt", { run_key: "stopped-run" });
+		runState.transitionRunState(sid, "run_registered", {
+			run_key: "stopped-run",
+		});
+		runState.transitionRunState(sid, "cancel", { run_key: "stopped-run" });
 		queueState.stoppedSessions.add(sid);
 		runSession.enqueuePrompt(
 			sid,

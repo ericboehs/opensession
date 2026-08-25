@@ -1,5 +1,5 @@
 import { repoLabel } from "../lib/repo-label";
-import React, { useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useEffectEvent, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import type {
   CodeFlowResult,
@@ -169,16 +169,25 @@ export function DiffPanel({
   const changed = (repos || []).filter(
     (repo) => repo.diff.rawPatch?.trim() || repo.diff.files.length > 0,
   );
-  useEffect(() => {
+  // Content key: re-run only when the repo list's ordering changes, while the
+  // sync reads the live `changed` through an effect event.
+  const changedReposKey = (changed || [])
+    .map((candidate) => candidate.repo)
+    .join("\0");
+  const syncActiveRepo = useEffectEvent(() => {
     if (!repo) return;
     const index = changed.findIndex((candidate) => candidate.repo === repo);
     if (index >= 0) setActive((current) => (current === index ? current : index));
-  }, [repo, changed.map((candidate) => candidate.repo).join("\0")]);
+  });
+  useEffect(() => {
+    syncActiveRepo();
+  }, [repo, changedReposKey]);
   const cur = changed[Math.min(active, changed.length - 1)] || changed[0] || null;
   const groupPatch = cur?.diff.rawPatch || "";
   const groupFileCount = cur?.diff.files.length || 0;
   const patchVersion = cur?.diff.diffVersion || "";
-  const flowKey = cur ? `${sessionId}\0${cur.repo}\0${patchVersion}` : "";
+  const flowRepo = cur?.repo;
+  const flowKey = cur ? `${sessionId}\0${flowRepo}\0${patchVersion}` : "";
   const [flow, setFlow] = useState<{ key: string; data: CodeFlowResult } | null>(null);
   const [flowLoading, setFlowLoading] = useState(false);
   const [flowError, setFlowError] = useState<string | null>(null);
@@ -187,13 +196,15 @@ export function DiffPanel({
   const [diffControlsTarget, setDiffControlsTarget] =
     useState<HTMLDivElement | null>(null);
 
-	const loadFlow = async () => {
-    if (!cur || !flowKey) return;
+	// Keyed on the semantic inputs (session/repo/diff version), not the
+	// per-poll `cur` object, so the flow effect doesn't re-arm every poll.
+	const loadFlow = useCallback(async () => {
+    if (!flowRepo || !flowKey) return;
     const generation = ++flowGeneration.current;
     setFlowLoading(true);
     setFlowError(null);
     await (async () => {
-const data = await fetchCodeFlow(sessionId, cur.repo);
+const data = await fetchCodeFlow(sessionId, flowRepo);
       if (!data) throw new Error("Code flow isn't available for these changes.");
       if (data.diffVersion !== patchVersion) {
         if (generation === flowGeneration.current) {
@@ -208,7 +219,7 @@ if (generation === flowGeneration.current)
 }).finally(async () => {
 if (generation === flowGeneration.current) setFlowLoading(false);
 });
-	};
+	}, [sessionId, flowRepo, flowKey, patchVersion]);
 
 	const refreshFlow = async () => {
 		flowGeneration.current += 1;
@@ -242,7 +253,7 @@ if (generation === flowGeneration.current) setFlowLoading(false);
     requestAnimationFrame(() => requestAnimationFrame(() => revealDiffFile(panelRef.current, path)));
   }
 
-  useEffect(() => {
+  const loadGroups = useEffectEvent(() => {
     if (grouping !== "ai" || !cur || !groupPatch || groupFileCount < 3) {
       setGroups(null);
       setGroupsLoading(false);
@@ -273,6 +284,9 @@ if (generation === flowGeneration.current) setFlowLoading(false);
       live = false;
       if (retryTimer) clearTimeout(retryTimer);
     };
+  });
+  useEffect(() => {
+    loadGroups();
   }, [sessionId, cur?.repo, groupPatch, groupFileCount, groupsRetry, grouping]);
 
   async function handleDiscard(repo: string, path: string, oldPath?: string) {

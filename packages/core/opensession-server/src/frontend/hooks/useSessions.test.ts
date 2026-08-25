@@ -1,11 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import type { UnifiedSession } from "../lib/types";
 import {
+  LIVE_POLL_FALLBACK_MS,
   liveSnapshotMatchesQuery,
   reconcilePendingSessionPatches,
   sessionPatchNeedsAcknowledgement,
   sidebarSessionsQuery,
 } from "./useSessions";
+
+test("uses a slow safety poll behind WebSocket invalidations", () => {
+  expect(LIVE_POLL_FALLBACK_MS).toBe(60_000);
+});
 
 function session(archived: boolean): UnifiedSession {
   return { id: "session-1", archived } as UnifiedSession;

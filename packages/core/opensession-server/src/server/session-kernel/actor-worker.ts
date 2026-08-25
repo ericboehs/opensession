@@ -371,6 +371,12 @@ export function startSessionKernelActorWorker(): void {
         } else if (command.kind === "turn") {
           const turn = command.request;
           if (turn.op === "snapshot") result = store.turnSnapshot(turn.sessionId);
+          else if (turn.op === "request_cancel_command")
+            result = store.requestTurnCancelCommand(turn);
+          else if (turn.op === "complete_cancel_command")
+            result = store.completeTurnCancelCommand(turn);
+          else if (turn.op === "fail_cancel_command")
+            result = store.failTurnCancelCommand(turn);
           else if (turn.op === "prepare_cancel")
             result = store.prepareTurnCancel(turn);
           else if (turn.op === "begin_cancel_effect")
@@ -382,6 +388,13 @@ export function startSessionKernelActorWorker(): void {
           else if (turn.op === "begin_outcome_projection")
             result = store.beginTurnOutcomeProjection(turn);
           else result = store.settleTurnOutcomeProjection(turn);
+        } else if (command.kind === "timer") {
+          const timer = command.request;
+          if (timer.op === "begin") result = store.beginTimerExecution(timer);
+          else if (timer.op === "complete")
+            result = store.completeTimerExecution(timer);
+          else if (timer.op === "fail") result = store.failTimerExecution(timer);
+          else result = store.recordTimerRuntimeFailure(timer);
         } else {
           const ask = command.request;
           if (ask.op === "snapshot") result = store.askSnapshot(ask.sessionId);

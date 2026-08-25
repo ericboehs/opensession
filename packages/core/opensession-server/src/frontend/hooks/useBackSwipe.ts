@@ -354,8 +354,9 @@ export function useBackSwipe({ active, onBack, paneRef, priority = 0 }: Opts) {
       paneRef,
     };
     layers.add(layer);
-    syncListeners();
-    return () => {
+    // Setup-scope helper so teardown reads the latest pane node without
+    // touching `.current` inside the cleanup body itself.
+    const releaseLayer = () => {
       layers.delete(layer);
       // If teardown lands mid-gesture on this layer (route change, unmount),
       // hand the pane back to the CSS class instead of leaving it stuck
@@ -366,6 +367,10 @@ export function useBackSwipe({ active, onBack, paneRef, priority = 0 }: Opts) {
         endGestureState();
       }
       syncListeners();
+    };
+    syncListeners();
+    return () => {
+      releaseLayer();
     };
   }, [paneRef, priority]);
 }

@@ -528,6 +528,8 @@ export type ProtocolServerMessage =
       newWorkspace?: boolean;
       /** True while the session's worktree is still being created. */
       preparingWorkspace?: boolean;
+      /** Stored result of an already-completed durable create command. */
+      replayed?: boolean;
     }
   // The create run finished (or failed) preparing the session's worktree.
   | { type: "workspace_status"; sessionId: string; ready: boolean }

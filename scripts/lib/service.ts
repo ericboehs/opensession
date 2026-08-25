@@ -46,7 +46,7 @@ import {
   USER_UNIT_PATH,
 } from "./paths";
 import { isCompiledBinary } from "../../packages/core/opensession-server/src/runner-host/exe";
-import { dim, info, ok, run, runInherit, warn } from "./ui";
+import { dim, fail, info, ok, run, runInherit, warn } from "./ui";
 
 export type Supervisor = "systemd" | "launchd" | "none";
 /** Which systemd manager owns the unit. */
@@ -442,6 +442,21 @@ export async function metadataEndpointReachable(): Promise<boolean> {
 
 export const IMDS_OVERRIDE_ENV = "OPENSESSION_ALLOW_IMDS";
 
+/** Important, non-dimmed remediation shown when a user service would expose IMDS. */
+export function metadataInstallBlockGuidance(uid: number): string[] {
+  return [
+    "This host can reach the cloud instance metadata endpoint used by EC2 at 169.254.169.254.",
+    "On EC2, agents could use that endpoint to obtain the instance's IAM role credentials.",
+    "The rootless service cannot reliably block that access itself, so Open Session did not install or start it.",
+    "",
+    "Recommended: block metadata access for this user:",
+    `  sudo iptables -I OUTPUT -d 169.254.169.254 -m owner --uid-owner ${uid} -j REJECT`,
+    "Then rerun the same Open Session installation command.",
+    "",
+    `Only if this instance has no cloud role credentials to protect, rerun with ${IMDS_OVERRIDE_ENV}=1 to explicitly skip this safety check.`,
+  ];
+}
+
 /**
  * Keep the user manager alive without a login session, so the user unit
  * survives logout and comes back after a reboot. logind lets a user set
@@ -558,24 +573,10 @@ export async function install(
           (await metadataEndpointReachable())
         ) {
           const uid = process.getuid?.() ?? 0;
-          warn(
-            "a cloud metadata endpoint (169.254.169.254) answers on this box; rootless mode runs agents inside the gateway process and cannot reliably block access to it",
+          fail(
+            "service installation blocked: EC2/cloud metadata is reachable",
           );
-          info(
-            dim(
-              "  Install the hardened system service, or block metadata for this uid:",
-            ),
-          );
-          info(
-            dim(
-              `    sudo iptables -I OUTPUT -d 169.254.169.254 -m owner --uid-owner ${uid} -j REJECT`,
-            ),
-          );
-          info(
-            dim(
-              `  If this box has no cloud role worth protecting: ${IMDS_OVERRIDE_ENV}=1 opensession service install`,
-            ),
-          );
+          for (const line of metadataInstallBlockGuidance(uid)) info(line);
           return false;
         }
         if (existsSync(SERVICE_PATH)) {

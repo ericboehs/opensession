@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useEffectEvent, useState } from "react";
 import { BASE_PATH } from "../lib/base";
 import { fetchSessionReports } from "../lib/api";
 import type { ReportMeta, WSServerMessage } from "../lib/types";
@@ -11,15 +11,15 @@ export function useSessionReports(
 	addHandler: (handler: (message: WSServerMessage) => void) => () => void,
 ) {
 	const [reports, setReports] = useState<ReportMeta[]>([]);
-	const refresh = () => {
+	const refresh = useEffectEvent(() => {
 		fetchSessionReports(sessionId)
 			.then(setReports)
 			.catch(() => {});
-	};
+	});
 	useEffect(() => {
 		setReports([]);
 		refresh();
-	}, [refresh]);
+	}, [sessionId]);
 	useEffect(
 		() =>
 			addHandler((message) => {
@@ -29,7 +29,7 @@ export function useSessionReports(
 				)
 					refresh();
 			}),
-		[addHandler, sessionId, refresh],
+		[addHandler, sessionId],
 	);
 	return reports;
 }

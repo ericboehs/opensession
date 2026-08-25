@@ -175,7 +175,7 @@ export function CatchUpDeck({
 		});
 		out.sort((a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || ""));
 		return out;
-	}, [sessions, getReads, currentUser, workspaces]);
+	}, [sessions, currentUser, workspaces]);
 	const cards = frozen ?? live;
 	// Freeze once the list has loaded (even to an empty queue — that's a
 	// genuine "all caught up"). While it's still empty we keep recomputing.

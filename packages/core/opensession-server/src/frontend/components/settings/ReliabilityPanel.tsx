@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { API_BASE } from "../../lib/api";
 import {
   localCommandScope,
@@ -40,12 +40,13 @@ export function ReliabilityPanel({ initialBody = null }: { initialBody?: Respons
     for (const command of outbox.pending())
       pendingById.set(command.requestId, { command, outbox });
   const pendingSends = [...pendingById.values()];
-  const load = async () => {
+  // Stable identity: only setters are captured.
+  const load = useCallback(async () => {
     const response = await fetch(`${API_BASE}/system/session-kernel/dead-letters?limit=100&offset=0`);
     if (!response.ok) throw new Error(`Could not load failed deliveries (${response.status})`);
     setBody(await response.json() as ResponseBody);
     setError(null);
-  };
+  }, []);
   const loadMore = async () => {
     if (!body?.nextOffset) return;
     const response = await fetch(`${API_BASE}/system/session-kernel/dead-letters?limit=100&offset=${body.nextOffset}`);

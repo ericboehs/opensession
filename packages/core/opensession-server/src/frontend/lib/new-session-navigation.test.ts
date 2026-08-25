@@ -1,7 +1,27 @@
 import { describe, expect, test } from "bun:test";
-import { shouldOpenCreatedSession } from "./new-session-navigation";
+import {
+	shouldApplyCreatedSessionReply,
+	shouldOpenCreatedSession,
+} from "./new-session-navigation";
 
 const appSource = await Bun.file(new URL("../App.tsx", import.meta.url)).text();
+
+describe("shouldApplyCreatedSessionReply", () => {
+	test("drops a durable create replay after its pending draft is gone", () => {
+		expect(shouldApplyCreatedSessionReply(true, false)).toBe(false);
+	});
+
+	test("keeps an ordinary reply and a reconnect reply for a pending create", () => {
+		expect(shouldApplyCreatedSessionReply(undefined, false)).toBe(true);
+		expect(shouldApplyCreatedSessionReply(true, true)).toBe(true);
+	});
+
+	test("guards the optimistic session injection in App", () => {
+		expect(appSource).toContain(
+			"if (!shouldApplyCreatedSessionReply(msg.replayed, !!draft))",
+		);
+	});
+});
 
 describe("shouldOpenCreatedSession", () => {
 	test("does not let a replayed creator reply take the foreground", () => {

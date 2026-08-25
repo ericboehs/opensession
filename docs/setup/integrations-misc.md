@@ -145,12 +145,14 @@ Two limits of that block, worth knowing on a cloud box:
   keeps engines inside the system unit's cgroup instead, trading detached-run
   survival across restarts for the unit filter covering them.
 - Because of this, `opensession service install` (user scope, the default)
-  probes 169.254.169.254 and refuses when anything answers, printing the host
-  rule, the detach kill switch, and `OPENSESSION_ALLOW_IMDS=1` for a box with
-  no role to protect. A per-user manager additionally cannot apply
-  `IPAddressDeny=` at all on stock Ubuntu (it needs `PrivateUsers=`, which the
-  apparmor unprivileged-userns restriction denies, silently), so the user
-  unit could not carry even the defense-in-depth copy.
+  probes 169.254.169.254 and refuses when anything answers. It explains the EC2
+  role-credential risk, prints the uid-scoped host firewall rule, and tells the
+  operator to rerun the installation afterward. On a box with no role to
+  protect, `OPENSESSION_ALLOW_IMDS=1` explicitly skips the check. A per-user
+  manager additionally cannot apply `IPAddressDeny=` at all on stock Ubuntu
+  (it needs `PrivateUsers=`, which the apparmor unprivileged-userns restriction
+  denies, silently), so the user unit could not carry even the
+  defense-in-depth copy.
 
 **Off by default.** The mint is EC2-specific and needs passwordless sudo, so it
 only runs when you turn it on:

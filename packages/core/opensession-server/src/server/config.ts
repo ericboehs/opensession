@@ -9,8 +9,9 @@
  *
  * Precedence per key: existing env var → config.json → built-in default.
  *
- * Sections `server`, `paths`, `storage`, `repos`, `identity`, `organization`,
- * `persona`, `branding`, `policy`, and integration-specific settings are consumed by their owning
+ * The top-level `onboardingCompleted` gate and sections `server`, `paths`,
+ * `storage`, `repos`, `identity`, `organization`, `persona`, `branding`,
+ * `policy`, and integration-specific settings are consumed by their owning
  * modules. See config.example.json at the repo root for the full schema.
  */
 
@@ -221,6 +222,8 @@ export interface BrandingSection {
 }
 
 export interface OpenSessionConfig {
+  /** The instance-wide first-run walkthrough has been explicitly finished. */
+  onboardingCompleted?: boolean;
   server?: ServerSection;
   paths?: PathsSection;
   storage?: StorageSection;

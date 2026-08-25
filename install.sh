@@ -836,40 +836,41 @@ if [ -n "${OPENSESSION_CLAUDE_TOKEN:-}" ]; then
   good "Claude token staged in ~/.opensession-claude-token (imported at first start)"
 fi
 
-# The one question the simple install asks: an organization sets up a shared,
-# org-owned GitHub app and per-user sign-in; blank keeps it single-user with no
-# sign-in. Default path only (advanced onboarding asks it itself), only when
-# nothing set it already, and only with a real terminal — a piped `curl | bash`
-# reads the answer from /dev/tty, and a non-interactive run (CI, --yes) stays
-# single-user.
-if [ "$ADVANCED" != "1" ] && [ -z "$ORG" ] && [ "$NO_PROMPT" != "1" ] && [ "$STDIN_PATH" = "/dev/tty" ]; then
-  step "GitHub organization"
-  printf '  Enter your GitHub org name or leave blank for a personal install: ' >/dev/tty
-  read -r ORG </dev/tty || ORG=""
-  ORG="$(printf '%s' "$ORG" | tr -d '[:space:]')"
-fi
-
-# Default: write defaults (and the org above), start the service, print the URL.
+# Default: write defaults, start the service, print the URL.
 # --advanced is the operator path with every question.
-# --org, when given, records the App owner and per-user sign-in intent (never a
-# live gate flip — nobody is signed in yet). Onboard ignores it on a re-run.
+# The install never asks for a GitHub org — that is configured in the web UI
+# after the server is up. --org stays available for scripted installs: it
+# records the App owner and per-user sign-in intent (never a live gate flip —
+# nobody is signed in yet). Onboard ignores it on a re-run.
+onboard_status=0
 if [ "$ADVANCED" = "1" ]; then
-  run_interactive "$BIN_DIR/opensession" onboard ${ORG:+--org "$ORG"} || true
+  run_interactive "$BIN_DIR/opensession" onboard ${ORG:+--org "$ORG"} || onboard_status=$?
 else
-  run_interactive "$BIN_DIR/opensession" onboard --defaults ${ORG:+--org "$ORG"} || true
+  run_interactive "$BIN_DIR/opensession" onboard --defaults ${ORG:+--org "$ORG"} || onboard_status=$?
 fi
 
 # Ensure the service independently of onboarding. On a re-run onboard sees an
 # existing config and returns before it would install the service, so a first
-# install that wrote config but could not start the service (e.g. the IMDS
+# install that wrote config but could not install the service (e.g. the IMDS
 # guard refused it until a firewall rule was added) would never recover on a
-# plain re-run. `service install` is idempotent and prints its own guidance
-# when it still cannot proceed. Skipped for --advanced, where the wizard
-# already offered it, and when there is no supervisor.
-if [ "$ADVANCED" != "1" ] && [ "$NO_ONBOARD" != "1" ]; then
-  if ! "$BIN_DIR/opensession" status 2>/dev/null | grep -qi "active"; then
-    "$BIN_DIR/opensession" service install || true
+# plain re-run. This is also deliberate for --advanced: install.sh installs a
+# persistent service; `opensession onboard` remains the standalone path where
+# an operator may decline one. `service install` is idempotent and prints its
+# own guidance when it still cannot proceed.
+service_install_failed=0
+[ "$onboard_status" -eq 2 ] && service_install_failed=1
+if [ "$service_install_failed" != "1" ] && ! "$BIN_DIR/opensession" status 2>/dev/null | grep -qi "active"; then
+  if ! "$BIN_DIR/opensession" service install; then
+    service_install_failed=1
   fi
+fi
+
+# A requested service failure is not a partly successful installation. In
+# particular, do not bury an IMDS refusal beneath generic server/log advice.
+if [ "$service_install_failed" = "1" ]; then
+  printf '\n'
+  step "Installation failed"
+  die "Open Session did not install a running service. Follow the instructions above, then rerun the same installation command."
 fi
 
 # Resolve both addresses before the summary. The public URL is what the person
@@ -887,9 +888,16 @@ if [ -f "$OPENSESSION_HOME/config.json" ]; then
   case "$host" in 0.0.0.0|::|\[::\]) host="127.0.0.1" ;; esac
   health_url="http://$host:$port"
   [ -n "$url" ] || url="$health_url"
-  if curl -fsS --max-time 3 "$health_url/api/health" >/dev/null 2>&1; then
-    server_ready=1
-  fi
+  # Installing a service returning successfully only means the supervisor
+  # accepted it. Give the server time to finish booting before declaring the
+  # install broken or printing a URL that does not answer yet.
+  for _ in $(seq 1 30); do
+    if curl -fsS --max-time 3 "$health_url/api/health" >/dev/null 2>&1; then
+      server_ready=1
+      break
+    fi
+    sleep 1
+  done
 fi
 
 printf '\n'
@@ -902,7 +910,7 @@ if [ "$ADVANCED" != "1" ] && [ "$server_ready" != "1" ]; then
     info "Expected URL: ${B}$url${N}"
   fi
   info "Inspect the failure: ${B}$BIN_DIR/opensession logs -n 80${N}"
-  info "Retry startup:       ${B}$BIN_DIR/opensession start${N}"
+  info "Retry installation:  ${B}$BIN_DIR/opensession service install${N}"
 else
   step "Done"
 fi

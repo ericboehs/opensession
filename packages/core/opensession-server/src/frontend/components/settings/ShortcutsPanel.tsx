@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { useShortcutsVersion } from "../../hooks/useShortcutBindings";
 import { isApple } from "../../lib/platform";
 import {
@@ -128,7 +128,7 @@ export function ShortcutsPanel() {
 	// registry's recording flag is the backstop for any listener that reads the
 	// event another way; between them, a keystroke aimed at the recorder can
 	// never also run the command it is about to be bound to.
-	useEffect(() => {
+	const recordKeys = useEffectEvent(() => {
 		if (!recording) return;
 		setShortcutRecording(true);
 		const { id, index } = recording;
@@ -192,6 +192,11 @@ export function ShortcutsPanel() {
 			window.removeEventListener("keyup", onKeyUp, true);
 			setShortcutRecording(false);
 		};
+	});
+	useEffect(() => {
+		if (!recording) return;
+		const cleanup = recordKeys();
+		return cleanup;
 	}, [recording?.id, recording?.index]);
 
 	function replaceConflicted() {

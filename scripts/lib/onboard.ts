@@ -97,15 +97,11 @@ function collect(orgFlag?: string): Answers {
     ),
   );
 
-  // The one answer that changes the install's shape: an organization sets up a
-  // shared org-owned GitHub App and per-user GitHub sign-in; blank keeps it
-  // single-user with no sign-in. `--org` answers it without asking; on the
-  // defaults path (no tty) it stays blank.
-  const org =
-    orgFlag?.trim() ||
-    (canPrompt()
-      ? ask("GitHub organization (blank for a personal, single-user install)", "").trim()
-      : "");
+  // An organization sets up a shared org-owned GitHub App and per-user GitHub
+  // sign-in; blank keeps it single-user with no sign-in. Never prompted here —
+  // the org is configured in the web UI once the server is up. `--org` stays
+  // available for scripted installs that already know the answer.
+  const org = orgFlag?.trim() || "";
 
   const productName = ask("Product name", "Open Session");
 
@@ -225,6 +221,9 @@ export function buildConfig(a: Answers): Record<string, unknown> {
     };
   }
   return {
+    // The web walkthrough owns the rest of first-run setup. It flips this only
+    // after the operator reaches the final confirmation step.
+    onboardingCompleted: false,
     server: {
       host: a.host,
       port: a.port,
@@ -387,16 +386,28 @@ export async function onboard(opts: OnboardOptions = {}): Promise<number> {
   // common way a first run stalls. `--system` on `service install` is the
   // operator path for a root unit.
   let serviceUp = false;
+  let serviceRequested = false;
   try {
     const kind = service.supervisor();
     if (kind !== "none") {
       const what = kind === "launchd" ? "LaunchAgent" : "user service";
-      if (askYesNo(`\n  Install and start it as a ${what} now?`, true)) {
-        serviceUp = await service.install();
-      }
+      serviceRequested = askYesNo(
+        `\n  Install and start it as a ${what} now?`,
+        true,
+      );
+      if (serviceRequested) serviceUp = await service.install();
     }
   } catch (err) {
     warn(`could not install the service: ${(err as Error).message}`);
+  }
+
+  // Exit 2 distinguishes a failed requested service from a harmless no-op on
+  // an already-configured box. install.sh uses it to stop immediately instead
+  // of printing a generic, half-working "Needs attention" summary.
+  if (serviceRequested && !serviceUp) {
+    warn("setup stopped because the requested service was not installed");
+    info("Fix the error above, then rerun the same setup command.");
+    return 2;
   }
 
   // Self-development needs a writable origin: sessions on the self repo commit

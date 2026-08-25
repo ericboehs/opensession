@@ -1,8 +1,9 @@
 import { AGENT_NAME } from "../lib/brand";
 import React, {
+	useCallback,
 	useEffect,
+	useEffectEvent,
 	useLayoutEffect,
-	
 	useRef,
 	useState,
 } from "react";
@@ -243,7 +244,8 @@ export function WorkspacePane({
 	// those requests in edit order so a slower text write cannot resurrect a
 	// draft after its later deletion has landed.
 	const serverDraftWrites = useRef<Promise<void>>(Promise.resolve());
-	const pushServerDraft = (text: string) => {
+	// Stable per workspace: refs + module fns otherwise.
+	const pushServerDraft = useCallback((text: string) => {
 			const patch = workspaceDraftPatch(
 				text,
 				new Date().toISOString(),
@@ -264,7 +266,7 @@ export function WorkspacePane({
 				// Autosave must never block typing. A flaky connection just means
 				// the next keystroke's debounce tries again.
 				.catch(() => {});
-		};
+	}, [workspace.id]);
 	useEffect(() => {
 		saveDraft(draftKey, { text: prompt, images, files });
 	}, [draftKey, prompt, images, files]);
@@ -283,15 +285,15 @@ export function WorkspacePane({
 	// last few keystrokes. Not when a session start is what unmounted the
 	// pane, though: the server consumed the draft at create, and a flush
 	// would park the just-sent prompt back on the workspace as a stale draft.
-	useEffect(() => {
-		return () => {
-			if (serverDraftTimer.current) {
-				clearTimeout(serverDraftTimer.current);
-				if (parksServerDraft && !startingRef.current)
-					pushServerDraft(promptRef.current);
-			}
-		};
-	}, []);
+	// The exit flush is not reactive: it reads the latest refs at teardown.
+	const flushServerDraftOnExit = useEffectEvent(() => {
+		if (serverDraftTimer.current) {
+			clearTimeout(serverDraftTimer.current);
+			if (parksServerDraft && !startingRef.current)
+				pushServerDraft(promptRef.current);
+		}
+	});
+	useEffect(() => () => flushServerDraftOnExit(), []);
 	const [models, setModels] = useState<ModelOption[]>([]);
 	const [defaultModel, setDefaultModel] = useState("");
 	const [model, setModel] = useState(""); // "" = default
@@ -344,7 +346,7 @@ export function WorkspacePane({
 	}, [addHandler, draftKey]);
 	useEffect(() => () => clearTimeout(startTimer.current), []);
 
-	const addWorkspaceAttachments = async (picked: FileList | File[]) => {
+	const addWorkspaceAttachments = useCallback(async (picked: FileList | File[]) => {
 			const selected = Array.from(picked);
 			const batch = countStaging(selected);
 			setStaging((current) => addStaging(current, batch));
@@ -363,7 +365,7 @@ const { rejected, applied } = await attachToDraft(draftKey, selected);
 })().finally(async () => {
 setStaging((current) => subtractStaging(current, batch));
 });
-		};
+		}, [draftKey]);
 
 	useEffect(() => {
 		if (tab !== null || !connected || starting) {
@@ -491,23 +493,24 @@ setStaging((current) => subtractStaging(current, batch));
 	}, [listedPresentationSession, tab, workspace.id]);
 	const presentationSession =
 		listedPresentationSession ?? hydratedPresentationSession ?? reviewSession;
+	const menuSessionId = presentationSession?.id;
 	useEffect(() => {
-		if (!overflowOpen || !presentationSession) return;
-		if (menuEntriesSessionId === presentationSession.id) return;
+		if (!overflowOpen || !menuSessionId) return;
+		if (menuEntriesSessionId === menuSessionId) return;
 		let stale = false;
-		void fetchTranscript(presentationSession.id)
+		void fetchTranscript(menuSessionId)
 			.then((entries) => {
 				if (stale) return;
 				setMenuEntries((entries as TranscriptEntry[]) || []);
-				setMenuEntriesSessionId(presentationSession.id);
+				setMenuEntriesSessionId(menuSessionId);
 			})
 			.catch(() => {
-				if (!stale) setMenuEntriesSessionId(presentationSession.id);
+				if (!stale) setMenuEntriesSessionId(menuSessionId);
 			});
 		return () => {
 			stale = true;
 		};
-	}, [overflowOpen, presentationSession?.id, menuEntriesSessionId]);
+	}, [overflowOpen, menuSessionId, menuEntriesSessionId]);
 
 	function handleStart() {
 		const q = prompt.trim();

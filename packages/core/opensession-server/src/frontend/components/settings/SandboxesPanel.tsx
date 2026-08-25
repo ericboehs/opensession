@@ -705,6 +705,9 @@ export function SandboxesPanel() {
 		setCanManage(response.canManage);
 	}
 
+	const hasRunningValue = operations.some(
+		(operation) => operation.status === "running",
+	);
 	useEffect(() => {
 		let active = true;
 		const load = () => {
@@ -722,13 +725,13 @@ export function SandboxesPanel() {
 		};
 		void load();
 		const interval = setInterval(() => {
-			if (operations.some((operation) => operation.status === "running")) void load();
+			if (hasRunningValue) void load();
 		}, 2_000);
 		return () => {
 			active = false;
 			clearInterval(interval);
 		};
-	}, [operations.some((operation) => operation.status === "running")]);
+	}, [hasRunningValue]);
 
 	function environmentStarted(
 		operation: SandboxOperationInfo,

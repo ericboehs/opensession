@@ -311,6 +311,56 @@ describe("session kernel actor boundary", () => {
     ]);
   });
 
+  test("owns cancel command retry identity before gateway continuation", async () => {
+    const host = await actor();
+    host.decideRunEvent({
+      sessionId: "typed-cancel",
+      event: "prompt",
+      runKey: "run-one",
+    });
+    expect(host.decideTurn({
+      op: "request_cancel_command",
+      sessionId: "typed-cancel",
+      requestId: "request-one",
+      fallbackRunId: null,
+    })).toEqual({
+      status: "execute",
+      targetRunId: "run-one",
+      targetRunGeneration: 1,
+    });
+    expect(host.decideTurn({
+      op: "request_cancel_command",
+      sessionId: "typed-cancel",
+      requestId: "request-one",
+      fallbackRunId: "run-two",
+    })).toMatchObject({ status: "execute", targetRunId: "run-one" });
+  });
+
+  test("owns timer execution receipts through the actor protocol", async () => {
+    const host = await actor();
+    host.store.scheduleTimer({
+      sessionId: "typed-timer",
+      timerId: "wake",
+      kind: "test_timer",
+      dueAt: Date.now() - 1,
+      payload: { value: 1 },
+    });
+    const timer = host.store.timer("typed-timer", "wake")!;
+    expect(host.decideTimer({
+      op: "begin",
+      sessionId: timer.sessionId,
+      timerId: timer.timerId,
+      token: timer.token,
+    })).toBe("execute");
+    expect(host.decideTimer({
+      op: "complete",
+      sessionId: timer.sessionId,
+      timerId: timer.timerId,
+      token: timer.token,
+    })).toBe(true);
+    expect(host.store.timer(timer.sessionId, timer.timerId)).toBeUndefined();
+  });
+
   test("owns terminal outcome projection and settlement while gateway work is active", async () => {
     const host = await actor();
     host.decideRunEvent({

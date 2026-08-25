@@ -311,7 +311,6 @@ import { SidebarCtxMenu } from "./sidebar/SidebarCtxMenu";
 import { SidebarToolRows, SidebarToolsMenu } from "./sidebar/SidebarToolsMenu";
 import { SidebarCustomizeDialog } from "./sidebar/SidebarCustomizeDialog";
 import { OrganizationSwitcher } from "./OrganizationSwitcher";
-import { GithubConnectEmptyState } from "./GithubConnectEmptyState";
 import { EmptyState, ListSkeleton } from "../ui/state";
 import {
 	SIDEBAR_ROW,
@@ -546,7 +545,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	onNewSession,
 	onNewSessionInRepo,
 	showDraftRow,
-	githubConnectionRequired = false,
 	draftRowActive,
 	onOpenDraft,
 	onOpenWorkspace,
@@ -5290,8 +5288,7 @@ fetchFeedItems("plain")
 				{workspaceListEmpty &&
 					!sessionsLoading &&
 					!sessionsError &&
-					hasWorkspaceFilter &&
-					!githubConnectionRequired && (
+					hasWorkspaceFilter && (
 					<div className="mx-4 my-7 text-center text-label leading-[1.4] text-faint">
 						No matching workspaces
 					</div>
@@ -5311,47 +5308,40 @@ fetchFeedItems("plain")
 				{workspaceListEmpty &&
 					!sessionsLoading &&
 					!sessionsError &&
-					(!hasWorkspaceFilter || githubConnectionRequired) &&
+					!hasWorkspaceFilter &&
 					!draftRow &&
 					(!isPhone || !productEmpty) && (
 					<div className="mx-4 my-7 text-center text-label leading-[1.4] text-faint">
-						{githubConnectionRequired ? "No sessions" : "No workspaces yet"}
+						No workspaces yet
 					</div>
 				)}
 				{productEmpty &&
 					!sessionsLoading &&
 					!sessionsError &&
-					(!hasWorkspaceFilter || githubConnectionRequired) &&
+					!hasWorkspaceFilter &&
 					isPhone && (
-					githubConnectionRequired ? (
-						<GithubConnectEmptyState
-							onConnect={onNewSession}
-							className="min-h-[360px] py-12"
-						/>
-					) : (
-						<div className="flex min-h-[360px] flex-col items-center justify-center px-7 py-12 text-center">
-							<IconMessages size={30} className="mb-3 text-dim" />
-							<div className="text-section-title leading-[1.15] font-semibold tracking-[-0.02em] text-fg">
-								No sessions
-							</div>
-							<p className="m-0 mt-1 max-w-[26ch] text-body leading-[1.45] text-dim text-pretty">
-								Start one and it shows up here.
-							</p>
-							<div className="mt-4 flex flex-col items-center gap-1">
-								<Button
-									variant="soft"
-									size="md"
-									className="rounded-full px-4"
-									onClick={onNewSession}
-								>
-									New session
-								</Button>
-								<Button variant="ghost" size="sm" onClick={onOpenArchived}>
-									Archived
-								</Button>
-							</div>
+					<div className="flex min-h-[360px] flex-col items-center justify-center px-7 py-12 text-center">
+						<IconMessages size={30} className="mb-3 text-dim" />
+						<div className="text-section-title leading-[1.15] font-semibold tracking-[-0.02em] text-fg">
+							No sessions
 						</div>
-					)
+						<p className="m-0 mt-1 max-w-[26ch] text-body leading-[1.45] text-dim text-pretty">
+							Start one and it shows up here.
+						</p>
+						<div className="mt-4 flex flex-col items-center gap-1">
+							<Button
+								variant="soft"
+								size="md"
+								className="rounded-full px-4"
+								onClick={onNewSession}
+							>
+								New session
+							</Button>
+							<Button variant="ghost" size="sm" onClick={onOpenArchived}>
+								Archived
+							</Button>
+						</div>
+					</div>
 				)}
 
 				{/* ── Needs review: everything waiting on YOUR review, both the
@@ -6001,7 +5991,7 @@ fetchFeedItems("plain")
 			    the workspace list. It is the end of the list, so anything ordered
 			    after the workspaces (the Automations band) used to render past it,
 			    which read as "the sidebar ended, and then there was more". */}
-			{!githubConnectionRequired && (!isPhone || !productEmpty || hasWorkspaceFilter) && (
+			{(!isPhone || !productEmpty || hasWorkspaceFilter) && (
 				<div
 					// It sits outside the workspace list, so it takes the same inset
 					// its other out-of-list siblings do. Without it the row is the one

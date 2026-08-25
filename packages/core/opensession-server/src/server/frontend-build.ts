@@ -8,7 +8,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "path";
 import type { BunFile, BunPlugin } from "bun";
-import { transformSync } from "oxc-transform-react";
 import { EMBEDDED_FRONTEND } from "./embedded-frontend";
 import { activeRunRecords } from "./run-journal";
 import { writeFileAtomic } from "./shared/atomic-write";
@@ -192,7 +191,9 @@ function currentMeta(): BundleMeta | null {
 // rather than silently shipping a function whose identities are unstable.
 // Dev mode serves through Bun's HMR server, which has no plugin hook, so the
 // compiler only runs here (prod bundle + release artefact).
-function reactCompilerPlugin(count: { n: number }): BunPlugin {
+type TransformSync = typeof import("oxc-transform-react").transformSync;
+
+function reactCompilerPlugin(count: { n: number }, transformSync: TransformSync): BunPlugin {
 	return {
 		name: "oxc-react-compiler",
 		setup(build) {
@@ -242,6 +243,10 @@ const compilerCount = { n: 0 };
  * makes a dist compiled on one machine reusable on any other.
  */
 export async function compileAssets(): Promise<BundleMeta> {
+	// The compiler is a build-only native dependency. Loading it at module scope
+	// makes a compiled release try to resolve its unshipped .node binding during
+	// server boot, even though embedded releases never rebuild the frontend.
+	const { transformSync } = await import("oxc-transform-react");
 	// Stamped before the build so edits landing mid-build hash as "changed" on
 	// the next boot rather than being masked by a post-build stamp.
 	const inputsHash = frontendInputsHash();
@@ -261,7 +266,7 @@ export async function compileAssets(): Promise<BundleMeta> {
 			chunk: "[name]-[hash].[ext]",
 			asset: "[name]-[hash].[ext]",
 		},
-		plugins: [reactCompilerPlugin(compilerCount)],
+		plugins: [reactCompilerPlugin(compilerCount, transformSync)],
 	});
 	if (!result.success) {
 		throw new AggregateError(result.logs, "frontend build failed");

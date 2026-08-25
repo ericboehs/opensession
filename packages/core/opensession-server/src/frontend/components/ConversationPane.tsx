@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { PlainThread, UnifiedSession } from "../lib/types";
 import { fetchPlainThreadById, startPlainTriageApi } from "../lib/api";
 import { useIsPhone } from "../hooks/useIsPhone";
@@ -117,7 +117,7 @@ export function ConversationPane({
 
 	// Load on mount / thread change, then poll — the customer can reply while
 	// the ticket is being read and there's no live push for Plain.
-	const load = () => {
+	const load = useCallback(() => {
 		return fetchPlainThreadById(threadId)
 			.then((t) => {
 				if (!aliveRef.current) return;
@@ -130,7 +130,7 @@ export function ConversationPane({
 			.finally(() => {
 				if (aliveRef.current) setLoading(false);
 			});
-	};
+	}, [threadId]);
 	useEffect(() => {
 		setLoading(true);
 		setThread(null);
@@ -142,7 +142,6 @@ export function ConversationPane({
 		}, 20000);
 		return () => clearInterval(poll);
 	}, [load]);
-
 	// The triage automation reuses a live session for this thread when one
 	// exists, else boots a fresh run — that takes tens of seconds, so keep the
 	// button in a visible in-progress state the whole way.

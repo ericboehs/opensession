@@ -1,6 +1,6 @@
 import { BASE_PATH } from "../lib/base";
 import { GITHUB_APP_GRANT_PERMISSIONS } from "../../shared/github-app-permissions";
-import React, { useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useEffectEvent, useState, useRef } from "react";
 import { Menu } from "../ui/menu";
 import { OptionSelect } from "../ui/select";
 import { cn } from "../ui/cn";
@@ -167,7 +167,8 @@ export function Connections() {
   // (Vercel approves only its own list of AI clients).
   const [tokenConnect, setTokenConnect] = useState<McpConnection | null>(null);
 
-  const load = async (force = false) => {
+  // Stable identity: only setters are captured.
+  const load = useCallback(async (force = false) => {
     if (force) setRefreshing(true);
     await (async () => {
 const res = await fetch(`${BASE_PATH}/api/connections${force ? "?refresh=1" : ""}`);
@@ -176,7 +177,7 @@ const res = await fetch(`${BASE_PATH}/api/connections${force ? "?refresh=1" : ""
 
 });
     setRefreshing(false);
-  };
+  }, []);
 
   useEffect(() => {
     document.title = docTitle("Connections");
@@ -198,7 +199,7 @@ const res = await fetch(`${BASE_PATH}/api/connections${force ? "?refresh=1" : ""
       }
     >
   >({});
-  const loadOauth = async (servers: McpConnection[]) => {
+  const loadOauth = useCallback(async (servers: McpConnection[]) => {
     const entries = await Promise.all(
       servers
         .map(async (s) => {
@@ -213,7 +214,7 @@ const res = await fetch(`${BASE_PATH}/api/connections${force ? "?refresh=1" : ""
         }),
     );
     setOauthByName(Object.fromEntries(entries.filter(Boolean) as any));
-  };
+  }, []);
   useEffect(() => {
     if (data?.mcpServers) void loadOauth(data.mcpServers);
   }, [data, loadOauth]);
@@ -685,7 +686,7 @@ function GithubAppWizard({
   const [appOrg, setAppOrg] = useState("");
   // Opening jumps to where the user actually is (an already-configured app
   // resumes at install, a fresh start begins at create) and mints a fresh name.
-  useEffect(() => {
+  const openReset = useEffectEvent(() => {
     if (open) {
       setStep(configured ? 3 : 1);
       setAppName(generateGithubAppName());
@@ -694,6 +695,9 @@ function GithubAppWizard({
       setAppOwner(intentOrg ? "org" : "you");
       setAppOrg(intentOrg ?? "");
     }
+  });
+  useEffect(() => {
+    openReset();
   }, [open]);
   // Saving the client id flips `configured`; carry the user from paste to
   // install without a manual step.
@@ -710,7 +714,7 @@ function GithubAppWizard({
   // strict mode's double invoke) from opening a second flow; leaving the step
   // rearms it, so Back → Next or a retry can start again.
   const connectStartedRef = useRef(false);
-  useEffect(() => {
+  const maybeConnect = useEffectEvent(() => {
     if (step !== 4) {
       connectStartedRef.current = false;
       return;
@@ -718,6 +722,9 @@ function GithubAppWizard({
     if (!open || connectStartedRef.current) return;
     connectStartedRef.current = true;
     if (!flow) onConnect();
+  });
+  useEffect(() => {
+    maybeConnect();
   }, [open, step]);
 
   // Focus each step's primary control as the user arrives on it (and on open).
@@ -1072,14 +1079,15 @@ export function GithubAccounts({ personal = false }: { personal?: boolean } = {}
   // wizard, launched from the App option below.
   const [wizardOpen, setWizardOpen] = useState(false);
 
-  const load = async () => {
+  // Stable identity: only setters are captured.
+  const load = useCallback(async () => {
     await (async () => {
 const res = await fetch(`${BASE_PATH}/api/connections/github`);
       if (res.ok) setData(await res.json());
 })().catch(async () => {
 
 });
-  };
+  }, []);
 
   useEffect(() => {
     load();
@@ -1741,13 +1749,14 @@ function CodeStorageCard() {
   const [showSecret, setShowSecret] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
 
-  const load = async () => {
+  // Stable identity: only setters are captured.
+  const load = useCallback(async () => {
     await (async () => {
 setStatus(await fetchCodeStorageStatus());
 })().catch(async () => {
 
 });
-  };
+  }, []);
 
   useEffect(() => {
     load();

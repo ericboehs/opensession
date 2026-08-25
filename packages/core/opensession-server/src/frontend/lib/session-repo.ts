@@ -25,7 +25,8 @@ export const FALLBACK_REPO = "repository";
 
 /**
  * Reserved repo id a CREATE sends to mean "this session has no repo" (the
- * server's `NO_REPO`, worktree.ts). Only Ask can use it.
+ * server's `NO_REPO`, worktree.ts). Ask uses it for a repo-less conversation;
+ * Code uses it for a writable Scratch session.
  *
  * Deliberately not the empty string: the create has to tell "the user turned
  * the repo off" from "the field was never set", because an unset repo still

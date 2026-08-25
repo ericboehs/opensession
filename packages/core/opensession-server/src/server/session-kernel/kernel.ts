@@ -20,6 +20,7 @@ import type {
   DeliveryActorResult,
 } from "./delivery-protocol";
 import type { TurnActorRequest, TurnActorResult } from "./turn-protocol";
+import type { TimerActorRequest, TimerActorResult } from "./timer-protocol";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
 	SessionKernelActorError,
@@ -115,6 +116,12 @@ export function sessionTurn<T extends TurnActorRequest>(
   const store = compatibilityStoreForTest("turn");
   if (request.op === "snapshot")
     return store.turnSnapshot(request.sessionId) as TurnActorResult<T>;
+  if (request.op === "request_cancel_command")
+    return store.requestTurnCancelCommand(request) as TurnActorResult<T>;
+  if (request.op === "complete_cancel_command")
+    return store.completeTurnCancelCommand(request) as TurnActorResult<T>;
+  if (request.op === "fail_cancel_command")
+    return store.failTurnCancelCommand(request) as TurnActorResult<T>;
   if (request.op === "prepare_cancel")
     return store.prepareTurnCancel(request) as TurnActorResult<T>;
   if (request.op === "begin_cancel_effect")
@@ -126,6 +133,20 @@ export function sessionTurn<T extends TurnActorRequest>(
   if (request.op === "begin_outcome_projection")
     return store.beginTurnOutcomeProjection(request) as TurnActorResult<T>;
   return store.settleTurnOutcomeProjection(request) as TurnActorResult<T>;
+}
+
+export function sessionTimer<T extends TimerActorRequest>(
+  request: T,
+): TimerActorResult<T> {
+  if (state.actor) return state.actor.decideTimer(request);
+  const store = compatibilityStoreForTest("turn");
+  if (request.op === "begin")
+    return store.beginTimerExecution(request) as TimerActorResult<T>;
+  if (request.op === "complete")
+    return store.completeTimerExecution(request) as TimerActorResult<T>;
+  if (request.op === "fail")
+    return store.failTimerExecution(request) as TimerActorResult<T>;
+  return store.recordTimerRuntimeFailure(request) as TimerActorResult<T>;
 }
 
 export function sessionDelivery<T extends DeliveryActorRequest>(

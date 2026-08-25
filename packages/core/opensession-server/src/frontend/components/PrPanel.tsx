@@ -2,6 +2,7 @@ import { repoLabel } from "../lib/repo-label";
 import { AGENT_NAME } from "../lib/brand";
 import { randomUUID } from "../lib/random-uuid";
 import React, {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useState,
@@ -394,6 +395,10 @@ export function PrPanel({
   const loadTargetKey = previewTarget
     ? `preview:${previewTarget.repo}:${previewTarget.branch}`
     : active?.key || sessionId;
+  // Scalars so the loaders below can be useCallback'd on stable values
+  // instead of the per-render preview object.
+  const previewRepo = previewTarget?.repo;
+  const previewBranch = previewTarget?.branch;
   // `#5528` in a PR body or review comment means a PR in the repo THIS panel is
   // showing — which is the attached repo's, not the session's, when the strip
   // is on a sibling PR. Only fall back to the surrounding surface's repo.
@@ -586,7 +591,8 @@ export function PrPanel({
     activeLoadTargetRef.current = loadTargetKey;
   }, [loadTargetKey]);
 
-  const load = (force = false): Promise<void> => {
+  const load = useCallback(
+    (force = false): Promise<void> => {
       if (loadTargetKey !== activeLoadTargetRef.current)
         return Promise.resolve();
     const existing = loadInFlightRef.current;
@@ -609,8 +615,8 @@ export function PrPanel({
       setDiffLoading(false);
     };
       const prRequest = (
-        previewTarget
-      ? fetchPrPreview(previewTarget.repo, previewTarget.branch)
+        previewRepo && previewBranch
+      ? fetchPrPreview(previewRepo, previewBranch)
       : fetchPr(sessionId, active?.repo, active?.branch)
     )
       .then((data) => {
@@ -633,8 +639,8 @@ export function PrPanel({
         if (isCurrent()) setLoading(false);
       });
       const diffRequest = (
-        previewTarget
-      ? fetchPrPreviewDiff(previewTarget.repo, previewTarget.branch)
+        previewRepo && previewBranch
+      ? fetchPrPreviewDiff(previewRepo, previewBranch)
       : fetchPrDiff(sessionId, active?.repo, active?.branch)
     )
       .then((data) => {
@@ -652,7 +658,7 @@ export function PrPanel({
       });
     // A linked PR has no local worktree in this session — no git state.
       const gitRequest = (
-        previewTarget || active?.linked
+        previewRepo || active?.linked
       ? Promise.resolve(null)
       : fetchGitStatus(sessionId, active?.repo)
     )
@@ -683,12 +689,14 @@ const threads = await fetchPrReviewThreads(
         reviewThreadsRequest,
       ]).then(() => undefined);
     loadInFlightRef.current = { key: loadTargetKey, promise };
-    void promise.then(() => {
+      void promise.then(() => {
         if (loadInFlightRef.current?.promise === promise)
           loadInFlightRef.current = null;
-    });
-    return promise;
-    };
+      });
+      return promise;
+    },
+    [sessionId, loadTargetKey, previewRepo, previewBranch, active?.repo, active?.branch, active?.linked],
+  );
 
   useEffect(() => {
     setLoading(true);
@@ -799,14 +807,14 @@ const threads = await fetchPrReviewThreads(
   // A guide belongs to one target's head commit: the key is what makes a
   // guide from the PR the panel just left read as absent rather than current.
   const guideKey = diff ? `${loadTargetKey}\0${diff.headRefOid}` : "";
-  const loadGuide = async () => {
+  const loadGuide = useCallback(async () => {
     if (!guideKey) return;
     const generation = ++guideGenerationRef.current;
     setGuideLoading(true);
     setGuideFailed(false);
     await (async () => {
-const data = previewTarget
-        ? await fetchPrPreviewGuide(previewTarget.repo, previewTarget.branch)
+const data = previewRepo && previewBranch
+        ? await fetchPrPreviewGuide(previewRepo, previewBranch)
         : await fetchReviewGuide(sessionId, active?.repo, active?.branch);
       if (generation !== guideGenerationRef.current) return;
       if (data) setGuide({ key: guideKey, data });
@@ -816,21 +824,21 @@ if (generation === guideGenerationRef.current) setGuideFailed(true);
 }).finally(async () => {
 if (generation === guideGenerationRef.current) setGuideLoading(false);
 });
-  };
+  }, [guideKey, sessionId, previewRepo, previewBranch, active?.repo, active?.branch]);
 
   const prPatchVersion = diff?.diffVersion || "";
   const codeFlowKey =
     diff && prPatchVersion
       ? `${loadTargetKey}\0${diff.headRefOid}\0${prPatchVersion}`
       : "";
-  const loadCodeFlow = async () => {
+  const loadCodeFlow = useCallback(async () => {
     if ((!diff?.patch && !diff?.skippedFiles) || !codeFlowKey) return;
     const generation = ++codeFlowGenerationRef.current;
     setCodeFlowLoading(true);
     setCodeFlowError(null);
     await (async () => {
-const data = previewTarget
-        ? await fetchPrPreviewCodeFlow(previewTarget.repo, previewTarget.branch)
+const data = previewRepo && previewBranch
+        ? await fetchPrPreviewCodeFlow(previewRepo, previewBranch)
         : await fetchPrCodeFlow(sessionId, active?.repo, active?.branch);
       if (!data)
         throw new Error("Code flow isn't available for this pull request.");
@@ -851,7 +859,7 @@ if (generation === codeFlowGenerationRef.current)
 if (generation === codeFlowGenerationRef.current)
         setCodeFlowLoading(false);
 });
-  };
+  }, [diff, codeFlowKey, sessionId, prPatchVersion, previewRepo, previewBranch, loadTargetKey, active?.repo, active?.branch]);
 
   const refreshCodeFlow = async () => {
     codeFlowGenerationRef.current += 1;

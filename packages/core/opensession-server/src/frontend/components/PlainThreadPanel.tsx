@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type {
 	PlainEntryAttachment,
 	PlainLabelType,
@@ -125,7 +125,7 @@ export function PlainThreadPanel({ sessionId, threadId, plainUrl }: Props) {
 			aliveRef.current = false;
 		};
 	}, []);
-	const load = () =>
+	const load = useCallback(() =>
 			fetchPlainThreadApi(sessionId)
 				.then((t) => {
 					if (!aliveRef.current) return;
@@ -137,7 +137,7 @@ export function PlainThreadPanel({ sessionId, threadId, plainUrl }: Props) {
 				})
 				.finally(() => {
 					if (aliveRef.current) setLoading(false);
-				});
+				}), [sessionId]);
 	useEffect(() => {
 		setLoading(true);
 		setError(null);

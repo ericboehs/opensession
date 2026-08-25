@@ -1,5 +1,12 @@
 import { BASE_PATH } from "../../lib/base";
-import React, { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
+import React, {
+	useCallback,
+	useEffect,
+	useEffectEvent,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import { usePeople } from "../../lib/people";
 import { providerAccountLabel } from "../../lib/provider-account";
 import { UserAvatar } from "../UserAvatar";
@@ -106,6 +113,18 @@ interface CodexUsageBucket {
 
 /** Who an account belongs to: the shared pool, or one person's own
  *  subscription. Both account lists render this same row control. */
+/** Cancel an in-flight OAuth login when its effect tears down. Reads the
+ * latest pending id at teardown time, which is the point. */
+function abortPendingOAuth(pending: { current: { id?: string; done: boolean } }) {
+	const { id, done } = pending.current;
+	if (!done && id) {
+		fetch(
+			`${BASE_PATH}/api/claude-accounts/oauth-login/${encodeURIComponent(id)}`,
+			{ method: "DELETE" },
+		).catch(() => {});
+	}
+}
+
 function OwnerSelect({
 	value,
 	onChange,
@@ -415,7 +434,9 @@ function useClaudeAccounts() {
 	const [refreshing, setRefreshing] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	const load = async (forceUsage = false) => {
+	// Stable identity: only setters are captured, so the polling effect can
+	// list `load` without ever refiring from re-renders.
+	const load = useCallback(async (forceUsage = false) => {
 		if (forceUsage) setRefreshing(true);
 		await (async () => {
 const res = forceUsage
@@ -428,7 +449,7 @@ setError(cause.message || "Could not load Anthropic accounts");
 			setAccounts((current) => current ?? []);
 });
 		setRefreshing(false);
-	};
+	}, []);
 
 	useEffect(() => {
 		void load();
@@ -764,7 +785,7 @@ function useCodexAccounts() {
 	const [refreshing, setRefreshing] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	const load = async (forceUsage = false) => {
+	const load = useCallback(async (forceUsage = false) => {
 		if (forceUsage) setRefreshing(true);
 		await (async () => {
 const res = forceUsage
@@ -777,7 +798,7 @@ setError(cause.message || "Could not load OpenAI accounts");
 			setAccounts((current) => current ?? []);
 });
 		setRefreshing(false);
-	};
+	}, []);
 
 	useEffect(() => {
 		void load();
@@ -1220,12 +1241,7 @@ if (!cancelled) setError(cause.message);
 		})();
 		return () => {
 			cancelled = true;
-			const { id, done } = pending.current;
-			if (!done && id) {
-				fetch(`${BASE_PATH}/api/claude-accounts/oauth-login/${encodeURIComponent(id)}`, {
-					method: "DELETE",
-				}).catch(() => {});
-			}
+			abortPendingOAuth(pending);
 		};
 	}, [account]);
 
@@ -1580,25 +1596,28 @@ function AddCodexAccountForm({ onAdded }: { onAdded: () => void }) {
 	});
 	useEffect(() => () => cleanupPendingLogin(), []);
 
-	// Poll an in-flight device sign-in until it lands (or fails).
-	useEffect(() => {
-		if (!login || login.state === "done" || login.state === "error") return;
-		const t = setInterval(async () => {
-			await (async () => {
+	// Poll an in-flight device sign-in until it lands (or fails). The tick
+	// reads the live login/onAdded through an effect event; the effect only
+	// re-arms when the login identity or its phase changes.
+	const pollDeviceLoginTick = useEffectEvent(async () => {
+		await (async () => {
 const res = await fetch(
-					`${BASE_PATH}/api/codex-accounts/device-login/${encodeURIComponent(login.id)}`
-				);
-				if (!res.ok) return;
-				const next: CodexDeviceLogin = await res.json();
-				setLogin(next);
-				if (next.state === "done") {
-					setPendingDone(true);
-					onAdded();
-				}
+				`${BASE_PATH}/api/codex-accounts/device-login/${encodeURIComponent(login?.id ?? "")}`
+			);
+			if (!res.ok) return;
+			const next: CodexDeviceLogin = await res.json();
+			setLogin(next);
+			if (next.state === "done") {
+				setPendingDone(true);
+				onAdded();
+			}
 })().catch(async () => {
 
 });
-		}, 2000);
+	});
+	useEffect(() => {
+		if (!login || login.state === "done" || login.state === "error") return;
+		const t = setInterval(() => void pollDeviceLoginTick(), 2000);
 		return () => clearInterval(t);
 	}, [login?.id, login?.state]);
 

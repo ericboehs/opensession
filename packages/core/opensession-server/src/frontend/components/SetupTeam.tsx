@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { githubLoginFromInput } from "../lib/github-login";
 import { Button } from "../ui/button";
 import { Field, FieldGrid, Input } from "../ui/input";
@@ -53,7 +53,8 @@ export function TeamSection({
 	const [githubOrganization, setGithubOrganization] = useState<string | null>(null);
 	const [githubSyncError, setGithubSyncError] = useState<string | null>(null);
 
-	const load = async () => {
+	// Stable identity: only setters and module functions are captured.
+	const load = useCallback(async () => {
 		await (async () => {
 const body = await setupRequest<{ members: TeamMember[] }>("/api/setup/team");
 			setMembers(body.members);
@@ -61,9 +62,9 @@ const body = await setupRequest<{ members: TeamMember[] }>("/api/setup/team");
 })().catch(async () => {
 setLoadFailed(true);
 });
-	};
+	}, []);
 
-	const syncGithubMembers = async () => {
+	const syncGithubMembers = useCallback(async () => {
 		setGithubSyncError(null);
 		await (async () => {
 const body = await setupRequest<{
@@ -81,7 +82,7 @@ const body = await setupRequest<{
 await load();
 			setGithubSyncError("GitHub members weren’t added. Add them manually.");
 });
-	};
+	}, [load]);
 
 	useEffect(() => {
 		if (githubOnly) void syncGithubMembers();

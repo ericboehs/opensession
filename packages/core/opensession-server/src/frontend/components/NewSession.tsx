@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { fetchWorktrees, fetchModels, fetchToolAccounts, fetchSandboxStatus, requestSandboxPrewarm, suggestBranch, suggestRepos, type RepoSuggestion, configuredNewSessionRepo, fetchProviderAccounts, fetchRepos, cachedRepos, type RepoInfo, createWorkspaceApi, updateWorkspaceApi, deleteWorkspaceApi, ApiError, type ProviderAccountOption, type ModelOption, type SandboxStatusInfo } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
@@ -35,6 +35,7 @@ import { AUTO_REPO, NO_REPO } from "../lib/session-repo";
 import { getDefaultRepoPref, setDefaultRepoPref } from "../lib/default-repo-pref";
 import { repoSelectionHint, toggleRepoSelection } from "../lib/repo-selection";
 import { fallbackBranchName } from "../lib/workspace-draft";
+import { newSessionDefaultRepo } from "../lib/new-session-repo";
 import {
   NewSessionPrompt,
   type NewSessionPromptHandle,
@@ -525,17 +526,10 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
     }));
   // The workspace's configured choice (which may itself be Auto) is what a
   // user with no preference of their own starts on; the repo flagged
-  // `default` is only the last resort behind it.
-  const resolveDefaultRepo = (options: RepoOption[]): string => {
-    const workspaceChoice = configuredNewSessionRepo();
-    return (
-      (workspaceChoice === AUTO_REPO || options.some((i) => i.id === workspaceChoice)
-        ? workspaceChoice
-        : "") ||
-      options.find((item) => item.default)?.id ||
-      AUTO_REPO
-    );
-  };
+  // `default` is only the last resort behind it. With no registered repos,
+  // start in Scratch instead.
+  const resolveDefaultRepo = (options: RepoOption[]): string =>
+    newSessionDefaultRepo(options, configuredNewSessionRepo());
   // Seeded from the repos this browser saw last (lib/repo-cache) so the picker
   // opens on the real list, and the palette settles on the right default,
   // without waiting for /repos. The fetch below still runs and corrects both.
@@ -648,11 +642,12 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
   const [staging, setStaging] = useState<StagingCount>(NOTHING_STAGING);
   const [fileDragActive, setFileDragActive] = useState(false);
   const fileDragWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const adoptDraftAttachments = () => {
+  // Stable identity: module loader + setters only.
+  const adoptDraftAttachments = useCallback(() => {
     const stored = loadDraft(DRAFT_KEY);
     setImages((prev) => (sameImages(prev, stored.images) ? prev : stored.images));
     setFiles((prev) => (sameFiles(prev, stored.files) ? prev : stored.files));
-  };
+  }, []);
   // An upload that lands while this palette is open belongs on screen even
   // though it was staged by the instance that closed: the store fires on an
   // attachment change for exactly this.
@@ -1312,9 +1307,10 @@ pendingDraftParks.delete(operation);
    *  through the prompt's own state, so a closure captured at the moment of
    *  the press would still be looking at the draft as it was. */
   const createRef = useRef<() => void>(() => {});
+  // Deliberate latest-value mirror: runs after every commit by design.
   useLayoutEffect(() => {
     createRef.current = handleCreate;
-  }, [handleCreate]);
+  });
 
   // The base a code session branches off. It sits in the footer's overflow
   // menu rather than the header: a fresh branch is what almost every session

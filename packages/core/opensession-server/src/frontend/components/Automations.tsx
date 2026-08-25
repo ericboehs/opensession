@@ -1,5 +1,5 @@
 import { BASE_PATH } from "../lib/base";
-import React, { useEffect, useState, } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   fetchAutomations,
   createAutomationApi,
@@ -208,7 +208,9 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
   // Leaving/changing the selection always drops back to the read view.
   useEffect(() => setEditMode(false), [selectedId]);
 
-  const load = async () => {
+  // Stable identity: only refs and setters are captured, so the polling
+  // effect can list `load` without ever refiring from re-renders.
+  const load = useCallback(async () => {
     await (async () => {
 const next = (await fetchAutomations()) as Automation[];
       setAutomations(
@@ -225,7 +227,7 @@ const next = (await fetchAutomations()) as Automation[];
 })().catch(async () => {
 
 });
-  };
+  }, []);
 
   useEffect(() => {
     document.title = docTitle("Automations");
@@ -245,8 +247,9 @@ const next = (await fetchAutomations()) as Automation[];
 
   // Escape backs out one layer: inline edit → read view → closed. (The create
   // modal handles its own Escape — don't close both from one keypress.)
+  const hasSelection = !!sel;
   useEffect(() => {
-    if (!sel || showModal) return;
+    if (!hasSelection || showModal) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       const t = e.target as HTMLElement | null;
@@ -256,7 +259,7 @@ const next = (await fetchAutomations()) as Automation[];
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [!!sel, showModal, editMode, onSelect]);
+  }, [hasSelection, showModal, editMode, onSelect]);
 
   async function handleToggle(a: Automation, enabled: boolean) {
     const previous = a.enabled;

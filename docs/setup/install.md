@@ -22,6 +22,18 @@ curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh
 claude setup-token     # on your Max login; copy the sk-ant-… it prints
 ```
 
+Need access from other devices? Pass `--tailscale` to the downloaded script
+like this:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale
+```
+
+The `bash -s --` separator is required: it tells Bash to read the script from
+standard input and pass everything after `--` to that script. See [Install
+with Tailscale](#install-with-tailscale) for the remaining setup and for adding
+Tailscale after a normal install.
+
 Now **open the URL the installer prints** (`http://127.0.0.1:3850` by default). Add your account under Workspace → Providers
 (paste the `sk-ant-…`, or use the ChatGPT device-code sign-in for the OpenAI
 path), then pick your repo on the home screen, write a prompt, and create the
@@ -123,11 +135,20 @@ defaults install upgrades to a full one at any time with `opensession onboard
 --force`. It is safe to re-run: an existing install is fast-forwarded, and
 existing config is backed up rather than overwritten.
 
-Useful flags — `--dir <path>` to install elsewhere, `--channel <ref>` to track
+Because this command pipes the installer into Bash, put installer flags after
+`bash -s --`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale
+# Multiple flags work too:
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale --advanced
+```
+
+Useful flags: `--dir <path>` to install elsewhere, `--channel <ref>` to track
 a branch or tag, `--advanced` for the wizard, `--org <name>` to set up an org
 install, `--tailscale` to install Tailscale, `--codex` for the ChatGPT sign-in
-CLI, `--no-engine` to skip the model CLI, `--yes` to never prompt, `--uninstall`
-to remove it. `--help` lists them all.
+CLI, `--no-engine` to skip the model CLI, `--yes` to never prompt, and
+`--uninstall` to remove it. `--help` lists them all.
 
 The Pi engine is compiled into the release binary and runs in-process, so
 there is no separate engine to seed or version. A release tarball carries the
@@ -136,29 +157,56 @@ the systemd service templates, and `release.json`; nothing else has to be
 fetched before the first turn. The one external tool a turn needs is the
 `claude` CLI, which the installer puts on the box (`--no-engine` skips it).
 
-### Tailscale: `--tailscale`
+### Install with Tailscale
 
-There is no authentication (see the
-[trust model](README.md#trust-model-read-this)) — the bind address *is* the
-access control. The default install binds `127.0.0.1` and needs no network
-software. When the UI has to be reachable from other machines, a private
-network is the way, and installing the Tailscale client before onboarding
-(`--tailscale`, then `--advanced` or `opensession bind`) lets your tailnet
-address be the bind default, rather than the usual path: accept `127.0.0.1`,
-discover later that a teammate cannot reach it, and reach for `HOST=0.0.0.0`.
-
-**Installing the client is not joining a network.** Nothing is exposed and no
-account is touched; `tailscale up` is a separate, explicit step. To do that
-part automatically too, set an [auth
-key](https://tailscale.com/kb/1085/auth-keys):
+Authentication is opt-in (see the [trust
+model](README.md#trust-model-read-this)). A default install trusts everyone who
+can reach it, so the bind address is the access control. It binds `127.0.0.1`
+and needs no network software. To have the Open Session installer add the
+Tailscale client on Linux, pass `--tailscale` after `bash -s --`:
 
 ```sh
-TS_AUTHKEY=tskey-auth-... curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale
 ```
 
-Otherwise the installer prints the `sudo tailscale up` command and carries on.
-Run it whenever you like, then `opensession onboard --force` to pick up the
-address. Full walkthrough: [networking.md](networking.md).
+The installer uses Tailscale's Linux installer when passwordless `sudo` is
+available. If it reports that `sudo` is needed, run the manual install command
+it prints so your terminal can ask for your password. On macOS, install the
+client from the [Tailscale download page](https://tailscale.com/download/mac)
+instead.
+
+**Installing the client does not join a tailnet.** Without an auth key, finish
+setup after the installer returns:
+
+```sh
+sudo tailscale up
+opensession bind
+```
+
+The first command prints a URL where you sign in to Tailscale. The second binds
+Open Session to its new tailnet address and restarts the service. Then open
+`http://<tailnet-ip>:3850` from another device on the same tailnet.
+
+To join automatically during a fresh Linux install, create a Tailscale [auth
+key](https://tailscale.com/kb/1085/auth-keys) and pass it to **Bash**, not to
+the `curl` process on the other side of the pipe:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | TS_AUTHKEY=tskey-auth-... bash -s -- --tailscale
+```
+
+#### Add Tailscale after a normal install
+
+You do not need to reinstall Open Session. On Linux, run:
+
+```sh
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+opensession bind
+```
+
+On macOS, install and connect the Tailscale app, then run `opensession bind`.
+Full walkthrough: [networking.md](networking.md).
 
 ### Doing it by hand
 
@@ -451,12 +499,15 @@ browser sockets, session state, or active hosts. See
 On macOS the service is a per-user **LaunchAgent**. The Linux executor sidecar
 and systemd run-host helper do not apply there.
 
-On a cloud instance the user service is not installed by default because its
-in-process agent children can reach the metadata endpoint at
-169.254.169.254. `service install` prints the controls when something answers:
-install the hardened system scope, add a host firewall rule for the service
-uid, or set `OPENSESSION_ALLOW_IMDS=1` on a box with no role worth protecting.
-See [integrations-misc.md](integrations-misc.md#aws-creds-for-runs-agent_aws_region).
+On EC2 and other cloud instances, the installer refuses to install or start
+the user service while 169.254.169.254 is reachable. Rootless agents could use
+that metadata endpoint to obtain the instance's role credentials. The failure
+prints the exact uid-scoped `iptables` rule. Apply that host firewall rule and
+rerun the same installation command. Only on an instance with no cloud role
+credentials to protect, rerun with `OPENSESSION_ALLOW_IMDS=1` to explicitly
+skip the check. The installer exits nonzero at this point instead of presenting
+the configured but stopped server as a partly successful installation. See
+[integrations-misc.md](integrations-misc.md#aws-creds-for-runs-agent_aws_region).
 
 The repo's `opensession.service` and `opensession-executor.service` are
 templates, not files to copy verbatim. `opensession service install` rewrites

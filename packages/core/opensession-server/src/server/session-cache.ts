@@ -44,6 +44,7 @@ import {
   sessionKernelActorActive,
   sessionTurn,
 } from "./session-kernel";
+import { broadcastToAll } from "./ws-hub";
 
 export const SESSIONS_DIR = OPENSESSION_SESSIONS_DIR;
 
@@ -76,8 +77,8 @@ const sessionsCacheGenerations: Record<SessionArchiveSlice, number> = {
 	exclude: 0,
 	only: 0,
 };
-// The UI polls every 5s and live run changes also arrive over WebSocket. Keep
-// the expensive multi-thousand-file fallback scan out of every poll wave;
+// The UI refreshes on WebSocket invalidations, with a slow fallback poll. Keep
+// the expensive multi-thousand-file fallback scan out of every refresh wave;
 // in-process mutations invalidate this cache immediately.
 const CACHE_TTL = 10_000;
 
@@ -99,6 +100,10 @@ export function invalidateSessionsCache(): void {
 		| Map<string, { expiresAt: number }>
 		| undefined;
 	for (const snapshot of responses?.values() || []) snapshot.expiresAt = 0;
+	// Publish only after every cache layer is stale, so a client reacting
+	// immediately cannot race ahead of the invalidation it was told about.
+	// Older and native clients safely ignore unknown server frames.
+	broadcastToAll({ type: "sessions_invalidated" });
 }
 
 export interface SessionRuntimeSnapshot {

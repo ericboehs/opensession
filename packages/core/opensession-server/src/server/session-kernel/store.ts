@@ -210,7 +210,7 @@ const PROCESS_OWNER_ID = (ownerGlobal.__opensessionSessionKernelOwnerId ??=
 		bootId: linuxBootId(),
 		start: linuxProcessStart(process.pid),
 	} satisfies ProcessOwnerIdentity));
-export const SESSION_KERNEL_SCHEMA_VERSION = 15;
+export const SESSION_KERNEL_SCHEMA_VERSION = 17;
 export const SESSION_KERNEL_MAX_CREATION_EFFECT_RECEIPTS = 256;
 export const SESSION_KERNEL_MAX_OPENING_PLAN_BYTES = 16 * 1024 * 1024;
 
@@ -2093,6 +2093,147 @@ export class SessionKernelStore {
       : { revision: 0, updatedAt: 0 };
   }
 
+  requestTurnCancelCommand(input: {
+    sessionId: string;
+    requestId: string;
+    fallbackRunId: string | null;
+  }):
+    | {
+        status: "execute";
+        targetRunId: string;
+        targetRunGeneration: number;
+      }
+    | { status: "completed"; result: boolean; duplicate: boolean } {
+    if (
+      !input.requestId ||
+      input.requestId.length > 256 ||
+      (input.fallbackRunId !== null &&
+        (!input.fallbackRunId || input.fallbackRunId.length > 256))
+    ) throw new Error("Invalid cancel command intent");
+    if (this.isTombstoned(input.sessionId))
+      throw new Error(`Session ${input.sessionId} was deleted`);
+
+    const existing = this.command(input.sessionId, input.requestId);
+    if (existing) {
+      if (existing.type !== "cancel_session")
+        throw new Error(
+          `Session command id ${input.requestId} was reused with another operation`,
+        );
+      if (existing.status === "completed")
+        return {
+          status: "completed",
+          result: existing.result === true,
+          duplicate: true,
+        };
+      if (
+        existing.status === "indeterminate" ||
+        (existing.status === "failed" &&
+          (!existing.retryable || !existing.replaySafe))
+      ) throw new Error(existing.error || "Session cancel command failed");
+      const payload = existing.payload as {
+        targetRunId?: unknown;
+        targetRunGeneration?: unknown;
+      } | null;
+      const targetRunId = payload?.targetRunId;
+      const targetRunGeneration = payload?.targetRunGeneration;
+      if (
+        targetRunId === null &&
+        Number.isSafeInteger(targetRunGeneration) &&
+        Number(targetRunGeneration) >= 0
+      ) {
+        this.completeCommand(input.sessionId, input.requestId, false);
+        return { status: "completed", result: false, duplicate: true };
+      }
+      if (
+        typeof targetRunId !== "string" ||
+        !targetRunId ||
+        !Number.isSafeInteger(targetRunGeneration) ||
+        Number(targetRunGeneration) < 0
+      ) throw new Error("Durable cancel command target is invalid");
+      this.markProcessing(input.sessionId, input.requestId);
+      return {
+        status: "execute",
+        targetRunId,
+        targetRunGeneration: Number(targetRunGeneration),
+      };
+    }
+
+    const priorCancel = this.turnSnapshot(input.sessionId).cancel;
+    const cancelId = `stop:${input.requestId}`;
+    const priorRun = this.runState(input.sessionId);
+    const replayedTarget =
+      priorCancel?.cancelId === cancelId
+        ? {
+            runId: priorCancel.runId,
+            generation: priorCancel.runGeneration,
+          }
+        : undefined;
+    const targetRunId =
+      replayedTarget?.runId ||
+      priorRun.currentRunId ||
+      ((priorRun.state === "starting" || priorRun.state === "preparing")
+        ? input.fallbackRunId
+        : null);
+    const targetRunGeneration =
+      replayedTarget?.generation ?? priorRun.generation;
+    this.acceptCommand({
+      sessionId: input.sessionId,
+      requestId: input.requestId,
+      type: "cancel_session",
+      payload: { targetRunId, targetRunGeneration },
+      replaySafe: true,
+    });
+    if (!targetRunId) {
+      this.completeCommand(input.sessionId, input.requestId, false);
+      return { status: "completed", result: false, duplicate: false };
+    }
+    this.markProcessing(input.sessionId, input.requestId);
+    return {
+      status: "execute",
+      targetRunId,
+      targetRunGeneration,
+    };
+  }
+
+  completeTurnCancelCommand(input: {
+    sessionId: string;
+    requestId: string;
+    result: boolean;
+  }): boolean {
+    const record = this.command(input.sessionId, input.requestId);
+    if (!record || record.type !== "cancel_session")
+      throw new Error("Cancel command receipt is missing");
+    if (record.status === "completed") return record.result === true;
+    if (record.status === "indeterminate" || record.status === "failed")
+      throw new Error(record.error || "Session cancel command failed");
+    const payload = record.payload as {
+      targetRunId?: unknown;
+      targetRunGeneration?: unknown;
+    } | null;
+    if (input.result) {
+      const cancel = this.turnSnapshot(input.sessionId).cancel;
+      if (
+        cancel?.cancelId !== `stop:${input.requestId}` ||
+        cancel.runId !== payload?.targetRunId ||
+        cancel.runGeneration !== payload?.targetRunGeneration
+      ) throw new Error("Cancel command completed without its durable receipt");
+    }
+    this.completeCommand(input.sessionId, input.requestId, input.result);
+    return input.result;
+  }
+
+  failTurnCancelCommand(input: {
+    sessionId: string;
+    requestId: string;
+    error: string;
+  }): void {
+    const record = this.command(input.sessionId, input.requestId);
+    if (!record || record.type !== "cancel_session")
+      throw new Error("Cancel command receipt is missing");
+    if (record.status === "completed") return;
+    this.failCommand(input.sessionId, input.requestId, input.error, false);
+  }
+
   prepareTurnCancel(input: {
     sessionId: string;
     cancelId: string;
@@ -2921,6 +3062,112 @@ export class SessionKernelStore {
       state.dispatch = undefined;
     });
     return true;
+  }
+
+  beginTimerExecution(input: {
+    sessionId: string;
+    timerId: string;
+    token: string;
+  }): "execute" | "completed" | "missing" {
+    if (!input.timerId || !input.token)
+      throw new Error("Invalid timer execution intent");
+    const timer = this.timer(input.sessionId, input.timerId);
+    if (!timer || timer.token !== input.token) return "missing";
+    const requestId = `timer:${input.timerId}:${input.token}`;
+    const existing = this.command(input.sessionId, requestId);
+    if (existing?.status === "completed") {
+      this.settleTimerSuccess(input.sessionId, input.timerId, input.token);
+      return "completed";
+    }
+    if (
+      existing?.status === "indeterminate" ||
+      (existing?.status === "failed" &&
+        (!existing.retryable || !existing.replaySafe))
+    ) throw new Error(existing.error || "Timer execution failed");
+    this.acceptCommand({
+      sessionId: input.sessionId,
+      requestId,
+      type: "timer_fired",
+      payload: {
+        timerId: timer.timerId,
+        kind: timer.kind,
+        dueAt: timer.dueAt,
+        payload: timer.payload,
+      },
+      replaySafe: true,
+    });
+    this.markProcessing(input.sessionId, requestId);
+    return "execute";
+  }
+
+  completeTimerExecution(input: {
+    sessionId: string;
+    timerId: string;
+    token: string;
+  }): boolean {
+    const requestId = `timer:${input.timerId}:${input.token}`;
+    const record = this.command(input.sessionId, requestId);
+    if (!record || record.type !== "timer_fired")
+      throw new Error("Timer execution receipt is missing");
+    if (record.status !== "completed")
+      this.completeCommand(input.sessionId, requestId, true);
+    return this.settleTimerSuccess(input.sessionId, input.timerId, input.token);
+  }
+
+  failTimerExecution(input: {
+    sessionId: string;
+    timerId: string;
+    token: string;
+    error: string;
+    maxAttempts: number;
+  }): { updated: boolean; deadLetteredNow: boolean } {
+    if (!Number.isSafeInteger(input.maxAttempts) || input.maxAttempts < 1)
+      throw new Error("Invalid timer attempt limit");
+    const requestId = `timer:${input.timerId}:${input.token}`;
+    const record = this.command(input.sessionId, requestId);
+    if (!record || record.type !== "timer_fired")
+      throw new Error("Timer execution receipt is missing");
+    const settled = this.noteTimerFailure(
+      input.sessionId,
+      input.timerId,
+      input.error,
+      input.maxAttempts,
+      input.token,
+    );
+    if (record.status !== "completed")
+      this.failCommand(input.sessionId, requestId, input.error, true);
+    return settled;
+  }
+
+  recordTimerRuntimeFailure(input: {
+    sessionId: string;
+    timerId: string;
+    token: string;
+    error: string;
+    maxAttempts: number;
+    observedAttempts: number;
+  }): { updated: boolean; deadLetteredNow: boolean } {
+    if (
+      !Number.isSafeInteger(input.maxAttempts) ||
+      input.maxAttempts < 1 ||
+      !Number.isSafeInteger(input.observedAttempts) ||
+      input.observedAttempts < 0
+    ) throw new Error("Invalid timer runtime failure intent");
+    const current = this.timer(input.sessionId, input.timerId);
+    if (!current || current.token !== input.token)
+      return { updated: false, deadLetteredNow: false };
+    if (current.attempts !== input.observedAttempts)
+      return {
+        updated: false,
+        deadLetteredNow: current.deadLetteredAt !== undefined,
+      };
+    return this.noteTimerFailure(
+      input.sessionId,
+      input.timerId,
+      input.error,
+      input.maxAttempts,
+      input.token,
+    );
   }
 
 	scheduleTimer(

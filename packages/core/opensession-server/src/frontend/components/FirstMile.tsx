@@ -35,13 +35,13 @@ const STEPS: FirstMileStep[] = [
 		id: "welcome",
 		label: "Welcome",
 		title: `Welcome to ${PRODUCT_NAME}`,
-		description: "Create a new organization or join one your team has already set up.",
+		description: "Set up this server before you start using Open Session.",
 	},
 	{
 		id: "github",
 		label: "GitHub",
 		title: "Connect GitHub",
-		description: "Give sessions access to your repositories and pull requests.",
+		description: "GitHub signs you in and lets sessions access repositories, push changes, and create and review pull requests.",
 	},
 	{
 		id: "organization",
@@ -296,12 +296,13 @@ function FirstMileSummary({
 	);
 }
 
-export function FirstMile({ onDone }: { onDone: () => void }) {
+export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 	const setup = useSetupStatus();
 	const { status, failed, refetch } = setup;
 	const [index, setIndex] = useState(0);
 	const [direction, setDirection] = useState(1);
 	const [footerSeparated, setFooterSeparated] = useState(false);
+	const [finishing, setFinishing] = useState(false);
 	const headingRef = useRef<HTMLHeadingElement>(null);
 	const mainRef = useRef<HTMLElement>(null);
 	const reducedMotion = useReducedMotion();
@@ -344,6 +345,13 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 		setDirection(nextIndex > index ? 1 : -1);
 		setIndex(nextIndex);
 		void refetch();
+	}
+
+	async function finish() {
+		if (finishing) return;
+		setFinishing(true);
+		await onDone();
+		setFinishing(false);
 	}
 
 	const variants = {
@@ -471,22 +479,14 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 									<p className="mt-3 max-w-[440px] text-pretty text-body leading-relaxed text-dim">
 										{step.description}
 									</p>
-									<div className="mt-7 flex w-full max-w-[300px] flex-col gap-3">
+									<div className="mt-7 w-full max-w-[300px]">
 										<Button
 											variant="primary"
 											size="lg"
 											onClick={() => goTo(1)}
 											className="min-h-11 w-full justify-center"
 										>
-											Create organization
-										</Button>
-										<Button
-											variant="soft"
-											size="lg"
-											onClick={onDone}
-											className="min-h-11 w-full justify-center"
-										>
-											Join organization
+											Setup server
 										</Button>
 									</div>
 								</div>
@@ -576,16 +576,18 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 						variant="primary"
 						size="lg"
 						onClick={() => {
-							if (index === STEPS.length - 1) onDone();
+							if (index === STEPS.length - 1) void finish();
 							else goTo(index + 1);
 						}}
-						disabled={!status}
+						disabled={!status || finishing}
 						className="justify-self-end phone:min-h-12 phone:w-full phone:justify-center phone:rounded-lg"
 					>
 						{index === 0
 							? "Continue"
 							: index === STEPS.length - 1
-								? `Enter ${PRODUCT_NAME}`
+								? finishing
+									? "Finishing…"
+									: `Enter ${PRODUCT_NAME}`
 								: index === STEPS.length - 2
 									? "Review"
 									: "Next"}

@@ -142,15 +142,24 @@ async function githubSnapshot() {
     githubAuthOnConnect,
   } = await import("../github-auth");
   const { githubAppConfigured } = await import("../github-app");
-  const { configuredIntegration, configuredServer } = await import("../config");
+  const { configuredIntegration, configuredServer, personaName } = await import("../config");
   const github = githubUserAuthSettings();
   const app = githubAppIdentity();
   const integration = configuredIntegration("github");
   const org = await primaryGithubOrg();
+  const configuredHandles = configuredIntegration("github").mentionHandles;
+  const mentionHandle = (
+    process.env.GITHUB_MENTION_HANDLES?.split(",")[0] ||
+    (Array.isArray(configuredHandles)
+      ? configuredHandles.find((value): value is string => typeof value === "string")
+      : "") ||
+    personaName().toLowerCase().replace(/[^a-z0-9-]/g, "")
+  ).trim().replace(/^@/, "");
   return {
     userPrAuth: github.enabled,
     clientIdConfigured: !!github.clientId,
     clientSecretConfigured: !!github.clientSecret,
+    mentionHandle,
     appCredentialConfigured: githubAppConfigured(),
     appSlug: app.slug,
     installationOwner:
@@ -204,8 +213,39 @@ export async function handleSetupRoutes(
   const { req, path } = ctx;
   if (!path.startsWith("/api/setup/")) return undefined;
 
+  // This one boolean is safe for every signed-in teammate to read. It must sit
+  // before the admin gate so a completed instance never sends non-admins into
+  // an onboarding flow they cannot configure.
+  if (path === "/api/setup/onboarding" && req.method === "GET") {
+    // Read the file directly rather than the mtime-cached resolved config: a GET
+    // immediately after the completion PUT must observe that write even on a
+    // filesystem whose timestamp resolution folds both operations together.
+    const { rawConfig } = await import("../config-mutation");
+    // Older instances predate the flag and have already been in use. Only the
+    // installer-written explicit false represents a first run.
+    return Response.json({ completed: rawConfig().onboardingCompleted !== false });
+  }
+
   const forbidden = requireWorkspaceAdmin(ctx);
   if (forbidden) return forbidden;
+
+  if (path === "/api/setup/onboarding" && req.method === "PUT") {
+    const body = (await req.json().catch(() => null)) as { completed?: unknown } | null;
+    if (body?.completed !== true) {
+      return Response.json({ error: "completed must be true" }, { status: 400 });
+    }
+    const { rawConfig, persistRawConfig, withConfigMutationLock } =
+      await import("../config-mutation");
+    return withConfigMutationLock(async () => {
+      const config = rawConfig();
+      if (config.onboardingCompleted !== true) {
+        config.onboardingCompleted = true;
+        persistRawConfig(config);
+        audit({ kind: "setup_onboarding_complete", by: ctx.authUser?.login || null });
+      }
+      return Response.json({ completed: true });
+    });
+  }
 
   if (path === "/api/setup/status" && req.method === "GET") {
     const { configuredRepos, configuredIdentity } = await import("../config");
@@ -359,6 +399,7 @@ export async function handleSetupRoutes(
       oauthClientSecret?: unknown;
       appSlug?: unknown;
       installationOwner?: unknown;
+      mentionHandle?: unknown;
       privateKey?: unknown;
     } | null;
     if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -378,6 +419,20 @@ export async function handleSetupRoutes(
       if (invalid) {
         return Response.json({ error: `${field}: ${invalid}` }, { status: 400 });
       }
+    }
+    const mentionHandle =
+      typeof body.mentionHandle === "string"
+        ? body.mentionHandle.trim().replace(/^@/, "")
+        : body.mentionHandle;
+    if (
+      mentionHandle !== undefined &&
+      (typeof mentionHandle !== "string" ||
+        (mentionHandle !== "" && !/^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(mentionHandle)))
+    ) {
+      return Response.json(
+        { error: "mentionHandle must be a valid GitHub handle" },
+        { status: 400 },
+      );
     }
     // The private key is a multi-line PEM, so it bypasses validateSetting (single
     // line). Require a complete block that parses, so a truncated paste cannot
@@ -411,6 +466,7 @@ export async function handleSetupRoutes(
       body.oauthClientSecret === undefined &&
       body.appSlug === undefined &&
       body.installationOwner === undefined &&
+      mentionHandle === undefined &&
       !privateKey
     ) {
       return Response.json({ error: "Nothing to change" }, { status: 400 });
@@ -557,6 +613,10 @@ export async function handleSetupRoutes(
         }
       }
       if (body.userPrAuth !== undefined) github.userPrAuth = body.userPrAuth;
+      if (mentionHandle !== undefined) {
+        if (mentionHandle) github.mentionHandles = [mentionHandle];
+        else delete github.mentionHandles;
+      }
       for (const field of [
         "oauthClientId",
         "oauthClientSecret",
@@ -588,6 +648,7 @@ export async function handleSetupRoutes(
           "oauthClientSecret",
           "appSlug",
           "installationOwner",
+          "mentionHandle",
         ] as const).filter(
           (f) => body[f] !== undefined,
         ),
@@ -599,7 +660,8 @@ export async function handleSetupRoutes(
       // createdByLogin boot migration waits for the next restart.)
       return Response.json({
         github: await githubSnapshot(),
-        restartRequired: false,
+        // Mention matching is initialized with the GitHub agent at boot.
+        restartRequired: mentionHandle !== undefined,
       });
     });
   }

@@ -13,18 +13,13 @@ import { SetupChecklist } from "./SetupChecklist";
 import { IntegrationsList } from "./SetupIntegrations";
 import { ReposSection } from "./SetupRepos";
 import { SetupRestart } from "./SetupRestart";
-import { SetupServerAccess } from "./SetupServerAccess";
 import { TeamSection } from "./SetupTeam";
 import { OrganizationProfileSection } from "./settings/GeneralPanel";
 import { ProviderAccountsSection } from "./settings/ModelAccounts";
 import { ModelProvidersPanel } from "./ModelProviders";
 import { ModelDefaultsSection } from "./Models";
 import { IconCheck } from "./icons";
-import {
-  integrationState,
-  publicUrlState,
-  type SetupStatus,
-} from "./setup-shared";
+import { integrationState, type SetupStatus } from "./setup-shared";
 
 // Settings → Setup: every part of a new instance, in the order someone fills
 // it in, with a summary rail that jumps to the section that still needs work.
@@ -32,7 +27,6 @@ import {
 // "set up" means.
 
 type SectionId =
-  | "server"
   | "github"
   | "organisation"
   | "providers"
@@ -65,15 +59,12 @@ function SetupSummary({
     (integration) => integration.id === "github",
   );
   const githubReady = !!github && integrationState(github).tone === "on";
-  const serverReady = publicUrlState(status.publicBaseUrl).tone === "on";
   const requiredReady =
-    serverReady &&
     githubReady &&
     status.engine.ready &&
     status.repos.length > 0 &&
     status.team.count > 0;
   const steps: { id: SectionId; label: string; complete: boolean }[] = [
-    { id: "server", label: "Server", complete: serverReady },
     { id: "github", label: "GitHub", complete: githubReady },
     { id: "organisation", label: "Organisation", complete: true },
     { id: "providers", label: "Providers", complete: status.engine.ready },
@@ -199,21 +190,10 @@ export function SetupPanel({
         <div className="grid items-start desktop:grid-cols-[minmax(0,720px)_220px] desktop:gap-10">
           <div className="min-w-0 desktop:col-start-1 desktop:row-start-1">
             <SetupPageSection
-              id="server"
-              title="Server access"
-              description="Add a private app domain and a separate public address for signed webhooks."
-              className="mt-0"
-            >
-              <SetupServerAccess
-                access={status.access}
-                onSaved={setup.applyAccess}
-              />
-            </SetupPageSection>
-
-            <SetupPageSection
               id="github"
               title="Connect GitHub"
               description="Give sessions access to repositories and pull requests."
+              className="mt-0"
             >
               <IntegrationsList
                 integrations={status.integrations.filter(

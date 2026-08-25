@@ -107,7 +107,7 @@ export async function preparePromptImages(
   if (!images?.length) return undefined;
   return Promise.all(images.map(async (image) => {
     if (image.startsWith("/media?")) return image;
-    const match = image.match(/^data:([^;]+);base64,(.+)$/s);
+    const match = image.match(/^data:([^;]+);base64,([\s\S]+)$/);
     if (match && STAGEABLE_IMAGE_TYPES[match[1]]) return image;
     if (!match?.[1].startsWith("image/")) throw unsupportedPromptImage();
     try {

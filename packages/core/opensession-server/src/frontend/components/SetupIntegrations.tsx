@@ -276,6 +276,7 @@ export function GithubAuthCard({
 		github.installationOwner ?? github.appOrg ?? "",
 	);
 	const [clientSecret, setClientSecret] = useState("");
+	const [mentionHandle, setMentionHandle] = useState(github.mentionHandle);
 	const [privateKey, setPrivateKey] = useState("");
 	const [clearId, setClearId] = useState(false);
 	const [clearSecret, setClearSecret] = useState(false);
@@ -287,13 +288,16 @@ export function GithubAuthCard({
 		setUserPrAuth(github.userPrAuth);
 		setAppSlug(github.appSlug ?? "");
 		setInstallationOwner(github.installationOwner ?? github.appOrg ?? "");
+		setMentionHandle(github.mentionHandle);
 	}, [
 		github.userPrAuth,
 		github.appSlug,
 		github.installationOwner,
 		github.appOrg,
+		github.mentionHandle,
 	]);
 
+	const normalizedMentionHandle = mentionHandle.trim().replace(/^@/, "");
 	const idCleared = github.clientIdConfigured && clearId && !clientId.trim();
 	const secretCleared = secretConfigured && clearSecret && !clientSecret.trim();
 	const dirty =
@@ -303,6 +307,7 @@ export function GithubAuthCard({
 		installationOwner.trim() !==
 			(github.installationOwner ?? github.appOrg ?? "") ||
 		clientSecret.trim() !== "" ||
+		normalizedMentionHandle !== github.mentionHandle ||
 		privateKey.trim() !== "" ||
 		idCleared ||
 		secretCleared;
@@ -336,6 +341,9 @@ const body = await setupRequest<{
 						: secretCleared
 							? { oauthClientSecret: "" }
 							: {}),
+					...(normalizedMentionHandle !== github.mentionHandle
+						? { mentionHandle: normalizedMentionHandle }
+						: {}),
 					...(privateKey.trim() ? { privateKey: privateKey.trim() } : {}),
 				},
 			});
@@ -459,7 +467,7 @@ setSaving(false);
 				</label>
 				<SecretField
 					name="Client secret"
-					description="Renews teammates' tokens before they expire. Signing in works without it; staying signed in does not."
+					required
 					present={secretConfigured}
 					cleared={secretCleared}
 					value={clientSecret}
@@ -473,6 +481,27 @@ setSaving(false);
 						setClientSecret("");
 					}}
 				/>
+				<label className="flex flex-col gap-1">
+					<span className="text-label font-medium text-dim">Mention handle</span>
+					<span className="text-supporting text-faint">
+						PR comments that mention this handle start a session.
+					</span>
+					<div className="mt-0.5 flex h-8 w-full items-center rounded-control border border-line bg-surface transition-colors focus-within:border-accent phone:h-11">
+						<span className="pl-2.5 text-sm text-faint" aria-hidden="true">@</span>
+						<input
+							type="text"
+							className="h-full min-w-0 flex-1 bg-transparent px-1.5 pr-2.5 text-sm text-fg outline-none placeholder:text-faint phone:text-input-phone"
+							value={mentionHandle}
+							onChange={(event) => setMentionHandle(event.target.value)}
+							placeholder="opensession"
+							aria-label="GitHub mention handle"
+							disabled={saving}
+							autoCapitalize="none"
+							autoComplete="off"
+							spellCheck={false}
+						/>
+					</div>
+				</label>
 				<label className="flex flex-col gap-1">
 					<span className="text-supporting text-fg">Private key (PEM)</span>
 					<textarea
@@ -572,13 +601,19 @@ setSaving(false);
 				    person should be able to read before opening a credentials form. */}
 				{onboarding && (
 					<div className="mt-3 grid grid-cols-2 items-start gap-3 phone:grid-cols-1">
-						<SettingsSection className="flex h-full flex-col gap-3">
+						<SettingsSection className="flex flex-col gap-3">
 							<div className="text-item-title font-semibold text-fg">How to connect</div>
 							<SetupSteps steps={GITHUB_ONBOARDING_STEPS} />
-							<LinkChips
-								className="mt-auto pt-1"
-								links={[{ label: "Create GitHub App", url: github.appCreateUrl }]}
-							/>
+							<Button
+								variant="primary"
+								size="lg"
+								className="mt-auto min-h-11 w-full justify-center"
+								render={
+									<a href={github.appCreateUrl} target="_blank" rel="noreferrer" />
+								}
+							>
+								Create GitHub App
+							</Button>
 						</SettingsSection>
 						<SettingsSection className="p-4">
 							{configuration}

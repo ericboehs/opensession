@@ -38,6 +38,7 @@ export interface SetupGithub {
 	userPrAuth: boolean;
 	clientIdConfigured: boolean;
 	clientSecretConfigured: boolean;
+	mentionHandle: string;
 	appCredentialConfigured: boolean;
 	appSlug: string | null;
 	installationOwner: string | null;
@@ -150,65 +151,6 @@ body = await res.json();
 
 export type ChipTone = "on" | "warn" | "off";
 
-export function publicUrlState(publicBaseUrl: string): {
-	tone: ChipTone;
-	label: string;
-	description: string;
-} {
-	try {
-		const url = new URL(publicBaseUrl);
-		if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
-		const host = url.hostname.toLowerCase();
-		if (
-			host === "localhost" ||
-			host === "127.0.0.1" ||
-			host === "0.0.0.0" ||
-			host === "::1" ||
-			host === "[::1]"
-		) {
-			return {
-				tone: "warn",
-				label: "Local only",
-				description: "Only this server can open the instance. Set a Tailscale address during server setup.",
-			};
-		}
-		const octets = host.split(".").map(Number);
-		const tailnetIp =
-			octets.length === 4 &&
-			octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255) &&
-			octets[0] === 100 &&
-			octets[1]! >= 64 &&
-			octets[1]! <= 127;
-		if (tailnetIp || host.endsWith(".ts.net")) {
-			return {
-				tone: "on",
-				label: "Private address",
-				description: `Configured for Tailscale at ${publicBaseUrl}.`,
-			};
-		}
-		// A TLS address is served by the instance's own reverse proxy, so it is
-		// reachable by definition — the page you are reading came through it.
-		if (url.protocol === "https:") {
-			return {
-				tone: "on",
-				label: "Online",
-				description: `Serving at ${publicBaseUrl}.`,
-			};
-		}
-		return {
-			tone: "warn",
-			label: "Check access",
-			description: `${publicBaseUrl} is configured over plain http, so setup cannot verify that it is private or reachable.`,
-		};
-	} catch {
-		return {
-			tone: "warn",
-			label: "Invalid",
-			description: "The instance URL is not valid. Run the server setup again.",
-		};
-	}
-}
-
 const CHIP_DOTS: Record<ChipTone, string> = {
 	on: "var(--green)",
 	warn: "var(--yellow)",
@@ -225,7 +167,6 @@ export function chipDotColor(tone: ChipTone): string {
  *  the checklist can offer a "jump to that step" without importing the wizard
  *  it is rendered by. */
 export type SetupStepId =
-	| "server"
 	| "github"
 	| "organization"
 	| "models"
@@ -516,6 +457,7 @@ export function SecretField({
 							: (placeholder ?? "Not set")
 				}
 				aria-label={name}
+				required={required}
 				autoComplete="new-password"
 				autoCapitalize="none"
 				spellCheck={false}

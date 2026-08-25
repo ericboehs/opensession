@@ -93,8 +93,6 @@ export interface Props {
 	 * the panel does, instead of flashing while the first list request is out.
 	 */
 	showDraftRow?: boolean;
-	/** The empty product cannot create sessions until GitHub is connected. */
-	githubConnectionRequired?: boolean;
 	/** True while the main panel is showing that input. */
 	draftRowActive?: boolean;
 	/** Put the caret back in it. */

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Popover } from "../ui/popover";
 import { cn } from "../ui/cn";
 import {
@@ -41,14 +41,14 @@ export function SandboxBadge({
 	const [status, setStatus] = useState<SessionSandboxStatus | null>(null);
 	const [working, setWorking] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const load = async () => {
+	const load = useCallback(async () => {
 		await (async () => {
 setStatus(await fetchSessionSandbox(sessionId));
 			setError(null);
 })().catch(async (cause: any) => {
 setError(cause?.message || "Sandbox status unavailable");
 });
-	};
+	}, [sessionId]);
 
 	useEffect(() => {
 		if (runner) return;

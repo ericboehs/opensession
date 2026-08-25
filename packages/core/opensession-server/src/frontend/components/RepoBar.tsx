@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   cachedRepos,
   fetchRepos,
@@ -65,8 +65,14 @@ export function RepoBar({
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   // Keep in sync if the session prop changes (e.g. the agent attached one, or a
-  // switch landed and the parent re-fetched).
-  useEffect(() => setAttached(initialAttached), [JSON.stringify(initialAttached)]);
+  // switch landed and the parent re-fetched). Compared by content: the parent
+  // rebuilds the array each fetch.
+  const initialAttachedKey = JSON.stringify(initialAttached);
+  const initialAttachedValue = useMemo(
+    () => JSON.parse(initialAttachedKey) as AttachedRepo[],
+    [initialAttachedKey],
+  );
+  useEffect(() => setAttached(initialAttachedValue), [initialAttachedValue]);
   useEffect(() => setPrimary(primaryRepo), [primaryRepo]);
 
   // Can this session's primary repo be switched, and does it already have work?

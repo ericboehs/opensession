@@ -276,8 +276,10 @@ function RangeCalendar({
 	// where the eye does. Base UI's own initialFocus can't reach a cell that
 	// only exists once this component has rendered. Once per open: the popup
 	// unmounts on close, so there is no later state for this to disagree with.
+	const focusEndOnce = React.useEffectEvent(() => focusDay(end));
 	React.useEffect(() => {
-		focusDay(end);
+		focusEndOnce();
+		// Once per open: the popup unmounts on close.
 	}, []);
 
 	// A viewport that crosses the phone breakpoint while the popup is open can

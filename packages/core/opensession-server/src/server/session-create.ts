@@ -104,6 +104,10 @@ import {
 } from "./session-kernel";
 import { AUTO_REPO, ensureAskCheckout, ensureScratchDir, getRepo, isRegisteredWorktree, listWorktrees, NO_REPO, repoForPath, repoForPathOrNull, resolveUniqueBranch, sharedCheckoutForNewSessions, worktreeHeadBranch, worktreePathFor, } from "./worktree";
 import { type WSClientData, broadcastToSession, preparingWorkspaces, } from "./ws-hub";
+import {
+	markReplayedCommandResult,
+	replayedSessionCreatedResult,
+} from "./command-replay";
 import { sessionIdForRequest } from "./session-request-id";
 import { isClientSessionId } from "./paths";
 import {
@@ -1588,6 +1592,8 @@ export async function openCreatedSession(
 type WebCreateSocket = ServerWebSocket<WSClientData>;
 interface PendingWebCreate {
 	sockets: Set<WebCreateSocket>;
+	/** Sockets that joined by replaying an already-admitted create command. */
+	replayedSockets?: Set<WebCreateSocket>;
 }
 
 const pendingWebCreates: Map<string, PendingWebCreate> =
@@ -1597,10 +1603,12 @@ function sendCreateFrame(
 	attempt: PendingWebCreate,
 	frame: Record<string, unknown>,
 ): void {
-	const payload = JSON.stringify(frame);
 	for (const socket of attempt.sockets) {
 		try {
-			socket.send(payload);
+			const payload = attempt.replayedSockets?.has(socket)
+				? markReplayedCommandResult(frame)
+				: frame;
+			socket.send(JSON.stringify(payload));
 		} catch {}
 	}
 }
@@ -1628,6 +1636,7 @@ export async function handleCreateSessionMessage(
 		const pending = pendingWebCreates.get(clientSessionId);
 		if (pending) {
 			pending.sockets.add(ws);
+			(pending.replayedSockets ??= new Set()).add(ws);
 			return;
 		}
 	}
@@ -1683,13 +1692,10 @@ export async function handleCreateSessionMessage(
 			durableCreation.state === "cancelled"
 		)
 			clearCreatePlan(bksId);
-		const response = {
-			type: "session_created",
-			id: bksId,
-			...(recoveringSession.workspaceId
-				? { workspaceId: recoveringSession.workspaceId }
-				: {}),
-		};
+		const response = replayedSessionCreatedResult(
+			bksId,
+			recoveringSession.workspaceId,
+		);
 		sendCreateFrame(attempt, response);
 		finishCreate();
 		return response;
@@ -1700,13 +1706,10 @@ export async function handleCreateSessionMessage(
 		recoveringSession?.codexThreadId
 	) {
 		clearCreatePlan(bksId);
-		const response = {
-			type: "session_created",
-			id: recoveringSession.id,
-			...(recoveringSession.workspaceId
-				? { workspaceId: recoveringSession.workspaceId }
-				: {}),
-		};
+		const response = replayedSessionCreatedResult(
+			recoveringSession.id,
+			recoveringSession.workspaceId,
+		);
 		sendCreateFrame(attempt, response);
 		finishCreate();
 		return response;

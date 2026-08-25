@@ -1,4 +1,10 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, {
+	useEffect,
+	useEffectEvent,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import { AnimatePresence } from "motion/react";
 import type { PlainThread, SupportThread } from "../lib/types";
 import {
@@ -110,7 +116,9 @@ export function SupportTinder({ onExit, onOpenSession }: Props) {
 		Record<string, PlainThread | "error">
 	>({});
 	const fetching = useRef(new Set<string>());
-	useEffect(() => {
+	// Reads the live card objects through an effect event, so the trigger set
+	// stays "which cards are in view + what is cached".
+	const ensureTimelines = useEffectEvent(() => {
 		let alive = true;
 		for (const t of [card, next]) {
 			if (!t || timelines[t.id] || fetching.current.has(t.id)) continue;
@@ -127,6 +135,9 @@ export function SupportTinder({ onExit, onOpenSession }: Props) {
 		return () => {
 			alive = false;
 		};
+	});
+	useEffect(() => {
+		ensureTimelines();
 	}, [card?.id, next?.id, timelines]);
 
 	// A new card always starts at the top (the deck area is one normal scroll).
@@ -262,8 +273,9 @@ export function SupportTinder({ onExit, onOpenSession }: Props) {
 
 	// Keyboard: →/k skip, ←/s spam, e session, d done, o Plain, b back, z undo;
 	// Esc leaves the deck.
-	useEffect(() => {
-		function onKey(e: KeyboardEvent) {
+	// The keymap reads the latest card and actions through an effect event, so
+	// the listener subscribes once.
+	const supportKeys = useEffectEvent(function onKey(e: KeyboardEvent) {
 			if (e.key === "Escape") {
 				return onExit();
 			}
@@ -301,10 +313,12 @@ export function SupportTinder({ onExit, onOpenSession }: Props) {
 				e.preventDefault();
 				back();
 			}
-		}
+	});
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => supportKeys(e);
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [card, index, busy, opening, onExit]);
+	}, []);
 
 	return (
 		<div className="relative flex min-h-0 flex-1 flex-col items-center bg-surface">
