@@ -1,5 +1,5 @@
 import { repoLabel } from "../lib/repo-label";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 import { FALLBACK_REPO, sessionRepoOr } from "../lib/session-repo";
 import { sessionSourceLabel } from "../lib/brand";
 import { SOURCE_CHIP, sourceChipTone } from "../lib/source-chip-classes";
@@ -122,7 +122,7 @@ const sx = stylex.create({
 		marginTop: "16px",
 	},
 	bgActive: {
-		backgroundColor: "var(--active)",
+		backgroundColor: "var(--bg-active)",
 	},
 	hidden: {
 			display: "none"

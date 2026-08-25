@@ -4,7 +4,7 @@ import { Tooltip } from "../ui/tooltip";
 import { useShortcutKeys } from "../hooks/useShortcutBindings";
 import { matchesShortcut } from "../lib/shortcuts";
 import * as stylex from "@stylexjs/stylex";
-import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({

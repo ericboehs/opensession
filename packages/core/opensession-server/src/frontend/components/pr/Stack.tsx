@@ -5,7 +5,7 @@ import { Badge } from "../../ui/badge";
 import { Button } from "../../ui/button";
 import { toast } from "../../ui/toast";
 import * as stylex from "@stylexjs/stylex";
-import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
+import { mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({

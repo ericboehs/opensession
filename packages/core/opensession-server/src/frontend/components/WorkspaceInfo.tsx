@@ -32,7 +32,7 @@ import { personNameForKey, usePeople, useReviewTeams } from "../lib/people";
 import { UserAvatar } from "./UserAvatar";
 import { Menu } from "../ui/menu";
 import { Popover } from "../ui/popover";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 import type {
 	DiffFile,
 	GitStatusInfo,
@@ -595,7 +595,7 @@ const sx = stylex.create({
 		}
 	},
 	backdropBlurSm: {
-		"--tw-backdrop-blur": "blur(var(--blur-sm))",
+		"--tw-backdrop-blur": "blur(4px)",
 		"WebkitBackdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)",
 		"backdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
 	},

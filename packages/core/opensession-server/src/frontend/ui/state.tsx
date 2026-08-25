@@ -1,6 +1,6 @@
 import * as React from "react";
 import { IconX } from "../components/icons";
-import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "./cn";
 import { PageLoader } from "./page-loader";
 import { Spinner } from "./spinner";
 import * as stylex from "@stylexjs/stylex";

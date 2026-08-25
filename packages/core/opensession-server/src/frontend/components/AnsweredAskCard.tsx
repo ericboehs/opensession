@@ -9,7 +9,7 @@ import { IconCheck } from "./icons";
 import { useMarkdownRepo } from "./MarkdownBody";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -119,7 +119,7 @@ const sx = stylex.create({
 		cornerShape: "var(--cs)"},
 	px25: { paddingInline: "10px" },
 	py2: { paddingBlock: "8px" },
-	bgControl: { backgroundColor: "var(--bg-control)" },
+	bgControl: { backgroundColor: "var(--control-surface)" },
 	block: { display: "block" },
 	fontMedium: { fontWeight: "var(--font-weight-medium)" },
 	textFg: { color: "var(--text)" },

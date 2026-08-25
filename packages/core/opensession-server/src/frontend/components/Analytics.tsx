@@ -10,7 +10,7 @@ import { Segmented, SegmentedOption } from "../ui/segmented";
 import { DateRangeField } from "../ui/date-picker";
 import { PageTitle } from "../ui/page-header";
 import { TopBar, TopBarActions, TopBarTitle } from "../ui/top-bar";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 import {
 	DETAIL_TOPBAR_TITLE_TEXT,
 	SCROLL_EDGE_DIVIDER,

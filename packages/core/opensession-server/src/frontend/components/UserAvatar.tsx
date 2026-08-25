@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */

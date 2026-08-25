@@ -2,7 +2,7 @@ import { Toggle } from "@base-ui/react/toggle";
 import { ToggleGroup } from "@base-ui/react/toggle-group";
 import { motion } from "motion/react";
 import * as React from "react";
-import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "./cn";
 import { duration, ease } from "./motion";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";

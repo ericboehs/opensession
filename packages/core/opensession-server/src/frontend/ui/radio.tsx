@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Radio as BaseRadio } from "@base-ui/react/radio";
 import { RadioGroup as BaseRadioGroup } from "@base-ui/react/radio-group";
-import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "./cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */

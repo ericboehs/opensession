@@ -22,7 +22,7 @@ import {
 	type RangeSpan,
 } from "../lib/date-grid";
 import { Button } from "./button";
-import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "./cn";
 import { Popover } from "./popover";
 import { Segmented, SegmentedKnob, SegmentedOption } from "./segmented";
 import * as stylex from "@stylexjs/stylex";

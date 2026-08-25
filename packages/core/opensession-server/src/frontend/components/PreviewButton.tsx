@@ -11,7 +11,7 @@ import { BASE_PATH } from "../lib/base";
 import { withPreviewPath } from "../lib/preview-url";
 import { Tooltip } from "../ui/tooltip";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 import { CopyCheck, useCopy } from "../ui/copy";
 import { Menu, MENU_ICON } from "../ui/menu";
 import { Popover } from "../ui/popover";

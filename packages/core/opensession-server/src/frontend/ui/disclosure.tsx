@@ -1,6 +1,6 @@
 import * as React from "react";
 import { IconChevronRight } from "../components/icons";
-import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "./cn";
 import { Collapsible, collapsiblePanelClasses } from "./collapsible";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";

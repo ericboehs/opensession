@@ -2,7 +2,7 @@ import { BASE_PATH } from "../lib/base";
 import React from "react";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 import { CopyCheck, useCopy } from "../ui/copy";
 import { fieldClasses } from "../ui/input";
 import { IconCopy } from "./icons";

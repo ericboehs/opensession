@@ -9,7 +9,7 @@ import {
   fileChipSub,
   fileChipThumb,
 } from "../lib/composer-classes";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 import { motionStyles } from "../styles/animations.stylex";
 

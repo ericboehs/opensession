@@ -7,7 +7,7 @@ import { PANEL_BODY } from "../lib/session-panel-classes";
 import { Badge } from "../ui/badge";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 
 const pulse = stylex.keyframes({
   "0%, 100%": { opacity: 1 },

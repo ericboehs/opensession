@@ -2,7 +2,7 @@ import React from "react";
 import type { UnifiedSession } from "../lib/types";
 import { PRODUCT_NAME } from "../lib/brand";
 import { usePeople, type Person } from "../lib/people";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 import { Menu } from "../ui/menu";
 import { IconChevronDown } from "./icons";
 import { UserAvatar } from "./UserAvatar";

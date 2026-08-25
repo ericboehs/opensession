@@ -5,7 +5,7 @@ import { dismissToast, toast } from "../ui/toast";
 import { fetchHealthStatus } from "../lib/health";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 
 const spin = stylex.keyframes({ to: { transform: "rotate(360deg)" } });
 

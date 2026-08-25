@@ -87,7 +87,7 @@ import {
   palettePill,
 } from "../lib/palette-classes";
 import { askSurface, noteSurface } from "../lib/tinted-surface";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 import { Tooltip } from "../ui/tooltip";
 import { ContextMenu, Menu, MenuShortcut, MENU_ICON } from "../ui/menu";
 import { Button } from "../ui/button";

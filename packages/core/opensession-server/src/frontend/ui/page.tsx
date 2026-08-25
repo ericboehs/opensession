@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "./cn";
 import { PageDescription, PageHeader, PageTitle } from "./page-header";
 import * as stylex from "@stylexjs/stylex";
 

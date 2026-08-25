@@ -3,7 +3,7 @@ import type { WorkflowRunSnapshot } from "../../server/workflow-types";
 import type { SessionSubagentSnapshot } from "../lib/api";
 import { currentPlanItem, planDoneCount, type PlanItem } from "@tellahq/opensession-protocol/todo-plan";
 import { composerFlapBorder } from "../lib/composer-classes";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 import { IconChevronDown, IconChevronRight } from "./icons";
 import { PlanChecklist } from "./PlanChecklist";
 import * as stylex from "@stylexjs/stylex";

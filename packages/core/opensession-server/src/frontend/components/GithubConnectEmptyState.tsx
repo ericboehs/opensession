@@ -1,5 +1,5 @@
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 import { EmptyState } from "../ui/state";
 import { BrandMark } from "./BrandTile";
 import * as stylex from "@stylexjs/stylex";

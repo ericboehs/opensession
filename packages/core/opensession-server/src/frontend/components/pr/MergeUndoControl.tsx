@@ -1,6 +1,6 @@
 import { UNDO_SHORTCUT_KEYS } from "../../lib/undo";
 import { Button } from "../../ui/button";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
 import { Tooltip } from "../../ui/tooltip";
 import { IconUndo } from "../icons";
 import * as stylex from "@stylexjs/stylex";

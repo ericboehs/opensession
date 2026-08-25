@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Popover as BasePopover } from "@base-ui/react/popover";
-import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "./cn";
 import { FLOATING_OVERLAY_LAYER } from "./popup-classes";
 import {
 	useExclusivePopup,

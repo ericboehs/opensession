@@ -31,7 +31,7 @@ import { MotionConfig } from "motion/react";
 import { MarkdownRepoProvider } from "./components/MarkdownBody";
 import { Sidebar, type SidebarHandle } from "./components/Sidebar";
 import { Tooltip, TooltipProvider } from "./ui/tooltip";
-import { cn, mergeStylexProps , mergeStylexClassName} from "./ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "./ui/cn";
 import {
 	APP_BODY,
 	DETAIL_PANE,

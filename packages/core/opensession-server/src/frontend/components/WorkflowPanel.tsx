@@ -6,7 +6,7 @@ import type {
 	WorkflowRunSnapshot,
 } from "../../server/workflow-types";
 import type { SessionSubagentSnapshot } from "../lib/api";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 import { Button } from "../ui/button";
 import { CardList } from "../ui/card";
 import { EmptyState } from "../ui/state";

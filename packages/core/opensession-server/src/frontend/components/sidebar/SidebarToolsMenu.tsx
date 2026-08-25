@@ -7,7 +7,7 @@ import {
 	type SupportSurface,
 } from "../../lib/support-surface";
 import { ContextMenu, Menu, MENU_ICON } from "../../ui/menu";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
 import { IconDotsHorizontal, IconSliders } from "../icons";
 import * as stylex from "@stylexjs/stylex";
 

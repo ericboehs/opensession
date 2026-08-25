@@ -12,7 +12,7 @@ import { currentPlanItem, parsePlanItems, planDoneCount } from "@tellahq/openses
 import { PlanChecklist } from "./PlanChecklist";
 import { resolveEntryImageSrc } from "../lib/osBlob";
 import { BASE_PATH } from "../lib/base";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 import {
   TOOL_CODE_WELL,
   TOOL_PRE,

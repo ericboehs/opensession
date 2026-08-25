@@ -28,7 +28,7 @@ import {
 	SettingsHint,
 	rowMenuTriggerClasses,
 } from "../../ui/settings";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
 import { toast } from "../../ui/toast";
 import { BrandMark, IconTile } from "../BrandTile";
 import {

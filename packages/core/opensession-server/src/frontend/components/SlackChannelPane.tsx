@@ -1,7 +1,7 @@
 import { BASE_PATH } from "../lib/base";
 import React, { useEffect, useRef, useState } from "react";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 import {
 	composerBox,
 	composerBoxExpanded,

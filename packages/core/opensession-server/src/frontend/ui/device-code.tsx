@@ -1,5 +1,5 @@
 import { IconCopy } from "../components/icons";
-import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "./cn";
 import { CopyCheck, useCopy } from "./copy";
 import { Tooltip } from "./tooltip";
 import * as stylex from "@stylexjs/stylex";

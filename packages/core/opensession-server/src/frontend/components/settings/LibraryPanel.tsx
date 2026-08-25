@@ -44,7 +44,7 @@ import {
 	SettingsPanel,
 } from "../../ui/settings";
 import { Input } from "../../ui/input";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
 import { Badge } from "../../ui/badge";
 import { Segmented, SegmentedOption } from "../../ui/segmented";
 import { EmptyState, InlineAlert, Skeleton, SkeletonBar } from "../../ui/state";
@@ -208,7 +208,7 @@ const sx = stylex.create({
 		borderStyle: "solid",
 		borderWidth: "1px",
 		borderColor: "var(--border)",
-		backgroundColor: "var(--button)",
+		backgroundColor: "var(--button-surface)",
 		paddingInline: "10px",
 		fontWeight: "var(--font-weight-medium)",
 		color: "var(--text-dim)",

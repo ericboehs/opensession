@@ -10,7 +10,7 @@ import { useIsPhone } from "../../hooks/useIsPhone";
 import { refreshPeople } from "../../lib/people";
 import { isTouchPrimary } from "../../lib/platform";
 import { Button } from "../../ui/button";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
 import { Field, FieldGrid, Input } from "../../ui/input";
 import { OverlayAction } from "../../ui/overlay-action";
 import { SettingsForm, SettingsGroupLabel } from "../../ui/settings";

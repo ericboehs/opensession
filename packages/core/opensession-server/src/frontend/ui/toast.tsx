@@ -33,7 +33,7 @@ import {
 } from "../lib/undo";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps , mergeStylexClassName} from "./cn";
+import { mergeStylexProps, mergeStylexClassName } from "./cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({

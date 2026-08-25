@@ -8,7 +8,7 @@ import type { PrTone } from "../../lib/pr-refs";
 import { stackLayersTopFirst } from "../../lib/pr-stack";
 import { prPath } from "../../lib/share-link";
 import type { PrDetails, PrStackLayer } from "../../lib/types";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
 import { Popover } from "../../ui/popover";
 import { IconArrowUpRight, IconStack } from "../icons";
 import { StackNode, StackRail } from "./StackRail";

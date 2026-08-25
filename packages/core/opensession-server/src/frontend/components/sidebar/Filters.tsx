@@ -30,7 +30,7 @@ import {
 	ValueRow,
 } from "../../ui/setting-row";
 import { SwitchIndicator } from "../../ui/switch";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
 import { RepoTile, repoLabel } from "../RepoTile";
 import { IconChevronRight, IconRepo } from "../icons";
 import {

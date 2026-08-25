@@ -106,8 +106,8 @@ const sx = stylex.create({
 		"fontWeight": "var(--font-weight-medium)"
 	},
 	trackingNormal: {
-		"--tw-tracking": "var(--tracking-normal)",
-		"letterSpacing": "var(--tracking-normal)"
+		"--tw-tracking": "0",
+		"letterSpacing": "0"
 	},
 
 	mb45: {

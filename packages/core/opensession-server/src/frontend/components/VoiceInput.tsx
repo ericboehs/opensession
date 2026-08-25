@@ -5,7 +5,7 @@ import { transcribeClip } from "../lib/api";
 import { IconArrowUp, IconCheck, IconMic, IconPlus, IconX } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { PRODUCT_NAME } from "../lib/brand";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 import { duration, ease } from "../ui/motion";
 import { paletteIconBtn } from "../lib/palette-classes";
 import { composerSend, composerSendDefault } from "../lib/composer-classes";

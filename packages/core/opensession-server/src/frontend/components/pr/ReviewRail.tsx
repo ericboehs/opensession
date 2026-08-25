@@ -17,7 +17,7 @@ import { CommitIcon } from "./PrViews";
 import { FileRow, ReviewerRow } from "./PrRows";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
+import { mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
 import { motionStyles } from "../../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */

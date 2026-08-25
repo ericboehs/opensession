@@ -301,7 +301,7 @@ import {
 	TopBarLeading,
 	TopBarTitle,
 } from "../ui/top-bar";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 import {
 	composerMenuIcon,
 	composerMenuItem,

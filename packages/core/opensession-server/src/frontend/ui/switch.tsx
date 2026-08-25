@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Switch as BaseSwitch } from "@base-ui/react/switch";
-import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "./cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */

@@ -127,13 +127,13 @@ const sx = stylex.create({
 	},
 
 	bgGreen500: {
-		"backgroundColor": "var(--color-green-500)"
+		"backgroundColor": "var(--green)"
 	},
 	animatePulse: {
 		"animation": "var(--animate-pulse)"
 	},
 	bgAmber400: {
-		"backgroundColor": "var(--color-amber-400)"
+		"backgroundColor": "var(--yellow)"
 	},
 });
 

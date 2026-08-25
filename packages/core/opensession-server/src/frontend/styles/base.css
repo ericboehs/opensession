@@ -409,6 +409,9 @@
 	--animate-spin: spin 1s linear infinite;
 	--animate-pulse: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 	--smooth-shadow-color: black;
+	--tw-gradient-from-position: 0%;
+	--tw-gradient-via-position: 50%;
+	--tw-gradient-to-position: 100%;
 	/* The web keeps desktop's compact metrics, while a phone promotes every role
 	   one rung. These are real custom properties, rather than values written
 	   directly into Tailwind's @theme block, so the same utility can follow the
@@ -2019,7 +2022,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	margin: 8px 0;
 	border: 1px solid var(--border);
 	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
-	background: var(--bg-surface);
+	background: var(--bg);
 	overflow: hidden;
 }
 .markdown .md-details > summary {

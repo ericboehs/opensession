@@ -18,7 +18,7 @@ import { mineStatus } from "../../lib/sidebar-lanes";
 import { MINE_STATUS_META, type Group, type LaneChoice } from "../../lib/sidebar-types";
 import { shortTime } from "../../lib/time";
 import type { FeedDescriptor, FeedFilterSpec, FeedItem, SupportThread, UnifiedSession } from "../../lib/types";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
 import { Menu } from "../../ui/menu";
 import { Popover } from "../../ui/popover";
 import { Tooltip } from "../../ui/tooltip";

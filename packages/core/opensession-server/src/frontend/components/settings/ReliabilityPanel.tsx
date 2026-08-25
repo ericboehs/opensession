@@ -14,7 +14,7 @@ import {
 import { EmptyState, InlineAlert } from "../../ui/state";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
+import { mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({

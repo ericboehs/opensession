@@ -18,7 +18,7 @@ import { AGENT_NAME, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 import { Segmented, SegmentedOption } from "../ui/segmented";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 import { Menu } from "../ui/menu";
 import { Modal } from "../ui/modal";
 import { CheckStatusIcon } from "./CheckStatusIcon";

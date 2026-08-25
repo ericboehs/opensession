@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Menu } from "../ui/menu";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 import { isApple } from "../lib/platform";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";

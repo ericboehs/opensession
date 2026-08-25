@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { WS_SUMMARY_REVIEW_BAR_CLEARANCE } from "../../lib/workspace-summary-classes";
 import * as stylex from "@stylexjs/stylex";
-import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
+import { mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({

@@ -15,7 +15,7 @@ import {
   composerMenuWidth,
 } from "../lib/composer-classes";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 
@@ -419,7 +419,7 @@ const caretButton =
 	mergeStylexClassName("", sx.relative, sx.inlineFlex, sx.w30px, sx.itemsCenter, sx.justifyCenter, sx.roundedRLg, sx.bgAccent, sx.textOnAccent, sx.transitionBackgroundColor, sx.beforeAbsolute, sx.beforeTop12, sx.beforeLeft0, sx.beforeH4, sx.beforeWPx, sx.beforeTranslateY12, sx.beforeBgWhite45, sx.beforeContent, sx.enabledHoverBgAccentHover, sx.disabledCursorDefault, sx.disabledOpacity35);
 
 /** Date / time field in the custom-time dialog. `bg-transparent` is deliberate:
- *  the stylesheet asked for `var(--bg-surface)`, a token that has never been
+ *  the stylesheet asked for `var(--bg)`, a token that has never been
  *  defined, so the declaration was invalid at computed-value time and the fill
  *  fell back to `transparent` — these fields have always shown the dialog's own
  *  surface. Without it they would pick up the UA's opaque field colour. */
