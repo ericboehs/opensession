@@ -19,7 +19,7 @@ import {
   sessionKernelServiceUrl,
   startSessionKernelService,
 } from "./actor-service";
-import { sessionKernelSessionDbPath } from "./store";
+import { SessionKernelStore, sessionKernelSessionDbPath } from "./store";
 
 const token = "test-session-kernel-token";
 const stateDir = mkdtempSync(join(tmpdir(), "opensession-kernel-service-"));
@@ -30,10 +30,23 @@ const previousDatabasePath = process.env.OPENSESSION_SESSION_KERNEL_DB_PATH;
 
 beforeAll(async () => {
   process.env.OPENSESSION_STATE_DIR = stateDir;
+  const databasePath = join(stateDir, "sessions", "session-kernel.sqlite");
+  const legacy = new SessionKernelStore(databasePath);
+  legacy.setRunState({
+    sessionId: "legacy-service-session",
+    state: "idle",
+    event: "legacy-seed",
+  });
+  legacy.close();
+  // The fixture writer runs in this same test PID but is not the supervised
+  // service incarnation. Retire only its owner claim before starting Workers.
+  const fixture = new Database(databasePath);
+  fixture.run("DELETE FROM session_kernel_owner");
+  fixture.close();
   service = await startSessionKernelService({
     port: 0,
     token,
-    databasePath: join(stateDir, "sessions", "session-kernel.sqlite"),
+    databasePath,
   });
 });
 
@@ -213,6 +226,52 @@ describe("session kernel actor service", () => {
       t: "error",
       error: "Invalid kernel actor response bound",
     });
+  });
+
+  test("fences and lazily migrates a legacy session before its mutation", async () => {
+    const migrated = await rpc({
+      t: "call",
+      rpcId: "migrate-legacy-session",
+      outputBytes: 256 * 1024,
+      request: {
+        t: "store",
+        method: "setRunState",
+        args: [{
+          sessionId: "legacy-service-session",
+          state: "running",
+          event: "isolated-mutation",
+          currentRunId: "isolated-run",
+        }],
+      },
+    });
+    expect(migrated).toMatchObject({ t: "call_result", status: 1 });
+
+    const databasePath = join(stateDir, "sessions", "session-kernel.sqlite");
+    const central = new Database(databasePath, { readonly: true });
+    expect(central.query(`
+      SELECT placement FROM session_kernel_placements WHERE session_id = ?
+    `).get("legacy-service-session")).toEqual({ placement: "isolated" });
+    expect(central.query(`
+      SELECT run_state, current_run_id FROM session_kernel_state WHERE session_id = ?
+    `).get("legacy-service-session")).toEqual({
+      run_state: "idle",
+      current_run_id: null,
+    });
+    central.close();
+
+    const targetPath = sessionKernelSessionDbPath(
+      "legacy-service-session",
+      join(stateDir, "sessions", "session-kernel-sessions"),
+    );
+    expect(existsSync(targetPath)).toBe(true);
+    const target = new Database(targetPath, { readonly: true });
+    expect(target.query(`
+      SELECT run_state, current_run_id FROM session_kernel_state WHERE session_id = ?
+    `).get("legacy-service-session")).toEqual({
+      run_state: "running",
+      current_run_id: "isolated-run",
+    });
+    target.close();
   });
 
   test("a locked session database does not block another session mailbox", async () => {

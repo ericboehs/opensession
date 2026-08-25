@@ -130,10 +130,10 @@ export async function startSessionKernelService(
     "session-kernel-worker.js",
     new URL("../../session-kernel-worker.ts", import.meta.url).href,
   );
-  // Slot zero is reserved for catalog/global compatibility work. Remaining
-  // slots are the bounded session execution pool.
+  // Slot zero is reserved for catalog/global compatibility work and slot one
+  // for bounded migration I/O. Remaining slots are the session execution pool.
   const slots: WorkerSlot[] = Array.from(
-    { length: configuredWorkers + 1 },
+    { length: configuredWorkers + 2 },
     (_, index) => ({
       index,
       generation: 0,
@@ -142,7 +142,8 @@ export async function startSessionKernelService(
       restarting: false,
     }),
   );
-  const sessionSlots = slots.slice(1);
+  const migrationSlot = slots[1]!;
+  const sessionSlots = slots.slice(2);
   const sessionMailboxes = new Map<string, Promise<void>>();
   let globalGate = Promise.resolve();
   const serviceEpoch = crypto.randomUUID();
@@ -229,7 +230,12 @@ export async function startSessionKernelService(
   async function startSlot(slot: WorkerSlot): Promise<void> {
     slot.generation += 1;
     const generation = slot.generation;
-    const worker = new Worker(workerUrl, { type: "module" });
+    const scopedWorkerUrl = new URL(String(workerUrl), import.meta.url);
+    scopedWorkerUrl.searchParams.set(
+      "opensessionKernelLane",
+      slot.index === 0 ? "catalog" : slot.index === 1 ? "migration" : "session",
+    );
+    const worker = new Worker(scopedWorkerUrl, { type: "module" });
     slot.worker = worker;
     slot.ready = false;
     worker.addEventListener(
@@ -304,7 +310,10 @@ export async function startSessionKernelService(
   async function resolveSessionPlacement(
     sessionId: string,
     mutation: boolean,
-  ): Promise<"legacy" | "isolated"> {
+  ): Promise<{
+    placement: "legacy" | "isolated";
+    migrationPending: boolean;
+  }> {
     const response = await sendToSlot(slots[0], {
       t: "route",
       rpcId: crypto.randomUUID(),
@@ -313,7 +322,7 @@ export async function startSessionKernelService(
     });
     if (response.t !== "route_result")
       throw new Error(`Session ${sessionId} route could not be resolved`);
-    return response.placement;
+    return response;
   }
 
   function enqueueSession(
@@ -327,8 +336,27 @@ export async function startSessionKernelService(
       .catch(() => {})
       .then(() => gate)
       .then(async () => {
-        const placement = await resolveSessionPlacement(sessionId, mutation);
-        const slot = placement === "isolated"
+        const route = await resolveSessionPlacement(sessionId, mutation);
+        if (route.migrationPending) {
+          const migrated = await sendToSlot(migrationSlot, {
+            t: "migrate",
+            rpcId: crypto.randomUUID(),
+            sessionId,
+          });
+          if (migrated.t !== "migration_result" || migrated.placement !== "isolated")
+            throw new Error(`Session ${sessionId} migration did not complete`);
+          const slot = assignedSessionSlot(sessionId);
+          const activated = await sendToSlot(slot, {
+            t: "activate",
+            rpcId: crypto.randomUUID(),
+            sessionId,
+            recoverInterruptedCommands: false,
+          });
+          if (activated.t !== "activation_result" || activated.sessionId !== sessionId)
+            throw new Error(`Session ${sessionId} activation did not complete`);
+          return sendToSlot(slot, request);
+        }
+        const slot = route.placement === "isolated"
           ? assignedSessionSlot(sessionId)
           : slots[0];
         return sendToSlot(slot, request);
@@ -398,7 +426,8 @@ export async function startSessionKernelService(
     maxRequestBodySize: SESSION_KERNEL_MAX_REQUEST_BYTES,
     async fetch(request) {
       const url = new URL(request.url);
-      const ready = !serviceError && slots[0].ready && sessionSlots.some((slot) => slot.ready);
+      const ready = !serviceError && slots[0].ready && migrationSlot.ready &&
+        sessionSlots.some((slot) => slot.ready);
       if (request.method === "GET" && url.pathname === "/live")
         return json({ live: !serviceError, version: SESSION_KERNEL_TRANSPORT_VERSION }, { status: serviceError ? 503 : 200 });
       if (request.method === "GET" && url.pathname === "/ready")

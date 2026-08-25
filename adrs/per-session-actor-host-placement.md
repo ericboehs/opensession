@@ -4,21 +4,23 @@ Status: Accepted for incremental implementation
 
 ## Context
 
-Schema 21 made `SessionKernel` the single logical owner of lifecycle state but hosted every session in one Worker and one SQLite database. Schema 22 introduced a durable placement catalog and routes a newly mutated session with no legacy rows to its own database. This ADR defines the final placement model and the crash-safe path from that bridge.
+Schema 21 made `SessionKernel` the single logical owner of lifecycle state but hosted every session in one Worker and one SQLite database. Schema 22 introduced a durable placement catalog and routed a newly mutated session with no legacy rows to its own database. Schema 23 implements fenced lazy migration for existing sessions, durable route epochs and database identities, and retained-evidence-safe global scans. This ADR defines the final placement model and the cleanup path from that bridge.
 
 The non-negotiable boundary is one logical actor, serial mailbox, and authoritative SQLite database per session. Logical actors are not operating-system processes. A separately supervised actor-host service runs a bounded pool of Worker isolates, activates actors lazily, and passivates idle actors. Network, model, sandbox, filesystem, and process work stays in gateway/executor processes and returns only fenced receipts.
 
 ## Existing durable surface
 
-Schema 22 creates these tables in every `SessionKernelStore` because the same store implementation serves legacy and isolated databases:
+Schemas 22 and 23 create these tables in every `SessionKernelStore` because the same store implementation serves legacy and isolated databases. Catalog tables remain empty in session databases and are temporary physical compatibility tables, not authorities:
 
 | Table | Ownership after placement | Purpose |
 | --- | --- | --- |
 | `session_kernel_owner` | system and session DB | Single-writer process/incarnation claim. |
 | `session_kernel_migrations` | temporary compatibility in both | One-time schema/import markers. Session copies must not use this as routing authority. |
 | `session_kernel_tombstones` | session DB | Permanent deletion fence. Legacy copies remain evidence until cleanup. |
-| `session_kernel_quarantine` | session DB; system DB only for storage/migration quarantine | Fail-closed ambiguous settlement and infrastructure quarantine. |
-| `session_kernel_placements` | system DB only | Durable route, conservative dirty wake bit, and derived next timer/outbox wake. |
+| `session_kernel_quarantine` | session DB; system DB only for scoped storage/migration quarantine | Fail-closed ambiguous settlement and infrastructure quarantine. The scope keeps retained session evidence from acting as a catalog fence. |
+| `session_kernel_placements` | system DB only | Durable route epoch, conservative dirty wake bit, and derived next timer/outbox wake. |
+| `session_kernel_session_migrations` | system DB only | Per-session copy, publish, cutover, verification, and quarantine recovery state. |
+| `session_kernel_database_identity` | session DB only | Binds the physical database to its canonical session and catalog route epoch. |
 | `session_kernel_outbox_routes` | system DB only, temporary | Globally unique numeric outbox ID to session route while numeric IDs remain in the wire protocol. Remove after effect receipts use session-scoped/string identity. |
 | `session_kernel_state` | session DB | Run state, run ID, generation, and change sequence. |
 | `session_kernel_creation` | session DB | Creation state machine, setup/opening plan, and bounded effect receipts. |
@@ -53,7 +55,7 @@ The typed effect union is session-owned: `human_ask_deliver`, `delivery_interrup
 
 ### Actor host and bounded pool
 
-The independently supervised actor-host service owns a bounded set of Worker isolates. The service router owns a mailbox per canonical session ID. It never dispatches two turns for one session concurrently. Each logical actor has stable affinity to one Worker lane while many actors share every lane; the database connection itself activates lazily and passivates under an LRU bound. Stable affinity keeps process-local reducer caches coherent without creating a Worker or process per session. A short isolated SQLite busy bound prevents one wait from indefinitely occupying its lane, while unrelated lanes continue.
+The independently supervised actor-host service owns a bounded set of Worker isolates: one catalog lane, one migration lane, and the configured bounded session pool. The service router owns a mailbox per canonical session ID. It never dispatches two turns for one session concurrently. Each logical actor has stable affinity to one Worker lane while many actors share every lane; the database connection itself activates lazily and passivates under an LRU bound. Stable affinity keeps process-local reducer caches coherent without creating a Worker or process per session. A short isolated SQLite busy bound prevents one wait from indefinitely occupying its lane, while unrelated lanes continue.
 
 Activation opens only the routed session database and validates its writer/route epoch. Passivation closes the connection after an idle deadline or under an LRU bound. A Worker crash rejects only its current turn as retryable/ambiguous according to the durable request journal, replaces that Worker, and leaves the actor-host service and other mailboxes alive. A critical settlement whose commit cannot be proven quarantines that session. A system-catalog ambiguity fail-stops the service.
 
@@ -73,7 +75,7 @@ Before an isolated mutation the router commits `needs_scan = 1`. The actor then 
 
 ### Lazy legacy migration
 
-Migration is per session and never pauses unrelated admission:
+Schema 23 runs migration on the first mutating request for a legacy session. The service retains that session's mailbox fence while a dedicated bounded migration lane performs publication, then activates the target on the session's stable execution lane without treating migration as an actor restart. Reads remain on legacy authority until that trigger. Migration is per session and never pauses unrelated admission:
 
 1. **Fence:** serialize behind that session mailbox, write migration state `copying` with source schema, target path, route epoch candidate, and source evidence identity. New admissions for only that session wait.
 2. **Snapshot:** checkpoint/read the legacy database under the existing writer, copy every row for the session from all session-owned tables into a new temporary session DB. Preserve numeric outbox IDs, command receipts, generations, tombstones, timers, attempts, execution tokens, quarantine, and change sequences.
@@ -105,10 +107,11 @@ No migration writes both authorities. Copying writes an unpublished target while
 ## Compatibility and removal gates
 
 - Central session tables remain only while at least one placement is legacy or migration evidence retention has not elapsed.
+- Empty catalog, placement, and per-session migration tables in isolated databases remain only while system and session stores share one schema constructor. Split schema bootstrapping before the central session tables are removed.
 - `session_kernel_outbox_routes` remains until all consumers settle effects by `(session_id, effect_id)` rather than a global integer.
 - Global ask/delivery import markers remain until legacy JSON import support is removed.
 - The central WAL read mirror remains valid only for legacy compatibility reads. Routed reads for isolated sessions always enter the actor host.
-- Global fan-out methods (`stats`, dead letters, migration imports, maintenance, wake work) must become catalog enumeration plus per-session mailbox requests before central session tables are dropped.
+- Global fan-out methods (`stats`, dead letters, migration imports, maintenance, wake work) exclude placed central evidence and include routed session stores. They must become catalog enumeration plus per-session mailbox requests before central session tables are dropped.
 - Cleanup requires zero legacy routes, zero non-verified migrations, successful wake-index rebuild, verified backups, and a release gate that no older actor/schema can start.
 
 ## Consequences

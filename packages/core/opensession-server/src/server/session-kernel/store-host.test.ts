@@ -1,5 +1,12 @@
+import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionKernelStoreHost } from "./store-host";
@@ -111,6 +118,250 @@ describe("per-session session kernel storage", () => {
     host.close();
   });
 
+  test("migrates a legacy session without dual writes or duplicate wake work", () => {
+    const path = paths();
+    const seed = new SessionKernelStore(path.central);
+    seed.setRunState({
+      sessionId: "migrated-session",
+      state: "running",
+      event: "legacy",
+      currentRunId: "legacy-run",
+    });
+    seed.setAskRecord("migrated-session", {
+      questionId: "question-one",
+      text: "Keep this receipt",
+    });
+    seed.setDeliverySlot("migrated-session", "queued", [{ id: "prompt-one" }]);
+    seed.scheduleTimer({
+      sessionId: "migrated-session",
+      timerId: "timer-one",
+      kind: "known_timer",
+      dueAt: Date.now() - 1,
+      payload: { stable: true },
+    });
+    const outboxId = seed.enqueueOutbox(
+      "migrated-session",
+      "known_effect",
+      { stable: true },
+      "legacy-effect",
+    );
+    const fixture = new Database(path.central);
+    const now = Date.now();
+    fixture.run(`
+      INSERT INTO session_kernel_creation
+        (session_id, identity, state, generation, completed_effects, change_seq, updated_at)
+      VALUES (?, ?, 'planned', 1, '[]', 1, ?)
+    `, ["migrated-session", "creation-one", now]);
+    fixture.run(`
+      INSERT INTO session_kernel_turn (session_id, revision, cancel, updated_at)
+      VALUES (?, 1, NULL, ?)
+    `, ["migrated-session", now]);
+    fixture.run(`
+      INSERT INTO session_kernel_turn_projections
+        (session_id, projection_id, generation, phase, payload, updated_at)
+      VALUES (?, 'projection-one', 1, 'prepared', '{}', ?)
+    `, ["migrated-session", now]);
+    fixture.run(`
+      INSERT INTO session_kernel_commands
+        (session_id, request_id, type, payload, payload_hash, status,
+         replay_safe, result, result_hash, result_released, terminal_failure,
+         created_at, updated_at)
+      VALUES (?, 'request-one', 'fixture', '{}', 'payload-hash', 'completed',
+              1, '{}', 'result-hash', 0, 0, ?, ?)
+    `, ["migrated-session", now, now]);
+    fixture.close();
+    const source = seed.sessionSnapshotDigest("migrated-session");
+    for (const table of [
+      "session_kernel_state",
+      "session_kernel_creation",
+      "session_kernel_asks",
+      "session_kernel_delivery",
+      "session_kernel_turn",
+      "session_kernel_turn_projections",
+      "session_kernel_commands",
+      "session_kernel_changes",
+      "session_kernel_timers",
+      "session_kernel_outbox",
+    ]) expect(source.tables[table]?.count).toBeGreaterThan(0);
+    seed.close();
+
+    const host = new SessionKernelStoreHost(path.central, path.isolated);
+    expect(host.routeSession("migrated-session", true)).toBe("legacy");
+    expect(host.sessionMigrationPending("migrated-session", true)).toBe(true);
+    expect(host.migrateLegacySession("migrated-session")).toBe("isolated");
+    expect(host.central.sessionPlacement("migrated-session")).toMatchObject({
+      placement: "isolated",
+      needsScan: true,
+    });
+    expect(host.central.sessionMigration("migrated-session")).toMatchObject({
+      phase: "verified",
+      sourceDigest: source.digest,
+      targetDigest: source.digest,
+    });
+    const target = host.storeForSession("migrated-session");
+    expect(target.sessionSnapshotDigest("migrated-session")).toEqual(source);
+    expect(host.central.sessionSnapshotDigest("migrated-session")).toEqual(source);
+
+    const work = host.runtimeWork(
+      Date.now(),
+      ["known_timer"],
+      ["known_effect"],
+      10,
+    );
+    expect(work.timers).toHaveLength(1);
+    expect(work.outbox).toHaveLength(1);
+    expect(work.outbox[0]?.id).toBe(outboxId);
+
+    host.call("setRunState", [{
+      sessionId: "migrated-session",
+      state: "stopped",
+      event: "isolated-only",
+    }]);
+    expect(host.central.runState("migrated-session")).toMatchObject({
+      state: "running",
+      currentRunId: "legacy-run",
+    });
+    expect(target.runState("migrated-session").state).toBe("stopped");
+
+    host.call("ackOutbox", [outboxId]);
+    expect(target.outboxSessionId(outboxId)).toBeUndefined();
+    expect(host.central.outboxSessionId(outboxId)).toBe("migrated-session");
+    expect(host.central.isolatedOutboxSessionId(outboxId)).toBe("migrated-session");
+    host.close();
+
+    const recovered = new SessionKernelStoreHost(path.central, path.isolated);
+    expect(recovered.routeSession("migrated-session", true)).toBe("isolated");
+    expect(recovered.central.sessionSnapshotDigest("migrated-session")).toEqual(source);
+    expect(recovered.storeForSession("migrated-session").runState("migrated-session").state)
+      .toBe("stopped");
+    recovered.close();
+  });
+
+  test("preserves tombstone-only and quarantine-only legacy evidence", () => {
+    const path = paths();
+    const seed = new SessionKernelStore(path.central);
+    seed.tombstoneSession("legacy-tombstone");
+    seed.quarantineSession(
+      "legacy-quarantine",
+      "ambiguous settlement",
+      "gateway:complete",
+    );
+    const tombstoneSource = seed.sessionSnapshotDigest("legacy-tombstone");
+    const quarantineSource = seed.sessionSnapshotDigest("legacy-quarantine");
+    seed.close();
+
+    const host = new SessionKernelStoreHost(path.central, path.isolated);
+    expect(host.migrateLegacySession("legacy-tombstone")).toBe("isolated");
+    expect(host.migrateLegacySession("legacy-quarantine")).toBe("isolated");
+    expect(host.storeForSession("legacy-tombstone").sessionSnapshotDigest(
+      "legacy-tombstone",
+    )).toEqual(tombstoneSource);
+    expect(host.storeForSession("legacy-quarantine").sessionSnapshotDigest(
+      "legacy-quarantine",
+    )).toEqual(quarantineSource);
+    expect(host.central.sessionSnapshotDigest("legacy-tombstone"))
+      .toEqual(tombstoneSource);
+    expect(host.central.sessionSnapshotDigest("legacy-quarantine"))
+      .toEqual(quarantineSource);
+    expect(host.storeForSession("legacy-tombstone").isTombstoned(
+      "legacy-tombstone",
+    )).toBe(true);
+    expect(host.quarantinedSession("legacy-quarantine")).toMatchObject({
+      reason: "ambiguous settlement",
+      scope: "session",
+    });
+    host.close();
+  });
+
+  test("recovers migration after publish and cutover crash points", () => {
+    const path = paths();
+    const seed = new SessionKernelStore(path.central);
+    for (const sessionId of ["publish-crash", "cutover-crash"]) {
+      seed.setRunState({
+        sessionId,
+        state: "running",
+        event: "legacy",
+        currentRunId: `${sessionId}-run`,
+      });
+      seed.scheduleTimer({
+        sessionId,
+        timerId: "wake",
+        kind: "known_timer",
+        dueAt: Date.now() - 1,
+        payload: null,
+      });
+    }
+    seed.close();
+
+    const preparePublishedFile = (
+      host: SessionKernelStoreHost,
+      sessionId: string,
+    ) => {
+      const targetPath = sessionKernelSessionDbPath(sessionId, path.isolated);
+      const migration = host.central.beginSessionMigration(sessionId, targetPath);
+      const source = host.central.sessionSnapshotDigest(sessionId);
+      const temporaryPath = `${targetPath}.migrating-${migration.routeEpoch}`;
+      const target = new SessionKernelStore(temporaryPath, {
+        recoverInterruptedCommands: false,
+      });
+      expect(target.importSessionSnapshotFrom(
+        path.central,
+        sessionId,
+        migration.routeEpoch,
+        source.digest,
+      )).toEqual(source);
+      target.checkpointForPublish();
+      target.close();
+      renameSync(temporaryPath, targetPath);
+      return { migration, source, targetPath };
+    };
+
+    const beforePublish = new SessionKernelStoreHost(path.central, path.isolated);
+    preparePublishedFile(beforePublish, "publish-crash");
+    expect(beforePublish.central.sessionMigration("publish-crash")?.phase)
+      .toBe("copying");
+    beforePublish.close();
+
+    const recoverPublish = new SessionKernelStoreHost(path.central, path.isolated);
+    expect(recoverPublish.migrateLegacySession("publish-crash")).toBe("isolated");
+    expect(recoverPublish.central.sessionMigration("publish-crash")?.phase)
+      .toBe("verified");
+
+    const cutover = preparePublishedFile(recoverPublish, "cutover-crash");
+    recoverPublish.central.markSessionMigrationPublished(
+      "cutover-crash",
+      cutover.source.digest,
+      cutover.source.digest,
+    );
+    const target = new SessionKernelStore(cutover.targetPath, { readonly: true });
+    recoverPublish.central.cutoverSessionMigration(
+      "cutover-crash",
+      cutover.source.digest,
+      target.sessionOutboxIds("cutover-crash"),
+      target.nextTimerWakeAt(),
+      target.nextOutboxWakeAt(),
+    );
+    target.close();
+    expect(recoverPublish.central.sessionMigration("cutover-crash")?.phase)
+      .toBe("cutover");
+    recoverPublish.close();
+
+    const recoverCutover = new SessionKernelStoreHost(path.central, path.isolated);
+    expect(recoverCutover.migrateLegacySession("cutover-crash")).toBe("isolated");
+    expect(recoverCutover.central.sessionMigration("cutover-crash")?.phase)
+      .toBe("verified");
+    expect(recoverCutover.runtimeWork(
+      Date.now(),
+      ["known_timer"],
+      [],
+      10,
+    ).timers.map((timer) => timer.sessionId).sort()).toEqual([
+      "cutover-crash",
+      "publish-crash",
+    ]);
+    recoverCutover.close();
+  });
+
   test("quarantines one unreadable session database without blocking global stats", () => {
     const path = paths();
     const first = new SessionKernelStoreHost(path.central, path.isolated);
@@ -156,6 +407,7 @@ describe("per-session session kernel storage", () => {
       "repair-session",
       "disk I/O error",
       "runtime:scan",
+      "storage",
     );
 
     expect(host.call("releaseQuarantine", ["repair-session"])).toBe(true);
@@ -310,7 +562,7 @@ describe("per-session session kernel storage", () => {
     ]);
 
     recovered.call("ackOutbox", [outboxId]);
-    expect(recovered.central.isolatedOutboxSessionId(outboxId)).toBeUndefined();
+    expect(recovered.central.isolatedOutboxSessionId(outboxId)).toBe("wake-session");
     expect(recovered.storeForSession("wake-session").pendingOutbox()).toEqual([]);
     const successorId = recovered.call("enqueueOutbox", [
       "successor-session",

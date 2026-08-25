@@ -5,7 +5,7 @@ import type {
   RunEventDecisionResult,
 } from "./store";
 
-export const SESSION_KERNEL_ACTOR_VERSION = 22;
+export const SESSION_KERNEL_ACTOR_VERSION = 23;
 export const SESSION_KERNEL_TRANSPORT_VERSION = 1;
 export const SESSION_KERNEL_MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 export const SESSION_KERNEL_MAX_RESPONSE_BYTES = 128 * 1024 * 1024;
@@ -59,7 +59,7 @@ export type KernelActorServiceCall = {
   outputBytes: number;
 };
 
-/** Actor-host-only catalog lookup. It is not accepted by the HTTP transport. */
+/** Actor-host-only catalog and migration messages. They are not accepted by HTTP. */
 export type KernelActorRouteRequest = {
   t: "route";
   rpcId: string;
@@ -67,10 +67,25 @@ export type KernelActorRouteRequest = {
   mutation: boolean;
 };
 
+export type KernelActorMigrateRequest = {
+  t: "migrate";
+  rpcId: string;
+  sessionId: string;
+};
+
+export type KernelActorActivateRequest = {
+  t: "activate";
+  rpcId: string;
+  sessionId: string;
+  recoverInterruptedCommands: boolean;
+};
+
 export type KernelActorWorkerRequest =
   | KernelActorAsyncRequest
   | KernelActorServiceCall
-  | KernelActorRouteRequest;
+  | KernelActorRouteRequest
+  | KernelActorMigrateRequest
+  | KernelActorActivateRequest;
 
 export type KernelActorServiceResponse =
   | KernelActorAsyncResponse
@@ -85,6 +100,17 @@ export type KernelActorServiceResponse =
       t: "route_result";
       rpcId: string;
       placement: "legacy" | "isolated";
+      migrationPending: boolean;
+    }
+  | {
+      t: "migration_result";
+      rpcId: string;
+      placement: "isolated";
+    }
+  | {
+      t: "activation_result";
+      rpcId: string;
+      sessionId: string;
     };
 
 export type KernelActorTransportEnvelope = {

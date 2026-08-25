@@ -52,8 +52,17 @@ function routedStoreCall(
   return { mutation: false };
 }
 
-export function startSessionKernelActorWorker(): void {
-  const host = new SessionKernelStoreHost();
+export function startSessionKernelActorWorker(options: {
+  recoverCentralCommands?: boolean;
+} = {}): void {
+  const host = options.recoverCentralCommands === undefined
+    ? new SessionKernelStoreHost()
+    : new SessionKernelStoreHost(
+        undefined,
+        undefined,
+        undefined,
+        options.recoverCentralCommands,
+      );
   function post(message: KernelActorServiceResponse): void {
     self.postMessage(message);
   }
@@ -353,12 +362,59 @@ export function startSessionKernelActorWorker(): void {
       syncStore(request);
       return;
     }
+    if (request.t === "activate") {
+      try {
+        host.activateIsolatedSession(
+          request.sessionId,
+          request.recoverInterruptedCommands,
+        );
+        post({
+          t: "activation_result",
+          rpcId: request.rpcId,
+          sessionId: request.sessionId,
+        });
+      } catch (error) {
+        const fatal = isSessionKernelCentralStoreFailure(error);
+        post({
+          t: "error",
+          rpcId: request.rpcId,
+          error: error instanceof Error ? error.message : String(error),
+          ...(fatal ? { fatal: true } : {}),
+        });
+        if (fatal) queueMicrotask(() => self.close());
+      }
+      return;
+    }
+    if (request.t === "migrate") {
+      try {
+        post({
+          t: "migration_result",
+          rpcId: request.rpcId,
+          placement: host.migrateLegacySession(request.sessionId),
+        });
+      } catch (error) {
+        const fatal = isSessionKernelCentralStoreFailure(error);
+        post({
+          t: "error",
+          rpcId: request.rpcId,
+          error: error instanceof Error ? error.message : String(error),
+          ...(fatal ? { fatal: true } : {}),
+        });
+        if (fatal) queueMicrotask(() => self.close());
+      }
+      return;
+    }
     if (request.t === "route") {
       try {
+        const placement = host.routeSession(request.sessionId, request.mutation);
         post({
           t: "route_result",
           rpcId: request.rpcId,
-          placement: host.routeSession(request.sessionId, request.mutation),
+          placement,
+          migrationPending: host.sessionMigrationPending(
+            request.sessionId,
+            request.mutation,
+          ),
         });
       } catch (error) {
         post({

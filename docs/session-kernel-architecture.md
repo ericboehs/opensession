@@ -30,8 +30,8 @@ completed. Neither endpoint exposes RPC data.
 
 The network frontend and actors are separate isolates. The frontend bounds
 requests at 16 MiB, responses at 128 MiB, and outstanding calls at 1024. A
-catalog lane plus a configurable bounded pool of session Worker lanes host typed
-messages. The service owns one serial promise mailbox per canonical session ID
+catalog lane, one bounded migration lane, and a configurable bounded pool of
+session Worker lanes host typed messages. The service owns one serial promise mailbox per canonical session ID
 and gives that actor stable lane affinity, so process-local reducer caches remain
 coherent and two turns for one session cannot overlap. Many actors share each
 lane, while the short isolated SQLite wait bound leaves unrelated lanes
@@ -419,10 +419,11 @@ turns, and disappears when its queue drains. Worker-local SQLite connections
 activate lazily and are passivated by a bounded LRU. The pool defaults to four
 session lanes plus a compatibility catalog lane and is bounded to 32 lanes.
 A session with no legacy durable rows is claimed in the placement catalog before
-its first mutation, then writes only its own SQLite database. Existing sessions
-remain on the legacy central database until the per-session fenced migration
-pass in `adrs/per-session-actor-host-placement.md`; the router never dual-writes
-authoritative state. Isolated outbox rows use a globally reserved numeric
+its first mutation, then writes only its own SQLite database. On the first
+mutation of an existing legacy session, its service mailbox remains fenced while
+the migration lane copies and verifies every session-owned row, durably publishes
+the target, and atomically switches the route. Retained central rows are
+read-only migration evidence. The router never dual-writes authoritative state. Isolated outbox rows use a globally reserved numeric
 identity allocated by the catalog so existing settlement protocols remain
 additive and mixed-version safe.
 
@@ -442,9 +443,20 @@ New sessions therefore have distinct physical databases and logical mailboxes
 inside a bounded, independently supervised pool. A locked isolated database has
 a 250 ms SQLite busy bound, after which that session is quarantined; the
 compatibility gateway's synchronous bridge cannot inherit the central store's
-five-second wait. The remaining placement step is crash-safe lazy migration of
-legacy sessions and decomposition of catalog-wide compatibility scans into
-per-session mailbox work.
+five-second wait. Crash-safe lazy migration now resumes from copying, published, and cutover
+phases. The remaining placement cleanup is decomposition of catalog-wide
+compatibility scans into per-session mailbox work, retirement of global numeric
+outbox routing, evidence retention and backup policy, and eventual removal of
+central session tables.
+
+Route epochs are stored in the system catalog and in each physical session
+database identity. Activation fails closed on a mismatch. Migration copies use a
+schema-only open that does not reinterpret pending or processing command
+receipts, and LRU reactivation does not run actor-restart recovery again. The
+system database scopes storage and migration quarantine separately from retained
+session quarantine evidence. Global bridge scans exclude placed evidence, and
+numeric outbox route tombstones remain durable so late duplicate settlements
+cannot fall through to an old central row.
 
 A command admission is a short bounded reduction: the actor fingerprints and
 persists the intent, then immediately returns `execute`, `in_progress`, or the

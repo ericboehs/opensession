@@ -132,8 +132,24 @@ export interface DurableOutboxItem {
 const json = (value: unknown): string => JSON.stringify(value ?? null);
 const CHANGE_HISTORY_PER_SESSION = 5_000;
 const MAINTENANCE_CHANGE_DELETE_BATCH = 250;
+export const SESSION_KERNEL_SESSION_TABLES = [
+	"session_kernel_tombstones",
+	"session_kernel_quarantine",
+	"session_kernel_state",
+	"session_kernel_creation",
+	"session_kernel_asks",
+	"session_kernel_delivery",
+	"session_kernel_turn",
+	"session_kernel_turn_projections",
+	"session_kernel_commands",
+	"session_kernel_changes",
+	"session_kernel_timers",
+	"session_kernel_outbox",
+] as const;
 const digest = (text: string): string =>
 	new Bun.CryptoHasher("sha256").update(text).digest("hex");
+const quotedIdentifier = (value: string): string =>
+	`"${value.replaceAll('"', '""')}"`;
 const resultRecord = (value: unknown) => {
 	const text = json(value);
 	return {
@@ -213,7 +229,7 @@ const PROCESS_OWNER_ID = (ownerGlobal.__opensessionSessionKernelOwnerId ??=
 		bootId: linuxBootId(),
 		start: linuxProcessStart(process.pid),
 	} satisfies ProcessOwnerIdentity));
-export const SESSION_KERNEL_SCHEMA_VERSION = 22;
+export const SESSION_KERNEL_SCHEMA_VERSION = 23;
 export const SESSION_KERNEL_MAX_CREATION_EFFECT_RECEIPTS = 256;
 export const SESSION_KERNEL_MAX_OPENING_PLAN_BYTES = 16 * 1024 * 1024;
 
@@ -328,6 +344,7 @@ export type DurableSessionQuarantine = {
   reason: string;
   commandKind: string;
   quarantinedAt: number;
+  scope: "session" | "storage" | "migration";
 };
 
 export type CreationEventDecisionResult = {
@@ -360,15 +377,44 @@ export type SessionKernelStoreOptions = {
 	readonly?: boolean;
 	allocateOutboxId?: (sessionId: string) => number;
   busyTimeoutMs?: number;
+  /** Migration copies and LRU reactivation are not actor-process restarts. */
+  recoverInterruptedCommands?: boolean;
 };
 
 export type DurableSessionPlacement = {
 	sessionId: string;
 	placement: "isolated";
+	routeEpoch: string;
 	needsScan: boolean;
 	nextTimerAt?: number;
 	nextOutboxAt?: number;
 	updatedAt: number;
+};
+
+export type SessionMigrationPhase =
+	| "copying"
+	| "published"
+	| "cutover"
+	| "verified"
+	| "quarantined";
+
+export type DurableSessionMigration = {
+	sessionId: string;
+	phase: SessionMigrationPhase;
+	sourceSchema: number;
+	targetPath: string;
+	routeEpoch: string;
+	sourceDigest?: string;
+	targetDigest?: string;
+	error?: string;
+	startedAt: number;
+	updatedAt: number;
+	verifiedAt?: number;
+};
+
+export type SessionSnapshotDigest = {
+	digest: string;
+	tables: Record<string, { count: number; digest: string }>;
 };
 
 export class SessionKernelStore {
@@ -449,15 +495,40 @@ export class SessionKernelStore {
 				session_id TEXT PRIMARY KEY,
 				reason TEXT NOT NULL,
 				command_kind TEXT NOT NULL,
-				quarantined_at INTEGER NOT NULL
+				quarantined_at INTEGER NOT NULL,
+				scope TEXT NOT NULL DEFAULT 'session'
+					CHECK (scope IN ('session', 'storage', 'migration'))
 			);
 			CREATE TABLE IF NOT EXISTS session_kernel_placements (
 				session_id TEXT PRIMARY KEY,
 				placement TEXT NOT NULL CHECK (placement = 'isolated'),
+				route_epoch TEXT NOT NULL,
 				needs_scan INTEGER NOT NULL DEFAULT 1,
 				next_timer_at INTEGER,
 				next_outbox_at INTEGER,
 				updated_at INTEGER NOT NULL
+			);
+			CREATE TABLE IF NOT EXISTS session_kernel_session_migrations (
+				session_id TEXT PRIMARY KEY,
+				phase TEXT NOT NULL CHECK (
+					phase IN ('copying', 'published', 'cutover', 'verified', 'quarantined')
+				),
+				source_schema INTEGER NOT NULL,
+				target_path TEXT NOT NULL,
+				route_epoch TEXT NOT NULL UNIQUE,
+				source_digest TEXT,
+				target_digest TEXT,
+				error TEXT,
+				started_at INTEGER NOT NULL,
+				updated_at INTEGER NOT NULL,
+				verified_at INTEGER
+			);
+			CREATE TABLE IF NOT EXISTS session_kernel_database_identity (
+				singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+				session_id TEXT NOT NULL,
+				route_epoch TEXT NOT NULL,
+				source_digest TEXT,
+				created_at INTEGER NOT NULL
 			);
 			CREATE TABLE IF NOT EXISTS session_kernel_outbox_routes (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -580,6 +651,34 @@ export class SessionKernelStore {
 			CREATE INDEX IF NOT EXISTS idx_sko_session
 				ON session_kernel_outbox(session_id, id);
 		`);
+    const quarantineColumns = new Set(
+      (
+        this.db
+          .query("PRAGMA table_info(session_kernel_quarantine)")
+          .all() as Array<{ name: string }>
+      ).map((column) => column.name),
+    );
+    if (!quarantineColumns.has("scope"))
+      this.db.exec(
+        "ALTER TABLE session_kernel_quarantine ADD COLUMN scope TEXT NOT NULL DEFAULT 'session'",
+      );
+    const placementColumns = new Set(
+      (
+        this.db
+          .query("PRAGMA table_info(session_kernel_placements)")
+          .all() as Array<{ name: string }>
+      ).map((column) => column.name),
+    );
+    if (!placementColumns.has("route_epoch"))
+      this.db.exec("ALTER TABLE session_kernel_placements ADD COLUMN route_epoch TEXT");
+    const placementsWithoutEpoch = this.db.query(
+      "SELECT session_id FROM session_kernel_placements WHERE route_epoch IS NULL OR route_epoch = ''",
+    ).all() as Array<{ session_id: string }>;
+    for (const placement of placementsWithoutEpoch)
+      this.db.run(
+        "UPDATE session_kernel_placements SET route_epoch = ? WHERE session_id = ?",
+        [crypto.randomUUID(), placement.session_id],
+      );
     const deliveryColumns = new Set(
       (
         this.db
@@ -812,26 +911,44 @@ export class SessionKernelStore {
 				chmodSync(path, 0o600);
 			} catch {}
 		}
-    // A processing execution dies with its actor. Keep replay-safe intent pending
-    // so the client's receipt outbox can re-admit the exact same command id.
-		this.db.run(
-			"UPDATE session_kernel_commands SET status = 'pending', error = 'actor restarted before acknowledgement', updated_at = ? WHERE status = 'processing' AND replay_safe = 1",
-			[Date.now()],
-		);
-		// Pending means the actor committed admission but never marked execution
-		// started. No physical effect can have run, so preserve the receipt as a
-		// retryable failure instead of leaving readiness degraded forever.
-		this.db.run(
-			`UPDATE session_kernel_commands
-			 SET status = 'failed', replay_safe = 1, retryable = 1,
-			     error = 'actor restarted before execution admission', updated_at = ?
-			 WHERE status = 'pending'`,
-			[Date.now()],
-		);
-		this.db.run(
-			"UPDATE session_kernel_commands SET status = 'indeterminate', error = 'actor restarted after execution began', retryable = 0, updated_at = ? WHERE status = 'processing'",
-			[Date.now()],
-		);
+    if (options.recoverInterruptedCommands !== false) {
+      // A processing execution dies with its actor. Keep replay-safe intent pending
+      // so the client's receipt outbox can re-admit the exact same command id.
+      this.db.run(
+        `UPDATE session_kernel_commands
+         SET status = 'pending', error = 'actor restarted before acknowledgement', updated_at = ?
+         WHERE status = 'processing' AND replay_safe = 1
+           AND NOT EXISTS (
+             SELECT 1 FROM session_kernel_placements p
+             WHERE p.session_id = session_kernel_commands.session_id
+           )`,
+        [Date.now()],
+      );
+      // Pending means the actor committed admission but never marked execution
+      // started. No physical effect can have run, so preserve the receipt as a
+      // retryable failure instead of leaving readiness degraded forever.
+      this.db.run(
+        `UPDATE session_kernel_commands
+         SET status = 'failed', replay_safe = 1, retryable = 1,
+             error = 'actor restarted before execution admission', updated_at = ?
+         WHERE status = 'pending'
+           AND NOT EXISTS (
+             SELECT 1 FROM session_kernel_placements p
+             WHERE p.session_id = session_kernel_commands.session_id
+           )`,
+        [Date.now()],
+      );
+      this.db.run(
+        `UPDATE session_kernel_commands
+         SET status = 'indeterminate', error = 'actor restarted after execution began', retryable = 0, updated_at = ?
+         WHERE status = 'processing'
+           AND NOT EXISTS (
+             SELECT 1 FROM session_kernel_placements p
+             WHERE p.session_id = session_kernel_commands.session_id
+           )`,
+        [Date.now()],
+      );
+    }
 		this.hydrateRunStateCache();
 		// A restart used to mark every known session dirty. The first runtime
 		// maintenance pass then issued up to 100 FULL-synchronous DELETEs, which
@@ -840,6 +957,10 @@ export class SessionKernelStore {
 		const compactableChangeRows = this.db
 			.query(
 				`SELECT session_id FROM session_kernel_changes
+         WHERE NOT EXISTS (
+           SELECT 1 FROM session_kernel_placements p
+           WHERE p.session_id = session_kernel_changes.session_id
+         )
 				 GROUP BY session_id HAVING COUNT(*) > ?`,
 			)
 			.all(CHANGE_HISTORY_PER_SESSION) as Array<{ session_id: string }>;
@@ -919,40 +1040,65 @@ export class SessionKernelStore {
 		sessionId: string,
 		reason: string,
 		commandKind: string,
+		scope: DurableSessionQuarantine["scope"] = "session",
 	): DurableSessionQuarantine {
 		const quarantinedAt = Date.now();
 		this.db.run(
 			`INSERT INTO session_kernel_quarantine
-			 (session_id, reason, command_kind, quarantined_at)
-			 VALUES (?, ?, ?, ?)
+			 (session_id, reason, command_kind, quarantined_at, scope)
+			 VALUES (?, ?, ?, ?, ?)
 			 ON CONFLICT(session_id) DO NOTHING`,
-			[sessionId, reason.slice(0, 2_000), commandKind.slice(0, 200), quarantinedAt],
+			[
+				sessionId,
+				reason.slice(0, 2_000),
+				commandKind.slice(0, 200),
+				quarantinedAt,
+				scope,
+			],
 		);
 		return this.quarantinedSession(sessionId)!;
 	}
 
-	quarantinedSession(sessionId: string): DurableSessionQuarantine | undefined {
+	quarantinedSession(
+		sessionId: string,
+		scopes?: readonly DurableSessionQuarantine["scope"][],
+	): DurableSessionQuarantine | undefined {
+		if (scopes?.length === 0) return undefined;
+		const scopeFilter = scopes?.length
+			? ` AND scope IN (${scopes.map(() => "?").join(",")})`
+			: "";
 		const row = this.db
 			.query(
-				`SELECT session_id, reason, command_kind, quarantined_at
-				 FROM session_kernel_quarantine WHERE session_id = ?`,
+				`SELECT session_id, reason, command_kind, quarantined_at, scope
+				 FROM session_kernel_quarantine WHERE session_id = ?${scopeFilter}`,
 			)
-			.get(sessionId) as Record<string, unknown> | null;
+			.get(sessionId, ...(scopes ?? [])) as Record<string, unknown> | null;
 		return row
 			? {
 					sessionId: String(row.session_id),
 					reason: String(row.reason),
 					commandKind: String(row.command_kind),
 					quarantinedAt: Number(row.quarantined_at),
+					scope: row.scope as DurableSessionQuarantine["scope"],
 				}
 			: undefined;
 	}
 
-	quarantinedSessions(limit = 100, offset = 0): DurableSessionQuarantine[] {
+	quarantinedSessions(
+		limit = 100,
+		offset = 0,
+		excludePlaced = false,
+	): DurableSessionQuarantine[] {
+		const placementFilter = excludePlaced
+			? ` WHERE scope != 'session' OR NOT EXISTS (
+				SELECT 1 FROM session_kernel_placements p
+				WHERE p.session_id = session_kernel_quarantine.session_id
+			  )`
+			: "";
 		const rows = this.db
 			.query(
-				`SELECT session_id, reason, command_kind, quarantined_at
-				 FROM session_kernel_quarantine
+				`SELECT session_id, reason, command_kind, quarantined_at, scope
+				 FROM session_kernel_quarantine${placementFilter}
 				 ORDER BY quarantined_at DESC LIMIT ? OFFSET ?`,
 			)
 			.all(limit, offset) as Record<string, unknown>[];
@@ -961,13 +1107,21 @@ export class SessionKernelStore {
 			reason: String(row.reason),
 			commandKind: String(row.command_kind),
 			quarantinedAt: Number(row.quarantined_at),
+			scope: row.scope as DurableSessionQuarantine["scope"],
 		}));
 	}
 
-	releaseQuarantine(sessionId: string): boolean {
+	releaseQuarantine(
+		sessionId: string,
+		scopes?: readonly DurableSessionQuarantine["scope"][],
+	): boolean {
+		if (scopes?.length === 0) return false;
+		const scopeFilter = scopes?.length
+			? ` AND scope IN (${scopes.map(() => "?").join(",")})`
+			: "";
 		return this.db.run(
-			"DELETE FROM session_kernel_quarantine WHERE session_id = ?",
-			[sessionId],
+			`DELETE FROM session_kernel_quarantine WHERE session_id = ?${scopeFilter}`,
+			[sessionId, ...(scopes ?? [])],
 		).changes > 0;
 	}
 
@@ -1112,15 +1266,14 @@ export class SessionKernelStore {
 				};
 	}
 
-	runStates(): Array<DurableRunState & { sessionId: string }> {
+	runStates(excludePlaced = false): Array<DurableRunState & { sessionId: string }> {
     // Catalog/global reads may run on a different actor-host lane from the
     // session's stable mailbox. Refresh this projection from SQLite instead of
     // returning a lane-local cache snapshot.
     this.hydrateRunStateCache();
-		return [...this.runStateCache].map(([sessionId, state]) => ({
-			sessionId,
-			...state,
-		}));
+		return [...this.runStateCache]
+			.filter(([sessionId]) => !excludePlaced || !this.sessionPlacement(sessionId))
+			.map(([sessionId, state]) => ({ sessionId, ...state }));
 	}
 
 	appendChange(sessionId: string, kind: string, payload?: unknown): number {
@@ -1808,11 +1961,17 @@ export class SessionKernelStore {
     return row ? parsed(row.record) : undefined;
   }
 
-  askEntries(): Array<[string, unknown]> {
+  askEntries(excludePlaced = false): Array<[string, unknown]> {
+    const placementFilter = excludePlaced
+      ? ` WHERE NOT EXISTS (
+          SELECT 1 FROM session_kernel_placements p
+          WHERE p.session_id = session_kernel_asks.session_id
+        )`
+      : "";
     return (
       this.db
         .query(
-          "SELECT session_id, record FROM session_kernel_asks ORDER BY session_id",
+          `SELECT session_id, record FROM session_kernel_asks${placementFilter} ORDER BY session_id`,
         )
         .all() as Array<{ session_id: string; record: string }>
     ).map((row) => [row.session_id, parsed(row.record)]);
@@ -1929,8 +2088,8 @@ export class SessionKernelStore {
     return this.mutateAskRecord(sessionId, undefined);
   }
 
-  clearAskRecords(): void {
-    for (const [sessionId] of this.askEntries())
+  clearAskRecords(excludePlaced = false): void {
+    for (const [sessionId] of this.askEntries(excludePlaced))
       this.deleteAskRecord(sessionId);
   }
 
@@ -2113,17 +2272,23 @@ export class SessionKernelStore {
     return this.deliveryRow(sessionId);
   }
 
-  deliveryEntries(slot: DeliverySlot): Array<[string, unknown]> {
+  deliveryEntries(slot: DeliverySlot, excludePlaced = false): Array<[string, unknown]> {
     const column =
       slot === "queued"
         ? "queued"
         : slot === "steered"
           ? "steered"
           : "dispatch";
+    const placementFilter = excludePlaced
+      ? ` AND NOT EXISTS (
+          SELECT 1 FROM session_kernel_placements p
+          WHERE p.session_id = session_kernel_delivery.session_id
+        )`
+      : "";
     const rows = this.db
       .query(
         `SELECT session_id, ${column} AS value FROM session_kernel_delivery
-			 WHERE ${column} IS NOT NULL${slot === "dispatch" ? "" : ` AND ${column} != '[]'`}`,
+			 WHERE ${column} IS NOT NULL${slot === "dispatch" ? "" : ` AND ${column} != '[]'`}${placementFilter}`,
       )
       .all() as Array<{ session_id: string; value: string }>;
     return rows.map((row) => [row.session_id, parsed(row.value)]);
@@ -2285,8 +2450,8 @@ export class SessionKernelStore {
     return true;
   }
 
-  clearDeliverySlot(slot: DeliverySlot): void {
-    for (const [sessionId] of this.deliveryEntries(slot))
+  clearDeliverySlot(slot: DeliverySlot, excludePlaced = false): void {
+    for (const [sessionId] of this.deliveryEntries(slot, excludePlaced))
       this.deleteDeliverySlot(sessionId, slot);
   }
 
@@ -2372,9 +2537,15 @@ export class SessionKernelStore {
     return items.length;
   }
 
-  settlePendingSteers(): number {
+  settlePendingSteers(excludePlaced = false): number {
+    const placementFilter = excludePlaced
+      ? ` AND NOT EXISTS (
+          SELECT 1 FROM session_kernel_placements p
+          WHERE p.session_id = session_kernel_delivery.session_id
+        )`
+      : "";
     const rows = this.db.query(
-      "SELECT session_id FROM session_kernel_delivery WHERE pending_steers != '[]'",
+      `SELECT session_id FROM session_kernel_delivery WHERE pending_steers != '[]'${placementFilter}`,
     ).all() as Array<{ session_id: string }>;
     let count = 0;
     for (const row of rows) {
@@ -3572,10 +3743,17 @@ export class SessionKernelStore {
 		now = Date.now(),
 		limit = 100,
 		kinds?: readonly string[],
+		excludePlaced = false,
 	): DurableTimer[] {
 		if (kinds && kinds.length === 0) return [];
 		const kindFilter = kinds?.length
 			? ` AND kind IN (${kinds.map(() => "?").join(",")})`
+			: "";
+		const placementFilter = excludePlaced
+			? ` AND NOT EXISTS (
+				SELECT 1 FROM session_kernel_placements p
+				WHERE p.session_id = session_kernel_timers.session_id
+			  )`
 			: "";
 		const rows = this.db
 			.query(
@@ -3586,7 +3764,7 @@ export class SessionKernelStore {
 				   AND NOT EXISTS (
 					 SELECT 1 FROM session_kernel_quarantine q
 					 WHERE q.session_id = session_kernel_timers.session_id
-				   )${kindFilter}
+				   )${kindFilter}${placementFilter}
 				 ORDER BY next_attempt_at, due_at LIMIT ?`,
 			)
 			.all(now, now, ...(kinds || []), limit) as Record<string, unknown>[];
@@ -3762,10 +3940,17 @@ export class SessionKernelStore {
 		now = Date.now(),
 		limit = 100,
 		kinds?: readonly string[],
+		excludePlaced = false,
 	): DurableOutboxItem[] {
 		if (kinds && kinds.length === 0) return [];
 		const kindFilter = kinds?.length
 			? ` AND kind IN (${kinds.map(() => "?").join(",")})`
+			: "";
+		const placementFilter = excludePlaced
+			? ` AND NOT EXISTS (
+				SELECT 1 FROM session_kernel_placements p
+				WHERE p.session_id = session_kernel_outbox.session_id
+			  )`
 			: "";
 		const rows = this.db
 			.query(
@@ -3776,7 +3961,7 @@ export class SessionKernelStore {
            AND NOT EXISTS (
              SELECT 1 FROM session_kernel_quarantine q
              WHERE q.session_id = session_kernel_outbox.session_id
-           )${kindFilter}
+           )${kindFilter}${placementFilter}
          ORDER BY next_attempt_at, id LIMIT ?`,
       )
 			.all(now, ...(kinds || []), limit) as Record<string, unknown>[];
@@ -3796,7 +3981,7 @@ export class SessionKernelStore {
 		}));
 	}
 
-	stats(): {
+	stats(excludePlaced = false): {
 		sessions: number;
 		quarantinedSessions: number;
 		pendingCommands: number;
@@ -3815,11 +4000,22 @@ export class SessionKernelStore {
 		freePages: number;
 		schemaVersion: number;
 	} {
+		const scopedWhere = (table: string, where = "") => {
+			const conditions = where.trim().replace(/^WHERE\s+/i, "");
+			const placement = excludePlaced
+				? `(${table === "session_kernel_quarantine" ? `${table}.scope != 'session' OR ` : ""}NOT EXISTS (
+					SELECT 1 FROM session_kernel_placements p
+					WHERE p.session_id = ${table}.session_id
+				  ))`
+				: "";
+			const combined = [conditions, placement].filter(Boolean).join(" AND ");
+			return combined ? `WHERE ${combined}` : "";
+		};
 		const count = (table: string, where = "") =>
 			Number(
 				(
           this.db
-            .query(`SELECT COUNT(*) AS n FROM ${table} ${where}`)
+            .query(`SELECT COUNT(*) AS n FROM ${table} ${scopedWhere(table, where)}`)
             .get() as {
 						n: number;
 					}
@@ -3831,7 +4027,7 @@ export class SessionKernelStore {
       where = "",
     ): number | undefined => {
 			const row = this.db
-				.query(`SELECT MIN(${column}) AS oldest FROM ${table} ${where}`)
+				.query(`SELECT MIN(${column}) AS oldest FROM ${table} ${scopedWhere(table, where)}`)
 				.get() as { oldest: number | null };
 			return row.oldest == null ? undefined : Number(row.oldest);
 		};
@@ -3913,6 +4109,7 @@ export class SessionKernelStore {
 		now = Date.now(),
 		commandRetentionMs = 30 * 24 * 60 * 60_000,
 		changesPerSession = CHANGE_HISTORY_PER_SESSION,
+		excludePlaced = false,
 	): void {
 		// Request fingerprints and completion state are permanent. Large semantic
 		// results stay replayable until the client confirms local receipt, then age
@@ -3926,11 +4123,19 @@ export class SessionKernelStore {
 				WHERE status = 'completed' AND terminal_failure = 0
 				  AND acknowledged_at IS NOT NULL AND acknowledged_at < ?
 				  AND result_hash IS NOT NULL AND result_released = 0 AND length(result) > ?
+				  ${excludePlaced ? `AND NOT EXISTS (
+					SELECT 1 FROM session_kernel_placements p
+					WHERE p.session_id = session_kernel_commands.session_id
+				  )` : ""}
 				LIMIT 500
 			 )`,
 			[now - commandRetentionMs, 64 * 1024],
 		);
 		for (const sessionId of [...this.dirtyChangeSessions].slice(0, 100)) {
+			if (excludePlaced && this.sessionPlacement(sessionId)) {
+				this.dirtyChangeSessions.delete(sessionId);
+				continue;
+			}
 			const result = this.db.run(
 				`DELETE FROM session_kernel_changes WHERE rowid IN (
 					SELECT rowid FROM session_kernel_changes
@@ -3945,7 +4150,7 @@ export class SessionKernelStore {
 		}
 	}
 
-	maintain(): boolean {
+	maintain(excludePlaced = false): boolean {
 		// Bounded semantic compaction only. VACUUM/optimize/checkpoint are offline
 		// operator work because this actor also serves synchronous compatibility RPCs.
 		this.db.run(
@@ -3957,13 +4162,21 @@ export class SessionKernelStore {
 				WHERE status = 'completed' AND terminal_failure = 0
 				  AND acknowledged_at IS NOT NULL AND acknowledged_at < ?
 				  AND result_hash IS NOT NULL AND result_released = 0 AND length(result) > ?
+				  ${excludePlaced ? `AND NOT EXISTS (
+					SELECT 1 FROM session_kernel_placements p
+					WHERE p.session_id = session_kernel_commands.session_id
+				  )` : ""}
 				LIMIT 50
 			 )`,
 			[Date.now() - 30 * 24 * 60 * 60_000, 64 * 1024],
 		);
-		const sessionId = this.dirtyChangeSessions.values().next().value as
+		let sessionId = this.dirtyChangeSessions.values().next().value as
 			| string
 			| undefined;
+		while (sessionId && excludePlaced && this.sessionPlacement(sessionId)) {
+			this.dirtyChangeSessions.delete(sessionId);
+			sessionId = this.dirtyChangeSessions.values().next().value as string | undefined;
+		}
 		if (!sessionId) return false;
 		const result = this.db.run(
 			`DELETE FROM session_kernel_changes WHERE rowid IN (
@@ -3985,22 +4198,28 @@ export class SessionKernelStore {
 		return this.dirtyChangeSessions.size > 0;
 	}
 
-	deadLetters(limit = 100, offset = 0) {
+	deadLetters(limit = 100, offset = 0, excludePlaced = false) {
+    const placementFilter = (table: string) => excludePlaced
+      ? ` AND (${table === "session_kernel_quarantine" ? `${table}.scope != 'session' OR ` : ""}NOT EXISTS (
+          SELECT 1 FROM session_kernel_placements p
+          WHERE p.session_id = ${table}.session_id
+        ))`
+      : "";
     const timers = this.db
       .query(
 			`SELECT session_id, timer_id, kind, due_at, attempts, next_attempt_at, last_error, dead_lettered_at, created_at
-			 FROM session_kernel_timers WHERE dead_lettered_at IS NOT NULL
+			 FROM session_kernel_timers WHERE dead_lettered_at IS NOT NULL${placementFilter("session_kernel_timers")}
 			 ORDER BY dead_lettered_at DESC LIMIT ? OFFSET ?`,
       )
       .all(limit, offset) as Record<string, unknown>[];
     const outbox = this.db
       .query(
 			`SELECT id, effect_id, effect_key, session_id, kind, attempts, next_attempt_at, last_error, dead_lettered_at, created_at
-			 FROM session_kernel_outbox WHERE dead_lettered_at IS NOT NULL
+			 FROM session_kernel_outbox WHERE dead_lettered_at IS NOT NULL${placementFilter("session_kernel_outbox")}
 			 ORDER BY dead_lettered_at DESC LIMIT ? OFFSET ?`,
       )
       .all(limit, offset) as Record<string, unknown>[];
-		const quarantines = this.quarantinedSessions(limit, offset);
+		const quarantines = this.quarantinedSessions(limit, offset, excludePlaced);
 		return {
 			quarantines,
 			timers: timers.map((row) => ({
@@ -4030,7 +4249,8 @@ export class SessionKernelStore {
 				quarantines: Number(
 					(
 						this.db
-							.query("SELECT COUNT(*) AS n FROM session_kernel_quarantine")
+							.query(`SELECT COUNT(*) AS n FROM session_kernel_quarantine
+                  WHERE 1 = 1${placementFilter("session_kernel_quarantine")}`)
 							.get() as { n: number }
 					).n,
 				),
@@ -4038,7 +4258,8 @@ export class SessionKernelStore {
           (
             this.db
               .query(
-                "SELECT COUNT(*) AS n FROM session_kernel_timers WHERE dead_lettered_at IS NOT NULL",
+                `SELECT COUNT(*) AS n FROM session_kernel_timers
+                 WHERE dead_lettered_at IS NOT NULL${placementFilter("session_kernel_timers")}`,
               )
               .get() as { n: number }
           ).n,
@@ -4047,7 +4268,8 @@ export class SessionKernelStore {
           (
             this.db
               .query(
-                "SELECT COUNT(*) AS n FROM session_kernel_outbox WHERE dead_lettered_at IS NOT NULL",
+                `SELECT COUNT(*) AS n FROM session_kernel_outbox
+                 WHERE dead_lettered_at IS NOT NULL${placementFilter("session_kernel_outbox")}`,
               )
               .get() as { n: number }
           ).n,
@@ -4106,6 +4328,7 @@ export class SessionKernelStore {
 	retryCompatibleCreationBranchDeadLetters(
 		destinations: ReadonlyArray<{ project: string; worktreePath: string }>,
 		now = Date.now(),
+		excludePlaced = false,
 	): Array<{
 		id: number;
 		sessionId: string;
@@ -4126,6 +4349,10 @@ export class SessionKernelStore {
 				  AND creation.current_effect_id = outbox.effect_key
 				 WHERE outbox.kind = 'creation_branch_prepare'
 				   AND outbox.dead_lettered_at IS NOT NULL
+				   ${excludePlaced ? `AND NOT EXISTS (
+					 SELECT 1 FROM session_kernel_placements p
+					 WHERE p.session_id = outbox.session_id
+				   )` : ""}
 				 ORDER BY outbox.id
 				 LIMIT 1000`,
 			)
@@ -4200,42 +4427,302 @@ export class SessionKernelStore {
 		return retried;
 	}
 
-	hasSessionDurableState(sessionId: string): boolean {
+	databaseIdentity(): {
+		sessionId: string;
+		routeEpoch: string;
+		sourceDigest?: string;
+	} | undefined {
 		const row = this.db.query(`
-			SELECT 1 AS present FROM (
-				SELECT session_id FROM session_kernel_tombstones WHERE session_id = ?
-				UNION ALL SELECT session_id FROM session_kernel_quarantine WHERE session_id = ?
-				UNION ALL SELECT session_id FROM session_kernel_state WHERE session_id = ?
-				UNION ALL SELECT session_id FROM session_kernel_creation WHERE session_id = ?
-				UNION ALL SELECT session_id FROM session_kernel_asks WHERE session_id = ?
-				UNION ALL SELECT session_id FROM session_kernel_delivery WHERE session_id = ?
-				UNION ALL SELECT session_id FROM session_kernel_turn WHERE session_id = ?
-				UNION ALL SELECT session_id FROM session_kernel_turn_projections WHERE session_id = ?
-				UNION ALL SELECT session_id FROM session_kernel_commands WHERE session_id = ?
-				UNION ALL SELECT session_id FROM session_kernel_changes WHERE session_id = ?
-				UNION ALL SELECT session_id FROM session_kernel_timers WHERE session_id = ?
-				UNION ALL SELECT session_id FROM session_kernel_outbox WHERE session_id = ?
-			) LIMIT 1
-		`).get(...Array(12).fill(sessionId)) as { present: number } | null;
+			SELECT session_id, route_epoch, source_digest
+			FROM session_kernel_database_identity WHERE singleton = 1
+		`).get() as {
+			session_id: string;
+			route_epoch: string;
+			source_digest: string | null;
+		} | null;
+		return row
+			? {
+				sessionId: row.session_id,
+				routeEpoch: row.route_epoch,
+				...(row.source_digest === null ? {} : { sourceDigest: row.source_digest }),
+			}
+			: undefined;
+	}
+
+	claimDatabaseIdentity(
+		sessionId: string,
+		routeEpoch: string,
+		sourceDigest?: string,
+	): void {
+		const current = this.databaseIdentity();
+		if (current) {
+			if (
+				current.sessionId !== sessionId ||
+				current.routeEpoch !== routeEpoch ||
+				(sourceDigest !== undefined && current.sourceDigest !== sourceDigest)
+			)
+				throw new Error(`Session database identity mismatch for ${sessionId}`);
+			return;
+		}
+		this.db.run(`
+			INSERT INTO session_kernel_database_identity
+				(singleton, session_id, route_epoch, source_digest, created_at)
+			VALUES (1, ?, ?, ?, ?)
+		`, [sessionId, routeEpoch, sourceDigest ?? null, Date.now()]);
+	}
+
+	sessionSnapshotDigest(sessionId: string): SessionSnapshotDigest {
+		const aggregate = new Bun.CryptoHasher("sha256");
+		aggregate.update("session-kernel-snapshot-v1\0");
+		const tables: SessionSnapshotDigest["tables"] = {};
+		for (const table of SESSION_KERNEL_SESSION_TABLES) {
+			const orderedColumns = (this.db.query(
+				`PRAGMA table_info(${quotedIdentifier(table)})`,
+			).all() as Array<{ name: string; cid: number; pk: number }>).sort(
+				(a, b) => a.cid - b.cid,
+			);
+			if (
+				orderedColumns.length === 0 ||
+				!orderedColumns.some((column) => column.name === "session_id")
+			) throw new Error(`Invalid session migration table ${table}`);
+			const canonical = orderedColumns.map((column, index) => {
+				const name = quotedIdentifier(column.name);
+				return `CASE typeof(${name})
+					WHEN 'null' THEN 'n'
+					WHEN 'integer' THEN 'i' || printf('%lld', ${name})
+					WHEN 'real' THEN 'r' || printf('%!.17g', ${name})
+					WHEN 'text' THEN 't' || length(CAST(${name} AS BLOB)) || ':' || hex(CAST(${name} AS BLOB))
+					WHEN 'blob' THEN 'b' || length(${name}) || ':' || hex(${name})
+				END AS v${index}`;
+			}).join(", ");
+			const primaryKey = orderedColumns.filter((column) => column.pk > 0)
+				.sort((a, b) => a.pk - b.pk);
+			const orderBy = (primaryKey.length > 0 ? primaryKey : orderedColumns)
+				.map((column) => quotedIdentifier(column.name)).join(", ");
+			const rows = this.db.query(`
+				SELECT ${canonical} FROM ${quotedIdentifier(table)}
+				WHERE session_id = ? ORDER BY ${orderBy}
+			`).all(sessionId) as Array<Record<string, string>>;
+			const tableHasher = new Bun.CryptoHasher("sha256");
+			tableHasher.update(`${table}\0${orderedColumns.map((column) => column.name).join("\0")}\0${rows.length}\0`);
+			for (const row of rows)
+				for (let index = 0; index < orderedColumns.length; index += 1) {
+					const value = String(row[`v${index}`]);
+					tableHasher.update(`${Buffer.byteLength(value)}:${value}`);
+				}
+			const tableDigest = tableHasher.digest("hex");
+			tables[table] = { count: rows.length, digest: tableDigest };
+			aggregate.update(`${table.length}:${table}${rows.length}:${tableDigest}`);
+		}
+		return { digest: aggregate.digest("hex"), tables };
+	}
+
+	importSessionSnapshotFrom(
+		sourcePath: string,
+		sessionId: string,
+		routeEpoch: string,
+		sourceDigest: string,
+	): SessionSnapshotDigest {
+		if (this.path === ":memory:" || sourcePath === ":memory:")
+			throw new Error("Legacy session migration requires file-backed databases");
+		this.db.run("ATTACH DATABASE ? AS legacy_source", [sourcePath]);
+		try {
+			const tx = this.db.transaction(() => {
+				for (const table of SESSION_KERNEL_SESSION_TABLES) {
+					const targetColumns = (this.db.query(
+						`PRAGMA main.table_info(${quotedIdentifier(table)})`,
+					).all() as Array<{ name: string; cid: number }>).sort((a, b) => a.cid - b.cid);
+					const sourceColumns = (this.db.query(
+						`PRAGMA legacy_source.table_info(${quotedIdentifier(table)})`,
+					).all() as Array<{ name: string; cid: number }>).sort((a, b) => a.cid - b.cid);
+					if (
+						targetColumns.length !== sourceColumns.length ||
+						targetColumns.some((column, index) => column.name !== sourceColumns[index]?.name)
+					)
+						throw new Error(`Session migration schema mismatch in ${table}`);
+					const columns = targetColumns.map((column) => quotedIdentifier(column.name)).join(", ");
+					this.db.run(`DELETE FROM main.${quotedIdentifier(table)} WHERE session_id = ?`, [sessionId]);
+					this.db.run(`
+						INSERT INTO main.${quotedIdentifier(table)} (${columns})
+						SELECT ${columns} FROM legacy_source.${quotedIdentifier(table)}
+						WHERE session_id = ?
+					`, [sessionId]);
+				}
+				this.claimDatabaseIdentity(sessionId, routeEpoch, sourceDigest);
+			});
+			tx.deferred();
+		} finally {
+			this.db.exec("DETACH DATABASE legacy_source");
+		}
+		return this.sessionSnapshotDigest(sessionId);
+	}
+
+	integrityCheck(): void {
+		const rows = this.db.query("PRAGMA integrity_check").values() as unknown[][];
+		if (rows.length !== 1 || rows[0]?.[0] !== "ok")
+			throw new Error("Session migration target failed SQLite integrity_check");
+	}
+
+	checkpointForPublish(): void {
+		this.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+	}
+
+	sessionMigration(sessionId: string): DurableSessionMigration | undefined {
+		const row = this.db.query(`
+			SELECT session_id, phase, source_schema, target_path, route_epoch,
+				source_digest, target_digest, error, started_at, updated_at, verified_at
+			FROM session_kernel_session_migrations WHERE session_id = ?
+		`).get(sessionId) as Record<string, unknown> | null;
+		if (!row) return undefined;
+		return {
+			sessionId: String(row.session_id),
+			phase: row.phase as SessionMigrationPhase,
+			sourceSchema: Number(row.source_schema),
+			targetPath: String(row.target_path),
+			routeEpoch: String(row.route_epoch),
+			...(row.source_digest == null ? {} : { sourceDigest: String(row.source_digest) }),
+			...(row.target_digest == null ? {} : { targetDigest: String(row.target_digest) }),
+			...(row.error == null ? {} : { error: String(row.error) }),
+			startedAt: Number(row.started_at),
+			updatedAt: Number(row.updated_at),
+			...(row.verified_at == null ? {} : { verifiedAt: Number(row.verified_at) }),
+		};
+	}
+
+	beginSessionMigration(
+		sessionId: string,
+		targetPath: string,
+		routeEpoch = crypto.randomUUID(),
+	): DurableSessionMigration {
+		const existing = this.sessionMigration(sessionId);
+		if (existing) return existing;
+		if (!this.hasSessionDurableState(sessionId))
+			throw new Error(`Session ${sessionId} has no legacy kernel state`);
+		const now = Date.now();
+		this.db.run(`
+			INSERT INTO session_kernel_session_migrations
+				(session_id, phase, source_schema, target_path, route_epoch, started_at, updated_at)
+			VALUES (?, 'copying', ?, ?, ?, ?, ?)
+		`, [sessionId, SESSION_KERNEL_SCHEMA_VERSION, targetPath, routeEpoch, now, now]);
+		return this.sessionMigration(sessionId)!;
+	}
+
+	markSessionMigrationPublished(
+		sessionId: string,
+		sourceDigest: string,
+		targetDigest: string,
+	): DurableSessionMigration {
+		const result = this.db.run(`
+			UPDATE session_kernel_session_migrations
+			SET phase = 'published', source_digest = ?, target_digest = ?, error = NULL, updated_at = ?
+			WHERE session_id = ? AND phase IN ('copying', 'published')
+		`, [sourceDigest, targetDigest, Date.now(), sessionId]);
+		if (result.changes !== 1)
+			throw new Error(`Session ${sessionId} migration cannot be published`);
+		return this.sessionMigration(sessionId)!;
+	}
+
+	cutoverSessionMigration(
+		sessionId: string,
+		expectedDigest: string,
+		outboxIds: number[],
+		nextTimerAt?: number,
+		nextOutboxAt?: number,
+	): DurableSessionPlacement {
+		const tx = this.db.transaction(() => {
+			const migration = this.sessionMigration(sessionId);
+			if (
+				!migration || migration.phase !== "published" ||
+				migration.targetDigest !== expectedDigest
+			)
+				throw new Error(`Session ${sessionId} migration is not publishable`);
+			this.db.run(`
+				INSERT INTO session_kernel_placements
+					(session_id, placement, route_epoch, needs_scan, next_timer_at, next_outbox_at, updated_at)
+				VALUES (?, 'isolated', ?, 1, ?, ?, ?)
+			`, [sessionId, migration.routeEpoch, nextTimerAt ?? null, nextOutboxAt ?? null, Date.now()]);
+			for (const id of outboxIds) {
+				this.db.run(`
+					INSERT INTO session_kernel_outbox_routes (id, session_id, created_at)
+					VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING
+				`, [id, sessionId, Date.now()]);
+				const owner = this.isolatedOutboxSessionId(id);
+				if (owner !== sessionId)
+					throw new Error(
+						`Outbox ${id} route belongs to ${owner ?? "no session"}, not ${sessionId}`,
+					);
+			}
+			this.db.run(`
+				UPDATE session_kernel_session_migrations
+				SET phase = 'cutover', updated_at = ? WHERE session_id = ?
+			`, [Date.now(), sessionId]);
+		});
+		tx.immediate();
+		return this.sessionPlacement(sessionId)!;
+	}
+
+	markSessionMigrationVerified(sessionId: string, expectedDigest: string): void {
+		const result = this.db.run(`
+			UPDATE session_kernel_session_migrations
+			SET phase = 'verified', error = NULL, verified_at = ?, updated_at = ?
+			WHERE session_id = ? AND phase IN ('cutover', 'verified') AND target_digest = ?
+		`, [Date.now(), Date.now(), sessionId, expectedDigest]);
+		if (result.changes !== 1)
+			throw new Error(`Session ${sessionId} migration cannot be verified`);
+	}
+
+	quarantineSessionMigration(sessionId: string, error: string): void {
+		this.db.run(`
+			UPDATE session_kernel_session_migrations
+			SET phase = 'quarantined', error = ?, updated_at = ? WHERE session_id = ?
+		`, [error.slice(0, 2_000), Date.now(), sessionId]);
+	}
+
+	retrySessionMigration(sessionId: string): boolean {
+		const result = this.db.run(`
+			UPDATE session_kernel_session_migrations
+			SET phase = CASE
+				WHEN EXISTS (
+					SELECT 1 FROM session_kernel_placements p
+					WHERE p.session_id = session_kernel_session_migrations.session_id
+				) THEN 'cutover' ELSE 'copying' END,
+				error = NULL, updated_at = ?
+			WHERE session_id = ? AND phase = 'quarantined'
+		`, [Date.now(), sessionId]);
+		return result.changes === 1;
+	}
+
+	hasSessionDurableState(sessionId: string): boolean {
+		const selects = SESSION_KERNEL_SESSION_TABLES.map((table, index) =>
+			`${index === 0 ? "" : "UNION ALL "}SELECT session_id FROM ${quotedIdentifier(table)} WHERE session_id = ?`,
+		).join("\n");
+		const row = this.db.query(`
+			SELECT 1 AS present FROM (${selects}) LIMIT 1
+		`).get(...SESSION_KERNEL_SESSION_TABLES.map(() => sessionId)) as {
+			present: number;
+		} | null;
 		return row !== null;
 	}
 
 	sessionPlacement(sessionId: string): DurableSessionPlacement | undefined {
 		const row = this.db.query(`
-			SELECT session_id, placement, needs_scan, next_timer_at, next_outbox_at, updated_at
+			SELECT session_id, placement, route_epoch, needs_scan,
+				next_timer_at, next_outbox_at, updated_at
 			FROM session_kernel_placements WHERE session_id = ?
 		`).get(sessionId) as {
 			session_id: string;
 			placement: "isolated";
+			route_epoch: string;
 			needs_scan: number;
 			next_timer_at: number | null;
 			next_outbox_at: number | null;
 			updated_at: number;
 		} | null;
-		if (!row) return undefined;
+		if (!row?.route_epoch) return undefined;
 		return {
 			sessionId: row.session_id,
 			placement: row.placement,
+			routeEpoch: row.route_epoch,
 			needsScan: row.needs_scan === 1,
 			...(row.next_timer_at === null ? {} : { nextTimerAt: Number(row.next_timer_at) }),
 			...(row.next_outbox_at === null ? {} : { nextOutboxAt: Number(row.next_outbox_at) }),
@@ -4252,15 +4739,18 @@ export class SessionKernelStore {
 			.filter(Boolean);
 	}
 
-	claimIsolatedSession(sessionId: string): DurableSessionPlacement {
+	claimIsolatedSession(
+		sessionId: string,
+		routeEpoch = crypto.randomUUID(),
+	): DurableSessionPlacement {
 		if (this.hasSessionDurableState(sessionId))
 			throw new Error(`Session ${sessionId} already has central kernel state`);
 		this.db.run(`
 			INSERT INTO session_kernel_placements
-				(session_id, placement, needs_scan, updated_at)
-			VALUES (?, 'isolated', 1, ?)
+				(session_id, placement, route_epoch, needs_scan, updated_at)
+			VALUES (?, 'isolated', ?, 1, ?)
 			ON CONFLICT(session_id) DO NOTHING
-		`, [sessionId, Date.now()]);
+		`, [sessionId, routeEpoch, Date.now()]);
 		const placement = this.sessionPlacement(sessionId);
 		if (!placement) throw new Error("Session placement was not persisted");
 		return placement;
@@ -4302,6 +4792,7 @@ export class SessionKernelStore {
 			  AND NOT EXISTS (
 				SELECT 1 FROM session_kernel_quarantine q
 				WHERE q.session_id = session_kernel_placements.session_id
+				  AND q.scope IN ('storage', 'migration')
 			  )
 			  AND (needs_scan = 1 OR next_timer_at <= ? OR next_outbox_at <= ?)
 			ORDER BY session_id
@@ -4324,6 +4815,12 @@ export class SessionKernelStore {
 			FROM session_kernel_outbox WHERE dead_lettered_at IS NULL
 		`).get() as { next_at: number | null };
 		return row.next_at === null ? undefined : Number(row.next_at);
+	}
+
+	sessionOutboxIds(sessionId: string): number[] {
+		return (this.db.query(`
+			SELECT id FROM session_kernel_outbox WHERE session_id = ? ORDER BY id
+		`).all(sessionId) as Array<{ id: number }>).map((row) => Number(row.id));
 	}
 
 	allocateIsolatedOutboxId(sessionId: string): number {
@@ -4370,7 +4867,10 @@ export class SessionKernelStore {
 	}
 
 	forgetIsolatedOutboxRoute(id: number): void {
-		this.db.run("DELETE FROM session_kernel_outbox_routes WHERE id = ?", [id]);
+		// Route rows are durable tombstones while retained legacy evidence exists.
+		// Removing one after settlement could route a duplicate late receipt back to
+		// the central evidence row and mutate the former authority.
+		void id;
 	}
 
 	outboxSessionId(id: number): string | undefined {
@@ -4417,6 +4917,19 @@ export class SessionKernelStore {
 /** Structural runtime surface implemented locally in tests and by the actor proxy in production. */
 export type SessionKernelStoreApi = Omit<
 	SessionKernelStore,
+	| "databaseIdentity"
+	| "claimDatabaseIdentity"
+	| "sessionSnapshotDigest"
+	| "importSessionSnapshotFrom"
+	| "integrityCheck"
+	| "checkpointForPublish"
+	| "sessionMigration"
+	| "beginSessionMigration"
+	| "markSessionMigrationPublished"
+	| "cutoverSessionMigration"
+	| "markSessionMigrationVerified"
+	| "quarantineSessionMigration"
+	| "retrySessionMigration"
 	| "hasSessionDurableState"
 	| "sessionPlacement"
 	| "isolatedSessionPlacements"
@@ -4426,6 +4939,7 @@ export type SessionKernelStoreApi = Omit<
 	| "isolatedWakeCandidates"
 	| "nextTimerWakeAt"
 	| "nextOutboxWakeAt"
+	| "sessionOutboxIds"
 	| "allocateIsolatedOutboxId"
 	| "isolatedOutboxRoutes"
 	| "isolatedOutboxSessionId"
