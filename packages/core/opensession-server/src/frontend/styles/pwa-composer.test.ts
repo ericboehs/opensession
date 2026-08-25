@@ -1,4 +1,6 @@
+import { readFileSync } from "node:fs";
 import { expect, test } from "bun:test";
+import { newStylexCollector, stylexCss, stylexTransform } from "../../server/stylex-build";
 import { composerBox, composerFlapBorder } from "../lib/composer-classes";
 
 const CSS = new URL("./base.css", import.meta.url);
@@ -7,14 +9,16 @@ const SHIPPED = new URL(
 	import.meta.url,
 );
 const COMPOSER = new URL("../components/Composer.tsx", import.meta.url);
+const COMPOSER_STYLES = new URL("../lib/composer-classes.ts", import.meta.url).pathname;
+const collector = newStylexCollector();
+stylexTransform(COMPOSER_STYLES, readFileSync(COMPOSER_STYLES, "utf8"), collector);
+const composerCss = stylexCss(collector);
 
 test("phone composers use the same quiet edge as the desktop ring", () => {
-	expect(composerBox).toContain(
-		"border-[color:color-mix(in_srgb,var(--composer-border)_35%,transparent)]",
+	expect(composerCss).toContain(
+		"border-color:color-mix(in srgb,var(--composer-border) 35%,transparent)",
 	);
-	expect(composerFlapBorder).toContain(
-		"border-[color:color-mix(in_srgb,var(--composer-border)_35%,transparent)]",
-	);
+	expect(composerFlapBorder).toContain("pwa-composer-edge");
 });
 
 test("team note mode stays compact at rest and names itself when expanded", async () => {
@@ -25,7 +29,8 @@ test("team note mode stays compact at rest and names itself when expanded", asyn
 	expect(minimizedStart).toBeGreaterThan(-1);
 	expect(composer.slice(minimizedStart, minimizedEnd)).not.toContain("noteMode");
 	expect(composer).toContain("{noteMode && !minimized && (");
-	expect(composer).toContain('noteMode && "before:opacity-100"');
+	expect(composer).toContain("noteMode && mergeStylexClassName");
+	expect(composer).toContain("sx.beforeOpacity100");
 });
 
 test("the installed phone composer keeps its add menu and hides only auxiliary controls", async () => {
@@ -49,7 +54,6 @@ test("the installed phone composer keeps its add menu and hides only auxiliary c
 	expect(standalonePhone).toContain("display: none");
 	expect(composer.match(/pwa-composer-auxiliary/g)).toHaveLength(2);
 	expect(composer).not.toContain("pwa-note-option");
-	expect(composer).toContain(
-		'"composer-pop-wrap relative inline-flex shrink-0"',
-	);
+	expect(composer).toContain('mergeStylexClassName("composer-pop-wrap"');
+	expect(composer).toContain("sx.relative, sx.inlineFlex, sx.shrink0");
 });

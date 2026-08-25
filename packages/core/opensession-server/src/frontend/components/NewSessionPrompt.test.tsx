@@ -74,7 +74,7 @@ test("an image still being staged holds its place", () => {
 	const { html } = field({ staging: { images: 1, files: 0 } });
 
 	// The tile itself, in the row the picture will land in.
-	expect(html).toContain("animate-pulse");
+	expect(html).toContain("animation-duration:2s");
 	// And the same news for a reader who cannot see it.
 	expect(html).toContain("Attaching 1 image…");
 	expect(html).toContain('role="status"');
@@ -83,7 +83,7 @@ test("an image still being staged holds its place", () => {
 test("a staged file holds its place too", () => {
 	const { html } = field({ staging: { images: 0, files: 1 } });
 
-	expect(html).toContain("animate-pulse");
+	expect(html).toContain("background-color:var(--hover)");
 	expect(html).toContain("Attaching 1 file…");
 });
 

@@ -969,8 +969,10 @@ export const fileChipSub = mergeStylexClassName("", typography.meta, sx.textFain
  *  ring on desktop and a solid hairline on phone. Drawing the flap at full
  *  strength made the panel behind it about three times darker than the input
  *  in front. Use the same mix everywhere so the two layers keep one edge. */
-export const composerFlapBorder =
-	"pwa-composer-edge border-[color:color-mix(in_srgb,var(--composer-border)_35%,transparent)]";
+export const composerFlapBorder = mergeStylexClassName(
+	"pwa-composer-edge",
+	sx.borderColorColorMixInSrgbVarComposerBorder35Transparent,
+);
 
 /* ── The queue flap ───────────────────────────────────────────────
    The flap that folds out from behind the composer: a dimmer panel flush with
