@@ -62,79 +62,10 @@ export function frontendStaticFile(
 	return Bun.file(sourcePath);
 }
 
-/**
- * Name of the newest Tailwind sheet that compiled successfully, so a failed
- * rebuild can keep serving it rather than shipping the app with no utilities
- * at all (see the Tailwind pass in buildFrontend). Parked on globalThis with
- * the rest of the bundle state, and seeded from disk on first use so the
- * fallback survives a server restart as well as a hot reload.
- */
-function lastGoodTailwind(): string | null {
-	if (g.__opensessionLastGoodTailwind === undefined) {
-		let newest: string | null = null;
-		let newestAt = 0;
-		try {
-			for (const f of readdirSync(FRONTEND_DIST)) {
-				if (!/^tailwind-.+\.css$/.test(f)) continue;
-				const at = statSync(join(FRONTEND_DIST, f)).mtimeMs;
-				if (at >= newestAt) [newest, newestAt] = [f, at];
-			}
-		} catch {}
-		g.__opensessionLastGoodTailwind = newest;
-	}
-	return g.__opensessionLastGoodTailwind ?? null;
-}
-
-/**
- * Compile src/frontend/styles/tailwind.css with the real Tailwind CLI. Bun
- * cannot compile Tailwind, so this subprocess (~100ms) is the only way to get
- * the utilities layer — in the prod bundle AND in dev, where the UI is served
- * by Bun's HMR server and therefore had NO utilities at all until 2026-08-05
- * (Home, the composer and every Tailwind-styled component rendered unstyled,
- * which reads as a broken app rather than a missing stylesheet).
- * Throws on a failed compile; callers decide how to fail soft.
- */
-async function compileTailwind(outPath: string): Promise<string> {
-	mkdirSync(dirname(outPath), { recursive: true });
-	const proc = Bun.spawn(
-		[
-			`${REPO_ROOT}/node_modules/.bin/tailwindcss`,
-			"-i",
-			`${FRONTEND_SRC}/styles/tailwind.css`,
-			"-o",
-			outPath,
-			"--minify",
-		],
-		{ cwd: REPO_ROOT, stdout: "pipe", stderr: "pipe" },
-	);
-	if ((await proc.exited) !== 0) {
-		throw new Error(await new Response(proc.stderr).text());
-	}
-	return await Bun.file(outPath).text();
-}
-
-// Dev-mode utilities sheet, compiled on first request and cached until a
-// frontend edit invalidates it (scheduleFrontendRebuild). Prod never uses
-// this path — there the hashed sheet is part of the built bundle.
-let devTailwind: string | null = null;
-
-/** The dev-mode Tailwind sheet, or null in prod / on a failed compile. */
-export async function devTailwindCss(): Promise<string | null> {
-	if (!IS_DEV) return null;
-	if (devTailwind !== null) return devTailwind;
-	try {
-		devTailwind = await compileTailwind(`${FRONTEND_DIST}/.tailwind-dev.css`);
-		return devTailwind;
-	} catch (e) {
-		console.error("[frontend] Tailwind (dev) build FAILED:", e);
-		return null;
-	}
-}
-
 // ── Prebuilt mode ────────────────────────────────────────────────────────────
 // A release artefact (scripts/build-release.ts) ships .frontend-dist compiled
 // on the build host and installs dependencies with --production, so the box
-// has no Tailwind compiler and never bundles. It is detected by the
+// has no frontend compiler and never bundles. It is detected by the
 // release.json the artefact writes at the repo root, or forced with
 // OPENSESSION_PREBUILT_FRONTEND=1 (=0 forces source mode). In this mode boot
 // only rehydrates the shipped bundle and renders index.html; every rebuild
@@ -162,9 +93,8 @@ export type BundleMeta = {
 	inputsHash: string;
 	entryName: string;
 	cssName: string;
-	twName: string | null;
-	/** The StyleX sheet (null while the tree still declares no stylex styles). */
-	sxName: string | null;
+	styleEngine: "stylex-v1";
+	sxName: string;
 	/** Every servable file compileAssets wrote (entry, chunks, sheets). */
 	assets: string[];
 	bunVersion?: string;
@@ -241,7 +171,7 @@ const stylexCollector = newStylexCollector();
 
 /**
  * Compile the SPA assets into .frontend-dist: the split JS bundle, the
- * hand-concatenated global stylesheet, the Tailwind sheet and the ghostty
+ * hand-concatenated global stylesheet, the generated StyleX sheet and the ghostty
  * wasm. Writes .bundle-meta.json and returns it. Touches no served state;
  * buildFrontend() and the release build both sit on top of this.
  *
@@ -292,8 +222,7 @@ export async function compileAssets(): Promise<BundleMeta> {
 	// base.css is the permanent foundation (tokens, reset, platform chrome);
 	// legacy.css remains empty; smooth-shadow.css carries its custom utility
 	// primitives and residual.css carries selectors StyleX cannot express.
-	// Concatenate them in authored cascade order before Tailwind during the
-	// migration and before the generated StyleX sheet after cutover.
+	// Concatenate them in authored cascade order before the generated StyleX sheet.
 	let cssSrc = (
 		await Promise.all(
 			["base", "legacy", "smooth-shadow", "residual"].map((n) =>
@@ -333,57 +262,24 @@ export async function compileAssets(): Promise<BundleMeta> {
 		);
 	}
 
-	// Tailwind pass (see styles/tailwind.css). Bun can't compile Tailwind, so
-	// the real compiler runs as a subprocess (~50ms); its lightningcss minifier
-	// doesn't have the var() bug above. Linked after the stylesheets so utilities win
-	// source-order ties against legacy rules.
-	//
-	// Fail-soft, but NOT by dropping the sheet: as components migrate off
-	// legacy.css the utilities stop being a garnish and start carrying the
-	// layout, so "serve without utilities" degrades from a cosmetic loss to a
-	// destroyed page. Fall back to the last sheet that compiled instead — it is
-	// stale by exactly the edit that broke the build, which is survivable, and
-	// the watcher replaces it on the next good compile. Only a failure with no
-	// previous sheet at all (a broken first build at boot) ships bare.
-	let twName: string | null = null;
-	try {
-		const twCss = await compileTailwind(`${FRONTEND_DIST}/.tailwind-build.css`);
-		twName = `tailwind-${Bun.hash(twCss).toString(36)}.css`;
-		writeFileAtomic(`${FRONTEND_DIST}/${twName}`, twCss);
-		g.__opensessionLastGoodTailwind = twName;
-	} catch (e) {
-		const prev = lastGoodTailwind();
-		if (prev && existsSync(`${FRONTEND_DIST}/${prev}`)) {
-			twName = prev;
-			console.error(
-				`[frontend] Tailwind build FAILED — reusing last good sheet (${prev}):`,
-				e,
-			);
-		} else {
-			console.error(
-				"[frontend] Tailwind build FAILED and no previous sheet exists — serving without utilities:",
-				e,
-			);
-		}
-	}
 
 	// StyleX pass output (see stylex-build.ts): one hashed sheet holding every
-	// compiled rule, linked after the Tailwind utilities so a migrated style
+	// compiled rule, linked after the residual selectors so a migrated style
 	// wins a source-order tie against the class it replaced.
-	let sxName: string | null = null;
-	if (stylexCollector.rules.size > 0) {
-		const sxCss = stylexCss(stylexCollector);
-		sxName = `stylex-${Bun.hash(sxCss).toString(36)}.css`;
-		writeFileAtomic(`${FRONTEND_DIST}/${sxName}`, sxCss);
+	if (stylexCollector.rules.size === 0) {
+		throw new Error("frontend imports StyleX but the compiler emitted no rules");
 	}
+	const sxCss = stylexCss(stylexCollector);
+	const sxName = `stylex-${Bun.hash(sxCss).toString(36)}.css`;
+	writeFileAtomic(`${FRONTEND_DIST}/${sxName}`, sxCss);
 
 	const meta: BundleMeta = {
 		inputsHash,
 		entryName,
 		cssName,
-		twName,
+		styleEngine: "stylex-v1",
 		sxName,
-		assets: [...outputNames, cssName, ...(twName ? [twName] : []), ...(sxName ? [sxName] : [])],
+		assets: [...outputNames, cssName, sxName],
 		bunVersion: Bun.version,
 		builtAt: new Date().toISOString(),
 	};
@@ -397,7 +293,7 @@ export async function compileAssets(): Promise<BundleMeta> {
 
 /** Changes whenever the entry or a stylesheet hash changes, so clients know to refresh. */
 export function bundleVersion(meta: BundleMeta): string {
-	return `${meta.entryName}|${meta.cssName}|${meta.twName ?? "no-tw"}|${meta.sxName ?? "no-sx"}`;
+	return `${meta.entryName}|${meta.cssName}|${meta.sxName}`;
 }
 
 /**
@@ -451,19 +347,14 @@ export function renderIndexHtml(meta: BundleMeta): string {
 		'<script type="module" src="./App.tsx"></script>',
 		`<script type="module" crossorigin src="/${meta.entryName}"></script>`,
 	);
-	const twLink = meta.twName
-		? `\n  <link rel="stylesheet" href="/${meta.twName}">`
-		: "";
-	const sxLink = meta.sxName
-		? `\n  <link rel="stylesheet" href="/${meta.sxName}">`
-		: "";
+	const sxLink = `\n  <link rel="stylesheet" href="/${meta.sxName}">`;
 	// Inject before the LAST head close: the first "</head>" in the source can
 	// legitimately appear inside inline-script comment text (2026-08-05: a
 	// comment literal ate the stylesheet links and broke the boot script).
 	const headClose = indexHtml.lastIndexOf("</head>");
 	return (
 		indexHtml.slice(0, headClose) +
-		`  <link rel="stylesheet" href="/${meta.cssName}">${twLink}${sxLink}\n` +
+		`  <link rel="stylesheet" href="/${meta.cssName}">${sxLink}\n` +
 		indexHtml.slice(headClose)
 	);
 }
@@ -501,7 +392,6 @@ export async function buildFrontend(): Promise<string> {
  * HMR server serves the source shell) and before the first build.
  */
 export function refreshIndexHtml(reason: string): void {
-	if (!frontend) return;
 	const meta = currentMeta();
 	if (!meta) return;
 	applyBundle(meta);
@@ -532,7 +422,7 @@ function pruneFrontendDist(keep: string[]): void {
 
 // ── Boot-time build skip ─────────────────────────────────────────────────────
 // The bundle only depends on src/frontend/**, bun.lock (vendored xterm css /
-// ghostty wasm / the tailwind compiler all live in node_modules) and the Bun
+// ghostty wasm and frontend compiler dependencies live in node_modules) and the Bun
 // version — verified: no frontend import reaches outside src/frontend. When
 // none of that changed since the last build, boot reuses .frontend-dist
 // instead of paying the ~3.5s rebuild; every restart used to eat it even with
@@ -544,7 +434,12 @@ function pruneFrontendDist(keep: string[]): void {
 // dist compiled elsewhere (compileAssets) and have boot accept it as current.
 
 export function frontendInputsHash(): string {
-	const parts: string[] = [`bun:${Bun.version}`];
+	const parts: string[] = [`bun:${Bun.version}`, "style-engine:stylex-v1"];
+	for (const compilerInput of ["stylex-build.ts", "frontend-build.ts"]) {
+		parts.push(
+			`${compilerInput}:${Bun.hash(readFileSync(join(import.meta.dir, compilerInput))).toString(36)}`,
+		);
+	}
 	try {
 		parts.push(`lock:${Bun.hash(readFileSync(join(REPO_ROOT, "bun.lock"))).toString(36)}`);
 	} catch {}
@@ -565,8 +460,16 @@ export function frontendInputsHash(): string {
 function readBundleMeta(): BundleMeta | null {
 	try {
 		const meta = JSON.parse(readFileSync(BUNDLE_META, "utf8")) as Partial<BundleMeta>;
-		if (!meta.inputsHash || !meta.entryName || !meta.cssName || !Array.isArray(meta.assets)) return null;
-		return { ...meta, twName: meta.twName ?? null, sxName: meta.sxName ?? null } as BundleMeta;
+		if (
+			meta.styleEngine !== "stylex-v1" ||
+			!meta.inputsHash ||
+			!meta.entryName ||
+			!meta.cssName ||
+			!meta.sxName ||
+			!Array.isArray(meta.assets) ||
+			!meta.assets.includes(meta.sxName)
+		) return null;
+		return meta as BundleMeta;
 	} catch {
 		return null;
 	}
@@ -622,7 +525,7 @@ function loadPrebuiltFrontendDist(): void {
  * serves the app instead).
  *
  * Allocated at import, FILLED by ensureFrontendBuilt(). Allocating an empty
- * object is not a resource; a Bun.build plus a Tailwind subprocess plus ~480
+ * object is not a resource; a a Bun.build plus ~480
  * written files are, and this module sits on the import chain of every route,
  * so building here compiled the whole SPA for any script or test that reached
  * it (scripts/check-module-side-effects.ts). The object has to exist before
@@ -630,7 +533,7 @@ function loadPrebuiltFrontendDist(): void {
  * the life of the process and read `indexHtml` fresh per request, which is
  * exactly what lets a rebuild land without a restart.
  */
-export const frontend: FrontendBundle | null = IS_DEV ? null : frontendStore();
+export const frontend: FrontendBundle = frontendStore();
 
 /**
  * Fill the bundle: rehydrate an unchanged .frontend-dist, or build it.
@@ -643,11 +546,11 @@ export const frontend: FrontendBundle | null = IS_DEV ? null : frontendStore();
  * In prebuilt mode it never builds: the shipped dist is served or boot fails.
  */
 export function ensureFrontendBuilt(): Promise<void> {
-	if (!frontend || frontend.version) return Promise.resolve();
+	if (frontend.version) return Promise.resolve();
 	if (!g.__opensessionFrontendBuild) {
 		g.__opensessionFrontendBuild = (async () => {
-			// Compiled binary: the bundle is baked in, no source tree or Tailwind
-			// CLI to build from — fill from the embedded assets.
+			// Compiled binary: the bundle is baked in, no source tree or frontend
+			// compiler to build from — fill from the embedded assets.
 			if (EMBEDDED_FRONTEND) {
 				// The embedded index.html is the instance-NEUTRAL shell; park it so
 				// renderIndexHtml stitches THIS install's config (product name,
@@ -681,22 +584,12 @@ export const SPA_HEADERS = {
 	"X-Frame-Options": "DENY",
 };
 
-// SPA entry: the HMR bundle in dev, the prebuilt index.html in prod. Reads
-// `frontend.indexHtml` fresh on each request so an in-process rebuild is served
-// immediately (the object is mutated, not replaced).
-const homepage = IS_DEV
-	? (await import("../frontend/index.html")).default
-	: null;
-
-export const spaEntry = frontend
-	? () =>
-			// Unbuilt is unreachable in the server (boot awaits
-			// ensureFrontendBuilt before binding); saying so out loud beats
-			// serving an empty document to whatever got here another way.
-			frontend.version
-				? new Response(frontend.indexHtml, { headers: SPA_HEADERS })
-				: new Response("Frontend is still building", { status: 503 })
-	: homepage ?? (() => new Response("Hosted frontend unavailable", { status: 503 }));
+// Reads `frontend.indexHtml` fresh on each request so an in-process rebuild is
+// served immediately in both normal and OPENSESSION_DEV server modes.
+export const spaEntry = () =>
+	frontend.version
+		? new Response(frontend.indexHtml, { headers: SPA_HEADERS })
+		: new Response("Frontend is still building", { status: 503 });
 
 /**
  * A run's user as a name a reader recognises. A run carries whatever id its
@@ -806,13 +699,6 @@ async function autoInstallAndRetry(): Promise<void> {
 }
 
 export function scheduleFrontendRebuild(reason: string, debounceMs = 300): void {
-	if (IS_DEV) {
-		// Dev serves JS/CSS through Bun's HMR server; only the Tailwind sheet is
-		// ours to keep fresh, so drop it and let the next request recompile.
-		devTailwind = null;
-		return;
-	}
-	if (!frontend) return;
 	if (isPrebuiltFrontend()) {
 		// A shipped dist has no compiler behind it; say so once and move on.
 		if (!g.__opensessionPrebuiltRebuildNoted) {

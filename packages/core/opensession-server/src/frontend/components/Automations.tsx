@@ -1995,7 +1995,6 @@ function DataFlowEditor({
                       <label className={FIELD_LABEL}>
                         Channel ID
                         <Input
-                          className="mono-input"
                           value={slack.channel}
                           onChange={(e) =>
                             updateInput(index, {
@@ -2069,7 +2068,6 @@ function DataFlowEditor({
                     <label className={FIELD_LABEL}>
                       Automation ID
                       <Input
-                        className="mono-input"
                         value={reports.automationId}
                         onChange={(e) =>
                           updateInput(index, {
@@ -2174,7 +2172,6 @@ function DataFlowEditor({
                 ) : (
                   <>
                     <Input
-                      className="mono-input"
                       value={output.channel}
                       onChange={(e) =>
                         updateOutput(index, { ...output, channel: e.target.value.toUpperCase() })
@@ -2444,7 +2441,6 @@ setError(e.message);
             value={watchChannel}
             onChange={(e) => setWatchChannel(e.target.value)}
             placeholder="C0123456789 (channel id)"
-            className="mono-input"
           />
           <span {...stylex.props(sx.mt1, sx.leadingSnug, sx.textFaint, typography.supporting)}>
             Invite @{AGENT_NAME} to the channel first. The bot only receives messages
@@ -2478,8 +2474,7 @@ setError(e.message);
                   value={customCron}
                   onChange={(e) => setCustomCron(e.target.value)}
                   placeholder="0 16 * * 1-5"
-                  className="mono-input"
-                />
+                      />
               </label>
             )}
             <label className={FIELD_LABEL}>

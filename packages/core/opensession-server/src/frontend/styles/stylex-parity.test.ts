@@ -30,7 +30,7 @@ function walk(dir: string, out: string[] = []) {
 	return out;
 }
 
-const sources = walk(FRONTEND).filter((f) => /\.(tsx|ts)$/.test(f) && !f.endsWith(".test.ts"));
+const sources = walk(FRONTEND).filter((f) => /\.(tsx|ts)$/.test(f) && !f.includes(".test."));
 
 describe("stylex port guards", () => {
 	test("the phone/desktop boundary is spelled exactly one way", () => {
@@ -205,7 +205,7 @@ describe("stylex port guards", () => {
 		expect(count).toBeLessThanOrEqual(RAW_COLOR_RATCHET);
 	});
 
-	test.failing("every static className token resolves in a shipped stylesheet", () => {
+	test("every static className token resolves in a shipped stylesheet", () => {
 		// Fails while the dynamic-conversion waves are in flight: tokens inside
 		// cn()/template strings (phone:min-h-11 …) still resolve through the
 		// live Tailwind sheet. When the last wave merges, regenerate

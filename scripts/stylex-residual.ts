@@ -188,26 +188,25 @@ const src = readFileSync(SHEET, "utf8");
 // Drop candidates the sheet has never heard of: component classes styled
 // elsewhere (markdown, mono-input…) and prose strings.
 const sheetNames = sheetClassNames(src);
-for (const t of [...tokens]) {
-	if (!sheetNames.has(t) && !t.includes(":")) tokens.delete(t);
-	else if (!sheetNames.has(t) && t.includes(":")) {
-		// variant tokens appear escaped+prefixed in the sheet; check base too
-		const base = t.split(":").pop()!;
-		if (!sheetNames.has(base)) tokens.delete(t);
-	}
+for (const token of [...tokens]) {
+	const escaped = token.replace(/([^a-zA-Z0-9_-])/g, "\\$1");
+	if (!src.includes(`.${escaped}`) && !sheetNames.has(token)) tokens.delete(token);
 }
 
 const semanticHooks = new Set([
 	"app",
+	"app-body",
 	"app-header-actions",
 	"archived-row",
 	"detail-pane",
 	"session-info-status",
 	"session-tab-new",
 	"session-tab-reorder",
+	"session-tab-view",
 	"session-tabs",
 	"staging-icon",
 	"tool-pre",
+	"viewer-header",
 	"viewer-header-actions",
 	"viewer-panel",
 	"workspace-info-panel",
@@ -216,7 +215,7 @@ const semanticHooks = new Set([
 const isPermittedResidual = (token: string) =>
 	token.startsWith("[") ||
 	token.startsWith("phone:[") ||
-	/^(?:data-|data-active|aria-|group-|first:|last:|empty:|space-y-|divide-|smooth-shadow|plate-sheen)/.test(
+	/^(?:data-|data-active|aria-|group(?:$|[/:-])|peer(?:$|-)|has-|selection:|first:|last:|empty:|-space-|space-y-|divide-|md:group-|phone:(?:\*|group-)|smooth-shadow|plate-sheen)/.test(
 		token,
 	) ||
 	semanticHooks.has(token);
