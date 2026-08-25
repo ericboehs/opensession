@@ -531,15 +531,23 @@ function PersonRepoBars({
 	// together would clear the segment on the next pixel of travel.
 	const [segment, setSegment] = useState<string | null>(null);
 	// The readout is placed against its own size, which changes with the
-	// number of repos in the row. Measured after layout, before paint.
+	// number of repos in the row. Measure while it is mounted; the observer also
+	// catches content changes as the pointer moves between rows.
 	const [tip, setTip] = useState({ w: 0, h: 0 });
+	const open = hover !== null;
 	useLayoutEffect(() => {
 		const el = tipRef.current;
-		if (!el) return;
-		const w = el.offsetWidth;
-		const h = el.offsetHeight;
-		setTip((cur) => (cur.w === w && cur.h === h ? cur : { w, h }));
-	});
+		if (!open || !el) return;
+		const measure = () => {
+			const w = el.offsetWidth;
+			const h = el.offsetHeight;
+			setTip((cur) => (cur.w === w && cur.h === h ? cur : { w, h }));
+		};
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(el);
+		return () => observer.disconnect();
+	}, [open]);
 
 	const show = (index: number, e: React.MouseEvent<HTMLDivElement>) => {
 		const wrap = wrapRef.current;
@@ -560,7 +568,6 @@ function PersonRepoBars({
 	};
 	// A tap has no way out of its own accord: there is no pointer to leave the
 	// row with, so the next touch anywhere else is what closes the readout.
-	const open = hover !== null;
 	useEffect(() => {
 		if (!open) return;
 		const onDown = (e: PointerEvent) => {

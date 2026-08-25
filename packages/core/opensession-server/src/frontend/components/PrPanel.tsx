@@ -4,6 +4,7 @@ import { randomUUID } from "../lib/random-uuid";
 import React, {
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useState,
   useRef,
@@ -481,7 +482,7 @@ export function PrPanel({
   // A PR chip or prose link can request a target before session PRs arrive.
   // Apply each request once after both the page setters and targets exist.
   const focusApplied = useRef<{ target?: number; checks?: number }>({});
-  useEffect(() => {
+  const applyFocusTarget = useEffectEvent(() => {
     if (!focusTarget) return;
     const { seq } = focusTarget;
     if (focusTarget.repo && focusApplied.current.target !== seq) {
@@ -496,6 +497,9 @@ export function PrPanel({
       setPage("overview");
       setFocusChecksSeq((prev) => prev + 1);
     }
+  });
+  useEffect(() => {
+    applyFocusTarget();
   }, [focusTarget?.seq, targets]);
   /** A file picked on Overview, waiting for the code page to have its diff. */
   const [pendingReveal, setPendingReveal] = useState<string | null>(null);
@@ -728,6 +732,7 @@ const threads = await fetchPrReviewThreads(
   // match those through the loaded PR number/head branch instead.
   // The server invalidated its caches before broadcasting, so this reads
   // fresh data.
+  const hasLoadedPr = pr !== null;
   useEffect(() => {
     if (!addHandler) return;
     return addHandler((msg) => {
@@ -738,7 +743,7 @@ const threads = await fetchPrReviewThreads(
         msg.repo === repo &&
         (branch
           ? msg.branch === branch
-          : !pr || msg.number === pr.number || msg.branch === pr.headRefName)
+          : !hasLoadedPr || msg.number === pr?.number || msg.branch === pr?.headRefName)
       )
         void load(true);
     });
@@ -749,11 +754,12 @@ const threads = await fetchPrReviewThreads(
     previewTarget?.branch,
     active?.repo,
     active?.branch,
+    hasLoadedPr,
     pr?.number,
     pr?.headRefName,
   ]);
 
-  useEffect(() => {
+  const loadDiffGroups = useEffectEvent(() => {
     const files = pr?.files || [];
     if (!diff?.patch || files.length < 3 || !diffLoadPolicy.groupFiles) {
       setDiffGroups(null);
@@ -794,7 +800,8 @@ const threads = await fetchPrReviewThreads(
       live = false;
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [
+  });
+  useEffect(() => loadDiffGroups(), [
     sessionId,
     active?.repo,
     active?.branch,
@@ -859,7 +866,7 @@ if (generation === codeFlowGenerationRef.current)
 if (generation === codeFlowGenerationRef.current)
         setCodeFlowLoading(false);
 });
-  }, [diff, codeFlowKey, sessionId, prPatchVersion, previewRepo, previewBranch, loadTargetKey, active?.repo, active?.branch]);
+  }, [diff, codeFlowKey, sessionId, prPatchVersion, previewRepo, previewBranch, active?.repo, active?.branch]);
 
   const refreshCodeFlow = async () => {
     codeFlowGenerationRef.current += 1;
@@ -875,6 +882,7 @@ if (generation === codeFlowGenerationRef.current)
   // refetch when a new push moves the head commit.
   const showingGuide = page === "files" && codeView === "guide";
   const showingFlow = page === "files" && codeView === "flow";
+  const hasSkippedFiles = !!diff?.skippedFiles;
   // A different PR or a new head commit is a different guide: drop the in-flight
   // and failed flags with it, or one failure would disable auto-load for the
   // rest of the panel's life. The keyed `guide` itself goes stale on its own.
@@ -901,7 +909,7 @@ if (generation === codeFlowGenerationRef.current)
 
   useEffect(() => {
     if (!showingFlow || codeFlowLoading || codeFlowError) return;
-    if (!diff?.patch && !diff?.skippedFiles) {
+    if (!diff?.patch && !hasSkippedFiles) {
       if (diffLoading || diffOutOfDate) return;
       setCodeView("all");
       return;
@@ -916,6 +924,7 @@ if (generation === codeFlowGenerationRef.current)
   }, [
     showingFlow,
     diff?.patch,
+    hasSkippedFiles,
     diffLoading,
     diffOutOfDate,
     codeFlow,
@@ -1251,10 +1260,11 @@ setClosing(false);
   // Hosts without viewed state never fetch — prViewed stays unset, so the
   // checkboxes stay hidden.
   const viewedKey = diff ? `${activeRepoId || "pr"}#${diff.number}` : null;
+  const viewedPrNumber = diff?.number;
   useEffect(() => {
-    if (!caps.viewedState || !viewedKey || !diff) return;
+    if (!caps.viewedState || !viewedKey || viewedPrNumber === undefined) return;
     let live = true;
-    fetchPrViewedFiles(activeRepoId, diff.number, getCurrentUser())
+    fetchPrViewedFiles(activeRepoId, viewedPrNumber, getCurrentUser())
       .then((res) => {
         if (!live) return;
         setPrViewed({
@@ -1269,7 +1279,7 @@ setClosing(false);
     return () => {
       live = false;
     };
-  }, [viewedKey, diff?.headRefOid, caps.viewedState]);
+  }, [viewedKey, viewedPrNumber, diff?.headRefOid, activeRepoId, caps.viewedState]);
 
   const handleToggleViewed = (path: string, next: boolean) => {
     const info = prViewedRef.current;

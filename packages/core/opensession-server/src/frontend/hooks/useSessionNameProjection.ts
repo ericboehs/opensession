@@ -229,7 +229,7 @@ export function useSessionNameProjection({
 			composerDisplayOffset(projection, selection.start),
 			composerDisplayOffset(projection, selection.end),
 		);
-	}, [displayText, textareaRef]);
+	}, [displayText, projection, textareaRef]);
 
 	function handleBeforeInput(e: React.FormEvent<HTMLTextAreaElement>) {
 		const native = e.nativeEvent as InputEvent;

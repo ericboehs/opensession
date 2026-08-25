@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import {
 	cancelPrReviewApi,
 	setSessionReviewerApi,
@@ -574,9 +574,12 @@ export function WorkspaceSummaryBody({
 	const [reviewCancelling, setReviewCancelling] = useState(false);
 	const [fixBusy, setFixBusy] = useState(false);
 	const [fixError, setFixError] = useState<string | null>(null);
-	useEffect(() => {
+	const syncReviewRequest = useEffectEvent(() => {
 		setSelectedReview(reviewRequest ?? null);
 		setReviewError(null);
+	});
+	useEffect(() => {
+		syncReviewRequest();
 	}, [reviewRequest?.to, reviewRequest?.at, reviewRequest?.accepted?.at]);
 
 	const additions = pr ? pr.additions : (diff?.additions ?? 0);

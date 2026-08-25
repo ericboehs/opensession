@@ -2,6 +2,7 @@ import { BASE_PATH } from "../lib/base";
 import React, {
 	useCallback,
 	useEffect,
+	useEffectEvent,
 	useLayoutEffect,
 	useMemo,
 	useRef,
@@ -828,6 +829,10 @@ export function SessionViewer({
 		prPresentation.primary?.state === "MERGED"
 			? prPresentation.primary
 			: undefined;
+	const prNumber = mergedPrValue?.number;
+	const prRepo = mergedPrValue?.repo;
+	const prBranch = mergedPrValue?.branch;
+	const prTitle = mergedPrValue?.title;
 	// The sessions poll rebuilds session.prs every tick, so `primary` is a new
 	// object on every render. Everything downstream memoizes on it, including
 	// the Slack share the memoized transcript takes as a prop, so key it on the
@@ -840,9 +845,19 @@ export function SessionViewer({
 				mergedPrValue.title ?? "",
 			].join("\u0000")
 		: "";
+	// Rebuilt from the key's own leaves so the memo callback reads only its
+	// deps: identity stays stable across poll ticks that change nothing.
 	const mergedPr = useMemo(
-		() => mergedPrValue,
-		[mergedPrKey]
+		() =>
+			mergedPrKey
+				? {
+						number: prNumber,
+						repo: prRepo,
+						branch: prBranch,
+						title: prTitle,
+					}
+				: undefined,
+		[mergedPrKey, prNumber, prRepo, prBranch, prTitle],
 	);
 	const [shippedChangeStatus, setShippedChangeStatus] = useState<
 		"idle" | "sharing"
@@ -870,6 +885,7 @@ export function SessionViewer({
 	const [shareDismissed, setShareDismissed] = useState(() =>
 		isSlackShareDismissed(shareDismissKey),
 	);
+	const isSessionFocused = useEffectEvent(() => focused);
 	useEffect(() => {
 		const sync = () => setShareDismissed(isSlackShareDismissed(shareDismissKey));
 		sync();
@@ -976,7 +992,7 @@ export function SessionViewer({
 	// The app opened Review on a specific PR (a sidebar PR row, or a workspace
 	// row whose PR isn't this session's primary). Re-sequenced locally so it
 	// shares one monotonic counter with the chips above.
-	useEffect(() => {
+	const syncReviewFocus = useEffectEvent(() => {
 		if (!reviewFocusPr) return;
 		setReviewFocus((prev) => ({
 			repo: reviewFocusPr.repo,
@@ -984,6 +1000,9 @@ export function SessionViewer({
 			number: reviewFocusPr.number,
 			seq: (prev?.seq ?? 0) + 1,
 		}));
+	});
+	useEffect(() => {
+		syncReviewFocus();
 	}, [reviewFocusPr?.seq]);
 	// Worktree roots for the transcript's tool rows: paths inside them render
 	// repo-relative instead of as a long absolute path (see tidyPath).
@@ -1056,7 +1075,11 @@ export function SessionViewer({
 	// this is a full scan of a transcript that runs to several thousand
 	// entries, not the routine allocation the rule is about.
 	const sentMessages = useMemo(() => collectSentMessages(entries), [entries]);
-	const liveTurnStore = useMemo(() => new LiveTurnStore(), [session.id]);
+	const liveTurnStore = useMemo(() => {
+		// Read (and discard) the session id so the reset key is explicit.
+		void session.id;
+		return new LiveTurnStore();
+	}, [session.id]);
 	const transcriptCommitCount = useRef(0);
 	const onTranscriptRender = useCallback(
 		(
@@ -1391,7 +1414,7 @@ export function SessionViewer({
 			unsubscribe();
 			stopObserving();
 		};
-	}, [session.id]);
+	}, [session.id, setEntries]);
 	useEffect(() => {
 		if (connected) void promptOutbox.flush();
 	}, [connected]);
@@ -1416,7 +1439,7 @@ export function SessionViewer({
 				},
 			];
 		});
-	}, [entries, initialPending, session.id]);
+	}, [entries, initialPending, session.id, setEntries]);
 	const [ask, setAsk] = useState<{
 		questionId: string;
 		questions: AskQuestion[];
@@ -1466,6 +1489,14 @@ export function SessionViewer({
 	// when the walkthrough actually does — the sessions poll hands back a fresh
 	// session object every tick, and an unstable prop here would re-render the
 	// whole (expensive) transcript each time.
+	const wt = session.walkthrough;
+	const wtSummary = wt?.summary ?? "";
+	const wtVideo = wt?.video;
+	const wtVideoTitle = wt?.videoTitle;
+	const wtShots = wt?.shots;
+	const wtPublishedAt = wt?.publishedAt ?? "";
+	const wtPublishedBy = wt?.publishedBy;
+	const wtPublishedEntryId = wt?.publishedEntryId;
 	const walkthroughKey = session.walkthrough
 		? [
 				session.walkthrough.publishedAt,
@@ -1474,9 +1505,31 @@ export function SessionViewer({
 				session.walkthrough.shots?.length || 0,
 			].join("|")
 		: "";
+	// Same rebuild-from-key-leaves trick as mergedPr above.
+	const hasWalkthrough = !!wt;
 	const sessionWalkthrough = useMemo(
-		() => session.walkthrough,
-		[walkthroughKey]
+		() =>
+			hasWalkthrough
+				? {
+						summary: wtSummary,
+						video: wtVideo,
+						videoTitle: wtVideoTitle,
+						shots: wtShots,
+						publishedAt: wtPublishedAt,
+						publishedBy: wtPublishedBy,
+						publishedEntryId: wtPublishedEntryId,
+					}
+				: undefined,
+		[
+			hasWalkthrough,
+			wtSummary,
+			wtVideo,
+			wtVideoTitle,
+			wtShots,
+			wtPublishedAt,
+			wtPublishedBy,
+			wtPublishedEntryId,
+		],
 	);
 	// The PR verdict on the transcript's last review loop, keyed the same way:
 	// it is built fresh from the polled session on every render, and an
@@ -1484,8 +1537,11 @@ export function SessionViewer({
 	const reviewResultValue = reviewLoopResult(session);
 	const reviewResultKey = JSON.stringify(reviewResultValue ?? null);
 	const reviewResult = useMemo(
-		() => reviewResultValue,
-		[reviewResultKey]
+		() =>
+			reviewResultKey === "null"
+				? undefined
+				: (JSON.parse(reviewResultKey) as ReturnType<typeof reviewLoopResult>),
+		[reviewResultKey],
 	);
 	// Open state + width of the right panel. Browser-level, and shared with the
 	// session-less workspace route so the chosen summary card or panel follows
@@ -1620,6 +1676,9 @@ export function SessionViewer({
 		if (fileDragWatchdogRef.current) clearTimeout(fileDragWatchdogRef.current);
 		fileDragWatchdogRef.current = setTimeout(finishFileDrag, 500);
 	}
+	const dropAttachments = useEffectEvent((picked: FileList | File[]) =>
+		addSessionAttachments(picked),
+	);
 	useEffect(() => {
 		// Own external file drags at the window, not on the conversation node.
 		// Dialogs and sheets portal to document.body, so a node-scoped handler
@@ -1714,7 +1773,7 @@ export function SessionViewer({
 			const cancelled = cancelledFileDragRef.current;
 			const dropped = event.dataTransfer?.files;
 			finishFileDrag();
-			if (!cancelled && dropped?.length) void addSessionAttachments(dropped);
+			if (!cancelled && dropped?.length) void dropAttachments(dropped);
 		}
 		// Capture before modal backdrops and the composer. Listen for keyup too:
 		// Chromium can consume keydown while it owns a native OS drag.
@@ -1966,7 +2025,7 @@ export function SessionViewer({
 	}, [captureScrollAnchor]);
 	useEffect(() => {
 		setEntries((prev) => withModelSwitches(prev, session.modelHistory));
-	}, [session.modelHistory]);
+	}, [session.modelHistory, setEntries]);
 
 	// The hold: keep an anchor element at a stable content offset while history
 	// prepends above it and the new bubbles' heights settle (content-visibility
@@ -2691,7 +2750,7 @@ export function SessionViewer({
 		[send, session.id],
 	);
 
-	useEffect(() => {
+	const subscribeToSession = useEffectEvent(() => {
 		if (!connected) return;
 
 		// Resume rather than re-snapshot when this exact session's transcript is
@@ -3285,7 +3344,13 @@ export function SessionViewer({
 		// tail attaches. It stands in for `transcriptPath`, which said the same
 		// thing a moment later but is detail-only now: reading it here would
 		// re-watch every session ONCE MORE the instant its detail hydrated.
-	}, [session.id, connected, session.ran, liveTurnStore]);
+	});
+	useEffect(() => subscribeToSession(), [
+		session.id,
+		connected,
+		session.ran,
+		liveTurnStore,
+	]);
 
 	// Drop optimistic bubbles once their real turn shows up. Each pending message
 	// is claimed (one-to-one) either by a transcript user entry recorded around or
@@ -3312,7 +3377,7 @@ export function SessionViewer({
 				for (const id of landed) next.add(id);
 				return next;
 			});
-	}, [entries, queued, steered]);
+	}, [entries, queued, steered, setEntries]);
 
 	// A steer receipt is reconciled away once its message lands in the transcript
 	// (the run actually read it). So this list is exactly the PENDING window: the
@@ -3347,7 +3412,7 @@ export function SessionViewer({
 	// sessions — the component isn't remounted per session, so a streaming
 	// bubble (now kept alive briefly past stream_done) would otherwise bleed
 	// into the next session's view.
-	useEffect(() => {
+	const resetOptimisticState = useEffectEvent(() => {
 		setPending(
 			initialPending
 				? [{ id: `pending-initial-${session.id}`, ...initialPending }]
@@ -3355,6 +3420,9 @@ export function SessionViewer({
 		);
 		liveTurnStore.clear();
 		setIsStreaming(false);
+	});
+	useEffect(() => {
+		resetOptimisticState();
 	}, [session.id, liveTurnStore]);
 
 	// Every session opens at the live edge. Do this in a layout effect so the
@@ -3410,7 +3478,7 @@ export function SessionViewer({
 			window.removeEventListener("keydown", stopForScrollKey);
 		};
 		const stopForScrollKey = (event: KeyboardEvent) => {
-			if (!focused) return;
+			if (!isSessionFocused()) return;
 			if (
 				["PageUp", "PageDown", "Home", "End"].includes(event.key) ||
 				(event.ctrlKey &&
@@ -3430,7 +3498,6 @@ export function SessionViewer({
 		keepAtLatest();
 		return stop;
 	}, [initialScrollSession, session.id, sessionHidden, messagesRef]);
-
 	// Returning to the app reads like reopening the session, not resuming a
 	// paused one. On the iOS PWA the page survives backgrounding with the scroll
 	// parked wherever it was; on desktop a hidden tab keeps streaming below the
@@ -3803,6 +3870,10 @@ export function SessionViewer({
 			: undefined);
 	// Same reason as mergedPr above: a receipt read off the polled session is a
 	// fresh object every tick, and the share below is a transcript prop.
+	const sentChannelName = shippedSentValue?.channelName ?? "";
+	const sentPermalink = shippedSentValue?.permalink;
+	const sentAt = shippedSentValue?.at ?? "";
+	const sentTs = shippedSentValue?.ts;
 	const shippedSentKey = shippedSentValue
 		? [
 				shippedSentValue.channelName,
@@ -3811,10 +3882,15 @@ export function SessionViewer({
 				shippedSentValue.ts,
 			].join("\u0000")
 		: "";
-	const shippedSent = useMemo(
-		() => shippedSentValue,
-		[shippedSentKey]
-	);
+	const shippedSent = useMemo(() => {
+		if (!shippedSentKey) return undefined;
+		return {
+			channelName: sentChannelName,
+			permalink: sentPermalink,
+			at: sentAt,
+			ts: sentTs,
+		};
+	}, [shippedSentKey, sentChannelName, sentPermalink, sentAt, sentTs]);
 	const shippedChangeShare = useMemo(
 		() =>
 			mergedPr && !shareDismissed
@@ -4243,7 +4319,7 @@ export function SessionViewer({
 			const sent = await handleSend(request.text, undefined, staged.images);
 			if (!sent) throw new Error("Could not send this comment");
 		};
-	}, [session.id, handleSend]);
+	});
 	useEffect(() => {
 		if (noEngine) return;
 		return registerImageRegionCommentHandler(session.id, (request) =>

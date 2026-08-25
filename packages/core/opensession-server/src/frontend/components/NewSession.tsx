@@ -1,4 +1,11 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { fetchWorktrees, fetchModels, fetchToolAccounts, fetchSandboxStatus, requestSandboxPrewarm, suggestBranch, suggestRepos, type RepoSuggestion, configuredNewSessionRepo, fetchProviderAccounts, fetchRepos, cachedRepos, type RepoInfo, createWorkspaceApi, updateWorkspaceApi, deleteWorkspaceApi, ApiError, type ProviderAccountOption, type ModelOption, type SandboxStatusInfo } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
@@ -996,47 +1003,48 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
   // "+" button, so Enter immediately creates another session. Cancelling still
   // restores focus normally.
   const createdRef = useRef(false);
-  useEffect(() => {
-    return addHandler((msg) => {
-      if (!creatingRef.current) return;
-      if (msg.type === "error") {
-        creatingRef.current = false;
-        createSessionIdRef.current = null;
-        createMessageRef.current = null;
-        replayCreateRef.current = false;
-        setStatus({ kind: "failed", message: msg.message });
-      } else if (
-        msg.type === "session_created" &&
-        msg.id === createSessionIdRef.current
-      ) {
-        creatingRef.current = false;
-        createSessionIdRef.current = null;
-        createMessageRef.current = null;
-        replayCreateRef.current = false;
-        // The prompt was consumed. Drop the stored draft and its pending write,
-        // which might otherwise land after this and restore the sent prompt.
-        promptHandle.current?.dropPendingDraftWrite();
-        dropStagingAttachments(DRAFT_KEY);
-        clearDraft(DRAFT_KEY);
-        // The next draft is a new one, so it gets its own workspace.
-        parkedWorkspaceId = null;
-        // "Create more" stays in the palette and resets for the next task. The
-        // other actions close it after App handles the same announcement.
-        if (createAction === "more" || inline) {
-          setStatus({ kind: "idle" });
-          promptHandle.current?.setText("");
-          setImages([]);
-          setFiles([]);
-          setNewBranch("");
-          setBranchEdited(false);
-          promptRef.current?.focus();
-        } else {
-          createdRef.current = createAction === "open";
-          onBack();
-        }
+  const handleCreationMessage = useEffectEvent((msg: WSServerMessage) => {
+    if (!creatingRef.current) return;
+    if (msg.type === "error") {
+      creatingRef.current = false;
+      createSessionIdRef.current = null;
+      createMessageRef.current = null;
+      replayCreateRef.current = false;
+      setStatus({ kind: "failed", message: msg.message });
+    } else if (
+      msg.type === "session_created" &&
+      msg.id === createSessionIdRef.current
+    ) {
+      creatingRef.current = false;
+      createSessionIdRef.current = null;
+      createMessageRef.current = null;
+      replayCreateRef.current = false;
+      // The prompt was consumed. Drop the stored draft and its pending write,
+      // which might otherwise land after this and restore the sent prompt.
+      promptHandle.current?.dropPendingDraftWrite();
+      dropStagingAttachments(DRAFT_KEY);
+      clearDraft(DRAFT_KEY);
+      // The next draft is a new one, so it gets its own workspace.
+      parkedWorkspaceId = null;
+      // "Create more" stays in the palette and resets for the next task. The
+      // other actions close it after App handles the same announcement.
+      if (createAction === "more" || inline) {
+        setStatus({ kind: "idle" });
+        promptHandle.current?.setText("");
+        setImages([]);
+        setFiles([]);
+        setNewBranch("");
+        setBranchEdited(false);
+        promptRef.current?.focus();
+      } else {
+        createdRef.current = createAction === "open";
+        onBack();
       }
-    });
-  }, [addHandler, createAction, inline]);
+    }
+  });
+  useEffect(() => {
+    return addHandler((msg) => handleCreationMessage(msg));
+  }, [addHandler]);
 
   // Re-send the same client-minted id after a drop. The server deduplicates an
   // in-flight request and returns the existing session if it already persisted.
@@ -1068,6 +1076,10 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
 setStaging((current) => subtractStaging(current, staging));
 });
   }
+
+  const addDroppedAttachments = useEffectEvent((picked: FileList | File[]) => {
+    void addAttachments(picked);
+  });
 
   // Leaving the palette with an unsent prompt saves it, rather than asking you
   // to say so in advance. The text is parked on a workspace (a fresh one, or
@@ -1408,7 +1420,7 @@ pendingDraftParks.delete(operation);
       event.stopPropagation();
       const dropped = event.dataTransfer?.files;
       resetFileDrag();
-      if (dropped?.length) void addAttachments(dropped);
+      if (dropped?.length) addDroppedAttachments(dropped);
     }
     window.addEventListener("dragenter", handleDragEnter, true);
     window.addEventListener("dragleave", handleDragLeave, true);

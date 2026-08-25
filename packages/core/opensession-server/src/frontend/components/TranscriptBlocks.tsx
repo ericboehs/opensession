@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useEffectEvent, useRef } from "react";
 import type { SessionNote, SessionWalkthrough, TranscriptEntry } from "../lib/types";
 import type { TranscriptIndexEntry } from "@tellahq/opensession-protocol/session";
 import {
@@ -693,9 +693,12 @@ function IndexedTranscriptBlocks(props: Props) {
 		);
 	// Nothing to window (an empty or fully-absent outline): the curtain lifts
 	// immediately instead of waiting for a demand pass that will never run.
+	const settleEmptyTimeline = useEffectEvent(() => {
+		props.onVisibleRangesSettled?.();
+	});
 	useEffect(() => {
-		if (renderedTimeline.length === 0) props.onVisibleRangesSettled?.();
-	}, [renderedTimeline.length, props.onVisibleRangesSettled]);
+		if (renderedTimeline.length === 0) settleEmptyTimeline();
+	}, [renderedTimeline.length]);
 	// Latest outline position of the mounted RANGE window's head row, read by
 	// handleTopApproach below. Standalone decorations (for example a model
 	// switch placed before the loaded tail by timestamp) must not become the
@@ -747,9 +750,10 @@ function IndexedTranscriptBlocks(props: Props) {
 	// index. The first top check can happen before that gate opens, so replay it
 	// when the generation advances instead of waiting for a scroll event that a
 	// short opening page may not be able to produce.
+	const retryTopApproach = useEffectEvent(() => handleTopApproach());
 	useEffect(() => {
 		if (props.transcriptRangeRetryGeneration === undefined) return;
-		handleTopApproach();
+		retryTopApproach();
 	}, [props.transcriptRangeRetryGeneration]);
 	const items: VirtualTranscriptItem[] = renderedTimeline.map(
 		({ item, index }, position) => {

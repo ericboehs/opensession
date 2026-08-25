@@ -1,4 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+	useCallback,
+	useEffect,
+	useEffectEvent,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { AnimatePresence } from "motion/react";
 import type {
 	UnifiedSession,
@@ -207,27 +214,30 @@ export function CatchUpDeck({
 	}
 
 	// Keyboard: ←/→ act, ↑ skip, esc leaves. (Space is left for the composer.)
-	useEffect(() => {
-		function onKey(e: KeyboardEvent) {
-			if (e.key === "Escape") return onExit();
-			if (!card) return;
-			// Don't hijack arrows while typing a reply.
-			const el = e.target as HTMLElement | null;
-			if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")) return;
-			if (e.key === "ArrowLeft") {
-				e.preventDefault();
-				act("archive");
-			} else if (e.key === "ArrowRight") {
-				e.preventDefault();
-				act("read");
-			} else if (e.key === "ArrowUp") {
-				e.preventDefault();
-				act("keep");
-			}
+	// The subscription is stable; the Effect Event reads the current card and
+	// callbacks without tearing down the window listener on every swipe.
+	const handleDeckKey = useEffectEvent((e: KeyboardEvent) => {
+		if (e.key === "Escape") return onExit();
+		if (!card) return;
+		// Don't hijack arrows while typing a reply.
+		const el = e.target as HTMLElement | null;
+		if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")) return;
+		if (e.key === "ArrowLeft") {
+			e.preventDefault();
+			act("archive");
+		} else if (e.key === "ArrowRight") {
+			e.preventDefault();
+			act("read");
+		} else if (e.key === "ArrowUp") {
+			e.preventDefault();
+			act("keep");
 		}
+	});
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => handleDeckKey(e);
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [card, index]);
+	}, []);
 
 	const done = index >= total;
 	const next = cards[index + 1];

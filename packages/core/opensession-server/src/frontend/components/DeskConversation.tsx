@@ -115,7 +115,12 @@ export function DeskConversation({
 	// One store per session, stable across renders: it sits in effect deps
 	// below, and a fresh instance every render would loop those effects forever
 	// (the compiler bails on this component, so it gets no automatic help).
-	const liveTurnStore = useMemo(() => new LiveTurnStore(), [sessionId]);
+	const liveTurnStore = useMemo(() => {
+		// Read (and discard) the session id so the linter sees the reset key:
+		// a new session must get a fresh store, nothing else may re-create it.
+		void sessionId;
+		return new LiveTurnStore();
+	}, [sessionId]);
 
 	useEffect(() => {
 		if (!autoFocus) return;

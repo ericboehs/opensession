@@ -193,11 +193,12 @@ export function ShortcutsPanel() {
 			setShortcutRecording(false);
 		};
 	});
+	const recordingKey = recording ? `${recording.id}:${recording.index}` : "";
 	useEffect(() => {
-		if (!recording) return;
+		if (!recordingKey) return;
 		const cleanup = recordKeys();
 		return cleanup;
-	}, [recording?.id, recording?.index]);
+	}, [recordingKey]);
 
 	function replaceConflicted() {
 		if (!conflict) return;

@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
+import React, {
+	useState,
+	useEffect,
+	useEffectEvent,
+	useLayoutEffect,
+	useRef,
+} from "react";
 import { createPortal } from "react-dom";
 import type {
 	UnifiedSession,
@@ -1180,20 +1186,25 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	};
 	// Items use the same gentle 60s cadence as Support (the server caches ~60s).
 	// Re-enabling a source loads it immediately; hiding one tears its timer down.
-	useEffect(() => {
-		const enabledFeeds = feeds.filter((feed) => !hiddenFeeds.has(feed.id));
-		if (enabledFeeds.length === 0) return;
-		let alive = true;
-		const load = () => {
+	// Filter changes already fetch their feed in setFeedFilter; interval ticks
+	// read the latest filters without restarting every feed's timer.
+	const refreshEnabledFeeds = useEffectEvent(
+		(enabledFeeds: FeedDescriptor[], isAlive: () => boolean) => {
 			for (const feed of enabledFeeds) {
 				fetchFeedItems(feed.id, argFiltersFor(feed, feedFilters))
 					.then((items) => {
-						if (alive)
+						if (isAlive())
 							setFeedItems((prev) => ({ ...prev, [feed.id]: items }));
 					})
 					.catch(() => {});
 			}
-		};
+		},
+	);
+	useEffect(() => {
+		const enabledFeeds = feeds.filter((feed) => !hiddenFeeds.has(feed.id));
+		if (enabledFeeds.length === 0) return;
+		let alive = true;
+		const load = () => refreshEnabledFeeds(enabledFeeds, () => alive);
 		load();
 		const timer = setInterval(load, 60_000);
 		return () => {
@@ -2342,42 +2353,44 @@ setClosingPrUrls((current) => {
 	// already-archived session — that session isn't in this list, so this
 	// handler no-ops on it and the two never both fire. ⌘⌥⇧A below escalates to
 	// the whole workspace.
+	const handleArchiveSessionKey = useEffectEvent((e: KeyboardEvent) => {
+		if (e.defaultPrevented || !matchesShortcut(e, "session-archive")) return;
+		if (blockingOverlayOpen()) return;
+		if (editableSwallowsArchiveChord(e.target)) return;
+		const canArchive = sessions.some(
+			(s) => s.id === selectedId && !s.archived,
+		);
+		if (!canArchive) return;
+		e.preventDefault();
+		closeWsHover();
+		archiveOpenSessionWithNext();
+	});
 	useEffect(() => {
-		function onKeyDown(e: KeyboardEvent) {
-			if (e.defaultPrevented || !matchesShortcut(e, "session-archive")) return;
-			if (blockingOverlayOpen()) return;
-			if (editableSwallowsArchiveChord(e.target)) return;
-			const canArchive = sessions.some(
-				(s) => s.id === selectedId && !s.archived,
-			);
-			if (!canArchive) return;
-			e.preventDefault();
-			closeWsHover();
-			archiveOpenSessionWithNext();
-		}
+		const onKeyDown = (e: KeyboardEvent) => handleArchiveSessionKey(e);
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [wsRowOrder, sessions, selectedId, onArchive, onSelect]);
+	}, []);
 
 	// ⌘⌥⇧A escalates the session archive (⌘E/⌘⇧A) to the whole active workspace.
 	// The Alt modifier is the only thing that separates the two handlers, so
 	// exactly one fires. Targets the workspace holding the open session.
+	const handleArchiveWorkspaceKey = useEffectEvent((e: KeyboardEvent) => {
+		if (e.defaultPrevented || !matchesShortcut(e, "workspace-archive"))
+			return;
+		if (editableSwallowsArchiveChord(e.target)) return;
+		const row = wsRowOrder.find(
+			(r) => r.sessions.length > 0 && r.sessions.some((c) => c.id === selectedId),
+		);
+		if (!row) return;
+		e.preventDefault();
+		closeWsHover();
+		archiveWorkspaceWithNext(row);
+	});
 	useEffect(() => {
-		function onKeyDown(e: KeyboardEvent) {
-			if (e.defaultPrevented || !matchesShortcut(e, "workspace-archive"))
-				return;
-			if (editableSwallowsArchiveChord(e.target)) return;
-			const row = wsRowOrder.find(
-				(r) => r.sessions.length > 0 && r.sessions.some((c) => c.id === selectedId),
-			);
-			if (!row) return;
-			e.preventDefault();
-			closeWsHover();
-			archiveWorkspaceWithNext(row);
-		}
+		const onKeyDown = (e: KeyboardEvent) => handleArchiveWorkspaceKey(e);
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [wsRowOrder, selectedId, onArchiveWorkspace]);
+	}, []);
 
 	// ⌘P pins the open session's workspace ROW, so the chord and the row's own
 	// pin button move the same pin. They used to move different ones: the button
@@ -2388,22 +2401,23 @@ setClosingPrUrls((current) => {
 	// archived one, or one the current lens filters out. Capture phase, so this
 	// runs before the viewer's window listener whatever order they mounted in,
 	// and `preventDefault` is what tells it we took the key.
+	const handlePinWorkspaceKey = useEffectEvent((e: KeyboardEvent) => {
+		if (e.defaultPrevented || !matchesShortcut(e, "session-pin")) return;
+		if (blockingOverlayOpen()) return;
+		// Decline inside a text field rather than swallowing the key: the
+		// viewer's own handler still sees it, so this only ever adds row
+		// semantics, never removes the chord from where it worked before.
+		if (editableSwallowsArchiveChord(e.target)) return;
+		const row = wsRowOrder.find(rowOwnsSelection);
+		if (!row) return;
+		e.preventDefault();
+		workspacePinState(row).toggle();
+	});
 	useEffect(() => {
-		function onKeyDown(e: KeyboardEvent) {
-			if (e.defaultPrevented || !matchesShortcut(e, "session-pin")) return;
-			if (blockingOverlayOpen()) return;
-			// Decline inside a text field rather than swallowing the key: the
-			// viewer's own handler still sees it, so this only ever adds row
-			// semantics, never removes the chord from where it worked before.
-			if (editableSwallowsArchiveChord(e.target)) return;
-			const row = wsRowOrder.find(rowOwnsSelection);
-			if (!row) return;
-			e.preventDefault();
-			workspacePinState(row).toggle();
-		}
+		const onKeyDown = (e: KeyboardEvent) => handlePinWorkspaceKey(e);
 		window.addEventListener("keydown", onKeyDown, true);
 		return () => window.removeEventListener("keydown", onKeyDown, true);
-	}, [wsRowOrder, selectedSession, pins]);
+	}, []);
 
 	// ⌘↓/⌘↑ cycle through the sidebar's rendered items in visual order (down =
 	// next row), wrapping at the ends. Reading the DOM here is intentional: each

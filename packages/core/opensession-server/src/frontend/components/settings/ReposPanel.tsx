@@ -62,7 +62,11 @@ function SharedCheckoutSetting() {
 	}
 	if (!settings.repos.length) return null;
 
-	const repoNames = settings.repos.map((repo) => repo.label).join(", ");
+	const repoNames = new Intl.ListFormat("en", {
+		style: "long",
+		type: "conjunction",
+	}).format(settings.repos.map((repo) => repo.label));
+	const groupLabel = `How sessions make changes to ${repoNames}`;
 	async function setMode(mode: SharedCheckoutMode) {
 		const previous = settings;
 		if (!previous || mode === previous.mode) return;
@@ -81,11 +85,11 @@ setSaving(false);
 
 	return (
 		<>
-			<SettingsGroupLabel>How sessions make changes</SettingsGroupLabel>
+			<SettingsGroupLabel>{groupLabel}</SettingsGroupLabel>
 			{error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
 			<SettingCard>
 				<RadioGroup
-					aria-label="How sessions make changes"
+					aria-label={groupLabel}
 					value={settings.mode}
 					disabled={saving}
 					onValueChange={(mode) => void setMode(mode as SharedCheckoutMode)}
@@ -117,7 +121,7 @@ setSaving(false);
 					</label>
 				</RadioGroup>
 			</SettingCard>
-			<SettingsHint>Only applies to new sessions.</SettingsHint>
+			<SettingsHint>Only affects new sessions in {repoNames}.</SettingsHint>
 		</>
 	);
 }

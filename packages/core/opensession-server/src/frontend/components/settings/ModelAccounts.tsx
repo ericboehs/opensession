@@ -1615,11 +1615,13 @@ const res = await fetch(
 
 });
 	});
+	const loginId = login?.id;
+	const loginState = login?.state;
 	useEffect(() => {
-		if (!login || login.state === "done" || login.state === "error") return;
+		if (!loginId || loginState === "done" || loginState === "error") return;
 		const t = setInterval(() => void pollDeviceLoginTick(), 2000);
 		return () => clearInterval(t);
-	}, [login?.id, login?.state]);
+	}, [loginId, loginState]);
 
 	async function handleStartDeviceLogin() {
 		setSaving(true);
