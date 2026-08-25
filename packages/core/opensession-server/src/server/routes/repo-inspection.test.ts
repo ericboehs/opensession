@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { pathToFileURL } from "url";
 import {
   inspectRepo,
   normalizeRepoOrigin,
@@ -24,6 +31,22 @@ describe("normalizeRepoOrigin", () => {
     expect(normalizeRepoOrigin("https://token@gitlab.com/acme/widget.git")).toBe(
       "gitlab.com/acme/widget",
     );
+  });
+
+  test("normalizes local paths, file URLs, and resolvable symlinks", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opensession-origin-identity-"));
+    try {
+      const remote = join(dir, "widget.git");
+      const symlink = join(dir, "widget-link.git");
+      mkdirSync(remote);
+      symlinkSync(remote, symlink);
+      const expected = normalizeRepoOrigin(remote);
+
+      expect(normalizeRepoOrigin(pathToFileURL(remote).href)).toBe(expected);
+      expect(normalizeRepoOrigin(symlink)).toBe(expected);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test("ignores registered checkouts that are unavailable", async () => {

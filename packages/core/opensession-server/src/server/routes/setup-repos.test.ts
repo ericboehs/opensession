@@ -12,6 +12,7 @@ import {
 } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { pathToFileURL } from "url";
 import { createWorktree } from "../worktree";
 import {
   adoptExistingCheckout,
@@ -683,11 +684,13 @@ describe("local repository registration", () => {
     });
   });
 
-  test.serial("rejects another checkout with the same generic origin", async () => {
+  test.serial("rejects the same local origin through a file URL", async () => {
     const root = localRoot();
     const registeredCheckout = createRemoteCheckout(root, "registered", "main");
+    const remote = join(root, "registered.git");
     const duplicateCheckout = join(root, "duplicate");
-    git(["clone", join(root, "registered.git"), duplicateCheckout]);
+    git(["clone", remote, duplicateCheckout]);
+    git(["remote", "set-url", "origin", pathToFileURL(remote).href], duplicateCheckout);
     const configPath = join(root, "config.json");
     writeFileSync(configPath, JSON.stringify({
       repos: {
