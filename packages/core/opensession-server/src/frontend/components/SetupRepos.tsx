@@ -693,9 +693,8 @@ function AddRepoPicker({
 			await onAdded();
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : String(cause));
-		} finally {
-			onPendingChange(null);
 		}
+		onPendingChange(null);
 	}
 
 	async function addLocalRepo() {
