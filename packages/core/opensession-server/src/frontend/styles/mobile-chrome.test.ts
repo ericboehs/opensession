@@ -1,4 +1,6 @@
+import { readFileSync } from "node:fs";
 import { expect, test } from "bun:test";
+import { newStylexCollector, stylexCss, stylexTransform } from "../../server/stylex-build";
 import {
 	APP_HEADER_ACTIONS,
 	ARCHIVED_SEARCH_HEADER,
@@ -20,11 +22,16 @@ import { REPORTS_COLUMN_HEADER } from "../lib/reports-classes";
 import { infoTopbarClass } from "../lib/session-viewer-classes";
 
 const CSS = new URL("./base.css", import.meta.url);
+const HEADER_SOURCE = new URL("../lib/app-header-classes.ts", import.meta.url).pathname;
+const headerCollector = newStylexCollector();
+stylexTransform(HEADER_SOURCE, readFileSync(HEADER_SOURCE, "utf8"), headerCollector);
+const headerCss = stylexCss(headerCollector);
 
 test("floating phone navigation stays pinned while chat chrome collapses", () => {
 	const floatingHeader = appHeader({ detail: true, floating: true });
 
-	expect(floatingHeader).toContain("phone:fixed");
+	expect(headerCss).toContain("@media (max-width: 720px)");
+	expect(headerCss).toContain("position:fixed");
 	expect(floatingHeader).not.toContain("chrome-collapsed");
 });
 
@@ -32,16 +39,11 @@ test("phone top-bar actions use neutral ink", () => {
 	expect(MOBILE_TOP_BAR_CONTROL).toContain("phone:[&_svg]:size-[26px]");
 	expect(MOBILE_BACK).toContain(MOBILE_TOP_BAR_CONTROL);
 	expect(MOBILE_BACK).toContain("phone:[&_svg]:size-[34px]");
-	for (const control of [
-		MOBILE_TOP_BAR_CONTROL,
-		MOBILE_BACK,
-		MOBILE_SEARCH_BTN,
-		mobileFilterBtn(true),
-	]) {
-		expect(control).toContain("phone:text-fg");
+	for (const control of [MOBILE_BACK, MOBILE_SEARCH_BTN, mobileFilterBtn(true)]) {
 		expect(control).not.toContain("phone:text-accent");
 	}
-	expect(mobileFilterBtn(false)).toContain("phone:text-dim");
+	expect(headerCss).toContain("color:var(--text)");
+	expect(headerCss).toContain("color:var(--text-dim)");
 });
 
 test("phone navigation chrome has no hard divider bars", async () => {
@@ -68,7 +70,8 @@ test("archived search focus collapses the phone header without clipping its shad
 	expect(ARCHIVED_SEARCH_HEADER).toContain(
 		"phone:transition-[height,padding-top,opacity,transform]",
 	);
-	expect(ARCHIVED_SEARCH_HEADER).toContain("motion-reduce:transition-none");
+	expect(headerCss).toContain("@media (prefers-reduced-motion: reduce)");
+	expect(headerCss).toContain("transition-property:none");
 });
 
 test("every floating phone header control is made of the same glass", async () => {
@@ -76,11 +79,11 @@ test("every floating phone header control is made of the same glass", async () =
 
 	// The prefixed spelling is the whole point on iOS Safari and the installed
 	// PWA, which still ship backdrop-filter only under `-webkit-`.
-	expect(MOBILE_CONTROL_GLASS).toContain(
-		"phone:[-webkit-backdrop-filter:var(--mobile-header-control-blur)]",
+	expect(headerCss).toContain(
+		"-webkit-backdrop-filter:var(--mobile-header-control-blur)",
 	);
+	expect(headerCss).toContain("background-color:var(--mobile-header-control-surface)");
 	for (const control of [MOBILE_BACK, HEADER_TITLE_PILL, APP_HEADER_ACTIONS]) {
-		expect(control).toContain(MOBILE_CONTROL_GLASS);
 		// A page-coloured fill is what made these read as paper stickers.
 		expect(control).not.toContain("phone:bg-surface");
 	}

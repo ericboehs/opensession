@@ -1,3 +1,247 @@
+
+import * as stylex from "@stylexjs/stylex";
+import { mergeStylexClassName } from "../ui/cn";
+import { type as typography } from "../styles/typography.stylex";
+
+const sx = stylex.create({
+	flex: {
+		"display": "flex"
+	},
+	w300px: {
+		"width": "300px"
+	},
+	flexCol: {
+		"flexDirection": "column"
+	},
+	overflowYAuto: {
+		"overflowY": "auto"
+	},
+	py2: {
+		"paddingBlock": "8px"
+	},
+	PopupBlurBlur32pxSaturate16Brightness112: {
+		"--popup-blur": "blur(32px) saturate(1.6) brightness(1.12)"
+	},
+	BorderRadiusCalc18pxVarRf: {
+		"borderRadius": "calc(18px * var(--rf))"
+	},
+	desktopMr320px: {
+		"@media (min-width: 721px)": {
+			"marginRight": "320px"
+		}
+	},
+	desktopMr312px: {
+		"@media (min-width: 721px)": {
+			"marginRight": "312px"
+		}
+	},
+	mt3: {
+		"marginTop": "12px"
+	},
+	h22px: {
+		"height": "22px"
+	},
+	shrink0: {
+		"flexShrink": "0"
+	},
+	itemsCenter: {
+		"alignItems": "center"
+	},
+	px4: {
+		"paddingInline": "16px"
+	},
+	fontMedium: {
+		"--tw-font-weight": "var(--font-weight-medium)",
+		"fontWeight": "var(--font-weight-medium)"
+	},
+	textFaint: {
+		"color": "var(--text-faint)"
+	},
+	mx2: {
+		"marginInline": "8px"
+	},
+	h31px: {
+		"height": "31px"
+	},
+	wCalc10016px: {
+		"width": "calc(100% - 16px)"
+	},
+	minW0: {
+		"minWidth": "0"
+	},
+	cursorPointer: {
+		"cursor": "pointer"
+	},
+	gap15: {
+		"gap": "6px"
+	},
+	roundedRow: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	borderNone: {
+		"--tw-border-style": "none",
+		"borderStyle": "none"
+	},
+	bgTransparent: {
+		"backgroundColor": "#0000"
+	},
+	px2: {
+		"paddingInline": "8px"
+	},
+	textLeft: {
+		"textAlign": "left"
+	},
+	textFg: {
+		"color": "var(--text)"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	focusRing: {
+		":focusVisible": {
+			"outline": "2px solid var(--accent-ink)",
+			"outlineOffset": "2px"
+		},
+		"@media (forced-colors: active)": {
+			":focusVisible": {
+				"outlineColor": "highlight"
+			}
+		}
+	},
+	minH38px: {
+		"minHeight": "38px"
+	},
+	pr2: {
+		"paddingRight": "8px"
+	},
+	pl25: {
+		"paddingLeft": "10px"
+	},
+	mb1: {
+		"marginBottom": "4px"
+	},
+	BorderRadiusCalc16pxVarRf: {
+		"borderRadius": "calc(16px * var(--rf))"
+	},
+	CornerShapeSquircle: {
+		"cornerShape": "squircle"
+	},
+	py1: {
+		"paddingBlock": "4px"
+	},
+	grid: {
+		"display": "grid"
+	},
+	size5: {
+		"width": "20px",
+		"height": "20px"
+	},
+	placeItemsCenter: {
+		"placeItems": "center"
+	},
+	flex1: {
+		"flex": "1"
+	},
+	truncate: {
+		"textOverflow": "ellipsis",
+		"whiteSpace": "nowrap",
+		"overflow": "hidden"
+	},
+	textDim: {
+		"color": "var(--text-dim)"
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	snapX: {
+		"scrollSnapType": "x var(--tw-scroll-snap-strictness)"
+	},
+	snapMandatory: {
+		"--tw-scroll-snap-strictness": "mandatory"
+	},
+	gap2: {
+		"gap": "8px"
+	},
+	overflowXAuto: {
+		"overflowX": "auto"
+	},
+	overflowYHidden: {
+		"overflowY": "hidden"
+	},
+	pt2: {
+		"paddingTop": "8px"
+	},
+	pb1: {
+		"paddingBottom": "4px"
+	},
+	ScrollPaddingLeft8px: {
+		"scrollPaddingLeft": "8px"
+	},
+	ScrollbarWidthNone: {
+		"scrollbarWidth": "none"
+	},
+	snapStart: {
+		"scrollSnapAlign": "start"
+	},
+	gap1: {
+		"gap": "4px"
+	},
+	p0: {
+		"padding": "0"
+	},
+	relative: {
+		"position": "relative"
+	},
+	block: {
+		"display": "block"
+	},
+	aspectVideo: {
+		"aspectRatio": "var(--aspect-video)"
+	},
+	wFull: {
+		"width": "100%"
+	},
+	overflowHidden: {
+		"overflow": "hidden"
+	},
+	roundedMd: {
+		"borderRadius": "calc(7px * var(--rf))"
+	},
+	border: {
+		"borderStyle": "var(--tw-border-style)",
+		"borderWidth": "1px"
+	},
+	borderLine: {
+		"borderColor": "var(--border)"
+	},
+	bgSurface: {
+		"backgroundColor": "var(--bg)"
+	},
+	transitionColors: {
+		"transitionProperty": "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	size4: {
+		"width": "16px",
+		"height": "16px"
+	},
+	roundedSm: {
+		"borderRadius": "calc(4px * var(--rf))"
+	},
+	bgPanel: {
+		"backgroundColor": "var(--bg-panel)"
+	},
+	objectCover: {
+		"objectFit": "cover"
+	},
+});
+
 /**
  * The workspace summary: the session header's floating stand-in for the right
  * Workspace panel, and the smaller version of it.
@@ -36,18 +280,18 @@
  * without pressing against it.
  */
 export const WS_SUMMARY_CARD =
-	"flex max-h-[min(72vh,640px)] w-[300px] flex-col overflow-y-auto py-2 " +
+	mergeStylexClassName("max-h-[min(72vh,640px)]", sx.flex, sx.w300px, sx.flexCol, sx.overflowYAuto, sx.py2) + " " +
 	"[--popup-glass:color-mix(in_srgb,var(--popup-surface)_58%,transparent)] " +
-	"[--popup-blur:blur(32px)_saturate(1.6)_brightness(1.12)] " +
-	"[border-radius:calc(18px*var(--rf))]!";
+	mergeStylexClassName("", sx.PopupBlurBlur32pxSaturate16Brightness112) + " " +
+	mergeStylexClassName("", sx.BorderRadiusCalc18pxVarRf);
 
 /** Wide Review keeps its scroller full width so the native scrollbar stays at
  * the window edge, beyond the summary card. These child clearances reserve the
  * summary column with an 8px visible gap. They stay 8px apart because the file
  * canvas supplies its own 8px inner gutter, keeping its border aligned with the
  * toolbar. */
-export const WS_SUMMARY_REVIEW_BAR_CLEARANCE = "desktop:mr-[320px]";
-export const WS_SUMMARY_REVIEW_CANVAS_CLEARANCE = "desktop:mr-[312px]";
+export const WS_SUMMARY_REVIEW_BAR_CLEARANCE = mergeStylexClassName("", sx.desktopMr320px);
+export const WS_SUMMARY_REVIEW_CANVAS_CLEARANCE = mergeStylexClassName("", sx.desktopMr312px);
 
 /**
  * Band label ("Assets"), taken from the sidebar so the card heads its lists
@@ -69,7 +313,7 @@ export const WS_SUMMARY_REVIEW_CANVAS_CLEARANCE = "desktop:mr-[312px]";
  * name back at you.
  */
 export const WS_SUMMARY_SECTION =
-	"mt-3 flex h-[22px] shrink-0 items-center px-4 text-label font-medium text-faint first:mt-1 " +
+	mergeStylexClassName("first:mt-1", sx.mt3, sx.flex, sx.h22px, sx.shrink0, sx.itemsCenter, sx.px4, typography.label, sx.fontMedium, sx.textFaint) +
 	// The PR plate already closes with its own bottom breathing room. Do not
 	// stack the next section's full top gap on it as well.
 	"[.ws-summary-band+&]:mt-0";
@@ -94,9 +338,9 @@ export const WS_SUMMARY_SECTION =
 const BAND_ROW = " [.ws-summary-band_&]:mx-0 [.ws-summary-band_&]:w-full";
 
 export const WS_SUMMARY_ROW =
-	"group/ws mx-2 flex h-[31px] w-[calc(100%_-_16px)] min-w-0 shrink-0 cursor-pointer items-center gap-1.5 " +
-	"rounded-row border-none bg-transparent px-2 text-left text-item-title text-fg " +
-	"hover:bg-hover focus-ring " +
+	mergeStylexClassName("group/ws", sx.mx2, sx.flex, sx.h31px, sx.wCalc10016px, sx.minW0, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.gap15) + " " +
+	mergeStylexClassName("", sx.roundedRow, sx.borderNone, sx.bgTransparent, sx.px2, sx.textLeft, typography.itemTitle, sx.textFg) + " " +
+	mergeStylexClassName("", sx.hoverBgHover, sx.focusRing) +
 	// Inside the PR band the row is already inset by the band, and the neutral
 	// hover plate would sit as a grey patch on a tinted surface. Give up the
 	// gutter and wash with the row's own ink instead, so the hover reads as the
@@ -111,8 +355,8 @@ export const WS_SUMMARY_ROW =
  * to the PR, the button does the thing.
  */
 export const WS_SUMMARY_STATUS_ROW =
-	"mx-2 flex min-h-[38px] w-[calc(100%_-_16px)] min-w-0 shrink-0 items-center gap-1.5 " +
-	"rounded-row pr-2 pl-2.5 text-left text-item-title text-fg" +
+	mergeStylexClassName("", sx.mx2, sx.flex, sx.minH38px, sx.wCalc10016px, sx.minW0, sx.shrink0, sx.itemsCenter, sx.gap15) + " " +
+	mergeStylexClassName("", sx.roundedRow, sx.pr2, sx.pl25, sx.textLeft, typography.itemTitle, sx.textFg) +
 	BAND_ROW;
 
 /**
@@ -134,12 +378,12 @@ export const WS_SUMMARY_STATUS_ROW =
  * this short reading as a rectangle, so it gives up 2px instead of 8.
  */
 export const WS_SUMMARY_BAND =
-	"ws-summary-band mx-2 mb-1 flex min-w-0 shrink-0 flex-col " +
-	"[border-radius:calc(16px*var(--rf))] [corner-shape:squircle]";
+	mergeStylexClassName("ws-summary-band", sx.mx2, sx.mb1, sx.flex, sx.minW0, sx.shrink0, sx.flexCol) + " " +
+	mergeStylexClassName("", sx.BorderRadiusCalc16pxVarRf, sx.CornerShapeSquircle);
 
 /** The band's inner padding, once it has a fill to hold. An untinted band is
  *  invisible, so it stays flush and the rows keep the list's own pitch. */
-export const WS_SUMMARY_BAND_PAD = "py-1";
+export const WS_SUMMARY_BAND_PAD = mergeStylexClassName("", sx.py1);
 
 /**
  * The leading column every row opens with, whatever it holds: a glyph, an
@@ -153,31 +397,31 @@ export const WS_SUMMARY_BAND_PAD = "py-1";
  * draws — `Svg` in components/icons.tsx clamps `size` up to a 20px minimum, so
  * a row asking for 15 was never getting it.
  */
-export const WS_SUMMARY_RAIL = "grid size-5 shrink-0 place-items-center";
+export const WS_SUMMARY_RAIL = mergeStylexClassName("", sx.grid, sx.size5, sx.shrink0, sx.placeItemsCenter);
 
 /** A glyph in that rail. Faint: the label is the content, the icon only says
  *  which kind of thing the row is. */
-export const WS_SUMMARY_ICON = "text-faint";
+export const WS_SUMMARY_ICON = mergeStylexClassName("", sx.textFaint);
 
 /** The label. It truncates, because a PR title or a worktree path is routinely
  *  longer than the card. */
-export const WS_SUMMARY_LABEL = "min-w-0 flex-1 truncate";
+export const WS_SUMMARY_LABEL = mergeStylexClassName("", sx.minW0, sx.flex1, sx.truncate);
 
 /** Right-edge action word ("Fix", "Pull", "Commit"). Reads as text until the
  *  row is hovered, then takes the accent, because the row itself is the
  *  button. */
 export const WS_SUMMARY_ACTION =
-	"shrink-0 text-meta font-medium text-dim group-hover/ws:text-accent";
+	mergeStylexClassName("group-hover/ws:text-accent", sx.shrink0, typography.meta, sx.fontMedium, sx.textDim);
 
 /** A count parked at a place row's right edge (live portals, working agents).
  *  Tone comes from the caller; a number that only reports gets `text-faint`,
  *  one that means something is running gets `text-yellow`, exactly as the
  *  panel's own tab strip reads them. */
-export const WS_SUMMARY_COUNT = "shrink-0 text-meta tabular-nums";
+export const WS_SUMMARY_COUNT = mergeStylexClassName("", sx.shrink0, typography.meta, sx.tabularNums);
 
 /** The PR row's trailing state word ("Draft", "Merged", "Changes requested").
  *  Tone comes from the caller; this is only the shape. */
-export const WS_SUMMARY_STATE = "shrink-0 text-meta font-medium";
+export const WS_SUMMARY_STATE = mergeStylexClassName("", sx.shrink0, typography.meta, sx.fontMedium);
 
 /* A reviewer's face is drawn by `UserAvatar`, not by a class here: it resolves
  * the roster picture, the GitHub fallback and the initials tile, and it wears
@@ -210,13 +454,13 @@ export const WS_SUMMARY_STATE = "shrink-0 text-meta font-medium";
  * hairline instead of scrolling past them.
  */
 export const WS_SUMMARY_STRIP =
-	"mx-2 flex shrink-0 snap-x snap-mandatory gap-2 overflow-x-auto overflow-y-hidden px-2 pt-2 pb-1 " +
-	"[scroll-padding-left:8px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
+	mergeStylexClassName("", sx.mx2, sx.flex, sx.shrink0, sx.snapX, sx.snapMandatory, sx.gap2, sx.overflowXAuto, sx.overflowYHidden, sx.px2, sx.pt2, sx.pb1) + " " +
+	mergeStylexClassName("[&::-webkit-scrollbar]:hidden", sx.ScrollPaddingLeft8px, sx.ScrollbarWidthNone);
 
 /** One frame in that strip: the picture, with its filename under it. */
 export const WS_SUMMARY_FRAME =
-	"group/frame flex shrink-0 cursor-pointer snap-start flex-col gap-1 border-none " +
-	"bg-transparent p-0 text-left focus-ring";
+	mergeStylexClassName("group/frame", sx.flex, sx.shrink0, sx.cursorPointer, sx.snapStart, sx.flexCol, sx.gap1, sx.borderNone) + " " +
+	mergeStylexClassName("", sx.bgTransparent, sx.p0, sx.textLeft, sx.focusRing);
 
 /** The picture itself. It carries a hairline because a capture's own edge is
  *  whatever it happened to end on, so a light screenshot would otherwise have
@@ -225,13 +469,13 @@ export const WS_SUMMARY_FRAME =
  *  loudest thing in a card that has no other lines in it. `object-contain`,
  *  because a screenshot is only worth showing whole. */
 export const WS_SUMMARY_FRAME_MEDIA =
-	"relative block aspect-video w-full overflow-hidden rounded-md border border-line " +
-	"bg-surface transition-colors group-hover/frame:bg-hover";
+	mergeStylexClassName("", sx.relative, sx.block, sx.aspectVideo, sx.wFull, sx.overflowHidden, sx.roundedMd, sx.border, sx.borderLine) + " " +
+	mergeStylexClassName("group-hover/frame:bg-hover", sx.bgSurface, sx.transitionColors);
 
 /** The filename under a frame. The picture is the content, but the name is how
  *  you refer to it ("use the dark one"), so it stays. */
 export const WS_SUMMARY_FRAME_CAPTION =
-	"block w-full truncate text-meta text-dim";
+	mergeStylexClassName("", sx.block, sx.wFull, sx.truncate, typography.meta, sx.textDim);
 
 /** A picture in the list, centred in the rail the glyphs use. A 16px tile
  *  inside a 20px slot, the same inset the sidebar gives its repo tiles: a
@@ -240,4 +484,4 @@ export const WS_SUMMARY_FRAME_CAPTION =
  *  the capture is at this size, which is what the frames are for. What it does
  *  is tell two rows apart at a glance once you already know them. */
 export const WS_SUMMARY_THUMB =
-	"size-4 overflow-hidden rounded-sm border border-line bg-panel object-cover";
+	mergeStylexClassName("", sx.size4, sx.overflowHidden, sx.roundedSm, sx.border, sx.borderLine, sx.bgPanel, sx.objectCover);
