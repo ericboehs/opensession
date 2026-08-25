@@ -34,13 +34,13 @@ class SessionTimerExecutionError extends Error {
 	}
 }
 
-function timerRuntimeFailure(
+async function timerRuntimeFailure(
 	timer: DurableTimer,
 	error: unknown,
-): SessionTimerExecutionError {
+): Promise<SessionTimerExecutionError> {
 	let deadLetteredNow = false;
 	try {
-		deadLetteredNow = sessionTimer({
+		deadLetteredNow = (await sessionTimer({
 			op: "record_runtime_failure",
 			sessionId: timer.sessionId,
 			timerId: timer.timerId,
@@ -48,7 +48,7 @@ function timerRuntimeFailure(
 			error: error instanceof Error ? error.message : String(error),
 			maxAttempts: 20,
 			observedAttempts: timer.attempts,
-		}).deadLetteredNow;
+		})).deadLetteredNow;
 	} catch {
 		// The actor is the only timer writer. If it is unavailable, preserve the
 		// original failure and let the next actor-owned runtime pass retry.
@@ -127,14 +127,14 @@ export async function fireSessionTimer(timer: DurableTimer): Promise<boolean> {
 	if (!handler) return false;
 	let decision: "execute" | "completed" | "missing";
 	try {
-		decision = sessionTimer({
+		decision = await sessionTimer({
 			op: "begin",
 			sessionId: timer.sessionId,
 			timerId: timer.timerId,
 			token: timer.token,
 		});
 	} catch (error) {
-		throw timerRuntimeFailure(timer, error);
+		throw await timerRuntimeFailure(timer, error);
 	}
 	if (decision === "missing") return false;
 	if (decision === "completed") return true;
@@ -142,7 +142,7 @@ export async function fireSessionTimer(timer: DurableTimer): Promise<boolean> {
 		await handler(timer);
 	} catch (error) {
 		try {
-			const settled = sessionTimer({
+			const settled = await sessionTimer({
 				op: "fail",
 				sessionId: timer.sessionId,
 				timerId: timer.timerId,
@@ -158,14 +158,14 @@ export async function fireSessionTimer(timer: DurableTimer): Promise<boolean> {
 		}
 	}
 	try {
-		sessionTimer({
+		await sessionTimer({
 			op: "complete",
 			sessionId: timer.sessionId,
 			timerId: timer.timerId,
 			token: timer.token,
 		});
 	} catch (error) {
-		throw timerRuntimeFailure(timer, error);
+		throw await timerRuntimeFailure(timer, error);
 	}
 	return true;
 }

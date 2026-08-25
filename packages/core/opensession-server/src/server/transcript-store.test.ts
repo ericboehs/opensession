@@ -53,9 +53,9 @@ const tick = () => new Promise<void>((r) => setTimeout(r, 0));
 describe("append + read roundtrip", () => {
   const sid = "bks-roundtrip";
 
-  test("appends assign dense 1-based seqs and read back in order", () => {
+  test("appends assign dense 1-based seqs and read back in order", async () => {
     const entries = [1, 2, 3, 4, 5].map((i) => entry(`e${i}`, `msg ${i}`));
-    const res = store.appendTranscriptEvents(sid, entries);
+    const res = await store.appendTranscriptEvents(sid, entries);
     expect(res).toEqual({ firstSeq: 1, lastSeq: 5, inserted: 5, updated: 0 });
     expect(store.getLastSeq(sid)).toBe(5);
 
@@ -68,14 +68,14 @@ describe("append + read roundtrip", () => {
     expect(tail.lastSeq).toBe(5);
   });
 
-  test("readTail limit returns the LAST n entries", () => {
+  test("readTail limit returns the LAST n entries", async () => {
     const tail = store.readTail(sid, 3);
     expect(tail.entries.map((e) => e.seq)).toEqual([3, 4, 5]);
     expect(tail.firstSeq).toBe(3);
     expect(tail.lastSeq).toBe(5);
   });
 
-  test("empty session reads as empty page, lastSeq 0", () => {
+  test("empty session reads as empty page, lastSeq 0", async () => {
     const t = store.readTail("bks-nonexistent");
     expect(t.entries).toEqual([]);
     expect(t.firstSeq).toBe(0);
@@ -83,15 +83,15 @@ describe("append + read roundtrip", () => {
     expect(store.getLastSeq("bks-nonexistent")).toBe(0);
   });
 
-  test("entries without an id are skipped, not thrown", () => {
+  test("entries without an id are skipped, not thrown", async () => {
     const bad = { type: "system", content: "no id", timestamp: "" } as unknown as TranscriptEntry;
-    expect(store.appendTranscriptEvents("bks-badid", [bad])).toBeNull();
+    expect(await store.appendTranscriptEvents("bks-badid", [bad])).toBeNull();
     expect(store.getLastSeq("bks-badid")).toBe(0);
   });
 });
 
 describe("stored media sanitation", () => {
-  test("removes implicit attachments from old grep result rows on every read path", () => {
+  test("removes implicit attachments from old grep result rows on every read path", async () => {
     const sid = "bks-grep-media";
     const result = entry(
       "grep-result",
@@ -101,7 +101,7 @@ describe("stored media sanitation", () => {
         videos: ["https://example.com/demo.mp4"],
       },
     );
-    store.appendTranscriptEvents(sid, [result]);
+    await store.appendTranscriptEvents(sid, [result]);
 
     expect(store.readTail(sid).entries[0].videos).toBeUndefined();
     expect(store.readSince(sid, 0).entries[0].videos).toBeUndefined();
@@ -112,17 +112,17 @@ describe("stored media sanitation", () => {
 describe("uuid dedup + upsert", () => {
   const sid = "bks-dedup";
 
-  test("re-append of the same entry mints no new seq", () => {
-    store.appendTranscriptEvents(sid, [entry("a", "one"), entry("b", "two")]);
+  test("re-append of the same entry mints no new seq", async () => {
+    await store.appendTranscriptEvents(sid, [entry("a", "one"), entry("b", "two")]);
     expect(store.getLastSeq(sid)).toBe(2);
 
-    const res = store.appendTranscriptEvents(sid, [entry("a", "one")]);
+    const res = await store.appendTranscriptEvents(sid, [entry("a", "one")]);
     expect(res).toEqual({ firstSeq: 1, lastSeq: 1, inserted: 0, updated: 1 });
     expect(store.getLastSeq(sid)).toBe(2);
   });
 
-  test("upsert updates data in place and keeps the original seq", () => {
-    const res = store.appendTranscriptEvents(sid, [
+  test("upsert updates data in place and keeps the original seq", async () => {
+    const res = await store.appendTranscriptEvents(sid, [
       entry("a", "one REWRITTEN by stream"),
     ]);
     expect(res!.updated).toBe(1);
@@ -134,8 +134,8 @@ describe("uuid dedup + upsert", () => {
     expect(tail.entries[1].content).toBe("two");
   });
 
-  test("mixed batch: upsert keeps seq, new row gets next seq", () => {
-    const res = store.appendTranscriptEvents(sid, [
+  test("mixed batch: upsert keeps seq, new row gets next seq", async () => {
+    const res = await store.appendTranscriptEvents(sid, [
       entry("b", "two v2"),
       entry("c", "three"),
     ]);
@@ -153,14 +153,14 @@ describe("big-entry bounding", () => {
   const bigContent = "x".repeat(100_000);
   const dataUrl = "data:image/png;base64," + "A".repeat(80_000);
 
-  test("oversized entry is stripped in data, full in blob", () => {
+  test("oversized entry is stripped in data, full in blob", async () => {
     const big = entry("big-1", bigContent, {
       type: "tool_use",
       toolName: "Bash",
       toolInput: { command: "echo hi", giant: "y".repeat(50_000) },
       images: [dataUrl, "https://cdn.tella.tv/pic.png"],
     });
-    const res = store.appendTranscriptEvents(sid, [big]);
+    const res = await store.appendTranscriptEvents(sid, [big]);
     expect(res!.inserted).toBe(1);
 
     // Raw row is hard-bounded and carries a full_ref.
@@ -201,8 +201,8 @@ describe("big-entry bounding", () => {
     expect(full.contentClamped).toBeUndefined();
   });
 
-  test("small entry: no blob, getFullEntry serves from the row", () => {
-    store.appendTranscriptEvents(sid, [entry("small-1", "tiny")]);
+  test("small entry: no blob, getFullEntry serves from the row", async () => {
+    await store.appendTranscriptEvents(sid, [entry("small-1", "tiny")]);
     const raw = new Database(dbPath, { readonly: true });
     try {
       const row = raw
@@ -218,8 +218,8 @@ describe("big-entry bounding", () => {
     expect(store.getFullEntry(sid, "does-not-exist")).toBeNull();
   });
 
-  test("upsert that shrinks below the bound drops the stale blob", () => {
-    store.appendTranscriptEvents(sid, [entry("big-1", "now small", { type: "tool_use", toolName: "Bash" })]);
+  test("upsert that shrinks below the bound drops the stale blob", async () => {
+    await store.appendTranscriptEvents(sid, [entry("big-1", "now small", { type: "tool_use", toolName: "Bash" })]);
     const raw = new Database(dbPath, { readonly: true });
     try {
       const blob = raw
@@ -241,8 +241,8 @@ describe("big-entry bounding", () => {
 describe("paging: readSince / readBefore", () => {
   const sid = "bks-paging";
 
-  test("setup + readSince returns strictly-after entries ascending", () => {
-    store.appendTranscriptEvents(
+  test("setup + readSince returns strictly-after entries ascending", async () => {
+    await store.appendTranscriptEvents(
       sid,
       [1, 2, 3, 4, 5, 6].map((i) => entry(`p${i}`, `p ${i}`))
     );
@@ -253,7 +253,7 @@ describe("paging: readSince / readBefore", () => {
     expect(store.readSince(sid, 6, 10).entries).toEqual([]);
   });
 
-  test("readBefore returns the LAST n entries below the cursor, ascending", () => {
+  test("readBefore returns the LAST n entries below the cursor, ascending", async () => {
     const before = store.readBefore(sid, 5, 2);
     expect(before.entries.map((e) => e.seq)).toEqual([3, 4]);
     expect(before.firstSeq).toBe(3);
@@ -266,9 +266,9 @@ describe("paging: readSince / readBefore", () => {
 });
 
 describe("message-aware tail windows", () => {
-  test("extends past the entry floor until it reaches conversation", () => {
+  test("extends past the entry floor until it reaches conversation", async () => {
     const sid = "bks-tail-window-messages";
-    store.appendTranscriptEvents(sid, [
+    await store.appendTranscriptEvents(sid, [
       entry("tw-u", "question", { type: "user" }),
       entry("tw-a", "answer"),
       ...Array.from({ length: 10 }, (_, i) =>
@@ -288,9 +288,9 @@ describe("message-aware tail windows", () => {
     expect(page.entries.at(-1)).toMatchObject({ id: "tw-tool-9", seq: 12 });
   });
 
-  test("assistant rows alone do not satisfy a required user boundary", () => {
+  test("assistant rows alone do not satisfy a required user boundary", async () => {
     const sid = "bks-tail-window-user";
-    store.appendTranscriptEvents(sid, [
+    await store.appendTranscriptEvents(sid, [
       entry("tu-u", "question", { type: "user" }),
       entry("tu-a0", "starting"),
       entry("tu-a1", "still working"),
@@ -311,9 +311,9 @@ describe("message-aware tail windows", () => {
     expect(page.entries[0]).toMatchObject({ id: "tu-u", type: "user" });
   });
 
-  test("the estimated byte ceiling bounds extension past the entry floor", () => {
+  test("the estimated byte ceiling bounds extension past the entry floor", async () => {
     const sid = "bks-tail-window-bytes";
-    store.appendTranscriptEvents(sid, [
+    await store.appendTranscriptEvents(sid, [
       entry("tb-u", "old question", { type: "user" }),
       entry("tb-a", "old answer"),
       ...Array.from({ length: 8 }, (_, i) =>
@@ -338,9 +338,9 @@ describe("message-aware tail windows", () => {
     ]);
   });
 
-  test("the row ceiling bounds a message-poor tail", () => {
+  test("the row ceiling bounds a message-poor tail", async () => {
     const sid = "bks-tail-window-rows";
-    store.appendTranscriptEvents(sid, [
+    await store.appendTranscriptEvents(sid, [
       entry("tr-u", "old question", { type: "user" }),
       ...Array.from({ length: 10 }, (_, i) =>
         entry(`tr-tool-${i}`, `step ${i}`, { type: "tool_use" })
@@ -360,9 +360,9 @@ describe("message-aware tail windows", () => {
     expect(page.lastSeq).toBe(11);
   });
 
-  test("measures stored rows in UTF-8 bytes", () => {
+  test("measures stored rows in UTF-8 bytes", async () => {
     const sid = "bks-tail-window-utf8";
-    store.appendTranscriptEvents(sid, [entry("utf8", "😀".repeat(20))]);
+    await store.appendTranscriptEvents(sid, [entry("utf8", "😀".repeat(20))]);
     let measured = 0;
 
     store.readTailWindow(sid, {
@@ -392,10 +392,10 @@ describe("message-aware tail windows", () => {
 });
 
 describe("import-first gate + legacy import", () => {
-  test("import then live-append: history seqs precede live seqs", () => {
+  test("import then live-append: history seqs precede live seqs", async () => {
     const sid = "bks-import-order";
     const history = [1, 2, 3].map((i) => entry(`h${i}`, `hist ${i}`));
-    const res = store.importLegacyTranscript(sid, history, "mirror", 4096);
+    const res = await store.importLegacyTranscript(sid, history, "mirror", 4096);
     expect(res).toEqual({ inserted: 3, updated: 0 });
     expect(store.hasImported(sid)).toBe(true);
     expect(store.needsImport(sid)).toBe(false);
@@ -405,7 +405,7 @@ describe("import-first gate + legacy import", () => {
       watermark: 4096,
     });
 
-    store.appendTranscriptEvents(sid, [entry("live1", "live 1")]);
+    await store.appendTranscriptEvents(sid, [entry("live1", "live 1")]);
     expect(store.readTail(sid).entries.map((e) => [e.seq, e.id])).toEqual([
       [1, "h1"],
       [2, "h2"],
@@ -414,9 +414,9 @@ describe("import-first gate + legacy import", () => {
     ]);
   });
 
-  test("re-import is idempotent (uuid upserts, seqs kept)", () => {
+  test("re-import is idempotent (uuid upserts, seqs kept)", async () => {
     const sid = "bks-import-order";
-    const res = store.importLegacyTranscript(
+    const res = await store.importLegacyTranscript(
       sid,
       [entry("h2", "hist 2 edited"), entry("h5", "hist 5 new")],
       "merged",
@@ -430,22 +430,22 @@ describe("import-first gate + legacy import", () => {
     expect(store.getImportInfo(sid)!.watermark).toBe(8192);
   });
 
-  test("chunked import handles > 500 rows in one call", () => {
+  test("chunked import handles > 500 rows in one call", async () => {
     const sid = "bks-import-chunks";
     const many = Array.from({ length: 1203 }, (_, i) => entry(`m${i}`, `m ${i}`));
-    const res = store.importLegacyTranscript(sid, many, "mirror", null);
+    const res = await store.importLegacyTranscript(sid, many, "mirror", null);
     expect(res.inserted).toBe(1203);
     expect(store.getLastSeq(sid)).toBe(1203);
   });
 
-  test("appendTranscriptEvents runs ensureImported before assigning live seqs", () => {
+  test("appendTranscriptEvents runs ensureImported before assigning live seqs", async () => {
     const sid = "bks-gate";
     let calls = 0;
     const ensureImported = (s: string) => {
       calls++;
-      store.importLegacyTranscript(s, [entry("g1", "old 1"), entry("g2", "old 2")], "mirror", 100);
+      (store as any).importLegacyTranscriptOwned(s, [entry("g1", "old 1"), entry("g2", "old 2")], "mirror", 100);
     };
-    store.appendTranscriptEvents(sid, [entry("g-live", "live")], { ensureImported });
+    await store.appendTranscriptEvents(sid, [entry("g-live", "live")], { ensureImported });
     expect(calls).toBe(1);
     expect(store.readTail(sid).entries.map((e) => [e.seq, e.id])).toEqual([
       [1, "g1"],
@@ -453,26 +453,26 @@ describe("import-first gate + legacy import", () => {
       [3, "g-live"],
     ]);
     // Gate is one-time: hook is not called again.
-    store.appendTranscriptEvents(sid, [entry("g-live2", "live 2")], { ensureImported });
+    await store.appendTranscriptEvents(sid, [entry("g-live2", "live 2")], { ensureImported });
     expect(calls).toBe(1);
   });
 
-  test("fresh session with no hook gets marked live-only", () => {
+  test("fresh session with no hook gets marked live-only", async () => {
     const sid = "bks-liveonly";
-    store.appendTranscriptEvents(sid, [entry("l1", "hello")]);
+    await store.appendTranscriptEvents(sid, [entry("l1", "hello")]);
     expect(store.hasImported(sid)).toBe(true);
     expect(store.getImportInfo(sid)!.src).toBe("live-only");
   });
 
-  test("a throwing ensureImported aborts the append (import-first invariant)", () => {
+  test("a throwing ensureImported aborts the append (import-first invariant)", async () => {
     const sid = "bks-gate-throw";
-    expect(() =>
+    await expect(
       store.appendTranscriptEvents(sid, [entry("t1", "live")], {
         ensureImported: () => {
           throw new Error("legacy parse exploded");
         },
-      })
-    ).toThrow("legacy parse exploded");
+      }),
+    ).rejects.toThrow("legacy parse exploded");
     expect(store.getLastSeq(sid)).toBe(0);
     expect(store.needsImport(sid)).toBe(true);
   });
@@ -489,13 +489,12 @@ describe("bus + append hook", () => {
     });
     const unsub2 = subscribeTranscript(sid, (ev) => got.push(ev));
     try {
-      const res = store.appendTranscriptEvents(sid, [
+      const res = await store.appendTranscriptEvents(sid, [
         entry("bus1", "hello"),
         entry("bus2", "world"),
       ]);
       expect(res!.lastSeq).toBe(2);
-      expect(got).toEqual([]); // fan-out is async (microtask), never in-tx
-      await tick();
+      // The async projection boundary yields after post-commit fan-out.
       expect(got.length).toBe(1);
       expect(got[0].firstSeq).toBe(1);
       expect(got[0].lastSeq).toBe(2);
@@ -515,7 +514,7 @@ describe("bus + append hook", () => {
     const got: TranscriptBusEvent[] = [];
     const unsub = subscribeTranscript(sid, (ev) => got.push(ev));
     try {
-      store.appendTranscriptEvents(sid, [entry("bus1", "hello v2")]);
+      await store.appendTranscriptEvents(sid, [entry("bus1", "hello v2")]);
       await tick();
       expect(got.length).toBe(1);
       expect(got[0].firstSeq).toBe(1);
@@ -526,7 +525,7 @@ describe("bus + append hook", () => {
     }
   });
 
-  test("append hook fires post-commit; a throwing hook never breaks appends", () => {
+  test("append hook fires post-commit; a throwing hook never breaks appends", async () => {
     const sid = "bks-hook";
     const seen: [string, number][] = [];
     setAppendHook((sessionId, entries) => {
@@ -534,7 +533,7 @@ describe("bus + append hook", () => {
       throw new Error("hook boom");
     });
     try {
-      const res = store.appendTranscriptEvents(sid, [entry("hk1", "user msg", { type: "user" })]);
+      const res = await store.appendTranscriptEvents(sid, [entry("hk1", "user msg", { type: "user" })]);
       expect(res!.inserted).toBe(1);
       expect(seen).toEqual([[sid, 1]]);
     } finally {
@@ -544,15 +543,15 @@ describe("bus + append hook", () => {
 });
 
 describe("deleteSessionTranscript", () => {
-  test("removes events, blobs and session row; import gate re-arms", () => {
+  test("removes events, blobs and session row; import gate re-arms", async () => {
     const sid = "bks-delete";
-    store.appendTranscriptEvents(sid, [
+    await store.appendTranscriptEvents(sid, [
       entry("d1", "x".repeat(100_000)), // forces a blob
       entry("d2", "small"),
     ]);
     expect(store.getLastSeq(sid)).toBe(2);
 
-    store.deleteSessionTranscript(sid);
+    await store.deleteSessionTranscript(sid);
     expect(store.getLastSeq(sid)).toBe(0);
     expect(store.readTail(sid).entries).toEqual([]);
     expect(store.getFullEntry(sid, "d1")).toBeNull();
@@ -571,15 +570,15 @@ describe("deleteSessionTranscript", () => {
     }
 
     // A later append starts a fresh dense sequence.
-    store.appendTranscriptEvents(sid, [entry("d3", "fresh start")]);
+    await store.appendTranscriptEvents(sid, [entry("d3", "fresh start")]);
     expect(store.readTail(sid).entries.map((e) => e.seq)).toEqual([1]);
   });
 });
 
 describe("transcript outline and random-access ranges", () => {
-  test("indexes display roles without shipping content", () => {
+  test("indexes display roles without shipping content", async () => {
     const sid = "bks-outline";
-    store.appendTranscriptEvents(sid, [
+    await store.appendTranscriptEvents(sid, [
       entry("context", "private context", {
         type: "system",
         contextInjection: { source: "repos" },
@@ -622,20 +621,20 @@ describe("transcript outline and random-access ranges", () => {
     expect(outline.lastSeq).toBe(6);
   });
 
-  test("updates an old outline row in place when its role changes", () => {
+  test("updates an old outline row in place when its role changes", async () => {
     const sid = "bks-outline-upsert";
-    store.appendTranscriptEvents(sid, [entry("same", "draft")]);
+    await store.appendTranscriptEvents(sid, [entry("same", "draft")]);
     const before = store.readTranscriptIndex(sid).entries[0];
-    store.appendTranscriptEvents(sid, [entry("same", "now a person", { type: "user" })]);
+    await store.appendTranscriptEvents(sid, [entry("same", "now a person", { type: "user" })]);
     const after = store.readTranscriptIndex(sid).entries[0];
     expect(after.seq).toBe(before.seq);
     expect(after.changeSeq).toBeGreaterThan(before.changeSeq);
     expect(after.role).toBe("user");
   });
 
-  test("hydrates an inclusive span in bounded chunks", () => {
+  test("hydrates an inclusive span in bounded chunks", async () => {
     const sid = "bks-range";
-    store.appendTranscriptEvents(
+    await store.appendTranscriptEvents(
       sid,
       Array.from({ length: 5 }, (_, index) => entry(`range-${index + 1}`, `row ${index + 1}`)),
     );
@@ -649,9 +648,9 @@ describe("transcript outline and random-access ranges", () => {
     expect(second.complete).toBe(true);
   });
 
-  test("paginates a range larger than the wire cap", () => {
+  test("paginates a range larger than the wire cap", async () => {
     const sid = "bks-range-large";
-    store.appendTranscriptEvents(
+    await store.appendTranscriptEvents(
       sid,
       Array.from({ length: 501 }, (_, index) =>
         entry(`large-range-${index + 1}`, `row ${index + 1}`),
@@ -668,7 +667,7 @@ describe("transcript outline and random-access ranges", () => {
 
   test("backfills existing canonical rows in bounded async batches", async () => {
     const sid = "bks-outline-backfill";
-    store.appendTranscriptEvents(
+    await store.appendTranscriptEvents(
       sid,
       Array.from({ length: 250 }, (_, index) =>
         entry(`backfill-${index}`, "hello", { type: "user" }),
@@ -695,7 +694,7 @@ describe("transcript outline and random-access ranges", () => {
     const sid = "bks-outline-full-blob";
     const content =
       "[GitHub] <!--os:review-handoff-->\nReview PR #42\n" + "x".repeat(100_000);
-    store.appendTranscriptEvents(sid, [
+    await store.appendTranscriptEvents(sid, [
       entry("large-handoff", content, { type: "user" }),
     ]);
     const written = store.readTranscriptIndex(sid).entries[0];

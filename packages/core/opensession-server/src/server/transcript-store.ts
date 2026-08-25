@@ -609,11 +609,11 @@ export class TranscriptStore {
    * publishes the affected entries on the bus and invokes the append hook —
    * neither can throw into this path.
    */
-  appendTranscriptEvents(
+  async appendTranscriptEvents(
     sessionId: string,
     entries: TranscriptEntry[],
     opts?: AppendOpts
-  ): AppendResult | null {
+  ): Promise<AppendResult | null> {
     return executeSessionProjection(sessionId, "transcript_append", () =>
       this.appendTranscriptEventsOwned(sessionId, entries, opts)
     );
@@ -940,12 +940,12 @@ export class TranscriptStore {
    * drift detection). Idempotent: re-import upserts by uuid and keeps seqs.
    * Publishes one post-import wake so an already-active watcher reconciles.
    */
-  importLegacyTranscript(
+  async importLegacyTranscript(
     sessionId: string,
     entries: TranscriptEntry[],
     src: TranscriptImportSrc | string,
     watermark: number | null
-  ): { inserted: number; updated: number } {
+  ): Promise<{ inserted: number; updated: number }> {
     return executeSessionProjection(sessionId, "transcript_import", () =>
       this.importLegacyTranscriptOwned(sessionId, entries, src, watermark)
     );
@@ -981,10 +981,10 @@ export class TranscriptStore {
 
   /** Replace a file-backed transcript authoritatively while preserving the
    * monotonic change cursor. Used for truncation/atomic replacement only. */
-  replaceTranscriptEvents(
+  async replaceTranscriptEvents(
     sessionId: string,
     entries: TranscriptEntry[]
-  ): { inserted: number; updated: number } {
+  ): Promise<{ inserted: number; updated: number }> {
     return executeSessionProjection(sessionId, "transcript_replace", () =>
       this.replaceTranscriptEventsOwned(sessionId, entries)
     );
@@ -1304,8 +1304,8 @@ export class TranscriptStore {
   // ── Delete / maintenance ──────────────────────────────────────────────────
 
   /** Remove every trace of a session (events + blobs + session row). */
-  deleteSessionTranscript(sessionId: string): void {
-    executeSessionProjection(sessionId, "transcript_delete", () => {
+  async deleteSessionTranscript(sessionId: string): Promise<void> {
+    await executeSessionProjection(sessionId, "transcript_delete", () => {
       this.txDelete.immediate(sessionId);
       this.importedCache.delete(sessionId);
     });

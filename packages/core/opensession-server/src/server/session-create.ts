@@ -101,6 +101,7 @@ import {
 	settleCreationFailed,
 	settleCreationSucceeded,
 	sessionKernel,
+	sessionKernelStore,
 	sessionTurn,
 } from "./session-kernel";
 import { AUTO_REPO, ensureAskCheckout, ensureScratchDir, getRepo, isRegisteredWorktree, listWorktrees, NO_REPO, repoForPath, repoForPathOrNull, resolveUniqueBranch, sharedCheckoutForNewSessions, worktreeHeadBranch, worktreePathFor, } from "./worktree";
@@ -508,28 +509,28 @@ export function runOpeningCreateOnce(
 	}
 	// Validate and bound actor recovery input before accepting the prompt dispatch.
 	const openingPlan = snapshotOpeningPlan(spec);
-	const openingPromptEntryId = beginPromptDispatch(
-		spec.id,
-		[
-			{
-				content: spec.openingPrompt,
-				user: spec.user,
-				...(spec.images?.length
-					? {
-							images: spec.images.map(
-								(image) => `data:${image.mediaType};base64,${image.data}`,
-							),
-						}
-					: {}),
-			},
-		],
+	const done = (async () => {
+		const openingPromptEntryId = await beginPromptDispatch(
+			spec.id,
+			[
+				{
+					content: spec.openingPrompt,
+					user: spec.user,
+					...(spec.images?.length
+						? {
+								images: spec.images.map(
+									(image) => `data:${image.mediaType};base64,${image.data}`,
+								),
+							}
+						: {}),
+				},
+			],
 		spec.openingPromptEntryId,
 		true,
 		"create",
-	);
-	if (openingPromptEntryId !== spec.openingPromptEntryId)
-		throw new Error("Opening prompt identity changed before actor dispatch");
-	const done = (async () => {
+		);
+		if (openingPromptEntryId !== spec.openingPromptEntryId)
+			throw new Error("Opening prompt identity changed before actor dispatch");
 		// The creation actor owns one physical effect at a time. Materialize the
 		// primary worktree before dispatching the long-running opening effect;
 		// otherwise openCreatedSession would try to emit a branch effect while the
@@ -709,9 +710,9 @@ async function restorePlannedOpening(sessionId: string): Promise<{
 	};
 }
 
-export function settleStoppedCreationOpening(item: CreationOpeningEffectItem): boolean {
+export async function settleStoppedCreationOpening(item: CreationOpeningEffectItem): Promise<boolean> {
 	const kernel = sessionKernel(item.sessionId);
-	const turn = sessionTurn({ op: "snapshot", sessionId: item.sessionId });
+	const turn = sessionKernelStore().turnSnapshot(item.sessionId);
 	// Exact cancel identity, matching openingTurnWasCancelled(): a retained
 	// receipt fences only the exact run it cancelled. The receipt records the
 	// admitted physical token derived from the effect payload, so recompute it
@@ -731,7 +732,7 @@ export function settleStoppedCreationOpening(item: CreationOpeningEffectItem): b
 		kernel,
 		item.effectKey,
 	);
-	acknowledgePromptDispatch(
+	await acknowledgePromptDispatch(
 		item.sessionId,
 		item.payload.openingPromptEntryId,
 	);
@@ -753,7 +754,7 @@ export async function executeCreationOpeningEffect(
 			state.state === "cancelled") &&
 		state.completedEffectIds.includes(item.effectKey)
 	) {
-		acknowledgePromptDispatch(
+		await acknowledgePromptDispatch(
 			item.sessionId,
 			item.payload.openingPromptEntryId,
 		);
@@ -761,7 +762,7 @@ export async function executeCreationOpeningEffect(
 			clearCreatePlan(item.sessionId);
 		return;
 	}
-	if (settleStoppedCreationOpening(item)) return;
+	if (await settleStoppedCreationOpening(item)) return;
 	if (
 		state.state !== "opening_dispatched" ||
 		state.currentEffectId !== item.effectKey
@@ -780,7 +781,7 @@ export async function executeCreationOpeningEffect(
 			sessionKernel(item.sessionId),
 			item.effectKey,
 		);
-		acknowledgePromptDispatch(
+		await acknowledgePromptDispatch(
 			item.sessionId,
 			item.payload.openingPromptEntryId,
 		);
@@ -801,7 +802,7 @@ export async function executeCreationOpeningEffect(
 					recovered?.state === "cancelled") &&
 				recovered.completedEffectIds.includes(item.effectKey)
 			) {
-				acknowledgePromptDispatch(
+				await acknowledgePromptDispatch(
 					item.sessionId,
 					item.payload.openingPromptEntryId,
 				);
@@ -809,7 +810,7 @@ export async function executeCreationOpeningEffect(
 					clearCreatePlan(item.sessionId);
 				return;
 			}
-			if (settleStoppedCreationOpening(item)) return;
+			if (await settleStoppedCreationOpening(item)) return;
 			if (
 				!recovered ||
 				recovered.identity !== item.payload.creationIdentity ||
@@ -832,7 +833,7 @@ export async function executeCreationOpeningEffect(
 		throw new Error("Opening effect actor-plan identity changed during recovery");
 	if (restored.spec.openingPromptEntryId !== item.payload.openingPromptEntryId)
 		throw new Error("Opening effect prompt identity changed during recovery");
-	if (settleStoppedCreationOpening(item)) return;
+	if (await settleStoppedCreationOpening(item)) return;
 	await openCreatedSession(
 		restored.spec,
 		restored.io,
@@ -915,7 +916,7 @@ export async function openCreatedSession(
 	let startGeneration = 0;
 	const openingTurnWasCancelled = (): boolean => {
 		if (!startToken || startGeneration < 1) return false;
-		const cancel = sessionTurn({ op: "snapshot", sessionId: bksId }).cancel;
+		const cancel = sessionKernelStore().turnSnapshot(bksId).cancel;
 		return (
 			cancel?.runId === startToken &&
 			cancel.runGeneration === startGeneration
@@ -1064,7 +1065,7 @@ export async function openCreatedSession(
 		const preparingEnvironment = spec.needsWorktree || Boolean(pendingAttach) || Boolean(spec.sandboxProvider) || Boolean(spec.runnerTarget);
 		if (preparingEnvironment) preparingWorkspaces.add(bksId);
 		try {
-			openingPromptEntryId = beginPromptDispatch(bksId, [
+			openingPromptEntryId = await beginPromptDispatch(bksId, [
 				{
 					content: spec.openingPrompt,
 					user: spec.user,
@@ -1294,7 +1295,7 @@ export async function openCreatedSession(
 						creationEffectId,
 					);
 				creationSettled = true;
-				acknowledgePromptDispatch(bksId, openingPromptEntryId);
+				await acknowledgePromptDispatch(bksId, openingPromptEntryId);
 			};
 			for await (const event of sandboxOpeningRun ?? runnerOpeningRun ?? runAgent({
 				prompt: openingPromptForRun,
@@ -1363,7 +1364,7 @@ export async function openCreatedSession(
 				// follow-up ladder. Consume Pi's exact boundary acknowledgement here
 				// too, including context-only steers that transcript parsing hides.
 				if (event.type === "steer_delivered" && event.steerId) {
-					acknowledgeSteerDelivery(bksId, event.steerId);
+					await acknowledgeSteerDelivery(bksId, event.steerId);
 				}
 				if (event.type === "init") {
 					engineSessionId = event.sessionId || "";
@@ -1569,7 +1570,7 @@ export async function openCreatedSession(
 				undefined,
 				creationEffectId,
 			);
-			acknowledgePromptDispatch(bksId, openingPromptEntryId);
+			await acknowledgePromptDispatch(bksId, openingPromptEntryId);
 			if (announced) {
 				io.emit({ type: "stream_done" });
 				io.emit({ type: "session_status", isRunning: false });
@@ -1618,7 +1619,7 @@ export async function openCreatedSession(
 			undefined,
 			creationEffectId,
 		);
-		acknowledgePromptDispatch(bksId, openingPromptEntryId);
+		await acknowledgePromptDispatch(bksId, openingPromptEntryId);
 		for (const record of activeRunRecords()) {
 			if (
 				record.osSessionId === bksId &&

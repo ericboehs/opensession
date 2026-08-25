@@ -1479,7 +1479,7 @@ export async function handleSessionsRoutes(
           : undefined);
       if (targetRunId) {
         try {
-          requestTurnCancel(session.id, session, {
+          await requestTurnCancel(session.id, session, {
             cancelId: `archive-stop:${session.id}:${targetRunId}:${target.generation}`,
             expectedRunId: targetRunId,
             expectedGeneration: target.generation,
@@ -1844,7 +1844,7 @@ export async function handleSessionsRoutes(
     let deleteExecuting = false;
     let deletePhysicalFinished = false;
 		try {
-      const plan = sessionGatewayCommand({
+      const plan = await sessionGatewayCommand({
         op: "request",
         sessionId: session.id,
         requestId: deleteRequestId,
@@ -1895,7 +1895,7 @@ export async function handleSessionsRoutes(
 		}
 			});
       deletePhysicalFinished = true;
-      sessionGatewayCommand({
+      await sessionGatewayCommand({
         op: "complete",
         sessionId: session.id,
         requestId: deleteRequestId,
@@ -1905,7 +1905,7 @@ export async function handleSessionsRoutes(
 			return Response.json(result.body, { status: result.status });
 		} catch (error) {
       if (deleteExecuting && !deletePhysicalFinished)
-        sessionGatewayCommand({
+        await sessionGatewayCommand({
           op: "fail",
           sessionId: session.id,
           requestId: deleteRequestId,

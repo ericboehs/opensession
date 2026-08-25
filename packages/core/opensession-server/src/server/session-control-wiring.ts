@@ -55,7 +55,7 @@ import {
 	requestCreationCredential,
 	requestCreationWorkspace,
 	sessionAsk,
-	sessionDeliveryAsync,
+	sessionDelivery,
 	sessionKernel,
   sessionTurn,
 } from "./session-kernel";
@@ -156,7 +156,7 @@ registerSessionControl({
 		// identity; the aggregate makes replay idempotent. The gateway-side
 		// resolver then runs its live side effects (escalation cancel,
 		// broadcast, tool-promise wake) — it owns the answerReceived flag.
-		const settled = sessionAsk({
+		const settled = await sessionAsk({
 			op: "answer",
 			sessionId: id,
 			questionId,
@@ -295,7 +295,7 @@ registerSessionControl({
 							deliveryId,
 						)
 					) {
-						if (!acceptQueuedSteer(id, deliveryId))
+						if (!await acceptQueuedSteer(id, deliveryId))
 							throw new Error("Pending steer changed before runner acceptance");
 						return {
 							status: "steered" as const,
@@ -303,7 +303,7 @@ registerSessionControl({
 							deliveryId,
 						};
 					}
-					rejectQueuedSteer(id, deliveryId);
+					await rejectQueuedSteer(id, deliveryId);
 					watchExternalRunAndDrain(id);
 					return {
 						status: "queued" as const,
@@ -363,7 +363,7 @@ registerSessionControl({
 				deliveryId,
 			};
 		};
-		const plan = await sessionDeliveryAsync({
+		const plan = await sessionDelivery({
 			op: "request_submit_command",
 			sessionId: id,
 			requestId: deliveryId,
@@ -381,7 +381,7 @@ registerSessionControl({
 		try {
 			const result = await deliverOwned();
       submitPhysicalFinished = true;
-			return await sessionDeliveryAsync({
+			return await sessionDelivery({
 				op: "complete_submit_command",
 				sessionId: id,
 				requestId: deliveryId,
@@ -390,7 +390,7 @@ registerSessionControl({
 		} catch (error) {
 			if (error instanceof SessionDeliveryError) {
         submitPhysicalFinished = true;
-				await sessionDeliveryAsync({
+				await sessionDelivery({
 					op: "complete_submit_command",
 					sessionId: id,
 					requestId: deliveryId,
@@ -398,20 +398,19 @@ registerSessionControl({
 				});
 				return error.result;
 			}
-      if (!submitPhysicalFinished)
-				await sessionDeliveryAsync({
-					op: "fail_submit_command",
-					sessionId: id,
-					requestId: deliveryId,
-					error: error instanceof Error ? error.message : String(error),
-				});
+      if (!submitPhysicalFinished) await sessionDelivery({
+				op: "fail_submit_command",
+				sessionId: id,
+				requestId: deliveryId,
+				error: error instanceof Error ? error.message : String(error),
+			});
 			throw error;
 		}
 	},
 
 	cancelSession: async (id, opts) => {
 		const requestId = opts?.requestId || randomUUIDv7();
-		const plan = sessionTurn({
+		const plan = await sessionTurn({
 			op: "request_cancel_command",
 			sessionId: id,
 			requestId,
@@ -423,28 +422,28 @@ registerSessionControl({
 			const currentSession = findSession(id);
 			if (!currentSession) {
         cancelPhysicalFinished = true;
-				return sessionTurn({
+				return await sessionTurn({
 					op: "complete_cancel_command",
 					sessionId: id,
 					requestId,
 					result: false,
 				});
 			}
-			requestTurnCancel(id, currentSession, {
+			await requestTurnCancel(id, currentSession, {
 				cancelId: `stop:${requestId}`,
 				expectedRunId: plan.targetRunId,
 				expectedGeneration: plan.targetRunGeneration,
 				source: "session_control",
 			});
       cancelPhysicalFinished = true;
-			return sessionTurn({
+			return await sessionTurn({
 				op: "complete_cancel_command",
 				sessionId: id,
 				requestId,
 				result: true,
 			});
 		} catch (error) {
-      if (!cancelPhysicalFinished) sessionTurn({
+      if (!cancelPhysicalFinished) await sessionTurn({
 				op: "fail_cancel_command",
 				sessionId: id,
 				requestId,

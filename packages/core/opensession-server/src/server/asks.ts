@@ -52,7 +52,7 @@ import type { AskQuestion as AskQuestionInput } from "@tellahq/opensession-proto
 export interface PendingAsk {
 	questionId: string;
 	questions: unknown[];
-	resolve: (answers: Record<string, string> | null) => void;
+	resolve: (answers: Record<string, string> | null) => void | Promise<void>;
 	/** Only run-blocking asks are durable. offerAskCard is restored by human-asks. */
 	durable?: boolean;
 	askedAt?: number;
@@ -69,7 +69,7 @@ export interface PendingAsk {
 	/** Test/isolated-instance seam; live asks use pendingAskStorePath(). */
 	storePath?: string;
 }
-export const pendingAsks: Map<string, PendingAsk> = new AskOwnedMap();
+export const pendingAsks = new AskOwnedMap<PendingAsk>();
 
 /** The durable map may retain a restored ask after its answer arrives, until
  * the detached run host reconnects and adopts that answer. That recovery
@@ -84,7 +84,7 @@ export function pendingAskAwaitingAnswer(
 /** One actor snapshot for list rendering, instead of one RPC per session. */
 export function pendingAskIdsAwaitingAnswer(): Set<string> {
 	const ids = new Set<string>();
-	for (const [sessionId, value] of sessionAsk({ op: "entries" })) {
+	for (const [sessionId, value] of sessionKernelStore().askEntries()) {
 		const pending = value as { answerReceived?: boolean } | undefined;
 		if (!pending?.answerReceived) ids.add(sessionId);
 	}
@@ -163,11 +163,11 @@ function clearAskTimer(sessionId: string): void {
 	sessionKernel(sessionId).cancelTimer("ask_escalation");
 }
 
-function retirePendingAsk(sessionId: string, questionId: string): void {
+async function retirePendingAsk(sessionId: string, questionId: string): Promise<void> {
 	clearAskTimer(sessionId);
 	const ask = pendingAsks.get(sessionId);
 	if (ask?.questionId === questionId) {
-		pendingAsks.delete(sessionId);
+		await pendingAsks.delete(sessionId);
 		persistPendingAsks(ask.storePath);
 	}
 }
@@ -198,18 +198,18 @@ function fallbackAnswerContext(
  * adopted engine re-emits its ask, makeAskHandler replaces this resolver with
  * the live one. An answer that wins that race still follows the ordinary
  * steer/queue path instead of disappearing. */
-function resolveRestoredAsk(
+async function resolveRestoredAsk(
 	sessionId: string,
 	questionId: string,
 	questions: AskQuestionInput[],
 	answers: Record<string, string> | null,
-): void {
+): Promise<void> {
 	const ask = pendingAsks.get(sessionId);
 	if (ask?.questionId !== questionId || ask.answerReceived) return;
 	clearAskTimer(sessionId);
 	ask.answerReceived = true;
 	ask.earlyAnswer = answers;
-	pendingAsks.set(sessionId, ask);
+	await pendingAsks.set(sessionId, ask);
 	if (ask.escalatedAskId) cancelAsk(ask.escalatedAskId);
 	persistPendingAsks(ask.storePath);
 	broadcastToSession(sessionId, {
@@ -222,16 +222,16 @@ function resolveRestoredAsk(
 	// promise instead of turning the answer into an unrelated user prompt.
 }
 
-export function settleRestoredAskAfterRecovery(sessionId: string): boolean {
+export async function settleRestoredAskAfterRecovery(sessionId: string): Promise<boolean> {
 	const ask = pendingAsks.get(sessionId);
 	if (!ask) return false;
 	if (!ask.restored) {
-		if (ask.answerReceived) retirePendingAsk(sessionId, ask.questionId);
+		if (ask.answerReceived) await retirePendingAsk(sessionId, ask.questionId);
 		return false;
 	}
 	const answers = ask.answerReceived ? (ask.earlyAnswer ?? null) : null;
 	if (!answers) {
-		retirePendingAsk(sessionId, ask.questionId);
+		await retirePendingAsk(sessionId, ask.questionId);
 		if (ask.escalatedAskId) cancelAsk(ask.escalatedAskId);
 		broadcastToSession(sessionId, {
 			type: "ask_resolved",
@@ -257,12 +257,12 @@ export function settleRestoredAskAfterRecovery(sessionId: string): boolean {
 				deliveryId: `restored-ask-answer:${ask.questionId}`,
 			},
 		)
-		.then((result) => {
+		.then(async (result) => {
 			if (result.status === "error") return;
 			// The continuation is now durably admitted under its stable id. Only
 			// now may the answered card and recovery intent be retired.
 			recordAskAnswer(sessionId, questions, answers);
-			retirePendingAsk(sessionId, ask.questionId);
+			await retirePendingAsk(sessionId, ask.questionId);
 			if (ask.escalatedAskId) cancelAsk(ask.escalatedAskId);
 			broadcastToSession(sessionId, {
 				type: "ask_resolved",
@@ -474,7 +474,7 @@ async function escalatePendingAsk(
 	if (current.escalatedAskId) {
 		if (!current.escalationWaitStarted) {
 			current.escalationWaitStarted = true;
-			pendingAsks.set(sessionId, current);
+			await pendingAsks.set(sessionId, current);
 			waitForEscalatedAnswer(
 				sessionId,
 				questionId,
@@ -502,7 +502,7 @@ async function escalatePendingAsk(
 	latest.escalatedAskId = escalated.askId;
 	latest.escalatedPersonName = escalated.personName;
 	latest.escalationWaitStarted = true;
-	pendingAsks.set(sessionId, latest);
+	await pendingAsks.set(sessionId, latest);
 	persistPendingAsks(latest.storePath);
 	waitForEscalatedAnswer(
 		sessionId,
@@ -559,13 +559,13 @@ function armAskEscalation(
 /** Restore run-blocking cards after a real process restart. The durable entry
  * stays display state only until the adopted engine re-emits the ask and
  * makeAskHandler adopts its original question id and askedAt. */
-export function restorePendingAsks(
+export async function restorePendingAsks(
   options: {
 	storePath?: string;
 	now?: number;
 	sessionExists?: (sessionId: string) => boolean;
   } = {},
-): number {
+): Promise<number> {
 	const storePath = options.storePath ?? pendingAskStorePath();
   const kernelStore = sessionKernelStore();
   const actorAuthority =
@@ -648,7 +648,7 @@ export function restorePendingAsks(
 			...(saved.answer ? { answer: saved.answer } : {}),
 			restored: true,
 			storePath,
-			resolve: (answers) =>
+			resolve: async (answers) =>
 				resolveRestoredAsk(
 					saved.sessionId,
 					saved.questionId,
@@ -656,7 +656,7 @@ export function restorePendingAsks(
 					answers,
 				),
 		};
-		pendingAsks.set(saved.sessionId, ask);
+		await pendingAsks.set(saved.sessionId, ask);
 		if (!ask.answerReceived) {
       armAskEscalation(saved.sessionId, ask, saved.questions, options.now);
 			broadcastToSession(saved.sessionId, {
@@ -692,16 +692,16 @@ export function restorePendingAsks(
  * like an SSO login) without interrupting the run. Answering calls `onAnswer`
  * once; closing retracts the card and never calls it.
  */
-export function offerAskCard(
+export async function offerAskCard(
 	sessionId: string,
 	questions: AskQuestionInput[],
 	onAnswer: (answers: Record<string, string> | null) => void,
-): { close: () => void } {
+): Promise<{ close: () => Promise<void> }> {
 	const questionId = crypto.randomUUID();
 	let settled = false;
-	const retract = () => {
+	const retract = async () => {
 		if (pendingAsks.get(sessionId)?.questionId === questionId) {
-			pendingAsks.delete(sessionId);
+			await pendingAsks.delete(sessionId);
 		}
 		broadcastToSession(sessionId, {
 			type: "ask_resolved",
@@ -709,13 +709,13 @@ export function offerAskCard(
 			questionId,
 		});
 	};
-	pendingAsks.set(sessionId, {
+	await pendingAsks.set(sessionId, {
 		questionId,
 		questions,
-		resolve: (a) => {
+		resolve: async (a) => {
 			if (settled) return;
 			settled = true;
-			retract();
+			await retract();
 			recordAskAnswer(sessionId, questions, a);
 			onAnswer(a);
 		},
@@ -727,10 +727,10 @@ export function offerAskCard(
 		questions,
 	});
 	return {
-		close: () => {
+		close: async () => {
 			if (settled) return;
 			settled = true;
-			retract();
+			await retract();
 		},
 	};
 }
@@ -763,7 +763,7 @@ export function makeAskHandler(sessionId: string) {
 			!!existing.durable &&
 			sameQuestions(existing.questions, questions);
 		if (existing?.restored && !adopted) {
-			retirePendingAsk(sessionId, existing.questionId);
+			await retirePendingAsk(sessionId, existing.questionId);
 			broadcastToSession(sessionId, {
 				type: "ask_resolved",
 				sessionId,
@@ -776,8 +776,8 @@ export function makeAskHandler(sessionId: string) {
 		let escalatedAskId = adopted ? existing!.escalatedAskId || null : null;
 
 		const answers = await new Promise<Record<string, string> | null>(
-			(resolve) => {
-				const finish = (a: Record<string, string> | null) => {
+			async (resolve) => {
+				const finish = async (a: Record<string, string> | null) => {
 					if (settled) return;
 					settled = true;
 					clearAskTimer(sessionId);
@@ -785,7 +785,7 @@ export function makeAskHandler(sessionId: string) {
 					if (durableAnswer?.questionId === questionId) {
 						durableAnswer.answerReceived = true;
 						durableAnswer.earlyAnswer = a;
-						pendingAsks.set(sessionId, durableAnswer);
+						await pendingAsks.set(sessionId, durableAnswer);
 						persistPendingAsks(durableAnswer.storePath);
 					}
 					// Before the card goes: the transcript's only trace of it.
@@ -825,9 +825,9 @@ export function makeAskHandler(sessionId: string) {
 					...(adopted && existing!.storePath
 						? { storePath: existing!.storePath }
 						: {}),
-					resolve: (a) => finish(a),
+					resolve: async (a) => finish(a),
 				};
-				pendingAsks.set(sessionId, ask);
+				await pendingAsks.set(sessionId, ask);
 				persistPendingAsks(ask.storePath);
 				transitionRunState(sessionId, "ask_posed");
 				if (ask.answerReceived) {

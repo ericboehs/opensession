@@ -93,15 +93,12 @@ function lastRestartBy(): string {
  * one AND the sinceOffset resume (these are cheap and idempotent; the client
  * replaces rather than merges them).
  */
-function sendWatchExtras(
+async function sendWatchExtras(
 	ws: any,
 	sessionId: string,
 	session: NonNullable<Awaited<ReturnType<typeof findSessionAsync>>>,
-): void {
-	const pendingAsk = sessionProjectionOr(
-		() => pendingAskAwaitingAnswer(sessionId),
-		undefined,
-	);
+): Promise<void> {
+	const pendingAsk = pendingAskAwaitingAnswer(sessionId);
 	if (pendingAsk) {
 		ws.send(
 			JSON.stringify({
@@ -117,10 +114,7 @@ function sendWatchExtras(
 
 	// Older in-memory rows may lack ids; assign and persist them before
 	// sending so edit/delete/steer actions can address the same row.
-	const queueState = sessionProjectionOr(
-		() => queueDisplayState(sessionId),
-		undefined,
-	);
+	const queueState = await queueDisplayState(sessionId);
 	if (queueState) {
 		const { queued: queuedPrompts, steered: steeredPrompts } = queueState;
 		if (queuedPrompts.length > 0 || steeredPrompts.length > 0) persistQueues();
@@ -133,7 +127,6 @@ function sendWatchExtras(
 			}),
 		);
 	}
-
 	ws.send(
 		JSON.stringify({
 			type: "session_status",
@@ -597,12 +590,12 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
         : undefined;
       const persistedCancel =
         msg.type === "cancel"
-          ? sessionTurn({ op: "snapshot", sessionId: commandSessionId }).cancel
+          ? (await sessionTurn({ op: "snapshot", sessionId: commandSessionId })).cancel
           : undefined;
       const persistedInterrupt =
         msg.type === "interrupt_prompt"
           ? deliveryInterruptForAnchor(
-              sessionDelivery({
+              await sessionDelivery({
                 op: "snapshot",
                 sessionId: commandSessionId,
               }),
@@ -649,7 +642,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
       let gatewayCommandExecuting = false;
       let gatewayPhysicalFinished = false;
 				try {
-          const plan = sessionGatewayCommand({
+          const plan = await sessionGatewayCommand({
             op: "request",
             sessionId: commandSessionId,
             requestId,
@@ -716,7 +709,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					if (dispatchError) throw dispatchError;
 					const result = kernelDispatchResults.get(kernelToken);
             gatewayPhysicalFinished = true;
-            sessionGatewayCommand({
+            await sessionGatewayCommand({
               op: "complete",
               sessionId: commandSessionId,
               requestId,
@@ -747,7 +740,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						error instanceof Error ? error.message : String(error);
 					const retryable = isRetryableSessionCommandError(error);
           if (gatewayCommandExecuting && !gatewayPhysicalFinished)
-            sessionGatewayCommand({
+            await sessionGatewayCommand({
               op: "fail",
               sessionId: commandSessionId,
               requestId,
@@ -886,7 +879,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					);
 				}
 				if (v2Served) {
-					sendWatchExtras(ws, sessionId, session);
+					await sendWatchExtras(ws, sessionId, session);
 					break;
 				}
 
@@ -914,7 +907,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					sinceOffset <= statSync(session.transcriptPath).size
 				) {
 					startWatching(session.transcriptPath, ws, sinceOffset, sessionId);
-					sendWatchExtras(ws, sessionId, session);
+					await sendWatchExtras(ws, sessionId, session);
 					break;
 				}
 
@@ -966,7 +959,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					startWatching(session.transcriptPath, ws, endOffset, sessionId);
 				}
 
-				sendWatchExtras(ws, sessionId, session);
+				await sendWatchExtras(ws, sessionId, session);
 				break;
 			}
 
@@ -1323,7 +1316,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						!hasFiles &&
 						!hasContext &&
 						steerItem.id &&
-						prepareQueuedSteer(sessionId, steerItem.id, steerItem)
+						await prepareQueuedSteer(sessionId, steerItem.id, steerItem)
 					) {
 						if (
 							steerAgentRun(
@@ -1333,10 +1326,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 								steerItem.id,
 							)
 						) {
-							if (!acceptQueuedSteer(sessionId, steerItem.id))
+							if (!await acceptQueuedSteer(sessionId, steerItem.id))
 								throw new Error("Pending steer changed before runner acceptance");
 						} else {
-							rejectQueuedSteer(sessionId, steerItem.id);
+							await rejectQueuedSteer(sessionId, steerItem.id);
 							watchExternalRunAndDrain(sessionId);
 						}
 						break;
@@ -1423,13 +1416,13 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 
 			case "delete_queued_prompt": {
 				const { sessionId, queueId, queueIndex } = msg;
-				deleteQueuedPrompt(sessionId, queueId, queueIndex);
+				await deleteQueuedPrompt(sessionId, queueId, queueIndex);
 				break;
 			}
 
 			case "take_queued_prompt": {
 				const { sessionId, queueId } = msg;
-				const item = takeQueuedPrompt(
+				const item = await takeQueuedPrompt(
 					sessionId,
 					queueId,
 					ws.data.authUser || ws.data.user || undefined,
@@ -1459,7 +1452,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					queueId,
 				);
 				const item = retracted
-					? takeSteeredPrompt(sessionId, queueId, actor) ?? receipt
+					? await takeSteeredPrompt(sessionId, queueId, actor) ?? receipt
 					: undefined;
 				const response = {
 					type: "queued_prompt_taken",
@@ -1480,7 +1473,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				const images = Array.isArray(msg.images)
 					? (asDataUrlList(msg.images) ?? [])
 					: undefined;
-				updateQueuedPrompt(
+				await updateQueuedPrompt(
 					sessionId,
 					queueId,
 					queueIndex,
@@ -1523,7 +1516,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 			case "reorder_queued_prompt": {
 				const { sessionId, order } = msg;
 				if (Array.isArray(order) && order.every((x) => typeof x === "string")) {
-					reorderQueuedPrompt(sessionId, order);
+					await reorderQueuedPrompt(sessionId, order);
 				}
 				break;
 			}
@@ -1545,7 +1538,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
             expectedRunId &&
             expectedGeneration !== undefined
           ) {
-            ({ requeued } = requestTurnCancel(sessionId, session, {
+            ({ requeued } = await requestTurnCancel(sessionId, session, {
               cancelId: `stop:${msg.requestId}`,
               expectedRunId,
               expectedGeneration,

@@ -9,7 +9,7 @@ import { existsSync, readFileSync } from "fs";
 import { OPENSESSION_SESSIONS_DIR } from "./paths";
 import { } from "./paths";
 import { transitionRunState } from "./run-state";
-import { sessionDelivery, sessionTurn } from "./session-kernel/kernel";
+import { sessionDelivery, sessionKernelStore, sessionTurn } from "./session-kernel/kernel";
 import { writeJsonAtomic } from "./shared/atomic-write";
 
 // Overridable so a detached run host (src/runner-host/host.ts) journals to its
@@ -383,14 +383,14 @@ export function journalRetireSettledCancelAbnormal(
 ): boolean {
   if (process.env.OPENSESSION_RUN_JOURNAL || !sessionId) return false;
   try {
-    const cancel = sessionTurn({ op: "snapshot", sessionId }).cancel;
+    const cancel = sessionKernelStore().turnSnapshot(sessionId).cancel;
     if (cancel?.runId === runKey && cancel.phase === "settled")
       return retireCancelAbnormalEvidence(sessionId, runKey);
   } catch {
     // The independent interrupt owner may still positively prove settlement.
   }
   try {
-    const delivery = sessionDelivery({ op: "snapshot", sessionId });
+    const delivery = sessionKernelStore().deliverySnapshot(sessionId);
     const dispatchedInterrupt = (
       delivery.dispatch as { interrupt?: typeof delivery.interrupt } | undefined
     )?.interrupt;

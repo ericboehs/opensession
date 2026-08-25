@@ -298,18 +298,6 @@ export class SessionKernelActorClient {
     );
   }
 
-  async decideCoreAsync<T extends CoreActorRequest>(
-    request: T,
-  ): Promise<CoreActorResult<T>> {
-    return this.callAsync<CoreActorResult<T>>(
-      {
-        t: "reduce",
-        command: { kind: "core", commandId: crypto.randomUUID(), request },
-      },
-      `core ${request.op}`,
-    );
-  }
-
   decideGateway<T extends GatewayCommandRequest>(
     request: T,
   ): GatewayCommandResult<T> {
@@ -587,18 +575,6 @@ export class SessionKernelActorClient {
     );
   }
 
-  decideGatewayAsync<T extends GatewayCommandRequest>(
-    request: T,
-  ): Promise<GatewayCommandResult<T>> {
-    return this.callAsync<GatewayCommandResult<T>>(
-      {
-        t: "reduce",
-        command: { kind: "gateway", commandId: crypto.randomUUID(), request },
-      },
-      `gateway ${request.operation} ${request.op}`,
-    );
-  }
-
   async decideDeliveryAsync<T extends DeliveryActorRequest>(
     request: T,
   ): Promise<DeliveryActorResult<T>> {
@@ -615,6 +591,8 @@ export class SessionKernelActorClient {
       },
       `delivery ${request.op}`,
     );
+    if (request.op === "snapshot" || request.op === "entries")
+      return response as DeliveryActorResult<T>;
     return (response as DeliveryMutationReply<DeliveryActorResult<T>>).result;
   }
 

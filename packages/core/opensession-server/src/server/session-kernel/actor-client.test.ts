@@ -780,15 +780,15 @@ describe("session kernel actor boundary", () => {
 
   test("delivery mutations invalidate projections without fetching a snapshot", async () => {
     const host = await actor();
-    const original = host.decideDelivery.bind(host);
+    const original = host.decideDeliveryAsync.bind(host);
     let snapshotCalls = 0;
-    host.decideDelivery = ((request) => {
+    host.decideDeliveryAsync = (async (request) => {
       if (request.op === "snapshot") snapshotCalls += 1;
       return original(request);
-    }) as typeof host.decideDelivery;
+    }) as typeof host.decideDeliveryAsync;
     installSessionKernelActor(host);
 
-    sessionDelivery({
+    await sessionDelivery({
       op: "set",
       sessionId: "small-mutation-reply",
       slot: "queued",
@@ -796,7 +796,7 @@ describe("session kernel actor boundary", () => {
     });
     expect(snapshotCalls).toBe(0);
     expect(
-      sessionDelivery({ op: "snapshot", sessionId: "small-mutation-reply" })
+      (await sessionDelivery({ op: "snapshot", sessionId: "small-mutation-reply" }))
         .revision,
     ).toBe(1);
     expect(snapshotCalls).toBe(1);

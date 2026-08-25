@@ -180,6 +180,7 @@ import {
 	settleCreationSucceeded,
 	sessionIsQuarantined,
 	sessionKernel,
+	sessionKernelStore,
   sessionTurn,
 } from "./session-kernel";
 
@@ -191,7 +192,7 @@ const interruptExecutorGlobal = globalThis as typeof globalThis & {
 if (!interruptExecutorGlobal.__opensessionTurnOutcomeProjectionExecutorRegistered) {
   registerSessionEffectExecutor("turn_outcome_project", async (item) => {
     const projection = item.payload;
-    const decision = sessionTurn({
+    const decision = await sessionTurn({
       op: "begin_outcome_projection",
       sessionId: item.sessionId,
       projectionId: projection.projectionId,
@@ -206,7 +207,7 @@ if (!interruptExecutorGlobal.__opensessionTurnOutcomeProjectionExecutorRegistere
       projection,
       true,
     );
-    const settled = sessionTurn({
+    const settled = await sessionTurn({
       op: "settle_outcome_projection",
       sessionId: item.sessionId,
       projectionId: projection.projectionId,
@@ -218,7 +219,7 @@ if (!interruptExecutorGlobal.__opensessionTurnOutcomeProjectionExecutorRegistere
   interruptExecutorGlobal.__opensessionTurnOutcomeProjectionExecutorRegistered = true;
 }
 if (!interruptExecutorGlobal.__opensessionInterruptExecutorRegistered) {
-	registerSessionEffectExecutor("delivery_interrupt_cancel", (item) => {
+	registerSessionEffectExecutor("delivery_interrupt_cancel", async (item) => {
     const { interruptId, dispatchId, runIds, runGeneration } = item.payload;
     const retireConfirmedAbnormal = () => {
       if (dispatchId)
@@ -227,7 +228,7 @@ if (!interruptExecutorGlobal.__opensessionInterruptExecutorRegistered) {
           dispatchId,
         );
     };
-		const decision = beginPromptInterruptEffect(
+		const decision = await beginPromptInterruptEffect(
 			item.sessionId,
 			interruptId,
 			runGeneration,
@@ -238,7 +239,7 @@ if (!interruptExecutorGlobal.__opensessionInterruptExecutorRegistered) {
       return;
     }
 		if (decision === "adopt_confirmed") {
-			settlePromptInterrupt(item.sessionId, interruptId, "confirmed");
+			await settlePromptInterrupt(item.sessionId, interruptId, "confirmed");
       retireConfirmedAbnormal();
 			return;
 		}
@@ -250,7 +251,7 @@ if (!interruptExecutorGlobal.__opensessionInterruptExecutorRegistered) {
 		// it terminal, so the accepted interrupt is conservatively confirmed.
     const outcome =
       aborted || decision === "retry" ? "confirmed" : "not_aborted";
-		settlePromptInterrupt(item.sessionId, interruptId, outcome);
+		await settlePromptInterrupt(item.sessionId, interruptId, outcome);
     if (outcome === "confirmed") retireConfirmedAbnormal();
 	});
 	interruptExecutorGlobal.__opensessionInterruptExecutorRegistered = true;
@@ -270,7 +271,7 @@ if (!interruptExecutorGlobal.__opensessionTurnCancelExecutorRegistered) {
         !isAgentRunTokenAdmitted(dispatchId)
       ) journalClearIfLineage(owner);
     };
-    const decision = sessionTurn({
+    const decision = await sessionTurn({
       op: "begin_cancel_effect",
       sessionId: item.sessionId,
       cancelId,
@@ -285,8 +286,8 @@ if (!interruptExecutorGlobal.__opensessionTurnCancelExecutorRegistered) {
       retireAbsentInProcessOwner();
       return;
     }
-    const settle = (outcome: "confirmed" | "not_aborted"): boolean => {
-      const settled = sessionTurn({
+    const settle = async (outcome: "confirmed" | "not_aborted"): Promise<boolean> => {
+      const settled = await sessionTurn({
         op: "settle_cancel",
         sessionId: item.sessionId,
         cancelId,
@@ -303,7 +304,7 @@ if (!interruptExecutorGlobal.__opensessionTurnCancelExecutorRegistered) {
       return true;
     };
     if (decision === "adopt_confirmed") {
-      settle("confirmed");
+      await settle("confirmed");
       return;
     }
     const cancelledWait = cancelAgentWait(item.sessionId);
@@ -312,7 +313,7 @@ if (!interruptExecutorGlobal.__opensessionTurnCancelExecutorRegistered) {
       throw new Error(
         `Could not reconcile executing cancellation ${cancelId} for ${dispatchId}`,
       );
-    const settled = settle(
+    const settled = await settle(
       cancelledWait || cancelledRun ? "confirmed" : "not_aborted",
     );
     if (!settled) return;
@@ -334,12 +335,12 @@ export type TurnCancelRequest = {
 
 /** Commit Stop ownership before its physical cancel, atomically parking any
  * undelivered steer receipts with the stopped run generation. */
-export function requestTurnCancel(
+export async function requestTurnCancel(
   sessionId: string,
   session: UnifiedSession,
   request: TurnCancelRequest,
-): { requeued: number } {
-  const existingCancel = sessionTurn({ op: "snapshot", sessionId }).cancel;
+): Promise<{ requeued: number }> {
+  const existingCancel = sessionKernelStore().turnSnapshot(sessionId).cancel;
   const exactReplay =
     existingCancel?.cancelId === request.cancelId &&
     existingCancel.runId === request.expectedRunId &&
@@ -353,7 +354,7 @@ export function requestTurnCancel(
     requeued
       .map((item) => item.id)
       .filter((id): id is string => typeof id === "string" && id.length > 0);
-  sessionTurn({
+  await sessionTurn({
     op: "prepare_cancel",
     sessionId,
     cancelId: request.cancelId,
@@ -373,12 +374,12 @@ export function requestTurnCancel(
   } finally {
     stoppedSessions.add(sessionId);
     persistQueues();
-    broadcastQueue(sessionId);
+    await broadcastQueue(sessionId);
   }
   return { requeued: exactReplay ? exactReplay.requeueIds.length : requeued.length };
 }
 
-export function settleCreationOpeningForStop(sessionId: string): boolean {
+export async function settleCreationOpeningForStop(sessionId: string): Promise<boolean> {
 	const kernel = sessionKernel(sessionId);
 	const creation = kernel.creationState();
 	const effectId = creation?.currentEffectId;
@@ -393,7 +394,7 @@ export function settleCreationOpeningForStop(sessionId: string): boolean {
 		kernel,
 		effectId,
 	);
-	acknowledgePromptDispatch(sessionId, effectId.slice("opening:".length));
+	await acknowledgePromptDispatch(sessionId, effectId.slice("opening:".length));
 	return true;
 }
 
@@ -406,12 +407,12 @@ export function creationOwnsPrompt(sessionId: string, promptEntryId: string): bo
 }
 
 /** Settle an actor-owned opening recovered by the generic local-run adopter. */
-export function settleRecoveredCreationOpening(
+export async function settleRecoveredCreationOpening(
 	sessionId: string,
 	promptEntryId: string,
 	failure?: string,
 	runId?: string,
-): boolean {
+): Promise<boolean> {
 	const creation = sessionKernel(sessionId).creationState();
 	const effectId = `opening:${promptEntryId}`;
 	if (
@@ -420,7 +421,7 @@ export function settleRecoveredCreationOpening(
 		creation.state !== "opening_dispatched"
 	)
 		return false;
-	const cancel = sessionTurn({ op: "snapshot", sessionId }).cancel;
+	const cancel = sessionKernelStore().turnSnapshot(sessionId).cancel;
 	if (runId && cancel?.runId === runId) {
 		settleCreationCancelled(
 			sessionId,
@@ -444,21 +445,21 @@ export function settleRecoveredCreationOpening(
 			effectId,
 		);
 	}
-	acknowledgePromptDispatch(sessionId, promptEntryId);
+	await acknowledgePromptDispatch(sessionId, promptEntryId);
 	return true;
 }
 
 // The runner writes its active-run journal before it can call an engine. Once
 // that journal names this prompt entry, normal boot recovery owns it and the
 // queue's pre-dispatch record is no longer needed.
-setJournalSetListener((record) => {
+setJournalSetListener(async (record) => {
 	if (
 		record.osSessionId &&
 		record.promptEntryId &&
 		creationOwnsPrompt(record.osSessionId, record.promptEntryId)
 	)
 		return;
-	acknowledgePromptDispatch(record.osSessionId, record.promptEntryId);
+	await acknowledgePromptDispatch(record.osSessionId, record.promptEntryId);
 });
 import { audit } from "./audit";
 import { githubCredentialForLogin, githubCredentialForRun } from "./github-auth";
@@ -532,17 +533,25 @@ export function enqueuePrompt(
 	// A durable command can be replayed after the queue write committed but
 	// before its command receipt did. Stable ids make that retry an adoption,
 	// not a second prompt.
-	if (!owned.id || !queue.some((queued) => queued.id === owned.id)) {
-		if (opts?.front) queue.unshift(owned);
-		else queue.push(owned);
-		promptQueues.set(sessionId, queue);
-	}
-	persistQueues();
-	broadcastQueue(sessionId);
-	// Queueing is a delivery promise, not just a UI state. Arm the idle watcher
-	// here so every queued message drains after the current run, even if a caller
-	// forgets to do that explicitly or the session becomes idle between checks.
-	watchExternalRunAndDrain(sessionId);
+	const committed =
+		!owned.id || !queue.some((queued) => queued.id === owned.id)
+			? (() => {
+				if (opts?.front) queue.unshift(owned);
+				else queue.push(owned);
+				return promptQueues.set(sessionId, queue);
+			})()
+			: Promise.resolve();
+	committed
+		.then(async () => {
+			persistQueues();
+			await broadcastQueue(sessionId);
+			// Queueing is a delivery promise, not just a UI state. Arm the idle
+			// watcher only after the durable queue write commits.
+			watchExternalRunAndDrain(sessionId);
+		})
+		.catch((error) =>
+			console.error(`[queue] Failed to enqueue prompt for ${sessionId}:`, error),
+		);
 }
 
 /**
@@ -562,14 +571,14 @@ export function enqueuePrompt(
  * ahead of anything queued behind it, and the steer is the only reason it
  * left the queue at all.
  */
-export function requeueFailedSteer(
+export async function requeueFailedSteer(
 	sessionId: string,
 	text: string,
 	user?: string,
-): void {
+): Promise<void> {
 	// effects=false: the enqueue below persists and broadcasts both maps, so
 	// watchers never see a frame with the message in neither of them.
-	const receipt = takeSteerReceiptForText(sessionId, text, false);
+	const receipt = await takeSteerReceiptForText(sessionId, text, false);
 	// No receipt (a steer recorded by a path that keeps none, or one already
 	// reconciled away): fall back to the echoed text, minus the prefix this
 	// run composed, so content stays the raw message either way.
@@ -582,11 +591,11 @@ export function requeueFailedSteer(
 	watchExternalRunAndDrain(sessionId);
 }
 
-export function steerQueuedPrompt(
+export async function steerQueuedPrompt(
 	sessionId: string,
 	queueId?: string,
 	queueIndex?: number,
-): boolean {
+): Promise<boolean> {
 	const session = findSession(sessionId);
 	const queue = promptQueues.get(sessionId);
 	if (!session || !queue) return false;
@@ -605,11 +614,11 @@ export function steerQueuedPrompt(
 		// Idle-but-queued (typically held behind running child workers): "steer"
 		// means "get this in front of the agent now" — deliver it as its own
 		// turn immediately. The rest of the queue keeps its hold.
-		if (queue.length > 0) promptQueues.set(sessionId, queue);
-		else promptQueues.delete(sessionId);
+		if (queue.length > 0) await promptQueues.set(sessionId, queue);
+		else await promptQueues.delete(sessionId);
 		stoppedSessions.delete(sessionId);
 		persistQueues();
-		broadcastQueue(sessionId);
+		await broadcastQueue(sessionId);
 		const files =
 			Array.isArray(item.files) && item.files.length > 0
 				? item.files
@@ -639,7 +648,7 @@ export function steerQueuedPrompt(
 			? `[${item.user}] ${item.content}`
 			: item.content;
 	const images = parseImageDataUrls(item.images || []);
-	if (!item.id || !prepareQueuedSteer(sessionId, item.id)) return false;
+	if (!item.id || !(await prepareQueuedSteer(sessionId, item.id))) return false;
 	if (
 		!steerAgentRun(
 			[session.claudeSessionId, session.codexThreadId, session.id],
@@ -648,10 +657,10 @@ export function steerQueuedPrompt(
 			item.id,
 		)
 	) {
-		rejectQueuedSteer(sessionId, item.id);
+		await rejectQueuedSteer(sessionId, item.id);
 		return false;
 	}
-	if (!acceptQueuedSteer(sessionId, item.id))
+	if (!await acceptQueuedSteer(sessionId, item.id))
 		throw new Error("Pending steer changed before runner acceptance");
 	return true;
 }
@@ -664,11 +673,11 @@ export function steerQueuedPrompt(
  * again would double-deliver), while a queued item is folded in through the
  * interrupt-and-steer path. False = still queued, nothing was interrupted.
  */
-export function interruptQueuedPrompt(
+export async function interruptQueuedPrompt(
 	sessionId: string,
 	queueId?: string,
 	queueIndex?: number,
-): boolean {
+): Promise<boolean> {
 	const session = findSession(sessionId);
 	if (!session) return false;
 	const receipt = queueId
@@ -693,7 +702,7 @@ export function interruptQueuedPrompt(
 		// instead of being swept into this forced one. The INTERRUPT_STEER_NOTE
 		// frames the delivery as a mid-task steer so the model resumes the
 		// interrupted work rather than acknowledge-and-parking.
-		return abortTurnAndDrain(sessionId, session, receipt.id);
+		return await abortTurnAndDrain(sessionId, session, receipt.id);
 	}
 	const queue = promptQueues.get(sessionId);
 	if (!queue) return false;
@@ -735,17 +744,17 @@ export function interruptQueuedPrompt(
 		// its original position so the queue doesn't visibly reshuffle.
 		const solo = queueItem(item);
 		queue.splice(index, 0, solo);
-		promptQueues.set(sessionId, queue);
+		await promptQueues.set(sessionId, queue);
 		persistQueues();
-		broadcastQueue(sessionId);
-		return abortTurnAndDrain(sessionId, session, solo.id);
+		await broadcastQueue(sessionId);
+		return await abortTurnAndDrain(sessionId, session, solo.id);
 	}
 	// No steer receipt: an interrupt delivers almost immediately, so the
 	// transcript entry is the record (same treatment as a direct interrupt send).
-	if (queue.length > 0) promptQueues.set(sessionId, queue);
-	else promptQueues.delete(sessionId);
+	if (queue.length > 0) await promptQueues.set(sessionId, queue);
+	else await promptQueues.delete(sessionId);
 	persistQueues();
-	broadcastQueue(sessionId);
+	await broadcastQueue(sessionId);
 	return true;
 }
 
@@ -758,9 +767,9 @@ export function interruptQueuedPrompt(
  * after resumeInterruptedRuns so a session being resumed reads as busy and the
  * watcher waits it out instead of starting a colliding run.
  */
-export function restorePromptQueues(resumedSessionIds: Set<string>): void {
+export async function restorePromptQueues(resumedSessionIds: Set<string>): Promise<void> {
 	const active = activeRunRecords();
-	const restored = restorePersistedQueueState({
+	const restored = await restorePersistedQueueState({
 		sessionExists: (sessionId) => !!findSession(sessionId),
 		// Preserve quarantined queue state without projecting or mutating it. A
 		// quarantine is intentionally inert until an operator releases it.
@@ -915,7 +924,7 @@ const recoveredSlackScanners = new Map<
 >();
 const recoveredFeedStarted: Set<string> = (g.__recoveredFeedStarted ??= new Set());
 
-export function recordRecoveredRunEvent(osSessionId: string, event: StreamEvent): void {
+export async function recordRecoveredRunEvent(osSessionId: string, event: StreamEvent): Promise<void> {
 	const session = findSession(osSessionId);
 	if (!session) return;
 	if (session.source !== "opensession") {
@@ -1074,15 +1083,15 @@ export function recordRecoveredRunEvent(osSessionId: string, event: StreamEvent)
 	if (event.type === "done" || event.type === "error") {
 		recoveredFeedStarted.delete(osSessionId);
 		if (event.type === "done") {
-			clearSteerReceipts(osSessionId);
+			await clearSteerReceipts(osSessionId);
 		} else {
-			const requeued = requeueSteerReceipts(
+			const requeued = await requeueSteerReceipts(
 				osSessionId,
 				engineUserTexts(session),
 			);
 			if (requeued > 0) watchExternalRunAndDrain(osSessionId);
 		}
-		if (settleRestoredAskAfterRecovery(osSessionId)) {
+		if (await settleRestoredAskAfterRecovery(osSessionId)) {
 			watchExternalRunAndDrain(osSessionId);
 		}
 		broadcastToSession(osSessionId, {
@@ -1247,7 +1256,7 @@ async function drainQueueInner(sessionId: string): Promise<void> {
 		// Selection, interrupt consumption, and claim are one actor reduction.
 		// Queue contents cannot change between choosing a batch and durable
 		// dispatch ownership, and a crash cannot lose or duplicate the interrupt.
-		const claim = beginNextPromptDispatch(sessionId, {
+		const claim = await beginNextPromptDispatch(sessionId, {
 			stillWorking: runningChildCount(sessionId) > 0,
 		});
 		if (claim.kind === "empty") continue;
@@ -1265,7 +1274,7 @@ async function drainQueueInner(sessionId: string): Promise<void> {
 		}
 		queueHoldNotified.delete(sessionId);
 		const { batch, promptEntryId, interrupted } = claim;
-		broadcastQueue(sessionId);
+		await broadcastQueue(sessionId);
 		let combined = batch
 			.map((m) =>
 				batch.length > 1 && m.user ? `[${m.user}] ${m.content}` : m.content,
@@ -1304,7 +1313,7 @@ async function drainQueueInner(sessionId: string): Promise<void> {
 		} catch (e) {
 			// The batch was already spliced out and persisted away — put it back at
 			// the front of the queue so a throw doesn't lose the messages.
-			failPromptDispatch(sessionId, promptEntryId);
+			await failPromptDispatch(sessionId, promptEntryId);
 			throw e;
 		}
 	}
@@ -1380,7 +1389,7 @@ export function watchExternalRunAndDrain(sessionId: string): void {
  * the fenced effect proves the owner was not abortable, it records
  * `not_aborted` and the message stays queued for the natural stopping point.
  */
-export function abortTurnAndDrain(
+export async function abortTurnAndDrain(
 	sessionId: string,
 	session: {
 		claudeSessionId?: string | null;
@@ -1393,7 +1402,7 @@ export function abortTurnAndDrain(
 	soloId?: string,
 	/** The queued item that fences even a whole-batch composer interrupt. */
 	anchorId?: string,
-): boolean {
+): Promise<boolean> {
 	const interruptAnchorId = anchorId || soloId;
 	if (!interruptAnchorId)
 		throw new Error("Interrupted prompt is missing its durable queue identity");
@@ -1404,7 +1413,7 @@ export function abortTurnAndDrain(
     sessionKernel(sessionId).runState().currentRunId ||
     currentAgentRunToken(sessionId);
   if (!dispatchId) return false;
-  preparePromptInterrupt(sessionId, interruptAnchorId, dispatchId, soloId);
+  await preparePromptInterrupt(sessionId, interruptAnchorId, dispatchId, soloId);
 	stoppedSessions.delete(sessionId);
 	watchExternalRunAndDrain(sessionId);
 	return true;
@@ -2000,7 +2009,7 @@ export async function runSessionPrompt(
 	// so a restart during provisioning requeues the complete prompt.
 	let durablePromptEntryId = promptEntryId;
 	if (!durablePromptEntryId && findSession(sessionId)?.sandbox) {
-		durablePromptEntryId = beginPromptDispatch(sessionId, [
+		durablePromptEntryId = await beginPromptDispatch(sessionId, [
 			{
 				content,
 				user,
@@ -2027,7 +2036,7 @@ export async function runSessionPrompt(
     // below. A direct sandbox dispatch was created here and must be restored
     // before surfacing the deferral.
     if (!promptEntryId && durablePromptEntryId) {
-      failPromptDispatch(sessionId, durablePromptEntryId);
+      await failPromptDispatch(sessionId, durablePromptEntryId);
     } else if (!durablePromptEntryId) {
       enqueuePrompt(sessionId, {
         content,
@@ -2062,7 +2071,7 @@ export async function runSessionPrompt(
 		);
 		// Sandboxes and non-standard runners may not create an active-run journal.
 		// A completed turn is nevertheless a safe acknowledgement of its dispatch.
-		acknowledgePromptDispatch(sessionId, durablePromptEntryId);
+		await acknowledgePromptDispatch(sessionId, durablePromptEntryId);
 	} catch (e) {
 		// A throw before the run registered (workspace revive, session-note
 		// build, …) would strand the FSM in "starting" forever — the wedge the
@@ -2077,7 +2086,7 @@ export async function runSessionPrompt(
 		// start failure retires that recovery record. A queue drain passes its own
 		// dispatch in and must retain it for the caller to restore atomically.
 		if (!promptEntryId)
-			acknowledgePromptDispatch(sessionId, durablePromptEntryId);
+			await acknowledgePromptDispatch(sessionId, durablePromptEntryId);
 		throw e;
 	} finally {
 		unmarkSessionStarting(sessionId, startToken);
@@ -2865,7 +2874,7 @@ async function runSessionPromptInner(
 				// Exact engine acknowledgement, consumed internally. Context-only
 				// system steers are intentionally absent from the visible transcript,
 				// so transcript matching alone cannot retire their receipts.
-				if (event.steerId) acknowledgeSteerDelivery(sessionId, event.steerId);
+				if (event.steerId) await acknowledgeSteerDelivery(sessionId, event.steerId);
 				break;
 			case "usage_snapshot":
 				// Live mid-run cost/context — same fold as `done`, recomputed from
@@ -3038,7 +3047,7 @@ async function runSessionPromptInner(
 	// a restart killed the SDK stream mid-turn), a steered message may NOT have
 	// been delivered yet — keep the receipt so persistQueues/restorePromptQueues
 	// can re-deliver it on the next boot instead of silently dropping it.
-	if (!endedWithError) clearSteerReceipts(sessionId);
+	if (!endedWithError) await clearSteerReceipts(sessionId);
 
 	broadcastToSession(sessionId, { type: "stream_done", sessionId });
 	broadcastToSession(sessionId, {

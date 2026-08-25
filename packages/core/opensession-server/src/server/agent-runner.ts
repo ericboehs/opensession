@@ -1230,10 +1230,7 @@ function durableCancelRecoveryOwnership(
 ): "owned" | "none" | "unknown" {
   if (!run.osSessionId) return "none";
   try {
-    return sessionTurn({
-      op: "snapshot",
-      sessionId: run.osSessionId,
-    }).cancel?.runId === run.runKey
+    return sessionKernelStore().turnSnapshot(run.osSessionId).cancel?.runId === run.runKey
       ? "owned"
       : "none";
   } catch {
@@ -1256,19 +1253,18 @@ export function reissueDurableRecoveryCancel(run: ActiveRunRecord): boolean {
 
 function settleDurableCancelForAbsentOwner(run: ActiveRunRecord): boolean {
   if (!run.osSessionId) return false;
-  const cancel = sessionTurn({
-    op: "snapshot",
-    sessionId: run.osSessionId,
-  }).cancel;
+  const cancel = sessionKernelStore().turnSnapshot(run.osSessionId).cancel;
   if (cancel?.runId !== run.runKey) return false;
-  if (cancel.phase !== "settled")
+  if (cancel.phase !== "settled") {
     sessionTurn({
       op: "settle_cancel",
       sessionId: run.osSessionId,
       cancelId: cancel.cancelId,
       outcome: "confirmed",
-    });
-  journalClearIfLineage(run);
+    }).then(() => journalClearIfLineage(run)).catch((error) =>
+      console.error(`[runner] Failed to settle recovered cancellation for ${run.runKey}:`, error),
+    );
+  } else journalClearIfLineage(run);
   return true;
 }
 
@@ -1312,17 +1308,16 @@ export function resumeInterruptedRuns(
       }
     } finally {
       if (run.osSessionId) {
-        const cancel = sessionTurn({
-          op: "snapshot",
-          sessionId: run.osSessionId,
-        }).cancel;
+        const cancel = sessionKernelStore().turnSnapshot(run.osSessionId).cancel;
         if (cancel?.runId === run.runKey && cancel.phase !== "settled")
           sessionTurn({
             op: "settle_cancel",
             sessionId: run.osSessionId,
             cancelId: cancel.cancelId,
             outcome: "confirmed",
-          });
+          }).catch((error) =>
+            console.error(`[runner] Failed to settle recovery cancellation for ${run.runKey}:`, error),
+          );
       }
       if (run.osSessionId && isRunStateUnsettled(getRunState(run.osSessionId))) {
         const failed = event.type === "error" || !!event.usageLimitExhausted;

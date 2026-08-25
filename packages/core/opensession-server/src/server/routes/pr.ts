@@ -1076,7 +1076,7 @@ export async function handlePrRoutes(
           : undefined);
       let stopped = false;
       if (reviewSession && targetRunId) {
-        requestTurnCancel(bksId, reviewSession, {
+        await requestTurnCancel(bksId, reviewSession, {
           cancelId: `pr-review-stop:${runTarget.generation}:${targetRunId}`,
           expectedRunId: targetRunId,
           expectedGeneration: runTarget.generation,

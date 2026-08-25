@@ -16,7 +16,7 @@ function recorder(registryIds: string[] = []) {
 		setArchived(id, value) {
 			archived.push([id, value]);
 		},
-		clearSessionFileArchive(id) {
+		async clearSessionFileArchive(id) {
 			files.push(id);
 			return true;
 		},

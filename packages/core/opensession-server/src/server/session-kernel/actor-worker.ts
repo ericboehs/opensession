@@ -8,6 +8,7 @@ import {
   SESSION_KERNEL_MAX_RESPONSE_BYTES,
   isCriticalSettlementCommand,
   type KernelActorAsyncRequest,
+  type KernelActorClientCallRequest,
   type KernelActorServiceCall,
   type KernelActorServiceResponse,
   type KernelActorSyncRequest,
@@ -325,6 +326,28 @@ export function startSessionKernelActorWorker(): void {
     Atomics.notify(control, 0);
   }
 
+  function asyncCall(request: KernelActorClientCallRequest): void {
+    const control = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2);
+    const output = new SharedArrayBuffer(SESSION_KERNEL_MAX_RESPONSE_BYTES);
+    syncStore({ ...request, control, output } as unknown as KernelActorSyncRequest);
+    const view = new Int32Array(control);
+    const status = Atomics.load(view, 0) as -1 | 1 | 2;
+    const length = Atomics.load(view, 1);
+    post({
+      t: "call_result",
+      rpcId: request.rpcId,
+      status,
+      length,
+      ...(status === 2
+        ? {}
+        : {
+            body: new TextDecoder().decode(
+              new Uint8Array(output, 0, Math.min(length, output.byteLength)),
+            ),
+          }),
+    });
+  }
+
   function serviceCall(request: KernelActorServiceCall): void {
     const outputBytes = Math.floor(request.outputBytes);
     if (outputBytes <= 0 || outputBytes > SESSION_KERNEL_MAX_RESPONSE_BYTES) {
@@ -367,7 +390,8 @@ export function startSessionKernelActorWorker(): void {
       return;
     }
     if (request.t === "store" || request.t === "reduce") {
-      syncStore(request);
+      if ("control" in request) syncStore(request);
+      else asyncCall(request);
       return;
     }
     if (request.t === "hello") {

@@ -42,6 +42,7 @@ import {
   sessionDeliveryProjection,
   sessionGatewayCommandAsync,
   sessionKernel,
+  sessionKernelStore,
   sessionKernelActorActive,
   sessionKernelStore,
   sessionTurn,
@@ -336,7 +337,7 @@ export function isRunSettled(sessionId: string): boolean {
 	}
 	// Queue authority lives in the actor. Read its per-session delivery snapshot
 	// directly rather than reaching through queue-state's former global map.
-	if (sessionDeliveryProjection(id).queued.length > 0)
+	if (sessionKernelStore().deliverySnapshot(id).queued.length > 0)
 		return false;
 	return true;
 }
@@ -462,7 +463,7 @@ export function updateSessionFile(
 ): Promise<void> {
   return withSessionMutationLock(sessionId, async () => {
     const requestId = `session-file:${crypto.randomUUID()}`;
-    const plan = await sessionGatewayCommandAsync({
+    const plan = await sessionGatewayCommand({
       op: "request",
       sessionId,
       requestId,
@@ -487,7 +488,7 @@ export function updateSessionFile(
 		}
 		invalidateSessionsCache();
       physicalFinished = true;
-      await sessionGatewayCommandAsync({
+      await sessionGatewayCommand({
         op: "complete",
         sessionId,
         requestId,
@@ -495,15 +496,14 @@ export function updateSessionFile(
         result: null,
       });
     } catch (error) {
-      if (!physicalFinished)
-        await sessionGatewayCommandAsync({
-          op: "fail",
-          sessionId,
-          requestId,
-          operation: "session_file_updated",
-          error: error instanceof Error ? error.message : String(error),
-          retryable: false,
-        });
+      if (!physicalFinished) await sessionGatewayCommand({
+        op: "fail",
+        sessionId,
+        requestId,
+        operation: "session_file_updated",
+        error: error instanceof Error ? error.message : String(error),
+        retryable: false,
+      });
       throw error;
     }
 	});
@@ -752,11 +752,11 @@ export type RunOutcomeProjectionOptions = {
 	projectedAt?: string;
 };
 
-export function recordRunOutcome(
+export async function recordRunOutcome(
 	sessionId: string,
 	errorMessage: string | null,
 	opts?: RunOutcomeProjectionOptions,
-): void {
+): Promise<void> {
 	const session = findSession(sessionId);
 	const id = session?.id || sessionId;
 	// runAgent settles every journal-owned run on its terminal event. Keep this
@@ -769,7 +769,7 @@ export function recordRunOutcome(
 	if (opts?.projectionId && opts.runId && sessionKernelActorActive()) {
 		const runGeneration =
 			opts.runGeneration ?? sessionKernel(id).runState().generation;
-		sessionTurn({
+		await sessionTurn({
 			op: "prepare_outcome_projection",
 			sessionId: id,
 			projectionId: opts.projectionId,
