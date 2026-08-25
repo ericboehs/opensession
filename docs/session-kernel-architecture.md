@@ -342,32 +342,27 @@ The writable `SessionKernelStore` and autonomous per-session coordinator run in
 `session-kernel-worker.ts`, a separate JavaScript actor isolate. The gateway
 starts and handshakes that actor before hydrating projections.
 
-A command admission is short: the actor fingerprints and persists the intent,
-allocates a fenced `executionId`, and immediately returns an execution descriptor.
-It does not retain a per-session gateway lease and does not stop reducing run,
-delivery or ask messages while physical work is active. Different command intents
-can be admitted concurrently. The temporary `LegacyGatewayEffect` adapter preserves physical effect
-order for three compatibility call sites, but that queue is not authoritative:
-every item in it is already durable in the actor. Its operation union and exact
-production call-site baseline are structural migration fences. New lifecycle
-work must use typed reducer messages and executors rather than add a callback.
-A restart re-admits replay-safe intent and marks ambiguous non-replay-safe
-execution indeterminate.
+A command admission is a short bounded reduction: the actor fingerprints and
+persists the intent, then immediately returns `execute`, `in_progress`, or the
+committed result. It never awaits filesystem, network, process, sandbox, Runner,
+or model work. Different command intents can therefore be reduced concurrently,
+and Stop or steering remains responsive while physical continuations are queued
+or running. A restart re-admits replay-safe intent and marks ambiguous
+non-replay-safe execution indeterminate.
 
-Retries of an executing request attach as bounded waiters to the same execution;
-they never allocate a second physical effect. Active executions and waiters have
-per-session and process-wide limits. Completion and failure messages carry the
-`executionId`; an unknown or stale id fail-stops the actor rather than committing
-over a successor. Settlement commits the command result and its typed outbox
-effects transactionally, then releases attached waiters.
+Physical continuations run in gateway or executor workers outside the actor.
+Their per-session mutex can queue physical work, but it does not hold the actor
+mailbox. An exact retry of executing work receives `in_progress` immediately
+rather than attaching an actor-held waiter. Typed completion and failure
+reductions settle immutable receipts; settlement ambiguity fail-stops the actor
+client rather than committing over a successor.
 
-Synchronous transcript and session-file compatibility callbacks use their own
-short execution IDs against the same physical SQLite writer. They can run while an
-async effect is suspended without borrowing its ownership. Session JSON and the
-transcript database remain specialized effect stores, but their writes are admitted
-and receipted by the actor. Moving the Worker to an independently supervised Unix
-process is therefore a transport and failure-isolation change, not an ownership
-migration; no fallback writer is permitted.
+Transcript and session-file projections use typed admission and settlement
+receipts, then mutate their specialized destination stores on the gateway thread.
+The actor returns from admission before that destination work begins and retains
+no execution waiter or callback. Moving the Worker to an independently supervised
+local process is therefore a transport and failure-isolation change, not an
+ownership migration; no fallback writer is permitted.
 
 ## Tests
 
@@ -417,4 +412,7 @@ bookkeeping or physical cancellation, and an exact retry cannot target a
 successor. Durable timer tokens also key typed actor begin/complete/fail
 receipts. Once actor completion commits, recovery retires only that timer
 generation without executing its handler again; a crash before that commit
-remains destination-idempotent at-least-once delivery.
+remains destination-idempotent at-least-once delivery. SessionControl prompt
+delivery uses the same pattern: the actor fingerprints the full immutable
+delivery identity before slash handling, queueing or steering, then stores the
+returned delivery result for exact caller replay.

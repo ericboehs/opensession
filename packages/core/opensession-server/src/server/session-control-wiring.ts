@@ -49,15 +49,14 @@ import { ensureAskCheckout, ensureScratchDir, getRepo, isRegisteredWorktree, lis
 import { broadcastToSession } from "./ws-hub";
 import { randomUUIDv7 } from "bun";
 import {
-	legacyGatewayEffect,
 	patchCreationSetupPlan,
 	requestCreationAttachment,
 	requestCreationBranch,
 	requestCreationCredential,
 	requestCreationWorkspace,
 	sessionAsk,
+	sessionDelivery,
 	sessionKernel,
-	sessionKernelOwnsCurrentCommand,
   sessionTurn,
 } from "./session-kernel";
 import {
@@ -364,23 +363,47 @@ registerSessionControl({
 				deliveryId,
 			};
 		};
-		if (sessionKernelOwnsCurrentCommand(id)) return deliverOwned();
+		const plan = sessionDelivery({
+			op: "request_submit_command",
+			sessionId: id,
+			requestId: deliveryId,
+			identity,
+		});
+		if (plan.status === "completed") {
+			const result = plan.result as Awaited<ReturnType<typeof deliverOwned>>;
+			return { ...result, duplicate: true };
+		}
+		if (plan.status === "in_progress")
+			throw Object.assign(new Error("Prompt delivery is already in progress"), {
+				retryable: true,
+			});
+    let submitPhysicalFinished = false;
 		try {
-			const accepted = await sessionKernel(id).dispatchLegacy(
-				legacyGatewayEffect("submit_prompt", {
-					requestId: deliveryId,
-					payload: identity,
-					source: "session_control",
-					replaySafe: true,
-				}),
-				deliverOwned,
-			);
-			return {
-				...accepted.result,
-				...(accepted.duplicate ? { duplicate: true } : {}),
-			};
+			const result = await deliverOwned();
+      submitPhysicalFinished = true;
+			return sessionDelivery({
+				op: "complete_submit_command",
+				sessionId: id,
+				requestId: deliveryId,
+				result,
+			}) as typeof result;
 		} catch (error) {
-			if (error instanceof SessionDeliveryError) return error.result;
+			if (error instanceof SessionDeliveryError) {
+        submitPhysicalFinished = true;
+				sessionDelivery({
+					op: "complete_submit_command",
+					sessionId: id,
+					requestId: deliveryId,
+					result: error.result,
+				});
+				return error.result;
+			}
+      if (!submitPhysicalFinished) sessionDelivery({
+				op: "fail_submit_command",
+				sessionId: id,
+				requestId: deliveryId,
+				error: error instanceof Error ? error.message : String(error),
+			});
 			throw error;
 		}
 	},
@@ -394,9 +417,11 @@ registerSessionControl({
 			fallbackRunId: currentAgentRunToken(id) || null,
 		});
 		if (plan.status === "completed") return plan.result;
+    let cancelPhysicalFinished = false;
 		try {
 			const currentSession = findSession(id);
 			if (!currentSession) {
+        cancelPhysicalFinished = true;
 				return sessionTurn({
 					op: "complete_cancel_command",
 					sessionId: id,
@@ -410,6 +435,7 @@ registerSessionControl({
 				expectedGeneration: plan.targetRunGeneration,
 				source: "session_control",
 			});
+      cancelPhysicalFinished = true;
 			return sessionTurn({
 				op: "complete_cancel_command",
 				sessionId: id,
@@ -417,7 +443,7 @@ registerSessionControl({
 				result: true,
 			});
 		} catch (error) {
-			sessionTurn({
+      if (!cancelPhysicalFinished) sessionTurn({
 				op: "fail_cancel_command",
 				sessionId: id,
 				requestId,

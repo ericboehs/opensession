@@ -1,5 +1,7 @@
 import type { AskActorRequest } from "./ask-protocol";
 import type { DeliveryActorRequest } from "./delivery-protocol";
+import type { GatewayCommandRequest } from "./gateway-command-protocol";
+import type { CoreActorRequest } from "./core-protocol";
 import type { CreationActorEffect } from "./creation-effect-protocol";
 import type { TurnActorRequest } from "./turn-protocol";
 import type { TimerActorRequest } from "./timer-protocol";
@@ -7,48 +9,6 @@ import type {
   CreationEventDecision,
   RunEventDecision,
 } from "./store";
-
-/**
- * Temporary physical work that still executes as a gateway callback.
- *
- * Adding an operation is intentionally a protocol change. The ownership test
- * also fixes the production call-site budget, so migration can only shrink
- * this adapter unless a reviewer deliberately changes both fences.
- */
-export const LEGACY_GATEWAY_EFFECT_OPERATIONS = Object.freeze([
-  "delete_session",
-  "session_file_updated",
-  "submit_prompt",
-  "websocket_command",
-] as const);
-
-export const LEGACY_GATEWAY_EFFECT_SITE_BASELINE = 3;
-
-export type LegacyGatewayEffectOperation =
-  (typeof LEGACY_GATEWAY_EFFECT_OPERATIONS)[number];
-
-export type LegacyGatewayEffect<TPayload = unknown> = {
-  kind: "legacy_gateway_effect";
-  operation: LegacyGatewayEffectOperation;
-  commandId: string;
-  payload?: TPayload;
-  source?: string;
-  replaySafe?: boolean;
-  retryFailures?: boolean;
-};
-
-export type LegacyGatewayEffectInput<TPayload = unknown> = Omit<
-  LegacyGatewayEffect<TPayload>,
-  "kind" | "operation" | "commandId"
-> & { requestId: string };
-
-export function legacyGatewayEffect<TPayload = unknown>(
-  operation: LegacyGatewayEffectOperation,
-  input: LegacyGatewayEffectInput<TPayload>,
-): LegacyGatewayEffect<TPayload> {
-  const { requestId: commandId, ...effect } = input;
-  return { kind: "legacy_gateway_effect", operation, commandId, ...effect };
-}
 
 export type RunFence = {
   runId: string;
@@ -85,6 +45,16 @@ export type SessionActorReducerCommand =
       kind: "timer";
       commandId: string;
       request: TimerActorRequest;
+    }
+  | {
+      kind: "gateway";
+      commandId: string;
+      request: GatewayCommandRequest;
+    }
+  | {
+      kind: "core";
+      commandId: string;
+      request: CoreActorRequest;
     };
 
 export type SessionActorCommand =
@@ -93,8 +63,7 @@ export type SessionActorCommand =
       kind: "effect_result";
       commandId: string;
       result: SessionActorEffectResult;
-    }
-  | LegacyGatewayEffect;
+    };
 
 export type SessionActorEvent =
   | { kind: "command_accepted"; commandId: string }

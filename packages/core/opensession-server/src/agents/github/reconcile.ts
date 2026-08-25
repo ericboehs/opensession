@@ -46,7 +46,7 @@ export function reconcileEnabled(): boolean {
 
 /** One sweep pass over every configured repo. Exported for tests/manual runs. */
 export async function reconcileOpenPrs(): Promise<void> {
-  if (!reconcileEnabled() || ghRateLimited()) return;
+  if (!reconcileEnabled() || ghRateLimited("rest")) return;
   const { resolveReviewConfig, fireReview, fireAutoFix, hasPendingDebouncedReview } = await import(
     "./webhook"
   );

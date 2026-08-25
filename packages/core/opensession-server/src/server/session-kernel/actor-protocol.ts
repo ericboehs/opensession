@@ -1,27 +1,14 @@
-import type {
-  LegacyGatewayEffect,
-  SessionActorReducerCommand,
-} from "./lifecycle-protocol";
+import type { SessionActorReducerCommand } from "./lifecycle-protocol";
 import type {
   DurableOutboxItem,
   DurableTimer,
   RunEventDecisionResult,
 } from "./store";
 
-export const SESSION_KERNEL_ACTOR_VERSION = 17;
-export const SESSION_KERNEL_MAX_WAITERS_PER_COMMAND = 64;
-export const SESSION_KERNEL_MAX_WAITERS_TOTAL = 4096;
-export const SESSION_KERNEL_MAX_EXECUTIONS_PER_SESSION = 128;
-export const SESSION_KERNEL_MAX_EXECUTIONS_TOTAL = 4096;
+export const SESSION_KERNEL_ACTOR_VERSION = 19;
 
 export type KernelActorAsyncRequest =
   | { t: "hello"; rpcId: string; version: number }
-  | {
-      t: "begin";
-      rpcId: string;
-      command: LegacyGatewayEffect;
-      sessionId: string;
-    }
   | { t: "acknowledge"; rpcId: string; sessionId: string; requestId: string }
   | { t: "stats"; rpcId: string }
   | { t: "maintain"; rpcId: string }
@@ -33,34 +20,11 @@ export type KernelActorAsyncRequest =
       effectKinds: string[];
       limit: number;
     }
-  | {
-      t: "complete";
-      rpcId: string;
-      executionId: string;
-      result: unknown;
-      effects: Array<{ kind: string; payload: unknown; effectKey: string }>;
-    }
-  | {
-      t: "fail";
-      rpcId: string;
-      executionId: string;
-      error: string;
-      retryable: boolean;
-    };
+;
 
 export type KernelActorAsyncResponse =
   | { t: "ready"; rpcId: string; version: number }
-  | {
-      t: "begin_result";
-      rpcId: string;
-      duplicate: boolean;
-      executionId?: string;
-      result?: unknown;
-    }
-  | {
-      t: "complete_result" | "fail_result" | "acknowledge_result";
-      rpcId: string;
-    }
+  | { t: "acknowledge_result"; rpcId: string }
   | { t: "maintain_result"; rpcId: string; pending: boolean }
   | {
       t: "stats_result";
@@ -85,3 +49,32 @@ export type KernelActorSyncRequest =
   | ({ t: "reduce"; command: SessionActorReducerCommand } & SyncBuffers);
 
 export type KernelActorRunEventResult = RunEventDecisionResult;
+
+/** Settlement follows a physical or externally visible action. Any rejected
+ * settlement is ambiguous, so both the client and actor fail-stop. */
+export function isCriticalSettlementCommand(
+  command: SessionActorReducerCommand,
+): boolean {
+  if (command.kind === "gateway")
+    return command.request.op === "complete" || command.request.op === "fail";
+  if (command.kind === "core")
+    return command.request.op === "ack_outbox" || command.request.op === "fail_outbox";
+  if (command.kind === "timer")
+    return command.request.op === "complete" || command.request.op === "fail";
+  if (command.kind === "delivery")
+    return [
+      "complete_submit_command",
+      "fail_submit_command",
+      "settle_interrupt",
+      "ack_dispatch",
+      "fail_dispatch",
+    ].includes(command.request.op);
+  if (command.kind === "turn")
+    return [
+      "complete_cancel_command",
+      "fail_cancel_command",
+      "settle_cancel",
+      "settle_outcome_projection",
+    ].includes(command.request.op);
+  return false;
+}

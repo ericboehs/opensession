@@ -11,7 +11,8 @@
 
 import type { RouteContext } from "./routes/context";
 import { githubCredentialForLogin, githubUserLoginForRun } from "./github-auth";
-import { botGhToken } from "./github-limit";
+import { botGhToken, ghRateLimited, isGhRateLimitMsg, noteGhRateLimited } from "./github-limit";
+import { noteGithubGraphqlCall } from "./github-budget";
 import { githubMutationCredential } from "./routes/github-credential";
 import { fetchWithTimeout } from "./shared/fetch-with-timeout";
 
@@ -49,6 +50,8 @@ async function graphql(
 	query: string,
 	variables: Record<string, unknown>,
 ): Promise<any> {
+	if (ghRateLimited()) throw new Error("GitHub GraphQL is rate-limited");
+	const started = Date.now();
 	const res = await fetchWithTimeout(
 		"https://api.github.com/graphql",
 		{
@@ -62,9 +65,12 @@ async function graphql(
 		15_000,
 	);
 	const data = (await res.json().catch(() => null)) as any;
-	if (!res.ok || !data || data.errors?.length) {
+	const ok = res.ok && !!data && !data.errors?.length;
+	noteGithubGraphqlCall("pr-viewed", Date.now() - started, ok);
+	if (!ok) {
 		const message =
 			data?.errors?.[0]?.message || data?.message || `GitHub HTTP ${res.status}`;
+		if (isGhRateLimitMsg(message)) noteGhRateLimited("pr-viewed");
 		throw new Error(message);
 	}
 	return data.data;

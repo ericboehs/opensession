@@ -1,3 +1,4 @@
+import { DESTINATION_IDEMPOTENT_GATEWAY_OPERATIONS } from "./gateway-command-protocol";
 /**
  * Durable state for the session actor boundary.
  *
@@ -210,7 +211,7 @@ const PROCESS_OWNER_ID = (ownerGlobal.__opensessionSessionKernelOwnerId ??=
 		bootId: linuxBootId(),
 		start: linuxProcessStart(process.pid),
 	} satisfies ProcessOwnerIdentity));
-export const SESSION_KERNEL_SCHEMA_VERSION = 17;
+export const SESSION_KERNEL_SCHEMA_VERSION = 19;
 export const SESSION_KERNEL_MAX_CREATION_EFFECT_RECEIPTS = 256;
 export const SESSION_KERNEL_MAX_OPENING_PLAN_BYTES = 16 * 1024 * 1024;
 
@@ -1812,6 +1813,153 @@ export class SessionKernelStore {
         ) ?? [],
       updatedAt: Number(row.updated_at),
     };
+  }
+
+  requestGatewayCommand(input: {
+    sessionId: string;
+    requestId: string;
+    operation: import("./gateway-command-protocol").GatewayCommandOperation;
+    identity?: unknown;
+  }):
+    | { status: "execute" }
+    | { status: "in_progress" }
+    | { status: "completed"; result: unknown; duplicate: true } {
+    if (!input.requestId || input.requestId.length > 256)
+      throw new Error("Invalid gateway command intent");
+    if (this.isTombstoned(input.sessionId)) {
+      if (input.operation === "delete_session")
+        return {
+          status: "completed",
+          result: { status: 200, body: { ok: true } },
+          duplicate: true,
+        };
+      if (input.operation === "transcript_delete")
+        return { status: "execute" };
+      throw new Error(`Session ${input.sessionId} was deleted`);
+    }
+    const record = this.acceptCommand({
+      sessionId: input.sessionId,
+      requestId: input.requestId,
+      type: input.operation,
+      payload: input.identity,
+      replaySafe: DESTINATION_IDEMPOTENT_GATEWAY_OPERATIONS.has(input.operation),
+    });
+    if (record.status === "completed")
+      return { status: "completed", result: record.result, duplicate: true };
+    if (record.status === "processing") return { status: "in_progress" };
+    if (
+      record.status === "indeterminate" ||
+      (record.status === "failed" && (!record.retryable || !record.replaySafe))
+    ) throw new Error(record.error || "Gateway command failed");
+    this.markProcessing(input.sessionId, input.requestId);
+    return { status: "execute" };
+  }
+
+  completeGatewayCommand(input: {
+    sessionId: string;
+    requestId: string;
+    operation: import("./gateway-command-protocol").GatewayCommandOperation;
+    result: unknown;
+  }): unknown {
+    const record = this.command(input.sessionId, input.requestId);
+    if (!record || record.type !== input.operation) {
+      if (
+        (input.operation === "delete_session" ||
+          input.operation === "transcript_delete") &&
+        this.isTombstoned(input.sessionId)
+      ) return input.result;
+      throw new Error("Gateway command receipt is missing");
+    }
+    if (record.status === "completed") return record.result;
+    if (record.status !== "processing")
+      throw new Error(record.error || "Gateway command is not executing");
+    this.completeCommand(input.sessionId, input.requestId, input.result);
+    return input.result;
+  }
+
+  failGatewayCommand(input: {
+    sessionId: string;
+    requestId: string;
+    operation: import("./gateway-command-protocol").GatewayCommandOperation;
+    error: string;
+    retryable: boolean;
+  }): void {
+    const record = this.command(input.sessionId, input.requestId);
+    if (!record || record.type !== input.operation) {
+      if (
+        (input.operation === "delete_session" ||
+          input.operation === "transcript_delete") &&
+        this.isTombstoned(input.sessionId)
+      ) return;
+      throw new Error("Gateway command receipt is missing");
+    }
+    if (record.status === "completed") return;
+    if (record.status !== "processing")
+      throw new Error(record.error || "Gateway command is not executing");
+    this.failCommand(
+      input.sessionId,
+      input.requestId,
+      input.error,
+      input.retryable,
+    );
+  }
+
+  requestSubmitPromptCommand(input: {
+    sessionId: string;
+    requestId: string;
+    identity: unknown;
+  }):
+    | { status: "execute" }
+    | { status: "in_progress" }
+    | { status: "completed"; result: unknown; duplicate: true } {
+    if (!input.requestId || input.requestId.length > 256)
+      throw new Error("Invalid submit prompt command intent");
+    if (this.isTombstoned(input.sessionId))
+      throw new Error(`Session ${input.sessionId} was deleted`);
+    const record = this.acceptCommand({
+      sessionId: input.sessionId,
+      requestId: input.requestId,
+      type: "submit_prompt",
+      payload: input.identity,
+      replaySafe: true,
+    });
+    if (record.status === "completed")
+      return { status: "completed", result: record.result, duplicate: true };
+    if (record.status === "processing") return { status: "in_progress" };
+    if (
+      record.status === "indeterminate" ||
+      (record.status === "failed" &&
+        (!record.retryable || !record.replaySafe))
+    ) throw new Error(record.error || "Submit prompt command failed");
+    this.markProcessing(input.sessionId, input.requestId);
+    return { status: "execute" };
+  }
+
+  completeSubmitPromptCommand(input: {
+    sessionId: string;
+    requestId: string;
+    result: unknown;
+  }): unknown {
+    const record = this.command(input.sessionId, input.requestId);
+    if (!record || record.type !== "submit_prompt")
+      throw new Error("Submit prompt command receipt is missing");
+    if (record.status === "completed") return record.result;
+    if (record.status === "indeterminate" || record.status === "failed")
+      throw new Error(record.error || "Submit prompt command failed");
+    this.completeCommand(input.sessionId, input.requestId, input.result);
+    return input.result;
+  }
+
+  failSubmitPromptCommand(input: {
+    sessionId: string;
+    requestId: string;
+    error: string;
+  }): void {
+    const record = this.command(input.sessionId, input.requestId);
+    if (!record || record.type !== "submit_prompt")
+      throw new Error("Submit prompt command receipt is missing");
+    if (record.status === "completed") return;
+    this.failCommand(input.sessionId, input.requestId, input.error, false);
   }
 
   deliverySnapshot(sessionId: string): DurableDeliveryState {

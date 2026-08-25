@@ -37,6 +37,7 @@ import {
   clearRecoveryMarker,
   planRecovery,
   recoveryMarkerAt,
+  readPrState,
   type GithubPrState,
   type RecoveryKind,
 } from "./state";
@@ -185,8 +186,8 @@ async function fireRecovery(s: GithubPrState, kind: RecoveryKind): Promise<void>
         inline: p.inline,
         ghRepo: s.ghRepo,
       })
-        .catch((e) => console.error(`[github] dropped-mention recovery failed for PR #${s.prNumber}:`, e))
-        .finally(() => clearPendingMention(s.prNumber, s.ghRepo));
+        .then(() => clearPendingMention(s.prNumber, s.ghRepo))
+        .catch((e) => console.error(`[github] dropped-mention recovery remains queued for PR #${s.prNumber}:`, e));
       return;
     }
   }
@@ -205,6 +206,52 @@ async function fireRecovery(s: GithubPrState, kind: RecoveryKind): Promise<void>
  * every restart. planRecovery picks the outermost live marker; the nested ones
  * belong to runs the resumed one starts again itself.
  */
+async function retryPendingMentions(): Promise<void> {
+  const { ghRateLimited } = await import("../../server/github-limit");
+  if (ghRateLimited("rest")) return;
+  for (const s of listPrStates()) {
+    if (!s.pendingMention || s.activeMention || s.activeRun) continue;
+    const p = s.pendingMention;
+    if (!isTrustedGithubLogin(p.author)) {
+      clearPendingMention(s.prNumber, s.ghRepo);
+      continue;
+    }
+    const { dispatchMention } = await import("./mention");
+    await dispatchMention({
+      prNumber: s.prNumber,
+      kind: p.kind,
+      body: p.body,
+      author: p.author,
+      replyToId: p.replyToId,
+      inline: p.inline,
+      ghRepo: s.ghRepo,
+    }).then(
+      async () => {
+        const stillPending = readPrState(s.prNumber, s.ghRepo)?.pendingMention;
+        if (stillPending?.progressCommentId) {
+          const { editIssueComment, REPLY_MARKER } = await import("./github-rest");
+          await editIssueComment(
+            stillPending.progressCommentId,
+            `${REPLY_MARKER}
+Request accepted.`,
+            s.ghRepo,
+          ).catch(() => {});
+        }
+        clearPendingMention(s.prNumber, s.ghRepo);
+      },
+      (error) => console.warn(`[github] pending mention remains queued for PR #${s.prNumber}:`, error),
+    );
+  }
+}
+
+function startPendingMentionRetry(): void {
+  const g = globalThis as any;
+  if (g.__githubPendingMentionRetryTimer) return;
+  const timer = setInterval(() => void retryPendingMentions(), 60_000);
+  timer.unref?.();
+  g.__githubPendingMentionRetryTimer = timer;
+}
+
 async function recoverInterrupted(): Promise<void> {
   for (const s of listPrStates()) {
     const { fire, stale } = planRecovery(s);
@@ -295,6 +342,7 @@ export class GithubAgent implements AgentModule {
     ensureReviewAutomation();
     ensureDocsSyncAutomation();
     await recoverInterrupted();
+    startPendingMentionRetry();
     // Safety net under all of the above: the webhook path is fire-once, so
     // work lost AFTER an event was consumed (debounce killed by a restart,
     // review dead on dry pools, missed delivery) is re-fired by the sweep.

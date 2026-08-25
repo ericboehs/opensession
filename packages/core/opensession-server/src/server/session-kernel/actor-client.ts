@@ -1,7 +1,4 @@
-import type {
-  LegacyGatewayEffect,
-  SessionActorReducerCommand,
-} from "./lifecycle-protocol";
+import type { SessionActorReducerCommand } from "./lifecycle-protocol";
 import type {
   CreationEventDecision,
   CreationEventDecisionResult,
@@ -25,8 +22,11 @@ import {
 import type { AskActorRequest, AskActorResult } from "./ask-protocol";
 import type { TurnActorRequest, TurnActorResult } from "./turn-protocol";
 import type { TimerActorRequest, TimerActorResult } from "./timer-protocol";
+import type { GatewayCommandRequest, GatewayCommandResult } from "./gateway-command-protocol";
+import type { CoreActorRequest, CoreActorResult } from "./core-protocol";
 import {
   SESSION_KERNEL_ACTOR_VERSION,
+  isCriticalSettlementCommand,
   type KernelActorAsyncRequest,
   type KernelActorAsyncResponse,
 } from "./actor-protocol";
@@ -59,7 +59,6 @@ type Pending = {
 
 export class SessionKernelActorClient {
   private readonly pending = new Map<string, Pending>();
-  private readonly executions = new Map<string, string>();
   private deadError?: Error;
   // Synchronous calls cannot overlap on the gateway thread: Atomics.wait
   // blocks until the actor finishes. Reuse their shared response buffers
@@ -172,136 +171,6 @@ export class SessionKernelActorClient {
     return { timers: response.timers, outbox: response.outbox };
   }
 
-  async begin(
-    sessionId: string,
-    command: LegacyGatewayEffect,
-  ): Promise<{ duplicate: boolean; executionId?: string; result?: unknown }> {
-    const response = await this.request({
-      t: "begin",
-      rpcId: crypto.randomUUID(),
-      sessionId,
-      command,
-    });
-    if (response.t !== "begin_result")
-      throw new Error("Invalid kernel begin response");
-    const failure = response.result as
-      { __sessionKernelFailure?: boolean; message?: string } | undefined;
-    if (failure?.__sessionKernelFailure)
-      throw new SessionKernelActorError(
-        failure.message || "Session command failed",
-        false,
-      );
-    if (response.executionId)
-      this.executions.set(response.executionId, sessionId);
-    return response;
-  }
-
-  async complete(
-    executionId: string,
-    result: unknown,
-    effects: Array<{ kind: string; payload: unknown; effectKey: string }>,
-  ): Promise<void> {
-    try {
-      const response = await this.request({
-        t: "complete",
-        rpcId: crypto.randomUUID(),
-        executionId,
-        result,
-        effects,
-      });
-      if (response.t !== "complete_result")
-        throw new Error("Invalid kernel complete response");
-      const sessionId = this.executions.get(executionId);
-      if (sessionId) (this.store as RemoteStore).noteChange(sessionId);
-      this.executions.delete(executionId);
-    } catch (error) {
-      const failure = error instanceof Error ? error : new Error(String(error));
-      // Once handler execution has finished, a failed completion is ambiguous.
-      // Fail-stop instead of converting it into a retryable failed receipt.
-      this.markDead(failure);
-      throw failure;
-    }
-  }
-
-  beginSync(
-    sessionId: string,
-    command: {
-      requestId: string;
-      type: string;
-      payload?: unknown;
-      source?: string;
-      replaySafe?: boolean;
-    },
-  ): { duplicate: boolean; executionId?: string; result?: unknown } {
-    const admission = this.callStore<{
-      duplicate: boolean;
-      executionId?: string;
-      result?: unknown;
-    }>("$beginSync", [sessionId, command]);
-    if (admission.executionId)
-      this.executions.set(admission.executionId, sessionId);
-    return admission;
-  }
-
-  completeSync(
-    executionId: string,
-    result: unknown,
-    effects: Array<{ kind: string; payload: unknown; effectKey: string }>,
-  ): void {
-    try {
-      this.callStore("$completeSync", [executionId, result, effects]);
-      const sessionId = this.executions.get(executionId);
-      if (sessionId) (this.store as RemoteStore).noteChange(sessionId);
-      this.executions.delete(executionId);
-    } catch (error) {
-      const failure = error instanceof Error ? error : new Error(String(error));
-      this.markDead(failure);
-      throw failure;
-    }
-  }
-
-  failSync(executionId: string, error: string): void {
-    try {
-      this.callStore("$failSync", [executionId, error]);
-      this.executions.delete(executionId);
-    } catch (cause) {
-      const failure = cause instanceof Error ? cause : new Error(String(cause));
-      this.markDead(failure);
-      throw failure;
-    }
-  }
-
-  async fail(
-    executionId: string,
-    error: string,
-    retryable = false,
-  ): Promise<void> {
-    if (!retryable) {
-      await this.complete(
-        executionId,
-        { __sessionKernelFailure: true, message: error.slice(0, 2_000) },
-        [],
-      );
-      return;
-    }
-    try {
-      const response = await this.request({
-        t: "fail",
-        rpcId: crypto.randomUUID(),
-        executionId,
-        error,
-        retryable,
-      });
-      if (response.t !== "fail_result")
-        throw new Error("Invalid kernel failure response");
-      this.executions.delete(executionId);
-    } catch (cause) {
-      const failure = cause instanceof Error ? cause : new Error(String(cause));
-      this.markDead(failure);
-      throw failure;
-    }
-  }
-
   decideAsk<T extends AskActorRequest>(request: T): AskActorResult<T> {
     return this.callSync<AskActorResult<T>>(
       {
@@ -343,6 +212,28 @@ export class SessionKernelActorClient {
         command: { kind: "timer", commandId: crypto.randomUUID(), request },
       },
       `timer ${request.op}`,
+    );
+  }
+
+  decideCore<T extends CoreActorRequest>(request: T): CoreActorResult<T> {
+    return this.callSync<CoreActorResult<T>>(
+      {
+        t: "reduce",
+        command: { kind: "core", commandId: crypto.randomUUID(), request },
+      },
+      `core ${request.op}`,
+    );
+  }
+
+  decideGateway<T extends GatewayCommandRequest>(
+    request: T,
+  ): GatewayCommandResult<T> {
+    return this.callSync<GatewayCommandResult<T>>(
+      {
+        t: "reduce",
+        command: { kind: "gateway", commandId: crypto.randomUUID(), request },
+      },
+      `gateway ${request.operation} ${request.op}`,
     );
   }
 
@@ -466,8 +357,12 @@ export class SessionKernelActorClient {
       result?: TResult;
       error?: string;
     };
-    if (!response.ok)
-      throw new Error(response.error || `Session kernel ${label} failed`);
+    if (!response.ok) {
+      const error = new Error(response.error || `Session kernel ${label} failed`);
+      if (request.t === "reduce" && isCriticalSettlementCommand(request.command))
+        this.markDead(error);
+      throw error;
+    }
     return response.result as TResult;
   }
 
@@ -481,19 +376,14 @@ export class SessionKernelActorClient {
   ): Promise<KernelActorAsyncResponse> {
     if (this.deadError) return Promise.reject(this.deadError);
     return new Promise((resolve, reject) => {
-      // Duplicate begin requests wait for the active execution result. Worker
-      // error/messageerror remains their failure signal; every other RPC is bounded.
-      const timeout =
-        request.t === "begin"
-          ? undefined
-          : setTimeout(() => {
-              this.pending.delete(request.rpcId);
-              const error = new Error(
-                `Session kernel actor timed out handling ${request.t}`,
-              );
-              this.markDead(error);
-              reject(error);
-            }, 15_000);
+      const timeout = setTimeout(() => {
+        this.pending.delete(request.rpcId);
+        const error = new Error(
+          `Session kernel actor timed out handling ${request.t}`,
+        );
+        this.markDead(error);
+        reject(error);
+      }, 15_000);
       this.pending.set(request.rpcId, {
         resolve: (value) => {
           if (timeout) clearTimeout(timeout);
@@ -765,6 +655,36 @@ class RemoteStore implements SessionKernelStoreApi {
       op: "settle_outcome_projection",
       ...input,
     }) as ReturnType<SessionKernelStoreApi["settleTurnOutcomeProjection"]>;
+  }
+  requestGatewayCommand(
+    input: Parameters<SessionKernelStoreApi["requestGatewayCommand"]>[0],
+  ): ReturnType<SessionKernelStoreApi["requestGatewayCommand"]> {
+    return this.actor.decideGateway({ op: "request", ...input });
+  }
+  completeGatewayCommand(
+    input: Parameters<SessionKernelStoreApi["completeGatewayCommand"]>[0],
+  ): ReturnType<SessionKernelStoreApi["completeGatewayCommand"]> {
+    return this.actor.decideGateway({ op: "complete", ...input });
+  }
+  failGatewayCommand(
+    input: Parameters<SessionKernelStoreApi["failGatewayCommand"]>[0],
+  ): ReturnType<SessionKernelStoreApi["failGatewayCommand"]> {
+    return this.actor.decideGateway({ op: "fail", ...input });
+  }
+  requestSubmitPromptCommand(
+    input: Parameters<SessionKernelStoreApi["requestSubmitPromptCommand"]>[0],
+  ): ReturnType<SessionKernelStoreApi["requestSubmitPromptCommand"]> {
+    return this.actor.decideDelivery({ op: "request_submit_command", ...input });
+  }
+  completeSubmitPromptCommand(
+    input: Parameters<SessionKernelStoreApi["completeSubmitPromptCommand"]>[0],
+  ): ReturnType<SessionKernelStoreApi["completeSubmitPromptCommand"]> {
+    return this.actor.decideDelivery({ op: "complete_submit_command", ...input });
+  }
+  failSubmitPromptCommand(
+    input: Parameters<SessionKernelStoreApi["failSubmitPromptCommand"]>[0],
+  ): ReturnType<SessionKernelStoreApi["failSubmitPromptCommand"]> {
+    return this.actor.decideDelivery({ op: "fail_submit_command", ...input });
   }
   deliverySnapshot(sessionId: string) {
     return this.actor.decideDelivery({ op: "snapshot", sessionId });

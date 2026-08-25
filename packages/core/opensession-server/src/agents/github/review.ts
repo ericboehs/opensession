@@ -8,10 +8,9 @@
 import { isGithubBotLogin, personaName } from "../../server/config";
 import { isShuttingDown } from "../../server/shutdown-state";
 import {
-  getPrDetails,
-  getPrDetailsFresh,
+  getPrAutomationDetails,
   getPrDiff,
-  type PrDetails,
+  type PrAutomationDetails,
 } from "../../server/pr-info";
 import {
   activeRunCancellationRequested,
@@ -253,7 +252,7 @@ export async function runReview(
 
     // Look up by number before publishing the session link. If details are
     // unavailable, no worker exists and the next delivery remains retryable.
-    const details = await getPrDetails(pr.number ? String(pr.number) : pr.headRef, pr.ghRepo || undefined);
+    const details = await getPrAutomationDetails(pr.number ? String(pr.number) : pr.headRef, pr.ghRepo || undefined);
     if (!details) {
       console.warn(`[github] no PR details for #${pr.number} (${pr.headRef}); review not started`);
       return null;
@@ -530,8 +529,8 @@ export async function runReview(
     // Never publish an assessment against a different commit from the one the
     // worktree and prompt were pinned to. A push while the review was running
     // gets its own webhook/reconcile review; this result is now stale.
-    const latestPr = await getPrDetailsFresh(
-      pr.headRef,
+    const latestPr = await getPrAutomationDetails(
+      pr.number ? String(pr.number) : pr.headRef,
       pr.ghRepo || undefined,
     );
     if (
@@ -653,7 +652,7 @@ function composeInlineBody(f: Finding): string {
 
 async function postReview(
   pr: PrRef,
-  details: PrDetails,
+  details: PrAutomationDetails,
   parsed: ReviewOutput | null,
   rawText: string,
   runError?: string,

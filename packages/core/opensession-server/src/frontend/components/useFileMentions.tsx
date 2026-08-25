@@ -1,5 +1,12 @@
 import { repoLabel } from "../lib/repo-label";
-import React, { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import React, {
+	useEffect,
+	useEffectEvent,
+	useId,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import { createPortal } from "react-dom";
 import type { FileMention } from "../lib/api";
 import { UserAvatar } from "./UserAvatar";
@@ -180,7 +187,7 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
       el.focus();
       el.setSelectionRange(pos, pos);
     }
-  }, [value]);
+  }, [value, textareaRef]);
 
   // Every state write here keeps the previous value when nothing moved. sync()
   // runs several times per keystroke by design (the value effect below, plus
@@ -226,14 +233,15 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
   // Controlled textarea updates are not guaranteed to commit before a caller's
   // queued microtask. Re-sync from the committed value so soft keyboards,
   // dictation and the toolbar's programmatic "@" insertion all open reliably.
+  const runSync = useEffectEvent(() => sync());
   useEffect(() => {
-    sync();
+    runSync();
   }, [value]);
 
   // People are already in the page-level directory cache, so paint them before
   // the file/tool/session request resolves. A bare "@" should feel like opening
   // a palette, not like waiting for a repository search.
-  useEffect(() => {
+  const loadSuggestions = useEffectEvent(() => {
     if (!mention) {
       clearSuggestions();
       return;
@@ -286,6 +294,9 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
         })
         .catch(() => {});
     }
+  });
+  useEffect(() => {
+    loadSuggestions();
   }, [mention?.query, mention?.start, mention?.kind, people, currentUser]);
 
   const open = !!mention && suggestions.length > 0;
@@ -361,7 +372,7 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
       window.removeEventListener("resize", measure);
       window.removeEventListener("scroll", measure, true);
     };
-  }, [open, suggestions.length, mention?.kind, mention?.start, value]);
+  }, [open, suggestions.length, mention?.kind, mention?.start, value, textareaRef]);
 
   useEffect(() => {
     if (!open) return;

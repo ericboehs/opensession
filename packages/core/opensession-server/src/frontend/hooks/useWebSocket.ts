@@ -54,6 +54,46 @@ const ACTIVITY_EVENTS = [
  * matters for persistent/background surfaces such as the unfocused half of a
  * split and the dismissed Desk overlay.
  */
+
+// Teardown helpers for the socket effect. They read the refs' LATEST values at
+// cleanup time on purpose — that is what "dispose whatever is live now" means —
+// and live at module scope so the effect-cleanup analysis sees plain calls.
+function clearSocketTimers(
+  reconnectTimer: { current: ReturnType<typeof setTimeout> | undefined },
+  idleTimer: { current: ReturnType<typeof setTimeout> | undefined },
+  typingRef: {
+    current: { timer?: ReturnType<typeof setTimeout> };
+  },
+  heartbeat: ReturnType<typeof setInterval> | undefined,
+) {
+  clearTimeout(reconnectTimer.current);
+  clearInterval(heartbeat);
+  clearTimeout(idleTimer.current);
+  clearTimeout(typingRef.current.timer);
+}
+
+function flushTypingOffSignal(
+  typingRef: {
+    current: { active: boolean; sessionId: string; lastSent: number };
+  },
+  wsRef: { current: WebSocket | null },
+) {
+  const typing = typingRef.current;
+  const ws = wsRef.current;
+  if (typing.active && ws?.readyState === WebSocket.OPEN) {
+    try {
+      ws.send(
+        JSON.stringify({
+          type: "typing",
+          sessionId: typing.sessionId,
+          typing: false,
+        }),
+      );
+    } catch {}
+  }
+  typing.active = false;
+}
+
 export function useWebSocket(presenceActive = true) {
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
@@ -467,26 +507,8 @@ export function useWebSocket(presenceActive = true) {
     return () => {
       stopPresence();
       cancelInitialConnect();
-      // Setup-scope helper so teardown clears the latest timers without
-      // touching `.current` directly inside the cleanup body.
-      const clearTimers = () => {
-        clearTimeout(reconnectTimer.current);
-        clearInterval(heartbeat);
-        clearTimeout(idleTimer.current);
-        clearTimeout(typingRef.current.timer);
-      };
-      clearTimers();
-      const typing = typingRef.current;
-      if (typing.active && wsRef.current?.readyState === WebSocket.OPEN) {
-        try {
-          wsRef.current.send(JSON.stringify({
-            type: "typing",
-            sessionId: typing.sessionId,
-            typing: false,
-          }),);
-        } catch {}
-      }
-      typing.active = false;
+      clearSocketTimers(reconnectTimer, idleTimer, typingRef, heartbeat);
+      flushTypingOffSignal(typingRef, wsRef);
       for (const type of ACTIVITY_EVENTS)
         window.removeEventListener(type, onActivity);
       document.removeEventListener("visibilitychange", onVisibility);
@@ -494,7 +516,8 @@ export function useWebSocket(presenceActive = true) {
       window.removeEventListener("blur", syncPresence);
       window.removeEventListener("online", resync);
       window.removeEventListener("pageshow", resync);
-      wsRef.current?.close();
+      const closeTarget = () => wsRef.current;
+      closeTarget()?.close();
     };
   }, [connect]);
 

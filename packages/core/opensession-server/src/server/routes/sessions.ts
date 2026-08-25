@@ -6,6 +6,7 @@
  * next handler (see routes/index.ts for the dispatch order).
  */
 
+import { executeSessionProjection } from "../session-projection-executor";
 import { requestUser, type RouteContext } from "./context";
 import {
 	cancelAgentRunAndWait,
@@ -64,11 +65,12 @@ import { notifyMentions } from "../mentions";
 import { reviewTeamFor } from "../people";
 import { sendPushToUser } from "../push";
 import {
-	legacyGatewayEffect,
+  sessionGatewayCommand,
 	sessionKernel,
 	sessionKernelStore,
 	tombstoneSessionKernel,
 } from "../session-kernel";
+import { withSessionMutationLock } from "../session-mutation-lock";
 import {
 	sessionIdForRequest,
 } from "../session-request-id";
@@ -1493,7 +1495,7 @@ export async function handleSessionsRoutes(
         }
       }
     }
-		sessionKernel(sessionId).applySync("archive_override", () =>
+		executeSessionProjection(sessionId, "archive_override", () =>
 			setArchived(sessionId, archived),
 		);
 		// Plain done-tickets are archived via a file-level flag, not the
@@ -1524,7 +1526,7 @@ export async function handleSessionsRoutes(
 		const body = await req.json().catch(() => ({}));
 		const title =
 			typeof body?.title === "string" ? body.title.trim().slice(0, 80) : "";
-		sessionKernel(sessionId).applySync("title_override", () =>
+		executeSessionProjection(sessionId, "title_override", () =>
 			setTitleOverride(sessionId, title || null),
 		);
 		invalidateSessionsCache();
@@ -1544,7 +1546,7 @@ export async function handleSessionsRoutes(
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const body = await req.json().catch(() => ({}));
 		const status = isManualStatus(body?.status) ? body.status : null;
-		sessionKernel(sessionId).applySync("status_override", () =>
+		executeSessionProjection(sessionId, "status_override", () =>
 			setStatusOverride(sessionId, status),
 		);
 		invalidateSessionsCache();
@@ -1681,7 +1683,7 @@ export async function handleSessionsRoutes(
 				} else mirroredToGithub = true;
 			}
 		}
-		sessionKernel(sessionId).applySync("review_request", () =>
+		executeSessionProjection(sessionId, "review_request", () =>
 			setReviewRequest(
 				sessionId,
 				reviewer
@@ -1834,10 +1836,27 @@ export async function handleSessionsRoutes(
 		if (sessionKernelStore().isTombstoned(session.id))
 			return recoverTombstonedDeletion();
 
+    const deleteRequestId = `delete:${session.id}`;
+    let deleteExecuting = false;
+    let deletePhysicalFinished = false;
 		try {
-			const result = await sessionKernel(session.id).runExclusive(
-				"delete_session",
-			async () => {
+      const plan = sessionGatewayCommand({
+        op: "request",
+        sessionId: session.id,
+        requestId: deleteRequestId,
+        operation: "delete_session",
+        identity: { cleanWorktree },
+      });
+      if (plan.status === "in_progress")
+        throw Object.assign(new Error("Session deletion is already in progress"), {
+          retryable: true,
+        });
+      if (plan.status === "completed") {
+        const replay = plan.result as { status: number; body: unknown };
+        return Response.json(replay.body, { status: replay.status });
+      }
+      deleteExecuting = true;
+			const result = await withSessionMutationLock(session.id, async () => {
 		try {
 			const runIds = [
 				session.claudeSessionId,
@@ -1870,12 +1889,26 @@ export async function handleSessionsRoutes(
 		} catch (e: any) {
 			return { status: 500, body: { error: e.message } };
 		}
-			},
-			);
-			// Actor commands cross a Worker boundary. Keep their result cloneable and
-			// construct the Response only after the mailbox has settled.
+			});
+      deletePhysicalFinished = true;
+      sessionGatewayCommand({
+        op: "complete",
+        sessionId: session.id,
+        requestId: deleteRequestId,
+        operation: "delete_session",
+        result,
+      });
 			return Response.json(result.body, { status: result.status });
 		} catch (error) {
+      if (deleteExecuting && !deletePhysicalFinished)
+        sessionGatewayCommand({
+          op: "fail",
+          sessionId: session.id,
+          requestId: deleteRequestId,
+          operation: "delete_session",
+          error: error instanceof Error ? error.message : String(error),
+          retryable: true,
+        });
 			// A concurrent delete can write the tombstone after the check above but
 			// before this request reaches the mailbox. Treat that race as the same
 			// idempotent recovery instead of surfacing a false failure.

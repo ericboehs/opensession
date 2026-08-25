@@ -1,4 +1,10 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, {
+	useEffect,
+	useEffectEvent,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { transcribeClip } from "../lib/api";
@@ -443,46 +449,50 @@ export function VoiceInput({
     observer.observe(waveform);
     return () => observer.disconnect();
   }, [active]);
+  // The shortcut listener reads the live start closure through an effect
+  // event, so the subscription keys stay the enablement state.
+  const startFromShortcut = useEffectEvent(function onKeyDown(
+    event: KeyboardEvent,
+  ) {
+    if (
+      event.defaultPrevented ||
+      event.repeat ||
+      disabled ||
+      phase !== "idle" ||
+      !matchesShortcut(event, "composer-dictate")
+    )
+      return;
+    const button = idleButtonRef.current;
+    const editorFocused = document.activeElement === editTargetRef?.current;
+    if (!button || (!shortcutActive && !editorFocused)) return;
+    if (button.closest("[inert], [hidden], [aria-hidden='true']")) return;
+    const rect = button.getBoundingClientRect();
+    const hit = document.elementFromPoint(
+      rect.left + rect.width / 2,
+      rect.top + rect.height / 2,
+    );
+    if (!hit || (hit !== button && !button.contains(hit))) return;
+    event.preventDefault();
+    void start();
+  });
   useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (
-        event.defaultPrevented ||
-        event.repeat ||
-        disabled ||
-        phase !== "idle" ||
-        !matchesShortcut(event, "composer-dictate")
-      )
-        return;
-      const button = idleButtonRef.current;
-      const editorFocused = document.activeElement === editTargetRef?.current;
-      if (!button || (!shortcutActive && !editorFocused)) return;
-      if (button.closest("[inert], [hidden], [aria-hidden='true']")) return;
-      const rect = button.getBoundingClientRect();
-      const hit = document.elementFromPoint(
-        rect.left + rect.width / 2,
-        rect.top + rect.height / 2,
-      );
-      if (!hit || (hit !== button && !button.contains(hit))) return;
-      event.preventDefault();
-      void start();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", startFromShortcut);
+    return () => window.removeEventListener("keydown", startFromShortcut);
   }, [disabled, editTargetRef, phase, shortcutActive]);
+  const stopOnSend = useEffectEvent(function onKeyDown(event: KeyboardEvent) {
+    if (
+      event.defaultPrevented ||
+      event.repeat ||
+      !isSendCombo(event, sendKey)
+    )
+      return;
+    event.preventDefault();
+    stop(true, true);
+  });
   useEffect(() => {
     if (phase !== "recording" || !onTextSend) return;
-    function onKeyDown(event: KeyboardEvent) {
-      if (
-        event.defaultPrevented ||
-        event.repeat ||
-        !isSendCombo(event, sendKey)
-      )
-        return;
-      event.preventDefault();
-      stop(true, true);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", stopOnSend);
+    return () => window.removeEventListener("keydown", stopOnSend);
   }, [onTextSend, phase, sendKey]);
   useEffect(() => {
     activeChangeRef.current?.(active);

@@ -1,10 +1,7 @@
 import { SessionKernelStore } from "./store";
 import {
   SESSION_KERNEL_ACTOR_VERSION,
-  SESSION_KERNEL_MAX_EXECUTIONS_PER_SESSION,
-  SESSION_KERNEL_MAX_EXECUTIONS_TOTAL,
-  SESSION_KERNEL_MAX_WAITERS_PER_COMMAND,
-  SESSION_KERNEL_MAX_WAITERS_TOTAL,
+  isCriticalSettlementCommand,
   type KernelActorAsyncRequest,
   type KernelActorAsyncResponse,
   type KernelActorSyncRequest,
@@ -13,282 +10,8 @@ import { isDeliveryReadRequest } from "./delivery-protocol";
 
 export function startSessionKernelActorWorker(): void {
   const store = new SessionKernelStore();
-  type Execution = {
-    executionId: string;
-    sessionId: string;
-    requestId: string;
-    type: string;
-    waiters: string[];
-  };
-  const executions = new Map<string, Execution>();
-  const executingRequests = new Map<string, string>();
-  let waiterTotal = 0;
-  const executionsPerSession = new Map<string, number>();
-
-  const requestKey = (sessionId: string, requestId: string) =>
-    `${sessionId}\u0000${requestId}`;
-
   function post(message: KernelActorAsyncResponse): void {
     self.postMessage(message);
-  }
-
-  function terminalResult(
-    request: Extract<KernelActorAsyncRequest, { t: "begin" }>,
-    result: unknown,
-  ): void {
-    post({
-      t: "begin_result",
-      rpcId: request.rpcId,
-      duplicate: true,
-      result,
-    });
-  }
-
-  function begin(
-    request: Extract<KernelActorAsyncRequest, { t: "begin" }>,
-  ): void {
-    try {
-      if (store.isTombstoned(request.sessionId))
-        throw new Error(`Session ${request.sessionId} was deleted`);
-      const key = requestKey(request.sessionId, request.command.commandId);
-      const currentExecutionId = executingRequests.get(key);
-      const existing = store.command(
-        request.sessionId,
-        request.command.commandId,
-      );
-      const terminal =
-        existing?.status === "completed" ||
-        existing?.status === "indeterminate" ||
-        (existing?.status === "failed" &&
-          (!existing.retryable || !existing.replaySafe));
-      if (
-        !terminal &&
-        !currentExecutionId &&
-        ((executionsPerSession.get(request.sessionId) ?? 0) >=
-          SESSION_KERNEL_MAX_EXECUTIONS_PER_SESSION ||
-          executions.size >= SESSION_KERNEL_MAX_EXECUTIONS_TOTAL)
-      )
-        throw Object.assign(new Error("Session effect executor is full"), {
-          retryable: true,
-        });
-      const persisted = store.acceptCommand({
-        sessionId: request.sessionId,
-        requestId: request.command.commandId,
-        type: request.command.operation,
-        payload: request.command.payload,
-        replaySafe: request.command.replaySafe,
-      });
-      if (persisted.status === "completed") {
-        terminalResult(request, persisted.result);
-        return;
-      }
-      if (
-        (persisted.status === "failed" &&
-          (!persisted.retryable || !persisted.replaySafe)) ||
-        persisted.status === "indeterminate"
-      ) {
-        terminalResult(request, {
-          __sessionKernelFailure: true,
-          message:
-            persisted.error || "Session command outcome is indeterminate",
-        });
-        return;
-      }
-
-      if (currentExecutionId) {
-        const current = executions.get(currentExecutionId);
-        if (!current) throw new Error("Session command execution was lost");
-        if (
-          current.waiters.length >= SESSION_KERNEL_MAX_WAITERS_PER_COMMAND ||
-          waiterTotal >= SESSION_KERNEL_MAX_WAITERS_TOTAL
-        )
-          throw Object.assign(
-            new Error("Session command waiter limit reached"),
-            {
-              retryable: true,
-            },
-          );
-        current.waiters.push(request.rpcId);
-        waiterTotal += 1;
-        return;
-      }
-
-      const execution: Execution = {
-        executionId: crypto.randomUUID(),
-        sessionId: request.sessionId,
-        requestId: request.command.commandId,
-        type: request.command.operation,
-        waiters: [],
-      };
-      executions.set(execution.executionId, execution);
-      executingRequests.set(key, execution.executionId);
-      executionsPerSession.set(
-        request.sessionId,
-        (executionsPerSession.get(request.sessionId) ?? 0) + 1,
-      );
-      store.markProcessing(request.sessionId, request.command.commandId);
-      post({
-        t: "begin_result",
-        rpcId: request.rpcId,
-        duplicate: false,
-        executionId: execution.executionId,
-      });
-    } catch (error) {
-      post({
-        t: "error",
-        rpcId: request.rpcId,
-        error: error instanceof Error ? error.message : String(error),
-        retryable:
-          !!error &&
-          typeof error === "object" &&
-          (error as { retryable?: boolean }).retryable === true,
-      });
-    }
-  }
-
-  function executionFor(executionId: string): Execution {
-    const execution = executions.get(executionId);
-    if (!execution)
-      throw new Error("Session kernel execution is no longer active");
-    return execution;
-  }
-
-  function releaseExecution(
-    execution: Execution,
-    outcome: { result?: unknown; error?: string; retryable?: boolean } = {},
-  ): void {
-    executions.delete(execution.executionId);
-    executingRequests.delete(
-      requestKey(execution.sessionId, execution.requestId),
-    );
-    const remaining = (executionsPerSession.get(execution.sessionId) ?? 1) - 1;
-    if (remaining > 0) executionsPerSession.set(execution.sessionId, remaining);
-    else executionsPerSession.delete(execution.sessionId);
-    for (const rpcId of execution.waiters) {
-      waiterTotal -= 1;
-      if (outcome.error !== undefined)
-        post({
-          t: "error",
-          rpcId,
-          error: outcome.error,
-          retryable: outcome.retryable,
-        });
-      else
-        post({
-          t: "begin_result",
-          rpcId,
-          duplicate: true,
-          result: outcome.result,
-        });
-      }
-  }
-
-  function finish(
-    request: Extract<KernelActorAsyncRequest, { t: "complete" | "fail" }>,
-  ): void {
-    try {
-      const execution = executionFor(request.executionId);
-      if (request.t === "complete") {
-        if (!store.isTombstoned(execution.sessionId))
-          store.completeCommandDecision({
-            sessionId: execution.sessionId,
-            requestId: execution.requestId,
-            type: execution.type,
-            result: request.result,
-            effects: request.effects,
-          });
-        post({ t: "complete_result", rpcId: request.rpcId });
-        releaseExecution(execution, { result: request.result });
-      } else {
-        store.failCommand(
-          execution.sessionId,
-          execution.requestId,
-          request.error,
-          request.retryable,
-        );
-        post({ t: "fail_result", rpcId: request.rpcId });
-        releaseExecution(execution, {
-          error: request.error,
-          retryable: request.retryable,
-        });
-      }
-    } catch (error) {
-      post({
-        t: "error",
-        rpcId: request.rpcId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      // Settlement persistence is ownership-critical. Continuing after an
-      // ambiguous result could let a stale executor commit over its successor.
-      queueMicrotask(() => self.close());
-    }
-  }
-
-  function beginSync(
-    sessionId: string,
-    command: {
-      requestId: string;
-      type: string;
-      payload?: unknown;
-      replaySafe?: boolean;
-    },
-  ) {
-    if (store.isTombstoned(sessionId))
-      throw new Error(`Session ${sessionId} was deleted`);
-    const persisted = store.acceptCommand({
-      sessionId,
-      requestId: command.requestId,
-      type: command.type,
-      payload: command.payload,
-      replaySafe: command.replaySafe,
-    });
-    if (persisted.status === "completed")
-      return { duplicate: true, result: persisted.result };
-    if (
-      (persisted.status === "failed" &&
-        (!persisted.retryable || !persisted.replaySafe)) ||
-      persisted.status === "indeterminate"
-    )
-      throw new Error(
-        persisted.error || "Session command outcome is indeterminate",
-      );
-    const key = requestKey(sessionId, command.requestId);
-    if (executingRequests.has(key))
-      throw new Error("Session command is already executing");
-    const execution: Execution = {
-      executionId: crypto.randomUUID(),
-      sessionId,
-      requestId: command.requestId,
-      type: command.type,
-      waiters: [],
-    };
-    executions.set(execution.executionId, execution);
-    executingRequests.set(key, execution.executionId);
-    store.markProcessing(sessionId, command.requestId);
-    return { duplicate: false, executionId: execution.executionId };
-  }
-
-  function completeSync(
-    executionId: string,
-    result: unknown,
-    effects: Array<{ kind: string; payload: unknown; effectKey: string }>,
-  ) {
-    const execution = executionFor(executionId);
-    if (!store.isTombstoned(execution.sessionId))
-      store.completeCommandDecision({
-        sessionId: execution.sessionId,
-        requestId: execution.requestId,
-        type: execution.type,
-        result,
-        effects,
-      });
-    releaseExecution(execution, { result });
-  }
-
-  function failSync(executionId: string, error: string) {
-    const execution = executionFor(executionId);
-    store.failCommand(execution.sessionId, execution.requestId, error);
-    releaseExecution(execution, { error, retryable: false });
   }
 
   function syncStore(request: KernelActorSyncRequest): void {
@@ -308,6 +31,12 @@ export function startSessionKernelActorWorker(): void {
             result = store.deliverySnapshot(delivery.sessionId);
           else if (delivery.op === "entries")
             result = store.deliveryEntries(delivery.slot);
+          else if (delivery.op === "request_submit_command")
+            result = store.requestSubmitPromptCommand(delivery);
+          else if (delivery.op === "complete_submit_command")
+            result = store.completeSubmitPromptCommand(delivery);
+          else if (delivery.op === "fail_submit_command")
+            result = store.failSubmitPromptCommand(delivery);
           else if (delivery.op === "set")
             result = store.setDeliverySlot(
               delivery.sessionId,
@@ -368,6 +97,32 @@ export function startSessionKernelActorWorker(): void {
                 ? { revision: store.deliverySnapshot(delivery.sessionId).revision }
                 : {}),
             };
+        } else if (command.kind === "gateway") {
+          const gateway = command.request;
+          if (gateway.op === "request")
+            result = store.requestGatewayCommand(gateway);
+          else if (gateway.op === "complete")
+            result = store.completeGatewayCommand(gateway);
+          else result = store.failGatewayCommand(gateway);
+        } else if (command.kind === "core") {
+          const core = command.request;
+          if (core.op === "enqueue_effect")
+            result = store.enqueueOutbox(
+              core.sessionId,
+              core.kind,
+              core.payload,
+              core.effectKey,
+            );
+          else if (core.op === "ack_outbox") result = store.ackOutbox(core.id);
+          else if (core.op === "defer_outbox") result = store.deferOutbox(core.id);
+          else if (core.op === "fail_outbox")
+            result = store.noteOutboxFailure(
+              core.id,
+              core.error,
+              core.maxAttempts,
+            );
+          else if (core.op === "clear") result = store.clearSession(core.sessionId);
+          else result = store.tombstoneSession(core.sessionId);
         } else if (command.kind === "turn") {
           const turn = command.request;
           if (turn.op === "snapshot") result = store.turnSnapshot(turn.sessionId);
@@ -390,7 +145,10 @@ export function startSessionKernelActorWorker(): void {
           else result = store.settleTurnOutcomeProjection(turn);
         } else if (command.kind === "timer") {
           const timer = command.request;
-          if (timer.op === "begin") result = store.beginTimerExecution(timer);
+          if (timer.op === "schedule") result = store.scheduleTimer(timer);
+          else if (timer.op === "cancel")
+            result = store.cancelTimer(timer.sessionId, timer.timerId);
+          else if (timer.op === "begin") result = store.beginTimerExecution(timer);
           else if (timer.op === "complete")
             result = store.completeTimerExecution(timer);
           else if (timer.op === "fail") result = store.failTimerExecution(timer);
@@ -412,17 +170,7 @@ export function startSessionKernelActorWorker(): void {
             result = store.deleteAskRecord(ask.sessionId);
           else result = store.clearAskRecords();
         }
-      } else if (request.method === "$beginSync")
-        result = beginSync(request.args[0] as string, request.args[1] as any);
-      else if (request.method === "$completeSync")
-        result = completeSync(
-          request.args[0] as string,
-          request.args[1],
-          request.args[2] as any,
-        );
-      else if (request.method === "$failSync")
-        result = failSync(request.args[0] as string, request.args[1] as string);
-      else {
+      } else {
         const method = (
           store as unknown as Record<string, (...args: unknown[]) => unknown>
         )[request.method];
@@ -454,6 +202,8 @@ export function startSessionKernelActorWorker(): void {
       output.set(bytes.subarray(0, output.length));
       Atomics.store(control, 1, Math.min(bytes.length, output.length));
       Atomics.store(control, 0, -1);
+      if (request.t === "reduce" && isCriticalSettlementCommand(request.command))
+        queueMicrotask(() => self.close());
     }
     Atomics.notify(control, 0);
   }
@@ -500,8 +250,7 @@ export function startSessionKernelActorWorker(): void {
           request.effectKinds,
         ),
       });
-    } else if (request.t === "begin") begin(request);
-    else finish(request);
+    }
   };
 }
 

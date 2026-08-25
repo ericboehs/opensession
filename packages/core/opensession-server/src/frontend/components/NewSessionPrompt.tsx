@@ -326,7 +326,7 @@ export function NewSessionPrompt({
 		textarea.style.height = "0px";
 		textarea.style.height = `${textarea.scrollHeight}px`;
 		updatePromptFade(promptBody);
-	}, [promptBody, sessionNames.displayText, images.length, files.length]);
+	}, [promptBody, sessionNames.displayText, images.length, files.length, textareaRef]);
 
 	useEffect(() => {
 		if (!promptBody) return;

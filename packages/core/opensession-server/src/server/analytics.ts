@@ -21,7 +21,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync,
 import { $ } from "bun";
 import { isNativeSessionId, OPENSESSION_SESSIONS_DIR, stateDir, statePath } from "./paths";
 import { configuredRepos, defaultRepo, githubBotLogins } from "./config";
-import { ghRateLimited, isGhRateLimitMsg, noteGhRateLimited } from "./github-limit";
+import { noteGithubGraphqlCall } from "./github-budget";
 import { readFeedback } from "../agents/github/feedback";
 import type { FeedbackRecord } from "../agents/github/feedback-gates";
 import { gitIdentityFor } from "./shared/user-mappings";
@@ -481,7 +481,6 @@ async function fetchRepoPrs(repoId: string, ghRepo: string, fromDate: string): P
 		if (disk) prCache.set(key, (cached = { at: disk.at, prs: disk.data }));
 	}
 	if (cached && Date.now() - cached.at < PR_CACHE_TTL_MS) return cached.prs;
-	if (ghRateLimited() && cached) return cached.prs; // serve stale during a backoff window
 
 	const fields = "number,title,url,state,createdAt,mergedAt,headRefName";
 	const seen = new Map<number, AnalyticsPr>();
@@ -491,9 +490,17 @@ async function fetchRepoPrs(repoId: string, ghRepo: string, fromDate: string): P
 	// search ceiling): a busy repo alone can open 400+ PRs in a 30-day window.
 	for (const search of [`created:>=${fromDate}`, `merged:>=${fromDate}`]) {
 		try {
-			const raw = await $`gh pr list --repo ${ghRepo} --state all --limit 1000 --search ${search} --json ${fields}`
-				.quiet()
-				.text();
+			const queryStarted = Date.now();
+			let raw: string;
+			try {
+				raw = await $`gh pr list --repo ${ghRepo} --state all --limit 1000 --search ${search} --json ${fields}`
+					.quiet()
+					.text();
+				noteGithubGraphqlCall("analytics:pr-list", Date.now() - queryStarted, true, { ambient: true });
+			} catch (error) {
+				noteGithubGraphqlCall("analytics:pr-list", Date.now() - queryStarted, false, { ambient: true });
+				throw error;
+			}
 			for (const pr of JSON.parse(raw)) {
 				seen.set(pr.number, {
 					repo: repoId,
@@ -510,7 +517,6 @@ async function fetchRepoPrs(repoId: string, ghRepo: string, fromDate: string): P
 		} catch (e) {
 			failed = true;
 			console.error(`[analytics] gh pr list failed for ${ghRepo}:`, e);
-			if (isGhRateLimitMsg(String((e as any)?.stderr || e))) noteGhRateLimited("analytics");
 		}
 	}
 	// A failed search means `seen` is partial — serve it (or the stale cache)
@@ -592,7 +598,6 @@ async function fetchRepoFactoryPrs(repoId: string, ghRepo: string, fromDate: str
 		if (disk) factoryCache.set(key, (cached = { at: disk.at, prs: disk.data }));
 	}
 	if (cached && Date.now() - cached.at < FACTORY_CACHE_TTL_MS) return cached.prs;
-	if (ghRateLimited() && cached) return cached.prs;
 
 	const prs: FactoryPr[] = [];
 	const q = `repo:${ghRepo} is:pr is:merged merged:>=${fromDate}`;
@@ -601,7 +606,15 @@ async function fetchRepoFactoryPrs(repoId: string, ghRepo: string, fromDate: str
 		while (prs.length < FACTORY_PR_CAP) {
 			const args = ["api", "graphql", "-f", `query=${FACTORY_QUERY}`, "-f", `q=${q}`];
 			if (cursor) args.push("-f", `cursor=${cursor}`);
-			const raw = await $`gh ${args}`.quiet().text();
+			const queryStarted = Date.now();
+			let raw: string;
+			try {
+				raw = await $`gh ${args}`.quiet().text();
+				noteGithubGraphqlCall("analytics:factory", Date.now() - queryStarted, true, { ambient: true });
+			} catch (error) {
+				noteGithubGraphqlCall("analytics:factory", Date.now() - queryStarted, false, { ambient: true });
+				throw error;
+			}
 			const search = JSON.parse(raw)?.data?.search;
 			for (const pr of search?.nodes || []) {
 				if (!pr?.number) continue;
@@ -634,7 +647,6 @@ async function fetchRepoFactoryPrs(repoId: string, ghRepo: string, fromDate: str
 		}
 	} catch (e) {
 		console.error(`[analytics] factory pr fetch failed for ${ghRepo}:`, e);
-		if (isGhRateLimitMsg(String((e as any)?.stderr || e))) noteGhRateLimited("analytics");
 		return cached?.prs ?? [];
 	}
 	factoryCache.set(key, { at: Date.now(), prs });
