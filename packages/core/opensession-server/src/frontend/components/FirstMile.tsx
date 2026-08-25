@@ -4,7 +4,6 @@ import { BASE_PATH } from "../lib/base";
 import { DEFAULT_DOC_TITLE, PRODUCT_NAME } from "../lib/brand";
 import { useSetupStatus } from "../hooks/useSetupStatus";
 import { Button } from "../ui/button";
-import { cn } from "../ui/cn";
 import { duration, ease } from "../ui/motion";
 import { LoadingState } from "../ui/state";
 import { TopBar } from "../ui/top-bar";
@@ -290,6 +289,78 @@ const sx = stylex.create({
 	mxAuto: {
 			marginInline: "auto"
 	},
+	previewOverflow: {
+		display: "flex", width: "28px", height: "28px", alignItems: "center", justifyContent: "center",
+		borderRadius: "calc(infinity * 1px)", borderStyle: "solid", borderWidth: "1px",
+		fontWeight: "var(--font-weight-semibold)", color: "var(--text-dim)",
+	},
+	previewOverflowOpaque: { borderColor: "var(--bg)", backgroundColor: "color-mix(in oklab, var(--bg) 85%, transparent)" },
+	previewOverflowTransparent: { borderColor: "transparent", backgroundColor: "transparent" },
+	summaryTile: {
+		display: "flex", aspectRatio: "1 / 1", minWidth: 0, flexDirection: "column",
+		justifyContent: "space-between", borderRadius: "calc(22px * var(--rf))",
+		borderStyle: "solid", borderWidth: "1px", padding: "16px", textAlign: "left",
+		backdropFilter: "blur(var(--blur-xl))",
+		"@media (max-width: 720px)": { borderRadius: "calc(18px * var(--rf))", padding: "14px" },
+	},
+	summaryTileInteractive: {
+		cursor: "pointer", transitionProperty: "transform, filter", transitionDuration: "150ms",
+		transitionTimingFunction: "var(--ease)",
+		":focusVisible": { outline: "2px solid var(--accent-ink)", outlineOffset: "2px" },
+		"@media (forced-colors: active)": { ":focusVisible": { outlineColor: "Highlight" } },
+		":hover": { filter: "brightness(0.98)" },
+		":active": { transform: "scale(0.96)" },
+		"@media (prefers-reduced-motion: reduce)": { transform: "none" },
+	},
+	summaryTileReady: {
+		borderColor: "transparent", backgroundColor: "var(--green-soft)",
+		boxShadow: "inset 0 1px 0 color-mix(in srgb, white 45%, transparent), 0 12px 28px -24px color-mix(in srgb, var(--green) 45%, transparent)",
+	},
+	summaryTilePending: { borderColor: "var(--divider-soft)", backgroundColor: "color-mix(in oklab, var(--settings-plate) 65%, transparent)" },
+	tileStatus: {
+		display: "flex", width: "32px", height: "32px", flexShrink: 0,
+		alignItems: "center", justifyContent: "center", borderRadius: "calc(infinity * 1px)",
+	},
+	tileStatusReady: { backgroundColor: "color-mix(in oklab, var(--bg) 60%, transparent)", color: "var(--green)" },
+	tileStatusPending: { backgroundColor: "color-mix(in oklab, var(--text-faint) 10%, transparent)", color: "var(--text-faint)" },
+	phoneBackButton: {
+		display: "none", justifySelf: "start",
+		"@media (max-width: 720px)": { display: "flex", width: "40px", height: "40px", justifyContent: "center", padding: 0 },
+	},
+	phoneInvisible: { "@media (max-width: 720px)": { visibility: "hidden" } },
+	progressNav: { position: "absolute", left: "50%", display: "flex", transform: "translateX(-50%)", alignItems: "center", gap: "8px" },
+	invisible: { visibility: "hidden" },
+	progressStep: {
+		height: "8px", cursor: "pointer", borderRadius: "calc(infinity * 1px)",
+		transitionProperty: "width, background-color", transitionDuration: "200ms",
+		transitionTimingFunction: "var(--ease)",
+		":focusVisible": { outline: "2px solid var(--accent-ink)", outlineOffset: "2px" },
+		"@media (forced-colors: active)": { ":focusVisible": { outlineColor: "Highlight" } },
+	},
+	progressCurrent: { width: "32px", backgroundColor: "var(--text)" },
+	progressComplete: { width: "8px", backgroundColor: "color-mix(in oklab, var(--text) 45%, transparent)" },
+	progressUpcoming: {
+		width: "8px", backgroundColor: "color-mix(in oklab, var(--text-faint) 35%, transparent)",
+		":hover": { backgroundColor: "color-mix(in oklab, var(--text-faint) 60%, transparent)" },
+	},
+	stepSection: {
+		marginInline: "auto", display: "flex", minHeight: "100%", width: "100%", maxWidth: "960px",
+		flexDirection: "column", alignItems: "center", paddingBlock: "32px",
+		"@media (max-width: 720px)": { paddingBlock: "20px" },
+	},
+	welcomeStep: { justifyContent: "center", paddingBottom: "64px", "@media (max-width: 720px)": { paddingBottom: "40px" } },
+	footer: {
+		position: "relative", zIndex: 10, borderTopStyle: "solid", borderTopWidth: "1px",
+		paddingInline: "32px", paddingTop: "4px", transitionProperty: "border-color, background-color",
+		transitionDuration: "var(--dur-micro)", transitionTimingFunction: "var(--ease)",
+		"@media (max-width: 720px)": { paddingInline: "20px", paddingTop: "12px" },
+	},
+	footerSeparated: {
+		borderTopColor: "var(--border)", backgroundColor: "color-mix(in oklab, var(--bg) 95%, transparent)",
+		backdropFilter: "blur(var(--blur-xl))",
+	},
+	footerAttached: { borderTopColor: "transparent", backgroundImage: "linear-gradient(to bottom, transparent, var(--bg) 30%)" },
+	desktopBackButton: { justifySelf: "start", "@media (max-width: 720px)": { display: "none" } },
 });
 
 interface FirstMileStep {
@@ -373,9 +444,10 @@ function PreviewOverflow({
 	if (count <= 0) return null;
 	return (
 		<span
-			className={cn(
-				"flex size-7 items-center justify-center rounded-full border text-meta font-semibold text-dim",
-				transparent ? "border-transparent bg-transparent" : "border-bg bg-bg/85",
+			{...stylex.props(
+				sx.previewOverflow,
+				typography.meta,
+				transparent ? sx.previewOverflowTransparent : sx.previewOverflowOpaque,
 			)}
 		>
 			+{count}
@@ -518,22 +590,19 @@ function FirstMileSummary({
 	return (
 		<div className="phone:grid-cols-2" {...stylex.props(sx.grid, sx.gridCols5, sx.gap3)}>
 			{tiles.map((tile) => {
-				const className = cn(
-					"flex aspect-square min-w-0 flex-col justify-between rounded-2xl border p-4 text-left backdrop-blur-xl phone:rounded-xl phone:p-3.5",
-					tile.step &&
-						"focus-ring cursor-pointer transition-[transform,filter] duration-150 hover:brightness-[0.98] active:scale-[0.96] motion-reduce:transform-none",
-					tile.ready
-						? "border-transparent bg-green-soft shadow-[inset_0_1px_0_color-mix(in_srgb,white_45%,transparent),0_12px_28px_-24px_color-mix(in_srgb,var(--green)_45%,transparent)]"
-						: "border-divider-soft bg-settings-plate/65",
+				const tileProps = stylex.props(
+					sx.summaryTile,
+					tile.step && sx.summaryTileInteractive,
+					tile.ready ? sx.summaryTileReady : sx.summaryTilePending,
 				);
 				const content = (
 					<>
 						<div {...stylex.props(sx.flex, sx.minW0, sx.itemsStart, sx.justifyBetween, sx.gap2)}>
 							<div {...stylex.props(sx.minW0)}>{tile.preview}</div>
 							<div
-								className={cn(
-									"flex size-8 shrink-0 items-center justify-center rounded-full",
-									tile.ready ? "bg-bg/60 text-green" : "bg-faint/10 text-faint",
+								{...stylex.props(
+									sx.tileStatus,
+									tile.ready ? sx.tileStatusReady : sx.tileStatusPending,
 								)}
 							>
 								{tile.ready ? (
@@ -555,12 +624,12 @@ function FirstMileSummary({
 						key={tile.title}
 						onClick={() => onSelect(tile.step)}
 						aria-label={`Edit ${tile.title}`}
-						className={className}
+						{...tileProps}
 					>
 						{content}
 					</button>
 				) : (
-					<div key={tile.title} className={className}>
+					<div key={tile.title} {...tileProps}>
 						{content}
 					</div>
 				);
@@ -651,17 +720,11 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 					icon={<IconChevronLeft size={18} />}
 					onClick={() => goTo(index - 1)}
 					aria-label="Back"
-					className={cn(
-						"hidden justify-self-start phone:flex phone:size-10 phone:justify-center phone:p-0",
-						index === 0 && "phone:invisible",
-					)}
+					{...stylex.props(sx.phoneBackButton, index === 0 && sx.phoneInvisible)}
 				/>
 
 				<nav
-					className={cn(
-						"absolute left-1/2 flex -translate-x-1/2 items-center gap-2",
-						index === 0 && "invisible",
-					)}
+					{...stylex.props(sx.progressNav, index === 0 && sx.invisible)}
 					aria-label="Onboarding progress"
 				>
 					{STEPS.slice(1).map((item, itemIndex) => {
@@ -673,13 +736,13 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 								aria-label={item.label}
 								aria-current={stepIndex === index ? "step" : undefined}
 								onClick={() => goTo(stepIndex)}
-								className={cn(
-									"focus-ring h-2 cursor-pointer rounded-full transition-[width,background-color] duration-200",
+								{...stylex.props(
+									sx.progressStep,
 									stepIndex === index
-										? "w-8 bg-fg"
+										? sx.progressCurrent
 										: stepIndex < index
-											? "w-2 bg-fg/45"
-											: "w-2 bg-faint/35 hover:bg-faint/60",
+											? sx.progressComplete
+											: sx.progressUpcoming,
 								)}
 							/>
 						);
@@ -723,10 +786,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 								duration: reducedMotion ? duration.micro : duration.large,
 								ease,
 							}}
-							className={cn(
-								"mx-auto flex min-h-full w-full max-w-[960px] flex-col items-center py-8 phone:py-5",
-								step.id === "welcome" && "justify-center pb-16 phone:pb-10",
-							)}
+							{...stylex.props(sx.stepSection, step.id === "welcome" && sx.welcomeStep)}
 						>
 							{step.id === "welcome" ? (
 								<div {...stylex.props(sx.flex, sx.maxW560px, sx.flexCol, sx.itemsCenter, sx.textCenter)}>
@@ -824,12 +884,10 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 			</main>
 
 			<footer
-				className={cn(
-					"relative z-10 border-t px-8 pt-1 transition-[border-color,background-color] phone:px-5 phone:pt-3",
-					footerSeparated
-						? "border-line bg-bg/95 backdrop-blur-xl"
-						: "border-transparent bg-[linear-gradient(to_bottom,transparent,var(--bg)_30%)]",
-					index === 0 && "invisible",
+				{...stylex.props(
+					sx.footer,
+					footerSeparated ? sx.footerSeparated : sx.footerAttached,
+					index === 0 && sx.invisible,
 				)}
 			>
 				<div className="phone:grid-cols-1 phone:items-start" {...stylex.props(sx.mxAuto, sx.grid, sx.hFull, sx.wFull, sx.maxW820px, sx.gridCols1frAuto1fr, sx.itemsCenter)}>
@@ -838,7 +896,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 						size="lg"
 						icon={<IconChevronLeft size={18} />}
 						onClick={() => goTo(index - 1)}
-						className={cn("justify-self-start phone:hidden", index === 0 && "invisible")}
+						{...stylex.props(sx.desktopBackButton, index === 0 && sx.invisible)}
 					>
 						Back
 					</Button>

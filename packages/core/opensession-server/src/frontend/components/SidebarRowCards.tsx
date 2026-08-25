@@ -152,6 +152,14 @@ const sx = stylex.create({
 	py05: {
 			paddingBlock: "2px"
 	},
+	rowCard: {
+		width: "min(300px, calc(100vw - 24px))", paddingInline: "13px", paddingTop: "11px", paddingBottom: "12px",
+	},
+	statusDot: { width: "7px", height: "7px", borderRadius: "calc(infinity * 1px)" },
+	statusDotAttention: { backgroundColor: "var(--yellow)" },
+	statusDotDefault: { backgroundColor: "var(--text-faint)" },
+	stateLine: { marginTop: "3px", fontWeight: "var(--font-weight-medium)" },
+	textBlue: { color: "var(--blue)" },
 });
 
 /**
@@ -169,9 +177,6 @@ const sx = stylex.create({
  *  positioning, collision flip, arrow, dwell) is ui/popover's, and so is the
  *  corner now: the card used to override it a step tighter than the menus it
  *  sits beside, which is a difference nobody meant. */
-const ROW_CARD_CLASS =
-	"w-[min(300px,calc(100vw-24px))] px-[13px] pt-[11px] pb-3";
-
 /**
  * The one popup every sidebar row's hover card is drawn in: to the row's
  * right, top-aligned with it, pointing back at it. Pass `anchor` for a row
@@ -205,7 +210,7 @@ export function RowCardPopup({
 			arrow
 			elevation="lg"
 			anchor={anchor}
-			className={ROW_CARD_CLASS}
+			{...stylex.props(sx.rowCard)}
 		>
 			{children}
 		</Popover.Popup>
@@ -286,7 +291,7 @@ export function CardLink({
 			target="_blank"
 			rel="noopener noreferrer"
 			title={title}
-			className="hover:text-fg" {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap05, sx.textXs, sx.textDim, sx.noUnderline)}
+			className="hover:text-fg" {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap05, typography.label, sx.textDim, sx.noUnderline)}
 		>
 			{children}
 			<IconArrowUpRight size={15} {...stylex.props(sx.opacity70)} />
@@ -380,10 +385,10 @@ export function CardFooter({
 export function osReviewLabel(review: OsReview): React.ReactNode {
 	const tone =
 		review.verdict === "approve"
-			? "text-green"
+			? sx.textGreen
 			: review.verdict === "request_changes"
-				? "text-red"
-				: "text-dim";
+				? sx.textRed
+				: sx.textDim;
 	const verdict =
 		review.verdict === "approve"
 			? "approved"
@@ -403,7 +408,7 @@ export function osReviewLabel(review: OsReview): React.ReactNode {
 			: "";
 	return (
 		<span
-			className={review.stale ? "text-faint" : tone}
+			{...stylex.props(review.stale ? sx.textFaint : tone)}
 			title={
 				review.stale
 					? `Reviewed ${relativeTime(review.at)}, on a commit this branch has moved past${confidence}`
@@ -490,9 +495,10 @@ export function PrRowCard({ item }: { item: ReviewQueueItem }) {
 						<IconGitMerge {...stylex.props(sx.textGreen)} size={20} />
 					) : (
 						<span
-							className={`size-[7px] rounded-full ${
-								item.bucket === "attention" ? "bg-yellow" : "bg-faint"
-							}`}
+							{...stylex.props(
+								sx.statusDot,
+								item.bucket === "attention" ? sx.statusDotAttention : sx.statusDotDefault,
+							)}
 						/>
 					)}
 				</span>
@@ -504,7 +510,9 @@ export function PrRowCard({ item }: { item: ReviewQueueItem }) {
 				<div {...stylex.props(sx.mt7px, sx.roundedMd, sx.bgAccentSoft, sx.px2, sx.py5px, sx.leadingSnug, sx.textDim, typography.meta)}>{problem}</div>
 			) : (
 				state && (
-					<div className={`mt-[3px] text-meta font-medium ${TONE_TEXT[state.tone]}`}>
+					<div
+						className={`${stylex.props(sx.stateLine, typography.meta).className} ${TONE_TEXT[state.tone]}`}
+					>
 						{state.label}
 					</div>
 				)
@@ -533,11 +541,14 @@ export function PrRowCard({ item }: { item: ReviewQueueItem }) {
 // Mirrors SUPPORT_PRIORITY_GROUPS in Sidebar.tsx (Plain priorities are ints
 // 0..3, unset buckets as Normal); kept local so the card file doesn't import
 // the sidebar that renders it.
-const PRIORITY_META: Record<number, { label: string; cls: string }> = {
-	0: { label: "Urgent", cls: "text-red" },
-	1: { label: "High", cls: "text-yellow" },
-	2: { label: "Normal", cls: "text-blue" },
-	3: { label: "Low", cls: "text-faint" },
+const PRIORITY_META: Record<
+	number,
+	{ label: string; tone: "red" | "yellow" | "blue" | "faint" }
+> = {
+	0: { label: "Urgent", tone: "red" },
+	1: { label: "High", tone: "yellow" },
+	2: { label: "Normal", tone: "blue" },
+	3: { label: "Low", tone: "faint" },
 };
 
 /** The card body for a Support row. `previewText` is the ticket's equivalent
@@ -572,7 +583,19 @@ export function SupportRowCard({
 		<>
 			<div {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap7px)}>
 				<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.textDim, typography.meta)}>{customer}</span>
-				<span className={`shrink-0 text-meta ${priority.cls}`}>
+				<span
+					{...stylex.props(
+						sx.shrink0,
+						typography.meta,
+						priority.tone === "red"
+							? sx.textRed
+							: priority.tone === "yellow"
+								? sx.textYellow
+								: priority.tone === "blue"
+									? sx.textBlue
+									: sx.textFaint,
+					)}
+				>
 					{priority.label}
 				</span>
 			</div>

@@ -45,6 +45,10 @@ import { createPortal } from "react-dom";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
 
+const filterPopoverIn = stylex.keyframes({
+	from: { opacity: 0, transform: "translateY(2px)" },
+});
+
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
 	justifyBetween: {
@@ -110,6 +114,27 @@ const sx = stylex.create({
 	leadingNone: {
 			lineHeight: "1"
 	},
+	backdrop: { position: "fixed", inset: 0, zIndex: 300 },
+	filterPopover: {
+		position: "fixed", zIndex: 301, display: "flex", flexDirection: "column", gap: "2px",
+		borderRadius: "calc(16px * var(--rf))", backgroundColor: "var(--popup-glass)",
+		backdropFilter: "var(--popup-blur)", padding: "8px",
+		animationName: filterPopoverIn, animationDuration: "var(--dur-micro)", animationTimingFunction: "var(--ease)",
+	},
+	mt1: { marginTop: "4px" },
+	chipBody: {
+		display: "inline-flex", minWidth: 0, alignItems: "center", gap: "7px",
+		borderRadius: "calc(infinity * 1px)", paddingInline: "3px", paddingBlock: "2px",
+		lineHeight: "1.15", ":hover": { backgroundColor: "var(--hover)" },
+	},
+	filterChip: {
+		display: "inline-flex", minWidth: 0, maxWidth: "100%", alignItems: "center", gap: "1px",
+		borderRadius: "calc(infinity * 1px)", borderStyle: "solid", borderWidth: "1px",
+		borderColor: "var(--border)", backgroundColor: "var(--bg-panel)", paddingInline: "4px", paddingBlock: "3px",
+		lineHeight: "1.15",
+	},
+	filterChipInline: { flexShrink: 0, maxWidth: "none" },
+	filterChipProbe: { pointerEvents: "none", position: "absolute", left: "-9999px", top: 0, maxWidth: "none", visibility: "hidden" },
 });
 
 // ── Filter popover ─────────────────────────────────────────────────────────
@@ -121,17 +146,8 @@ const sx = stylex.create({
 /** Full-screen transparent catcher that closes the popover on outside click.
  *  The row menus portal above it (Base UI positions them at z-10001), so a
  *  press inside an open menu never reaches this. */
-const BACKDROP = "fixed inset-0 z-[300]";
-
-/** The panel itself, portalled and fixed-positioned at the anchor: the app's
- *  popup surface, so it reads as the same object as every menu it opens.
- *
- *  Padding is 8px, keeping the rows inside close to the panel edge without
- *  crowding its `rounded-popup` corners. `gap-0.5` keeps two adjacent hover
- *  washes from fusing into one block. */
-const FILTER_POPOVER =
-	"fixed z-[301] flex flex-col gap-0.5 rounded-popup bg-popup-glass [backdrop-filter:var(--popup-blur)] [--smooth-ring-color:var(--popup-ring)] " +
-	"p-2 smooth-shadow-ring-md animate-[hovercard-in_var(--dur-micro)_var(--ease)]";
+const FILTER_POPOVER_RESIDUAL =
+	"[--smooth-ring-color:var(--popup-ring)] smooth-shadow-ring-md";
 
 /** The same control as a row inside the Advanced menu: label, current value,
  *  and its options one level in. Reads as a menu row rather than a panel row,
@@ -218,8 +234,14 @@ export function FilterPopover({
 
 	return createPortal(
 		<>
-			<div className={BACKDROP} onClick={onClose} />
-			<div className={FILTER_POPOVER} style={{ left, top, width }}>
+			<div {...stylex.props(sx.backdrop)} onClick={onClose} />
+			<div
+				className={cn(
+					FILTER_POPOVER_RESIDUAL,
+					stylex.props(sx.filterPopover).className,
+				)}
+				style={{ left, top, width }}
+			>
 				{/* The section mode and project nesting are independent answers. */}
 				<ValueRow
 					label="Group by"
@@ -277,7 +299,13 @@ export function FilterPopover({
 				    how the list reads rather than what is in it, so they are not
 				    part of that count. */}
 				<Menu.Root>
-					<Menu.Trigger className={cn(SETTING_ROW, SETTING_ROW_PRESSABLE, "mt-1")}>
+					<Menu.Trigger
+						className={cn(
+							SETTING_ROW,
+							SETTING_ROW_PRESSABLE,
+							stylex.props(sx.mt1).className,
+						)}
+					>
 						<span {...stylex.props(sx.shrink0, sx.textDim)}>Advanced</span>
 						<span {...stylex.props(sx.mlAuto, sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.textFg)}>
 							{advancedChanged > 0 && (
@@ -416,26 +444,29 @@ export const RepoFilterChip = React.forwardRef<
 			<span {...stylex.props(sx.minW0, sx.truncate, sx.textDim)}>{repoLabel(repo)}</span>
 		</>
 	);
-	const bodyClass =
-		"inline-flex min-w-0 items-center gap-[7px] rounded-full px-[3px] py-0.5 text-label leading-[1.15] hover:bg-hover data-[popup-open]:bg-hover";
+	const bodyProps = stylex.props(sx.chipBody, typography.label);
 
 	return (
 		<span
 			ref={ref}
-			className={cn(
-				"inline-flex min-w-0 max-w-full items-center gap-px rounded-full border border-line bg-panel px-1 py-[3px] text-label leading-[1.15]",
-				variant === "inline" && "shrink-0 max-w-none",
-				variant === "probe" && "pointer-events-none absolute left-[-9999px] top-0 max-w-none invisible",
+			{...stylex.props(
+				sx.filterChip,
+				typography.label,
+				variant === "inline" && sx.filterChipInline,
+				variant === "probe" && sx.filterChipProbe,
 			)}
 			aria-hidden={probe || undefined}
 		>
 			{/* Body opens the repo menu; the × clears the filter. The probe is
 			    measured, never pressed, so it renders the same box without one. */}
 			{probe ? (
-				<span className={bodyClass}>{body}</span>
+				<span {...bodyProps}>{body}</span>
 			) : (
 				<Menu.Root>
-					<Menu.Trigger className={bodyClass} title="Switch repo">
+					<Menu.Trigger
+						className={cn("data-[popup-open]:bg-hover", bodyProps.className)}
+						title="Switch repo"
+					>
 						{body}
 					</Menu.Trigger>
 					<Menu.Popup align="start" sideOffset={5}>
