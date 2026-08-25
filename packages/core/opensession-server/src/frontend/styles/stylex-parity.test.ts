@@ -169,6 +169,13 @@ describe("stylex port guards", () => {
 		expect(refs.length).toBeGreaterThan(40);
 		const missing = refs.filter((v) => !definedVars.has(v) && v !== "--accent-control" && v !== "--on-accent-control");
 		expect(missing).toEqual([]);
+		expect(tokens).toContain('focusRing: "var(--accent-ink)"');
+		const wrongTextAccent = sources.filter((f) =>
+			/\btextAccent\s*:\s*\{[^}]{0,150}?color\s*:\s*"var\(--accent\)"/s.test(
+				readFileSync(f, "utf8"),
+			),
+		);
+		expect(wrongTextAccent).toEqual([]);
 	});
 
 	test("stylex.create values carry no NEW raw colors (ratchet to zero)", () => {

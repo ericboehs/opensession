@@ -613,7 +613,7 @@ const sx = stylex.create({
   pyPx: { paddingBlock: "1px" },
   tabularNums: { fontVariantNumeric: "tabular-nums" },
   bgAccentSoft: { backgroundColor: "var(--accent-soft)" },
-  textAccent: { color: "var(--accent)" },
+  textAccent: { color: "var(--accent-ink)" },
   desktopReviewBar: {
     "@media (min-width: 721px)": {
       position: "absolute",

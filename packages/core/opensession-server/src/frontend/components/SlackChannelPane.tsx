@@ -43,7 +43,7 @@ const sx = stylex.create({
 			fontWeight: "var(--font-weight-medium)"
 	},
 	textAccent: {
-			color: "var(--accent)"
+			color: "var(--accent-ink)"
 	},
 	textLink: {
 			color: "var(--link)"

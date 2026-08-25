@@ -49,7 +49,7 @@ const sx = stylex.create({
 			whiteSpace: "nowrap"
 	},
 	textAccent: {
-			color: "var(--accent)"
+			color: "var(--accent-ink)"
 	},
 	flex: {
 			display: "flex"

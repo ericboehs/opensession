@@ -77,7 +77,7 @@ const sx = stylex.create({
 			fontWeight: "var(--font-weight-semibold)"
 	},
 	textAccent: {
-			color: "var(--accent)"
+			color: "var(--accent-ink)"
 	},
 	duration150: {
 			transitionDuration: ".15s"

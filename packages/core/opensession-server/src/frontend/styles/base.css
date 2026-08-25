@@ -279,6 +279,9 @@
 	   button and .pr-bar-btn-solid already paint ink-on-paper, each with its own
 	   comment explaining that the red accent shouted. */
 	--accent: var(--text);
+	/* Readable accent ink defaults to the fill when no named accent has been
+	   chosen yet; html[data-accent] supplies hue-specific light/dark ink. */
+	--accent-ink: var(--accent);
 	/* What sits ON an --accent fill: its inverse. Was a hardcoded #fff at every
 	   call site, which is white-on-white the moment the accent becomes ink. */
 	--on-accent: var(--bg);

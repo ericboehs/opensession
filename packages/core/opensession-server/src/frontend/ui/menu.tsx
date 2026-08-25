@@ -34,7 +34,7 @@ const sx = stylex.create({
 			color: "var(--text-faint)"
 	},
 	textAccent: {
-			color: "var(--accent)"
+			color: "var(--accent-ink)"
 	},
 	invisible: {
 			visibility: "hidden"

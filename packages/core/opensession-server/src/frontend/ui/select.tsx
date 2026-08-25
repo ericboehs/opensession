@@ -57,7 +57,7 @@ const sx = stylex.create({
 			height: "17px"
 	},
 	textAccent: {
-			color: "var(--accent)"
+			color: "var(--accent-ink)"
 	},
 	invisible: {
 			visibility: "hidden"

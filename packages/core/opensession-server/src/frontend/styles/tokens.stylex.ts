@@ -55,7 +55,7 @@ export const tokens = stylex.defineVars({
 	accentControl: "var(--accent-control, var(--accent))",
 	onAccentControl: "var(--on-accent-control, var(--on-accent))",
 	link: "var(--link)",
-	focusRing: "var(--accent)",
+	focusRing: "var(--accent-ink)",
 	green: "var(--green)",
 	greenSoft: "var(--green-soft)",
 	yellow: "var(--yellow)",

@@ -309,7 +309,7 @@ const sx = stylex.create({
 			display: "none"
 	},
 	textAccent: {
-			color: "var(--accent)"
+			color: "var(--accent-ink)"
 	},
 });
 

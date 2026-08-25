@@ -8,7 +8,7 @@ import { mergeStylexProps } from "../ui/cn";
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
 	textAccent: {
-			color: "var(--accent)"
+			color: "var(--accent-ink)"
 	},
 	underline: {
 			textDecorationLine: "underline"

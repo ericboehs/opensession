@@ -128,7 +128,7 @@ const sx = stylex.create({
 			fontWeight: "var(--font-weight-semibold)"
 	},
 	textAccent: {
-			color: "var(--accent)"
+			color: "var(--accent-ink)"
 	},
 	roundedFull: {
 			borderRadius: "calc(infinity * 1px)"

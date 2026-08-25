@@ -143,7 +143,7 @@ const sx = stylex.create({
 			backgroundColor: "var(--settings-plate)"
 	},
 	textAccent: {
-			color: "var(--accent)"
+			color: "var(--accent-ink)"
 	},
 	h7: {
 			height: "28px"

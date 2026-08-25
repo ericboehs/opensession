@@ -168,7 +168,7 @@ const sx = stylex.create({
 			paddingBlock: "4px"
 	},
 	textAccent: {
-			color: "var(--accent)"
+			color: "var(--accent-ink)"
 	},
 });
 

@@ -220,7 +220,7 @@ const sx = stylex.create({
   h7: { height: "28px" },
   disabledRow: { ":disabled": { cursor: "default", opacity: 0.7 } },
   animatePulse: { animation: "var(--animate-pulse)" },
-  textAccent: { color: "var(--accent)" },
+  textAccent: { color: "var(--accent-ink)" },
   inlineFlex: { display: "inline-flex" },
   gap05: { gap: "2px" },
   cursorPointer: { cursor: "pointer" },

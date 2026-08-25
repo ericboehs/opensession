@@ -51,7 +51,7 @@ const sx = stylex.create({
 			backgroundColor: "var(--accent-soft)"
 	},
 	textAccent: {
-			color: "var(--accent)"
+			color: "var(--accent-ink)"
 	},
 });
 

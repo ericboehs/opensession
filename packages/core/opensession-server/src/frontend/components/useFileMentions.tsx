@@ -66,7 +66,7 @@ const sx = stylex.create({
 			fontWeight: "var(--font-weight-semibold)"
 	},
 	textAccent: {
-			color: "var(--accent)"
+			color: "var(--accent-ink)"
 	},
 	textFaint: {
 			color: "var(--text-faint)"
