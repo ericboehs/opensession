@@ -106,7 +106,7 @@ describe("agent wait registration", () => {
     expect(duplicate).toMatchObject({ ok: true, replaced: false });
     expect(getAgentWait("s1")).toMatchObject({ dueAt: 61_000 });
 
-    const replacement = registerPrChecksAgentWait({
+    const replacement = await registerPrChecksAgentWait({
       sessionId: "s1",
       user: "Jaap",
       repo: "example",
