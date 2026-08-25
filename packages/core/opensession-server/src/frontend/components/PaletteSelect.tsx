@@ -88,6 +88,10 @@ const sx = stylex.create({
 	bgHover: {
 		"backgroundColor": "var(--hover)"
 	},
+
+	maxWMin360pxCalc100vw1rem: {
+		"maxWidth": "min(360px,100vw - 1rem)"
+	},
 });
 
 export type PaletteSelectOption = {
@@ -193,7 +197,7 @@ export function PaletteSelect({
 			>
 				{children}
 			</Menu.Trigger>
-			<Menu.Popup align={align} sideOffset={6} className="max-w-[min(360px,calc(100vw-1rem))]">
+			<Menu.Popup align={align} sideOffset={6} className={mergeStylexClassName("", sx.maxWMin360pxCalc100vw1rem)}>
 				{options.map((option) => {
 					const selected = picked.has(option.value);
 					return (

@@ -787,6 +787,26 @@ const sx = stylex.create({
 	z5: {
 		"zIndex": "5"
 	},
+
+	borderRgba9410621005: {
+		"borderColor": "#5e6ad280"
+	},
+	borderRgba1314813605: {
+		"borderColor": "#0d948880"
+	},
+	phonePbMax16pxEnvSafeAreaInsetBottom0px: {
+		"@media (max-width: 720px)": {
+			"paddingBottom": "max(16px, env(safe-area-inset-bottom,0px))"
+		}
+	},
+	desktopGridColsMinmax01frAutoMinmax01fr: {
+		"@media (min-width: 721px)": {
+			"gridTemplateColumns": "minmax(0,1fr) auto minmax(0,1fr)"
+		}
+	},
+	ptEnvSafeAreaInsetTop0px: {
+		"paddingTop": "env(safe-area-inset-top,0px)"
+	},
 });
 
 /* ── Top bar ────────────────────────────────────────────────────────────── */
@@ -916,8 +936,8 @@ export const SESSION_LINK =
 	// unprefixed `py-[5px]` and `text-label` on the same element because Tailwind
 	// emits every breakpoint variant after the unprefixed utilities.
 	mergeStylexClassName("", sx.phoneInlineFlex, sx.phoneMinH11, sx.phoneItemsCenter, sx.phonePy7px, sx.phoneTextLabel);
-export const SESSION_LINK_LINEAR = mergeStylexClassName("border-[rgba(94,106,210,0.5)]", sx.text7b86e8);
-export const SESSION_LINK_PLAIN = mergeStylexClassName("border-[rgba(13,148,136,0.5)]", sx.text5eead4);
+export const SESSION_LINK_LINEAR = mergeStylexClassName("", sx.borderRgba9410621005, sx.text7b86e8);
+export const SESSION_LINK_PLAIN = mergeStylexClassName("", sx.borderRgba1314813605, sx.text5eead4);
 
 /** ⋯ overflow: the secondary actions collapse into the shared Menu popup when
  *  they would otherwise crowd the title. */
@@ -1038,7 +1058,7 @@ export const VIEWER_INPUT =
 	// Phone: clear the home indicator rather than jamming the composer against
 	// the very bottom edge. That gap is also all the room the composer's shadow
 	// gets in mobile Safari, where there is no safe-area inset.
-	mergeStylexClassName("phone:pb-[max(16px,env(safe-area-inset-bottom,0px))]", sx.phonePx3) +
+	mergeStylexClassName("", sx.phonePbMax16pxEnvSafeAreaInsetBottom0px, sx.phonePx3) +
 	// Keyboard up: pin the input to Safari's fixed viewport instead of relying on
 	// its focus pan, which can stop with the toolbar floating above the keyboard.
 	// Fixed bottom already follows the visible keyboard edge on iOS Safari, so do
@@ -1078,7 +1098,7 @@ export const VIEWER_ACTION_ROW =
  * share the desktop row. Equal side tracks let either side yield and scroll
  * without moving the middle control off the conversation's centre line. */
 export const VIEWER_ACTION_ROW_WITH_SCROLL =
-	mergeStylexClassName("desktop:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]", sx.desktopGrid);
+	mergeStylexClassName("", sx.desktopGridColsMinmax01frAutoMinmax01fr, sx.desktopGrid);
 
 /**
  * The band the session's own offers hang in: the quick-reply chips and the
@@ -1355,7 +1375,7 @@ export const INFO_PAGE =
 const INFO_TOPBAR =
 	mergeStylexClassName("session-info-topbar", sx.sticky, sx.top0, sx.z4, sx.flex, sx.itemsCenter) + " " +
 	"min-h-[calc(env(safe-area-inset-top,0px)+52px)] " +
-	mergeStylexClassName("pt-[env(safe-area-inset-top,0px)]", sx.px2, sx.pb0) + " " +
+	mergeStylexClassName("", sx.ptEnvSafeAreaInsetTop0px, sx.px2, sx.pb0) + " " +
 	mergeStylexClassName("", sx.TransitionBackgroundColorVarDurVarEase);
 
 /** Transparent until the page scrolls, then a frosted surface. The fill and

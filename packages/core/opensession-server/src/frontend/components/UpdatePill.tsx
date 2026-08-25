@@ -131,6 +131,19 @@ const sx = stylex.create({
 	px3: {
 		"paddingInline": "12px"
 	},
+
+	hoverBgColorMixInSrgbVarRed85Black: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--red)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in srgb,var(--red) 85%,black)"
+				}
+			}
+		}
+	},
 });
 
 interface Props {
@@ -292,7 +305,7 @@ export function UpdatePill({ addHandler, variant = "card" }: Props) {
         // exempts rounded-full from its generic squircle rule.
         className={
           mergeStylexClassName("", sx.inlineFlex, sx.h7, sx.shrink0, sx.itemsCenter, sx.roundedFull, sx.CornerShapeSquircle, sx.px13px) +
-          mergeStylexClassName("hover:bg-[color-mix(in_srgb,var(--red)_85%,black)]", sx.cursorPointer, sx.borderNone, sx.bgRed, typography.label, sx.fontSemibold, sx.leadingNone, sx.textWhite, sx.transitionBackground, sx.durationVarDurMicro, sx.easeVarEase, sx.disabledCursorWait, sx.disabledOpacity75) +
+          mergeStylexClassName("", sx.hoverBgColorMixInSrgbVarRed85Black, sx.cursorPointer, sx.borderNone, sx.bgRed, typography.label, sx.fontSemibold, sx.leadingNone, sx.textWhite, sx.transitionBackground, sx.durationVarDurMicro, sx.easeVarEase, sx.disabledCursorWait, sx.disabledOpacity75) +
           mergeStylexClassName("", sx.animateUpdateToastInVarDurLgVarEase, sx.motionReduceAnimateNone) +
           // Phone: keep the visible pill compact while a pseudo-element grows
           // its tap target to the full 44px header row.
@@ -347,7 +360,7 @@ export function UpdatePill({ addHandler, variant = "card" }: Props) {
       </div>
       <div {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.gap1)}>
         <button
-          className={mergeStylexClassName("hover:bg-[color-mix(in_srgb,var(--red)_85%,black)]", sx.inlineFlex, sx.h7, sx.itemsCenter, sx.roundedControl, sx.px3, sx.cursorPointer, sx.borderNone, sx.bgRed, typography.supporting, sx.fontSemibold, sx.leadingNone, sx.textWhite, sx.transitionBackground, sx.durationVarDurMicro, sx.easeVarEase, sx.disabledCursorWait, sx.disabledOpacity75)}
+          className={mergeStylexClassName("", sx.hoverBgColorMixInSrgbVarRed85Black, sx.inlineFlex, sx.h7, sx.itemsCenter, sx.roundedControl, sx.px3, sx.cursorPointer, sx.borderNone, sx.bgRed, typography.supporting, sx.fontSemibold, sx.leadingNone, sx.textWhite, sx.transitionBackground, sx.durationVarDurMicro, sx.easeVarEase, sx.disabledCursorWait, sx.disabledOpacity75)}
           onClick={refresh}
           disabled={refreshing}
         >

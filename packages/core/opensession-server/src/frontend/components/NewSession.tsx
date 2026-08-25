@@ -341,6 +341,16 @@ const sx = stylex.create({
 	rotate180: {
 		"rotate": "180deg"
 	},
+
+	maxHMin560px68dvh: {
+		"maxHeight": "min(560px,68dvh)"
+	},
+	maxWMin340pxCalc100vw1rem: {
+		"maxWidth": "min(340px,100vw - 1rem)"
+	},
+	maxWMin360pxCalc100vw1rem: {
+		"maxWidth": "min(360px,100vw - 1rem)"
+	},
 });
 
 interface Props {
@@ -609,7 +619,7 @@ const CREATE_MENU_ITEM =
  */
 const INLINE_CARD = cn(
 	mergeStylexClassName("", sx.relative, sx.flex, sx.wFull, sx.flexCol, sx.overflowHidden, sx.rounded2xl),
-	"max-h-[min(560px,68dvh)]",
+	mergeStylexClassName("", sx.maxHMin560px68dvh),
 	composerBox,
 );
 
@@ -2027,7 +2037,7 @@ pendingDraftParks.delete(operation);
                         <IconChevronRight {...stylex.props(sx.shrink0, sx.textFaint)} size={17} />
                       </span>
                     </Menu.SubmenuTrigger>
-                    <Menu.Popup className="max-w-[min(340px,calc(100vw-1rem))]">
+                    <Menu.Popup className={mergeStylexClassName("", sx.maxWMin340pxCalc100vw1rem)}>
                       {createFromOptions.map((opt) => (
                         <Menu.Item
                           key={opt.value}
@@ -2058,7 +2068,7 @@ pendingDraftParks.delete(operation);
                         <IconChevronRight {...stylex.props(sx.shrink0, sx.textFaint)} size={17} />
                       </span>
                     </Menu.SubmenuTrigger>
-                    <Menu.Popup className="max-w-[min(340px,calc(100vw-1rem))]">
+                    <Menu.Popup className={mergeStylexClassName("", sx.maxWMin340pxCalc100vw1rem)}>
                       {[{ id: "", note: undefined as string | undefined }, ...visibleSandboxChoices].map(
                         (opt) => {
                           const selected = sandboxProvider === opt.id;
@@ -2104,7 +2114,7 @@ pendingDraftParks.delete(operation);
                       <IconChevronRight {...stylex.props(sx.shrink0, sx.textFaint)} size={17} />
                     </span>
                   </Menu.SubmenuTrigger>
-                  <Menu.Popup className="max-w-[min(360px,calc(100vw-1rem))]">
+                  <Menu.Popup className={mergeStylexClassName("", sx.maxWMin360pxCalc100vw1rem)}>
                     {availableMcpServers.length > 0 && (
                       <div {...stylex.props(sx.maxW300px, sx.px2, sx.pb1, sx.leadingSnug, sx.textFaint, typography.supporting)}>
                         Picked services are the only ones the session gets.

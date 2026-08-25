@@ -66,6 +66,10 @@ const sx = stylex.create({
 		"--tw-leading": "var(--leading-relaxed)",
 		"lineHeight": "var(--leading-relaxed)"
 	},
+
+	maxWMin600px90: {
+		"maxWidth": "min(600px,90%)"
+	},
 });
 
 /**
@@ -101,7 +105,7 @@ export const plainEntryIn = mergeStylexClassName("", sx.flex, sx.flexCol, sx.gap
  *  The transcript's own reply bubble, at the same cap, corner and padding
  *  (`msgBubbleUser`, lib/msg-classes.ts). */
 export const plainEntryOut =
-	mergeStylexClassName("max-w-[min(600px,90%)]", sx.flex, sx.flexCol, sx.gap1, sx.selfEnd, sx.roundedLg, sx.bgPanel) + " " +
+	mergeStylexClassName("", sx.maxWMin600px90, sx.flex, sx.flexCol, sx.gap1, sx.selfEnd, sx.roundedLg, sx.bgPanel) + " " +
 	mergeStylexClassName("", sx.px35, sx.py25);
 
 /** An internal note. Full width and washed rather than plated, so it reads as

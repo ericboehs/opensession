@@ -361,6 +361,12 @@ const sx = stylex.create({
 	maxH96: {
 		"maxHeight": "384px"
 	},
+
+	transitionTransformColor: {
+		"transitionProperty": "transform,color",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
 });
 
 /** Stream server-side media (staged under the uploads dir) through the
@@ -568,7 +574,7 @@ export function WalkthroughCard({
 						</span>
 						<span
 							className={cn(
-								mergeStylexClassName("transition-[transform,color] group-hover:text-dim", sx.grid, sx.size5, sx.flexShrink0, sx.placeItemsCenter, sx.leadingNone, sx.textFaint, sx.duration150),
+								mergeStylexClassName("group-hover:text-dim", sx.transitionTransformColor, sx.grid, sx.size5, sx.flexShrink0, sx.placeItemsCenter, sx.leadingNone, sx.textFaint, sx.duration150),
 								!expanded && mergeStylexClassName("", sx.Rotate90),
 							)}
 						>

@@ -343,6 +343,29 @@ const sx = stylex.create({
 	pt0: {
 		"paddingTop": "0"
 	},
+
+	topCalcVarDiffPanelTop0px37px: {
+		"top": "calc(var(--diff-panel-top,0px) + 37px)"
+	},
+	phoneTopCalcVarDiffPanelTop0px47px: {
+		"@media (max-width: 720px)": {
+			"top": "calc(var(--diff-panel-top,0px) + 47px)"
+		}
+	},
+	topVarDiffPanelTop0px: {
+		"top": "var(--diff-panel-top,0px)"
+	},
+	ReviewFileHeaderTopCalcVarDiffPanelTop0px87px: {
+		"--review-file-header-top": "calc(var(--diff-panel-top,0px) + 87px)"
+	},
+	phoneReviewFileHeaderTopCalcVarDiffPanelTop0px97px: {
+		"@media (max-width: 720px)": {
+			"--review-file-header-top": "calc(var(--diff-panel-top,0px) + 97px)"
+		}
+	},
+	ReviewFileHeaderTopCalcVarDiffPanelTop0px50px: {
+		"--review-file-header-top": "calc(var(--diff-panel-top,0px) + 50px)"
+	},
 });
 
 /* The +/− counts. Kept as constants because CommentableDiff carries the same
@@ -786,7 +809,7 @@ if (generation === flowGeneration.current) setFlowLoading(false);
       // Paint through the section's 10px top gutter. The gutter still belongs
       // to the diff below, but code cannot scroll through its empty space.
       <div
-        className={[mergeStylexClassName("", sx.sticky), multi ? "top-[calc(var(--diff-panel-top,0px)+37px)] phone:top-[calc(var(--diff-panel-top,0px)+47px)]" : "top-[var(--diff-panel-top,0px)]", mergeStylexClassName("", sx.z1, sx.bgPanelSurface, sx.afterAbsolute, sx.afterInsetX0, sx.afterTopFull, sx.afterH25, sx.afterBgPanelSurface, sx.afterContent)].filter(Boolean).join(" ")}
+        className={[mergeStylexClassName("", sx.sticky), multi ? mergeStylexClassName("", sx.topCalcVarDiffPanelTop0px37px, sx.phoneTopCalcVarDiffPanelTop0px47px) : mergeStylexClassName("", sx.topVarDiffPanelTop0px), mergeStylexClassName("", sx.z1, sx.bgPanelSurface, sx.afterAbsolute, sx.afterInsetX0, sx.afterTopFull, sx.afterH25, sx.afterBgPanelSurface, sx.afterContent)].filter(Boolean).join(" ")}
       >
         <div {...mergeStylexProps("[&::-webkit-scrollbar]:hidden", sx.flex, sx.h10, sx.itemsCenter, sx.gap25, sx.overflowXAuto, sx.borderB, sx.borderDivider, sx.px35, sx.whitespaceNowrap, sx.ScrollbarWidthNone, typography.label)}>
           {toolbarContents}
@@ -798,7 +821,7 @@ if (generation === flowGeneration.current) setFlowLoading(false);
 
   return (
     <div
-      className={[mergeStylexClassName("", sx.Container, sx.flex, sx.minH0, sx.flexCol), multi ? "[--review-file-header-top:calc(var(--diff-panel-top,0px)+87px)] phone:[--review-file-header-top:calc(var(--diff-panel-top,0px)+97px)]" : "[--review-file-header-top:calc(var(--diff-panel-top,0px)+50px)]"].filter(Boolean).join(" ")}
+      className={[mergeStylexClassName("", sx.Container, sx.flex, sx.minH0, sx.flexCol), multi ? mergeStylexClassName("", sx.ReviewFileHeaderTopCalcVarDiffPanelTop0px87px, sx.phoneReviewFileHeaderTopCalcVarDiffPanelTop0px97px) : mergeStylexClassName("", sx.ReviewFileHeaderTopCalcVarDiffPanelTop0px50px)].filter(Boolean).join(" ")}
       ref={panelRef}
     >
       {multi && (

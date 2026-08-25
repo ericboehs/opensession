@@ -92,6 +92,12 @@ const sx = stylex.create({
 			"--tw-ring-offset-color": "var(--bg)"
 		}
 	},
+
+	transitionBackgroundColorBorderColor: {
+		"transitionProperty": "background-color,border-color",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
 });
 
 type RadioProps = React.ComponentProps<typeof BaseRadio.Root>;
@@ -100,7 +106,7 @@ type RadioGroupProps = React.ComponentProps<typeof BaseRadioGroup>;
 /** The app's radio control for choosing one option from a visible set. */
 export function Radio({ className, ...props }: RadioProps) {
 	return (
-		<BaseRadio.Root {...mergeStylexProps(cn("transition-[background-color,border-color]", mergeStylexClassName("", sx.hoverBorderFaint), "data-[checked]:border-accent-control data-[checked]:bg-accent-control data-[checked]:hover:border-accent-control", mergeStylexClassName("", sx.focusVisibleRing2, sx.focusVisibleRingAccent50, sx.focusVisibleRingOffset2, sx.focusVisibleRingOffsetBg), "data-[disabled]:cursor-default data-[disabled]:opacity-40", className), sx.flex, sx.size4, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.border, sx.borderLineStrong, sx.bgSurface, sx.p0, sx.outlineNone, sx.durationVarDurMicro, sx.easeVarEase)}
+		<BaseRadio.Root {...mergeStylexProps(cn(mergeStylexClassName("", sx.transitionBackgroundColorBorderColor), mergeStylexClassName("", sx.hoverBorderFaint), "data-[checked]:border-accent-control data-[checked]:bg-accent-control data-[checked]:hover:border-accent-control", mergeStylexClassName("", sx.focusVisibleRing2, sx.focusVisibleRingAccent50, sx.focusVisibleRingOffset2, sx.focusVisibleRingOffsetBg), "data-[disabled]:cursor-default data-[disabled]:opacity-40", className), sx.flex, sx.size4, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.border, sx.borderLineStrong, sx.bgSurface, sx.p0, sx.outlineNone, sx.durationVarDurMicro, sx.easeVarEase)}
 			{...props}
 		>
 			<BaseRadio.Indicator {...stylex.props(sx.size15, sx.roundedFull, sx.bgOnAccentControl)} />

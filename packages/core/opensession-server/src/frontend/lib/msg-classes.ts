@@ -134,6 +134,16 @@ const sx = stylex.create({
 	py225: {
 		"paddingBlock": "9px"
 	},
+
+	maxWMin600px90: {
+		"maxWidth": "min(600px,90%)"
+	},
+	bgRgba31158138012: {
+		"backgroundColor": "#1f9e8a1f"
+	},
+	maxWMin560px100: {
+		"maxWidth": "min(560px,100%)"
+	},
 });
 
 /**
@@ -207,9 +217,9 @@ export const msgBody =
 /** Bubble bodies: shrink-wrapped to their words and hugging the right edge,
  *  capped short of the column so a long message still reads right-aligned. */
 const msgBubble =
-	mergeStylexClassName("msg-body max-w-[min(600px,90%)]", sx.block, sx.selfEnd, typography.body, sx.leading6, sx.breakWords, sx.textFg);
+	mergeStylexClassName("msg-body", sx.maxWMin600px90, sx.block, sx.selfEnd, typography.body, sx.leading6, sx.breakWords, sx.textFg);
 export const msgBubbleUser = [msgBubble, mergeStylexClassName("", sx.roundedLg, sx.bgPanel, sx.px35, sx.py25)].filter(Boolean).join(" ");
-export const msgBubbleHuman = [msgBubble, mergeStylexClassName("bg-[rgba(31,158,138,0.12)]", sx.roundedRow, sx.px35, sx.py225)].filter(Boolean).join(" ");
+export const msgBubbleHuman = [msgBubble, mergeStylexClassName("", sx.bgRgba31158138012, sx.roundedRow, sx.px35, sx.py225)].filter(Boolean).join(" ");
 
 /**
  * The row a live turn streams into. `overflow-anchor: none` keeps the browser's
@@ -230,7 +240,7 @@ export const msgBodyStreaming =
  * names it.
  */
 const msgSystemBase =
-	mergeStylexClassName("msg-system-text max-w-[min(560px,100%)]", sx.inlineBlock, sx.selfCenter, sx.py15, sx.textCenter, typography.meta, sx.leading145, sx.textFaint);
+	mergeStylexClassName("msg-system-text", sx.maxWMin560px100, sx.inlineBlock, sx.selfCenter, sx.py15, sx.textCenter, typography.meta, sx.leading145, sx.textFaint);
 
 /** The centered notice pill itself. */
 export const msgSystemText = [msgSystemBase, mergeStylexClassName("", sx.roundedRow, sx.bgPanel, sx.px35)].filter(Boolean).join(" ");

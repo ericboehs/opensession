@@ -313,6 +313,25 @@ const sx = stylex.create({
 	flexRowReverse: {
 		"flexDirection": "row-reverse"
 	},
+
+	bgColorMixInSrgbVarYellowTint22Transparent: {
+		"backgroundColor": "var(--yellow-tint)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--yellow-tint) 22%,transparent)"
+		}
+	},
+	hoverBgColorMixInSrgbVarYellowTint32Transparent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--yellow-tint)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in srgb,var(--yellow-tint) 32%,transparent)"
+				}
+			}
+		}
+	},
 });
 
 interface Props {
@@ -1095,7 +1114,7 @@ setSending(false);
 							palettePill,
 							mergeStylexClassName("", sx.shrink0),
 							kind === "note" &&
-								mergeStylexClassName("bg-[color-mix(in_srgb,var(--yellow-tint)_22%,transparent)] hover:bg-[color-mix(in_srgb,var(--yellow-tint)_32%,transparent)]", sx.textYellow, sx.hoverTextYellow),
+								mergeStylexClassName("", sx.bgColorMixInSrgbVarYellowTint22Transparent, sx.hoverBgColorMixInSrgbVarYellowTint32Transparent, sx.textYellow, sx.hoverTextYellow),
 						)}
 						onClick={() => setKind((current) => (current === "note" ? "reply" : "note"))}
 						disabled={sending}

@@ -396,6 +396,151 @@ const sx = stylex.create({
 		"--tw-shadow": "var(--mobile-header-control-shadow)",
 		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
 	},
+
+	transitionColorBackgroundColor: {
+		"transitionProperty": "color,background-color",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	enabledHoverBgActive: {
+		"@media (hover: hover)": {
+			":enabled": {
+				":hover": {
+					"backgroundColor": "var(--bg-active)"
+				}
+			}
+		}
+	},
+	enabledHoverTextFg: {
+		"@media (hover: hover)": {
+			":enabled": {
+				":hover": {
+					"color": "var(--text)"
+				}
+			}
+		}
+	},
+	bgColorMixInSrgbVarGreen24VarControlSurface: {
+		"backgroundColor": "var(--green)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--green) 24%,var(--control-surface))"
+		}
+	},
+	enabledHoverBgColorMixInSrgbCurrentColor34VarControlSurface: {
+		"@media (hover: hover)": {
+			":enabled": {
+				":hover": {
+					"backgroundColor": "currentColor"
+				}
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":enabled": {
+					":hover": {
+						"backgroundColor": "color-mix(in srgb,currentColor 34%,var(--control-surface))"
+					}
+				}
+			}
+		}
+	},
+	bgColorMixInSrgbVarYellow24VarControlSurface: {
+		"backgroundColor": "var(--yellow)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--yellow) 24%,var(--control-surface))"
+		}
+	},
+	bgColorMixInSrgbVarRed24VarControlSurface: {
+		"backgroundColor": "var(--red)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--red) 24%,var(--control-surface))"
+		}
+	},
+	bgColorMixInSrgbVarBlue24VarControlSurface: {
+		"backgroundColor": "var(--blue)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--blue) 24%,var(--control-surface))"
+		}
+	},
+	hoverBgColorMixInSrgbCurrentColor12Transparent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "currentColor"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in srgb,currentColor 12%,transparent)"
+				}
+			}
+		}
+	},
+	activeBgColorMixInSrgbCurrentColor18Transparent: {
+		":active": {
+			"backgroundColor": "currentColor"
+		},
+		"@supports (color: color-mix(in lab, red, red))": {
+			":active": {
+				"backgroundColor": "color-mix(in srgb,currentColor 18%,transparent)"
+			}
+		}
+	},
+	borderColorMixInSrgbVarGreen22Transparent: {
+		"borderColor": "var(--green)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in srgb,var(--green) 22%,transparent)"
+		}
+	},
+	hoverBgColorMixInSrgbCurrentColor32VarControlSurface: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "currentColor"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in srgb,currentColor 32%,var(--control-surface))"
+				}
+			}
+		}
+	},
+	borderColorMixInSrgbVarPurple22Transparent: {
+		"borderColor": "var(--purple)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in srgb,var(--purple) 22%,transparent)"
+		}
+	},
+	bgColorMixInSrgbVarPurple24VarControlSurface: {
+		"backgroundColor": "var(--purple)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--purple) 24%,var(--control-surface))"
+		}
+	},
+	borderColorMixInSrgbVarRed22Transparent: {
+		"borderColor": "var(--red)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in srgb,var(--red) 22%,transparent)"
+		}
+	},
+	borderColorMixInSrgbVarYellow22Transparent: {
+		"borderColor": "var(--yellow)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in srgb,var(--yellow) 22%,transparent)"
+		}
+	},
+	transitionBackgroundColorScale: {
+		"transitionProperty": "background-color,scale",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	hoverBgColorMixInSrgbCurrentColor14Transparent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "currentColor"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in srgb,currentColor 14%,transparent)"
+				}
+			}
+		}
+	},
 });
 
 /**
@@ -444,9 +589,9 @@ export const GIT_LABEL = mergeStylexClassName("", sx.flex1, sx.overflowHidden, s
  *  `data-popup-open` keeps the menu triggers ("Request", "Change") lit while
  *  their own menu is open. */
 const GIT_ACTION_BOX =
-	mergeStylexClassName("transition-[color,background-color]", sx.inlineFlex, sx.minH22px, sx.shrink0, sx.itemsCenter, sx.whitespaceNowrap, sx.roundedMd, sx.px2, typography.label, sx.fontSemibold, sx.disabledCursorDefault, sx.disabledOpacity60);
+	mergeStylexClassName("", sx.transitionColorBackgroundColor, sx.inlineFlex, sx.minH22px, sx.shrink0, sx.itemsCenter, sx.whitespaceNowrap, sx.roundedMd, sx.px2, typography.label, sx.fontSemibold, sx.disabledCursorDefault, sx.disabledOpacity60);
 const GIT_ACTION_NEUTRAL =
-	mergeStylexClassName("enabled:hover:bg-active enabled:hover:text-fg data-[popup-open]:bg-active data-[popup-open]:text-fg", sx.bgControl, sx.textDim);
+	mergeStylexClassName("data-[popup-open]:bg-active data-[popup-open]:text-fg", sx.enabledHoverBgActive, sx.enabledHoverTextFg, sx.bgControl, sx.textDim);
 export const GIT_ACTION = [GIT_ACTION_BOX, GIT_ACTION_NEUTRAL].filter(Boolean).join(" ");
 /** What the plate adds when the action opens a menu rather than doing the
  *  thing: one trailing chevron, on the Button primitive's caret terms. That is
@@ -479,13 +624,13 @@ export type RowActionTone = "green" | "yellow" | "red" | "blue" | "muted";
 const GIT_ACTION_TONE: Record<RowActionTone, string> = {
 	muted: GIT_ACTION_NEUTRAL,
 	green:
-		mergeStylexClassName("bg-[color-mix(in_srgb,var(--green)_24%,var(--control-surface))] enabled:hover:bg-[color-mix(in_srgb,currentColor_34%,var(--control-surface))] data-[popup-open]:bg-[color-mix(in_srgb,currentColor_34%,var(--control-surface))]", sx.textGreen),
+		mergeStylexClassName("data-[popup-open]:bg-[color-mix(in_srgb,currentColor_34%,var(--control-surface))]", sx.bgColorMixInSrgbVarGreen24VarControlSurface, sx.enabledHoverBgColorMixInSrgbCurrentColor34VarControlSurface, sx.textGreen),
 	yellow:
-		mergeStylexClassName("bg-[color-mix(in_srgb,var(--yellow)_24%,var(--control-surface))] enabled:hover:bg-[color-mix(in_srgb,currentColor_34%,var(--control-surface))] data-[popup-open]:bg-[color-mix(in_srgb,currentColor_34%,var(--control-surface))]", sx.textYellow),
+		mergeStylexClassName("data-[popup-open]:bg-[color-mix(in_srgb,currentColor_34%,var(--control-surface))]", sx.bgColorMixInSrgbVarYellow24VarControlSurface, sx.enabledHoverBgColorMixInSrgbCurrentColor34VarControlSurface, sx.textYellow),
 	red:
-		mergeStylexClassName("bg-[color-mix(in_srgb,var(--red)_24%,var(--control-surface))] enabled:hover:bg-[color-mix(in_srgb,currentColor_34%,var(--control-surface))] data-[popup-open]:bg-[color-mix(in_srgb,currentColor_34%,var(--control-surface))]", sx.textRed),
+		mergeStylexClassName("data-[popup-open]:bg-[color-mix(in_srgb,currentColor_34%,var(--control-surface))]", sx.bgColorMixInSrgbVarRed24VarControlSurface, sx.enabledHoverBgColorMixInSrgbCurrentColor34VarControlSurface, sx.textRed),
 	blue:
-		mergeStylexClassName("bg-[color-mix(in_srgb,var(--blue)_24%,var(--control-surface))] enabled:hover:bg-[color-mix(in_srgb,currentColor_34%,var(--control-surface))] data-[popup-open]:bg-[color-mix(in_srgb,currentColor_34%,var(--control-surface))]", sx.textBlue),
+		mergeStylexClassName("data-[popup-open]:bg-[color-mix(in_srgb,currentColor_34%,var(--control-surface))]", sx.bgColorMixInSrgbVarBlue24VarControlSurface, sx.enabledHoverBgColorMixInSrgbCurrentColor34VarControlSurface, sx.textBlue),
 };
 
 export function gitActionClass(tone: RowActionTone, menu = false): string {
@@ -674,14 +819,14 @@ const CHIP_SIZE: Record<ChipSize, string> = {
  *  order, not by the order they are written. */
 const CHIP_TONE: Record<PrTone, string> = {
 	muted:
-		mergeStylexClassName("hover:bg-[color-mix(in_srgb,currentColor_12%,transparent)] active:bg-[color-mix(in_srgb,currentColor_18%,transparent)]", sx.borderLine, sx.bgControl, sx.textDim),
+		mergeStylexClassName("", sx.hoverBgColorMixInSrgbCurrentColor12Transparent, sx.activeBgColorMixInSrgbCurrentColor18Transparent, sx.borderLine, sx.bgControl, sx.textDim),
 	green:
-		mergeStylexClassName("border-[color-mix(in_srgb,var(--green)_22%,transparent)] bg-[color-mix(in_srgb,var(--green)_24%,var(--control-surface))] hover:bg-[color-mix(in_srgb,currentColor_32%,var(--control-surface))]", sx.textGreen),
+		mergeStylexClassName("", sx.borderColorMixInSrgbVarGreen22Transparent, sx.bgColorMixInSrgbVarGreen24VarControlSurface, sx.hoverBgColorMixInSrgbCurrentColor32VarControlSurface, sx.textGreen),
 	purple:
-		mergeStylexClassName("border-[color-mix(in_srgb,var(--purple)_22%,transparent)] bg-[color-mix(in_srgb,var(--purple)_24%,var(--control-surface))] hover:bg-[color-mix(in_srgb,currentColor_32%,var(--control-surface))]", sx.textPurple),
-	red: mergeStylexClassName("border-[color-mix(in_srgb,var(--red)_22%,transparent)] bg-[color-mix(in_srgb,var(--red)_24%,var(--control-surface))] hover:bg-[color-mix(in_srgb,currentColor_32%,var(--control-surface))]", sx.textRed),
+		mergeStylexClassName("", sx.borderColorMixInSrgbVarPurple22Transparent, sx.bgColorMixInSrgbVarPurple24VarControlSurface, sx.hoverBgColorMixInSrgbCurrentColor32VarControlSurface, sx.textPurple),
+	red: mergeStylexClassName("", sx.borderColorMixInSrgbVarRed22Transparent, sx.bgColorMixInSrgbVarRed24VarControlSurface, sx.hoverBgColorMixInSrgbCurrentColor32VarControlSurface, sx.textRed),
 	yellow:
-		mergeStylexClassName("border-[color-mix(in_srgb,var(--yellow)_22%,transparent)] bg-[color-mix(in_srgb,var(--yellow)_24%,var(--control-surface))] hover:bg-[color-mix(in_srgb,currentColor_32%,var(--control-surface))]", sx.textYellow),
+		mergeStylexClassName("", sx.borderColorMixInSrgbVarYellow22Transparent, sx.bgColorMixInSrgbVarYellow24VarControlSurface, sx.hoverBgColorMixInSrgbCurrentColor32VarControlSurface, sx.textYellow),
 };
 
 /** The same chip on a plain row: the primary chip fills with its tone because
@@ -690,12 +835,12 @@ const CHIP_TONE: Record<PrTone, string> = {
  *  the right is where the colour carries. */
 const CHIP_TONE_FLAT: Record<PrTone, string> = {
 	muted: mergeStylexClassName("", sx.borderLine, sx.bgControl, sx.textDim),
-	green: mergeStylexClassName("border-[color-mix(in_srgb,var(--green)_22%,transparent)]", sx.bgControl, sx.textGreen),
+	green: mergeStylexClassName("", sx.borderColorMixInSrgbVarGreen22Transparent, sx.bgControl, sx.textGreen),
 	purple:
-		mergeStylexClassName("border-[color-mix(in_srgb,var(--purple)_22%,transparent)]", sx.bgControl, sx.textPurple),
-	red: mergeStylexClassName("border-[color-mix(in_srgb,var(--red)_22%,transparent)]", sx.bgControl, sx.textRed),
+		mergeStylexClassName("", sx.borderColorMixInSrgbVarPurple22Transparent, sx.bgControl, sx.textPurple),
+	red: mergeStylexClassName("", sx.borderColorMixInSrgbVarRed22Transparent, sx.bgControl, sx.textRed),
 	yellow:
-		mergeStylexClassName("border-[color-mix(in_srgb,var(--yellow)_22%,transparent)]", sx.bgControl, sx.textYellow),
+		mergeStylexClassName("", sx.borderColorMixInSrgbVarYellow22Transparent, sx.bgControl, sx.textYellow),
 };
 
 export function prChipClass(tone: PrTone, size: ChipSize): string {
@@ -733,12 +878,12 @@ export function prPhoneChipClass(tone: PrTone): string {
 export function prChipExternalClass(tone: PrTone, size: "bar" | "head"): string {
 	const geometry =
 		// -ml-px collapses the shared seam to a single hairline.
-		mergeStylexClassName("transition-[background-color,scale]", sx.MlPx, sx.inlineFlex, sx.itemsCenter, sx.justifyCenter, sx.roundedEControl, sx.roundedSNone, sx.border, sx.noUnderline, sx.activeScale096);
+		mergeStylexClassName("", sx.transitionBackgroundColorScale, sx.MlPx, sx.inlineFlex, sx.itemsCenter, sx.justifyCenter, sx.roundedEControl, sx.roundedSNone, sx.border, sx.noUnderline, sx.activeScale096);
 	const colour =
 		tone === "muted"
 			? // No ink of its own: the neutral half is an <a>, so its arrow takes
 				// the link colour, and the hover wash mixes from it.
-				mergeStylexClassName("smooth-shadow-sm hover:bg-[color-mix(in_srgb,currentColor_12%,transparent)]", sx.borderLine, sx.bgControl)
+				mergeStylexClassName("smooth-shadow-sm", sx.hoverBgColorMixInSrgbCurrentColor12Transparent, sx.borderLine, sx.bgControl)
 			: CHIP_TONE[tone];
 	return [geometry, size === "head" ? mergeStylexClassName("", sx.size32px) : mergeStylexClassName("", sx.size30px), colour].filter(Boolean).join(" ");
 }
@@ -810,4 +955,4 @@ export const prRepoTabClass = (selected: boolean) =>
 export const PR_REPO_TAB_X = mergeStylexClassName("", sx.Mr1, sx.inlineFlex, sx.itemsCenter, sx.textDim, sx.hoverTextFg);
 
 export const PR_ROW_OUT =
-	mergeStylexClassName("hover:bg-[color-mix(in_srgb,currentColor_14%,transparent)]", sx.inlineFlex, sx.size6, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.textDim, sx.hoverTextFg);
+	mergeStylexClassName("", sx.hoverBgColorMixInSrgbCurrentColor14Transparent, sx.inlineFlex, sx.size6, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.textDim, sx.hoverTextFg);

@@ -123,6 +123,16 @@ const sx = stylex.create({
 			}
 		}
 	},
+
+	bgGreen500: {
+		"backgroundColor": "var(--color-green-500)"
+	},
+	animatePulse: {
+		"animation": "var(--animate-pulse)"
+	},
+	bgAmber400: {
+		"backgroundColor": "var(--color-amber-400)"
+	},
 });
 
 /**
@@ -182,7 +192,7 @@ setStopping(false);
 		<div {...stylex.props(sx.flex, sx.hFull, sx.minH0, sx.flexCol)}>
 			<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.borderB, sx.borderDivider, sx.bgPanel, sx.px3, sx.py15)}>
 				<span
-					className={[mergeStylexClassName("", sx.h2, sx.w2, sx.shrink0, sx.roundedFull), url ? "bg-green-500" : "animate-pulse bg-amber-400"].filter(Boolean).join(" ")}
+					className={[mergeStylexClassName("", sx.h2, sx.w2, sx.shrink0, sx.roundedFull), url ? mergeStylexClassName("", sx.bgGreen500) : mergeStylexClassName("", sx.animatePulse, sx.bgAmber400)].filter(Boolean).join(" ")}
 					aria-hidden="true"
 				/>
 				<div {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.fontMedium, sx.textDim, typography.supporting)}>

@@ -271,6 +271,18 @@ const sx = stylex.create({
 			"display": "none"
 		}
 	},
+
+	maxWMin320pxCalc100vw1rem: {
+		"maxWidth": "min(320px,100vw - 1rem)"
+	},
+	hMin500px76vh: {
+		"height": "min(500px,76vh)"
+	},
+	max560pxHMin560px82vh: {
+		"@media not all and (min-width: 560px)": {
+			"height": "min(560px,82vh)"
+		}
+	},
 });
 
 export interface CommandPaletteAction {
@@ -470,7 +482,7 @@ function FilterMenu({
 					</Button>
 				}
 			/>
-			<Menu.Popup align="start" sideOffset={6} className="max-w-[min(320px,calc(100vw-1rem))]">
+			<Menu.Popup align="start" sideOffset={6} className={mergeStylexClassName("", sx.maxWMin320pxCalc100vw1rem)}>
 				<Menu.RadioGroup value={value} onValueChange={(next) => onChange(String(next))}>
 					{options.map((option) => (
 						<Menu.RadioItem
@@ -747,7 +759,7 @@ if (!ctrl.signal.aborted) setSearching(false);
 			<Modal.Content
 				variant="palette"
 				widthClassName="w-[min(640px,100%)]"
-				className="h-[min(500px,76vh)] max-[560px]:h-[min(560px,82vh)]"
+				className={mergeStylexClassName("", sx.hMin500px76vh, sx.max560pxHMin560px82vh)}
 				aria-label="Command menu"
 				initialFocus={inputRef}
 				onKeyDown={onKeyDown}

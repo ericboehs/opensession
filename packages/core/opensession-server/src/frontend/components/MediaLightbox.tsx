@@ -541,6 +541,25 @@ const sx = stylex.create({
 	cursorZoomIn: {
 		"cursor": "zoom-in"
 	},
+
+	transitionOpacityTransform: {
+		"transitionProperty": "opacity,transform",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	pbMax14pxEnvSafeAreaInsetBottom: {
+		"paddingBottom": "max(14px, env(safe-area-inset-bottom))"
+	},
+	transitionWidthHeightOpacity: {
+		"transitionProperty": "width,height,opacity",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	transitionScaleBackgroundColor: {
+		"transitionProperty": "scale,background-color",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
 });
 
 /**
@@ -2388,7 +2407,7 @@ sendingCommentRef.current = false;
 				className={cn(
 					mergeStylexClassName("", sx.pointerEventsNone, sx.absolute, sx.leftCalc12pxEnvSafeAreaInsetLeft, sx.rightCalc12pxEnvSafeAreaInsetRight, sx.topCalc12pxEnvSafeAreaInsetTop, sx.z10, sx.flex, sx.itemsCenter, sx.justifyCenter),
 					isPhone &&
-						mergeStylexClassName("transition-[opacity,transform]", sx.durationVarDur, sx.easeVarEase, sx.motionReduceTransitionNone),
+						mergeStylexClassName("", sx.transitionOpacityTransform, sx.durationVarDur, sx.easeVarEase, sx.motionReduceTransitionNone),
 					isPhone && !chromeVisible && mergeStylexClassName("", sx.TranslateY2, sx.opacity0),
 				)}
 				inert={isPhone && !chromeVisible ? true : undefined}
@@ -2647,7 +2666,7 @@ sendingCommentRef.current = false;
 				<div
 					ref={phoneBottomRef}
 					className={cn(
-						mergeStylexClassName("pb-[max(14px,env(safe-area-inset-bottom))] transition-[opacity,transform]", sx.absolute, sx.insetX0, sx.bottom0, sx.z10, sx.flex, sx.flexCol, sx.gap3, sx.bgLinearToB, sx.fromTransparent, sx.viaBlack85, sx.toBlack, sx.px0, sx.pt8, sx.durationVarDur, sx.easeVarEase, sx.motionReduceTransitionNone),
+						mergeStylexClassName("", sx.pbMax14pxEnvSafeAreaInsetBottom, sx.transitionOpacityTransform, sx.absolute, sx.insetX0, sx.bottom0, sx.z10, sx.flex, sx.flexCol, sx.gap3, sx.bgLinearToB, sx.fromTransparent, sx.viaBlack85, sx.toBlack, sx.px0, sx.pt8, sx.durationVarDur, sx.easeVarEase, sx.motionReduceTransitionNone),
 						!chromeVisible && mergeStylexClassName("", sx.pointerEventsNone, sx.translateY3, sx.opacity0),
 					)}
 					inert={!chromeVisible ? true : undefined}
@@ -2700,7 +2719,7 @@ sendingCommentRef.current = false;
 									>
 										<span
 											className={cn(
-												mergeStylexClassName("transition-[width,height,opacity]", sx.block, sx.overflowHidden, sx.roundedSm, sx.outline, sx.outline1, sx.outlineOffset1, sx.durationVarDur, sx.easeVarEase, sx.motionReduceTransitionNone),
+												mergeStylexClassName("", sx.transitionWidthHeightOpacity, sx.block, sx.overflowHidden, sx.roundedSm, sx.outline, sx.outline1, sx.outlineOffset1, sx.durationVarDur, sx.easeVarEase, sx.motionReduceTransitionNone),
 												active
 													? mergeStylexClassName("", sx.h11, sx.w11, sx.opacity100, sx.outlineWhite85)
 													: mergeStylexClassName("", sx.h9, sx.w7, sx.opacity60, sx.outlineTransparent),
@@ -2939,7 +2958,7 @@ sendingCommentRef.current = false;
 								>
 									<span
 										className={cn(
-											mergeStylexClassName("transition-[scale,background-color]", sx.block, sx.size15, sx.roundedFull),
+											mergeStylexClassName("", sx.transitionScaleBackgroundColor, sx.block, sx.size15, sx.roundedFull),
 											((position === 0 && dotStart > 0) ||
 												(position === dotIndexes.length - 1 &&
 													dotStart + dotIndexes.length < items.length)) &&

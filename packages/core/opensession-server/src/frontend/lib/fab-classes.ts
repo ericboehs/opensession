@@ -165,6 +165,17 @@ const sx = stylex.create({
 			}
 		}
 	},
+
+	phoneBottomCalc18pxEnvSafeAreaInsetBottom0px: {
+		"@media (max-width: 720px)": {
+			"bottom": "calc(18px + env(safe-area-inset-bottom,0px))"
+		}
+	},
+	transitionColorBorderColorTranslateScale: {
+		"transitionProperty": "color,border-color,translate,scale",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
 });
 
 /**
@@ -203,7 +214,7 @@ const sx = stylex.create({
  * is what the Desk trigger beside it now uses.
  */
 export const MOBILE_FAB =
-	mergeStylexClassName("phone:bottom-[calc(18px+env(safe-area-inset-bottom,0px))]", sx.hidden, sx.phoneFixed, sx.phoneRight3) + " " +
+	mergeStylexClassName("", sx.phoneBottomCalc18pxEnvSafeAreaInsetBottom0px, sx.hidden, sx.phoneFixed, sx.phoneRight3) + " " +
 	mergeStylexClassName("", sx.phoneZ500, sx.phoneFlex, sx.phoneSize58px, sx.phoneItemsCenter, sx.phoneJustifyCenter) + " " +
 	mergeStylexClassName("", sx.phoneRoundedFull, sx.phoneBorderNone, sx.phoneBgAccent, sx.phoneTextOnAccent) + " " +
 	"phone:shadow-[0_4px_14px_rgba(0,0,0,0.16),0_1px_3px_rgba(0,0,0,0.10)] " +
@@ -239,9 +250,9 @@ export const DESK_FAB =
 	mergeStylexClassName("", sx.fixed, sx.right18px, sx.bottom18px, sx.z500, sx.flex, sx.size11, sx.itemsCenter, sx.justifyCenter) + " " +
 	mergeStylexClassName("", sx.roundedFull, sx.border, sx.borderDivider, sx.bgVarComposerSurface, sx.textDim) + " " +
 	"smooth-shadow-xs " +
-	mergeStylexClassName("transition-[color,border-color,translate,scale]", sx.hoverTranslateYPx, sx.hoverBorderLine, sx.hoverTextFg) + " " +
+	mergeStylexClassName("", sx.transitionColorBorderColorTranslateScale, sx.hoverTranslateYPx, sx.hoverBorderLine, sx.hoverTextFg) + " " +
 	mergeStylexClassName("", sx.phoneLeftAuto) + " " +
-	mergeStylexClassName("phone:bottom-[calc(18px+env(safe-area-inset-bottom,0px))]", sx.phoneRightCalc12px58px12px) + " " +
+	mergeStylexClassName("", sx.phoneBottomCalc18pxEnvSafeAreaInsetBottom0px, sx.phoneRightCalc12px58px12px) + " " +
 	mergeStylexClassName("", sx.phoneSize58px, sx.phoneTextFg) + " " +
 	"phone:shadow-[0_2px_10px_rgba(0,0,0,0.10),0_1px_2px_rgba(0,0,0,0.06)] " +
 	mergeStylexClassName("", sx.phoneHoverTranslateY0, sx.phoneActiveScale092);

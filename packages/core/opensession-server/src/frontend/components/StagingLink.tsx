@@ -118,6 +118,10 @@ const sx = stylex.create({
 	textYellow: {
 		"color": "var(--yellow)"
 	},
+
+	textFg: {
+		"color": "var(--text)"
+	},
 });
 
 // The open-preview chord's handler lives in SessionViewer: this component
@@ -495,7 +499,7 @@ export function StagingLink({
 				rel="noopener"
 				onClick={onClick}
 				aria-disabled={building || undefined}
-				className={[mergeStylexClassName("", sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px25, sx.py2, sx.textLeft, typography.supporting, sx.fontSemibold, sx.noUnderline, sx.outlineNone, sx.transitionColors, sx.hoverBgHover, sx.focusVisibleBgHover), building ? "cursor-default text-faint" : "text-fg"].filter(Boolean).join(" ")}
+				className={[mergeStylexClassName("", sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px25, sx.py2, sx.textLeft, typography.supporting, sx.fontSemibold, sx.noUnderline, sx.outlineNone, sx.transitionColors, sx.hoverBgHover, sx.focusVisibleBgHover), building ? mergeStylexClassName("", sx.cursorDefault, sx.textFaint) : mergeStylexClassName("", sx.textFg)].filter(Boolean).join(" ")}
 				/* A phone grid cell: no right-click, so no copy to advertise. */
 				title={`${tooltip("")} · ${href}`}
 			>

@@ -67,6 +67,17 @@ const sx = stylex.create({
 			"borderColor": "var(--border)"
 		}
 	},
+
+	desktopOverflowHidden: {
+		"@media (min-width: 721px)": {
+			"overflow": "hidden"
+		}
+	},
+	desktopOverflowVisible: {
+		"@media (min-width: 721px)": {
+			"overflow": "visible"
+		}
+	},
 });
 
 /**
@@ -92,7 +103,7 @@ export function ReviewToolbar({
         className={[mergeStylexClassName("", sx.relative, sx.shrink0, sx.bgSurface, sx.desktopPt25), placement].filter(Boolean).join(" ")}
       >
         <div
-          className={[mergeStylexClassName("", sx.relative, sx.bgSurface, sx.desktopRoundedLg, sx.desktopBorder, sx.desktopBorderLine), compact ? "desktop:overflow-hidden" : "desktop:overflow-visible"].filter(Boolean).join(" ")}
+          className={[mergeStylexClassName("", sx.relative, sx.bgSurface, sx.desktopRoundedLg, sx.desktopBorder, sx.desktopBorderLine), compact ? mergeStylexClassName("", sx.desktopOverflowHidden) : mergeStylexClassName("", sx.desktopOverflowVisible)].filter(Boolean).join(" ")}
         >
           {children}
         </div>

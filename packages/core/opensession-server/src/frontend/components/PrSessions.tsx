@@ -85,6 +85,16 @@ const sx = stylex.create({
 	roundedFull: {
 		"borderRadius": "3.40282e38px"
 	},
+
+	bgYellow: {
+		"backgroundColor": "var(--yellow)"
+	},
+	animatePulse: {
+		"animation": "var(--animate-pulse)"
+	},
+	bgLine: {
+		"backgroundColor": "var(--border)"
+	},
 });
 
 /**
@@ -249,7 +259,7 @@ export function PrSessionsList({
 					}} {...mergeStylexProps("hover:bg-surface", sx.Mx2, sx.flex, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px2, sx.py15, sx.textFg, sx.noUnderline, typography.itemTitle)}
 				>
 					<span
-						className={[mergeStylexClassName("", sx.w15, sx.h15, sx.roundedFull, sx.shrink0), s.isRunning ? "bg-yellow animate-pulse" : "bg-line"].filter(Boolean).join(" ")}
+						className={[mergeStylexClassName("", sx.w15, sx.h15, sx.roundedFull, sx.shrink0), s.isRunning ? mergeStylexClassName("", sx.bgYellow, sx.animatePulse) : mergeStylexClassName("", sx.bgLine)].filter(Boolean).join(" ")}
 					/>
 					<span {...stylex.props(sx.truncate)}>{s.title}</span>
 					{s.id === currentSessionId && (

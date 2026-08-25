@@ -102,6 +102,21 @@ const sx = stylex.create({
 			"opacity": ".5"
 		}
 	},
+
+	enabledActiveScale096: {
+		":enabled": {
+			":active": {
+				"scale": ".96"
+			}
+		}
+	},
+	enabledTransitionColorTransform: {
+		":enabled": {
+			"transitionProperty": "color,transform",
+			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+		}
+	},
 });
 
 /** Per-tone colour, spelled out in full: Tailwind scans source as text, so a
@@ -200,7 +215,7 @@ export function ComposerContextChip({
 					className={cn(
 						// `before:-inset-2` grows the hit area past the 20px box without
 						// growing the pill around it.
-						mergeStylexClassName("enabled:active:scale-[0.96] enabled:transition-[color,transform]", sx.relative, sx.Mr1, sx.flex, sx.size5, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.beforeAbsolute, sx.beforeInset2, sx.disabledCursorDefault, sx.disabledOpacity50),
+						mergeStylexClassName("", sx.enabledActiveScale096, sx.enabledTransitionColorTransform, sx.relative, sx.Mr1, sx.flex, sx.size5, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.beforeAbsolute, sx.beforeInset2, sx.disabledCursorDefault, sx.disabledOpacity50),
 						colours.remove,
 					)}
 				>

@@ -354,6 +354,12 @@ const sx = stylex.create({
 			"justifyContent": "center"
 		}
 	},
+
+	transitionBackgroundColorBorderColorColorFilterTransform: {
+		"transitionProperty": "background-color,border-color,color,filter,transform",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
 });
 
 /**
@@ -480,7 +486,7 @@ function PrBarButton({
 		<button
 			type="button"
 			className={cn(
-				mergeStylexClassName("smooth-shadow-sm transition-[background-color,border-color,color,filter,transform]", sx.inlineFlex, sx.minH30px, sx.itemsCenter, sx.justifyCenter, sx.gap15, sx.roundedControl, sx.border, sx.px25, sx.py5px, typography.label, sx.leadingNone, sx.fontSemibold, sx.whitespaceNowrap, sx.duration150, sx.easeInOut, sx.hoverBrightness108, sx.activeScale098, sx.activeBrightness098, sx.focusVisibleOutline2, sx.focusVisibleOutlineVarAccentInk, sx.focusVisibleOutlineOffset2, sx.disabledCursorDefault, sx.disabledOpacity60, sx.disabledShadowNone),
+				mergeStylexClassName("smooth-shadow-sm", sx.transitionBackgroundColorBorderColorColorFilterTransform, sx.inlineFlex, sx.minH30px, sx.itemsCenter, sx.justifyCenter, sx.gap15, sx.roundedControl, sx.border, sx.px25, sx.py5px, typography.label, sx.leadingNone, sx.fontSemibold, sx.whitespaceNowrap, sx.duration150, sx.easeInOut, sx.hoverBrightness108, sx.activeScale098, sx.activeBrightness098, sx.focusVisibleOutline2, sx.focusVisibleOutlineVarAccentInk, sx.focusVisibleOutlineOffset2, sx.disabledCursorDefault, sx.disabledOpacity60, sx.disabledShadowNone),
 				tones[tone],
 				// A leading glyph carries its own margin: the icon set draws in a
 				// 4.75–19.25 span of a 24 grid, so an 18px box holds ~3.5px of

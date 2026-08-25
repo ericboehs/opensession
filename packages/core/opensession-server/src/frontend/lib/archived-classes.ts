@@ -396,6 +396,20 @@ const sx = stylex.create({
 			"opacity": "1"
 		}
 	},
+
+	pbMax12pxEnvSafeAreaInsetBottom0px: {
+		"paddingBottom": "max(12px, env(safe-area-inset-bottom,0px))"
+	},
+	transitionColorBackgroundColorTransform: {
+		"transitionProperty": "color,background-color,transform",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	phoneTransformTranslateXVarSwipeX0: {
+		"@media (max-width: 720px)": {
+			"transform": "translateX(var(--swipe-x,0))"
+		}
+	},
 });
 
 /**
@@ -411,7 +425,7 @@ export const ARCHIVED_LIST = mergeStylexClassName("", sx.Mx3);
  */
 export const ARCHIVED_PHONE_SEARCH_DOCK =
 	mergeStylexClassName("", sx.pointerEventsNone, sx.fixed, sx.insetX0, sx.bottom0, sx.z30, sx.hidden, sx.px35, sx.pt6) + " " +
-	mergeStylexClassName("pb-[max(12px,env(safe-area-inset-bottom,0px))]", sx.phoneBlock) + " " +
+	mergeStylexClassName("", sx.pbMax12pxEnvSafeAreaInsetBottom0px, sx.phoneBlock) + " " +
 	"phone:[body.kb-open_&]:pb-3 " +
 	mergeStylexClassName("", sx.beforePointerEventsNone, sx.beforeAbsolute, sx.beforeInset0, sx.beforeZ1) + " " +
 	"before:bg-[linear-gradient(to_bottom,transparent_0%,var(--bg)_48%)] " +
@@ -454,13 +468,13 @@ export const ARCHIVED_SWIPE_ACTION =
  */
 export const ARCHIVED_ROW =
 	mergeStylexClassName("archived-row group", sx.relative, sx.flex, sx.itemsStart, sx.gap3, sx.roundedControl, sx.px3, sx.py25) + " " +
-	mergeStylexClassName("transition-[color,background-color,transform]", sx.durationVarDurMicro, sx.easeVarEase) + " " +
+	mergeStylexClassName("", sx.transitionColorBackgroundColorTransform, sx.durationVarDurMicro, sx.easeVarEase) + " " +
 	mergeStylexClassName("", sx.hoverBgHover, sx.focusWithinBgHover) + " " +
 	mergeStylexClassName("", sx.afterPointerEventsNone, sx.afterAbsolute, sx.afterRight3, sx.afterBottom0, sx.afterLeft42px) + " " +
 	mergeStylexClassName("", sx.afterHPx, sx.afterBgLine, sx.afterTransitionOpacity, sx.afterDurationVarDurMicro) + " " +
 	mergeStylexClassName("", sx.hoverAfterOpacity0, sx.focusWithinAfterOpacity0) + " " +
 	mergeStylexClassName("", sx.phoneZ1, sx.phoneGap25, sx.phoneTouchPanY, sx.phoneBgSurface, sx.phonePx18px, sx.phonePy4) + " " +
-	mergeStylexClassName("phone:transform-[translateX(var(--swipe-x,0))]", sx.phoneAfterLeft46px);
+	mergeStylexClassName("", sx.phoneTransformTranslateXVarSwipeX0, sx.phoneAfterLeft46px);
 
 /**
  * The open action, stretched over the whole row by its own `::after` so a click

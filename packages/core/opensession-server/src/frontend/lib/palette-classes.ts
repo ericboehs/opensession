@@ -92,6 +92,60 @@ const sx = stylex.create({
 			"opacity": ".55"
 		}
 	},
+
+	beforeRoundedFull: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"borderRadius": "3.40282e38px"
+		}
+	},
+	beforeCornerShapeRound: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"cornerShape": "round"
+		}
+	},
+	beforeBgColorMixInSrgbVarAccent16Transparent: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"backgroundColor": "var(--accent)"
+		},
+		"@supports (color: color-mix(in lab, red, red))": {
+			"::before": {
+				"backgroundColor": "color-mix(in srgb,var(--accent) 16%,transparent)"
+			}
+		}
+	},
+	hoverBeforeBgColorMixInSrgbVarAccent24Transparent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"::before": {
+					"content": "var(--tw-content)",
+					"backgroundColor": "var(--accent)"
+				}
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"::before": {
+						"backgroundColor": "color-mix(in srgb,var(--accent) 24%,transparent)"
+					}
+				}
+			}
+		}
+	},
+	transitionBackgroundBorderColorColor: {
+		"transitionProperty": "background,border-color,color",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+
+	hoverTextAccent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--accent-ink)"
+			}
+		}
+	},
 });
 
 /**
@@ -155,7 +209,7 @@ export const paletteIconBtn =
  *  The wash needs the same treatment or a circular button hovers into a
  *  squircle. Everywhere else this family keeps its squircle. */
 export const paletteIconBtnRound =
-	mergeStylexClassName("before:rounded-full before:[corner-shape:round]", sx.roundedFull);
+	mergeStylexClassName("", sx.beforeRoundedFull, sx.beforeCornerShapeRound, sx.roundedFull);
 
 /** On reads as one filled accent chip: the glyph lights up with its wash. The
  *  hover colour is restated because the base's `hover:text-fg` is a different
@@ -165,7 +219,7 @@ export const paletteIconBtnRound =
  *  ring read as a validation outline, and it is the one thing that survived
  *  on the plan-mode surface, which carries its own accent tint. */
 export const paletteIconBtnOn =
-	mergeStylexClassName("hover:text-accent before:bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] hover:before:bg-[color-mix(in_srgb,var(--accent)_24%,transparent)]", sx.textAccent);
+	mergeStylexClassName("", sx.hoverTextAccent, sx.beforeBgColorMixInSrgbVarAccent16Transparent, sx.hoverBeforeBgColorMixInSrgbVarAccent24Transparent, sx.textAccent);
 
 /* ── The model/effort pill ────────────────────────────────────────
    ModelEffortSelect's trigger, in the composer toolbar and in the new-session
@@ -183,4 +237,4 @@ export const paletteIconBtnOn =
    and as a utility it outranked the stylesheet's `var(--border)` on source
    order. Written out here so the constant describes what actually paints. */
 export const palettePill =
-	mergeStylexClassName("transition-[background,border-color,color]", sx.relative, sx.inlineFlex, sx.minH8, sx.maxW180px, sx.itemsCenter, sx.gap15, sx.roundedFull, sx.border, sx.borderTransparent, sx.px11px, sx.py5px, typography.label, sx.fontMedium, sx.textDim, sx.hoverBgHover, sx.hoverTextFg, sx.disabledCursorDefault, sx.disabledOpacity55);
+	mergeStylexClassName("", sx.transitionBackgroundBorderColorColor, sx.relative, sx.inlineFlex, sx.minH8, sx.maxW180px, sx.itemsCenter, sx.gap15, sx.roundedFull, sx.border, sx.borderTransparent, sx.px11px, sx.py5px, typography.label, sx.fontMedium, sx.textDim, sx.hoverBgHover, sx.hoverTextFg, sx.disabledCursorDefault, sx.disabledOpacity55);

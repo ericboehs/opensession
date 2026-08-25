@@ -130,6 +130,35 @@ const sx = stylex.create({
 			}
 		}
 	},
+
+	gridColsAutoMinmax01frAuto: {
+		"gridTemplateColumns": "auto minmax(0,1fr) auto"
+	},
+	gridColsMinmax01frAuto: {
+		"gridTemplateColumns": "minmax(0,1fr) auto"
+	},
+	transitionBorderColorBoxShadow: {
+		"transitionProperty": "border-color,box-shadow",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	enabledHoverSmoothShadowXs: {
+		"@media (hover: hover)": {
+			":enabled": {
+				":hover": {
+					"--smooth-shadow-color": "var(--tw-shadow-color,black)",
+					"boxShadow": "0 1px 2px -1px var(--smooth-shadow-color), 0 2px 5px -3px var(--smooth-shadow-color)"
+				}
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":enabled": {
+					":hover": {
+						"boxShadow": "0 1px 2px -1px color-mix(in srgb, var(--smooth-shadow-color) 5%, transparent), 0 2px 5px -3px color-mix(in srgb, var(--smooth-shadow-color) 7%, transparent)"
+					}
+				}
+			}
+		}
+	},
 });
 
 /**
@@ -235,13 +264,13 @@ function Trigger(triggerProps: TriggerProps) {
 					cn(
 						mergeStylexClassName("", sx.inlineGrid, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.pr2, sx.textLeft),
 						iconSlot
-							? "grid-cols-[auto_minmax(0,1fr)_auto]"
-							: "grid-cols-[minmax(0,1fr)_auto]",
+							? mergeStylexClassName("", sx.gridColsAutoMinmax01frAuto)
+							: mergeStylexClassName("", sx.gridColsMinmax01frAuto),
 					),
 				),
 				// A select lifts slightly under the pointer; opening still reads like
 				// focus, with the border carrying that state as on every other field.
-				mergeStylexClassName("transition-[border-color,box-shadow] enabled:hover:smooth-shadow-xs data-[popup-open]:border-accent", sx.hoverBorderLineStrong),
+				mergeStylexClassName("data-[popup-open]:border-accent", sx.transitionBorderColorBoxShadow, sx.enabledHoverSmoothShadowXs, sx.hoverBorderLineStrong),
 				className,
 			)}
 		>

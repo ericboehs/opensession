@@ -724,6 +724,12 @@ const sx = stylex.create({
 	ReviewFileHeaderTop0px: {
 		"--review-file-header-top": "0px"
 	},
+
+	desktopReviewFileHeaderTop61px: {
+		"@media (min-width: 721px)": {
+			"--review-file-header-top": "61px"
+		}
+	},
 });
 
 const STATUS_TEXT_STYLE = {
@@ -2801,7 +2807,7 @@ toast(e.message || "Couldn't unlink the PR");
           // the toolbar sticks, file titles clear its 10px inset, 40px row,
           // 2px border, 8px section gap, and the file card's own 1px border.
           className={[mergeStylexClassName("", sx.ReviewFileHeaderTop0px), compactToolbar
-              ? "desktop:[--review-file-header-top:61px]"
+              ? mergeStylexClassName("", sx.desktopReviewFileHeaderTop61px)
               : "", stylex.props(
             sx.minW0,
             sx.flex1,

@@ -489,6 +489,24 @@ const sx = stylex.create({
 	borderAccent: {
 		"borderColor": "var(--accent)"
 	},
+
+	beforeEaseCubicBezier03207201: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"--tw-ease": "cubic-bezier(.32,.72,0,1)",
+			"transitionTimingFunction": "cubic-bezier(.32,.72,0,1)"
+		}
+	},
+	placeholderTextColorMixInSrgbVarTextFaint84VarYellow: {
+		"::placeholder": {
+			"color": "var(--text-faint)"
+		},
+		"@supports (color: color-mix(in lab, red, red))": {
+			"::placeholder": {
+				"color": "color-mix(in srgb,var(--text-faint) 84%,var(--yellow))"
+			}
+		}
+	},
 });
 
 interface Props {
@@ -1840,7 +1858,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
           minimized && "composer-min",
           composerBox,
           minimized ? composerBoxMinimized : composerBoxExpanded,
-          mergeStylexClassName("before:ease-[cubic-bezier(0.32,0.72,0,1)] [&>*]:relative [&>*]:z-[1]", sx.isolate, sx.beforePointerEventsNone, sx.beforeAbsolute, sx.beforeInset0, sx.beforeZ0, sx.beforeRoundedInherit, sx.beforeCornerShapeInherit, sx.beforeBgVarComposerNoteBg, sx.beforeOpacity0, sx.beforeTransitionOpacity, sx.beforeDuration150),
+          mergeStylexClassName("[&>*]:relative [&>*]:z-[1]", sx.beforeEaseCubicBezier03207201, sx.isolate, sx.beforePointerEventsNone, sx.beforeAbsolute, sx.beforeInset0, sx.beforeZ0, sx.beforeRoundedInherit, sx.beforeCornerShapeInherit, sx.beforeBgVarComposerNoteBg, sx.beforeOpacity0, sx.beforeTransitionOpacity, sx.beforeDuration150),
           noteMode && mergeStylexClassName("", sx.beforeOpacity100),
           dictationClipping && mergeStylexClassName("", sx.overflowHidden),
           disabled && mergeStylexClassName("", sx.opacity60),
@@ -2024,7 +2042,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
               // LIGHTENING it, the intuitive move, would have taken it to
               // 1.82:1 and made it dimmer as well as still cool.
               noteMode
-                ? "placeholder:text-[color-mix(in_srgb,var(--text-faint)_84%,var(--yellow))]"
+                ? mergeStylexClassName("", sx.placeholderTextColorMixInSrgbVarTextFaint84VarYellow)
                 : mergeStylexClassName("", sx.placeholderTextFaint),
               // With the mirror painting the styled draft, the field's own
               // glyphs go transparent and only the caret stays visible.

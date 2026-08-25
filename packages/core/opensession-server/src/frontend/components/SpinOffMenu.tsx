@@ -67,6 +67,21 @@ const sx = stylex.create({
 		"--tw-leading": "var(--leading-relaxed)",
 		"lineHeight": "var(--leading-relaxed)"
 	},
+
+	hoverBorderAccent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"borderColor": "var(--accent)"
+			}
+		}
+	},
+	hoverTextAccent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--accent-ink)"
+			}
+		}
+	},
 });
 
 type Flavor = "build" | "learnings" | "analyze";
@@ -321,7 +336,7 @@ export function SpinOffMenu({
             <Button onClick={() => setFlavor(null)} disabled={starting}>
               Cancel
             </Button>
-            <Button {...mergeStylexProps("hover:border-accent hover:text-accent", sx.borderAccent, sx.bgAccentSoft, sx.textAccent)}
+            <Button {...mergeStylexProps("", sx.hoverBorderAccent, sx.hoverTextAccent, sx.borderAccent, sx.bgAccentSoft, sx.textAccent)}
               onClick={start}
               disabled={!canStart}
             >

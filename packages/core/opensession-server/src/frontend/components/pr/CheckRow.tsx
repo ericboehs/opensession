@@ -63,6 +63,10 @@ const sx = stylex.create({
 	textCenter: {
 		"textAlign": "center"
 	},
+
+	animatePulse14sInfinite: {
+		"animation": "1.4s infinite pulse"
+	},
 });
 
 /** `pr-check-mark-pending` styles nothing — it is base.css's hook for keeping
@@ -81,7 +85,7 @@ export function CheckRow({ check }: { check: PrCheck }) {
         rel="noopener"
       >
         <span
-          className={[mergeStylexClassName("", sx.w35, sx.shrink0, sx.textCenter, typography.label), CHECK_TEXT[cls], cls === "check-pending" ? "pr-check-mark-pending animate-[pulse_1.4s_infinite]" : ""].filter(Boolean).join(" ")}
+          className={[mergeStylexClassName("", sx.w35, sx.shrink0, sx.textCenter, typography.label), CHECK_TEXT[cls], cls === "check-pending" ? mergeStylexClassName("pr-check-mark-pending", sx.animatePulse14sInfinite) : ""].filter(Boolean).join(" ")}
         >
           {mark}
         </span>

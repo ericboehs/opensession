@@ -303,6 +303,12 @@ const sx = stylex.create({
 			}
 		}
 	},
+
+	transitionColorBackgroundColor: {
+		"transitionProperty": "color,background-color",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
 });
 
 /**
@@ -832,7 +838,7 @@ function Day({
 				aria-current={today ? "date" : undefined}
 				onClick={() => onPick(day)}
 				onPointerEnter={onPreview}
-				onFocus={onFocus} {...mergeStylexProps(cn(mergeStylexClassName("", sx.tabularNums, sx.phoneH11, sx.phoneTextItemTitle), "transition-[color,background-color]", today && !selected && mergeStylexClassName("", sx.ring1), selected ? mergeStylexClassName("", sx.hoverBgAccentHover) : mergeStylexClassName("", sx.hoverBgHover), mergeStylexClassName("", sx.disabledCursorDefault, sx.disabledTextFaint, sx.disabledOpacity45, sx.disabledHoverBgTransparent)), sx.relative, sx.grid, sx.h8, sx.wFull, sx.cursorPointer, sx.placeItemsCenter, sx.roundedMd, typography.controlLabel, sx.durationVarDurMicro, sx.easeVarEase, sx.focusRing, sx.textFg, today && !selected && sx.fontSemibold, today && !selected && sx.ringLineStrong, today && !selected && sx.ringInset, selected && sx.bgAccent, selected && sx.fontSemibold, selected && sx.textOnAccent)}
+				onFocus={onFocus} {...mergeStylexProps(cn(mergeStylexClassName("", sx.tabularNums, sx.phoneH11, sx.phoneTextItemTitle), mergeStylexClassName("", sx.transitionColorBackgroundColor), today && !selected && mergeStylexClassName("", sx.ring1), selected ? mergeStylexClassName("", sx.hoverBgAccentHover) : mergeStylexClassName("", sx.hoverBgHover), mergeStylexClassName("", sx.disabledCursorDefault, sx.disabledTextFaint, sx.disabledOpacity45, sx.disabledHoverBgTransparent)), sx.relative, sx.grid, sx.h8, sx.wFull, sx.cursorPointer, sx.placeItemsCenter, sx.roundedMd, typography.controlLabel, sx.durationVarDurMicro, sx.easeVarEase, sx.focusRing, sx.textFg, today && !selected && sx.fontSemibold, today && !selected && sx.ringLineStrong, today && !selected && sx.ringInset, selected && sx.bgAccent, selected && sx.fontSemibold, selected && sx.textOnAccent)}
 			>
 				{dayOfMonth(day)}
 			</button>

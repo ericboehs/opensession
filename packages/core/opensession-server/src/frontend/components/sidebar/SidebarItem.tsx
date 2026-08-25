@@ -262,6 +262,14 @@ const sx = stylex.create({
 	right7px: {
 		"right": "7px"
 	},
+
+	sizeVarSidebarRowAction26px: {
+		"width": "var(--sidebar-row-action,26px)",
+		"height": "var(--sidebar-row-action,26px)"
+	},
+	rightCalcVarSidebarRowAction26px11px: {
+		"right": "calc(var(--sidebar-row-action,26px) + 11px)"
+	},
 });
 
 /** The sidebar's selectable row — the shape every list family wears: session,
@@ -305,7 +313,7 @@ export const SIDEBAR_ROW =
    us; on touch these actions live behind the swipe gesture and the long-press
    sheet. */
 const ROW_ACTION = cn(
-	mergeStylexClassName("size-[var(--sidebar-row-action,26px)] group-hover:flex", sx.absolute, sx.top12, sx.hidden, sx.TranslateY12, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.text15px, sx.leadingNone, sx.textFaint, sx.hoverTextFg),
+	mergeStylexClassName("group-hover:flex", sx.sizeVarSidebarRowAction26px, sx.absolute, sx.top12, sx.hidden, sx.TranslateY12, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.text15px, sx.leadingNone, sx.textFaint, sx.hoverTextFg),
 	// Not a wash — a lid. See SIDEBAR_ROW_CHIP.
 	SIDEBAR_ROW_CHIP,
 );
@@ -840,7 +848,7 @@ export function SidebarItem({
 						// between them — the ws rows' `gap-1` cluster, spelled as an
 						// offset because these two are positioned rather than laid out.
 						// It has to be a calc: the chip narrows with the density.
-						"right-[calc(var(--sidebar-row-action,26px)_+_11px)] data-[on]:bg-pressed data-[on]:text-fg",
+						mergeStylexClassName("data-[on]:bg-pressed data-[on]:text-fg", sx.rightCalcVarSidebarRowAction26px11px),
 					)}
 					data-on=""
 					role="button"

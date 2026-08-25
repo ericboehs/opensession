@@ -240,6 +240,10 @@ const sx = stylex.create({
 	objectCover: {
 		"objectFit": "cover"
 	},
+
+	maxHMin72vh640px: {
+		"maxHeight": "min(72vh,640px)"
+	},
 });
 
 /**
@@ -280,7 +284,7 @@ const sx = stylex.create({
  * without pressing against it.
  */
 export const WS_SUMMARY_CARD =
-	mergeStylexClassName("max-h-[min(72vh,640px)]", sx.flex, sx.w300px, sx.flexCol, sx.overflowYAuto, sx.py2) + " " +
+	mergeStylexClassName("", sx.maxHMin72vh640px, sx.flex, sx.w300px, sx.flexCol, sx.overflowYAuto, sx.py2) + " " +
 	"[--popup-glass:color-mix(in_srgb,var(--popup-surface)_58%,transparent)] " +
 	mergeStylexClassName("", sx.PopupBlurBlur32pxSaturate16Brightness112) + " " +
 	mergeStylexClassName("", sx.BorderRadiusCalc18pxVarRf);

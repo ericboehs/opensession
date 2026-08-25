@@ -54,6 +54,18 @@ const sx = stylex.create({
 	AnimationDelay840ms: {
 		"animationDelay": ".84s"
 	},
+
+	bgColorMixInSrgbCurrentColor35Transparent: {
+		"backgroundColor": "currentColor",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,currentColor 35%,transparent)"
+		}
+	},
+	transitionBackgroundBoxShadowOpacity: {
+		"transitionProperty": "background,box-shadow,opacity",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
 });
 
 /** Class strings for the pixel spinner (components/PixelSpinner). Its own
@@ -70,8 +82,8 @@ export const PIXEL_GRID = mergeStylexClassName("", sx.grid, sx.gridCols3, sx.gap
  * matches base.css's squircle rule — so these keep their corner shape, not just
  * their radius. */
 export const PIXEL =
-	mergeStylexClassName("bg-[color-mix(in_srgb,currentColor_35%,transparent)]", sx.size3px, sx.roundedXs) + " " +
-	mergeStylexClassName("transition-[background,box-shadow,opacity]", sx.durationVarDurMicro, sx.easeVarEase);
+	mergeStylexClassName("", sx.bgColorMixInSrgbCurrentColor35Transparent, sx.size3px, sx.roundedXs) + " " +
+	mergeStylexClassName("", sx.transitionBackgroundBoxShadowOpacity, sx.durationVarDurMicro, sx.easeVarEase);
 
 /** The wave, as animation LONGHANDS rather than an `animate-[…]` shorthand.
  * The shorthand would reset `animation-delay`, and which of the two won would

@@ -201,6 +201,13 @@ const sx = stylex.create({
 		"width": "6px",
 		"height": "6px"
 	},
+
+	bgColorMixInSrgbVarBgPanel80VarComposerSurface: {
+		"backgroundColor": "var(--bg-panel)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--bg-panel) 80%,var(--composer-surface))"
+		}
+	},
 });
 
 /**
@@ -402,7 +409,7 @@ export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 		// states: open and close are the same click, in the same place.
 		<div
 			className={cn(
-				mergeStylexClassName("bg-[color-mix(in_srgb,var(--bg-panel)_80%,var(--composer-surface))]", sx.relative, sx.Mb35, sx.flex, sx.wFull, sx.flexCol, sx.gap25, sx.roundedTVarComposerRadius, sx.borderX, sx.borderT, sx.px35, sx.pt25, sx.pb22px, typography.label, sx.fontMedium, sx.textFg),
+				mergeStylexClassName("", sx.bgColorMixInSrgbVarBgPanel80VarComposerSurface, sx.relative, sx.Mb35, sx.flex, sx.wFull, sx.flexCol, sx.gap25, sx.roundedTVarComposerRadius, sx.borderX, sx.borderT, sx.px35, sx.pt25, sx.pb22px, typography.label, sx.fontMedium, sx.textFg),
 				composerFlapBorder,
 			)}
 			data-open={open ? "" : undefined}

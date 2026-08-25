@@ -94,6 +94,12 @@ const sx = stylex.create({
 			"--tw-ring-offset-color": "var(--bg)"
 		}
 	},
+
+	transitionBackgroundColorBorderColor: {
+		"transitionProperty": "background-color,border-color",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
 });
 
 type CheckboxProps = Omit<React.ComponentProps<typeof BaseCheckbox.Root>, "size"> & {
@@ -116,7 +122,7 @@ type CheckboxProps = Omit<React.ComponentProps<typeof BaseCheckbox.Root>, "size"
  */
 export function Checkbox({ className, ...props }: CheckboxProps) {
 	return (
-		<BaseCheckbox.Root {...mergeStylexProps(cn("transition-[background-color,border-color]", mergeStylexClassName("", sx.hoverBorderFaint), "data-[checked]:border-accent-control data-[checked]:bg-accent-control data-[checked]:hover:border-accent-control", mergeStylexClassName("", sx.focusVisibleRing2, sx.focusVisibleRingAccent50, sx.focusVisibleRingOffset2, sx.focusVisibleRingOffsetBg), "data-[disabled]:cursor-default data-[disabled]:opacity-40", className), sx.flex, sx.size4, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.border, sx.borderLineStrong, sx.bgSurface, sx.p0, sx.outlineNone, sx.durationVarDurMicro, sx.easeVarEase)}
+		<BaseCheckbox.Root {...mergeStylexProps(cn(mergeStylexClassName("", sx.transitionBackgroundColorBorderColor), mergeStylexClassName("", sx.hoverBorderFaint), "data-[checked]:border-accent-control data-[checked]:bg-accent-control data-[checked]:hover:border-accent-control", mergeStylexClassName("", sx.focusVisibleRing2, sx.focusVisibleRingAccent50, sx.focusVisibleRingOffset2, sx.focusVisibleRingOffsetBg), "data-[disabled]:cursor-default data-[disabled]:opacity-40", className), sx.flex, sx.size4, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.border, sx.borderLineStrong, sx.bgSurface, sx.p0, sx.outlineNone, sx.durationVarDurMicro, sx.easeVarEase)}
 			{...props}
 		>
 			<BaseCheckbox.Indicator {...mergeStylexProps("data-[unchecked]:hidden", sx.flex, sx.textOnAccentControl)}>

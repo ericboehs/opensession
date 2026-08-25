@@ -201,6 +201,12 @@ const sx = stylex.create({
 			"transform": "none"
 		}
 	},
+
+	transitionBackgroundColorScale: {
+		"transitionProperty": "background-color,scale",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
 });
 
 type OrganizationAccount = {
@@ -337,7 +343,7 @@ toast("Couldn’t copy the organization link", { variant: "error" });
 				</Menu.Trigger>
 			) : (
 				<Menu.Trigger
-					className={[mergeStylexClassName("group", sx.flex, sx.wFull, sx.itemsCenter), SIDEBAR_RAIL_GAP, mergeStylexClassName("transition-[background-color,scale]", sx.roundedRow, sx.bgTransparent, sx.pxCalcVarSidebarIconLeftVarSidebarNavX, sx.pyVarSidebarToolPad, sx.textLeft, typography.body, sx.fontMedium, sx.textFg, sx.hoverBgHover, sx.activeScale096, sx.phonePy13px, sx.desktopTextItemTitle, sx.motionReduceTransformNone)].filter(Boolean).join(" ")}
+					className={[mergeStylexClassName("group", sx.flex, sx.wFull, sx.itemsCenter), SIDEBAR_RAIL_GAP, mergeStylexClassName("", sx.transitionBackgroundColorScale, sx.roundedRow, sx.bgTransparent, sx.pxCalcVarSidebarIconLeftVarSidebarNavX, sx.pyVarSidebarToolPad, sx.textLeft, typography.body, sx.fontMedium, sx.textFg, sx.hoverBgHover, sx.activeScale096, sx.phonePy13px, sx.desktopTextItemTitle, sx.motionReduceTransformNone)].filter(Boolean).join(" ")}
 					aria-label={`Open organization menu, current: ${name}`}
 				>
 					<span {...stylex.props(sx.relative, sx.inlineFlex, sx.size22px, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>

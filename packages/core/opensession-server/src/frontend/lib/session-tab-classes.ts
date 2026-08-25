@@ -685,6 +685,15 @@ const sx = stylex.create({
 			"fontSize": "22px"
 		}
 	},
+
+	transitionBackgroundColorColor: {
+		"transitionProperty": "background-color,color",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	borderRgba255255255015: {
+		"borderColor": "#ffffff26"
+	},
 });
 
 /**
@@ -1035,7 +1044,7 @@ const CTRL_REVEAL =
 const CTRL_BASE =
 	mergeStylexClassName("", sx.inlineFlex, sx.minH36px, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.whitespaceNowrap) +
 	[mergeStylexClassName("", sx.border, sx.borderTransparent, sx.bgTransparent, sx.px35, sx.py15), PILL].filter(Boolean).join(" ") +
-	mergeStylexClassName("transition-[background-color,color]", sx.fontInherit, sx.leadingNone, sx.textDim) + " " +
+	mergeStylexClassName("", sx.transitionBackgroundColorColor, sx.fontInherit, sx.leadingNone, sx.textDim) + " " +
 	mergeStylexClassName("", sx.hoverBgHover, sx.hoverTextFg);
 
 /** Desktop trailing controls match the tabs' 28px box and medium radius. */
@@ -1072,7 +1081,7 @@ export const TAB_HISTORY =
    not as a chrome border, so `border-line` would be a visual change rather
    than a translation. */
 export const TAB_SWATCH =
-	mergeStylexClassName("border-[rgba(255,255,255,0.15)]", sx.size22px, sx.roundedFull, sx.border, sx.transitionTransform, sx.hoverScale118);
+	mergeStylexClassName("", sx.borderRgba255255255015, sx.size22px, sx.roundedFull, sx.border, sx.transitionTransform, sx.hoverScale118);
 
 /** The chip for the colour the tab currently wears: a ring in the page ink,
  *  gapped off the chip by the panel it sits on. */

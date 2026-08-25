@@ -41,6 +41,13 @@ const sx = stylex.create({
 		"--tw-shadow": "var(--avatar-edge)",
 		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
 	},
+
+	AvatarEdgeInset0001pxColorMixInSrgbVarText14Transparent: {
+		"--avatar-edge": "inset 0 0 0 1px var(--text)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"--avatar-edge": "inset 0 0 0 1px color-mix(in srgb,var(--text) 14%,transparent)"
+		}
+	},
 });
 
 /**
@@ -130,7 +137,7 @@ export function UserAvatar({
 		<span
 			{...mergeStylexProps(cn(
 				picture && edge
-					? "[--avatar-edge:inset_0_0_0_1px_color-mix(in_srgb,var(--text)_14%,transparent)]"
+					? mergeStylexClassName("", sx.AvatarEdgeInset0001pxColorMixInSrgbVarText14Transparent)
 					: mergeStylexClassName("", sx.AvatarEdge0000Transparent),
 				mergeStylexClassName("", sx.shadowVarAvatarEdge),
 				className,

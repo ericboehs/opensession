@@ -36,6 +36,14 @@ const sx = stylex.create({
 	pointerEventsNone: {
 		"pointerEvents": "none"
 	},
+
+	WebkitMaskImageLinearGradientToRightVarReplyFadeStart000016px000Calc10016pxVarReplyFadeEnd100: {
+		"WebkitmaskImage": "linear-gradient(to right,var(--reply-fade-start) 0,#000 16px,#000 calc(100% - 16px),var(--reply-fade-end) 100%)"
+	},
+	MaskImageLinearGradientToRightVarReplyFadeStart000016px000Calc10016pxVarReplyFadeEnd100: {
+		"WebkitmaskImage": "linear-gradient(to right,var(--reply-fade-start) 0,#000 16px,#000 calc(100% - 16px),var(--reply-fade-end) 100%)",
+		"maskImage": "linear-gradient(to right,var(--reply-fade-start) 0,#000 16px,#000 calc(100% - 16px),var(--reply-fade-end) 100%)"
+	},
 });
 
 /**
@@ -150,8 +158,8 @@ export function ReplySuggestions({ suggestions, onPick, className }: Props) {
 				// a complete chip look broken, while the fade says the row scrolls.
 				mergeStylexClassName("", sx.ReplyFadeStart000, sx.ReplyFadeEnd000) +
 					"data-[overflow-start]:[--reply-fade-start:transparent] data-[overflow-end]:[--reply-fade-end:transparent] " +
-					"[-webkit-mask-image:linear-gradient(to_right,var(--reply-fade-start)_0,#000_16px,#000_calc(100%_-_16px),var(--reply-fade-end)_100%)] " +
-					"[mask-image:linear-gradient(to_right,var(--reply-fade-start)_0,#000_16px,#000_calc(100%_-_16px),var(--reply-fade-end)_100%)]",
+					mergeStylexClassName("", sx.WebkitMaskImageLinearGradientToRightVarReplyFadeStart000016px000Calc10016pxVarReplyFadeEnd100) +
+					mergeStylexClassName("", sx.MaskImageLinearGradientToRightVarReplyFadeStart000016px000Calc10016pxVarReplyFadeEnd100),
 				// The caller floats this over the transcript, so the row spans the
 				// whole column while the chips fill only part of it. Nothing but the
 				// chips may take a click: the rest of that band is transcript you

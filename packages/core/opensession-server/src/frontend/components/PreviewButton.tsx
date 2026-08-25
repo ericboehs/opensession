@@ -439,6 +439,88 @@ const sx = stylex.create({
 	z1: {
 		"zIndex": "1"
 	},
+
+	shadow0002pxColorMixInSrgbVarGreen18Transparent: {
+		"--tw-shadow": "0 0 0 2px var(--tw-shadow-color,var(--green))",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"--tw-shadow": "0 0 0 2px var(--tw-shadow-color,color-mix(in srgb,var(--green) 18%,transparent))"
+		},
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	hoverBorderColorMixInSrgbVarGreen50Transparent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"borderColor": "var(--green)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"borderColor": "color-mix(in srgb,var(--green) 50%,transparent)"
+				}
+			}
+		}
+	},
+	hoverBgColorMixInSrgbVarGreen12Transparent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--green)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in srgb,var(--green) 12%,transparent)"
+				}
+			}
+		}
+	},
+	hoverBorderColorMixInSrgbVarRed40Transparent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"borderColor": "var(--red)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"borderColor": "color-mix(in srgb,var(--red) 40%,transparent)"
+				}
+			}
+		}
+	},
+	hoverBgColorMixInSrgbVarRed10Transparent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--red)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in srgb,var(--red) 10%,transparent)"
+				}
+			}
+		}
+	},
+	textColorColorMixInSrgbVarGreen72VarTextDim: {
+		"color": "var(--green)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"color": "color-mix(in srgb,var(--green) 72%,var(--text-dim))"
+		}
+	},
+	borderColorMixInSrgbVarGreen50Transparent: {
+		"borderColor": "var(--green)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in srgb,var(--green) 50%,transparent)"
+		}
+	},
+	bgColorMixInSrgbVarGreen12Transparent: {
+		"backgroundColor": "var(--green)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--green) 12%,transparent)"
+		}
+	},
+
+	hoverTextAccent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--accent-ink)"
+			}
+		}
+	},
 });
 
 // Any worktree session gets the control; whether a repo can actually boot a
@@ -751,7 +833,7 @@ setShotError(e.message);
                 className={cn(
                   mergeStylexClassName("", sx.size7px, sx.shrink0, sx.roundedFull),
                   s.running
-                    ? mergeStylexClassName("shadow-[0_0_0_2px_color-mix(in_srgb,var(--green)_18%,transparent)]", sx.bgGreen)
+                    ? mergeStylexClassName("", sx.shadow0002pxColorMixInSrgbVarGreen18Transparent, sx.bgGreen)
                     : mergeStylexClassName("", sx.bgVarTextFaint, sx.shadowNone),
                 )}
               />
@@ -1017,7 +1099,7 @@ setShotError(e.message);
             className={cn(
               splitSegmentBase,
               mergeStylexClassName("", sx.gap15, sx.whitespaceNowrap, sx.roundedLCalc5pxVarRf, sx.px11px, sx.py5px, typography.label, sx.fontSemibold, sx.textGreen, sx.noUnderline),
-              mergeStylexClassName("hover:border-[color-mix(in_srgb,var(--green)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--green)_12%,transparent)]", sx.hoverRelative, sx.hoverZ1, sx.hoverTextGreen),
+              mergeStylexClassName("", sx.hoverBorderColorMixInSrgbVarGreen50Transparent, sx.hoverBgColorMixInSrgbVarGreen12Transparent, sx.hoverRelative, sx.hoverZ1, sx.hoverTextGreen),
             )}
             href={url}
             target="_blank"
@@ -1039,7 +1121,7 @@ setShotError(e.message);
             className={cn(
               splitSegmentBase,
               mergeStylexClassName("group", sx.gap15, sx.whitespaceNowrap, sx.roundedLCalc5pxVarRf, sx.px11px, sx.py5px, typography.label, sx.fontSemibold, sx.textDim),
-              mergeStylexClassName("hover:border-[color-mix(in_srgb,var(--red)_40%,transparent)] hover:bg-[color-mix(in_srgb,var(--red)_10%,transparent)]", sx.cursorPointer, sx.hoverRelative, sx.hoverZ1, sx.hoverTextRed),
+              mergeStylexClassName("", sx.hoverBorderColorMixInSrgbVarRed40Transparent, sx.hoverBgColorMixInSrgbVarRed10Transparent, sx.cursorPointer, sx.hoverRelative, sx.hoverZ1, sx.hoverTextRed),
             )}
             onClick={stop}
             disabled={stopping}
@@ -1087,8 +1169,8 @@ setShotError(e.message);
             splitSegmentBase,
             mergeStylexClassName("", sx.MlPx, sx.px2, sx.py1),
             running
-              ? mergeStylexClassName("text-[color:color-mix(in_srgb,var(--green)_72%,var(--text-dim))] hover:border-[color-mix(in_srgb,var(--green)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--green)_12%,transparent)]", sx.hoverRelative, sx.hoverZ1, sx.hoverTextGreen)
-              : mergeStylexClassName("hover:text-accent", sx.hoverRelative, sx.hoverZ1, sx.hoverBorderAccent, sx.hoverBgHover),
+              ? mergeStylexClassName("", sx.textColorColorMixInSrgbVarGreen72VarTextDim, sx.hoverBorderColorMixInSrgbVarGreen50Transparent, sx.hoverBgColorMixInSrgbVarGreen12Transparent, sx.hoverRelative, sx.hoverZ1, sx.hoverTextGreen)
+              : mergeStylexClassName("", sx.hoverTextAccent, sx.hoverRelative, sx.hoverZ1, sx.hoverBorderAccent, sx.hoverBgHover),
             "aria-disabled:cursor-default aria-disabled:opacity-45 aria-disabled:hover:border-line-strong aria-disabled:hover:bg-transparent aria-disabled:hover:text-dim",
           )}
           onClick={() => {
@@ -1103,8 +1185,8 @@ setShotError(e.message);
           <button
             className={cn(
               splitSegmentBase,
-              mergeStylexClassName("text-[color:color-mix(in_srgb,var(--green)_72%,var(--text-dim))]", sx.MlPx, sx.px2, sx.py1),
-              mergeStylexClassName("hover:border-[color-mix(in_srgb,var(--green)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--green)_12%,transparent)]", sx.hoverRelative, sx.hoverZ1, sx.hoverTextGreen),
+              mergeStylexClassName("", sx.textColorColorMixInSrgbVarGreen72VarTextDim, sx.MlPx, sx.px2, sx.py1),
+              mergeStylexClassName("", sx.hoverBorderColorMixInSrgbVarGreen50Transparent, sx.hoverBgColorMixInSrgbVarGreen12Transparent, sx.hoverRelative, sx.hoverZ1, sx.hoverTextGreen),
             )}
             onClick={snap}
             disabled={snapping}
@@ -1120,14 +1202,14 @@ setShotError(e.message);
                 splitSegmentBase,
                 mergeStylexClassName("", sx.MlPx, sx.roundedRCalc5pxVarRf, sx.px2, sx.py1),
                 running
-                  ? "text-[color:color-mix(in_srgb,var(--green)_72%,var(--text-dim))]"
+                  ? mergeStylexClassName("", sx.textColorColorMixInSrgbVarGreen72VarTextDim)
                   : mergeStylexClassName("", sx.textDim),
                 open || running
-                  ? mergeStylexClassName("border-[color-mix(in_srgb,var(--green)_50%,transparent)] bg-[color-mix(in_srgb,var(--green)_12%,transparent)]", sx.relative, sx.z1, sx.textGreen)
+                  ? mergeStylexClassName("", sx.borderColorMixInSrgbVarGreen50Transparent, sx.bgColorMixInSrgbVarGreen12Transparent, sx.relative, sx.z1, sx.textGreen)
                   : "",
-                !running && mergeStylexClassName("hover:text-accent", sx.hoverRelative, sx.hoverZ1, sx.hoverBorderAccent, sx.hoverBgHover),
+                !running && mergeStylexClassName("", sx.hoverTextAccent, sx.hoverRelative, sx.hoverZ1, sx.hoverBorderAccent, sx.hoverBgHover),
                 running && !open &&
-                  mergeStylexClassName("hover:border-[color-mix(in_srgb,var(--green)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--green)_12%,transparent)]", sx.hoverRelative, sx.hoverZ1, sx.hoverTextGreen),
+                  mergeStylexClassName("", sx.hoverBorderColorMixInSrgbVarGreen50Transparent, sx.hoverBgColorMixInSrgbVarGreen12Transparent, sx.hoverRelative, sx.hoverZ1, sx.hoverTextGreen),
               )}
               title="Dev server processes"
             >

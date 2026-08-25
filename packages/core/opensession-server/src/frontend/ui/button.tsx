@@ -72,6 +72,12 @@ const sx = stylex.create({
 			"opacity": ".4"
 		}
 	},
+
+	transitionColorBackgroundColorBorderColorFilterScale: {
+		"transitionProperty": "color,background-color,border-color,filter,scale",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
 });
 
 /**
@@ -401,7 +407,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 			// button scale pins its own heights. A single tight line box gives
 			// labels the same optical centre as fixed-size icons and chevrons.
 			mergeStylexClassName("", sx.leadingNone),
-			mergeStylexClassName("transition-[color,background-color,border-color,filter,scale]", sx.fontMedium, sx.activeScale096),
+			mergeStylexClassName("", sx.transitionColorBackgroundColorBorderColorFilterScale, sx.fontMedium, sx.activeScale096),
 			// One keyboard focus treatment for every variant. Without it a
 			// Button falls back to the browser's default outline, which
 			// differs per engine and sits tight against the corner; the

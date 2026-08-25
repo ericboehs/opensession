@@ -188,6 +188,13 @@ const sx = stylex.create({
 	pb2: {
 		"paddingBottom": "8px"
 	},
+
+	gridCols24pxMinmax01fr130px44px: {
+		"gridTemplateColumns": "24px minmax(0,1fr) 130px 44px"
+	},
+	gridCols22px24pxMinmax01fr130px44px: {
+		"gridTemplateColumns": "22px 24px minmax(0,1fr) 130px 44px"
+	},
 });
 
 /**
@@ -257,7 +264,7 @@ export const PR_FEED_GROUP_LABEL = [GROUP_LABEL, mergeStylexClassName("", sx.pb2
  * offsets below are `px-3` plus the leading columns plus `gap-2.5`.
  */
 export const PR_FEED_ROW =
-	mergeStylexClassName("group grid-cols-[24px_minmax(0,1fr)_130px_44px]", sx.focusRing, sx.relative, sx.grid, sx.wFull) + " " +
+	mergeStylexClassName("group", sx.gridCols24pxMinmax01fr130px44px, sx.focusRing, sx.relative, sx.grid, sx.wFull) + " " +
 	mergeStylexClassName("", sx.cursorPointer, sx.itemsCenter, sx.gap25, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px3, sx.py3) + " " +
 	mergeStylexClassName("", sx.textLeft, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase, sx.hoverBgHover) + " " +
 	mergeStylexClassName("", sx.afterPointerEventsNone, sx.afterAbsolute, sx.afterRight3, sx.afterBottom0, sx.afterLeft46px) + " " +
@@ -267,7 +274,7 @@ export const PR_FEED_ROW =
 	"phone:grid-cols-[24px_minmax(0,1fr)_44px]";
 
 export const PR_ROW =
-	mergeStylexClassName("group grid-cols-[22px_24px_minmax(0,1fr)_130px_44px]", sx.focusRing, sx.relative, sx.grid, sx.wFull) + " " +
+	mergeStylexClassName("group", sx.gridCols22px24pxMinmax01fr130px44px, sx.focusRing, sx.relative, sx.grid, sx.wFull) + " " +
 	mergeStylexClassName("", sx.cursorPointer, sx.itemsCenter, sx.gap25, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px3, sx.py3) + " " +
 	mergeStylexClassName("", sx.textLeft, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase, sx.hoverBgHover) + " " +
 	mergeStylexClassName("", sx.afterPointerEventsNone, sx.afterAbsolute, sx.afterRight3, sx.afterBottom0, sx.afterLeft78px) + " " +

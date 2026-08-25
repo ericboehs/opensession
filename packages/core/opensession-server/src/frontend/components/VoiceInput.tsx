@@ -156,6 +156,14 @@ const sx = stylex.create({
 	opacity15: {
 		"opacity": ".15"
 	},
+
+	hoverTextAccent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--accent-ink)"
+			}
+		}
+	},
 });
 
 type Phase = "idle" | "requesting" | "recording" | "cancelling" | "transcribing";
@@ -712,7 +720,7 @@ if (request === requestRef.current) {
           <Tooltip label="Keep it. The text lands in the draft to edit.">
             <button
               type="button"
-              className={cn(className, mergeStylexClassName("hover:text-accent", sx.textFg))}
+              className={cn(className, mergeStylexClassName("", sx.hoverTextAccent, sx.textFg))}
               onClick={() => stop(true)}
               disabled={phase === "requesting" || phase === "cancelling"}
               aria-label="Stop and transcribe"

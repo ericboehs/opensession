@@ -780,6 +780,17 @@ const sx = stylex.create({
 	mt2: {
 		"marginTop": "8px"
 	},
+
+	pbMax24pxEnvSafeAreaInsetBottom0px: {
+		"paddingBottom": "max(24px, env(safe-area-inset-bottom,0px))"
+	},
+	WebkitMaskImageLinearGradientToBottomTransparent0000VarHeaderH: {
+		"WebkitmaskImage": "linear-gradient(to bottom,transparent 0,#000 var(--header-h))"
+	},
+	MaskImageLinearGradientToBottomTransparent0000VarHeaderH: {
+		"WebkitmaskImage": "linear-gradient(to bottom,transparent 0,#000 var(--header-h))",
+		"maskImage": "linear-gradient(to bottom,transparent 0,#000 var(--header-h))"
+	},
 });
 
 // Re-exported for App.tsx, which holds the sidebar ref.
@@ -5370,7 +5381,7 @@ fetchFeedItems("plain")
 				// Fade the list into the bar with a mask, and keep the last section
 				// clear of the home indicator.
 				isPhone &&
-					mergeStylexClassName("pb-[max(24px,env(safe-area-inset-bottom,0px))] [-webkit-mask-image:linear-gradient(to_bottom,transparent_0,#000_var(--header-h))] [mask-image:linear-gradient(to_bottom,transparent_0,#000_var(--header-h))]", sx.ptVarHeaderH),
+					mergeStylexClassName("", sx.pbMax24pxEnvSafeAreaInsetBottom0px, sx.WebkitMaskImageLinearGradientToBottomTransparent0000VarHeaderH, sx.MaskImageLinearGradientToBottomTransparent0000VarHeaderH, sx.ptVarHeaderH),
 			)}
 			ref={sidebarScrollRef}
 			onDragOver={handleRepoAutoScroll}

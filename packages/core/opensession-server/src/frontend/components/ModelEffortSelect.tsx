@@ -203,6 +203,15 @@ const sx = stylex.create({
 	minW220px: {
 		"minWidth": "220px"
 	},
+
+	transitionColorBackgroundColorScale: {
+		"transitionProperty": "color,background-color,scale",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	maxWMin360pxCalc100vw1rem: {
+		"maxWidth": "min(360px,100vw - 1rem)"
+	},
 });
 
 export const EFFORTS = [
@@ -854,7 +863,7 @@ export function ModelEffortSelect({
 					menuRowTrigger
 						? mergeStylexClassName("data-[popup-open]:bg-hover data-[popup-open]:text-fg", sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap7px, sx.whitespaceNowrap, sx.roundedControl, sx.border, sx.borderLineStrong, sx.bgTransparent, sx.px3, sx.py7px, typography.controlLabel, sx.fontMedium, sx.textFaint, sx.hoverBgHover, sx.hoverTextFg)
 						: heroTrigger
-							? mergeStylexClassName("transition-[color,background-color,scale] data-[popup-open]:bg-hover data-[popup-open]:text-fg", sx.inlineFlex, sx.minH11, sx.minW0, sx.maxWFull, sx.cursorPointer, sx.itemsCenter, sx.roundedMd, sx.border0, sx.bgTransparent, sx.px15, typography.label, sx.fontMedium, sx.textDim, sx.hoverBgHover, sx.hoverTextFg, sx.activeScale096)
+							? mergeStylexClassName("data-[popup-open]:bg-hover data-[popup-open]:text-fg", sx.transitionColorBackgroundColorScale, sx.inlineFlex, sx.minH11, sx.minW0, sx.maxWFull, sx.cursorPointer, sx.itemsCenter, sx.roundedMd, sx.border0, sx.bgTransparent, sx.px15, typography.label, sx.fontMedium, sx.textDim, sx.hoverBgHover, sx.hoverTextFg, sx.activeScale096)
 							: mergeStylexClassName("", sx.borderTransparent, sx.hoverBorderTransparent, sx.hoverBgHover),
 					className,
 				)}
@@ -908,7 +917,7 @@ export function ModelEffortSelect({
 				align={menuRowTrigger ? "start" : heroTrigger ? "center" : "end"}
 				sideOffset={6}
 				className={cn(
-					"max-w-[min(360px,calc(100vw-1rem))]",
+					mergeStylexClassName("", sx.maxWMin360pxCalc100vw1rem),
 					menuRowTrigger && mergeStylexClassName("", sx.minW220px),
 				)}
 			>
@@ -946,7 +955,7 @@ export function ModelEffortSelect({
 							<IconChevronRight {...stylex.props(sx.shrink0)} size={17} />
 						</span>
 					</Menu.SubmenuTrigger>
-					<Menu.Popup className="max-w-[min(360px,calc(100vw-1rem))]">
+					<Menu.Popup className={mergeStylexClassName("", sx.maxWMin360pxCalc100vw1rem)}>
 						{reuploadHint && <MenuHint>{reuploadHint}</MenuHint>}
 						{groupedPrimary
 							? providerGroups.map((g, i) => (
@@ -974,7 +983,7 @@ export function ModelEffortSelect({
 										<IconChevronRight {...stylex.props(sx.shrink0)} size={17} />
 									</span>
 								</Menu.SubmenuTrigger>
-								<Menu.Popup className="max-w-[min(360px,calc(100vw-1rem))]">
+								<Menu.Popup className={mergeStylexClassName("", sx.maxWMin360pxCalc100vw1rem)}>
 									{!primaryFirst && otherGroups.length > 1
 										? otherGroups.map((g, i) => (
 												<React.Fragment key={g.engine}>
@@ -1006,7 +1015,7 @@ export function ModelEffortSelect({
 								<IconChevronRight {...stylex.props(sx.shrink0, sx.textDim)} size={17} />
 							</span>
 						</Menu.SubmenuTrigger>
-						<Menu.Popup className="max-w-[min(360px,calc(100vw-1rem))]">
+						<Menu.Popup className={mergeStylexClassName("", sx.maxWMin360pxCalc100vw1rem)}>
 							{effortReuploadHint && <MenuHint>{effortReuploadHint}</MenuHint>}
 							{effortOptions.map((e) => {
 								const selected = effectiveEffort === e.id;
@@ -1037,7 +1046,7 @@ export function ModelEffortSelect({
 								<IconChevronRight {...stylex.props(sx.shrink0, sx.textDim)} size={17} />
 							</span>
 						</Menu.SubmenuTrigger>
-						<Menu.Popup className="max-w-[min(360px,calc(100vw-1rem))]">
+						<Menu.Popup className={mergeStylexClassName("", sx.maxWMin360pxCalc100vw1rem)}>
 							{speedOptions.map((o) => {
 								const selected = effectiveFastMode === o.fast;
 								return (
@@ -1070,7 +1079,7 @@ export function ModelEffortSelect({
 								<IconChevronRight {...stylex.props(sx.shrink0, sx.textDim)} size={17} />
 							</span>
 						</Menu.SubmenuTrigger>
-						<Menu.Popup className="max-w-[min(360px,calc(100vw-1rem))]">
+						<Menu.Popup className={mergeStylexClassName("", sx.maxWMin360pxCalc100vw1rem)}>
 							<Menu.Item
 								onClick={() => onAccountChange!("")}
 								className={cn(

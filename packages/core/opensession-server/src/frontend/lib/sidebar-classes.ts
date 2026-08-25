@@ -737,6 +737,28 @@ const sx = stylex.create({
 	roundedMd: {
 		"borderRadius": "calc(7px * var(--rf))"
 	},
+
+	shadowInset0001pxVarAccent6b8afd: {
+		"--tw-shadow": "inset 0 0 0 1px var(--tw-shadow-color,var(--accent,#6b8afd))",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	transitionTransformOpacity: {
+		"transitionProperty": "transform,opacity",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	transitionColorBackground: {
+		"transitionProperty": "color,background",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	sizeVarSidebarRowAction26px: {
+		"width": "var(--sidebar-row-action,26px)",
+		"height": "var(--sidebar-row-action,26px)"
+	},
+	wVarSwipeActionW82px: {
+		"width": "var(--swipe-action-w,82px)"
+	},
 });
 
 /**
@@ -1006,7 +1028,7 @@ export const SIDEBAR_STATUS_GROUP = "[[data-status-group]+&]:mt-2";
  */
 export const SIDEBAR_LANE_EMPTY = mergeStylexClassName("", sx.opacity55);
 export const SIDEBAR_LANE_DROP_HOVER =
-	mergeStylexClassName("shadow-[inset_0_0_0_1px_var(--accent,#6b8afd)]", sx.roundedRow, sx.bgPressed, sx.opacity100);
+	mergeStylexClassName("", sx.shadowInset0001pxVarAccent6b8afd, sx.roundedRow, sx.bgPressed, sx.opacity100);
 
 /** The drag-to-reorder wrapper around each Pinned row (Motion Reorder.Item). */
 export const SIDEBAR_PIN_ENTRY = mergeStylexClassName("", sx.relative);
@@ -1130,7 +1152,7 @@ export const SIDEBAR_LANE_NAME = mergeStylexClassName("", sx.pl05, sx.desktopPl0
  * collapsed state by the call site's inline transform.
  */
 export const SIDEBAR_GROUP_CHEVRON =
-	mergeStylexClassName("transition-[transform,opacity] group-hover/gh:text-fg group-hover/gh:opacity-100", sx.shrink0, sx.textFaint, sx.opacity0);
+	mergeStylexClassName("group-hover/gh:text-fg group-hover/gh:opacity-100", sx.transitionTransformOpacity, sx.shrink0, sx.textFaint, sx.opacity0);
 
 /**
  * A collapsed heading keeps its chevron out of hover. Expanded, the rows below
@@ -1399,7 +1421,7 @@ export const SIDEBAR_STUCK_BACKING =
  * ordering rather than to the call site.
  */
 export const SIDEBAR_CHROME_BTN =
-	mergeStylexClassName("transition-[color,background]", sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textFaint, sx.hoverBgHover, sx.hoverTextFg);
+	mergeStylexClassName("", sx.transitionColorBackground, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textFaint, sx.hoverBgHover, sx.hoverTextFg);
 
 /**
  * The square icon buttons in the workspace header — the filter and the new
@@ -1541,7 +1563,7 @@ export const SIDEBAR_WS_ACTIONS_TOUCH = mergeStylexClassName("", sx.MediaHoverNo
  * in the sheet relative to each other.
  */
 export const SIDEBAR_WS_ACTION =
-	[mergeStylexClassName("size-[var(--sidebar-row-action,26px)]", sx.inlineFlex, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedMd), SIDEBAR_ROW_CHIP].filter(Boolean).join(" ");
+	[mergeStylexClassName("", sx.sizeVarSidebarRowAction26px, sx.inlineFlex, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedMd), SIDEBAR_ROW_CHIP].filter(Boolean).join(" ");
 
 /**
  * Compact last-activity time. It has no `display` of its own on purpose: as a
@@ -1634,7 +1656,7 @@ export const SIDEBAR_SWIPE_ACTION =
 	// `border-none`, not `border-0`: the latter zeroes the width but leaves
 	// the style at Tailwind's `solid` default, where the `border: 0` this
 	// replaced computed to `none`. Width resolves to 0 under either.
-	mergeStylexClassName("w-[var(--swipe-action-w,82px)] [&>svg]:shrink-0", sx.absolute, sx.top0, sx.bottom0, sx.z0, sx.hidden, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.gap05, sx.borderNone, typography.meta, sx.fontSemibold, sx.willChangeWidth);
+	mergeStylexClassName("[&>svg]:shrink-0", sx.wVarSwipeActionW82px, sx.absolute, sx.top0, sx.bottom0, sx.z0, sx.hidden, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.gap05, sx.borderNone, typography.meta, sx.fontSemibold, sx.willChangeWidth);
 
 /** Revealed because the gesture opened this side. Touch only, as above. */
 export const SIDEBAR_SWIPE_ACTION_OPEN = mergeStylexClassName("", sx.MediaHoverNoneFlex);

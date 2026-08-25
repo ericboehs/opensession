@@ -846,6 +846,10 @@ const sx = stylex.create({
 	Max380pxHidden: {
 		"display": "none"
 	},
+
+	DiffPanelTopCalcEnvSafeAreaInsetTop0px52px: {
+		"--diff-panel-top": "calc(env(safe-area-inset-top,0px) + 52px)"
+	},
 });
 
 type QueueReceipt = {
@@ -7012,7 +7016,7 @@ export function SessionViewer({
 									) : (
 										// The Changes toolbar clears this page's taller bar
 										// (52px plus the notch); file titles add its own height.
-										<div className="[--diff-panel-top:calc(env(safe-area-inset-top,0px)+52px)]">
+										<div className={mergeStylexClassName("", sx.DiffPanelTopCalcEnvSafeAreaInsetTop0px52px)}>
 											<DiffPanel
 												sessionId={session.id}
 												isRunning={isBusy}

@@ -230,6 +230,19 @@ const sx = stylex.create({
 			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
 		}
 	},
+
+	wMin480pxCalc100vw32px: {
+		"width": "min(480px,100vw - 32px)"
+	},
+	transitionTransformTranslateScaleOpacity: {
+		"transitionProperty": "transform,translate,scale,opacity",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	easeCubicBezier02310321: {
+		"--tw-ease": "cubic-bezier(.23,1,.32,1)",
+		"transitionTimingFunction": "cubic-bezier(.23,1,.32,1)"
+	},
 });
 
 export type ToastVariant = "default" | "success" | "error";
@@ -457,7 +470,7 @@ function ToastViewport({ container }: { container?: HTMLElement | null }) {
 		<BaseToast.Portal container={container ?? undefined}>
 			<BaseToast.Viewport
 				ref={viewportRef}
-				className={[TOAST_NOTICE_LANE, container ? mergeStylexClassName("", sx.absolute) : mergeStylexClassName("", sx.fixed), mergeStylexClassName("toast-viewport w-[min(480px,calc(100vw-32px))]", sx.mxAuto, sx.hVarToastFrontmostHeight, sx.outlineNone, sx.phoneWFull, sx.phonePx3)].filter(Boolean).join(" ")}
+				className={[TOAST_NOTICE_LANE, container ? mergeStylexClassName("", sx.absolute) : mergeStylexClassName("", sx.fixed), mergeStylexClassName("toast-viewport", sx.wMin480pxCalc100vw32px, sx.mxAuto, sx.hVarToastFrontmostHeight, sx.outlineNone, sx.phoneWFull, sx.phonePx3)].filter(Boolean).join(" ")}
 			>
 				{items.map((item) => (
 					<ToastCard key={item.id} toast={item} />
@@ -486,7 +499,7 @@ function ToastCard({ toast: item }: { toast: BaseToast.Root.ToastObject<ToastDat
 				mergeStylexClassName("", sx.ZIndexCalc100VarToastIndex, sx.TransformOriginCenterBottom),
 				mergeStylexClassName("", sx.TransformTranslateXCalc50VarToastSwipeMovementXTranslateYCalcVarToastSwipeMovementYVarToastIndex8pxScaleCalc1VarToastIndex004),
 				"data-[expanded]:[transform:translateX(calc(-50%+var(--toast-swipe-movement-x)))_translateY(calc(var(--toast-swipe-movement-y)-var(--toast-offset-y)-var(--toast-index)*8px))_scale(1)]",
-				mergeStylexClassName("transition-[transform,translate,scale,opacity] ease-[cubic-bezier(0.23,1,0.32,1)]", sx.duration200, sx.motionReduceTransitionOpacity),
+				mergeStylexClassName("", sx.transitionTransformTranslateScaleOpacity, sx.easeCubicBezier02310321, sx.duration200, sx.motionReduceTransitionOpacity),
 				"data-[starting-style]:opacity-0 data-[starting-style]:[translate:0_8px] data-[starting-style]:[scale:0.96] data-[ending-style]:opacity-0 data-[ending-style]:[translate:0_8px] data-[ending-style]:[scale:0.96] data-[limited]:opacity-0 motion-reduce:data-[starting-style]:[translate:0_0] motion-reduce:data-[starting-style]:[scale:1] motion-reduce:data-[ending-style]:[translate:0_0] motion-reduce:data-[ending-style]:[scale:1]",
 			].join(" ")}
 		>

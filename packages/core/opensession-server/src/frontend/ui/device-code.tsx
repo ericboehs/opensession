@@ -93,6 +93,12 @@ const sx = stylex.create({
 			}
 		}
 	},
+
+	transitionBackgroundColorBorderColorScale: {
+		"transitionProperty": "background-color,border-color,scale",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
 });
 
 /**
@@ -123,7 +129,7 @@ export function DeviceCode({
 			<button
 				type="button"
 				aria-label={`${label} ${code}`}
-				onClick={() => copy(code, { toast: "Code copied" })} {...mergeStylexProps(cn("group", mergeStylexClassName("transition-[background-color,border-color,scale]", sx.activeScale098), mergeStylexClassName("", sx.hoverBorderLineStrong, sx.hoverBgHover), className), sx.inlineFlex, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.border, sx.borderLine, sx.bgControl, sx.px25, sx.py1, sx.fontMono, typography.itemTitle, sx.fontBold, sx.textFg, sx.smoothShadowSm, sx.focusRing)}
+				onClick={() => copy(code, { toast: "Code copied" })} {...mergeStylexProps(cn("group", mergeStylexClassName("", sx.transitionBackgroundColorBorderColorScale, sx.activeScale098), mergeStylexClassName("", sx.hoverBorderLineStrong, sx.hoverBgHover), className), sx.inlineFlex, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.border, sx.borderLine, sx.bgControl, sx.px25, sx.py1, sx.fontMono, typography.itemTitle, sx.fontBold, sx.textFg, sx.smoothShadowSm, sx.focusRing)}
 			>
 				{/* Cap-band centered against the copy glyph: `text-box` trims the
 				    line box to cap height and baseline, so the code's own ink sits

@@ -478,6 +478,15 @@ const sx = stylex.create({
 	bgSurface: {
 		"backgroundColor": "var(--bg)"
 	},
+
+	transitionTransformBackgroundColorColor: {
+		"transitionProperty": "transform,background-color,color",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	maxWMin720px90vw: {
+		"maxWidth": "min(720px,90vw)"
+	},
 });
 
 type AssetNavigation = {
@@ -670,7 +679,7 @@ toast("Could not delete that file");
 					mergeStylexClassName("", sx.flex, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.border0),
 					bar
 						? cn(
-								mergeStylexClassName("transition-[transform,background-color,color]", sx.size10, sx.roundedFull, sx.bgTransparent, sx.activeScale096, sx.phoneSize11),
+								mergeStylexClassName("", sx.transitionTransformBackgroundColorColor, sx.size10, sx.roundedFull, sx.bgTransparent, sx.activeScale096, sx.phoneSize11),
 								phone
 									? mergeStylexClassName("data-[popup-open]:bg-white/10 data-[popup-open]:text-white/80", sx.textWhite55, sx.hoverBgWhite10, sx.hoverTextWhite80)
 									: mergeStylexClassName("data-[popup-open]:bg-white/15 data-[popup-open]:text-white", sx.textWhite60, sx.hoverBgWhite15, sx.hoverTextWhite),
@@ -936,7 +945,7 @@ function AssetOverlayFooter({
 				{file.description && (
 					<div
 						className={cn(
-							mergeStylexClassName("max-w-[min(720px,90vw)]", sx.lineClamp2, sx.leadingSnug, sx.textWhite75),
+							mergeStylexClassName("", sx.maxWMin720px90vw, sx.lineClamp2, sx.leadingSnug, sx.textWhite75),
 							phone ? mergeStylexClassName("", typography.supporting) : mergeStylexClassName("", sx.textSm),
 						)}
 					>

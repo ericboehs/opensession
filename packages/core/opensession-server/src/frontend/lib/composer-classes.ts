@@ -627,6 +627,92 @@ const sx = stylex.create({
 	mr15: {
 		"marginRight": "6px"
 	},
+
+	borderColorColorMixInSrgbVarComposerBorder35Transparent: {
+		"borderColor": "var(--composer-border)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in srgb,var(--composer-border) 35%,transparent)"
+		}
+	},
+	transitionBorderColorBoxShadow: {
+		"transitionProperty": "border-color,box-shadow",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	transitionBackgroundColorBorderColorColorFilterScale: {
+		"transitionProperty": "background-color,border-color,color,filter,scale",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	enabledActiveScale096: {
+		":enabled": {
+			":active": {
+				"scale": ".96"
+			}
+		}
+	},
+	enabledHoverBgAccentHover: {
+		"@media (hover: hover)": {
+			":enabled": {
+				":hover": {
+					"backgroundColor": "var(--accent-hover)"
+				}
+			}
+		}
+	},
+	enabledHoverBrightness112: {
+		"@media (hover: hover)": {
+			":enabled": {
+				":hover": {
+					"--tw-brightness": "brightness(1.12)",
+					"filter": "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+				}
+			}
+		}
+	},
+	bgColorMixInSrgbVarAccent16Transparent: {
+		"backgroundColor": "var(--accent)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--accent) 16%,transparent)"
+		}
+	},
+	bgColorMixInSrgbVarBgPanel80VarComposerSurface: {
+		"backgroundColor": "var(--bg-panel)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--bg-panel) 80%,var(--composer-surface))"
+		}
+	},
+	enabledHoverTextFg: {
+		"@media (hover: hover)": {
+			":enabled": {
+				":hover": {
+					"color": "var(--text)"
+				}
+			}
+		}
+	},
+	enabledHoverBeforeBgHover: {
+		"@media (hover: hover)": {
+			":enabled": {
+				":hover": {
+					"::before": {
+						"content": "var(--tw-content)",
+						"backgroundColor": "var(--hover)"
+					}
+				}
+			}
+		}
+	},
+
+	enabledHoverTextAccent: {
+		"@media (hover: hover)": {
+			":enabled": {
+				":hover": {
+					"color": "var(--accent-ink)"
+				}
+			}
+		}
+	},
 });
 
 /**
@@ -654,7 +740,7 @@ const sx = stylex.create({
    .palette-icon-btn`, whose ::before wash is styled from the stylesheet). The
    declarations below are what that rule used to paint. */
 export const composerBox =
-	mergeStylexClassName("border-[color:color-mix(in_srgb,var(--composer-border)_35%,transparent)] transition-[border-color,box-shadow]", sx.relative, sx.border, sx.bgVarComposerSurface, sx.shadowVarComposerShadow) + " " +
+	mergeStylexClassName("", sx.borderColorColorMixInSrgbVarComposerBorder35Transparent, sx.transitionBorderColorBoxShadow, sx.relative, sx.border, sx.bgVarComposerSurface, sx.shadowVarComposerShadow) + " " +
 	mergeStylexClassName("", sx.desktopBorderTransparent, sx.desktopSmoothRingColorVarComposerBorder, sx.desktopSmoothShadowRingSoft);
 
 /** Resting/expanded box. `--composer-inset-left` is read by the "+" menu to
@@ -831,11 +917,11 @@ export const composerMenuAnchorLeft =
    40px phone size is what the last of the three (!) competing phone blocks in
    legacy.css resolved to. */
 export const composerSend =
-	mergeStylexClassName("transition-[background-color,border-color,color,filter,scale] enabled:active:scale-[0.96]", sx.inlineFlex, sx.size8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.leadingNone, sx.disabledCursorDefault, sx.disabledOpacity35, sx.phoneSize10);
+	mergeStylexClassName("", sx.transitionBackgroundColorBorderColorColorFilterScale, sx.enabledActiveScale096, sx.inlineFlex, sx.size8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.leadingNone, sx.disabledCursorDefault, sx.disabledOpacity35, sx.phoneSize10);
 /** Ordinary send: the accent plate. Hover takes `--accent-hover` rather than
  *  brightening — brightening a wash read as a disabled state. */
 export const composerSendDefault =
-	mergeStylexClassName("enabled:hover:bg-accent-hover", sx.bgAccent, sx.textOnAccent);
+	mergeStylexClassName("", sx.enabledHoverBgAccentHover, sx.bgAccent, sx.textOnAccent);
 /** Busy + queue keeps the send plate and changes the glyph. The old 2px ring
  *  read like a selected toggle, then hovered to dark-on-dark because its ink
  *  did not invert with the fill. */
@@ -845,7 +931,7 @@ export const composerSendQueue = composerSendDefault;
 export const composerSendSteer = composerSendDefault;
 /** Stop: the only full-strength red plate. */
 export const composerSendStop =
-	mergeStylexClassName("enabled:hover:brightness-[1.12]", sx.bgRed, sx.textWhite);
+	mergeStylexClassName("", sx.enabledHoverBrightness112, sx.bgRed, sx.textWhite);
 /** Inside the 50px resting pill a 40px disc is a blob against the hairline
  *  glyphs beside it. Keep the target, shrink the fill: padding plus
  *  background-clip paints a 32px disc without moving the hit area. */
@@ -866,7 +952,7 @@ export const fileChipCardPaddingRemovable = mergeStylexClassName("", sx.pr26px);
  *  chip has always rendered; closing it up is a design change, not a migration. */
 export const fileChipCardPadding = mergeStylexClassName("", sx.pr26px);
 export const fileChipThumb =
-	mergeStylexClassName("bg-[color-mix(in_srgb,var(--accent)_16%,transparent)]", sx.inlineFlex, sx.size34px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.text10px, sx.fontBold, sx.tracking002em, sx.textAccent);
+	mergeStylexClassName("", sx.bgColorMixInSrgbVarAccent16Transparent, sx.inlineFlex, sx.size34px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.text10px, sx.fontBold, sx.tracking002em, sx.textAccent);
 export const fileChipMeta = mergeStylexClassName("", sx.flex, sx.minW0, sx.flexCol, sx.gapPx);
 /** The chip's title. 13px (text-label) rather than the stylesheet's off-scale
  *  12px — it is interface copy, and the card's height comes from the 34px
@@ -901,7 +987,7 @@ export const composerFlapBorder =
 export const composerQueue =
 	mergeStylexClassName("", sx.relative, sx.Mb35, sx.flex, sx.flexCol, sx.gap2, sx.roundedTVarComposerRadius, sx.borderX, sx.borderT) +
 	composerFlapBorder +
-	mergeStylexClassName("bg-[color-mix(in_srgb,var(--bg-panel)_80%,var(--composer-surface))]", sx.px35, sx.pt25, sx.pb26px);
+	mergeStylexClassName("", sx.bgColorMixInSrgbVarBgPanel80VarComposerSurface, sx.px35, sx.pt25, sx.pb26px);
 export const composerQueueTitle = mergeStylexClassName("", typography.meta, sx.fontSemibold, sx.textFaint);
 export const composerQueueList = mergeStylexClassName("", sx.flex, sx.flexCol, sx.gap2);
 /** One queued/steered row. The floor is one line of body text, so a row whose
@@ -936,8 +1022,8 @@ export const composerQueueActions =
  *  constant because the wash sits 3px in rather than 4px, there is no
  *  transparent border holding layout, and disabled actions fade further. */
 export const composerQueueAction =
-	mergeStylexClassName("enabled:hover:text-fg", sx.relative, sx.inlineFlex, sx.size9, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textDim, sx.disabledCursorDefault, sx.disabledOpacity35) + " " +
-	mergeStylexClassName("enabled:hover:before:bg-hover", sx.beforeAbsolute, sx.beforeInset3px, sx.beforeZ0, sx.beforeRoundedCalc9pxVarRf, sx.beforeCornerShapeVarCs, sx.beforeTransitionBackground, sx.beforeContent) + " " +
+	mergeStylexClassName("", sx.enabledHoverTextFg, sx.relative, sx.inlineFlex, sx.size9, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textDim, sx.disabledCursorDefault, sx.disabledOpacity35) + " " +
+	mergeStylexClassName("", sx.enabledHoverBeforeBgHover, sx.beforeAbsolute, sx.beforeInset3px, sx.beforeZ0, sx.beforeRoundedCalc9pxVarRf, sx.beforeCornerShapeVarCs, sx.beforeTransitionBackground, sx.beforeContent) + " " +
 	"[&>*]:relative [&>*]:z-[1]";
 /** Destructive action: the wash goes red rather than neutral. */
 export const composerQueueActionDanger =
@@ -945,7 +1031,7 @@ export const composerQueueActionDanger =
 /** Steer stays accent at rest AND under the cursor — it is the one action on
  *  the row that is not a correction, and the shared hover would have dropped
  *  it back to plain ink. */
-export const composerQueueActionSteer = mergeStylexClassName("enabled:hover:text-accent", sx.textAccent);
+export const composerQueueActionSteer = mergeStylexClassName("", sx.enabledHoverTextAccent, sx.textAccent);
 /** A status readout, not a control: "Steered". Genuinely
  *  round (the stylesheet spelled a bare 999px with no `corner-shape`), so
  *  `rounded-full` rather than `rounded-[999px]`. */

@@ -249,6 +249,20 @@ const sx = stylex.create({
 			"backgroundColor": "var(--hover-strong)"
 		}
 	},
+
+	roundedTCalcVarSheetRadius34pxVarRf: {
+		"borderTopLeftRadius": "calc(var(--sheet-radius,34px) * var(--rf))",
+		"borderTopRightRadius": "calc(var(--sheet-radius,34px) * var(--rf))"
+	},
+	shadow012px40pxRgba000035: {
+		"--tw-shadow": "0 -12px 40px var(--tw-shadow-color,#00000059)",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	transitionTransformOpacity: {
+		"transitionProperty": "transform,opacity",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
 });
 
 /**
@@ -498,7 +512,7 @@ export function ResponsiveDialog({
 				tabIndex={-1} {...mergeStylexProps(cn(phone
 						? phonePage
 							? mergeStylexClassName("", sx.inset0, sx.hDvh, sx.maxHNone, sx.roundedNone, sx.bgSurface, sx.pbEnvSafeAreaInsetBottom, sx.ptEnvSafeAreaInsetTop, sx.shadowNone)
-							: mergeStylexClassName("rounded-t-[calc(var(--sheet-radius,34px)*var(--rf))] shadow-[0_-12px_40px_rgba(0,0,0,0.35)]", sx.insetX0, sx.bottom0, sx.maxH94dvh, sx.bgSurface, sx.pbEnvSafeAreaInsetBottom)
+							: mergeStylexClassName("", sx.roundedTCalcVarSheetRadius34pxVarRf, sx.shadow012px40pxRgba000035, sx.insetX0, sx.bottom0, sx.maxH94dvh, sx.bgSurface, sx.pbEnvSafeAreaInsetBottom)
 						: mergeStylexClassName("smooth-shadow-ring-lg", sx.left12, sx.top12, sx.maxH85vh, sx.w92vw, sx.maxW30rem, sx.TranslateX12, sx.TranslateY12, sx.roundedCalc18pxVarRf, sx.bgRaised), animated &&
 						(phone
 							? [
@@ -506,7 +520,7 @@ export function ResponsiveDialog({
 									shown ? mergeStylexClassName("", sx.translateY0) : mergeStylexClassName("", sx.translateYFull),
 								]
 							: [
-									mergeStylexClassName("transition-[transform,opacity]", sx.originCenter, sx.durationVarDur, sx.easeVarEase),
+									mergeStylexClassName("", sx.transitionTransformOpacity, sx.originCenter, sx.durationVarDur, sx.easeVarEase),
 									shown ? mergeStylexClassName("", sx.scale100, sx.opacity100) : mergeStylexClassName("", sx.scale096, sx.opacity0),
 								]), phone ? sheetClassName : modalClassName), sx.absolute, sx.flex, sx.flexCol, sx.overflowHidden, sx.outlineNone, sx.CornerShapeSquircle)}
 			>

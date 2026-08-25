@@ -145,6 +145,12 @@ const sx = stylex.create({
 		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
 		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
 	},
+
+	transitionColorBackgroundColorScale: {
+		"transitionProperty": "color,background-color,scale",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
 });
 
 /**
@@ -210,7 +216,7 @@ export const TOOL_RESULT_MEDIA = mergeStylexClassName("", sx.mt15, sx.flex, sx.f
 export const TOOL_ROW_CHIP =
 	mergeStylexClassName("", sx.inlineFlex, sx.flexShrink0, sx.selfCenter, sx.itemsCenter, sx.gap05, sx.roundedControl) + " " +
 	mergeStylexClassName("", sx.bgHover, sx.py2px, sx.pl2, sx.pr1, typography.meta, sx.fontMedium, sx.leading4, sx.textDim) + " " +
-	mergeStylexClassName("transition-[color,background-color,scale]", sx.hoverBgPressed, sx.hoverTextFg) + " " +
+	mergeStylexClassName("", sx.transitionColorBackgroundColorScale, sx.hoverBgPressed, sx.hoverTextFg) + " " +
 	mergeStylexClassName("", sx.activeScale096, sx.focusRing);
 
 /**

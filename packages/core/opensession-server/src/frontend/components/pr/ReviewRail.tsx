@@ -154,6 +154,10 @@ const sx = stylex.create({
 	pt2: {
 			paddingTop: "8px"
 	},
+
+	rotate90: {
+		"rotate": "90deg"
+	},
 });
 
 /**
@@ -476,7 +480,7 @@ function RollupRow({
       {trailing}
       <IconChevronRight
         size={14}
-        className={[mergeStylexClassName("", sx.shrink0, sx.textFaint), open ? "rotate-90" : ""].filter(Boolean).join(" ")}
+        className={[mergeStylexClassName("", sx.shrink0, sx.textFaint), open ? mergeStylexClassName("", sx.rotate90) : ""].filter(Boolean).join(" ")}
       />
     </button>
   );

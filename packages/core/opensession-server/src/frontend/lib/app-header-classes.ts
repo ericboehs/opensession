@@ -612,6 +612,22 @@ const sx = stylex.create({
 			"order": "calc(1 * -1)"
 		}
 	},
+
+	ptEnvSafeAreaInsetTop0px: {
+		"paddingTop": "env(safe-area-inset-top,0px)"
+	},
+	phonePtMaxEnvSafeAreaInsetTop0px8px: {
+		"@media (max-width: 720px)": {
+			"paddingTop": "max(env(safe-area-inset-top,0px), 8px)"
+		}
+	},
+	phoneTransitionOpacityTranslate: {
+		"@media (max-width: 720px)": {
+			"transitionProperty": "opacity,translate",
+			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+		}
+	},
 });
 
 /**
@@ -663,8 +679,8 @@ const sx = stylex.create({
  */
 const APP_HEADER_BASE =
 	mergeStylexClassName("", sx.hidden, sx.hVarHeaderH, sx.shrink0, sx.itemsCenter, sx.justifyBetween, sx.bgSidebar) + " " +
-	mergeStylexClassName("pt-[env(safe-area-inset-top,0px)]", sx.px4, sx.pb0) + " " +
-	mergeStylexClassName("phone:pt-[max(env(safe-area-inset-top,0px),8px)]", sx.phoneFlex, sx.phonePx3);
+	mergeStylexClassName("", sx.ptEnvSafeAreaInsetTop0px, sx.px4, sx.pb0) + " " +
+	mergeStylexClassName("", sx.phonePtMaxEnvSafeAreaInsetTop0px8px, sx.phoneFlex, sx.phonePx3);
 
 /**
  * Pushed pages (a session, a PR…): the band itself goes invisible so its
@@ -857,7 +873,7 @@ export const ARCHIVED_SEARCH_HEADER =
  * duplicate title it was there to avoid.
  */
 export const HEADER_TITLE_PILL_FADE =
-	mergeStylexClassName("phone:transition-[opacity,translate]", sx.phoneTranslateY1, sx.phoneOpacity0) + " " +
+	mergeStylexClassName("", sx.phoneTransitionOpacityTranslate, sx.phoneTranslateY1, sx.phoneOpacity0) + " " +
 	"phone:data-[shown]:translate-y-0 phone:data-[shown]:opacity-100";
 
 /**

@@ -103,6 +103,16 @@ const sx = stylex.create({
 			"--tw-ring-offset-color": "var(--bg)"
 		}
 	},
+
+	shadow01px3pxRgba0000220001pxRgba000007: {
+		"--tw-shadow": "0 1px 3px var(--tw-shadow-color,#00000038), 0 0 0 1px var(--tw-shadow-color,#00000012)",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	transitionTranslateBackgroundColor: {
+		"transitionProperty": "translate,background-color",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
 });
 
 type SwitchSize = "md" | "sm";
@@ -135,7 +145,7 @@ const trackClasses = (size: SwitchSize) =>
  *  and the capsule, at 26×16. */
 const thumbClasses = (size: SwitchSize) =>
 	cn(
-		mergeStylexClassName("shadow-[0_1px_3px_rgba(0,0,0,0.22),0_0_0_1px_rgba(0,0,0,0.07)] transition-[translate,background-color] data-[checked]:bg-on-accent-control", sx.absolute, sx.left05, sx.top05, sx.roundedFull, sx.bgWhite, sx.durationVarDurMicro, sx.easeVarEase),
+		mergeStylexClassName("data-[checked]:bg-on-accent-control", sx.shadow01px3pxRgba0000220001pxRgba000007, sx.transitionTranslateBackgroundColor, sx.absolute, sx.left05, sx.top05, sx.roundedFull, sx.bgWhite, sx.durationVarDurMicro, sx.easeVarEase),
 		size === "sm"
 			? mergeStylexClassName("data-[checked]:translate-x-[14px]", sx.h4, sx.w26px)
 			: mergeStylexClassName("data-[checked]:translate-x-[18px]", sx.h5, sx.w8),

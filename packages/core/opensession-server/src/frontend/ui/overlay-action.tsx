@@ -41,6 +41,12 @@ const sx = stylex.create({
 			"opacity": "1"
 		}
 	},
+
+	transitionOpacityScale: {
+		"transitionProperty": "opacity,scale",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
 });
 
 export type OverlayActionProps = Omit<ButtonProps, "size" | "variant">;
@@ -59,7 +65,7 @@ export const OverlayAction = React.forwardRef<HTMLButtonElement, OverlayActionPr
 			<Button
 				ref={ref}
 				variant="default"
-				size="sm" {...mergeStylexProps(cn("transition-[opacity,scale]", mergeStylexClassName("", sx.MediaHoverHoverPointerEventsNone, sx.MediaHoverHoverOpacity0), "[@media(hover:hover)]:group-hover/overlay-action:pointer-events-auto [@media(hover:hover)]:group-hover/overlay-action:opacity-100", mergeStylexClassName("", sx.focusVisiblePointerEventsAuto, sx.focusVisibleOpacity100), className), sx.absolute, sx.Right2, sx.Top2, sx.z1, sx.bgWhite)}
+				size="sm" {...mergeStylexProps(cn(mergeStylexClassName("", sx.transitionOpacityScale), mergeStylexClassName("", sx.MediaHoverHoverPointerEventsNone, sx.MediaHoverHoverOpacity0), "[@media(hover:hover)]:group-hover/overlay-action:pointer-events-auto [@media(hover:hover)]:group-hover/overlay-action:opacity-100", mergeStylexClassName("", sx.focusVisiblePointerEventsAuto, sx.focusVisibleOpacity100), className), sx.absolute, sx.Right2, sx.Top2, sx.z1, sx.bgWhite)}
 				{...props}
 			/>
 		);

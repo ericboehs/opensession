@@ -47,6 +47,18 @@ const sx = stylex.create({
 		"WebkitBackdropFilter": "var(--popup-blur)",
 		"backdropFilter": "var(--popup-blur)"
 	},
+
+	SmoothRingColorColorMixInSrgbVarPopupRing65VarPopupSurface: {
+		"--smooth-ring-color": "var(--popup-ring)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"--smooth-ring-color": "color-mix(in srgb,var(--popup-ring) 65%,var(--popup-surface))"
+		}
+	},
+	transitionTransformOpacity: {
+		"transitionProperty": "transform,opacity",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
 });
 
 /**
@@ -189,11 +201,11 @@ function Popup({
 				arrowPadding={14} {...mergeStylexProps(cn(FLOATING_OVERLAY_LAYER, positionerClassName), sx.outlineNone)}
 			>
 				<BasePopover.Popup
-					initialFocus={initialFocus} {...mergeStylexProps(cn(mergeStylexClassName("", sx.BackdropFilterVarPopupBlur), ring === "soft" ? "[--smooth-ring-color:color-mix(in_srgb,var(--popup-ring)_65%,var(--popup-surface))]" : "", elevation === "lg"
+					initialFocus={initialFocus} {...mergeStylexProps(cn(mergeStylexClassName("", sx.BackdropFilterVarPopupBlur), ring === "soft" ? mergeStylexClassName("", sx.SmoothRingColorColorMixInSrgbVarPopupRing65VarPopupSurface) : "", elevation === "lg"
 							? "smooth-shadow-ring-lg"
 							: elevation === "sm"
 								? "smooth-shadow-ring-sm"
-								: "smooth-shadow-ring-md", "transition-[transform,opacity]", "data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0", "data-[ending-style]:opacity-0 data-[ending-style]:transition-none", className), sx.roundedPopup, sx.CornerShapeSquircle, sx.outlineNone, sx.bgPopupGlass, !(ring === "soft") && sx.SmoothRingColorVarPopupRing, sx.originVarTransformOrigin, sx.duration120ms, sx.easeOut)}
+								: "smooth-shadow-ring-md", mergeStylexClassName("", sx.transitionTransformOpacity), "data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0", "data-[ending-style]:opacity-0 data-[ending-style]:transition-none", className), sx.roundedPopup, sx.CornerShapeSquircle, sx.outlineNone, sx.bgPopupGlass, !(ring === "soft") && sx.SmoothRingColorVarPopupRing, sx.originVarTransformOrigin, sx.duration120ms, sx.easeOut)}
 				>
 					{arrow && (
 						// A square rotated onto its point, half of it hanging off the

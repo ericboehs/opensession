@@ -279,6 +279,15 @@ const sx = stylex.create({
 		"--tw-shadow": "inset 0 -1px 0 var(--tw-shadow-color,var(--divider))",
 		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
 	},
+
+	transitionTransformOpacity: {
+		"transitionProperty": "transform,opacity",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	wMin820px100: {
+		"width": "min(820px,100%)"
+	},
 });
 
 /**
@@ -397,10 +406,10 @@ function Content({
 							mergeStylexClassName("smooth-shadow-ring-lg", sx.SmoothRingColorVarDialogRing),
 							// Drops in from just above its resting place, the way a
 							// palette summoned by a keystroke should.
-							mergeStylexClassName("transition-[transform,opacity]", sx.originTop, sx.durationVarDurMicro, sx.easeVarEase),
+							mergeStylexClassName("", sx.transitionTransformOpacity, sx.originTop, sx.durationVarDurMicro, sx.easeVarEase),
 							"data-[starting-style]:-translate-y-1.5 data-[starting-style]:scale-[0.99] data-[starting-style]:opacity-0",
 							"data-[ending-style]:-translate-y-1.5 data-[ending-style]:scale-[0.99] data-[ending-style]:opacity-0",
-							widthClassName ?? "w-[min(820px,100%)]",
+							widthClassName ?? mergeStylexClassName("", sx.wMin820px100),
 						]
 					: [
 							mergeStylexClassName("", sx.fixed, sx.left12, sx.top12, sx.z10001, sx.w90vw, sx.TranslateX12, sx.TranslateY12),
@@ -415,7 +424,7 @@ function Content({
 							mergeStylexClassName("smooth-shadow-ring-lg", sx.SmoothRingColorVarDialogRing),
 							mergeStylexClassName("", sx.p6),
 							mergeStylexClassName("", sx.flex, sx.flexCol, sx.gap4),
-							mergeStylexClassName("transition-[transform,opacity]", sx.originCenter, sx.durationVarDur, sx.easeVarEase),
+							mergeStylexClassName("", sx.transitionTransformOpacity, sx.originCenter, sx.durationVarDur, sx.easeVarEase),
 							"data-[starting-style]:scale-[0.96] data-[starting-style]:opacity-0",
 							"data-[ending-style]:scale-[0.97] data-[ending-style]:opacity-0",
 						],

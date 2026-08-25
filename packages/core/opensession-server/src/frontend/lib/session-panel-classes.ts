@@ -262,6 +262,28 @@ const sx = stylex.create({
 			"zIndex": "45"
 		}
 	},
+
+	wVarPanelW32: {
+		"width": "var(--panel-w,32%)"
+	},
+	maxWMax480pxCalc100vw620px: {
+		"maxWidth": "max(480px,100vw - 620px)"
+	},
+	max920pxWMin480px94vw: {
+		"@media not all and (min-width: 920px)": {
+			"width": "min(480px,94vw)"
+		}
+	},
+	max920pxBgRgba000045: {
+		"@media not all and (min-width: 920px)": {
+			"backgroundColor": "#00000073"
+		}
+	},
+	phoneBgRgba00005: {
+		"@media (max-width: 720px)": {
+			"backgroundColor": "#00000080"
+		}
+	},
 });
 
 /**
@@ -332,13 +354,13 @@ const sx = stylex.create({
  * decoration.
  */
 export const PANEL_SHELL =
-	mergeStylexClassName("viewer-panel w-[var(--panel-w,32%)]", sx.Container, sx.relative, sx.flex, sx.minH0, sx.minW320px, sx.shrink0, sx.flexCol) + " " +
-	mergeStylexClassName("max-w-[max(480px,calc(100vw-620px))]", sx.borderL, sx.borderDivider, sx.bgPanelSurface, sx.BgPanelVarPanelPlate) +
+	mergeStylexClassName("viewer-panel", sx.wVarPanelW32, sx.Container, sx.relative, sx.flex, sx.minH0, sx.minW320px, sx.shrink0, sx.flexCol) + " " +
+	mergeStylexClassName("", sx.maxWMax480pxCalc100vw620px, sx.borderL, sx.borderDivider, sx.bgPanelSurface, sx.BgPanelVarPanelPlate) +
 	// From 920px down it stops being a column in the layout and becomes an
 	// overlay over the session, anchored under the top bar (--header-h is 0 on
 	// desktop, the bar's height on a phone) with PANEL_OVERLAY dimming behind it.
 	mergeStylexClassName("", sx.max920pxFixed, sx.max920pxTopVarHeaderH, sx.max920pxRight0, sx.max920pxBottom0) + " " +
-	mergeStylexClassName("max-[920px]:w-[min(480px,94vw)]", sx.max920pxZ30, sx.max920pxMaxWNone, sx.max920pxMinW0) + " " +
+	mergeStylexClassName("", sx.max920pxWMin480px94vw, sx.max920pxZ30, sx.max920pxMaxWNone, sx.max920pxMinW0) + " " +
 	"max-[920px]:shadow-[-12px_0_32px_rgba(0,0,0,0.5)]";
 
 /**
@@ -428,5 +450,5 @@ export const PANEL_TAB =
 export const PANEL_OVERLAY =
 	mergeStylexClassName("", sx.hidden) + " " +
 	mergeStylexClassName("", sx.max920pxFixed, sx.max920pxInsetVarHeaderH000, sx.max920pxZ25) + " " +
-	mergeStylexClassName("max-[920px]:bg-[rgba(0,0,0,0.45)]", sx.max920pxBlock) + " " +
-	mergeStylexClassName("phone:bg-[rgba(0,0,0,0.5)]", sx.phoneInset0, sx.phoneZ45);
+	mergeStylexClassName("", sx.max920pxBgRgba000045, sx.max920pxBlock) + " " +
+	mergeStylexClassName("", sx.phoneBgRgba00005, sx.phoneInset0, sx.phoneZ45);

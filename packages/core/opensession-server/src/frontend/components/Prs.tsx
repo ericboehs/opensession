@@ -834,7 +834,7 @@ setAddingToSidebar(false);
                                 healthy, so the resting mark is drawn as
                                 structure and green now means approved. */}
                             <span
-                              className={[status.quiet ? "text-dim" : status.className, mergeStylexClassName("", sx.flex, sx.itemsCenter)].filter(Boolean).join(" ")}
+                              className={[status.quiet ? mergeStylexClassName("", sx.textDim) : status.className, mergeStylexClassName("", sx.flex, sx.itemsCenter)].filter(Boolean).join(" ")}
                               title={status.label}
                             >
                               <StateIcon state={row.state} />

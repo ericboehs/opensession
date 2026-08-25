@@ -104,6 +104,15 @@ const sx = stylex.create({
 		"--tw-duration": ".1s",
 		"transitionDuration": ".1s"
 	},
+
+	hMin600px85dvh: {
+		"height": "min(600px,85dvh)"
+	},
+	transitionScaleTranslateOpacity: {
+		"transitionProperty": "scale,translate,opacity",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
 });
 
 /**
@@ -356,10 +365,10 @@ export function DeskOverlay({
 				widthClassName="w-[min(650px,100%)]"
 				className={cn(
 					phone
-						? "h-[min(600px,85dvh)]"
+						? mergeStylexClassName("", sx.hMin600px85dvh)
 						: mergeStylexClassName("", sx.h600px, sx.maxH80dvh),
 					openOrigin === "center" ? mergeStylexClassName("", sx.originCenter) : mergeStylexClassName("", sx.originBottomRight),
-					mergeStylexClassName("transition-[scale,translate,opacity]! data-[starting-style]:translate-y-0! data-[starting-style]:scale-[0.9]!", sx.roundedBVarComposerRadius, sx.duration100ms),
+					mergeStylexClassName("data-[starting-style]:translate-y-0! data-[starting-style]:scale-[0.9]!", sx.transitionScaleTranslateOpacity, sx.roundedBVarComposerRadius, sx.duration100ms),
 				)}
 				aria-label="Desk"
 			>
