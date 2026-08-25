@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Dialog as BaseDialog } from "@base-ui/react/dialog";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import { IconX } from "../components/icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -188,6 +188,97 @@ const sx = stylex.create({
 	gap25: {
 			gap: "10px"
 	},
+
+	flexCol: {
+		"flexDirection": "column"
+	},
+	overflowHidden: {
+		"overflow": "hidden"
+	},
+	outlineNone: {
+		"--tw-outline-style": "none",
+		"outlineStyle": "none"
+	},
+	roundedCalc22pxVarRf: {
+		"borderRadius": "calc(22px * var(--rf))"
+	},
+	bgPaletteGlass: {
+		"backgroundColor": "var(--palette-glass)"
+	},
+	BackdropFilterVarPopupBlur: {
+		"WebkitBackdropFilter": "var(--popup-blur)",
+		"backdropFilter": "var(--popup-blur)"
+	},
+	SmoothRingColorVarDialogRing: {
+		"--smooth-ring-color": "var(--dialog-ring)"
+	},
+	originTop: {
+		"transformOrigin": "top"
+	},
+	easeVarEase: {
+		"--tw-ease": "var(--ease)",
+		"transitionTimingFunction": "var(--ease)"
+	},
+	left12: {
+		"left": "50%"
+	},
+	top12: {
+		"top": "50%"
+	},
+	z10001: {
+		"zIndex": "10001"
+	},
+	w90vw: {
+		"width": "90vw"
+	},
+	TranslateX12: {
+		"--tw-translate-x": "calc(calc(1 / 2 * 100%) * -1)",
+		"translate": "var(--tw-translate-x) var(--tw-translate-y)"
+	},
+	TranslateY12: {
+		"--tw-translate-y": "calc(calc(1 / 2 * 100%) * -1)",
+		"translate": "var(--tw-translate-x) var(--tw-translate-y)"
+	},
+	maxW28rem: {
+		"maxWidth": "28rem"
+	},
+	maxH85dvh: {
+		"maxHeight": "85dvh"
+	},
+	overflowYAuto: {
+		"overflowY": "auto"
+	},
+	overscrollContain: {
+		"overscrollBehavior": "contain"
+	},
+	p6: {
+		"padding": "24px"
+	},
+	gap4: {
+		"gap": "16px"
+	},
+	originCenter: {
+		"transformOrigin": "50%"
+	},
+	backdropBlur6px: {
+		"--tw-backdrop-blur": "blur(6px)",
+		"WebkitBackdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)",
+		"backdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+	},
+	backdropBlur1px: {
+		"--tw-backdrop-blur": "blur(1px)",
+		"WebkitBackdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)",
+		"backdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+	},
+	max560pxPt7vh: {
+		"@media not all and (min-width: 560px)": {
+			"paddingTop": "7vh"
+		}
+	},
+	shadowInset01px0VarDivider: {
+		"--tw-shadow": "inset 0 -1px 0 var(--tw-shadow-color,var(--divider))",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
 });
 
 /**
@@ -287,44 +378,44 @@ function Content({
 							// `relative` anchors overlays a palette draws inside itself
 							// (the dictation HUD); `overflow-hidden` keeps the rows'
 							// dividers inside the rounded shell.
-							"relative flex flex-col overflow-hidden outline-none",
+							mergeStylexClassName("", sx.relative, sx.flex, sx.flexCol, sx.overflowHidden, sx.outlineNone),
 							// A 22px base rather than the scale's `rounded-xl`: an
 							// overlay this size carries a rounder corner than the
 							// controls inside it. Same corner as the centered dialog,
 							// one step up from the 18px it used to carry.
-							"rounded-[calc(22px*var(--rf))]",
+							mergeStylexClassName("", sx.roundedCalc22pxVarRf),
 							// The same glass the menus and hover cards are made of
 							// (ui/menu.tsx), so the palette reads as one more floating
 							// surface rather than an opaque card — just denser, because
 							// this one sits over a dimming backdrop. --palette-glass
 							// falls back to the opaque fill without backdrop-filter and
 							// under prefers-reduced-transparency (base.css).
-							"bg-palette-glass [backdrop-filter:var(--popup-blur)]",
+							mergeStylexClassName("", sx.bgPaletteGlass, sx.BackdropFilterVarPopupBlur),
 							// --dialog-ring, not --popup-ring: a shell on a scrim needs a
 							// firmer hairline than a menu over the page (base.css). In
 							// light the two resolve to the same line.
-							"[--smooth-ring-color:var(--dialog-ring)] smooth-shadow-ring-lg",
+							mergeStylexClassName("smooth-shadow-ring-lg", sx.SmoothRingColorVarDialogRing),
 							// Drops in from just above its resting place, the way a
 							// palette summoned by a keystroke should.
-							"origin-top transition-[transform,opacity] duration-[var(--dur-micro)] ease-[var(--ease)]",
+							mergeStylexClassName("transition-[transform,opacity]", sx.originTop, sx.durationVarDurMicro, sx.easeVarEase),
 							"data-[starting-style]:-translate-y-1.5 data-[starting-style]:scale-[0.99] data-[starting-style]:opacity-0",
 							"data-[ending-style]:-translate-y-1.5 data-[ending-style]:scale-[0.99] data-[ending-style]:opacity-0",
 							widthClassName ?? "w-[min(820px,100%)]",
 						]
 					: [
-							"fixed left-1/2 top-1/2 z-[10001] w-[90vw] -translate-x-1/2 -translate-y-1/2",
-							widthClassName ?? "max-w-[28rem]",
-							"max-h-[85dvh] overflow-y-auto overscroll-contain outline-none",
+							mergeStylexClassName("", sx.fixed, sx.left12, sx.top12, sx.z10001, sx.w90vw, sx.TranslateX12, sx.TranslateY12),
+							widthClassName ?? mergeStylexClassName("", sx.maxW28rem),
+							mergeStylexClassName("", sx.maxH85dvh, sx.overflowYAuto, sx.overscrollContain, sx.outlineNone),
 							// A restrained dialog shell: lifted surface, soft edge,
 							// and enough radius to read as a modal without becoming a card.
 							// The edge is --dialog-ring rather than the shared hairline: on
 							// a scrim the fill's step above the page all but disappears, so
 							// the line is what holds the shape (base.css).
-							"rounded-[calc(22px*var(--rf))] bg-raised",
-							"[--smooth-ring-color:var(--dialog-ring)] smooth-shadow-ring-lg",
-							"p-6",
-							"flex flex-col gap-4",
-							"origin-center transition-[transform,opacity] duration-[var(--dur)] ease-[var(--ease)]",
+							mergeStylexClassName("", sx.roundedCalc22pxVarRf, sx.bgRaised),
+							mergeStylexClassName("smooth-shadow-ring-lg", sx.SmoothRingColorVarDialogRing),
+							mergeStylexClassName("", sx.p6),
+							mergeStylexClassName("", sx.flex, sx.flexCol, sx.gap4),
+							mergeStylexClassName("transition-[transform,opacity]", sx.originCenter, sx.durationVarDur, sx.easeVarEase),
 							"data-[starting-style]:scale-[0.96] data-[starting-style]:opacity-0",
 							"data-[ending-style]:scale-[0.97] data-[ending-style]:opacity-0",
 						],
@@ -338,10 +429,10 @@ function Content({
 	);
 	return (
 		<BaseDialog.Portal keepMounted={keepMounted}>
-			<BaseDialog.Backdrop {...mergeStylexProps(cn("data-[starting-style]:opacity-0 data-[ending-style]:opacity-0", palette ? "backdrop-blur-[6px]" : "backdrop-blur-[1px]", palette && "palette-backdrop"), sx.fixed, sx.inset0, sx.transitionOpacity, sx.easeOut, palette && sx.z6000, palette && sx.bgBlack22, palette && sx.durationVarDurMicro, !(palette) && sx.z10000, !(palette) && sx.bgBlack25, !(palette) && sx.durationVarDur)}
+			<BaseDialog.Backdrop {...mergeStylexProps(cn("data-[starting-style]:opacity-0 data-[ending-style]:opacity-0", palette ? mergeStylexClassName("", sx.backdropBlur6px) : mergeStylexClassName("", sx.backdropBlur1px), palette && "palette-backdrop"), sx.fixed, sx.inset0, sx.transitionOpacity, sx.easeOut, palette && sx.z6000, palette && sx.bgBlack22, palette && sx.durationVarDurMicro, !(palette) && sx.z10000, !(palette) && sx.bgBlack25, !(palette) && sx.durationVarDur)}
 			/>
 			{palette ? (
-				<BaseDialog.Viewport {...mergeStylexProps(cn("max-[560px]:pt-[7vh] [&[hidden]]:hidden", viewportClassName), sx.fixed, sx.inset0, sx.z6001, sx.flex, sx.itemsStart, sx.justifyCenter, sx.px4, sx.pb4, sx.pt11vh)}
+				<BaseDialog.Viewport {...mergeStylexProps(cn(mergeStylexClassName("[&[hidden]]:hidden", sx.max560pxPt7vh), viewportClassName), sx.fixed, sx.inset0, sx.z6001, sx.flex, sx.itemsStart, sx.justifyCenter, sx.px4, sx.pb4, sx.pt11vh)}
 				>
 					{popup}
 				</BaseDialog.Viewport>
@@ -433,7 +524,7 @@ function Header({
 		// pulls 10px of it back to keep its own 6px.
 		<>
 			<div
-				ref={setNode} {...mergeStylexProps(cn(scrolled && "shadow-[inset_0_-1px_0_var(--divider)]", className), sx.sticky, sx.Top6, sx.z10, sx.flex, sx.itemsStart, sx.gap3, sx.bgRaised, sx.Mx6, sx.Mb3, sx.Mt6, sx.px6, sx.pb3, sx.pt6, sx.transitionBoxShadow, sx.durationVarDurMicro)}
+				ref={setNode} {...mergeStylexProps(cn(scrolled && mergeStylexClassName("", sx.shadowInset01px0VarDivider), className), sx.sticky, sx.Top6, sx.z10, sx.flex, sx.itemsStart, sx.gap3, sx.bgRaised, sx.Mx6, sx.Mb3, sx.Mt6, sx.px6, sx.pb3, sx.pt6, sx.transitionBoxShadow, sx.durationVarDurMicro)}
 			>
 				{/* Base UI renders Title as <h2> and Description as <p>; preflight
 				    isn't imported (base.css owns resets), so zero their UA margins

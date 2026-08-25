@@ -84,7 +84,7 @@ import {
 import { FullPageFileDropOverlay } from "./FullPageFileDropOverlay";
 import { askSurface } from "../lib/tinted-surface";
 import { toast } from "../ui/toast";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { PhoneTopBar, PhoneTopBarAction } from "../ui/top-bar";
 import {
 	paletteIconBtn,
@@ -220,6 +220,123 @@ const sx = stylex.create({
 	fontSemibold: {
 			fontWeight: "var(--font-weight-semibold)"
 	},
+
+	phoneSize11: {
+		"@media (max-width: 720px)": {
+			"width": "44px",
+			"height": "44px"
+		}
+	},
+	phoneRounded999px: {
+		"@media (max-width: 720px)": {
+			"borderRadius": "999px"
+		}
+	},
+	phoneBeforeRounded999px: {
+		"@media (max-width: 720px)": {
+			"::before": {
+				"content": "var(--tw-content)",
+				"borderRadius": "999px"
+			}
+		}
+	},
+	shrink: {
+		"flexShrink": "1"
+	},
+	maxWNone: {
+		"maxWidth": "none"
+	},
+	phoneMlAuto: {
+		"@media (max-width: 720px)": {
+			"marginLeft": "auto"
+		}
+	},
+	phoneMinH11: {
+		"@media (max-width: 720px)": {
+			"minHeight": "44px"
+		}
+	},
+	max560pxPx9px: {
+		"@media not all and (min-width: 560px)": {
+			"paddingInline": "9px"
+		}
+	},
+	relative: {
+		"position": "relative"
+	},
+	wFull: {
+		"width": "100%"
+	},
+	overflowHidden: {
+		"overflow": "hidden"
+	},
+	rounded2xl: {
+		"borderRadius": "calc(22px * var(--rf))"
+	},
+	invisible: {
+		"visibility": "hidden"
+	},
+	minH0: {
+		"minHeight": "0"
+	},
+	flex1: {
+		"flex": "1"
+	},
+	bgHover: {
+		"backgroundColor": "var(--hover)"
+	},
+	mx0: {
+		"marginInline": "0"
+	},
+	phoneHidden: {
+		"@media (max-width: 720px)": {
+			"display": "none"
+		}
+	},
+	textXs: {
+		"fontSize": "var(--type-label)",
+		"lineHeight": "var(--tw-leading,var(--text-xs--line-height))"
+	},
+	Mx3px: {
+		"marginInline": "-3px"
+	},
+	transitionTransform: {
+		"transitionProperty": "transform,translate,scale,rotate",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	beforeOpacity100: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"opacity": "1"
+		}
+	},
+	afterOpacity100: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"opacity": "1"
+		}
+	},
+	maxHCalc89dvh1rem: {
+		"maxHeight": "calc(89dvh - 1rem)"
+	},
+	phoneMaxHCalc100dvh12px: {
+		"@media (max-width: 720px)": {
+			"maxHeight": "calc(100dvh - 12px)"
+		}
+	},
+	phoneRoundedTCalc40pxVarRf: {
+		"@media (max-width: 720px)": {
+			"borderTopLeftRadius": "calc(40px * var(--rf))",
+			"borderTopRightRadius": "calc(40px * var(--rf))"
+		}
+	},
+	phoneRoundedBNone: {
+		"@media (max-width: 720px)": {
+			"borderBottomRightRadius": "0",
+			"borderBottomLeftRadius": "0"
+		}
+	},
 });
 
 interface Props {
@@ -352,7 +469,7 @@ const MOBILE_TRIGGER =
 /** The composer's own send disc, so the gesture that commits a prompt looks the
  *  same in the palette as it does in a session. Sized up to the 44px target the
  *  rest of this bar keeps. */
-const PHONE_SEND = cn(composerSend, composerSendDefault, "phone:size-11");
+const PHONE_SEND = cn(composerSend, composerSendDefault, mergeStylexClassName("", sx.phoneSize11));
 
 /* (The prompt's own surface — the scroller and the field — moved to
    NewSessionPrompt, with the draft state it belongs to.) */
@@ -377,7 +494,7 @@ const FOOTER_RIGHT = "flex min-w-0 items-center gap-1.5 phone:contents max-[560p
  *  hover wash rides a pseudo-element, so it has to be rounded with them. */
 const FOOTER_ICON_BTN = cn(
 	paletteIconBtn,
-	"shrink-0 phone:size-11 phone:rounded-[999px] phone:before:rounded-[999px]",
+	mergeStylexClassName("", sx.shrink0, sx.phoneSize11, sx.phoneRounded999px, sx.phoneBeforeRounded999px),
 );
 /** Ask mode's toggle. Off, it is one of the footer's quiet icon tools. On, it
  *  wears the same green marker the session composer's toolbar shows for the
@@ -409,7 +526,7 @@ const ASK_SURFACE =
  *  effort suffix steps aside first and leaves that room to the model. */
 const MODEL_PILL = cn(
 	palettePill,
-	"shrink min-w-0 max-w-none phone:ml-auto phone:min-h-11 phone:[&_[data-effort]]:hidden max-[560px]:px-[9px]",
+	mergeStylexClassName("phone:[&_[data-effort]]:hidden", sx.shrink, sx.minW0, sx.maxWNone, sx.phoneMlAuto, sx.phoneMinH11, sx.max560pxPx9px),
 );
 
 /* What a create does with the view behind the palette: "open" follows the new
@@ -487,7 +604,7 @@ const CREATE_MENU_ITEM =
  * HUD; `overflow-hidden` keeps the rows' dividers inside the rounded shell.
  */
 const INLINE_CARD = cn(
-	"relative flex w-full flex-col overflow-hidden rounded-2xl",
+	mergeStylexClassName("", sx.relative, sx.flex, sx.wFull, sx.flexCol, sx.overflowHidden, sx.rounded2xl),
 	"max-h-[min(560px,68dvh)]",
 	composerBox,
 );
@@ -1714,7 +1831,7 @@ pendingDraftParks.delete(operation);
         {phoneBar && (
           <button
             type="button"
-            className={cn(PHONE_SEND, dictating && "invisible")}
+            className={cn(PHONE_SEND, dictating && mergeStylexClassName("", sx.invisible))}
             onClick={handleCreate}
             disabled={!canCreate}
             aria-label={CREATE_LABELS[createAction]}
@@ -1732,8 +1849,8 @@ pendingDraftParks.delete(operation);
           if (!dictating) setDictationClipping(false);
         }}
         className={cn(
-          "relative flex min-h-0 flex-col",
-          dictationClipping && "overflow-hidden",
+          mergeStylexClassName("", sx.relative, sx.flex, sx.minH0, sx.flexCol),
+          dictationClipping && mergeStylexClassName("", sx.overflowHidden),
         )}
       >
         {/* Dictation replaces everything below Project while the card itself
@@ -1745,8 +1862,8 @@ pendingDraftParks.delete(operation);
         />
         <div
           className={cn(
-            "flex min-h-0 flex-1 flex-col",
-            dictating && "invisible",
+            mergeStylexClassName("", sx.flex, sx.minH0, sx.flex1, sx.flexCol),
+            dictating && mergeStylexClassName("", sx.invisible),
           )}
         >
 
@@ -2002,7 +2119,7 @@ pendingDraftParks.delete(operation);
                           checked={checked}
                           closeOnClick={false}
                           onCheckedChange={(on) => toggleMcpServer(mcp, on)}
-                          className={cn("justify-between gap-3", checked && "bg-hover")}
+                          className={cn(mergeStylexClassName("", sx.justifyBetween, sx.gap3), checked && mergeStylexClassName("", sx.bgHover))}
                         >
                           <span {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap25)}>
                             <IconTile name={mcp} size={20} />
@@ -2107,7 +2224,7 @@ pendingDraftParks.delete(operation);
                     field that only creates on ⌘↩ is what made Enter look
                     broken in the first place. */}
                 {sendKey === "mod-enter" ? (
-                  <span className={`${CREATE_KBD} mx-0 phone:hidden text-xs`}>
+                  <span className={[CREATE_KBD, mergeStylexClassName("", sx.mx0, sx.phoneHidden, sx.textXs)].filter(Boolean).join(" ")}>
                     {MOD_ENTER_GLYPH}
                   </span>
                 ) : (
@@ -2115,7 +2232,7 @@ pendingDraftParks.delete(operation);
                      button edge. "Create more" is a desktop workflow, so the
                      hint goes away with the caret on phones. */
                   <IconReturn
-                    className={`${CREATE_KBD} -mx-[3px] phone:hidden`}
+                    className={[CREATE_KBD, mergeStylexClassName("", sx.Mx3px, sx.phoneHidden)].filter(Boolean).join(" ")}
                     size={20}
                   />
                 )}
@@ -2143,7 +2260,7 @@ pendingDraftParks.delete(operation);
                 aria-label="Create options"
               >
                 <IconChevronDown
-                  className={`transition-transform ${createMenuOpen ? "rotate-180" : ""}`}
+                  className={[mergeStylexClassName("", sx.transitionTransform), createMenuOpen ? "rotate-180" : ""].filter(Boolean).join(" ")}
                   size={22}
                 />
               </button>
@@ -2199,7 +2316,7 @@ pendingDraftParks.delete(operation);
         className={cn(
           INLINE_CARD,
           ASK_SURFACE,
-          mode === "ask" && "before:opacity-100 after:opacity-100",
+          mode === "ask" && mergeStylexClassName("", sx.beforeOpacity100, sx.afterOpacity100),
         )}
         style={askSurfaceStyle}
         role="group"
@@ -2255,9 +2372,9 @@ pendingDraftParks.delete(operation);
           // inside that strip on a client whose keyboard is taller than the
           // one 43dvh was measured against. Past the cap the prompt scrolls,
           // which is what its scroller is for.
-          "max-h-[calc(89dvh-1rem)] phone:max-h-[calc(100dvh-12px)] phone:[body.kb-open_&]:max-h-[min(43dvh,100%)] phone:rounded-t-[calc(40px*var(--rf))] phone:rounded-b-none phone:[&_textarea]:min-h-[160px] phone:[&_textarea]:text-input-phone",
+          mergeStylexClassName("phone:[body.kb-open_&]:max-h-[min(43dvh,100%)] phone:[&_textarea]:min-h-[160px] phone:[&_textarea]:text-input-phone", sx.maxHCalc89dvh1rem, sx.phoneMaxHCalc100dvh12px, sx.phoneRoundedTCalc40pxVarRf, sx.phoneRoundedBNone),
           ASK_SURFACE,
-          mode === "ask" && "before:opacity-100 after:opacity-100",
+          mode === "ask" && mergeStylexClassName("", sx.beforeOpacity100, sx.afterOpacity100),
         )}
         style={askSurfaceStyle}
         aria-label="New session"

@@ -61,7 +61,7 @@ import { Tooltip } from "../ui/tooltip";
 import { ContextMenu, Menu, MENU_ICON } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
 import { Skeleton, SkeletonBar } from "../ui/state";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { useShortcutLabel } from "../hooks/useShortcutBindings";
 import { useDeferredMergePhase } from "../hooks/useDeferredMerge";
 import {
@@ -208,6 +208,152 @@ const sx = stylex.create({
 	flex1: {
 			flex: "1"
 	},
+
+	minH30px: {
+		"minHeight": "30px"
+	},
+	gap15: {
+		"gap": "6px"
+	},
+	roundedControl: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	border: {
+		"borderStyle": "var(--tw-border-style)",
+		"borderWidth": "1px"
+	},
+	px25: {
+		"paddingInline": "10px"
+	},
+	py5px: {
+		"paddingBlock": "5px"
+	},
+	leadingNone: {
+		"--tw-leading": "1",
+		"lineHeight": "1"
+	},
+	fontSemibold: {
+		"--tw-font-weight": "var(--font-weight-semibold)",
+		"fontWeight": "var(--font-weight-semibold)"
+	},
+	whitespaceNowrap: {
+		"whiteSpace": "nowrap"
+	},
+	easeInOut: {
+		"--tw-ease": "var(--ease)",
+		"transitionTimingFunction": "var(--ease)"
+	},
+	hoverBrightness108: {
+		"@media (hover: hover)": {
+			":hover": {
+				"--tw-brightness": "brightness(1.08)",
+				"filter": "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+			}
+		}
+	},
+	activeScale098: {
+		":active": {
+			"scale": ".98"
+		}
+	},
+	activeBrightness098: {
+		":active": {
+			"--tw-brightness": "brightness(.98)",
+			"filter": "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+		}
+	},
+	focusVisibleOutline2: {
+		":focusVisible": {
+			"outlineStyle": "var(--tw-outline-style)",
+			"outlineWidth": "2px"
+		}
+	},
+	focusVisibleOutlineVarAccentInk: {
+		":focusVisible": {
+			"outlineColor": "var(--accent-ink)"
+		}
+	},
+	focusVisibleOutlineOffset2: {
+		":focusVisible": {
+			"outlineOffset": "2px"
+		}
+	},
+	disabledCursorDefault: {
+		":disabled": {
+			"cursor": "default"
+		}
+	},
+	disabledOpacity60: {
+		":disabled": {
+			"opacity": ".6"
+		}
+	},
+	disabledShadowNone: {
+		":disabled": {
+			"--tw-shadow": "0 0 #0000",
+			"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+		}
+	},
+	pl65px: {
+		"paddingLeft": "6.5px"
+	},
+	Max440pxPx15: {
+		"paddingInline": "6px"
+	},
+	Max440pxGap0: {
+		"gap": "0"
+	},
+	Max440pxHidden: {
+		"display": "none"
+	},
+	minH32px: {
+		"minHeight": "32px"
+	},
+	cursorPointer: {
+		"cursor": "pointer"
+	},
+	roundedSm: {
+		"borderRadius": "calc(4px * var(--rf))"
+	},
+	borderNone: {
+		"--tw-border-style": "none",
+		"borderStyle": "none"
+	},
+	bgTransparent: {
+		"backgroundColor": "#0000"
+	},
+	p0: {
+		"padding": "0"
+	},
+	textLeft: {
+		"textAlign": "left"
+	},
+	focusRing: {
+		":focusVisible": {
+			"outline": "2px solid var(--accent-ink)",
+			"outlineOffset": "2px"
+		},
+		"@media (forced-colors: active)": {
+			":focusVisible": {
+				"outlineColor": "highlight"
+			}
+		}
+	},
+	phoneFlex: {
+		"@media (max-width: 720px)": {
+			"display": "flex"
+		}
+	},
+	phoneFlexCol: {
+		"@media (max-width: 720px)": {
+			"flexDirection": "column"
+		}
+	},
+	phoneJustifyCenter: {
+		"@media (max-width: 720px)": {
+			"justifyContent": "center"
+		}
+	},
 });
 
 /**
@@ -334,7 +480,7 @@ function PrBarButton({
 		<button
 			type="button"
 			className={cn(
-				"inline-flex min-h-[30px] items-center justify-center gap-1.5 rounded-control border px-2.5 py-[5px] text-label leading-none font-semibold whitespace-nowrap smooth-shadow-sm transition-[background-color,border-color,color,filter,transform] duration-150 ease-in-out hover:brightness-[1.08] active:scale-[0.98] active:brightness-[0.98] focus-visible:outline-2 focus-visible:outline-[var(--accent-ink)] focus-visible:outline-offset-2 disabled:cursor-default disabled:opacity-60 disabled:shadow-none",
+				mergeStylexClassName("smooth-shadow-sm transition-[background-color,border-color,color,filter,transform]", sx.inlineFlex, sx.minH30px, sx.itemsCenter, sx.justifyCenter, sx.gap15, sx.roundedControl, sx.border, sx.px25, sx.py5px, typography.label, sx.leadingNone, sx.fontSemibold, sx.whitespaceNowrap, sx.duration150, sx.easeInOut, sx.hoverBrightness108, sx.activeScale098, sx.activeBrightness098, sx.focusVisibleOutline2, sx.focusVisibleOutlineVarAccentInk, sx.focusVisibleOutlineOffset2, sx.disabledCursorDefault, sx.disabledOpacity60, sx.disabledShadowNone),
 				tones[tone],
 				// A leading glyph carries its own margin: the icon set draws in a
 				// 4.75–19.25 span of a 24 grid, so an 18px box holds ~3.5px of
@@ -344,7 +490,7 @@ function PrBarButton({
 				// and close the inner gap so the two read as one group rather than
 				// two things. Icon-only callers override px themselves, so this
 				// never lands on a lone glyph.
-				icon && "gap-1 pl-[6.5px]",
+				icon && mergeStylexClassName("", sx.gap1, sx.pl65px),
 				className,
 			)}
 			{...props}
@@ -882,7 +1028,7 @@ setBusy(null);
 					<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
 						{onNewSession && (
 							<PrBarButton
-								className={cn(actionBtn, "@max-[440px]:px-1.5 @max-[440px]:gap-0")}
+								className={cn(actionBtn, mergeStylexClassName("", sx.Max440pxPx15, sx.Max440pxGap0))}
 								// The open outline: carrying the work on is the choice
 								// beside the filed-away one, not the same weight as it.
 								tone="purple-dashed"
@@ -893,7 +1039,7 @@ setBusy(null);
 							>
 								{/* The label is the first thing to go on a narrow panel: the
 								    headline beside it is what the strip exists to say. */}
-								<span className="@max-[440px]:hidden">Continue</span>
+								<span className={mergeStylexClassName("", sx.Max440pxHidden)}>Continue</span>
 							</PrBarButton>
 						)}
 						{isArchived ? (
@@ -1044,7 +1190,7 @@ setBusy(null);
 				if (mergeScheduled)
 					return (
 						<MergeUndoControl
-							className={variant === "header" ? "min-h-[32px]" : undefined}
+							className={variant === "header" ? mergeStylexClassName("", sx.minH32px) : undefined}
 							onUndo={handleMerge}
 						/>
 					);
@@ -1101,7 +1247,7 @@ setBusy(null);
 		// wrapper would drop the focus ring with the box.
 		const labelClass = cn(
 			WS_SUMMARY_LABEL,
-			"group/prsum cursor-pointer rounded-sm border-none bg-transparent p-0 text-left focus-ring phone:flex phone:flex-col phone:justify-center",
+			mergeStylexClassName("group/prsum", sx.cursorPointer, sx.roundedSm, sx.borderNone, sx.bgTransparent, sx.p0, sx.textLeft, sx.focusRing, sx.phoneFlex, sx.phoneFlexCol, sx.phoneJustifyCenter),
 		);
 		const provider = pr ? providerFromUrl(pr.url) : null;
 		const externalHint = provider
@@ -1122,7 +1268,7 @@ setBusy(null);
 						{checksPr && (
 							<>
 								<span aria-hidden="true">·</span>
-								<span className={cn("truncate", checksTone)}>{checksLabel}</span>
+								<span className={cn(mergeStylexClassName("", sx.truncate), checksTone)}>{checksLabel}</span>
 							</>
 						)}
 						<IconArrowUpRight
@@ -1166,7 +1312,7 @@ setBusy(null);
 						checks={checksPr.checks}
 						trigger={
 							<a
-								className={cn(labelClass, "no-underline")}
+								className={cn(labelClass, mergeStylexClassName("", sx.noUnderline))}
 								href={checksPr.url}
 								target="_blank"
 								rel="noopener"
@@ -1194,7 +1340,7 @@ setBusy(null);
 						multiline
 					>
 						<a
-							className={cn(labelClass, "no-underline")}
+							className={cn(labelClass, mergeStylexClassName("", sx.noUnderline))}
 							href={pr.url}
 							target="_blank"
 							rel="noopener"

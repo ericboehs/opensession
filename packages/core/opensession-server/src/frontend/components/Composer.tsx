@@ -87,7 +87,7 @@ import {
   palettePill,
 } from "../lib/palette-classes";
 import { askSurface, noteSurface } from "../lib/tinted-surface";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { Tooltip } from "../ui/tooltip";
 import { ContextMenu, Menu, MenuShortcut, MENU_ICON } from "../ui/menu";
 import { Button } from "../ui/button";
@@ -314,6 +314,176 @@ const sx = stylex.create({
 	},
 	textFaint: {
 			color: "var(--text-faint)"
+	},
+
+	ml0: {
+		"marginLeft": "0"
+	},
+	Ml15: {
+		"marginLeft": "-6px"
+	},
+	isolate: {
+		"isolation": "isolate"
+	},
+	beforePointerEventsNone: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"pointerEvents": "none"
+		}
+	},
+	beforeAbsolute: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	beforeInset0: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"inset": "0"
+		}
+	},
+	beforeZ0: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"zIndex": "0"
+		}
+	},
+	beforeRoundedInherit: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"borderRadius": "inherit"
+		}
+	},
+	beforeCornerShapeInherit: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"cornerShape": "inherit"
+		}
+	},
+	beforeBgVarComposerNoteBg: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"backgroundColor": "var(--composer-note-bg)"
+		}
+	},
+	beforeOpacity0: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"opacity": "0"
+		}
+	},
+	beforeTransitionOpacity: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"transitionProperty": "opacity",
+			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+		}
+	},
+	beforeDuration150: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"--tw-duration": ".15s",
+			"transitionDuration": ".15s"
+		}
+	},
+	beforeOpacity100: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"opacity": "1"
+		}
+	},
+	overflowHidden: {
+		"overflow": "hidden"
+	},
+	opacity60: {
+		"opacity": ".6"
+	},
+	relative: {
+		"position": "relative"
+	},
+	order2: {
+		"order": "2"
+	},
+	minW0: {
+		"minWidth": "0"
+	},
+	flexAuto: {
+		"flex": "auto"
+	},
+	z0: {
+		"zIndex": "0"
+	},
+	breakWords: {
+		"overflowWrap": "break-word"
+	},
+	whitespacePreWrap: {
+		"whiteSpace": "pre-wrap"
+	},
+	selectNone: {
+		"WebkitUserSelect": "none",
+		"userSelect": "none"
+	},
+	Mx6px: {
+		"marginInline": "-6px"
+	},
+	wCalc10012px: {
+		"width": "calc(100% + 12px)"
+	},
+	px6px: {
+		"paddingInline": "6px"
+	},
+	placeholderTextFaint: {
+		"::placeholder": {
+			"color": "var(--text-faint)"
+		}
+	},
+	z1: {
+		"zIndex": "1"
+	},
+	textTransparent: {
+		"color": "#0000"
+	},
+	caretVarText: {
+		"caretColor": "var(--text)"
+	},
+	inlineFlex: {
+		"display": "inline-flex"
+	},
+	order1: {
+		"order": "1"
+	},
+	phoneOrder2: {
+		"@media (max-width: 720px)": {
+			"order": "-2"
+		}
+	},
+	itemsCenter: {
+		"alignItems": "center"
+	},
+	order3: {
+		"order": "3"
+	},
+	order4: {
+		"order": "4"
+	},
+	itemsStretch: {
+		"alignItems": "stretch"
+	},
+	order5: {
+		"order": "5"
+	},
+	h8: {
+		"height": "32px"
+	},
+	roundedMd: {
+		"borderRadius": "calc(7px * var(--rf))"
+	},
+	activeBgPanel: {
+		":active": {
+			"backgroundColor": "var(--bg-panel)"
+		}
 	},
 });
 
@@ -909,7 +1079,7 @@ export function Composer({
   );
   const addButtonClass = cn(
     composerIconButtonClass,
-    minimized ? "ml-0" : "-ml-1.5",
+    minimized ? mergeStylexClassName("", sx.ml0) : mergeStylexClassName("", sx.Ml15),
   );
   const showSend = !busy || hasContent;
   function handleDictationActive(active: boolean) {
@@ -1666,10 +1836,10 @@ setLocalStaging((current) => subtractStaging(current, batch));
           minimized && "composer-min",
           composerBox,
           minimized ? composerBoxMinimized : composerBoxExpanded,
-          "isolate before:pointer-events-none before:absolute before:inset-0 before:z-0 before:rounded-[inherit] before:[corner-shape:inherit] before:bg-[var(--composer-note-bg)] before:opacity-0 before:transition-opacity before:duration-150 before:ease-[cubic-bezier(0.32,0.72,0,1)] [&>*]:relative [&>*]:z-[1]",
-          noteMode && "before:opacity-100",
-          dictationClipping && "overflow-hidden",
-          disabled && "opacity-60",
+          mergeStylexClassName("before:ease-[cubic-bezier(0.32,0.72,0,1)] [&>*]:relative [&>*]:z-[1]", sx.isolate, sx.beforePointerEventsNone, sx.beforeAbsolute, sx.beforeInset0, sx.beforeZ0, sx.beforeRoundedInherit, sx.beforeCornerShapeInherit, sx.beforeBgVarComposerNoteBg, sx.beforeOpacity0, sx.beforeTransitionOpacity, sx.beforeDuration150),
+          noteMode && mergeStylexClassName("", sx.beforeOpacity100),
+          dictationClipping && mergeStylexClassName("", sx.overflowHidden),
+          disabled && mergeStylexClassName("", sx.opacity60),
         )}
         style={surfaceStyle}
       >
@@ -1791,8 +1961,8 @@ setLocalStaging((current) => subtractStaging(current, batch));
           // Positioned for the code mirror below (and the scroll-fade mask the
           // auto-grow effect writes onto it).
           className={cn(
-            "relative",
-            minimized && "order-2 min-w-0 flex-auto",
+            mergeStylexClassName("", sx.relative),
+            minimized && mergeStylexClassName("", sx.order2, sx.minW0, sx.flexAuto),
           )}
           ref={mentions.inputWrapRef}
         >
@@ -1807,7 +1977,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
                 "composer-hl",
                 composerTextarea,
                 composerTextareaPadding,
-                "pointer-events-none absolute inset-0 z-0 overflow-hidden text-fg break-words whitespace-pre-wrap select-none",
+                mergeStylexClassName("", sx.pointerEventsNone, sx.absolute, sx.inset0, sx.z0, sx.overflowHidden, sx.textFg, sx.breakWords, sx.whitespacePreWrap, sx.selectNone),
                 hasMention && composerMentionSpacing,
                 // A pill's wash reaches past its own box (base.css), so one at
                 // either end of a line would be cut off by this box. The
@@ -1824,7 +1994,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
                 // different line from the caret and the selection under it on
                 // any draft long enough to wrap. Asking for the 12px back
                 // makes the two agree glyph for glyph again.
-                "-mx-[6px] w-[calc(100%+12px)] px-[6px]",
+                mergeStylexClassName("", sx.Mx6px, sx.wCalc10012px, sx.px6px),
               )}
               aria-hidden="true"
               dangerouslySetInnerHTML={{ __html: hlHtml }}
@@ -1851,12 +2021,12 @@ setLocalStaging((current) => subtractStaging(current, batch));
               // 1.82:1 and made it dimmer as well as still cool.
               noteMode
                 ? "placeholder:text-[color-mix(in_srgb,var(--text-faint)_84%,var(--yellow))]"
-                : "placeholder:text-faint",
+                : mergeStylexClassName("", sx.placeholderTextFaint),
               // With the mirror painting the styled draft, the field's own
               // glyphs go transparent and only the caret stays visible.
               hlActive
-                ? "relative z-[1] break-words text-transparent caret-[var(--text)]"
-                : "text-fg",
+                ? mergeStylexClassName("", sx.relative, sx.z1, sx.breakWords, sx.textTransparent, sx.caretVarText)
+                : mergeStylexClassName("", sx.textFg),
             )}
             // In the resting pill the full prompt would clip, so show a short
             // "Ask <model>" (ChatGPT-style) that fits the single row; the
@@ -1984,10 +2154,10 @@ setLocalStaging((current) => subtractStaging(current, batch));
               // `composer-pop-wrap` stays as a hook: the outside-click handler
               // above dismisses the menu for any mousedown that isn't inside one.
               className={cn(
-                "composer-pop-wrap relative inline-flex shrink-0",
+                mergeStylexClassName("composer-pop-wrap", sx.relative, sx.inlineFlex, sx.shrink0),
                 // Phones pull the model pill to the front of the toolbar, so the
                 // "+" has to lead it; in the resting pill it opens the row.
-                minimized ? "order-1" : "phone:order-[-2]",
+                minimized ? mergeStylexClassName("", sx.order1) : mergeStylexClassName("", sx.phoneOrder2),
               )}
             >
               <Tooltip label="Attach files and session options">
@@ -2204,8 +2374,8 @@ setLocalStaging((current) => subtractStaging(current, batch));
             transition={composerMorph}
             layoutDependency={minimized}
             className={cn(
-              "pwa-composer-auxiliary inline-flex shrink-0 items-center",
-              minimized && "order-3",
+              mergeStylexClassName("pwa-composer-auxiliary", sx.inlineFlex, sx.shrink0, sx.itemsCenter),
+              minimized && mergeStylexClassName("", sx.order3),
             )}
           >
             {/* The mic is one of the resting pill's circles, so it takes the
@@ -2253,11 +2423,11 @@ setLocalStaging((current) => subtractStaging(current, batch));
                   composerSendStop,
                   // Without an order the stop button defaults to 0 and jumps to
                   // the far left of the resting row; seat it just before send.
-                  minimized && "order-4",
+                  minimized && mergeStylexClassName("", sx.order4),
                   minimized && composerSendMinimizedFill,
                   // Acknowledged: the press registered, the engine is winding
                   // down. Not `disabled` — pressing again re-sends the cancel.
-                  stopping && "opacity-60",
+                  stopping && mergeStylexClassName("", sx.opacity60),
                 )}
                 {...tapProps(() => onStop())}
                 disabled={disabled}
@@ -2277,8 +2447,8 @@ setLocalStaging((current) => subtractStaging(current, batch));
               transition={composerMorph}
               layoutDependency={minimized}
               className={cn(
-                "relative inline-flex shrink-0 items-stretch",
-                minimized && "order-5",
+                mergeStylexClassName("", sx.relative, sx.inlineFlex, sx.shrink0, sx.itemsStretch),
+                minimized && mergeStylexClassName("", sx.order5),
               )}
             >
               <ContextMenu.Root>
@@ -2414,11 +2584,9 @@ setLocalStaging((current) => subtractStaging(current, batch));
               <button
                 key={key}
                 type="button"
-                className={`h-8 flex-1 select-none rounded-md border border-line bg-surface text-label font-semibold text-dim active:bg-panel ${
-                  key === "Escape" && vim.mode !== "insert"
+                className={[mergeStylexClassName("", sx.h8, sx.flex1, sx.selectNone, sx.roundedMd, sx.border, sx.borderLine, sx.bgSurface, typography.label, sx.fontSemibold, sx.textDim, sx.activeBgPanel), key === "Escape" && vim.mode !== "insert"
                     ? "border-accent text-fg"
-                    : ""
-                }`}
+                    : ""].filter(Boolean).join(" ")}
                 {...tapProps(() => vim.injectKey(key))}
                 aria-label={key}
               >

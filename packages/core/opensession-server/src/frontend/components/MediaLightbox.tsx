@@ -24,7 +24,7 @@ import {
 } from "../lib/walkthrough-label";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { toast } from "../ui/toast";
 import {
 	anchoredCommentPosition,
@@ -348,6 +348,188 @@ const sx = stylex.create({
 	},
 	textWhite50: {
 			color: "#ffffff80"
+	},
+
+	relative: {
+		"position": "relative"
+	},
+	selectNone: {
+		"WebkitUserSelect": "none",
+		"userSelect": "none"
+	},
+	dropShadow002pxRgb00005: {
+		"--tw-drop-shadow-size": "drop-shadow(0 0 2px var(--tw-drop-shadow-color,#00000080))",
+		"--tw-drop-shadow": "var(--tw-drop-shadow-size)",
+		"filter": "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+	},
+	leftCalc12pxEnvSafeAreaInsetLeft: {
+		"left": "calc(12px + env(safe-area-inset-left))"
+	},
+	rightCalc12pxEnvSafeAreaInsetRight: {
+		"right": "calc(12px + env(safe-area-inset-right))"
+	},
+	topCalc12pxEnvSafeAreaInsetTop: {
+		"top": "calc(12px + env(safe-area-inset-top))"
+	},
+	z10: {
+		"zIndex": "10"
+	},
+	durationVarDur: {
+		"--tw-duration": "var(--dur)",
+		"transitionDuration": "var(--dur)"
+	},
+	easeVarEase: {
+		"--tw-ease": "var(--ease)",
+		"transitionTimingFunction": "var(--ease)"
+	},
+	motionReduceTransitionNone: {
+		"@media (prefers-reduced-motion: reduce)": {
+			"transitionProperty": "none"
+		}
+	},
+	TranslateY2: {
+		"--tw-translate-y": "calc(4px * -2)",
+		"translate": "var(--tw-translate-x) var(--tw-translate-y)"
+	},
+	opacity0: {
+		"opacity": "0"
+	},
+	hidden: {
+		"display": "none"
+	},
+	bgWhite15: {
+		"backgroundColor": "#ffffff26",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in oklab, var(--color-white) 15%, transparent)"
+		}
+	},
+	right0: {
+		"right": "0"
+	},
+	gap3: {
+		"gap": "12px"
+	},
+	pb2: {
+		"paddingBottom": "8px"
+	},
+	ptCalc56pxEnvSafeAreaInsetTop: {
+		"paddingTop": "calc(56px + env(safe-area-inset-top))"
+	},
+	smPx4: {
+		"@media (min-width: 40rem)": {
+			"paddingInline": "16px"
+		}
+	},
+	gap0: {
+		"gap": "0"
+	},
+	px0: {
+		"paddingInline": "0"
+	},
+	bottom0: {
+		"bottom": "0"
+	},
+	bgLinearToB: {
+		"--tw-gradient-position": "to bottom",
+		"@supports (background-image: linear-gradient(in lab, red, red))": {
+			"--tw-gradient-position": "to bottom in oklab"
+		},
+		"backgroundImage": "linear-gradient(var(--tw-gradient-stops))"
+	},
+	fromTransparent: {
+		"--tw-gradient-from": "transparent",
+		"--tw-gradient-stops": "var(--tw-gradient-via-stops,var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position))"
+	},
+	viaBlack85: {
+		"--tw-gradient-via": "#000000d9",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"--tw-gradient-via": "color-mix(in oklab, var(--color-black) 85%, transparent)"
+		},
+		"--tw-gradient-via-stops": "var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-via) var(--tw-gradient-via-position), var(--tw-gradient-to) var(--tw-gradient-to-position)",
+		"--tw-gradient-stops": "var(--tw-gradient-via-stops)"
+	},
+	toBlack: {
+		"--tw-gradient-to": "var(--color-black)",
+		"--tw-gradient-stops": "var(--tw-gradient-via-stops,var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position))"
+	},
+	pt8: {
+		"paddingTop": "32px"
+	},
+	translateY3: {
+		"--tw-translate-y": "calc(4px * 3)",
+		"translate": "var(--tw-translate-x) var(--tw-translate-y)"
+	},
+	roundedSm: {
+		"borderRadius": "calc(4px * var(--rf))"
+	},
+	outline: {
+		"outlineStyle": "var(--tw-outline-style)",
+		"outlineWidth": "1px"
+	},
+	outline1: {
+		"outlineStyle": "var(--tw-outline-style)",
+		"outlineWidth": "1px"
+	},
+	outlineOffset1: {
+		"outlineOffset": "1px"
+	},
+	h11: {
+		"height": "44px"
+	},
+	w11: {
+		"width": "44px"
+	},
+	opacity100: {
+		"opacity": "1"
+	},
+	outlineWhite85: {
+		"outlineColor": "#ffffffd9",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"outlineColor": "color-mix(in oklab, var(--color-white) 85%, transparent)"
+		}
+	},
+	h9: {
+		"height": "36px"
+	},
+	w7: {
+		"width": "28px"
+	},
+	opacity60: {
+		"opacity": ".6"
+	},
+	outlineTransparent: {
+		"outlineColor": "#0000"
+	},
+	justifySelfCenter: {
+		"justifySelf": "center"
+	},
+	colStart3: {
+		"gridColumnStart": "3"
+	},
+	justifySelfEnd: {
+		"justifySelf": "flex-end"
+	},
+	pb4: {
+		"paddingBottom": "16px"
+	},
+	pt4: {
+		"paddingTop": "16px"
+	},
+	size15: {
+		"width": "6px",
+		"height": "6px"
+	},
+	scale067: {
+		"scale": ".67"
+	},
+	bgWhite: {
+		"backgroundColor": "var(--color-white)"
+	},
+	bgWhite30: {
+		"backgroundColor": "#ffffff4d",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in oklab, var(--color-white) 30%, transparent)"
+		}
 	},
 });
 
@@ -1645,9 +1827,7 @@ function ZoomableMedia({
 	return (
 		<div
 			ref={wrapRef}
-			className={`relative flex min-h-0 min-w-0 flex-1 touch-none select-none items-center justify-center self-stretch ${
-				commentMode ? "cursor-crosshair" : zoomed ? "cursor-grab" : "cursor-zoom-in"
-			}`}
+			className={[mergeStylexClassName("", sx.relative, sx.flex, sx.minH0, sx.minW0, sx.flex1, sx.touchNone, sx.selectNone, sx.itemsCenter, sx.justifyCenter, sx.selfStretch), commentMode ? "cursor-crosshair" : zoomed ? "cursor-grab" : "cursor-zoom-in"].filter(Boolean).join(" ")}
 			onPointerDown={onPointerDown}
 			onPointerMove={onPointerMove}
 			onPointerUp={onPointerEnd}
@@ -1745,7 +1925,7 @@ function ZoomableMedia({
 										// region; the square around it is what the finger
 										// gets.
 										className={cn(
-											"absolute grid touch-none place-items-center",
+											mergeStylexClassName("", sx.absolute, sx.grid, sx.touchNone, sx.placeItemsCenter),
 											handle.position,
 											handle.cursor,
 										)}
@@ -1757,7 +1937,7 @@ function ZoomableMedia({
 									>
 										<span
 											className={cn(
-												"block border-white drop-shadow-[0_0_2px_rgb(0_0_0/0.5)]",
+												mergeStylexClassName("", sx.block, sx.borderWhite, sx.dropShadow002pxRgb00005),
 												handle.mark,
 											)}
 										/>
@@ -2196,10 +2376,10 @@ sendingCommentRef.current = false;
 		>
 			<div
 				className={cn(
-					"pointer-events-none absolute left-[calc(12px+env(safe-area-inset-left))] right-[calc(12px+env(safe-area-inset-right))] top-[calc(12px+env(safe-area-inset-top))] z-10 flex items-center justify-center",
+					mergeStylexClassName("", sx.pointerEventsNone, sx.absolute, sx.leftCalc12pxEnvSafeAreaInsetLeft, sx.rightCalc12pxEnvSafeAreaInsetRight, sx.topCalc12pxEnvSafeAreaInsetTop, sx.z10, sx.flex, sx.itemsCenter, sx.justifyCenter),
 					isPhone &&
-						"transition-[opacity,transform] duration-[var(--dur)] ease-[var(--ease)] motion-reduce:transition-none",
-					isPhone && !chromeVisible && "-translate-y-2 opacity-0",
+						mergeStylexClassName("transition-[opacity,transform]", sx.durationVarDur, sx.easeVarEase, sx.motionReduceTransitionNone),
+					isPhone && !chromeVisible && mergeStylexClassName("", sx.TranslateY2, sx.opacity0),
 				)}
 				inert={isPhone && !chromeVisible ? true : undefined}
 				aria-hidden={isPhone && !chromeVisible ? true : undefined}
@@ -2210,7 +2390,7 @@ sendingCommentRef.current = false;
 				<div
 					role="group"
 					aria-label="Media actions"
-					className={isPhone ? "hidden" : "pointer-events-auto flex items-center gap-1"}
+					className={isPhone ? mergeStylexClassName("", sx.hidden) : mergeStylexClassName("", sx.pointerEventsAuto, sx.flex, sx.itemsCenter, sx.gap1)}
 				>
 					{commentable && (
 						<Button
@@ -2219,7 +2399,7 @@ sendingCommentRef.current = false;
 							icon={<IconMessage size={20} />}
 							className={cn(
 								lightboxAction,
-								commenting && "bg-white/15 text-white",
+								commenting && mergeStylexClassName("", sx.bgWhite15, sx.textWhite),
 							)}
 							onClick={() => {
 								if (commenting) resetComment();
@@ -2320,7 +2500,7 @@ sendingCommentRef.current = false;
 				<button
 					ref={closeRef}
 					type="button"
-					className={cn(navBtn, "pointer-events-auto absolute right-0")}
+					className={cn(navBtn, mergeStylexClassName("", sx.pointerEventsAuto, sx.absolute, sx.right0))}
 					onClick={requestClose}
 					aria-label="Close"
 				>
@@ -2330,8 +2510,8 @@ sendingCommentRef.current = false;
 
 			<div
 				className={cn(
-					"flex min-h-0 flex-1 items-center justify-center gap-3 px-3 pb-2 pt-[calc(56px+env(safe-area-inset-top))] sm:px-4",
-					isPhone && "gap-0 px-0",
+					mergeStylexClassName("", sx.flex, sx.minH0, sx.flex1, sx.itemsCenter, sx.justifyCenter, sx.gap3, sx.px3, sx.pb2, sx.ptCalc56pxEnvSafeAreaInsetTop, sx.smPx4),
+					isPhone && mergeStylexClassName("", sx.gap0, sx.px0),
 				)}
 				style={
 					isPhone
@@ -2457,8 +2637,8 @@ sendingCommentRef.current = false;
 				<div
 					ref={phoneBottomRef}
 					className={cn(
-						"absolute inset-x-0 bottom-0 z-10 flex flex-col gap-3 bg-linear-to-b from-transparent via-black/85 to-black px-0 pb-[max(14px,env(safe-area-inset-bottom))] pt-8 transition-[opacity,transform] duration-[var(--dur)] ease-[var(--ease)] motion-reduce:transition-none",
-						!chromeVisible && "pointer-events-none translate-y-3 opacity-0",
+						mergeStylexClassName("pb-[max(14px,env(safe-area-inset-bottom))] transition-[opacity,transform]", sx.absolute, sx.insetX0, sx.bottom0, sx.z10, sx.flex, sx.flexCol, sx.gap3, sx.bgLinearToB, sx.fromTransparent, sx.viaBlack85, sx.toBlack, sx.px0, sx.pt8, sx.durationVarDur, sx.easeVarEase, sx.motionReduceTransitionNone),
+						!chromeVisible && mergeStylexClassName("", sx.pointerEventsNone, sx.translateY3, sx.opacity0),
 					)}
 					inert={!chromeVisible ? true : undefined}
 					aria-hidden={!chromeVisible ? true : undefined}
@@ -2510,10 +2690,10 @@ sendingCommentRef.current = false;
 									>
 										<span
 											className={cn(
-												"block overflow-hidden rounded-sm outline outline-1 outline-offset-1 transition-[width,height,opacity] duration-[var(--dur)] ease-[var(--ease)] motion-reduce:transition-none",
+												mergeStylexClassName("transition-[width,height,opacity]", sx.block, sx.overflowHidden, sx.roundedSm, sx.outline, sx.outline1, sx.outlineOffset1, sx.durationVarDur, sx.easeVarEase, sx.motionReduceTransitionNone),
 												active
-													? "h-11 w-11 opacity-100 outline-white/85"
-													: "h-9 w-7 opacity-60 outline-transparent",
+													? mergeStylexClassName("", sx.h11, sx.w11, sx.opacity100, sx.outlineWhite85)
+													: mergeStylexClassName("", sx.h9, sx.w7, sx.opacity60, sx.outlineTransparent),
 											)}
 										>
 											{thumb.kind === "video" ? (
@@ -2570,7 +2750,7 @@ sendingCommentRef.current = false;
 						{commentable && (
 							<button
 								type="button"
-								className={cn(phoneAction, "justify-self-center", commenting && "bg-white/15")}
+								className={cn(phoneAction, mergeStylexClassName("", sx.justifySelfCenter), commenting && mergeStylexClassName("", sx.bgWhite15))}
 								onClick={() => {
 									if (commenting) resetComment();
 									else {
@@ -2588,7 +2768,7 @@ sendingCommentRef.current = false;
 
 						<button
 							type="button"
-							className={cn(phoneAction, "col-start-3 justify-self-end")}
+							className={cn(phoneAction, mergeStylexClassName("", sx.colStart3, sx.justifySelfEnd))}
 							onClick={copyImage}
 							disabled={item.kind === "video"}
 							aria-label={copied ? "Image copied" : "Copy image"}
@@ -2699,10 +2879,10 @@ sendingCommentRef.current = false;
 			{!isPhone && (
 				<div
 					className={cn(
-						"z-10 flex flex-col items-center gap-1.5 px-4 pb-4 pt-4",
+						mergeStylexClassName("", sx.z10, sx.flex, sx.flexCol, sx.itemsCenter, sx.gap15, sx.px4, sx.pb4, sx.pt4),
 					(commenting ||
 						(!item.walkthroughLabel && !caption && !description && !many)) &&
-						"hidden",
+						mergeStylexClassName("", sx.hidden),
 				)}
 				onMouseDown={(e) => {
 					if (e.target === e.currentTarget) requestClose();
@@ -2749,14 +2929,14 @@ sendingCommentRef.current = false;
 								>
 									<span
 										className={cn(
-											"block size-1.5 rounded-full transition-[scale,background-color]",
+											mergeStylexClassName("transition-[scale,background-color]", sx.block, sx.size15, sx.roundedFull),
 											((position === 0 && dotStart > 0) ||
 												(position === dotIndexes.length - 1 &&
 													dotStart + dotIndexes.length < items.length)) &&
-												"scale-[0.67]",
+												mergeStylexClassName("", sx.scale067),
 											dot === index
-												? "bg-white"
-												: "bg-white/30 group-hover:bg-white/60",
+												? mergeStylexClassName("", sx.bgWhite)
+												: mergeStylexClassName("group-hover:bg-white/60", sx.bgWhite30),
 										)}
 									/>
 								</button>

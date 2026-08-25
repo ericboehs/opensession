@@ -23,7 +23,7 @@ import { sessionWasAgentStarted } from "../../lib/sidebar-placement";
 import { LONG_PRESS_MS, LONG_PRESS_SLOP, SWIPE_AXIS_LOCK_PX, SWIPE_COMMIT_MS, SWIPE_OPEN_THRESHOLD, SWIPE_REVEAL_PX, clampSwipe, fullSwipeThreshold, swipeCommitOffset, type SwipeAction } from "../../lib/sidebar-swipe";
 import type { LaneChoice } from "../../lib/sidebar-types";
 import type { UnifiedSession } from "../../lib/types";
-import { cn, mergeStylexProps } from "../../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 import { Popover } from "../../ui/popover";
 import { BottomSheet, SheetBody, SheetItem, SheetSeparator, SheetTitle } from "../../ui/sheet";
 import { Tooltip } from "../../ui/tooltip";
@@ -165,6 +165,103 @@ const sx = stylex.create({
 	textFaint: {
 			color: "var(--text-faint)"
 	},
+
+	top12: {
+		"top": "50%"
+	},
+	hidden: {
+		"display": "none"
+	},
+	TranslateY12: {
+		"--tw-translate-y": "calc(calc(1 / 2 * 100%) * -1)",
+		"translate": "var(--tw-translate-x) var(--tw-translate-y)"
+	},
+	text15px: {
+		"fontSize": "15px"
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	transitionNone: {
+		"transitionProperty": "none"
+	},
+	z1: {
+		"zIndex": "1"
+	},
+	mt0: {
+		"marginTop": "0"
+	},
+	block: {
+		"display": "block"
+	},
+	touchPanY: {
+		"--tw-pan-y": "pan-y",
+		"touchAction": "var(--tw-pan-x,) var(--tw-pan-y,) var(--tw-pinch-zoom,)"
+	},
+	hoverPr68px: {
+		"@media (hover: hover)": {
+			":hover": {
+				"paddingRight": "68px"
+			}
+		}
+	},
+	hoverPr38px: {
+		"@media (hover: hover)": {
+			":hover": {
+				"paddingRight": "38px"
+			}
+		}
+	},
+	bgSelected: {
+		"backgroundColor": "var(--selected)"
+	},
+	transitionTransform: {
+		"transitionProperty": "transform,translate,scale,rotate",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	durationDurMicro: {
+		"--tw-duration": "var(--dur-micro)",
+		"transitionDuration": "var(--dur-micro)"
+	},
+	durationDur: {
+		"--tw-duration": "var(--dur)",
+		"transitionDuration": "var(--dur)"
+	},
+	willChangeTransform: {
+		"willChange": "transform"
+	},
+	size2: {
+		"width": "8px",
+		"height": "8px"
+	},
+	mlAuto: {
+		"marginLeft": "auto"
+	},
+	minW10: {
+		"minWidth": "40px"
+	},
+	justifyEnd: {
+		"justifyContent": "flex-end"
+	},
+	pl25: {
+		"paddingLeft": "10px"
+	},
+	phoneTextLabel: {
+		"@media (max-width: 720px)": {
+			"fontSize": "var(--type-label)"
+		}
+	},
+	ml15: {
+		"marginLeft": "6px"
+	},
+	right7px: {
+		"right": "7px"
+	},
 });
 
 /** The sidebar's selectable row — the shape every list family wears: session,
@@ -208,7 +305,7 @@ export const SIDEBAR_ROW =
    us; on touch these actions live behind the swipe gesture and the long-press
    sheet. */
 const ROW_ACTION = cn(
-	"absolute top-1/2 hidden size-[var(--sidebar-row-action,26px)] -translate-y-1/2 items-center justify-center rounded-md text-[15px] leading-none text-faint group-hover:flex hover:text-fg",
+	mergeStylexClassName("size-[var(--sidebar-row-action,26px)] group-hover:flex", sx.absolute, sx.top12, sx.hidden, sx.TranslateY12, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.text15px, sx.leadingNone, sx.textFaint, sx.hoverTextFg),
 	// Not a wash — a lid. See SIDEBAR_ROW_CHIP.
 	SIDEBAR_ROW_CHIP,
 );
@@ -480,7 +577,7 @@ export function SidebarItem({
 						SIDEBAR_SWIPE_ACTION,
 						SIDEBAR_SWIPE_ACTION_ARCHIVE,
 						openSide === "archive" && SIDEBAR_SWIPE_ACTION_OPEN,
-						dragging ? "transition-none" : SIDEBAR_SWIPE_ACTION_TRANSITION,
+						dragging ? mergeStylexClassName("", sx.transitionNone) : SIDEBAR_SWIPE_ACTION_TRANSITION,
 					)}
 					data-swipe-action="archive"
 					onClick={(e) => {
@@ -500,7 +597,7 @@ export function SidebarItem({
 						SIDEBAR_SWIPE_ACTION,
 						pinned ? SIDEBAR_SWIPE_ACTION_STAR_ON : SIDEBAR_SWIPE_ACTION_STAR,
 						openSide === "star" && SIDEBAR_SWIPE_ACTION_OPEN,
-						dragging ? "transition-none" : SIDEBAR_SWIPE_ACTION_TRANSITION,
+						dragging ? mergeStylexClassName("", sx.transitionNone) : SIDEBAR_SWIPE_ACTION_TRANSITION,
 					)}
 					data-swipe-action="star"
 					onClick={(e) => {
@@ -525,7 +622,7 @@ export function SidebarItem({
 						// slide. Hover paints over selected/waiting here, as it always
 						// has — as a layer now, so it lifts those states rather than
 						// replacing them (see SIDEBAR_HOVER_LAYER).
-						"z-1 mt-0 block touch-pan-y",
+						mergeStylexClassName("", sx.z1, sx.mt0, sx.block, sx.touchPanY),
 						SIDEBAR_HOVER_LAYER,
 						// On hover the row gives up its right end to the pin +
 						// archive pair floating there, the same reserve workspace
@@ -536,7 +633,7 @@ export function SidebarItem({
 						// Two chips' worth while the pin is there to unpin; one
 						// chip less (26px + the 4px gap) on an unpinned row, which
 						// reveals archive alone.
-						pinned ? "hover:pr-[68px]" : "hover:pr-[38px]",
+						pinned ? mergeStylexClassName("", sx.hoverPr68px) : mergeStylexClassName("", sx.hoverPr38px),
 						// No trim here for other people's sessions, which stack a meta
 						// line under the title. That used to re-state `py-[7px]` against
 						// a 9px base; the base is now the shared `--sidebar-row-pad`, and
@@ -545,15 +642,15 @@ export function SidebarItem({
 						// No fill for "needs you" — the blue mark in the rail and the
 						// bold title carry it, and the row's one background slot stays
 						// with selection (see the workspace row, which matches).
-						selected && "bg-selected",
+						selected && mergeStylexClassName("", sx.bgSelected),
 						dragging
-							? "transition-none"
+							? mergeStylexClassName("", sx.transitionNone)
 							: swipeOpen
-								? "transition-transform duration-(--dur-micro)"
-								: "transition-transform duration-(--dur)",
+								? mergeStylexClassName("", sx.transitionTransform, sx.durationDurMicro)
+								: mergeStylexClassName("", sx.transitionTransform, sx.durationDur),
 						// One compositor layer for the row under the finger, none for
 						// the idle list (dozens of retina-sized layers is a real tax).
-						(dragging || swipeOpen) && "will-change-transform",
+						(dragging || swipeOpen) && mergeStylexClassName("", sx.willChangeTransform),
 					)}
 					data-sidebar-row=""
 					data-sidebar-item-key={`session:${session.id}`}
@@ -608,7 +705,7 @@ export function SidebarItem({
 			{/* The shared rail gap, as every other family takes it: with the
 			    SIDEBAR_RAIL slot in front, that pair is what puts every title on
 			    one rail. */}
-			<div className={cn("flex min-w-0 items-center", SIDEBAR_RAIL_GAP)}>
+			<div className={cn(mergeStylexClassName("", sx.flex, sx.minW0, sx.itemsCenter), SIDEBAR_RAIL_GAP)}>
 				{/* Questions stay blue. A stopped run is red, so it cannot look as
 				    though it is waiting for a reply. */}
 				<span className={SIDEBAR_RAIL}>
@@ -616,15 +713,15 @@ export function SidebarItem({
 					{failed && <span {...stylex.props(sx.srOnly)}>Last run failed</span>}
 					{waitingForInput ? (
 						<span
-							className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.waiting}`}
+							className={[mergeStylexClassName("", sx.size2, sx.shrink0, sx.roundedFull), SIDEBAR_STATUS_DOT.waiting].filter(Boolean).join(" ")}
 						/>
 					) : failed ? (
 						<span
-							className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.failed}`}
+							className={[mergeStylexClassName("", sx.size2, sx.shrink0, sx.roundedFull), SIDEBAR_STATUS_DOT.failed].filter(Boolean).join(" ")}
 						/>
 					) : session.isRunning ? (
 						<span
-							className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.running}`}
+							className={[mergeStylexClassName("", sx.size2, sx.shrink0, sx.roundedFull), SIDEBAR_STATUS_DOT.running].filter(Boolean).join(" ")}
 						/>
 					) : (
 						<WsPrStatusMark
@@ -692,7 +789,7 @@ export function SidebarItem({
 				{mine && !editing && metaParts.length > 0 && (
 					<span
 						className={cn(
-							"ml-auto flex min-w-10 shrink-0 items-center justify-end gap-1 pl-2.5 whitespace-nowrap text-meta text-faint phone:text-label group-data-[unread]:text-dim",
+							mergeStylexClassName("group-data-[unread]:text-dim", sx.mlAuto, sx.flex, sx.minW10, sx.shrink0, sx.itemsCenter, sx.justifyEnd, sx.gap1, sx.pl25, sx.whitespaceNowrap, typography.meta, sx.textFaint, sx.phoneTextLabel),
 							!isPhone && "group-hover:opacity-0",
 						)}
 					>
@@ -706,7 +803,7 @@ export function SidebarItem({
 				)}
 				{!editing && hasDraft(`session:${session.id}`) && (
 					<span
-						className={cn(SIDEBAR_WS_DRAFT, "ml-1.5")}
+						className={cn(SIDEBAR_WS_DRAFT, mergeStylexClassName("", sx.ml15))}
 						data-ws-draft=""
 						aria-label="Unsent draft. Return to finish it."
 					>
@@ -764,7 +861,7 @@ export function SidebarItem({
 				shortcut={selected ? (archiveKeys ?? undefined) : undefined}
 			>
 				<span
-					className={cn(ROW_ACTION, "right-[7px]")}
+					className={cn(ROW_ACTION, mergeStylexClassName("", sx.right7px))}
 					role="button"
 					aria-label="Archive session"
 					onMouseEnter={closeHover}

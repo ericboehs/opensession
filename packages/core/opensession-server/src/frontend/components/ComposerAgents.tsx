@@ -3,7 +3,7 @@ import type { WorkflowRunSnapshot } from "../../server/workflow-types";
 import type { SessionSubagentSnapshot } from "../lib/api";
 import { currentPlanItem, planDoneCount, type PlanItem } from "@tellahq/opensession-protocol/todo-plan";
 import { composerFlapBorder } from "../lib/composer-classes";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { IconChevronDown, IconChevronRight } from "./icons";
 import { PlanChecklist } from "./PlanChecklist";
 import * as stylex from "@stylexjs/stylex";
@@ -121,6 +121,85 @@ const sx = stylex.create({
 	},
 	textFg: {
 			color: "var(--text)"
+	},
+
+	wFull: {
+		"width": "100%"
+	},
+	gap2: {
+		"gap": "8px"
+	},
+	textLeft: {
+		"textAlign": "left"
+	},
+	borderT: {
+		"borderTopStyle": "var(--tw-border-style)",
+		"borderTopWidth": "1px"
+	},
+	pt25: {
+		"paddingTop": "10px"
+	},
+	size2: {
+		"width": "8px",
+		"height": "8px"
+	},
+	transitionTransform: {
+		"transitionProperty": "transform,translate,scale,rotate",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	durationVarDur: {
+		"--tw-duration": "var(--dur)",
+		"transitionDuration": "var(--dur)"
+	},
+	rotate180: {
+		"rotate": "180deg"
+	},
+	relative: {
+		"position": "relative"
+	},
+	Mb35: {
+		"marginBottom": "-14px"
+	},
+	roundedTVarComposerRadius: {
+		"borderTopLeftRadius": "var(--composer-radius)",
+		"borderTopRightRadius": "var(--composer-radius)"
+	},
+	borderX: {
+		"borderInlineStyle": "var(--tw-border-style)",
+		"borderInlineWidth": "1px"
+	},
+	px35: {
+		"paddingInline": "14px"
+	},
+	pb22px: {
+		"paddingBottom": "22px"
+	},
+	size4: {
+		"width": "16px",
+		"height": "16px"
+	},
+	justifyCenter: {
+		"justifyContent": "center"
+	},
+	text10px: {
+		"fontSize": "10px"
+	},
+	borderTransparent: {
+		"borderColor": "#0000"
+	},
+	bgGreenSoft: {
+		"backgroundColor": "var(--green-soft)"
+	},
+	textGreen: {
+		"color": "var(--green)"
+	},
+	borderGreen: {
+		"borderColor": "var(--green)"
+	},
+	size15: {
+		"width": "6px",
+		"height": "6px"
 	},
 });
 
@@ -253,17 +332,17 @@ export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 		<button
 			type="button"
 			className={cn(
-				"flex w-full items-center gap-2 text-left text-label font-medium text-fg",
+				mergeStylexClassName("", sx.flex, sx.wFull, sx.itemsCenter, sx.gap2, sx.textLeft, typography.label, sx.fontMedium, sx.textFg),
 				// Open, this row is a control bar under a list that scrolls: without
 				// a rule its last clipped item runs straight into it. Same gap + rule
 				// + padding the agents section takes from the plan above it.
-				open && "border-t border-line pt-2.5",
+				open && mergeStylexClassName("", sx.borderT, sx.borderLine, sx.pt25),
 			)}
 			aria-expanded={open}
 			aria-label={open ? "Collapse run status" : "Show run status"}
 			onClick={toggle}
 		>
-			{!open && <span className={cn(liveDot, "size-2")} />}
+			{!open && <span className={cn(liveDot, mergeStylexClassName("", sx.size2))} />}
 			{total === 0 && (
 				<span {...mergeStylexProps("tabular-nums", sx.flexNone, sx.fontMedium, sx.textFaint)}>
 					{planDone}/{planTotal}
@@ -302,8 +381,8 @@ export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 			<IconChevronDown
 				size={16}
 				className={cn(
-					"flex-none text-faint transition-transform duration-[var(--dur)]",
-					!open && "rotate-180",
+					mergeStylexClassName("", sx.flexNone, sx.textFaint, sx.transitionTransform, sx.durationVarDur),
+					!open && mergeStylexClassName("", sx.rotate180),
 				)}
 			/>
 		</button>
@@ -323,7 +402,7 @@ export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 		// states: open and close are the same click, in the same place.
 		<div
 			className={cn(
-				"relative -mb-3.5 flex w-full flex-col gap-2.5 rounded-t-[var(--composer-radius)] border-x border-t bg-[color-mix(in_srgb,var(--bg-panel)_80%,var(--composer-surface))] px-3.5 pt-2.5 pb-[22px] text-label font-medium text-fg",
+				mergeStylexClassName("bg-[color-mix(in_srgb,var(--bg-panel)_80%,var(--composer-surface))]", sx.relative, sx.Mb35, sx.flex, sx.wFull, sx.flexCol, sx.gap25, sx.roundedTVarComposerRadius, sx.borderX, sx.borderT, sx.px35, sx.pt25, sx.pb22px, typography.label, sx.fontMedium, sx.textFg),
 				composerFlapBorder,
 			)}
 			data-open={open ? "" : undefined}
@@ -350,8 +429,8 @@ export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 						// it — without one the two sections read as a single list.
 						<div
 							className={cn(
-								"flex flex-col gap-2.5",
-								planTotal > 0 && "border-t border-line pt-2.5",
+								mergeStylexClassName("", sx.flex, sx.flexCol, sx.gap25),
+								planTotal > 0 && mergeStylexClassName("", sx.borderT, sx.borderLine, sx.pt25),
 							)}
 						>
 							<div className={sectionName}>
@@ -370,20 +449,20 @@ export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 										<li
 											key={s}
 											className={cn(
-												"flex items-center gap-2",
-												i < curIdx && "font-medium text-dim",
-												i === curIdx && "font-semibold text-fg",
-												i > curIdx && "font-medium text-faint",
+												mergeStylexClassName("", sx.flex, sx.itemsCenter, sx.gap2),
+												i < curIdx && mergeStylexClassName("", sx.fontMedium, sx.textDim),
+												i === curIdx && mergeStylexClassName("", sx.fontSemibold, sx.textFg),
+												i > curIdx && mergeStylexClassName("", sx.fontMedium, sx.textFaint),
 											)}
 										>
 											<span
 												className={cn(
-													"inline-flex size-4 flex-none items-center justify-center rounded-full text-[10px] font-semibold",
+													mergeStylexClassName("", sx.inlineFlex, sx.size4, sx.flexNone, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.text10px, sx.fontSemibold),
 													i < curIdx
-														? "border border-transparent bg-green-soft text-green"
+														? mergeStylexClassName("", sx.border, sx.borderTransparent, sx.bgGreenSoft, sx.textGreen)
 														: i === curIdx
-															? "border border-green text-green"
-															: "border border-line",
+															? mergeStylexClassName("", sx.border, sx.borderGreen, sx.textGreen)
+															: mergeStylexClassName("", sx.border, sx.borderLine),
 												)}
 											>
 												{i < curIdx ? "✓" : i + 1}
@@ -396,7 +475,7 @@ export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 
 							<div {...stylex.props(sx.flex, sx.flexWrap, sx.gapX3, sx.gapY1, sx.fontMedium, typography.meta)}>
 								<span {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap5px)}>
-									<i className={cn(liveDot, "size-2")} />
+									<i className={cn(liveDot, mergeStylexClassName("", sx.size2))} />
 									{runningCount} running
 								</span>
 								{done > 0 && (
@@ -420,7 +499,7 @@ export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 								<ul {...stylex.props(sx.m0, sx.flex, sx.maxH108px, sx.listNone, sx.flexCol, sx.gap5px, sx.overflowYAuto, sx.p0, sx.fontMedium, typography.meta)}>
 									{running.slice(0, 4).map((a) => (
 										<li key={a.key} {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap7px)}>
-											<i className={cn(liveDot, "size-1.5")} />
+											<i className={cn(liveDot, mergeStylexClassName("", sx.size15))} />
 											<span {...stylex.props(sx.truncate)}>{a.label}</span>
 											{a.phase && single?.phases?.length !== 1 ? (
 												<span {...stylex.props(sx.flexNone, sx.textFaint)}> · {a.phase}</span>

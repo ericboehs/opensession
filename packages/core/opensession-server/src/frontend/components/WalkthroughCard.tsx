@@ -9,7 +9,7 @@ import {
 	WALKTHROUGH_LABEL_TONE,
 } from "../lib/walkthrough-label";
 import { walkthroughLede } from "../lib/walkthrough-lede";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { ease } from "../ui/motion";
 import { IconChevronDown, IconPlay, IconPlayRectangle } from "./icons";
 import { MarkdownBody, useMarkdownRepo } from "./MarkdownBody";
@@ -218,6 +218,149 @@ const sx = stylex.create({
 			transitionTimingFunction: "var(--tw-ease,var(--ease))",
 			transitionDuration: "var(--tw-duration,var(--dur-micro))"
 	},
+
+	pointerEventsNone: {
+		"pointerEvents": "none"
+	},
+	left2: {
+		"left": "8px"
+	},
+	top2: {
+		"top": "8px"
+	},
+	maxWFull: {
+		"maxWidth": "100%"
+	},
+	TileH320px: {
+		"--tile-h": "320px"
+	},
+	desktopTileH384px: {
+		"@media (min-width: 721px)": {
+			"--tile-h": "384px"
+		}
+	},
+	TileH100px: {
+		"--tile-h": "100px"
+	},
+	desktopTileH160px: {
+		"@media (min-width: 721px)": {
+			"--tile-h": "160px"
+		}
+	},
+	roundedXl: {
+		"borderRadius": "calc(18px * var(--rf))"
+	},
+	borderLine60: {
+		"borderColor": "var(--border)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in oklab, var(--border) 60%, transparent)"
+		}
+	},
+	p4: {
+		"padding": "16px"
+	},
+	mxAuto: {
+		"marginInline": "auto"
+	},
+	mb6: {
+		"marginBottom": "24px"
+	},
+	maxWVarSessionCol: {
+		"maxWidth": "var(--session-col)"
+	},
+	mb4: {
+		"marginBottom": "16px"
+	},
+	size5: {
+		"width": "20px",
+		"height": "20px"
+	},
+	leadingNone: {
+		"--tw-leading": "1",
+		"lineHeight": "1"
+	},
+	duration150: {
+		"--tw-duration": ".15s",
+		"transitionDuration": ".15s"
+	},
+	Rotate90: {
+		"rotate": "-90deg"
+	},
+	Mx4: {
+		"marginInline": "-16px"
+	},
+	overflowXAuto: {
+		"overflowX": "auto"
+	},
+	px4: {
+		"paddingInline": "16px"
+	},
+	ScrollbarWidthNone: {
+		"scrollbarWidth": "none"
+	},
+	gap4: {
+		"gap": "16px"
+	},
+	wMax: {
+		"width": "max-content"
+	},
+	shrink0: {
+		"flexShrink": "0"
+	},
+	bgBlack: {
+		"backgroundColor": "var(--color-black)"
+	},
+	focusVisibleShadow0003pxVarAccentSoft: {
+		":focusVisible": {
+			"--tw-shadow": "0 0 0 3px var(--tw-shadow-color,var(--accent-soft))",
+			"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+		}
+	},
+	hFull: {
+		"height": "100%"
+	},
+	objectContain: {
+		"objectFit": "contain"
+	},
+	objectCover: {
+		"objectFit": "cover"
+	},
+	gap1: {
+		"gap": "4px"
+	},
+	objectTop: {
+		"objectPosition": "top"
+	},
+	mt4: {
+		"marginTop": "16px"
+	},
+	mt3: {
+		"marginTop": "12px"
+	},
+	shadow0001pxVarBorder: {
+		"--tw-shadow": "0 0 0 1px var(--tw-shadow-color,var(--border))",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	maxH60vh: {
+		"maxHeight": "60vh"
+	},
+	gap25: {
+		"gap": "10px"
+	},
+	gridCols2: {
+		"gridTemplateColumns": "repeat(2,minmax(0,1fr))"
+	},
+	phoneGridCols1: {
+		"@media (max-width: 720px)": {
+			"gridTemplateColumns": "repeat(1,minmax(0,1fr))"
+		}
+	},
+	gridCols1: {
+		"gridTemplateColumns": "repeat(1,minmax(0,1fr))"
+	},
+	maxH96: {
+		"maxHeight": "384px"
+	},
 });
 
 /** Stream server-side media (staged under the uploads dir) through the
@@ -245,7 +388,7 @@ const mediaUrl = (path: string) => `/media?path=${encodeURIComponent(path)}`;
  */
 const SHOT_LABEL = cn(
 	WALKTHROUGH_LABEL_CLASS,
-	"pointer-events-none absolute left-2 top-2",
+	mergeStylexClassName("", sx.pointerEventsNone, sx.absolute, sx.left2, sx.top2),
 );
 
 /**
@@ -373,10 +516,10 @@ export function WalkthroughCard({
 			};
 		return {
 			className: cn(
-				"max-w-full",
+				mergeStylexClassName("", sx.maxWFull),
 				fill
-					? "[--tile-h:320px] desktop:[--tile-h:384px]"
-					: "[--tile-h:100px] desktop:[--tile-h:160px]",
+					? mergeStylexClassName("", sx.TileH320px, sx.desktopTileH384px)
+					: mergeStylexClassName("", sx.TileH100px, sx.desktopTileH160px),
 			),
 			style: {
 				height: "var(--tile-h)",
@@ -390,15 +533,15 @@ export function WalkthroughCard({
 			className={cn(
 				// White in light mode, with only a close edge shadow. The walkthrough
 				// should read as finished proof, not a panel floating over the transcript.
-				"rounded-xl border border-line/60 bg-surface p-4 smooth-shadow-xs",
+				mergeStylexClassName("smooth-shadow-xs", sx.roundedXl, sx.border, sx.borderLine60, sx.bgSurface, sx.p4),
 				// In the session the card is a transcript block like any other, so it
 				// takes the same centered reading column the turns and footers use
 				// (mx-auto + --session-col) instead of spanning the whole pane. It
 				// trails more space than it leads: unlike the neighbouring blocks
 				// it ends in media, which otherwise butts straight into the next
 				// message.
-				session && "mx-auto mb-6 mt-2 w-full max-w-[var(--session-col)]",
-				!session && "mb-4",
+				session && mergeStylexClassName("", sx.mxAuto, sx.mb6, sx.mt2, sx.wFull, sx.maxWVarSessionCol),
+				!session && mergeStylexClassName("", sx.mb4),
 			)}
 		>
 			{session ? (
@@ -425,8 +568,8 @@ export function WalkthroughCard({
 						</span>
 						<span
 							className={cn(
-								"grid size-5 flex-shrink-0 place-items-center leading-none text-faint transition-[transform,color] duration-150 group-hover:text-dim",
-								!expanded && "-rotate-90",
+								mergeStylexClassName("transition-[transform,color] group-hover:text-dim", sx.grid, sx.size5, sx.flexShrink0, sx.placeItemsCenter, sx.leadingNone, sx.textFaint, sx.duration150),
+								!expanded && mergeStylexClassName("", sx.Rotate90),
 							)}
 						>
 							<IconChevronDown size={20} {...stylex.props(sx.block)} />
@@ -464,27 +607,27 @@ export function WalkthroughCard({
 				// one that runs under the edge reads as "there is more this way".
 				<div
 					className={cn(
-						"mt-2",
+						mergeStylexClassName("", sx.mt2),
 						!fill &&
-							"-mx-4 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+							mergeStylexClassName("[&::-webkit-scrollbar]:hidden", sx.Mx4, sx.overflowXAuto, sx.px4, sx.ScrollbarWidthNone),
 					)}
 				>
-					<div className={cn("flex items-start gap-4", !fill && "w-max")}>
+					<div className={cn(mergeStylexClassName("", sx.flex, sx.itemsStart, sx.gap4), !fill && mergeStylexClassName("", sx.wMax))}>
 						{walkthrough.video && (
 							<figure
 								className={cn(
-									"m-0",
+									mergeStylexClassName("", sx.m0),
 									isTall("video")
-										? "shrink-0"
+										? mergeStylexClassName("", sx.shrink0)
 										: fill
-											? "min-w-0 flex-1"
-											: cn("shrink-0", tile),
+											? mergeStylexClassName("", sx.minW0, sx.flex1)
+											: cn(mergeStylexClassName("", sx.shrink0), tile),
 								)}
 							>
 								<button
 									type="button"
 									className={cn(
-										"relative block cursor-zoom-in overflow-hidden rounded-md border border-line bg-black p-0 outline-none focus-visible:shadow-[0_0_0_3px_var(--accent-soft)]",
+										mergeStylexClassName("", sx.relative, sx.block, sx.cursorZoomIn, sx.overflowHidden, sx.roundedMd, sx.border, sx.borderLine, sx.bgBlack, sx.p0, sx.outlineNone, sx.focusVisibleShadow0003pxVarAccentSoft),
 										tileBox("video").className,
 									)}
 									style={tileBox("video").style}
@@ -493,8 +636,8 @@ export function WalkthroughCard({
 								>
 									<video
 										className={cn(
-											"h-full w-full",
-											ownRatio.video ? "object-contain" : "object-cover",
+											mergeStylexClassName("", sx.hFull, sx.wFull),
+											ownRatio.video ? mergeStylexClassName("", sx.objectContain) : mergeStylexClassName("", sx.objectCover),
 										)}
 										src={`${mediaUrl(walkthrough.video)}#t=0.1`}
 										preload="metadata"
@@ -522,12 +665,12 @@ export function WalkthroughCard({
 						{(walkthrough.shots || []).map((shot, i) => (
 							<div
 								className={cn(
-									"flex gap-1",
+									mergeStylexClassName("", sx.flex, sx.gap1),
 									fill &&
 										!(isTall(`${i}:before`) || isTall(`${i}:after`)) &&
-										"min-w-0 flex-1",
+										mergeStylexClassName("", sx.minW0, sx.flex1),
 									(!fill || isTall(`${i}:before`) || isTall(`${i}:after`)) &&
-										"shrink-0",
+										mergeStylexClassName("", sx.shrink0),
 								)}
 								key={i}
 							>
@@ -543,12 +686,12 @@ export function WalkthroughCard({
 												// decorative rather than the answer to "what
 												// changed". How wide is `fill`/`tile`, above.
 												className={cn(
-													"m-0",
+													mergeStylexClassName("", sx.m0),
 													isTall(`${i}:${side}`)
-														? "shrink-0"
+														? mergeStylexClassName("", sx.shrink0)
 														: fill
-															? "min-w-0 flex-1"
-															: cn("shrink-0", tile),
+															? mergeStylexClassName("", sx.minW0, sx.flex1)
+															: cn(mergeStylexClassName("", sx.shrink0), tile),
 												)}
 												key={side}
 											>
@@ -559,7 +702,7 @@ export function WalkthroughCard({
 													// silently letterbox the wide sizes. A narrow
 													// one is sized by height instead (tileBox).
 													className={cn(
-														"relative block cursor-zoom-in overflow-hidden rounded-md border border-line bg-transparent p-0 outline-none focus-visible:shadow-[0_0_0_3px_var(--accent-soft)]",
+														mergeStylexClassName("", sx.relative, sx.block, sx.cursorZoomIn, sx.overflowHidden, sx.roundedMd, sx.border, sx.borderLine, sx.bgTransparent, sx.p0, sx.outlineNone, sx.focusVisibleShadow0003pxVarAccentSoft),
 														tileBox(`${i}:${side}`).className,
 													)}
 													style={tileBox(`${i}:${side}`).style}
@@ -570,10 +713,10 @@ export function WalkthroughCard({
 													    "Open before image preview"s. */}
 													<img
 														className={cn(
-															"h-full w-full",
+															mergeStylexClassName("", sx.hFull, sx.wFull),
 															ownRatio[`${i}:${side}`]
-																? "object-contain"
-																: "object-cover object-top",
+																? mergeStylexClassName("", sx.objectContain)
+																: mergeStylexClassName("", sx.objectCover, sx.objectTop),
 														)}
 														src={mediaUrl(shot[side]!)}
 														alt={`${shot.caption || "Change"} · ${side}`}
@@ -623,12 +766,12 @@ export function WalkthroughCard({
 									opacity: { type: "tween", duration: 0.2, ease },
 								}
 						}
-						className={session ? "overflow-hidden" : undefined}
+						className={session ? mergeStylexClassName("", sx.overflowHidden) : undefined}
 					>
 						{/* No rule under the header: the card is already one surface,
 						    and open, the header and the writeup read as parts of it.
 						    The gap does the separating. */}
-						<div className={cn("space-y-5", session ? "mt-4" : "mt-3")}>
+						<div className={cn("space-y-5", session ? mergeStylexClassName("", sx.mt4) : mergeStylexClassName("", sx.mt3))}>
 							<section {...stylex.props(sx.px05)}>
 								<h3 {...stylex.props(sx.m0, sx.mb15, sx.fontSemibold, sx.leading4, sx.textFaint, typography.meta)}>
 									Summary
@@ -651,8 +794,8 @@ export function WalkthroughCard({
 									</figcaption>
 									<video
 										className={cn(
-											"w-full rounded-md bg-black shadow-[0_0_0_1px_var(--border)]",
-											session && "max-h-[60vh] object-contain",
+											mergeStylexClassName("", sx.wFull, sx.roundedMd, sx.bgBlack, sx.shadow0001pxVarBorder),
+											session && mergeStylexClassName("", sx.maxH60vh, sx.objectContain),
 										)}
 										src={mediaUrl(walkthrough.video)}
 										controls
@@ -673,10 +816,10 @@ export function WalkthroughCard({
 										)}
 										<div
 											className={cn(
-												"grid gap-2.5",
+												mergeStylexClassName("", sx.grid, sx.gap25),
 												paired
-													? "grid-cols-2 phone:grid-cols-1"
-													: "grid-cols-1",
+													? mergeStylexClassName("", sx.gridCols2, sx.phoneGridCols1)
+													: mergeStylexClassName("", sx.gridCols1),
 											)}
 										>
 											{(["before", "after"] as const).map(
@@ -691,7 +834,7 @@ export function WalkthroughCard({
 															>
 																<img
 																	className={cn(
-																		"block object-contain object-top",
+																		mergeStylexClassName("", sx.block, sx.objectContain, sx.objectTop),
 																		// A cap on HEIGHT costs a PORTRAIT shot its
 																		// width too: a phone screenshot is about
 																		// twice as tall as it is wide, so every
@@ -700,7 +843,7 @@ export function WalkthroughCard({
 																		// ~120px across — a column of grey. 384
 																		// still leaves the pair, the writeup above
 																		// it and the next block in view.
-																		session ? "max-h-96 max-w-full" : "w-full",
+																		session ? mergeStylexClassName("", sx.maxH96, sx.maxWFull) : mergeStylexClassName("", sx.wFull),
 																	)}
 																	src={mediaUrl(shot[side]!)}
 																	alt={`${shot.caption || "change"} · ${side}`}

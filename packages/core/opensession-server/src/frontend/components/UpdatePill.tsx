@@ -6,6 +6,7 @@ import { PERSISTENT_NOTICE_CARD } from "../lib/notification-classes";
 import { Tooltip } from "../ui/tooltip";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -55,6 +56,80 @@ const sx = stylex.create({
 	},
 	gap1: {
 			gap: "4px"
+	},
+
+	inlineFlex: {
+		"display": "inline-flex"
+	},
+	h7: {
+		"height": "28px"
+	},
+	roundedFull: {
+		"borderRadius": "3.40282e38px"
+	},
+	CornerShapeSquircle: {
+		"cornerShape": "squircle"
+	},
+	px13px: {
+		"paddingInline": "13px"
+	},
+	cursorPointer: {
+		"cursor": "pointer"
+	},
+	borderNone: {
+		"--tw-border-style": "none",
+		"borderStyle": "none"
+	},
+	bgRed: {
+		"backgroundColor": "var(--red)"
+	},
+	fontSemibold: {
+		"--tw-font-weight": "var(--font-weight-semibold)",
+		"fontWeight": "var(--font-weight-semibold)"
+	},
+	leadingNone: {
+		"--tw-leading": "1",
+		"lineHeight": "1"
+	},
+	textWhite: {
+		"color": "var(--color-white)"
+	},
+	transitionBackground: {
+		"transitionProperty": "background",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	durationVarDurMicro: {
+		"--tw-duration": "var(--dur-micro)",
+		"transitionDuration": "var(--dur-micro)"
+	},
+	easeVarEase: {
+		"--tw-ease": "var(--ease)",
+		"transitionTimingFunction": "var(--ease)"
+	},
+	disabledCursorWait: {
+		":disabled": {
+			"cursor": "wait"
+		}
+	},
+	disabledOpacity75: {
+		":disabled": {
+			"opacity": ".75"
+		}
+	},
+	animateUpdateToastInVarDurLgVarEase: {
+		"animation": "update-toast-in var(--dur-lg) var(--ease)"
+	},
+	motionReduceAnimateNone: {
+		"@media (prefers-reduced-motion: reduce)": {
+			"animation": "none"
+		}
+	},
+	roundedControl: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	px3: {
+		"paddingInline": "12px"
 	},
 });
 
@@ -216,9 +291,9 @@ export function UpdatePill({ addHandler, variant = "card" }: Props) {
         // The pill keeps a squircle at a pill radius on purpose; base.css
         // exempts rounded-full from its generic squircle rule.
         className={
-          "inline-flex h-7 shrink-0 items-center rounded-full [corner-shape:squircle] px-[13px] " +
-          "cursor-pointer border-none bg-red text-label font-semibold leading-none text-white transition-[background] duration-[var(--dur-micro)] ease-[var(--ease)] hover:bg-[color-mix(in_srgb,var(--red)_85%,black)] disabled:cursor-wait disabled:opacity-75 " +
-          "animate-[update-toast-in_var(--dur-lg)_var(--ease)] motion-reduce:animate-none " +
+          mergeStylexClassName("", sx.inlineFlex, sx.h7, sx.shrink0, sx.itemsCenter, sx.roundedFull, sx.CornerShapeSquircle, sx.px13px) +
+          mergeStylexClassName("hover:bg-[color-mix(in_srgb,var(--red)_85%,black)]", sx.cursorPointer, sx.borderNone, sx.bgRed, typography.label, sx.fontSemibold, sx.leadingNone, sx.textWhite, sx.transitionBackground, sx.durationVarDurMicro, sx.easeVarEase, sx.disabledCursorWait, sx.disabledOpacity75) +
+          mergeStylexClassName("", sx.animateUpdateToastInVarDurLgVarEase, sx.motionReduceAnimateNone) +
           // Phone: keep the visible pill compact while a pseudo-element grows
           // its tap target to the full 44px header row.
           "phone:[.app-brand_&]:relative phone:[.app-brand_&]:order-3 " +
@@ -272,7 +347,7 @@ export function UpdatePill({ addHandler, variant = "card" }: Props) {
       </div>
       <div {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.gap1)}>
         <button
-          className={"inline-flex h-7 items-center rounded-control px-3 cursor-pointer border-none bg-red text-supporting font-semibold leading-none text-white transition-[background] duration-[var(--dur-micro)] ease-[var(--ease)] hover:bg-[color-mix(in_srgb,var(--red)_85%,black)] disabled:cursor-wait disabled:opacity-75"}
+          className={mergeStylexClassName("hover:bg-[color-mix(in_srgb,var(--red)_85%,black)]", sx.inlineFlex, sx.h7, sx.itemsCenter, sx.roundedControl, sx.px3, sx.cursorPointer, sx.borderNone, sx.bgRed, typography.supporting, sx.fontSemibold, sx.leadingNone, sx.textWhite, sx.transitionBackground, sx.durationVarDurMicro, sx.easeVarEase, sx.disabledCursorWait, sx.disabledOpacity75)}
           onClick={refresh}
           disabled={refreshing}
         >

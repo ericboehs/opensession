@@ -6,7 +6,7 @@ import type {
 	WorkflowRunSnapshot,
 } from "../../server/workflow-types";
 import type { SessionSubagentSnapshot } from "../lib/api";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { Button } from "../ui/button";
 import { CardList } from "../ui/card";
 import { EmptyState } from "../ui/state";
@@ -263,6 +263,52 @@ const sx = stylex.create({
 	textLink: {
 			color: "var(--link)"
 	},
+
+	size2: {
+		"width": "8px",
+		"height": "8px"
+	},
+	bgYellow: {
+		"backgroundColor": "var(--yellow)"
+	},
+	bgLineStrong: {
+		"backgroundColor": "var(--border-strong)"
+	},
+	itemsStretch: {
+		"alignItems": "stretch"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	cursorDefault: {
+		"cursor": "default"
+	},
+	lineThrough: {
+		"textDecorationLine": "line-through"
+	},
+	transitionGridTemplateRows: {
+		"transitionProperty": "grid-template-rows",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	duration200: {
+		"--tw-duration": ".2s",
+		"transitionDuration": ".2s"
+	},
+	easeOut: {
+		"--tw-ease": "var(--ease)",
+		"transitionTimingFunction": "var(--ease)"
+	},
+	GridTemplateRows1fr: {
+		"gridTemplateRows": "1fr"
+	},
+	GridTemplateRows0fr: {
+		"gridTemplateRows": "0fr"
+	},
 });
 
 /**
@@ -338,7 +384,7 @@ function StatusMark({ status }: { status: WorkflowAgentSnapshot["status"] }) {
 		return (
 			<svg
 				viewBox="0 0 12 12"
-				className={cn("size-3 shrink-0", ok ? "text-green" : "text-red")}
+				className={cn(mergeStylexClassName("", sx.size3, sx.shrink0), ok ? mergeStylexClassName("", sx.textGreen) : mergeStylexClassName("", sx.textRed))}
 				fill="none"
 				stroke="currentColor"
 				strokeWidth="2"
@@ -357,8 +403,8 @@ function StatusMark({ status }: { status: WorkflowAgentSnapshot["status"] }) {
 		<span {...stylex.props(sx.flex, sx.size3, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>
 			<span
 				className={cn(
-					"size-2 rounded-full",
-					status === "running" ? "bg-yellow animate-pulse" : "bg-line-strong",
+					mergeStylexClassName("", sx.size2, sx.roundedFull),
+					status === "running" ? mergeStylexClassName("", sx.bgYellow, sx.animatePulse) : mergeStylexClassName("", sx.bgLineStrong),
 				)}
 			/>
 		</span>
@@ -599,7 +645,7 @@ export function WorkflowPanel({
 	// the page owns the inset.
 	return (
 		<div className={INFO_SECTION_CLASS}>
-			<div className={cn(INFO_LABEL_CLASS, "flex items-center justify-between gap-2")}>
+			<div className={cn(INFO_LABEL_CLASS, mergeStylexClassName("", sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap2))}>
 				<span>Agents</span>
 				{anyRunning && (
 					<span {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap15, sx.textYellow)}>
@@ -668,8 +714,8 @@ function SubagentsCard({
 							key={s.id ?? `pending-${i}`}
 							className={cn(
 								ROW_CLASS,
-								"flex-col items-stretch gap-0.5",
-								openable ? "hover:bg-hover" : "cursor-default",
+								mergeStylexClassName("", sx.flexCol, sx.itemsStretch, sx.gap05),
+								openable ? mergeStylexClassName("", sx.hoverBgHover) : mergeStylexClassName("", sx.cursorDefault),
 							)}
 							onClick={() => {
 								if (s.id && onOpen) onOpen(s.id, s.label);
@@ -886,7 +932,7 @@ setDetails((prev) => ({ ...prev, [seq]: "missing" }));
 							<Badge
 								tone={tone}
 								dot={run.status === "running"}
-								className={cn(run.status === "running" && "animate-pulse")}
+								className={cn(run.status === "running" && mergeStylexClassName("", sx.animatePulse))}
 							>
 								{run.status}
 							</Badge>
@@ -929,10 +975,10 @@ setDetails((prev) => ({ ...prev, [seq]: "missing" }));
 								<div {...mergeStylexProps("first:pt-0.5", sx.flex, sx.itemsBaseline, sx.gap2, sx.px2, sx.pbPx, sx.pt2)}>
 									<span
 										className={cn(
-											"min-w-0 flex-1 truncate text-meta font-medium",
+											mergeStylexClassName("", sx.minW0, sx.flex1, sx.truncate, typography.meta, sx.fontMedium),
 											run.status === "running" && title === run.currentPhase
-												? "text-dim"
-												: "text-faint",
+												? mergeStylexClassName("", sx.textDim)
+												: mergeStylexClassName("", sx.textFaint),
 										)}
 									>
 										{title}
@@ -973,7 +1019,7 @@ setDetails((prev) => ({ ...prev, [seq]: "missing" }));
 									{...stylex.props(sx.flex, sx.itemsBaseline, sx.gap2, sx.leadingSnug, typography.meta)}
 								>
 									<span
-										className={cn("shrink-0", c.ok ? "text-faint" : "text-red")}
+										className={cn(mergeStylexClassName("", sx.shrink0), c.ok ? mergeStylexClassName("", sx.textFaint) : mergeStylexClassName("", sx.textRed))}
 									>
 										{c.ok ? "·" : "✗"}
 									</span>
@@ -1074,7 +1120,7 @@ const AgentRow = function AgentRow({
 	return (
 		<>
 			<button
-				className={cn(ROW_CLASS, "flex-col items-stretch gap-0.5 hover:bg-hover")}
+				className={cn(ROW_CLASS, mergeStylexClassName("", sx.flexCol, sx.itemsStretch, sx.gap05, sx.hoverBgHover))}
 				aria-expanded={open}
 				onClick={() => onToggle(a.seq)}
 			>
@@ -1082,8 +1128,8 @@ const AgentRow = function AgentRow({
 					<StatusMark status={a.status} />
 					<span
 						className={cn(
-							"min-w-0 flex-1 truncate text-label",
-							a.status === "cancelled" ? "text-faint line-through" : "text-fg",
+							mergeStylexClassName("", sx.minW0, sx.flex1, sx.truncate, typography.label),
+							a.status === "cancelled" ? mergeStylexClassName("", sx.textFaint, sx.lineThrough) : mergeStylexClassName("", sx.textFg),
 						)}
 					>
 						{a.label}
@@ -1099,10 +1145,10 @@ const AgentRow = function AgentRow({
 			</button>
 			<div
 				className={cn(
-					"grid transition-[grid-template-rows] duration-200 ease-out",
+					mergeStylexClassName("", sx.grid, sx.transitionGridTemplateRows, sx.duration200, sx.easeOut),
 					open
-						? "[grid-template-rows:1fr]"
-						: "[grid-template-rows:0fr]",
+						? mergeStylexClassName("", sx.GridTemplateRows1fr)
+						: mergeStylexClassName("", sx.GridTemplateRows0fr),
 				)}
 			>
 				<div {...stylex.props(sx.minH0, sx.overflowHidden)}>
@@ -1127,10 +1173,10 @@ const AgentRow = function AgentRow({
 								<>
 									<div
 										className={cn(
-											"text-meta font-medium",
+											mergeStylexClassName("", typography.meta, sx.fontMedium),
 											a.status === "error" || full?.outcome.error
-												? "text-red"
-												: "text-faint",
+												? mergeStylexClassName("", sx.textRed)
+												: mergeStylexClassName("", sx.textFaint),
 										)}
 									>
 										{a.status === "error" || full?.outcome.error

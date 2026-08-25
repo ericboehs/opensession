@@ -33,7 +33,7 @@ import {
 } from "../lib/undo";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "./cn";
+import { mergeStylexProps , mergeStylexClassName} from "./cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -197,6 +197,38 @@ const sx = stylex.create({
 	},
 	pr3: {
 			paddingRight: "12px"
+	},
+
+	phoneWFull: {
+		"@media (max-width: 720px)": {
+			"width": "100%"
+		}
+	},
+	phonePx3: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "12px"
+		}
+	},
+	phoneMaxWCalc100vw24px: {
+		"@media (max-width: 720px)": {
+			"maxWidth": "calc(100vw - 24px)"
+		}
+	},
+	ZIndexCalc100VarToastIndex: {
+		"zIndex": "calc(100 - var(--toast-index))"
+	},
+	TransformOriginCenterBottom: {
+		"transformOrigin": "bottom"
+	},
+	TransformTranslateXCalc50VarToastSwipeMovementXTranslateYCalcVarToastSwipeMovementYVarToastIndex8pxScaleCalc1VarToastIndex004: {
+		"transform": "translateX(calc(-50% + var(--toast-swipe-movement-x))) translateY(calc(var(--toast-swipe-movement-y) - var(--toast-index) * 8px)) scale(calc(1 - (var(--toast-index) * .04)))"
+	},
+	motionReduceTransitionOpacity: {
+		"@media (prefers-reduced-motion: reduce)": {
+			"transitionProperty": "opacity",
+			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+		}
 	},
 });
 
@@ -425,7 +457,7 @@ function ToastViewport({ container }: { container?: HTMLElement | null }) {
 		<BaseToast.Portal container={container ?? undefined}>
 			<BaseToast.Viewport
 				ref={viewportRef}
-				className={`${TOAST_NOTICE_LANE} ${container ? "absolute" : "fixed"} toast-viewport mx-auto h-[var(--toast-frontmost-height)] w-[min(480px,calc(100vw-32px))] outline-none phone:w-full phone:px-3`}
+				className={[TOAST_NOTICE_LANE, container ? "absolute" : "fixed", mergeStylexClassName("toast-viewport w-[min(480px,calc(100vw-32px))]", sx.mxAuto, sx.hVarToastFrontmostHeight, sx.outlineNone, sx.phoneWFull, sx.phonePx3)].filter(Boolean).join(" ")}
 			>
 				{items.map((item) => (
 					<ToastCard key={item.id} toast={item} />
@@ -449,21 +481,21 @@ function ToastCard({ toast: item }: { toast: BaseToast.Root.ToastObject<ToastDat
 			swipeDirection={data.ongoing ? [] : ["down", "right"]}
 			onClick={data.ongoing ? undefined : () => dismissToast(data.id)}
 			className={[
-				`${data.ongoing ? "pointer-events-none" : "pointer-events-auto"} absolute bottom-0 left-1/2 w-max max-w-full outline-none phone:max-w-[calc(100vw-24px)]`,
+				[data.ongoing ? "pointer-events-none" : "pointer-events-auto", mergeStylexClassName("", sx.absolute, sx.bottom0, sx.left12, sx.wMax, sx.maxWFull, sx.outlineNone, sx.phoneMaxWCalc100vw24px)].filter(Boolean).join(" "),
 				data.ongoing ? ONGOING_TOAST_POSITION : "",
-				"[z-index:calc(100-var(--toast-index))] [transform-origin:center_bottom]",
-				"[transform:translateX(calc(-50%+var(--toast-swipe-movement-x)))_translateY(calc(var(--toast-swipe-movement-y)-var(--toast-index)*8px))_scale(calc(1-(var(--toast-index)*0.04)))]",
+				mergeStylexClassName("", sx.ZIndexCalc100VarToastIndex, sx.TransformOriginCenterBottom),
+				mergeStylexClassName("", sx.TransformTranslateXCalc50VarToastSwipeMovementXTranslateYCalcVarToastSwipeMovementYVarToastIndex8pxScaleCalc1VarToastIndex004),
 				"data-[expanded]:[transform:translateX(calc(-50%+var(--toast-swipe-movement-x)))_translateY(calc(var(--toast-swipe-movement-y)-var(--toast-offset-y)-var(--toast-index)*8px))_scale(1)]",
-				"transition-[transform,translate,scale,opacity] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-opacity",
+				mergeStylexClassName("transition-[transform,translate,scale,opacity] ease-[cubic-bezier(0.23,1,0.32,1)]", sx.duration200, sx.motionReduceTransitionOpacity),
 				"data-[starting-style]:opacity-0 data-[starting-style]:[translate:0_8px] data-[starting-style]:[scale:0.96] data-[ending-style]:opacity-0 data-[ending-style]:[translate:0_8px] data-[ending-style]:[scale:0.96] data-[limited]:opacity-0 motion-reduce:data-[starting-style]:[translate:0_0] motion-reduce:data-[starting-style]:[scale:1] motion-reduce:data-[ending-style]:[translate:0_0] motion-reduce:data-[ending-style]:[scale:1]",
 			].join(" ")}
 		>
 			<BaseToast.Content
 				className={[
-					"relative flex max-w-full items-center gap-2 overflow-hidden whitespace-normal rounded-[999px] border border-divider-soft bg-popup",
-					"py-1.5 text-supporting font-medium leading-tight text-fg smooth-shadow-md",
-					iconName ? "pl-2.5" : "pl-3",
-					data.action ? "pr-1.5" : "pr-3",
+					mergeStylexClassName("", sx.relative, sx.flex, sx.maxWFull, sx.itemsCenter, sx.gap2, sx.overflowHidden, sx.whitespaceNormal, sx.rounded999px, sx.border, sx.borderDividerSoft, sx.bgPopup),
+					mergeStylexClassName("smooth-shadow-md", sx.py15, typography.supporting, sx.fontMedium, sx.leadingTight, sx.textFg),
+					iconName ? mergeStylexClassName("", sx.pl25) : mergeStylexClassName("", sx.pl3),
+					data.action ? mergeStylexClassName("", sx.pr15) : mergeStylexClassName("", sx.pr3),
 				].join(" ")}
 			>
 				<ToastStatusIcon name={iconName} ongoing={data.ongoing} />

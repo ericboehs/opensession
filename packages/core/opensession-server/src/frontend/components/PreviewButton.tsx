@@ -11,7 +11,7 @@ import { BASE_PATH } from "../lib/base";
 import { withPreviewPath } from "../lib/preview-url";
 import { Tooltip } from "../ui/tooltip";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { CopyCheck, useCopy } from "../ui/copy";
 import { Menu, MENU_ICON } from "../ui/menu";
 import { Popover } from "../ui/popover";
@@ -311,6 +311,134 @@ const sx = stylex.create({
 	textAccent: {
 			color: "var(--accent-ink)"
 	},
+
+	textGreen: {
+		"color": "var(--green)"
+	},
+	size7px: {
+		"width": "7px",
+		"height": "7px"
+	},
+	bgGreen: {
+		"backgroundColor": "var(--green)"
+	},
+	bgVarTextFaint: {
+		"backgroundColor": "var(--text-faint)"
+	},
+	shadowNone: {
+		"--tw-shadow": "0 0 #0000",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	mlAuto: {
+		"marginLeft": "auto"
+	},
+	Ml3px: {
+		"marginLeft": "-3px"
+	},
+	pxPx: {
+		"paddingInline": "1px"
+	},
+	py3px: {
+		"paddingBlock": "3px"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextGreen: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--green)"
+			}
+		}
+	},
+	hoverTextDim: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text-dim)"
+			}
+		}
+	},
+	textYellow: {
+		"color": "var(--yellow)"
+	},
+	hoverTextYellow: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--yellow)"
+			}
+		}
+	},
+	cursorNotAllowed: {
+		"cursor": "not-allowed"
+	},
+	opacity45: {
+		"opacity": ".45"
+	},
+	gap15: {
+		"gap": "6px"
+	},
+	roundedLCalc5pxVarRf: {
+		"borderTopLeftRadius": "calc(5px * var(--rf))",
+		"borderBottomLeftRadius": "calc(5px * var(--rf))"
+	},
+	px11px: {
+		"paddingInline": "11px"
+	},
+	py5px: {
+		"paddingBlock": "5px"
+	},
+	noUnderline: {
+		"textDecorationLine": "none"
+	},
+	hoverRelative: {
+		"@media (hover: hover)": {
+			":hover": {
+				"position": "relative"
+			}
+		}
+	},
+	hoverZ1: {
+		"@media (hover: hover)": {
+			":hover": {
+				"zIndex": "1"
+			}
+		}
+	},
+	cursorPointer: {
+		"cursor": "pointer"
+	},
+	hoverTextRed: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--red)"
+			}
+		}
+	},
+	hoverBorderAccent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"borderColor": "var(--accent)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	roundedRCalc5pxVarRf: {
+		"borderTopRightRadius": "calc(5px * var(--rf))",
+		"borderBottomRightRadius": "calc(5px * var(--rf))"
+	},
+	z1: {
+		"zIndex": "1"
+	},
 });
 
 // Any worktree session gets the control; whether a repo can actually boot a
@@ -450,7 +578,7 @@ export function PreviewButton({
         {isStarting ? (
           <span className={spinnerClass} />
         ) : (
-          <IconPlayOutline size={20} className={running ? "text-green" : MENU_ICON} />
+          <IconPlayOutline size={20} className={running ? mergeStylexClassName("", sx.textGreen) : MENU_ICON} />
         )}
         <span {...stylex.props(sx.grow)}>
           {isStarting ? "Cancel preview startup" : running ? "Open preview" : "Preview"}
@@ -621,10 +749,10 @@ setShotError(e.message);
             <li key={s.key} {...stylex.props(sx.flex, sx.minH10, sx.itemsCenter, sx.gap7px, sx.textXs, sx.textDim)}>
               <span
                 className={cn(
-                  "size-[7px] shrink-0 rounded-full",
+                  mergeStylexClassName("", sx.size7px, sx.shrink0, sx.roundedFull),
                   s.running
-                    ? "bg-green shadow-[0_0_0_2px_color-mix(in_srgb,var(--green)_18%,transparent)]"
-                    : "bg-[var(--text-faint)] shadow-none",
+                    ? mergeStylexClassName("shadow-[0_0_0_2px_color-mix(in_srgb,var(--green)_18%,transparent)]", sx.bgGreen)
+                    : mergeStylexClassName("", sx.bgVarTextFaint, sx.shadowNone),
                 )}
               />
               {s.running && s.previewUrl ? (
@@ -639,7 +767,7 @@ setShotError(e.message);
                 <span {...stylex.props(sx.fontSemibold)}>{s.name}</span>
               )}
               <span {...stylex.props(sx.textFaint)}>:{s.port}</span>
-              <span className={cn("ml-auto text-meta text-faint", s.running && "text-green")}>
+              <span className={cn(mergeStylexClassName("", sx.mlAuto, typography.meta, sx.textFaint), s.running && mergeStylexClassName("", sx.textGreen))}>
                 {s.running ? "running" : "stopped"}
               </span>
             </li>
@@ -662,7 +790,7 @@ setShotError(e.message);
         <div {...stylex.props(sx.px0, sx.py1, sx.textXs, sx.textFaint)}>{notBootableHint}.</div>
       )}
       {variant !== "bar" && running && (
-        <button className={cn(popoverActionClass, "mt-1.5")} onClick={snap} disabled={snapping}>
+        <button className={cn(popoverActionClass, mergeStylexClassName("", sx.mt15))} onClick={snap} disabled={snapping}>
           {snapping ? "Capturing…" : "Snapshot preview"}
         </button>
       )}
@@ -670,7 +798,7 @@ setShotError(e.message);
           those actions live here. The bar layout keeps its split controls. */}
       {variant !== "bar" && running && (
         <button
-          className={cn(popoverActionClass, "mt-1.5")}
+          className={cn(popoverActionClass, mergeStylexClassName("", sx.mt15))}
           onClick={() => copy(url, { toast: "Preview link copied" })}
         >
           Copy preview link
@@ -777,10 +905,10 @@ setShotError(e.message);
             <button
               className={cn(
                 headerIconBase,
-                "-ml-[3px] px-px py-[3px]",
+                mergeStylexClassName("", sx.Ml3px, sx.pxPx, sx.py3px),
                 open
-                  ? "text-green hover:bg-hover hover:text-green"
-                  : "text-faint hover:bg-hover hover:text-dim",
+                  ? mergeStylexClassName("", sx.textGreen, sx.hoverBgHover, sx.hoverTextGreen)
+                  : mergeStylexClassName("", sx.textFaint, sx.hoverBgHover, sx.hoverTextDim),
               )}
               aria-label="Dev services"
             >
@@ -803,7 +931,7 @@ setShotError(e.message);
               side="bottom"
             >
               <a
-                className={cn(headerIconBase, "text-green hover:bg-hover hover:text-green")}
+                className={cn(headerIconBase, mergeStylexClassName("", sx.textGreen, sx.hoverBgHover, sx.hoverTextGreen))}
                 href={url}
                 target="_blank"
                 rel="noopener"
@@ -834,7 +962,7 @@ setShotError(e.message);
               side="bottom"
             >
               <button
-                className={cn(headerIconBase, "text-yellow hover:bg-hover hover:text-yellow")}
+                className={cn(headerIconBase, mergeStylexClassName("", sx.textYellow, sx.hoverBgHover, sx.hoverTextYellow))}
                 onClick={stop}
                 onContextMenu={openServices}
                 disabled={stopping}
@@ -853,7 +981,7 @@ setShotError(e.message);
               <button
                 className={cn(
                   headerIconBase,
-                  "cursor-not-allowed text-faint opacity-45 hover:bg-hover hover:text-dim",
+                  mergeStylexClassName("", sx.cursorNotAllowed, sx.textFaint, sx.opacity45, sx.hoverBgHover, sx.hoverTextDim),
                 )}
                 onClick={openServices}
                 onContextMenu={openServices}
@@ -865,7 +993,7 @@ setShotError(e.message);
           ) : (
             <Tooltip label="Run the dev server (right-click for dev services)" side="bottom">
               <button
-                className={cn(headerIconBase, "text-faint hover:bg-hover hover:text-dim")}
+                className={cn(headerIconBase, mergeStylexClassName("", sx.textFaint, sx.hoverBgHover, sx.hoverTextDim))}
                 onClick={start}
                 onContextMenu={openServices}
               >
@@ -888,8 +1016,8 @@ setShotError(e.message);
           <a
             className={cn(
               splitSegmentBase,
-              "gap-1.5 whitespace-nowrap rounded-l-[calc(5px*var(--rf))] px-[11px] py-[5px] text-label font-semibold text-green no-underline",
-              "hover:relative hover:z-[1] hover:border-[color-mix(in_srgb,var(--green)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--green)_12%,transparent)] hover:text-green",
+              mergeStylexClassName("", sx.gap15, sx.whitespaceNowrap, sx.roundedLCalc5pxVarRf, sx.px11px, sx.py5px, typography.label, sx.fontSemibold, sx.textGreen, sx.noUnderline),
+              mergeStylexClassName("hover:border-[color-mix(in_srgb,var(--green)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--green)_12%,transparent)]", sx.hoverRelative, sx.hoverZ1, sx.hoverTextGreen),
             )}
             href={url}
             target="_blank"
@@ -910,8 +1038,8 @@ setShotError(e.message);
           <button
             className={cn(
               splitSegmentBase,
-              "group gap-1.5 whitespace-nowrap rounded-l-[calc(5px*var(--rf))] px-[11px] py-[5px] text-label font-semibold text-dim",
-              "cursor-pointer hover:relative hover:z-[1] hover:border-[color-mix(in_srgb,var(--red)_40%,transparent)] hover:bg-[color-mix(in_srgb,var(--red)_10%,transparent)] hover:text-red",
+              mergeStylexClassName("group", sx.gap15, sx.whitespaceNowrap, sx.roundedLCalc5pxVarRf, sx.px11px, sx.py5px, typography.label, sx.fontSemibold, sx.textDim),
+              mergeStylexClassName("hover:border-[color-mix(in_srgb,var(--red)_40%,transparent)] hover:bg-[color-mix(in_srgb,var(--red)_10%,transparent)]", sx.cursorPointer, sx.hoverRelative, sx.hoverZ1, sx.hoverTextRed),
             )}
             onClick={stop}
             disabled={stopping}
@@ -927,8 +1055,8 @@ setShotError(e.message);
           <button
             className={cn(
               splitSegmentBase,
-              "gap-1.5 whitespace-nowrap rounded-l-[calc(5px*var(--rf))] px-[11px] py-[5px] text-label font-semibold text-dim opacity-45",
-              "cursor-not-allowed",
+              mergeStylexClassName("", sx.gap15, sx.whitespaceNowrap, sx.roundedLCalc5pxVarRf, sx.px11px, sx.py5px, typography.label, sx.fontSemibold, sx.textDim, sx.opacity45),
+              mergeStylexClassName("", sx.cursorNotAllowed),
             )}
             onClick={openServices}
             aria-disabled="true"
@@ -941,8 +1069,8 @@ setShotError(e.message);
           <button
             className={cn(
               splitSegmentBase,
-              "gap-1.5 whitespace-nowrap rounded-l-[calc(5px*var(--rf))] px-[11px] py-[5px] text-label font-semibold text-dim",
-              "cursor-pointer hover:relative hover:z-[1] hover:border-accent hover:bg-hover hover:text-fg",
+              mergeStylexClassName("", sx.gap15, sx.whitespaceNowrap, sx.roundedLCalc5pxVarRf, sx.px11px, sx.py5px, typography.label, sx.fontSemibold, sx.textDim),
+              mergeStylexClassName("", sx.cursorPointer, sx.hoverRelative, sx.hoverZ1, sx.hoverBorderAccent, sx.hoverBgHover, sx.hoverTextFg),
             )}
             onClick={start}
             title="Start the dev server and preview this session"
@@ -957,10 +1085,10 @@ setShotError(e.message);
         <button
           className={cn(
             splitSegmentBase,
-            "-ml-px px-2 py-1",
+            mergeStylexClassName("", sx.MlPx, sx.px2, sx.py1),
             running
-              ? "text-[color:color-mix(in_srgb,var(--green)_72%,var(--text-dim))] hover:relative hover:z-[1] hover:border-[color-mix(in_srgb,var(--green)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--green)_12%,transparent)] hover:text-green"
-              : "hover:relative hover:z-[1] hover:border-accent hover:bg-hover hover:text-accent",
+              ? mergeStylexClassName("text-[color:color-mix(in_srgb,var(--green)_72%,var(--text-dim))] hover:border-[color-mix(in_srgb,var(--green)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--green)_12%,transparent)]", sx.hoverRelative, sx.hoverZ1, sx.hoverTextGreen)
+              : mergeStylexClassName("hover:text-accent", sx.hoverRelative, sx.hoverZ1, sx.hoverBorderAccent, sx.hoverBgHover),
             "aria-disabled:cursor-default aria-disabled:opacity-45 aria-disabled:hover:border-line-strong aria-disabled:hover:bg-transparent aria-disabled:hover:text-dim",
           )}
           onClick={() => {
@@ -975,8 +1103,8 @@ setShotError(e.message);
           <button
             className={cn(
               splitSegmentBase,
-              "-ml-px px-2 py-1 text-[color:color-mix(in_srgb,var(--green)_72%,var(--text-dim))]",
-              "hover:relative hover:z-[1] hover:border-[color-mix(in_srgb,var(--green)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--green)_12%,transparent)] hover:text-green",
+              mergeStylexClassName("text-[color:color-mix(in_srgb,var(--green)_72%,var(--text-dim))]", sx.MlPx, sx.px2, sx.py1),
+              mergeStylexClassName("hover:border-[color-mix(in_srgb,var(--green)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--green)_12%,transparent)]", sx.hoverRelative, sx.hoverZ1, sx.hoverTextGreen),
             )}
             onClick={snap}
             disabled={snapping}
@@ -990,16 +1118,16 @@ setShotError(e.message);
             <button
               className={cn(
                 splitSegmentBase,
-                "-ml-px rounded-r-[calc(5px*var(--rf))] px-2 py-1",
+                mergeStylexClassName("", sx.MlPx, sx.roundedRCalc5pxVarRf, sx.px2, sx.py1),
                 running
                   ? "text-[color:color-mix(in_srgb,var(--green)_72%,var(--text-dim))]"
-                  : "text-dim",
+                  : mergeStylexClassName("", sx.textDim),
                 open || running
-                  ? "relative z-[1] border-[color-mix(in_srgb,var(--green)_50%,transparent)] bg-[color-mix(in_srgb,var(--green)_12%,transparent)] text-green"
+                  ? mergeStylexClassName("border-[color-mix(in_srgb,var(--green)_50%,transparent)] bg-[color-mix(in_srgb,var(--green)_12%,transparent)]", sx.relative, sx.z1, sx.textGreen)
                   : "",
-                !running && "hover:relative hover:z-[1] hover:border-accent hover:bg-hover hover:text-accent",
+                !running && mergeStylexClassName("hover:text-accent", sx.hoverRelative, sx.hoverZ1, sx.hoverBorderAccent, sx.hoverBgHover),
                 running && !open &&
-                  "hover:relative hover:z-[1] hover:border-[color-mix(in_srgb,var(--green)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--green)_12%,transparent)] hover:text-green",
+                  mergeStylexClassName("hover:border-[color-mix(in_srgb,var(--green)_50%,transparent)] hover:bg-[color-mix(in_srgb,var(--green)_12%,transparent)]", sx.hoverRelative, sx.hoverZ1, sx.hoverTextGreen),
               )}
               title="Dev server processes"
             >

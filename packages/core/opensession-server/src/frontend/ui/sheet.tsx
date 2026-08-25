@@ -1,6 +1,6 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import { PhoneTopBarAction } from "./top-bar";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -134,6 +134,120 @@ const sx = stylex.create({
 	},
 	textLeft: {
 			textAlign: "left"
+	},
+
+	transitionOpacity: {
+		"transitionProperty": "opacity",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	durationVarDurLg: {
+		"--tw-duration": "var(--dur-lg)",
+		"transitionDuration": "var(--dur-lg)"
+	},
+	durationVarDur: {
+		"--tw-duration": "var(--dur)",
+		"transitionDuration": "var(--dur)"
+	},
+	opacity100: {
+		"opacity": "1"
+	},
+	opacity0: {
+		"opacity": "0"
+	},
+	hDvh: {
+		"height": "100dvh"
+	},
+	maxHNone: {
+		"maxHeight": "none"
+	},
+	roundedNone: {
+		"borderRadius": "0"
+	},
+	bgSurface: {
+		"backgroundColor": "var(--bg)"
+	},
+	pbEnvSafeAreaInsetBottom: {
+		"paddingBottom": "env(safe-area-inset-bottom)"
+	},
+	ptEnvSafeAreaInsetTop: {
+		"paddingTop": "env(safe-area-inset-top)"
+	},
+	shadowNone: {
+		"--tw-shadow": "0 0 #0000",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	insetX0: {
+		"insetInline": "0"
+	},
+	bottom0: {
+		"bottom": "0"
+	},
+	maxH94dvh: {
+		"maxHeight": "94dvh"
+	},
+	left12: {
+		"left": "50%"
+	},
+	top12: {
+		"top": "50%"
+	},
+	maxH85vh: {
+		"maxHeight": "85vh"
+	},
+	w92vw: {
+		"width": "92vw"
+	},
+	maxW30rem: {
+		"maxWidth": "30rem"
+	},
+	TranslateX12: {
+		"--tw-translate-x": "calc(calc(1 / 2 * 100%) * -1)",
+		"translate": "var(--tw-translate-x) var(--tw-translate-y)"
+	},
+	TranslateY12: {
+		"--tw-translate-y": "calc(calc(1 / 2 * 100%) * -1)",
+		"translate": "var(--tw-translate-x) var(--tw-translate-y)"
+	},
+	roundedCalc18pxVarRf: {
+		"borderRadius": "calc(18px * var(--rf))"
+	},
+	bgRaised: {
+		"backgroundColor": "var(--bg-raised)"
+	},
+	transitionTransform: {
+		"transitionProperty": "transform,translate,scale,rotate",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	easeVarEase: {
+		"--tw-ease": "var(--ease)",
+		"transitionTimingFunction": "var(--ease)"
+	},
+	translateY0: {
+		"--tw-translate-y": "0",
+		"translate": "var(--tw-translate-x) var(--tw-translate-y)"
+	},
+	translateYFull: {
+		"--tw-translate-y": "100%",
+		"translate": "var(--tw-translate-x) var(--tw-translate-y)"
+	},
+	originCenter: {
+		"transformOrigin": "50%"
+	},
+	scale100: {
+		"--tw-scale-x": "100%",
+		"--tw-scale-y": "100%",
+		"--tw-scale-z": "100%",
+		"scale": "var(--tw-scale-x) var(--tw-scale-y)"
+	},
+	scale096: {
+		"scale": ".96"
+	},
+	activeBgPressed: {
+		":active": {
+			"backgroundColor": "var(--hover-strong)"
+		}
 	},
 });
 
@@ -370,11 +484,11 @@ export function ResponsiveDialog({
 		>
 			{!phonePage && (
 				<div {...mergeStylexProps(cn(backdropClassName, animated && [
-							"transition-opacity",
+							mergeStylexClassName("", sx.transitionOpacity),
 							phone
-								? "duration-[var(--dur-lg)]"
-								: "duration-[var(--dur)]",
-							shown ? "opacity-100" : "opacity-0",
+								? mergeStylexClassName("", sx.durationVarDurLg)
+								: mergeStylexClassName("", sx.durationVarDur),
+							shown ? mergeStylexClassName("", sx.opacity100) : mergeStylexClassName("", sx.opacity0),
 						]), sx.absolute, sx.inset0, sx.bgBlack45)}
 					onClick={onClose}
 				/>
@@ -383,17 +497,17 @@ export function ResponsiveDialog({
 				ref={panelRef}
 				tabIndex={-1} {...mergeStylexProps(cn(phone
 						? phonePage
-							? "inset-0 h-dvh max-h-none rounded-none bg-surface pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] shadow-none"
-							: "inset-x-0 bottom-0 max-h-[94dvh] rounded-t-[calc(var(--sheet-radius,34px)*var(--rf))] bg-surface pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_40px_rgba(0,0,0,0.35)]"
-						: "left-1/2 top-1/2 max-h-[85vh] w-[92vw] max-w-[30rem] -translate-x-1/2 -translate-y-1/2 rounded-[calc(18px*var(--rf))] bg-raised smooth-shadow-ring-lg", animated &&
+							? mergeStylexClassName("", sx.inset0, sx.hDvh, sx.maxHNone, sx.roundedNone, sx.bgSurface, sx.pbEnvSafeAreaInsetBottom, sx.ptEnvSafeAreaInsetTop, sx.shadowNone)
+							: mergeStylexClassName("rounded-t-[calc(var(--sheet-radius,34px)*var(--rf))] shadow-[0_-12px_40px_rgba(0,0,0,0.35)]", sx.insetX0, sx.bottom0, sx.maxH94dvh, sx.bgSurface, sx.pbEnvSafeAreaInsetBottom)
+						: mergeStylexClassName("smooth-shadow-ring-lg", sx.left12, sx.top12, sx.maxH85vh, sx.w92vw, sx.maxW30rem, sx.TranslateX12, sx.TranslateY12, sx.roundedCalc18pxVarRf, sx.bgRaised), animated &&
 						(phone
 							? [
-									"transition-transform duration-[var(--dur-lg)] ease-[var(--ease)]",
-									shown ? "translate-y-0" : "translate-y-full",
+									mergeStylexClassName("", sx.transitionTransform, sx.durationVarDurLg, sx.easeVarEase),
+									shown ? mergeStylexClassName("", sx.translateY0) : mergeStylexClassName("", sx.translateYFull),
 								]
 							: [
-									"origin-center transition-[transform,opacity] duration-[var(--dur)] ease-[var(--ease)]",
-									shown ? "scale-100 opacity-100" : "scale-[0.96] opacity-0",
+									mergeStylexClassName("transition-[transform,opacity]", sx.originCenter, sx.durationVarDur, sx.easeVarEase),
+									shown ? mergeStylexClassName("", sx.scale100, sx.opacity100) : mergeStylexClassName("", sx.scale096, sx.opacity0),
 								]), phone ? sheetClassName : modalClassName), sx.absolute, sx.flex, sx.flexCol, sx.overflowHidden, sx.outlineNone, sx.CornerShapeSquircle)}
 			>
 				{phone && !phonePage && showPhoneGrabber && (
@@ -495,7 +609,7 @@ export function SheetItem({
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { tone?: SheetItemTone }) {
 	return (
 		<button
-			type="button" {...mergeStylexProps(cn("active:bg-pressed [&_svg]:shrink-0", SHEET_ITEM_TONE[tone], className), sx.flex, sx.wFull, sx.itemsCenter, sx.gap13px, sx.roundedControl, sx.px35, sx.py15px, sx.textLeft, typography.body)}
+			type="button" {...mergeStylexProps(cn(mergeStylexClassName("[&_svg]:shrink-0", sx.activeBgPressed), SHEET_ITEM_TONE[tone], className), sx.flex, sx.wFull, sx.itemsCenter, sx.gap13px, sx.roundedControl, sx.px35, sx.py15px, sx.textLeft, typography.body)}
 			{...rest}
 		>
 			{children}

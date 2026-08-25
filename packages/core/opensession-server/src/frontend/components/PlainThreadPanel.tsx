@@ -30,7 +30,7 @@ import { renderMarkdown } from "../lib/markdown";
 import { MarkdownBody } from "./MarkdownBody";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { useCurrentUser } from "./UserPicker";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { PLAIN_WORKSPACE_ID, PRODUCT_NAME } from "../lib/brand";
 import { PlainStatusBadge } from "./PlainStatusBadge";
 import {
@@ -232,6 +232,86 @@ const sx = stylex.create({
 	},
 	noUnderline: {
 			textDecorationLine: "none"
+	},
+
+	gap1: {
+		"gap": "4px"
+	},
+	flexNowrap: {
+		"flexWrap": "nowrap"
+	},
+	hoverTextGreen: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--green)"
+			}
+		}
+	},
+	wAuto: {
+		"width": "auto"
+	},
+	px2: {
+		"paddingInline": "8px"
+	},
+	hoverTextRed: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--red)"
+			}
+		}
+	},
+	maxW160px: {
+		"maxWidth": "160px"
+	},
+	minH12: {
+		"minHeight": "48px"
+	},
+	placeholderTextFaint: {
+		"::placeholder": {
+			"color": "var(--text-faint)"
+		}
+	},
+	Ml15: {
+		"marginLeft": "-6px"
+	},
+	hoverTextYellow: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--yellow)"
+			}
+		}
+	},
+	roundedLg: {
+		"borderRadius": "calc(14px * var(--rf))"
+	},
+	bgYellowSoft: {
+		"backgroundColor": "var(--yellow-soft)"
+	},
+	overflowHidden: {
+		"overflow": "hidden"
+	},
+	gap15: {
+		"gap": "6px"
+	},
+	bgActive: {
+		"backgroundColor": "var(--bg-active)"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	flexRowReverse: {
+		"flexDirection": "row-reverse"
 	},
 });
 
@@ -535,8 +615,8 @@ setBusy(false);
 	return (
 		<div
 			className={cn(
-				"flex gap-1",
-				inBar ? "min-w-0 items-center" : "flex-col",
+				mergeStylexClassName("", sx.flex, sx.gap1),
+				inBar ? mergeStylexClassName("", sx.minW0, sx.itemsCenter) : mergeStylexClassName("", sx.flexCol),
 				className,
 			)}
 		>
@@ -548,8 +628,8 @@ setBusy(false);
 			    fields, not one segmented choice. */}
 			<div
 				className={cn(
-					"flex items-center gap-1",
-					inBar ? "flex-nowrap" : "flex-wrap",
+					mergeStylexClassName("", sx.flex, sx.itemsCenter, sx.gap1),
+					inBar ? mergeStylexClassName("", sx.flexNowrap) : mergeStylexClassName("", sx.flexWrap),
 				)}
 			>
 				{status === "DONE" ? (
@@ -570,7 +650,7 @@ setBusy(false);
 							size="sm"
 							variant="default"
 							icon={<IconCheck size={20} />}
-							className="hover:text-green"
+							className={mergeStylexClassName("", sx.hoverTextGreen)}
 							disabled={busy}
 							onClick={() => setStatus("done")}
 							aria-label="Mark this thread Done in Plain"
@@ -599,7 +679,7 @@ setBusy(false);
 											variant="default"
 											icon={<IconClock size={20} />}
 											caret
-											className={cn(inBar && "w-auto px-2")}
+											className={cn(inBar && mergeStylexClassName("", sx.wAuto, sx.px2))}
 											disabled={busy}
 											aria-label="Snooze this thread"
 											title="Snooze this thread"
@@ -810,7 +890,7 @@ setBusy(false);
 							size="sm"
 							variant="default"
 							icon={<IconForbid size={20} />}
-							className={cn(!isSpam && "hover:text-red")}
+							className={cn(!isSpam && mergeStylexClassName("", sx.hoverTextRed))}
 							disabled={busy}
 							onClick={toggleSpam}
 							title={spamTitle}
@@ -823,8 +903,8 @@ setBusy(false);
 			{error && (
 				<span
 					className={cn(
-						"text-red text-label truncate",
-						inBar && "max-w-[160px] shrink-0",
+						mergeStylexClassName("", sx.textRed, typography.label, sx.truncate),
+						inBar && mergeStylexClassName("", sx.maxW160px, sx.shrink0),
 					)}
 					title={error}
 				>
@@ -920,7 +1000,7 @@ setSending(false);
 	return (
 		<div
 			className={cn(
-				"composer shrink-0",
+				mergeStylexClassName("composer", sx.shrink0),
 				composerBox,
 				composerBoxExpanded,
 				className,
@@ -939,7 +1019,7 @@ setSending(false);
 				rows={1}
 				{...noAutofill}
 				className={cn(
-					"composer-textarea min-h-12 text-fg placeholder:text-faint",
+					mergeStylexClassName("composer-textarea", sx.minH12, sx.textFg, sx.placeholderTextFaint),
 					composerTextarea,
 					composerTextareaPadding,
 				)}
@@ -967,7 +1047,7 @@ setSending(false);
 				<Tooltip label="Add attachments">
 					<button
 						type="button"
-						className={cn(paletteIconBtn, "-ml-1.5")}
+						className={cn(paletteIconBtn, mergeStylexClassName("", sx.Ml15))}
 						onClick={() => fileInputRef.current?.click()}
 						disabled={sending}
 						aria-label="Add attachments"
@@ -1013,9 +1093,9 @@ setSending(false);
 						aria-pressed={kind === "note"}
 						className={cn(
 							palettePill,
-							"shrink-0",
+							mergeStylexClassName("", sx.shrink0),
 							kind === "note" &&
-								"bg-[color-mix(in_srgb,var(--yellow-tint)_22%,transparent)] text-yellow hover:bg-[color-mix(in_srgb,var(--yellow-tint)_32%,transparent)] hover:text-yellow",
+								mergeStylexClassName("bg-[color-mix(in_srgb,var(--yellow-tint)_22%,transparent)] hover:bg-[color-mix(in_srgb,var(--yellow-tint)_32%,transparent)]", sx.textYellow, sx.hoverTextYellow),
 						)}
 						onClick={() => setKind((current) => (current === "note" ? "reply" : "note"))}
 						disabled={sending}
@@ -1036,7 +1116,7 @@ setSending(false);
 				)}
 				<button
 					type="button"
-					className={cn("ml-auto", composerSend, composerSendDefault)}
+					className={cn(mergeStylexClassName("", sx.mlAuto), composerSend, composerSendDefault)}
 					onClick={handleSend}
 					disabled={sending || (!text.trim() && attachments.length === 0)}
 					title="Send (⌘↵)"
@@ -1079,7 +1159,7 @@ export function PlainWaitingBanner({
 	return (
 		<div
 			className={cn(
-				"flex items-center gap-2 rounded-lg bg-yellow-soft px-3 py-1.5 text-supporting text-fg",
+				mergeStylexClassName("", sx.flex, sx.itemsCenter, sx.gap2, sx.roundedLg, sx.bgYellowSoft, sx.px3, sx.py15, typography.supporting, sx.textFg),
 				className,
 			)}
 		>
@@ -1134,10 +1214,10 @@ function PlainAttachments({
 						rel="noreferrer"
 						title={`${a.fileName}${a.sizeBytes ? ` · ${fileSize(a.sizeBytes)}` : ""}`}
 						className={cn(
-							"block overflow-hidden rounded-lg no-underline",
+							mergeStylexClassName("", sx.block, sx.overflowHidden, sx.roundedLg, sx.noUnderline),
 							isImage
-								? "md-image-link bg-surface"
-								: "inline-flex items-center gap-1.5 bg-active px-2.5 py-1.5 text-label text-dim hover:bg-hover hover:text-fg",
+								? mergeStylexClassName("md-image-link", sx.bgSurface)
+								: mergeStylexClassName("", sx.inlineFlex, sx.itemsCenter, sx.gap15, sx.bgActive, sx.px25, sx.py15, typography.label, sx.textDim, sx.hoverBgHover, sx.hoverTextFg),
 						)}
 					>
 						{isImage ? (
@@ -1297,7 +1377,7 @@ export function PlainEntryRow({
 			    bubble holds nothing but the words — the transcript's grammar for a
 			    speaker label, and the only way the customer's side can lose its
 			    plate without losing who wrote it. */}
-			<div className={cn(plainEntryHead, ours && "flex-row-reverse")}>
+			<div className={cn(plainEntryHead, ours && mergeStylexClassName("", sx.flexRowReverse))}>
 				<span className={plainEntryName}>{entry.actorName}</span>
 				<span className={plainEntryMeta}>
 					{entry.kind} · {timeOf(entry.timestamp)}

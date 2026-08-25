@@ -50,7 +50,7 @@ import { UserAvatar } from "./UserAvatar";
 import { ExtBadge, fileExt } from "./lang-marks";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -329,6 +329,110 @@ const sx = stylex.create({
 	},
 	py6px: {
 			paddingBlock: "6px"
+	},
+
+	borderL3px: {
+		"borderLeftStyle": "var(--tw-border-style)",
+		"borderLeftWidth": "3px"
+	},
+	borderLineStrong: {
+		"borderColor": "var(--border-strong)"
+	},
+	borderLAccent: {
+		"borderLeftColor": "var(--accent)"
+	},
+	py9px: {
+		"paddingBlock": "9px"
+	},
+	transitionTransform: {
+		"transitionProperty": "transform,translate,scale,rotate",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	p3px: {
+		"padding": "3px"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	phonePointerEventsAuto: {
+		"@media (max-width: 720px)": {
+			"pointerEvents": "auto"
+		}
+	},
+	phoneOpacity100: {
+		"@media (max-width: 720px)": {
+			"opacity": "1"
+		}
+	},
+	phoneHidden: {
+		"@media (max-width: 720px)": {
+			"display": "none"
+		}
+	},
+	right2: {
+		"right": "8px"
+	},
+	p05: {
+		"padding": "2px"
+	},
+	gap5px: {
+		"gap": "5px"
+	},
+	pl1: {
+		"paddingLeft": "4px"
+	},
+	selectNone: {
+		"WebkitUserSelect": "none",
+		"userSelect": "none"
+	},
+	beforeSize5px: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"width": "5px",
+			"height": "5px"
+		}
+	},
+	beforeRoundedFull: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"borderRadius": "3.40282e38px"
+		}
+	},
+	beforeBgAccent: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"backgroundColor": "var(--accent)"
+		}
+	},
+	beforeContent: {
+		"::before": {
+			"--tw-content": "\"\"",
+			"content": "var(--tw-content)"
+		}
+	},
+	rotate180: {
+		"rotate": "180deg"
+	},
+	opacity80: {
+		"opacity": ".8"
+	},
+	borderAccent: {
+		"borderColor": "var(--accent)"
+	},
+	p25: {
+		"padding": "10px"
 	},
 });
 
@@ -917,7 +1021,7 @@ setSavingEdit(false);
           : `lines ${comment.startLine}–${comment.endLine}`;
       return (
         <div
-          className={`${CARD} gap-1.5 border border-l-[3px] border-line-strong border-l-accent px-2.5 py-[9px]`}
+          className={[CARD, mergeStylexClassName("", sx.gap15, sx.border, sx.borderL3px, sx.borderLineStrong, sx.borderLAccent, sx.px25, sx.py9px)].filter(Boolean).join(" ")}
           onClick={(e) => e.stopPropagation()}
         >
           <div {...stylex.props(sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap2)}>
@@ -1065,7 +1169,7 @@ const pendingByFile = m;
           // `diff-file-header` is a DOM hook, not styling — no rule reaches it
           // any more: PrPanel's Files card finds this row by that class to
           // scroll to and expand a file (`el.querySelector(".diff-file-header")`).
-          className={`${FILE_HEADER} ${stickyFileHeaders ? STICKY_FILE_HEADER : "bg-transparent"}`}
+          className={`${FILE_HEADER} ${stickyFileHeaders ? STICKY_FILE_HEADER : mergeStylexClassName("", sx.bgTransparent)}`}
           data-sticky-edge={stickyFileHeaders ? "" : undefined}
         >
           {stickyFileHeaders && (
@@ -1084,7 +1188,7 @@ const pendingByFile = m;
           >
             <IconChevronRight
               size={16}
-              className={`shrink-0 text-faint transition-transform ${isOpen ? "rotate-90" : ""}`}
+              className={[mergeStylexClassName("", sx.shrink0, sx.textFaint, sx.transitionTransform), isOpen ? "rotate-90" : ""].filter(Boolean).join(" ")}
             />
             <span {...stylex.props(sx.flex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textDim)}>
               {fileExt(base) ? (
@@ -1108,7 +1212,7 @@ const pendingByFile = m;
             <Tooltip label="Edit file in place">
               <button
                 type="button"
-                className={`${INLINE_ACTION} ${REVEAL} cursor-pointer p-[3px] text-faint hover:bg-hover hover:text-fg phone:pointer-events-auto phone:opacity-100`}
+                className={[INLINE_ACTION, REVEAL, mergeStylexClassName("", sx.cursorPointer, sx.p3px, sx.textFaint, sx.hoverBgHover, sx.hoverTextFg, sx.phonePointerEventsAuto, sx.phoneOpacity100)].filter(Boolean).join(" ")}
                 aria-label="Edit this file in place"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -1123,7 +1227,7 @@ const pendingByFile = m;
             <Button
               variant="ghost"
               size="sm"
-              className={`phone:hidden ${copied === file.name ? "text-green" : "text-faint"}`}
+              className={[mergeStylexClassName("", sx.phoneHidden), copied === file.name ? "text-green" : "text-faint"].filter(Boolean).join(" ")}
               aria-label={`Copy path ${file.name}`}
               icon={
                 copied === file.name ? (
@@ -1182,13 +1286,11 @@ const pendingByFile = m;
               <button
                 type="button"
                 data-discard
-                className={`${ROW_ACTION} right-2 p-0.5 ${
-                  discarding === file.name
+                className={[ROW_ACTION, mergeStylexClassName("", sx.right2, sx.p05), discarding === file.name
                     ? `${REVEALED} cursor-default text-faint`
                     : armed === file.name
                       ? `${REVEALED} cursor-pointer text-red`
-                      : `${REVEAL} cursor-pointer text-faint hover:bg-hover hover:text-red`
-                }`}
+                      : `${REVEAL} cursor-pointer text-faint hover:bg-hover hover:text-red`].filter(Boolean).join(" ")}
                 disabled={discarding === file.name}
                 aria-label="Discard this file's changes (reset to base)"
                 onClick={(e) => {
@@ -1203,13 +1305,9 @@ const pendingByFile = m;
           {/* Change counts stay pinned right, before the review state and menu. */}
           {showFileStats && (
             <span
-              className={`ml-auto flex shrink-0 gap-1.5 text-meta ${
-                isEditing ? "hidden" : ""
-              } ${
-                onDiscard
+              className={[mergeStylexClassName("", sx.mlAuto, sx.flex, sx.shrink0, sx.gap15, typography.meta), isEditing ? "hidden" : "", onDiscard
                   ? "group-hover:invisible [[data-discard]:focus-visible~&]:invisible"
-                  : ""
-              } ${armed === file.name || discarding === file.name ? "invisible" : ""}`}
+                  : "", armed === file.name || discarding === file.name ? "invisible" : ""].filter(Boolean).join(" ")}
             >
               {s.add > 0 && <span className={DIFF_ADD}>+{s.add}</span>}
               {s.del > 0 && <span className={DIFF_DEL}>−{s.del}</span>}
@@ -1217,9 +1315,7 @@ const pendingByFile = m;
           )}
           {viewedEnabled && (
             <label
-              className={`inline-flex shrink-0 cursor-pointer items-center gap-[5px] pl-1 font-sans text-label select-none ${
-                isViewed ? "text-dim" : "text-faint"
-              }`}
+              className={[mergeStylexClassName("", sx.inlineFlex, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.gap5px, sx.pl1, sx.fontSans, typography.label, sx.selectNone), isViewed ? "text-dim" : "text-faint"].filter(Boolean).join(" ")}
               onClick={(e) => e.stopPropagation()}
             >
               <Checkbox
@@ -1344,7 +1440,7 @@ const pendingByFile = m;
       )}
       {showGroupsStatus && !groupsLoading && groupedFiles && (
         <span
-          className={`${GROUPS_NOTE} before:size-[5px] before:rounded-full before:bg-accent before:content-['']`}
+          className={[GROUPS_NOTE, mergeStylexClassName("", sx.beforeSize5px, sx.beforeRoundedFull, sx.beforeBgAccent, sx.beforeContent)].filter(Boolean).join(" ")}
         >
           AI organized
         </span>
@@ -1365,7 +1461,7 @@ const pendingByFile = m;
             icon={
               <IconArrowUpToLine
                 size={20}
-                className={allOpen ? undefined : "rotate-180"}
+                className={allOpen ? undefined : mergeStylexClassName("", sx.rotate180)}
               />
             }
             aria-label={allOpen ? "Collapse all" : "Expand all"}
@@ -1422,7 +1518,7 @@ const pendingByFile = m;
                 >
                   <IconChevronRight
                     size={16}
-                    className={`shrink-0 text-faint transition-transform ${collapsed ? "" : "rotate-90"}`}
+                    className={[mergeStylexClassName("", sx.shrink0, sx.textFaint, sx.transitionTransform), collapsed ? "" : "rotate-90"].filter(Boolean).join(" ")}
                   />
                   <span {...stylex.props(sx.fontSemibold, typography.label)}>
                     {group.title}
@@ -1494,7 +1590,7 @@ function ResolvedReviewThread({
         </span>
         <IconChevronRight
           size={16}
-          className={`shrink-0 text-faint transition-transform ${open ? "rotate-90" : ""}`}
+          className={[mergeStylexClassName("", sx.shrink0, sx.textFaint, sx.transitionTransform), open ? "rotate-90" : ""].filter(Boolean).join(" ")}
         />
       </button>
       {open && (
@@ -1558,7 +1654,7 @@ function ImageDiffRow({
       {showOld && (
         <figure className={IMAGE_CELL}>
           <img
-            className={`${IMAGE} opacity-80`}
+            className={[IMAGE, mergeStylexClassName("", sx.opacity80)].filter(Boolean).join(" ")}
             src={srcs!.oldSrc}
             alt=""
             loading="lazy"
@@ -1633,7 +1729,7 @@ setError(e.message || "Failed to submit");
 
   return (
     <div
-      className={`${CARD} gap-2 border border-accent p-2.5`}
+      className={[CARD, mergeStylexClassName("", sx.gap2, sx.border, sx.borderAccent, sx.p25)].filter(Boolean).join(" ")}
       onClick={(e) => e.stopPropagation()}
     >
       <div {...stylex.props(sx.textFaint, typography.meta)}>{targetLabel}</div>

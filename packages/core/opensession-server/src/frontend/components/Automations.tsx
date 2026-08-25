@@ -35,7 +35,7 @@ import {
 import { AGENT_NAME, WEBHOOK_BASE_URL, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { Input, Select, Textarea } from "../ui/input";
 import { Modal, useEnterOnMount } from "../ui/modal";
 import { PageDescription, PageHeader, PageTitle } from "../ui/page-header";
@@ -406,6 +406,138 @@ const sx = stylex.create({
 	mrAuto: {
 			marginRight: "auto"
 	},
+
+	flex00340px: {
+		"flex": "0 0 340px"
+	},
+	borderR: {
+		"borderRightStyle": "var(--tw-border-style)",
+		"borderRightWidth": "1px"
+	},
+	pt4: {
+		"paddingTop": "16px"
+	},
+	max900pxHidden: {
+		"@media not all and (min-width: 900px)": {
+			"display": "none"
+		}
+	},
+	px6: {
+		"paddingInline": "24px"
+	},
+	pt7: {
+		"paddingTop": "28px"
+	},
+	pb15: {
+		"paddingBottom": "60px"
+	},
+	max560pxPx4: {
+		"@media not all and (min-width: 560px)": {
+			"paddingInline": "16px"
+		}
+	},
+	max560pxPt5: {
+		"@media not all and (min-width: 560px)": {
+			"paddingTop": "20px"
+		}
+	},
+	max560pxPb12: {
+		"@media not all and (min-width: 560px)": {
+			"paddingBottom": "48px"
+		}
+	},
+	mxAuto: {
+		"marginInline": "auto"
+	},
+	maxW860px: {
+		"maxWidth": "860px"
+	},
+	max560pxMb5: {
+		"@media not all and (min-width: 560px)": {
+			"marginBottom": "20px"
+		}
+	},
+	max560pxFlexCol: {
+		"@media not all and (min-width: 560px)": {
+			"flexDirection": "column"
+		}
+	},
+	max560pxItemsStart: {
+		"@media not all and (min-width: 560px)": {
+			"alignItems": "flex-start"
+		}
+	},
+	max560pxGap35: {
+		"@media not all and (min-width: 560px)": {
+			"gap": "14px"
+		}
+	},
+	textBase: {
+		"fontSize": "var(--type-body)",
+		"lineHeight": "var(--tw-leading,var(--text-base--line-height))"
+	},
+	py275: {
+		"paddingBlock": "11px"
+	},
+	max560pxGap25: {
+		"@media not all and (min-width: 560px)": {
+			"gap": "10px"
+		}
+	},
+	max560pxPx1: {
+		"@media not all and (min-width: 560px)": {
+			"paddingInline": "4px"
+		}
+	},
+	max560pxPy3: {
+		"@media not all and (min-width: 560px)": {
+			"paddingBlock": "12px"
+		}
+	},
+	bgActive: {
+		"backgroundColor": "var(--bg-active)"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	opacity55: {
+		"opacity": ".55"
+	},
+	selfStart: {
+		"alignSelf": "flex-start"
+	},
+	max560pxHidden: {
+		"@media not all and (min-width: 560px)": {
+			"display": "none"
+		}
+	},
+	w21: {
+		"width": "84px"
+	},
+	textRight: {
+		"textAlign": "right"
+	},
+	hoverBgRedSoft: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--red-soft)"
+			}
+		}
+	},
+	hoverTextRed: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--red)"
+			}
+		}
+	},
+	itemsEnd: {
+		"alignItems": "flex-end"
+	},
 });
 
 /* The old .automation-form family, as utilities. Two of its rules reached in
@@ -652,19 +784,19 @@ setError(e.message);
         on phones it steps aside entirely — Back returns to it. */}
     <div
       className={cn(
-        "min-w-0 overflow-y-auto",
+        mergeStylexClassName("", sx.minW0, sx.overflowYAuto),
         sel
-          ? "flex-[0_0_340px] border-r border-line px-3.5 pt-4 pb-10 max-[900px]:hidden"
-          : "flex-1 px-6 pt-7 pb-15 max-[560px]:px-4 max-[560px]:pt-5 max-[560px]:pb-12",
+          ? mergeStylexClassName("", sx.flex00340px, sx.borderR, sx.borderLine, sx.px35, sx.pt4, sx.pb10, sx.max900pxHidden)
+          : mergeStylexClassName("", sx.flex1, sx.px6, sx.pt7, sx.pb15, sx.max560pxPx4, sx.max560pxPt5, sx.max560pxPb12),
       )}
     >
-    <div className={cn("mx-auto", !sel && "max-w-[860px]")}>
+    <div className={cn(mergeStylexClassName("", sx.mxAuto), !sel && mergeStylexClassName("", sx.maxW860px))}>
       <PageHeader
-        className={`max-[560px]:mb-5 max-[560px]:flex-col max-[560px]:items-start max-[560px]:gap-3.5 ${sel ? "mb-3.5 items-center" : ""}`}
+        className={[mergeStylexClassName("", sx.max560pxMb5, sx.max560pxFlexCol, sx.max560pxItemsStart, sx.max560pxGap35), sel ? "mb-3.5 items-center" : ""].filter(Boolean).join(" ")}
       >
         <div>
-          <PageTitle className={sel ? "text-base" : undefined}>Automations</PageTitle>
-          <PageDescription className={sel ? "hidden" : undefined}>
+          <PageTitle className={sel ? mergeStylexClassName("", sx.textBase) : undefined}>Automations</PageTitle>
+          <PageDescription className={sel ? mergeStylexClassName("", sx.hidden) : undefined}>
             Scheduled {AGENT_NAME} sessions. Cron runs in UTC (server time).
           </PageDescription>
         </div>
@@ -698,9 +830,9 @@ setError(e.message);
               <div
                 key={a.id}
                 className={cn(
-                  "relative flex w-full min-w-0 items-center gap-3 border-b border-line px-2.5 py-2.75 text-left text-item-title text-fg",
-                  "max-[560px]:gap-2.5 max-[560px]:px-1 max-[560px]:py-3",
-                  sel?.id === a.id ? "bg-active" : "hover:bg-hover",
+                  mergeStylexClassName("", sx.relative, sx.flex, sx.wFull, sx.minW0, sx.itemsCenter, sx.gap3, sx.borderB, sx.borderLine, sx.px25, sx.py275, sx.textLeft, typography.itemTitle, sx.textFg),
+                  mergeStylexClassName("", sx.max560pxGap25, sx.max560pxPx1, sx.max560pxPy3),
+                  sel?.id === a.id ? mergeStylexClassName("", sx.bgActive) : mergeStylexClassName("", sx.hoverBgHover),
                 )}
               >
                 {/* Two controls in one row: opening the automation, and
@@ -717,8 +849,8 @@ setError(e.message);
                 <TriggerIcon automation={a} />
                 <span
                   className={cn(
-                    "pointer-events-none relative flex min-w-0 flex-1 flex-col gap-0.75",
-                    !a.enabled && "opacity-55",
+                    mergeStylexClassName("", sx.pointerEventsNone, sx.relative, sx.flex, sx.minW0, sx.flex1, sx.flexCol, sx.gap075),
+                    !a.enabled && mergeStylexClassName("", sx.opacity55),
                   )}
                 >
                   <span {...stylex.props(sx.truncate, sx.fontSemibold, sx.leading5, typography.itemTitle)}>{a.name}</span>
@@ -732,8 +864,8 @@ setError(e.message);
                   // does what the row does.
                   <span
                     className={cn(
-                      "relative flex size-5 shrink-0 self-start cursor-pointer items-center justify-center [&_svg]:size-3.5",
-                      a.lastRunStatus === "ok" ? "text-green" : "text-red",
+                      mergeStylexClassName("[&_svg]:size-3.5", sx.relative, sx.flex, sx.size5, sx.shrink0, sx.selfStart, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter),
+                      a.lastRunStatus === "ok" ? mergeStylexClassName("", sx.textGreen) : mergeStylexClassName("", sx.textRed),
                     )}
                     onClick={() => onSelect(a.id)}
                     title={
@@ -749,8 +881,8 @@ setError(e.message);
                     go when width is scarce: the drawer's rail and phones. */}
                 <span
                   className={cn(
-                    "relative shrink-0 cursor-pointer",
-                    sel ? "hidden" : "flex max-[560px]:hidden",
+                    mergeStylexClassName("", sx.relative, sx.shrink0, sx.cursorPointer),
+                    sel ? mergeStylexClassName("", sx.hidden) : mergeStylexClassName("", sx.flex, sx.max560pxHidden),
                   )}
                   onClick={() => onSelect(a.id)}
                 >
@@ -758,8 +890,8 @@ setError(e.message);
                 </span>
                 <span
                   className={cn(
-                    "pointer-events-none relative w-21 shrink-0 text-right text-meta text-faint",
-                    sel ? "hidden" : "max-[560px]:hidden",
+                    mergeStylexClassName("", sx.pointerEventsNone, sx.relative, sx.w21, sx.shrink0, sx.textRight, typography.meta, sx.textFaint),
+                    sel ? mergeStylexClassName("", sx.hidden) : mergeStylexClassName("", sx.max560pxHidden),
                   )}
                 >
                   {/* No "off" here any more: it used to be the only state a
@@ -816,7 +948,7 @@ setError(e.message);
                 <Button
                   size="sm"
                   variant="soft"
-                  className="hover:bg-red-soft hover:text-red"
+                  className={mergeStylexClassName("", sx.hoverBgRedSoft, sx.hoverTextRed)}
                   onClick={() => handleDelete(sel)}
                 >
                   Delete
@@ -884,7 +1016,7 @@ setError(e.message);
                       {sel.slackWatch?.channel ? (
                         <>
                           watches{" "}
-                          <span className={`${CHIP} text-yellow`}>
+                          <span className={[CHIP, mergeStylexClassName("", sx.textYellow)].filter(Boolean).join(" ")}>
                             #{sel.slackWatch.channel}
                           </span>{" "}
                           · one run per top-level message
@@ -1092,11 +1224,11 @@ function TriggerIcon({ automation }: { automation: Automation }) {
   return (
     <span
       className={cn(
-        "pointer-events-none relative flex size-5 shrink-0 self-start items-center justify-center text-faint",
-        !automation.enabled && "opacity-55",
+        mergeStylexClassName("", sx.pointerEventsNone, sx.relative, sx.flex, sx.size5, sx.shrink0, sx.selfStart, sx.itemsCenter, sx.justifyCenter, sx.textFaint),
+        !automation.enabled && mergeStylexClassName("", sx.opacity55),
       )}
     >
-      <Icon size={20} className={cn("max-w-none", scale)} />
+      <Icon size={20} className={cn(mergeStylexClassName("", sx.maxWNone), scale)} />
     </span>
   );
 }
@@ -1160,7 +1292,7 @@ function TriggerGraph({ runs, compact }: { runs: AutomationRun[]; compact?: bool
   if (total === 0) return null;
 
   return (
-    <div className={`flex items-end gap-2 ${compact ? "" : "mt-2"}`}>
+    <div className={[mergeStylexClassName("", sx.flex, sx.itemsEnd, sx.gap2), compact ? "" : "mt-2"].filter(Boolean).join(" ")}>
       <svg
         width={GRAPH_DAYS * SLOT - 2}
         height={PLOT_H + 1}
@@ -1240,7 +1372,7 @@ function RunLedger({
             </span>
           )}
           <a
-            className={cn(LINK, "ml-auto shrink-0")}
+            className={cn(LINK, mergeStylexClassName("", sx.mlAuto, sx.shrink0))}
             href={`${BASE_PATH}/session/${r.sessionId}`}
             onClick={(e) => {
               e.preventDefault();
@@ -1251,7 +1383,7 @@ function RunLedger({
           </a>
           {r.status !== "running" && (
             <button
-              className={cn(LINK, "shrink-0 text-label")}
+              className={cn(LINK, mergeStylexClassName("", sx.shrink0, typography.label))}
               title={
                 r.trigger === "event" || r.trigger === "webhook"
                   ? "Start a fresh run replaying this run's triggering event"
@@ -1477,7 +1609,7 @@ setError(e.message);
       {/* Outdented by the rows' own padding, so each group's label shares an x
           with the rows under it (see src/frontend/AGENTS.md). */}
       <div {...stylex.props(sx.Mx25)}>
-        <div className={cn(SECTION_LABEL, "px-2.5")}>Start from scratch</div>
+        <div className={cn(SECTION_LABEL, mergeStylexClassName("", sx.px25))}>Start from scratch</div>
         <ChooserRow
           icon={IconClock}
           title="Schedule, event or webhook"
@@ -1494,7 +1626,7 @@ setError(e.message);
 
       {templates.length > 0 && (
         <div {...stylex.props(sx.Mx25, sx.flex, sx.minH0, sx.flexCol)}>
-          <div className={cn(SECTION_LABEL, "px-2.5")}>Templates</div>
+          <div className={cn(SECTION_LABEL, mergeStylexClassName("", sx.px25))}>Templates</div>
           {/* The gallery scrolls inside the dialog rather than growing it, so
               the describe field and the two blank starts stay on screen. */}
           <div {...mergeStylexProps("phone:max-h-none desktop:max-h-[32dvh]", sx.minH0, sx.overflowYAuto, sx.overscrollContain)}>

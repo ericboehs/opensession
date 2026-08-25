@@ -40,7 +40,7 @@ import {
 import { PrFileTree } from "./pr/PrFileTree";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -226,6 +226,90 @@ const sx = stylex.create({
 	textXs: {
 			fontSize: "var(--type-label)",
 			lineHeight: "var(--tw-leading,var(--text-xs--line-height))"
+	},
+
+	z1: {
+		"zIndex": "1"
+	},
+	afterAbsolute: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	afterInsetX0: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"insetInline": "0"
+		}
+	},
+	afterTopFull: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"top": "100%"
+		}
+	},
+	afterH25: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"height": "10px"
+		}
+	},
+	afterBgPanelSurface: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"backgroundColor": "var(--panel-surface)"
+		}
+	},
+	afterContent: {
+		"::after": {
+			"--tw-content": "\"\"",
+			"content": "var(--tw-content)"
+		}
+	},
+	Container: {
+		"containerType": "inline-size"
+	},
+	inlineFlex: {
+		"display": "inline-flex"
+	},
+	cursorPointer: {
+		"cursor": "pointer"
+	},
+	gap15: {
+		"gap": "6px"
+	},
+	roundedMd: {
+		"borderRadius": "calc(7px * var(--rf))"
+	},
+	border: {
+		"borderStyle": "var(--tw-border-style)",
+		"borderWidth": "1px"
+	},
+	px9px: {
+		"paddingInline": "9px"
+	},
+	py3px: {
+		"paddingBlock": "3px"
+	},
+	phonePx3: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "12px"
+		}
+	},
+	phonePy2: {
+		"@media (max-width: 720px)": {
+			"paddingBlock": "8px"
+		}
+	},
+	maxWFull: {
+		"maxWidth": "100%"
+	},
+	overflowClip: {
+		"overflow": "clip"
+	},
+	pb7: {
+		"paddingBottom": "28px"
 	},
 });
 
@@ -670,7 +754,7 @@ if (generation === flowGeneration.current) setFlowLoading(false);
       // Paint through the section's 10px top gutter. The gutter still belongs
       // to the diff below, but code cannot scroll through its empty space.
       <div
-        className={`sticky ${multi ? "top-[calc(var(--diff-panel-top,0px)+37px)] phone:top-[calc(var(--diff-panel-top,0px)+47px)]" : "top-[var(--diff-panel-top,0px)]"} z-1 bg-panel-surface after:absolute after:inset-x-0 after:top-full after:h-2.5 after:bg-panel-surface after:content-['']`}
+        className={[mergeStylexClassName("", sx.sticky), multi ? "top-[calc(var(--diff-panel-top,0px)+37px)] phone:top-[calc(var(--diff-panel-top,0px)+47px)]" : "top-[var(--diff-panel-top,0px)]", mergeStylexClassName("", sx.z1, sx.bgPanelSurface, sx.afterAbsolute, sx.afterInsetX0, sx.afterTopFull, sx.afterH25, sx.afterBgPanelSurface, sx.afterContent)].filter(Boolean).join(" ")}
       >
         <div {...mergeStylexProps("[&::-webkit-scrollbar]:hidden", sx.flex, sx.h10, sx.itemsCenter, sx.gap25, sx.overflowXAuto, sx.borderB, sx.borderDivider, sx.px35, sx.whitespaceNowrap, sx.ScrollbarWidthNone, typography.label)}>
           {toolbarContents}
@@ -682,7 +766,7 @@ if (generation === flowGeneration.current) setFlowLoading(false);
 
   return (
     <div
-      className={`@container flex min-h-0 flex-col ${multi ? "[--review-file-header-top:calc(var(--diff-panel-top,0px)+87px)] phone:[--review-file-header-top:calc(var(--diff-panel-top,0px)+97px)]" : "[--review-file-header-top:calc(var(--diff-panel-top,0px)+50px)]"}`}
+      className={[mergeStylexClassName("", sx.Container, sx.flex, sx.minH0, sx.flexCol), multi ? "[--review-file-header-top:calc(var(--diff-panel-top,0px)+87px)] phone:[--review-file-header-top:calc(var(--diff-panel-top,0px)+97px)]" : "[--review-file-header-top:calc(var(--diff-panel-top,0px)+50px)]"].filter(Boolean).join(" ")}
       ref={panelRef}
     >
       {multi && (
@@ -694,11 +778,9 @@ if (generation === flowGeneration.current) setFlowLoading(false);
                 // The active pill supplies its own surface and border colour —
                 // the base has the geometry only, so nothing carries two
                 // competing colour utilities.
-                className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-[9px] py-[3px] text-label whitespace-nowrap phone:px-3 phone:py-2 ${
-                  i === active
+                className={[mergeStylexClassName("", sx.inlineFlex, sx.cursorPointer, sx.itemsCenter, sx.gap15, sx.roundedMd, sx.border, sx.px9px, sx.py3px, typography.label, sx.whitespaceNowrap, sx.phonePx3, sx.phonePy2), i === active
                     ? "border-line bg-panel text-fg"
-                    : "border-transparent bg-transparent text-dim hover:text-fg"
-                }`}
+                    : "border-transparent bg-transparent text-dim hover:text-fg"].filter(Boolean).join(" ")}
                 onClick={() => setActive(i)}
                 title={r.primary ? "Primary repo" : "Attached repo"}
               >
@@ -738,7 +820,7 @@ if (generation === flowGeneration.current) setFlowLoading(false);
          supplies the review canvas's shared 8px inset; standalone Changes
          keeps this panel's own inset. */
       <div
-        className={`${toolbarTarget === undefined ? "px-2.5 pt-2.5" : "px-0 pt-0"} min-w-0 max-w-full overflow-clip pb-7 [&_[class*=pierre]]:max-w-full`}
+        className={[toolbarTarget === undefined ? "px-2.5 pt-2.5" : "px-0 pt-0", mergeStylexClassName("[&_[class*=pierre]]:max-w-full", sx.minW0, sx.maxWFull, sx.overflowClip, sx.pb7)].filter(Boolean).join(" ")}
       >
         <CommentableDiff
           key={cur.repo}

@@ -10,7 +10,7 @@ import { Segmented, SegmentedOption } from "../ui/segmented";
 import { DateRangeField } from "../ui/date-picker";
 import { PageTitle } from "../ui/page-header";
 import { TopBar, TopBarActions, TopBarTitle } from "../ui/top-bar";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import {
 	DETAIL_TOPBAR_TITLE_TEXT,
 	SCROLL_EDGE_DIVIDER,
@@ -272,6 +272,99 @@ const sx = stylex.create({
 	hidden: {
 			display: "none"
 	},
+
+	pointerEventsNone: {
+		"pointerEvents": "none"
+	},
+	absolute: {
+		"position": "absolute"
+	},
+	z10: {
+		"zIndex": "10"
+	},
+	roundedPopup: {
+		"borderRadius": "calc(16px * var(--rf))"
+	},
+	CornerShapeSquircle: {
+		"cornerShape": "squircle"
+	},
+	bgPopup: {
+		"backgroundColor": "var(--popup-surface)"
+	},
+	px3: {
+		"paddingInline": "12px"
+	},
+	py25: {
+		"paddingBlock": "10px"
+	},
+	SmoothRingColorVarPopupRing: {
+		"--smooth-ring-color": "var(--popup-ring)"
+	},
+	gapY1: {
+		"rowGap": "4px"
+	},
+	Mx15: {
+		"marginInline": "-6px"
+	},
+	gapX05: {
+		"columnGap": "2px"
+	},
+	gapX35: {
+		"columnGap": "14px"
+	},
+	px15: {
+		"paddingInline": "6px"
+	},
+	py1: {
+		"paddingBlock": "4px"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	bgActive: {
+		"backgroundColor": "var(--bg-active)"
+	},
+	bgHover: {
+		"backgroundColor": "var(--hover)"
+	},
+	pb05: {
+		"paddingBottom": "2px"
+	},
+	opacity40: {
+		"opacity": ".4"
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	hVarDesktopHeaderH: {
+		"height": "var(--desktop-header-h)"
+	},
+	phoneHAuto: {
+		"@media (max-width: 720px)": {
+			"height": "auto"
+		}
+	},
+	phonePy25: {
+		"@media (max-width: 720px)": {
+			"paddingBlock": "10px"
+		}
+	},
+	opacity60: {
+		"opacity": ".6"
+	},
+	transitionOpacity: {
+		"transitionProperty": "opacity",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	maxW40: {
+		"maxWidth": "160px"
+	},
 });
 
 /**
@@ -413,8 +506,8 @@ function ChartTooltip({
 		<div
 			ref={ref}
 			className={cn(
-				"pointer-events-none absolute z-10 rounded-popup [corner-shape:squircle] bg-popup",
-				"px-3 py-2.5 [--smooth-ring-color:var(--popup-ring)] smooth-shadow-ring-md",
+				mergeStylexClassName("", sx.pointerEventsNone, sx.absolute, sx.z10, sx.roundedPopup, sx.CornerShapeSquircle, sx.bgPopup),
+				mergeStylexClassName("smooth-shadow-ring-md", sx.px3, sx.py25, sx.SmoothRingColorVarPopupRing),
 				className,
 			)}
 			style={style}
@@ -597,7 +690,7 @@ function Legend({
 	if (series.length < 2) return null;
 	return (
 		<div
-			className={cn("mb-3 flex flex-wrap gap-y-1", onSelect ? "-mx-1.5 gap-x-0.5" : "gap-x-3.5")}
+			className={cn(mergeStylexClassName("", sx.mb3, sx.flex, sx.flexWrap, sx.gapY1), onSelect ? mergeStylexClassName("", sx.Mx15, sx.gapX05) : mergeStylexClassName("", sx.gapX35))}
 			role={onSelect ? "group" : undefined}
 			aria-label={onSelect ? filterLabel : undefined}
 		>
@@ -626,8 +719,8 @@ function Legend({
 						onClick={() => onSelect(value)}
 						title={active ? clearLabel : `Show only ${s.label}`}
 						className={cn(
-							"flex items-center gap-1.5 rounded-[999px] px-1.5 py-1 text-meta hover:bg-hover",
-							active ? "bg-active text-fg" : muted ? "text-faint" : "text-dim",
+							mergeStylexClassName("", sx.flex, sx.itemsCenter, sx.gap15, sx.rounded999px, sx.px15, sx.py1, typography.meta, sx.hoverBgHover),
+							active ? mergeStylexClassName("", sx.bgActive, sx.textFg) : muted ? mergeStylexClassName("", sx.textFaint) : mergeStylexClassName("", sx.textDim),
 						)}
 					>
 						{swatch}
@@ -843,8 +936,8 @@ function PersonRepoBars({
 				<div
 					key={p.name}
 					className={cn(
-						"-mx-2 flex items-center gap-3 rounded-row px-2 py-1.5 text-label",
-						hover?.index === i && "bg-hover",
+						mergeStylexClassName("", sx.Mx2, sx.flex, sx.itemsCenter, sx.gap3, sx.roundedRow, sx.px2, sx.py15, typography.label),
+						hover?.index === i && mergeStylexClassName("", sx.bgHover),
 					)}
 					onMouseMove={(e) => show(i, e)}
 					onClick={(e) => show(i, e)}
@@ -898,7 +991,7 @@ function PersonRepoBars({
 									// the two that are along for the ride.
 									<th
 										key={m.key}
-										className={cn("pb-0.5 pl-3 text-right font-medium", m.key === metric.key && "text-dim")}
+										className={cn(mergeStylexClassName("", sx.pb05, sx.pl3, sx.textRight, sx.fontMedium), m.key === metric.key && mergeStylexClassName("", sx.textDim))}
 									>
 										{m.label}
 									</th>
@@ -907,7 +1000,7 @@ function PersonRepoBars({
 						</thead>
 						<tbody>
 							{row.segments.map((s) => (
-								<tr key={s.repo || "(none)"} className={segment !== null && segment !== s.repo ? "opacity-40" : undefined}>
+								<tr key={s.repo || "(none)"} className={segment !== null && segment !== s.repo ? mergeStylexClassName("", sx.opacity40) : undefined}>
 									<td>
 										<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap15, sx.whitespaceNowrap, sx.textDim)}>
 											<span {...stylex.props(sx.size2, sx.shrink0, sx.roundedFull)} style={{ background: colorOf(s.repo) }} />
@@ -918,8 +1011,8 @@ function PersonRepoBars({
 										<td
 											key={m.key}
 											className={cn(
-												"pl-3 text-right tabular-nums leading-4.5",
-												m.key === metric.key ? "font-medium text-fg" : "text-dim",
+												mergeStylexClassName("", sx.pl3, sx.textRight, sx.tabularNums, sx.leading45),
+												m.key === metric.key ? mergeStylexClassName("", sx.fontMedium, sx.textFg) : mergeStylexClassName("", sx.textDim),
 											)}
 										>
 											{m.format(s[m.key])}
@@ -934,8 +1027,8 @@ function PersonRepoBars({
 										<td
 											key={m.key}
 											className={cn(
-												"pt-1 pl-3 text-right tabular-nums",
-												m.key === metric.key ? "font-medium text-fg" : "text-dim",
+												mergeStylexClassName("", sx.pt1, sx.pl3, sx.textRight, sx.tabularNums),
+												m.key === metric.key ? mergeStylexClassName("", sx.fontMedium, sx.textFg) : mergeStylexClassName("", sx.textDim),
 											)}
 										>
 											{m.format(row.segments.reduce((sum, s) => sum + s[m.key], 0))}
@@ -1190,8 +1283,8 @@ export function Analytics() {
 				as="header"
 				ref={setBarEl}
 				className={cn(
-					"wco-chrome flex h-[var(--desktop-header-h)] shrink-0 items-center",
-					"phone:h-auto phone:py-2.5",
+					mergeStylexClassName("wco-chrome", sx.flex, sx.hVarDesktopHeaderH, sx.shrink0, sx.itemsCenter),
+					mergeStylexClassName("", sx.phoneHAuto, sx.phonePy25),
 					SCROLL_EDGE_DIVIDER,
 				)}
 			>
@@ -1206,7 +1299,7 @@ export function Analytics() {
 				<div {...mergeStylexProps("md:px-6", sx.mxAuto, sx.flex, sx.wFull, sx.maxW1080px, sx.flexWrap, sx.itemsCenter, sx.justifyBetween, sx.gap3, sx.px4)}>
 					<TopBarTitle
 						className={cn(
-							"text-item-title font-semibold text-fg",
+							mergeStylexClassName("", typography.itemTitle, sx.fontSemibold, sx.textFg),
 							DETAIL_TOPBAR_TITLE_TEXT,
 						)}
 						data-shown={titleHandedOver || undefined}
@@ -1246,7 +1339,7 @@ export function Analytics() {
 					)}
 
 					{data && derived && (
-						<div className={loading ? "opacity-60 transition-opacity" : "transition-opacity"}>
+						<div className={loading ? mergeStylexClassName("", sx.opacity60, sx.transitionOpacity) : mergeStylexClassName("", sx.transitionOpacity)}>
 							<div {...mergeStylexProps("md:grid-cols-4", sx.mt4, sx.grid, sx.gridCols2, sx.gap3)}>
 								<StatTile
 									label="Active sessions"
@@ -1525,7 +1618,7 @@ export function Analytics() {
 											<tbody>
 												{data.repos.map((r) => (
 													<tr key={r.repo || "(none)"} {...stylex.props(sx.borderT, sx.borderLine)}>
-														<td className={`max-w-32 truncate py-1.5 ${r.repo ? "text-fg" : "text-faint"}`}>
+														<td className={[mergeStylexClassName("", sx.maxW32, sx.truncate, sx.py15), r.repo ? "text-fg" : "text-faint"].filter(Boolean).join(" ")}>
 															{r.repo ? repoLabel(r.repo) : "No repo"}
 														</td>
 														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{fmtInt(r.sessions || 0)}</td>
@@ -1569,7 +1662,7 @@ export function Analytics() {
 														    left out of the People active count. Dim it, or the table
 														    and that number look like they disagree. */}
 														<td
-															className={`max-w-40 py-1.5 ${p.unattributed ? "text-faint" : "text-fg"}`}
+															className={[mergeStylexClassName("", sx.maxW40, sx.py15), p.unattributed ? "text-faint" : "text-fg"].filter(Boolean).join(" ")}
 															title={p.unattributed ? `Sessions from ${p.name} with no person recorded` : undefined}
 														>
 															<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
@@ -1605,7 +1698,7 @@ export function Analytics() {
 														</td>
 														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{fmtInt(a.runs)}</td>
 														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{fmtInt(a.turns)}</td>
-														<td className={`py-1.5 text-right tabular-nums ${a.errors ? "text-red" : "text-faint"}`}>
+														<td className={[mergeStylexClassName("", sx.py15, sx.textRight, sx.tabularNums), a.errors ? "text-red" : "text-faint"].filter(Boolean).join(" ")}>
 															{fmtInt(a.errors)}
 														</td>
 													</tr>

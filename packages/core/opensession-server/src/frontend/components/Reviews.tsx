@@ -10,7 +10,7 @@ import { EmptyState } from "../ui/state";
 import { Badge } from "../ui/badge";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -267,6 +267,126 @@ const sx = stylex.create({
 	fontSemibold: {
 			fontWeight: "var(--font-weight-semibold)"
 	},
+
+	MbPx: {
+		"marginBottom": "-1px"
+	},
+	borderB2: {
+		"borderBottomStyle": "var(--tw-border-style)",
+		"borderBottomWidth": "2px"
+	},
+	px13px: {
+		"paddingInline": "13px"
+	},
+	pt2: {
+		"paddingTop": "8px"
+	},
+	pb11px: {
+		"paddingBottom": "11px"
+	},
+	transitionColors: {
+		"transitionProperty": "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	phoneShrink0: {
+		"@media (max-width: 720px)": {
+			"flexShrink": "0"
+		}
+	},
+	phonePx35: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "14px"
+		}
+	},
+	phonePt11px: {
+		"@media (max-width: 720px)": {
+			"paddingTop": "11px"
+		}
+	},
+	phonePb13px: {
+		"@media (max-width: 720px)": {
+			"paddingBottom": "13px"
+		}
+	},
+	phoneTextItemTitle: {
+		"@media (max-width: 720px)": {
+			"fontSize": "var(--type-item-title)"
+		}
+	},
+	phoneWhitespaceNowrap: {
+		"@media (max-width: 720px)": {
+			"whiteSpace": "nowrap"
+		}
+	},
+	minW5: {
+		"minWidth": "20px"
+	},
+	px7px: {
+		"paddingInline": "7px"
+	},
+	pyPx: {
+		"paddingBlock": "1px"
+	},
+	textCenter: {
+		"textAlign": "center"
+	},
+	py9px: {
+		"paddingBlock": "9px"
+	},
+	phoneHidden: {
+		"@media (max-width: 720px)": {
+			"display": "none"
+		}
+	},
+	cursorPointer: {
+		"cursor": "pointer"
+	},
+	py11px: {
+		"paddingBlock": "11px"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	phoneFlex: {
+		"@media (max-width: 720px)": {
+			"display": "flex"
+		}
+	},
+	phoneFlexWrap: {
+		"@media (max-width: 720px)": {
+			"flexWrap": "wrap"
+		}
+	},
+	phoneItemsCenter: {
+		"@media (max-width: 720px)": {
+			"alignItems": "center"
+		}
+	},
+	phoneGapX3: {
+		"@media (max-width: 720px)": {
+			"columnGap": "12px"
+		}
+	},
+	phoneGapY9px: {
+		"@media (max-width: 720px)": {
+			"rowGap": "9px"
+		}
+	},
+	phonePx4: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "16px"
+		}
+	},
+	phonePy35: {
+		"@media (max-width: 720px)": {
+			"paddingBlock": "14px"
+		}
+	},
 });
 
 interface Props {
@@ -409,8 +529,8 @@ function ChecksCell({ s }: { s: UnifiedSession }) {
       {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap7px, typography.meta)}
       title={`${c.passed} passed · ${c.failed} failed · ${c.pending} pending · ${c.total} total`}
     >
-      <span className={`size-2 shrink-0 rounded-full ${CHECKS_TONE[tone].dot}`} />
-      <span className={`whitespace-nowrap ${CHECKS_TONE[tone].label}`}>{label}</span>
+      <span className={[mergeStylexClassName("", sx.size2, sx.shrink0, sx.roundedFull), CHECKS_TONE[tone].dot].filter(Boolean).join(" ")} />
+      <span className={[mergeStylexClassName("", sx.whitespaceNowrap), CHECKS_TONE[tone].label].filter(Boolean).join(" ")}>{label}</span>
       <span {...mergeStylexProps("phone:hidden", sx.inlineFlex, sx.h1, sx.w46px, sx.shrink0, sx.overflowHidden, sx.roundedFull, sx.bgActive)}
         aria-hidden
       >
@@ -426,11 +546,11 @@ function ReviewCell({ s }: { s: UnifiedSession }) {
   const d = s.prReviewDecision || "";
   const review = "text-meta font-medium whitespace-nowrap";
   if ((s.prState || "OPEN") !== "OPEN") return <span className={DIM}>–</span>;
-  if (d === "APPROVED") return <span className={`${review} text-green`}>Approved</span>;
+  if (d === "APPROVED") return <span className={[review, mergeStylexClassName("", sx.textGreen)].filter(Boolean).join(" ")}>Approved</span>;
   if (d === "CHANGES_REQUESTED")
-    return <span className={`${review} text-yellow`}>Changes</span>;
-  if (s.prIsDraft) return <span className={`${review} text-faint`}>Draft</span>;
-  return <span className={`${review} text-faint`}>Review required</span>;
+    return <span className={[review, mergeStylexClassName("", sx.textYellow)].filter(Boolean).join(" ")}>Changes</span>;
+  if (s.prIsDraft) return <span className={[review, mergeStylexClassName("", sx.textFaint)].filter(Boolean).join(" ")}>Draft</span>;
+  return <span className={[review, mergeStylexClassName("", sx.textFaint)].filter(Boolean).join(" ")}>Review required</span>;
 }
 
 function ChangesCell({ s }: { s: UnifiedSession }) {
@@ -628,16 +748,12 @@ export function Reviews({
               return (
                 <button
                   key={t.key}
-                  className={`-mb-px flex items-center gap-[7px] border-b-2 px-[13px] pt-2 pb-[11px] text-label font-medium transition-colors phone:shrink-0 phone:px-3.5 phone:pt-[11px] phone:pb-[13px] phone:text-item-title phone:whitespace-nowrap ${
-                    on ? "border-b-accent text-fg" : "border-b-transparent text-dim hover:text-fg"
-                  }`}
+                  className={[mergeStylexClassName("", sx.MbPx, sx.flex, sx.itemsCenter, sx.gap7px, sx.borderB2, sx.px13px, sx.pt2, sx.pb11px, typography.label, sx.fontMedium, sx.transitionColors, sx.phoneShrink0, sx.phonePx35, sx.phonePt11px, sx.phonePb13px, sx.phoneTextItemTitle, sx.phoneWhitespaceNowrap), on ? "border-b-accent text-fg" : "border-b-transparent text-dim hover:text-fg"].filter(Boolean).join(" ")}
                   onClick={() => setFilter(t.key)}
                 >
                   {t.label}
                   <span
-                    className={`min-w-5 rounded-full px-[7px] py-px text-center text-meta font-semibold ${
-                      on ? "bg-accent-soft text-accent" : "bg-active text-dim"
-                    }`}
+                    className={[mergeStylexClassName("", sx.minW5, sx.roundedFull, sx.px7px, sx.pyPx, sx.textCenter, typography.meta, sx.fontSemibold), on ? "bg-accent-soft text-accent" : "bg-active text-dim"].filter(Boolean).join(" ")}
                   >
                     {t.count}
                   </span>
@@ -650,7 +766,7 @@ export function Reviews({
               divider spans the full width. */}
           {filtered.length > 0 && (
             <div
-              className={`${ROW} -mx-[22px] bg-surface py-[9px] text-meta font-semibold tracking-[-0.01em] text-faint phone:hidden`}
+              className={[ROW, mergeStylexClassName("", sx.Mx22px, sx.bgSurface, sx.py9px, typography.meta, sx.fontSemibold, sx.tracking001em, sx.textFaint, sx.phoneHidden)].filter(Boolean).join(" ")}
               role="row"
             >
               <span className={C_STATE}>Status</span>
@@ -683,7 +799,7 @@ export function Reviews({
               return (
                 <button
                   key={s.prUrl}
-                  className={`${ROW} group cursor-pointer py-[11px] text-item-title text-fg hover:bg-hover phone:flex phone:flex-wrap phone:items-center phone:gap-x-3 phone:gap-y-[9px] phone:px-4 phone:py-3.5`}
+                  className={[ROW, mergeStylexClassName("group", sx.cursorPointer, sx.py11px, typography.itemTitle, sx.textFg, sx.hoverBgHover, sx.phoneFlex, sx.phoneFlexWrap, sx.phoneItemsCenter, sx.phoneGapX3, sx.phoneGapY9px, sx.phonePx4, sx.phonePy35)].filter(Boolean).join(" ")}
                   onClick={() => onSelect(s.id)}
                   role="row"
                 >

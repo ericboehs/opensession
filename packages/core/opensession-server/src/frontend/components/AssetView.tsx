@@ -41,7 +41,7 @@ import {
 import { absoluteLink, copyToClipboard } from "../lib/share-link";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { Menu } from "../ui/menu";
 import { ResponsiveDialog } from "../ui/sheet";
 import { toast } from "../ui/toast";
@@ -276,6 +276,208 @@ const sx = stylex.create({
 	borderDivider: { borderColor: "var(--divider)" },
 	px3: { paddingInline: "12px" },
 	py2: { paddingBlock: "8px" },
+
+	size9: {
+		"width": "36px",
+		"height": "36px"
+	},
+	hoverBgWhite15: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "#ffffff26"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in oklab, var(--color-white) 15%, transparent)"
+				}
+			}
+		}
+	},
+	hoverTextWhite: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--color-white)"
+			}
+		}
+	},
+	block: {
+		"display": "block"
+	},
+	size15: {
+		"width": "6px",
+		"height": "6px"
+	},
+	transitionColors: {
+		"transitionProperty": "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	bgFg: {
+		"backgroundColor": "var(--text)"
+	},
+	bgWhite35: {
+		"backgroundColor": "#ffffff59",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in oklab, var(--color-white) 35%, transparent)"
+		}
+	},
+	bgLineStrong: {
+		"backgroundColor": "var(--border-strong)"
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	top12: {
+		"top": "50%"
+	},
+	TranslateY12: {
+		"--tw-translate-y": "calc(calc(1 / 2 * 100%) * -1)",
+		"translate": "var(--tw-translate-x) var(--tw-translate-y)"
+	},
+	bgRaised: {
+		"backgroundColor": "var(--bg-raised)"
+	},
+	rightFull: {
+		"right": "100%"
+	},
+	mr3: {
+		"marginRight": "12px"
+	},
+	leftFull: {
+		"left": "100%"
+	},
+	ml3: {
+		"marginLeft": "12px"
+	},
+	activeScale096: {
+		":active": {
+			"scale": ".96"
+		}
+	},
+	phoneSize11: {
+		"@media (max-width: 720px)": {
+			"width": "44px",
+			"height": "44px"
+		}
+	},
+	hoverBgWhite10: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "#ffffff1a"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in oklab, var(--color-white) 10%, transparent)"
+				}
+			}
+		}
+	},
+	hoverTextWhite80: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "#fffc"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"color": "color-mix(in oklab, var(--color-white) 80%, transparent)"
+				}
+			}
+		}
+	},
+	bgPanel: {
+		"backgroundColor": "var(--bg-panel)"
+	},
+	activeBgPressed: {
+		":active": {
+			"backgroundColor": "var(--hover-strong)"
+		}
+	},
+	roundedControl: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	textXs: {
+		"fontSize": "var(--type-label)",
+		"lineHeight": "var(--tw-leading,var(--text-xs--line-height))"
+	},
+	bgWhite10: {
+		"backgroundColor": "#ffffff1a",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in oklab, var(--color-white) 10%, transparent)"
+		}
+	},
+	ring1: {
+		"--tw-ring-shadow": "var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor)",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	ringWhite10: {
+		"--tw-ring-color": "#ffffff1a",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"--tw-ring-color": "color-mix(in oklab, var(--color-white) 10%, transparent)"
+		}
+	},
+	backdropBlurXl: {
+		"--tw-backdrop-blur": "blur(var(--blur-xl))",
+		"WebkitBackdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)",
+		"backdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+	},
+	left0: {
+		"left": "0"
+	},
+	topFull: {
+		"top": "100%"
+	},
+	mt2: {
+		"marginTop": "8px"
+	},
+	textSm: {
+		"fontSize": "var(--type-label)",
+		"lineHeight": "var(--tw-leading,var(--text-sm--line-height))"
+	},
+	lineClamp2: {
+		"WebkitlineClamp": "2",
+		"WebkitboxOrient": "vertical",
+		"display": "-webkit-box",
+		"overflow": "hidden"
+	},
+	textWhite75: {
+		"color": "#ffffffbf",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"color": "color-mix(in oklab, var(--color-white) 75%, transparent)"
+		}
+	},
+	overflowHidden: {
+		"overflow": "hidden"
+	},
+	bgBlack: {
+		"backgroundColor": "var(--color-black)"
+	},
+	relative: {
+		"position": "relative"
+	},
+	m3: {
+		"margin": "12px"
+	},
+	roundedXl: {
+		"borderRadius": "calc(18px * var(--rf))"
+	},
+	bgSurface: {
+		"backgroundColor": "var(--bg)"
+	},
 });
 
 type AssetNavigation = {
@@ -311,8 +513,8 @@ function AssetPager({
 						icon={<IconChevronLeft size={16} />}
 						aria-label="Previous asset"
 						className={cn(
-							"size-9",
-							onDark && "text-white/60 hover:bg-white/15 hover:text-white",
+							mergeStylexClassName("", sx.size9),
+							onDark && mergeStylexClassName("", sx.textWhite60, sx.hoverBgWhite15, sx.hoverTextWhite),
 						)}
 						onClick={onPrevious}
 					/>
@@ -334,14 +536,14 @@ function AssetPager({
 						>
 							<span
 								className={cn(
-									"block size-1.5 rounded-full transition-colors",
+									mergeStylexClassName("", sx.block, sx.size15, sx.roundedFull, sx.transitionColors),
 									dot === index
 										? onDark
-											? "bg-white"
-											: "bg-fg"
+											? mergeStylexClassName("", sx.bgWhite)
+											: mergeStylexClassName("", sx.bgFg)
 										: onDark
-											? "bg-white/35 group-hover:bg-white/70"
-											: "bg-line-strong group-hover:bg-dim",
+											? mergeStylexClassName("group-hover:bg-white/70", sx.bgWhite35)
+											: mergeStylexClassName("group-hover:bg-dim", sx.bgLineStrong),
 								)}
 							/>
 						</button>
@@ -350,8 +552,8 @@ function AssetPager({
 					<span
 						role="status"
 						className={cn(
-							"px-1 text-meta tabular-nums",
-							onDark ? "text-white/60" : "text-faint",
+							mergeStylexClassName("", sx.px1, typography.meta, sx.tabularNums),
+							onDark ? mergeStylexClassName("", sx.textWhite60) : mergeStylexClassName("", sx.textFaint),
 						)}
 					>
 						{index + 1} / {count}
@@ -366,8 +568,8 @@ function AssetPager({
 						icon={<IconChevronRight size={16} />}
 						aria-label="Next asset"
 						className={cn(
-							"size-9",
-							onDark && "text-white/60 hover:bg-white/15 hover:text-white",
+							mergeStylexClassName("", sx.size9),
+							onDark && mergeStylexClassName("", sx.textWhite60, sx.hoverBgWhite15, sx.hoverTextWhite),
 						)}
 						onClick={onNext}
 					/>
@@ -400,8 +602,8 @@ function AssetSideButton({
 				}
 				aria-label={label}
 				className={cn(
-					"absolute top-1/2 z-20 size-10 -translate-y-1/2 rounded-full bg-raised smooth-shadow-sm",
-					previous ? "right-full mr-3" : "left-full ml-3",
+					mergeStylexClassName("smooth-shadow-sm", sx.absolute, sx.top12, sx.z20, sx.size10, sx.TranslateY12, sx.roundedFull, sx.bgRaised),
+					previous ? mergeStylexClassName("", sx.rightFull, sx.mr3) : mergeStylexClassName("", sx.leftFull, sx.ml3),
 				)}
 				onClick={onClick}
 			/>
@@ -465,17 +667,17 @@ toast("Could not delete that file");
 			<Menu.Trigger
 				aria-label={deleteOnly ? "More asset actions" : "Asset actions"}
 				className={cn(
-					"flex shrink-0 items-center justify-center border-0",
+					mergeStylexClassName("", sx.flex, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.border0),
 					bar
 						? cn(
-								"size-10 rounded-full bg-transparent transition-[transform,background-color,color] active:scale-[0.96] phone:size-11",
+								mergeStylexClassName("transition-[transform,background-color,color]", sx.size10, sx.roundedFull, sx.bgTransparent, sx.activeScale096, sx.phoneSize11),
 								phone
-									? "text-white/55 hover:bg-white/10 hover:text-white/80 data-[popup-open]:bg-white/10 data-[popup-open]:text-white/80"
-									: "text-white/60 hover:bg-white/15 hover:text-white data-[popup-open]:bg-white/15 data-[popup-open]:text-white",
+									? mergeStylexClassName("data-[popup-open]:bg-white/10 data-[popup-open]:text-white/80", sx.textWhite55, sx.hoverBgWhite10, sx.hoverTextWhite80)
+									: mergeStylexClassName("data-[popup-open]:bg-white/15 data-[popup-open]:text-white", sx.textWhite60, sx.hoverBgWhite15, sx.hoverTextWhite),
 							)
 						: phone
-							? "size-11 rounded-full bg-panel text-dim active:bg-pressed data-[popup-open]:bg-pressed data-[popup-open]:text-fg"
-							: "size-7 rounded-control bg-transparent text-dim hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg",
+							? mergeStylexClassName("data-[popup-open]:bg-pressed data-[popup-open]:text-fg", sx.size11, sx.roundedFull, sx.bgPanel, sx.textDim, sx.activeBgPressed)
+							: mergeStylexClassName("data-[popup-open]:bg-hover data-[popup-open]:text-fg", sx.size7, sx.roundedControl, sx.bgTransparent, sx.textDim, sx.hoverBgHover, sx.hoverTextFg),
 				)}
 			>
 				<IconDotsHorizontal size={phone ? 24 : 16} />
@@ -544,9 +746,9 @@ function AssetOverlayActionBar({
 	const name = file.path.split("/").pop() || "asset";
 	const commentable = assetPreviewKind(file.path) === "image";
 	const actionClass = cn(
-		"shrink-0 cursor-pointer",
+		mergeStylexClassName("", sx.shrink0, sx.cursorPointer),
 		phone &&
-			"size-11 rounded-full px-0 text-xs text-white/55 hover:bg-white/10 hover:text-white/80",
+			mergeStylexClassName("", sx.size11, sx.roundedFull, sx.px0, sx.textXs, sx.textWhite55, sx.hoverBgWhite10, sx.hoverTextWhite80),
 	);
 	const actionSize: "sm" | "md" = phone ? "sm" : "md";
 	const actionLabel = (label: string) => (phone ? null : label);
@@ -572,9 +774,9 @@ if (!nativeShareWasCancelled(error)) toast("Could not share that link");
 			role="group"
 			aria-label="Asset actions"
 			className={cn(
-				"flex items-center justify-center gap-1",
+				mergeStylexClassName("", sx.flex, sx.itemsCenter, sx.justifyCenter, sx.gap1),
 				phone &&
-					"rounded-full bg-white/10 p-1 ring-1 ring-white/10 backdrop-blur-xl",
+					mergeStylexClassName("", sx.roundedFull, sx.bgWhite10, sx.p1, sx.ring1, sx.ringWhite10, sx.backdropBlurXl),
 			)}
 		>
 			{commentable && (
@@ -708,16 +910,16 @@ function AssetOverlayFooter({
 	return (
 		<div
 			className={cn(
-				"z-20 flex shrink-0 flex-col items-center gap-1 px-3 py-2",
-				!phone && "absolute left-0 right-0 top-full mt-2",
+				mergeStylexClassName("", sx.z20, sx.flex, sx.shrink0, sx.flexCol, sx.itemsCenter, sx.gap1, sx.px3, sx.py2),
+				!phone && mergeStylexClassName("", sx.absolute, sx.left0, sx.right0, sx.topFull, sx.mt2),
 			)}
 		>
 			<div {...stylex.props(sx.flex, sx.maxWFull, sx.flexCol, sx.itemsCenter, sx.gap05, sx.textCenter)}>
 				<div {...stylex.props(sx.flex, sx.maxWFull, sx.itemsCenter, sx.justifyCenter, sx.gap2)}>
 					<div
 						className={cn(
-							"max-w-full truncate font-medium text-white",
-							phone ? "text-label" : "text-sm",
+							mergeStylexClassName("", sx.maxWFull, sx.truncate, sx.fontMedium, sx.textWhite),
+							phone ? mergeStylexClassName("", typography.label) : mergeStylexClassName("", sx.textSm),
 						)}
 						title={file.path}
 					>
@@ -734,8 +936,8 @@ function AssetOverlayFooter({
 				{file.description && (
 					<div
 						className={cn(
-							"max-w-[min(720px,90vw)] line-clamp-2 leading-snug text-white/75",
-							phone ? "text-supporting" : "text-sm",
+							mergeStylexClassName("max-w-[min(720px,90vw)]", sx.lineClamp2, sx.leadingSnug, sx.textWhite75),
+							phone ? mergeStylexClassName("", typography.supporting) : mergeStylexClassName("", sx.textSm),
 						)}
 					>
 						{file.description}
@@ -1143,8 +1345,8 @@ export function AssetOverlay({
 		>
 			<div
 				className={cn(
-					"flex min-h-0 flex-1 flex-col overflow-hidden",
-					isPhone && "bg-black",
+					mergeStylexClassName("", sx.flex, sx.minH0, sx.flex1, sx.flexCol, sx.overflowHidden),
+					isPhone && mergeStylexClassName("", sx.bgBlack),
 				)}
 			>
 				{/* Desktop keeps the centered action bar above the asset. Phones put
@@ -1156,8 +1358,8 @@ export function AssetOverlay({
 				)}
 				<div
 					className={cn(
-						"relative flex min-h-0 flex-1",
-						!visual && "m-3 overflow-hidden rounded-xl bg-surface text-fg",
+						mergeStylexClassName("", sx.relative, sx.flex, sx.minH0, sx.flex1),
+						!visual && mergeStylexClassName("", sx.m3, sx.overflowHidden, sx.roundedXl, sx.bgSurface, sx.textFg),
 					)}
 				>
 					{missingPath === file.path ? (

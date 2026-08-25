@@ -8,7 +8,7 @@ import {
 	pushRecentModel,
 } from "../lib/model-recents";
 import { Menu } from "../ui/menu";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { Tooltip } from "../ui/tooltip";
 import { IconBolt, IconChevronRight, IconSparkle, IconUndo } from "./icons";
 import type { SessionUsage } from "../lib/types";
@@ -109,6 +109,99 @@ const sx = stylex.create({
 	},
 	my1: {
 			marginBlock: "4px"
+	},
+
+	bgHover: {
+		"backgroundColor": "var(--hover)"
+	},
+	opacity55: {
+		"opacity": ".55"
+	},
+	wFull: {
+		"width": "100%"
+	},
+	cursorPointer: {
+		"cursor": "pointer"
+	},
+	gap7px: {
+		"gap": "7px"
+	},
+	whitespaceNowrap: {
+		"whiteSpace": "nowrap"
+	},
+	roundedControl: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	border: {
+		"borderStyle": "var(--tw-border-style)",
+		"borderWidth": "1px"
+	},
+	borderLineStrong: {
+		"borderColor": "var(--border-strong)"
+	},
+	bgTransparent: {
+		"backgroundColor": "#0000"
+	},
+	px3: {
+		"paddingInline": "12px"
+	},
+	py7px: {
+		"paddingBlock": "7px"
+	},
+	fontMedium: {
+		"--tw-font-weight": "var(--font-weight-medium)",
+		"fontWeight": "var(--font-weight-medium)"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	inlineFlex: {
+		"display": "inline-flex"
+	},
+	minH11: {
+		"minHeight": "44px"
+	},
+	maxWFull: {
+		"maxWidth": "100%"
+	},
+	roundedMd: {
+		"borderRadius": "calc(7px * var(--rf))"
+	},
+	border0: {
+		"borderStyle": "var(--tw-border-style)",
+		"borderWidth": "0"
+	},
+	px15: {
+		"paddingInline": "6px"
+	},
+	activeScale096: {
+		":active": {
+			"scale": ".96"
+		}
+	},
+	borderTransparent: {
+		"borderColor": "#0000"
+	},
+	hoverBorderTransparent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"borderColor": "#0000"
+			}
+		}
+	},
+	minW220px: {
+		"minWidth": "220px"
 	},
 });
 
@@ -725,9 +818,9 @@ export function ModelEffortSelect({
 				}
 				className={cn(
 					PICKER_ROW_GAP,
-					"justify-between gap-3",
-					selected && "bg-hover",
-					disabled && "opacity-55",
+					mergeStylexClassName("", sx.justifyBetween, sx.gap3),
+					selected && mergeStylexClassName("", sx.bgHover),
+					disabled && mergeStylexClassName("", sx.opacity55),
 				)}
 			>
 				{optionDescription ? (
@@ -759,10 +852,10 @@ export function ModelEffortSelect({
 				type="button"
 				className={cn(
 					menuRowTrigger
-						? "flex w-full cursor-pointer items-center gap-[7px] whitespace-nowrap rounded-control border border-line-strong bg-transparent px-3 py-[7px] text-control-label font-medium text-faint hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg"
+						? mergeStylexClassName("data-[popup-open]:bg-hover data-[popup-open]:text-fg", sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap7px, sx.whitespaceNowrap, sx.roundedControl, sx.border, sx.borderLineStrong, sx.bgTransparent, sx.px3, sx.py7px, typography.controlLabel, sx.fontMedium, sx.textFaint, sx.hoverBgHover, sx.hoverTextFg)
 						: heroTrigger
-							? "inline-flex min-h-11 min-w-0 max-w-full cursor-pointer items-center rounded-md border-0 bg-transparent px-1.5 text-label font-medium text-dim transition-[color,background-color,scale] hover:bg-hover hover:text-fg active:scale-[0.96] data-[popup-open]:bg-hover data-[popup-open]:text-fg"
-							: "border-transparent hover:border-transparent hover:bg-hover",
+							? mergeStylexClassName("transition-[color,background-color,scale] data-[popup-open]:bg-hover data-[popup-open]:text-fg", sx.inlineFlex, sx.minH11, sx.minW0, sx.maxWFull, sx.cursorPointer, sx.itemsCenter, sx.roundedMd, sx.border0, sx.bgTransparent, sx.px15, typography.label, sx.fontMedium, sx.textDim, sx.hoverBgHover, sx.hoverTextFg, sx.activeScale096)
+							: mergeStylexClassName("", sx.borderTransparent, sx.hoverBorderTransparent, sx.hoverBgHover),
 					className,
 				)}
 				title={title}
@@ -816,7 +909,7 @@ export function ModelEffortSelect({
 				sideOffset={6}
 				className={cn(
 					"max-w-[min(360px,calc(100vw-1rem))]",
-					menuRowTrigger && "min-w-[220px]",
+					menuRowTrigger && mergeStylexClassName("", sx.minW220px),
 				)}
 			>
 				{showUsage && (
@@ -869,7 +962,7 @@ export function ModelEffortSelect({
 						{otherOptions.length > 0 && (
 							<Menu.SubmenuRoot>
 								<Menu.SubmenuTrigger
-									className={cn("justify-between gap-3", primaryFirst && "text-dim")}
+									className={cn(mergeStylexClassName("", sx.justifyBetween, sx.gap3), primaryFirst && mergeStylexClassName("", sx.textDim))}
 								>
 									<span {...stylex.props(sx.minW0, sx.truncate)}>
 										{primaryFirst ? LEGACY_GROUP_LABEL : "Other models"}
@@ -923,8 +1016,8 @@ export function ModelEffortSelect({
 										onClick={() => onEffortChange!(e.id)}
 										className={cn(
 											PICKER_ROW_GAP,
-											"justify-between gap-3",
-											selected && "bg-hover",
+											mergeStylexClassName("", sx.justifyBetween, sx.gap3),
+											selected && mergeStylexClassName("", sx.bgHover),
 										)}
 									>
 										<span {...stylex.props(sx.minW0, sx.truncate)}>{e.label}</span>
@@ -958,7 +1051,7 @@ export function ModelEffortSelect({
 											}
 											onFastModeChange!(o.fast);
 										}}
-										className={cn("justify-between gap-3", selected && "bg-hover")}
+										className={cn(mergeStylexClassName("", sx.justifyBetween, sx.gap3), selected && mergeStylexClassName("", sx.bgHover))}
 									>
 										<span {...stylex.props(sx.minW0, sx.truncate)}>{o.label}</span>
 										<Menu.Check on={selected} {...stylex.props(sx.textDim)} />
@@ -982,8 +1075,8 @@ export function ModelEffortSelect({
 								onClick={() => onAccountChange!("")}
 								className={cn(
 									PICKER_ROW_GAP,
-									"justify-between gap-3",
-									!accountId && "bg-hover",
+									mergeStylexClassName("", sx.justifyBetween, sx.gap3),
+									!accountId && mergeStylexClassName("", sx.bgHover),
 								)}
 							>
 								<span {...stylex.props(sx.minW0, sx.truncate)}>Auto</span>
@@ -997,8 +1090,8 @@ export function ModelEffortSelect({
 										onClick={() => onAccountChange!(a.id)}
 										className={cn(
 											PICKER_ROW_GAP,
-											"justify-between gap-3",
-											selected && "bg-hover",
+											mergeStylexClassName("", sx.justifyBetween, sx.gap3),
+											selected && mergeStylexClassName("", sx.bgHover),
 										)}
 									>
 										<span {...stylex.props(sx.minW0, sx.truncate)}>
@@ -1020,8 +1113,8 @@ export function ModelEffortSelect({
 						disabled={isPreferredDefault}
 						title={`Use ${modelLabel} for new sessions`}
 						className={cn(
-							"justify-between gap-3",
-							isPreferredDefault && "opacity-55",
+							mergeStylexClassName("", sx.justifyBetween, sx.gap3),
+							isPreferredDefault && mergeStylexClassName("", sx.opacity55),
 						)}
 					>
 						<span {...stylex.props(sx.minW0, sx.truncate)}>Set as default</span>
@@ -1031,7 +1124,7 @@ export function ModelEffortSelect({
 				<Menu.Item
 					onClick={resetToDefault}
 					disabled={atDefault}
-					className={cn("justify-between gap-3", atDefault && "opacity-55")}
+					className={cn(mergeStylexClassName("", sx.justifyBetween, sx.gap3), atDefault && mergeStylexClassName("", sx.opacity55))}
 				>
 					<span {...stylex.props(sx.minW0, sx.truncate)}>Reset to default</span>
 					<IconUndo {...stylex.props(sx.shrink0, sx.textDim)} size={17} />

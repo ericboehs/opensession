@@ -169,7 +169,7 @@ import { useConfirm } from "../ui/confirm";
 import { Tooltip } from "../ui/tooltip";
 import { ContextMenu, MENU_ICON, Menu } from "../ui/menu";
 import { Popover } from "../ui/popover";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { RowCardPopup } from "./SidebarRowCards";
 import { pointerCanHover } from "../lib/pointer";
 import { RepoTile, repoLabel } from "./RepoTile";
@@ -726,6 +726,60 @@ const sx = stylex.create({
 	mdFallbackMargins: { "@media (min-width: 768px)": { marginRight: "8px", marginLeft: "16px" } },
 	tabularNums: { fontVariantNumeric: "tabular-nums" },
 
+
+	MediaHoverNoneInlineFlex: {
+		"@media (hover: none)": {
+			"display": "inline-flex"
+		}
+	},
+	pxVarSidebarNavX: {
+		"paddingInline": "var(--sidebar-nav-x)"
+	},
+	pxCalcVarSidebarIconLeftVarSidebarNavX: {
+		"paddingInline": "calc(var(--sidebar-icon-left) - var(--sidebar-nav-x))"
+	},
+	pyVarSidebarToolPad: {
+		"paddingBlock": "var(--sidebar-tool-pad)"
+	},
+	phonePy13px: {
+		"@media (max-width: 720px)": {
+			"paddingBlock": "13px"
+		}
+	},
+	desktopTextItemTitle: {
+		"@media (min-width: 721px)": {
+			"fontSize": "var(--type-item-title)"
+		}
+	},
+	desktopWFull: {
+		"@media (min-width: 721px)": {
+			"width": "100%"
+		}
+	},
+	FontInherit: {
+		"font": "inherit"
+	},
+	ScrollbarWidthNone: {
+		"scrollbarWidth": "none"
+	},
+	ptVarHeaderH: {
+		"paddingTop": "var(--header-h)"
+	},
+	desktopSidebarBandSlot0px: {
+		"@media (min-width: 721px)": {
+			"--sidebar-band-slot": "0px"
+		}
+	},
+	hoverTextDim: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text-dim)"
+			}
+		}
+	},
+	mt2: {
+		"marginTop": "8px"
+	},
 });
 
 // Re-exported for App.tsx, which holds the sidebar ref.
@@ -3559,7 +3613,7 @@ setClosingPrUrls((current) => {
 					// second auto margin would split the free space between them.
 					<SnoozeBadge
 						until={snoozeIso}
-						className={showRunDuration ? "ml-1.5" : undefined}
+						className={showRunDuration ? mergeStylexClassName("", sx.ml15) : undefined}
 					/>
 				)}
 				{/* The optional last-used preference remains useful context, but it is
@@ -3576,10 +3630,10 @@ setClosingPrUrls((current) => {
 								// The "hover" mode (the default) shows the badge only under
 								// the pointer. On touch there is no hover, so it shows inline
 								// like "always". A running row keeps its duration instead.
-								showRunDuration && "hidden",
+								showRunDuration && mergeStylexClassName("", sx.hidden),
 								wsTimePref === "hover" &&
 									!showRunDuration &&
-									"[@media(hover:none)]:inline-flex",
+									mergeStylexClassName("", sx.MediaHoverNoneInlineFlex),
 							)}
 							data-ws-time=""
 							aria-label={new Date(row.lastActivity).toLocaleString()}
@@ -3595,7 +3649,7 @@ setClosingPrUrls((current) => {
 							SIDEBAR_WS_DRAFT,
 							// The pencil pins itself to the row's right edge unless a
 							// ticker or a snooze countdown already did that pushing.
-							showRunDuration || snoozeIso ? "ml-1.5" : "ml-auto",
+							showRunDuration || snoozeIso ? mergeStylexClassName("", sx.ml15) : mergeStylexClassName("", sx.mlAuto),
 							"group-hover:hidden",
 						)}
 						data-ws-draft=""
@@ -3611,7 +3665,7 @@ setClosingPrUrls((current) => {
 						// A revealed swipe action owns the row's right edge, so the
 						// hover cluster stays out of it entirely rather than being
 						// hidden again by a more specific rule further down the sheet.
-						swipeSide ? "hidden" : SIDEBAR_WS_ACTIONS_HOVER,
+						swipeSide ? mergeStylexClassName("", sx.hidden) : SIDEBAR_WS_ACTIONS_HOVER,
 					)}
 					data-ws-actions=""
 				>
@@ -3634,7 +3688,7 @@ setClosingPrUrls((current) => {
 							// One colour, picked here rather than stacking two `text-*`
 							// utilities, whose winner would be Tailwind's ordering: a
 							// pinned action keeps its accent under the pointer.
-							className={cn(SIDEBAR_WS_ACTION, "text-accent")}
+							className={cn(SIDEBAR_WS_ACTION, mergeStylexClassName("", sx.textAccent))}
 							aria-label="Unpin workspace"
 							onClick={(e) => {
 								e.stopPropagation();
@@ -3659,7 +3713,7 @@ setClosingPrUrls((current) => {
 								<span
 									role="button"
 									tabIndex={0}
-									className={cn(SIDEBAR_WS_ACTION, "text-faint hover:text-fg")}
+									className={cn(SIDEBAR_WS_ACTION, mergeStylexClassName("", sx.textFaint, sx.hoverTextFg))}
 									aria-label={snoozed ? "Unsnooze workspace" : "Snooze workspace"}
 									onClick={(e) => {
 										e.stopPropagation();
@@ -3684,7 +3738,7 @@ setClosingPrUrls((current) => {
 								<span
 									role="button"
 									tabIndex={0}
-									className={cn(SIDEBAR_WS_ACTION, "text-faint hover:text-fg")}
+									className={cn(SIDEBAR_WS_ACTION, mergeStylexClassName("", sx.textFaint, sx.hoverTextFg))}
 									aria-label="Archive workspace"
 									onClick={(e) => {
 										e.stopPropagation();
@@ -3716,7 +3770,7 @@ setClosingPrUrls((current) => {
 							<span
 								role="button"
 								tabIndex={0}
-								className={cn(SIDEBAR_WS_ACTION, "text-faint hover:text-red")}
+								className={cn(SIDEBAR_WS_ACTION, mergeStylexClassName("", sx.textFaint, sx.hoverTextRed))}
 								aria-label="Delete draft"
 								onClick={(e) => {
 									e.stopPropagation();
@@ -3862,7 +3916,7 @@ fetchFeedItems("plain")
 						SIDEBAR_GROUP_HEADER,
 						SIDEBAR_GROUP_HEADER_INSET,
 						SIDEBAR_LANE_HEADER,
-						"transition-colors",
+						mergeStylexClassName("", sx.transitionColors),
 						SIDEBAR_STICKY_LANE,
 						ns && SIDEBAR_STICKY_LANE_NESTED,
 						SIDEBAR_STUCK_BACKING,
@@ -3923,7 +3977,7 @@ fetchFeedItems("plain")
 						SIDEBAR_GROUP_HEADER,
 						SIDEBAR_GROUP_HEADER_INSET,
 						SIDEBAR_LANE_HEADER,
-						"transition-colors",
+						mergeStylexClassName("", sx.transitionColors),
 						SIDEBAR_STICKY_LANE,
 						ns && SIDEBAR_STICKY_LANE_NESTED,
 						SIDEBAR_STUCK_BACKING,
@@ -4008,7 +4062,7 @@ fetchFeedItems("plain")
 							SIDEBAR_GROUP_HEADER,
 							SIDEBAR_GROUP_HEADER_INSET,
 							SIDEBAR_LANE_HEADER,
-							"transition-colors",
+							mergeStylexClassName("", sx.transitionColors),
 							SIDEBAR_STICKY_LANE,
 							ns && SIDEBAR_STICKY_LANE_NESTED,
 							SIDEBAR_STUCK_BACKING,
@@ -4102,7 +4156,7 @@ fetchFeedItems("plain")
 								SIDEBAR_GROUP_HEADER,
 								SIDEBAR_GROUP_HEADER_INSET,
 								SIDEBAR_LANE_HEADER,
-								"transition-colors",
+								mergeStylexClassName("", sx.transitionColors),
 								SIDEBAR_STICKY_LANE,
 								ns && SIDEBAR_STICKY_LANE_NESTED,
 								SIDEBAR_STUCK_BACKING,
@@ -4152,7 +4206,7 @@ fetchFeedItems("plain")
 						SIDEBAR_GROUP_HEADER,
 						SIDEBAR_GROUP_HEADER_INSET,
 						SIDEBAR_LANE_HEADER,
-						"transition-colors",
+						mergeStylexClassName("", sx.transitionColors),
 						SIDEBAR_STICKY_LANE,
 						ns && SIDEBAR_STICKY_LANE_NESTED,
 						SIDEBAR_STUCK_BACKING,
@@ -4416,7 +4470,7 @@ fetchFeedItems("plain")
 					<div
 						className={cn(
 							"[&:not(:first-child)]:mt-4",
-							canReorder && "cursor-grab active:cursor-grabbing",
+							canReorder && mergeStylexClassName("", sx.cursorGrab, sx.activeCursorGrabbing),
 							repoDragKey === repo &&
 								"[&>[data-sticky-head]]:rounded-md [&>[data-sticky-head]]:bg-hover [&>[data-sticky-head]]:opacity-50 [&>[data-sticky-head]]:ring-1 [&>[data-sticky-head]]:ring-inset [&>[data-sticky-head]]:ring-line-strong",
 						)}
@@ -4438,7 +4492,7 @@ fetchFeedItems("plain")
 								SIDEBAR_GROUP_HEADER,
 								SIDEBAR_GROUP_HEADER_INSET,
 								SIDEBAR_HEADER_ROW,
-								"group transition-colors",
+								mergeStylexClassName("group", sx.transitionColors),
 								SIDEBAR_STICKY_LANE,
 								SIDEBAR_STUCK_BACKING,
 							)}
@@ -4477,10 +4531,10 @@ fetchFeedItems("plain")
 							{/* The differently sized name and count share a baseline, while the
 							    pair stays vertically centred against the tile. */}
 							<span {...mergeStylexProps("desktop:gap-[9px]", sx.flex, sx.minW0, sx.flex01Auto, sx.itemsBaseline, sx.gap15)}>
-								<span className={cn(SIDEBAR_GROUP_NAME, "flex-[0_1_auto] font-semibold")}>
+								<span className={cn(SIDEBAR_GROUP_NAME, mergeStylexClassName("", sx.flex01Auto, sx.fontSemibold))}>
 									{repo === ASK_BAND ? "Ask" : repoLabel(repo)}
 								</span>
-								<span className={cn(SIDEBAR_GROUP_COUNT, "shrink-0")}>
+								<span className={cn(SIDEBAR_GROUP_COUNT, mergeStylexClassName("", sx.shrink0))}>
 									{rows.length +
 										snoozedRows.length +
 										needsReviewRepoRows.length +
@@ -4495,7 +4549,7 @@ fetchFeedItems("plain")
 							    and of reviews being asked of you. */}
 							{!open && urgent > 0 && (
 								<span
-									className={cn(SIDEBAR_ATTN_COUNT, "bg-blue")}
+									className={cn(SIDEBAR_ATTN_COUNT, mergeStylexClassName("", sx.bgBlue))}
 									aria-label={`${urgent} waiting on you`}
 								>
 									{urgent}
@@ -4644,7 +4698,7 @@ fetchFeedItems("plain")
 						<IconChevronDown
 							className={cn(
 								SIDEBAR_GROUP_CHEVRON,
-								"ml-auto",
+								mergeStylexClassName("", sx.mlAuto),
 								!groupIsOpen && SIDEBAR_GROUP_CHEVRON_COLLAPSED,
 							)}
 							size={20}
@@ -4793,7 +4847,7 @@ fetchFeedItems("plain")
 									SIDEBAR_GROUP_HEADER,
 									SIDEBAR_GROUP_HEADER_INSET,
 									SIDEBAR_HEADER_ROW,
-									"group transition-colors",
+									mergeStylexClassName("group", sx.transitionColors),
 									SIDEBAR_STICKY_LANE,
 									SIDEBAR_STUCK_BACKING,
 								)}
@@ -4806,12 +4860,12 @@ fetchFeedItems("plain")
 							<RepoTile name={feed.id} className={SIDEBAR_REPO_TILE} />
 						</span>
 						<span {...mergeStylexProps("desktop:gap-[9px]", sx.flex, sx.minW0, sx.flex01Auto, sx.itemsBaseline, sx.gap15)}>
-							<span className={cn(SIDEBAR_GROUP_NAME, "flex-[0_1_auto] font-semibold")}>{feed.title}</span>
-							<span className={cn(SIDEBAR_GROUP_COUNT, "shrink-0")}>{count}</span>
+							<span className={cn(SIDEBAR_GROUP_NAME, mergeStylexClassName("", sx.flex01Auto, sx.fontSemibold))}>{feed.title}</span>
+							<span className={cn(SIDEBAR_GROUP_COUNT, mergeStylexClassName("", sx.shrink0))}>{count}</span>
 						</span>
 						{!open && attentionCount > 0 && (
 							<span
-								className={cn(SIDEBAR_ATTN_COUNT, "bg-red")}
+								className={cn(SIDEBAR_ATTN_COUNT, mergeStylexClassName("", sx.bgRed))}
 								aria-label={`${attentionCount} urgent`}
 							>
 								{attentionCount}
@@ -4872,7 +4926,7 @@ fetchFeedItems("plain")
 		// twice, which costs nothing: they are one string either way.
 		data-density={density}
 		className={cn(
-			"block max-w-full min-w-0 flex-none",
+			mergeStylexClassName("", sx.block, sx.maxWFull, sx.minW0, sx.flexNone),
 			SIDEBAR_DENSITY_VARS,
 			SIDEBAR_NAV_X,
 		)}
@@ -4908,10 +4962,10 @@ fetchFeedItems("plain")
 				// The organization row leads this rail on desktop now that the old
 				// heading is gone. Pull it slightly closer to the fixed top bar there;
 				// phones keep the original spacing because their first row is a tool.
-				"flex flex-col gap-0.5 px-[var(--sidebar-nav-x)] pt-2 pb-1.5 desktop:pt-0.5",
+				mergeStylexClassName("", sx.flex, sx.flexCol, sx.gap05, sx.pxVarSidebarNavX, sx.pt2, sx.pb15, sx.desktopPt05),
 			)}
 		>
-			<div className="phone:hidden">
+			<div className={mergeStylexClassName("", sx.phoneHidden)}>
 				<OrganizationSwitcher
 					connected={connected}
 					onOpenSettings={onOpenSettings}
@@ -4921,7 +4975,7 @@ fetchFeedItems("plain")
 				const rowClass = cn(
 					// One look at both widths. Only the box changes, and only
 					// because a phone row is pressed rather than read.
-					"group flex items-center text-left transition-colors",
+					mergeStylexClassName("group", sx.flex, sx.itemsCenter, sx.textLeft, sx.transitionColors),
 					// Rows use control-label type, with glyphs matching the
 					// sidebar's standard 22px leading rail.
 					// `--sidebar-tool-pad` is 5px for a 32px box: the tools are a
@@ -4937,16 +4991,16 @@ fetchFeedItems("plain")
 					// Phones override it to the 13px the session rows take
 					// (SIDEBAR_ROW, lib/sidebar-classes.ts) for a 48px box: 32px is
 					// a reading height, not a tap target.
-					`w-full ${SIDEBAR_RAIL_GAP} rounded-row bg-transparent px-[calc(var(--sidebar-icon-left)-var(--sidebar-nav-x))] py-[var(--sidebar-tool-pad)] phone:py-[13px] text-body font-medium text-dim desktop:text-item-title hover:text-fg`,
+					[mergeStylexClassName("", sx.wFull), SIDEBAR_RAIL_GAP, mergeStylexClassName("", sx.roundedRow, sx.bgTransparent, sx.pxCalcVarSidebarIconLeftVarSidebarNavX, sx.pyVarSidebarToolPad, sx.phonePy13px, typography.body, sx.fontMedium, sx.textDim, sx.desktopTextItemTitle, sx.hoverTextFg)].filter(Boolean).join(" "),
 					SIDEBAR_HOVER_LAYER,
-					tool.active && "bg-selected text-fg",
+					tool.active && mergeStylexClassName("", sx.bgSelected, sx.textFg),
 				);
 				const rowBody = (
 					<>
 						<span
 							className={cn(
-								"inline-flex text-faint [&_svg]:size-[22px]",
-								tool.active ? "text-dim" : "group-hover:text-dim",
+								mergeStylexClassName("[&_svg]:size-[22px]", sx.inlineFlex, sx.textFaint),
+								tool.active ? mergeStylexClassName("", sx.textDim) : "group-hover:text-dim",
 							)}
 						>
 							{tool.icon}
@@ -5072,15 +5126,15 @@ fetchFeedItems("plain")
 			// caption hidden and the chevron invisible-but-in-layout, that was a
 			// near-empty band between the tool cards and the first project, which
 			// read as the strip being bottom-heavy. Nothing to set off there.
-			"mt-1 pb-0.5 pt-3 phone:mt-0 phone:pt-0",
+			mergeStylexClassName("", sx.mt1, sx.pb05, sx.pt3, sx.phoneMt0, sx.phonePt0),
 			// A borrowed lens hides the tools strip, so this bar becomes the
 			// first thing in the phone scroll. Give it enough air to clear the
 			// floating top bar's fade instead of letting its top edge wash out.
-			borrowedLens && "phone:pt-4",
+			borrowedLens && mergeStylexClassName("", sx.phonePt4),
 			// A caption starts on the rail's 16px text column; the borrowed
 			// lens's strip is a filled bar, so it takes the rows' own 8px
 			// inset instead and lines up with the workspace pills under it.
-			borrowedLens ? "px-2" : "px-[16px] pr-[7px]",
+			borrowedLens ? mergeStylexClassName("", sx.px2) : mergeStylexClassName("", sx.px16px, sx.pr7px),
 			SIDEBAR_STICKY_BAND,
 			SIDEBAR_STICKY_BAND_ROW,
 			SIDEBAR_STUCK_BACKING,
@@ -5089,14 +5143,14 @@ fetchFeedItems("plain")
 	>
 		<div
 			className={cn(
-				"group/wshead flex min-w-0 items-center gap-1.5 desktop:w-full",
+				mergeStylexClassName("group/wshead", sx.flex, sx.minW0, sx.itemsCenter, sx.gap15, sx.desktopWFull),
 				// In someone else's sidebar this row IS the strip: one bar that
 				// names whose lanes these are, takes you back out, and carries
 				// the header's own actions. The name was being said twice —
 				// once by a strip above the tools, once by this heading — and
 				// each said it with its own ✕.
 				borrowedLens &&
-					"min-h-10 w-full rounded-row bg-blue-soft pl-3 pr-1 phone:min-h-12 phone:pl-3.5 desktop:h-full desktop:min-h-0",
+					mergeStylexClassName("", sx.minH10, sx.wFull, sx.roundedRow, sx.bgBlueSoft, sx.pl3, sx.pr1, sx.phoneMinH12, sx.phonePl35, sx.desktopHFull, sx.desktopMinH0),
 			)}
 			ref={headRef}
 		>
@@ -5143,7 +5197,7 @@ fetchFeedItems("plain")
 			) : (
 			<button
 				className={cn(
-					"group/wstoggle flex min-w-0 items-center gap-[5px] [font:inherit]",
+					mergeStylexClassName("group/wstoggle", sx.flex, sx.minW0, sx.itemsCenter, sx.gap5px, sx.FontInherit),
 					// On phones the caption is hidden and the chevron only paints on
 					// hover, so while the band is open this button is a 22px row of
 					// nothing between the tool cards and the first project. That row
@@ -5152,7 +5206,7 @@ fetchFeedItems("plain")
 					// Collapsed it stays: the chevron IS visible then
 					// (SIDEBAR_BAND_CHEVRON_COLLAPSED), and it is the only way to
 					// open the band back up.
-					isPhone && workspacesOpen && "hidden",
+					isPhone && workspacesOpen && mergeStylexClassName("", sx.hidden),
 				)}
 				onClick={() => toggleBand("workspaces")}
 				aria-expanded={workspacesOpen}
@@ -5169,8 +5223,8 @@ fetchFeedItems("plain")
 						// The band caption, same as SIDEBAR_BAND_LABEL wears one
 						// section down: this heading is written inline rather than
 						// composed from it only because of the strip above.
-						"shrink-0 text-label font-semibold text-dim group-hover/wshead:text-fg",
-						isPhone && "hidden",
+						mergeStylexClassName("group-hover/wshead:text-fg", sx.shrink0, typography.label, sx.fontSemibold, sx.textDim),
+						isPhone && mergeStylexClassName("", sx.hidden),
 					)}
 					ref={(node) => {
 						titleRef.current = node;
@@ -5213,8 +5267,8 @@ fetchFeedItems("plain")
 			    bar keeps the one action that belongs to it, which is leaving. */}
 			<div
 				className={cn(
-					"shrink-0 items-center gap-1.5",
-					isPhone || borrowedLens ? "hidden" : "flex",
+					mergeStylexClassName("", sx.shrink0, sx.itemsCenter, sx.gap15),
+					isPhone || borrowedLens ? mergeStylexClassName("", sx.hidden) : mergeStylexClassName("", sx.flex),
 				)}
 				ref={actionsRef}
 			>
@@ -5224,19 +5278,19 @@ fetchFeedItems("plain")
 					className={cn(
 						SIDEBAR_HEADER_BTN,
 						isPhone
-							? cn(SIDEBAR_HEADER_BTN_PHONE, "min-h-[38px] min-w-[38px]")
+							? cn(SIDEBAR_HEADER_BTN_PHONE, mergeStylexClassName("", sx.minH38px, sx.minW38px))
 							: SIDEBAR_HEADER_BTN_DESKTOP,
-						"inline-flex items-center justify-center",
+						mergeStylexClassName("", sx.inlineFlex, sx.itemsCenter, sx.justifyCenter),
 						// The open state paints the stronger wash and the hover now
 						// layers OVER it (SIDEBAR_HOVER_LAYER), so the button no
 						// longer has to withhold its hover to keep from washing
 						// itself back out while open.
 						SIDEBAR_HOVER_LAYER,
-						filterOpen && "border-line-strong bg-pressed",
+						filterOpen && mergeStylexClassName("", sx.borderLineStrong, sx.bgPressed),
 						// A set filter is already spelled out in the header (the repo
 						// chip) and in the popover itself, so the button stays a plain
 						// glyph: full contrast under the pointer or while open.
-						filterOpen ? "text-fg" : "text-dim hover:text-fg",
+						filterOpen ? mergeStylexClassName("", sx.textFg) : mergeStylexClassName("", sx.textDim, sx.hoverTextFg),
 					)}
 					// A Base UI tooltip is a DESCRIPTION, not a name, so an
 					// icon-only trigger still needs one of its own. The phone twin
@@ -5267,7 +5321,7 @@ fetchFeedItems("plain")
 						isPhone
 							? SIDEBAR_HEADER_BTN_PHONE
 							: SIDEBAR_HEADER_BTN_DESKTOP,
-						"inline-flex items-center justify-center text-dim hover:bg-hover hover:text-fg",
+						mergeStylexClassName("", sx.inlineFlex, sx.itemsCenter, sx.justifyCenter, sx.textDim, sx.hoverBgHover, sx.hoverTextFg),
 					)}
 					onClick={onNewSession}
 				>
@@ -5305,7 +5359,7 @@ fetchFeedItems("plain")
 			// rows inherit rather than a flag every family has to be handed.
 			data-density={density}
 			className={cn(
-				"flex w-full min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+				mergeStylexClassName("[&::-webkit-scrollbar]:hidden", sx.flex, sx.wFull, sx.minH0, sx.flex1, sx.flexCol, sx.overflowXHidden, sx.overflowYAuto, sx.ScrollbarWidthNone),
 				SIDEBAR_DENSITY_VARS,
 				SIDEBAR_NAV_X,
 				// The whole sidebar scrolls as one on phones, so the tools (and the
@@ -5316,7 +5370,7 @@ fetchFeedItems("plain")
 				// Fade the list into the bar with a mask, and keep the last section
 				// clear of the home indicator.
 				isPhone &&
-					"pt-[var(--header-h)] pb-[max(24px,env(safe-area-inset-bottom,0px))] [-webkit-mask-image:linear-gradient(to_bottom,transparent_0,#000_var(--header-h))] [mask-image:linear-gradient(to_bottom,transparent_0,#000_var(--header-h))]",
+					mergeStylexClassName("pb-[max(24px,env(safe-area-inset-bottom,0px))] [-webkit-mask-image:linear-gradient(to_bottom,transparent_0,#000_var(--header-h))] [mask-image:linear-gradient(to_bottom,transparent_0,#000_var(--header-h))]", sx.ptVarHeaderH),
 			)}
 			ref={sidebarScrollRef}
 			onDragOver={handleRepoAutoScroll}
@@ -5584,7 +5638,7 @@ fetchFeedItems("plain")
 						// Scoped here rather than on the scroll root because the bands BELOW
 						// this list (Automations, People) still pin inside it and their lanes
 						// still have to clear them.
-						"desktop:[--sidebar-band-slot:0px]",
+						mergeStylexClassName("", sx.desktopSidebarBandSlot0px),
 					)}
 					data-sidebar-list
 				>
@@ -6119,9 +6173,9 @@ fetchFeedItems("plain")
 				{autoCreatedRows > 0 && (
 					<button
 						className={cn(
-							"mb-1 flex w-full items-center gap-1.5 rounded-row px-4 py-1.5 text-left text-label text-faint",
+							mergeStylexClassName("", sx.mb1, sx.flex, sx.wFull, sx.itemsCenter, sx.gap15, sx.roundedRow, sx.px4, sx.py15, sx.textLeft, typography.label, sx.textFaint),
 							SIDEBAR_HOVER_LAYER,
-							"hover:text-dim",
+							mergeStylexClassName("", sx.hoverTextDim),
 						)}
 						onClick={() =>
 							setFilter({
@@ -6144,14 +6198,14 @@ fetchFeedItems("plain")
 
 				{/* ── Automations (one collapsible band, one group per automation) ── */}
 				{groups.length > 0 && (
-					<div className={cn(SIDEBAR_INDEPENDENT_SECTION, "mt-2 pb-7")}>
+					<div className={cn(SIDEBAR_INDEPENDENT_SECTION, mergeStylexClassName("", sx.mt2, sx.pb7))}>
 						<div
 							className={cn(
 								SIDEBAR_BAND_LABEL,
 								// A band heading carries no leading mark, so on phones it
 								// takes the 8px a 22px glyph spends on its own padding
 								// before the ink starts — see the toggle's inset below.
-								"py-0 pl-0 pr-2 desktop:pr-0",
+								mergeStylexClassName("", sx.py0, sx.pl0, sx.pr2, sx.desktopPr0),
 								SIDEBAR_STICKY_BAND,
 								SIDEBAR_STICKY_BAND_ROW,
 								SIDEBAR_STUCK_BACKING,
@@ -6216,7 +6270,7 @@ fetchFeedItems("plain")
 											    way every band above it does. Pinned right it read
 											    as a column of its own, and it had to disappear on
 											    hover to hand the slot to the settings glyph. */}
-											<span className={cn(SIDEBAR_GROUP_COUNT, "shrink-0")}>
+											<span className={cn(SIDEBAR_GROUP_COUNT, mergeStylexClassName("", sx.shrink0))}>
 												{group.totalItems || group.items.length}
 											</span>
 											{/* Collapsed, the chevron shows at rest, as it does
@@ -6337,7 +6391,7 @@ fetchFeedItems("plain")
 					// It sits outside the workspace list, so it takes the same inset
 					// its other out-of-list siblings do. Without it the row is the one
 					// thing in the sidebar whose fill runs edge to edge.
-					className={cn(SIDEBAR_INDEPENDENT_SECTION, SIDEBAR_GROUP, "mt-1")}
+					className={cn(SIDEBAR_INDEPENDENT_SECTION, SIDEBAR_GROUP, mergeStylexClassName("", sx.mt1))}
 					style={{ order: 99 }}
 				>
 					{archivedLink}
