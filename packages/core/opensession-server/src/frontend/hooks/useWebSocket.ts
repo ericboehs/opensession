@@ -201,16 +201,8 @@ export function useWebSocket(presenceActive = true) {
         }
         if (!commandOutbox.put(candidate)) {
           negotiatingCommandsRef.current.set(requestId, candidate);
-          window.dispatchEvent(new CustomEvent("opensession-command-outbox-blocked"));
           toast("A pending send needs storage before it can continue.", {
             variant: "error",
-            action: {
-              label: "Review",
-              onClick: () => {
-                history.pushState(null, "", `${BASE_PATH}/settings/reliability`);
-                window.dispatchEvent(new PopStateEvent("popstate"));
-              },
-            },
           });
           continue;
         }

@@ -64,6 +64,51 @@ async function rpc(request: KernelActorTransportEnvelope["request"]) {
 }
 
 describe("session kernel actor service", () => {
+  test("accepts the transport worker's first message immediately", async () => {
+    const previousToken = process.env.OPENSESSION_SESSION_KERNEL_TOKEN;
+    const previousUrl = process.env.OPENSESSION_SESSION_KERNEL_URL;
+    process.env.OPENSESSION_SESSION_KERNEL_TOKEN = token;
+    process.env.OPENSESSION_SESSION_KERNEL_URL = service.url;
+    const worker = new Worker(
+      new URL("../../session-kernel-transport-worker.ts", import.meta.url),
+      { type: "module" },
+    );
+    try {
+      const response = new Promise<Record<string, unknown>>((resolve, reject) => {
+        const timeout = setTimeout(
+          () => reject(new Error("transport worker handshake timed out")),
+          2_000,
+        );
+        worker.addEventListener("message", (event: MessageEvent) => {
+          clearTimeout(timeout);
+          resolve(event.data as Record<string, unknown>);
+        });
+        worker.addEventListener("error", (event) => {
+          clearTimeout(timeout);
+          reject(new Error(event.message));
+        });
+      });
+      worker.postMessage({
+        t: "hello",
+        rpcId: "immediate-worker-handshake",
+        version: SESSION_KERNEL_ACTOR_VERSION,
+      });
+      expect(await response).toMatchObject({
+        t: "ready",
+        rpcId: "immediate-worker-handshake",
+        version: SESSION_KERNEL_ACTOR_VERSION,
+      });
+    } finally {
+      worker.terminate();
+      if (previousToken === undefined)
+        delete process.env.OPENSESSION_SESSION_KERNEL_TOKEN;
+      else process.env.OPENSESSION_SESSION_KERNEL_TOKEN = previousToken;
+      if (previousUrl === undefined)
+        delete process.env.OPENSESSION_SESSION_KERNEL_URL;
+      else process.env.OPENSESSION_SESSION_KERNEL_URL = previousUrl;
+    }
+  });
+
   test("reports liveness and readiness without exposing the RPC", async () => {
     const live = await fetch(`${service.url}/live`);
     const ready = await fetch(`${service.url}/ready`);

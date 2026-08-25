@@ -599,6 +599,23 @@ export function ModelEffortSelect({
 		const optionDescription = standalone ? undefined : option.description;
 		const nextModelInfo = modelById.get(option.id);
 		const nextEfforts = nextModelInfo?.efforts ?? [];
+		const nextEffort =
+			nextModelInfo?.fixedEffort ||
+			(nextEfforts.includes(effort ?? "")
+				? effort
+				: nextEfforts.includes("high")
+					? "high"
+					: nextEfforts[0]);
+		const recentSettings = standalone
+			? [
+					onFastModeChange
+						? effectiveFastMode && nextModelInfo?.fastModeSupported === true
+							? "Fast"
+							: "Standard"
+						: undefined,
+					onEffortChange ? EFFORTS.find((e) => e.id === nextEffort)?.label : undefined,
+				].filter((label): label is string => !!label)
+			: [];
 		// Engine stays sticky across model changes: the new id is recomposed onto
 		// the engine the session is already on. An entry that can't route there
 		// (wrong vendor for a direct-SDK engine, a legacy native id) is offered
@@ -611,11 +628,8 @@ export function ModelEffortSelect({
 				onClick={() => {
 					onModelChange(routed ?? option.value);
 					pushRecentModel(option.id);
-					if (onEffortChange && !nextEfforts.includes(effort ?? "")) {
-						const nextEffort =
-							nextModelInfo?.fixedEffort ||
-							(nextEfforts.includes("high") ? "high" : nextEfforts[0]);
-						if (nextEffort) onEffortChange(nextEffort);
+					if (onEffortChange && !nextEfforts.includes(effort ?? "") && nextEffort) {
+						onEffortChange(nextEffort);
 					}
 					if (onFastModeChange && nextModelInfo?.fastModeSupported !== true) {
 						onFastModeChange(false);
@@ -639,6 +653,11 @@ export function ModelEffortSelect({
 					</span>
 				) : (
 					<span className="min-w-0 truncate">{optionLabel}</span>
+				)}
+				{recentSettings.length > 0 && (
+					<span className="ml-auto shrink-0 text-supporting text-faint">
+						{recentSettings.join(" · ")}
+					</span>
 				)}
 				<Menu.Check on={selected} className="text-dim" />
 			</Menu.Item>

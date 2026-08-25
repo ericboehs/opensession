@@ -15,11 +15,15 @@ import {
   sessionKernelServiceUrl,
 } from "./server/session-kernel/actor-service";
 
-const token = await readSessionKernelCredential();
 const endpoint = `${sessionKernelServiceUrl().replace(/\/$/, "")}/rpc`;
+let tokenPromise: Promise<string> | undefined;
 let inFlight = 0;
 let fatal = false;
 let serviceEpoch: string | undefined;
+
+function sessionKernelToken(): Promise<string> {
+  return (tokenPromise ??= readSessionKernelCredential());
+}
 
 function failTransport(message: string): never {
   fatal = true;
@@ -46,6 +50,7 @@ async function rpc(
     throw new Error("Session kernel request is too large");
   inFlight += 1;
   try {
+    const token = await sessionKernelToken();
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
