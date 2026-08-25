@@ -2,6 +2,7 @@ import type { AskActorRequest } from "./ask-protocol";
 import type { DeliveryActorRequest } from "./delivery-protocol";
 import type { CreationActorEffect } from "./creation-effect-protocol";
 import type { TurnActorRequest } from "./turn-protocol";
+import type { TimerActorRequest } from "./timer-protocol";
 import type {
   CreationEventDecision,
   RunEventDecision,
@@ -18,11 +19,10 @@ export const LEGACY_GATEWAY_EFFECT_OPERATIONS = Object.freeze([
   "delete_session",
   "session_file_updated",
   "submit_prompt",
-  "timer_fired",
   "websocket_command",
 ] as const);
 
-export const LEGACY_GATEWAY_EFFECT_SITE_BASELINE = 4;
+export const LEGACY_GATEWAY_EFFECT_SITE_BASELINE = 3;
 
 export type LegacyGatewayEffectOperation =
   (typeof LEGACY_GATEWAY_EFFECT_OPERATIONS)[number];
@@ -80,6 +80,11 @@ export type SessionActorReducerCommand =
       kind: "turn";
       commandId: string;
       request: TurnActorRequest;
+    }
+  | {
+      kind: "timer";
+      commandId: string;
+      request: TimerActorRequest;
     };
 
 export type SessionActorCommand =

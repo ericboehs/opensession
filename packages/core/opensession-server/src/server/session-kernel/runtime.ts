@@ -5,6 +5,7 @@ import {
 	sessionKernelRuntimeWork,
 	sessionKernelStore,
 	maintainSessionKernel,
+	sessionTimer,
 } from "./kernel";
 import type { DurableOutboxItem, DurableTimer } from "./store";
 import {
@@ -12,7 +13,6 @@ import {
 	registeredSessionEffectKinds,
   SessionEffectDeferredError,
 } from "./effect-executors";
-import { legacyGatewayEffect } from "./lifecycle-protocol";
 import { pruneCreatePlans } from "../session-create-plan";
 import {
   CreationEffectIndeterminateError,
@@ -21,6 +21,16 @@ import {
 import { audit } from "../audit";
 
 type TimerHandler = (timer: DurableTimer) => void | Promise<void>;
+
+class SessionTimerExecutionError extends Error {
+	constructor(
+		readonly cause: unknown,
+		readonly deadLetteredNow: boolean,
+	) {
+		super(cause instanceof Error ? cause.message : String(cause));
+		this.name = "SessionTimerExecutionError";
+	}
+}
 
 function failDeadCreationEffect(
 	item: DurableOutboxItem,
@@ -79,22 +89,33 @@ export function registerSessionTimerHandler(
 export async function fireSessionTimer(timer: DurableTimer): Promise<boolean> {
 	const handler = runtime.timerHandlers.get(timer.kind);
 	if (!handler) return false;
-	await sessionKernel(timer.sessionId).dispatchLegacy(
-		legacyGatewayEffect("timer_fired", {
-			requestId: `timer:${timer.timerId}:${timer.token}`,
-			payload: {
-				timerId: timer.timerId,
-				kind: timer.kind,
-				dueAt: timer.dueAt,
-				payload: timer.payload,
-			},
-			source: "timer",
-			replaySafe: true,
-			retryFailures: true,
-		}),
-		() => handler(timer),
-	);
-	sessionKernelStore().settleTimerSuccess(timer.sessionId, timer.timerId, timer.token);
+	const decision = sessionTimer({
+		op: "begin",
+		sessionId: timer.sessionId,
+		timerId: timer.timerId,
+		token: timer.token,
+	});
+	if (decision === "missing") return false;
+	if (decision === "completed") return true;
+	try {
+		await handler(timer);
+	} catch (error) {
+		const settled = sessionTimer({
+			op: "fail",
+			sessionId: timer.sessionId,
+			timerId: timer.timerId,
+			token: timer.token,
+			error: error instanceof Error ? error.message : String(error),
+			maxAttempts: 20,
+		});
+		throw new SessionTimerExecutionError(error, settled.deadLetteredNow);
+	}
+	sessionTimer({
+		op: "complete",
+		sessionId: timer.sessionId,
+		timerId: timer.timerId,
+		token: timer.token,
+	});
 	return true;
 }
 
@@ -134,18 +155,16 @@ export async function drainSessionKernelRuntime(): Promise<void> {
 				.catch((error) => {
 					const message =
 						error instanceof Error ? error.message : String(error);
-					const settled = sessionKernelStore().noteTimerFailure(
-						timer.sessionId,
-						timer.timerId,
-						message,
-						20,
-						timer.token,
-					);
-					if (settled.deadLetteredNow)
+					if (
+						error instanceof SessionTimerExecutionError &&
+						error.deadLetteredNow
+					)
 						audit({ msg: "session_kernel_dead_lettered", kind: "timer", session_id: timer.sessionId, timer_id: timer.timerId, error: message });
 					console.error(
 						`[session-kernel] timer ${timer.kind}/${timer.timerId} failed:`,
-						error,
+						error instanceof SessionTimerExecutionError
+							? error.cause
+							: error,
 					);
 				}
 				)

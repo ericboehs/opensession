@@ -24,6 +24,7 @@ import {
 } from "./delivery-protocol";
 import type { AskActorRequest, AskActorResult } from "./ask-protocol";
 import type { TurnActorRequest, TurnActorResult } from "./turn-protocol";
+import type { TimerActorRequest, TimerActorResult } from "./timer-protocol";
 import {
   SESSION_KERNEL_ACTOR_VERSION,
   type KernelActorAsyncRequest,
@@ -333,6 +334,16 @@ export class SessionKernelActorClient {
       (this.store as RemoteStore).noteChange(request.sessionId);
     }
     return result;
+  }
+
+  decideTimer<T extends TimerActorRequest>(request: T): TimerActorResult<T> {
+    return this.callSync<TimerActorResult<T>>(
+      {
+        t: "reduce",
+        command: { kind: "timer", commandId: crypto.randomUUID(), request },
+      },
+      `timer ${request.op}`,
+    );
   }
 
   decideDelivery<T extends DeliveryActorRequest>(
@@ -844,6 +855,21 @@ class RemoteStore implements SessionKernelStoreApi {
       sessionId,
       promptEntryId,
     });
+  }
+  beginTimerExecution(
+    input: Parameters<SessionKernelStoreApi["beginTimerExecution"]>[0],
+  ): ReturnType<SessionKernelStoreApi["beginTimerExecution"]> {
+    return this.actor.decideTimer({ op: "begin", ...input });
+  }
+  completeTimerExecution(
+    input: Parameters<SessionKernelStoreApi["completeTimerExecution"]>[0],
+  ): ReturnType<SessionKernelStoreApi["completeTimerExecution"]> {
+    return this.actor.decideTimer({ op: "complete", ...input });
+  }
+  failTimerExecution(
+    input: Parameters<SessionKernelStoreApi["failTimerExecution"]>[0],
+  ): ReturnType<SessionKernelStoreApi["failTimerExecution"]> {
+    return this.actor.decideTimer({ op: "fail", ...input });
   }
   scheduleTimer(timer: Parameters<SessionKernelStoreApi["scheduleTimer"]>[0]) {
     this.call("scheduleTimer", timer);

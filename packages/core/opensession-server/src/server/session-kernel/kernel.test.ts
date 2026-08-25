@@ -2388,6 +2388,26 @@ describe("SessionKernel durable runtime", () => {
 		}
 	});
 
+	test("retires a timer without replay after actor completion survives a crash", () => {
+		store.scheduleTimer({
+			sessionId: "timer-complete-crash",
+			timerId: "wake",
+			kind: "test_timer",
+			dueAt: Date.now() - 1,
+			payload: { value: 1 },
+		});
+		const timer = store.timer("timer-complete-crash", "wake")!;
+		expect(store.beginTimerExecution(timer)).toBe("execute");
+		store.completeCommand(
+			timer.sessionId,
+			`timer:${timer.timerId}:${timer.token}`,
+			true,
+		);
+		expect(store.timer(timer.sessionId, timer.timerId)).toBeDefined();
+		expect(store.beginTimerExecution(timer)).toBe("completed");
+		expect(store.timer(timer.sessionId, timer.timerId)).toBeUndefined();
+	});
+
 	test("same-id same-time replacement gets a distinct firing receipt", async () => {
 		const { fireSessionTimer, registerSessionTimerHandler } = await import("./runtime");
 		const sessionId = "timer-replacement";

@@ -210,7 +210,7 @@ const PROCESS_OWNER_ID = (ownerGlobal.__opensessionSessionKernelOwnerId ??=
 		bootId: linuxBootId(),
 		start: linuxProcessStart(process.pid),
 	} satisfies ProcessOwnerIdentity));
-export const SESSION_KERNEL_SCHEMA_VERSION = 16;
+export const SESSION_KERNEL_SCHEMA_VERSION = 17;
 export const SESSION_KERNEL_MAX_CREATION_EFFECT_RECEIPTS = 256;
 export const SESSION_KERNEL_MAX_OPENING_PLAN_BYTES = 16 * 1024 * 1024;
 
@@ -3062,6 +3062,81 @@ export class SessionKernelStore {
       state.dispatch = undefined;
     });
     return true;
+  }
+
+  beginTimerExecution(input: {
+    sessionId: string;
+    timerId: string;
+    token: string;
+  }): "execute" | "completed" | "missing" {
+    if (!input.timerId || !input.token)
+      throw new Error("Invalid timer execution intent");
+    const timer = this.timer(input.sessionId, input.timerId);
+    if (!timer || timer.token !== input.token) return "missing";
+    const requestId = `timer:${input.timerId}:${input.token}`;
+    const existing = this.command(input.sessionId, requestId);
+    if (existing?.status === "completed") {
+      this.settleTimerSuccess(input.sessionId, input.timerId, input.token);
+      return "completed";
+    }
+    if (
+      existing?.status === "indeterminate" ||
+      (existing?.status === "failed" &&
+        (!existing.retryable || !existing.replaySafe))
+    ) throw new Error(existing.error || "Timer execution failed");
+    this.acceptCommand({
+      sessionId: input.sessionId,
+      requestId,
+      type: "timer_fired",
+      payload: {
+        timerId: timer.timerId,
+        kind: timer.kind,
+        dueAt: timer.dueAt,
+        payload: timer.payload,
+      },
+      replaySafe: true,
+    });
+    this.markProcessing(input.sessionId, requestId);
+    return "execute";
+  }
+
+  completeTimerExecution(input: {
+    sessionId: string;
+    timerId: string;
+    token: string;
+  }): boolean {
+    const requestId = `timer:${input.timerId}:${input.token}`;
+    const record = this.command(input.sessionId, requestId);
+    if (!record || record.type !== "timer_fired")
+      throw new Error("Timer execution receipt is missing");
+    if (record.status !== "completed")
+      this.completeCommand(input.sessionId, requestId, true);
+    return this.settleTimerSuccess(input.sessionId, input.timerId, input.token);
+  }
+
+  failTimerExecution(input: {
+    sessionId: string;
+    timerId: string;
+    token: string;
+    error: string;
+    maxAttempts: number;
+  }): { updated: boolean; deadLetteredNow: boolean } {
+    if (!Number.isSafeInteger(input.maxAttempts) || input.maxAttempts < 1)
+      throw new Error("Invalid timer attempt limit");
+    const requestId = `timer:${input.timerId}:${input.token}`;
+    const record = this.command(input.sessionId, requestId);
+    if (!record || record.type !== "timer_fired")
+      throw new Error("Timer execution receipt is missing");
+    const settled = this.noteTimerFailure(
+      input.sessionId,
+      input.timerId,
+      input.error,
+      input.maxAttempts,
+      input.token,
+    );
+    if (record.status !== "completed")
+      this.failCommand(input.sessionId, requestId, input.error, true);
+    return settled;
   }
 
 	scheduleTimer(

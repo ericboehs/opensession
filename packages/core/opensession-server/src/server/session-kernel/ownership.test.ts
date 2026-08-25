@@ -33,7 +33,6 @@ describe("single session ownership", () => {
 			"delete_session",
 			"session_file_updated",
 			"submit_prompt",
-			"timer_fired",
 			"websocket_command",
 		]);
 		expect(read("session-kernel/kernel.ts")).not.toContain("async dispatch<");
