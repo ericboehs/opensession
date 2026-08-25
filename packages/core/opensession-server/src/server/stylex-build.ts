@@ -25,11 +25,17 @@ const SERVER_ROOT = join(import.meta.dir, "..", "..");
 /** Everything under this root that mentions @stylexjs/stylex gets compiled. */
 const FRONTEND_SRC_STYLEX = resolve(SERVER_ROOT, "src", "frontend");
 
+type StylexRule = [
+	string,
+	{ ltr: string; rtl?: string | null; constKey?: string; constVal?: string | number },
+	number,
+];
+
 export type StylexCollector = {
-	/** Compiled CSS rule text keyed by the class name that owns it, so the
-	 *  same rule met twice merges instead of duplicating. Theme files
-	 *  (:root variable definitions) arrive under their file hash. */
-	rules: Map<string, string>;
+	/** Raw compiler rules keyed by class hash. Keep the priority metadata: the
+	 * official processor uses it to place base, pseudo and media rules in the
+	 * cascade independently of Bun's module traversal order. */
+	rules: Map<string, StylexRule>;
 };
 
 export function newStylexCollector(): StylexCollector {
@@ -54,8 +60,10 @@ function collectStylexRules(collector: StylexCollector, node: unknown): void {
 			typeof node[1] === "object" &&
 			typeof (node[1] as { ltr?: unknown }).ltr === "string";
 		if (looksLikeRule) {
-			const [className, rule] = node as [string, { ltr?: string }];
-			if (rule.ltr) collector.rules.set(className, rule.ltr);
+			const [className, rule, priority] = node as StylexRule;
+			if (rule.ltr && typeof priority === "number") {
+				collector.rules.set(className, [className, rule, priority]);
+			}
 			return;
 		}
 		for (const child of node) collectStylexRules(collector, child);
@@ -69,7 +77,9 @@ function collectStylexRules(collector: StylexCollector, node: unknown): void {
 /** The stylesheet produced by one build: every collected rule in first-seen
  *  order (deterministic for identical inputs), ready to write hashed. */
 export function stylexCss(collector: StylexCollector): string {
-	return [...collector.rules.values()].join("\n");
+	return stylexBabelPlugin.processStylexRules([...collector.rules.values()], {
+		useLayers: false,
+	});
 }
 
 /**
