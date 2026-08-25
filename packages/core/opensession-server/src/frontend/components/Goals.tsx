@@ -37,6 +37,7 @@ import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
 import { WorkingPill } from "../ui/status";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -459,11 +460,7 @@ setError(e.message);
     {/* Drawer open: the list compresses to a narrow rail, and on phones it
         steps aside entirely — Back returns to it. */}
     <div
-        className={sel ? "max-[900px]:hidden" : undefined}
-        {...stylex.props(
-          sx.listPane,
-          sel ? sx.listPaneSelected : sx.listPaneDefault,
-      )}
+        {...mergeStylexProps(sel ? "max-[900px]:hidden" : undefined, sx.listPane, sel ? sx.listPaneSelected : sx.listPaneDefault)}
     >
         <SettingsPanel {...stylex.props(sx.selfStart, sel && sx.maxWNone)}>
       <SettingsHeader
@@ -473,8 +470,7 @@ setError(e.message);
             ? undefined
             : "Long-running missions that pace themselves, keep a ledger, and stop when done."
         }
-            className={sel ? "[&_h1]:text-item-title" : undefined}
-            {...stylex.props(sx.headerPhone, sel && sx.headerSelected)}
+            {...mergeStylexProps(sel ? "[&_h1]:text-item-title" : undefined, sx.headerPhone, sel && sx.headerSelected)}
         actions={
           <Button
             variant="primary"
@@ -571,11 +567,7 @@ setError(e.message);
                     ) : g.lastRunStatus === "ok" ||
                       g.lastRunStatus === "error" ? (
                   <span
-                        className="[&_svg]:size-3.5"
-                        {...stylex.props(
-                          sx.resultIcon,
-                          g.lastRunStatus === "ok" ? sx.textGreen : sx.textRed,
-                    )}
+                        {...mergeStylexProps("[&_svg]:size-3.5", sx.resultIcon, g.lastRunStatus === "ok" ? sx.textGreen : sx.textRed)}
                     title={
                       g.lastRunStatus === "ok"
                         ? `Last wake ok${g.lastRunAt ? ` · ${relativeTime(g.lastRunAt)}` : ""}`
@@ -613,17 +605,7 @@ setError(e.message);
 
       {sel && (
         <aside
-          className="max-[900px]:border-l-0"
-          {...stylex.props(
-            sx.flex,
-            sx.minH0,
-            sx.minW0,
-            sx.flexAuto,
-            sx.flexCol,
-            sx.borderL,
-            sx.borderLine,
-            sx.bgPanel,
-          )}
+          {...mergeStylexProps("max-[900px]:border-l-0", sx.flex, sx.minH0, sx.minW0, sx.flexAuto, sx.flexCol, sx.borderL, sx.borderLine, sx.bgPanel)}
         >
           <div
             {...stylex.props(
@@ -639,20 +621,7 @@ setError(e.message);
           >
             {/* Phones get Back instead of Close: there the drawer is the page. */}
             <button
-              className="max-[900px]:inline-flex"
-              {...stylex.props(
-                sx.My1,
-                sx.Ml05,
-                sx.hidden,
-                sx.shrink0,
-                sx.itemsCenter,
-                sx.gap175,
-                sx.px15,
-                sx.py1,
-                sx.fontMedium,
-                sx.textFg,
-                typography.itemTitle,
-              )}
+              {...mergeStylexProps("max-[900px]:inline-flex", sx.My1, sx.Ml05, sx.hidden, sx.shrink0, sx.itemsCenter, sx.gap175, sx.px15, sx.py1, sx.fontMedium, sx.textFg, typography.itemTitle)}
               onClick={() => onSelect("")}
               title="Back to goals"
             >
@@ -724,16 +693,7 @@ setError(e.message);
               </div>
             )}
             <button
-              className="hover:bg-hover hover:text-fg max-[900px]:hidden"
-              {...stylex.props(
-                sx.flex,
-                sx.size7,
-                sx.shrink0,
-                sx.itemsCenter,
-                sx.justifyCenter,
-                sx.roundedMd,
-                sx.textDim,
-              )}
+              {...mergeStylexProps("hover:bg-hover hover:text-fg max-[900px]:hidden", sx.flex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.textDim)}
               onClick={() => onSelect("")}
               title="Close"
             >
@@ -776,8 +736,7 @@ setError(e.message);
               <>
                 <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25)}>
                   <span
-                    className={SOURCE_CHIP}
-                    {...stylex.props(statusStyle[sel.status], sx.textWhite)}
+                    {...mergeStylexProps(SOURCE_CHIP, statusStyle[sel.status], sx.textWhite)}
                   >
                     {sel.status}
                   </span>
@@ -1265,15 +1224,14 @@ setError(e.message);
   // plate and the title the drawer's own header carries.
   if (inline)
     return (
-      <div className={FORM_FIELDS} {...stylex.props(sx.formStack)}>
+      <div {...mergeStylexProps(FORM_FIELDS, sx.formStack)}>
         {fields}
       </div>
     );
 
   return (
     <SettingsForm
-      className={FORM_FIELDS}
-      {...stylex.props(sx.mb3, sx.formStack)}
+      {...mergeStylexProps(FORM_FIELDS, sx.mb3, sx.formStack)}
     >
       <SettingsFormTitle {...stylex.props(sx.mb0)}>
         {initial ? `Edit "${initial.name}"` : "New goal"}

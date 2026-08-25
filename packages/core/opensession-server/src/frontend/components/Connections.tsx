@@ -3,7 +3,7 @@ import { GITHUB_APP_GRANT_PERMISSIONS } from "../../shared/github-app-permission
 import React, { useEffect, useState, useRef } from "react";
 import { Menu } from "../ui/menu";
 import { OptionSelect } from "../ui/select";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { Button } from "../ui/button";
 import { DeviceCode } from "../ui/device-code";
 import { Modal } from "../ui/modal";
@@ -386,8 +386,7 @@ function ConnectionsSkeleton() {
     <>
       <SectionHeading>Agents: how work reaches {AGENT_NAME}</SectionHeading>
       <Skeleton
-        label="Checking connections"
-        className="grid-cols-[repeat(auto-fill,minmax(230px,1fr))]" {...stylex.props(sx.grid, sx.gap25)}
+        label="Checking connections" {...mergeStylexProps("grid-cols-[repeat(auto-fill,minmax(230px,1fr))]", sx.grid, sx.gap25)}
       >
         {Array.from({ length: 3 }, (_, index) => (
           <SettingsSection key={index} {...stylex.props(sx.flex, sx.flexCol, sx.gap2, sx.p35)}>
@@ -591,7 +590,7 @@ setRemoveError(e.message);
       ) : (
         <>
           <SectionHeading>Agents: how work reaches {AGENT_NAME}</SectionHeading>
-          <div className="grid-cols-[repeat(auto-fill,minmax(230px,1fr))]" {...stylex.props(sx.grid, sx.gap25)}>
+          <div {...mergeStylexProps("grid-cols-[repeat(auto-fill,minmax(230px,1fr))]", sx.grid, sx.gap25)}>
             {Object.entries(data.agents).map(([name, health]) => {
               const ok = health?.status === "operational";
               const count = typeof health?.activeSessions === "number" ? health.activeSessions : null;
@@ -627,8 +626,7 @@ setRemoveError(e.message);
               const restricted = !!s.allowedUsers?.length;
               return (
                 <div
-                  key={s.name}
-                  className="group hover:bg-hover" {...stylex.props(sx.flex, sx.itemsStart, sx.gap3, sx.px5, sx.py3, sx.transitionColors)}
+                  key={s.name} {...mergeStylexProps("group hover:bg-hover", sx.flex, sx.itemsStart, sx.gap3, sx.px5, sx.py3, sx.transitionColors)}
                 >
                   <IconTile name={s.name} />
                   <div {...stylex.props(sx.minW0, sx.flex1)}>
@@ -733,8 +731,7 @@ setRemoveError(e.message);
                         {restricted ? "Edit access" : "Restrict access"}
                       </Menu.Item>
                       <Menu.Item
-                        onClick={() => handleRemove(s.name)}
-                        className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
+                        onClick={() => handleRemove(s.name)} {...mergeStylexProps("data-[highlighted]:bg-red-soft", sx.textRed)}
                       >
                         <IconTrash size={16} />
                         Remove server
@@ -1082,8 +1079,7 @@ function GithubAppWizard({
             </div>
             <Modal.Footer>
               <button
-                type="button"
-                className="hover:text-fg" {...stylex.props(sx.mrAuto, sx.textDim, sx.underline, typography.supporting)}
+                type="button" {...mergeStylexProps("hover:text-fg", sx.mrAuto, sx.textDim, sx.underline, typography.supporting)}
                 onClick={() => setStep(2)}
               >
                 I already have an app
@@ -1607,8 +1603,7 @@ setError(e.message);
                       </Menu.Item>
                     )}
                     <Menu.Item
-                      onClick={() => disconnect(account.login)}
-                      className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
+                      onClick={() => disconnect(account.login)} {...mergeStylexProps("data-[highlighted]:bg-red-soft", sx.textRed)}
                     >
                       <IconTrash size={16} />
                       Disconnect
@@ -1660,8 +1655,7 @@ setError(e.message);
                         gets named, since it needs a restart to change. */}
                     {data.appConfigSource === "config" ? (
                       <button
-                        type="button"
-                        className="hover:text-fg" {...stylex.props(sx.selfStart, sx.textDim, sx.underline, typography.meta)}
+                        type="button" {...mergeStylexProps("hover:text-fg", sx.selfStart, sx.textDim, sx.underline, typography.meta)}
                         onClick={removeApp}
                       >
                         Remove app
@@ -1708,8 +1702,7 @@ setError(e.message);
               <a
                 href={data.appInstallUrl}
                 target="_blank"
-                rel="noreferrer"
-                className="hover:text-fg" {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap1, sx.textDim, sx.underline, typography.meta)}
+                rel="noreferrer" {...mergeStylexProps("hover:text-fg", sx.inlineFlex, sx.itemsCenter, sx.gap1, sx.textDim, sx.underline, typography.meta)}
               >
                 Manage which repositories the app can access
                 <IconArrowUpRight size={14} />
@@ -1877,8 +1870,7 @@ setError(e.message);
                     Reconnect
                   </Menu.Item>
                   <Menu.Item
-                    onClick={() => disconnect(own!.github)}
-                    className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
+                    onClick={() => disconnect(own!.github)} {...mergeStylexProps("data-[highlighted]:bg-red-soft", sx.textRed)}
                   >
                     <IconTrash size={16} />
                     Disconnect
@@ -1949,8 +1941,7 @@ setError(e.message);
                       </Menu.Trigger>
                       <Menu.Popup align="end" sideOffset={4}>
                         <Menu.Item
-                          onClick={() => disconnect(m.github)}
-                          className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
+                          onClick={() => disconnect(m.github)} {...mergeStylexProps("data-[highlighted]:bg-red-soft", sx.textRed)}
                         >
                           <IconTrash size={16} />
                           Disconnect
@@ -2090,8 +2081,7 @@ setError(e.message);
           />
           {connected && (
             <Button
-              size="sm"
-              className="hover:border-red hover:text-red" {...stylex.props(sx.flexShrink0)}
+              size="sm" {...mergeStylexProps("hover:border-red hover:text-red", sx.flexShrink0)}
               onClick={disconnect}
             >
               Disconnect
@@ -2417,8 +2407,7 @@ setSaving(false);
           {tokenPage ? (
             <div {...stylex.props(sx.leadingSnug, sx.textDim, typography.supporting)}>
               Create a token at{" "}
-              <a
-                className="hover:text-fg" {...stylex.props(sx.underline)}
+              <a {...mergeStylexProps("hover:text-fg", sx.underline)}
                 href={tokenPage.url}
                 target="_blank"
                 rel="noreferrer"

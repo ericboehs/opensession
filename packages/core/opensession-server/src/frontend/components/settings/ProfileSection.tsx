@@ -10,7 +10,7 @@ import { useIsPhone } from "../../hooks/useIsPhone";
 import { refreshPeople } from "../../lib/people";
 import { isTouchPrimary } from "../../lib/platform";
 import { Button } from "../../ui/button";
-import { cn } from "../../ui/cn";
+import { cn, mergeStylexProps } from "../../ui/cn";
 import { Field, FieldGrid, Input } from "../../ui/input";
 import { OverlayAction } from "../../ui/overlay-action";
 import { SettingsForm, SettingsGroupLabel } from "../../ui/settings";
@@ -394,8 +394,7 @@ setBusy(null);
 					    themed surface: it sits on whatever photo a person uploaded,
 					    so it has to hold its own contrast in both themes instead of
 					    following the page. Same reason its ink is hard black. */}
-					<span
-						className="shadow-sm" {...stylex.props(sx.absolute, sx.Bottom05, sx.Right05, sx.grid, sx.size8, sx.placeItemsCenter, sx.roundedFull, sx.bgWhite, sx.textBlack)}
+					<span {...mergeStylexProps("shadow-sm", sx.absolute, sx.Bottom05, sx.Right05, sx.grid, sx.size8, sx.placeItemsCenter, sx.roundedFull, sx.bgWhite, sx.textBlack)}
 						aria-hidden
 					>
 						{busy === "picture" ? (
@@ -448,14 +447,13 @@ setBusy(null);
 
 						    A touch client has no hover, so there the overlay stays
 						    on. */}
-						<div className="group/overlay-action" {...stylex.props(sx.relative, sx.mb1, sx.mt1, sx.wMax)}>
+						<div {...mergeStylexProps("group/overlay-action", sx.relative, sx.mb1, sx.mt1, sx.wMax)}>
 							<button
 								type="button"
 								disabled={busy !== null}
 								onClick={() => fileRef.current?.click()}
 								aria-label={pictureAction}
-								title={pictureAction}
-								className="group disabled:pointer-events-none" {...stylex.props(sx.focusRing, sx.relative, sx.flex, sx.roundedAvatar)}
+								title={pictureAction} {...mergeStylexProps("group disabled:pointer-events-none", sx.focusRing, sx.relative, sx.flex, sx.roundedAvatar)}
 							>
 								<UserAvatar
 									name={name || profile.name}

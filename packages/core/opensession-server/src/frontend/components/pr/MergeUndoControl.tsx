@@ -1,6 +1,6 @@
 import { UNDO_SHORTCUT_KEYS } from "../../lib/undo";
 import { Button } from "../../ui/button";
-import { cn } from "../../ui/cn";
+import { cn, mergeStylexProps } from "../../ui/cn";
 import { Tooltip } from "../../ui/tooltip";
 import { IconUndo } from "../icons";
 import * as stylex from "@stylexjs/stylex";
@@ -59,7 +59,7 @@ export function MergeUndoControl({
               : "rounded-r-control phone:min-h-[26px] phone:px-1.5",
           )}
         >
-          <IconUndo size={20} className="phone:hidden" {...stylex.props(sx.shrink0, sx.opacity60)} />
+          <IconUndo size={20} {...mergeStylexProps("phone:hidden", sx.shrink0, sx.opacity60)} />
           <span {...stylex.props(sx.TextBoxTrimBothCapAlphabetic)}>Undo</span>
         </Button>
       </Tooltip>

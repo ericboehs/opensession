@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Checkbox as BaseCheckbox } from "@base-ui/react/checkbox";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -81,11 +81,10 @@ type CheckboxProps = Omit<React.ComponentProps<typeof BaseCheckbox.Root>, "size"
  */
 export function Checkbox({ className, ...props }: CheckboxProps) {
 	return (
-		<BaseCheckbox.Root
-			className={cn("transition-[background-color,border-color]", "hover:border-faint", "data-[checked]:border-accent-control data-[checked]:bg-accent-control data-[checked]:hover:border-accent-control", "focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-bg", "data-[disabled]:cursor-default data-[disabled]:opacity-40", className)} {...stylex.props(sx.flex, sx.size4, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.border, sx.borderLineStrong, sx.bgSurface, sx.p0, sx.outlineNone, sx.durationVarDurMicro, sx.easeVarEase)}
+		<BaseCheckbox.Root {...mergeStylexProps(cn("transition-[background-color,border-color]", "hover:border-faint", "data-[checked]:border-accent-control data-[checked]:bg-accent-control data-[checked]:hover:border-accent-control", "focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-bg", "data-[disabled]:cursor-default data-[disabled]:opacity-40", className), sx.flex, sx.size4, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.border, sx.borderLineStrong, sx.bgSurface, sx.p0, sx.outlineNone, sx.durationVarDurMicro, sx.easeVarEase)}
 			{...props}
 		>
-			<BaseCheckbox.Indicator className="data-[unchecked]:hidden" {...stylex.props(sx.flex, sx.textOnAccentControl)}>
+			<BaseCheckbox.Indicator {...mergeStylexProps("data-[unchecked]:hidden", sx.flex, sx.textOnAccentControl)}>
 				<svg
 					viewBox="0 0 12 12"
 					{...stylex.props(sx.size3)}

@@ -17,6 +17,7 @@ import { CommitIcon } from "./PrViews";
 import { FileRow, ReviewerRow } from "./PrRows";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { mergeStylexProps } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -278,7 +279,7 @@ export function ReviewRail({
                 {checkSummary.failed > 0 ? (
                   <IconX size={15} />
                 ) : checkSummary.pending > 0 ? (
-                  <span className="pr-check-mark-pending" {...stylex.props(sx.animatePulse14sInfinite)}>●</span>
+                  <span {...mergeStylexProps("pr-check-mark-pending", sx.animatePulse14sInfinite)}>●</span>
                 ) : (
                   <IconCheck size={15} />
                 )}
@@ -292,7 +293,7 @@ export function ReviewRail({
                   : "All passed"
             }
             trailing={
-              <span className="tabular-nums" {...stylex.props(sx.inlineFlex, sx.gap15, typography.meta)}>
+              <span {...mergeStylexProps("tabular-nums", sx.inlineFlex, sx.gap15, typography.meta)}>
                 {checkSummary.passed > 0 && <span {...stylex.props(sx.textGreen)}>{checkSummary.passed}</span>}
                 {checkSummary.failed > 0 && <span {...stylex.props(sx.textRed)}>{checkSummary.failed}</span>}
                 {checkSummary.pending > 0 && <span {...stylex.props(sx.textYellow)}>{checkSummary.pending}</span>}
@@ -374,15 +375,13 @@ export function ReviewRail({
               ))}
               <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3, sx.px15, sx.pt15)}>
                 {files.length > 8 && (
-                  <button
-                    className="hover:text-fg" {...stylex.props(sx.border0, sx.bgTransparent, sx.p0, sx.fontMedium, sx.textDim, typography.meta)}
+                  <button {...mergeStylexProps("hover:text-fg", sx.border0, sx.bgTransparent, sx.p0, sx.fontMedium, sx.textDim, typography.meta)}
                     onClick={() => setAllFiles((o) => !o)}
                   >
                     {allFiles ? "Show fewer" : `Show all ${files.length}`}
                   </button>
                 )}
-                <button
-                  className="hover:text-fg" {...stylex.props(sx.border0, sx.bgTransparent, sx.p0, sx.fontMedium, sx.textDim, typography.meta)}
+                <button {...mergeStylexProps("hover:text-fg", sx.border0, sx.bgTransparent, sx.p0, sx.fontMedium, sx.textDim, typography.meta)}
                   onClick={onOpenFiles}
                 >
                   Open files changed
@@ -400,7 +399,7 @@ export function ReviewRail({
             onClick={onOpenSessions}
             title="Sessions working on this pull request"
           >
-            <span className="[&>svg]:block" {...stylex.props(sx.inlineFlex, sx.w4, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>
+            <span {...mergeStylexProps("[&>svg]:block", sx.inlineFlex, sx.w4, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>
               <IconMessages size={15} {...stylex.props(sx.textFaint)} />
             </span>
             <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.fontMedium)}>
@@ -437,7 +436,7 @@ function RailSection({
   ref?: React.Ref<HTMLElement>;
 }) {
   return (
-    <section className="first:pt-0 last:border-b-0" {...stylex.props(sx.scrollMt72px, sx.borderB, sx.borderLine, sx.py4)} ref={ref}>
+    <section {...mergeStylexProps("first:pt-0 last:border-b-0", sx.scrollMt72px, sx.borderB, sx.borderLine, sx.py4)} ref={ref}>
       <div {...stylex.props(sx.mb15, sx.flex, sx.itemsCenter, sx.gap2, sx.px1)}>
         <h3 {...stylex.props(sx.m0, sx.fontSemibold, sx.textFaint, typography.meta)}>{title}</h3>
         {action}
@@ -472,7 +471,7 @@ function RollupRow({
 }) {
   return (
     <button className={RAIL_ROW} onClick={onToggle} aria-expanded={open}>
-      <span className="[&>svg]:block" {...stylex.props(sx.inlineFlex, sx.w4, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>{icon}</span>
+      <span {...mergeStylexProps("[&>svg]:block", sx.inlineFlex, sx.w4, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>{icon}</span>
       <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.fontMedium)}>{label}</span>
       {trailing}
       <IconChevronRight

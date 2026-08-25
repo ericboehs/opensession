@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Switch as BaseSwitch } from "@base-ui/react/switch";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -92,8 +92,7 @@ export function Switch({
 }: SwitchProps) {
 	const thumbRef = React.useRef<HTMLSpanElement>(null);
 	return (
-		<BaseSwitch.Root
-			className={cn(trackClasses(size), "focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-bg", "data-[disabled]:cursor-default data-[disabled]:opacity-40", className)} {...stylex.props(sx.cursorPointer, sx.outlineNone)}
+		<BaseSwitch.Root {...mergeStylexProps(cn(trackClasses(size), "focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-bg", "data-[disabled]:cursor-default data-[disabled]:opacity-40", className), sx.cursorPointer, sx.outlineNone)}
 			onCheckedChange={(checked, eventDetails) => {
 				if (thumbRef.current) animateThumbTravel(thumbRef.current, checked);
 				onCheckedChange?.(checked, eventDetails);
@@ -129,8 +128,7 @@ export function SwitchIndicator({
 	return (
 		<span
 			aria-hidden
-			data-checked={checked}
-			className={cn(trackClasses(size), className)} {...stylex.props(sx.pointerEventsNone)}
+			data-checked={checked} {...mergeStylexProps(cn(trackClasses(size), className), sx.pointerEventsNone)}
 		>
 			<span data-checked={checked} className={thumbClasses(size)} />
 		</span>

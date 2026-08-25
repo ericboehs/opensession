@@ -8,6 +8,7 @@ import { toast } from "../../ui/toast";
 import type { LinkedPrEntry } from "../PrPanel";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { mergeStylexProps } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -108,8 +109,7 @@ setBusy(false);
       <Popover.Popup
         side="bottom"
         align="start"
-        initialFocus
-        className="w-[min(380px,calc(100vw-16px))]" {...stylex.props(sx.p4)}
+        initialFocus {...mergeStylexProps("w-[min(380px,calc(100vw-16px))]", sx.p4)}
       >
         <form
           {...stylex.props(sx.flex, sx.flexCol, sx.gap4)}

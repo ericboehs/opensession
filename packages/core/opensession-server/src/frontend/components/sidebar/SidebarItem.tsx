@@ -23,7 +23,7 @@ import { sessionWasAgentStarted } from "../../lib/sidebar-placement";
 import { LONG_PRESS_MS, LONG_PRESS_SLOP, SWIPE_AXIS_LOCK_PX, SWIPE_COMMIT_MS, SWIPE_OPEN_THRESHOLD, SWIPE_REVEAL_PX, clampSwipe, fullSwipeThreshold, swipeCommitOffset, type SwipeAction } from "../../lib/sidebar-swipe";
 import type { LaneChoice } from "../../lib/sidebar-types";
 import type { UnifiedSession } from "../../lib/types";
-import { cn } from "../../ui/cn";
+import { cn, mergeStylexProps } from "../../ui/cn";
 import { Popover } from "../../ui/popover";
 import { BottomSheet, SheetBody, SheetItem, SheetSeparator, SheetTitle } from "../../ui/sheet";
 import { Tooltip } from "../../ui/tooltip";
@@ -635,8 +635,7 @@ export function SidebarItem({
 					)}
 				</span>
 				{editing ? (
-					<input
-						className="desktop:text-item-title phone:text-input-phone" {...stylex.props(sx.minW0, sx.flex1, sx.roundedMd, sx.border, sx.borderAccent, sx.bgBg, sx.px3px, sx.py0, sx.fontMedium, sx.textInherit, sx.outlineNone, typography.body)}
+					<input {...mergeStylexProps("desktop:text-item-title phone:text-input-phone", sx.minW0, sx.flex1, sx.roundedMd, sx.border, sx.borderAccent, sx.bgBg, sx.px3px, sx.py0, sx.fontMedium, sx.textInherit, sx.outlineNone, typography.body)}
 						value={draft}
 						autoFocus
 						onChange={(e) => setDraft(e.target.value)}
@@ -680,8 +679,7 @@ export function SidebarItem({
 					>
 						<UserAvatar name={mention} size={16} {...stylex.props(sx.shrink0)} />
 						<span
-							aria-hidden="true"
-							className="ring-2" {...stylex.props(sx.absolute, sx.Right1, sx.Bottom1, sx.flex, sx.size3, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgAccent, sx.text8px, sx.fontBold, sx.leadingNone, sx.textOnAccent, sx.ringPanel)}
+							aria-hidden="true" {...mergeStylexProps("ring-2", sx.absolute, sx.Right1, sx.Bottom1, sx.flex, sx.size3, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgAccent, sx.text8px, sx.fontBold, sx.leadingNone, sx.textOnAccent, sx.ringPanel)}
 						>
 							@
 						</span>
@@ -720,7 +718,7 @@ export function SidebarItem({
 			    clears the hover-revealed buttons, so this line needs no reserve of
 			    its own. */}
 			{!mine && (
-				<div className="phone:text-label group-data-[unread]:text-dim" {...stylex.props(sx.mt3px, sx.flex, sx.itemsCenter, sx.gap1, sx.overflowHidden, sx.pl7, sx.whitespaceNowrap, sx.textFaint, typography.meta)}>
+				<div {...mergeStylexProps("phone:text-label group-data-[unread]:text-dim", sx.mt3px, sx.flex, sx.itemsCenter, sx.gap1, sx.overflowHidden, sx.pl7, sx.whitespaceNowrap, sx.textFaint, typography.meta)}>
 					{metaParts.map((part, i) => (
 						<React.Fragment key={i}>
 							{i > 0 && <span {...stylex.props(sx.opacity50)}>·</span>}

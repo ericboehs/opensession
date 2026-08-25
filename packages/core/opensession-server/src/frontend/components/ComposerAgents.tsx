@@ -3,7 +3,7 @@ import type { WorkflowRunSnapshot } from "../../server/workflow-types";
 import type { SessionSubagentSnapshot } from "../lib/api";
 import { currentPlanItem, planDoneCount, type PlanItem } from "@tellahq/opensession-protocol/todo-plan";
 import { composerFlapBorder } from "../lib/composer-classes";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { IconChevronDown, IconChevronRight } from "./icons";
 import { PlanChecklist } from "./PlanChecklist";
 import * as stylex from "@stylexjs/stylex";
@@ -265,7 +265,7 @@ export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 		>
 			{!open && <span className={cn(liveDot, "size-2")} />}
 			{total === 0 && (
-				<span className="tabular-nums" {...stylex.props(sx.flexNone, sx.fontMedium, sx.textFaint)}>
+				<span {...mergeStylexProps("tabular-nums", sx.flexNone, sx.fontMedium, sx.textFaint)}>
 					{planDone}/{planTotal}
 				</span>
 			)}
@@ -436,8 +436,7 @@ export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 							)}
 
 							<button
-								type="button"
-								className="active:bg-pressed" {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap05, sx.selfStart, sx.roundedFull, sx.border, sx.borderLine, sx.bgVarBgHover, sx.py5px, sx.pr25, sx.pl3, sx.fontSemibold, sx.textFg, typography.meta)}
+								type="button" {...mergeStylexProps("active:bg-pressed", sx.inlineFlex, sx.itemsCenter, sx.gap05, sx.selfStart, sx.roundedFull, sx.border, sx.borderLine, sx.bgVarBgHover, sx.py5px, sx.pr25, sx.pl3, sx.fontSemibold, sx.textFg, typography.meta)}
 								onClick={onOpenPanel}
 							>
 								Open full panel

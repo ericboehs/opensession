@@ -87,7 +87,7 @@ import {
   palettePill,
 } from "../lib/palette-classes";
 import { askSurface, noteSurface } from "../lib/tinted-surface";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { Tooltip } from "../ui/tooltip";
 import { ContextMenu, Menu, MenuShortcut, MENU_ICON } from "../ui/menu";
 import { Button } from "../ui/button";
@@ -603,8 +603,7 @@ function StopConfirmModal({
     <Modal.Root open={open} onOpenChange={onOpenChange}>
       <Modal.Content
         initialFocus={stopRef}
-        widthClassName="max-w-[32rem]"
-        className="phone:w-[calc(100vw-1.5rem)] phone:p-6" {...stylex.props(sx.gap5, sx.p7)}
+        widthClassName="max-w-[32rem]" {...mergeStylexProps("phone:w-[calc(100vw-1.5rem)] phone:p-6", sx.gap5, sx.p7)}
       >
         <div {...stylex.props(sx.flex, sx.flexCol)}>
           <Modal.Title {...stylex.props(sx.m0, sx.textBalance, sx.fontSemibold, sx.leadingTight, sx.tracking001em, sx.textFg, typography.sectionTitle)}>
@@ -1685,7 +1684,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
             typing looks identical with the pref on. Sits above the input wrap's
             scroll-fade mask. */}
         {vimEnabled && vim.mode !== "insert" && (
-          <div className="select-none" {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.right3, sx.top2, sx.z2, sx.roundedSm, sx.border, sx.borderLine, sx.bgSurface, sx.px15, sx.py05, sx.fontSemibold, sx.trackingWider, sx.textDim, typography.meta)}>
+          <div {...mergeStylexProps("select-none", sx.pointerEventsNone, sx.absolute, sx.right3, sx.top2, sx.z2, sx.roundedSm, sx.border, sx.borderLine, sx.bgSurface, sx.px15, sx.py05, sx.fontSemibold, sx.trackingWider, sx.textDim, typography.meta)}>
             {vim.mode === "normal"
               ? "NORMAL"
               : vim.mode === "visual"
@@ -2432,7 +2431,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
       {/* The keyboard-shortcut hint is irrelevant on touch and eats vertical
           space right where the keyboard appears. */}
       {hint && (
-        <div className="phone:hidden" {...stylex.props(sx.mt7px, sx.textCenter, sx.textFaint, typography.meta)}>
+        <div {...mergeStylexProps("phone:hidden", sx.mt7px, sx.textCenter, sx.textFaint, typography.meta)}>
           {hint}
         </div>
       )}

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { WS_SUMMARY_REVIEW_BAR_CLEARANCE } from "../../lib/workspace-summary-classes";
 import * as stylex from "@stylexjs/stylex";
+import { mergeStylexProps } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -71,8 +72,7 @@ export function ReviewToolbar({
       {compact && (
         // File headers pin 61px below the scroll edge. Fill everything between
         // the toolbar and that edge so code cannot scroll above its own header.
-        <div
-          className="desktop:block" {...stylex.props(sx.pointerEventsNone, sx.sticky, sx.top52px, sx.z5, sx.mx2, sx.hidden, sx.h25, sx.Mb25, sx.overflowClip, sx.roundedTLg, sx.bgSurface)}
+        <div {...mergeStylexProps("desktop:block", sx.pointerEventsNone, sx.sticky, sx.top52px, sx.z5, sx.mx2, sx.hidden, sx.h25, sx.Mb25, sx.overflowClip, sx.roundedTLg, sx.bgSurface)}
           aria-hidden="true"
         />
       )}

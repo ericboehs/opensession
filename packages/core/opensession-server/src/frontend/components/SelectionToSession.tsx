@@ -4,6 +4,7 @@ import { Button } from "../ui/button";
 import { noAutofill } from "../lib/composer-autofill";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -243,8 +244,7 @@ export function SelectionToSession({ sessionId, label, send, children }: Props) 
       {children}
       {sel && send && (
         <div
-          ref={popRef}
-          className="max-w-[min(340px,90vw)] [backdrop-filter:var(--popup-blur)]" {...stylex.props(sx.fixed, sx.z1000, sx.TranslateX12, sx.roundedMd, sx.border, sx.borderAccent, sx.bgPopupGlass, sx.fontSans, sx.smoothShadowMd)}
+          ref={popRef} {...mergeStylexProps("max-w-[min(340px,90vw)] [backdrop-filter:var(--popup-blur)]", sx.fixed, sx.z1000, sx.TranslateX12, sx.roundedMd, sx.border, sx.borderAccent, sx.bgPopupGlass, sx.fontSans, sx.smoothShadowMd)}
           style={{ left: sel.x, top: sel.y + 6 }}
           onMouseDown={(e) => e.stopPropagation()}
         >
@@ -259,8 +259,7 @@ export function SelectionToSession({ sessionId, label, send, children }: Props) 
               </div>
               <textarea
                 autoFocus
-                {...noAutofill}
-                className="focus:border-accent" {...stylex.props(sx.resizeY, sx.roundedMd, sx.border, sx.borderLineStrong, sx.bgRaised, sx.px25, sx.py2, sx.fontSans, sx.leading145, sx.textFg, sx.outlineNone, typography.label)}
+                {...noAutofill} {...mergeStylexProps("focus:border-accent", sx.resizeY, sx.roundedMd, sx.border, sx.borderLineStrong, sx.bgRaised, sx.px25, sx.py2, sx.fontSans, sx.leading145, sx.textFg, sx.outlineNone, typography.label)}
                 rows={2}
                 placeholder="Message to the session (optional)… ⌘↵ to send"
                 value={message}
@@ -283,8 +282,7 @@ export function SelectionToSession({ sessionId, label, send, children }: Props) 
                 </Button>
                 <Button
                   variant="primary"
-                  size="sm"
-                  className="shadow-none" {...stylex.props(sx.minH0, sx.px14px, sx.py6px, sx.fontMedium, typography.supporting)}
+                  size="sm" {...mergeStylexProps("shadow-none", sx.minH0, sx.px14px, sx.py6px, sx.fontMedium, typography.supporting)}
                   onClick={doSend}
                 >
                   Send to session
@@ -292,8 +290,7 @@ export function SelectionToSession({ sessionId, label, send, children }: Props) 
               </div>
             </div>
           ) : (
-            <button
-              className="hover:bg-hover" {...stylex.props(sx.block, sx.cursorPointer, sx.roundedMd, sx.borderNone, sx.bgTransparent, sx.px3, sx.py7px, sx.fontSans, sx.whitespaceNowrap, sx.textFg, typography.label)}
+            <button {...mergeStylexProps("hover:bg-hover", sx.block, sx.cursorPointer, sx.roundedMd, sx.borderNone, sx.bgTransparent, sx.px3, sx.py7px, sx.fontSans, sx.whitespaceNowrap, sx.textFg, typography.label)}
               onClick={() => setComposing(true)}
             >
               💬 Send to session

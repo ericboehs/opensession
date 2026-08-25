@@ -18,6 +18,7 @@ import { Switch } from "../../ui/switch";
 import { Select, SettingRow } from "./shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { mergeStylexProps } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -156,8 +157,7 @@ export function PapercutsPanel() {
 				<SettingCard>
 					{entries.map((e, i) => (
 						<div
-							key={`${e.ts}-${i}`}
-							className="last:border-b-0" {...stylex.props(sx.borderB, sx.borderLine, sx.px5, sx.py3)}
+							key={`${e.ts}-${i}`} {...mergeStylexProps("last:border-b-0", sx.borderB, sx.borderLine, sx.px5, sx.py3)}
 						>
 							<div {...stylex.props(sx.leadingRelaxed, sx.textFg, typography.body)}>
 								{e.message}

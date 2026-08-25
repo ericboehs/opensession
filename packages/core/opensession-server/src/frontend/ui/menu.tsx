@@ -2,7 +2,7 @@ import * as React from "react";
 import { Menu as BaseMenu } from "@base-ui/react/menu";
 import { ContextMenu as BaseContextMenu } from "@base-ui/react/context-menu";
 import { IconCheck } from "../components/icons";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import {
 	FLOATING_OVERLAY_LAYER,
 	POPUP_HOOK,
@@ -82,7 +82,7 @@ function Trigger({
 }: Omit<React.ComponentProps<typeof BaseMenu.Trigger>, "className"> & {
 	className?: string;
 }) {
-	return <BaseMenu.Trigger {...props} className={cn(className)} {...stylex.props(sx.focusRing)} />;
+	return <BaseMenu.Trigger {...props} {...mergeStylexProps(cn(className), sx.focusRing)} />;
 }
 
 // The popup chrome, the scroller inside it, and the row live in
@@ -127,8 +127,7 @@ function Popup({
 				sideOffset={sideOffset}
 				alignOffset={alignOffset}
 				anchor={anchor}
-				collisionPadding={8}
-				className={cn(FLOATING_OVERLAY_LAYER, positionerClassName)} {...stylex.props(sx.outlineNone)}
+				collisionPadding={8} {...mergeStylexProps(cn(FLOATING_OVERLAY_LAYER, positionerClassName), sx.outlineNone)}
 			>
 				<BaseMenu.Popup
 					className={cn(POPUP_HOOK, popupSurfaceClasses, className)}
@@ -157,8 +156,7 @@ function ContextPopup({
 	return (
 		<BaseContextMenu.Portal>
 			<BaseContextMenu.Positioner
-				collisionPadding={8}
-				className={cn(FLOATING_OVERLAY_LAYER)} {...stylex.props(sx.outlineNone)}
+				collisionPadding={8} {...mergeStylexProps(cn(FLOATING_OVERLAY_LAYER), sx.outlineNone)}
 			>
 				<BaseContextMenu.Popup
 					className={cn(POPUP_HOOK, popupSurfaceClasses, className)}
@@ -238,7 +236,7 @@ export function MenuShortcut({
 	children: React.ReactNode;
 }) {
 	return (
-		<span className={cn(className)} {...stylex.props(sx.shrink0, sx.pl4, typography.label, sx.textFaint)}>
+		<span {...mergeStylexProps(cn(className), sx.shrink0, sx.pl4, typography.label, sx.textFaint)}>
 			{children}
 		</span>
 	);
@@ -269,21 +267,19 @@ export function MenuCheck({
 	return (
 		<IconCheck
 			size={size}
-			aria-hidden
-			className={cn(className)} {...stylex.props(sx.shrink0, sx.textAccent, !on && sx.invisible)}
+			aria-hidden {...mergeStylexProps(cn(className), sx.shrink0, sx.textAccent, !on && sx.invisible)}
 		/>
 	);
 }
 
 function Separator({ className }: { className?: string }) {
-	return <BaseMenu.Separator className={cn(className)} {...stylex.props(sx.Mx15, sx.my15, sx.hPx, sx.bgLine)} />;
+	return <BaseMenu.Separator {...mergeStylexProps(cn(className), sx.Mx15, sx.my15, sx.hPx, sx.bgLine)} />;
 }
 
 function GroupLabel({ className, ...props }: { className?: string; children?: React.ReactNode }) {
 	return (
 		<BaseMenu.GroupLabel
-			{...props}
-			className={cn(className)} {...stylex.props(sx.px2, sx.pb1, typography.meta, sx.fontSemibold, sx.tracking001em, sx.textFaint)}
+			{...props} {...mergeStylexProps(cn(className), sx.px2, sx.pb1, typography.meta, sx.fontSemibold, sx.tracking001em, sx.textFaint)}
 		/>
 	);
 }

@@ -31,6 +31,7 @@ import {
 } from "./setup-shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -471,8 +472,7 @@ setSaving(false);
 									<Segmented
 										label="Slack event delivery"
 										value={transport}
-										onValueChange={(next) => pickTransport(next as SlackTransport)}
-										className="phone:ml-0 phone:w-full" {...stylex.props(sx.mlAuto)}
+										onValueChange={(next) => pickTransport(next as SlackTransport)} {...mergeStylexProps("phone:ml-0 phone:w-full", sx.mlAuto)}
 									>
 										<SegmentedOption value="socket" disabled={saving} className="phone:min-h-11 phone:flex-1">
 											Socket Mode

@@ -11,7 +11,7 @@ import {
 import { PlainEntryRow, plainThreadUrl } from "./PlainThreadPanel";
 import { useCurrentUser } from "./UserPicker";
 import { Button } from "../ui/button";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { DeckDone, SwipeCard } from "../ui/swipe-deck";
 import { dismissToast, toast } from "../ui/toast";
 import { UNDO_MS, ageLabel, ageTone, shuffle } from "../lib/swipe-deck";
@@ -486,8 +486,7 @@ export function SupportTinder({ onExit, onOpenSession }: Props) {
 			<div {...stylex.props(sx.relative, sx.flex, sx.wFull, sx.itemsCenter, sx.justifyBetween, sx.px4, sx.py3)}>
 				<Button
 					variant="ghost"
-					size="md"
-					className="phone:inline-flex" {...stylex.props(sx.hidden)}
+					size="md" {...mergeStylexProps("phone:inline-flex", sx.hidden)}
 					onClick={onExit}
 					title="Back (Esc)"
 					aria-label="Back"
@@ -588,7 +587,7 @@ export function SupportTinder({ onExit, onOpenSession }: Props) {
 
 			{/* Action bar (works without gestures). */}
 			{deck !== null && !done && !error && (
-				<div className="pb-[max(16px,env(safe-area-inset-bottom))]" {...stylex.props(sx.flex, sx.wFull, sx.maxW640px, sx.itemsStretch, sx.gap25, sx.px4)}>
+				<div {...mergeStylexProps("pb-[max(16px,env(safe-area-inset-bottom))]", sx.flex, sx.wFull, sx.maxW640px, sx.itemsStretch, sx.gap25, sx.px4)}>
 					<Button
 						variant="danger"
 						size="lg"

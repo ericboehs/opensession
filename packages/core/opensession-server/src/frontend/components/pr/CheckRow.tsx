@@ -3,6 +3,7 @@ import { CHECK_TEXT } from "../../lib/pr-tone-classes";
 import type { PrCheck } from "../../lib/types";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { mergeStylexProps } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -62,7 +63,7 @@ export function CheckRow({ check }: { check: PrCheck }) {
   const mark = cls === "check-success" ? "✓" : cls === "check-failure" ? "✕" : "●";
   const duration = formatCheckDuration(check);
   return (
-    <div className="group hover:bg-hover" {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.roundedRow, sx.px15, sx.py1, sx.textFg, sx.transitionBackground, typography.label)}>
+    <div {...mergeStylexProps("group hover:bg-hover", sx.flex, sx.itemsCenter, sx.gap2, sx.roundedRow, sx.px15, sx.py1, sx.textFg, sx.transitionBackground, typography.label)}>
       <a
         {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.textInherit, sx.noUnderline)}
         href={check.url}
@@ -77,9 +78,9 @@ export function CheckRow({ check }: { check: PrCheck }) {
           {mark}
         </span>
         <span {...stylex.props(sx.flex1, sx.truncate)}>{check.name}</span>
-        {duration && <span className="tabular-nums" {...stylex.props(sx.textFaint, typography.meta)}>{duration}</span>}
+        {duration && <span {...mergeStylexProps("tabular-nums", sx.textFaint, typography.meta)}>{duration}</span>}
         {check.url && (
-          <span className="group-hover:text-fg" {...stylex.props(sx.textFaint, typography.itemTitle)}>↗</span>
+          <span {...mergeStylexProps("group-hover:text-fg", sx.textFaint, typography.itemTitle)}>↗</span>
         )}
       </a>
     </div>

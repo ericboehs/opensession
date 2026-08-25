@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Select as BaseSelect } from "@base-ui/react/select";
 import { IconCheck, IconChevronDown } from "../components/icons";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import { fieldClasses } from "./input";
 import {
 	FLOATING_OVERLAY_LAYER,
@@ -230,14 +230,13 @@ function Trigger(triggerProps: TriggerProps) {
 					{icon}
 				</span>
 			)}
-			<span className={cn(label)} {...stylex.props(sx.rowStart1, sx.truncate)}>
+			<span {...mergeStylexProps(cn(label), sx.rowStart1, sx.truncate)}>
 				{children ?? <BaseSelect.Value placeholder={placeholder} />}
 			</span>
 			{sizeTo?.map((text, index) => (
 				<span
 					key={index}
-					aria-hidden
-					className={cn(label)} {...stylex.props(sx.invisible, sx.rowStart1, sx.truncate)}
+					aria-hidden {...mergeStylexProps(cn(label), sx.invisible, sx.rowStart1, sx.truncate)}
 				>
 					{text}
 				</span>
@@ -276,12 +275,10 @@ function Popup({
 				// positioning transition and turns itself off on touch, which
 				// would give this one popup two open behaviours and no
 				// animation. Anchor it below the trigger like every menu.
-				alignItemWithTrigger={false}
-				className={cn(FLOATING_OVERLAY_LAYER)} {...stylex.props(sx.outlineNone)}
+				alignItemWithTrigger={false} {...mergeStylexProps(cn(FLOATING_OVERLAY_LAYER), sx.outlineNone)}
 			>
 				<BaseSelect.Popup
-					finalFocus={() => restoreFocusRef?.current ?? true}
-					className={cn(POPUP_HOOK, popupSurfaceClasses, className)} {...stylex.props(sx.minWVarAnchorWidth)}
+					finalFocus={() => restoreFocusRef?.current ?? true} {...mergeStylexProps(cn(POPUP_HOOK, popupSurfaceClasses, className), sx.minWVarAnchorWidth)}
 				>
 					<BaseSelect.List className={popupScrollClasses}>{children}</BaseSelect.List>
 				</BaseSelect.Popup>
@@ -302,8 +299,7 @@ function Item(itemProps: ItemProps) {
 	const iconSlot = "icon" in itemProps;
 	return (
 		<BaseSelect.Item
-			{...props}
-			className={cn(popupItemClasses, "data-[disabled]:cursor-default data-[disabled]:opacity-40", className)} {...stylex.props(sx.justifyBetween, sx.gap3)}
+			{...props} {...mergeStylexProps(cn(popupItemClasses, "data-[disabled]:cursor-default data-[disabled]:opacity-40", className), sx.justifyBetween, sx.gap3)}
 		>
 			<span {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
 				{iconSlot && (
@@ -334,14 +330,13 @@ function GroupLabel({
 }) {
 	return (
 		<BaseSelect.GroupLabel
-			{...props}
-			className={cn(className)} {...stylex.props(sx.px2, sx.pb1, sx.pt15, typography.meta, sx.fontSemibold, sx.tracking001em, sx.textFaint)}
+			{...props} {...mergeStylexProps(cn(className), sx.px2, sx.pb1, sx.pt15, typography.meta, sx.fontSemibold, sx.tracking001em, sx.textFaint)}
 		/>
 	);
 }
 
 function Separator({ className }: { className?: string }) {
-	return <BaseSelect.Separator className={cn(className)} {...stylex.props(sx.Mx15, sx.my15, sx.hPx, sx.bgLine)} />;
+	return <BaseSelect.Separator {...mergeStylexProps(cn(className), sx.Mx15, sx.my15, sx.hPx, sx.bgLine)} />;
 }
 
 export const Select = {

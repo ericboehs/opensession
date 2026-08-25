@@ -41,7 +41,7 @@ import {
 import { absoluteLink, copyToClipboard } from "../lib/share-link";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { Button } from "../ui/button";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { Menu } from "../ui/menu";
 import { ResponsiveDialog } from "../ui/sheet";
 import { toast } from "../ui/toast";
@@ -330,8 +330,7 @@ function AssetPager({
 							type="button"
 							onClick={() => onSelect(dot)}
 							aria-label={`Show ${dot + 1} of ${count}`}
-							aria-current={dot === index ? "true" : undefined}
-							className="group" {...stylex.props(sx.shrink0, sx.cursorPointer, sx.border0, sx.bgTransparent, sx.p1, sx.leadingNone)}
+							aria-current={dot === index ? "true" : undefined} {...mergeStylexProps("group", sx.shrink0, sx.cursorPointer, sx.border0, sx.bgTransparent, sx.p1, sx.leadingNone)}
 						>
 							<span
 								className={cn(
@@ -791,11 +790,11 @@ export function AssetActions({
 		: null;
 
 	return (
-		<div className={className} {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.gap2, sx.borderB, sx.borderDivider, sx.px3, sx.py2)}>
+		<div {...mergeStylexProps(className, sx.flex, sx.shrink0, sx.itemsCenter, sx.gap2, sx.borderB, sx.borderDivider, sx.px3, sx.py2)}>
 			<div {...stylex.props(sx.minW0, sx.flex1)} title={file.path}>
 				<div {...stylex.props(sx.truncate, sx.fontMedium, sx.textFg, typography.label)}>{name}</div>
 				{file.description && (
-					<div className="line-clamp-2" {...stylex.props(sx.leadingSnug, sx.textDim, typography.supporting)}>
+					<div {...mergeStylexProps("line-clamp-2", sx.leadingSnug, sx.textDim, typography.supporting)}>
 						{file.description}
 					</div>
 				)}
@@ -887,7 +886,7 @@ export function AssetPreview({
 	}, [rawUrl, kind]);
 
 	return (
-		<div className={className} {...stylex.props(sx.minH0, sx.flex1, sx.overflowAuto)}>
+		<div {...mergeStylexProps(className, sx.minH0, sx.flex1, sx.overflowAuto)}>
 			{kind === "html" ? (
 				// allow-same-origin so the page can fetch() sibling assets
 				// (./data.json); the sandbox still blocks top navigation. The
@@ -963,8 +962,7 @@ export function AssetPreview({
 				) : text === null ? (
 					<div {...stylex.props(sx.p4, sx.textFaint, typography.label)}>Loading…</div>
 				) : (
-					<MarkdownBody
-						className="markdown" {...stylex.props(sx.px4, sx.py3, typography.label)}
+					<MarkdownBody {...mergeStylexProps("markdown", sx.px4, sx.py3, typography.label)}
 						html={marked.parse(text, { async: false }) as string}
 					/>
 				)
@@ -1189,8 +1187,7 @@ export function AssetOverlay({
 			{isPhone ? (
 				<button
 					type="button"
-					aria-label="Close"
-					className="backdrop-blur-xl transition-[transform,background-color] active:scale-[0.96] hover:bg-white/20" {...stylex.props(sx.absolute, sx.right3, sx.top3, sx.z20, sx.grid, sx.size11, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgWhite15, sx.textWhite)}
+					aria-label="Close" {...mergeStylexProps("backdrop-blur-xl transition-[transform,background-color] active:scale-[0.96] hover:bg-white/20", sx.absolute, sx.right3, sx.top3, sx.z20, sx.grid, sx.size11, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgWhite15, sx.textWhite)}
 					onClick={onClose}
 				>
 					<IconX size={24} />
@@ -1199,8 +1196,7 @@ export function AssetOverlay({
 				<Tooltip label="Close">
 					<button
 						type="button"
-						aria-label="Close"
-						className="backdrop-blur-xl transition-[transform,background-color] active:scale-[0.96] hover:bg-white/20" {...stylex.props(sx.absolute, sx.right0, sx.top0, sx.z20, sx.grid, sx.size10, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgWhite15, sx.textWhite)}
+						aria-label="Close" {...mergeStylexProps("backdrop-blur-xl transition-[transform,background-color] active:scale-[0.96] hover:bg-white/20", sx.absolute, sx.right0, sx.top0, sx.z20, sx.grid, sx.size10, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgWhite15, sx.textWhite)}
 						onClick={onClose}
 					>
 						<IconX size={20} />

@@ -8,7 +8,7 @@ import type { PrTone } from "../../lib/pr-refs";
 import { stackLayersTopFirst } from "../../lib/pr-stack";
 import { prPath } from "../../lib/share-link";
 import type { PrDetails, PrStackLayer } from "../../lib/types";
-import { cn } from "../../ui/cn";
+import { cn, mergeStylexProps } from "../../ui/cn";
 import { Popover } from "../../ui/popover";
 import { IconArrowUpRight, IconStack } from "../icons";
 import { StackNode, StackRail } from "./StackRail";
@@ -196,8 +196,7 @@ export function PrStackChip({
 			<Popover.Popup
 				side="bottom"
 				align="start"
-				sideOffset={6}
-				className="max-h-[min(560px,70vh,var(--available-height))] w-[min(460px,calc(100vw-24px))]" {...stylex.props(sx.flex, sx.flexCol, sx.overflowHidden, sx.p0)}
+				sideOffset={6} {...mergeStylexProps("max-h-[min(560px,70vh,var(--available-height))] w-[min(460px,calc(100vw-24px))]", sx.flex, sx.flexCol, sx.overflowHidden, sx.p0)}
 			>
 				{/* The strip's headline, in the strip's tone: the popup opens under a
 				    green chip and has to keep saying what the green means. */}

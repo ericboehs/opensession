@@ -47,6 +47,7 @@ import {
 } from "../icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { mergeStylexProps } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -455,8 +456,7 @@ export function ShortcutsPanel() {
 											Reset to default
 										</Menu.Item>
 									)}
-									<Menu.Item
-										className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
+									<Menu.Item {...mergeStylexProps("data-[highlighted]:bg-red-soft", sx.textRed)}
 										onClick={() =>
 											setShortcutBindings(
 												id,

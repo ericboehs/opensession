@@ -30,7 +30,7 @@ import { renderMarkdown } from "../lib/markdown";
 import { MarkdownBody } from "./MarkdownBody";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { useCurrentUser } from "./UserPicker";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { PLAIN_WORKSPACE_ID, PRODUCT_NAME } from "../lib/brand";
 import { PlainStatusBadge } from "./PlainStatusBadge";
 import {
@@ -1024,7 +1024,7 @@ setSending(false);
 						Internal note
 					</button>
 				</Tooltip>
-				<span className="phone:hidden" {...stylex.props(sx.minW0, sx.truncate, sx.textFaint, typography.meta)}>
+				<span {...mergeStylexProps("phone:hidden", sx.minW0, sx.truncate, sx.textFaint, typography.meta)}>
 					{kind === "note"
 						? `Posted as ${currentUser} (via ${PRODUCT_NAME})`
 						: `Via Plain, signed “${currentUser.split(/\s+/)[0]}”`}
@@ -1147,12 +1147,7 @@ function PlainAttachments({
 								loading="lazy"
 								onError={() =>
 									setFailed((f) => ({ ...f, [a.id]: true }))
-								}
-								/* md-image is what opens the lightbox. Its own block
-								   treatment is for a full-width transcript image, so the
-								   thumbnail keeps its cap and drops the border and margin
-								   the wrapper already provides. */
-								className="md-image" {...stylex.props(sx.m0, sx.block, sx.maxH220px, sx.maxWFull, sx.border0, sx.bgSurface, sx.objectContain)}
+								} {...mergeStylexProps("md-image", sx.m0, sx.block, sx.maxH220px, sx.maxWFull, sx.border0, sx.bgSurface, sx.objectContain)}
 							/>
 						) : (
 							<>
@@ -1275,8 +1270,7 @@ export function PlainEntryRow({
 					)}
 					<span className={plainEntryMeta}>{timeOf(entry.timestamp)}</span>
 					{author.isAgent && threadId && (
-						<a
-							className="hover:underline" {...stylex.props(sx.mlAuto, sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap05, sx.whitespaceNowrap, sx.fontSemibold, sx.textLink, sx.noUnderline, typography.meta)}
+						<a {...mergeStylexProps("hover:underline", sx.mlAuto, sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap05, sx.whitespaceNowrap, sx.fontSemibold, sx.textLink, sx.noUnderline, typography.meta)}
 							href={`${BASE_PATH}/plain-triage/${encodeURIComponent(threadId)}`}
 							target="_blank"
 							rel="noreferrer"

@@ -31,6 +31,7 @@ import { GithubAccounts } from "./Connections";
 import { KeychainSection } from "./settings/KeychainPanel";
 import { ProfileSection } from "./settings/ProfileSection";
 import * as stylex from "@stylexjs/stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -204,8 +205,7 @@ setError(e.message);
 														Reconnect
 													</Menu.Item>
 													<Menu.Item
-														onClick={() => disconnect(s.name)}
-														className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
+														onClick={() => disconnect(s.name)} {...mergeStylexProps("data-[highlighted]:bg-red-soft", sx.textRed)}
 													>
 														<IconTrash size={16} />
 														Disconnect

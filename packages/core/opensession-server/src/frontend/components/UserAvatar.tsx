@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -120,16 +120,13 @@ export function UserAvatar({
 	const picture = !!src && !failed;
 	return (
 		<span
-			// The variable utilities remain residual because callers compose the
-			// edge into larger shadows.
-			className={cn(
+			{...mergeStylexProps(cn(
 				picture && edge
 					? "[--avatar-edge:inset_0_0_0_1px_color-mix(in_srgb,var(--text)_14%,transparent)]"
 					: "[--avatar-edge:0_0_0_0_transparent]",
 				"shadow-[var(--avatar-edge)]",
 				className,
-			)}
-			{...stylex.props(sx.relative, sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedAvatar, sx.bgActive, sx.fontBold, sx.textDim, sx.selectNone)}
+			), sx.relative, sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedAvatar, sx.bgActive, sx.fontBold, sx.textDim, sx.selectNone)}
 			style={{
 				width: size,
 				height: size,
@@ -141,14 +138,7 @@ export function UserAvatar({
 			{picture ? (
 				<img
 					src={src}
-					alt={name}
-					// `corner-shape` is not inherited, and base.css squircles
-					// anything carrying a `rounded-*` class — so a photo inside a
-					// frame a caller made round (`rounded-full`, which opts out)
-					// took the radius but kept the squircle, and only the frame's
-					// clip hid it. Inheriting the shape as well as the radius is
-					// what makes the picture the frame's shape, always.
-					className="shadow-[var(--avatar-edge)]" {...stylex.props(sx.absolute, sx.inset0, sx.sizeFull, sx.roundedInherit, sx.CornerShapeInherit, sx.objectCover)}
+					alt={name} {...mergeStylexProps("shadow-[var(--avatar-edge)]", sx.absolute, sx.inset0, sx.sizeFull, sx.roundedInherit, sx.CornerShapeInherit, sx.objectCover)}
 					loading="lazy"
 					draggable={false}
 					onError={() => setFailed(true)}

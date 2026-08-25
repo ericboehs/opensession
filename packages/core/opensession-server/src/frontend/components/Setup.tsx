@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useSetupStatus } from "../hooks/useSetupStatus";
 import { DEFAULT_DOC_TITLE, docTitle } from "../lib/brand";
 import { Button } from "../ui/button";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import {
   SettingCard,
   SettingsHeader,
@@ -225,8 +225,7 @@ function SetupSummary({
 
   return (
     <aside
-      aria-labelledby="setup-summary-title"
-      className="desktop:sticky desktop:top-0 desktop:col-start-2 desktop:row-start-1 desktop:mt-0" {...stylex.props(sx.mt10)}
+      aria-labelledby="setup-summary-title" {...mergeStylexProps("desktop:sticky desktop:top-0 desktop:col-start-2 desktop:row-start-1 desktop:mt-0", sx.mt10)}
     >
       <h2
         id="setup-summary-title"
@@ -239,8 +238,7 @@ function SetupSummary({
           <button
             key={step.id}
             type="button"
-            onClick={() => onSelect(step.id)}
-            className="hover:bg-hover" {...stylex.props(sx.focusRing, sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap25, sx.px4, sx.py3, sx.textLeft)}
+            onClick={() => onSelect(step.id)} {...mergeStylexProps("hover:bg-hover", sx.focusRing, sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap25, sx.px4, sx.py3, sx.textLeft)}
           >
             <span
               {...stylex.props(
@@ -325,7 +323,7 @@ export function SetupPanel({
   }
 
   return (
-    <SettingsPanel className="[&_input]:phone:text-input-phone" {...stylex.props(sx.relative, sx.maxW980px)}>
+    <SettingsPanel {...mergeStylexProps("[&_input]:phone:text-input-phone", sx.relative, sx.maxW980px)}>
       <SettingsHeader
         title="Workspace setup"
         actions={
@@ -339,8 +337,8 @@ export function SetupPanel({
           {failed ? "Couldn't load setup status." : "Loading…"}
         </LoadingState>
       ) : (
-        <div className="desktop:grid-cols-[minmax(0,720px)_220px] desktop:gap-10" {...stylex.props(sx.grid, sx.itemsStart)}>
-          <div className="desktop:col-start-1 desktop:row-start-1" {...stylex.props(sx.minW0)}>
+        <div {...mergeStylexProps("desktop:grid-cols-[minmax(0,720px)_220px] desktop:gap-10", sx.grid, sx.itemsStart)}>
+          <div {...mergeStylexProps("desktop:col-start-1 desktop:row-start-1", sx.minW0)}>
             <SetupPageSection
               id="server"
               title="Server access"

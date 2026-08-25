@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { clampSplitRatio } from "../lib/split-tabs";
 import * as stylex from "@stylexjs/stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -138,8 +139,7 @@ export function SessionSplit({
 
 	const column = (side: SplitSide, socket: Socket) => (
 		<div
-			{...stylex.props(sx.relative, sx.flex, sx.minH0, sx.minW0, sx.flexCol, sx.overflowHidden)}
-			className={`${stylex.props(sx.relative, sx.flex, sx.minH0, sx.minW0, sx.flexCol, sx.overflowHidden).className} ${COLUMN_RESIDUAL}`}
+			{...mergeStylexProps(`${stylex.props(sx.relative, sx.flex, sx.minH0, sx.minW0, sx.flexCol, sx.overflowHidden).className} ${COLUMN_RESIDUAL}`, sx.relative, sx.flex, sx.minH0, sx.minW0, sx.flexCol, sx.overflowHidden)}
 			onPointerDownCapture={() => {
 				if (focusedSide !== side) onFocusSide(side);
 			}}
@@ -156,8 +156,7 @@ export function SessionSplit({
 		>
 			{column("left", leftSocket)}
 			<div
-				{...stylex.props(sx.relative, sx.z5, sx.cursorColResize, sx.touchNone, sx.bgLine, sx.transitionBackground, sx.dividerAfter, sx.dividerHover)}
-				className={`${stylex.props(sx.relative, sx.z5, sx.cursorColResize, sx.touchNone, sx.bgLine, sx.transitionBackground, sx.dividerAfter, sx.dividerHover).className} ${DIVIDER_RESIDUAL}`}
+				{...mergeStylexProps(`${stylex.props(sx.relative, sx.z5, sx.cursorColResize, sx.touchNone, sx.bgLine, sx.transitionBackground, sx.dividerAfter, sx.dividerHover).className} ${DIVIDER_RESIDUAL}`, sx.relative, sx.z5, sx.cursorColResize, sx.touchNone, sx.bgLine, sx.transitionBackground, sx.dividerAfter, sx.dividerHover)}
 				role="separator"
 				aria-orientation="vertical"
 				aria-label="Resize split tabs"

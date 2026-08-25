@@ -1,5 +1,5 @@
 import { IconCopy } from "../components/icons";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import { CopyCheck, useCopy } from "./copy";
 import { Tooltip } from "./tooltip";
 import * as stylex from "@stylexjs/stylex";
@@ -103,8 +103,7 @@ export function DeviceCode({
 			<button
 				type="button"
 				aria-label={`${label} ${code}`}
-				onClick={() => copy(code, { toast: "Code copied" })}
-				className={cn("group", "transition-[background-color,border-color,scale] active:scale-[0.98]", "hover:border-line-strong hover:bg-hover", className)} {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.border, sx.borderLine, sx.bgControl, sx.px25, sx.py1, sx.fontMono, typography.itemTitle, sx.fontBold, sx.textFg, sx.smoothShadowSm, sx.focusRing)}
+				onClick={() => copy(code, { toast: "Code copied" })} {...mergeStylexProps(cn("group", "transition-[background-color,border-color,scale] active:scale-[0.98]", "hover:border-line-strong hover:bg-hover", className), sx.inlineFlex, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.border, sx.borderLine, sx.bgControl, sx.px25, sx.py1, sx.fontMono, typography.itemTitle, sx.fontBold, sx.textFg, sx.smoothShadowSm, sx.focusRing)}
 			>
 				{/* Cap-band centered against the copy glyph: `text-box` trims the
 				    line box to cap height and baseline, so the code's own ink sits
@@ -119,8 +118,7 @@ export function DeviceCode({
 					size={20}
 					idle={
 						<IconCopy
-							size={20}
-							className="group-hover:opacity-80" {...stylex.props(sx.opacity45, sx.transitionOpacity)}
+							size={20} {...mergeStylexProps("group-hover:opacity-80", sx.opacity45, sx.transitionOpacity)}
 						/>
 					}
 				/>

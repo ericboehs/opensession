@@ -3,6 +3,7 @@ import { formatPrCommentPrompt, stripHtmlComments } from "../../lib/pr-prompts";
 import type { PrComment, PrDetails } from "../../lib/types";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { mergeStylexProps } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -165,8 +166,7 @@ function PrDescriptionCard({
           <div {...stylex.props(sx.textFaint, typography.meta)}>Opened this pull request</div>
         </div>
       </div>
-      <div
-        className="markdown" {...stylex.props(sx.px4, sx.py4, sx.leadingRelaxed, sx.textDim, typography.body)}
+      <div {...mergeStylexProps("markdown", sx.px4, sx.py4, sx.leadingRelaxed, sx.textDim, typography.body)}
         dangerouslySetInnerHTML={{ __html: descriptionHtml }}
       />
     </article>
@@ -215,11 +215,7 @@ export function ConversationView({
             ? new Date(comment.createdAt).toLocaleString()
             : null;
           return (
-            <article
-              /* A grid item's automatic minimum size is its min-content
-                 width, so a wide comment (a deploy table, a long path) would
-                 otherwise stretch the track past the viewport. */
-              className="group" {...stylex.props(sx.minW0, sx.roundedXl, sx.border, sx.borderLine60, sx.bgSurface, sx.smoothShadowSm)}
+            <article {...mergeStylexProps("group", sx.minW0, sx.roundedXl, sx.border, sx.borderLine60, sx.bgSurface, sx.smoothShadowSm)}
               key={`${comment.url || comment.createdAt || index}`}
             >
               <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.borderB, sx.borderDivider, sx.px4, sx.py3)}>
@@ -235,16 +231,14 @@ export function ConversationView({
                   )}
                 </div>
                 {onAddToInput && pr && (
-                  <button
-                    className="hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover:opacity-100" {...stylex.props(sx.roundedMd, sx.border0, sx.bgTransparent, sx.px15, sx.py1, sx.textFaint, sx.opacity0, sx.transitionOpacity, typography.meta)}
+                  <button {...mergeStylexProps("hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover:opacity-100", sx.roundedMd, sx.border0, sx.bgTransparent, sx.px15, sx.py1, sx.textFaint, sx.opacity0, sx.transitionOpacity, typography.meta)}
                     onClick={() => onAddToInput(formatPrCommentPrompt(comment, pr))}
                   >
                     Add to session
                   </button>
                 )}
                 {comment.url && (
-                  <a
-                    className="hover:text-fg" {...stylex.props(sx.textFaint, sx.noUnderline, typography.meta)}
+                  <a {...mergeStylexProps("hover:text-fg", sx.textFaint, sx.noUnderline, typography.meta)}
                     href={comment.url}
                     target="_blank"
                     rel="noopener"
@@ -253,8 +247,7 @@ export function ConversationView({
                   </a>
                 )}
               </div>
-              <div
-                className="markdown" {...stylex.props(sx.px4, sx.py4, sx.leadingRelaxed, sx.textDim, typography.body)}
+              <div {...mergeStylexProps("markdown", sx.px4, sx.py4, sx.leadingRelaxed, sx.textDim, typography.body)}
                 dangerouslySetInnerHTML={{
                   __html: renderPrCommentMarkdown(body, { repo }),
                 }}

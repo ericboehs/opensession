@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { useScrollEdge } from "../hooks/useScrollEdge";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { useAuthStatus } from "./UserPicker";
 import {
 	SETTINGS_BACK,
@@ -692,8 +692,7 @@ function MobileSettings({
 										<div {...stylex.props(sx.overflowHidden, sx.rounded2xl, sx.border, sx.borderDividerSoft, sx.bgSettingsPlate)}>
 											{g.hits.map(({ item: s, hint }) => (
 												<button
-													key={s.key}
-													className="after:absolute after:bottom-0 after:left-[54px] after:right-0 after:h-px after:bg-divider-soft last:after:hidden active:bg-hover" {...stylex.props(sx.relative, sx.flex, sx.wFull, sx.itemsCenter, sx.gap3, sx.border0, sx.bgTransparent, sx.px35, sx.py3, sx.textLeft)}
+													key={s.key} {...mergeStylexProps("after:absolute after:bottom-0 after:left-[54px] after:right-0 after:h-px after:bg-divider-soft last:after:hidden active:bg-hover", sx.relative, sx.flex, sx.wFull, sx.itemsCenter, sx.gap3, sx.border0, sx.bgTransparent, sx.px35, sx.py3, sx.textLeft)}
 													onClick={() => onSelect(s.key)}
 												>
 													<span {...stylex.props(sx.flex, sx.h7, sx.w7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textDim)}>

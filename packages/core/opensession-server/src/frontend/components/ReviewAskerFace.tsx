@@ -3,6 +3,7 @@ import { personNameForGithubLogin } from "../lib/people";
 import { UserAvatar } from "./UserAvatar";
 import { IconEye } from "./icons";
 import * as stylex from "@stylexjs/stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -84,8 +85,7 @@ export function ReviewAskerFace({ asker }: { asker: ReviewAsker }) {
 			{/* Same 12px corner mark the mention badge uses: big enough to read as
 			    deliberate, small enough to leave the face recognisable. */}
 			<span
-				aria-hidden="true"
-				className="ring-2" {...stylex.props(sx.absolute, sx.Bottom1, sx.Right1, sx.flex, sx.size3, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgBlue, sx.textWhite, sx.ringPanel)}
+				aria-hidden="true" {...mergeStylexProps("ring-2", sx.absolute, sx.Bottom1, sx.Right1, sx.flex, sx.size3, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgBlue, sx.textWhite, sx.ringPanel)}
 			>
 				<IconEye size={8} />
 			</span>

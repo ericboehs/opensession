@@ -11,6 +11,7 @@ import { IconCheck, IconListCircles, IconPlus, IconX } from "./icons";
 import { Input } from "../ui/input";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -189,15 +190,7 @@ function TaskRow({
 	const done = task.status === "done";
 	return (
     <li
-      className="group sm:px-4"
-      {...stylex.props(
-        sx.flex,
-        sx.minH11,
-        sx.itemsCenter,
-        sx.gap3,
-        sx.px3,
-        sx.py25,
-      )}
+      {...mergeStylexProps("group sm:px-4", sx.flex, sx.minH11, sx.itemsCenter, sx.gap3, sx.px3, sx.py25)}
     >
 			<button
 				type="button"
@@ -243,12 +236,7 @@ function TaskRow({
 						{task.source.sessionId && (
 							<button
 								type="button"
-                className="hover:text-dim"
-                {...stylex.props(
-                  sx.underline,
-                  sx.decorationDotted,
-                  sx.underlineOffset2,
-                )}
+                {...mergeStylexProps("hover:text-dim", sx.underline, sx.decorationDotted, sx.underlineOffset2)}
 								onClick={() => onOpenSession(task.source.sessionId!)}
 							>
 								Open source
@@ -379,8 +367,7 @@ setAdding(false);
 	return (
     <div
       data-page-scroll
-      className="sm:px-7 sm:py-7"
-      {...stylex.props(sx.hFull, sx.overflowYAuto, sx.px4, sx.py5)}
+      {...mergeStylexProps("sm:px-7 sm:py-7", sx.hFull, sx.overflowYAuto, sx.px4, sx.py5)}
     >
 			<div {...stylex.props(sx.mxAuto, sx.maxW760px)}>
 				<PageHeader>
@@ -473,17 +460,7 @@ setAdding(false);
 					<div {...stylex.props(sx.mt5)}>
 						<button
 							type="button"
-              className="hover:text-fg"
-              {...stylex.props(
-                sx.mb2,
-                sx.flex,
-                sx.minH10,
-                sx.itemsCenter,
-                sx.gap2,
-                sx.fontMedium,
-                sx.textDim,
-                typography.controlLabel,
-              )}
+              {...mergeStylexProps("hover:text-fg", sx.mb2, sx.flex, sx.minH10, sx.itemsCenter, sx.gap2, sx.fontMedium, sx.textDim, typography.controlLabel)}
 							onClick={() => setShowDone((current) => !current)}
 							aria-expanded={showDone}
 						>

@@ -40,6 +40,7 @@ import {
 import { PrFileTree } from "./pr/PrFileTree";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -671,7 +672,7 @@ if (generation === flowGeneration.current) setFlowLoading(false);
       <div
         className={`sticky ${multi ? "top-[calc(var(--diff-panel-top,0px)+37px)] phone:top-[calc(var(--diff-panel-top,0px)+47px)]" : "top-[var(--diff-panel-top,0px)]"} z-1 bg-panel-surface after:absolute after:inset-x-0 after:top-full after:h-2.5 after:bg-panel-surface after:content-['']`}
       >
-        <div className="[&::-webkit-scrollbar]:hidden" {...stylex.props(sx.flex, sx.h10, sx.itemsCenter, sx.gap25, sx.overflowXAuto, sx.borderB, sx.borderDivider, sx.px35, sx.whitespaceNowrap, sx.ScrollbarWidthNone, typography.label)}>
+        <div {...mergeStylexProps("[&::-webkit-scrollbar]:hidden", sx.flex, sx.h10, sx.itemsCenter, sx.gap25, sx.overflowXAuto, sx.borderB, sx.borderDivider, sx.px35, sx.whitespaceNowrap, sx.ScrollbarWidthNone, typography.label)}>
           {toolbarContents}
         </div>
       </div>
@@ -685,7 +686,7 @@ if (generation === flowGeneration.current) setFlowLoading(false);
       ref={panelRef}
     >
       {multi && (
-        <div className="top-[var(--diff-panel-top,0px)]" {...stylex.props(sx.sticky, sx.z2, sx.flex, sx.gap1, sx.overflowXAuto, sx.borderB, sx.borderDivider, sx.bgPanelSurface, sx.px25, sx.py15)}>
+        <div {...mergeStylexProps("top-[var(--diff-panel-top,0px)]", sx.sticky, sx.z2, sx.flex, sx.gap1, sx.overflowXAuto, sx.borderB, sx.borderDivider, sx.bgPanelSurface, sx.px25, sx.py15)}>
           {changed.map((r, i) => {
             return (
               <button

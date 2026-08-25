@@ -3,6 +3,7 @@ import { IconChevronDown, IconCheckCircle, IconX } from "./icons";
 import type { ReviewLoopResult } from "../lib/review-loop";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -204,8 +205,7 @@ export function ReviewLoopBlock({
 						onOpenChange?.(next);
 						return next;
 					})
-				}
-				className="hover:bg-hover/40 hover:text-fg phone:min-h-10" {...stylex.props(sx.Mx2, sx.flex, sx.wCalc10016px, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px3, sx.py1, sx.textLeft, sx.fontSans, sx.leading5, sx.textDim, sx.transitionColors, typography.itemTitle)}
+				} {...mergeStylexProps("hover:bg-hover/40 hover:text-fg phone:min-h-10", sx.Mx2, sx.flex, sx.wCalc10016px, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px3, sx.py1, sx.textLeft, sx.fontSans, sx.leading5, sx.textDim, sx.transitionColors, typography.itemTitle)}
 			>
 				<span
 					{...stylex.props(sx.grid, sx.size5, sx.flexNone, sx.selfCenter, sx.placeItemsCenter, sx.leadingNone, sx.textFaint, sx.transitionTransform, sx.duration150, open ? sx.translateUpPx : sx.rotateNeg90)}
@@ -215,7 +215,7 @@ export function ReviewLoopBlock({
 				<span {...stylex.props(sx.shrink0, sx.fontMedium)}>Review loop</span>
 				<span {...stylex.props(sx.minW0, sx.truncate, sx.leading4, sx.textFaint, typography.label)}>{visibleDetail}</span>
 				{prNumber && (
-					<span className="desktop:block" {...stylex.props(sx.hidden, sx.shrink0, sx.leading4, sx.textFaint, typography.label)}>PR #{prNumber}</span>
+					<span {...mergeStylexProps("desktop:block", sx.hidden, sx.shrink0, sx.leading4, sx.textFaint, typography.label)}>PR #{prNumber}</span>
 				)}
 				{live && (
 					<span
@@ -225,7 +225,7 @@ export function ReviewLoopBlock({
 				)}
 			</button>
 			{open && (
-				<div className="[&>*:last-child]:mb-0" {...stylex.props(sx.mt05, sx.pl2)}>
+				<div {...mergeStylexProps("[&>*:last-child]:mb-0", sx.mt05, sx.pl2)}>
 					{children}
 					{result && !live && result.status !== "pending" && (
 						<ReviewLoopResultRow result={result} rounds={rounds} />

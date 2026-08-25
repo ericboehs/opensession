@@ -5,6 +5,7 @@ import { dismissToast, toast } from "../ui/toast";
 import { fetchHealthStatus } from "../lib/health";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 const spin = stylex.keyframes({ to: { transform: "rotate(360deg)" } });
 
@@ -353,7 +354,7 @@ await fetchHealthStatus();
   if (phase !== "crashed") return null;
 
   return (
-    <div className="backdrop-blur-[4px]" {...stylex.props(sx.fixed, sx.inset0, sx.z10000, sx.flex, sx.itemsCenter, sx.justifyCenter, sx.bgBlack82, sx.p6)} role="alertdialog" aria-live="assertive">
+    <div {...mergeStylexProps("backdrop-blur-[4px]", sx.fixed, sx.inset0, sx.z10000, sx.flex, sx.itemsCenter, sx.justifyCenter, sx.bgBlack82, sx.p6)} role="alertdialog" aria-live="assertive">
       <div {...stylex.props(sx.flex, sx.maxW340px, sx.flexCol, sx.itemsCenter, sx.gap35, sx.roundedLg, sx.border, sx.borderLine, sx.bgPanel, sx.px26px, sx.py7, sx.textCenter)}>
         <div
           {...stylex.props(

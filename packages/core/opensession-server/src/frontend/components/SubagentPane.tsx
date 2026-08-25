@@ -7,6 +7,7 @@ import { PANEL_BODY } from "../lib/session-panel-classes";
 import { Badge } from "../ui/badge";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 const pulse = stylex.keyframes({
   "0%, 100%": { opacity: 1 },
@@ -250,8 +251,7 @@ if (cancelled) return;
             />}
         </div>
         {stack.length > 1 && (
-          <button
-            className="hover:text-fg" {...stylex.props(sx.mt2, sx.maxWFull, sx.overflowHidden, sx.borderNone, sx.bgTransparent, sx.p0, sx.textEllipsis, sx.whitespaceNowrap, sx.textDim, typography.supporting)}
+          <button {...mergeStylexProps("hover:text-fg", sx.mt2, sx.maxWFull, sx.overflowHidden, sx.borderNone, sx.bgTransparent, sx.p0, sx.textEllipsis, sx.whitespaceNowrap, sx.textDim, typography.supporting)}
             onClick={onBack}
           >
             ← {stack[stack.length - 2].label}
@@ -260,7 +260,7 @@ if (cancelled) return;
         {meta?.description && <div {...stylex.props(sx.mt15, sx.leading14, sx.textDim, typography.supporting)}>{meta.description}</div>}
       </div>
 
-      <div className={PANEL_BODY} {...stylex.props(sx.px35, sx.py3)} ref={bodyRef} onScroll={onScroll}>
+      <div {...mergeStylexProps(PANEL_BODY, sx.px35, sx.py3)} ref={bodyRef} onScroll={onScroll}>
         {loading ? (
           <LoadingState>Loading sub-agent…</LoadingState>
         ) : error ? (

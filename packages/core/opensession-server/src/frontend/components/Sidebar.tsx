@@ -169,7 +169,7 @@ import { useConfirm } from "../ui/confirm";
 import { Tooltip } from "../ui/tooltip";
 import { ContextMenu, MENU_ICON, Menu } from "../ui/menu";
 import { Popover } from "../ui/popover";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { RowCardPopup } from "./SidebarRowCards";
 import { pointerCanHover } from "../lib/pointer";
 import { RepoTile, repoLabel } from "./RepoTile";
@@ -3130,7 +3130,7 @@ setClosingPrUrls((current) => {
 	// The shared rail centres its 20px glyph on the same line as the 18px repo tiles.
 	const archivedLink = (
 		<button
-			className={cn(
+			{...mergeStylexProps(cn(
 				SIDEBAR_GROUP_HEADER,
 				SIDEBAR_GROUP_HEADER_INSET,
 				SIDEBAR_HEADER_ROW,
@@ -3138,12 +3138,7 @@ setClosingPrUrls((current) => {
 				// fill. Its neighbours in the rail collapse a group instead and
 				// deliberately take none. See the two signals in sidebar-classes.ts.
 				SIDEBAR_HOVER_LAYER,
-			)}
-			{...stylex.props(
-				sx.transitionColors,
-				archivedActive && sx.bgSelected,
-				archivedActive && sx.textFg,
-			)}
+			), sx.transitionColors, archivedActive && sx.bgSelected, archivedActive && sx.textFg)}
 			data-selected={archivedActive || undefined}
 			onClick={onOpenArchived}
 			title="View archived sessions"
@@ -3151,7 +3146,7 @@ setClosingPrUrls((current) => {
 			<span className={SIDEBAR_RAIL}>
 				<IconArchive size={20} />
 			</span>
-			<span className={SIDEBAR_GROUP_NAME} {...stylex.props(sx.fontSemibold)}>Archived</span>
+			<span {...mergeStylexProps(SIDEBAR_GROUP_NAME, sx.fontSemibold)}>Archived</span>
 		</button>
 	);
 
@@ -3279,13 +3274,12 @@ setClosingPrUrls((current) => {
 			>
 				{isPhone && row.sessions.length > 0 && (
 					<button
-						className={cn(
+						{...mergeStylexProps(cn(
 							SIDEBAR_SWIPE_ACTION,
 							SIDEBAR_SWIPE_ACTION_ARCHIVE,
 							swipeSide === "archive" && SIDEBAR_SWIPE_ACTION_OPEN,
 							draggingRow ? undefined : SIDEBAR_SWIPE_ACTION_TRANSITION,
-						)}
-						{...stylex.props(draggingRow && sx.transitionNone)}
+						), draggingRow && sx.transitionNone)}
 						data-swipe-action="archive"
 						onClick={(e) => {
 							e.stopPropagation();
@@ -3303,13 +3297,12 @@ setClosingPrUrls((current) => {
 				    long-press sheet) would defeat the point of a swipe. */}
 				{isPhone && isDraftWsRow(row) && (
 					<button
-						className={cn(
+						{...mergeStylexProps(cn(
 							SIDEBAR_SWIPE_ACTION,
 							SIDEBAR_SWIPE_ACTION_ARCHIVE,
 							swipeSide === "archive" && SIDEBAR_SWIPE_ACTION_OPEN,
 							draggingRow ? undefined : SIDEBAR_SWIPE_ACTION_TRANSITION,
-						)}
-						{...stylex.props(draggingRow && sx.transitionNone)}
+						), draggingRow && sx.transitionNone)}
 						data-swipe-action="delete"
 						onClick={(e) => {
 							e.stopPropagation();
@@ -3324,13 +3317,12 @@ setClosingPrUrls((current) => {
 				)}
 				{isPhone && (
 					<button
-						className={cn(
+						{...mergeStylexProps(cn(
 							SIDEBAR_SWIPE_ACTION,
 							pinned ? SIDEBAR_SWIPE_ACTION_STAR_ON : SIDEBAR_SWIPE_ACTION_STAR,
 							swipeSide === "star" && SIDEBAR_SWIPE_ACTION_OPEN,
 							draggingRow ? undefined : SIDEBAR_SWIPE_ACTION_TRANSITION,
-						)}
-						{...stylex.props(draggingRow && sx.transitionNone)}
+						), draggingRow && sx.transitionNone)}
 						data-swipe-action="star"
 						onClick={(e) => {
 							e.stopPropagation();
@@ -3344,32 +3336,14 @@ setClosingPrUrls((current) => {
 					</button>
 				)}
 				<button
-					className={cn(
+					{...mergeStylexProps(cn(
 						SIDEBAR_ROW,
 						// Inside a swipe row: the wrapper carries the 2px gap and the
 						// row carries the slide. The drag writes --swipe-x straight onto
 						// the node, so the transform reads it rather than a React style.
 						SIDEBAR_WS_ROW,
 						SIDEBAR_HOVER_LAYER,
-					)}
-					{...stylex.props(
-						// The reserve follows the chips that actually appear: an
-						// unpinned row reveals snooze + archive, not the pin, so it
-						// gives up one chip less of its right end (26px + the 4px gap).
-						!pinned && sx.hoverPr68,
-						sx.z1,
-						sx.mt0,
-						sx.touchPanY,
-						sx.transformSwipe,
-						// "Needs you" paints no fill of its own: it is a question
-						// waiting, not a failure, and the row's one background slot
-						// belongs to selection. The blue mark in the rail and the bold
-						// title carry it, same as the native app.
-						active && sx.bgSelected,
-						draggingRow ? sx.transitionNone : sx.transitionTransform,
-						!draggingRow && (swipeSide ? sx.durationMicro : sx.duration),
-						(draggingRow || swipeSide) && sx.willChangeTransform,
-					)}
+					), !pinned && sx.hoverPr68, sx.z1, sx.mt0, sx.touchPanY, sx.transformSwipe, active && sx.bgSelected, draggingRow ? sx.transitionNone : sx.transitionTransform, !draggingRow && (swipeSide ? sx.durationMicro : sx.duration), (draggingRow || swipeSide) && sx.willChangeTransform)}
 					data-sidebar-row=""
 					data-ws-row=""
 					data-sidebar-item-key={`workspace:${row.key}`}
@@ -3445,20 +3419,17 @@ setClosingPrUrls((current) => {
 				<span className={SIDEBAR_RAIL}>
 					{waiting || needsMyReview ? (
 						<span
-							className={SIDEBAR_STATUS_DOT.waiting}
-							{...stylex.props(sx.size2, sx.shrink0, sx.roundedFull)}
+							{...mergeStylexProps(SIDEBAR_STATUS_DOT.waiting, sx.size2, sx.shrink0, sx.roundedFull)}
 						/>
 					) : failed ? (
 						<span
-							className={SIDEBAR_STATUS_DOT.failed}
-							{...stylex.props(sx.size2, sx.shrink0, sx.roundedFull)}
+							{...mergeStylexProps(SIDEBAR_STATUS_DOT.failed, sx.size2, sx.shrink0, sx.roundedFull)}
 						/>
 					) : noSectionHeading ? (
 						<WsStatusMark row={row} size={18} />
 					) : row.running ? (
 						<span
-							className={SIDEBAR_STATUS_DOT.running}
-							{...stylex.props(sx.size2, sx.shrink0, sx.roundedFull)}
+							{...mergeStylexProps(SIDEBAR_STATUS_DOT.running, sx.size2, sx.shrink0, sx.roundedFull)}
 						/>
 					) : (
 						<WsPrStatusMark
@@ -3476,8 +3447,7 @@ setClosingPrUrls((current) => {
 					<RepoTile name={wsRowRepo(row)} size={14} />
 				)}
 				{editing ? (
-					<input
-						className="border-[var(--accent,#6b8afd)] desktop:text-item-title" {...stylex.props(sx.minW0, sx.flex1, sx.roundedMd, sx.border, sx.bgBg, sx.px3px, sx.fontMedium, sx.textInherit, sx.outlineNone, typography.body)}
+					<input {...mergeStylexProps("border-[var(--accent,#6b8afd)] desktop:text-item-title", sx.minW0, sx.flex1, sx.roundedMd, sx.border, sx.bgBg, sx.px3px, sx.fontMedium, sx.textInherit, sx.outlineNone, typography.body)}
 						value={row.workspace ? workspaceDraft : sessionDraft}
 						autoFocus
 						onChange={(e) =>
@@ -3541,8 +3511,7 @@ setClosingPrUrls((current) => {
 					>
 						<UserAvatar name={row.mention} size={16} {...stylex.props(sx.shrink0)} />
 						<span
-							aria-hidden="true"
-							className="ring-2" {...stylex.props(sx.absolute, sx.Right1, sx.Bottom1, sx.flex, sx.size3, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgAccent, sx.text8px, sx.fontBold, sx.leadingNone, sx.textOnAccent, sx.ringPanel)}
+							aria-hidden="true" {...mergeStylexProps("ring-2", sx.absolute, sx.Right1, sx.Bottom1, sx.flex, sx.size3, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgAccent, sx.text8px, sx.fontBold, sx.leadingNone, sx.textOnAccent, sx.ringPanel)}
 						>
 							@
 						</span>
@@ -4507,7 +4476,7 @@ fetchFeedItems("plain")
 							</span>
 							{/* The differently sized name and count share a baseline, while the
 							    pair stays vertically centred against the tile. */}
-							<span className="desktop:gap-[9px]" {...stylex.props(sx.flex, sx.minW0, sx.flex01Auto, sx.itemsBaseline, sx.gap15)}>
+							<span {...mergeStylexProps("desktop:gap-[9px]", sx.flex, sx.minW0, sx.flex01Auto, sx.itemsBaseline, sx.gap15)}>
 								<span className={cn(SIDEBAR_GROUP_NAME, "flex-[0_1_auto] font-semibold")}>
 									{repo === ASK_BAND ? "Ask" : repoLabel(repo)}
 								</span>
@@ -4552,8 +4521,7 @@ fetchFeedItems("plain")
 							{!borrowedLens && (
 								<span
 									role="button"
-									tabIndex={0}
-									className="transition-[opacity,color] hover:text-fg focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100 before:absolute before:inset-0.5 before:z-0 before:rounded-sm before:[corner-shape:var(--cs)] before:transition-[background] before:content-[''] hover:before:bg-hover [&>*]:relative [&>*]:z-[1]" {...stylex.props(sx.relative, sx.mlAuto, sx.inlineFlex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.textFaint, sx.opacity100, sx.duration150)}
+									tabIndex={0} {...mergeStylexProps("transition-[opacity,color] hover:text-fg focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100 before:absolute before:inset-0.5 before:z-0 before:rounded-sm before:[corner-shape:var(--cs)] before:transition-[background] before:content-[''] hover:before:bg-hover [&>*]:relative [&>*]:z-[1]", sx.relative, sx.mlAuto, sx.inlineFlex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.textFaint, sx.opacity100, sx.duration150)}
 									title={
 										repo === ASK_BAND
 											? "New Ask session, no repo"
@@ -4837,7 +4805,7 @@ fetchFeedItems("plain")
 						<span className={SIDEBAR_RAIL}>
 							<RepoTile name={feed.id} className={SIDEBAR_REPO_TILE} />
 						</span>
-						<span className="desktop:gap-[9px]" {...stylex.props(sx.flex, sx.minW0, sx.flex01Auto, sx.itemsBaseline, sx.gap15)}>
+						<span {...mergeStylexProps("desktop:gap-[9px]", sx.flex, sx.minW0, sx.flex01Auto, sx.itemsBaseline, sx.gap15)}>
 							<span className={cn(SIDEBAR_GROUP_NAME, "flex-[0_1_auto] font-semibold")}>{feed.title}</span>
 							<span className={cn(SIDEBAR_GROUP_COUNT, "shrink-0")}>{count}</span>
 						</span>
@@ -5073,7 +5041,7 @@ fetchFeedItems("plain")
 				// Feed.
 				if (tool.id !== "feed" || team.length === 0) return row;
 				return (
-					<div key={tool.id} className="group/team-lens" {...stylex.props(sx.relative)}>
+					<div key={tool.id} {...mergeStylexProps("group/team-lens", sx.relative)}>
 						{row}
 						<TeamLensMenu
 							members={team}
@@ -5090,12 +5058,7 @@ fetchFeedItems("plain")
 							label={personLensName}
 							onPick={(next) =>
 								setFilter({ person: personLensFilter(next, currentUser) })
-							}
-							// Phones pad the trigger out to the row's own height so
-							// the faces are a thumb-sized target rather than a 24px
-							// one. It stays a pill either way, so the padding is only
-							// reach: nothing about it reads larger at rest.
-							className="phone:py-2.5 group-hover/team-lens:[--team-face-ring:var(--row-chip)] data-[popup-open]:[--team-face-ring:var(--row-chip)]" {...stylex.props(sx.absolute, sx.right2, sx.top12, sx.TranslateY12, sx.TeamFaceRingVarSidebarBg)}
+							} {...mergeStylexProps("phone:py-2.5 group-hover/team-lens:[--team-face-ring:var(--row-chip)] data-[popup-open]:[--team-face-ring:var(--row-chip)]", sx.absolute, sx.right2, sx.top12, sx.TranslateY12, sx.TeamFaceRingVarSidebarBg)}
 						/>
 					</div>
 				);
@@ -5142,16 +5105,14 @@ fetchFeedItems("plain")
 					{/* The bar reports the active lens. Closing it is a separate
 					    action at the far edge, so the label stays visually stable and
 					    the close control gets a full touch target. */}
-					<div
-						className="phone:text-base" {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.textSm, sx.textFg)}
+					<div {...mergeStylexProps("phone:text-base", sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.textSm, sx.textFg)}
 						ref={(node) => {
 							titleRef.current = node;
 						}}
 					>
 						{filter.person === "everyone" ? (
 							<IconPeople
-								size={20}
-								className="phone:-translate-y-px" {...stylex.props(sx.shrink0, sx.translateY05px, sx.textDim)}
+								size={20} {...mergeStylexProps("phone:-translate-y-px", sx.shrink0, sx.translateY05px, sx.textDim)}
 							/>
 						) : (
 							filter.person !== "unassigned" && (
@@ -5171,8 +5132,7 @@ fetchFeedItems("plain")
 						</span>
 					</div>
 					<Tooltip label="Back to your workspaces">
-						<button
-							className="transition-[color,scale] before:absolute before:inset-2 before:rounded-md before:transition-colors before:content-[''] hover:text-fg hover:before:bg-hover active:scale-[0.96] phone:size-11 motion-reduce:transform-none [&>*]:relative [&>*]:z-[1]" {...stylex.props(sx.relative, sx.flex, sx.size10, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.border0, sx.bgTransparent, sx.textDim)}
+						<button {...mergeStylexProps("transition-[color,scale] before:absolute before:inset-2 before:rounded-md before:transition-colors before:content-[''] hover:text-fg hover:before:bg-hover active:scale-[0.96] phone:size-11 motion-reduce:transform-none [&>*]:relative [&>*]:z-[1]", sx.relative, sx.flex, sx.size10, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.border0, sx.bgTransparent, sx.textDim)}
 							onClick={() => setFilter({ person: "me" })}
 							aria-label="Back to your workspaces"
 						>
@@ -5373,7 +5333,7 @@ fetchFeedItems("plain")
 
 				{/* Fallback row: only when the chip doesn't fit inline. */}
 				{filter.repo !== "all" && !repoInline && (
-					<div className="md:mr-2 md:ml-4" {...stylex.props(sx.mx4, sx.mt2px, sx.mb2, sx.flex, sx.minW0)}>
+					<div {...mergeStylexProps("md:mr-2 md:ml-4", sx.mx4, sx.mt2px, sx.mb2, sx.flex, sx.minW0)}>
 						<RepoFilterChip
 							repo={filter.repo}
 							repos={repos}
@@ -6322,7 +6282,7 @@ fetchFeedItems("plain")
 										)}
 										{open &&
 											(group.totalItems || group.items.length) > group.items.length && (
-												<div className="tabular-nums" {...stylex.props(sx.px4, sx.pb1, sx.pt05, sx.textFaint, typography.meta)}>
+												<div {...mergeStylexProps("tabular-nums", sx.px4, sx.pb1, sx.pt05, sx.textFaint, typography.meta)}>
 													Latest {group.items.length} of {group.totalItems} runs
 												</div>
 											)}

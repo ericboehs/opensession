@@ -77,6 +77,7 @@ import {
 } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -590,8 +591,7 @@ export function WorkspaceSummary({
 		>
 			<Tooltip label="Workspace summary">
 				<Popover.Trigger
-          className="data-[popup-open]:bg-pressed data-[popup-open]:text-fg"
-          {...stylex.props(sx.trigger)}
+          {...mergeStylexProps("data-[popup-open]:bg-pressed data-[popup-open]:text-fg", sx.trigger)}
 					aria-label="Workspace summary"
 				>
 					<IconListCircles size={20} />
@@ -1005,8 +1005,7 @@ setFixBusy(false);
 				</span>
 				<span className={WS_SUMMARY_LABEL}>{commit.title}</span>
         <span
-          className={WS_SUMMARY_STATE}
-          {...stylex.props(sx.textDim, sx.tabularNums)}
+          {...mergeStylexProps(WS_SUMMARY_STATE, sx.textDim, sx.tabularNums)}
         >
 					{commit.filesChanged} file{commit.filesChanged === 1 ? "" : "s"}
 				</span>
@@ -1016,8 +1015,7 @@ setFixBusy(false);
 		return commit.url ? (
 			<a
 				key={commit.sha}
-        className={WS_SUMMARY_ROW}
-        {...stylex.props(sx.noUnderline)}
+        {...mergeStylexProps(WS_SUMMARY_ROW, sx.noUnderline)}
 				href={commit.url}
 				target="_blank"
 				rel="noopener"
@@ -1028,8 +1026,7 @@ setFixBusy(false);
 		) : (
 			<div
 				key={commit.sha}
-        className={WS_SUMMARY_ROW}
-        {...stylex.props(sx.cursorDefault)}
+        {...mergeStylexProps(WS_SUMMARY_ROW, sx.cursorDefault)}
 				title={title}
 			>
 				{content}
@@ -1056,8 +1053,7 @@ setFixBusy(false);
 					{commits.length} commit{commits.length === 1 ? "" : "s"}
 				</span>
         <span
-          className={WS_SUMMARY_STATE}
-          {...stylex.props(sx.textDim, sx.tabularNums)}
+          {...mergeStylexProps(WS_SUMMARY_STATE, sx.textDim, sx.tabularNums)}
         >
 					{files} file{files === 1 ? "" : "s"}
 				</span>
@@ -1072,12 +1068,10 @@ setFixBusy(false);
 
 	return (
 		<div
-      className={embedded ? "[&_button]:min-h-11 [&_a]:min-h-11" : undefined}
-      {...stylex.props(embedded ? sx.rootEmbedded : sx.contents)}
+      {...mergeStylexProps(embedded ? "[&_button]:min-h-11 [&_a]:min-h-11" : undefined, embedded ? sx.rootEmbedded : sx.contents)}
 		>
       <div
-        className={prGroupClass}
-        {...stylex.props(groupStyle, embedded && sx.py0)}
+        {...mergeStylexProps(prGroupClass, groupStyle, embedded && sx.py0)}
       >
 				{/* Which PR, where it stands, and the one thing to do about it. The
 				    strip owns all three; this card only says where they go. */}
@@ -1127,8 +1121,7 @@ setFixBusy(false);
 						<span className={WS_SUMMARY_LABEL}>Overview</span>
 						{reviewPage === "overview" ? (
               <span
-                className={WS_SUMMARY_STATE}
-                {...stylex.props(sx.textAccent)}
+                {...mergeStylexProps(WS_SUMMARY_STATE, sx.textAccent)}
               >
                 Viewing
               </span>
@@ -1148,8 +1141,7 @@ setFixBusy(false);
 						<span className={WS_SUMMARY_LABEL}>Files</span>
 						{reviewPage === "files" ? (
               <span
-                className={WS_SUMMARY_STATE}
-                {...stylex.props(sx.textAccent)}
+                {...mergeStylexProps(WS_SUMMARY_STATE, sx.textAccent)}
               >
                 Viewing
               </span>
@@ -1165,16 +1157,14 @@ setFixBusy(false);
 				    to review. Its action opens the complete workspace review; the final row
 				    owns the picker, so neither action requires the workspace panel. */}
 				<div
-          className={WS_SUMMARY_SECTION}
-          {...stylex.props(sx.justifyBetween, embedded ? sx.h11 : sx.h7)}
+          {...mergeStylexProps(WS_SUMMARY_SECTION, sx.justifyBetween, embedded ? sx.h11 : sx.h7)}
 				>
 					<span>Review</span>
 					{!reviewMode && (
 						<Button
 							variant="ghost"
 							size="sm"
-              className="phone:min-h-11"
-              {...stylex.props(sx.minH6, sx.px2, typography.meta)}
+              {...mergeStylexProps("phone:min-h-11", sx.minH6, sx.px2, typography.meta)}
 							onClick={() => go(onOpenPr)}
 						>
 							Open
@@ -1184,8 +1174,7 @@ setFixBusy(false);
 			{showOsReview && (
 				<>
 					<button
-              className={WS_SUMMARY_ROW}
-              {...stylex.props(sx.disabledRow)}
+              {...mergeStylexProps(WS_SUMMARY_ROW, sx.disabledRow)}
 						onClick={
 							osReviewActive
 								? () => void cancelOsReview()
@@ -1208,8 +1197,7 @@ setFixBusy(false);
 						<span className={WS_SUMMARY_RAIL}>
 							<IconRobot
 								size={20}
-                  className={WS_SUMMARY_ICON}
-                  {...stylex.props(osReviewActive && sx.animatePulse)}
+                  {...mergeStylexProps(WS_SUMMARY_ICON, osReviewActive && sx.animatePulse)}
 							/>
 						</span>
 						<span className={WS_SUMMARY_LABEL}>
@@ -1238,21 +1226,17 @@ setFixBusy(false);
 							</span>
 						) : canFixOsReview ? (
                 <span
-                  className={WS_SUMMARY_ACTION}
-                  {...stylex.props(sx.textRed)}
+                  {...mergeStylexProps(WS_SUMMARY_ACTION, sx.textRed)}
                 >
 								{fixBusy ? "Starting…" : "Fix"}
 							</span>
 						) : (
 							<span
-                  className={WS_SUMMARY_STATE}
-                  {...stylex.props(
-									osReview?.stale
+                  {...mergeStylexProps(WS_SUMMARY_STATE, osReview?.stale
                       ? sx.textFaint
 										: osReview?.blocking
                         ? sx.textRed
-                        : sx.textDim,
-								)}
+                        : sx.textDim)}
 							>
 								{osReviewState}
 							</span>
@@ -1290,8 +1274,7 @@ setFixBusy(false);
 					</span>
 					<span className={WS_SUMMARY_LABEL}>{reviewer.name}</span>
             <span
-              className={WS_SUMMARY_STATE}
-              {...stylex.props(toneStyle(reviewer.tone))}
+              {...mergeStylexProps(WS_SUMMARY_STATE, toneStyle(reviewer.tone))}
             >
 						{reviewer.state}
 					</span>
@@ -1316,8 +1299,7 @@ setFixBusy(false);
 						</span>
 						<span className={WS_SUMMARY_LABEL}>{reviewer.name}</span>
               <span
-                className={WS_SUMMARY_STATE}
-                {...stylex.props(toneStyle(reviewer.tone))}
+                {...mergeStylexProps(WS_SUMMARY_STATE, toneStyle(reviewer.tone))}
               >
 							{reviewer.state}
 						</span>
@@ -1331,8 +1313,7 @@ setFixBusy(false);
 						</span>
 						<span className={WS_SUMMARY_LABEL}>No reviewers</span>
               <span
-                className={WS_SUMMARY_ACTION}
-                {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap05)}
+                {...mergeStylexProps(WS_SUMMARY_ACTION, sx.inlineFlex, sx.itemsCenter, sx.gap05)}
               >
 							Add
 							<IconChevronDown size={14} />
@@ -1411,30 +1392,14 @@ setFixBusy(false);
 						   chevron waits for the cursor, so a card at rest keeps a plain
 						   label like every other section. */
 						<button
-              className={`${WS_SUMMARY_SECTION} group/committed`}
-              {...stylex.props(
-                sx.wFull,
-                sx.cursorPointer,
-                sx.justifyBetween,
-                sx.gap2,
-                sx.borderNone,
-                sx.bgTransparent,
-                sx.textLeft,
-							)}
+              {...mergeStylexProps(`${WS_SUMMARY_SECTION} group/committed`, sx.wFull, sx.cursorPointer, sx.justifyBetween, sx.gap2, sx.borderNone, sx.bgTransparent, sx.textLeft)}
 							onClick={() => setCommitsOpen((open) => !open)}
 							aria-expanded={commitsOpen}
 						>
 							<span>Committed</span>
 							<IconChevronDown
 								size={14}
-                className="group-hover/committed:opacity-100 group-focus-visible/committed:opacity-100"
-                {...stylex.props(
-                  sx.chevron,
-                  sx.transitionTransformOpacity,
-                  sx.opacity0,
-                  commitsOpen && sx.rotate180,
-                  commitsOpen && sx.opacity100,
-								)}
+                {...mergeStylexProps("group-hover/committed:opacity-100 group-focus-visible/committed:opacity-100", sx.chevron, sx.transitionTransformOpacity, sx.opacity0, commitsOpen && sx.rotate180, commitsOpen && sx.opacity100)}
 							/>
 						</button>
 					) : (
@@ -1485,12 +1450,12 @@ setFixBusy(false);
 					    separates this band from the assets under it is still the
 					    source: one is what appeared in the conversation, the other is
 					    what the session wrote. Same word the Workspace panel uses. */}
-          <div className={WS_SUMMARY_SECTION} {...stylex.props(sx.sectionGap)}>
+          <div {...mergeStylexProps(WS_SUMMARY_SECTION, sx.sectionGap)}>
 						<span>Screenshots</span>
 						{/* Every frame is available in the strip. Keep the count beside
 						    the label so the heading reads as one fact rather than two
 						    ends of a row. */}
-            <span className={WS_SUMMARY_COUNT} {...stylex.props(sx.textFaint)}>
+            <span {...mergeStylexProps(WS_SUMMARY_COUNT, sx.textFaint)}>
 							{media.length}
 						</span>
 					</div>
@@ -1502,12 +1467,7 @@ setFixBusy(false);
 							<button
 								key={`${item.sessionId}:${item.at}:${index}`}
 								type="button"
-								// One width for every frame, a lone one included. A single
-								// picture taken up to the card's width reads as a hero in a
-								// list of quiet rows, and pushes everything under it a
-								// screenshot's height down for no more information.
-                className={WS_SUMMARY_FRAME}
-                {...stylex.props(sx.frameWidth)}
+                {...mergeStylexProps(WS_SUMMARY_FRAME, sx.frameWidth)}
 								// Open the same complete set shown in the strip. The card stays
 								// up behind it while the lightbox pages between frames.
 								onClick={(event) =>
@@ -1537,15 +1497,7 @@ setFixBusy(false);
                         )}
                       >
                         <span
-                          className="backdrop-blur-sm"
-                          {...stylex.props(
-                            sx.grid,
-                            sx.size7,
-                            sx.placeItemsCenter,
-                            sx.roundedFull,
-                            sx.bgBlack45,
-                            sx.textWhite,
-                          )}
+                          {...mergeStylexProps("backdrop-blur-sm", sx.grid, sx.size7, sx.placeItemsCenter, sx.roundedFull, sx.bgBlack45, sx.textWhite)}
                         >
 													<IconPlay size={16} />
 												</span>
@@ -1569,14 +1521,12 @@ setFixBusy(false);
 			{assets.length > 0 && (
         <div {...stylex.props(groupStyle)}>
 					<div
-            className={`${WS_SUMMARY_SECTION} group/assets`}
-            {...stylex.props(sx.justifyBetween, sx.gap2)}
+            {...mergeStylexProps(`${WS_SUMMARY_SECTION} group/assets`, sx.justifyBetween, sx.gap2)}
 					>
 						<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap15)}>
 							<span>Assets</span>
               <span
-                className={WS_SUMMARY_COUNT}
-                {...stylex.props(sx.textFaint)}
+                {...mergeStylexProps(WS_SUMMARY_COUNT, sx.textFaint)}
               >
 								{assets.length}
 							</span>
@@ -1589,13 +1539,7 @@ setFixBusy(false);
 								<button
 									key={file.path}
 									type="button"
-									// One width, however many there are: two frames plus a
-									// sliver of the next is what says the strip scrolls, and a
-									// lone picture blown up to the card reads as a hero in a
-									// list of quiet rows. It also keeps the two strips the same
-									// size when a card shows both.
-                  className={WS_SUMMARY_FRAME}
-                  {...stylex.props(sx.frameWidth)}
+                  {...mergeStylexProps(WS_SUMMARY_FRAME, sx.frameWidth)}
 									onClick={() => openAsset(file.path)}
 									title={file.path}
 								>
@@ -1625,15 +1569,7 @@ setFixBusy(false);
                           )}
                         >
                           <span
-                            className="backdrop-blur-sm"
-                            {...stylex.props(
-                              sx.grid,
-                              sx.size7,
-                              sx.placeItemsCenter,
-                              sx.roundedFull,
-                              sx.bgBlack45,
-                              sx.textWhite,
-                            )}
+                            {...mergeStylexProps("backdrop-blur-sm", sx.grid, sx.size7, sx.placeItemsCenter, sx.roundedFull, sx.bgBlack45, sx.textWhite)}
                           >
 														<IconPlay size={16} />
 													</span>
@@ -1706,7 +1642,7 @@ setFixBusy(false);
 					{assetView === "list" && assetsHidden > 0 && (
 						<button className={WS_SUMMARY_ROW} onClick={() => go(onOpenAssets)}>
 							<span className={WS_SUMMARY_RAIL} />
-              <span className={WS_SUMMARY_LABEL} {...stylex.props(sx.textDim)}>
+              <span {...mergeStylexProps(WS_SUMMARY_LABEL, sx.textDim)}>
 								View all {assets.length}
 							</span>
 						</button>

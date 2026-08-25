@@ -12,6 +12,7 @@ import { noAutofill } from "../lib/composer-autofill";
 import { noteSurface } from "../lib/tinted-surface";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -232,15 +233,7 @@ setBusy(false);
 	}
 
 	return (
-		<div
-			// A note is a transcript block like any other, so it takes the same
-			// centered reading column the turns, footers and walkthrough cards use
-			// (mx-auto + --session-col) instead of spanning the whole pane, and the
-			// same mt-2/mb-6 rhythm as the column's other card blocks (AskCard,
-			// WalkthroughCard) so it doesn't crowd whatever follows it.
-			//
-			// `group` so the actions can stay quiet until the note is hovered.
-			className="group" {...stylex.props(sx.relative, sx.mxAuto, sx.mb6, sx.mt2, sx.wFull, sx.maxWVarSessionCol, sx.rounded2xl, sx.px4, sx.py35)}
+		<div {...mergeStylexProps("group", sx.relative, sx.mxAuto, sx.mb6, sx.mt2, sx.wFull, sx.maxWVarSessionCol, sx.rounded2xl, sx.px4, sx.py35)}
 			style={{ background: noteSurface("transparent") }}
 		>
 			<div {...stylex.props(sx.mb1, sx.flex, sx.itemsCenter, sx.gap2)}>
@@ -261,11 +254,7 @@ setBusy(false);
 					<Menu.Root>
 						<Menu.Trigger
 							aria-label="Note actions"
-							// Quiet until you want it: visible on hover, on keyboard
-							// focus, and while its own menu is open — never hover-only,
-							// which would strand touch and keyboard.
-							className="group-hover:opacity-100 data-[popup-open]:bg-hover data-[popup-open]:text-fg data-[popup-open]:opacity-100"
-							{...stylex.props(sx.mlAuto, sx.flex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.border0, sx.bgTransparent, sx.textDim, sx.opacity0, sx.transitionOpacity, sx.menuInteractive)}
+							{...mergeStylexProps("group-hover:opacity-100 data-[popup-open]:bg-hover data-[popup-open]:text-fg data-[popup-open]:opacity-100", sx.mlAuto, sx.flex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.border0, sx.bgTransparent, sx.textDim, sx.opacity0, sx.transitionOpacity, sx.menuInteractive)}
 						>
 							<IconDotsHorizontal size={16} />
 						</Menu.Trigger>
@@ -310,15 +299,13 @@ setBusy(false);
 								e.preventDefault();
 								void save();
 							}
-						}}
-						className="border-[color:color-mix(in_srgb,var(--yellow-tint)_45%,transparent)] focus-visible:border-[color:var(--yellow)]" {...stylex.props(sx.wFull, sx.resizeNone, sx.roundedLg, sx.border, sx.bgSurface, sx.px25, sx.py2, sx.leadingRelaxed, sx.textFg, sx.outlineNone, typography.body)}
+						}} {...mergeStylexProps("border-[color:color-mix(in_srgb,var(--yellow-tint)_45%,transparent)] focus-visible:border-[color:var(--yellow)]", sx.wFull, sx.resizeNone, sx.roundedLg, sx.border, sx.bgSurface, sx.px25, sx.py2, sx.leadingRelaxed, sx.textFg, sx.outlineNone, typography.body)}
 					/>
 					<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
 						<button
 							type="button"
 							onClick={() => void save()}
-							disabled={busy || !draft.trim()}
-							className="enabled:hover:bg-accent-hover disabled:cursor-default disabled:opacity-50" {...stylex.props(sx.roundedControl, sx.bgAccent, sx.px25, sx.py1, sx.fontMedium, sx.textOnAccent, typography.label)}
+							disabled={busy || !draft.trim()} {...mergeStylexProps("enabled:hover:bg-accent-hover disabled:cursor-default disabled:opacity-50", sx.roundedControl, sx.bgAccent, sx.px25, sx.py1, sx.fontMedium, sx.textOnAccent, typography.label)}
 						>
 							Save
 						</button>
@@ -328,8 +315,7 @@ setBusy(false);
 								setEditing(false);
 								setDraft(note.text);
 							}}
-							disabled={busy}
-							className="hover:bg-hover hover:text-fg" {...stylex.props(sx.roundedControl, sx.px25, sx.py1, sx.fontMedium, sx.textDim, typography.label)}
+							disabled={busy} {...mergeStylexProps("hover:bg-hover hover:text-fg", sx.roundedControl, sx.px25, sx.py1, sx.fontMedium, sx.textDim, typography.label)}
 						>
 							Cancel
 						</button>

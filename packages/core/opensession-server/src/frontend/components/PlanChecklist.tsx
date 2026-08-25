@@ -1,6 +1,7 @@
 import type { PlanItem } from "@tellahq/opensession-protocol/todo-plan";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -63,7 +64,7 @@ export function PlanChecklist({ items, max, live = false, className }: Props) {
 	const shown = max && items.length > max ? items.slice(0, max) : items;
 	const hidden = items.length - shown.length;
 	return (
-    <ol className={className} {...stylex.props(sx.list, typography.label)}>
+    <ol {...mergeStylexProps(className, sx.list, typography.label)}>
 			{shown.map((item, i) => (
 				<li
 					key={`${i}-${item.content}`}

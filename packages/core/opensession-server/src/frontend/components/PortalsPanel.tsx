@@ -13,6 +13,7 @@ import { IconArrowUpRight } from "./icons";
 import { PanelPageHeader } from "./PanelPageHeader";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -281,14 +282,7 @@ export function PortalsPage({
 					trailing={
 						liveCount > 0 && (
               <span
-                className="tabular-nums"
-                {...stylex.props(
-                  sx.shrink0,
-                  sx.px1,
-                  sx.fontSemibold,
-                  sx.textFaint,
-                  typography.label,
-                )}
+                {...mergeStylexProps("tabular-nums", sx.shrink0, sx.px1, sx.fontSemibold, sx.textFaint, typography.label)}
               >
 								{liveCount} live
 							</span>
@@ -320,8 +314,7 @@ export function PortalsPage({
 						<div className={INFO_SECTION_CLASS}>
 							<div className={INFO_LABEL_CLASS}>Start a portal</div>
                 <div
-                  className={PORTAL_LIST_RESIDUAL_CLASS}
-                  {...stylex.props(sx.grid)}
+                  {...mergeStylexProps(PORTAL_LIST_RESIDUAL_CLASS, sx.grid)}
                 >
 								{recipes.map((recipe) => {
 									const service = recipe.serviceKey
@@ -357,20 +350,7 @@ export function PortalsPage({
                             )
 													.finally(() => setRequestedId(null));
 											}}
-                        className="transition-[background-color,scale] hover:bg-hover active:scale-[0.96] disabled:cursor-default disabled:opacity-45"
-                        {...stylex.props(
-                          sx.focusRing,
-                          sx.flex,
-                          sx.minH11,
-                          sx.wFull,
-                          sx.minW0,
-                          sx.itemsCenter,
-                          sx.gap3,
-                          sx.roundedControl,
-                          sx.px2,
-                          sx.py15,
-                          sx.textLeft,
-                        )}
+                        {...mergeStylexProps("transition-[background-color,scale] hover:bg-hover active:scale-[0.96] disabled:cursor-default disabled:opacity-45", sx.focusRing, sx.flex, sx.minH11, sx.wFull, sx.minW0, sx.itemsCenter, sx.gap3, sx.roundedControl, sx.px2, sx.py15, sx.textLeft)}
 										>
 											<span {...stylex.props(sx.minW0, sx.flex1)}>
                           <span
@@ -386,13 +366,7 @@ export function PortalsPage({
                           </span>
 												{recipe.description ? (
                             <span
-                              className="line-clamp-2"
-                              {...stylex.props(
-                                sx.mt05,
-                                sx.block,
-                                sx.textDim,
-                                typography.supporting,
-                              )}
+                              {...mergeStylexProps("line-clamp-2", sx.mt05, sx.block, sx.textDim, typography.supporting)}
                             >
                               {recipe.description}
                             </span>
@@ -423,8 +397,7 @@ export function PortalsPage({
 							<div className={INFO_LABEL_CLASS}>Services</div>
 						)}
               <div
-                className={PORTAL_LIST_RESIDUAL_CLASS}
-                {...stylex.props(sx.grid)}
+                {...mergeStylexProps(PORTAL_LIST_RESIDUAL_CLASS, sx.grid)}
               >
 							{services.length ? (
 								services.map((service) => {
@@ -436,28 +409,13 @@ export function PortalsPage({
 									return (
 										<div
 											key={service.key}
-                        className="group"
-                        {...stylex.props(
-                          sx.serviceRow,
-                          active ? sx.active : sx.inactive,
-											)}
+                        {...mergeStylexProps("group", sx.serviceRow, active ? sx.active : sx.inactive)}
 										>
 											<button
 												type="button"
 												disabled={!target}
 												onClick={() => target && onOpenPortal?.(target)}
-                          className="disabled:cursor-default"
-                          {...stylex.props(
-                            sx.flex,
-                            sx.minW0,
-                            sx.flex1,
-                            sx.itemsCenter,
-                            sx.gap2,
-                            sx.roundedControl,
-                            sx.px2,
-                            sx.py5px,
-                            sx.textLeft,
-                          )}
+                          {...mergeStylexProps("disabled:cursor-default", sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.px2, sx.py5px, sx.textLeft)}
 											>
 												<span
                             {...stylex.props(
@@ -493,18 +451,7 @@ export function PortalsPage({
 													href={target.url}
 													target="_blank"
 													rel="noopener"
-                            className="transition-[color,opacity] phone:opacity-100 hover:text-fg group-hover:opacity-100 focus-visible:opacity-100"
-                            {...stylex.props(
-                              sx.focusRing,
-                              sx.inlineFlex,
-                              sx.size11,
-                              sx.shrink0,
-                              sx.itemsCenter,
-                              sx.justifyCenter,
-                              sx.roundedControl,
-                              sx.textFaint,
-                              sx.opacity0,
-                            )}
+                            {...mergeStylexProps("transition-[color,opacity] phone:opacity-100 hover:text-fg group-hover:opacity-100 focus-visible:opacity-100", sx.focusRing, sx.inlineFlex, sx.size11, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textFaint, sx.opacity0)}
 													aria-label={`Open ${service.name} in a separate browser window`}
 													title="Open in browser"
 												>
@@ -513,14 +460,7 @@ export function PortalsPage({
 											) : null}
 											{service.managed && onPortalAction ? (
                           <div
-                            className="phone:opacity-100 group-hover:opacity-100 focus-within:opacity-100"
-                            {...stylex.props(
-                              sx.flex,
-                              sx.shrink0,
-                              sx.itemsCenter,
-                              sx.opacity0,
-                              sx.transitionOpacity,
-                            )}
+                            {...mergeStylexProps("phone:opacity-100 group-hover:opacity-100 focus-within:opacity-100", sx.flex, sx.shrink0, sx.itemsCenter, sx.opacity0, sx.transitionOpacity)}
                           >
 													<button
 														type="button"
@@ -538,17 +478,7 @@ export function PortalsPage({
                                   )
 																.finally(() => setWorking(null));
 														}}
-                              className="phone:min-h-11 hover:text-fg disabled:opacity-45"
-                              {...stylex.props(
-                                sx.focusRing,
-                                sx.roundedControl,
-                                sx.px15,
-                                sx.py1,
-                                sx.fontSemibold,
-                                sx.textFaint,
-                                sx.transitionColors,
-                                typography.label,
-                              )}
+                              {...mergeStylexProps("phone:min-h-11 hover:text-fg disabled:opacity-45", sx.focusRing, sx.roundedControl, sx.px15, sx.py1, sx.fontSemibold, sx.textFaint, sx.transitionColors, typography.label)}
 													>
 														Restart
 													</button>
@@ -570,17 +500,7 @@ export function PortalsPage({
                                   )
 																.finally(() => setWorking(null));
 														}}
-                              className="phone:min-h-11 hover:text-red disabled:opacity-45"
-                              {...stylex.props(
-                                sx.focusRing,
-                                sx.roundedControl,
-                                sx.px15,
-                                sx.py1,
-                                sx.fontSemibold,
-                                sx.textRed,
-                                sx.transitionColors,
-                                typography.label,
-                              )}
+                              {...mergeStylexProps("phone:min-h-11 hover:text-red disabled:opacity-45", sx.focusRing, sx.roundedControl, sx.px15, sx.py1, sx.fontSemibold, sx.textRed, sx.transitionColors, typography.label)}
 													>
 														Stop
 													</button>

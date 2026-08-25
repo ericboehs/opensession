@@ -5,6 +5,7 @@ import { Menu } from "../ui/menu";
 import { IconRestore, IconRobot } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -82,8 +83,7 @@ export function ArchivedSessionItems({ sessions, onSelect, onRestore }: Props) {
 					<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>{s.title}</span>
 					<span {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}>{relativeTime(s.lastActivity)}</span>
 					<button
-						type="button"
-						className="hover:text-fg" {...stylex.props(sx.flex, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.roundedControl, sx.border0, sx.bgTransparent, sx.p05, sx.textDim)}
+						type="button" {...mergeStylexProps("hover:text-fg", sx.flex, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.roundedControl, sx.border0, sx.bgTransparent, sx.p05, sx.textDim)}
 						aria-label="Restore session"
 						title="Restore to tabs"
 						onClick={(e) => {

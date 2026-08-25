@@ -1,7 +1,7 @@
 import { BASE_PATH } from "../lib/base";
 import React, { useEffect, useRef, useState } from "react";
 import { Button } from "../ui/button";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import {
 	composerBox,
 	composerBoxExpanded,
@@ -294,8 +294,7 @@ function MessageText({ text }: { text: string }) {
 					key={key++}
 					href={href}
 					target="_blank"
-					rel="noreferrer"
-					className="decoration-line hover:decoration-current" {...stylex.props(sx.textLink, sx.underline, sx.underlineOffset2)}
+					rel="noreferrer" {...mergeStylexProps("decoration-line hover:decoration-current", sx.textLink, sx.underline, sx.underlineOffset2)}
 				>
 					{label}
 				</a>,
@@ -305,7 +304,7 @@ function MessageText({ text }: { text: string }) {
 	}
 	if (last < text.length) parts.push(text.slice(last));
 	return (
-		<div className="select-text" {...stylex.props(sx.whitespacePreWrap, sx.breakWords, sx.leadingSnug, sx.textFg, typography.body)}>
+		<div {...mergeStylexProps("select-text", sx.whitespacePreWrap, sx.breakWords, sx.leadingSnug, sx.textFg, typography.body)}>
 			{parts}
 		</div>
 	);
@@ -389,7 +388,7 @@ setLoadingReplies(false);
 			)}
 			<div {...stylex.props(sx.minW0, sx.flex1)}>
 				<div {...stylex.props(sx.flex, sx.itemsBaseline, sx.gap2)}>
-					<span className="select-text" {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>
+					<span {...mergeStylexProps("select-text", sx.fontSemibold, sx.textFg, typography.itemTitle)}>
 						{m.userName}
 					</span>
 					<span {...stylex.props(sx.textFaint, typography.meta)}>{timeOf(m.ts)}</span>
@@ -397,8 +396,7 @@ setLoadingReplies(false);
 				<MessageText text={m.text} />
 				<ReactionPills reactions={m.reactions} />
 				{depth === 0 && (m.replyCount || 0) > 0 && (
-					<button
-						className="hover:underline" {...stylex.props(sx.mt1, sx.fontMedium, sx.textLink, typography.meta)}
+					<button {...mergeStylexProps("hover:underline", sx.mt1, sx.fontMedium, sx.textLink, typography.meta)}
 						onClick={toggleThread}
 					>
 						{expanded
@@ -566,7 +564,7 @@ setSending(false);
 	}
 
 	return (
-		<div className={className} {...stylex.props(sx.flex, sx.hFull, sx.minH0, sx.flexCol)}>
+		<div {...mergeStylexProps(className, sx.flex, sx.hFull, sx.minH0, sx.flexCol)}>
 			<div
 				ref={scrollRef}
 				{...stylex.props(sx.minH0, sx.flex1, sx.overflowYAuto)}
@@ -615,22 +613,18 @@ setSending(false);
 				{/* `composer` stays as a hook: base.css and legacy.css key phone
 				    keyboard/shadow behaviour off the class name. */}
 				<div
-					className={cn(
+					{...mergeStylexProps(cn(
 						"composer",
 						composerBox,
 						composerBoxExpanded,
-					)}
-					{...stylex.props(!asUser && sx.opacity60)}
+					), !asUser && sx.opacity60)}
 				>
 					<textarea
-						// `composer-textarea` stays as a class NAME hook (the sidebar
-						// swipe guard and SessionViewer's global keys look for it).
-						className={cn(
+						{...mergeStylexProps(cn(
 							"composer-textarea",
 							composerTextarea,
 							composerTextareaPadding,
-						)}
-						{...stylex.props(sx.textFgPlaceholderFaint)}
+						), sx.textFgPlaceholderFaint)}
 						style={{ minHeight: 48 }}
 						placeholder={
 							asUser

@@ -8,6 +8,7 @@ import { duration, ease } from "../ui/motion";
 import { Tooltip } from "../ui/tooltip";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -64,8 +65,7 @@ export function DesktopLinkToast() {
 		<AnimatePresence>
 			{!dismissed && (
 				<motion.div
-					className={PERSISTENT_NOTICE_CARD}
-					{...stylex.props(sx.animationNone)}
+					{...mergeStylexProps(PERSISTENT_NOTICE_CARD, sx.animationNone)}
 					role="region"
 					aria-label="View in the app"
 					initial={{ opacity: 0, x: -12 }}

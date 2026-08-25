@@ -4,6 +4,7 @@ import { IconArrowDownRight } from "./icons";
 import { shortModelLabel } from "./ModelEffortSelect";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -106,8 +107,7 @@ export function SessionRelations({
 					    The glyph and the number take that room instead, and the
 					    accessible name still spells it out. */}
 					<Menu.Trigger
-            className="data-[popup-open]:bg-hover data-[popup-open]:text-fg"
-            {...stylex.props(sx.chip, typography.label)}
+            {...mergeStylexProps("data-[popup-open]:bg-hover data-[popup-open]:text-fg", sx.chip, typography.label)}
 						aria-label={workerLabel}
 						title={workerLabel}
 					>

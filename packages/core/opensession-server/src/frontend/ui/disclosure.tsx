@@ -1,6 +1,6 @@
 import * as React from "react";
 import { IconChevronRight } from "../components/icons";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import { Collapsible, collapsiblePanelClasses } from "./collapsible";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -121,14 +121,13 @@ export function Disclosure({
 	children: React.ReactNode;
 }) {
 	return (
-		<Collapsible.Root defaultOpen={defaultOpen} className={cn(className)} {...stylex.props(sx.minW0)}>
+		<Collapsible.Root defaultOpen={defaultOpen} {...mergeStylexProps(cn(className), sx.minW0)}>
 			<div {...stylex.props(sx.flex, sx.minW0, sx.flexWrap, sx.itemsCenter, sx.justifyBetween, sx.gapX3, sx.gapY15)}>
 				{/* -mx-2 lets the row's hover wash bleed past the text without
 				    indenting the title away from the content it labels. */}
-				<Collapsible.Trigger className="group hover:bg-hover" {...stylex.props(sx.focusRing, sx.Mx2, sx.flex, sx.minW0, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.px2, sx.py1, sx.fontSemibold, sx.textFg, sx.transitionColors, typography.label)}>
+				<Collapsible.Trigger {...mergeStylexProps("group hover:bg-hover", sx.focusRing, sx.Mx2, sx.flex, sx.minW0, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.px2, sx.py1, sx.fontSemibold, sx.textFg, sx.transitionColors, typography.label)}>
 					<IconChevronRight
-						size={14}
-						className="group-data-[panel-open]:rotate-90" {...stylex.props(sx.shrink0, sx.textFaint, sx.transitionTransform, sx.durationVarDurMicro, sx.easeVarEase)}
+						size={14} {...mergeStylexProps("group-data-[panel-open]:rotate-90", sx.shrink0, sx.textFaint, sx.transitionTransform, sx.durationVarDurMicro, sx.easeVarEase)}
 					/>
 					<span {...stylex.props(sx.minW0, sx.truncate)}>{title}</span>
 				</Collapsible.Trigger>

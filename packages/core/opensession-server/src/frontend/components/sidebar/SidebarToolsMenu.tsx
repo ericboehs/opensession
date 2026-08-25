@@ -7,7 +7,7 @@ import {
 	type SupportSurface,
 } from "../../lib/support-surface";
 import { ContextMenu, Menu, MENU_ICON } from "../../ui/menu";
-import { cn } from "../../ui/cn";
+import { cn, mergeStylexProps } from "../../ui/cn";
 import { IconDotsHorizontal, IconSliders } from "../icons";
 import * as stylex from "@stylexjs/stylex";
 
@@ -171,14 +171,7 @@ export function SidebarToolRows({
 							    registers as a child menu, so opening it leaves the menu it
 							    sits in up. */}
 							<Menu.Root>
-								<Menu.Trigger
-									// A control on a row, not a row. It sits in the gap the
-									// row's `pr-16` keeps clear, just inside the tick.
-									// Square, with the glyph centred in it: a block button around
-									// an inline SVG is 4px taller than it is wide, because the
-									// line box keeps room under the glyph for a descender, and
-									// the dots then sit 2px high of the box they light up.
-									className="hover:bg-hover data-[popup-open]:bg-hover" {...stylex.props(sx.absolute, sx.top12, sx.right9, sx.flex, sx.size7, sx.TranslateY12, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.p0, sx.textFaint)}
+								<Menu.Trigger {...mergeStylexProps("hover:bg-hover data-[popup-open]:bg-hover", sx.absolute, sx.top12, sx.right9, sx.flex, sx.size7, sx.TranslateY12, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.p0, sx.textFaint)}
 									aria-label="Where support tickets live"
 								>
 									<IconDotsHorizontal size={20} />

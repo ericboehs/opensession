@@ -2,7 +2,7 @@ import { Toggle } from "@base-ui/react/toggle";
 import { ToggleGroup } from "@base-ui/react/toggle-group";
 import { motion } from "motion/react";
 import * as React from "react";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import { duration, ease } from "./motion";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -186,8 +186,7 @@ export function Segmented({
 				onValueChange={(next) => {
 					const picked = next[0];
 					if (picked !== undefined && picked !== value) onValueChange(picked);
-				}}
-				className={cn(className)} {...stylex.props(sx.inlineFlex, sx.roundedLg, sx.bgHover, sx.p05)}
+				}} {...mergeStylexProps(cn(className), sx.inlineFlex, sx.roundedLg, sx.bgHover, sx.p05)}
 				{...props}
 			>
 				{children}
@@ -206,8 +205,7 @@ export function SegmentedOption({
 	const selected = current === value;
 	return (
 		<Toggle
-			value={value}
-			className={cn(optionSizes[size], "phone:px-3 phone:py-2 phone:text-item-title", selected ? "" : "hover:text-fg", "disabled:cursor-default disabled:text-faint disabled:hover:text-faint", className)} {...stylex.props(sx.relative, sx.cursorPointer, sx.roundedControl, sx.border0, sx.bgTransparent, typography.controlLabel, sx.fontMedium, sx.whitespaceNowrap, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase, selected && sx.textFg, !(selected) && sx.textDim)}
+			value={value} {...mergeStylexProps(cn(optionSizes[size], "phone:px-3 phone:py-2 phone:text-item-title", selected ? "" : "hover:text-fg", "disabled:cursor-default disabled:text-faint disabled:hover:text-faint", className), sx.relative, sx.cursorPointer, sx.roundedControl, sx.border0, sx.bgTransparent, typography.controlLabel, sx.fontMedium, sx.whitespaceNowrap, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase, selected && sx.textFg, !(selected) && sx.textDim)}
 			{...props}
 		>
 			{selected && <SegmentedKnob knobId={knobId} />}

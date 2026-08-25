@@ -1,6 +1,6 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import { PhoneTopBarAction } from "./top-bar";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -369,21 +369,19 @@ export function ResponsiveDialog({
 			aria-hidden={parked || undefined}
 		>
 			{!phonePage && (
-				<div
-					className={cn(backdropClassName, animated && [
+				<div {...mergeStylexProps(cn(backdropClassName, animated && [
 							"transition-opacity",
 							phone
 								? "duration-[var(--dur-lg)]"
 								: "duration-[var(--dur)]",
 							shown ? "opacity-100" : "opacity-0",
-						])} {...stylex.props(sx.absolute, sx.inset0, sx.bgBlack45)}
+						]), sx.absolute, sx.inset0, sx.bgBlack45)}
 					onClick={onClose}
 				/>
 			)}
 			<div
 				ref={panelRef}
-				tabIndex={-1}
-				className={cn(phone
+				tabIndex={-1} {...mergeStylexProps(cn(phone
 						? phonePage
 							? "inset-0 h-dvh max-h-none rounded-none bg-surface pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] shadow-none"
 							: "inset-x-0 bottom-0 max-h-[94dvh] rounded-t-[calc(var(--sheet-radius,34px)*var(--rf))] bg-surface pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_40px_rgba(0,0,0,0.35)]"
@@ -396,7 +394,7 @@ export function ResponsiveDialog({
 							: [
 									"origin-center transition-[transform,opacity] duration-[var(--dur)] ease-[var(--ease)]",
 									shown ? "scale-100 opacity-100" : "scale-[0.96] opacity-0",
-								]), phone ? sheetClassName : modalClassName)} {...stylex.props(sx.absolute, sx.flex, sx.flexCol, sx.overflowHidden, sx.outlineNone, sx.CornerShapeSquircle)}
+								]), phone ? sheetClassName : modalClassName), sx.absolute, sx.flex, sx.flexCol, sx.overflowHidden, sx.outlineNone, sx.CornerShapeSquircle)}
 			>
 				{phone && !phonePage && showPhoneGrabber && (
 					<div
@@ -443,8 +441,7 @@ export function SheetBody({
 	children: React.ReactNode;
 }) {
 	return (
-		<div
-			className={cn(className)} {...stylex.props(sx.minH0, sx.overflowYAuto, sx.overscrollContain, sx.px25, sx.pb35)}
+		<div {...mergeStylexProps(cn(className), sx.minH0, sx.overflowYAuto, sx.overscrollContain, sx.px25, sx.pb35)}
 		>
 			{children}
 		</div>
@@ -460,7 +457,7 @@ export function SheetTitle({
 	children: React.ReactNode;
 }) {
 	return (
-		<div className={cn(className)} {...stylex.props(sx.truncate, sx.px3, sx.pb2, sx.pt15, typography.label, sx.textFaint)}>
+		<div {...mergeStylexProps(cn(className), sx.truncate, sx.px3, sx.pb2, sx.pt15, typography.label, sx.textFaint)}>
 			{children}
 		</div>
 	);
@@ -468,7 +465,7 @@ export function SheetTitle({
 
 /** Hairline between two groups of sheet actions. */
 export function SheetSeparator({ className }: { className?: string }) {
-	return <div className={cn(className)} {...stylex.props(sx.mx25, sx.my15, sx.hPx, sx.bgLine)} />;
+	return <div {...mergeStylexProps(cn(className), sx.mx25, sx.my15, sx.hPx, sx.bgLine)} />;
 }
 
 /**
@@ -498,8 +495,7 @@ export function SheetItem({
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { tone?: SheetItemTone }) {
 	return (
 		<button
-			type="button"
-			className={cn("active:bg-pressed [&_svg]:shrink-0", SHEET_ITEM_TONE[tone], className)} {...stylex.props(sx.flex, sx.wFull, sx.itemsCenter, sx.gap13px, sx.roundedControl, sx.px35, sx.py15px, sx.textLeft, typography.body)}
+			type="button" {...mergeStylexProps(cn("active:bg-pressed [&_svg]:shrink-0", SHEET_ITEM_TONE[tone], className), sx.flex, sx.wFull, sx.itemsCenter, sx.gap13px, sx.roundedControl, sx.px35, sx.py15px, sx.textLeft, typography.body)}
 			{...rest}
 		>
 			{children}

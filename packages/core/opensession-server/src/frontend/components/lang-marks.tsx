@@ -1,5 +1,6 @@
 import React from "react";
 import * as stylex from "@stylexjs/stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -203,8 +204,7 @@ export function ExtBadge({
   const Glyph = LANG_MARKS[ext];
   return (
     <span
-      className={className}
-      {...stylex.props(sx.flex, sx.h4, sx.minW4, sx.flexShrink0, sx.itemsCenter, sx.justifyCenter, sx.px05, sx.fontBold, sx.leadingNone)}
+      {...mergeStylexProps(className, sx.flex, sx.h4, sx.minW4, sx.flexShrink0, sx.itemsCenter, sx.justifyCenter, sx.px05, sx.fontBold, sx.leadingNone)}
       style={{ color: `color-mix(in oklab, ${color} 75%, var(--text))` }}
     >
       <span {...stylex.props(sx.flex, sx.translateYPx, sx.itemsCenter, sx.justifyCenter)}>

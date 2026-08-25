@@ -4,6 +4,7 @@ import {
 	DEFAULT_APP_ICON_URL,
 	useOrganizationIcon,
 } from "../hooks/useOrganizationIcon";
+import { mergeStylexProps } from "../ui/cn";
 
 const sx = stylex.create({
 	block: { display: "block" },
@@ -22,13 +23,7 @@ export function OrganizationAppIcon({ className }: { className?: string }) {
 
 	return (
 		<img
-			className={className}
-			{...stylex.props(
-				sx.block,
-				sx.size11,
-				usesOrganizationIcon && sx.roundedControl,
-				usesOrganizationIcon && sx.objectCover,
-			)}
+			{...mergeStylexProps(className, sx.block, sx.size11, usesOrganizationIcon && sx.roundedControl, usesOrganizationIcon && sx.objectCover)}
 			src={src}
 			alt=""
 			onError={() => {

@@ -8,6 +8,7 @@ import { PulseDot } from "../../ui/status";
 import { msgRow } from "../../lib/msg-classes";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { mergeStylexProps } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -185,7 +186,7 @@ function BusyElapsed({ since }: { since: number }) {
 		label = `${Math.floor(s / 60)}m, ${(s % 60).toFixed(1)}s`;
 	else label = `${Math.floor(s / 3600)}h, ${Math.floor((s % 3600) / 60)}m`;
 	// Tabular figures so a 10Hz counter doesn't jitter its own width.
-	return <span className="tabular-nums" {...stylex.props(sx.textFaint, typography.meta)}>{label}</span>;
+	return <span {...mergeStylexProps("tabular-nums", sx.textFaint, typography.meta)}>{label}</span>;
 }
 
 // How long a steer may wait before the chip starts showing how long it has
@@ -222,7 +223,7 @@ export function SteerWaiting({ since }: { since?: number }) {
 	const s = Math.floor(waited / 1000);
 	const label =
 		s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
-	return <span className="tabular-nums" {...stylex.props(sx.fontNormal, sx.opacity70)}>{label}</span>;
+	return <span {...mergeStylexProps("tabular-nums", sx.fontNormal, sx.opacity70)}>{label}</span>;
 }
 
 // How long a stop may sit there before the label stops sounding confident.
@@ -262,8 +263,7 @@ export function BusyInline({
 }) {
 	return (
 		<div
-			{...stylex.props(sx.mt05, sx.flexRow, sx.itemsCenter, sx.gap2, sx.px1, sx.py125, sx.textDim)}
-			className={`${stylex.props(sx.mt05, sx.flexRow, sx.itemsCenter, sx.gap2, sx.px1, sx.py125, sx.textDim).className} ${msgRow}`}
+			{...mergeStylexProps(`${stylex.props(sx.mt05, sx.flexRow, sx.itemsCenter, sx.gap2, sx.px1, sx.py125, sx.textDim).className} ${msgRow}`, sx.mt05, sx.flexRow, sx.itemsCenter, sx.gap2, sx.px1, sx.py125, sx.textDim)}
 		>
 			{/* The 8px pull hangs off the DOT, not off the row: msgRow centres
 			    itself in the reading column with `mx-auto`, and a `-ml-2` on the

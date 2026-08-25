@@ -1,4 +1,4 @@
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import { type as typography } from "../styles/typography.stylex";
 import * as stylex from "@stylexjs/stylex";
 
@@ -99,8 +99,7 @@ export function PulseDot({
 }) {
 	return (
 		<span
-			aria-hidden
-			className={cn(PULSE, className)} {...stylex.props(sx.shrink0, sx.roundedFull, sx.bgYellow, size === 8 && sx.size2, !(size === 8) && sx.size7px)}
+			aria-hidden {...mergeStylexProps(cn(PULSE, className), sx.shrink0, sx.roundedFull, sx.bgYellow, size === 8 && sx.size2, !(size === 8) && sx.size7px)}
 		/>
 	);
 }
@@ -113,8 +112,7 @@ export function WorkingPill({
 	className?: string;
 }) {
 	return (
-		<span
-			className={cn(className)} {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap15, sx.roundedFull, sx.bgYellowSoft, sx.px25, sx.py3px, typography.meta, sx.fontSemibold, sx.textYellow)}
+		<span {...mergeStylexProps(cn(className), sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap15, sx.roundedFull, sx.bgYellowSoft, sx.px25, sx.py3px, typography.meta, sx.fontSemibold, sx.textYellow)}
 		>
 			<PulseDot size={7} />
 			{children}

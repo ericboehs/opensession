@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
+import ts from "typescript";
 
 /**
  * Guards for the StyleX port (see STYLEX-MIGRATION.md). These fail loudly
@@ -50,6 +51,34 @@ describe("stylex port guards", () => {
 		expect(readFileSync(join(FRONTEND, "lib/breakpoints.ts"), "utf8")).toContain(
 			'"(max-width: 720px)"',
 		);
+	});
+
+	test("residual and semantic classes are merged with StyleX props", () => {
+		const offenders: string[] = [];
+		for (const f of sources.filter((file) => file.endsWith(".tsx"))) {
+			const src = readFileSync(f, "utf8");
+			const file = ts.createSourceFile(f, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+			function visit(node: ts.Node) {
+				if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+					const attrs = [...node.attributes.properties];
+					const hasClassName = attrs.some(
+						(attr) => ts.isJsxAttribute(attr) && attr.name.getText(file) === "className",
+					);
+					const hasStylexSpread = attrs.some(
+						(attr) =>
+							ts.isJsxSpreadAttribute(attr) &&
+							ts.isCallExpression(attr.expression) &&
+							attr.expression.expression.getText(file) === "stylex.props",
+					);
+					if (hasClassName && hasStylexSpread) {
+						offenders.push(`${f}:${file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1}`);
+					}
+				}
+				ts.forEachChild(node, visit);
+			}
+			visit(file);
+		}
+		expect(offenders).toEqual([]);
 	});
 
 	test("tokens.stylex.ts only references custom properties that base.css defines", () => {

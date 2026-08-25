@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -44,8 +44,7 @@ export function Card({ as: Component = "div", className, ...props }: CardProps) 
 
 export function CardList({ className, ...props }: CardProps) {
 	return (
-		<Card
-			className={cn("[&>*+*]:border-t [&>*+*]:border-line", className)} {...stylex.props(sx.overflowHidden)}
+		<Card {...mergeStylexProps(cn("[&>*+*]:border-t [&>*+*]:border-line", className), sx.overflowHidden)}
 			{...props}
 		/>
 	);

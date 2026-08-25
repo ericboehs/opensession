@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import { type as typography } from "../styles/typography.stylex";
 import * as stylex from "@stylexjs/stylex";
 
@@ -45,8 +45,7 @@ export function PageHeader({
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
-		<div
-			className={cn("phone:flex-col phone:gap-2.5", className)} {...stylex.props(sx.mb22px, sx.flex, sx.itemsStart, sx.justifyBetween, sx.gap4)}
+		<div {...mergeStylexProps(cn("phone:flex-col phone:gap-2.5", className), sx.mb22px, sx.flex, sx.itemsStart, sx.justifyBetween, sx.gap4)}
 			{...props}
 		/>
 	);
@@ -63,8 +62,7 @@ export function PageTitle({
 			// once it has scrolled under that row, the row picks the name up. Read
 			// by hooks/useLargeTitle.ts, which the app's top bar and the Analytics
 			// range bar both call. Nothing else reads it, and it styles nothing.
-			data-large-title=""
-			className={cn(className)} {...stylex.props(sx.m0, typography.sectionTitle, sx.fontTitle, sx.tracking001em, sx.textFg)}
+			data-large-title="" {...mergeStylexProps(cn(className), sx.m0, typography.sectionTitle, sx.fontTitle, sx.tracking001em, sx.textFg)}
 			{...props}
 		/>
 	);
@@ -74,5 +72,5 @@ export function PageDescription({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn(className)} {...stylex.props(sx.mt1, typography.supporting, sx.textFaint)} {...props} />;
+	return <div {...mergeStylexProps(cn(className), sx.mt1, typography.supporting, sx.textFaint)} {...props} />;
 }

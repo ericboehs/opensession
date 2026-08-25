@@ -18,6 +18,7 @@ import { duration, ease } from "../ui/motion";
 import { IconBrowserTab, IconCursor } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -400,8 +401,7 @@ export function QuoteSelection({
 				variant="ghost"
 				size="md"
 				icon={<IconCursor size={20} />}
-				onClick={add}
-				className="hover:text-fg focus-visible:z-[1]" {...stylex.props(sx.roundedNone, sx.textFg)}
+				onClick={add} {...mergeStylexProps("hover:text-fg focus-visible:z-[1]", sx.roundedNone, sx.textFg)}
 			>
 				Add to chat
 			</Button>
@@ -409,8 +409,7 @@ export function QuoteSelection({
 				variant="ghost"
 				size="md"
 				icon={<IconBrowserTab size={20} />}
-				onClick={startNewChat}
-				className="hover:text-fg focus-visible:z-[1]" {...stylex.props(sx.roundedNone, sx.borderLLineStrong, sx.textFg)}
+				onClick={startNewChat} {...mergeStylexProps("hover:text-fg focus-visible:z-[1]", sx.roundedNone, sx.borderLLineStrong, sx.textFg)}
 			>
 				Start new chat
 			</Button>

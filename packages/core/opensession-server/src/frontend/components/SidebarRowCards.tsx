@@ -13,6 +13,7 @@ import { Popover } from "../ui/popover";
 import { pointerCanHover } from "../lib/pointer";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -290,8 +291,7 @@ export function CardLink({
 			href={href}
 			target="_blank"
 			rel="noopener noreferrer"
-			title={title}
-			className="hover:text-fg" {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap05, typography.label, sx.textDim, sx.noUnderline)}
+			title={title} {...mergeStylexProps("hover:text-fg", sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap05, typography.label, sx.textDim, sx.noUnderline)}
 		>
 			{children}
 			<IconArrowUpRight size={15} {...stylex.props(sx.opacity70)} />
@@ -603,7 +603,7 @@ export function SupportRowCard({
 			<div {...stylex.props(sx.mt5px, sx.fontSemibold, sx.leading13, typography.label)}>{t.title || customer}</div>
 
 			{preview && (
-				<div className="selectable line-clamp-3" {...stylex.props(sx.mt1, sx.leadingSnug, sx.textDim, typography.meta)}>
+				<div {...mergeStylexProps("selectable line-clamp-3", sx.mt1, sx.leadingSnug, sx.textDim, typography.meta)}>
 					{preview}
 				</div>
 			)}

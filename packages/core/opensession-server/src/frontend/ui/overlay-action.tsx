@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Button, type ButtonProps } from "./button";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -38,8 +38,7 @@ export const OverlayAction = React.forwardRef<HTMLButtonElement, OverlayActionPr
 			<Button
 				ref={ref}
 				variant="default"
-				size="sm"
-				className={cn("transition-[opacity,scale]", "[@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0", "[@media(hover:hover)]:group-hover/overlay-action:pointer-events-auto [@media(hover:hover)]:group-hover/overlay-action:opacity-100", "focus-visible:pointer-events-auto focus-visible:opacity-100", className)} {...stylex.props(sx.absolute, sx.Right2, sx.Top2, sx.z1, sx.bgWhite)}
+				size="sm" {...mergeStylexProps(cn("transition-[opacity,scale]", "[@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0", "[@media(hover:hover)]:group-hover/overlay-action:pointer-events-auto [@media(hover:hover)]:group-hover/overlay-action:opacity-100", "focus-visible:pointer-events-auto focus-visible:opacity-100", className), sx.absolute, sx.Right2, sx.Top2, sx.z1, sx.bgWhite)}
 				{...props}
 			/>
 		);

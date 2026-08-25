@@ -13,6 +13,7 @@ import { IconPlus, IconUndo, IconX } from "./icons";
 import { Spinner } from "../ui/spinner";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -253,8 +254,7 @@ export function SlackSentNotice({
 			{permalink && (
 				<>
 					<span aria-hidden {...stylex.props(sx.textFaint)}>·</span>
-					<a
-						className="decoration-line hover:text-fg hover:decoration-current" {...stylex.props(sx.focusRing, sx.roundedSm, sx.textDim, sx.underline, sx.underlineOffset2, sx.transitionColors)}
+					<a {...mergeStylexProps("decoration-line hover:text-fg hover:decoration-current", sx.focusRing, sx.roundedSm, sx.textDim, sx.underline, sx.underlineOffset2, sx.transitionColors)}
 						href={permalink}
 						target="_blank"
 						rel="noreferrer"
@@ -460,8 +460,7 @@ setAwaitingSlack(false);
 					<Tooltip label="Close" side="bottom">
 						<Button
 							variant="ghost"
-							size="md"
-							className="phone:size-10" {...stylex.props(sx.mlAuto)}
+							size="md" {...mergeStylexProps("phone:size-10", sx.mlAuto)}
 							icon={<IconX size={18} />}
 							aria-label="Close"
 							disabled={status !== "idle"}
@@ -471,16 +470,14 @@ setAwaitingSlack(false);
 				)}
 			</div>
 			{/* `pwa-composer-edge` keeps this card aligned with the shared composer. */}
-			<div
-				className="pwa-composer-edge shadow-[var(--composer-shadow)] transition-[border-color,box-shadow] focus-within:border-accent desktop:border-transparent desktop:[--smooth-ring-color:var(--composer-border)] desktop:smooth-shadow-ring-soft phone:px-3 phone:pt-3 phone:pb-2" {...stylex.props(sx.roundedVarComposerRadius, sx.border, sx.borderColorVarComposerBorder, sx.bgVarComposerSurface, sx.px35, sx.pt35, sx.pb25)}
+			<div {...mergeStylexProps("pwa-composer-edge shadow-[var(--composer-shadow)] transition-[border-color,box-shadow] focus-within:border-accent desktop:border-transparent desktop:[--smooth-ring-color:var(--composer-border)] desktop:smooth-shadow-ring-soft phone:px-3 phone:pt-3 phone:pb-2", sx.roundedVarComposerRadius, sx.border, sx.borderColorVarComposerBorder, sx.bgVarComposerSurface, sx.px35, sx.pt35, sx.pb25)}
 				onDragOver={(event) => event.preventDefault()}
 				onDrop={(event) => {
 					event.preventDefault();
 					if (status === "idle") void addImages(Array.from(event.dataTransfer.files));
 				}}
 			>
-				<textarea
-					className="placeholder:text-faint phone:text-input-phone" {...stylex.props(sx.block, sx.minH14, sx.maxH32, sx.wFull, sx.resizeNone, sx.border0, sx.bgTransparent, sx.p0, sx.leading155, sx.textFg, sx.outlineNone, sx.FieldSizingContent, typography.body)}
+				<textarea {...mergeStylexProps("placeholder:text-faint phone:text-input-phone", sx.block, sx.minH14, sx.maxH32, sx.wFull, sx.resizeNone, sx.border0, sx.bgTransparent, sx.p0, sx.leading155, sx.textFg, sx.outlineNone, sx.FieldSizingContent, typography.body)}
 					aria-label="Slack message"
 					{...noAutofill}
 					value={message}
@@ -496,9 +493,9 @@ setAwaitingSlack(false);
 					}}
 				/>
 				{screenshots.length > 0 && (
-					<div className="[&::-webkit-scrollbar]:hidden" {...stylex.props(sx.mt05, sx.flex, sx.gap2, sx.overflowXAuto, sx.pt2, sx.pr2, sx.pb05, sx.ScrollbarWidthNone)}>
+					<div {...mergeStylexProps("[&::-webkit-scrollbar]:hidden", sx.mt05, sx.flex, sx.gap2, sx.overflowXAuto, sx.pt2, sx.pr2, sx.pb05, sx.ScrollbarWidthNone)}>
 						{screenshots.map((path, index) => (
-							<div key={path} className="group/overlay-action" {...stylex.props(sx.relative, sx.shrink0)}>
+							<div key={path} {...mergeStylexProps("group/overlay-action", sx.relative, sx.shrink0)}>
 								<button type="button" aria-label="Open screenshot preview" {...stylex.props(sx.focusRing, sx.block, sx.overflowHidden, sx.roundedMd)} onClick={(event) => openLightbox(screenshots.map((item) => ({ kind: "image", src: mediaUrl(item) })), index, event.currentTarget)}>
 									<img {...stylex.props(sx.h16, sx.w24, sx.roundedMd, sx.border, sx.borderLineStrong, sx.objectCover, sx.objectTop)} src={mediaUrl(path)} alt="" />
 								</button>
@@ -514,9 +511,9 @@ setAwaitingSlack(false);
 						))}
 					</div>
 				)}
-				<div className="phone:mt-2" {...stylex.props(sx.mt25, sx.flex, sx.itemsCenter, sx.gap15)}>
+				<div {...mergeStylexProps("phone:mt-2", sx.mt25, sx.flex, sx.itemsCenter, sx.gap15)}>
 					<input ref={fileInputRef} {...stylex.props(sx.srOnly)} type="file" accept="image/*" multiple onChange={(event) => { void addImages(Array.from(event.target.files || [])); event.currentTarget.value = ""; }} />
-					<button type="button" aria-label="Add images" title="Add images" className="transition-[background-color,color,scale] hover:bg-hover hover:text-fg active:scale-[0.96] disabled:opacity-40 phone:size-10" {...stylex.props(sx.focusRing, sx.inlineFlex, sx.size8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textDim)} disabled={status !== "idle" || uploading || screenshots.length >= 10} onClick={() => fileInputRef.current?.click()}>
+					<button type="button" aria-label="Add images" title="Add images" {...mergeStylexProps("transition-[background-color,color,scale] hover:bg-hover hover:text-fg active:scale-[0.96] disabled:opacity-40 phone:size-10", sx.focusRing, sx.inlineFlex, sx.size8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textDim)} disabled={status !== "idle" || uploading || screenshots.length >= 10} onClick={() => fileInputRef.current?.click()}>
 						{uploading ? <Spinner size="md" /> : <IconPlus size={20} />}
 					</button>
 					<div {...stylex.props(sx.flex1)} />
@@ -525,8 +522,7 @@ setAwaitingSlack(false);
 					    position it, which is the primitive rebuilt by hand around a
 					    control it exists to replace. */}
 					<OptionSelect
-						label="Slack channel"
-						className="phone:w-32" {...stylex.props(sx.w28)}
+						label="Slack channel" {...mergeStylexProps("phone:w-32", sx.w28)}
 						value={channel}
 						options={
 							channels.length === 0

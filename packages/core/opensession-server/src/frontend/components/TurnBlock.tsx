@@ -27,6 +27,7 @@ import { transcriptDisclosureLedger } from "../lib/transcript-disclosures";
 import { turnScrollAnchor } from "../lib/transcript-block-identity";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -393,15 +394,7 @@ export const TurnBlock = function TurnBlock({
             ? `${live ? "Working" : "Worked"}. ${countsLabel}. ${toolOnlyAggregate.statusLabel}`
             : undefined
         }
-        onClick={() => rememberExpansion(!expanded)}
-        // Baseline, not centre: this row mixes its 14px title with 13px meta
-        // runs, and centring aligns boxes rather than text. The chevron carries
-        // no baseline of its own, so it keeps centring individually.
-        // The 8px overhang gives the icon-aligned chevron breathing room. Its
-        // asymmetric padding moves the disclosure line into that overhang so
-        // the open rail sits near the transcript edge instead of floating
-        // inside the work column.
-        className="hover:bg-hover/40 hover:text-fg" {...stylex.props(sx.Mx2, sx.flex, sx.wCalc10016px, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.py1, sx.pl1, sx.pr3, sx.textLeft, sx.fontSans, sx.leading5, sx.textDim, sx.transitionColors, typography.itemTitle)}
+        onClick={() => rememberExpansion(!expanded)} {...mergeStylexProps("hover:bg-hover/40 hover:text-fg", sx.Mx2, sx.flex, sx.wCalc10016px, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.py1, sx.pl1, sx.pr3, sx.textLeft, sx.fontSans, sx.leading5, sx.textDim, sx.transitionColors, typography.itemTitle)}
       >
         <span
           {...stylex.props(sx.grid, sx.size5, sx.flexShrink0, sx.selfCenter, sx.placeItemsCenter, sx.leadingNone, sx.textFaint, sx.transitionTransform, sx.duration150, !expanded && sx.rotateNeg90)}
@@ -450,8 +443,7 @@ export const TurnBlock = function TurnBlock({
           <button
             type="button"
             aria-label={`Collapse ${live ? "Working" : "Worked"}`}
-            onClick={() => rememberExpansion(false)}
-            className="after:absolute after:inset-y-0 after:left-1/2 after:border-l after:border-transparent after:transition-colors hover:after:border-line-strong focus-visible:after:border-line-strong" {...stylex.props(sx.absolute, sx.insetY0, sx.Left2, sx.w4, sx.cursorPointer, sx.border0, sx.bgTransparent, sx.p0)}
+            onClick={() => rememberExpansion(false)} {...mergeStylexProps("after:absolute after:inset-y-0 after:left-1/2 after:border-l after:border-transparent after:transition-colors hover:after:border-line-strong focus-visible:after:border-line-strong", sx.absolute, sx.insetY0, sx.Left2, sx.w4, sx.cursorPointer, sx.border0, sx.bgTransparent, sx.p0)}
           />
           {sections.map((sec) =>
             sec.kind === "msg" ? (
@@ -464,8 +456,7 @@ export const TurnBlock = function TurnBlock({
               // Tool icons align with the fold chevron on desktop. Phones use
               // the 1px optical correction for the icon's inset glyph.
               <div
-                key={sec.items[0].id}
-                className="desktop:ml-0" {...stylex.props(sx.MlPx)}
+                key={sec.items[0].id} {...mergeStylexProps("desktop:ml-0", sx.MlPx)}
                 data-eid={`${sec.items[sec.items.length - 1].id}#sec`}
               >
                 {/* The outer Working row is already the tool-only run's
@@ -620,30 +611,27 @@ function ToolRunBlock({
         aria-expanded={expanded}
         aria-label={`${expanded ? "Hide" : "Show"} ${items.length} grouped steps: ${label}${statusLabel ? `. ${statusLabel}` : ""}`}
         title={`${items.length} grouped steps`}
-        onClick={() => rememberExpansion(!expanded)}
-        className="group hover:bg-hover/40 phone:min-h-10" {...stylex.props(sx.flex, sx.wFull, sx.minW0, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px1, sx.py3px, sx.textLeft, sx.fontSans, sx.transitionColors)}
+        onClick={() => rememberExpansion(!expanded)} {...mergeStylexProps("group hover:bg-hover/40 phone:min-h-10", sx.flex, sx.wFull, sx.minW0, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px1, sx.py3px, sx.textLeft, sx.fontSans, sx.transitionColors)}
       >
         {/* Open, the row is a heading for the steps under it, so it keeps the
             chevron rather than a stack of what is already on screen. Closed,
             the stack stands in until a hover offers the chevron. */}
         <span {...stylex.props(sx.relative, sx.grid, sx.size22px, sx.flexShrink0, sx.placeItemsCenter, sx.textFaint)}>
           <span
-            className="group-hover:opacity-0 group-focus-visible:opacity-0"
-            {...stylex.props(sx.absolute, sx.inset0, sx.transitionOpacity, sx.duration150, expanded && sx.opacity0)}
+            {...mergeStylexProps("group-hover:opacity-0 group-focus-visible:opacity-0", sx.absolute, sx.inset0, sx.transitionOpacity, sx.duration150, expanded && sx.opacity0)}
           >
             <IconStack size={18} {...stylex.props(sx.absolute, sx.left12, sx.top12, sx.TranslateX12, sx.TranslateY12)} />
           </span>
           <IconChevronDown
             size={20}
-            className="group-hover:opacity-100 group-focus-visible:opacity-100"
-            {...stylex.props(sx.absolute, sx.block, sx.transitionOpacityTransform, sx.duration150, expanded ? sx.opacity100 : sx.rotateNeg90Opacity0)}
+            {...mergeStylexProps("group-hover:opacity-100 group-focus-visible:opacity-100", sx.absolute, sx.block, sx.transitionOpacityTransform, sx.duration150, expanded ? sx.opacity100 : sx.rotateNeg90Opacity0)}
           />
         </span>
         {/* Just the count. Which tools ran is what the row is folding away,
             and one click puts every step back with its own glyph, so naming
             them here only asks to be read. The names stay in the aria-label,
             where the count alone would tell a screen reader nothing. */}
-        <span className="group-hover:text-fg" {...stylex.props(sx.flexShrink0, sx.truncate, sx.fontMedium, sx.leading5, sx.textDim, sx.transitionColors, typography.itemTitle)}>
+        <span {...mergeStylexProps("group-hover:text-fg", sx.flexShrink0, sx.truncate, sx.fontMedium, sx.leading5, sx.textDim, sx.transitionColors, typography.itemTitle)}>
           {items.length} step{items.length === 1 ? "" : "s"}
         </span>
         {/* What the count can't say: a run that edited files moved lines, in

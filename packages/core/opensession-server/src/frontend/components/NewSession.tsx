@@ -84,7 +84,7 @@ import {
 import { FullPageFileDropOverlay } from "./FullPageFileDropOverlay";
 import { askSurface } from "../lib/tinted-surface";
 import { toast } from "../ui/toast";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { PhoneTopBar, PhoneTopBarAction } from "../ui/top-bar";
 import {
 	paletteIconBtn,
@@ -1755,9 +1755,9 @@ pendingDraftParks.delete(operation);
           so without this the only trace of a pick is a count on the overflow
           button, and the pick governs the whole session rather than one
           prompt. The row stays mounted so the last chip can animate out. */}
-      <div className="phone:px-3 phone:pt-1" {...stylex.props(sx.flex, sx.flexWrap, sx.itemsStart, sx.gapX1, sx.px4)}>
+      <div {...mergeStylexProps("phone:px-3 phone:pt-1", sx.flex, sx.flexWrap, sx.itemsStart, sx.gapX1, sx.px4)}>
         {selectedMcpServers.length > 0 && (
-          <span className="phone:block desktop:hidden" {...stylex.props(sx.mr1, sx.selfCenter, sx.fontMedium, sx.textFaint, typography.meta)}>
+          <span {...mergeStylexProps("phone:block desktop:hidden", sx.mr1, sx.selfCenter, sx.fontMedium, sx.textFaint, typography.meta)}>
             Using
           </span>
         )}
@@ -1892,8 +1892,7 @@ pendingDraftParks.delete(operation);
               </Tooltip>
               <Menu.Popup
                 align="start"
-                sideOffset={6}
-                className="max-w-[min(360px,calc(100vw-1rem))]" {...stylex.props(sx.minW260px)}
+                sideOffset={6} {...mergeStylexProps("max-w-[min(360px,calc(100vw-1rem))]", sx.minW260px)}
               >
                 {showBranchPicker && (
                   <Menu.SubmenuRoot>

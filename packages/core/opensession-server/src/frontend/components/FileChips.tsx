@@ -9,7 +9,7 @@ import {
   fileChipSub,
   fileChipThumb,
 } from "../lib/composer-classes";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -81,8 +81,7 @@ export function FileChips({ files, onRemove, disabled, pending = 0 }: Props) {
             <span className={fileChipSub}>Attachment</span>
           </span>
           <button
-            type="button"
-            className="enabled:hover:text-fg disabled:cursor-default disabled:opacity-50" {...stylex.props(sx.absolute, sx.top1, sx.right5px, sx.shrink0, sx.text15px, sx.leadingNone, sx.textFaint)}
+            type="button" {...mergeStylexProps("enabled:hover:text-fg disabled:cursor-default disabled:opacity-50", sx.absolute, sx.top1, sx.right5px, sx.shrink0, sx.text15px, sx.leadingNone, sx.textFaint)}
             onClick={() => onRemove(i)}
             disabled={disabled}
             title="Remove file"

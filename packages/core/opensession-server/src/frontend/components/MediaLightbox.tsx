@@ -24,7 +24,7 @@ import {
 } from "../lib/walkthrough-label";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { Button } from "../ui/button";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { toast } from "../ui/toast";
 import {
 	anchoredCommentPosition,
@@ -1658,12 +1658,7 @@ function ZoomableMedia({
 				<div
 					ref={boxRef}
 					role="img"
-					aria-label="Diagram"
-					// The same hairline and corner the photo takes, over the well
-					// the diagram is drawn on in the transcript: a light-theme
-					// chart is near-black ink, which would be unreadable straight
-					// on the scrim.
-					className="[&>svg]:block [&>svg]:h-full [&>svg]:w-full" {...stylex.props(sx.boxBorder, sx.shrink0, sx.rounded2xl, sx.border, sx.borderWhite20, sx.bgVarDiagramCanvas, sx.p4, sx.TransformOrigin00)}
+					aria-label="Diagram" {...mergeStylexProps("[&>svg]:block [&>svg]:h-full [&>svg]:w-full", sx.boxBorder, sx.shrink0, sx.rounded2xl, sx.border, sx.borderWhite20, sx.bgVarDiagramCanvas, sx.p4, sx.TransformOrigin00)}
 					style={{ width: fit?.w, height: fit?.h, viewTransitionName }}
 					// The markup is mermaid's own output, already rendered into the
 					// transcript by MarkdownBody; this is the same SVG, resized.
@@ -1709,8 +1704,7 @@ function ZoomableMedia({
 							}}
 							aria-hidden="true"
 						>
-							<div
-								className="shadow-[0_0_0_9999px_rgb(0_0_0/0.5)]" {...stylex.props(sx.absolute)}
+							<div {...mergeStylexProps("shadow-[0_0_0_9999px_rgb(0_0_0/0.5)]", sx.absolute)}
 								style={{
 									left: shownRegionBox.left - imageBox.left,
 									top: shownRegionBox.top - imageBox.top,
@@ -1725,12 +1719,7 @@ function ZoomableMedia({
 							// The region is a thing you can take hold of, not a mark:
 							// press it to move it, press a handle to resize it.
 							// Dragging bare picture still starts a new one.
-							data-region-handle="move"
-							// A hairline, not a coloured frame: the dimmed surround is
-							// what says where the selection is, so the line only has to
-							// trace it. The dark hairline under it keeps the white edge
-							// legible on a white screenshot.
-							className="shadow-[0_0_0_1px_rgb(0_0_0/0.22)]" {...stylex.props(sx.absolute, sx.cursorMove, sx.touchNone, sx.rounded3px, sx.border, sx.borderWhite)}
+							data-region-handle="move" {...mergeStylexProps("shadow-[0_0_0_1px_rgb(0_0_0/0.22)]", sx.absolute, sx.cursorMove, sx.touchNone, sx.rounded3px, sx.border, sx.borderWhite)}
 							style={shownRegionBox}
 							aria-hidden="true"
 						>
@@ -2192,8 +2181,7 @@ sendingCommentRef.current = false;
 	return (
 		<motion.div
 			ref={dialogRef}
-			data-media-lightbox=""
-			className="phone:h-[100dvh] phone:bg-black" {...stylex.props(sx.fixed, sx.inset0, sx.z11000, sx.flex, sx.flexCol, sx.bgBlack85)}
+			data-media-lightbox="" {...mergeStylexProps("phone:h-[100dvh] phone:bg-black", sx.fixed, sx.inset0, sx.z11000, sx.flex, sx.flexCol, sx.bgBlack85)}
 			role="dialog"
 			tabIndex={-1}
 			aria-modal="true"
@@ -2479,7 +2467,7 @@ sendingCommentRef.current = false;
 						<div {...stylex.props(sx.flex, sx.maxWFull, sx.flexCol, sx.itemsCenter, sx.gap05, sx.px6, sx.textCenter)}>
 							<div {...stylex.props(sx.flex, sx.maxWFull, sx.itemsCenter, sx.justifyCenter, sx.gap2)}>
 								{caption && (
-									<div className="line-clamp-2" {...stylex.props(sx.minW0, sx.maxWFull, sx.textSm, sx.fontMedium, sx.leadingSnug, sx.textWhite)}>
+									<div {...mergeStylexProps("line-clamp-2", sx.minW0, sx.maxWFull, sx.textSm, sx.fontMedium, sx.leadingSnug, sx.textWhite)}>
 										{caption}
 									</div>
 								)}
@@ -2495,7 +2483,7 @@ sendingCommentRef.current = false;
 								)}
 							</div>
 							{description && (
-								<div className="line-clamp-2" {...stylex.props(sx.maxWFull, sx.textSm, sx.leadingSnug, sx.textWhite75)}>
+								<div {...mergeStylexProps("line-clamp-2", sx.maxWFull, sx.textSm, sx.leadingSnug, sx.textWhite75)}>
 									{description}
 								</div>
 							)}
@@ -2504,8 +2492,7 @@ sendingCommentRef.current = false;
 
 					{many && (
 						<div
-							ref={filmstripRef}
-							className="snap-x [&::-webkit-scrollbar]:hidden" {...stylex.props(sx.flex, sx.h12, sx.snapMandatory, sx.itemsCenter, sx.gap1, sx.overflowXAuto, sx.pxCalc5022px, sx.ScrollbarWidthNone)}
+							ref={filmstripRef} {...mergeStylexProps("snap-x [&::-webkit-scrollbar]:hidden", sx.flex, sx.h12, sx.snapMandatory, sx.itemsCenter, sx.gap1, sx.overflowXAuto, sx.pxCalc5022px, sx.ScrollbarWidthNone)}
 							role="group"
 							aria-label="Media filmstrip"
 						>
@@ -2614,13 +2601,12 @@ sendingCommentRef.current = false;
 
 			{commenting && !selection && (
 				<div {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.insetX0, sx.bottomCalc16pxEnvSafeAreaInsetBottom, sx.z20, sx.flex, sx.justifyCenter, sx.px4)}>
-					<div className="shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_12px_44px_rgb(0_0_0/0.5)] backdrop-blur-2xl backdrop-saturate-150" {...stylex.props(sx.pointerEventsAuto, sx.flex, sx.itemsCenter, sx.gap1, sx.roundedFull, sx.border, sx.borderWhite10, sx.bgBlack55, sx.py1, sx.pl4, sx.pr1)}>
+					<div {...mergeStylexProps("shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_12px_44px_rgb(0_0_0/0.5)] backdrop-blur-2xl backdrop-saturate-150", sx.pointerEventsAuto, sx.flex, sx.itemsCenter, sx.gap1, sx.roundedFull, sx.border, sx.borderWhite10, sx.bgBlack55, sx.py1, sx.pl4, sx.pr1)}>
 						<span {...stylex.props(sx.fontMedium, sx.textWhite, typography.label)}>
 							Drag over the part you mean
 						</span>
 						<button
-							type="button"
-							className="hover:bg-white/10 hover:text-white phone:min-h-11" {...stylex.props(sx.minH9, sx.roundedFull, sx.px3, sx.fontMedium, sx.textWhite70, typography.label)}
+							type="button" {...mergeStylexProps("hover:bg-white/10 hover:text-white phone:min-h-11", sx.minH9, sx.roundedFull, sx.px3, sx.fontMedium, sx.textWhite70, typography.label)}
 							onClick={resetComment}
 						>
 							Cancel
@@ -2631,11 +2617,7 @@ sendingCommentRef.current = false;
 
 			{commentAnchor && (
 				<motion.form
-					ref={commentCardRef}
-					/* Fixed and placed against the region: the remark and the pixels it
-					   is about read as one thing. Kept to a single row, because on a
-					   phone a taller card would cover the picture it is describing. */
-					className="shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_16px_50px_rgb(0_0_0/0.5)] backdrop-blur-2xl backdrop-saturate-150" {...stylex.props(sx.fixed, sx.z20, sx.flex, sx.cursorText, sx.flexCol, sx.gap1, sx.rounded22px, sx.bgBlack55, sx.p15)}
+					ref={commentCardRef} {...mergeStylexProps("shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_16px_50px_rgb(0_0_0/0.5)] backdrop-blur-2xl backdrop-saturate-150", sx.fixed, sx.z20, sx.flex, sx.cursorText, sx.flexCol, sx.gap1, sx.rounded22px, sx.bgBlack55, sx.p15)}
 					// It grows out of the corner of the region it belongs to, rather
 					// than fading in beside it.
 					initial={reduceMotion ? false : { opacity: 0, scale: 0.94 }}
@@ -2684,20 +2666,11 @@ sendingCommentRef.current = false;
 								}
 							}}
 							rows={1}
-							placeholder="What should change here?"
-							// No surface of its own: the bar behind it is the input.
-							// border-0 explicitly, because this app leaves the browser's
-							// own control styling in place rather than importing a
-							// preflight, and a bare textarea draws a grey 1px frame.
-							// A long remark grows the bar rather than scrolling inside
-							// one line, up to the point where it would start covering
-							// the picture it is about.
-							className="placeholder:text-white/45 phone:text-input-phone [&::-webkit-scrollbar]:hidden" {...stylex.props(sx.block, sx.wFull, sx.flex1, sx.resizeNone, sx.appearanceNone, sx.border0, sx.bgTransparent, sx.px25, sx.py2, sx.leadingSnug, sx.textWhite, sx.outlineNone, sx.ScrollbarWidthNone, typography.body)}
+							placeholder="What should change here?" {...mergeStylexProps("placeholder:text-white/45 phone:text-input-phone [&::-webkit-scrollbar]:hidden", sx.block, sx.wFull, sx.flex1, sx.resizeNone, sx.appearanceNone, sx.border0, sx.bgTransparent, sx.px25, sx.py2, sx.leadingSnug, sx.textWhite, sx.outlineNone, sx.ScrollbarWidthNone, typography.body)}
 							disabled={sendingComment}
 						/>
 						<button
-							type="button"
-							className="hover:bg-white/10 hover:text-white phone:size-11" {...stylex.props(sx.grid, sx.size9, sx.shrink0, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgTransparent, sx.p0, sx.textWhite60)}
+							type="button" {...mergeStylexProps("hover:bg-white/10 hover:text-white phone:size-11", sx.grid, sx.size9, sx.shrink0, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgTransparent, sx.p0, sx.textWhite60)}
 							onClick={resetComment}
 							disabled={sendingComment}
 							aria-label="Cancel comment"
@@ -2705,10 +2678,7 @@ sendingCommentRef.current = false;
 							<IconX size={16} />
 						</button>
 						<button
-							type="submit"
-							// The filled circle a message is sent with, in the app's own
-							// accent rather than a plain white chip.
-							className="active:scale-[0.94] disabled:bg-white/15 disabled:text-white/40 phone:size-11" {...stylex.props(sx.grid, sx.size9, sx.shrink0, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgAccent, sx.p0, sx.textWhite, sx.transitionTransform)}
+							type="submit" {...mergeStylexProps("active:scale-[0.94] disabled:bg-white/15 disabled:text-white/40 phone:size-11", sx.grid, sx.size9, sx.shrink0, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgAccent, sx.p0, sx.textWhite, sx.transitionTransform)}
 							disabled={!commentText.trim() || sendingComment}
 							aria-label={sendingComment ? "Sending comment" : "Send comment"}
 						>
@@ -2758,7 +2728,7 @@ sendingCommentRef.current = false;
 							)}
 						</div>
 						{description && (
-							<div className="max-w-[min(720px,90vw)] line-clamp-2" {...stylex.props(sx.textSm, sx.leadingSnug, sx.textWhite75)}>
+							<div {...mergeStylexProps("max-w-[min(720px,90vw)] line-clamp-2", sx.textSm, sx.leadingSnug, sx.textWhite75)}>
 								{description}
 							</div>
 						)}
@@ -2775,8 +2745,7 @@ sendingCommentRef.current = false;
 									type="button"
 									onClick={() => go(dot)}
 									aria-label={`Show ${dot + 1} of ${items.length}`}
-									aria-current={dot === index ? "true" : undefined}
-									className="group" {...stylex.props(sx.shrink0, sx.cursorPointer, sx.border0, sx.bgTransparent, sx.p1, sx.leadingNone)}
+									aria-current={dot === index ? "true" : undefined} {...mergeStylexProps("group", sx.shrink0, sx.cursorPointer, sx.border0, sx.bgTransparent, sx.p1, sx.leadingNone)}
 								>
 									<span
 										className={cn(
@@ -2795,7 +2764,7 @@ sendingCommentRef.current = false;
 						</div>
 					)}
 					{many && (
-						<span className="tabular-nums" {...stylex.props(sx.fontMedium, sx.textWhite50, typography.meta)}>
+						<span {...mergeStylexProps("tabular-nums", sx.fontMedium, sx.textWhite50, typography.meta)}>
 							{index + 1} of {items.length}
 						</span>
 					)}

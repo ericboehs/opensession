@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Card } from "./card";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import { fieldClasses } from "./input";
 import { markTileClass } from "../lib/mark-tile";
 import { Skeleton, SkeletonBar } from "./state";
@@ -168,7 +168,7 @@ export function SettingsPanel({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn(className)} {...stylex.props(sx.wFull, sx.maxW720px)} {...props} />;
+	return <div {...mergeStylexProps(cn(className), sx.wFull, sx.maxW720px)} {...props} />;
 }
 
 /**
@@ -189,16 +189,15 @@ export function SettingsHeader({
 	actions?: React.ReactNode;
 }) {
 	return (
-		<header
-			className={cn(className)} {...stylex.props(sx.mb5, sx.flex, sx.itemsStart, sx.justifyBetween, sx.gap4, sx.px5)}
+		<header {...mergeStylexProps(cn(className), sx.mb5, sx.flex, sx.itemsStart, sx.justifyBetween, sx.gap4, sx.px5)}
 			{...props}
 		>
 			<div {...stylex.props(sx.minW0)}>
-				<h1 className="[.settings-sheet_&]:hidden" {...stylex.props(sx.m0, sx.fontTitle, sx.tracking002em, sx.textFg, typography.pageTitle)}>
+				<h1 {...mergeStylexProps("[.settings-sheet_&]:hidden", sx.m0, sx.fontTitle, sx.tracking002em, sx.textFg, typography.pageTitle)}>
 					{title}
 				</h1>
 				{description && (
-					<p className="[.settings-sheet_&]:mt-0" {...stylex.props(sx.m0, sx.mt15, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
+					<p {...mergeStylexProps("[.settings-sheet_&]:mt-0", sx.m0, sx.mt15, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 						{description}
 					</p>
 				)}
@@ -221,8 +220,7 @@ export function SettingsGroupLabel({
 	...props
 }: React.ComponentPropsWithoutRef<"div"> & { actions?: React.ReactNode }) {
 	return (
-		<div
-			className={cn(className)} {...stylex.props(sx.mb2, sx.mt9, sx.flex, sx.minH6, sx.flexWrap, sx.itemsCenter, sx.justifyBetween, sx.gapX2, sx.gapY15, sx.px5, typography.label, sx.fontSemibold, sx.textFaint)}
+		<div {...mergeStylexProps(cn(className), sx.mb2, sx.mt9, sx.flex, sx.minH6, sx.flexWrap, sx.itemsCenter, sx.justifyBetween, sx.gapX2, sx.gapY15, sx.px5, typography.label, sx.fontSemibold, sx.textFaint)}
 			{...props}
 		>
 			<span {...stylex.props(sx.minW0)}>{children}</span>
@@ -292,8 +290,7 @@ export function SettingCard({
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
-		<Card
-			className={cn(settingsSurface, settingGroupRule, className)} {...stylex.props(sx.overflowHidden)}
+		<Card {...mergeStylexProps(cn(settingsSurface, settingGroupRule, className), sx.overflowHidden)}
 			{...props}
 		/>
 	);
@@ -308,7 +305,7 @@ export function SettingGroup({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn(className)} {...stylex.props(sx.flex, sx.flexCol)} {...props} />;
+	return <div {...mergeStylexProps(cn(className), sx.flex, sx.flexCol)} {...props} />;
 }
 
 /**
@@ -367,7 +364,7 @@ export function SettingCardSkeleton({
 						)}
 						<SettingRowText>
 							<SkeletonBar className={row.title} />
-							<SkeletonBar className={cn(row.description)} {...stylex.props(sx.mt2, sx.h25)} />
+							<SkeletonBar {...mergeStylexProps(cn(row.description), sx.mt2, sx.h25)} />
 						</SettingRowText>
 					</SettingRow>
 				))}
@@ -399,7 +396,7 @@ export function SettingsSection({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <Card className={cn(settingsSurface, className)} {...stylex.props(sx.p5)} {...props} />;
+	return <Card {...mergeStylexProps(cn(settingsSurface, className), sx.p5)} {...props} />;
 }
 
 /**
@@ -420,8 +417,7 @@ export function SettingRow({
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
-		<div
-			className={cn(className)} {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gapX4, sx.gapY25, sx.px5, sx.py4)}
+		<div {...mergeStylexProps(cn(className), sx.flex, sx.flexWrap, sx.itemsCenter, sx.gapX4, sx.gapY25, sx.px5, sx.py4)}
 			{...props}
 		/>
 	);
@@ -431,14 +427,14 @@ export function SettingRowText({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("max-sm:min-w-[55%]", className)} {...stylex.props(sx.minW0, sx.flex1)} {...props} />;
+	return <div {...mergeStylexProps(cn("max-sm:min-w-[55%]", className), sx.minW0, sx.flex1)} {...props} />;
 }
 
 export function SettingRowTitle({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn(className)} {...stylex.props(typography.itemTitle, sx.fontMedium, sx.textFg)} {...props} />;
+	return <div {...mergeStylexProps(cn(className), typography.itemTitle, sx.fontMedium, sx.textFg)} {...props} />;
 }
 
 export function SettingRowDescription({
@@ -447,8 +443,7 @@ export function SettingRowDescription({
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
 		<div
-			data-setting-description=""
-			className={cn(className)} {...stylex.props(sx.mt1, typography.supporting, sx.textDim)}
+			data-setting-description="" {...mergeStylexProps(cn(className), sx.mt1, typography.supporting, sx.textDim)}
 			{...props}
 		/>
 	);
@@ -458,7 +453,7 @@ export function SettingRowControl({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn(className)} {...stylex.props(sx.mlAuto, sx.shrink0)} {...props} />;
+	return <div {...mergeStylexProps(cn(className), sx.mlAuto, sx.shrink0)} {...props} />;
 }
 
 /**
@@ -492,8 +487,7 @@ export function SettingsHint({
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
 		<div
-			data-settings-hint=""
-			className={cn(className)} {...stylex.props(sx.mt2, sx.px5, typography.supporting, sx.textFaint)}
+			data-settings-hint="" {...mergeStylexProps(cn(className), sx.mt2, sx.px5, typography.supporting, sx.textFaint)}
 			{...props}
 		/>
 	);
@@ -519,8 +513,7 @@ export function SettingsForm({
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
-		<div
-			className={cn(settingsSurface, className)} {...stylex.props(sx.mb3, sx.flex, sx.flexCol, sx.gap35, sx.p5)}
+		<div {...mergeStylexProps(cn(settingsSurface, className), sx.mb3, sx.flex, sx.flexCol, sx.gap35, sx.p5)}
 			{...props}
 		/>
 	);
@@ -530,14 +523,14 @@ export function SettingsFormTitle({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn(className)} {...stylex.props(sx.mb4, typography.itemTitle, sx.fontSemibold, sx.textFg)} {...props} />;
+	return <div {...mergeStylexProps(cn(className), sx.mb4, typography.itemTitle, sx.fontSemibold, sx.textFg)} {...props} />;
 }
 
 export function SettingsFormRow({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("max-sm:grid-cols-1", className)} {...stylex.props(sx.grid, sx.gridCols2, sx.gap3)} {...props} />;
+	return <div {...mergeStylexProps(cn("max-sm:grid-cols-1", className), sx.grid, sx.gridCols2, sx.gap3)} {...props} />;
 }
 
 export function SettingsField({
@@ -545,8 +538,7 @@ export function SettingsField({
 	...props
 }: React.ComponentPropsWithoutRef<"label">) {
 	return (
-		<label
-			className={cn(className)} {...stylex.props(sx.mb3, sx.flex, sx.minW0, sx.flexCol, sx.gap15, typography.label, sx.fontMedium, sx.textDim)}
+		<label {...mergeStylexProps(cn(className), sx.mb3, sx.flex, sx.minW0, sx.flexCol, sx.gap15, typography.label, sx.fontMedium, sx.textDim)}
 			{...props}
 		/>
 	);
@@ -562,5 +554,5 @@ export function SettingsFormActions({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn(className)} {...stylex.props(sx.mt1, sx.flex, sx.justifyEnd, sx.gap2)} {...props} />;
+	return <div {...mergeStylexProps(cn(className), sx.mt1, sx.flex, sx.justifyEnd, sx.gap2)} {...props} />;
 }

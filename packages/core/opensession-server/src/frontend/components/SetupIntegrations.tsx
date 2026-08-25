@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Button } from "../ui/button";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { Disclosure } from "../ui/disclosure";
 import { Modal } from "../ui/modal";
 import { SettingCard, SettingsHint, SettingsSection } from "../ui/settings";
@@ -690,9 +690,9 @@ setSaving(false);
 
 	return (
 		<>
-			<div className="phone:px-0" {...stylex.props(sx.grid, sx.px4)}>
+			<div {...mergeStylexProps("phone:px-0", sx.grid, sx.px4)}>
 				<SettingCard {...stylex.props(onboarding && !active && sx.hidden)}>
-					<div className="grid-cols-[auto_minmax(0,1fr)_auto] phone:grid-cols-[auto_minmax(0,1fr)] phone:px-3 phone:py-2" {...stylex.props(sx.grid, sx.itemsStart, sx.gapX3, sx.gapY1, sx.px5, sx.py4)}>
+					<div {...mergeStylexProps("grid-cols-[auto_minmax(0,1fr)_auto] phone:grid-cols-[auto_minmax(0,1fr)] phone:px-3 phone:py-2", sx.grid, sx.itemsStart, sx.gapX3, sx.gapY1, sx.px5, sx.py4)}>
 						<IconTile name="github" size={40} />
 						<div
 							{...stylex.props(
@@ -708,7 +708,7 @@ setSaving(false);
 							<StateChip tone={state.tone} label={state.label} />
 						</div>
 						{!onboarding && (
-							<div className="phone:col-span-2 phone:col-start-1 phone:mt-3" {...stylex.props(sx.colStart2, sx.rowStart2, sx.minW0)}>
+							<div {...mergeStylexProps("phone:col-span-2 phone:col-start-1 phone:mt-3", sx.colStart2, sx.rowStart2, sx.minW0)}>
 								<p {...stylex.props(sx.m0, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 									Interactive sessions open PRs as their connected owner instead of the bot.
 								</p>
@@ -727,10 +727,10 @@ setSaving(false);
 							</div>
 						)}
 						{!onboarding && (
-						<div className="phone:col-span-2 phone:col-start-1 phone:row-span-1 phone:row-start-3 phone:mt-4 phone:ml-0 phone:flex-col phone:items-stretch" {...stylex.props(sx.colStart3, sx.rowSpan2, sx.rowStart1, sx.ml4, sx.flex, sx.minH10, sx.shrink0, sx.itemsCenter, sx.gap2)}>
+						<div {...mergeStylexProps("phone:col-span-2 phone:col-start-1 phone:row-span-1 phone:row-start-3 phone:mt-4 phone:ml-0 phone:flex-col phone:items-stretch", sx.colStart3, sx.rowSpan2, sx.rowStart1, sx.ml4, sx.flex, sx.minH10, sx.shrink0, sx.itemsCenter, sx.gap2)}>
 							{(github.clientIdConfigured || github.userPrAuth) && (
 								<>
-									<div className="phone:flex" {...stylex.props(sx.hidden, sx.minH11, sx.itemsCenter, sx.justifyBetween, sx.fontMedium, sx.textDim, typography.label)}>
+									<div {...mergeStylexProps("phone:flex", sx.hidden, sx.minH11, sx.itemsCenter, sx.justifyBetween, sx.fontMedium, sx.textDim, typography.label)}>
 										<span>GitHub sign-in</span>
 										<Switch
 											checked={github.userPrAuth}
@@ -765,7 +765,7 @@ setSaving(false);
 				    whole workspace, so the work is a one-time setup on GitHub that a
 				    person should be able to read before opening a credentials form. */}
 				{onboarding && (
-					<div className="phone:grid-cols-1" {...stylex.props(sx.mt3, sx.grid, sx.gridCols2, sx.itemsStart, sx.gap3)}>
+					<div {...mergeStylexProps("phone:grid-cols-1", sx.mt3, sx.grid, sx.gridCols2, sx.itemsStart, sx.gap3)}>
 						<SettingsSection {...stylex.props(sx.flex, sx.hFull, sx.flexCol, sx.gap3)}>
 							<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>How to connect</div>
 							<SetupSteps steps={GITHUB_ONBOARDING_STEPS} />

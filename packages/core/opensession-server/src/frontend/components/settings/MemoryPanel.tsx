@@ -68,6 +68,7 @@ import {
 } from "../../lib/memory-v2";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { mergeStylexProps } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -507,8 +508,7 @@ function CategoryCard({
 	return (
 		<SettingCard>
 			<button
-				type="button"
-				className="group hover:bg-hover phone:items-start" {...stylex.props(sx.focusRing, sx.flex, sx.wFull, sx.itemsCenter, sx.gap3, sx.rounded2xl, sx.px5, sx.py4, sx.textLeft)}
+				type="button" {...mergeStylexProps("group hover:bg-hover phone:items-start", sx.focusRing, sx.flex, sx.wFull, sx.itemsCenter, sx.gap3, sx.rounded2xl, sx.px5, sx.py4, sx.textLeft)}
 				onClick={onOpen}
 			>
 				<CategoryIcon category={category} />
@@ -517,13 +517,13 @@ function CategoryCard({
 					<span {...stylex.props(sx.mt1, sx.block, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 						{category.description}
 					</span>
-					<span className="phone:block" {...stylex.props(sx.mt15, sx.hidden, sx.fontMedium, sx.textDim, typography.label)}>
+					<span {...mergeStylexProps("phone:block", sx.mt15, sx.hidden, sx.fontMedium, sx.textDim, typography.label)}>
 						{count} {count === 1 ? "memory" : "memories"}
 					</span>
 				</span>
-				<span className="phone:self-start phone:pt-2" {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.gap2, sx.selfCenter, sx.fontMedium, sx.textDim, typography.label)}>
+				<span {...mergeStylexProps("phone:self-start phone:pt-2", sx.flex, sx.shrink0, sx.itemsCenter, sx.gap2, sx.selfCenter, sx.fontMedium, sx.textDim, typography.label)}>
 					<span className="phone:hidden">{count} {count === 1 ? "memory" : "memories"}</span>
-					<IconChevronRight size={20} className="group-hover:text-dim" {...stylex.props(sx.textFaint)} />
+					<IconChevronRight size={20} {...mergeStylexProps("group-hover:text-dim", sx.textFaint)} />
 				</span>
 			</button>
 		</SettingCard>
@@ -676,26 +676,25 @@ setBusy(false);
 	}
 
 	return <>
-		<tr className="first:border-t-0 phone:grid phone:grid-cols-[minmax(0,1fr)_auto] phone:gap-x-3 phone:px-4 phone:py-3" {...stylex.props(sx.borderT, sx.borderLine, sx.alignTop)}>
-			<td className="phone:col-start-2 phone:row-start-1 phone:w-auto phone:p-0" {...stylex.props(sx.w11, sx.px1, sx.py1)}>
-				<label className="phone:size-11" {...stylex.props(sx.flex, sx.size10, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter)}>
+		<tr {...mergeStylexProps("first:border-t-0 phone:grid phone:grid-cols-[minmax(0,1fr)_auto] phone:gap-x-3 phone:px-4 phone:py-3", sx.borderT, sx.borderLine, sx.alignTop)}>
+			<td {...mergeStylexProps("phone:col-start-2 phone:row-start-1 phone:w-auto phone:p-0", sx.w11, sx.px1, sx.py1)}>
+				<label {...mergeStylexProps("phone:size-11", sx.flex, sx.size10, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter)}>
 					<span {...stylex.props(sx.srOnly)}>Select {summary}</span>
 					<Checkbox checked={selected} onCheckedChange={(checked) => onSelected(checked === true)} />
 				</label>
 			</td>
 			{showScope && (
-				<td className="phone:col-start-1 phone:row-start-1 phone:w-auto phone:p-0" {...stylex.props(sx.w32, sx.px4, sx.py3, sx.fontMedium, sx.textDim, typography.label)}>
+				<td {...mergeStylexProps("phone:col-start-1 phone:row-start-1 phone:w-auto phone:p-0", sx.w32, sx.px4, sx.py3, sx.fontMedium, sx.textDim, typography.label)}>
 					{row.scoped.scope.label}
 				</td>
 			)}
-			<td className="phone:col-span-2 phone:row-start-2 phone:mt-2 phone:p-0" {...stylex.props(sx.px4, sx.py3)}>
+			<td {...mergeStylexProps("phone:col-span-2 phone:row-start-2 phone:mt-2 phone:p-0", sx.px4, sx.py3)}>
 				{editing ? (
 					<div>
 						<Textarea
 							ref={editRef}
 							rows={3}
-							maxLength={400}
-							className="phone:text-input-phone" {...stylex.props(sx.minH6em, sx.resizeNone, sx.overflowHidden, sx.leadingRelaxed, typography.supporting)}
+							maxLength={400} {...mergeStylexProps("phone:text-input-phone", sx.minH6em, sx.resizeNone, sx.overflowHidden, sx.leadingRelaxed, typography.supporting)}
 							value={draft}
 							autoFocus
 							onChange={(event) => setDraft(event.target.value)}
@@ -705,7 +704,7 @@ setBusy(false);
 							}}
 						/>
 						<div {...stylex.props(sx.mt2, sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap2)}>
-							<span className="tabular-nums" {...stylex.props(sx.textFaint, typography.meta)}>{draft.length}/400</span>
+							<span {...mergeStylexProps("tabular-nums", sx.textFaint, typography.meta)}>{draft.length}/400</span>
 							<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
 							<Button size="sm" variant="primary" className="phone:min-h-11" disabled={busy || !draft.trim()} onClick={() => void save()}>
 								Save
@@ -720,7 +719,7 @@ setBusy(false);
 						</div>
 					</div>
 				) : (
-					<div className="group/memory" {...stylex.props(sx.relative)}>
+					<div {...mergeStylexProps("group/memory", sx.relative)}>
 						<div {...stylex.props(sx.mb2, sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap15)}>
 							<Badge>{kind === "legacy" ? "Unclassified" : KIND_LABELS[kind]}</Badge>
 							<Badge tone={row.entry.tier === "pinned" ? "accent" : "neutral"}>
@@ -750,18 +749,16 @@ setBusy(false);
 							)}
 							{!expanded && canExpand && (
 								<span
-									aria-hidden="true"
-									className="bg-[linear-gradient(to_bottom,transparent,var(--settings-plate))]" {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.insetX0, sx.bottom0, sx.h10)}
+									aria-hidden="true" {...mergeStylexProps("bg-[linear-gradient(to_bottom,transparent,var(--settings-plate))]", sx.pointerEventsNone, sx.absolute, sx.insetX0, sx.bottom0, sx.h10)}
 								/>
 							)}
 						</div>
-						<div className="phone:mt-1 phone:flex-wrap" {...stylex.props(sx.flex, sx.minH10, sx.itemsCenter, sx.justifyBetween, sx.gap2)}>
+						<div {...mergeStylexProps("phone:mt-1 phone:flex-wrap", sx.flex, sx.minH10, sx.itemsCenter, sx.justifyBetween, sx.gap2)}>
 							<div {...stylex.props(sx.flex, sx.h10, sx.minW0, sx.itemsCenter)}>
 								{!expanded && (canExpand || row.entry.hasDetails) && (
 									<button
 										type="button"
-										aria-expanded="false"
-								className="hover:text-fg group-hover/memory:opacity-100 group-focus-within/memory:opacity-100 phone:h-11 phone:min-h-11 phone:opacity-100" {...stylex.props(sx.focusRing, sx.inlineFlex, sx.h10, sx.minH10, sx.itemsCenter, sx.roundedMd, sx.border0, sx.bgTransparent, sx.px0, sx.fontSemibold, sx.leadingNone, sx.textDim, sx.opacity0, sx.transitionOpacity, sx.duration150, typography.meta)}
+										aria-expanded="false" {...mergeStylexProps("hover:text-fg group-hover/memory:opacity-100 group-focus-within/memory:opacity-100 phone:h-11 phone:min-h-11 phone:opacity-100", sx.focusRing, sx.inlineFlex, sx.h10, sx.minH10, sx.itemsCenter, sx.roundedMd, sx.border0, sx.bgTransparent, sx.px0, sx.fontSemibold, sx.leadingNone, sx.textDim, sx.opacity0, sx.transitionOpacity, sx.duration150, typography.meta)}
 									onClick={() => void expand()}
 									>
 										Read all
@@ -770,26 +767,24 @@ setBusy(false);
 								{expanded && (canExpand || row.entry.hasDetails) && (
 									<button
 										type="button"
-										aria-expanded="true"
-								className="hover:text-fg phone:h-11 phone:min-h-11" {...stylex.props(sx.focusRing, sx.inlineFlex, sx.h10, sx.minH10, sx.itemsCenter, sx.roundedMd, sx.border0, sx.bgTransparent, sx.px0, sx.fontSemibold, sx.leadingNone, sx.textDim, typography.meta)}
+										aria-expanded="true" {...mergeStylexProps("hover:text-fg phone:h-11 phone:min-h-11", sx.focusRing, sx.inlineFlex, sx.h10, sx.minH10, sx.itemsCenter, sx.roundedMd, sx.border0, sx.bgTransparent, sx.px0, sx.fontSemibold, sx.leadingNone, sx.textDim, typography.meta)}
 										onClick={() => setExpanded(false)}
 									>
 										Show less
 									</button>
 								)}
 							</div>
-							<div className="group-hover/memory:opacity-100 group-focus-within/memory:opacity-100 phone:opacity-100" {...stylex.props(sx.mlAuto, sx.flex, sx.h10, sx.shrink0, sx.itemsCenter, sx.justifyEnd, sx.gap1, sx.opacity0, sx.transitionOpacity, sx.duration150)}>
+							<div {...mergeStylexProps("group-hover/memory:opacity-100 group-focus-within/memory:opacity-100 phone:opacity-100", sx.mlAuto, sx.flex, sx.h10, sx.shrink0, sx.itemsCenter, sx.justifyEnd, sx.gap1, sx.opacity0, sx.transitionOpacity, sx.duration150)}>
 								{review && (
-									<Button size="sm" variant="ghost" aria-label="Confirm memory" className="phone:size-11 phone:min-h-11" {...stylex.props(sx.size10, sx.minH10)} icon={<IconCheck size={16} />} disabled={busy} onClick={() => void act("confirm")} />
+									<Button size="sm" variant="ghost" aria-label="Confirm memory" {...mergeStylexProps("phone:size-11 phone:min-h-11", sx.size10, sx.minH10)} icon={<IconCheck size={16} />} disabled={busy} onClick={() => void act("confirm")} />
 								)}
 								{state === "active" && (
-									<Button size="sm" variant="ghost" aria-label={row.entry.tier === "pinned" ? "Unpin memory" : "Pin memory"} className="phone:size-11 phone:min-h-11" {...stylex.props(sx.size10, sx.minH10)} icon={<IconPin size={16} />} disabled={busy} onClick={() => void act(row.entry.tier === "pinned" ? "unpin" : "pin")} />
+									<Button size="sm" variant="ghost" aria-label={row.entry.tier === "pinned" ? "Unpin memory" : "Pin memory"} {...mergeStylexProps("phone:size-11 phone:min-h-11", sx.size10, sx.minH10)} icon={<IconPin size={16} />} disabled={busy} onClick={() => void act(row.entry.tier === "pinned" ? "unpin" : "pin")} />
 								)}
 								<Button
 									size="sm"
 									variant="ghost"
-									aria-label="Edit memory"
-									className="phone:size-11 phone:min-h-11" {...stylex.props(sx.size10, sx.minH10)}
+									aria-label="Edit memory" {...mergeStylexProps("phone:size-11 phone:min-h-11", sx.size10, sx.minH10)}
 									icon={<IconPencil size={16} />}
 									disabled={busy}
 									onClick={() => {
@@ -800,8 +795,7 @@ setBusy(false);
 								<Button
 									size="sm"
 									variant="ghost"
-									aria-label={state === "archived" ? "Restore memory" : "Archive memory"}
-									className="phone:size-11 phone:min-h-11" {...stylex.props(sx.size10, sx.minH10)}
+									aria-label={state === "archived" ? "Restore memory" : "Archive memory"} {...mergeStylexProps("phone:size-11 phone:min-h-11", sx.size10, sx.minH10)}
 									icon={state === "archived" ? <IconRestore size={16} /> : <IconArchive size={16} />}
 									disabled={busy}
 									onClick={() => void act(state === "archived" ? "restore" : "archive")}
@@ -810,8 +804,7 @@ setBusy(false);
 									<Button
 										size="sm"
 										variant="ghost"
-										aria-label="Delete memory permanently"
-										className="hover:text-red phone:size-11 phone:min-h-11" {...stylex.props(sx.size10, sx.minH10)}
+										aria-label="Delete memory permanently" {...mergeStylexProps("hover:text-red phone:size-11 phone:min-h-11", sx.size10, sx.minH10)}
 										icon={<IconTrash size={16} />}
 										disabled={busy}
 										onClick={() => confirm({
@@ -828,7 +821,7 @@ setBusy(false);
 					</div>
 				)}
 			</td>
-			<td className="phone:col-start-1 phone:row-start-3 phone:mt-2 phone:w-auto phone:p-0" {...stylex.props(sx.w32, sx.px4, sx.py3, sx.textFaint, typography.meta)}>
+			<td {...mergeStylexProps("phone:col-start-1 phone:row-start-3 phone:mt-2 phone:w-auto phone:p-0", sx.w32, sx.px4, sx.py3, sx.textFaint, typography.meta)}>
 				<div {...stylex.props(sx.fontMedium, sx.textDim)}>{memorySourceLabel(row.entry)}</div>
 				<div {...stylex.props(sx.mt05)}>{relativeTime(memoryCreatedAt(row.entry))}</div>
 				{row.entry.expiresAt && <div {...stylex.props(sx.mt05)}>Expires {new Date(row.entry.expiresAt).toLocaleDateString()}</div>}
@@ -858,8 +851,8 @@ function MemoryTable({
 	return (
 		<SettingCard {...stylex.props(sx.overflowHidden, sx.borderLine)}>
 			<div {...stylex.props(sx.overflowXAuto)}>
-				<table className="phone:block" {...stylex.props(sx.wFull, sx.tableFixed, sx.borderCollapse)}>
-					<thead className="phone:sr-only" {...stylex.props(sx.borderB, sx.borderLine, sx.textLeft, sx.fontSemibold, sx.textFaint, typography.label)}>
+				<table {...mergeStylexProps("phone:block", sx.wFull, sx.tableFixed, sx.borderCollapse)}>
+					<thead {...mergeStylexProps("phone:sr-only", sx.borderB, sx.borderLine, sx.textLeft, sx.fontSemibold, sx.textFaint, typography.label)}>
 						<tr>
 							<th {...stylex.props(sx.w11, sx.px3, sx.py25)}><span {...stylex.props(sx.srOnly)}>Select</span></th>
 							{showScope && <th {...stylex.props(sx.w32, sx.px4, sx.py25)}>Scope</th>}
@@ -977,7 +970,7 @@ setBusy(false);
 						}}
 					/>
 				</Field>
-				<div className="phone:grid-cols-1" {...stylex.props(sx.mt3, sx.grid, sx.gridCols2, sx.gap3)}>
+				<div {...mergeStylexProps("phone:grid-cols-1", sx.mt3, sx.grid, sx.gridCols2, sx.gap3)}>
 					<Field label="Kind">
 						<Select className="phone:min-h-11 phone:text-input-phone" value={kind} onChange={(event) => setKind(event.target.value as MemoryRecordKind)}>
 							{Object.entries(KIND_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -989,7 +982,7 @@ setBusy(false);
 						</Field>
 					)}
 				</div>
-				<div className="tabular-nums" {...stylex.props(sx.mt1, sx.textRight, sx.textFaint, typography.meta)}>{draft.length}/400</div>
+				<div {...mergeStylexProps("tabular-nums", sx.mt1, sx.textRight, sx.textFaint, typography.meta)}>{draft.length}/400</div>
 				<Modal.Footer>
 					<Modal.Close render={<Button className="phone:min-h-11" variant="ghost" disabled={busy}>Cancel</Button>} />
 					<Button className="phone:min-h-11" variant="primary" disabled={busy || !scopeKey || !draft.trim() || (kind === "status" && !expiresAt)} onClick={() => void add()}>
@@ -1053,7 +1046,7 @@ setBusy(false);
 				<Field label="Summary">
 					<Textarea className="phone:text-input-phone" rows={4} maxLength={400} value={summary} autoFocus onChange={(event) => setSummary(event.target.value)} />
 				</Field>
-				<div className="phone:grid-cols-1" {...stylex.props(sx.mt3, sx.grid, sx.gridCols2, sx.gap3)}>
+				<div {...mergeStylexProps("phone:grid-cols-1", sx.mt3, sx.grid, sx.gridCols2, sx.gap3)}>
 					<Field label="Kind">
 						<Select className="phone:min-h-11 phone:text-input-phone" value={kind} onChange={(event) => setKind(event.target.value as MemoryRecordKind)}>
 							{Object.entries(KIND_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -1061,7 +1054,7 @@ setBusy(false);
 					</Field>
 					{kind === "status" && <Field label="Expires"><Input className="phone:min-h-11 phone:text-input-phone" type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} /></Field>}
 				</div>
-				<div className="tabular-nums" {...stylex.props(sx.mt1, sx.textRight, sx.textFaint, typography.meta)}>{summary.length}/400</div>
+				<div {...mergeStylexProps("tabular-nums", sx.mt1, sx.textRight, sx.textFaint, typography.meta)}>{summary.length}/400</div>
 				<Modal.Footer>
 					<Modal.Close render={<Button className="phone:min-h-11" variant="ghost" disabled={busy}>Cancel</Button>} />
 					<Button className="phone:min-h-11" variant="primary" disabled={busy || !summary.trim() || (kind === "status" && !expiresAt)} onClick={() => void merge()}>{busy ? "Merging…" : "Merge"}</Button>
@@ -1143,15 +1136,14 @@ function CategoryPage({
 
 	return (
 		<SettingsPanel>
-			<h2 className="phone:block" {...stylex.props(sx.relative, sx.z20, sx.m0, sx.hidden, sx.px5, sx.fontSemibold, sx.textFg, typography.sectionTitle)}>
+			<h2 {...mergeStylexProps("phone:block", sx.relative, sx.z20, sx.m0, sx.hidden, sx.px5, sx.fontSemibold, sx.textFg, typography.sectionTitle)}>
 				{category.pageTitle}
 			</h2>
 			<SettingsHeader
 				title={category.pageTitle}
-				description={`${category.description} ${count} ${count === 1 ? "memory" : "memories"}.`}
-				className="phone:mt-1.5" {...stylex.props(sx.relative, sx.z20)}
+				description={`${category.description} ${count} ${count === 1 ? "memory" : "memories"}.`} {...mergeStylexProps("phone:mt-1.5", sx.relative, sx.z20)}
 			/>
-			<div className="before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-11 before:bg-surface before:content-[''] after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-[linear-gradient(to_bottom,var(--bg),transparent)] after:content-[''] phone:before:h-4" {...stylex.props(sx.sticky, sx.top0, sx.z10, sx.mb3, sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap3, sx.bgSurface, sx.px5, sx.py2)}>
+			<div {...mergeStylexProps("before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-11 before:bg-surface before:content-[''] after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-[linear-gradient(to_bottom,var(--bg),transparent)] after:content-[''] phone:before:h-4", sx.sticky, sx.top0, sx.z10, sx.mb3, sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap3, sx.bgSurface, sx.px5, sx.py2)}>
 				<Button size="sm" variant="ghost" className="phone:min-h-11" icon={<IconChevronLeft size={18} />} onClick={onBack}>
 					Back
 				</Button>
@@ -1166,11 +1158,11 @@ function CategoryPage({
 								title="Clear selection"
 								onClick={() => setSelectedIds(new Set())}
 							>
-								<span className="phone:hidden" {...stylex.props(sx.grid, sx.placeItemsCenter)}>
-									<span className="group-hover:opacity-0 group-focus-visible:opacity-0" {...stylex.props(sx.colStart1, sx.rowStart1, sx.transitionOpacity)}>{selectedIds.size} selected</span>
-									<IconX size={16} className="group-hover:opacity-100 group-focus-visible:opacity-100" {...stylex.props(sx.colStart1, sx.rowStart1, sx.opacity0, sx.transitionOpacity)} />
+								<span {...mergeStylexProps("phone:hidden", sx.grid, sx.placeItemsCenter)}>
+									<span {...mergeStylexProps("group-hover:opacity-0 group-focus-visible:opacity-0", sx.colStart1, sx.rowStart1, sx.transitionOpacity)}>{selectedIds.size} selected</span>
+									<IconX size={16} {...mergeStylexProps("group-hover:opacity-100 group-focus-visible:opacity-100", sx.colStart1, sx.rowStart1, sx.opacity0, sx.transitionOpacity)} />
 								</span>
-								<span className="phone:flex" {...stylex.props(sx.hidden, sx.itemsCenter, sx.gap15)}>
+								<span {...mergeStylexProps("phone:flex", sx.hidden, sx.itemsCenter, sx.gap15)}>
 									{selectedIds.size} selected
 									<IconX size={16} />
 								</span>
@@ -1189,8 +1181,7 @@ function CategoryPage({
 					</Button>
 					{selectedIds.size >= 2 && (
 						<Button
-							size="sm"
-							className="phone:inline-flex phone:min-h-11 phone:w-11" {...stylex.props(sx.hidden)}
+							size="sm" {...mergeStylexProps("phone:inline-flex phone:min-h-11 phone:w-11", sx.hidden)}
 							icon={<IconPlus size={18} />}
 							aria-label="Add memory"
 							title="Add memory"
@@ -1203,15 +1194,15 @@ function CategoryPage({
 			{canAdd && (
 				<SettingCard {...stylex.props(sx.mb3, sx.borderLine, sx.p4)}>
 					<SettingGroup {...stylex.props(sx.gap2)}>
-						<div className="phone:grid-cols-1" {...stylex.props(sx.grid, sx.gridCols4, sx.itemsCenter, sx.gap2)}>
-							<label className="phone:col-span-1" {...stylex.props(sx.relative, sx.colSpan2, sx.block, sx.minW0)}>
+						<div {...mergeStylexProps("phone:grid-cols-1", sx.grid, sx.gridCols4, sx.itemsCenter, sx.gap2)}>
+							<label {...mergeStylexProps("phone:col-span-1", sx.relative, sx.colSpan2, sx.block, sx.minW0)}>
 								<span {...stylex.props(sx.srOnly)}>Search memories</span>
 								<IconSearch size={16} {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.left25, sx.top12, sx.TranslateY12, sx.textFaint)} />
-								<Input className="phone:min-h-11 phone:text-input-phone" {...stylex.props(sx.pl9)} type="search" value={query} placeholder="Search memories" onChange={(event) => { setQuery(event.target.value); resetPage(); }} />
+								<Input {...mergeStylexProps("phone:min-h-11 phone:text-input-phone", sx.pl9)} type="search" value={query} placeholder="Search memories" onChange={(event) => { setQuery(event.target.value); resetPage(); }} />
 							</label>
-							<span className="phone:col-span-1 phone:text-left" {...stylex.props(sx.colSpan2, sx.textRight, sx.textFaint, typography.meta)}>{selectedScope?.count || 0} total · {selectedScope?.pinnedCount || 0} pinned · {selectedScope?.reviewCount || 0} to review</span>
+							<span {...mergeStylexProps("phone:col-span-1 phone:text-left", sx.colSpan2, sx.textRight, sx.textFaint, typography.meta)}>{selectedScope?.count || 0} total · {selectedScope?.pinnedCount || 0} pinned · {selectedScope?.reviewCount || 0} to review</span>
 						</div>
-						<div className="phone:grid-cols-1" {...stylex.props(sx.grid, sx.gridCols4, sx.gap2)}>
+						<div {...mergeStylexProps("phone:grid-cols-1", sx.grid, sx.gridCols4, sx.gap2)}>
 							<OptionSelect
 								label={category.targetLabel}
 								className="phone:min-h-11 phone:text-input-phone"
@@ -1371,7 +1362,7 @@ export function MemoryPanel() {
 			{error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
 			{stats && (
 				<SettingCard {...stylex.props(sx.mb3, sx.px5, sx.py4)}>
-					<div className="phone:flex-col" {...stylex.props(sx.flex, sx.itemsStart, sx.justifyBetween, sx.gap4)}>
+					<div {...mergeStylexProps("phone:flex-col", sx.flex, sx.itemsStart, sx.justifyBetween, sx.gap4)}>
 						<div>
 							<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>Prompt budget</div>
 							<div {...stylex.props(sx.mt1, sx.textDim, typography.supporting)}>
@@ -1380,8 +1371,8 @@ export function MemoryPanel() {
 									: "Only pinned, trusted summaries are ambient. Other memories are retrieved when relevant."}
 							</div>
 						</div>
-						<div className="phone:text-left" {...stylex.props(sx.shrink0, sx.textRight)}>
-							<div className="tabular-nums" {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>{(stats.ambientUsedBytes || 0).toLocaleString()} / {(stats.ambientBudgetBytes || 0).toLocaleString()} bytes</div>
+						<div {...mergeStylexProps("phone:text-left", sx.shrink0, sx.textRight)}>
+							<div {...mergeStylexProps("tabular-nums", sx.fontSemibold, sx.textFg, typography.itemTitle)}>{(stats.ambientUsedBytes || 0).toLocaleString()} / {(stats.ambientBudgetBytes || 0).toLocaleString()} bytes</div>
 							<div {...stylex.props(sx.mt1, sx.textFaint, typography.meta)}>{stats.reviewCount || 0} memories need review</div>
 						</div>
 					</div>

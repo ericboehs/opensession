@@ -22,6 +22,7 @@ import { IconDotsHorizontal, IconPencil, IconPlus, IconTrash } from "./icons";
 import { setupRequest, type TeamMember } from "./setup-shared";
 import { UserAvatar } from "./UserAvatar";
 import * as stylex from "@stylexjs/stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -287,8 +288,7 @@ toast(e.message, { variant: "error" });
 						<IconPencil size={16} className={MENU_ICON} />
 						Edit member
 					</Menu.Item>
-					<Menu.Item
-						className="data-[highlighted]:bg-red-soft data-[highlighted]:text-red" {...stylex.props(sx.textRed)}
+					<Menu.Item {...mergeStylexProps("data-[highlighted]:bg-red-soft data-[highlighted]:text-red", sx.textRed)}
 						onClick={() => setConfirmOpen(true)}
 					>
 						<IconTrash size={16} />

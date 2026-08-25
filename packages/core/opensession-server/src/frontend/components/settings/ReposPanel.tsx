@@ -27,6 +27,7 @@ import { IconSparkle } from "../icons";
 import { Radio, RadioGroup } from "../../ui/radio";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { mergeStylexProps } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -147,7 +148,7 @@ setSaving(false);
 					onValueChange={(mode) => void setMode(mode as SharedCheckoutMode)}
 					className="[&>*+*]:relative [&>*+*]:before:pointer-events-none [&>*+*]:before:absolute [&>*+*]:before:inset-x-5 [&>*+*]:before:top-0 [&>*+*]:before:h-px [&>*+*]:before:bg-line [&>*+*]:before:content-['']"
 				>
-					<label className="hover:bg-hover" {...stylex.props(sx.flex, sx.minH11, sx.cursorPointer, sx.itemsStart, sx.gap3, sx.px5, sx.py4, sx.transitionBackgroundColor)}>
+					<label {...mergeStylexProps("hover:bg-hover", sx.flex, sx.minH11, sx.cursorPointer, sx.itemsStart, sx.gap3, sx.px5, sx.py4, sx.transitionBackgroundColor)}>
 						<Radio value="shared" {...stylex.props(sx.mt05)} />
 						<span {...stylex.props(sx.minW0)}>
 							<span {...stylex.props(sx.block, sx.fontMedium, sx.textFg, typography.itemTitle)}>
@@ -159,7 +160,7 @@ setSaving(false);
 							</span>
 						</span>
 					</label>
-					<label className="hover:bg-hover" {...stylex.props(sx.flex, sx.minH11, sx.cursorPointer, sx.itemsStart, sx.gap3, sx.px5, sx.py4, sx.transitionBackgroundColor)}>
+					<label {...mergeStylexProps("hover:bg-hover", sx.flex, sx.minH11, sx.cursorPointer, sx.itemsStart, sx.gap3, sx.px5, sx.py4, sx.transitionBackgroundColor)}>
 						<Radio value="worktree" {...stylex.props(sx.mt05)} />
 						<span {...stylex.props(sx.minW0)}>
 							<span {...stylex.props(sx.block, sx.fontMedium, sx.textFg, typography.itemTitle)}>

@@ -50,6 +50,7 @@ import { UserAvatar } from "./UserAvatar";
 import { ExtBadge, fileExt } from "./lang-marks";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -925,8 +926,7 @@ setSavingEdit(false);
               {comment.side === "deletions" ? " (removed)" : ""}
             </span>
             {onRemovePending && (
-              <button
-                className="hover:text-red" {...stylex.props(sx.cursorPointer, sx.borderNone, sx.bgTransparent, sx.px1, sx.py05, sx.textFaint, typography.meta)}
+              <button {...mergeStylexProps("hover:text-red", sx.cursorPointer, sx.borderNone, sx.bgTransparent, sx.px1, sx.py05, sx.textFaint, typography.meta)}
                 onClick={() => onRemovePending(comment.id)}
                 title="Remove this pending comment"
               >
@@ -1070,8 +1070,7 @@ const pendingByFile = m;
         >
           {stickyFileHeaders && (
             <span
-              aria-hidden="true"
-              className="shadow-[inset_0_0_0_1px_var(--border),inset_0_-1px_0_var(--divider)] group-data-[stuck]:block" {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.inset0, sx.hidden, sx.roundedTLg)}
+              aria-hidden="true" {...mergeStylexProps("shadow-[inset_0_0_0_1px_var(--border),inset_0_-1px_0_var(--divider)] group-data-[stuck]:block", sx.pointerEventsNone, sx.absolute, sx.inset0, sx.hidden, sx.roundedTLg)}
             />
           )}
           <button
@@ -1137,7 +1136,7 @@ const pendingByFile = m;
             />
           </Tooltip>
           {pend.length > 0 && (
-            <span className="before:text-meta before:content-['💬']" {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap3px, sx.fontSans, sx.textFaint, typography.meta)}>
+            <span {...mergeStylexProps("before:text-meta before:content-['💬']", sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap3px, sx.fontSans, sx.textFaint, typography.meta)}>
               {pend.length}
             </span>
           )}
@@ -1162,8 +1161,7 @@ const pendingByFile = m;
               </Button>
               <Button
                 variant="primary"
-                size="sm"
-                className="shadow-none" {...stylex.props(sx.minH0, sx.px25, sx.py3px, sx.textXs, sx.fontMedium)}
+                size="sm" {...mergeStylexProps("shadow-none", sx.minH0, sx.px25, sx.py3px, sx.textXs, sx.fontMedium)}
                 onClick={saveEdit}
                 disabled={savingEdit}
               >
@@ -1352,8 +1350,7 @@ const pendingByFile = m;
         </span>
       )}
       {viewedEnabled && showViewedProgress && (
-        <span
-          className="tabular-nums" {...stylex.props(sx.flex, sx.itemsCenter, sx.gap1, sx.textFaint, typography.meta)}
+        <span {...mergeStylexProps("tabular-nums", sx.flex, sx.itemsCenter, sx.gap1, sx.textFaint, typography.meta)}
           aria-label={`${viewedCount} of ${files.length} files viewed`}
         >
           <IconEye size={20} />
@@ -1405,13 +1402,11 @@ const pendingByFile = m;
             return (
               // Group headers are deliberately quieter than file rows: they
               // give scan structure without competing with filenames.
-              <section
-                className="[section+&]:mt-1" {...stylex.props(sx.flex, sx.flexCol, sx.gap7px)}
+              <section {...mergeStylexProps("[section+&]:mt-1", sx.flex, sx.flexCol, sx.gap7px)}
                 key={groupKey}
               >
                 <button
-                  type="button"
-                  className="hover:text-fg" {...stylex.props(sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap7px, sx.borderNone, sx.bgTransparent, sx.px3px, sx.py1, sx.textLeft, sx.fontSans, sx.textDim)}
+                  type="button" {...mergeStylexProps("hover:text-fg", sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap7px, sx.borderNone, sx.bgTransparent, sx.px3px, sx.py1, sx.textLeft, sx.fontSans, sx.textDim)}
                   data-diff-group-files={JSON.stringify(
                     group.indices.map((index) => files[index].name),
                   )}
@@ -1489,8 +1484,7 @@ function ResolvedReviewThread({
   return (
     <article {...stylex.props(sx.overflowHidden, sx.roundedMd, sx.border, sx.borderDividerSoft, sx.bgBg)}>
       <button
-        type="button"
-        className="hover:bg-hover" {...stylex.props(sx.focusRing, sx.flex, sx.minH11, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.border0, sx.bgTransparent, sx.px3, sx.py2, sx.textLeft, sx.textDim, typography.label)}
+        type="button" {...mergeStylexProps("hover:bg-hover", sx.focusRing, sx.flex, sx.minH11, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.border0, sx.bgTransparent, sx.px3, sx.py2, sx.textLeft, sx.textDim, typography.label)}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
@@ -1507,8 +1501,7 @@ function ResolvedReviewThread({
         <div {...stylex.props(sx.borderT, sx.borderDividerSoft)}>
           {comments.map((comment, index) => (
             <div
-              key={`${thread.id}-${index}`}
-              className="[&+&]:border-t [&+&]:border-divider-soft" {...stylex.props(sx.px3, sx.py3)}
+              key={`${thread.id}-${index}`} {...mergeStylexProps("[&+&]:border-t [&+&]:border-divider-soft", sx.px3, sx.py3)}
             >
               <div {...stylex.props(sx.mb2, sx.flex, sx.itemsCenter, sx.gap2)}>
                 <UserAvatar
@@ -1525,8 +1518,7 @@ function ResolvedReviewThread({
                   </span>
                 )}
               </div>
-              <div
-                className="markdown" {...stylex.props(sx.leadingRelaxed, sx.textDim, typography.label)}
+              <div {...mergeStylexProps("markdown", sx.leadingRelaxed, sx.textDim, typography.label)}
                 dangerouslySetInnerHTML={{
                   __html: renderPrCommentMarkdown(comment.body, { repo }),
                 }}
@@ -1682,8 +1674,7 @@ setError(e.message || "Failed to submit");
             </Button>
             <Button
               variant="primary"
-              size="sm"
-              className="shadow-none" {...stylex.props(sx.minH0, sx.px14px, sx.py6px, sx.fontMedium, typography.supporting)}
+              size="sm" {...mergeStylexProps("shadow-none", sx.minH0, sx.px14px, sx.py6px, sx.fontMedium, typography.supporting)}
               onClick={submit}
               disabled={sending || !text.trim()}
             >

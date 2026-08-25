@@ -51,7 +51,7 @@ import { CopyCheck, useCopy } from "../ui/copy";
 import { toast } from "../ui/toast";
 import { Tooltip } from "../ui/tooltip";
 import { OverflowFadeText } from "../ui/overflow-fade-text";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { TopBar, TopBarActions, TopBarLeading } from "../ui/top-bar";
 import {
 	PANEL_BODY,
@@ -852,19 +852,14 @@ setDeleting(false);
 							icon={<IconDotsHorizontal size={22} />}
 						/>
 					}
-          className="[corner-shape:squircle]"
-          {...stylex.props(
-            isPhone && sx.menuPhone,
-            overflowOpen && sx.menuOpen,
-					)}
+          {...mergeStylexProps("[corner-shape:squircle]", isPhone && sx.menuPhone, overflowOpen && sx.menuOpen)}
 					title="More actions"
 					aria-label="More actions"
 				/>
 				<Menu.Popup
 					align={isPhone ? "end" : "start"}
 					sideOffset={6}
-          className="max-w-[min(300px,calc(100vw-24px))]"
-          {...stylex.props(sx.minW240px)}
+          {...mergeStylexProps("max-w-[min(300px,calc(100vw-24px))]", sx.minW240px)}
 				>
 					{onRenameWorkspace && (
 						<Menu.Item onClick={() => setRenameDraft(workspace.name)}>
@@ -979,8 +974,7 @@ setDeleting(false);
 						(!showDeleteConfirm ? (
 							<Menu.Item
 								closeOnClick={false}
-                className="data-[highlighted]:bg-red-soft data-[highlighted]:text-red"
-                {...stylex.props(sx.textRed)}
+                {...mergeStylexProps("data-[highlighted]:bg-red-soft data-[highlighted]:text-red", sx.textRed)}
 								onClick={() => setShowDeleteConfirm(true)}
 							>
 								<IconTrash size={20} />
@@ -1155,8 +1149,7 @@ setDeleting(false);
 					<Button
 						variant="ghost"
 						size="md"
-            className="hover:bg-hover hover:text-fg"
-            {...stylex.props(sx.roundedControl, sx.textDim)}
+            {...mergeStylexProps("hover:bg-hover hover:text-fg", sx.roundedControl, sx.textDim)}
 						onClick={() => setPanelOpen(!panelOpen)}
 						aria-label="Toggle side panel"
 						icon={<IconSidebarRight size={22} />}
@@ -1185,7 +1178,7 @@ setDeleting(false);
 
 	if (tab === "review" && reviewTarget) {
 		return withPanel(
-      <div className={VIEW_MAIN} {...stylex.props(sx.reviewMain)}>
+      <div {...mergeStylexProps(VIEW_MAIN, sx.reviewMain)}>
 				<PrPanel
 					onOpenPr={onOpenPr}
 					key={`${reviewTarget.repo}:${reviewTarget.branch}`}
@@ -1211,7 +1204,7 @@ setDeleting(false);
 
 	if (tab === "conversation" && workspace.plainThreadId) {
 		return withPanel(
-      <div className={VIEW_MAIN} {...stylex.props(sx.main)}>
+      <div {...mergeStylexProps(VIEW_MAIN, sx.main)}>
 				<ConversationPane
 					threadId={workspace.plainThreadId}
 					onOpenSession={onOpenSession}
@@ -1227,7 +1220,7 @@ setDeleting(false);
 	const webPanel = webRef ? refWebPanel(webRef) : null;
 	if (tab === "video" && webPanel) {
 		return withPanel(
-      <div className={VIEW_MAIN} {...stylex.props(sx.main)}>
+      <div {...mergeStylexProps(VIEW_MAIN, sx.main)}>
 				{webPanel.component === "slack-channel" ? (
 					<SlackChannelPane channelId={webPanel.refId} />
 				) : (
@@ -1248,24 +1241,12 @@ setDeleting(false);
 	// it doesn't narrate that there are no sessions yet, and the header row and
 	// info panel already say which workspace it belongs to.
 	return withPanel(
-    <div className={VIEW_MAIN} {...stylex.props(sx.main)}>
+    <div {...mergeStylexProps(VIEW_MAIN, sx.main)}>
 			{fileDragActive &&
 				createPortal(
 					<>
 						<motion.div
-              className="bg-[color-mix(in_srgb,var(--bg-panel)_68%,transparent)]"
-              {...stylex.props(
-                sx.pointerEventsNone,
-                sx.fixed,
-                sx.inset0,
-                sx.z12000,
-                sx.flex,
-                sx.flexCol,
-                sx.itemsCenter,
-                sx.justifyCenter,
-                sx.px6,
-                sx.textCenter,
-              )}
+              {...mergeStylexProps("bg-[color-mix(in_srgb,var(--bg-panel)_68%,transparent)]", sx.pointerEventsNone, sx.fixed, sx.inset0, sx.z12000, sx.flex, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.px6, sx.textCenter)}
 							initial={{ opacity: 0 }}
 							animate={{ opacity: 1 }}
 							transition={{ type: "tween", duration: duration.base, ease }}
@@ -1274,8 +1255,7 @@ setDeleting(false);
 						>
 							<IconArrowUpToLine size={40} {...stylex.props(sx.textFg)} />
               <div
-                className="text-title"
-                {...stylex.props(sx.mt4, sx.fontSemibold, sx.textFg)}
+                {...mergeStylexProps("text-title", sx.mt4, sx.fontSemibold, sx.textFg)}
               >
                 Add files
               </div>

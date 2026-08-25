@@ -44,6 +44,7 @@ import {
 } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -352,11 +353,7 @@ function OverviewLine({
             }`
           : "Analytics are loading"
       }
-      aria-busy={!stats}
-      // The clauses wrap rather than truncate: a narrow window should cost the
-      // line a second row, not hide the trend behind an ellipsis that gives no
-      // hint of what it swallowed.
-      className="group tabular-nums hover:text-fg" {...stylex.props(sx.focusRing, sx.Mx1, sx.flex, sx.maxWFull, sx.cursorPointer, sx.flexWrap, sx.itemsCenter, sx.gapX15, sx.gapY05, sx.roundedSm, sx.px1, sx.textLeft, sx.textDim, sx.transitionColors, typography.supporting)}
+      aria-busy={!stats} {...mergeStylexProps("group tabular-nums hover:text-fg", sx.focusRing, sx.Mx1, sx.flex, sx.maxWFull, sx.cursorPointer, sx.flexWrap, sx.itemsCenter, sx.gapX15, sx.gapY05, sx.roundedSm, sx.px1, sx.textLeft, sx.textDim, sx.transitionColors, typography.supporting)}
     >
       <span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
         <span
@@ -386,12 +383,12 @@ function OverviewLine({
         </>
       ) : null}
       {trend ? (
-        <span className="group-hover:text-dim" {...stylex.props(sx.textFaint, sx.transitionColors)}>
+        <span {...mergeStylexProps("group-hover:text-dim", sx.textFaint, sx.transitionColors)}>
           {trend}
         </span>
       ) : null}
       {!stats && (
-        <span className="motion-safe:animate-pulse" {...stylex.props(sx.h25, sx.w40, sx.shrink, sx.roundedSm, sx.bgLine)} />
+        <span {...mergeStylexProps("motion-safe:animate-pulse", sx.h25, sx.w40, sx.shrink, sx.roundedSm, sx.bgLine)} />
       )}
     </button>
   );
@@ -757,7 +754,7 @@ setAddingToSidebar(false);
     // column at the shared width and padding, a PageHeader on top.
     <div data-page-scroll {...stylex.props(sx.minH0, sx.wFull, sx.flex1, sx.overflowYAuto, sx.bgSurface)}>
       {topbarActionsEl ? createPortal(actions, topbarActionsEl) : null}
-      <div className="max-[560px]:px-4 max-[560px]:pb-12 max-[560px]:pt-[18px]" {...stylex.props(sx.mxAuto, sx.wFull, sx.maxW920px, sx.px6, sx.pb15, sx.pt7)}>
+      <div {...mergeStylexProps("max-[560px]:px-4 max-[560px]:pb-12 max-[560px]:pt-[18px]", sx.mxAuto, sx.wFull, sx.maxW920px, sx.px6, sx.pb15, sx.pt7)}>
         {/* The page's name is the top bar's now. With no `PageTitle` under it
             the large-title handoff never has a heading to defer to, so the bar
             holds "Pull requests" in its left corner for good rather than
@@ -767,7 +764,7 @@ setAddingToSidebar(false);
 
             `min-w-0` because the line wraps, and a flex child asked for its
             content size takes the width of one clause rather than of the row. */}
-        <div className="max-[560px]:mb-3.5" {...stylex.props(sx.mb18px, sx.flex, sx.minW0)}>
+        <div {...mergeStylexProps("max-[560px]:mb-3.5", sx.mb18px, sx.flex, sx.minW0)}>
           <OverviewLine
             running={running}
             stats={stats}
@@ -838,7 +835,7 @@ setAddingToSidebar(false);
                                 {row.title}
                               </span>
                               {row.number && (
-                                <span className="tabular-nums" {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}>
+                                <span {...mergeStylexProps("tabular-nums", sx.shrink0, sx.textFaint, typography.meta)}>
                                   #{row.number}
                                 </span>
                               )}
@@ -848,7 +845,7 @@ setAddingToSidebar(false);
                                 is the convention rather than a status, and it
                                 reads at a glance in a way a neutral pair of
                                 numbers does not. */}
-                            <span className="tabular-nums phone:hidden" {...stylex.props(sx.justifySelfEnd, typography.meta)}>
+                            <span {...mergeStylexProps("tabular-nums phone:hidden", sx.justifySelfEnd, typography.meta)}>
                               {row.additions !== undefined && (
                                 <span {...stylex.props(sx.textGreen)}>+{compactDiff(row.additions)}</span>
                               )}
@@ -856,7 +853,7 @@ setAddingToSidebar(false);
                                 <span {...stylex.props(sx.ml2, sx.textRed)}>−{compactDiff(row.deletions)}</span>
                               )}
                             </span>
-                            <span className="tabular-nums" {...stylex.props(sx.justifySelfEnd, sx.textFaint, typography.meta)}>
+                            <span {...mergeStylexProps("tabular-nums", sx.justifySelfEnd, sx.textFaint, typography.meta)}>
                               {compactAge(row.updatedAt)}
                             </span>
                           </button>
@@ -882,20 +879,19 @@ setAddingToSidebar(false);
       >
         {preview && (
           <>
-            <div className="phone:min-h-14" {...stylex.props(sx.flex, sx.minH13, sx.shrink0, sx.itemsCenter, sx.gap2, sx.borderB, sx.borderLine, sx.bgPanel, sx.px3)}>
+            <div {...mergeStylexProps("phone:min-h-14", sx.flex, sx.minH13, sx.shrink0, sx.itemsCenter, sx.gap2, sx.borderB, sx.borderLine, sx.bgPanel, sx.px3)}>
               <div {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.px1, sx.fontMedium, sx.textFg, typography.itemTitle)}>
                 <IconPullRequest size={19} {...stylex.props(sx.shrink0, sx.textDim)} />
                 <span {...stylex.props(sx.truncate)}>{repoLabel(preview.repo)}</span>
                 {preview.number && (
-                  <span className="tabular-nums" {...stylex.props(sx.shrink0, sx.fontNormal, sx.textFaint)}>
+                  <span {...mergeStylexProps("tabular-nums", sx.shrink0, sx.fontNormal, sx.textFaint)}>
                     #{preview.number}
                   </span>
                 )}
               </div>
               {preview.workspaceId ? (
                 <Button
-                  variant="default"
-                  className="phone:min-h-11" {...stylex.props(sx.minH10, sx.shrink0)}
+                  variant="default" {...mergeStylexProps("phone:min-h-11", sx.minH10, sx.shrink0)}
                   icon={<IconSidebarLeft size={18} />}
                   onClick={() => {
                     onOpenWorkspace(preview.workspaceId!, preview);
@@ -906,8 +902,7 @@ setAddingToSidebar(false);
                 </Button>
               ) : preview.state === "OPEN" ? (
                 <Button
-                  variant="default"
-                  className="phone:min-h-11" {...stylex.props(sx.minH10, sx.shrink0)}
+                  variant="default" {...mergeStylexProps("phone:min-h-11", sx.minH10, sx.shrink0)}
                   icon={<IconSidebarLeft size={18} />}
                   disabled={addingToSidebar}
                   onClick={() => void addPreviewToSidebar()}
@@ -916,8 +911,7 @@ setAddingToSidebar(false);
                 </Button>
               ) : null}
               <Button
-                variant="ghost"
-                className="phone:size-11" {...stylex.props(sx.size10, sx.shrink0)}
+                variant="ghost" {...mergeStylexProps("phone:size-11", sx.size10, sx.shrink0)}
                 icon={<IconX size={20} />}
                 aria-label="Close pull request"
                 onClick={() => setPreview(null)}

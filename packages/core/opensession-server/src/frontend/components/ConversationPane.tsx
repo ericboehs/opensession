@@ -25,7 +25,7 @@ import {
 	PlainThreadActions,
 	PlainWaitingBanner,
 } from "./PlainThreadPanel";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { IconSparkle } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -304,8 +304,7 @@ if (aliveRef.current) setTriaging(false);
 
 	return (
 		<div
-			ref={setPaneEl}
-			className={className} {...stylex.props(sx.flex, sx.minH0, sx.flex1, sx.flexCol)}
+			ref={setPaneEl} {...mergeStylexProps(className, sx.flex, sx.minH0, sx.flex1, sx.flexCol)}
 		>
 			{headerInTopBar && (
 				<div className={SUPPORT_COLUMN_BAR}>
@@ -442,8 +441,7 @@ if (aliveRef.current) setTriaging(false);
 								}`}
 							>
 								<button
-									type="button"
-									className={FLOATING_PILL_BUTTON} {...stylex.props(sx.pointerEventsAuto)}
+									type="button" {...mergeStylexProps(FLOATING_PILL_BUTTON, sx.pointerEventsAuto)}
 									onClick={() => onOpenSession(session.id)}
 								>
 									<span
@@ -464,8 +462,7 @@ if (aliveRef.current) setTriaging(false);
 						) : (
 							<Tooltip label="Investigates, posts an internal note, and can open a PR for review.">
 								<button
-									type="button"
-									className={FLOATING_PILL_BUTTON} {...stylex.props(sx.pointerEventsAuto)}
+									type="button" {...mergeStylexProps(FLOATING_PILL_BUTTON, sx.pointerEventsAuto)}
 									onClick={handleTriage}
 								>
 									<IconSparkle size={14} {...stylex.props(sx.textDim)} aria-hidden />
@@ -475,8 +472,7 @@ if (aliveRef.current) setTriaging(false);
 						)}
 						{triageError && (
 							<div
-								className={FLOATING_PILL}
-								{...stylex.props(sx.pointerEventsAuto, sx.minW0, sx.fontNormal, sx.textRed)}
+								{...mergeStylexProps(FLOATING_PILL, sx.pointerEventsAuto, sx.minW0, sx.fontNormal, sx.textRed)}
 								role="alert"
 							>
 								<span {...stylex.props(sx.minW0, sx.truncate)} title={triageError}>

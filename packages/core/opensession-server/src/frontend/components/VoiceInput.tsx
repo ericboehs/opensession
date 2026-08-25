@@ -5,7 +5,7 @@ import { transcribeClip } from "../lib/api";
 import { IconArrowUp, IconCheck, IconMic, IconPlus, IconX } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { PRODUCT_NAME } from "../lib/brand";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { duration, ease } from "../ui/motion";
 import { paletteIconBtn } from "../lib/palette-classes";
 import { composerSend, composerSendDefault } from "../lib/composer-classes";
@@ -636,8 +636,7 @@ if (request === requestRef.current) {
     >
       {phase === "recording" || phase === "requesting" || phase === "cancelling" ? (
         <motion.div
-          key="recording"
-          className="phone:gap-1.5" {...stylex.props(sx.flex, sx.h10, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2)}
+          key="recording" {...mergeStylexProps("phone:gap-1.5", sx.flex, sx.h10, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2)}
           {...ROW_MOTION}
         >
           <span {...stylex.props(sx.srOnly)} role="status" aria-live="polite">
@@ -674,8 +673,7 @@ if (request === requestRef.current) {
           {/* Full-width track: baseline dots on the quiet/older left, live
               bars accumulating on the right by the accept buttons. */}
           <div
-            ref={waveformRef}
-            className="phone:mx-[18px]" {...stylex.props(sx.relative, sx.mx4, sx.flex, sx.hFull, sx.minW0, sx.flex1, sx.itemsCenter, sx.justifyCenter, sx.gap1, sx.overflowHidden)}
+            ref={waveformRef} {...mergeStylexProps("phone:mx-[18px]", sx.relative, sx.mx4, sx.flex, sx.hFull, sx.minW0, sx.flex1, sx.itemsCenter, sx.justifyCenter, sx.gap1, sx.overflowHidden)}
             aria-hidden="true"
           >
             <div
@@ -803,8 +801,7 @@ if (request === requestRef.current) {
       </Tooltip>
       {error && phase === "idle" && (
         <div
-          role="alert"
-          className="border-[color-mix(in_srgb,var(--red)_40%,transparent)]" {...stylex.props(sx.absolute, sx.bottomCalc1008px, sx.right0, sx.z7, sx.whitespaceNowrap, sx.roundedControl, sx.border, sx.bgRedSoft, sx.px11px, sx.py7px, sx.fontMedium, sx.textRed, typography.supporting)}
+          role="alert" {...mergeStylexProps("border-[color-mix(in_srgb,var(--red)_40%,transparent)]", sx.absolute, sx.bottomCalc1008px, sx.right0, sx.z7, sx.whitespaceNowrap, sx.roundedControl, sx.border, sx.bgRedSoft, sx.px11px, sx.py7px, sx.fontMedium, sx.textRed, typography.supporting)}
         >
           {error}
         </div>

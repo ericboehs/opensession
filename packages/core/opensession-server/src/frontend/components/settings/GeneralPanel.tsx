@@ -11,7 +11,7 @@ import { rememberOrganizationIcon } from "../../hooks/useOrganizationIcon";
 import { PRODUCT_NAME } from "../../lib/brand";
 import { pngFromImageFile, pngFromImageUrl } from "../../lib/icon-image";
 import { REPO_TILE_INK, repoColor, repoIconFill } from "../../lib/repo-colors";
-import { cn } from "../../ui/cn";
+import { cn, mergeStylexProps } from "../../ui/cn";
 import { OverlayAction } from "../../ui/overlay-action";
 import {
 	SettingCard,
@@ -301,13 +301,12 @@ setBusy(false);
 								<SettingRowTitle>Upload icon</SettingRowTitle>
 							</SettingRowText>
 							<SettingRowControl {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.justifyEnd, sx.gap2)}>
-								<div className="group/overlay-action" {...stylex.props(sx.relative, sx.flex, sx.shrink0, sx.flexCol, sx.itemsCenter, sx.gap15)}>
+								<div {...mergeStylexProps("group/overlay-action", sx.relative, sx.flex, sx.shrink0, sx.flexCol, sx.itemsCenter, sx.gap15)}>
 									<button
 										type="button"
 										disabled={busy}
 										onClick={() => fileInput.current?.click()}
-										aria-label={showIcon ? "Change organization icon" : "Upload organization icon"}
-										className="group/upload outline outline-1 disabled:pointer-events-none" {...stylex.props(sx.focusRing, sx.relative, sx.flex, sx.size14, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.overflowHidden, sx.roundedLg, sx.fontSemibold, sx.outlineDivider, typography.sectionTitle)}
+										aria-label={showIcon ? "Change organization icon" : "Upload organization icon"} {...mergeStylexProps("group/upload outline outline-1 disabled:pointer-events-none", sx.focusRing, sx.relative, sx.flex, sx.size14, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.overflowHidden, sx.roundedLg, sx.fontSemibold, sx.outlineDivider, typography.sectionTitle)}
 										style={
 											showIcon
 												? undefined
@@ -327,7 +326,7 @@ setBusy(false);
 										) : (
 											initials
 										)}
-										<span className="group-hover/upload:opacity-100 group-focus-visible/upload:opacity-100" {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.inset0, sx.grid, sx.placeItemsCenter, sx.roundedInherit, sx.bgBlack50, sx.textWhite, sx.opacity0, sx.transitionOpacity, sx.duration150)}>
+										<span {...mergeStylexProps("group-hover/upload:opacity-100 group-focus-visible/upload:opacity-100", sx.pointerEventsNone, sx.absolute, sx.inset0, sx.grid, sx.placeItemsCenter, sx.roundedInherit, sx.bgBlack50, sx.textWhite, sx.opacity0, sx.transitionOpacity, sx.duration150)}>
 											<IconArrowUpToLine size={20} />
 										</span>
 									</button>

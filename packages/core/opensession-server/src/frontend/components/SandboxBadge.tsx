@@ -8,6 +8,7 @@ import {
 import { IconBox, IconConnections } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -210,23 +211,7 @@ setError(cause?.message || "Sandbox status unavailable");
     return (
       <Popover.Root open={open} onOpenChange={setOpen}>
         <Popover.Trigger
-          className="transition-[color,background-color,border-color,scale] hover:border-line-strong hover:text-fg focus-visible:border-line-strong active:scale-[0.96]"
-          {...stylex.props(
-            sx.flex,
-            sx.minH10,
-            sx.flexNone,
-            sx.itemsCenter,
-            sx.gap15,
-            sx.roundedMd,
-            sx.border,
-            sx.borderLine,
-            sx.bgSurface,
-            sx.px2,
-            sx.fontMedium,
-            sx.textDim,
-            sx.outlineNone,
-            typography.meta,
-          )}
+          {...mergeStylexProps("transition-[color,background-color,border-color,scale] hover:border-line-strong hover:text-fg focus-visible:border-line-strong active:scale-[0.96]", sx.flex, sx.minH10, sx.flexNone, sx.itemsCenter, sx.gap15, sx.roundedMd, sx.border, sx.borderLine, sx.bgSurface, sx.px2, sx.fontMedium, sx.textDim, sx.outlineNone, typography.meta)}
           aria-label={`Runner · ${runner.name} · ${label}`}
         >
           <span {...stylex.props(sx.dot, dot)} aria-hidden="true" />
@@ -337,23 +322,7 @@ setWorking(null);
 	return (
 		<Popover.Root open={open} onOpenChange={setOpen}>
 			<Popover.Trigger
-        className="transition-[color,background-color,border-color,scale] hover:border-line-strong hover:text-fg focus-visible:border-line-strong active:scale-[0.96]"
-        {...stylex.props(
-          sx.flex,
-          sx.minH10,
-          sx.flexNone,
-          sx.itemsCenter,
-          sx.gap15,
-          sx.roundedMd,
-          sx.border,
-          sx.borderLine,
-          sx.bgSurface,
-          sx.px2,
-          sx.fontMedium,
-          sx.textDim,
-          sx.outlineNone,
-          typography.meta,
-        )}
+        {...mergeStylexProps("transition-[color,background-color,border-color,scale] hover:border-line-strong hover:text-fg focus-visible:border-line-strong active:scale-[0.96]", sx.flex, sx.minH10, sx.flexNone, sx.itemsCenter, sx.gap15, sx.roundedMd, sx.border, sx.borderLine, sx.bgSurface, sx.px2, sx.fontMedium, sx.textDim, sx.outlineNone, typography.meta)}
 				data-testid="sandbox-badge"
 				aria-label={`Sandbox · ${lifecycleLabel}`}
 			>

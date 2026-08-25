@@ -7,6 +7,7 @@ import { Popover } from "../ui/popover";
 import { scrollToVirtualTranscriptEntry } from "../lib/transcript-virtual-navigation";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -544,11 +545,11 @@ export function MessageRail({ messages, containerRef, leaveLatest }: Props) {
 					    bare `<p>` keeps the UA's `margin-block: 1em`. That put a
 					    second 15px above the title on top of the card's own
 					    padding, and widened both gaps under it. */}
-					<p className="line-clamp-2" {...stylex.props(sx.m0, sx.fontSemibold, sx.leadingSnug, sx.textFg, typography.body)}>
+					<p {...mergeStylexProps("line-clamp-2", sx.m0, sx.fontSemibold, sx.leadingSnug, sx.textFg, typography.body)}>
 						{shown.preview}
 					</p>
 					{shown.reply && (
-						<p className="line-clamp-3" {...stylex.props(sx.m0, sx.mt2, sx.leadingNormal, sx.textDim, typography.label)}>
+						<p {...mergeStylexProps("line-clamp-3", sx.m0, sx.mt2, sx.leadingNormal, sx.textDim, typography.label)}>
 							{shown.reply}
 						</p>
 					)}

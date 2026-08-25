@@ -18,7 +18,7 @@ import { AGENT_NAME, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 import { Segmented, SegmentedOption } from "../ui/segmented";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { Menu } from "../ui/menu";
 import { Modal } from "../ui/modal";
 import { CheckStatusIcon } from "./CheckStatusIcon";
@@ -273,7 +273,7 @@ setError(e.message);
   }
 
   return (
-    <div className="phone:px-4 phone:pt-5 phone:pb-12" {...stylex.props(sx.flex, sx.minH0, sx.flex1, sx.justifyCenter, sx.overflowYAuto, sx.px8, sx.pt11, sx.pb22)}>
+    <div {...mergeStylexProps("phone:px-4 phone:pt-5 phone:pb-12", sx.flex, sx.minH0, sx.flex1, sx.justifyCenter, sx.overflowYAuto, sx.px8, sx.pt11, sx.pb22)}>
       <SettingsPanel {...stylex.props(sx.selfStart)}>
         <SettingsHeader
           title="Security"
@@ -352,8 +352,7 @@ setError(e.message);
                           Edit profile
                         </Menu.Item>
                         <Menu.Item
-                          onClick={() => handleDeleteProfile(p)}
-                          className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
+                          onClick={() => handleDeleteProfile(p)} {...mergeStylexProps("data-[highlighted]:bg-red-soft", sx.textRed)}
                         >
                           <IconTrash size={16} />
                           Delete profile
@@ -482,8 +481,7 @@ setError(e.message);
                         </Menu.Trigger>
                         <Menu.Popup align="end" sideOffset={4}>
                           <Menu.Item
-                            onClick={() => handleDeleteScan(s)}
-                            className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
+                            onClick={() => handleDeleteScan(s)} {...mergeStylexProps("data-[highlighted]:bg-red-soft", sx.textRed)}
                           >
                             <IconTrash size={16} />
                             Remove scan

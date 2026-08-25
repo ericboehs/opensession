@@ -6,7 +6,7 @@ import type {
 	WorkflowRunSnapshot,
 } from "../../server/workflow-types";
 import type { SessionSubagentSnapshot } from "../lib/api";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { Button } from "../ui/button";
 import { CardList } from "../ui/card";
 import { EmptyState } from "../ui/state";
@@ -435,7 +435,7 @@ function WriteLine({ a }: { a: WorkflowAgentSnapshot }) {
 				</span>
 			)}
 			{a.changed ? (
-				<span className="tabular-nums" {...stylex.props(sx.shrink0)}>
+				<span {...mergeStylexProps("tabular-nums", sx.shrink0)}>
 					<span {...stylex.props(sx.textGreen)}>+{a.insertions ?? 0}</span>{" "}
 					<span {...stylex.props(sx.textRed)}>−{a.deletions ?? 0}</span>
 					{files > 0 && (
@@ -477,10 +477,10 @@ function AgentRail({
 					{shortModel(model)}
 				</span>
 			)}
-			<span className="tabular-nums" {...stylex.props(sx.w46px, sx.shrink0, sx.whitespaceNowrap, sx.textRight, sx.textFaint, typography.meta)}>
+			<span {...mergeStylexProps("tabular-nums", sx.w46px, sx.shrink0, sx.whitespaceNowrap, sx.textRight, sx.textFaint, typography.meta)}>
 				{tokens ? `${fmtTokens(tokens)} tok` : ""}
 			</span>
-			<span className="tabular-nums" {...stylex.props(sx.w11, sx.shrink0, sx.whitespaceNowrap, sx.textRight, sx.textFaint, typography.meta)}>
+			<span {...mergeStylexProps("tabular-nums", sx.w11, sx.shrink0, sx.whitespaceNowrap, sx.textRight, sx.textFaint, typography.meta)}>
 				{duration}
 			</span>
 		</>
@@ -649,7 +649,7 @@ function SubagentsCard({
 						</Badge>
 					)}
 				</div>
-				<div className="tabular-nums" {...stylex.props(sx.mt05, sx.truncate, sx.textFaint, typography.meta)}>
+				<div {...mergeStylexProps("tabular-nums", sx.mt05, sx.truncate, sx.textFaint, typography.meta)}>
 					{meta.join(" · ")}
 				</div>
 			</div>
@@ -892,7 +892,7 @@ setDetails((prev) => ({ ...prev, [seq]: "missing" }));
 							</Badge>
 						)}
 					</div>
-					<div className="tabular-nums" {...stylex.props(sx.mt05, sx.truncate, sx.textFaint, typography.meta)}>
+					<div {...mergeStylexProps("tabular-nums", sx.mt05, sx.truncate, sx.textFaint, typography.meta)}>
 						{meta.join(" · ")}
 					</div>
 				</div>
@@ -926,7 +926,7 @@ setDetails((prev) => ({ ...prev, [seq]: "missing" }));
 								{/* The phase label sits quieter than the agent names under
 								    it, and its count holds the rail's right edge, so a
 								    group reads as a heading over rows. */}
-								<div className="first:pt-0.5" {...stylex.props(sx.flex, sx.itemsBaseline, sx.gap2, sx.px2, sx.pbPx, sx.pt2)}>
+								<div {...mergeStylexProps("first:pt-0.5", sx.flex, sx.itemsBaseline, sx.gap2, sx.px2, sx.pbPx, sx.pt2)}>
 									<span
 										className={cn(
 											"min-w-0 flex-1 truncate text-meta font-medium",
@@ -937,7 +937,7 @@ setDetails((prev) => ({ ...prev, [seq]: "missing" }));
 									>
 										{title}
 									</span>
-									<span className="tabular-nums" {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}>
+									<span {...mergeStylexProps("tabular-nums", sx.shrink0, sx.textFaint, typography.meta)}>
 										{agents.length ? `${doneN}/${agents.length}` : "queued"}
 									</span>
 								</div>
@@ -961,7 +961,7 @@ setDetails((prev) => ({ ...prev, [seq]: "missing" }));
 				<div>
 					<button className={FOOTER_ROW} onClick={() => setShowMcp((v) => !v)}>
 						{showMcp ? "Hide" : "Show"} tool calls
-						<span className="tabular-nums" {...stylex.props(sx.mlAuto, sx.shrink0, sx.textFaint)}>
+						<span {...mergeStylexProps("tabular-nums", sx.mlAuto, sx.shrink0, sx.textFaint)}>
 							{run.totals.mcpCalls ?? run.mcpCalls.length}
 						</span>
 					</button>
@@ -980,7 +980,7 @@ setDetails((prev) => ({ ...prev, [seq]: "missing" }));
 									<span {...stylex.props(sx.truncate, sx.textDim)}>
 										{c.server}.{c.tool}
 									</span>
-									<span className="tabular-nums" {...stylex.props(sx.mlAuto, sx.shrink0, sx.textFaint, typography.meta)}>
+									<span {...mergeStylexProps("tabular-nums", sx.mlAuto, sx.shrink0, sx.textFaint, typography.meta)}>
 										{c.cached ? "cached" : `${c.ms}ms`}
 									</span>
 								</div>
@@ -1002,8 +1002,7 @@ setDetails((prev) => ({ ...prev, [seq]: "missing" }));
 						))}
 					</div>
 					{run.logs.length > 20 && (
-						<button
-							className="hover:text-fg" {...stylex.props(sx.mt1, sx.fontMedium, sx.textDim, sx.transitionColors, typography.meta)}
+						<button {...mergeStylexProps("hover:text-fg", sx.mt1, sx.fontMedium, sx.textDim, sx.transitionColors, typography.meta)}
 							onClick={() => setAllLogs((v) => !v)}
 						>
 							{allLogs ? "Show recent" : `Show all ${run.logs.length}`}
@@ -1143,8 +1142,7 @@ const AgentRow = function AgentRow({
 							)}
 							{detail === undefined &&
 								(a.status === "done" || a.status === "error") && (
-									<button
-										className="hover:underline" {...stylex.props(sx.selfStart, sx.fontMedium, sx.textLink, typography.meta)}
+									<button {...mergeStylexProps("hover:underline", sx.selfStart, sx.fontMedium, sx.textLink, typography.meta)}
 										onClick={() => onLoadDetail(a.seq)}
 									>
 										Show full prompt & result
@@ -1156,8 +1154,7 @@ const AgentRow = function AgentRow({
 							{detail === "missing" && (
 								// Transient failures happen (the snapshot flips done before
 								// the journal entry lands) — keep the miss retryable.
-								<button
-									className="hover:underline" {...stylex.props(sx.selfStart, sx.fontMedium, sx.textLink, typography.meta)}
+								<button {...mergeStylexProps("hover:underline", sx.selfStart, sx.fontMedium, sx.textLink, typography.meta)}
 									onClick={() => onLoadDetail(a.seq)}
 								>
 									Couldn't load the full record. Retry

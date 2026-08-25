@@ -8,7 +8,7 @@ import {
 	pushRecentModel,
 } from "../lib/model-recents";
 import { Menu } from "../ui/menu";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { Tooltip } from "../ui/tooltip";
 import { IconBolt, IconChevronRight, IconSparkle, IconUndo } from "./icons";
 import type { SessionUsage } from "../lib/types";
@@ -829,7 +829,7 @@ export function ModelEffortSelect({
 									<IconChevronRight {...stylex.props(sx.shrink0)} size={17} />
 								</span>
 							</Menu.SubmenuTrigger>
-							<Menu.Popup className="max-w-[min(360px,calc(100vw-1rem))]" {...stylex.props(sx.w64)}>
+							<Menu.Popup {...mergeStylexProps("max-w-[min(360px,calc(100vw-1rem))]", sx.w64)}>
 								<UsageDetails usage={usage} {...stylex.props(sx.p15)} />
 							</Menu.Popup>
 						</Menu.SubmenuRoot>

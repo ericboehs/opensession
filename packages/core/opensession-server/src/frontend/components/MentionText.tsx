@@ -3,6 +3,7 @@ import { parseMentions } from "../lib/mention-text";
 import { usePeople } from "../lib/people";
 import { githubLoginFor } from "./UserAvatar";
 import * as stylex from "@stylexjs/stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -42,8 +43,7 @@ export function MentionText({ text }: { text: string }) {
 							key={i}
 							href={token.text}
 							target="_blank"
-							rel="noreferrer"
-							className="decoration-accent/40 hover:decoration-accent" {...stylex.props(sx.textAccent, sx.underline, sx.underlineOffset2)}
+							rel="noreferrer" {...mergeStylexProps("decoration-accent/40 hover:decoration-accent", sx.textAccent, sx.underline, sx.underlineOffset2)}
 						>
 							{token.text}
 						</a>

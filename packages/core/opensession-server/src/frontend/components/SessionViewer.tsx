@@ -301,7 +301,7 @@ import {
 	TopBarLeading,
 	TopBarTitle,
 } from "../ui/top-bar";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import {
 	composerMenuIcon,
 	composerMenuItem,
@@ -6013,14 +6013,7 @@ export function SessionViewer({
 	return (
 		<div {...stylex.props(sx.relative, sx.flex, sx.hFull, sx.minH0, sx.flexCol)}>
 			{deleting && (
-				<div
-					/* `session-delete-overlay` stays on the markup as a bare hook with
-					   no rule behind it: the Escape/outside-click handlers above ask
-					   `closest('.palette-backdrop, .composer-schedule-modal-backdrop,
-					   .session-delete-overlay')` whether a click landed on a blocking
-					   surface. Drop the name and a click through this overlay starts
-					   dismissing what's underneath it. */
-					className="session-delete-overlay bg-[color-mix(in_srgb,var(--bg)_72%,transparent)] backdrop-blur-[2px]" {...stylex.props(sx.absolute, sx.inset0, sx.z30, sx.flex, sx.itemsCenter, sx.justifyCenter)}
+				<div {...mergeStylexProps("session-delete-overlay bg-[color-mix(in_srgb,var(--bg)_72%,transparent)] backdrop-blur-[2px]", sx.absolute, sx.inset0, sx.z30, sx.flex, sx.itemsCenter, sx.justifyCenter)}
 					role="status"
 					aria-live="polite"
 				>
@@ -6226,7 +6219,7 @@ export function SessionViewer({
 						<IconGlobe size={20} className={MENU_ICON} />
 						<span {...stylex.props(sx.grow)}>Portals</span>
 						{livePortals > 0 && (
-							<span className="tabular-nums" {...stylex.props(sx.shrink0, sx.textFaint)}>
+							<span {...mergeStylexProps("tabular-nums", sx.shrink0, sx.textFaint)}>
 								{livePortals} live
 							</span>
 						)}
@@ -6371,11 +6364,7 @@ export function SessionViewer({
 				// it always lives inside the ⋯ menu, one deliberate hop away.
 				const deleteAction = !showDeleteConfirm ? (
 					<Menu.Item
-						closeOnClick={false}
-						// Red at rest, not only under the cursor. This is the one row in
-						// the menu that cannot be undone, and a row that looks ordinary
-						// until you are already on it announces that too late.
-						className="data-[highlighted]:bg-red-soft data-[highlighted]:text-red" {...stylex.props(sx.textRed)}
+						closeOnClick={false} {...mergeStylexProps("data-[highlighted]:bg-red-soft data-[highlighted]:text-red", sx.textRed)}
 						onClick={() => setShowDeleteConfirm(true)}
 						title="Delete session"
 					>
@@ -6509,8 +6498,7 @@ export function SessionViewer({
 										/>
 									)
 								}
-								className={!infoPageOpen ? "[corner-shape:squircle]" : undefined}
-								{...stylex.props(!infoPageOpen && isPhone && sx.phoneMenuButton, overflowOpen && sx.menuOpen)}
+								{...mergeStylexProps(!infoPageOpen ? "[corner-shape:squircle]" : undefined, !infoPageOpen && isPhone && sx.phoneMenuButton, overflowOpen && sx.menuOpen)}
 								title="More actions"
 								aria-label="More actions"
 							/>
@@ -6518,8 +6506,7 @@ export function SessionViewer({
 								// Desktop: opens rightward from a trigger that now sits at the
 								// left of the bar. Phones keep it flush with the right edge.
 								align={isPhone ? "end" : "start"}
-								sideOffset={6}
-								className="max-w-[min(300px,calc(100vw-24px))]" {...stylex.props(sx.minW240px)}
+								sideOffset={6} {...mergeStylexProps("max-w-[min(300px,calc(100vw-24px))]", sx.minW240px)}
 							>
 								{/* Quick session actions use the same focus, spacing, collision,
 								    and dismissal behavior as every other app menu. Each group is
@@ -6706,8 +6693,7 @@ export function SessionViewer({
 					{session.automation ? (
 						<Tooltip label={`Automation · ${session.automation}`} side="bottom">
 							<a
-								href={`${BASE_PATH}/automations/${encodeURIComponent(session.automationId || session.automation)}`}
-								className="hover:bg-hover hover:text-fg" {...stylex.props(sx.Ml1, sx.inlineFlex, sx.size6, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textFaint, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase)}
+								href={`${BASE_PATH}/automations/${encodeURIComponent(session.automationId || session.automation)}`} {...mergeStylexProps("hover:bg-hover hover:text-fg", sx.Ml1, sx.inlineFlex, sx.size6, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textFaint, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase)}
 								aria-label={`Open ${session.automation} automation settings`}
 							>
 								<IconRobot size={18} />
@@ -6941,16 +6927,7 @@ export function SessionViewer({
 						>
 							<Button
 								variant="ghost"
-								size="md"
-								// No height/width overrides: the primitive's icon-only box is
-								// already the 32px square the ⋯ and share buttons use.
-								// text-dim, not text-faint: the share and ⋯ buttons beside it
-								// are dim, and a lighter ink made this read as disabled.
-								// No negative margin after the ⋯ either: that -4px pull dated
-								// from when both were narrow padded controls, and now that all
-								// three are equal squares it just made this gap 4px where the
-								// share → ⋯ one is the row's 8px.
-								className="hover:bg-hover hover:text-fg phone:order-2 phone:h-[38px] phone:min-h-[38px] phone:w-[38px] phone:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] phone:text-accent" {...stylex.props(sx.roundedControl, sx.textDim)}
+								size="md" {...mergeStylexProps("hover:bg-hover hover:text-fg phone:order-2 phone:h-[38px] phone:min-h-[38px] phone:w-[38px] phone:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] phone:text-accent", sx.roundedControl, sx.textDim)}
 								onClick={() => setActivePanelOpen(!activePanelOpen)}
 								aria-label="Toggle side panel"
 								// Iconic sidebar-right glyph — reads as "right side panel".
@@ -7322,10 +7299,7 @@ export function SessionViewer({
 
 			<div {...stylex.props(sx.flex, sx.minH0, sx.flex1)}>
 				<div
-					/* The last class is what the floating action band covers, paid for
-					   by the transcript's bottom padding and by the scroll-to-bottom
-					   pill's offset. Set here so both read one value. */
-					className={cn(actionBand &&
+					{...mergeStylexProps(cn(actionBand &&
 							(nextAction || isPhone
 								? isPhone && quickReplies
 									? ACTION_WITH_REPLIES_CLEARANCE
@@ -7333,8 +7307,7 @@ export function SessionViewer({
 								: scrollAction
 									? SCROLL_ACTION_CLEARANCE
 									: SUGGESTIONS_CLEARANCE),
-					)}
-					{...stylex.props(sx.viewerColumn, sx.sessionUnder)}
+					), sx.viewerColumn, sx.sessionUnder)}
 				>
 					{showPortal && portalTarget ? (
 						<div className={VIEWER_REVIEW_MAIN}>
@@ -7374,8 +7347,7 @@ export function SessionViewer({
 												type="button"
 												onClick={() =>
 													shareLink(stagingUrl, { toast: "Link copied" })
-												}
-												className="hover:text-fg" {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap1, sx.transitionColors)}
+												} {...mergeStylexProps("hover:text-fg", sx.inlineFlex, sx.itemsCenter, sx.gap1, sx.transitionColors)}
 											>
 												<IconCopy size={13} />
 												Copy link
@@ -7384,8 +7356,7 @@ export function SessionViewer({
 												href={stagingUrl}
 												target="_blank"
 												rel="noopener"
-												title="Open first-party in a new tab. Needed if the frame is blank because you aren't logged in to the preview environment yet."
-												className="hover:text-fg" {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap1, sx.transitionColors)}
+												title="Open first-party in a new tab. Needed if the frame is blank because you aren't logged in to the preview environment yet." {...mergeStylexProps("hover:text-fg", sx.inlineFlex, sx.itemsCenter, sx.gap1, sx.transitionColors)}
 											>
 												Open
 												<IconArrowUpRight size={13} />
@@ -7421,8 +7392,7 @@ export function SessionViewer({
 									<a
 										href={stagingUrl}
 										target="_blank"
-										rel="noopener"
-										className="hover:bg-panel" {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.border, sx.borderLine, sx.bgSurface, sx.px4, sx.py2, sx.textSm, sx.fontMedium, sx.textFg, sx.transitionColors)}
+										rel="noopener" {...mergeStylexProps("hover:bg-panel", sx.inlineFlex, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.border, sx.borderLine, sx.bgSurface, sx.px4, sx.py2, sx.textSm, sx.fontMedium, sx.textFg, sx.transitionColors)}
 									>
 										<IconGlobe size={16} />
 										Open staging
@@ -7432,8 +7402,7 @@ export function SessionViewer({
 										type="button"
 										onClick={() =>
 											shareLink(stagingUrl, { toast: "Link copied" })
-										}
-										className="hover:text-fg" {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap15, sx.textXs, sx.textDim, sx.transitionColors)}
+										} {...mergeStylexProps("hover:text-fg", sx.inlineFlex, sx.itemsCenter, sx.gap15, sx.textXs, sx.textDim, sx.transitionColors)}
 									>
 										<IconCopy size={14} />
 										Copy link
@@ -7541,8 +7510,7 @@ export function SessionViewer({
 					{fileDragActive &&
 						createPortal(
 							<>
-								<motion.div
-									className="bg-[color-mix(in_srgb,var(--bg-panel)_68%,transparent)]" {...stylex.props(sx.pointerEventsNone, sx.fixed, sx.inset0, sx.z12000, sx.flex, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.px6, sx.textCenter)}
+								<motion.div {...mergeStylexProps("bg-[color-mix(in_srgb,var(--bg-panel)_68%,transparent)]", sx.pointerEventsNone, sx.fixed, sx.inset0, sx.z12000, sx.flex, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.px6, sx.textCenter)}
 									initial={{ opacity: 0 }}
 									animate={{ opacity: 1 }}
 									transition={{ type: "tween", duration: duration.base, ease }}
@@ -7550,7 +7518,7 @@ export function SessionViewer({
 									data-file-drop-overlay
 								>
 									<IconArrowUpToLine size={40} {...stylex.props(sx.textFg)} />
-									<div className="text-title" {...stylex.props(sx.mt4, sx.fontSemibold, sx.textFg)}>Add files</div>
+									<div {...mergeStylexProps("text-title", sx.mt4, sx.fontSemibold, sx.textFg)}>Add files</div>
 									<div {...stylex.props(sx.mt1, sx.textDim, typography.label)}>
 										Drop here to attach them to your message.
 									</div>
@@ -7872,12 +7840,10 @@ export function SessionViewer({
 										<button
 											type="button"
 											onClick={loadAllHistory}
-											className={TRANSCRIPT_PILL_BUTTON}
-											{...stylex.props(sx.pointerEventsAuto)}
+											{...mergeStylexProps(TRANSCRIPT_PILL_BUTTON, sx.pointerEventsAuto)}
 										>
 											<IconArrowUp
-												size={13}
-												className="group-hover:-translate-y-px" {...stylex.props(sx.textDim, sx.transitionTransform)}
+												size={13} {...mergeStylexProps("group-hover:-translate-y-px", sx.textDim, sx.transitionTransform)}
 												aria-hidden
 											/>
 											Load all
@@ -7894,15 +7860,13 @@ export function SessionViewer({
 									shortcut={transcriptDownKeys ?? undefined}
 								>
 									<button
-										className={cn(TRANSCRIPT_ICON_BUTTON, PILL_CENTRED)}
-										{...stylex.props(sx.absolute, sx.phoneScrollBottom)}
+										{...mergeStylexProps(cn(TRANSCRIPT_ICON_BUTTON, PILL_CENTRED), sx.absolute, sx.phoneScrollBottom)}
 										type="button"
 										aria-label="Scroll to the bottom"
 										onClick={() => scrollToLatest("auto")}
 									>
 										<IconArrowDown
-											size={13}
-											className="group-hover:translate-y-px" {...stylex.props(sx.textDim, sx.transitionTransform)}
+											size={13} {...mergeStylexProps("group-hover:translate-y-px", sx.textDim, sx.transitionTransform)}
 											aria-hidden
 										/>
 									</button>
@@ -7927,13 +7891,12 @@ export function SessionViewer({
 								) : (
 									<>
 										{forkFrom && (
-											<div className="border-[color-mix(in_srgb,var(--accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]" {...stylex.props(sx.mb2, sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap3, sx.roundedControl, sx.border, sx.px3, sx.py7px, sx.textFg, typography.supporting)}>
+											<div {...mergeStylexProps("border-[color-mix(in_srgb,var(--accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]", sx.mb2, sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap3, sx.roundedControl, sx.border, sx.px3, sx.py7px, sx.textFg, typography.supporting)}>
 												<span>
 													⑂ Forking a new session from the selected message. Type
 													the new direction.
 												</span>
-												<button
-													className="hover:text-fg" {...stylex.props(sx.cursorPointer, sx.bgTransparent, sx.textDim, typography.label)}
+												<button {...mergeStylexProps("hover:text-fg", sx.cursorPointer, sx.bgTransparent, sx.textDim, typography.label)}
 													onClick={() => setForkFrom(null)}
 												>
 											Cancel
@@ -7971,8 +7934,7 @@ export function SessionViewer({
 															onClick={() => scrollToLatest("auto")}
 														>
 															<IconArrowDown
-																size={13}
-																className="group-hover:translate-y-px" {...stylex.props(sx.textDim, sx.transitionTransform)}
+																size={13} {...mergeStylexProps("group-hover:translate-y-px", sx.textDim, sx.transitionTransform)}
 																aria-hidden
 															/>
 														</button>
@@ -7986,8 +7948,7 @@ export function SessionViewer({
 														shortcut={nextChatKeys ?? undefined}
 													>
 														<Button
-															size="lg"
-															className="hover:border-line" {...stylex.props(sx.minH10, sx.shrink0, sx.borderDivider)}
+															size="lg" {...mergeStylexProps("hover:border-line", sx.minH10, sx.shrink0, sx.borderDivider)}
 															trailing={<IconChevronRight size={18} aria-hidden />}
 															aria-label="Next chat"
 															onClick={onNextChat}
@@ -7999,8 +7960,7 @@ export function SessionViewer({
 											)}
 											{isPhone && (
 												<div
-													className={cn(MOBILE_CONTROL_GLASS, "phone:[body.kb-open_&]:hidden")}
-													{...stylex.props(sx.mobileControls)}
+													{...mergeStylexProps(cn(MOBILE_CONTROL_GLASS, "phone:[body.kb-open_&]:hidden"), sx.mobileControls)}
 												>
 													{!session.archived && (
 														<Button
@@ -8242,8 +8202,7 @@ export function SessionViewer({
 								<button
 									type="button"
 									aria-pressed={desktopPanelPage === "changes"}
-									className={PANEL_TAB}
-									{...stylex.props(desktopPanelPage === "changes" && sx.panelTabActive)}
+									{...mergeStylexProps(PANEL_TAB, desktopPanelPage === "changes" && sx.panelTabActive)}
 									onClick={() => setPanelPage("changes")}
 								>
 									<IconFile size={15} {...stylex.props(sx.shrink0)} />
@@ -8252,14 +8211,13 @@ export function SessionViewer({
 								<button
 									type="button"
 									aria-pressed={desktopPanelPage === "portals"}
-									className={PANEL_TAB}
-									{...stylex.props(desktopPanelPage === "portals" && sx.panelTabActive)}
+									{...mergeStylexProps(PANEL_TAB, desktopPanelPage === "portals" && sx.panelTabActive)}
 									onClick={() => setPanelPage("portals")}
 								>
 									<IconGlobe size={15} {...stylex.props(sx.shrink0)} />
 									<span className="@max-[380px]:hidden">Portals</span>
 									{livePortals > 0 && (
-										<span className="tabular-nums @max-[380px]:hidden" {...stylex.props(sx.shrink0, sx.textFaint)}>
+										<span {...mergeStylexProps("tabular-nums @max-[380px]:hidden", sx.shrink0, sx.textFaint)}>
 											{livePortals}
 										</span>
 									)}
@@ -8267,14 +8225,13 @@ export function SessionViewer({
 								<button
 									type="button"
 									aria-pressed={desktopPanelPage === "agents"}
-									className={PANEL_TAB}
-									{...stylex.props(desktopPanelPage === "agents" && sx.panelTabActive)}
+									{...mergeStylexProps(PANEL_TAB, desktopPanelPage === "agents" && sx.panelTabActive)}
 									onClick={() => setPanelPage("agents")}
 								>
 									<IconStack size={15} {...stylex.props(sx.shrink0)} />
 									<span className="@max-[380px]:hidden">Agents</span>
 									{runningAgents > 0 && (
-										<span className="tabular-nums @max-[380px]:hidden" {...stylex.props(sx.shrink0, sx.textYellow)}>
+										<span {...mergeStylexProps("tabular-nums @max-[380px]:hidden", sx.shrink0, sx.textYellow)}>
 											{runningAgents}
 										</span>
 									)}
@@ -8282,8 +8239,7 @@ export function SessionViewer({
 								<button
 									type="button"
 									aria-pressed={desktopPanelPage === "terminal"}
-									className={PANEL_TAB}
-									{...stylex.props(desktopPanelPage === "terminal" && sx.panelTabActive)}
+									{...mergeStylexProps(PANEL_TAB, desktopPanelPage === "terminal" && sx.panelTabActive)}
 									onClick={() => {
 										setPanelTerminalMounted(true);
 										setPanelPage("terminal");

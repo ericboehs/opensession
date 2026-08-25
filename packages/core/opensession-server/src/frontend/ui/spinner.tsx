@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -55,8 +55,7 @@ export function Spinner({
 }: React.ComponentPropsWithoutRef<"span"> & { size?: SpinnerSize }) {
 	return (
 		<span
-			aria-hidden
-			className={cn(sizes[size], className)} {...stylex.props(sx.inlineBlock, sx.shrink0, sx.animateSpin, sx.roundedFull, sx.borderCurrent25, sx.borderTCurrent)}
+			aria-hidden {...mergeStylexProps(cn(sizes[size], className), sx.inlineBlock, sx.shrink0, sx.animateSpin, sx.roundedFull, sx.borderCurrent25, sx.borderTCurrent)}
 			{...props}
 		/>
 	);

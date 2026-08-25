@@ -13,6 +13,7 @@ import { Switch } from "../../ui/switch";
 import { Select } from "./shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { mergeStylexProps } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -226,8 +227,7 @@ export function AuditPanel() {
 					const sid = typeof e.bks_session_id === "string" ? e.bks_session_id : "";
 					return (
 						<div key={i} {...stylex.props(expanded === i && sx.bgPressed)}>
-							<button
-								className="hover:bg-hover" {...stylex.props(sx.flex, sx.wFull, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.px5, sx.py15, sx.textLeft, typography.label)}
+							<button {...mergeStylexProps("hover:bg-hover", sx.flex, sx.wFull, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.px5, sx.py15, sx.textLeft, typography.label)}
 								onClick={() => setExpanded(expanded === i ? null : i)}
 							>
 								<span {...stylex.props(sx.textFaint, sx.shrink0)}>{time}</span>

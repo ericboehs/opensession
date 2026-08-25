@@ -11,7 +11,7 @@ import { BASE_PATH } from "../lib/base";
 import { withPreviewPath } from "../lib/preview-url";
 import { Tooltip } from "../ui/tooltip";
 import { Button } from "../ui/button";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { CopyCheck, useCopy } from "../ui/copy";
 import { Menu, MENU_ICON } from "../ui/menu";
 import { Popover } from "../ui/popover";
@@ -572,8 +572,7 @@ setShotError(e.message);
             </Button>
           )}
           {shot && (
-            <a
-              className="hover:border-line-strong hover:text-fg active:scale-[0.97]" {...stylex.props(sx.inlineFlex, sx.minH26px, sx.itemsCenter, sx.justifyCenter, sx.whitespaceNowrap, sx.roundedXs, sx.border, sx.borderLine, sx.bgControl, sx.px25, sx.textXs, sx.fontMedium, sx.textDim, sx.smoothShadowSm, sx.transition)}
+            <a {...mergeStylexProps("hover:border-line-strong hover:text-fg active:scale-[0.97]", sx.inlineFlex, sx.minH26px, sx.itemsCenter, sx.justifyCenter, sx.whitespaceNowrap, sx.roundedXs, sx.border, sx.borderLine, sx.bgControl, sx.px25, sx.textXs, sx.fontMedium, sx.textDim, sx.smoothShadowSm, sx.transition)}
               href={shot}
               download={`preview-${session.id}.png`}
             >
@@ -632,8 +631,7 @@ setShotError(e.message);
                 <a
                   href={s.previewUrl}
                   target="_blank"
-                  rel="noreferrer"
-                  className="hover:decoration-current focus-visible:decoration-current" {...stylex.props(sx.fontSemibold, sx.textFg, sx.underline, sx.decorationTransparent, sx.underlineOffset2, sx.transitionTextDecorationColor)}
+                  rel="noreferrer" {...mergeStylexProps("hover:decoration-current focus-visible:decoration-current", sx.fontSemibold, sx.textFg, sx.underline, sx.decorationTransparent, sx.underlineOffset2, sx.transitionTextDecorationColor)}
                 >
                   {s.name}
                 </a>
@@ -750,8 +748,7 @@ setShotError(e.message);
           )}
           <Popover.Trigger
             render={
-              <button
-                className="hover:bg-hover hover:text-fg focus-visible:bg-hover focus-visible:text-fg" {...stylex.props(sx.flex, sx.w8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.roundedLNone, sx.textFaint, sx.outlineNone, sx.transitionColors)}
+              <button {...mergeStylexProps("hover:bg-hover hover:text-fg focus-visible:bg-hover focus-visible:text-fg", sx.flex, sx.w8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.roundedLNone, sx.textFaint, sx.outlineNone, sx.transitionColors)}
                 title="Dev services"
                 aria-label="Dev services"
               >
@@ -921,10 +918,10 @@ setShotError(e.message);
             title="Starting the dev server (first build can take a minute). Click to cancel."
           >
             <span className={spinnerClass} />
-            <span className="group-hover:hidden" {...stylex.props(sx.inline)}>
+            <span {...mergeStylexProps("group-hover:hidden", sx.inline)}>
               {stopping ? "Cancelling…" : "Starting…"}
             </span>
-            <span className="group-hover:inline" {...stylex.props(sx.hidden)}>Cancel</span>
+            <span {...mergeStylexProps("group-hover:inline", sx.hidden)}>Cancel</span>
           </button>
         ) : !bootable ? (
           <button

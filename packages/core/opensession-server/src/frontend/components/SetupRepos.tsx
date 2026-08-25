@@ -4,7 +4,7 @@ import { Field, Input } from "../ui/input";
 import { Modal } from "../ui/modal";
 import { Popover } from "../ui/popover";
 import { Switch } from "../ui/switch";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
 import {
 	SettingCard,
@@ -531,7 +531,7 @@ setSaving(null);
 						{branchError}
 					</InlineAlert>
 				)}
-				<div className="grid-cols-[minmax(0,1fr)_auto] phone:-ml-11 phone:max-w-[calc(100%+2.75rem)]" {...stylex.props(sx.mt3, sx.grid, sx.minH11, sx.maxW36rem, sx.itemsCenter, sx.gapX3, sx.gapY1, sx.py1)}>
+				<div {...mergeStylexProps("grid-cols-[minmax(0,1fr)_auto] phone:-ml-11 phone:max-w-[calc(100%+2.75rem)]", sx.mt3, sx.grid, sx.minH11, sx.maxW36rem, sx.itemsCenter, sx.gapX3, sx.gapY1, sx.py1)}>
 					<span {...stylex.props(sx.minW0, sx.fontMedium, sx.textFg, typography.label)}>
 						Use isolated worktrees
 					</span>
@@ -622,8 +622,7 @@ setBusy(false);
 
 	return (
 		<Popover.Root>
-			<Popover.Trigger
-				className="focus-visible:ring-2 focus-visible:ring-[var(--accent,#6b8afd)]" {...stylex.props(sx.shrink0, sx.roundedMd, sx.outlineNone)}
+			<Popover.Trigger {...mergeStylexProps("focus-visible:ring-2 focus-visible:ring-[var(--accent,#6b8afd)]", sx.shrink0, sx.roundedMd, sx.outlineNone)}
 				aria-label={`Change ${id}'s icon`}
 			>
 				<RepoTile name={id} size={28} />
@@ -812,7 +811,7 @@ function RepoPickRow({
 	onAdd: () => void;
 }) {
 	return (
-		<div className="last:border-b-0" {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3, sx.borderB, sx.borderLine, sx.px1, sx.py2)}>
+		<div {...mergeStylexProps("last:border-b-0", sx.flex, sx.itemsCenter, sx.gap3, sx.borderB, sx.borderLine, sx.px1, sx.py2)}>
 			<div {...stylex.props(sx.minW0, sx.flex1)}>
 				<div {...stylex.props(sx.flex, sx.minW0, sx.itemsBaseline, sx.gap2)}>
 					<span {...stylex.props(sx.truncate, sx.fontMedium, sx.textFg, typography.controlLabel)}>

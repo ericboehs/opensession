@@ -18,7 +18,7 @@ import { getLiveTypingPref } from "../lib/live-typing-pref";
 import { randomUUID } from "../lib/random-uuid";
 import { isTimelineOnlyRunnerNotice } from "../lib/runner-events";
 import { otherTypingUsers } from "../lib/typing";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { msgBubbleUser, msgOwnTurn, msgRow } from "../lib/msg-classes";
 import { SessionTranscript } from "./SessionTranscript";
 import { TypingIndicator } from "./TypingIndicator";
@@ -568,8 +568,7 @@ setDropStaging((current) => subtractStaging(current, batch));
 			{/* The shared transcript virtualizer and lazy markdown/code renderers
 			    resolve their scroll root through this marker, as in SessionViewer. */}
 			<div
-				className="viewer-messages"
-				{...stylex.props(sx.minH0, sx.flex1, sx.overflowYAuto, sx.px3, sx.pt2, sx.deskMessagesMask)}
+				{...mergeStylexProps("viewer-messages", sx.minH0, sx.flex1, sx.overflowYAuto, sx.px3, sx.pt2, sx.deskMessagesMask)}
 				ref={bodyRef}
 				onScroll={onScroll}
 			>
@@ -630,14 +629,12 @@ setDropStaging((current) => subtractStaging(current, batch));
 									initial={{ y: 40 }}
 									animate={{ y: 0 }}
 									exit={{ y: 40 }}
-									transition={{ type: "tween", duration: duration.base, ease }}
-									className="[-webkit-mask-image:linear-gradient(to_right,#000_0,#000_calc(100%_-_32px),transparent_100%)] [mask-image:linear-gradient(to_right,#000_0,#000_calc(100%_-_32px),transparent_100%)] [&::-webkit-scrollbar]:hidden" {...stylex.props(sx.flex, sx.gap15, sx.overflowXAuto, sx.px1, sx.pb3, sx.pr8, sx.ScrollbarWidthNone)}
+									transition={{ type: "tween", duration: duration.base, ease }} {...mergeStylexProps("[-webkit-mask-image:linear-gradient(to_right,#000_0,#000_calc(100%_-_32px),transparent_100%)] [mask-image:linear-gradient(to_right,#000_0,#000_calc(100%_-_32px),transparent_100%)] [&::-webkit-scrollbar]:hidden", sx.flex, sx.gap15, sx.overflowXAuto, sx.px1, sx.pb3, sx.pr8, sx.ScrollbarWidthNone)}
 								>
 									{suggestions.map((s) => (
 										<button
 											type="button"
-											key={s}
-											className="hover:bg-active hover:text-fg" {...stylex.props(sx.shrink0, sx.whitespaceNowrap, sx.roundedFull, sx.bgHover, sx.px3, sx.py15, sx.fontMedium, sx.textDim, typography.label)}
+											key={s} {...mergeStylexProps("hover:bg-active hover:text-fg", sx.shrink0, sx.whitespaceNowrap, sx.roundedFull, sx.bgHover, sx.px3, sx.py15, sx.fontMedium, sx.textDim, typography.label)}
 											onClick={() => {
 												setPrefill((current) => ({
 													seq: (current?.seq ?? 0) + 1,

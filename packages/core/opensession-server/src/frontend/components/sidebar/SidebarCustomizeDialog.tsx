@@ -9,6 +9,7 @@ import { IconGripVertical, IconX } from "../icons";
 import { RepoTile, repoLabel } from "../RepoTile";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { mergeStylexProps } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -212,7 +213,7 @@ function OrderSection<T extends string>({
 			</h3>
 			{order.length === 0 ? (
 				// Left-aligned like the rows it stands in for.
-				<p className="phone:bg-settings-plate" {...stylex.props(sx.m0, sx.roundedLg, sx.bgPanel, sx.px2, sx.py4, sx.textFaint, typography.label)}>
+				<p {...mergeStylexProps("phone:bg-settings-plate", sx.m0, sx.roundedLg, sx.bgPanel, sx.px2, sx.py4, sx.textFaint, typography.label)}>
 					No {label.toLowerCase()} available.
 				</p>
 			) : (
@@ -220,8 +221,7 @@ function OrderSection<T extends string>({
 					as="div"
 					axis="y"
 					values={order}
-					onReorder={setDraft}
-					className="phone:bg-settings-plate" {...stylex.props(sx.roundedLg, sx.bgPanel, sx.p05)}
+					onReorder={setDraft} {...mergeStylexProps("phone:bg-settings-plate", sx.roundedLg, sx.bgPanel, sx.p05)}
 					role="list"
 				>
 					{order.map((id, index) => {
@@ -233,8 +233,7 @@ function OrderSection<T extends string>({
 								key={id}
 								value={id}
 								onDragEnd={commit}
-								whileDrag={{ scale: 1.015, zIndex: 2 }}
-								className="group select-none active:cursor-grabbing hover:bg-hover phone:min-h-11 phone:bg-settings-plate" {...stylex.props(sx.focusRing, sx.flex, sx.minH9, sx.cursorGrab, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.bgPanel, sx.px15, sx.py15, sx.textFg, typography.itemTitle)}
+								whileDrag={{ scale: 1.015, zIndex: 2 }} {...mergeStylexProps("group select-none active:cursor-grabbing hover:bg-hover phone:min-h-11 phone:bg-settings-plate", sx.focusRing, sx.flex, sx.minH9, sx.cursorGrab, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.bgPanel, sx.px15, sx.py15, sx.textFg, typography.itemTitle)}
 								role="listitem"
 								tabIndex={0}
 								aria-label={`${item.label}, position ${index + 1} of ${order.length}. Use the up and down arrow keys to move it.`}
@@ -245,12 +244,12 @@ function OrderSection<T extends string>({
 									move(id, event.key === "ArrowUp" ? -1 : 1);
 								}}
 							>
-								<span className="group-hover:text-dim" {...stylex.props(sx.flex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textFaint)}>
+								<span {...mergeStylexProps("group-hover:text-dim", sx.flex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textFaint)}>
 									<IconGripVertical size={18} />
 								</span>
 								{/* Shared geometry keeps every tool and repository label
 								    on the same vertical line. */}
-								<span className="[&_svg]:size-[20px]" {...stylex.props(sx.flex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textDim)}>
+								<span {...mergeStylexProps("[&_svg]:size-[20px]", sx.flex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textDim)}>
 									{item.icon}
 								</span>
 								<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>{item.label}</span>

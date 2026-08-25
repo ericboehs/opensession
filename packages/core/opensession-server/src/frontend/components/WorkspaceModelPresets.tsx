@@ -29,6 +29,7 @@ import { EFFORTS, shortModelLabel } from "./ModelEffortSelect";
 import { IconChevronDown, IconPlus, IconTrash } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -264,17 +265,7 @@ function PresetRow({
 				type="button"
 				aria-expanded={open}
 				onClick={onToggle}
-        className="hover:bg-hover"
-        {...stylex.props(
-          sx.flex,
-          sx.wFull,
-          sx.itemsCenter,
-          sx.gap3,
-          sx.px5,
-          sx.py3,
-          sx.textLeft,
-          sx.transitionColors,
-        )}
+        {...mergeStylexProps("hover:bg-hover", sx.flex, sx.wFull, sx.itemsCenter, sx.gap3, sx.px5, sx.py3, sx.textLeft, sx.transitionColors)}
 			>
 				<span {...stylex.props(sx.minW0, sx.flex1)}>
           <span
@@ -368,8 +359,7 @@ function PresetRow({
 								// effort under them, instead of four fields fighting over 200px.
 								<div
 									key={index}
-                  className="grid-cols-[minmax(0,1fr)_auto] desktop:grid-cols-[minmax(0,1fr)_10rem_8rem_auto]"
-                  {...stylex.props(sx.grid, sx.itemsCenter, sx.gap2)}
+                  {...mergeStylexProps("grid-cols-[minmax(0,1fr)_auto] desktop:grid-cols-[minmax(0,1fr)_10rem_8rem_auto]", sx.grid, sx.itemsCenter, sx.gap2)}
 								>
 									<ModelSelect
 										{...stylex.props(sx.colStart1, sx.rowStart1)}
@@ -380,8 +370,7 @@ function PresetRow({
 									/>
 									<button
 										type="button"
-                    className={rowMenuTriggerClasses}
-                    {...stylex.props(sx.removeGrid)}
+                    {...mergeStylexProps(rowMenuTriggerClasses, sx.removeGrid)}
 										aria-label="Remove supporting model"
                     onClick={() =>
                       onPatch({
@@ -392,8 +381,7 @@ function PresetRow({
 										<IconTrash size={16} />
 									</button>
 									<input
-                    className={settingsInputClass}
-                    {...stylex.props(sx.roleGrid)}
+                    {...mergeStylexProps(settingsInputClass, sx.roleGrid)}
 										value={member.role || ""}
 										aria-label="What this model does"
 										placeholder="Role"
@@ -403,8 +391,7 @@ function PresetRow({
 									/>
 									{memberEfforts.length > 0 && (
 										<ModelSelect
-                      className="desktop:col-span-1 desktop:col-start-3 desktop:row-start-1"
-                      {...stylex.props(sx.colSpan2)}
+                      {...mergeStylexProps("desktop:col-span-1 desktop:col-start-3 desktop:row-start-1", sx.colSpan2)}
                       items={memberEfforts.map((effort) => ({
                         value: effort.id,
                         label: effort.label,
@@ -431,8 +418,7 @@ function PresetRow({
 					<SettingsField {...stylex.props(sx.mb0)}>
 						Instructions
 						<textarea
-              className={settingsTextareaClass}
-              {...stylex.props(sx.minH18)}
+              {...mergeStylexProps(settingsTextareaClass, sx.minH18)}
 							value={preset.instructions || ""}
               onChange={(event) =>
                 onPatch({ instructions: event.target.value })
@@ -445,8 +431,7 @@ function PresetRow({
 							size="sm"
 							variant="ghost"
 							icon={<IconTrash size={16} />}
-              className="hover:bg-red-soft hover:text-red"
-              {...stylex.props(sx.textRed)}
+              {...mergeStylexProps("hover:bg-red-soft hover:text-red", sx.textRed)}
 							onClick={onRemove}
 						>
 							Remove preset

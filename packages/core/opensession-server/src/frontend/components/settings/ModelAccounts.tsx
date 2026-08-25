@@ -28,7 +28,7 @@ import {
 	SettingsHint,
 	rowMenuTriggerClasses,
 } from "../../ui/settings";
-import { cn } from "../../ui/cn";
+import { cn, mergeStylexProps } from "../../ui/cn";
 import { toast } from "../../ui/toast";
 import { BrandMark, IconTile } from "../BrandTile";
 import {
@@ -488,7 +488,7 @@ function absoluteReset(resetsAt: string | null): string | undefined {
  */
 function MeterGroup({ children }: { children: React.ReactNode }) {
 	return (
-		<div className="phone:grid-cols-1 phone:gap-1.5" {...stylex.props(sx.mt2, sx.grid, sx.maxW420px, sx.gridCols3, sx.gap3, typography.meta)}>
+		<div {...mergeStylexProps("phone:grid-cols-1 phone:gap-1.5", sx.mt2, sx.grid, sx.maxW420px, sx.gridCols3, sx.gap3, typography.meta)}>
 			{children}
 		</div>
 	);
@@ -512,19 +512,17 @@ function Meter({
 	noteTitle?: string;
 }) {
 	return (
-		<div className="grid-cols-[minmax(0,1fr)_auto] phone:grid-cols-[minmax(0,1fr)_72px_minmax(38px,auto)] phone:gap-x-2 phone:gap-y-0" {...stylex.props(sx.grid, sx.minW0, sx.itemsCenter, sx.gapX2, sx.gapY1)}>
+		<div {...mergeStylexProps("grid-cols-[minmax(0,1fr)_auto] phone:grid-cols-[minmax(0,1fr)_72px_minmax(38px,auto)] phone:gap-x-2 phone:gap-y-0", sx.grid, sx.minW0, sx.itemsCenter, sx.gapX2, sx.gapY1)}>
 			{/* `contents` gives the desktop label and reset time separate rows.
 			    On phones they become one cell beside the track and value. */}
-			<span className="phone:overflow-visible phone:whitespace-normal desktop:contents" {...stylex.props(sx.minW0)}>
-				<span
-					className="desktop:col-start-1 desktop:row-start-1" {...stylex.props(sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.textDim)}
+			<span {...mergeStylexProps("phone:overflow-visible phone:whitespace-normal desktop:contents", sx.minW0)}>
+				<span {...mergeStylexProps("desktop:col-start-1 desktop:row-start-1", sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.textDim)}
 					title={labelTitle}
 				>
 					{label}
 				</span>
 				{note ? (
-					<span
-						className="desktop:col-span-2 desktop:row-start-3" {...stylex.props(sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.textFaint)}
+					<span {...mergeStylexProps("desktop:col-span-2 desktop:row-start-3", sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.textFaint)}
 						title={noteTitle}
 					>
 						<span className="phone:inline desktop:hidden"> · </span>
@@ -532,13 +530,13 @@ function Meter({
 					</span>
 				) : null}
 			</span>
-			<div className="desktop:col-span-2 desktop:row-start-2 phone:col-start-2 phone:row-start-1" {...stylex.props(sx.h1, sx.overflowHidden, sx.roundedFull, sx.bgActive)}>
+			<div {...mergeStylexProps("desktop:col-span-2 desktop:row-start-2 phone:col-start-2 phone:row-start-1", sx.h1, sx.overflowHidden, sx.roundedFull, sx.bgActive)}>
 				<div
 					{...stylex.props(sx.meterFill, usageToneStyles[usageTone(pct)])}
 					style={{ width: `${Math.min(100, Math.max(0, pct ?? 0))}%` }}
 				/>
 			</div>
-			<span className="tabular-nums desktop:col-start-2 desktop:row-start-1 phone:col-start-3 phone:row-start-1" {...stylex.props(sx.textRight, sx.textDim)}>
+			<span {...mergeStylexProps("tabular-nums desktop:col-start-2 desktop:row-start-1 phone:col-start-3 phone:row-start-1", sx.textRight, sx.textDim)}>
 				{value}
 			</span>
 		</div>
@@ -750,7 +748,7 @@ function ClaudeAccountRows({ state }: { state: ClaudeAccountsState }) {
 				)
 				.map((account) => (
 					<React.Fragment key={account.id}>
-						<SettingRow className="phone:px-4" {...stylex.props(sx.itemsStart, sx.gapX3)}>
+						<SettingRow {...mergeStylexProps("phone:px-4", sx.itemsStart, sx.gapX3)}>
 							<AccountProviderMark name="claude" />
 							<SettingRowText>
 								<div {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
@@ -790,8 +788,8 @@ function ClaudeAccountRows({ state }: { state: ClaudeAccountsState }) {
 									</>
 								)}
 							</SettingRowText>
-							<SettingRowControl className="phone:mt-1 phone:ml-0 phone:w-full phone:basis-full phone:gap-2.5 phone:pl-10" {...stylex.props(sx.flex, sx.itemsCenter, sx.gap15)}>
-								<span className="phone:inline" {...stylex.props(sx.hidden, sx.shrink0, sx.textFaint, typography.meta)}>Used by</span>
+							<SettingRowControl {...mergeStylexProps("phone:mt-1 phone:ml-0 phone:w-full phone:basis-full phone:gap-2.5 phone:pl-10", sx.flex, sx.itemsCenter, sx.gap15)}>
+								<span {...mergeStylexProps("phone:inline", sx.hidden, sx.shrink0, sx.textFaint, typography.meta)}>Used by</span>
 								<OwnerSelect
 									value={account.owner || ""}
 									onChange={(owner) => state.setOwner(account, owner)}
@@ -823,8 +821,7 @@ function ClaudeAccountRows({ state }: { state: ClaudeAccountsState }) {
 											</Menu.Item>
 										)}
 										<Menu.Item
-											onClick={() => state.remove(account)}
-											className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
+											onClick={() => state.remove(account)} {...mergeStylexProps("data-[highlighted]:bg-red-soft", sx.textRed)}
 										>
 											<IconTrash size={16} />
 											Remove account
@@ -1061,7 +1058,7 @@ function CodexAccountRows({ state }: { state: CodexAccountsState }) {
 						left.id.localeCompare(right.id),
 				)
 				.map((account) => (
-					<SettingRow key={account.id} className="phone:px-4" {...stylex.props(sx.itemsStart, sx.gapX3)}>
+					<SettingRow key={account.id} {...mergeStylexProps("phone:px-4", sx.itemsStart, sx.gapX3)}>
 						<AccountProviderMark name="codex" />
 						<SettingRowText>
 							<div {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
@@ -1079,8 +1076,8 @@ function CodexAccountRows({ state }: { state: CodexAccountsState }) {
 							</SettingRowDescription>
 							<CodexUsageMeters account={account} />
 						</SettingRowText>
-						<SettingRowControl className="phone:mt-1 phone:ml-0 phone:w-full phone:basis-full phone:gap-2.5 phone:pl-10" {...stylex.props(sx.flex, sx.itemsCenter, sx.gap15)}>
-							<span className="phone:inline" {...stylex.props(sx.hidden, sx.shrink0, sx.textFaint, typography.meta)}>Used by</span>
+						<SettingRowControl {...mergeStylexProps("phone:mt-1 phone:ml-0 phone:w-full phone:basis-full phone:gap-2.5 phone:pl-10", sx.flex, sx.itemsCenter, sx.gap15)}>
+							<span {...mergeStylexProps("phone:inline", sx.hidden, sx.shrink0, sx.textFaint, typography.meta)}>Used by</span>
 							<OwnerSelect
 								value={account.owner || ""}
 								onChange={(owner) => state.setOwner(account, owner)}
@@ -1102,8 +1099,7 @@ function CodexAccountRows({ state }: { state: CodexAccountsState }) {
 								</Menu.Trigger>
 								<Menu.Popup align="end" sideOffset={4}>
 									<Menu.Item
-										onClick={() => state.remove(account)}
-										className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
+										onClick={() => state.remove(account)} {...mergeStylexProps("data-[highlighted]:bg-red-soft", sx.textRed)}
 									>
 										<IconTrash size={16} />
 										Remove account
@@ -1716,7 +1712,7 @@ setError(e.message);
 			</SettingRowDescription>
 
 			{login ? (
-				<div className="phone:flex-col phone:items-stretch" {...stylex.props(sx.flex, sx.itemsEnd, sx.gap35)}>
+				<div {...mergeStylexProps("phone:flex-col phone:items-stretch", sx.flex, sx.itemsEnd, sx.gap35)}>
 					<a {...stylex.props(sx.shrink0)} href={login.url} target="_blank" rel="noreferrer">
 						<Button icon={<IconPlug size={16} />}>Open Claude sign-in</Button>
 					</a>

@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 
@@ -140,7 +140,7 @@ export function Field({
 	children: React.ReactNode;
 }) {
 	return (
-		<label className={cn(className)} {...stylex.props(sx.flex, sx.minW0, sx.flexCol, sx.gap15)} {...props}>
+		<label {...mergeStylexProps(cn(className), sx.flex, sx.minW0, sx.flexCol, sx.gap15)} {...props}>
 			<span {...stylex.props(sx.fontMedium, sx.textDim, typography.label)}>{label}</span>
 			{children}
 		</label>
@@ -155,6 +155,6 @@ export function FieldGrid({
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
-		<div className={cn("phone:grid-cols-1", className)} {...stylex.props(sx.grid, sx.gridCols2, sx.gap3)} {...props} />
+		<div {...mergeStylexProps(cn("phone:grid-cols-1", className), sx.grid, sx.gridCols2, sx.gap3)} {...props} />
 	);
 }

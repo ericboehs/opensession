@@ -5,7 +5,7 @@ import {
 } from "../lib/app-header-classes";
 import { IconChevronLeft } from "../components/icons";
 import { Button, type ButtonProps } from "./button";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import { type as typography } from "../styles/typography.stylex";
 import * as stylex from "@stylexjs/stylex";
 
@@ -85,8 +85,7 @@ export const TopBarLeading = React.forwardRef<
 >(function TopBarLeading({ className, ...props }, ref) {
 	return (
 		<div
-			ref={ref}
-			className={cn(className)} {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}
+			ref={ref} {...mergeStylexProps(cn(className), sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}
 			{...props}
 		/>
 	);
@@ -96,7 +95,7 @@ export const TopBarTitle = React.forwardRef<
 	HTMLDivElement,
 	React.ComponentPropsWithoutRef<"div">
 >(function TopBarTitle({ className, ...props }, ref) {
-	return <div ref={ref} className={cn(className)} {...stylex.props(sx.minW0)} {...props} />;
+	return <div ref={ref} {...mergeStylexProps(cn(className), sx.minW0)} {...props} />;
 });
 
 export const TopBarActions = React.forwardRef<
@@ -105,8 +104,7 @@ export const TopBarActions = React.forwardRef<
 >(function TopBarActions({ className, ...props }, ref) {
 	return (
 		<div
-			ref={ref}
-			className={cn(className)} {...stylex.props(sx.mlAuto, sx.flex, sx.shrink0, sx.itemsCenter)}
+			ref={ref} {...mergeStylexProps(cn(className), sx.mlAuto, sx.flex, sx.shrink0, sx.itemsCenter)}
 			{...props}
 		/>
 	);
@@ -141,8 +139,7 @@ export const PhoneTopBarTitle = React.forwardRef<
 >(function PhoneTopBarTitle({ className, ...props }, ref) {
 	return (
 		<TopBarTitle
-			ref={ref}
-			className={cn(className)} {...stylex.props(typography.body, sx.fontTitle, sx.textFg)}
+			ref={ref} {...mergeStylexProps(cn(className), typography.body, sx.fontTitle, sx.textFg)}
 			{...props}
 		/>
 	);
@@ -157,8 +154,7 @@ export const PhoneTopBarAction = React.forwardRef<
 		<Button
 			ref={ref}
 			variant="ghost"
-			size="md"
-			className={cn("shadow-none hover:bg-pressed active:scale-[0.96] [&_svg]:size-6", className)} {...stylex.props(sx.size11, sx.minH11, sx.shrink0, sx.touchManipulation, sx.roundedFull, sx.bgPanel, sx.p0, sx.textDim)}
+			size="md" {...mergeStylexProps(cn("shadow-none hover:bg-pressed active:scale-[0.96] [&_svg]:size-6", className), sx.size11, sx.minH11, sx.shrink0, sx.touchManipulation, sx.roundedFull, sx.bgPanel, sx.p0, sx.textDim)}
 			{...props}
 		/>
 	);

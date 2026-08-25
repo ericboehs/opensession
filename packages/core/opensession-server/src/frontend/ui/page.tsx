@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import { PageDescription, PageHeader, PageTitle } from "./page-header";
 import * as stylex from "@stylexjs/stylex";
 
@@ -81,12 +81,10 @@ export function PageLayout({
 			// The scroller the app's top bar watches, so it can reveal the compact
 			// title once this page has travelled under it. Read by App.tsx through
 			// hooks/useScrollEdge.ts; it styles nothing.
-			data-page-scroll
-			className={cn(className)} {...stylex.props(sx.minH0, sx.wFull, sx.flex1, sx.overflowYAuto)}
+			data-page-scroll {...mergeStylexProps(cn(className), sx.minH0, sx.wFull, sx.flex1, sx.overflowYAuto)}
 			{...props}
 		>
-			<div
-				className={cn("max-[560px]:px-3.5 max-[560px]:pb-12 max-[560px]:pt-[18px]", contentWidths[contentWidth])} {...stylex.props(sx.mxAuto, sx.wFull, sx.px6, sx.pb60px, sx.pt7)}
+			<div {...mergeStylexProps(cn("max-[560px]:px-3.5 max-[560px]:pb-12 max-[560px]:pt-[18px]", contentWidths[contentWidth]), sx.mxAuto, sx.wFull, sx.px6, sx.pb60px, sx.pt7)}
 			>
 				<PageHeader>
 					<div>
@@ -119,5 +117,5 @@ export function PageSection({
 	className,
 	...props
 }: PageSectionProps) {
-	return <div className={cn(contentWidths[contentWidth], className)} {...stylex.props(sx.mxAuto, sx.wFull)} {...props} />;
+	return <div {...mergeStylexProps(cn(contentWidths[contentWidth], className), sx.mxAuto, sx.wFull)} {...props} />;
 }

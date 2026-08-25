@@ -9,7 +9,7 @@ import {
 	WALKTHROUGH_LABEL_TONE,
 } from "../lib/walkthrough-label";
 import { walkthroughLede } from "../lib/walkthrough-lede";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { ease } from "../ui/motion";
 import { IconChevronDown, IconPlay, IconPlayRectangle } from "./icons";
 import { MarkdownBody, useMarkdownRepo } from "./MarkdownBody";
@@ -406,19 +406,7 @@ export function WalkthroughCard({
 					<button
 						type="button"
 						aria-expanded={expanded}
-						onClick={() => setExpanded(!expanded)}
-						// Keep the fold's 14px title and 20px chevron. The play-in-screen
-						// glyph mirrors the native app without adding another icon tile.
-						// The row is the height of its own contents, like the turn fold
-						// it sits among — a 40px row spent 20 of them holding the title
-						// away from a card edge that already has padding of its own, so
-						// the header read as a band and the folded card as a panel.
-						// The hover is the turn fold's: a half-strength wash, which on a
-						// row this wide is the difference between saying "this is live"
-						// and lighting a slab the size of the card. The chevron takes
-						// the rest of it, at its own scale — the whole row folds, but
-						// the chevron is what a reader is aiming at.
-						className="group hover:bg-hover/40 focus-visible:shadow-[0_0_0_3px_var(--accent-soft)]" {...stylex.props(sx.M1, sx.flex, sx.minW0, sx.flex1, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.p1, sx.textLeft, sx.fontSans, sx.leading5, sx.textDim, sx.outlineNone, sx.transitionColors, typography.itemTitle)}
+						onClick={() => setExpanded(!expanded)} {...mergeStylexProps("group hover:bg-hover/40 focus-visible:shadow-[0_0_0_3px_var(--accent-soft)]", sx.M1, sx.flex, sx.minW0, sx.flex1, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.p1, sx.textLeft, sx.fontSans, sx.leading5, sx.textDim, sx.outlineNone, sx.transitionColors, typography.itemTitle)}
 					>
 						{/* The walkthrough's own icon leads the line, so the row is
 					    named before it is operated; the chevron trails at the far
@@ -428,7 +416,7 @@ export function WalkthroughCard({
 						<span {...stylex.props(sx.flexShrink0, sx.fontSemibold, sx.textFg)}>
 							Walkthrough
 						</span>
-						<span className="phone:max-w-24" {...stylex.props(sx.mlAuto, sx.maxW40, sx.flexShrink, sx.truncate, sx.leading4, sx.textFaint, typography.label)}>
+						<span {...mergeStylexProps("phone:max-w-24", sx.mlAuto, sx.maxW40, sx.flexShrink, sx.truncate, sx.leading4, sx.textFaint, typography.label)}>
 							{expanded
 								? walkthrough.publishedAt
 									? relativeTime(walkthrough.publishedAt)
@@ -459,7 +447,7 @@ export function WalkthroughCard({
 				// transcript. Three lines is what the paragraph usually is; the
 				// rest of the writeup stays behind the fold, which is what the
 				// fold is for.
-				<p className="line-clamp-3" {...stylex.props(sx.m0, sx.mt2, sx.leading5, sx.textDim, sx.OverflowWrapAnywhere, sx.TextWrapPretty, typography.supporting)}>
+				<p {...mergeStylexProps("line-clamp-3", sx.m0, sx.mt2, sx.leading5, sx.textDim, sx.OverflowWrapAnywhere, sx.TextWrapPretty, typography.supporting)}>
 					{lede}
 				</p>
 			)}
@@ -646,8 +634,7 @@ export function WalkthroughCard({
 									Summary
 								</h3>
 								<MarkdownBody
-									html={summaryHtml}
-									className="markdown" {...stylex.props(sx.maxW68ch, sx.leading5, sx.textDim, sx.OverflowWrapAnywhere, sx.TextWrapPretty, typography.label)}
+									html={summaryHtml} {...mergeStylexProps("markdown", sx.maxW68ch, sx.leading5, sx.textDim, sx.OverflowWrapAnywhere, sx.TextWrapPretty, typography.label)}
 								/>
 							</section>
 
@@ -697,13 +684,7 @@ export function WalkthroughCard({
 													shot[side] && (
 														<figure {...stylex.props(sx.m0, sx.minW0)} key={side}>
 															<button
-																type="button"
-																// The hairline is the edge of the picture, not a
-																// frame around a section: a screenshot of a white
-																// UI ends nowhere on a white card. The folded
-																// tiles and the demo video above carry the same
-																// one, so open is where it was missing.
-																className="hover:brightness-[0.98] focus-visible:shadow-[inset_0_0_0_3px_var(--accent-soft)]" {...stylex.props(sx.relative, sx.flex, sx.wFull, sx.cursorZoomIn, sx.itemsStart, sx.justifyCenter, sx.overflowHidden, sx.roundedMd, sx.border, sx.borderLine, sx.bgSurface, sx.p0, sx.textLeft, sx.outlineNone, sx.transitionFilter)}
+																type="button" {...mergeStylexProps("hover:brightness-[0.98] focus-visible:shadow-[inset_0_0_0_3px_var(--accent-soft)]", sx.relative, sx.flex, sx.wFull, sx.cursorZoomIn, sx.itemsStart, sx.justifyCenter, sx.overflowHidden, sx.roundedMd, sx.border, sx.borderLine, sx.bgSurface, sx.p0, sx.textLeft, sx.outlineNone, sx.transitionFilter)}
 																onClick={(event) =>
 																	open(`${i}:${side}`, event.currentTarget)
 																}

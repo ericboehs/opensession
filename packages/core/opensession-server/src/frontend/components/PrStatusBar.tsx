@@ -61,7 +61,7 @@ import { Tooltip } from "../ui/tooltip";
 import { ContextMenu, Menu, MENU_ICON } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
 import { Skeleton, SkeletonBar } from "../ui/state";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { useShortcutLabel } from "../hooks/useShortcutBindings";
 import { useDeferredMergePhase } from "../hooks/useDeferredMerge";
 import {
@@ -350,7 +350,7 @@ function PrBarButton({
 			{...props}
 		>
 			{icon && (
-				<span className="[&_svg]:block [&_svg]:stroke-[1.7]" {...stylex.props(sx.inlineFlex, sx.size18px, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>
+				<span {...mergeStylexProps("[&_svg]:block [&_svg]:stroke-[1.7]", sx.inlineFlex, sx.size18px, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>
 					{icon}
 				</span>
 			)}
@@ -1071,7 +1071,7 @@ setBusy(null);
 								? "Merge stack"
 								: "Merge"}
 						{stackMerge && !merging && (
-							<span className="tabular-nums" {...stylex.props(sx.ml15, sx.roundedFull, sx.bgWhite20, sx.px15)}>
+							<span {...mergeStylexProps("tabular-nums", sx.ml15, sx.roundedFull, sx.bgWhite20, sx.px15)}>
 								{stackMerge.layers.length}
 							</span>
 						)}
@@ -1116,7 +1116,7 @@ setBusy(null);
 					{headlineLabel}
 				</span>
 				{pr && provider && (
-					<span className="group-hover/prsum:text-dim" {...stylex.props(sx.flex, sx.itemsCenter, sx.gap1, sx.truncate, sx.textFaint, typography.meta)}>
+					<span {...mergeStylexProps("group-hover/prsum:text-dim", sx.flex, sx.itemsCenter, sx.gap1, sx.truncate, sx.textFaint, typography.meta)}>
 						<BrandMark name={provider.key} size={12} {...stylex.props(sx.shrink0)} />
 						<span {...stylex.props(sx.shrink0)}>#{pr.number}</span>
 						{checksPr && (
@@ -1127,8 +1127,7 @@ setBusy(null);
 						)}
 						<IconArrowUpRight
 							dense
-							size={12}
-							className="group-hover/prsum:opacity-100 group-focus-visible/prsum:opacity-100" {...stylex.props(sx.shrink0, sx.opacity0, sx.transitionOpacity, sx.duration150)}
+							size={12} {...mergeStylexProps("group-hover/prsum:opacity-100 group-focus-visible/prsum:opacity-100", sx.shrink0, sx.opacity0, sx.transitionOpacity, sx.duration150)}
 						/>
 					</span>
 				)}

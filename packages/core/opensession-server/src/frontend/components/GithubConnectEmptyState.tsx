@@ -1,5 +1,5 @@
 import { Button } from "../ui/button";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { EmptyState } from "../ui/state";
 import { BrandMark } from "./BrandTile";
 import * as stylex from "@stylexjs/stylex";
@@ -46,8 +46,7 @@ export function GithubConnectEmptyState({
 					variant="primary"
 					size="lg"
 					icon={<BrandMark name="github" size={18} />}
-					onClick={onConnect}
-					className="phone:min-h-11" {...stylex.props(sx.minH10)}
+					onClick={onConnect} {...mergeStylexProps("phone:min-h-11", sx.minH10)}
 				>
 					Connect GitHub
 				</Button>

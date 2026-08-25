@@ -3,7 +3,7 @@ import React, { useEffect, useId, useLayoutEffect, useRef, useState } from "reac
 import { createPortal } from "react-dom";
 import type { FileMention } from "../lib/api";
 import { UserAvatar } from "./UserAvatar";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { FLOATING_OVERLAY_LAYER } from "../ui/popup-classes";
 import { IconTile } from "./BrandTile";
 import { displayName as brandDisplayName } from "../brand-logos";
@@ -583,7 +583,7 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
                     {item.icon || <IconPlug size={16} />}
                   </span>
                 ) : item.repo ? (
-                  <span className="bg-[color-mix(in_srgb,var(--accent)_14%,transparent)]" {...stylex.props(sx.shrink0, sx.roundedMd, sx.px5px, sx.pyPx, sx.fontSemibold, sx.textAccent, typography.meta)}>
+                  <span {...mergeStylexProps("bg-[color-mix(in_srgb,var(--accent)_14%,transparent)]", sx.shrink0, sx.roundedMd, sx.px5px, sx.pyPx, sx.fontSemibold, sx.textAccent, typography.meta)}>
                     {repoLabel(item.repo)}
                   </span>
                 ) : (

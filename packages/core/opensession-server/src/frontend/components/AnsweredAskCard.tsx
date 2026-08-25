@@ -9,6 +9,7 @@ import { IconCheck } from "./icons";
 import { useMarkdownRepo } from "./MarkdownBody";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -142,23 +143,20 @@ function ChoiceRow({
 			role="listitem"
 			aria-label={`${label}${selected ? ", selected" : ""}`}
 			data-selected={selected ? "" : undefined}
-			className="[corner-shape:var(--cs)]"
-			{...stylex.props(sx.flex, sx.minH9, sx.itemsStart, sx.gap25, sx.roundedMd, sx.px25, sx.py2, selected ? sx.bgControl : sx.textDim)}
+			{...mergeStylexProps("[corner-shape:var(--cs)]", sx.flex, sx.minH9, sx.itemsStart, sx.gap25, sx.roundedMd, sx.px25, sx.py2, selected ? sx.bgControl : sx.textDim)}
 		>
 			<span {...stylex.props(sx.w35, sx.shrink0, sx.ptPx, sx.leading5, sx.textFaint, typography.meta)}>
 				{letter}
 			</span>
 			<span {...stylex.props(sx.minW0, sx.flex1)}>
 				<span
-					className="[overflow-wrap:anywhere]"
-					{...stylex.props(sx.block, typography.controlLabel, sx.leading5, selected ? sx.fontSemibold : sx.fontMedium, selected && sx.textFg)}
+					{...mergeStylexProps("[overflow-wrap:anywhere]", sx.block, typography.controlLabel, sx.leading5, selected ? sx.fontSemibold : sx.fontMedium, selected && sx.textFg)}
 				>
 					{label}
 				</span>
 				{description && (
 					<span
-						className="[overflow-wrap:anywhere]"
-						{...stylex.props(sx.mt05, sx.block, typography.supporting, sx.leading145, selected ? sx.textDim : sx.textFaint)}
+						{...mergeStylexProps("[overflow-wrap:anywhere]", sx.mt05, sx.block, typography.supporting, sx.leading145, selected ? sx.textDim : sx.textFaint)}
 					>
 						{description}
 					</span>
@@ -191,7 +189,7 @@ export function AnsweredAskCard({
 
 	return (
 		<div className={msgRow} data-eid={entryId} data-answered-ask="">
-			<div className="max-w-[min(600px,90%)]" {...stylex.props(sx.selfEnd, sx.rounded2xl, sx.bgPanel, sx.p4, sx.CornerShapeVarCs)}>
+			<div {...mergeStylexProps("max-w-[min(600px,90%)]", sx.selfEnd, sx.rounded2xl, sx.bgPanel, sx.p4, sx.CornerShapeVarCs)}>
 				<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gapX15, sx.gapY05, sx.fontSemibold, typography.label)}>
 					<span
 						aria-hidden="true"
@@ -223,8 +221,7 @@ export function AnsweredAskCard({
 										{question.header}
 									</div>
 								)}
-								<div
-									className="markdown" {...stylex.props(sx.leading5, sx.textDim, sx.OverflowWrapAnywhere, sx.TextWrapPretty, typography.controlLabel)}
+								<div {...mergeStylexProps("markdown", sx.leading5, sx.textDim, sx.OverflowWrapAnywhere, sx.TextWrapPretty, typography.controlLabel)}
 									dangerouslySetInnerHTML={{
 										__html: renderMarkdown(question.question, { repo }),
 									}}

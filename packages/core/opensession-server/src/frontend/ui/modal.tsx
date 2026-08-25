@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Dialog as BaseDialog } from "@base-ui/react/dialog";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import { IconX } from "../components/icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -338,12 +338,10 @@ function Content({
 	);
 	return (
 		<BaseDialog.Portal keepMounted={keepMounted}>
-			<BaseDialog.Backdrop
-				className={cn("data-[starting-style]:opacity-0 data-[ending-style]:opacity-0", palette ? "backdrop-blur-[6px]" : "backdrop-blur-[1px]", palette && "palette-backdrop")} {...stylex.props(sx.fixed, sx.inset0, sx.transitionOpacity, sx.easeOut, palette && sx.z6000, palette && sx.bgBlack22, palette && sx.durationVarDurMicro, !(palette) && sx.z10000, !(palette) && sx.bgBlack25, !(palette) && sx.durationVarDur)}
+			<BaseDialog.Backdrop {...mergeStylexProps(cn("data-[starting-style]:opacity-0 data-[ending-style]:opacity-0", palette ? "backdrop-blur-[6px]" : "backdrop-blur-[1px]", palette && "palette-backdrop"), sx.fixed, sx.inset0, sx.transitionOpacity, sx.easeOut, palette && sx.z6000, palette && sx.bgBlack22, palette && sx.durationVarDurMicro, !(palette) && sx.z10000, !(palette) && sx.bgBlack25, !(palette) && sx.durationVarDur)}
 			/>
 			{palette ? (
-				<BaseDialog.Viewport
-					className={cn("max-[560px]:pt-[7vh] [&[hidden]]:hidden", viewportClassName)} {...stylex.props(sx.fixed, sx.inset0, sx.z6001, sx.flex, sx.itemsStart, sx.justifyCenter, sx.px4, sx.pb4, sx.pt11vh)}
+				<BaseDialog.Viewport {...mergeStylexProps(cn("max-[560px]:pt-[7vh] [&[hidden]]:hidden", viewportClassName), sx.fixed, sx.inset0, sx.z6001, sx.flex, sx.itemsStart, sx.justifyCenter, sx.px4, sx.pb4, sx.pt11vh)}
 				>
 					{popup}
 				</BaseDialog.Viewport>
@@ -435,8 +433,7 @@ function Header({
 		// pulls 10px of it back to keep its own 6px.
 		<>
 			<div
-				ref={setNode}
-				className={cn(scrolled && "shadow-[inset_0_-1px_0_var(--divider)]", className)} {...stylex.props(sx.sticky, sx.Top6, sx.z10, sx.flex, sx.itemsStart, sx.gap3, sx.bgRaised, sx.Mx6, sx.Mb3, sx.Mt6, sx.px6, sx.pb3, sx.pt6, sx.transitionBoxShadow, sx.durationVarDurMicro)}
+				ref={setNode} {...mergeStylexProps(cn(scrolled && "shadow-[inset_0_-1px_0_var(--divider)]", className), sx.sticky, sx.Top6, sx.z10, sx.flex, sx.itemsStart, sx.gap3, sx.bgRaised, sx.Mx6, sx.Mb3, sx.Mt6, sx.px6, sx.pb3, sx.pt6, sx.transitionBoxShadow, sx.durationVarDurMicro)}
 			>
 				{/* Base UI renders Title as <h2> and Description as <p>; preflight
 				    isn't imported (base.css owns resets), so zero their UA margins
@@ -445,8 +442,7 @@ function Header({
 					{title}
 				</BaseDialog.Title>
 				<BaseDialog.Close
-					aria-label="Close"
-					className="after:absolute after:-inset-1 after:content-[''] hover:bg-hover hover:text-fg" {...stylex.props(sx.focusRing, sx.relative, sx.Mr15, sx.Mt1, sx.flex, sx.size8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.p0, sx.textFaint, sx.transitionColors)}
+					aria-label="Close" {...mergeStylexProps("after:absolute after:-inset-1 after:content-[''] hover:bg-hover hover:text-fg", sx.focusRing, sx.relative, sx.Mr15, sx.Mt1, sx.flex, sx.size8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.p0, sx.textFaint, sx.transitionColors)}
 				>
 					<IconX size={20} />
 				</BaseDialog.Close>
@@ -481,8 +477,7 @@ function Footer({
 	children: React.ReactNode;
 }) {
 	return (
-		<div
-			className={cn(className)} {...stylex.props(sx.mt2, sx.flex, sx.flexWrap, sx.itemsCenter, sx.justifyEnd, sx.gap25)}
+		<div {...mergeStylexProps(cn(className), sx.mt2, sx.flex, sx.flexWrap, sx.itemsCenter, sx.justifyEnd, sx.gap25)}
 		>
 			{children}
 		</div>

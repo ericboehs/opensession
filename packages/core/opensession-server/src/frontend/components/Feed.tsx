@@ -29,7 +29,7 @@ import { PageDescription, PageHeader, PageTitle } from "../ui/page-header";
 import { EmptyState, ListSkeleton } from "../ui/state";
 import { Button } from "../ui/button";
 import { Menu } from "../ui/menu";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { IconFeed, IconPeople, IconRepo, IconRobot } from "./icons";
 import {
 	PEOPLE_CHIP,
@@ -252,8 +252,7 @@ function FeedOwnerMark({ owner }: { owner: FeedOwner }) {
 		return <UserAvatar name={owner.label} size={24} title={owner.label} />;
 	}
 	return (
-		<span
-			className="shadow-[var(--avatar-edge)]" {...stylex.props(sx.flex, sx.size24px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedAvatar, sx.bgActive, sx.textDim)}
+		<span {...mergeStylexProps("shadow-[var(--avatar-edge)]", sx.flex, sx.size24px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedAvatar, sx.bgActive, sx.textDim)}
 			title={owner.label}
 		>
 			<IconRobot size={14} />
@@ -407,7 +406,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 		// The page frame every other list page in the app uses: one centred
 		// column at the shared width and padding, a PageHeader on top.
 		<div data-page-scroll {...stylex.props(sx.minH0, sx.wFull, sx.flex1, sx.overflowYAuto, sx.bgSurface)}>
-			<div className="phone:pt-[calc(var(--header-h)+18px)] max-[560px]:px-4 max-[560px]:pb-12" {...stylex.props(sx.mxAuto, sx.wFull, sx.maxW920px, sx.px6, sx.pb15, sx.pt7)}>
+			<div {...mergeStylexProps("phone:pt-[calc(var(--header-h)+18px)] max-[560px]:px-4 max-[560px]:pb-12", sx.mxAuto, sx.wFull, sx.maxW920px, sx.px6, sx.pb15, sx.pt7)}>
 				<PageHeader>
 					<div {...stylex.props(sx.minW0)}>
 						<PageTitle>Feed</PageTitle>
@@ -598,7 +597,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 														{row.title}
 													</span>
 													{row.ref && (
-														<span className="tabular-nums" {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}>
+														<span {...mergeStylexProps("tabular-nums", sx.shrink0, sx.textFaint, typography.meta)}>
 															{row.ref}
 														</span>
 													)}
@@ -611,7 +610,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 												</span>
 												{/* A side that moved no lines is left off rather than
 												    written as a zero: every commit carries both counts. */}
-												<span className="tabular-nums phone:hidden" {...stylex.props(sx.justifySelfEnd, typography.meta)}>
+												<span {...mergeStylexProps("tabular-nums phone:hidden", sx.justifySelfEnd, typography.meta)}>
 													{!!row.additions && (
 														<span {...stylex.props(sx.textGreen)}>+{compactDiff(row.additions)}</span>
 													)}
@@ -619,7 +618,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 														<span {...stylex.props(sx.ml2, sx.textRed)}>−{compactDiff(row.deletions)}</span>
 													)}
 												</span>
-												<span className="tabular-nums" {...stylex.props(sx.justifySelfEnd, sx.textFaint, typography.meta)}>
+												<span {...mergeStylexProps("tabular-nums", sx.justifySelfEnd, sx.textFaint, typography.meta)}>
 													{compactAge(row.shippedAt)}
 												</span>
 											</button>

@@ -3,6 +3,7 @@ import type { ExternalRef } from "../lib/types";
 import { feedForRefKind } from "../lib/feeds-meta";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -137,7 +138,7 @@ export function FeedWebPane({
 	className?: string;
 }) {
 	return (
-		<div className={className} {...stylex.props(sx.flex, sx.hFull, sx.minH0, sx.flexCol)}>
+		<div {...mergeStylexProps(className, sx.flex, sx.hFull, sx.minH0, sx.flexCol)}>
 			<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3, sx.borderB, sx.borderDivider, sx.px3, sx.py2)}>
 				<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.fontMedium, sx.textFg, typography.label)}>
 					{title || panel.label}
@@ -147,8 +148,7 @@ export function FeedWebPane({
 						key={l.href}
 						href={l.href}
 						target="_blank"
-						rel="noreferrer"
-						className="hover:text-fg" {...stylex.props(sx.whitespaceNowrap, sx.textXs, sx.fontMedium, sx.textDim)}
+						rel="noreferrer" {...mergeStylexProps("hover:text-fg", sx.whitespaceNowrap, sx.textXs, sx.fontMedium, sx.textDim)}
 					>
 						{l.label} ↗
 					</a>

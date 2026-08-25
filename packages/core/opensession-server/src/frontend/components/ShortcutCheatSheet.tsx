@@ -11,6 +11,7 @@ import { Modal, useEnterOnMount } from "../ui/modal";
 import { IconX } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -225,8 +226,7 @@ function CheatSheet({
 						</Button>
 					)}
 					<Modal.Close
-						aria-label="Close"
-						className="after:absolute after:-inset-1 after:content-[''] hover:bg-hover hover:text-fg" {...stylex.props(sx.focusRing, sx.relative, sx.Mr15, sx.flex, sx.size8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.p0, sx.textFaint, sx.transitionColors)}
+						aria-label="Close" {...mergeStylexProps("after:absolute after:-inset-1 after:content-[''] hover:bg-hover hover:text-fg", sx.focusRing, sx.relative, sx.Mr15, sx.flex, sx.size8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.p0, sx.textFaint, sx.transitionColors)}
 					>
 						<IconX size={20} />
 					</Modal.Close>
@@ -253,7 +253,7 @@ export function ShortcutCheatSheetBody() {
 	// actually answers to rather than the shipped defaults.
 	useShortcutsVersion();
 	return (
-		<div className="desktop:columns-2" {...stylex.props(sx.columns1, sx.gap8)}>
+		<div {...mergeStylexProps("desktop:columns-2", sx.columns1, sx.gap8)}>
 			{SHORTCUT_GROUPS.map((group) => {
 				const rows = SHORTCUT_COMMANDS.filter((c) => c.group === group);
 				if (rows.length === 0) return null;

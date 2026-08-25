@@ -2,7 +2,7 @@ import React from "react";
 import type { UnifiedSession } from "../lib/types";
 import { PRODUCT_NAME } from "../lib/brand";
 import { usePeople, type Person } from "../lib/people";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { Menu } from "../ui/menu";
 import { IconChevronDown } from "./icons";
 import { UserAvatar } from "./UserAvatar";
@@ -346,7 +346,7 @@ export function TeamFacepile({
 	const selectedIndex = selectedKey ? shown.findIndex((m) => m.key === selectedKey) : -1;
 	const selectedTuck = Math.max(2, Math.round(size * 0.08));
 	return (
-		<div className={className} {...stylex.props(sx.flex, sx.itemsCenter)}>
+		<div {...mergeStylexProps(className, sx.flex, sx.itemsCenter)}>
 			{shown.map((m, i) => {
 				const selected = !!selectedKey && m.key === selectedKey;
 				const label = status
@@ -471,7 +471,7 @@ export function TeamLensMenu({
 				/>
 				{!compact && (
 					<>
-						<span className="max-[860px]:hidden" {...stylex.props(sx.truncate)}>{label}</span>
+						<span {...mergeStylexProps("max-[860px]:hidden", sx.truncate)}>{label}</span>
 						{/* The Button primitive's `caret` step (ui/button.tsx): this
 						    trigger is a facepile, so it can't be a Button, but the
 						    affordance has to read the same as every other menu. */}

@@ -35,7 +35,7 @@ import {
 import { AGENT_NAME, WEBHOOK_BASE_URL, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { Input, Select, Textarea } from "../ui/input";
 import { Modal, useEnterOnMount } from "../ui/modal";
 import { PageDescription, PageHeader, PageTitle } from "../ui/page-header";
@@ -709,8 +709,7 @@ setError(e.message);
                     content instead, which keeps the whole row clickable and
                     keyboard-reachable without nesting one inside the other.
                     Content above it is inert unless it has its own tooltip. */}
-                <button
-                  className="focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50" {...stylex.props(sx.absolute, sx.inset0, sx.roundedSm, sx.outlineNone)}
+                <button {...mergeStylexProps("focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50", sx.absolute, sx.inset0, sx.roundedSm, sx.outlineNone)}
                   onClick={() => onSelect(a.id)}
                 >
                   <span {...stylex.props(sx.srOnly)}>Open {a.name}</span>
@@ -726,7 +725,7 @@ setError(e.message);
                   <span {...stylex.props(sx.truncate, sx.textFaint, typography.meta)}>{triggerSummary(a)}</span>
                 </span>
                 {running ? (
-                  <WorkingPill className="max-[560px]:max-w-[92px] max-[560px]:overflow-hidden max-[560px]:text-ellipsis" {...stylex.props(sx.pointerEventsNone, sx.relative)} />
+                  <WorkingPill {...mergeStylexProps("max-[560px]:max-w-[92px] max-[560px]:overflow-hidden max-[560px]:text-ellipsis", sx.pointerEventsNone, sx.relative)} />
                 ) : a.lastRunStatus === "ok" || a.lastRunStatus === "error" ? (
                   // Its own click target rather than an inert glyph: keeping
                   // pointer events is what keeps the tooltip, and the click
@@ -786,11 +785,10 @@ setError(e.message);
     </div>
 
       {sel && (
-        <aside className="max-[900px]:border-l-0" {...stylex.props(sx.flex, sx.minH0, sx.minW0, sx.flexAuto, sx.flexCol, sx.borderL, sx.borderLine, sx.bgPanel)}>
+        <aside {...mergeStylexProps("max-[900px]:border-l-0", sx.flex, sx.minH0, sx.minW0, sx.flexAuto, sx.flexCol, sx.borderL, sx.borderLine, sx.bgPanel)}>
           <div {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.gap25, sx.borderB, sx.borderDivider, sx.px4, sx.py3)}>
             {/* Phones get Back instead of Close: there the drawer is the page. */}
-            <button
-              className="max-[900px]:inline-flex" {...stylex.props(sx.My1, sx.Ml05, sx.hidden, sx.shrink0, sx.itemsCenter, sx.gap175, sx.px15, sx.py1, sx.fontMedium, sx.textFg, typography.itemTitle)}
+            <button {...mergeStylexProps("max-[900px]:inline-flex", sx.My1, sx.Ml05, sx.hidden, sx.shrink0, sx.itemsCenter, sx.gap175, sx.px15, sx.py1, sx.fontMedium, sx.textFg, typography.itemTitle)}
               onClick={() => onSelect("")}
               title="Back to automations"
             >
@@ -825,8 +823,7 @@ setError(e.message);
                 </Button>
               </div>
             )}
-            <button
-              className="hover:bg-hover hover:text-fg max-[900px]:hidden" {...stylex.props(sx.flex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.textDim)}
+            <button {...mergeStylexProps("hover:bg-hover hover:text-fg max-[900px]:hidden", sx.flex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.textDim)}
               onClick={() => onSelect("")}
               title="Close"
             >
@@ -1401,8 +1398,7 @@ function ChooserRow({
 }) {
   return (
     <button
-      type="button"
-      className="hover:bg-hover" {...stylex.props(sx.flex, sx.wFull, sx.cursorPointer, sx.itemsStart, sx.gap3, sx.roundedRow, sx.px25, sx.py225, sx.textLeft, sx.transitionColors)}
+      type="button" {...mergeStylexProps("hover:bg-hover", sx.flex, sx.wFull, sx.cursorPointer, sx.itemsStart, sx.gap3, sx.roundedRow, sx.px25, sx.py225, sx.textLeft, sx.transitionColors)}
       onClick={onClick}
     >
       {/* Normalize the drawn height, not the SVG box, the way the list rows do. */}
@@ -1501,7 +1497,7 @@ setError(e.message);
           <div className={cn(SECTION_LABEL, "px-2.5")}>Templates</div>
           {/* The gallery scrolls inside the dialog rather than growing it, so
               the describe field and the two blank starts stay on screen. */}
-          <div className="phone:max-h-none desktop:max-h-[32dvh]" {...stylex.props(sx.minH0, sx.overflowYAuto, sx.overscrollContain)}>
+          <div {...mergeStylexProps("phone:max-h-none desktop:max-h-[32dvh]", sx.minH0, sx.overflowYAuto, sx.overscrollContain)}>
             {templates.map((t) => (
               <ChooserRow
                 key={t.id}
@@ -1583,16 +1579,14 @@ function McpPicker({
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search MCPs…"
-            className="placeholder:text-faint" {...stylex.props(sx.flex1, sx.bgTransparent, sx.border0, sx.outlineNone, sx.textFg, typography.label)}
+            placeholder="Search MCPs…" {...mergeStylexProps("placeholder:text-faint", sx.flex1, sx.bgTransparent, sx.border0, sx.outlineNone, sx.textFg, typography.label)}
             style={{ border: "none", padding: 0, background: "transparent" }}
           />
           <span {...stylex.props(sx.textFaint, sx.shrink0, typography.meta)}>
             {all ? "all connectors" : `${selected.length} selected`}
           </span>
         </div>
-        <label
-          className="hover:bg-hover" {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25, sx.borderB, sx.borderLine, sx.px3, sx.py2, sx.cursorPointer, typography.label)}
+        <label {...mergeStylexProps("hover:bg-hover", sx.flex, sx.itemsCenter, sx.gap25, sx.borderB, sx.borderLine, sx.px3, sx.py2, sx.cursorPointer, typography.label)}
         >
           <Checkbox checked={all} onCheckedChange={() => onChange(all ? [] : undefined)} />
           <span {...stylex.props(sx.textFg)}>All connectors</span>
@@ -1603,8 +1597,7 @@ function McpPicker({
         <div {...stylex.props(sx.maxH180px, sx.overflowYAuto)}>
           {shown.map((s) => (
             <label
-              key={s.name}
-              className="hover:bg-hover" {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25, sx.px3, sx.py15, sx.cursorPointer, typography.label)}
+              key={s.name} {...mergeStylexProps("hover:bg-hover", sx.flex, sx.itemsCenter, sx.gap25, sx.px3, sx.py15, sx.cursorPointer, typography.label)}
             >
               <Checkbox
                 checked={all || selected.includes(s.name)}
@@ -1751,8 +1744,7 @@ function DataFlowEditor({
                     placeholder="Label"
                   />
                   <Button
-                    size="sm"
-                    className="hover:text-red" {...stylex.props(sx.shrink0, sx.textDim)}
+                    size="sm" {...mergeStylexProps("hover:text-red", sx.shrink0, sx.textDim)}
                     onClick={() => onInputsChange(inputs.filter((_, at) => at !== index))}
                   >
                     Remove
@@ -1963,15 +1955,14 @@ function DataFlowEditor({
                   </>
                 )}
                 <Button
-                  size="sm"
-                  className="hover:text-red" {...stylex.props(sx.shrink0, sx.textDim)}
+                  size="sm" {...mergeStylexProps("hover:text-red", sx.shrink0, sx.textDim)}
                   onClick={() => onOutputsChange(outputs.filter((_, at) => at !== index))}
                 >
                   Remove
                 </Button>
               </div>
               {output.type === "slack" && (
-                <div className="phone:grid-cols-1" {...stylex.props(sx.mt2, sx.grid, sx.gridCols2, sx.gap3)}>
+                <div {...mergeStylexProps("phone:grid-cols-1", sx.mt2, sx.grid, sx.gridCols2, sx.gap3)}>
                   <label className={FIELD_LABEL}>
                     Minimum urgency
                     <Select

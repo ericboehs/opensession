@@ -33,6 +33,7 @@ import {
 } from "../lib/session-owner";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -716,10 +717,7 @@ if (!ctrl.signal.aborted) setSearching(false);
 				<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3, sx.borderB, sx.borderDivider, sx.px5, sx.py4)}>
 					<IconSearch {...stylex.props(sx.shrink0, sx.textFaint)} size={22} />
 					<input
-						ref={inputRef}
-						// 16px at every width on purpose: anything smaller makes iOS zoom
-						// the page when the palette's field takes focus.
-						className="placeholder:text-faint" {...stylex.props(sx.flex1, sx.borderNone, sx.bgTransparent, sx.fontSans, sx.textInputPhone, sx.leading14, sx.textFg, sx.outlineNone)}
+						ref={inputRef} {...mergeStylexProps("placeholder:text-faint", sx.flex1, sx.borderNone, sx.bgTransparent, sx.fontSans, sx.textInputPhone, sx.leading14, sx.textFg, sx.outlineNone)}
 						value={query}
 						onChange={(e) => {
 							setQuery(e.target.value);
@@ -824,7 +822,7 @@ if (!ctrl.signal.aborted) setSearching(false);
 										onClick={() => selectResult(result)}
 									>
 										{result.action.icon && (
-											<span className="group-aria-selected:text-fg" {...stylex.props(sx.inlineFlex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textDim)}>{result.action.icon}</span>
+											<span {...mergeStylexProps("group-aria-selected:text-fg", sx.inlineFlex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textDim)}>{result.action.icon}</span>
 										)}
 										<span {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.flexCol, sx.gap05)}>
 											<span {...stylex.props(sx.truncate, sx.fontMedium, typography.label)}>{result.action.label}</span>
@@ -833,7 +831,7 @@ if (!ctrl.signal.aborted) setSearching(false);
 											)}
 										</span>
 										{result.action.shortcut && (
-											<span className="max-[560px]:hidden" {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap3px)}>
+											<span {...mergeStylexProps("max-[560px]:hidden", sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap3px)}>
 												{result.action.shortcut.map((key) => <kbd key={key} className={KBD}>{key}</kbd>)}
 											</span>
 										)}
@@ -861,16 +859,16 @@ if (!ctrl.signal.aborted) setSearching(false);
 										onMouseMove={() => setActiveKey(resultKey(result))}
 										onClick={() => selectResult(result)}
 									>
-										<span className="group-aria-selected:text-fg" {...stylex.props(sx.inlineFlex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textDim)}><IconPullRequest size={18} /></span>
+										<span {...mergeStylexProps("group-aria-selected:text-fg", sx.inlineFlex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textDim)}><IconPullRequest size={18} /></span>
 										<span {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.flexCol, sx.gap05)}>
 											<span {...stylex.props(sx.truncate, sx.fontMedium, typography.label)}>{pr.title}</span>
 											<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.overflowHidden, sx.whitespaceNowrap, sx.textFaint, typography.meta)}>
 												<span {...stylex.props(sx.textDim)}>{repoLabel(pr.repo)} #{pr.number}</span>
-												<span className="max-[560px]:hidden" {...stylex.props(sx.maxW220px, sx.truncate)}>{pr.branch}</span>
+												<span {...mergeStylexProps("max-[560px]:hidden", sx.maxW220px, sx.truncate)}>{pr.branch}</span>
 												<span>{pr.author}</span>
 											</span>
 										</span>
-										<span className="max-[560px]:hidden" {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}>{prStatus(pr)}</span>
+										<span {...mergeStylexProps("max-[560px]:hidden", sx.shrink0, sx.textFaint, typography.meta)}>{prStatus(pr)}</span>
 									</button>
 								</React.Fragment>
 							);
@@ -904,16 +902,16 @@ if (!ctrl.signal.aborted) setSearching(false);
 										)}
 										<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.overflowHidden, sx.whitespaceNowrap, sx.textFaint, typography.meta)}>
 											{s.automation ? (
-												<span className="bg-[color-mix(in_srgb,var(--yellow)_16%,transparent)]" {...stylex.props(sx.roundedSm, sx.px15, sx.pyPx, sx.textYellow, typography.meta)}>{s.automation}</span>
+												<span {...mergeStylexProps("bg-[color-mix(in_srgb,var(--yellow)_16%,transparent)]", sx.roundedSm, sx.px15, sx.pyPx, sx.textYellow, typography.meta)}>{s.automation}</span>
 											) : (
 												s.startedBy && <span>{s.startedBy}</span>
 											)}
 											<span {...stylex.props(sx.textDim)}>{sessionRepo(s)}</span>
-											{s.branch && <span className="max-[560px]:hidden" {...stylex.props(sx.maxW220px, sx.truncate)}>{s.branch}</span>}
+											{s.branch && <span {...mergeStylexProps("max-[560px]:hidden", sx.maxW220px, sx.truncate)}>{s.branch}</span>}
 											<span {...stylex.props(sx.mlAuto, sx.shrink0)}>{relativeTime(s.lastActivity)}</span>
 										</span>
 									</span>
-									<span className="max-[560px]:hidden" {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}>{meta.label}</span>
+									<span {...mergeStylexProps("max-[560px]:hidden", sx.shrink0, sx.textFaint, typography.meta)}>{meta.label}</span>
 								</button>
 							</React.Fragment>
 						);

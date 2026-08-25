@@ -1,5 +1,5 @@
 import React from "react";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { repoLetter } from "../lib/repo-label";
 import {
 	hasRepoIcon,
@@ -108,7 +108,7 @@ export function RepoTile({
 	const attempt = `${name}:${rev ?? 0}`;
 	if (hasRepoIcon(name) && failedFor !== attempt) {
 		return (
-			<span className={cn(TILE, className)} style={style} {...stylex.props(sx.inlineFlex, sx.size18px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.fontBold, typography.meta)}>
+			<span style={style} {...mergeStylexProps(cn(TILE, className), sx.inlineFlex, sx.size18px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.fontBold, typography.meta)}>
 				{/* The img fills the tile and inherits its rounding; the tile keeps
 				    no colored backing, so icons with transparency sit on the
 				    surface itself. No inset on purpose, at either end: the route
@@ -136,7 +136,7 @@ export function RepoTile({
 	style.background = repoIconFill(repoColor(name));
 	const letter = repoLetter(name);
 	return (
-		<span className={cn(TILE, className)} style={style} {...stylex.props(sx.inlineFlex, sx.size18px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.fontBold, typography.meta)}>
+		<span style={style} {...mergeStylexProps(cn(TILE, className), sx.inlineFlex, sx.size18px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.fontBold, typography.meta)}>
 			{letter}
 		</span>
 	);

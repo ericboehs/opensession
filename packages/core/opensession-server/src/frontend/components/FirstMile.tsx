@@ -19,6 +19,7 @@ import { IconCheck, IconChevronLeft, IconGlobe, IconRepo } from "./icons";
 import { githubAuthState, type SetupStatus } from "./setup-shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -515,7 +516,7 @@ function FirstMileSummary({
 								size={24}
 								{...stylex.props(sx.roundedFull)}
 							/>
-							<span className="ring-1" {...stylex.props(sx.absolute, sx.Right05, sx.Bottom05, sx.flex, sx.size25, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgFg, sx.textBg, sx.ringBg)}>
+							<span {...mergeStylexProps("ring-1", sx.absolute, sx.Right05, sx.Bottom05, sx.flex, sx.size25, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgFg, sx.textBg, sx.ringBg)}>
 								<BrandMark name="github" size={7} />
 							</span>
 						</span>
@@ -534,7 +535,7 @@ function FirstMileSummary({
 			ready: status.engine.ready,
 			label: `${accountCount} ${accountCount === 1 ? "account" : "accounts"} connected`,
 			preview: (
-				<div className="-space-x-2" {...stylex.props(sx.flex)}>
+				<div {...mergeStylexProps("-space-x-2", sx.flex)}>
 					{accounts.slice(0, 4).map((account, index) => (
 						<span
 							key={`${account.provider}-${index}`}
@@ -554,7 +555,7 @@ function FirstMileSummary({
 			ready: status.repos.length > 0,
 			label: status.repos.length > 0 ? `${status.repos.length} added` : "None added",
 			preview: (
-				<div className="-space-x-2" {...stylex.props(sx.flex)}>
+				<div {...mergeStylexProps("-space-x-2", sx.flex)}>
 					{status.repos.slice(0, 4).map((repo) => (
 						<span
 							key={repo.id}
@@ -577,7 +578,7 @@ function FirstMileSummary({
 					? `${status.team.count} ${status.team.count === 1 ? "member" : "members"}`
 					: "No members",
 			preview: (
-				<div className="-space-x-2" {...stylex.props(sx.flex)}>
+				<div {...mergeStylexProps("-space-x-2", sx.flex)}>
 					{status.team.names.slice(0, 4).map((name) => (
 						<UserAvatar key={name} name={name} size={28} {...stylex.props(sx.border, sx.borderBg)} />
 					))}
@@ -588,7 +589,7 @@ function FirstMileSummary({
 	];
 
 	return (
-		<div className="phone:grid-cols-2" {...stylex.props(sx.grid, sx.gridCols5, sx.gap3)}>
+		<div {...mergeStylexProps("phone:grid-cols-2", sx.grid, sx.gridCols5, sx.gap3)}>
 			{tiles.map((tile) => {
 				const tileProps = stylex.props(
 					sx.summaryTile,
@@ -702,17 +703,14 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 
 	return (
 		<div
-			data-first-mile
-			className="grid-rows-[76px_minmax(0,1fr)_84px] phone:grid-rows-[68px_minmax(0,1fr)_90px] phone:pb-[env(safe-area-inset-bottom)]" {...stylex.props(sx.relative, sx.grid, sx.h100dvh, sx.wFull, sx.overflowHidden, sx.bgBg, sx.textFg)}
+			data-first-mile {...mergeStylexProps("grid-rows-[76px_minmax(0,1fr)_84px] phone:grid-rows-[68px_minmax(0,1fr)_90px] phone:pb-[env(safe-area-inset-bottom)]", sx.relative, sx.grid, sx.h100dvh, sx.wFull, sx.overflowHidden, sx.bgBg, sx.textFg)}
 		>
-			<div
-				className="[background:radial-gradient(circle_at_18%_8%,var(--accent-soft),transparent_34%),radial-gradient(circle_at_82%_92%,var(--blue-soft),transparent_36%)]" {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.inset0, sx.opacity70)}
+			<div {...mergeStylexProps("[background:radial-gradient(circle_at_18%_8%,var(--accent-soft),transparent_34%),radial-gradient(circle_at_82%_92%,var(--blue-soft),transparent_36%)]", sx.pointerEventsNone, sx.absolute, sx.inset0, sx.opacity70)}
 				aria-hidden="true"
 			/>
 
 			<TopBar
-				as="header"
-				className="phone:px-4" {...stylex.props(sx.relative, sx.z10, sx.grid, sx.gridCols1frAuto1fr, sx.px8)}
+				as="header" {...mergeStylexProps("phone:px-4", sx.relative, sx.z10, sx.grid, sx.gridCols1frAuto1fr, sx.px8)}
 			>
 				<Button
 					variant="ghost"
@@ -752,8 +750,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 				{index > 0 && index < STEPS.length - 1 ? (
 					<button
 						type="button"
-						onClick={() => goTo(index + 1)}
-						className="hover:bg-hover hover:text-fg" {...stylex.props(sx.focusRing, sx.colStart3, sx.minH9, sx.justifySelfEnd, sx.roundedControl, sx.px3, sx.fontMedium, sx.textDim, typography.label)}
+						onClick={() => goTo(index + 1)} {...mergeStylexProps("hover:bg-hover hover:text-fg", sx.focusRing, sx.colStart3, sx.minH9, sx.justifySelfEnd, sx.roundedControl, sx.px3, sx.fontMedium, sx.textDim, typography.label)}
 					>
 						Skip
 					</button>
@@ -763,8 +760,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 			</TopBar>
 
 			<main
-				ref={mainRef}
-				className="phone:px-4" {...stylex.props(sx.relative, sx.z10, sx.minH0, sx.overflowYAuto, sx.px6, sx.ScrollbarWidthThin)}
+				ref={mainRef} {...mergeStylexProps("phone:px-4", sx.relative, sx.z10, sx.minH0, sx.overflowYAuto, sx.px6, sx.ScrollbarWidthThin)}
 			>
 				{!status ? (
 					<div {...stylex.props(sx.flex, sx.hFull, sx.itemsCenter, sx.justifyCenter)}>
@@ -792,12 +788,10 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 								<div {...stylex.props(sx.flex, sx.maxW560px, sx.flexCol, sx.itemsCenter, sx.textCenter)}>
 									<img
 										src={`${BASE_PATH}/mac-app-icon.png`}
-										alt=""
-										className="[filter:drop-shadow(0_18px_28px_rgba(0,0,0,0.16))] phone:mb-6 phone:size-16" {...stylex.props(sx.mb7, sx.size20, sx.scale113)}
+										alt="" {...mergeStylexProps("[filter:drop-shadow(0_18px_28px_rgba(0,0,0,0.16))] phone:mb-6 phone:size-16", sx.mb7, sx.size20, sx.scale113)}
 									/>
 									<h1
-										ref={headingRef}
-										className="text-[clamp(1.6rem,2vw,2.15rem)]" {...stylex.props(sx.m0, sx.textCenter, sx.fontTitle, sx.leading108, sx.tracking003em, sx.textFg, sx.outlineNone)}
+										ref={headingRef} {...mergeStylexProps("text-[clamp(1.6rem,2vw,2.15rem)]", sx.m0, sx.textCenter, sx.fontTitle, sx.leading108, sx.tracking003em, sx.textFg, sx.outlineNone)}
 									>
 										{step.title}
 									</h1>
@@ -825,11 +819,10 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 								</div>
 							) : (
 								<>
-									<div className="phone:mb-6" {...stylex.props(sx.mb8, sx.maxW700px, sx.textCenter)}>
+									<div {...mergeStylexProps("phone:mb-6", sx.mb8, sx.maxW700px, sx.textCenter)}>
 										<h1
 											ref={headingRef}
-											tabIndex={-1}
-											className="text-[clamp(1.6rem,2.5vw,2.25rem)]" {...stylex.props(sx.m0, sx.textBalance, sx.fontTitle, sx.leading108, sx.tracking0035em, sx.textFg, sx.outlineNone)}
+											tabIndex={-1} {...mergeStylexProps("text-[clamp(1.6rem,2.5vw,2.25rem)]", sx.m0, sx.textBalance, sx.fontTitle, sx.leading108, sx.tracking0035em, sx.textFg, sx.outlineNone)}
 										>
 											{step.title}
 										</h1>
@@ -838,7 +831,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 										</p>
 									</div>
 
-									<div className="[&_.bg-settings-plate]:rounded-2xl [&_.bg-settings-plate]:border-transparent [&_.bg-settings-plate]:bg-blue-soft/65 [&_.bg-settings-plate]:shadow-[inset_0_1px_0_color-mix(in_srgb,white_45%,transparent),0_18px_46px_-36px_color-mix(in_srgb,var(--blue)_48%,transparent)] [&_[data-setting-description]]:hidden [&_[data-settings-hint]]:hidden" {...stylex.props(sx.wFull, sx.maxW820px, sx.pb8)}>
+									<div {...mergeStylexProps("[&_.bg-settings-plate]:rounded-2xl [&_.bg-settings-plate]:border-transparent [&_.bg-settings-plate]:bg-blue-soft/65 [&_.bg-settings-plate]:shadow-[inset_0_1px_0_color-mix(in_srgb,white_45%,transparent),0_18px_46px_-36px_color-mix(in_srgb,var(--blue)_48%,transparent)] [&_[data-setting-description]]:hidden [&_[data-settings-hint]]:hidden", sx.wFull, sx.maxW820px, sx.pb8)}>
 										{step.id === "github" && (
 											<GithubAuthCard
 												github={status.github}
@@ -890,7 +883,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 					index === 0 && sx.invisible,
 				)}
 			>
-				<div className="phone:grid-cols-1 phone:items-start" {...stylex.props(sx.mxAuto, sx.grid, sx.hFull, sx.wFull, sx.maxW820px, sx.gridCols1frAuto1fr, sx.itemsCenter)}>
+				<div {...mergeStylexProps("phone:grid-cols-1 phone:items-start", sx.mxAuto, sx.grid, sx.hFull, sx.wFull, sx.maxW820px, sx.gridCols1frAuto1fr, sx.itemsCenter)}>
 					<Button
 						variant="ghost"
 						size="lg"
@@ -910,8 +903,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 							if (index === STEPS.length - 1) onDone();
 							else goTo(index + 1);
 						}}
-						disabled={!status}
-						className="phone:min-h-12 phone:w-full phone:justify-center phone:rounded-lg" {...stylex.props(sx.justifySelfEnd)}
+						disabled={!status} {...mergeStylexProps("phone:min-h-12 phone:w-full phone:justify-center phone:rounded-lg", sx.justifySelfEnd)}
 					>
 						{index === 0
 							? "Continue"

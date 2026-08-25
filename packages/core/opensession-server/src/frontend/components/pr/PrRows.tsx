@@ -10,6 +10,7 @@ import {
 } from "../icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { mergeStylexProps } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -122,7 +123,7 @@ export function ReviewerRow({ reviewer, provider }: { reviewer: PrReviewer; prov
           ? "text-yellow"
           : "text-faint";
   return (
-    <div className="hover:border-line hover:bg-hover/50" {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3, sx.roundedRow, sx.border, sx.borderTransparent, sx.px15, sx.py15)}>
+    <div {...mergeStylexProps("hover:border-line hover:bg-hover/50", sx.flex, sx.itemsCenter, sx.gap3, sx.roundedRow, sx.border, sx.borderTransparent, sx.px15, sx.py15)}>
       {src ? (
         <img {...stylex.props(sx.size7, sx.roundedFull, sx.objectCover)} src={src} alt="" loading="lazy" />
       ) : (
@@ -172,8 +173,7 @@ export function FileRow({ file, onClick }: { file: PrFile; onClick?: () => void 
   const base = slash >= 0 ? file.path.slice(slash + 1) : file.path;
   return (
     <button
-      type="button"
-      className="hover:border-line hover:bg-hover/50 disabled:cursor-default disabled:hover:border-transparent disabled:hover:bg-transparent" {...stylex.props(sx.flex, sx.wFull, sx.itemsCenter, sx.gap2, sx.roundedRow, sx.border, sx.borderTransparent, sx.px15, sx.py1, sx.textLeft)}
+      type="button" {...mergeStylexProps("hover:border-line hover:bg-hover/50 disabled:cursor-default disabled:hover:border-transparent disabled:hover:bg-transparent", sx.flex, sx.wFull, sx.itemsCenter, sx.gap2, sx.roundedRow, sx.border, sx.borderTransparent, sx.px15, sx.py1, sx.textLeft)}
       onClick={onClick}
       disabled={!onClick}
       title={file.path}

@@ -20,7 +20,7 @@ import {
 	IconPullRequest,
 	IconX,
 } from "./icons";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { ContextMenu } from "../ui/menu";
 import { Popover } from "../ui/popover";
 import { Tooltip } from "../ui/tooltip";
@@ -236,8 +236,7 @@ export function PrRow({
 					<span {...stylex.props(sx.grow)}>Open on {providerFromUrl(item.pr.url).name}</span>
 				</ContextMenu.Item>
 				<ContextMenu.Separator />
-				<ContextMenu.Item
-					className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
+				<ContextMenu.Item {...mergeStylexProps("data-[highlighted]:bg-red-soft", sx.textRed)}
 					disabled={closing}
 					onClick={onClose}
 				>

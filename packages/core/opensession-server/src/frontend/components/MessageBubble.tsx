@@ -43,7 +43,7 @@ import {
 	msgSystemToned,
 	msgTime,
 } from "../lib/msg-classes";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 
@@ -326,8 +326,7 @@ setFetching(false);
 				<Button
 					variant="ghost"
 					size="sm"
-					onClick={showAll ? () => setShowAll(false) : expand}
-					className="hover:bg-hover/40" {...stylex.props(sx.mt1, sx.minH0, sx.justifyStart, sx.whitespaceNormal, sx.roundedMd, sx.border0, sx.px2, sx.py1, sx.textLeft, sx.fontSans, sx.fontMedium, sx.leadingNormal, typography.label)}
+					onClick={showAll ? () => setShowAll(false) : expand} {...mergeStylexProps("hover:bg-hover/40", sx.mt1, sx.minH0, sx.justifyStart, sx.whitespaceNormal, sx.roundedMd, sx.border0, sx.px2, sx.py1, sx.textLeft, sx.fontSans, sx.fontMedium, sx.leadingNormal, typography.label)}
 				>
 					{fetching
 						? "Loading…"
@@ -423,8 +422,7 @@ function NoticeRow({
 						// The delegated click handler on the transcript navigates on
 						// data-session-id, so this opens in place; the href is there
 						// for cmd-click and copy-link.
-						<a
-							className="hover:text-fg" {...stylex.props(sx.mt25, sx.block, sx.textXs, sx.textDim, sx.noUnderline)}
+						<a {...mergeStylexProps("hover:text-fg", sx.mt25, sx.block, sx.textXs, sx.textDim, sx.noUnderline)}
 							data-session-id={notice.link.sessionId}
 							href={`${BASE_PATH}/session/${notice.link.sessionId}`}
 						>
@@ -563,8 +561,7 @@ function EditAgainButton({ onClick }: { onClick: () => void }) {
 			<button
 				type="button"
 				onClick={onClick}
-				aria-label="Edit and send again"
-				className="select-none hover:bg-hover hover:text-dim [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:transition-opacity [@media(hover:hover)]:group-hover/bubble:opacity-100 [@media(hover:hover)]:group-focus-within/bubble:opacity-100" {...stylex.props(sx.flex, sx.size7, sx.flexNone, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.border0, sx.bgTransparent, sx.p0, sx.textFaint)}
+				aria-label="Edit and send again" {...mergeStylexProps("select-none hover:bg-hover hover:text-dim [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:transition-opacity [@media(hover:hover)]:group-hover/bubble:opacity-100 [@media(hover:hover)]:group-focus-within/bubble:opacity-100", sx.flex, sx.size7, sx.flexNone, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.border0, sx.bgTransparent, sx.p0, sx.textFaint)}
 			>
 				<IconPencil size={16} />
 			</button>
@@ -590,7 +587,7 @@ function BubbleMeta({ ts, onEdit }: { ts?: string; onEdit?: () => void }) {
 		<div {...stylex.props(sx.absolute, sx.topCalc1002px, sx.right0, sx.flex, sx.itemsCenter, sx.gap1)}>
 			{onEdit && <EditAgainButton onClick={onEdit} />}
 			{label && (
-				<span className="select-none selection:bg-[rgba(0,0,0,0.01)] [@media(hover:hover)]:block [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:transition-opacity [@media(hover:hover)]:group-hover/bubble:opacity-100 [@media(hover:hover)]:group-focus-within/bubble:opacity-100" {...stylex.props(sx.hidden, sx.leadingNone, sx.fontMedium, sx.whitespaceNowrap, sx.textFaint, typography.meta)}>
+				<span {...mergeStylexProps("select-none selection:bg-[rgba(0,0,0,0.01)] [@media(hover:hover)]:block [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:transition-opacity [@media(hover:hover)]:group-hover/bubble:opacity-100 [@media(hover:hover)]:group-focus-within/bubble:opacity-100", sx.hidden, sx.leadingNone, sx.fontMedium, sx.whitespaceNowrap, sx.textFaint, typography.meta)}>
 					{label}
 				</span>
 			)}
@@ -845,7 +842,7 @@ export const MessageBubble = function MessageBubble({
 					</div>
 				)}
 				{/* One stack anchors the quiet actions below both the bubble and attachments. */}
-				<div className="group/bubble" {...stylex.props(sx.relative, sx.flex, sx.minW0, sx.flexCol)}>
+				<div {...mergeStylexProps("group/bubble", sx.relative, sx.flex, sx.minW0, sx.flexCol)}>
 					{!fromOther && (
 						<BubbleMeta
 							ts={e.timestamp}

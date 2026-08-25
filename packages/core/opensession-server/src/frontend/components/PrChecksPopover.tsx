@@ -9,6 +9,7 @@ import { Popover } from "../ui/popover";
 import { CheckStatusIcon } from "./CheckStatusIcon";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -166,8 +167,7 @@ export function PrChecksPopover({
 				portalContainer={nested && typeof document !== "undefined" ? document.body : undefined}
 				side="left"
 				align="start"
-				sideOffset={10}
-				className="max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))]" {...stylex.props(sx.flex, sx.flexCol, sx.overflowHidden, sx.p0)}
+				sideOffset={10} {...mergeStylexProps("max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))]", sx.flex, sx.flexCol, sx.overflowHidden, sx.p0)}
 			>
 				<div {...stylex.props(sx.flex, sx.itemsBaseline, sx.justifyBetween, sx.gap25, sx.borderB, sx.borderDivider, sx.bgSurface, sx.px3, sx.py9px)}>
 					<span {...stylex.props(sx.fontSemibold, sx.textFg, typography.label)}>
@@ -197,8 +197,7 @@ export function PrChecksPopover({
 						);
 						return check.url ? (
 							<a
-								key={`${check.name}:${i}`}
-								className="hover:bg-surface" {...stylex.props(sx.flex, sx.itemsCenter, sx.gap9px, sx.roundedMd, sx.px2, sx.py15, sx.textFg, sx.noUnderline)}
+								key={`${check.name}:${i}`} {...mergeStylexProps("hover:bg-surface", sx.flex, sx.itemsCenter, sx.gap9px, sx.roundedMd, sx.px2, sx.py15, sx.textFg, sx.noUnderline)}
 								href={check.url}
 								target="_blank"
 								rel="noopener"

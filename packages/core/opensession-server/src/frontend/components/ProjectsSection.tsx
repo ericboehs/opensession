@@ -12,6 +12,7 @@ import type { FeedDescriptor, Project } from "../lib/types";
 import { fieldClasses } from "../ui/input";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -300,8 +301,7 @@ const res = await fetch(`${BASE_PATH}/api/feeds`);
 				{(feeds || []).map((f) => (
 					<div
 						key={f.id}
-            className="group"
-            {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3, sx.px5, sx.py3)}
+            {...mergeStylexProps("group", sx.flex, sx.itemsCenter, sx.gap3, sx.px5, sx.py3)}
 					>
 						<IconTile name={f.id} size={30} />
 						<div {...stylex.props(sx.minW0, sx.flex1)}>
@@ -323,8 +323,7 @@ const res = await fetch(`${BASE_PATH}/api/feeds`);
 						</div>
 						{f.fromConfig && (
 							<button
-                className={`${rowMenuTriggerClasses} group-hover:opacity-100`}
-                {...stylex.props(sx.removeButton)}
+                {...mergeStylexProps(`${rowMenuTriggerClasses} group-hover:opacity-100`, sx.removeButton)}
 								onClick={() => remove(f.id)}
 								aria-label={`Remove ${f.title}`}
 							>
@@ -334,19 +333,7 @@ const res = await fetch(`${BASE_PATH}/api/feeds`);
 					</div>
 				))}
 				<button
-          className="hover:bg-hover hover:text-fg"
-          {...stylex.props(
-            sx.flex,
-            sx.wFull,
-            sx.itemsCenter,
-            sx.gap2,
-            sx.px5,
-            sx.py3,
-            sx.fontMedium,
-            sx.textDim,
-            sx.transitionColors,
-            typography.controlLabel,
-          )}
+          {...mergeStylexProps("hover:bg-hover hover:text-fg", sx.flex, sx.wFull, sx.itemsCenter, sx.gap2, sx.px5, sx.py3, sx.fontMedium, sx.textDim, sx.transitionColors, typography.controlLabel)}
 					onClick={() => setOpen(true)}
 				>
 					<IconPlus size={16} /> New project

@@ -24,6 +24,7 @@ import { pointerCanHover } from "../lib/pointer";
 import { ExtBadge } from "./lang-marks";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -500,8 +501,7 @@ function FileChip({
         openOnHover
         delay={300}
         closeDelay={120}
-        {...stylex.props(sx.chip, sx.cursorPointer, sx.pr15, sx.hoverBg)}
-        className={`${stylex.props(sx.chip, sx.cursorPointer, sx.pr15, sx.hoverBg).className} data-[popup-open]:bg-hover`}
+        {...mergeStylexProps(`${stylex.props(sx.chip, sx.cursorPointer, sx.pr15, sx.hoverBg).className} data-[popup-open]:bg-hover`, sx.chip, sx.cursorPointer, sx.pr15, sx.hoverBg)}
         aria-label={`Show what this turn wrote to ${name}`}
       >
         {body}
@@ -642,8 +642,7 @@ export function TurnLineStatsCard({
             anchor={anchor}
             {...DIFF_CARD}
           >
-            <div
-              className="max-h-[min(60vh,420px)]" {...stylex.props(sx.flex, sx.flexCol, sx.gap2, sx.overflowYAuto)}
+            <div {...mergeStylexProps("max-h-[min(60vh,420px)]", sx.flex, sx.flexCol, sx.gap2, sx.overflowYAuto)}
               onMouseEnter={hold}
               onMouseLeave={() => schedule(false, CARD_CLOSE_MS)}
             >

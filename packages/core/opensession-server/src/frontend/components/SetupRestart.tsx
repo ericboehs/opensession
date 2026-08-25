@@ -5,6 +5,7 @@ import { LoadingState } from "../ui/state";
 import { Code } from "./setup-shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -130,7 +131,7 @@ export function SetupRestart({ setup }: { setup: SetupController }) {
 				</div>
 			)}
 			{restartState === "working" && (
-				<div className="backdrop-blur-[2px]" {...stylex.props(sx.absolute, sx.inset0, sx.z30, sx.roundedLg, sx.bgBg75)}>
+				<div {...mergeStylexProps("backdrop-blur-[2px]", sx.absolute, sx.inset0, sx.z30, sx.roundedLg, sx.bgBg75)}>
 					<div {...stylex.props(sx.sticky, sx.top30vh, sx.pb8)}>
 						<LoadingState>Restarting…</LoadingState>
 					</div>

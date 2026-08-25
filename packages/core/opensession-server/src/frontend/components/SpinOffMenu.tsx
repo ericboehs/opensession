@@ -13,6 +13,7 @@ import { composerSessionRef } from "../lib/share-link";
 import type { NewSessionPrefill } from "../lib/new-session-link";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -306,8 +307,7 @@ export function SpinOffMenu({
             <Button onClick={() => setFlavor(null)} disabled={starting}>
               Cancel
             </Button>
-            <Button
-              className="hover:border-accent hover:text-accent" {...stylex.props(sx.borderAccent, sx.bgAccentSoft, sx.textAccent)}
+            <Button {...mergeStylexProps("hover:border-accent hover:text-accent", sx.borderAccent, sx.bgAccentSoft, sx.textAccent)}
               onClick={start}
               disabled={!canStart}
             >

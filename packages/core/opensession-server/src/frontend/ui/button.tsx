@@ -1,6 +1,6 @@
 import * as React from "react";
 import { IconChevronDown } from "../components/icons";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -322,8 +322,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 		const content = (
 			<>
 				{icon != null && (
-					<span
-						className={cn(!iconOnly && iconDim[variant])} {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter)}
+					<span {...mergeStylexProps(cn(!iconOnly && iconDim[variant]), sx.inlineFlex, sx.shrink0, sx.itemsCenter)}
 					>
 						{icon}
 					</span>

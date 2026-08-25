@@ -44,7 +44,7 @@ import {
 	SettingsPanel,
 } from "../../ui/settings";
 import { Input } from "../../ui/input";
-import { cn } from "../../ui/cn";
+import { cn, mergeStylexProps } from "../../ui/cn";
 import { Badge } from "../../ui/badge";
 import { Segmented, SegmentedOption } from "../../ui/segmented";
 import { EmptyState, InlineAlert, Skeleton, SkeletonBar } from "../../ui/state";
@@ -436,7 +436,7 @@ function CatalogSkeleton() {
 		<Skeleton label="Loading the library" {...stylex.props(sx.mt11, sx.px5)}>
 			<SkeletonBar {...stylex.props(sx.mb4, sx.h4, sx.w22, sx.borderB, sx.borderDivider, sx.pb3)} />
 			<div className="@container">
-				<div className="@[560px]:grid-cols-2" {...stylex.props(sx.grid, sx.gridCols1, sx.gapX12)}>
+				<div {...mergeStylexProps("@[560px]:grid-cols-2", sx.grid, sx.gridCols1, sx.gapX12)}>
 					{CATALOG_GHOST_ROWS.map((row, index) => (
 						<div key={index} {...stylex.props(sx.flex, sx.itemsCenter, sx.gap35, sx.py35)}>
 							<SkeletonBar {...stylex.props(sx.size9, sx.shrink0, sx.roundedControl)} />
@@ -475,7 +475,7 @@ function SectionHeading({
 				{children}
 			</h2>
 			{count != null && (
-				<span className="tabular-nums" {...stylex.props(sx.textFaint, typography.supporting)}>{count}</span>
+				<span {...mergeStylexProps("tabular-nums", sx.textFaint, typography.supporting)}>{count}</span>
 			)}
 		</div>
 	);
@@ -624,10 +624,7 @@ export function LibraryPanel() {
 								key={entry.id}
 								href={`${BASE_PATH}${entry.href}`}
 								title={entry.name}
-								aria-label={entry.name}
-								// The tile's own corner, so the focus ring traces the mark
-								// rather than a squarer box behind it.
-								className="hover:opacity-80" {...stylex.props(sx.roundedControl, sx.transitionOpacity)}
+								aria-label={entry.name} {...mergeStylexProps("hover:opacity-80", sx.roundedControl, sx.transitionOpacity)}
 							>
 								<EntryIcon entry={entry} size={36} />
 							</a>
@@ -647,7 +644,7 @@ export function LibraryPanel() {
 				    than the sheet and the segmented control's own tap sizing makes
 				    them wider still, so the strip scrolls rather than wrapping into
 				    a second row of chrome above the catalog. */}
-				<div className="[&::-webkit-scrollbar]:hidden" {...stylex.props(sx.maxWFull, sx.overflowXAuto, sx.ScrollbarWidthNone)}>
+				<div {...mergeStylexProps("[&::-webkit-scrollbar]:hidden", sx.maxWFull, sx.overflowXAuto, sx.ScrollbarWidthNone)}>
 					<Segmented
 						label="Filter the library"
 						size="sm"
@@ -680,7 +677,7 @@ export function LibraryPanel() {
 					    fill under a row, the air is what tells the two columns
 					    apart. */}
 					<div className="@container">
-						<div className="@[560px]:grid-cols-2" {...stylex.props(sx.grid, sx.gridCols1, sx.gapX12)}>
+						<div {...mergeStylexProps("@[560px]:grid-cols-2", sx.grid, sx.gridCols1, sx.gapX12)}>
 							{group.entries.map((entry) => (
 								<EntryCard
 									key={entry.id}

@@ -9,6 +9,7 @@ import { useMarkdownRepo } from "./MarkdownBody";
 import { ASK_CARD_SHELL, ASK_CHOICE_ROW } from "../lib/ask-card-classes";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -328,8 +329,7 @@ export function AskCard({ questions, onAnswer }: Props) {
 		>
 			<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gapX2, sx.gapY05)}>
 				<span
-					aria-hidden="true"
-					className="shadow-[0_0_0_3px_var(--green-soft)]" {...stylex.props(sx.h15, sx.w15, sx.shrink0, sx.roundedFull, sx.bgGreen)}
+					aria-hidden="true" {...mergeStylexProps("shadow-[0_0_0_3px_var(--green-soft)]", sx.h15, sx.w15, sx.shrink0, sx.roundedFull, sx.bgGreen)}
 				/>
 				<span {...stylex.props(sx.fontSemibold, sx.textDim, typography.label)}>
 					{AGENT_NAME} needs input
@@ -356,10 +356,7 @@ export function AskCard({ questions, onAnswer }: Props) {
 					name={itemName(i)}
 					required
 					multiple={q.multiSelect}
-					aria-labelledby={titleId(i)}
-					// Zero the UA fieldset (no Preflight), and win back `hidden`
-					// against the `flex` on the same element.
-					className="[&[hidden]]:hidden" {...stylex.props(sx.m0, sx.flex, sx.minW0, sx.flexCol, sx.gap3, sx.border0, sx.p0)}
+					aria-labelledby={titleId(i)} {...mergeStylexProps("[&[hidden]]:hidden", sx.m0, sx.flex, sx.minW0, sx.flexCol, sx.gap3, sx.border0, sx.p0)}
 				>
 					{((q.header && !lone) || q.multiSelect) && (
 						<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsBaseline, sx.gapX2, sx.gapY05)}>
@@ -385,8 +382,7 @@ export function AskCard({ questions, onAnswer }: Props) {
 					<Questionnaire.Title
 						id={titleId(i)}
 						render={
-							<div
-								className="markdown" {...stylex.props(sx.leading6, sx.textFg, sx.OverflowWrapAnywhere, typography.body)}
+							<div {...mergeStylexProps("markdown", sx.leading6, sx.textFg, sx.OverflowWrapAnywhere, typography.body)}
 								dangerouslySetInnerHTML={{
 									__html: renderMarkdown(q.question, { repo }),
 								}}
@@ -439,13 +435,7 @@ export function AskCard({ questions, onAnswer }: Props) {
 									</Questionnaire.ChoiceLabel>
 									<span
 										aria-hidden="true"
-										className={q.multiSelect ? "[corner-shape:var(--cs)]" : undefined}
-										{...stylex.props(
-											sx.mtPx, sx.flex, sx.h5, sx.w5, sx.shrink0, sx.itemsCenter, sx.justifyCenter,
-											sx.border, sx.transitionColors, q.multiSelect ? sx.roundedCheckbox : sx.roundedFull,
-											active ? sx.borderTransparent : sx.borderLineStrong,
-											active ? sx.bgFg : sx.textTransparent, active && sx.textBg,
-										)}
+										{...mergeStylexProps(q.multiSelect ? "[corner-shape:var(--cs)]" : undefined, sx.mtPx, sx.flex, sx.h5, sx.w5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.border, sx.transitionColors, q.multiSelect ? sx.roundedCheckbox : sx.roundedFull, active ? sx.borderTransparent : sx.borderLineStrong, active ? sx.bgFg : sx.textTransparent, active && sx.textBg)}
 									>
 										<IconCheck size={20} />
 									</span>
@@ -454,17 +444,7 @@ export function AskCard({ questions, onAnswer }: Props) {
 						})}
 						<Questionnaire.Input
 							aria-label={q.options?.length ? "Custom answer" : "Answer"}
-							/* border-0 is load-bearing, not tidying: this app deliberately
-							   doesn't ship Tailwind's Preflight (see styles/tailwind.css), so
-							   an <input> with no border utility keeps the UA's 2px inset
-							   border — the dark outline this field used to wear. Any borderless
-							   input here has to zero it explicitly.
-
-							   No ring on focus either — same call the composer makes: it read
-							   as an error state on a field you're simply typing in, and the
-							   caret is affordance enough. */
-							className="[corner-shape:var(--cs)]"
-							{...stylex.props(sx.h11, sx.wFull, sx.roundedControl, sx.border0, sx.bgControl, sx.px3, typography.inputPhone, sx.desktopControlText, sx.textFg, sx.outlineNone, sx.placeholderFaint, sx.disabledOpacity60, Boolean(q.options?.length) && sx.mt15)}
+							{...mergeStylexProps("[corner-shape:var(--cs)]", sx.h11, sx.wFull, sx.roundedControl, sx.border0, sx.bgControl, sx.px3, typography.inputPhone, sx.desktopControlText, sx.textFg, sx.outlineNone, sx.placeholderFaint, sx.disabledOpacity60, Boolean(q.options?.length) && sx.mt15)}
 							placeholder={
 								q.options?.length ? "Or type your own answer…" : "Type your answer…"
 							}

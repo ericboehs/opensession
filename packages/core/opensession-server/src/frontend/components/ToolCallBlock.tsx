@@ -12,7 +12,7 @@ import { currentPlanItem, parsePlanItems, planDoneCount } from "@tellahq/openses
 import { PlanChecklist } from "./PlanChecklist";
 import { resolveEntryImageSrc } from "../lib/osBlob";
 import { BASE_PATH } from "../lib/base";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import {
   TOOL_CODE_WELL,
   TOOL_PRE,
@@ -469,8 +469,7 @@ function RunningToolDuration({ entry }: { entry: TranscriptEntry }) {
   if (durationMs === null) return null;
   return (
     <span
-      data-tool-duration
-      className="tabular-nums group-hover:block" {...stylex.props(sx.hidden, sx.flexShrink0, sx.textFaint, typography.meta)}
+      data-tool-duration {...mergeStylexProps("tabular-nums group-hover:block", sx.hidden, sx.flexShrink0, sx.textFaint, typography.meta)}
     >
       {formatToolDuration(durationMs)}
     </span>
@@ -606,17 +605,15 @@ export const ToolCallBlock = function ToolCallBlock({
         type="button"
         aria-expanded={expanded}
         onClick={() => rememberExpansion(!expanded)}
-        className="group"
-        {...stylex.props(sx.flex, sx.wFull, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px1, sx.py3px, sx.textLeft, sx.fontSans, sx.transitionColors, sx.rowHover)}
+        {...mergeStylexProps("group", sx.flex, sx.wFull, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px1, sx.py3px, sx.textLeft, sx.fontSans, sx.transitionColors, sx.rowHover)}
       >
         <span {...stylex.props(sx.relative, sx.z1, sx.flex, sx.size22px, sx.flexShrink0, sx.selfCenter, sx.itemsCenter, sx.justifyCenter, sx.textFaint)}>
-          <span className="group-hover:opacity-0" {...stylex.props(sx.transitionOpacity, sx.duration150)}>
+          <span {...mergeStylexProps("group-hover:opacity-0", sx.transitionOpacity, sx.duration150)}>
             <ToolGlyph toolName={toolName} size={20} />
           </span>
           <IconChevronDown
             size={20}
-            className="group-hover:opacity-100"
-            {...stylex.props(sx.absolute, sx.block, sx.textDim, sx.opacity0, sx.transitionOpacityTransform, sx.duration150, expanded && sx.rotate180)}
+            {...mergeStylexProps("group-hover:opacity-100", sx.absolute, sx.block, sx.textDim, sx.opacity0, sx.transitionOpacityTransform, sx.duration150, expanded && sx.rotate180)}
           />
         </span>
 
@@ -625,8 +622,7 @@ export const ToolCallBlock = function ToolCallBlock({
           // strength: down a fold of Open Session calls the product name is the
           // same on every row, so it should read as the path to the part that
           // differs rather than compete with it.
-          <span
-            className="group-hover:text-fg phone:flex-shrink-0" {...stylex.props(sx.flex, sx.minW0, sx.itemsBaseline, sx.gap1, sx.overflowHidden, sx.leading5, sx.fontMedium, sx.textDim, sx.transitionColors, typography.itemTitle)}
+          <span {...mergeStylexProps("group-hover:text-fg phone:flex-shrink-0", sx.flex, sx.minW0, sx.itemsBaseline, sx.gap1, sx.overflowHidden, sx.leading5, sx.fontMedium, sx.textDim, sx.transitionColors, typography.itemTitle)}
             title={mcpParts.join(" · ")}
           >
             {mcpParts.map((part, i) => {
@@ -650,7 +646,7 @@ export const ToolCallBlock = function ToolCallBlock({
             })}
           </span>
         ) : (
-          <span className="group-hover:text-fg" {...stylex.props(sx.flexShrink0, sx.leading5, sx.fontMedium, sx.textDim, sx.transitionColors, typography.itemTitle)}>{toolName}</span>
+          <span {...mergeStylexProps("group-hover:text-fg", sx.flexShrink0, sx.leading5, sx.fontMedium, sx.textDim, sx.transitionColors, typography.itemTitle)}>{toolName}</span>
         )}
 
         {/* Baseline, not centre: the path is mono and the ± counts are sans, so
@@ -732,7 +728,7 @@ export const ToolCallBlock = function ToolCallBlock({
         )}
 
         {duration && (
-          <span className="tabular-nums" {...stylex.props(sx.flexShrink0, sx.textFaint, typography.meta)}>{duration}</span>
+          <span {...mergeStylexProps("tabular-nums", sx.flexShrink0, sx.textFaint, typography.meta)}>{duration}</span>
         )}
         {pending && <RunningToolDuration entry={entry} />}
 
@@ -753,7 +749,7 @@ export const ToolCallBlock = function ToolCallBlock({
       </button>
 
       {expanded && (
-        <div className="space-y-1.5" {...stylex.props(sx.relative, sx.z1, sx.mb15, sx.ml30px, sx.mt1)}>
+        <div {...mergeStylexProps("space-y-1.5", sx.relative, sx.z1, sx.mb15, sx.ml30px, sx.mt1)}>
           {inputNode && (
             <div
               {...stylex.props(inputNeedsPanel && sx.inputPanel)}
@@ -970,8 +966,7 @@ function DetailDisclosure({
   return (
     <button
       type="button"
-      aria-expanded={expanded}
-      className="hover:bg-hover/40 hover:text-fg" {...stylex.props(sx.mt1, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px15, sx.py1, sx.fontSans, sx.fontMedium, sx.textFaint, typography.meta)}
+      aria-expanded={expanded} {...mergeStylexProps("hover:bg-hover/40 hover:text-fg", sx.mt1, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px15, sx.py1, sx.fontSans, sx.fontMedium, sx.textFaint, typography.meta)}
       onClick={onClick}
     >
       {expanded ? "Show preview" : `Show full detail · ${Math.round(length / 1024)} KB`}

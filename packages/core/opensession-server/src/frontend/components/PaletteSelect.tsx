@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Menu } from "../ui/menu";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { isApple } from "../lib/platform";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -142,8 +142,7 @@ export function PaletteSelect({
 				    get a real OS menu without hand-rolling a popover. There is no
 				    modifier on a phone, so this stays single-select; a second repo
 				    is added from the session's own repo menu instead. */}
-				<select
-					className="disabled:cursor-default" {...stylex.props(sx.absolute, sx.inset0, sx.hFull, sx.wFull, sx.cursorPointer, sx.appearanceNone, sx.borderNone, sx.opacity0)}
+				<select {...mergeStylexProps("disabled:cursor-default", sx.absolute, sx.inset0, sx.hFull, sx.wFull, sx.cursorPointer, sx.appearanceNone, sx.borderNone, sx.opacity0)}
 					value={value}
 					onChange={(e) => onChange(e.target.value)}
 					disabled={disabled}

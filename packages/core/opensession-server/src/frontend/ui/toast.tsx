@@ -33,6 +33,7 @@ import {
 } from "../lib/undo";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "./cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -468,8 +469,7 @@ function ToastCard({ toast: item }: { toast: BaseToast.Root.ToastObject<ToastDat
 				<ToastStatusIcon name={iconName} ongoing={data.ongoing} />
 				{/* Description renders a <p>; remove its browser margins so the
 				    visible height comes from the pill padding alone. */}
-				<BaseToast.Description
-					className="line-clamp-2" {...stylex.props(sx.my0, sx.minW0)}
+				<BaseToast.Description {...mergeStylexProps("line-clamp-2", sx.my0, sx.minW0)}
 					title={data.message}
 				>
 					{data.message}
@@ -480,10 +480,7 @@ function ToastCard({ toast: item }: { toast: BaseToast.Root.ToastObject<ToastDat
 							onClick={(event) => {
 								event.stopPropagation();
 								runToastAction(data.id);
-							}}
-							// The pill stays tight, so the action carries the finger
-							// target on its own: 28px of box inside a 44px tap area.
-							className="transition-[background-color,transform] hover:bg-hover active:scale-[0.96] phone:-my-1.5 phone:ml-0.5 phone:grid phone:min-h-7 phone:place-items-center phone:rounded-[999px] phone:px-2.5 phone:after:absolute phone:after:inset-x-0 phone:after:top-1/2 phone:after:h-11 phone:after:-translate-y-1/2 phone:after:content-['']" {...stylex.props(sx.focusRing, sx.relative, sx.My1, sx.ml1, sx.shrink0, sx.cursorPointer, sx.roundedMd, sx.px2, sx.py1, sx.fontSemibold, sx.textAccent, sx.duration150, typography.supporting)}
+							}} {...mergeStylexProps("transition-[background-color,transform] hover:bg-hover active:scale-[0.96] phone:-my-1.5 phone:ml-0.5 phone:grid phone:min-h-7 phone:place-items-center phone:rounded-[999px] phone:px-2.5 phone:after:absolute phone:after:inset-x-0 phone:after:top-1/2 phone:after:h-11 phone:after:-translate-y-1/2 phone:after:content-['']", sx.focusRing, sx.relative, sx.My1, sx.ml1, sx.shrink0, sx.cursorPointer, sx.roundedMd, sx.px2, sx.py1, sx.fontSemibold, sx.textAccent, sx.duration150, typography.supporting)}
 						>
 							{data.action.label}
 						</BaseToast.Action>

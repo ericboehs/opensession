@@ -22,7 +22,7 @@ import {
 	type RangeSpan,
 } from "../lib/date-grid";
 import { Button } from "./button";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import { Popover } from "./popover";
 import { Segmented, SegmentedKnob, SegmentedOption } from "./segmented";
 import * as stylex from "@stylexjs/stylex";
@@ -307,8 +307,7 @@ export function DateRangeField({
 		// options' `rounded-control` (12) plus this 2px padding is `rounded-lg`.
 		<div
 			role="group"
-			aria-label={label}
-			className={cn(className)} {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.roundedLg, sx.bgHover, sx.p05)}
+			aria-label={label} {...mergeStylexProps(cn(className), sx.inlineFlex, sx.itemsCenter, sx.roundedLg, sx.bgHover, sx.p05)}
 		>
 			{presetsOnTrack && (
 				<>
@@ -331,8 +330,7 @@ export function DateRangeField({
 					    track's full height, so it separates the options without
 					    reading as the edge of a second box. */}
 					<span
-						aria-hidden
-						className="phone:mx-1.5 phone:h-5" {...stylex.props(sx.mx1, sx.h35, sx.wPx, sx.shrink0, sx.bgLineStrong)}
+						aria-hidden {...mergeStylexProps("phone:mx-1.5 phone:h-5", sx.mx1, sx.h35, sx.wPx, sx.shrink0, sx.bgLineStrong)}
 					/>
 				</>
 			)}
@@ -341,8 +339,7 @@ export function DateRangeField({
 					// The range is the label a sighted reader gets, so it belongs in
 					// the spoken one: a bare "Date range, button" says nothing about
 					// what is being charted.
-					aria-label={`${label}, ${rangeLabel}`}
-					className={cn("select-none", "phone:py-2 phone:pr-3 phone:pl-2.5 phone:text-item-title", rangeWearsKnob ? "" : "hover:text-fg", "data-[popup-open]:text-fg")} {...stylex.props(sx.relative, sx.inlineFlex, sx.cursorPointer, sx.itemsCenter, sx.roundedControl, sx.py1, sx.pr25, sx.pl15, typography.controlLabel, sx.fontMedium, sx.whitespaceNowrap, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase, sx.focusRing, rangeWearsKnob && sx.textFg, !(rangeWearsKnob) && sx.textDim)}
+					aria-label={`${label}, ${rangeLabel}`} {...mergeStylexProps(cn("select-none", "phone:py-2 phone:pr-3 phone:pl-2.5 phone:text-item-title", rangeWearsKnob ? "" : "hover:text-fg", "data-[popup-open]:text-fg"), sx.relative, sx.inlineFlex, sx.cursorPointer, sx.itemsCenter, sx.roundedControl, sx.py1, sx.pr25, sx.pl15, typography.controlLabel, sx.fontMedium, sx.whitespaceNowrap, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase, sx.focusRing, rangeWearsKnob && sx.textFg, !(rangeWearsKnob) && sx.textDim)}
 				>
 					{rangeWearsKnob && <SegmentedKnob knobId={knobId} />}
 					{/* Above the knob, which fills the option. */}
@@ -554,10 +551,7 @@ function RangeCalendar({
 					label="Preset ranges"
 					size="md"
 					value={activePreset === null ? null : String(activePreset)}
-					onValueChange={(v) => onPreset(Number(v))}
-					// Full width, so the options divide the popup rather than huddling
-					// in one corner of it.
-					className="[&>*]:flex-1" {...stylex.props(sx.mb2, sx.flex, sx.wFull)}
+					onValueChange={(v) => onPreset(Number(v))} {...mergeStylexProps("[&>*]:flex-1", sx.mb2, sx.flex, sx.wFull)}
 				>
 					{presets.map((p) => (
 						<SegmentedOption key={p.label} value={String(p.days)} {...stylex.props(sx.justifyCenter)}>
@@ -575,7 +569,7 @@ function RangeCalendar({
 						// Wider on a phone, where a day is a thumb target rather than a
 						// click: 308px puts the columns on 44px and still clears the
 						// 390px viewport.
-						<div key={month} className="phone:w-[308px]" {...stylex.props(sx.w252px)}>
+						<div key={month} {...mergeStylexProps("phone:w-[308px]", sx.w252px)}>
 							{/* The title is centred between the chevrons rather than sitting
 							    on the grid's left edge: with two grids side by side, a
 							    left-aligned title and one pair of chevrons can't say which
@@ -638,7 +632,7 @@ function RangeCalendar({
 											// twice, once in each, and a range band would be painted
 											// across both copies.
 											if (!isSameMonth(day, month)) {
-												return <div key={day} role="gridcell" className="phone:h-12" {...stylex.props(sx.h9)} />;
+												return <div key={day} role="gridcell" {...mergeStylexProps("phone:h-12", sx.h9)} />;
 											}
 											const span = rangeSpanAt(day, week, i, bandFrom, bandTo);
 											return (
@@ -735,8 +729,7 @@ function Day({
 		// span instead of standing a step taller than it.
 		<div
 			role="gridcell"
-			aria-selected={selected}
-			className="phone:h-12" {...stylex.props(sx.relative, sx.grid, sx.h9, sx.placeItemsCenter)}
+			aria-selected={selected} {...mergeStylexProps("phone:h-12", sx.relative, sx.grid, sx.h9, sx.placeItemsCenter)}
 		>
 			{span && (
 				<span
@@ -756,8 +749,7 @@ function Day({
 				aria-current={today ? "date" : undefined}
 				onClick={() => onPick(day)}
 				onPointerEnter={onPreview}
-				onFocus={onFocus}
-				className={cn("tabular-nums phone:h-11 phone:text-item-title", "transition-[color,background-color]", today && !selected && "ring-1", selected ? "hover:bg-accent-hover" : "hover:bg-hover", "disabled:cursor-default disabled:text-faint disabled:opacity-45 disabled:hover:bg-transparent")} {...stylex.props(sx.relative, sx.grid, sx.h8, sx.wFull, sx.cursorPointer, sx.placeItemsCenter, sx.roundedMd, typography.controlLabel, sx.durationVarDurMicro, sx.easeVarEase, sx.focusRing, sx.textFg, today && !selected && sx.fontSemibold, today && !selected && sx.ringLineStrong, today && !selected && sx.ringInset, selected && sx.bgAccent, selected && sx.fontSemibold, selected && sx.textOnAccent)}
+				onFocus={onFocus} {...mergeStylexProps(cn("tabular-nums phone:h-11 phone:text-item-title", "transition-[color,background-color]", today && !selected && "ring-1", selected ? "hover:bg-accent-hover" : "hover:bg-hover", "disabled:cursor-default disabled:text-faint disabled:opacity-45 disabled:hover:bg-transparent"), sx.relative, sx.grid, sx.h8, sx.wFull, sx.cursorPointer, sx.placeItemsCenter, sx.roundedMd, typography.controlLabel, sx.durationVarDurMicro, sx.easeVarEase, sx.focusRing, sx.textFg, today && !selected && sx.fontSemibold, today && !selected && sx.ringLineStrong, today && !selected && sx.ringInset, selected && sx.bgAccent, selected && sx.fontSemibold, selected && sx.textOnAccent)}
 			>
 				{dayOfMonth(day)}
 			</button>

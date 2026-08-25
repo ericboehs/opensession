@@ -15,7 +15,7 @@ import {
   composerMenuWidth,
 } from "../lib/composer-classes";
 import { Button } from "../ui/button";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 
@@ -445,7 +445,7 @@ setError(e.message);
           />
         )}
         {pending.length > 0 && (
-          <span className="shadow-[0_0_0_2px_var(--bg)]" {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.Top5px, sx.Right5px, sx.h15px, sx.minW15px, sx.roundedFull, sx.bgYellow, sx.px3px, sx.textCenter, sx.text10px, sx.leading15px, sx.fontBold, sx.textWhite)}>
+          <span {...mergeStylexProps("shadow-[0_0_0_2px_var(--bg)]", sx.pointerEventsNone, sx.absolute, sx.Top5px, sx.Right5px, sx.h15px, sx.minW15px, sx.roundedFull, sx.bgYellow, sx.px3px, sx.textCenter, sx.text10px, sx.leading15px, sx.fontBold, sx.textWhite)}>
             {pending.length}
           </span>
         )}
@@ -478,8 +478,7 @@ setError(e.message);
                     {p.prompt}
                   </span>
                   <button
-                    type="button"
-                    className="hover:text-red" {...stylex.props(sx.mlAuto, sx.shrink0, sx.textFaint, typography.meta)}
+                    type="button" {...mergeStylexProps("hover:text-red", sx.mlAuto, sx.shrink0, sx.textFaint, typography.meta)}
                     title="Cancel this scheduled message"
                     onClick={async () => {
                       await (async () => {
@@ -533,8 +532,7 @@ await deleteScheduledPromptApi(p.id);
       {customOpen && (
         // The class name stays: SessionViewer and Sidebar look for an open
         // overlay by this selector before taking a global key.
-        <div
-          className="composer-schedule-modal-backdrop" {...stylex.props(sx.fixed, sx.inset0, sx.z300, sx.flex, sx.itemsCenter, sx.justifyCenter, sx.bgBlack40, sx.p5)}
+        <div {...mergeStylexProps("composer-schedule-modal-backdrop", sx.fixed, sx.inset0, sx.z300, sx.flex, sx.itemsCenter, sx.justifyCenter, sx.bgBlack40, sx.p5)}
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) setCustomOpen(false);
           }}

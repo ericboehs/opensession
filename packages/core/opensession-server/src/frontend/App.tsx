@@ -31,7 +31,7 @@ import { MotionConfig } from "motion/react";
 import { MarkdownRepoProvider } from "./components/MarkdownBody";
 import { Sidebar, type SidebarHandle } from "./components/Sidebar";
 import { Tooltip, TooltipProvider } from "./ui/tooltip";
-import { cn } from "./ui/cn";
+import { cn, mergeStylexProps } from "./ui/cn";
 import {
 	APP_BODY,
 	DETAIL_PANE,
@@ -5334,32 +5334,9 @@ console.error("Rename workspace failed:", error);
 					    fallback) paints this surface by name. */}
 					<div
 						ref={sidebarColRef}
-						className="sidebar-container"
-						{...stylex.props(
-							sx.flex,
-							sx.minH0,
-							sx.shrink0,
-							sx.flexCol,
-							sx.bgSidebar,
-							sx.sidebarIconLeft,
-							// Desktop and the exposed workspace gutter share one chrome
-							// material, so opaque sticky headers scroll over the exact same
-							// surface instead of revealing a gradient seam. No
-							// backdrop-filter: since the shell went opaque the blur sampled
-							// nothing but our own flat background while forcing the
-							// compositor to re-rasterize the whole sidebar on any repaint
-							// behind it (a scroll-flash amplifier).
-							sx.desktopSidebarMaterial,
-							// On phones the sidebar is the root PAGE of the iOS-style
-							// stack — full bleed under the pushed detail pane — rather than
-							// a fixed-width column.
-							isPhone
+						{...mergeStylexProps("sidebar-container", sx.flex, sx.minH0, sx.shrink0, sx.flexCol, sx.bgSidebar, sx.sidebarIconLeft, sx.desktopSidebarMaterial, isPhone
 								? [sx.absolute, sx.inset0, sx.z1, sx.wFull]
-								: [sx.relative, sx.wSidebar],
-							// Collapsed hides the whole left column; on phones the page
-							// stack owns the sidebar and the class is inert.
-							sidebarCollapsed && sx.desktopHidden,
-						)}
+								: [sx.relative, sx.wSidebar], sidebarCollapsed && sx.desktopHidden)}
 						style={
 							{ "--sidebar-w": `${sidebarWidth}px` } as React.CSSProperties
 						}
@@ -5378,28 +5355,9 @@ console.error("Rename workspace failed:", error);
 						    row pulls its own in to keep the logo on the list icons'
 						    --sidebar-icon-left column. */}
 						<div
-							className="sidebar-brand wco-chrome"
-							{...stylex.props(
-								sx.hDesktopHeader,
-								sx.minW0,
-								sx.shrink0,
-								sx.itemsCenter,
-								sx.justifyStart,
-								sx.gap2,
-								sx.py0,
-								sx.pr3,
-								sx.plSidebarBrand,
-								// No scroll hairline: the tools sit fixed below this row and
-								// only the workspace list scrolls, so nothing passes under it.
-								// The brand row (and its account menu) is a desktop
-								// affordance; on phones the top bar carries the brand
-								// instead. Gated in JS rather than at `phone:` because
-								// Tailwind's max-* is `width < 720`, one pixel short of the
-								// `max-width: 720px` the rest of the app means by "phone".
-								isPhone ? sx.hidden : sx.flex,
-							)}
+							{...mergeStylexProps("sidebar-brand wco-chrome", sx.hDesktopHeader, sx.minW0, sx.shrink0, sx.itemsCenter, sx.justifyStart, sx.gap2, sx.py0, sx.pr3, sx.plSidebarBrand, isPhone ? sx.hidden : sx.flex)}
 						>
-							<div className="sidebar-brand-actions" {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.gap2)}>
+							<div {...mergeStylexProps("sidebar-brand-actions", sx.flex, sx.shrink0, sx.itemsCenter, sx.gap2)}>
 								<Tooltip
 									label="Hide sidebar"
 									side="bottom"
@@ -5409,8 +5367,7 @@ console.error("Rename workspace failed:", error);
 									    sidebar's chrome row and the session header's icon
 									    cluster read as one system. */}
 									<button
-										className={SIDEBAR_CHROME_BTN}
-										{...stylex.props(sx.inlineFlex, sx.px5px, sx.py3px)}
+										{...mergeStylexProps(SIDEBAR_CHROME_BTN, sx.inlineFlex, sx.px5px, sx.py3px)}
 										onClick={toggleSidebarCollapsed}
 										aria-label="Hide sidebar"
 									>

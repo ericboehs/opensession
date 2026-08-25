@@ -32,7 +32,7 @@ import { personNameForKey, usePeople, useReviewTeams } from "../lib/people";
 import { UserAvatar } from "./UserAvatar";
 import { Menu } from "../ui/menu";
 import { Popover } from "../ui/popover";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import type {
 	DiffFile,
 	GitStatusInfo,
@@ -807,26 +807,7 @@ function CommentCard({
 	const addBtn = onAddToInput && (
 		<button
 			type="button"
-      className="group-hover:opacity-100 hover:border-faint hover:bg-hover hover:text-fg"
-      {...stylex.props(
-        sx.absolute,
-        sx.right15,
-        sx.top12,
-        sx.z1,
-        sx.TranslateY12,
-        sx.roundedControl,
-        sx.border,
-        sx.borderLineStrong,
-        sx.bgPanel,
-        sx.px2,
-        sx.py05,
-        sx.fontSemibold,
-        sx.textDim,
-        sx.opacity0,
-        sx.transitionOpacity,
-        sx.duration150,
-        typography.meta,
-      )}
+      {...mergeStylexProps("group-hover:opacity-100 hover:border-faint hover:bg-hover hover:text-fg", sx.absolute, sx.right15, sx.top12, sx.z1, sx.TranslateY12, sx.roundedControl, sx.border, sx.borderLineStrong, sx.bgPanel, sx.px2, sx.py05, sx.fontSemibold, sx.textDim, sx.opacity0, sx.transitionOpacity, sx.duration150, typography.meta)}
 			onClick={(e) => {
 				e.stopPropagation();
 				onAddToInput(formatPrCommentPrompt(comment, pr));
@@ -846,19 +827,7 @@ function CommentCard({
 				openOnHover
 				delay={200}
 				closeDelay={90}
-        className="group hover:bg-hover"
-        {...stylex.props(
-          sx.relative,
-          sx.flex,
-          sx.minW0,
-          sx.itemsCenter,
-          sx.gap2,
-          sx.roundedMd,
-          sx.px2,
-          sx.py5px,
-          sx.textLeft,
-          sx.transitionColors,
-        )}
+        {...mergeStylexProps("group hover:bg-hover", sx.relative, sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px2, sx.py5px, sx.textLeft, sx.transitionColors)}
 				role="button"
 				tabIndex={0}
 				onClick={() => onOpenTab?.("pr")}
@@ -891,16 +860,7 @@ function CommentCard({
 				align="start"
 				sideOffset={10}
 				elevation="lg"
-        className="max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))]"
-        {...stylex.props(
-          sx.flex,
-          sx.cursorPointer,
-          sx.gap9px,
-          sx.overflowHidden,
-          sx.bgPanel,
-          sx.px3,
-          sx.py11px,
-        )}
+        {...mergeStylexProps("max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))]", sx.flex, sx.cursorPointer, sx.gap9px, sx.overflowHidden, sx.bgPanel, sx.px3, sx.py11px)}
 			>
 				<div {...stylex.props(sx.contents)} onClick={() => onOpenTab?.("pr")}>
 					{avatar}
@@ -984,13 +944,7 @@ function CommitRow({ commit }: { commit: WorkspaceCommit }) {
 				{commit.title}
 			</span>
       <span
-        className="tabular-nums"
-        {...stylex.props(
-          sx.shrink0,
-          sx.fontMedium,
-          sx.textDim,
-          typography.meta,
-        )}
+        {...mergeStylexProps("tabular-nums", sx.shrink0, sx.fontMedium, sx.textDim, typography.meta)}
       >
 				{commit.filesChanged} file{commit.filesChanged === 1 ? "" : "s"}
 			</span>
@@ -1044,15 +998,7 @@ function FileRow({
   };
 	const stats = (
     <span
-      className="tabular-nums"
-      {...stylex.props(
-        sx.inlineFlex,
-        sx.shrink0,
-        sx.itemsCenter,
-        sx.gap1,
-        sx.fontSemibold,
-        typography.meta,
-      )}
+      {...mergeStylexProps("tabular-nums", sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap1, sx.fontSemibold, typography.meta)}
     >
 			{file.additions > 0 && (
 				<span {...stylex.props(sx.textGreen)}>+{file.additions}</span>
@@ -1090,18 +1036,7 @@ function FileRow({
 				delay={200}
 				closeDelay={90}
 				type="button"
-        className="hover:bg-hover"
-        {...stylex.props(
-          sx.flex,
-          sx.minW0,
-          sx.itemsCenter,
-          sx.gap2,
-          sx.roundedMd,
-          sx.px2,
-          sx.py5px,
-          sx.textLeft,
-          sx.transitionColors,
-        )}
+        {...mergeStylexProps("hover:bg-hover", sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px2, sx.py5px, sx.textLeft, sx.transitionColors)}
 				onClick={() => onOpenTab?.("changes")}
 				aria-label={`${file.path} · ${mark.label.toLowerCase()} · open in Changes`}
 			>
@@ -1125,16 +1060,7 @@ function FileRow({
 					align="start"
 					sideOffset={10}
 					elevation="lg"
-          className="max-h-[min(720px,82vh,var(--available-height))] w-[min(720px,calc(100vw-24px))]"
-          {...stylex.props(
-            sx.flex,
-            sx.cursorPointer,
-            sx.flexCol,
-            sx.overflowHidden,
-            sx.bgPanel,
-            sx.px3,
-            sx.py25,
-          )}
+          {...mergeStylexProps("max-h-[min(720px,82vh,var(--available-height))] w-[min(720px,calc(100vw-24px))]", sx.flex, sx.cursorPointer, sx.flexCol, sx.overflowHidden, sx.bgPanel, sx.px3, sx.py25)}
 				>
 					<div
             {...stylex.props(
@@ -1372,17 +1298,7 @@ setBusy(null);
 				{actionable && (
 					<Menu.Root>
 						<Menu.Trigger
-              className="transition-[color,background-color] hover:bg-hover hover:text-fg disabled:opacity-50"
-              {...stylex.props(
-                sx.Mr1,
-                sx.mlAuto,
-                sx.grid,
-                sx.size6,
-                sx.shrink0,
-                sx.placeItemsCenter,
-                sx.roundedMd,
-                sx.textFaint,
-              )}
+              {...mergeStylexProps("transition-[color,background-color] hover:bg-hover hover:text-fg disabled:opacity-50", sx.Mr1, sx.mlAuto, sx.grid, sx.size6, sx.shrink0, sx.placeItemsCenter, sx.roundedMd, sx.textFaint)}
 							disabled={busy !== null}
 							aria-label={`${AGENT_NAME} actions`}
 						>
@@ -1432,8 +1348,7 @@ setBusy(null);
 			    back to the panel's own list grammar. */}
 			<div className={INFO_LIST_CLASS}>
         <div
-          className={cn(GIT_ROW, reviewBand(rowTone))}
-          {...stylex.props(sx.rowRound)}
+          {...mergeStylexProps(cn(GIT_ROW, reviewBand(rowTone)), sx.rowRound)}
         >
 					<Popover.Root>
 						<Popover.Trigger
@@ -1452,8 +1367,7 @@ setBusy(null);
 							    row leads with a face rather than the state dot the Git
 							    status rows use: the state's colour is on the words. */}
 							<span
-                className={REVIEW_FACE}
-                {...stylex.props(sx.textDim, active && sx.animatePulse)}
+                {...mergeStylexProps(REVIEW_FACE, sx.textDim, active && sx.animatePulse)}
 								aria-hidden
 							>
 								<IconRobot size={18} />
@@ -1487,8 +1401,7 @@ setBusy(null);
 								side="left"
 								align="start"
 								sideOffset={12}
-                className="max-h-[min(680px,calc(100vh-24px),var(--available-height))] w-[min(680px,calc(100vw-24px),var(--available-width))]"
-                {...stylex.props(sx.flex, sx.minH0, sx.overflowHidden)}
+                {...mergeStylexProps("max-h-[min(680px,calc(100vh-24px),var(--available-height))] w-[min(680px,calc(100vw-24px),var(--available-width))]", sx.flex, sx.minH0, sx.overflowHidden)}
 							>
 								<div {...stylex.props(sx.flex, sx.minH0, sx.wFull, sx.flexCol)}>
                   <div
@@ -1573,8 +1486,7 @@ setBusy(null);
 							href={pr.url}
 							target="_blank"
 							rel="noopener"
-              className="decoration-line-strong"
-              {...stylex.props(sx.textFg, sx.underline, sx.underlineOffset2)}
+              {...mergeStylexProps("decoration-line-strong", sx.textFg, sx.underline, sx.underlineOffset2)}
 						>
 							the PR
 						</a>
@@ -1594,8 +1506,7 @@ setBusy(null);
 									e.preventDefault();
 									onOpenSession(done.bksId!, done.session ?? null);
 								}}
-                className="decoration-line-strong"
-                {...stylex.props(sx.textFg, sx.underline, sx.underlineOffset2)}
+                {...mergeStylexProps("decoration-line-strong", sx.textFg, sx.underline, sx.underlineOffset2)}
 							>
 								open run
 							</a>
@@ -1794,8 +1705,7 @@ function ReviewerChip({
 	return (
 		<>
 			<div
-        className={cn(GIT_ROW, reviewBand(rowTone))}
-        {...stylex.props(sx.rowRound)}
+        {...mergeStylexProps(cn(GIT_ROW, reviewBand(rowTone)), sx.rowRound)}
 			>
 				{/* The reviewer's own picture, beside the agent's face on the row
 				    above. A team has no one face, and an unasked review has nobody
@@ -1804,8 +1714,7 @@ function ReviewerChip({
 					<UserAvatar name={faceName} size={20} edge={false} />
 				) : (
           <span
-            className={REVIEW_FACE}
-            {...stylex.props(sx.textDim)}
+            {...mergeStylexProps(REVIEW_FACE, sx.textDim)}
             aria-hidden
           >
 						{selectedTeam ? <IconStack size={18} /> : <IconPeople size={18} />}
@@ -1832,8 +1741,7 @@ function ReviewerChip({
 				)}
 			<Menu.Root>
 				<Menu.Trigger
-            className={reviewNow ? undefined : gitActionClass(rowTone, true)}
-            {...stylex.props(reviewNow && sx.reviewMenu)}
+            {...mergeStylexProps(reviewNow ? undefined : gitActionClass(rowTone, true), reviewNow && sx.reviewMenu)}
 					aria-label="Review options"
 					title={rowTitle}
 				>
@@ -1986,7 +1894,7 @@ function GitStatusRows({
 		<div className={INFO_SECTION_CLASS}>
 			<div className={INFO_LABEL_CLASS}>Uncommitted</div>
 			<div className={INFO_LIST_CLASS}>
-        <div className={GIT_ROW} {...stylex.props(sx.py2)}>
+        <div {...mergeStylexProps(GIT_ROW, sx.py2)}>
 					<span className={`${GIT_DOT} ${GIT_DOT_BG.yellow}`} aria-hidden />
 					<span className={GIT_LABEL}>
 						{dirty} uncommitted file{dirty === 1 ? "" : "s"}
@@ -2004,7 +1912,7 @@ function GitStatusRows({
 				</div>
 			</div>
       {prompted && (
-        <div className={GIT_NOTE} {...stylex.props(sx.textFaint)}>
+        <div {...mergeStylexProps(GIT_NOTE, sx.textFaint)}>
           Asked {AGENT_NAME} to {prompted} ✓
         </div>
       )}
@@ -2039,28 +1947,7 @@ type StripItem = {
 function MediaStrip({ items }: { items: StripItem[] }) {
 	return (
 		<div
-			// The same card the neighbouring lists sit on (INFO_LIST_CLASS), laid
-			// out as a scroller, spelled out rather than composed so its overflow
-			// isn't fighting that constant's `overflow-hidden`. Frames scroll
-			// *inside* the card, so the panel's padding is there on both sides at
-			// rest; a sliver of the next frame at the trailing edge is what says it
-			// scrolls. `p-3` rather than the lists' `p-1`: their rows carry their
-			// own `px-2`, which puts row content 12px off the card edge. A frame is
-			// its own content, so the card holds all 12 itself and the frames line
-			// up with the rows and the label above them.
-      className="snap-x [&::-webkit-scrollbar]:hidden"
-      {...stylex.props(
-        sx.flex,
-        sx.snapMandatory,
-        sx.gap2,
-        sx.overflowXAuto,
-        sx.overflowYHidden,
-        sx.roundedLg,
-        sx.bgPanel,
-        sx.p3,
-        sx.ScrollPaddingLeft12px,
-        sx.ScrollbarWidthNone,
-      )}
+      {...mergeStylexProps("snap-x [&::-webkit-scrollbar]:hidden", sx.flex, sx.snapMandatory, sx.gap2, sx.overflowXAuto, sx.overflowYHidden, sx.roundedLg, sx.bgPanel, sx.p3, sx.ScrollPaddingLeft12px, sx.ScrollbarWidthNone)}
 		>
 			{items.map((item) => (
 				<button
@@ -2068,42 +1955,14 @@ function MediaStrip({ items }: { items: StripItem[] }) {
 					type="button"
 					onClick={(event) => item.onOpen(event.currentTarget)}
 					title={item.title}
-          className="focus-ring group/frame"
-          {...stylex.props(
-            sx.mediaFrame,
-						items.length === 1
+          {...mergeStylexProps("focus-ring group/frame", sx.mediaFrame, items.length === 1
               ? sx.mediaOne
 							: items.length === 2
                 ? sx.mediaTwo
-                : sx.mediaMany,
-					)}
+                : sx.mediaMany)}
 				>
 					<span
-						// Concentric with the card: inner = outer − padding, i.e.
-						// rounded-lg (14·rf) minus the card's 12px. No token lands
-						// there (the neighbouring lists' rows get away with
-						// rounded-control because they only sit 4px in), so it's
-						// spelled out, and it follows --rf like every other radius.
-						// border-line-strong, not border-line: a frame's own edge is
-						// whatever the capture happens to end on, so a dark screenshot
-						// on the dark panel has no edge at all and the tile dissolves
-						// into the card behind it. The frame supplies the edge instead,
-						// at the same step every other image in the app is outlined
-						// with (NoteBubble, the Slack composer's thumbnails). Hover is
-						// the fill alone: there is no line above strong to escalate to.
-            className="group-hover/frame:bg-hover"
-            {...stylex.props(
-              sx.relative,
-              sx.block,
-              sx.aspectVideo,
-              sx.wFull,
-              sx.overflowHidden,
-              sx.roundedCalc14pxVarRf12px,
-              sx.border,
-              sx.borderLineStrong,
-              sx.bgSurface,
-              sx.transitionColors,
-            )}
+            {...mergeStylexProps("group-hover/frame:bg-hover", sx.relative, sx.block, sx.aspectVideo, sx.wFull, sx.overflowHidden, sx.roundedCalc14pxVarRf12px, sx.border, sx.borderLineStrong, sx.bgSurface, sx.transitionColors)}
 					>
 						{item.kind === "file" ? (
               <span
@@ -2150,15 +2009,7 @@ function MediaStrip({ items }: { items: StripItem[] }) {
                   )}
                 >
                   <span
-                    className="backdrop-blur-sm"
-                    {...stylex.props(
-                      sx.grid,
-                      sx.size8,
-                      sx.placeItemsCenter,
-                      sx.roundedFull,
-                      sx.bgBlack45,
-                      sx.textWhite,
-                    )}
+                    {...mergeStylexProps("backdrop-blur-sm", sx.grid, sx.size8, sx.placeItemsCenter, sx.roundedFull, sx.bgBlack45, sx.textWhite)}
                   >
 										<IconPlay size={18} />
 									</span>
@@ -2344,8 +2195,7 @@ export function WorkspaceInfo({
 	// INFO_OVERVIEW (lib/session-viewer-classes).
 	return (
     <div
-      className="workspace-info-panel"
-      {...stylex.props(sx.flex, sx.flexCol, sx.gap4, sx.px2, sx.pb22px, sx.pt3)}
+      {...mergeStylexProps("workspace-info-panel", sx.flex, sx.flexCol, sx.gap4, sx.px2, sx.pb22px, sx.pt3)}
     >
 			{/* Both reviewers in one section. With a PR the agent's card owns the
 			    plate and the teammate's row goes in under it; without one there is
@@ -2386,26 +2236,14 @@ export function WorkspaceInfo({
 				<div {...stylex.props(sx.grid, sx.gap4)}>
 					{comments.length > 0 && (
 						<div className={INFO_SECTION_CLASS}>
-              <div className={INFO_LABEL_CLASS} {...stylex.props(sx.labelRow)}>
+              <div {...mergeStylexProps(INFO_LABEL_CLASS, sx.labelRow)}>
 								<span>
 									{comments.length} PR comment{comments.length === 1 ? "" : "s"}
 								</span>
 								{onAddToInput && (
 									<button
 										type="button"
-                    className="hover:border-line-strong hover:bg-hover hover:text-fg"
-                    {...stylex.props(
-                      sx.roundedControl,
-                      sx.border,
-                      sx.borderLine,
-                      sx.bgSurface,
-                      sx.px2,
-                      sx.py05,
-                      sx.fontSemibold,
-                      sx.textDim,
-                      sx.transitionColors,
-                      typography.meta,
-                    )}
+                    {...mergeStylexProps("hover:border-line-strong hover:bg-hover hover:text-fg", sx.roundedControl, sx.border, sx.borderLine, sx.bgSurface, sx.px2, sx.py05, sx.fontSemibold, sx.textDim, sx.transitionColors, typography.meta)}
 										onClick={() =>
 											onAddToInput(formatFixCommentsPrompt(comments, pr!))
 										}
@@ -2454,20 +2292,12 @@ export function WorkspaceInfo({
 					)}
 					{changed.length > 0 && (
 						<div className={INFO_SECTION_CLASS}>
-              <div className={INFO_LABEL_CLASS} {...stylex.props(sx.labelRow)}>
+              <div {...mergeStylexProps(INFO_LABEL_CLASS, sx.labelRow)}>
 								<span>
 									{changed.length} file{changed.length === 1 ? "" : "s"} changed
 								</span>
                 <span
-                  className="tabular-nums"
-                  {...stylex.props(
-                    sx.inlineFlex,
-                    sx.shrink0,
-                    sx.itemsCenter,
-                    sx.gap1,
-                    sx.fontSemibold,
-                    typography.meta,
-                  )}
+                  {...mergeStylexProps("tabular-nums", sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap1, sx.fontSemibold, typography.meta)}
                 >
 									{totalAdd > 0 && (
 										<span {...stylex.props(sx.textGreen)}>+{totalAdd}</span>
@@ -2506,7 +2336,7 @@ export function WorkspaceInfo({
 							    What separates this section from the assets below it is
 							    still the source: one is what appeared in the conversation,
 							    the other is what the session wrote. */}
-              <div className={INFO_LABEL_CLASS} {...stylex.props(sx.labelRow)}>
+              <div {...mergeStylexProps(INFO_LABEL_CLASS, sx.labelRow)}>
 								<span>Screenshots</span>
 								<span className="tabular-nums">{media.length}</span>
 							</div>
@@ -2526,8 +2356,7 @@ export function WorkspaceInfo({
 					{assets.length > 0 && (
 						<div className={INFO_SECTION_CLASS}>
 							<div
-                className={`${INFO_LABEL_CLASS} group/assets`}
-                {...stylex.props(sx.labelRow)}
+                {...mergeStylexProps(`${INFO_LABEL_CLASS} group/assets`, sx.labelRow)}
 							>
 								<span>Assets</span>
 								<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap15)}>
@@ -2607,13 +2436,7 @@ export function WorkspaceInfo({
                         </span>
 												{a.description && (
                           <span
-                            className="line-clamp-2"
-                            {...stylex.props(
-                              sx.mt05,
-                              sx.leadingSnug,
-                              sx.textDim,
-                              typography.supporting,
-                            )}
+                            {...mergeStylexProps("line-clamp-2", sx.mt05, sx.leadingSnug, sx.textDim, typography.supporting)}
                           >
 														{a.description}
 													</span>

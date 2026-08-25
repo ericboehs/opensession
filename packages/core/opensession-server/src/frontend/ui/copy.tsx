@@ -14,7 +14,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { MIN_ICON_SIZE } from "../components/icons";
 import { copyToClipboard, shareOrCopyLink } from "../lib/share-link";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import { toast as fireToast } from "./toast";
 import * as stylex from "@stylexjs/stylex";
 
@@ -108,15 +108,13 @@ export function CopyCheck({
 	// Sizing the box below the icon is not a smaller icon, it is a broken one.
 	const box = Math.max(size, MIN_ICON_SIZE);
 	return (
-		<span
-			className={cn(className)} {...stylex.props(sx.relative, sx.inlineGrid, sx.placeItemsCenter)}
+		<span {...mergeStylexProps(cn(className), sx.relative, sx.inlineGrid, sx.placeItemsCenter)}
 			style={{ width: box, height: box }}
 		>
 			<AnimatePresence initial={false} mode="popLayout">
 				{copied ? (
 					<motion.span
-						key="check"
-						className={cn(checkClassName)} {...stylex.props(sx.colStart1, sx.rowStart1, sx.grid, sx.placeItemsCenter, sx.textGreen)}
+						key="check" {...mergeStylexProps(cn(checkClassName), sx.colStart1, sx.rowStart1, sx.grid, sx.placeItemsCenter, sx.textGreen)}
 						initial={{ opacity: 0, scale: 0.4, rotate: -12 }}
 						animate={{ opacity: 1, scale: 1, rotate: 0 }}
 						exit={{ opacity: 0, scale: 0.6 }}

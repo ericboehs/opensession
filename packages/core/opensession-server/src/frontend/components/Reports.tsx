@@ -31,6 +31,7 @@ import {
 } from "../lib/reports-classes";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -450,8 +451,7 @@ setError(e?.message || "Failed to load reports");
 					) : (
 						selected && (
 							<TopBar
-								as="header"
-								className="wco-chrome" {...stylex.props(sx.hVarDesktopHeaderH, sx.shrink0, sx.gap4, sx.borderB, sx.borderDivider, sx.px5)}
+								as="header" {...mergeStylexProps("wco-chrome", sx.hVarDesktopHeaderH, sx.shrink0, sx.gap4, sx.borderB, sx.borderDivider, sx.px5)}
 							>
 								{/* The name, and nothing else. Quiet on purpose: the report
 								    below opens with these same words as its own first

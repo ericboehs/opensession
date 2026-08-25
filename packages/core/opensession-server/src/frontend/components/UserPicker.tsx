@@ -13,6 +13,7 @@ import { PulseDot } from "../ui/status";
 import { AUTH_STATUS_EVENT, authGatesOut } from "../lib/auth-ready";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -319,13 +320,11 @@ function AuthBackdrop() {
 	const poster = `${BASE_PATH}/${name}.webp`;
 	return (
 		<div
-			aria-hidden="true"
-			className="select-none" {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.inset0, sx.bgSurface, sx.bgCover, sx.bgCenter)}
+			aria-hidden="true" {...mergeStylexProps("select-none", sx.pointerEventsNone, sx.absolute, sx.inset0, sx.bgSurface, sx.bgCover, sx.bgCenter)}
 			style={{ backgroundImage: `url(${poster})` }}
 		>
 			<video
-				key={name}
-				className="motion-reduce:hidden" {...stylex.props(sx.sizeFull, sx.objectCover)}
+				key={name} {...mergeStylexProps("motion-reduce:hidden", sx.sizeFull, sx.objectCover)}
 				autoPlay
 				loop
 				muted
@@ -375,9 +374,9 @@ function AuthCard({
 		// none of the rows it normally makes draggable. The backdrop is the handle
 		// here; the card opts back out so its controls stay clickable. The durable
 		// shell capability keeps this working if WCO geometry disappears.
-		<div className="[html.wco_&]:[-webkit-app-region:drag] [html.wco_&]:[app-region:drag] [html.desktop-shell_&]:[-webkit-app-region:drag] [html.desktop-shell_&]:[app-region:drag]" {...stylex.props(sx.relative, sx.flex, sx.hScreen, sx.itemsCenter, sx.justifyCenter, sx.overflowHidden, sx.p6)}>
+		<div {...mergeStylexProps("[html.wco_&]:[-webkit-app-region:drag] [html.wco_&]:[app-region:drag] [html.desktop-shell_&]:[-webkit-app-region:drag] [html.desktop-shell_&]:[app-region:drag]", sx.relative, sx.flex, sx.hScreen, sx.itemsCenter, sx.justifyCenter, sx.overflowHidden, sx.p6)}>
 			<AuthBackdrop />
-			<div className="shadow-(--auth-card-edge) phone:p-6 [html.wco_&]:[-webkit-app-region:no-drag] [html.wco_&]:[app-region:no-drag] [html.desktop-shell_&]:[-webkit-app-region:no-drag] [html.desktop-shell_&]:[app-region:no-drag]" {...stylex.props(sx.relative, sx.w400px, sx.maxWFull, sx.rounded2xl, sx.bgSurface, sx.p8, sx.textCenter)}>
+			<div {...mergeStylexProps("shadow-(--auth-card-edge) phone:p-6 [html.wco_&]:[-webkit-app-region:no-drag] [html.wco_&]:[app-region:no-drag] [html.desktop-shell_&]:[-webkit-app-region:no-drag] [html.desktop-shell_&]:[app-region:no-drag]", sx.relative, sx.w400px, sx.maxWFull, sx.rounded2xl, sx.bgSurface, sx.p8, sx.textCenter)}>
 				<img
 					src={`${BASE_PATH}/mac-app-icon.png?v=7`}
 					alt=""
@@ -400,7 +399,7 @@ function AuthCopy({ children }: { children: React.ReactNode }) {
 		// `last:mb-0` for the cards whose sentence IS the card (the expired
 		// notice): the margin is air before whatever follows, and with nothing
 		// following it just lands the card off-centre.
-		<p className="last:mb-0" {...stylex.props(sx.mxAuto, sx.mt2, sx.mb6, sx.maxW32ch, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
+		<p {...mergeStylexProps("last:mb-0", sx.mxAuto, sx.mt2, sx.mb6, sx.maxW32ch, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 			{children}
 		</p>
 	);
@@ -527,11 +526,7 @@ export function UserGate({ children }: { children: React.ReactNode }) {
         {(roster.length ? roster.map(({ name }) => name) : ["Local User"]).map(
           (name) => (
             <button
-              key={name}
-              // The raised-control optics of Button's `default` variant, at
-              // tile proportions: a hairline is allowed here because the tile
-              // is a control, not a card (see src/frontend/AGENTS.md).
-              className="transition-[border-color,scale] hover:border-line-strong active:scale-[0.98]" {...stylex.props(sx.flex, sx.flexCol, sx.itemsCenter, sx.gap2, sx.roundedLg, sx.border, sx.borderLine, sx.bgButton, sx.px3, sx.py4, sx.fontMedium, sx.textFg, sx.smoothShadowXs, sx.focusRing, typography.itemTitle)}
+              key={name} {...mergeStylexProps("transition-[border-color,scale] hover:border-line-strong active:scale-[0.98]", sx.flex, sx.flexCol, sx.itemsCenter, sx.gap2, sx.roundedLg, sx.border, sx.borderLine, sx.bgButton, sx.px3, sx.py4, sx.fontMedium, sx.textFg, sx.smoothShadowXs, sx.focusRing, typography.itemTitle)}
               onClick={() => setStoredUser(name)}
             >
               <UserAvatar name={name} size={36} />

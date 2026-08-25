@@ -22,6 +22,7 @@ import { InlineAlert } from "../ui/state";
 import { toast } from "../ui/toast";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -178,8 +179,7 @@ setStarting(false);
 				<div {...stylex.props(sx.Mx1, sx.flex, sx.maxH46dvh, sx.minH0, sx.flexCol, sx.gap05, sx.overflowYAuto, sx.overscrollContain, sx.px1)}>
 					{tasks.map((task, index) => (
 						<label
-							key={index}
-							className="hover:bg-hover" {...stylex.props(sx.flex, sx.cursorPointer, sx.itemsStart, sx.gap25, sx.roundedRow, sx.px2, sx.py2)}
+							key={index} {...mergeStylexProps("hover:bg-hover", sx.flex, sx.cursorPointer, sx.itemsStart, sx.gap25, sx.roundedRow, sx.px2, sx.py2)}
 						>
 							<Checkbox
 								{...stylex.props(sx.mt05)}
@@ -193,7 +193,7 @@ setStarting(false);
 								</span>
 								{/* No `block` beside the clamp: both set `display`, and the
 								    plain one wins, which silently unclamps the preview. */}
-								<span className="line-clamp-2" {...stylex.props(sx.mt05, sx.leadingNormal, sx.textFaint, typography.supporting)}>
+								<span {...mergeStylexProps("line-clamp-2", sx.mt05, sx.leadingNormal, sx.textFaint, typography.supporting)}>
 									{task.prompt}
 								</span>
 							</span>

@@ -1,6 +1,7 @@
 import type React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { mergeStylexProps } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -66,11 +67,11 @@ export function PrCard({
 }) {
   return (
     <div {...stylex.props(sx.roundedXl, sx.bgPanel)}>
-      <div className="sm:px-5" {...stylex.props(sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap3, sx.borderB, sx.borderDivider, sx.px4, sx.py3)}>
+      <div {...mergeStylexProps("sm:px-5", sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap3, sx.borderB, sx.borderDivider, sx.px4, sx.py3)}>
         <span {...stylex.props(sx.fontSemibold, sx.textFaint, typography.label)}>{title}</span>
         {headExtra}
       </div>
-      <div className="sm:px-5" {...stylex.props(sx.flex, sx.flexCol, sx.gap2, sx.px4, sx.py3)}>{children}</div>
+      <div {...mergeStylexProps("sm:px-5", sx.flex, sx.flexCol, sx.gap2, sx.px4, sx.py3)}>{children}</div>
     </div>
   );
 }

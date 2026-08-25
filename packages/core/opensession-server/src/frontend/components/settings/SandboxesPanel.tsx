@@ -36,6 +36,7 @@ import { WorkspaceSandboxDefaults } from "./SandboxDefaults";
 import { SandboxProviderLogo } from "./SandboxProviderLogo";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { mergeStylexProps } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -540,7 +541,7 @@ setSaving(false);
 				)}
 
 				{connection.provider === "modal" && (
-					<div className="sm:grid-cols-2" {...stylex.props(sx.grid, sx.gap3)}>
+					<div {...mergeStylexProps("sm:grid-cols-2", sx.grid, sx.gap3)}>
 						<Field label="Modal token ID">
 							<Input
 								ref={firstFieldRef}
@@ -566,7 +567,7 @@ setSaving(false);
 				{!remote && (
 					<div {...stylex.props(sx.roundedLg, sx.bgSurface, sx.p3)}>
 						<div {...stylex.props(sx.mb1, sx.fontMedium, sx.textDim, typography.label)}>Setup command</div>
-						<code className="select-all" {...stylex.props(sx.block, sx.overflowXAuto, sx.textSm, sx.textFg)}>
+						<code {...mergeStylexProps("select-all", sx.block, sx.overflowXAuto, sx.textSm, sx.textFg)}>
 							{provider.command}
 						</code>
 					</div>
@@ -587,7 +588,7 @@ setSaving(false);
 							<details {...stylex.props(sx.roundedLg, sx.bgSurface, sx.p3, sx.textDim, typography.meta)}>
 								<summary {...stylex.props(sx.cursorPointer, sx.fontMedium, sx.textFg)}>Generated Caddy routes</summary>
 								{ingress.proposedUrl && (
-									<code className="select-all" {...stylex.props(sx.mt2, sx.block, sx.overflowXAuto, sx.roundedMd, sx.bgPanel, sx.p2, sx.textXs, sx.textFg)}>
+									<code {...mergeStylexProps("select-all", sx.mt2, sx.block, sx.overflowXAuto, sx.roundedMd, sx.bgPanel, sx.p2, sx.textXs, sx.textFg)}>
 										opensession sandbox ingress install {ingress.proposedUrl}
 									</code>
 								)}
@@ -597,7 +598,7 @@ setSaving(false);
 						{connection.provider !== "box" && (
 							<details {...stylex.props(sx.roundedLg, sx.bgSurface, sx.p3, sx.textDim, typography.supporting)}>
 								<summary {...stylex.props(sx.cursorPointer, sx.fontMedium, sx.textFg)}>Provider settings</summary>
-								<div className="sm:grid-cols-2" {...stylex.props(sx.mt3, sx.grid, sx.gap3)}>
+								<div {...mergeStylexProps("sm:grid-cols-2", sx.mt3, sx.grid, sx.gap3)}>
 									<Field label="Region">
 										<Input value={region} onChange={(event) => setRegion(event.target.value)} placeholder="Provider default" />
 									</Field>
@@ -706,7 +707,7 @@ setBusy(false);
 	return (
 		<>
 			<SettingCard>
-				<div className="grid-cols-[minmax(0,1fr)_5.75rem] desktop:grid-cols-[minmax(0,1fr)_13rem]" {...stylex.props(sx.grid, sx.gapX4, sx.gapY3, sx.px5, sx.py4)}>
+				<div {...mergeStylexProps("grid-cols-[minmax(0,1fr)_5.75rem] desktop:grid-cols-[minmax(0,1fr)_13rem]", sx.grid, sx.gapX4, sx.gapY3, sx.px5, sx.py4)}>
 					<div {...stylex.props(sx.colStart1, sx.rowStart1, sx.flex, sx.minW0, sx.itemsStart, sx.gap3)}>
 						<SandboxProviderLogo provider={connection.provider} />
 						<div {...stylex.props(sx.minW0, sx.flex1)}>
@@ -742,7 +743,7 @@ setBusy(false);
 						<div {...stylex.props(sx.colSpan2, sx.rowStart2, sx.flex, sx.itemsBaseline, sx.justifyBetween, sx.gap4)}>
 							{connection.qualification && (
 								<details {...stylex.props(sx.ml10, sx.minW0, sx.textFaint, typography.meta)}>
-									<summary className="select-none hover:text-fg" {...stylex.props(sx.h26px, sx.wFit, sx.cursorPointer, sx.leading26px)}>Diagnostics</summary>
+									<summary {...mergeStylexProps("select-none hover:text-fg", sx.h26px, sx.wFit, sx.cursorPointer, sx.leading26px)}>Diagnostics</summary>
 									<div {...stylex.props(sx.mt1, sx.grid, sx.gap05, sx.pl3)}>
 										<span>Connection {connection.id}</span>
 										<span>Adapter {connection.qualification.adapterSignature}</span>
@@ -857,7 +858,7 @@ setSaving(false);
 					description="Open Session builds a reusable, credential-free project snapshot only when you opt in here. Each new session still gets its own isolated sandbox."
 				/>
 				{!target ? (
-					<div className="sm:grid-cols-2" {...stylex.props(sx.grid, sx.gap3)}>
+					<div {...mergeStylexProps("sm:grid-cols-2", sx.grid, sx.gap3)}>
 						<Field label="Provider">
 							<Select
 								value={provider}
@@ -1091,7 +1092,7 @@ export function SandboxesPanel() {
 											: "Snapshot is stale";
 								return (
 									<SettingCard key={`${environment.repo}:${environment.provider}`}>
-										<div className="grid-cols-[minmax(0,1fr)_auto]" {...stylex.props(sx.grid, sx.gapX4, sx.gapY3, sx.px5, sx.py35)}>
+										<div {...mergeStylexProps("grid-cols-[minmax(0,1fr)_auto]", sx.grid, sx.gapX4, sx.gapY3, sx.px5, sx.py35)}>
 											<div {...stylex.props(sx.colSpan2, sx.rowStart1, sx.flex, sx.minW0, sx.itemsStart, sx.gap3)}>
 												<SandboxProviderLogo provider={environment.provider} />
 												<div {...stylex.props(sx.minW0, sx.flex1)}>
@@ -1124,7 +1125,7 @@ export function SandboxesPanel() {
 											<div {...stylex.props(sx.colSpan2, sx.rowStart2, sx.flex, sx.itemsBaseline, sx.justifyBetween, sx.gap4)}>
 												{(operation || environment.failureCode) && (
 													<details {...stylex.props(sx.ml10, sx.minW0, sx.textFaint, typography.meta)}>
-														<summary className="select-none hover:text-fg" {...stylex.props(sx.h26px, sx.wFit, sx.cursorPointer, sx.leading26px)}>Details</summary>
+														<summary {...mergeStylexProps("select-none hover:text-fg", sx.h26px, sx.wFit, sx.cursorPointer, sx.leading26px)}>Details</summary>
 														<div {...stylex.props(sx.mt1, sx.grid, sx.gap05, sx.pl3)}>
 															{operation && <span>{operation.stage} · updated {new Date(operation.updatedAt).toLocaleString()}</span>}
 															{(environment.failureCode || operation?.failureCode) && <span>Code {environment.failureCode || operation?.failureCode}</span>}

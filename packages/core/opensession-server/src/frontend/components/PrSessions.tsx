@@ -8,6 +8,7 @@ import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -235,8 +236,7 @@ export function PrSessionsList({
 						if (e.metaKey || e.ctrlKey || e.shiftKey) return;
 						e.preventDefault();
 						onOpenSession?.(s.id);
-					}}
-					className="hover:bg-surface" {...stylex.props(sx.Mx2, sx.flex, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px2, sx.py15, sx.textFg, sx.noUnderline, typography.itemTitle)}
+					}} {...mergeStylexProps("hover:bg-surface", sx.Mx2, sx.flex, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px2, sx.py15, sx.textFg, sx.noUnderline, typography.itemTitle)}
 				>
 					<span
 						className={`w-1.5 h-1.5 rounded-full shrink-0 ${

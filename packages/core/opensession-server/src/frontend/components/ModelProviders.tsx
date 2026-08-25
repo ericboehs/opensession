@@ -25,6 +25,7 @@ import { IconTile } from "./BrandTile";
 import { IconDotsHorizontal, IconPlus, IconTrash } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -227,8 +228,7 @@ toast(e.message, { variant: "error" });
 									</Menu.Trigger>
 									<Menu.Popup align="end" sideOffset={4}>
 										<Menu.Item
-											onClick={() => handleRemove(p)}
-											className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
+											onClick={() => handleRemove(p)} {...mergeStylexProps("data-[highlighted]:bg-red-soft", sx.textRed)}
 										>
 											<IconTrash size={16} />
 											Remove provider

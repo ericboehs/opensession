@@ -30,7 +30,7 @@ import {
 	ValueRow,
 } from "../../ui/setting-row";
 import { SwitchIndicator } from "../../ui/switch";
-import { cn } from "../../ui/cn";
+import { cn, mergeStylexProps } from "../../ui/cn";
 import { RepoTile, repoLabel } from "../RepoTile";
 import { IconChevronRight, IconRepo } from "../icons";
 import {
@@ -508,8 +508,7 @@ export const RepoFilterChip = React.forwardRef<
 				</Menu.Root>
 			)}
 			<button
-				type="button"
-				className="hover:bg-hover hover:text-fg" {...stylex.props(sx.inlineFlex, sx.size19px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.leadingNone, sx.textFaint, typography.itemTitle)}
+				type="button" {...mergeStylexProps("hover:bg-hover hover:text-fg", sx.inlineFlex, sx.size19px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.leadingNone, sx.textFaint, typography.itemTitle)}
 				title="Clear repo filter"
 				tabIndex={probe ? -1 : undefined}
 				onClick={probe ? undefined : onClear}

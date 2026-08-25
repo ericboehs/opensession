@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 
@@ -114,8 +114,7 @@ export function Badge({
 	...rest
 }: BadgeProps) {
 	return (
-		<span
-			className={cn(variant === "outline" ? outline[tone] : soft[tone], className)} {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap1, sx.roundedSm, sx.px15, sx.py05, typography.meta, sx.whitespaceNowrap)}
+		<span {...mergeStylexProps(cn(variant === "outline" ? outline[tone] : soft[tone], className), sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap1, sx.roundedSm, sx.px15, sx.py05, typography.meta, sx.whitespaceNowrap)}
 			{...rest}
 		>
 			{dot && (

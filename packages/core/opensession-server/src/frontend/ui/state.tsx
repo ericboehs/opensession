@@ -1,6 +1,6 @@
 import * as React from "react";
 import { IconX } from "../components/icons";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import { PageLoader } from "./page-loader";
 import { Spinner } from "./spinner";
 import * as stylex from "@stylexjs/stylex";
@@ -340,7 +340,7 @@ export function Skeleton({
 			{...stylex.props(sx.AnimationGhostInVarDurVarEase180msBoth)}
 			{...props}
 		>
-			<div className={cn(className)} {...stylex.props(sx.animatePulse)}>{children}</div>
+			<div {...mergeStylexProps(cn(className), sx.animatePulse)}>{children}</div>
 		</div>
 	);
 }
@@ -355,7 +355,7 @@ export function SkeletonBar({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn(className)} {...stylex.props(sx.h3, sx.roundedSm, sx.bgHover)} {...props} />;
+	return <div {...mergeStylexProps(cn(className), sx.h3, sx.roundedSm, sx.bgHover)} {...props} />;
 }
 
 /**
@@ -411,18 +411,16 @@ export function ListSkeleton({
 	const divided = variant === "rows";
 	return (
 		<Skeleton
-			label={label}
-			className={cn(cards
+			label={label} {...mergeStylexProps(cn(cards
 					? "gap-1.5"
 					: divided
 						? "[&>*+*]:border-t [&>*+*]:border-line"
-						: "gap-0.5", className)} {...stylex.props(sx.flex, sx.flexCol)}
+						: "gap-0.5", className), sx.flex, sx.flexCol)}
 			{...props}
 		>
 			{Array.from({ length: rows }, (_, i) => (
 				<div
-					key={i}
-					className={cn(rowClassName)} {...stylex.props(cards && sx.roundedControl, cards && sx.border, cards && sx.borderLine, cards && sx.bgPanel, cards && sx.px35, cards && sx.py11px, !(cards) && sx.px35, !(cards) && sx.py13px)}
+					key={i} {...mergeStylexProps(cn(rowClassName), cards && sx.roundedControl, cards && sx.border, cards && sx.borderLine, cards && sx.bgPanel, cards && sx.px35, cards && sx.py11px, !(cards) && sx.px35, !(cards) && sx.py13px)}
 				>
 					<SkeletonBar className={SKELETON_WIDTHS[i % SKELETON_WIDTHS.length]} />
 					{cards && <SkeletonBar {...stylex.props(sx.mt2, sx.h25, sx.w26)} />}
@@ -463,11 +461,11 @@ export function TranscriptSkeleton({
 	...props
 }: React.ComponentPropsWithoutRef<"div"> & { label?: string }) {
 	return (
-		<Skeleton label={label} className={cn(className)} {...stylex.props(sx.flex, sx.flexCol)} {...props}>
+		<Skeleton label={label} {...mergeStylexProps(cn(className), sx.flex, sx.flexCol)} {...props}>
 			{TRANSCRIPT_GHOST_TURNS.map((turn) => (
 				<React.Fragment key={turn.bubble}>
 					<div {...stylex.props(sx.mxAuto, sx.mb45, sx.flex, sx.wFull, sx.maxWVarSessionCol, sx.flexCol)}>
-						<SkeletonBar className={cn(turn.bubble)} {...stylex.props(sx.selfEnd, sx.roundedLg)} />
+						<SkeletonBar {...mergeStylexProps(cn(turn.bubble), sx.selfEnd, sx.roundedLg)} />
 					</div>
 					<div {...stylex.props(sx.mxAuto, sx.mb45, sx.flex, sx.wFull, sx.maxWVarSessionCol, sx.flexCol, sx.gap25)}>
 						{turn.lines.map((width) => (
@@ -514,8 +512,7 @@ export function InlineAlert({
 }) {
 	return (
 		<div
-			role="alert"
-			className={cn(alertVariants[variant], className)} {...stylex.props(sx.flex, sx.itemsStart, sx.gap2, sx.roundedMd, sx.border, sx.px3, sx.py25, sx.textSm, onDismiss && sx.cursorPointer)}
+			role="alert" {...mergeStylexProps(cn(alertVariants[variant], className), sx.flex, sx.itemsStart, sx.gap2, sx.roundedMd, sx.border, sx.px3, sx.py25, sx.textSm, onDismiss && sx.cursorPointer)}
 			onClick={(e) => {
 				onClick?.(e);
 				onDismiss?.();
@@ -528,8 +525,7 @@ export function InlineAlert({
 			</div>
 			{onRetry && (
 				<button
-					type="button"
-					className="hover:opacity-100" {...stylex.props(sx.focusRing, sx.shrink0, sx.selfCenter, sx.whitespaceNowrap, sx.fontMedium, sx.underline, sx.underlineOffset2, sx.opacity80, sx.transitionOpacity, typography.supporting)}
+					type="button" {...mergeStylexProps("hover:opacity-100", sx.focusRing, sx.shrink0, sx.selfCenter, sx.whitespaceNowrap, sx.fontMedium, sx.underline, sx.underlineOffset2, sx.opacity80, sx.transitionOpacity, typography.supporting)}
 					onClick={(e) => {
 						e.stopPropagation();
 						onRetry();
@@ -541,10 +537,7 @@ export function InlineAlert({
 			{onDismiss && (
 				<button
 					type="button"
-					aria-label="Dismiss"
-					// Visually 24px so it sits inside the box's 10px padding; the
-					// pseudo-element takes the hit area out to 40px.
-					className="hover:opacity-100 before:absolute before:-inset-2 before:content-['']" {...stylex.props(sx.focusRing, sx.relative, sx.Mr1, sx.flex, sx.size6, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.opacity60, sx.transitionOpacity)}
+					aria-label="Dismiss" {...mergeStylexProps("hover:opacity-100 before:absolute before:-inset-2 before:content-['']", sx.focusRing, sx.relative, sx.Mr1, sx.flex, sx.size6, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.opacity60, sx.transitionOpacity)}
 					onClick={(e) => {
 						e.stopPropagation();
 						onDismiss();

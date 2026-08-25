@@ -5,7 +5,7 @@ import {
 	useTransform,
 	type PanInfo,
 } from "motion/react";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import { SWIPE_DISTANCE, SWIPE_VELOCITY } from "../lib/swipe-deck";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -216,8 +216,7 @@ export function SwipeCard<A extends string>({
 	};
 
 	return (
-		<motion.div
-			className={cn("touch-pan-y", className)} {...stylex.props(sx.flex, sx.flexCol, sx.overflowHidden, sx.roundedXl, sx.bgPanel, sx.smoothShadowSoft)}
+		<motion.div {...mergeStylexProps(cn("touch-pan-y", className), sx.flex, sx.flexCol, sx.overflowHidden, sx.roundedXl, sx.bgPanel, sx.smoothShadowSoft)}
 			style={{ x, rotate }}
 			drag="x"
 			dragConstraints={{ left: 0, right: 0 }}
@@ -275,15 +274,13 @@ export function DeckDone({
 			<div {...stylex.props(sx.maxWXs, sx.textSm, sx.textDim)}>{message}</div>
 			<div {...stylex.props(sx.mt2, sx.flex, sx.gap2)}>
 				{secondary && (
-					<button
-						className="hover:bg-surface hover:text-fg" {...stylex.props(sx.roundedControl, sx.border, sx.borderLine, sx.bgPanel, sx.px4, sx.py25, sx.textSm, sx.fontSemibold, sx.textDim)}
+					<button {...mergeStylexProps("hover:bg-surface hover:text-fg", sx.roundedControl, sx.border, sx.borderLine, sx.bgPanel, sx.px4, sx.py25, sx.textSm, sx.fontSemibold, sx.textDim)}
 						onClick={secondary.onClick}
 					>
 						{secondary.label}
 					</button>
 				)}
-				<button
-					className="hover:bg-surface" {...stylex.props(sx.roundedControl, sx.bgPanel, sx.px4, sx.py25, sx.textSm, sx.fontSemibold, sx.textFg)}
+				<button {...mergeStylexProps("hover:bg-surface", sx.roundedControl, sx.bgPanel, sx.px4, sx.py25, sx.textSm, sx.fontSemibold, sx.textFg)}
 					onClick={onExit}
 				>
 					Done

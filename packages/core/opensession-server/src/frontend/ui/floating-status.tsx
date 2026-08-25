@@ -1,5 +1,5 @@
 import { motion, type HTMLMotionProps } from "motion/react";
-import { cn } from "./cn";
+import { cn, mergeStylexProps } from "./cn";
 import { type as typography } from "../styles/typography.stylex";
 import * as stylex from "@stylexjs/stylex";
 
@@ -50,8 +50,7 @@ export function FloatingStatus({
 	...props
 }: HTMLMotionProps<"div">) {
 	return (
-		<motion.div
-			className={cn("[backdrop-filter:var(--popup-blur)]", className)} {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.whitespaceNowrap, sx.rounded999px, sx.bgPopupGlass, sx.px3, sx.py15, typography.supporting, sx.fontMedium, sx.leadingTight, sx.textFg, sx.SmoothRingColorVarPopupRing, sx.smoothShadowRingSm)}
+		<motion.div {...mergeStylexProps(cn("[backdrop-filter:var(--popup-blur)]", className), sx.flex, sx.itemsCenter, sx.gap2, sx.whitespaceNowrap, sx.rounded999px, sx.bgPopupGlass, sx.px3, sx.py15, typography.supporting, sx.fontMedium, sx.leadingTight, sx.textFg, sx.SmoothRingColorVarPopupRing, sx.smoothShadowRingSm)}
 			{...props}
 		/>
 	);

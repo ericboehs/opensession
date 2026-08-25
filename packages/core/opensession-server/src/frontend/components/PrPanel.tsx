@@ -136,6 +136,7 @@ import {
 } from "../lib/deferred-merge";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -2731,8 +2732,7 @@ toast(e.message || "Couldn't unlink the PR");
                         : "Squash and merge"}
                   </Menu.Item>
                 )}
-                <Menu.Item
-                  className="data-[highlighted]:bg-red-soft" {...stylex.props(sx.textRed)}
+                <Menu.Item {...mergeStylexProps("data-[highlighted]:bg-red-soft", sx.textRed)}
                   onClick={handleClose}
                   closeOnClick={confirmClose}
                   disabled={closing}

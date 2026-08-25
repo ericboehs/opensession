@@ -15,7 +15,7 @@ import { SNOOZE_SOMEDAY, formatRemaining, snoozePresets } from "../../lib/snooze
 import { elapsedSince, fullTime } from "../../lib/time";
 import type { UnifiedSession } from "../../lib/types";
 import { Button } from "../../ui/button";
-import { cn } from "../../ui/cn";
+import { cn, mergeStylexProps } from "../../ui/cn";
 import { BottomSheet, SheetBody, SheetItem, SheetSeparator } from "../../ui/sheet";
 import {
 	LanePickerPage,
@@ -315,8 +315,7 @@ export function SessionCardBody({ session: s }: { session: UnifiedSession }) {
 				</div>
 			)}
 			{!s.waitingForInput && runNeedsAttention(s) && (
-				<div
-					className="line-clamp-2" {...stylex.props(sx.mt7px, sx.roundedMd, sx.bgAccentSoft, sx.px2, sx.py5px, sx.leadingSnug, sx.textDim, typography.meta)}
+				<div {...mergeStylexProps("line-clamp-2", sx.mt7px, sx.roundedMd, sx.bgAccentSoft, sx.px2, sx.py5px, sx.leadingSnug, sx.textDim, typography.meta)}
 					title={s.lastRunError!.message}
 				>
 					{cardRunErrorDetail(s.lastRunError!.message)}
@@ -585,7 +584,7 @@ export function CardOverview({ ov }: { ov: WorkspaceOverview | null }) {
 	return (
 		<>
 			{desc && (
-				<div className="selectable line-clamp-2" {...stylex.props(sx.mt1, sx.leadingSnug, sx.textDim, typography.meta)}>
+				<div {...mergeStylexProps("selectable line-clamp-2", sx.mt1, sx.leadingSnug, sx.textDim, typography.meta)}>
 					{desc}
 				</div>
 			)}
@@ -597,7 +596,7 @@ export function CardOverview({ ov }: { ov: WorkspaceOverview | null }) {
 				// everything is reachable instead of hidden behind a "+3". Bleed
 				// through the card's right inset so the carousel peek is clipped
 				// at the card edge rather than stopping inside its padding.
-				<div className="snap-x [&::-webkit-scrollbar]:hidden" {...stylex.props(sx.mt2, sx.Mr13px, sx.flex, sx.snapMandatory, sx.gap15, sx.overflowXAuto, sx.pr13px, sx.ScrollbarWidthNone)}>
+				<div {...mergeStylexProps("snap-x [&::-webkit-scrollbar]:hidden", sx.mt2, sx.Mr13px, sx.flex, sx.snapMandatory, sx.gap15, sx.overflowXAuto, sx.pr13px, sx.ScrollbarWidthNone)}>
 					{media.slice(0, MAX_HOVERCARD_MEDIA).map((m, i) => (
 						<button
 							key={`${m.sessionId}:${m.at}:${i}`}
@@ -624,7 +623,7 @@ export function CardOverview({ ov }: { ov: WorkspaceOverview | null }) {
 										preload="metadata"
 										{...stylex.props(sx.hFull, sx.wFull, sx.objectContain)}
 									/>
-									<span className="drop-shadow" {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.inset0, sx.grid, sx.placeItemsCenter, sx.textSm, sx.textWhite)}>
+									<span {...mergeStylexProps("drop-shadow", sx.pointerEventsNone, sx.absolute, sx.inset0, sx.grid, sx.placeItemsCenter, sx.textSm, sx.textWhite)}>
 										▶
 									</span>
 								</>
@@ -714,8 +713,7 @@ function WsOverviewInfo({
 						Blocked on a question. Open to answer.
 					</div>
 				) : (
-					<div
-						className="line-clamp-2" {...stylex.props(sx.mt7px, sx.roundedMd, sx.bgAccentSoft, sx.px2, sx.py5px, sx.leadingSnug, sx.textDim, typography.meta)}
+					<div {...mergeStylexProps("line-clamp-2", sx.mt7px, sx.roundedMd, sx.bgAccentSoft, sx.px2, sx.py5px, sx.leadingSnug, sx.textDim, typography.meta)}
 						title={failedSession?.lastRunError?.message}
 					>
 						{cardRunErrorDetail(

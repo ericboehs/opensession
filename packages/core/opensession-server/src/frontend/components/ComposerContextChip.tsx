@@ -1,6 +1,6 @@
 import React from "react";
 import { motion } from "motion/react";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexProps } from "../ui/cn";
 import { duration, ease } from "../ui/motion";
 import { Tooltip } from "../ui/tooltip";
 import { IconX } from "./icons";
@@ -139,7 +139,7 @@ export function ComposerContextChip({
 						colours.remove,
 					)}
 				>
-					<IconX size={20} className="[&_path]:stroke-2" {...stylex.props(sx.scale08)} />
+					<IconX size={20} {...mergeStylexProps("[&_path]:stroke-2", sx.scale08)} />
 				</button>
 			)}
 		</div>

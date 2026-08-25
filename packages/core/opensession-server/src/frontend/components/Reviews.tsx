@@ -10,6 +10,7 @@ import { EmptyState } from "../ui/state";
 import { Badge } from "../ui/badge";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexProps } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -410,8 +411,7 @@ function ChecksCell({ s }: { s: UnifiedSession }) {
     >
       <span className={`size-2 shrink-0 rounded-full ${CHECKS_TONE[tone].dot}`} />
       <span className={`whitespace-nowrap ${CHECKS_TONE[tone].label}`}>{label}</span>
-      <span
-        className="phone:hidden" {...stylex.props(sx.inlineFlex, sx.h1, sx.w46px, sx.shrink0, sx.overflowHidden, sx.roundedFull, sx.bgActive)}
+      <span {...mergeStylexProps("phone:hidden", sx.inlineFlex, sx.h1, sx.w46px, sx.shrink0, sx.overflowHidden, sx.roundedFull, sx.bgActive)}
         aria-hidden
       >
         <span {...stylex.props(sx.hFull, sx.bgGreen)} style={{ width: pct(c.passed) }} />
@@ -448,7 +448,7 @@ function ChangesCell({ s }: { s: UnifiedSession }) {
       {...stylex.props(sx.inlineFlex, sx.flexCol, sx.gap1)}
       title={`${files} file${files === 1 ? "" : "s"} changed`}
     >
-      <span className="tabular-nums" {...stylex.props(sx.inlineFlex, sx.gap7px, typography.meta)}>
+      <span {...mergeStylexProps("tabular-nums", sx.inlineFlex, sx.gap7px, typography.meta)}>
         <span {...stylex.props(sx.textGreen)}>+{add}</span>
         <span {...stylex.props(sx.textRed)}>−{del}</span>
       </span>
@@ -572,9 +572,8 @@ export function Reviews({
   if (selected) {
     return (
       <div {...stylex.props(sx.flex, sx.hFull, sx.minH0, sx.flexCol, sx.bgSurface)}>
-        <div className="phone:flex" {...stylex.props(sx.hidden, sx.shrink0, sx.itemsCenter, sx.borderB, sx.borderDivider, sx.px3, sx.py2)}>
-          <button
-            className="hover:bg-hover" {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px2, sx.py15, sx.textSm, sx.fontMedium, sx.textFg)}
+        <div {...mergeStylexProps("phone:flex", sx.hidden, sx.shrink0, sx.itemsCenter, sx.borderB, sx.borderDivider, sx.px3, sx.py2)}>
+          <button {...mergeStylexProps("hover:bg-hover", sx.inlineFlex, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px2, sx.py15, sx.textSm, sx.fontMedium, sx.textFg)}
             onClick={() => onSelect("")}
           >
             <svg width="17" height="17" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
@@ -603,16 +602,15 @@ export function Reviews({
 
   return (
     <div {...stylex.props(sx.relative, sx.flex, sx.minH0, sx.flex1)}>
-      <div className="phone:overflow-x-hidden" {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.flexCol, sx.overflowYAuto)}>
+      <div {...mergeStylexProps("phone:overflow-x-hidden", sx.flex, sx.minW0, sx.flex1, sx.flexCol, sx.overflowYAuto)}>
         <div {...stylex.props(sx.sticky, sx.top0, sx.z3, sx.bgSurface, sx.px22px, sx.pt4)}>
           <div {...stylex.props(sx.mb3, sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap4)}>
             <h1 {...stylex.props(sx.m0, sx.fontTitle, sx.tracking001em, typography.sectionTitle)}>Reviews</h1>
-            <div className="transition-[border-color,background-color] focus-within:border-line-strong focus-within:bg-panel" {...stylex.props(sx.flex, sx.w60, sx.itemsCenter, sx.gap7px, sx.roundedMd, sx.border, sx.borderLine, sx.bgRaised, sx.px25, sx.py15, sx.textFaint)}>
+            <div {...mergeStylexProps("transition-[border-color,background-color] focus-within:border-line-strong focus-within:bg-panel", sx.flex, sx.w60, sx.itemsCenter, sx.gap7px, sx.roundedMd, sx.border, sx.borderLine, sx.bgRaised, sx.px25, sx.py15, sx.textFaint)}>
               <svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
                 <path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z" />
               </svg>
-              <input
-                className="placeholder:text-faint" {...stylex.props(sx.minW0, sx.flex1, sx.border0, sx.bgTransparent, sx.textFg, sx.outlineNone, typography.label)}
+              <input {...mergeStylexProps("placeholder:text-faint", sx.minW0, sx.flex1, sx.border0, sx.bgTransparent, sx.textFg, sx.outlineNone, typography.label)}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search pull requests…"
@@ -624,7 +622,7 @@ export function Reviews({
               underline sits on top of it. The negative margin cancels the
               header's 22px padding. Five tabs + counts don't fit a phone, so
               below 720px the strip scrolls edge to edge instead. */}
-          <div className="phone:overflow-x-auto phone:[scrollbar-width:none] phone:[&::-webkit-scrollbar]:hidden" {...stylex.props(sx.Mx22px, sx.flex, sx.gap05, sx.borderB, sx.borderDivider, sx.px22px)}>
+          <div {...mergeStylexProps("phone:overflow-x-auto phone:[scrollbar-width:none] phone:[&::-webkit-scrollbar]:hidden", sx.Mx22px, sx.flex, sx.gap05, sx.borderB, sx.borderDivider, sx.px22px)}>
             {TABS.map((t) => {
               const on = filter === t.key;
               return (
@@ -699,13 +697,12 @@ export function Reviews({
                         {cleanTitle(s)}
                       </span>
                       {prNum(s) && (
-                        <span className="tabular-nums" {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}>
+                        <span {...mergeStylexProps("tabular-nums", sx.shrink0, sx.textFaint, typography.meta)}>
                           {prNum(s)}
                         </span>
                       )}
                       {s.prUrl && (
-                        <span
-                          className="group-hover:opacity-100 focus-visible:opacity-100 hover:text-link" {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.selfCenter, sx.roundedSm, sx.p05, sx.textFaint, sx.opacity0, sx.transitionOpacity)}
+                        <span {...mergeStylexProps("group-hover:opacity-100 focus-visible:opacity-100 hover:text-link", sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.selfCenter, sx.roundedSm, sx.p05, sx.textFaint, sx.opacity0, sx.transitionOpacity)}
                           title={`Open on ${providerFromUrl(s.prUrl).name}`}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -723,7 +720,7 @@ export function Reviews({
                         <Badge>{s.repo ? repoLabel(s.repo) : "repository"}</Badge>
                       )}
                       {s.branch && (
-                        <span className="[&>svg]:shrink-0 [&>svg]:opacity-70" {...stylex.props(sx.inlineFlex, sx.minW0, sx.maxWFull, sx.itemsCenter, sx.gap1, sx.overflowHidden, sx.textDim, typography.meta)}>
+                        <span {...mergeStylexProps("[&>svg]:shrink-0 [&>svg]:opacity-70", sx.inlineFlex, sx.minW0, sx.maxWFull, sx.itemsCenter, sx.gap1, sx.overflowHidden, sx.textDim, typography.meta)}>
                           <svg width="17" height="17" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
                             <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" />
                           </svg>
