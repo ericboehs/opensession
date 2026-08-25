@@ -15,7 +15,7 @@ import { SNOOZE_SOMEDAY, formatRemaining, snoozePresets } from "../../lib/snooze
 import { elapsedSince, fullTime } from "../../lib/time";
 import type { UnifiedSession } from "../../lib/types";
 import { Button } from "../../ui/button";
-import { cn, mergeStylexProps } from "../../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 import { BottomSheet, SheetBody, SheetItem, SheetSeparator } from "../../ui/sheet";
 import {
 	LanePickerPage,
@@ -227,6 +227,28 @@ const sx = stylex.create({
 	pt1: {
 			paddingTop: "4px"
 	},
+
+	leading13: {
+		"--tw-leading": "1.3",
+		"lineHeight": "1.3"
+	},
+	mt5px: {
+		"marginTop": "5px"
+	},
+	size2: {
+		"width": "8px",
+		"height": "8px"
+	},
+	roundedFull: {
+		"borderRadius": "3.40282e38px"
+	},
+	mt3px: {
+		"marginTop": "3px"
+	},
+	fontMedium: {
+		"--tw-font-weight": "var(--font-weight-medium)",
+		"fontWeight": "var(--font-weight-medium)"
+	},
 });
 
 // The session card, in the shape the workspace card already proved: what the
@@ -293,18 +315,18 @@ export function SessionCardBody({ session: s }: { session: UnifiedSession }) {
 
 			<div
 				className={cn(
-					"flex min-w-0 items-center gap-[7px] text-label font-semibold leading-[1.3]",
-					hasHead && "mt-[5px]",
+					mergeStylexClassName("", sx.flex, sx.minW0, sx.itemsCenter, sx.gap7px, typography.label, sx.fontSemibold, sx.leading13),
+					hasHead && mergeStylexClassName("", sx.mt5px),
 				)}
 			>
 				{s.isRunning && (
-					<span className={`size-2 shrink-0 rounded-full ${state.dotClass}`} />
+					<span className={[mergeStylexClassName("", sx.size2, sx.shrink0, sx.roundedFull), state.dotClass].filter(Boolean).join(" ")} />
 				)}
 				<span {...stylex.props(sx.minW0, sx.truncate)}>{s.title}</span>
 			</div>
 
 			{!runNeedsAttention(s) && (
-				<div className={`mt-[3px] text-meta font-medium ${TONE_TEXT[state.tone]}`}>
+				<div className={[mergeStylexClassName("", sx.mt3px, typography.meta, sx.fontMedium), TONE_TEXT[state.tone]].filter(Boolean).join(" ")}>
 					{state.label}
 				</div>
 			)}
@@ -465,7 +487,7 @@ export function WsPrStatusMark({
 					{...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}
 					style={{ width: size, height: size }}
 				>
-					<span className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.idle}`} />
+					<span className={[mergeStylexClassName("", sx.size2, sx.shrink0, sx.roundedFull), SIDEBAR_STATUS_DOT.idle].filter(Boolean).join(" ")} />
 				</span>
 			);
 		return (
@@ -532,7 +554,7 @@ export function WsStatusMark({
 		</span>
 	);
 	const dot = (cls: string) =>
-		slot(<span className={`size-2 shrink-0 rounded-full ${cls}`} />);
+		slot(<span className={[mergeStylexClassName("", sx.size2, sx.shrink0, sx.roundedFull), cls].filter(Boolean).join(" ")} />);
 	if (row.sessions.some((session) => session.waitingForInput))
 		return dot(SIDEBAR_STATUS_DOT.waiting);
 	if (workspaceRunNeedingAttention(row.sessions))
@@ -553,7 +575,7 @@ export function WsStatusMark({
 		return slot(
 			<IconPullRequest
 				size={size}
-				className={allDraft ? "text-faint" : "text-green"}
+				className={allDraft ? mergeStylexClassName("", sx.textFaint) : mergeStylexClassName("", sx.textGreen)}
 			/>,
 		);
 	}
@@ -695,13 +717,13 @@ function WsOverviewInfo({
 
 			<div
 				className={cn(
-					"flex min-w-0 items-center gap-[7px] text-label font-semibold leading-[1.3]",
-					hasHead && "mt-[5px]",
+					mergeStylexClassName("", sx.flex, sx.minW0, sx.itemsCenter, sx.gap7px, typography.label, sx.fontSemibold, sx.leading13),
+					hasHead && mergeStylexClassName("", sx.mt5px),
 				)}
 			>
 				{row.running && (
 					<span
-						className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.running}`}
+						className={[mergeStylexClassName("", sx.size2, sx.shrink0, sx.roundedFull), SIDEBAR_STATUS_DOT.running].filter(Boolean).join(" ")}
 					/>
 				)}
 				<span {...stylex.props(sx.minW0, sx.truncate)}>{row.name}</span>
@@ -940,7 +962,7 @@ export function WsMobileSheet({
 						<div {...stylex.props(sx.mt2, sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.textFaint, typography.meta)}>
 							{prSession?.prNumber != null && (
 								<span
-									className={`shrink-0 text-[0.95em] font-semibold ${prTone(prSession)}`}
+									className={[mergeStylexClassName("", sx.shrink0, sx.text095em, sx.fontSemibold), prTone(prSession)].filter(Boolean).join(" ")}
 								>
 									#{prSession.prNumber}
 								</span>

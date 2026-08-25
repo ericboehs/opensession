@@ -11,7 +11,7 @@ import {
 import { PlainEntryRow, plainThreadUrl } from "./PlainThreadPanel";
 import { useCurrentUser } from "./UserPicker";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { DeckDone, SwipeCard } from "../ui/swipe-deck";
 import { dismissToast, toast } from "../ui/toast";
 import { UNDO_MS, ageLabel, ageTone, shuffle } from "../lib/swipe-deck";
@@ -189,6 +189,31 @@ const sx = stylex.create({
 	},
 	italic: {
 			fontStyle: "italic"
+	},
+
+	hoverTextGreen: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--green)"
+			}
+		}
+	},
+	roundedFull: {
+		"borderRadius": "3.40282e38px"
+	},
+	px2: {
+		"paddingInline": "8px"
+	},
+	py05: {
+		"paddingBlock": "2px"
+	},
+	fontBold: {
+		"--tw-font-weight": "var(--font-weight-bold)",
+		"fontWeight": "var(--font-weight-bold)"
+	},
+	tracking001em: {
+		"--tw-tracking": "-.01em",
+		"letterSpacing": "-.01em"
 	},
 });
 
@@ -600,7 +625,7 @@ export function SupportTinder({ onExit, onOpenSession }: Props) {
 					</Button>
 					<Button
 						size="lg"
-						className={cn(DECK_ACTION, "flex-1 hover:text-green")}
+						className={cn(DECK_ACTION, mergeStylexClassName("", sx.flex1, sx.hoverTextGreen))}
 						onClick={markDone}
 						disabled={busy}
 						title="Mark this thread Done (d). Undo available."
@@ -609,7 +634,7 @@ export function SupportTinder({ onExit, onOpenSession }: Props) {
 					</Button>
 					<Button
 						size="lg"
-						className={cn(DECK_ACTION, "flex-1")}
+						className={cn(DECK_ACTION, mergeStylexClassName("", sx.flex1))}
 						onClick={openSession}
 						disabled={opening}
 						title="Open the ticket's opensession session, starting triage if none exists (e)"
@@ -618,7 +643,7 @@ export function SupportTinder({ onExit, onOpenSession }: Props) {
 					</Button>
 					<Button
 						size="lg"
-						className={cn(DECK_ACTION, "flex-1")}
+						className={cn(DECK_ACTION, mergeStylexClassName("", sx.flex1))}
 						onClick={() =>
 							card && window.open(plainThreadUrl(card.id), "_blank", "noopener")
 						}
@@ -629,7 +654,7 @@ export function SupportTinder({ onExit, onOpenSession }: Props) {
 					<Button
 						variant="success-strong"
 						size="lg"
-						className={cn(DECK_ACTION, "flex-1")}
+						className={cn(DECK_ACTION, mergeStylexClassName("", sx.flex1))}
 						onClick={skip}
 						title="Skip, leaving the ticket as-is (→ or k)"
 					>
@@ -690,7 +715,7 @@ function TicketCard({
 					)}
 					{prio && (
 						<span
-							className={`shrink-0 rounded-full px-2 py-0.5 text-meta font-bold tracking-[-0.01em] ${prio.cls}`}
+							className={[mergeStylexClassName("", sx.shrink0, sx.roundedFull, sx.px2, sx.py05, typography.meta, sx.fontBold, sx.tracking001em), prio.cls].filter(Boolean).join(" ")}
 						>
 							{prio.label}
 						</span>

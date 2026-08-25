@@ -5,7 +5,7 @@ import {
 	useTransform,
 	type PanInfo,
 } from "motion/react";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import { SWIPE_DISTANCE, SWIPE_VELOCITY } from "../lib/swipe-deck";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -139,6 +139,11 @@ const sx = stylex.create({
 	smoothShadowSoft: {
 			boxShadow: "0 3px 10px -3px var(--smooth-shadow-color), 0 20px 56px -16px var(--smooth-shadow-color)"
 	},
+
+	touchPanY: {
+		"--tw-pan-y": "pan-y",
+		"touchAction": "var(--tw-pan-x,) var(--tw-pan-y,) var(--tw-pinch-zoom,)"
+	},
 });
 
 /**
@@ -216,7 +221,7 @@ export function SwipeCard<A extends string>({
 	};
 
 	return (
-		<motion.div {...mergeStylexProps(cn("touch-pan-y", className), sx.flex, sx.flexCol, sx.overflowHidden, sx.roundedXl, sx.bgPanel, sx.smoothShadowSoft)}
+		<motion.div {...mergeStylexProps(cn(mergeStylexClassName("", sx.touchPanY), className), sx.flex, sx.flexCol, sx.overflowHidden, sx.roundedXl, sx.bgPanel, sx.smoothShadowSoft)}
 			style={{ x, rotate }}
 			drag="x"
 			dragConstraints={{ left: 0, right: 0 }}

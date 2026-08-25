@@ -8,7 +8,7 @@ import { toast } from "../../ui/toast";
 import type { LinkedPrEntry } from "../PrPanel";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps } from "../../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -41,6 +41,27 @@ const sx = stylex.create({
 	},
 	gap25: {
 			gap: "10px"
+	},
+
+	px25: {
+		"paddingInline": "10px"
+	},
+	textXs: {
+		"fontSize": "var(--type-label)",
+		"lineHeight": "var(--tw-leading,var(--text-xs--line-height))"
+	},
+	textFaint: {
+		"color": "var(--text-faint)"
+	},
+	phoneMinH11: {
+		"@media (max-width: 720px)": {
+			"minHeight": "44px"
+		}
+	},
+	phoneTextInputPhone: {
+		"@media (max-width: 720px)": {
+			"fontSize": "var(--type-input-phone)"
+		}
 	},
 });
 
@@ -96,8 +117,8 @@ setBusy(false);
             size="sm"
             className={
               tab
-                ? "px-2.5 text-xs text-faint phone:min-h-11"
-                : "phone:min-h-11"
+                ? mergeStylexClassName("", sx.px25, sx.textXs, sx.textFaint, sx.phoneMinH11)
+                : mergeStylexClassName("", sx.phoneMinH11)
             }
             icon={tab ? undefined : <IconLink size={20} />}
             title="Link another PR to this session"
@@ -130,7 +151,7 @@ setBusy(false);
           <Field label="Pull request URL">
             <Input
               autoFocus
-              className="phone:min-h-11 phone:text-input-phone"
+              className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneTextInputPhone)}
               placeholder="https://github.com/org/repo/pull/123"
               value={val}
               onChange={(event) => setVal(event.target.value)}
@@ -141,7 +162,7 @@ setBusy(false);
               render={
                 <Button
                   variant="soft"
-                  className="phone:min-h-11"
+                  className={mergeStylexClassName("", sx.phoneMinH11)}
                   disabled={busy}
                 >
                   Cancel
@@ -151,7 +172,7 @@ setBusy(false);
             <Button
               type="submit"
               variant="primary"
-              className="phone:min-h-11"
+              className={mergeStylexClassName("", sx.phoneMinH11)}
               disabled={busy || !val.trim()}
             >
               {busy ? "Linking…" : "Link PR"}

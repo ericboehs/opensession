@@ -9,7 +9,7 @@ import { Popover } from "../ui/popover";
 import { CheckStatusIcon } from "./CheckStatusIcon";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -115,6 +115,11 @@ const sx = stylex.create({
 	noUnderline: {
 			textDecorationLine: "none"
 	},
+
+	size4: {
+		"width": "16px",
+		"height": "16px"
+	},
 });
 
 /** A shared checks preview: hover for detail, click its trigger to open Review's Checks tab. */
@@ -184,7 +189,7 @@ export function PrChecksPopover({
 						const status = checkStatusMeta(check);
 						const content = (
 							<>
-								<span className={`inline-flex size-4 shrink-0 ${checkToneClass(status.kind)}`}>
+								<span className={[mergeStylexClassName("", sx.inlineFlex, sx.size4, sx.shrink0), checkToneClass(status.kind)].filter(Boolean).join(" ")}>
 									<CheckStatusIcon kind={status.kind} />
 								</span>
 								<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.fontMedium, sx.textFg, typography.label)}>

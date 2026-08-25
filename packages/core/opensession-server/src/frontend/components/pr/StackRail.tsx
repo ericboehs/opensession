@@ -1,4 +1,4 @@
-import { cn } from "../../ui/cn";
+import { cn, mergeStylexClassName } from "../../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -42,6 +42,19 @@ const sx = stylex.create({
 	},
 	my3px: {
 			marginBlock: "3px"
+	},
+
+	wPx: {
+		"width": "1px"
+	},
+	flex1: {
+		"flex": "1"
+	},
+	bgLine: {
+		"backgroundColor": "var(--border)"
+	},
+	invisible: {
+		"visibility": "hidden"
 	},
 });
 
@@ -153,9 +166,9 @@ export function StackRail({
 }) {
 	return (
 		<span {...stylex.props(sx.flex, sx.w22px, sx.shrink0, sx.flexCol, sx.itemsCenter, sx.selfStretch)}>
-			<span className={cn("w-px flex-1 bg-line", first && "invisible")} />
+			<span className={cn(mergeStylexClassName("", sx.wPx, sx.flex1, sx.bgLine), first && mergeStylexClassName("", sx.invisible))} />
 			<span {...stylex.props(sx.my3px, sx.shrink0)}>{children}</span>
-			<span className={cn("w-px flex-1 bg-line", last && "invisible")} />
+			<span className={cn(mergeStylexClassName("", sx.wPx, sx.flex1, sx.bgLine), last && mergeStylexClassName("", sx.invisible))} />
 		</span>
 	);
 }

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Menu } from "../ui/menu";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { isApple } from "../lib/platform";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -74,6 +74,19 @@ const sx = stylex.create({
 	},
 	textFaint: {
 			color: "var(--text-faint)"
+	},
+
+	mt05: {
+		"marginTop": "2px"
+	},
+	justifyBetween: {
+		"justifyContent": "space-between"
+	},
+	gap3: {
+		"gap": "12px"
+	},
+	bgHover: {
+		"backgroundColor": "var(--hover)"
 	},
 });
 
@@ -195,8 +208,8 @@ export function PaletteSelect({
 							// here, and two selected rows that touch read as one block
 							// with a pinched waist rather than as two repos.
 							className={cn(
-								"mt-0.5 justify-between gap-3 first:mt-0",
-								selected && "bg-hover",
+								mergeStylexClassName("first:mt-0", sx.mt05, sx.justifyBetween, sx.gap3),
+								selected && mergeStylexClassName("", sx.bgHover),
 							)}
 						>
 							<span {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap25)}>

@@ -337,6 +337,10 @@ const sx = stylex.create({
 			"borderBottomLeftRadius": "0"
 		}
 	},
+
+	rotate180: {
+		"rotate": "180deg"
+	},
 });
 
 interface Props {
@@ -2260,7 +2264,7 @@ pendingDraftParks.delete(operation);
                 aria-label="Create options"
               >
                 <IconChevronDown
-                  className={[mergeStylexClassName("", sx.transitionTransform), createMenuOpen ? "rotate-180" : ""].filter(Boolean).join(" ")}
+                  className={[mergeStylexClassName("", sx.transitionTransform), createMenuOpen ? mergeStylexClassName("", sx.rotate180) : ""].filter(Boolean).join(" ")}
                   size={22}
                 />
               </button>

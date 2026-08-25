@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import { type as typography } from "../styles/typography.stylex";
 import * as stylex from "@stylexjs/stylex";
 
@@ -38,6 +38,17 @@ const sx = stylex.create({
 	textFaint: {
 			color: "var(--text-faint)"
 	},
+
+	phoneFlexCol: {
+		"@media (max-width: 720px)": {
+			"flexDirection": "column"
+		}
+	},
+	phoneGap25: {
+		"@media (max-width: 720px)": {
+			"gap": "10px"
+		}
+	},
 });
 
 export function PageHeader({
@@ -45,7 +56,7 @@ export function PageHeader({
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
-		<div {...mergeStylexProps(cn("phone:flex-col phone:gap-2.5", className), sx.mb22px, sx.flex, sx.itemsStart, sx.justifyBetween, sx.gap4)}
+		<div {...mergeStylexProps(cn(mergeStylexClassName("", sx.phoneFlexCol, sx.phoneGap25), className), sx.mb22px, sx.flex, sx.itemsStart, sx.justifyBetween, sx.gap4)}
 			{...props}
 		/>
 	);

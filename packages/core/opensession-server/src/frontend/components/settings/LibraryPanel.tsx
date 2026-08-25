@@ -44,7 +44,7 @@ import {
 	SettingsPanel,
 } from "../../ui/settings";
 import { Input } from "../../ui/input";
-import { cn, mergeStylexProps } from "../../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 import { Badge } from "../../ui/badge";
 import { Segmented, SegmentedOption } from "../../ui/segmented";
 import { EmptyState, InlineAlert, Skeleton, SkeletonBar } from "../../ui/state";
@@ -233,6 +233,10 @@ const sx = stylex.create({
 	w74pct: { width: "74%" },
 	w76pct: { width: "76%" },
 	w83pct: { width: "83%" },
+
+	Container: {
+		"containerType": "inline-size"
+	},
 });
 
 // ── The library: one browsable catalog over the things this instance can be
@@ -435,7 +439,7 @@ function CatalogSkeleton() {
 	return (
 		<Skeleton label="Loading the library" {...stylex.props(sx.mt11, sx.px5)}>
 			<SkeletonBar {...stylex.props(sx.mb4, sx.h4, sx.w22, sx.borderB, sx.borderDivider, sx.pb3)} />
-			<div className="@container">
+			<div className={mergeStylexClassName("", sx.Container)}>
 				<div {...mergeStylexProps("@[560px]:grid-cols-2", sx.grid, sx.gridCols1, sx.gapX12)}>
 					{CATALOG_GHOST_ROWS.map((row, index) => (
 						<div key={index} {...stylex.props(sx.flex, sx.itemsCenter, sx.gap35, sx.py35)}>
@@ -676,7 +680,7 @@ export function LibraryPanel() {
 					    column that isn't. The gutter is wide on purpose: with no
 					    fill under a row, the air is what tells the two columns
 					    apart. */}
-					<div className="@container">
+					<div className={mergeStylexClassName("", sx.Container)}>
 						<div {...mergeStylexProps("@[560px]:grid-cols-2", sx.grid, sx.gridCols1, sx.gapX12)}>
 							{group.entries.map((entry) => (
 								<EntryCard

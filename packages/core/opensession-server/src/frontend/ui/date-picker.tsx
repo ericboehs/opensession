@@ -22,7 +22,7 @@ import {
 	type RangeSpan,
 } from "../lib/date-grid";
 import { Button } from "./button";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import { Popover } from "./popover";
 import { Segmented, SegmentedKnob, SegmentedOption } from "./segmented";
 import * as stylex from "@stylexjs/stylex";
@@ -34,7 +34,7 @@ const sx = stylex.create({
 			borderRadius: "0"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	p0: {
 			padding: "0"
@@ -220,6 +220,89 @@ const sx = stylex.create({
 	textOnAccent: {
 			color: "var(--on-accent)"
 	},
+
+	selectNone: {
+		"WebkitUserSelect": "none",
+		"userSelect": "none"
+	},
+	phonePy2: {
+		"@media (max-width: 720px)": {
+			"paddingBlock": "8px"
+		}
+	},
+	phonePr3: {
+		"@media (max-width: 720px)": {
+			"paddingRight": "12px"
+		}
+	},
+	phonePl25: {
+		"@media (max-width: 720px)": {
+			"paddingLeft": "10px"
+		}
+	},
+	phoneTextItemTitle: {
+		"@media (max-width: 720px)": {
+			"fontSize": "var(--type-item-title)"
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	phoneH11: {
+		"@media (max-width: 720px)": {
+			"height": "44px"
+		}
+	},
+	ring1: {
+		"--tw-ring-shadow": "var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor)",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	hoverBgAccentHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--accent-hover)"
+			}
+		}
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	disabledCursorDefault: {
+		":disabled": {
+			"cursor": "default"
+		}
+	},
+	disabledTextFaint: {
+		":disabled": {
+			"color": "var(--text-faint)"
+		}
+	},
+	disabledOpacity45: {
+		":disabled": {
+			"opacity": ".45"
+		}
+	},
+	disabledHoverBgTransparent: {
+		"@media (hover: hover)": {
+			":disabled": {
+				":hover": {
+					"backgroundColor": "transparent"
+				}
+			}
+		}
+	},
 });
 
 /**
@@ -339,7 +422,7 @@ export function DateRangeField({
 					// The range is the label a sighted reader gets, so it belongs in
 					// the spoken one: a bare "Date range, button" says nothing about
 					// what is being charted.
-					aria-label={`${label}, ${rangeLabel}`} {...mergeStylexProps(cn("select-none", "phone:py-2 phone:pr-3 phone:pl-2.5 phone:text-item-title", rangeWearsKnob ? "" : "hover:text-fg", "data-[popup-open]:text-fg"), sx.relative, sx.inlineFlex, sx.cursorPointer, sx.itemsCenter, sx.roundedControl, sx.py1, sx.pr25, sx.pl15, typography.controlLabel, sx.fontMedium, sx.whitespaceNowrap, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase, sx.focusRing, rangeWearsKnob && sx.textFg, !(rangeWearsKnob) && sx.textDim)}
+					aria-label={`${label}, ${rangeLabel}`} {...mergeStylexProps(cn(mergeStylexClassName("", sx.selectNone), mergeStylexClassName("", sx.phonePy2, sx.phonePr3, sx.phonePl25, sx.phoneTextItemTitle), rangeWearsKnob ? "" : mergeStylexClassName("", sx.hoverTextFg), "data-[popup-open]:text-fg"), sx.relative, sx.inlineFlex, sx.cursorPointer, sx.itemsCenter, sx.roundedControl, sx.py1, sx.pr25, sx.pl15, typography.controlLabel, sx.fontMedium, sx.whitespaceNowrap, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase, sx.focusRing, rangeWearsKnob && sx.textFg, !(rangeWearsKnob) && sx.textDim)}
 				>
 					{rangeWearsKnob && <SegmentedKnob knobId={knobId} />}
 					{/* Above the knob, which fills the option. */}
@@ -749,7 +832,7 @@ function Day({
 				aria-current={today ? "date" : undefined}
 				onClick={() => onPick(day)}
 				onPointerEnter={onPreview}
-				onFocus={onFocus} {...mergeStylexProps(cn("tabular-nums phone:h-11 phone:text-item-title", "transition-[color,background-color]", today && !selected && "ring-1", selected ? "hover:bg-accent-hover" : "hover:bg-hover", "disabled:cursor-default disabled:text-faint disabled:opacity-45 disabled:hover:bg-transparent"), sx.relative, sx.grid, sx.h8, sx.wFull, sx.cursorPointer, sx.placeItemsCenter, sx.roundedMd, typography.controlLabel, sx.durationVarDurMicro, sx.easeVarEase, sx.focusRing, sx.textFg, today && !selected && sx.fontSemibold, today && !selected && sx.ringLineStrong, today && !selected && sx.ringInset, selected && sx.bgAccent, selected && sx.fontSemibold, selected && sx.textOnAccent)}
+				onFocus={onFocus} {...mergeStylexProps(cn(mergeStylexClassName("", sx.tabularNums, sx.phoneH11, sx.phoneTextItemTitle), "transition-[color,background-color]", today && !selected && mergeStylexClassName("", sx.ring1), selected ? mergeStylexClassName("", sx.hoverBgAccentHover) : mergeStylexClassName("", sx.hoverBgHover), mergeStylexClassName("", sx.disabledCursorDefault, sx.disabledTextFaint, sx.disabledOpacity45, sx.disabledHoverBgTransparent)), sx.relative, sx.grid, sx.h8, sx.wFull, sx.cursorPointer, sx.placeItemsCenter, sx.roundedMd, typography.controlLabel, sx.durationVarDurMicro, sx.easeVarEase, sx.focusRing, sx.textFg, today && !selected && sx.fontSemibold, today && !selected && sx.ringLineStrong, today && !selected && sx.ringInset, selected && sx.bgAccent, selected && sx.fontSemibold, selected && sx.textOnAccent)}
 			>
 				{dayOfMonth(day)}
 			</button>

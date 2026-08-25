@@ -18,7 +18,7 @@ import { AGENT_NAME, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 import { Segmented, SegmentedOption } from "../ui/segmented";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { Menu } from "../ui/menu";
 import { Modal } from "../ui/modal";
 import { CheckStatusIcon } from "./CheckStatusIcon";
@@ -156,6 +156,54 @@ const sx = stylex.create({
 	fontNormal: {
 			fontWeight: "var(--font-weight-normal)"
 	},
+
+	size5: {
+		"width": "20px",
+		"height": "20px"
+	},
+	textGreen: {
+		"color": "var(--green)"
+	},
+	phoneFlexCol: {
+		"@media (max-width: 720px)": {
+			"flexDirection": "column"
+		}
+	},
+	phoneItemsStart: {
+		"@media (max-width: 720px)": {
+			"alignItems": "flex-start"
+		}
+	},
+	phoneGap3: {
+		"@media (max-width: 720px)": {
+			"gap": "12px"
+		}
+	},
+	lineClamp2: {
+		"WebkitlineClamp": "2",
+		"WebkitboxOrient": "vertical",
+		"display": "-webkit-box",
+		"overflow": "hidden"
+	},
+	mlAuto: {
+		"marginLeft": "auto"
+	},
+	flexRow: {
+		"flexDirection": "row"
+	},
+	gap25: {
+		"gap": "10px"
+	},
+	fontMedium: {
+		"--tw-font-weight": "var(--font-weight-medium)",
+		"fontWeight": "var(--font-weight-medium)"
+	},
+	cursorPointer: {
+		"cursor": "pointer"
+	},
+	opacity50: {
+		"opacity": ".5"
+	},
 });
 
 /* Security is a tool surface hosted inside Settings, so it reads as one of its
@@ -199,8 +247,8 @@ function RunGlyph({ ok, title }: { ok: boolean; title?: string }) {
   return (
     <span
       className={cn(
-        "flex size-5 shrink-0 items-center justify-center [&_svg]:size-3.5",
-        ok ? "text-green" : "text-red",
+        mergeStylexClassName("[&_svg]:size-3.5", sx.flex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter),
+        ok ? mergeStylexClassName("", sx.textGreen) : mergeStylexClassName("", sx.textRed),
       )}
       title={title}
     >
@@ -278,7 +326,7 @@ setError(e.message);
         <SettingsHeader
           title="Security"
           description="deepsec scans across your repos. Every confirmed finding lands as its own PR."
-          className="phone:flex-col phone:items-start phone:gap-3"
+          className={mergeStylexClassName("", sx.phoneFlexCol, sx.phoneItemsStart, sx.phoneGap3)}
           actions={
             tab === "profiles" ? (
               <Button
@@ -333,7 +381,7 @@ setError(e.message);
                 <SettingRow key={p.id} {...stylex.props(sx.itemsStart)}>
                   <SettingRowText>
                     <SettingRowTitle>{p.name}</SettingRowTitle>
-                    <SettingRowDescription className="line-clamp-2">
+                    <SettingRowDescription className={mergeStylexClassName("", sx.lineClamp2)}>
                       {p.prompt}
                     </SettingRowDescription>
                     <div {...stylex.props(sx.mt1, sx.textFaint, typography.meta)}>by {p.createdBy}</div>
@@ -425,7 +473,7 @@ setError(e.message);
                       </div>
 
                       {s.instructions && (
-                        <SettingRowDescription className="line-clamp-2">
+                        <SettingRowDescription className={mergeStylexClassName("", sx.lineClamp2)}>
                           {s.instructions}
                         </SettingRowDescription>
                       )}
@@ -453,7 +501,7 @@ setError(e.message);
                             )}
                             {ref.sessionId && (
                               <a
-                                className={cn(LINK, "ml-auto shrink-0")}
+                                className={cn(LINK, mergeStylexClassName("", sx.mlAuto, sx.shrink0))}
                                 href={`${BASE_PATH}/session/${ref.sessionId}`}
                                 onClick={(e) => {
                                   e.preventDefault();
@@ -685,8 +733,8 @@ setError(e.message);
 
           <label
             className={cn(
-              "flex flex-row items-start gap-2.5 text-label font-medium text-dim",
-              canInteractive ? "cursor-pointer" : "opacity-50",
+              mergeStylexClassName("", sx.flex, sx.flexRow, sx.itemsStart, sx.gap25, typography.label, sx.fontMedium, sx.textDim),
+              canInteractive ? mergeStylexClassName("", sx.cursorPointer) : mergeStylexClassName("", sx.opacity50),
             )}
           >
             <Checkbox

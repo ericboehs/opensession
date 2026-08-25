@@ -49,7 +49,7 @@ const sx = stylex.create({
 			borderColor: "var(--border-strong)"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	px3: {
 			paddingInline: "12px"

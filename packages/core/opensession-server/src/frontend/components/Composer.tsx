@@ -443,7 +443,7 @@ const sx = stylex.create({
 		"zIndex": "1"
 	},
 	textTransparent: {
-		"color": "#0000"
+		"color": "transparent"
 	},
 	caretVarText: {
 		"caretColor": "var(--text)"
@@ -484,6 +484,10 @@ const sx = stylex.create({
 		":active": {
 			"backgroundColor": "var(--bg-panel)"
 		}
+	},
+
+	borderAccent: {
+		"borderColor": "var(--accent)"
 	},
 });
 
@@ -2585,7 +2589,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
                 key={key}
                 type="button"
                 className={[mergeStylexClassName("", sx.h8, sx.flex1, sx.selectNone, sx.roundedMd, sx.border, sx.borderLine, sx.bgSurface, typography.label, sx.fontSemibold, sx.textDim, sx.activeBgPanel), key === "Escape" && vim.mode !== "insert"
-                    ? "border-accent text-fg"
+                    ? mergeStylexClassName("", sx.borderAccent, sx.textFg)
                     : ""].filter(Boolean).join(" ")}
                 {...tapProps(() => vim.injectKey(key))}
                 aria-label={key}

@@ -140,7 +140,7 @@ const sx = stylex.create({
 		"borderColor": "var(--border-strong)"
 	},
 	bgTransparent: {
-		"backgroundColor": "#0000"
+		"backgroundColor": "transparent"
 	},
 	px3: {
 		"paddingInline": "12px"
@@ -191,12 +191,12 @@ const sx = stylex.create({
 		}
 	},
 	borderTransparent: {
-		"borderColor": "#0000"
+		"borderColor": "transparent"
 	},
 	hoverBorderTransparent: {
 		"@media (hover: hover)": {
 			":hover": {
-				"borderColor": "#0000"
+				"borderColor": "transparent"
 			}
 		}
 	},

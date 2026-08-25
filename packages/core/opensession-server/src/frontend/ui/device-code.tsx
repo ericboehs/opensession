@@ -1,5 +1,5 @@
 import { IconCopy } from "../components/icons";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import { CopyCheck, useCopy } from "./copy";
 import { Tooltip } from "./tooltip";
 import * as stylex from "@stylexjs/stylex";
@@ -73,6 +73,26 @@ const sx = stylex.create({
 					outlineOffset: "2px"
 			}
 	},
+
+	activeScale098: {
+		":active": {
+			"scale": ".98"
+		}
+	},
+	hoverBorderLineStrong: {
+		"@media (hover: hover)": {
+			":hover": {
+				"borderColor": "var(--border-strong)"
+			}
+		}
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
 });
 
 /**
@@ -103,7 +123,7 @@ export function DeviceCode({
 			<button
 				type="button"
 				aria-label={`${label} ${code}`}
-				onClick={() => copy(code, { toast: "Code copied" })} {...mergeStylexProps(cn("group", "transition-[background-color,border-color,scale] active:scale-[0.98]", "hover:border-line-strong hover:bg-hover", className), sx.inlineFlex, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.border, sx.borderLine, sx.bgControl, sx.px25, sx.py1, sx.fontMono, typography.itemTitle, sx.fontBold, sx.textFg, sx.smoothShadowSm, sx.focusRing)}
+				onClick={() => copy(code, { toast: "Code copied" })} {...mergeStylexProps(cn("group", mergeStylexClassName("transition-[background-color,border-color,scale]", sx.activeScale098), mergeStylexClassName("", sx.hoverBorderLineStrong, sx.hoverBgHover), className), sx.inlineFlex, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.border, sx.borderLine, sx.bgControl, sx.px25, sx.py1, sx.fontMono, typography.itemTitle, sx.fontBold, sx.textFg, sx.smoothShadowSm, sx.focusRing)}
 			>
 				{/* Cap-band centered against the copy glyph: `text-box` trims the
 				    line box to cap height and baseline, so the code's own ink sits

@@ -33,7 +33,7 @@ import {
 } from "../lib/session-owner";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -118,7 +118,7 @@ const sx = stylex.create({
 			borderStyle: "none"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	fontSans: {
 			fontFamily: "var(--sans)"
@@ -232,6 +232,44 @@ const sx = stylex.create({
 	},
 	borderLine: {
 			borderColor: "var(--border)"
+	},
+
+	phoneMinH11: {
+		"@media (max-width: 720px)": {
+			"minHeight": "44px"
+		}
+	},
+	size13px: {
+		"width": "13px",
+		"height": "13px"
+	},
+	animateSpin07sLinearInfinite: {
+		"animation": ".7s linear infinite spin"
+	},
+	border2: {
+		"borderStyle": "var(--tw-border-style)",
+		"borderWidth": "2px"
+	},
+	borderLineStrong: {
+		"borderColor": "var(--border-strong)"
+	},
+	borderTAccent: {
+		"borderTopColor": "var(--accent)"
+	},
+	motionReduceAnimationDuration07s: {
+		"@media (prefers-reduced-motion: reduce)": {
+			"animationDuration": ".7s"
+		}
+	},
+	motionReduceAnimationIterationCountInfinite: {
+		"@media (prefers-reduced-motion: reduce)": {
+			"animationIterationCount": "infinite"
+		}
+	},
+	phoneHidden: {
+		"@media (max-width: 720px)": {
+			"display": "none"
+		}
 	},
 });
 
@@ -422,7 +460,7 @@ function FilterMenu({
 						type="button"
 						variant="ghost"
 						size="sm"
-						className="phone:min-h-11"
+						className={mergeStylexClassName("", sx.phoneMinH11)}
 						icon={icon}
 						caret
 						data-session-filter
@@ -735,10 +773,10 @@ if (!ctrl.signal.aborted) setSearching(false);
 					{(searching || loadingPrs) && (
 						<span
 							className={
-								"size-[13px] shrink-0 animate-[spin_0.7s_linear_infinite] rounded-full border-2 border-line-strong border-t-accent " +
+								mergeStylexClassName("", sx.size13px, sx.shrink0, sx.animateSpin07sLinearInfinite, sx.roundedFull, sx.border2, sx.borderLineStrong, sx.borderTAccent) +
 								// Keeps turning under reduced motion — it is the only "still
 								// searching" signal, and the blanket rule would freeze it.
-								"motion-reduce:[animation-duration:0.7s]! motion-reduce:[animation-iteration-count:infinite]!"
+								mergeStylexClassName("", sx.motionReduceAnimationDuration07s, sx.motionReduceAnimationIterationCountInfinite)
 							}
 							aria-label="Searching"
 						/>
@@ -919,11 +957,11 @@ if (!ctrl.signal.aborted) setSearching(false);
 				</div>
 
 				<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap4, sx.borderT, sx.borderLine, sx.px4, sx.py25, sx.textFaint, typography.meta)}>
-					<span className="phone:hidden">
+					<span className={mergeStylexClassName("", sx.phoneHidden)}>
 						<kbd className={KBD}>↑</kbd>
 						<kbd className={KBD}>↓</kbd> navigate
 					</span>
-					<span className="phone:hidden">
+					<span className={mergeStylexClassName("", sx.phoneHidden)}>
 						<kbd className={KBD}>↵</kbd> open
 					</span>
 					<span {...stylex.props(sx.mlAuto)}>

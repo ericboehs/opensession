@@ -10,7 +10,7 @@ import {
 } from "../icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps } from "../../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -31,7 +31,7 @@ const sx = stylex.create({
 			borderWidth: "1px"
 	},
 	borderTransparent: {
-			borderColor: "#0000"
+			borderColor: "transparent"
 	},
 	px15: {
 			paddingInline: "6px"
@@ -135,7 +135,7 @@ export function ReviewerRow({ reviewer, provider }: { reviewer: PrReviewer; prov
         </span>
       )}
       <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.textSm, sx.textFg)}>{reviewer.login}</span>
-      <span className={`shrink-0 ${toneClass}`} title={meta.label}>
+      <span className={[mergeStylexClassName("", sx.shrink0), toneClass].filter(Boolean).join(" ")} title={meta.label}>
         {meta.icon}
       </span>
     </div>

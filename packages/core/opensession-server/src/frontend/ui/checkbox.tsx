@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Checkbox as BaseCheckbox } from "@base-ui/react/checkbox";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -59,6 +59,41 @@ const sx = stylex.create({
 	easeVarEase: {
 			transitionTimingFunction: "var(--ease)"
 	},
+
+	hoverBorderFaint: {
+		"@media (hover: hover)": {
+			":hover": {
+				"borderColor": "var(--text-faint)"
+			}
+		}
+	},
+	focusVisibleRing2: {
+		":focusVisible": {
+			"--tw-ring-shadow": "var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor)",
+			"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+		}
+	},
+	focusVisibleRingAccent50: {
+		":focusVisible": {
+			"--tw-ring-color": "var(--accent)"
+		},
+		"@supports (color: color-mix(in lab, red, red))": {
+			":focusVisible": {
+				"--tw-ring-color": "color-mix(in oklab, var(--accent) 50%, transparent)"
+			}
+		}
+	},
+	focusVisibleRingOffset2: {
+		":focusVisible": {
+			"--tw-ring-offset-width": "2px",
+			"--tw-ring-offset-shadow": "var(--tw-ring-inset,) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color)"
+		}
+	},
+	focusVisibleRingOffsetBg: {
+		":focusVisible": {
+			"--tw-ring-offset-color": "var(--bg)"
+		}
+	},
 });
 
 type CheckboxProps = Omit<React.ComponentProps<typeof BaseCheckbox.Root>, "size"> & {
@@ -81,7 +116,7 @@ type CheckboxProps = Omit<React.ComponentProps<typeof BaseCheckbox.Root>, "size"
  */
 export function Checkbox({ className, ...props }: CheckboxProps) {
 	return (
-		<BaseCheckbox.Root {...mergeStylexProps(cn("transition-[background-color,border-color]", "hover:border-faint", "data-[checked]:border-accent-control data-[checked]:bg-accent-control data-[checked]:hover:border-accent-control", "focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-bg", "data-[disabled]:cursor-default data-[disabled]:opacity-40", className), sx.flex, sx.size4, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.border, sx.borderLineStrong, sx.bgSurface, sx.p0, sx.outlineNone, sx.durationVarDurMicro, sx.easeVarEase)}
+		<BaseCheckbox.Root {...mergeStylexProps(cn("transition-[background-color,border-color]", mergeStylexClassName("", sx.hoverBorderFaint), "data-[checked]:border-accent-control data-[checked]:bg-accent-control data-[checked]:hover:border-accent-control", mergeStylexClassName("", sx.focusVisibleRing2, sx.focusVisibleRingAccent50, sx.focusVisibleRingOffset2, sx.focusVisibleRingOffsetBg), "data-[disabled]:cursor-default data-[disabled]:opacity-40", className), sx.flex, sx.size4, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.border, sx.borderLineStrong, sx.bgSurface, sx.p0, sx.outlineNone, sx.durationVarDurMicro, sx.easeVarEase)}
 			{...props}
 		>
 			<BaseCheckbox.Indicator {...mergeStylexProps("data-[unchecked]:hidden", sx.flex, sx.textOnAccentControl)}>

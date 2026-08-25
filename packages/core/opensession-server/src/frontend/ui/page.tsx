@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import { PageDescription, PageHeader, PageTitle } from "./page-header";
 import * as stylex from "@stylexjs/stylex";
 
@@ -47,6 +47,27 @@ const sx = stylex.create({
 	pt7: {
 			paddingTop: "28px"
 	},
+
+	max560pxPx35: {
+		"@media not all and (min-width: 560px)": {
+			"paddingInline": "14px"
+		}
+	},
+	max560pxPb12: {
+		"@media not all and (min-width: 560px)": {
+			"paddingBottom": "48px"
+		}
+	},
+	max560pxPt18px: {
+		"@media not all and (min-width: 560px)": {
+			"paddingTop": "18px"
+		}
+	},
+	phoneWFull: {
+		"@media (max-width: 720px)": {
+			"width": "100%"
+		}
+	},
 });
 
 export type PageContentWidth = "narrow" | "default" | "wide" | "full";
@@ -84,7 +105,7 @@ export function PageLayout({
 			data-page-scroll {...mergeStylexProps(cn(className), sx.minH0, sx.wFull, sx.flex1, sx.overflowYAuto)}
 			{...props}
 		>
-			<div {...mergeStylexProps(cn("max-[560px]:px-3.5 max-[560px]:pb-12 max-[560px]:pt-[18px]", contentWidths[contentWidth]), sx.mxAuto, sx.wFull, sx.px6, sx.pb60px, sx.pt7)}
+			<div {...mergeStylexProps(cn(mergeStylexClassName("", sx.max560pxPx35, sx.max560pxPb12, sx.max560pxPt18px), contentWidths[contentWidth]), sx.mxAuto, sx.wFull, sx.px6, sx.pb60px, sx.pt7)}
 			>
 				<PageHeader>
 					<div>
@@ -94,7 +115,7 @@ export function PageLayout({
 						)}
 					</div>
 					{actions !== undefined && (
-						<div className="phone:w-full">{actions}</div>
+						<div className={mergeStylexClassName("", sx.phoneWFull)}>{actions}</div>
 					)}
 				</PageHeader>
 				{filters !== undefined && (

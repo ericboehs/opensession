@@ -1,6 +1,6 @@
 import * as React from "react";
 import { IconX } from "../components/icons";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import { PageLoader } from "./page-loader";
 import { Spinner } from "./spinner";
 import * as stylex from "@stylexjs/stylex";
@@ -186,6 +186,13 @@ const sx = stylex.create({
 	},
 	opacity90: {
 			opacity: ".9"
+	},
+
+	gap15: {
+		"gap": "6px"
+	},
+	gap05: {
+		"gap": "2px"
 	},
 });
 
@@ -412,10 +419,10 @@ export function ListSkeleton({
 	return (
 		<Skeleton
 			label={label} {...mergeStylexProps(cn(cards
-					? "gap-1.5"
+					? mergeStylexClassName("", sx.gap15)
 					: divided
 						? "[&>*+*]:border-t [&>*+*]:border-line"
-						: "gap-0.5", className), sx.flex, sx.flexCol)}
+						: mergeStylexClassName("", sx.gap05), className), sx.flex, sx.flexCol)}
 			{...props}
 		>
 			{Array.from({ length: rows }, (_, i) => (

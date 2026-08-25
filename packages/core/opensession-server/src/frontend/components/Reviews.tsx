@@ -114,7 +114,7 @@ const sx = stylex.create({
 			borderWidth: "0"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	px2: {
 			paddingInline: "8px"
@@ -386,6 +386,26 @@ const sx = stylex.create({
 		"@media (max-width: 720px)": {
 			"paddingBlock": "14px"
 		}
+	},
+
+	borderBAccent: {
+		"borderBottomColor": "var(--accent)"
+	},
+	borderBTransparent: {
+		"borderBottomColor": "transparent"
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	bgAccentSoft: {
+		"backgroundColor": "var(--accent-soft)"
+	},
+	textAccent: {
+		"color": "var(--accent-ink)"
 	},
 });
 
@@ -748,12 +768,12 @@ export function Reviews({
               return (
                 <button
                   key={t.key}
-                  className={[mergeStylexClassName("", sx.MbPx, sx.flex, sx.itemsCenter, sx.gap7px, sx.borderB2, sx.px13px, sx.pt2, sx.pb11px, typography.label, sx.fontMedium, sx.transitionColors, sx.phoneShrink0, sx.phonePx35, sx.phonePt11px, sx.phonePb13px, sx.phoneTextItemTitle, sx.phoneWhitespaceNowrap), on ? "border-b-accent text-fg" : "border-b-transparent text-dim hover:text-fg"].filter(Boolean).join(" ")}
+                  className={[mergeStylexClassName("", sx.MbPx, sx.flex, sx.itemsCenter, sx.gap7px, sx.borderB2, sx.px13px, sx.pt2, sx.pb11px, typography.label, sx.fontMedium, sx.transitionColors, sx.phoneShrink0, sx.phonePx35, sx.phonePt11px, sx.phonePb13px, sx.phoneTextItemTitle, sx.phoneWhitespaceNowrap), on ? mergeStylexClassName("", sx.borderBAccent, sx.textFg) : mergeStylexClassName("", sx.borderBTransparent, sx.textDim, sx.hoverTextFg)].filter(Boolean).join(" ")}
                   onClick={() => setFilter(t.key)}
                 >
                   {t.label}
                   <span
-                    className={[mergeStylexClassName("", sx.minW5, sx.roundedFull, sx.px7px, sx.pyPx, sx.textCenter, typography.meta, sx.fontSemibold), on ? "bg-accent-soft text-accent" : "bg-active text-dim"].filter(Boolean).join(" ")}
+                    className={[mergeStylexClassName("", sx.minW5, sx.roundedFull, sx.px7px, sx.pyPx, sx.textCenter, typography.meta, sx.fontSemibold), on ? mergeStylexClassName("", sx.bgAccentSoft, sx.textAccent) : mergeStylexClassName("", sx.bgActive, sx.textDim)].filter(Boolean).join(" ")}
                   >
                     {t.count}
                   </span>

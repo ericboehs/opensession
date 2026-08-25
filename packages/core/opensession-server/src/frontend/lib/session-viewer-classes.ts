@@ -503,7 +503,7 @@ const sx = stylex.create({
 	beforeBgTransparent: {
 		"::before": {
 			"content": "var(--tw-content)",
-			"backgroundColor": "#0000"
+			"backgroundColor": "transparent"
 		}
 	},
 	beforeTransitionColors: {
@@ -645,7 +645,7 @@ const sx = stylex.create({
 		"backdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
 	},
 	bgTransparent: {
-		"backgroundColor": "#0000"
+		"backgroundColor": "transparent"
 	},
 	right14: {
 		"right": "56px"

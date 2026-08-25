@@ -28,7 +28,7 @@ import {
 	SettingsHint,
 	rowMenuTriggerClasses,
 } from "../../ui/settings";
-import { cn, mergeStylexProps } from "../../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 import { toast } from "../../ui/toast";
 import { BrandMark, IconTile } from "../BrandTile";
 import {
@@ -268,6 +268,27 @@ const sx = stylex.create({
 		animationDuration: "1s",
 		animationTimingFunction: "linear",
 		animationIterationCount: "infinite",
+	},
+
+	phoneInline: {
+		"@media (max-width: 720px)": {
+			"display": "inline"
+		}
+	},
+	desktopHidden: {
+		"@media (min-width: 721px)": {
+			"display": "none"
+		}
+	},
+	phoneMlAuto: {
+		"@media (max-width: 720px)": {
+			"marginLeft": "auto"
+		}
+	},
+	phoneMinH11: {
+		"@media (max-width: 720px)": {
+			"minHeight": "44px"
+		}
 	},
 });
 
@@ -525,7 +546,7 @@ function Meter({
 					<span {...mergeStylexProps("desktop:col-span-2 desktop:row-start-3", sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.textFaint)}
 						title={noteTitle}
 					>
-						<span className="phone:inline desktop:hidden"> · </span>
+						<span className={mergeStylexClassName("", sx.phoneInline, sx.desktopHidden)}> · </span>
 						{note}
 					</span>
 				) : null}
@@ -795,7 +816,7 @@ function ClaudeAccountRows({ state }: { state: ClaudeAccountsState }) {
 									onChange={(owner) => state.setOwner(account, owner)}
 									label={`Owner of ${providerAccountLabel(account)}`}
 									quiet
-									className="phone:ml-auto"
+									className={mergeStylexClassName("", sx.phoneMlAuto)}
 									title={
 										account.owner
 											? `${account.owner}'s personal subscription. Their runs use it first, everyone else never does.`
@@ -1083,7 +1104,7 @@ function CodexAccountRows({ state }: { state: CodexAccountsState }) {
 								onChange={(owner) => state.setOwner(account, owner)}
 								label={`Owner of ${providerAccountLabel(account)}`}
 								quiet
-								className="phone:ml-auto"
+								className={mergeStylexClassName("", sx.phoneMlAuto)}
 								title={
 									account.owner
 										? `${account.owner}'s personal subscription. Their runs use it first, everyone else never does.`
@@ -1213,7 +1234,7 @@ function ProviderSummaryRow({
 						<Button
 							size="sm"
 							variant="ghost"
-							className="phone:min-h-11"
+							className={mergeStylexClassName("", sx.phoneMinH11)}
 							aria-expanded={expanded}
 							onClick={onToggle}
 						>
@@ -1223,7 +1244,7 @@ function ProviderSummaryRow({
 					<Button
 						size="sm"
 						variant="ghost"
-						className="phone:min-h-11"
+						className={mergeStylexClassName("", sx.phoneMinH11)}
 						icon={<IconPlus size={16} />}
 						onClick={onAdd}
 					>
@@ -1283,7 +1304,7 @@ export function ProviderAccountsSection({
 						<Button
 							size="sm"
 							variant="ghost"
-							className="phone:min-h-11"
+							className={mergeStylexClassName("", sx.phoneMinH11)}
 							icon={<IconHistory size={16} {...stylex.props(refreshing && sx.spinning)} />}
 							onClick={refreshUsage}
 							disabled={refreshing}
@@ -1296,7 +1317,7 @@ export function ProviderAccountsSection({
 							render={
 								<Button
 									size="sm"
-									className="phone:min-h-11"
+									className={mergeStylexClassName("", sx.phoneMinH11)}
 									icon={<IconPlus size={16} />}
 									caret
 								>

@@ -76,7 +76,7 @@ const sx = stylex.create({
 			borderStyle: "none"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	px1: {
 			paddingInline: "4px"
@@ -433,6 +433,23 @@ const sx = stylex.create({
 	},
 	p25: {
 		"padding": "10px"
+	},
+
+	rotate90: {
+		"rotate": "90deg"
+	},
+	cursorDefault: {
+		"cursor": "default"
+	},
+	hoverTextRed: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--red)"
+			}
+		}
+	},
+	invisible: {
+		"visibility": "hidden"
 	},
 });
 
@@ -1188,7 +1205,7 @@ const pendingByFile = m;
           >
             <IconChevronRight
               size={16}
-              className={[mergeStylexClassName("", sx.shrink0, sx.textFaint, sx.transitionTransform), isOpen ? "rotate-90" : ""].filter(Boolean).join(" ")}
+              className={[mergeStylexClassName("", sx.shrink0, sx.textFaint, sx.transitionTransform), isOpen ? mergeStylexClassName("", sx.rotate90) : ""].filter(Boolean).join(" ")}
             />
             <span {...stylex.props(sx.flex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textDim)}>
               {fileExt(base) ? (
@@ -1227,7 +1244,7 @@ const pendingByFile = m;
             <Button
               variant="ghost"
               size="sm"
-              className={[mergeStylexClassName("", sx.phoneHidden), copied === file.name ? "text-green" : "text-faint"].filter(Boolean).join(" ")}
+              className={[mergeStylexClassName("", sx.phoneHidden), copied === file.name ? mergeStylexClassName("", sx.textGreen) : mergeStylexClassName("", sx.textFaint)].filter(Boolean).join(" ")}
               aria-label={`Copy path ${file.name}`}
               icon={
                 copied === file.name ? (
@@ -1287,10 +1304,10 @@ const pendingByFile = m;
                 type="button"
                 data-discard
                 className={[ROW_ACTION, mergeStylexClassName("", sx.right2, sx.p05), discarding === file.name
-                    ? `${REVEALED} cursor-default text-faint`
+                    ? [REVEALED, mergeStylexClassName("", sx.cursorDefault, sx.textFaint)].filter(Boolean).join(" ")
                     : armed === file.name
-                      ? `${REVEALED} cursor-pointer text-red`
-                      : `${REVEAL} cursor-pointer text-faint hover:bg-hover hover:text-red`].filter(Boolean).join(" ")}
+                      ? [REVEALED, mergeStylexClassName("", sx.cursorPointer, sx.textRed)].filter(Boolean).join(" ")
+                      : [REVEAL, mergeStylexClassName("", sx.cursorPointer, sx.textFaint, sx.hoverBgHover, sx.hoverTextRed)].filter(Boolean).join(" ")].filter(Boolean).join(" ")}
                 disabled={discarding === file.name}
                 aria-label="Discard this file's changes (reset to base)"
                 onClick={(e) => {
@@ -1305,9 +1322,9 @@ const pendingByFile = m;
           {/* Change counts stay pinned right, before the review state and menu. */}
           {showFileStats && (
             <span
-              className={[mergeStylexClassName("", sx.mlAuto, sx.flex, sx.shrink0, sx.gap15, typography.meta), isEditing ? "hidden" : "", onDiscard
+              className={[mergeStylexClassName("", sx.mlAuto, sx.flex, sx.shrink0, sx.gap15, typography.meta), isEditing ? mergeStylexClassName("", sx.hidden) : "", onDiscard
                   ? "group-hover:invisible [[data-discard]:focus-visible~&]:invisible"
-                  : "", armed === file.name || discarding === file.name ? "invisible" : ""].filter(Boolean).join(" ")}
+                  : "", armed === file.name || discarding === file.name ? mergeStylexClassName("", sx.invisible) : ""].filter(Boolean).join(" ")}
             >
               {s.add > 0 && <span className={DIFF_ADD}>+{s.add}</span>}
               {s.del > 0 && <span className={DIFF_DEL}>−{s.del}</span>}
@@ -1315,7 +1332,7 @@ const pendingByFile = m;
           )}
           {viewedEnabled && (
             <label
-              className={[mergeStylexClassName("", sx.inlineFlex, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.gap5px, sx.pl1, sx.fontSans, typography.label, sx.selectNone), isViewed ? "text-dim" : "text-faint"].filter(Boolean).join(" ")}
+              className={[mergeStylexClassName("", sx.inlineFlex, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.gap5px, sx.pl1, sx.fontSans, typography.label, sx.selectNone), isViewed ? mergeStylexClassName("", sx.textDim) : mergeStylexClassName("", sx.textFaint)].filter(Boolean).join(" ")}
               onClick={(e) => e.stopPropagation()}
             >
               <Checkbox
@@ -1518,7 +1535,7 @@ const pendingByFile = m;
                 >
                   <IconChevronRight
                     size={16}
-                    className={[mergeStylexClassName("", sx.shrink0, sx.textFaint, sx.transitionTransform), collapsed ? "" : "rotate-90"].filter(Boolean).join(" ")}
+                    className={[mergeStylexClassName("", sx.shrink0, sx.textFaint, sx.transitionTransform), collapsed ? "" : mergeStylexClassName("", sx.rotate90)].filter(Boolean).join(" ")}
                   />
                   <span {...stylex.props(sx.fontSemibold, typography.label)}>
                     {group.title}
@@ -1590,7 +1607,7 @@ function ResolvedReviewThread({
         </span>
         <IconChevronRight
           size={16}
-          className={[mergeStylexClassName("", sx.shrink0, sx.textFaint, sx.transitionTransform), open ? "rotate-90" : ""].filter(Boolean).join(" ")}
+          className={[mergeStylexClassName("", sx.shrink0, sx.textFaint, sx.transitionTransform), open ? mergeStylexClassName("", sx.rotate90) : ""].filter(Boolean).join(" ")}
         />
       </button>
       {open && (

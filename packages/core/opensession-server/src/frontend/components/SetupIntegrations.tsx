@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { Disclosure } from "../ui/disclosure";
 import { Modal } from "../ui/modal";
 import { SettingCard, SettingsHint, SettingsSection } from "../ui/settings";
@@ -249,6 +249,32 @@ const sx = stylex.create({
 	selfCenter: {
 		alignSelf: "center",
 	},
+
+	maxSmMinH10: {
+		"@media not all and (min-width: 40rem)": {
+			"minHeight": "40px"
+		}
+	},
+	phoneHidden: {
+		"@media (max-width: 720px)": {
+			"display": "none"
+		}
+	},
+	phoneMinH11: {
+		"@media (max-width: 720px)": {
+			"minHeight": "44px"
+		}
+	},
+	phoneWFull: {
+		"@media (max-width: 720px)": {
+			"width": "100%"
+		}
+	},
+	phoneJustifyCenter: {
+		"@media (max-width: 720px)": {
+			"justifyContent": "center"
+		}
+	},
 });
 
 // The configuration forms behind the integration registry: paste the
@@ -332,7 +358,7 @@ setToggling(false);
 						)}
 						<Button
 							size="sm"
-							className="max-sm:min-h-10"
+							className={mergeStylexClassName("", sx.maxSmMinH10)}
 							variant={!hasCredentials && integration.env.length > 0 ? "primary" : "default"}
 							onClick={() => setSetupOpen(true)}
 						>
@@ -739,7 +765,7 @@ setSaving(false);
 											aria-label={`${github.userPrAuth ? "Disable" : "Enable"} GitHub sign-in`}
 										/>
 									</div>
-									<div className="phone:hidden">
+									<div className={mergeStylexClassName("", sx.phoneHidden)}>
 										<Switch
 											checked={github.userPrAuth}
 											onCheckedChange={(next) => void handleToggle(next)}
@@ -751,7 +777,7 @@ setSaving(false);
 							)}
 							<Button
 								size="sm"
-								className="phone:min-h-11 phone:w-full phone:justify-center"
+								className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneWFull, sx.phoneJustifyCenter)}
 								variant={github.clientIdConfigured ? "default" : "primary"}
 								onClick={() => setSetupOpen(true)}
 							>
@@ -780,7 +806,7 @@ setSaving(false);
 							<div {...stylex.props(sx.mt4, sx.flex, sx.justifyEnd)}>
 								<Button
 									variant="primary"
-									className="phone:min-h-11 phone:w-full phone:justify-center"
+									className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneWFull, sx.phoneJustifyCenter)}
 									disabled={!dirty || saving}
 									onClick={() => void handleSave()}
 								>

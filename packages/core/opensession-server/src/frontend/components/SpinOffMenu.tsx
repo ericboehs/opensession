@@ -13,7 +13,7 @@ import { composerSessionRef } from "../lib/share-link";
 import type { NewSessionPrefill } from "../lib/new-session-link";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -52,6 +52,20 @@ const sx = stylex.create({
 	},
 	textAccent: {
 			color: "var(--accent-ink)"
+	},
+
+	h10: {
+		"height": "40px"
+	},
+	resizeY: {
+		"resize": "vertical"
+	},
+	py2: {
+		"paddingBlock": "8px"
+	},
+	leadingRelaxed: {
+		"--tw-leading": "var(--leading-relaxed)",
+		"lineHeight": "var(--leading-relaxed)"
 	},
 });
 
@@ -275,7 +289,7 @@ export function SpinOffMenu({
             <Field label="Branch">
               <input
                 ref={branchRef}
-                className={`${fieldCls} h-10`}
+                className={[fieldCls, mergeStylexClassName("", sx.h10)].filter(Boolean).join(" ")}
                 value={branch}
                 onChange={(e) => setBranch(e.target.value)}
                 disabled={starting}
@@ -286,7 +300,7 @@ export function SpinOffMenu({
           {flavor !== "analyze" && (
             <Field label={flavor === "build" ? "Task" : "Extra guidance (optional)"}>
               <textarea
-                className={`${fieldCls} resize-y py-2 leading-relaxed`}
+                className={[fieldCls, mergeStylexClassName("", sx.resizeY, sx.py2, sx.leadingRelaxed)].filter(Boolean).join(" ")}
                 value={task}
                 onChange={(e) => setTask(e.target.value)}
                 rows={3}

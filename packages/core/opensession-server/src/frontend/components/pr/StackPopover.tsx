@@ -8,7 +8,7 @@ import type { PrTone } from "../../lib/pr-refs";
 import { stackLayersTopFirst } from "../../lib/pr-stack";
 import { prPath } from "../../lib/share-link";
 import type { PrDetails, PrStackLayer } from "../../lib/types";
-import { cn, mergeStylexProps } from "../../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 import { Popover } from "../../ui/popover";
 import { IconArrowUpRight, IconStack } from "../icons";
 import { StackNode, StackRail } from "./StackRail";
@@ -67,6 +67,57 @@ const sx = stylex.create({
 	fontMono: {
 			fontFamily: "var(--mono)"
 	},
+
+	bgHover: {
+		"backgroundColor": "var(--hover)"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	fontSemibold: {
+		"--tw-font-weight": "var(--font-weight-semibold)",
+		"fontWeight": "var(--font-weight-semibold)"
+	},
+	textFg: {
+		"color": "var(--text)"
+	},
+	fontMedium: {
+		"--tw-font-weight": "var(--font-weight-medium)",
+		"fontWeight": "var(--font-weight-medium)"
+	},
+	selfCenter: {
+		"alignSelf": "center"
+	},
+	phoneSize11: {
+		"@media (max-width: 720px)": {
+			"width": "44px",
+			"height": "44px"
+		}
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	shrink0: {
+		"flexShrink": "0"
+	},
+	borderB: {
+		"borderBottomStyle": "var(--tw-border-style)",
+		"borderBottomWidth": "1px"
+	},
+	borderDivider: {
+		"borderColor": "var(--divider)"
+	},
+	px3: {
+		"paddingInline": "12px"
+	},
+	py25: {
+		"paddingBlock": "10px"
+	},
 });
 
 /**
@@ -107,7 +158,7 @@ function StackRow({
 	// "You are here" is painted as a wash, not a surface: bg-surface is an
 	// absolute colour and lands *lighter* than the popup's panel in light mode.
 	return (
-		<li className={cn(ROW, current ? "bg-hover" : "hover:bg-hover")}>
+		<li className={cn(ROW, current ? mergeStylexClassName("", sx.bgHover) : mergeStylexClassName("", sx.hoverBgHover))}>
 			<StackRail first={first}>
 				<StackNode state={layer.state} isDraft={layer.isDraft} />
 			</StackRail>
@@ -127,8 +178,8 @@ function StackRow({
 			>
 				<span
 					className={cn(
-						"block truncate text-label leading-snug",
-						current ? "font-semibold text-fg" : "font-medium text-fg",
+						mergeStylexClassName("", sx.block, sx.truncate, typography.label, sx.leadingSnug),
+						current ? mergeStylexClassName("", sx.fontSemibold, sx.textFg) : mergeStylexClassName("", sx.fontMedium, sx.textFg),
 					)}
 				>
 					{layer.title}
@@ -138,7 +189,7 @@ function StackRow({
 				</span>
 			</a>
 			<a
-				className={cn(PR_ROW_OUT, "self-center phone:size-11")}
+				className={cn(PR_ROW_OUT, mergeStylexClassName("", sx.selfCenter, sx.phoneSize11))}
 				href={layer.url}
 				target="_blank"
 				rel="noopener"
@@ -189,7 +240,7 @@ export function PrStackChip({
 				}
 			>
 				<IconStack size={20} />
-				<span className="tabular-nums">
+				<span className={mergeStylexClassName("", sx.tabularNums)}>
 					{stack.position}/{stack.size}
 				</span>
 			</Popover.Trigger>
@@ -202,7 +253,7 @@ export function PrStackChip({
 				    green chip and has to keep saying what the green means. */}
 				<div
 					className={cn(
-						"shrink-0 border-b border-divider px-3 py-2.5 text-item-title font-semibold",
+						mergeStylexClassName("", sx.shrink0, sx.borderB, sx.borderDivider, sx.px3, sx.py25, typography.itemTitle, sx.fontSemibold),
 						PR_STATE_TEXT[tone],
 					)}
 				>
@@ -221,7 +272,7 @@ export function PrStackChip({
 						/>
 					))}
 					{/* The trunk: not a layer, just where the bottom one lands. */}
-					<li className={cn(ROW, "py-2")}>
+					<li className={cn(ROW, mergeStylexClassName("", sx.py2))}>
 						<StackRail last>
 							<StackNode />
 						</StackRail>

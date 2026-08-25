@@ -3,7 +3,7 @@ import React, { useEffect, useId, useLayoutEffect, useRef, useState } from "reac
 import { createPortal } from "react-dom";
 import type { FileMention } from "../lib/api";
 import { UserAvatar } from "./UserAvatar";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { FLOATING_OVERLAY_LAYER } from "../ui/popup-classes";
 import { IconTile } from "./BrandTile";
 import { displayName as brandDisplayName } from "../brand-logos";
@@ -88,6 +88,63 @@ const sx = stylex.create({
 	},
 	DirectionRtl: {
 			direction: "rtl"
+	},
+
+	fixed: {
+		"position": "fixed"
+	},
+	overflowYAuto: {
+		"overflowY": "auto"
+	},
+	roundedXl: {
+		"borderRadius": "calc(18px * var(--rf))"
+	},
+	bgPopupGlass: {
+		"backgroundColor": "var(--popup-glass)"
+	},
+	BackdropFilterVarPopupBlur: {
+		"WebkitBackdropFilter": "var(--popup-blur)",
+		"backdropFilter": "var(--popup-blur)"
+	},
+	SmoothRingColorVarPopupRing: {
+		"--smooth-ring-color": "var(--popup-ring)"
+	},
+	p1: {
+		"padding": "4px"
+	},
+	px25: {
+		"paddingInline": "10px"
+	},
+	pb1: {
+		"paddingBottom": "4px"
+	},
+	pt1: {
+		"paddingTop": "4px"
+	},
+	pt2: {
+		"paddingTop": "8px"
+	},
+	cursorPointer: {
+		"cursor": "pointer"
+	},
+	gap25: {
+		"gap": "10px"
+	},
+	roundedControl: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	py2: {
+		"paddingBlock": "8px"
+	},
+	leading13: {
+		"--tw-leading": "1.3",
+		"lineHeight": "1.3"
+	},
+	whitespaceNowrap: {
+		"whiteSpace": "nowrap"
+	},
+	bgPressed: {
+		"backgroundColor": "var(--hover-strong)"
 	},
 });
 
@@ -508,7 +565,7 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
     <div
       ref={popupRef}
       className={cn(
-        "fixed overflow-y-auto rounded-xl bg-popup-glass [backdrop-filter:var(--popup-blur)] [--smooth-ring-color:var(--popup-ring)] p-1 smooth-shadow-ring-md",
+        mergeStylexClassName("smooth-shadow-ring-md", sx.fixed, sx.overflowYAuto, sx.roundedXl, sx.bgPopupGlass, sx.BackdropFilterVarPopupBlur, sx.SmoothRingColorVarPopupRing, sx.p1),
         FLOATING_OVERLAY_LAYER,
       )}
       id={popupId}
@@ -518,8 +575,8 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
       {groups.map((group, groupIndex) => (
         <div key={group.category} role="group" aria-label={group.category}>
           <div className={cn(
-            "px-2.5 pb-1 text-meta font-medium text-faint",
-            groupIndex === 0 ? "pt-1" : "pt-2",
+            mergeStylexClassName("", sx.px25, sx.pb1, typography.meta, sx.fontMedium, sx.textFaint),
+            groupIndex === 0 ? mergeStylexClassName("", sx.pt1) : mergeStylexClassName("", sx.pt2),
           )}>
             {group.category}
           </div>
@@ -553,8 +610,8 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
                 aria-selected={i === activeIdx}
                 data-mention-index={i}
                 className={cn(
-                  "flex cursor-pointer items-center gap-2.5 overflow-hidden rounded-control px-2.5 py-2 text-label leading-[1.3] whitespace-nowrap",
-                  i === activeIdx && "bg-pressed",
+                  mergeStylexClassName("", sx.flex, sx.cursorPointer, sx.itemsCenter, sx.gap25, sx.overflowHidden, sx.roundedControl, sx.px25, sx.py2, typography.label, sx.leading13, sx.whitespaceNowrap),
+                  i === activeIdx && mergeStylexClassName("", sx.bgPressed),
                 )}
                 onMouseDown={(e) => {
                   e.preventDefault();

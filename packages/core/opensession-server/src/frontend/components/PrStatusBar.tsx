@@ -290,7 +290,7 @@ const sx = stylex.create({
 	},
 	disabledShadowNone: {
 		":disabled": {
-			"--tw-shadow": "0 0 #0000",
+			"--tw-shadow": "0 0 transparent",
 			"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
 		}
 	},
@@ -320,7 +320,7 @@ const sx = stylex.create({
 		"borderStyle": "none"
 	},
 	bgTransparent: {
-		"backgroundColor": "#0000"
+		"backgroundColor": "transparent"
 	},
 	p0: {
 		"padding": "0"

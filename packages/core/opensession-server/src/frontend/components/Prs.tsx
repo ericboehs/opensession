@@ -44,7 +44,7 @@ import {
 } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -235,6 +235,24 @@ const sx = stylex.create({
 			width: "40px",
 			height: "40px"
 	},
+
+	h15: {
+		"height": "6px"
+	},
+	w15: {
+		"width": "6px"
+	},
+	roundedFull: {
+		"borderRadius": "3.40282e38px"
+	},
+	bgGreen: {
+		"backgroundColor": "var(--green)"
+	},
+	motionSafeAnimatePulse: {
+		"@media (prefers-reduced-motion: no-preference)": {
+			"animation": "var(--animate-pulse)"
+		}
+	},
 });
 
 interface Props {
@@ -360,8 +378,8 @@ function OverviewLine({
           aria-hidden="true"
           className={
             running > 0
-              ? "h-1.5 w-1.5 shrink-0 rounded-full bg-green motion-safe:animate-pulse"
-              : "h-1.5 w-1.5 shrink-0 rounded-full bg-line"
+              ? mergeStylexClassName("", sx.h15, sx.w15, sx.shrink0, sx.roundedFull, sx.bgGreen, sx.motionSafeAnimatePulse)
+              : mergeStylexClassName("", sx.h15, sx.w15, sx.shrink0, sx.roundedFull, sx.bgLine)
           }
         />
         {runningLabel(running)}
@@ -712,7 +730,7 @@ setAddingToSidebar(false);
             render={
               <Button
                 variant="ghost"
-                className={showArchived ? "shrink-0 text-fg" : "shrink-0"}
+                className={showArchived ? mergeStylexClassName("", sx.shrink0, sx.textFg) : mergeStylexClassName("", sx.shrink0)}
                 aria-label="More filters"
                 icon={<IconDotsHorizontal size={18} />}
               />
@@ -816,7 +834,7 @@ setAddingToSidebar(false);
                                 healthy, so the resting mark is drawn as
                                 structure and green now means approved. */}
                             <span
-                              className={`${status.quiet ? "text-dim" : status.className} flex items-center`}
+                              className={[status.quiet ? "text-dim" : status.className, mergeStylexClassName("", sx.flex, sx.itemsCenter)].filter(Boolean).join(" ")}
                               title={status.label}
                             >
                               <StateIcon state={row.state} />

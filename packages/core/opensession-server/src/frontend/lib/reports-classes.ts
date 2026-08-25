@@ -162,7 +162,7 @@ const sx = stylex.create({
 		"borderWidth": "0"
 	},
 	bgTransparent: {
-		"backgroundColor": "#0000"
+		"backgroundColor": "transparent"
 	},
 	py35: {
 		"paddingBlock": "14px"

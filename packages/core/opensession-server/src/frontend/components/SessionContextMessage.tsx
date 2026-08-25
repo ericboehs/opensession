@@ -21,7 +21,7 @@ const sx = stylex.create({
 			cursor: "pointer"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	p0: {
 			padding: "0"

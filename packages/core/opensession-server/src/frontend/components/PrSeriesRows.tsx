@@ -25,7 +25,7 @@ import {
 	WS_SUMMARY_ROW,
 	WS_SUMMARY_STATE,
 } from "../lib/workspace-summary-classes";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexClassName } from "../ui/cn";
 import { IconArrowUpRight, IconPullRequest } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 
@@ -33,6 +33,13 @@ import * as stylex from "@stylexjs/stylex";
 const sx = stylex.create({
 	textDim: {
 			color: "var(--text-dim)"
+	},
+
+	gap2: {
+		"gap": "8px"
+	},
+	noUnderline: {
+		"textDecorationLine": "none"
 	},
 });
 
@@ -85,7 +92,7 @@ export function PrSeriesRow({
 				</span>
 			</>
 		);
-		const className = cn(WS_SUMMARY_ROW, "gap-2 no-underline");
+		const className = cn(WS_SUMMARY_ROW, mergeStylexClassName("", sx.gap2, sx.noUnderline));
 		const title = refLabel(prRef);
 		if (prRef.url) {
 			return (

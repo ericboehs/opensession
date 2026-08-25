@@ -311,6 +311,38 @@ const sx = stylex.create({
 	pb7: {
 		"paddingBottom": "28px"
 	},
+
+	borderLine: {
+		"borderColor": "var(--border)"
+	},
+	bgPanel: {
+		"backgroundColor": "var(--bg-panel)"
+	},
+	textFg: {
+		"color": "var(--text)"
+	},
+	borderTransparent: {
+		"borderColor": "transparent"
+	},
+	bgTransparent: {
+		"backgroundColor": "transparent"
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	pt25: {
+		"paddingTop": "10px"
+	},
+	px0: {
+		"paddingInline": "0"
+	},
+	pt0: {
+		"paddingTop": "0"
+	},
 });
 
 /* The +/− counts. Kept as constants because CommentableDiff carries the same
@@ -779,8 +811,8 @@ if (generation === flowGeneration.current) setFlowLoading(false);
                 // the base has the geometry only, so nothing carries two
                 // competing colour utilities.
                 className={[mergeStylexClassName("", sx.inlineFlex, sx.cursorPointer, sx.itemsCenter, sx.gap15, sx.roundedMd, sx.border, sx.px9px, sx.py3px, typography.label, sx.whitespaceNowrap, sx.phonePx3, sx.phonePy2), i === active
-                    ? "border-line bg-panel text-fg"
-                    : "border-transparent bg-transparent text-dim hover:text-fg"].filter(Boolean).join(" ")}
+                    ? mergeStylexClassName("", sx.borderLine, sx.bgPanel, sx.textFg)
+                    : mergeStylexClassName("", sx.borderTransparent, sx.bgTransparent, sx.textDim, sx.hoverTextFg)].filter(Boolean).join(" ")}
                 onClick={() => setActive(i)}
                 title={r.primary ? "Primary repo" : "Attached repo"}
               >
@@ -820,7 +852,7 @@ if (generation === flowGeneration.current) setFlowLoading(false);
          supplies the review canvas's shared 8px inset; standalone Changes
          keeps this panel's own inset. */
       <div
-        className={[toolbarTarget === undefined ? "px-2.5 pt-2.5" : "px-0 pt-0", mergeStylexClassName("[&_[class*=pierre]]:max-w-full", sx.minW0, sx.maxWFull, sx.overflowClip, sx.pb7)].filter(Boolean).join(" ")}
+        className={[toolbarTarget === undefined ? mergeStylexClassName("", sx.px25, sx.pt25) : mergeStylexClassName("", sx.px0, sx.pt0), mergeStylexClassName("[&_[class*=pierre]]:max-w-full", sx.minW0, sx.maxWFull, sx.overflowClip, sx.pb7)].filter(Boolean).join(" ")}
       >
         <CommentableDiff
           key={cur.repo}

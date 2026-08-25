@@ -9,7 +9,7 @@ import {
   fileChipSub,
   fileChipThumb,
 } from "../lib/composer-classes";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -53,6 +53,10 @@ const sx = stylex.create({
 	w46px: {
 			width: "46px"
 	},
+
+	animatePulse: {
+		"animation": "var(--animate-pulse)"
+	},
 });
 
 interface Props {
@@ -95,9 +99,9 @@ export function FileChips({ files, onRemove, disabled, pending = 0 }: Props) {
       {Array.from({ length: pending }, (_, i) => (
         <div
           key={`staging-${i}`}
-          className={cn(fileChipCard, fileChipCardPaddingRemovable, "animate-pulse")}
+          className={cn(fileChipCard, fileChipCardPaddingRemovable, mergeStylexClassName("", sx.animatePulse))}
         >
-          <span className={cn(fileChipThumb, "bg-hover")} />
+          <span className={cn(fileChipThumb, mergeStylexClassName("", sx.bgHover))} />
           <span className={fileChipMeta}>
             <span {...stylex.props(sx.h3, sx.w92px, sx.roundedSm, sx.bgHover)} />
             <span {...stylex.props(sx.h25, sx.w46px, sx.roundedSm, sx.bgHover)} />

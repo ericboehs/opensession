@@ -68,7 +68,7 @@ import {
 } from "../../lib/memory-v2";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps } from "../../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -258,7 +258,7 @@ const sx = stylex.create({
 			borderWidth: "0"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	px0: {
 			paddingInline: "0"
@@ -416,6 +416,17 @@ const sx = stylex.create({
 	phoneMinH11: {
 		"@media (max-width: 720px)": { minHeight: "44px" },
 	},
+
+	phoneBlock: {
+		"@media (max-width: 720px)": {
+			"display": "block"
+		}
+	},
+	phoneTextInputPhone: {
+		"@media (max-width: 720px)": {
+			"fontSize": "var(--type-input-phone)"
+		}
+	},
 });
 
 // Settings maintenance for structured repo, user, workspace, and Slack channel
@@ -522,7 +533,7 @@ function CategoryCard({
 					</span>
 				</span>
 				<span {...mergeStylexProps("phone:self-start phone:pt-2", sx.flex, sx.shrink0, sx.itemsCenter, sx.gap2, sx.selfCenter, sx.fontMedium, sx.textDim, typography.label)}>
-					<span className="phone:hidden">{count} {count === 1 ? "memory" : "memories"}</span>
+					<span className={mergeStylexClassName("", sx.phoneHidden)}>{count} {count === 1 ? "memory" : "memories"}</span>
 					<IconChevronRight size={20} {...mergeStylexProps("group-hover:text-dim", sx.textFaint)} />
 				</span>
 			</button>
@@ -706,10 +717,10 @@ setBusy(false);
 						<div {...stylex.props(sx.mt2, sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap2)}>
 							<span {...mergeStylexProps("tabular-nums", sx.textFaint, typography.meta)}>{draft.length}/400</span>
 							<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
-							<Button size="sm" variant="primary" className="phone:min-h-11" disabled={busy || !draft.trim()} onClick={() => void save()}>
+							<Button size="sm" variant="primary" className={mergeStylexClassName("", sx.phoneMinH11)} disabled={busy || !draft.trim()} onClick={() => void save()}>
 								Save
 							</Button>
-							<Button size="sm" variant="ghost" className="phone:min-h-11" disabled={busy} onClick={() => {
+							<Button size="sm" variant="ghost" className={mergeStylexClassName("", sx.phoneMinH11)} disabled={busy} onClick={() => {
 								setDraft(summary);
 								setEditing(false);
 							}}>
@@ -860,7 +871,7 @@ function MemoryTable({
 							<th {...stylex.props(sx.w32, sx.px4, sx.py25)}>Saved</th>
 						</tr>
 					</thead>
-					<tbody className="phone:block">
+					<tbody className={mergeStylexClassName("", sx.phoneBlock)}>
 						{rows.map((row) => (
 							<MemoryRow
 								key={`${row.scoped.scope.key}:${row.entry.id}`}
@@ -947,7 +958,7 @@ setBusy(false);
 				/>
 				{scopes.length > 1 && (
 					<Field label={category.targetLabel}>
-						<Select className="phone:min-h-11 phone:text-input-phone" value={scopeKey} onChange={(event) => setScopeKey(event.target.value)}>
+						<Select className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneTextInputPhone)} value={scopeKey} onChange={(event) => setScopeKey(event.target.value)}>
 							{scopes.map((scoped) => (
 								<option key={scoped.scope.key} value={scoped.scope.key}>
 									{scoped.scope.label}
@@ -963,7 +974,7 @@ setBusy(false);
 						value={draft}
 						autoFocus
 						placeholder="A durable, self-contained fact…"
-						className="phone:text-input-phone"
+						className={mergeStylexClassName("", sx.phoneTextInputPhone)}
 						onChange={(event) => setDraft(event.target.value)}
 						onKeyDown={(event) => {
 							if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void add();
@@ -972,20 +983,20 @@ setBusy(false);
 				</Field>
 				<div {...mergeStylexProps("phone:grid-cols-1", sx.mt3, sx.grid, sx.gridCols2, sx.gap3)}>
 					<Field label="Kind">
-						<Select className="phone:min-h-11 phone:text-input-phone" value={kind} onChange={(event) => setKind(event.target.value as MemoryRecordKind)}>
+						<Select className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneTextInputPhone)} value={kind} onChange={(event) => setKind(event.target.value as MemoryRecordKind)}>
 							{Object.entries(KIND_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
 						</Select>
 					</Field>
 					{kind === "status" && (
 						<Field label="Expires">
-							<Input className="phone:min-h-11 phone:text-input-phone" type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} />
+							<Input className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneTextInputPhone)} type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} />
 						</Field>
 					)}
 				</div>
 				<div {...mergeStylexProps("tabular-nums", sx.mt1, sx.textRight, sx.textFaint, typography.meta)}>{draft.length}/400</div>
 				<Modal.Footer>
-					<Modal.Close render={<Button className="phone:min-h-11" variant="ghost" disabled={busy}>Cancel</Button>} />
-					<Button className="phone:min-h-11" variant="primary" disabled={busy || !scopeKey || !draft.trim() || (kind === "status" && !expiresAt)} onClick={() => void add()}>
+					<Modal.Close render={<Button className={mergeStylexClassName("", sx.phoneMinH11)} variant="ghost" disabled={busy}>Cancel</Button>} />
+					<Button className={mergeStylexClassName("", sx.phoneMinH11)} variant="primary" disabled={busy || !scopeKey || !draft.trim() || (kind === "status" && !expiresAt)} onClick={() => void add()}>
 						{busy ? "Saving…" : "Save memory"}
 					</Button>
 				</Modal.Footer>
@@ -1044,20 +1055,20 @@ setBusy(false);
 			<Modal.Content>
 				<Modal.Header title={`Merge ${ids.length} memories`} description="Replace the selected records with one concise fact. The originals stay recoverable." />
 				<Field label="Summary">
-					<Textarea className="phone:text-input-phone" rows={4} maxLength={400} value={summary} autoFocus onChange={(event) => setSummary(event.target.value)} />
+					<Textarea className={mergeStylexClassName("", sx.phoneTextInputPhone)} rows={4} maxLength={400} value={summary} autoFocus onChange={(event) => setSummary(event.target.value)} />
 				</Field>
 				<div {...mergeStylexProps("phone:grid-cols-1", sx.mt3, sx.grid, sx.gridCols2, sx.gap3)}>
 					<Field label="Kind">
-						<Select className="phone:min-h-11 phone:text-input-phone" value={kind} onChange={(event) => setKind(event.target.value as MemoryRecordKind)}>
+						<Select className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneTextInputPhone)} value={kind} onChange={(event) => setKind(event.target.value as MemoryRecordKind)}>
 							{Object.entries(KIND_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
 						</Select>
 					</Field>
-					{kind === "status" && <Field label="Expires"><Input className="phone:min-h-11 phone:text-input-phone" type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} /></Field>}
+					{kind === "status" && <Field label="Expires"><Input className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneTextInputPhone)} type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} /></Field>}
 				</div>
 				<div {...mergeStylexProps("tabular-nums", sx.mt1, sx.textRight, sx.textFaint, typography.meta)}>{summary.length}/400</div>
 				<Modal.Footer>
-					<Modal.Close render={<Button className="phone:min-h-11" variant="ghost" disabled={busy}>Cancel</Button>} />
-					<Button className="phone:min-h-11" variant="primary" disabled={busy || !summary.trim() || (kind === "status" && !expiresAt)} onClick={() => void merge()}>{busy ? "Merging…" : "Merge"}</Button>
+					<Modal.Close render={<Button className={mergeStylexClassName("", sx.phoneMinH11)} variant="ghost" disabled={busy}>Cancel</Button>} />
+					<Button className={mergeStylexClassName("", sx.phoneMinH11)} variant="primary" disabled={busy || !summary.trim() || (kind === "status" && !expiresAt)} onClick={() => void merge()}>{busy ? "Merging…" : "Merge"}</Button>
 				</Modal.Footer>
 			</Modal.Content>
 		</Modal.Root>
@@ -1144,7 +1155,7 @@ function CategoryPage({
 				description={`${category.description} ${count} ${count === 1 ? "memory" : "memories"}.`} {...mergeStylexProps("phone:mt-1.5", sx.relative, sx.z20)}
 			/>
 			<div {...mergeStylexProps("before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-11 before:bg-surface before:content-[''] after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-[linear-gradient(to_bottom,var(--bg),transparent)] after:content-[''] phone:before:h-4", sx.sticky, sx.top0, sx.z10, sx.mb3, sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap3, sx.bgSurface, sx.px5, sx.py2)}>
-				<Button size="sm" variant="ghost" className="phone:min-h-11" icon={<IconChevronLeft size={18} />} onClick={onBack}>
+				<Button size="sm" variant="ghost" className={mergeStylexClassName("", sx.phoneMinH11)} icon={<IconChevronLeft size={18} />} onClick={onBack}>
 					Back
 				</Button>
 				<div {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
@@ -1153,7 +1164,7 @@ function CategoryPage({
 							<Button
 								size="sm"
 								variant="ghost"
-								className="group phone:min-h-11"
+								className={mergeStylexClassName("group", sx.phoneMinH11)}
 								aria-label={`Clear ${selectedIds.size} selected memories`}
 								title="Clear selection"
 								onClick={() => setSelectedIds(new Set())}
@@ -1167,7 +1178,7 @@ function CategoryPage({
 									<IconX size={16} />
 								</span>
 							</Button>
-							<Button size="sm" variant="soft" className="phone:min-h-11" onClick={() => setMerging(true)}>Merge</Button>
+							<Button size="sm" variant="soft" className={mergeStylexClassName("", sx.phoneMinH11)} onClick={() => setMerging(true)}>Merge</Button>
 						</>
 					)}
 					<Button
@@ -1205,14 +1216,14 @@ function CategoryPage({
 						<div {...mergeStylexProps("phone:grid-cols-1", sx.grid, sx.gridCols4, sx.gap2)}>
 							<OptionSelect
 								label={category.targetLabel}
-								className="phone:min-h-11 phone:text-input-phone"
+								className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneTextInputPhone)}
 								value={scopeKey}
 								options={scopes.map(({ scope }) => ({ value: scope.key, label: scope.label }))}
 								onChange={(value) => { setScopeKey(value); resetPage(); }}
 							/>
 							<OptionSelect<MemoryRecordKind | "">
 								label="Memory kind"
-								className="phone:min-h-11 phone:text-input-phone"
+								className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneTextInputPhone)}
 								value={kind}
 								options={[
 									{ value: "", label: "All kinds" },
@@ -1222,7 +1233,7 @@ function CategoryPage({
 							/>
 							<OptionSelect<MemoryState | "">
 								label="Memory state"
-								className="phone:min-h-11 phone:text-input-phone"
+								className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneTextInputPhone)}
 								value={state}
 								options={[
 									{ value: "", label: "Active" },
@@ -1234,7 +1245,7 @@ function CategoryPage({
 							/>
 							<OptionSelect<typeof review>
 								label="Review state"
-								className="phone:min-h-11 phone:text-input-phone"
+								className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneTextInputPhone)}
 								value={review}
 								options={[
 									{ value: "", label: "All review states" },
@@ -1260,13 +1271,13 @@ function CategoryPage({
 					<MemoryTable rows={rows} selectedIds={selectedIds} onSelectedIdsChange={setSelectedIds} onChanged={changed} />
 					{(cursorHistory.length > 0 || nextCursor) && (
 						<div {...stylex.props(sx.mt3, sx.flex, sx.itemsCenter, sx.justifyEnd, sx.gap2)}>
-							<Button size="sm" variant="ghost" className="phone:min-h-11" disabled={!cursorHistory.length} onClick={() => {
+							<Button size="sm" variant="ghost" className={mergeStylexClassName("", sx.phoneMinH11)} disabled={!cursorHistory.length} onClick={() => {
 								const history = cursorHistory.slice(0, -1);
 								setCursor(cursorHistory.at(-1));
 								setCursorHistory(history);
 								setItems(null);
 							}}>Previous</Button>
-							<Button size="sm" variant="ghost" className="phone:min-h-11" disabled={!nextCursor} onClick={() => {
+							<Button size="sm" variant="ghost" className={mergeStylexClassName("", sx.phoneMinH11)} disabled={!nextCursor} onClick={() => {
 								setCursorHistory((history) => [...history, cursor]);
 								setCursor(nextCursor);
 								setItems(null);

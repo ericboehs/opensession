@@ -43,7 +43,7 @@ const sx = stylex.create({
 			borderWidth: "0"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	p05: {
 			padding: "2px"

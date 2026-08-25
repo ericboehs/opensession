@@ -1618,7 +1618,7 @@ export function Analytics() {
 											<tbody>
 												{data.repos.map((r) => (
 													<tr key={r.repo || "(none)"} {...stylex.props(sx.borderT, sx.borderLine)}>
-														<td className={[mergeStylexClassName("", sx.maxW32, sx.truncate, sx.py15), r.repo ? "text-fg" : "text-faint"].filter(Boolean).join(" ")}>
+														<td className={[mergeStylexClassName("", sx.maxW32, sx.truncate, sx.py15), r.repo ? mergeStylexClassName("", sx.textFg) : mergeStylexClassName("", sx.textFaint)].filter(Boolean).join(" ")}>
 															{r.repo ? repoLabel(r.repo) : "No repo"}
 														</td>
 														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{fmtInt(r.sessions || 0)}</td>
@@ -1662,7 +1662,7 @@ export function Analytics() {
 														    left out of the People active count. Dim it, or the table
 														    and that number look like they disagree. */}
 														<td
-															className={[mergeStylexClassName("", sx.maxW40, sx.py15), p.unattributed ? "text-faint" : "text-fg"].filter(Boolean).join(" ")}
+															className={[mergeStylexClassName("", sx.maxW40, sx.py15), p.unattributed ? mergeStylexClassName("", sx.textFaint) : mergeStylexClassName("", sx.textFg)].filter(Boolean).join(" ")}
 															title={p.unattributed ? `Sessions from ${p.name} with no person recorded` : undefined}
 														>
 															<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
@@ -1698,7 +1698,7 @@ export function Analytics() {
 														</td>
 														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{fmtInt(a.runs)}</td>
 														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{fmtInt(a.turns)}</td>
-														<td className={[mergeStylexClassName("", sx.py15, sx.textRight, sx.tabularNums), a.errors ? "text-red" : "text-faint"].filter(Boolean).join(" ")}>
+														<td className={[mergeStylexClassName("", sx.py15, sx.textRight, sx.tabularNums), a.errors ? mergeStylexClassName("", sx.textRed) : mergeStylexClassName("", sx.textFaint)].filter(Boolean).join(" ")}>
 															{fmtInt(a.errors)}
 														</td>
 													</tr>

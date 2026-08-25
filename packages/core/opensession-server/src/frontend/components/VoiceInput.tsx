@@ -5,7 +5,7 @@ import { transcribeClip } from "../lib/api";
 import { IconArrowUp, IconCheck, IconMic, IconPlus, IconX } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { PRODUCT_NAME } from "../lib/brand";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { duration, ease } from "../ui/motion";
 import { paletteIconBtn } from "../lib/palette-classes";
 import { composerSend, composerSendDefault } from "../lib/composer-classes";
@@ -146,6 +146,15 @@ const sx = stylex.create({
 	},
 	textRed: {
 			color: "var(--red)"
+	},
+
+	transitionOpacity: {
+		"transitionProperty": "opacity",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	opacity15: {
+		"opacity": ".15"
 	},
 });
 
@@ -678,8 +687,8 @@ if (request === requestRef.current) {
           >
             <div
               className={cn(
-                "absolute inset-0 flex items-center justify-center gap-1 transition-opacity",
-                liveTranscript && "opacity-15",
+                mergeStylexClassName("", sx.absolute, sx.inset0, sx.flex, sx.itemsCenter, sx.justifyCenter, sx.gap1, sx.transitionOpacity),
+                liveTranscript && mergeStylexClassName("", sx.opacity15),
               )}
             >
               {Array.from({ length: barCount }, (_, i) => {
@@ -703,7 +712,7 @@ if (request === requestRef.current) {
           <Tooltip label="Keep it. The text lands in the draft to edit.">
             <button
               type="button"
-              className={cn(className, "text-fg hover:text-accent")}
+              className={cn(className, mergeStylexClassName("hover:text-accent", sx.textFg))}
               onClick={() => stop(true)}
               disabled={phase === "requesting" || phase === "cancelling"}
               aria-label="Stop and transcribe"

@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Card } from "./card";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import { fieldClasses } from "./input";
 import { markTileClass } from "../lib/mark-tile";
 import { Skeleton, SkeletonBar } from "./state";
@@ -161,6 +161,17 @@ const sx = stylex.create({
 	},
 	justifyEnd: {
 			justifyContent: "flex-end"
+	},
+
+	maxSmMinW55: {
+		"@media not all and (min-width: 40rem)": {
+			"minWidth": "55%"
+		}
+	},
+	maxSmGridCols1: {
+		"@media not all and (min-width: 40rem)": {
+			"gridTemplateColumns": "repeat(1,minmax(0,1fr))"
+		}
 	},
 });
 
@@ -427,7 +438,7 @@ export function SettingRowText({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div {...mergeStylexProps(cn("max-sm:min-w-[55%]", className), sx.minW0, sx.flex1)} {...props} />;
+	return <div {...mergeStylexProps(cn(mergeStylexClassName("", sx.maxSmMinW55), className), sx.minW0, sx.flex1)} {...props} />;
 }
 
 export function SettingRowTitle({
@@ -530,7 +541,7 @@ export function SettingsFormRow({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div {...mergeStylexProps(cn("max-sm:grid-cols-1", className), sx.grid, sx.gridCols2, sx.gap3)} {...props} />;
+	return <div {...mergeStylexProps(cn(mergeStylexClassName("", sx.maxSmGridCols1), className), sx.grid, sx.gridCols2, sx.gap3)} {...props} />;
 }
 
 export function SettingsField({

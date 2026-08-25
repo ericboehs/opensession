@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { WS_SUMMARY_REVIEW_BAR_CLEARANCE } from "../../lib/workspace-summary-classes";
 import * as stylex from "@stylexjs/stylex";
-import { mergeStylexProps } from "../../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -39,6 +39,34 @@ const sx = stylex.create({
 	bgSurface: {
 			backgroundColor: "var(--bg)"
 	},
+
+	relative: {
+		"position": "relative"
+	},
+	shrink0: {
+		"flexShrink": "0"
+	},
+	desktopPt25: {
+		"@media (min-width: 721px)": {
+			"paddingTop": "10px"
+		}
+	},
+	desktopRoundedLg: {
+		"@media (min-width: 721px)": {
+			"borderRadius": "calc(14px * var(--rf))"
+		}
+	},
+	desktopBorder: {
+		"@media (min-width: 721px)": {
+			"borderStyle": "var(--tw-border-style)",
+			"borderWidth": "1px"
+		}
+	},
+	desktopBorderLine: {
+		"@media (min-width: 721px)": {
+			"borderColor": "var(--border)"
+		}
+	},
 });
 
 /**
@@ -61,10 +89,10 @@ export function ReviewToolbar({
   return (
     <>
       <div
-        className={`relative shrink-0 bg-surface desktop:pt-2.5 ${placement}`}
+        className={[mergeStylexClassName("", sx.relative, sx.shrink0, sx.bgSurface, sx.desktopPt25), placement].filter(Boolean).join(" ")}
       >
         <div
-          className={`relative bg-surface desktop:rounded-lg desktop:border desktop:border-line ${compact ? "desktop:overflow-hidden" : "desktop:overflow-visible"}`}
+          className={[mergeStylexClassName("", sx.relative, sx.bgSurface, sx.desktopRoundedLg, sx.desktopBorder, sx.desktopBorderLine), compact ? "desktop:overflow-hidden" : "desktop:overflow-visible"].filter(Boolean).join(" ")}
         >
           {children}
         </div>

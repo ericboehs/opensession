@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 
@@ -31,6 +31,21 @@ const sx = stylex.create({
 	},
 	gap3: {
 			gap: "12px"
+	},
+
+	resizeY: {
+		"resize": "vertical"
+	},
+	py2: {
+		"paddingBlock": "8px"
+	},
+	cursorPointer: {
+		"cursor": "pointer"
+	},
+	phoneGridCols1: {
+		"@media (max-width: 720px)": {
+			"gridTemplateColumns": "repeat(1,minmax(0,1fr))"
+		}
 	},
 });
 
@@ -104,7 +119,7 @@ type TextareaProps = React.ComponentProps<"textarea"> & {
 /** Multi-line entry. Vertically resizable and padded like a paragraph rather
  *  than a single line, but the same well as `Input` in every other respect. */
 export function Textarea({ className, size = "md", ...props }: TextareaProps) {
-	return <textarea className={fieldClasses(size, cn("resize-y py-2", className))} {...props} />;
+	return <textarea className={fieldClasses(size, cn(mergeStylexClassName("", sx.resizeY, sx.py2), className))} {...props} />;
 }
 
 type SelectProps = Omit<React.ComponentProps<"select">, "size"> & {
@@ -117,7 +132,7 @@ type SelectProps = Omit<React.ComponentProps<"select">, "size"> & {
  *  or a native select's own keyboard behaviour (see `PaletteSelect`,
  *  `SessionSearch`). */
 export function Select({ className, size = "md", ...props }: SelectProps) {
-	return <select className={fieldClasses(size, cn("cursor-pointer", className))} {...props} />;
+	return <select className={fieldClasses(size, cn(mergeStylexClassName("", sx.cursorPointer), className))} {...props} />;
 }
 
 /**
@@ -155,6 +170,6 @@ export function FieldGrid({
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
-		<div {...mergeStylexProps(cn("phone:grid-cols-1", className), sx.grid, sx.gridCols2, sx.gap3)} {...props} />
+		<div {...mergeStylexProps(cn(mergeStylexClassName("", sx.phoneGridCols1), className), sx.grid, sx.gridCols2, sx.gap3)} {...props} />
 	);
 }

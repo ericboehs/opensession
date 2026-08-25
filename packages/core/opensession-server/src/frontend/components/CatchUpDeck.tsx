@@ -34,7 +34,7 @@ import {
 import { IconChevronLeft, IconPlus } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -155,7 +155,7 @@ const sx = stylex.create({
 			borderColor: "var(--border)"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	px5: {
 			paddingInline: "20px"
@@ -228,6 +228,11 @@ const sx = stylex.create({
 	},
 	textDim: {
 			color: "var(--text-dim)"
+	},
+
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
 	},
 });
 
@@ -886,7 +891,7 @@ const since = Number.isNaN(t) ? Date.now() : t;
 		<div {...stylex.props(sx.mt2, sx.flex, sx.itemsCenter, sx.gap2, sx.px1, sx.textXs, sx.textFaint)}>
 			<PulseDot />
 			<span>Working</span>
-			<span className="tabular-nums">{elapsedSince(since, now)}</span>
+			<span className={mergeStylexClassName("", sx.tabularNums)}>{elapsedSince(since, now)}</span>
 		</div>
 	);
 }

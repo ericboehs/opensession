@@ -1,6 +1,6 @@
 import * as React from "react";
 import { IconChevronDown } from "../components/icons";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -19,6 +19,58 @@ const sx = stylex.create({
 	},
 	opacity55: {
 			opacity: ".55"
+	},
+
+	justifyCenter: {
+		"justifyContent": "center"
+	},
+	border: {
+		"borderStyle": "var(--tw-border-style)",
+		"borderWidth": "1px"
+	},
+	whitespaceNowrap: {
+		"whiteSpace": "nowrap"
+	},
+	selectNone: {
+		"WebkitUserSelect": "none",
+		"userSelect": "none"
+	},
+	noUnderline: {
+		"textDecorationLine": "none"
+	},
+	leadingNone: {
+		"--tw-leading": "1",
+		"lineHeight": "1"
+	},
+	fontMedium: {
+		"--tw-font-weight": "var(--font-weight-medium)",
+		"fontWeight": "var(--font-weight-medium)"
+	},
+	activeScale096: {
+		":active": {
+			"scale": ".96"
+		}
+	},
+	focusRing: {
+		":focusVisible": {
+			"outline": "2px solid var(--accent-ink)",
+			"outlineOffset": "2px"
+		},
+		"@media (forced-colors: active)": {
+			":focusVisible": {
+				"outlineColor": "highlight"
+			}
+		}
+	},
+	disabledPointerEventsNone: {
+		":disabled": {
+			"pointerEvents": "none"
+		}
+	},
+	disabledOpacity40: {
+		":disabled": {
+			"opacity": ".4"
+		}
 	},
 });
 
@@ -343,19 +395,19 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 			// `no-underline` is inert on a <button> and load-bearing under
 			// `render`: an <a> underlines its text by default, so without it a
 			// button that navigates arrives looking like body copy.
-			"inline-flex items-center justify-center border whitespace-nowrap select-none no-underline",
+			mergeStylexClassName("", sx.inlineFlex, sx.itemsCenter, sx.justifyCenter, sx.border, sx.whitespaceNowrap, sx.selectNone, sx.noUnderline),
 			icon != null && hasLabel ? LEAD_GAP : PLAIN_GAP,
 			// Text utilities carry different stock line heights even though this
 			// button scale pins its own heights. A single tight line box gives
 			// labels the same optical centre as fixed-size icons and chevrons.
-			"leading-none",
-			"font-medium transition-[color,background-color,border-color,filter,scale] active:scale-[0.96]",
+			mergeStylexClassName("", sx.leadingNone),
+			mergeStylexClassName("transition-[color,background-color,border-color,filter,scale]", sx.fontMedium, sx.activeScale096),
 			// One keyboard focus treatment for every variant. Without it a
 			// Button falls back to the browser's default outline, which
 			// differs per engine and sits tight against the corner; the
 			// shared utility also carries the forced-colors fallback.
-			"focus-ring",
-			"disabled:pointer-events-none disabled:opacity-40",
+			mergeStylexClassName("", sx.focusRing),
+			mergeStylexClassName("", sx.disabledPointerEventsNone, sx.disabledOpacity40),
 			sizes[size],
 			variants[variant],
 			icon != null && hasLabel && iconLeadPad[size],

@@ -3,7 +3,7 @@ import { motion } from "motion/react";
 import type { ReplySuggestion } from "../lib/reply-suggestions";
 import { duration, ease } from "../ui/motion";
 import { Tooltip } from "../ui/tooltip";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexClassName } from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -13,6 +13,28 @@ const sx = stylex.create({
 	},
 	shrink0: {
 			flexShrink: "0"
+	},
+
+	flex: {
+		"display": "flex"
+	},
+	gap15: {
+		"gap": "6px"
+	},
+	overflowXAuto: {
+		"overflowX": "auto"
+	},
+	ScrollbarWidthNone: {
+		"scrollbarWidth": "none"
+	},
+	ReplyFadeStart000: {
+		"--reply-fade-start": "var(--color-black)"
+	},
+	ReplyFadeEnd000: {
+		"--reply-fade-end": "var(--color-black)"
+	},
+	pointerEventsNone: {
+		"pointerEvents": "none"
 	},
 });
 
@@ -123,10 +145,10 @@ export function ReplySuggestions({ suggestions, onPick, className }: Props) {
 			className={cn(
 				// One row that scrolls sideways rather than wrapping: a second line
 				// costs the transcript real height, and these are optional.
-				"flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+				mergeStylexClassName("[&::-webkit-scrollbar]:hidden", sx.flex, sx.gap15, sx.overflowXAuto, sx.ScrollbarWidthNone),
 				// Fade only the edge with more content. A hard clip beside Next made
 				// a complete chip look broken, while the fade says the row scrolls.
-				"[--reply-fade-start:#000] [--reply-fade-end:#000] " +
+				mergeStylexClassName("", sx.ReplyFadeStart000, sx.ReplyFadeEnd000) +
 					"data-[overflow-start]:[--reply-fade-start:transparent] data-[overflow-end]:[--reply-fade-end:transparent] " +
 					"[-webkit-mask-image:linear-gradient(to_right,var(--reply-fade-start)_0,#000_16px,#000_calc(100%_-_16px),var(--reply-fade-end)_100%)] " +
 					"[mask-image:linear-gradient(to_right,var(--reply-fade-start)_0,#000_16px,#000_calc(100%_-_16px),var(--reply-fade-end)_100%)]",
@@ -134,7 +156,7 @@ export function ReplySuggestions({ suggestions, onPick, className }: Props) {
 				// whole column while the chips fill only part of it. Nothing but the
 				// chips may take a click: the rest of that band is transcript you
 				// should still be able to select and reach.
-				"pointer-events-none",
+				mergeStylexClassName("", sx.pointerEventsNone),
 				className,
 			)}
 		>

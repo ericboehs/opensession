@@ -28,7 +28,7 @@ const sx = stylex.create({
 		"borderWidth": "1px"
 	},
 	borderTransparent: {
-		"borderColor": "#0000"
+		"borderColor": "transparent"
 	},
 	textDim: {
 		"color": "var(--text-dim)"

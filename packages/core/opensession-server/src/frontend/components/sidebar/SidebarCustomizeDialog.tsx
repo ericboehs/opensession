@@ -9,7 +9,7 @@ import { IconGripVertical, IconX } from "../icons";
 import { RepoTile, repoLabel } from "../RepoTile";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps } from "../../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -140,6 +140,39 @@ const sx = stylex.create({
 	},
 	maxH80dvh: {
 			maxHeight: "80dvh"
+	},
+
+	phoneAfterAbsolute: {
+		"@media (max-width: 720px)": {
+			"::after": {
+				"content": "var(--tw-content)",
+				"position": "absolute"
+			}
+		}
+	},
+	phoneAfterInsetX0: {
+		"@media (max-width: 720px)": {
+			"::after": {
+				"content": "var(--tw-content)",
+				"insetInline": "0"
+			}
+		}
+	},
+	phoneAfterInsetY3: {
+		"@media (max-width: 720px)": {
+			"::after": {
+				"content": "var(--tw-content)",
+				"insetBlock": "-12px"
+			}
+		}
+	},
+	phoneAfterContent: {
+		"@media (max-width: 720px)": {
+			"::after": {
+				"--tw-content": "\"\"",
+				"content": "var(--tw-content)"
+			}
+		}
 	},
 });
 
@@ -303,7 +336,7 @@ export function SidebarCustomizeDialog({
 					action: (
 						<Switch
 							size="sm"
-							className="phone:after:absolute phone:after:inset-x-0 phone:after:-inset-y-3 phone:after:content-['']"
+							className={mergeStylexClassName("", sx.phoneAfterAbsolute, sx.phoneAfterInsetX0, sx.phoneAfterInsetY3, sx.phoneAfterContent)}
 							checked={tool.shown}
 							onCheckedChange={tool.onShownChange}
 							aria-label={`${tool.shown ? "Hide" : "Show"} ${tool.label} in sidebar`}

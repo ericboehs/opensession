@@ -3,6 +3,7 @@ import { Modal } from "./modal";
 import { Button } from "./button";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexClassName } from "./cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -44,6 +45,17 @@ const sx = stylex.create({
 	},
 	textDim: {
 			color: "var(--text-dim)"
+	},
+
+	phoneMinH11: {
+		"@media (max-width: 720px)": {
+			"minHeight": "44px"
+		}
+	},
+	phoneFlex1: {
+		"@media (max-width: 720px)": {
+			"flex": "1"
+		}
 	},
 });
 
@@ -135,7 +147,7 @@ export function ConfirmDialog({
 						type="button"
 						size="lg"
 						variant="soft"
-						className="phone:min-h-11 phone:flex-1"
+						className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneFlex1)}
 						onClick={() => onOpenChange(false)}
 					>
 						{cancelLabel}
@@ -145,7 +157,7 @@ export function ConfirmDialog({
 						type="button"
 						size="lg"
 						variant={destructive ? "danger-strong" : "primary"}
-						className="phone:min-h-11 phone:flex-1"
+						className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneFlex1)}
 						onClick={() => {
 							onOpenChange(false);
 							onConfirm();

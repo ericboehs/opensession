@@ -23,7 +23,7 @@ import {
 import { OrganizationAppIcon } from "./OrganizationAppIcon";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -56,7 +56,7 @@ const sx = stylex.create({
 			borderRadius: "calc(12px * var(--rf))"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	p0: {
 			padding: "0"
@@ -153,6 +153,53 @@ const sx = stylex.create({
 	},
 	px3: {
 			paddingInline: "12px"
+	},
+
+	wFull: {
+		"width": "100%"
+	},
+	roundedRow: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	pxCalcVarSidebarIconLeftVarSidebarNavX: {
+		"paddingInline": "calc(var(--sidebar-icon-left) - var(--sidebar-nav-x))"
+	},
+	pyVarSidebarToolPad: {
+		"paddingBlock": "var(--sidebar-tool-pad)"
+	},
+	textLeft: {
+		"textAlign": "left"
+	},
+	fontMedium: {
+		"--tw-font-weight": "var(--font-weight-medium)",
+		"fontWeight": "var(--font-weight-medium)"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	activeScale096: {
+		":active": {
+			"scale": ".96"
+		}
+	},
+	phonePy13px: {
+		"@media (max-width: 720px)": {
+			"paddingBlock": "13px"
+		}
+	},
+	desktopTextItemTitle: {
+		"@media (min-width: 721px)": {
+			"fontSize": "var(--type-item-title)"
+		}
+	},
+	motionReduceTransformNone: {
+		"@media (prefers-reduced-motion: reduce)": {
+			"transform": "none"
+		}
 	},
 });
 
@@ -290,7 +337,7 @@ toast("Couldn’t copy the organization link", { variant: "error" });
 				</Menu.Trigger>
 			) : (
 				<Menu.Trigger
-					className={`group flex w-full items-center ${SIDEBAR_RAIL_GAP} rounded-row bg-transparent px-[calc(var(--sidebar-icon-left)-var(--sidebar-nav-x))] py-[var(--sidebar-tool-pad)] text-left text-body font-medium text-fg transition-[background-color,scale] hover:bg-hover active:scale-[0.96] phone:py-[13px] desktop:text-item-title motion-reduce:transform-none`}
+					className={[mergeStylexClassName("group", sx.flex, sx.wFull, sx.itemsCenter), SIDEBAR_RAIL_GAP, mergeStylexClassName("transition-[background-color,scale]", sx.roundedRow, sx.bgTransparent, sx.pxCalcVarSidebarIconLeftVarSidebarNavX, sx.pyVarSidebarToolPad, sx.textLeft, typography.body, sx.fontMedium, sx.textFg, sx.hoverBgHover, sx.activeScale096, sx.phonePy13px, sx.desktopTextItemTitle, sx.motionReduceTransformNone)].filter(Boolean).join(" ")}
 					aria-label={`Open organization menu, current: ${name}`}
 				>
 					<span {...stylex.props(sx.relative, sx.inlineFlex, sx.size22px, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>
@@ -342,7 +389,7 @@ toast("Couldn’t copy the organization link", { variant: "error" });
 					)}
 				</Menu.Item>
 				<Menu.Item
-					className={`${itemClass} text-accent`}
+					className={[itemClass, mergeStylexClassName("", sx.textAccent)].filter(Boolean).join(" ")}
 					onClick={() => setInviteOpen(true)}
 				>
 					<IconPlus size={19} {...stylex.props(sx.textAccent)} />
@@ -389,7 +436,7 @@ toast("Couldn’t copy the organization link", { variant: "error" });
 					</Menu.RadioGroup>
 					{bridge?.inlineAdd && bridge.add && (
 						<Menu.Item
-							className={`${itemClass} text-accent`}
+							className={[itemClass, mergeStylexClassName("", sx.textAccent)].filter(Boolean).join(" ")}
 							onClick={openAddOrganization}
 						>
 							<IconPlus size={19} {...stylex.props(sx.textAccent)} />

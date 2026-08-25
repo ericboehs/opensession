@@ -17,7 +17,7 @@ import { CommitIcon } from "./PrViews";
 import { FileRow, ReviewerRow } from "./PrRows";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps } from "../../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -112,7 +112,7 @@ const sx = stylex.create({
 			borderWidth: "0"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	p0: {
 			padding: "0"
@@ -476,7 +476,7 @@ function RollupRow({
       {trailing}
       <IconChevronRight
         size={14}
-        className={`shrink-0 text-faint ${open ? "rotate-90" : ""}`}
+        className={[mergeStylexClassName("", sx.shrink0, sx.textFaint), open ? "rotate-90" : ""].filter(Boolean).join(" ")}
       />
     </button>
   );

@@ -32,7 +32,7 @@ import { personNameForKey, usePeople, useReviewTeams } from "../lib/people";
 import { UserAvatar } from "./UserAvatar";
 import { Menu } from "../ui/menu";
 import { Popover } from "../ui/popover";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import type {
 	DiffFile,
 	GitStatusInfo,
@@ -499,6 +499,11 @@ const sx = stylex.create({
     objectFit: "cover",
   },
   assetIcon: { flexShrink: 0, color: "var(--text-faint)" },
+
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
 });
 
 function localToneStyle(tone: string | undefined): stylex.StyleXStyles {
@@ -2338,7 +2343,7 @@ export function WorkspaceInfo({
 							    the other is what the session wrote. */}
               <div {...mergeStylexProps(INFO_LABEL_CLASS, sx.labelRow)}>
 								<span>Screenshots</span>
-								<span className="tabular-nums">{media.length}</span>
+								<span className={mergeStylexClassName("", sx.tabularNums)}>{media.length}</span>
 							</div>
 							<MediaStrip
 								items={media.map((m, i) => ({
@@ -2361,7 +2366,7 @@ export function WorkspaceInfo({
 								<span>Assets</span>
 								<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap15)}>
 									<AssetViewToggle mode={assetView} onChange={setAssetView} />
-									<span className="tabular-nums">{assets.length}</span>
+									<span className={mergeStylexClassName("", sx.tabularNums)}>{assets.length}</span>
 								</span>
 							</div>
 							{assetView === "preview" ? (

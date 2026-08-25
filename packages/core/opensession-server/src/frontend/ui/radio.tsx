@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Radio as BaseRadio } from "@base-ui/react/radio";
 import { RadioGroup as BaseRadioGroup } from "@base-ui/react/radio-group";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -57,6 +57,41 @@ const sx = stylex.create({
 	easeVarEase: {
 			transitionTimingFunction: "var(--ease)"
 	},
+
+	hoverBorderFaint: {
+		"@media (hover: hover)": {
+			":hover": {
+				"borderColor": "var(--text-faint)"
+			}
+		}
+	},
+	focusVisibleRing2: {
+		":focusVisible": {
+			"--tw-ring-shadow": "var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor)",
+			"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+		}
+	},
+	focusVisibleRingAccent50: {
+		":focusVisible": {
+			"--tw-ring-color": "var(--accent)"
+		},
+		"@supports (color: color-mix(in lab, red, red))": {
+			":focusVisible": {
+				"--tw-ring-color": "color-mix(in oklab, var(--accent) 50%, transparent)"
+			}
+		}
+	},
+	focusVisibleRingOffset2: {
+		":focusVisible": {
+			"--tw-ring-offset-width": "2px",
+			"--tw-ring-offset-shadow": "var(--tw-ring-inset,) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color)"
+		}
+	},
+	focusVisibleRingOffsetBg: {
+		":focusVisible": {
+			"--tw-ring-offset-color": "var(--bg)"
+		}
+	},
 });
 
 type RadioProps = React.ComponentProps<typeof BaseRadio.Root>;
@@ -65,7 +100,7 @@ type RadioGroupProps = React.ComponentProps<typeof BaseRadioGroup>;
 /** The app's radio control for choosing one option from a visible set. */
 export function Radio({ className, ...props }: RadioProps) {
 	return (
-		<BaseRadio.Root {...mergeStylexProps(cn("transition-[background-color,border-color]", "hover:border-faint", "data-[checked]:border-accent-control data-[checked]:bg-accent-control data-[checked]:hover:border-accent-control", "focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-bg", "data-[disabled]:cursor-default data-[disabled]:opacity-40", className), sx.flex, sx.size4, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.border, sx.borderLineStrong, sx.bgSurface, sx.p0, sx.outlineNone, sx.durationVarDurMicro, sx.easeVarEase)}
+		<BaseRadio.Root {...mergeStylexProps(cn("transition-[background-color,border-color]", mergeStylexClassName("", sx.hoverBorderFaint), "data-[checked]:border-accent-control data-[checked]:bg-accent-control data-[checked]:hover:border-accent-control", mergeStylexClassName("", sx.focusVisibleRing2, sx.focusVisibleRingAccent50, sx.focusVisibleRingOffset2, sx.focusVisibleRingOffsetBg), "data-[disabled]:cursor-default data-[disabled]:opacity-40", className), sx.flex, sx.size4, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.border, sx.borderLineStrong, sx.bgSurface, sx.p0, sx.outlineNone, sx.durationVarDurMicro, sx.easeVarEase)}
 			{...props}
 		>
 			<BaseRadio.Indicator {...stylex.props(sx.size15, sx.roundedFull, sx.bgOnAccentControl)} />

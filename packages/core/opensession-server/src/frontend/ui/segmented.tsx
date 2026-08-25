@@ -2,7 +2,7 @@ import { Toggle } from "@base-ui/react/toggle";
 import { ToggleGroup } from "@base-ui/react/toggle-group";
 import { motion } from "motion/react";
 import * as React from "react";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import { duration, ease } from "./motion";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -63,7 +63,7 @@ const sx = stylex.create({
 			borderWidth: "0"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	fontMedium: {
 			fontWeight: "var(--font-weight-medium)"
@@ -87,6 +87,48 @@ const sx = stylex.create({
 	},
 	textDim: {
 			color: "var(--text-dim)"
+	},
+
+	phonePx3: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "12px"
+		}
+	},
+	phonePy2: {
+		"@media (max-width: 720px)": {
+			"paddingBlock": "8px"
+		}
+	},
+	phoneTextItemTitle: {
+		"@media (max-width: 720px)": {
+			"fontSize": "var(--type-item-title)"
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	disabledCursorDefault: {
+		":disabled": {
+			"cursor": "default"
+		}
+	},
+	disabledTextFaint: {
+		":disabled": {
+			"color": "var(--text-faint)"
+		}
+	},
+	disabledHoverTextFaint: {
+		"@media (hover: hover)": {
+			":disabled": {
+				":hover": {
+					"color": "var(--text-faint)"
+				}
+			}
+		}
 	},
 });
 
@@ -205,7 +247,7 @@ export function SegmentedOption({
 	const selected = current === value;
 	return (
 		<Toggle
-			value={value} {...mergeStylexProps(cn(optionSizes[size], "phone:px-3 phone:py-2 phone:text-item-title", selected ? "" : "hover:text-fg", "disabled:cursor-default disabled:text-faint disabled:hover:text-faint", className), sx.relative, sx.cursorPointer, sx.roundedControl, sx.border0, sx.bgTransparent, typography.controlLabel, sx.fontMedium, sx.whitespaceNowrap, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase, selected && sx.textFg, !(selected) && sx.textDim)}
+			value={value} {...mergeStylexProps(cn(optionSizes[size], mergeStylexClassName("", sx.phonePx3, sx.phonePy2, sx.phoneTextItemTitle), selected ? "" : mergeStylexClassName("", sx.hoverTextFg), mergeStylexClassName("", sx.disabledCursorDefault, sx.disabledTextFaint, sx.disabledHoverTextFaint), className), sx.relative, sx.cursorPointer, sx.roundedControl, sx.border0, sx.bgTransparent, typography.controlLabel, sx.fontMedium, sx.whitespaceNowrap, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase, selected && sx.textFg, !(selected) && sx.textDim)}
 			{...props}
 		>
 			{selected && <SegmentedKnob knobId={knobId} />}

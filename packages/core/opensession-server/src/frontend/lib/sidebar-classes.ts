@@ -429,7 +429,7 @@ const sx = stylex.create({
 		"borderStyle": "none"
 	},
 	bgTransparent: {
-		"backgroundColor": "#0000"
+		"backgroundColor": "transparent"
 	},
 	py1: {
 		"paddingBlock": "4px"

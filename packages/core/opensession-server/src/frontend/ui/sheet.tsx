@@ -174,7 +174,7 @@ const sx = stylex.create({
 		"paddingTop": "env(safe-area-inset-top)"
 	},
 	shadowNone: {
-		"--tw-shadow": "0 0 #0000",
+		"--tw-shadow": "0 0 transparent",
 		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
 	},
 	insetX0: {

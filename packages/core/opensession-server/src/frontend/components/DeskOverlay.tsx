@@ -11,7 +11,7 @@ import {
 	type DeskVoiceState,
 } from "../lib/desk-voice-client";
 import { getDeskVoicePref, onDeskVoiceChanged } from "../lib/desk-voice-pref";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexClassName } from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 
@@ -82,6 +82,27 @@ const sx = stylex.create({
 	},
 	textCenter: {
 			textAlign: "center"
+	},
+
+	h600px: {
+		"height": "600px"
+	},
+	maxH80dvh: {
+		"maxHeight": "80dvh"
+	},
+	originCenter: {
+		"transformOrigin": "50%"
+	},
+	originBottomRight: {
+		"transformOrigin": "100% 100%"
+	},
+	roundedBVarComposerRadius: {
+		"borderBottomRightRadius": "var(--composer-radius)",
+		"borderBottomLeftRadius": "var(--composer-radius)"
+	},
+	duration100ms: {
+		"--tw-duration": ".1s",
+		"transitionDuration": ".1s"
 	},
 });
 
@@ -336,9 +357,9 @@ export function DeskOverlay({
 				className={cn(
 					phone
 						? "h-[min(600px,85dvh)]"
-						: "h-[600px] max-h-[80dvh]",
-					openOrigin === "center" ? "origin-center" : "origin-bottom-right",
-					"rounded-b-[var(--composer-radius)] transition-[scale,translate,opacity]! duration-[100ms]! data-[starting-style]:translate-y-0! data-[starting-style]:scale-[0.9]!",
+						: mergeStylexClassName("", sx.h600px, sx.maxH80dvh),
+					openOrigin === "center" ? mergeStylexClassName("", sx.originCenter) : mergeStylexClassName("", sx.originBottomRight),
+					mergeStylexClassName("transition-[scale,translate,opacity]! data-[starting-style]:translate-y-0! data-[starting-style]:scale-[0.9]!", sx.roundedBVarComposerRadius, sx.duration100ms),
 				)}
 				aria-label="Desk"
 			>

@@ -20,7 +20,7 @@ import {
 	IconPullRequest,
 	IconX,
 } from "./icons";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { ContextMenu } from "../ui/menu";
 import { Popover } from "../ui/popover";
 import { Tooltip } from "../ui/tooltip";
@@ -44,6 +44,40 @@ const sx = stylex.create({
 	},
 	textRed: {
 			color: "var(--red)"
+	},
+
+	hoverPr68px: {
+		"@media (hover: hover)": {
+			":hover": {
+				"paddingRight": "68px"
+			}
+		}
+	},
+	bgSelected: {
+		"backgroundColor": "var(--selected)"
+	},
+	size2: {
+		"width": "8px",
+		"height": "8px"
+	},
+	shrink0: {
+		"flexShrink": "0"
+	},
+	roundedFull: {
+		"borderRadius": "3.40282e38px"
+	},
+	textAccent: {
+		"color": "var(--accent-ink)"
+	},
+	textFaint: {
+		"color": "var(--text-faint)"
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
 	},
 });
 
@@ -117,9 +151,9 @@ export function PrRow({
 									// An unpinned row reveals one chip fewer (the pin only
 									// appears once there is something to unpin), so it gives
 									// that much of its right end back to the title.
-									!pinned && "hover:pr-[68px]",
+									!pinned && mergeStylexClassName("", sx.hoverPr68px),
 									SIDEBAR_HOVER_LAYER,
-									selected && "bg-selected",
+									selected && mergeStylexClassName("", sx.bgSelected),
 								)}
 								data-sidebar-row=""
 								data-ws-row=""
@@ -142,7 +176,7 @@ export function PrRow({
 			<span className={SIDEBAR_RAIL}>
 				{needsMyReview ? (
 					<span
-						className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.waiting}`}
+						className={[mergeStylexClassName("", sx.size2, sx.shrink0, sx.roundedFull), SIDEBAR_STATUS_DOT.waiting].filter(Boolean).join(" ")}
 						title="Needs your review"
 					/>
 				) : (
@@ -182,7 +216,7 @@ export function PrRow({
 						tabIndex={0}
 						// One colour, picked here rather than stacking two `text-*`
 						// utilities, whose winner would be Tailwind's ordering.
-						className={cn(SIDEBAR_WS_ACTION, "text-accent")}
+						className={cn(SIDEBAR_WS_ACTION, mergeStylexClassName("", sx.textAccent))}
 						aria-label="Unpin pull request"
 						onMouseEnter={card.close}
 						onClick={(e) => {
@@ -204,7 +238,7 @@ export function PrRow({
 					<span
 						role="button"
 						tabIndex={0}
-						className={cn(SIDEBAR_WS_ACTION, "text-faint hover:text-fg")}
+						className={cn(SIDEBAR_WS_ACTION, mergeStylexClassName("", sx.textFaint, sx.hoverTextFg))}
 						aria-label="Close pull request"
 						onMouseEnter={card.close}
 						onClick={(e) => {

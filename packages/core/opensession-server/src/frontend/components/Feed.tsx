@@ -29,7 +29,7 @@ import { PageDescription, PageHeader, PageTitle } from "../ui/page-header";
 import { EmptyState, ListSkeleton } from "../ui/state";
 import { Button } from "../ui/button";
 import { Menu } from "../ui/menu";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { IconFeed, IconPeople, IconRepo, IconRobot } from "./icons";
 import {
 	PEOPLE_CHIP,
@@ -170,6 +170,10 @@ const sx = stylex.create({
 	},
 	mt1: {
 			marginTop: "4px"
+	},
+
+	mb0: {
+		"marginBottom": "0"
 	},
 });
 
@@ -465,7 +469,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 				{feedLoading ? (
 					<>
 						<div {...stylex.props(sx.mb2, sx.flex, sx.minH30px, sx.itemsCenter)}>
-							<h3 className={cn(PEOPLE_SECTION_LABEL, "mb-0")}>Shipped</h3>
+							<h3 className={cn(PEOPLE_SECTION_LABEL, mergeStylexClassName("", sx.mb0))}>Shipped</h3>
 						</div>
 						<ListSkeleton
 							variant="bare"
@@ -488,7 +492,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 						    screen when a pick empties the list, or the only way back
 						    is gone. */}
 						<div {...stylex.props(sx.mb2, sx.flex, sx.minH30px, sx.itemsCenter, sx.justifyBetween, sx.gap3)}>
-							<h3 className={cn(PEOPLE_SECTION_LABEL, "mb-0")}>
+							<h3 className={cn(PEOPLE_SECTION_LABEL, mergeStylexClassName("", sx.mb0))}>
 								{scopeName ? `${scopeName} shipped` : "Shipped"}
 							</h3>
 							{repoOptions.length > 1 && (

@@ -5,7 +5,7 @@ import {
 } from "../lib/app-header-classes";
 import { IconChevronLeft } from "../components/icons";
 import { Button, type ButtonProps } from "./button";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import { type as typography } from "../styles/typography.stylex";
 import * as stylex from "@stylexjs/stylex";
 
@@ -57,6 +57,48 @@ const sx = stylex.create({
 	textDim: {
 			color: "var(--text-dim)"
 	},
+
+	phoneRelative: {
+		"@media (max-width: 720px)": {
+			"position": "relative"
+		}
+	},
+	phoneH11: {
+		"@media (max-width: 720px)": {
+			"height": "44px"
+		}
+	},
+	phoneShrink0: {
+		"@media (max-width: 720px)": {
+			"flexShrink": "0"
+		}
+	},
+	phoneJustifyCenter: {
+		"@media (max-width: 720px)": {
+			"justifyContent": "center"
+		}
+	},
+	phonePx3: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "12px"
+		}
+	},
+	shadowNone: {
+		"--tw-shadow": "0 0 transparent",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	hoverBgPressed: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover-strong)"
+			}
+		}
+	},
+	activeScale096: {
+		":active": {
+			"scale": ".96"
+		}
+	},
 });
 
 /**
@@ -74,7 +116,7 @@ export const TopBar = React.forwardRef<HTMLElement, TopBarProps>(function TopBar
 	return React.createElement(as, {
 		ref,
 		"data-top-bar": "",
-		className: cn("flex min-w-0 items-center", className),
+		className: cn(mergeStylexClassName("", sx.flex, sx.minW0, sx.itemsCenter), className),
 		...props,
 	});
 });
@@ -124,7 +166,7 @@ export const PhoneTopBar = React.forwardRef<
 				as="header"
 				ref={ref}
 				className={cn(
-					"phone:relative phone:h-11 phone:shrink-0 phone:justify-center phone:px-3",
+					mergeStylexClassName("", sx.phoneRelative, sx.phoneH11, sx.phoneShrink0, sx.phoneJustifyCenter, sx.phonePx3),
 					className,
 				)}
 				{...props}
@@ -154,7 +196,7 @@ export const PhoneTopBarAction = React.forwardRef<
 		<Button
 			ref={ref}
 			variant="ghost"
-			size="md" {...mergeStylexProps(cn("shadow-none hover:bg-pressed active:scale-[0.96] [&_svg]:size-6", className), sx.size11, sx.minH11, sx.shrink0, sx.touchManipulation, sx.roundedFull, sx.bgPanel, sx.p0, sx.textDim)}
+			size="md" {...mergeStylexProps(cn(mergeStylexClassName("[&_svg]:size-6", sx.shadowNone, sx.hoverBgPressed, sx.activeScale096), className), sx.size11, sx.minH11, sx.shrink0, sx.touchManipulation, sx.roundedFull, sx.bgPanel, sx.p0, sx.textDim)}
 			{...props}
 		/>
 	);

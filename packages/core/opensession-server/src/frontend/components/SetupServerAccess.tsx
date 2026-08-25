@@ -19,7 +19,7 @@ import {
 } from "./setup-shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -118,6 +118,12 @@ const sx = stylex.create({
 	},
 	py1: {
 			paddingBlock: "4px"
+	},
+
+	phoneMinH11: {
+		"@media (max-width: 720px)": {
+			"minHeight": "44px"
+		}
 	},
 });
 
@@ -271,7 +277,7 @@ setSaving(false);
 							type="submit"
 							variant="primary"
 							disabled={!dirty || saving}
-							className="phone:min-h-11"
+							className={mergeStylexClassName("", sx.phoneMinH11)}
 						>
 							{saving ? "Saving…" : "Save addresses"}
 						</Button>

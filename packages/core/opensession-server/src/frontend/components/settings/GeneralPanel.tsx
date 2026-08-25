@@ -11,7 +11,7 @@ import { rememberOrganizationIcon } from "../../hooks/useOrganizationIcon";
 import { PRODUCT_NAME } from "../../lib/brand";
 import { pngFromImageFile, pngFromImageUrl } from "../../lib/icon-image";
 import { REPO_TILE_INK, repoColor, repoIconFill } from "../../lib/repo-colors";
-import { cn, mergeStylexProps } from "../../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 import { OverlayAction } from "../../ui/overlay-action";
 import {
 	SettingCard,
@@ -137,6 +137,22 @@ const sx = stylex.create({
 	nameInput: {
 		width: "220px",
 		maxWidth: "100%",
+	},
+
+	phonePointerEventsAuto: {
+		"@media (max-width: 720px)": {
+			"pointerEvents": "auto"
+		}
+	},
+	phoneOpacity100: {
+		"@media (max-width: 720px)": {
+			"opacity": "1"
+		}
+	},
+	phoneHidden: {
+		"@media (max-width: 720px)": {
+			"display": "none"
+		}
 	},
 });
 
@@ -337,7 +353,7 @@ setBusy(false);
 											onClick={removeIcon}
 											aria-label="Remove organization icon"
 											title="Remove icon"
-											className="phone:pointer-events-auto! phone:opacity-100!"
+											className={mergeStylexClassName("", sx.phonePointerEventsAuto, sx.phoneOpacity100)}
 										/>
 									)}
 								</div>
@@ -417,7 +433,7 @@ setBusy(false);
 export function GeneralPanel() {
 	return (
 		<SettingsPanel>
-			<SettingsHeader title="General" className="phone:hidden" />
+			<SettingsHeader title="General" className={mergeStylexClassName("", sx.phoneHidden)} />
 			<OrganizationProfileSection />
 		</SettingsPanel>
 	);

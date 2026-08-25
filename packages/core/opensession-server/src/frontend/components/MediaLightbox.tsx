@@ -212,7 +212,7 @@ const sx = stylex.create({
 			borderWidth: "0"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	p0: {
 			padding: "0"
@@ -498,7 +498,7 @@ const sx = stylex.create({
 		"opacity": ".6"
 	},
 	outlineTransparent: {
-		"outlineColor": "#0000"
+		"outlineColor": "transparent"
 	},
 	justifySelfCenter: {
 		"justifySelf": "center"
@@ -530,6 +530,16 @@ const sx = stylex.create({
 		"@supports (color: color-mix(in lab, red, red))": {
 			"backgroundColor": "color-mix(in oklab, var(--color-white) 30%, transparent)"
 		}
+	},
+
+	cursorCrosshair: {
+		"cursor": "crosshair"
+	},
+	cursorGrab: {
+		"cursor": "grab"
+	},
+	cursorZoomIn: {
+		"cursor": "zoom-in"
 	},
 });
 
@@ -1827,7 +1837,7 @@ function ZoomableMedia({
 	return (
 		<div
 			ref={wrapRef}
-			className={[mergeStylexClassName("", sx.relative, sx.flex, sx.minH0, sx.minW0, sx.flex1, sx.touchNone, sx.selectNone, sx.itemsCenter, sx.justifyCenter, sx.selfStretch), commentMode ? "cursor-crosshair" : zoomed ? "cursor-grab" : "cursor-zoom-in"].filter(Boolean).join(" ")}
+			className={[mergeStylexClassName("", sx.relative, sx.flex, sx.minH0, sx.minW0, sx.flex1, sx.touchNone, sx.selectNone, sx.itemsCenter, sx.justifyCenter, sx.selfStretch), commentMode ? mergeStylexClassName("", sx.cursorCrosshair) : zoomed ? mergeStylexClassName("", sx.cursorGrab) : mergeStylexClassName("", sx.cursorZoomIn)].filter(Boolean).join(" ")}
 			onPointerDown={onPointerDown}
 			onPointerMove={onPointerMove}
 			onPointerUp={onPointerEnd}

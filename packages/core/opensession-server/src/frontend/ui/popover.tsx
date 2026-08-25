@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Popover as BasePopover } from "@base-ui/react/popover";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import { FLOATING_OVERLAY_LAYER } from "./popup-classes";
 import {
 	useExclusivePopup,
@@ -41,6 +41,11 @@ const sx = stylex.create({
 	},
 	BorderColorVarSmoothRingColor: {
 			borderColor: "var(--smooth-ring-color)"
+	},
+
+	BackdropFilterVarPopupBlur: {
+		"WebkitBackdropFilter": "var(--popup-blur)",
+		"backdropFilter": "var(--popup-blur)"
 	},
 });
 
@@ -184,7 +189,7 @@ function Popup({
 				arrowPadding={14} {...mergeStylexProps(cn(FLOATING_OVERLAY_LAYER, positionerClassName), sx.outlineNone)}
 			>
 				<BasePopover.Popup
-					initialFocus={initialFocus} {...mergeStylexProps(cn("[backdrop-filter:var(--popup-blur)]", ring === "soft" ? "[--smooth-ring-color:color-mix(in_srgb,var(--popup-ring)_65%,var(--popup-surface))]" : "", elevation === "lg"
+					initialFocus={initialFocus} {...mergeStylexProps(cn(mergeStylexClassName("", sx.BackdropFilterVarPopupBlur), ring === "soft" ? "[--smooth-ring-color:color-mix(in_srgb,var(--popup-ring)_65%,var(--popup-surface))]" : "", elevation === "lg"
 							? "smooth-shadow-ring-lg"
 							: elevation === "sm"
 								? "smooth-shadow-ring-sm"
@@ -206,7 +211,7 @@ function Popup({
 						// sliver past the diagonal, so the arrow's own fill covers
 						// the popup's hairline where it would otherwise draw a line
 						// across the arrow's base.
-						<BasePopover.Arrow {...mergeStylexProps(cn("[backdrop-filter:var(--popup-blur)]", "data-[side=right]:left-[-5px] data-[side=right]:border-b data-[side=right]:border-l", "data-[side=right]:[clip-path:polygon(14%_0,0_0,0_100%,100%_100%,100%_86%)]", "data-[side=left]:right-[-6px] data-[side=left]:border-t data-[side=left]:border-r", "data-[side=left]:[clip-path:polygon(0_0,100%_0,100%_100%,86%_100%,0_14%)]", "data-[side=top]:bottom-[-6px] data-[side=top]:border-r data-[side=top]:border-b", "data-[side=top]:[clip-path:polygon(100%_0,100%_100%,0_100%,0_86%,86%_0)]", "data-[side=bottom]:top-[-6px] data-[side=bottom]:border-t data-[side=bottom]:border-l", "data-[side=bottom]:[clip-path:polygon(0_0,100%_0,100%_14%,14%_100%,0_100%)]"), sx.size10px, sx.rotate45, sx.BorderColorVarSmoothRingColor, sx.bgPopupGlass)}
+						<BasePopover.Arrow {...mergeStylexProps(cn(mergeStylexClassName("", sx.BackdropFilterVarPopupBlur), "data-[side=right]:left-[-5px] data-[side=right]:border-b data-[side=right]:border-l", "data-[side=right]:[clip-path:polygon(14%_0,0_0,0_100%,100%_100%,100%_86%)]", "data-[side=left]:right-[-6px] data-[side=left]:border-t data-[side=left]:border-r", "data-[side=left]:[clip-path:polygon(0_0,100%_0,100%_100%,86%_100%,0_14%)]", "data-[side=top]:bottom-[-6px] data-[side=top]:border-r data-[side=top]:border-b", "data-[side=top]:[clip-path:polygon(100%_0,100%_100%,0_100%,0_86%,86%_0)]", "data-[side=bottom]:top-[-6px] data-[side=bottom]:border-t data-[side=bottom]:border-l", "data-[side=bottom]:[clip-path:polygon(0_0,100%_0,100%_14%,14%_100%,0_100%)]"), sx.size10px, sx.rotate45, sx.BorderColorVarSmoothRingColor, sx.bgPopupGlass)}
 						/>
 					)}
 					{children}

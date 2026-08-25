@@ -186,7 +186,7 @@ const sx = stylex.create({
 		"fontSize": "10px"
 	},
 	borderTransparent: {
-		"borderColor": "#0000"
+		"borderColor": "transparent"
 	},
 	bgGreenSoft: {
 		"backgroundColor": "var(--green-soft)"

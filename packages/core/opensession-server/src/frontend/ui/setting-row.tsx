@@ -5,7 +5,7 @@ import {
 	SETTING_ROW_PRESSABLE,
 } from "../lib/setting-row-classes";
 import { IconChevronDown } from "../components/icons";
-import { cn } from "./cn";
+import { cn, mergeStylexClassName } from "./cn";
 import { Menu } from "./menu";
 import { Switch } from "./switch";
 import * as stylex from "@stylexjs/stylex";
@@ -53,6 +53,10 @@ const sx = stylex.create({
 	textFaint: {
 			color: "var(--text-faint)"
 	},
+
+	cursorDefault: {
+		"cursor": "default"
+	},
 });
 
 /** The rows a settings popover is made of. The rule they follow, and why they
@@ -99,7 +103,7 @@ export function SwitchRow({
 		<label
 			className={cn(
 				SETTING_ROW,
-				disabled ? "cursor-default" : SETTING_ROW_PRESSABLE,
+				disabled ? mergeStylexClassName("", sx.cursorDefault) : SETTING_ROW_PRESSABLE,
 			)}
 		>
 			{/* A setting that cannot apply yet dims its name too: a live label

@@ -20,7 +20,7 @@ const sx = stylex.create({
 	},
 	desktopBorderTransparent: {
 		"@media (min-width: 721px)": {
-			"borderColor": "#0000"
+			"borderColor": "transparent"
 		}
 	},
 	desktopSmoothRingColorVarComposerBorder: {
@@ -113,7 +113,7 @@ const sx = stylex.create({
 		"borderStyle": "none"
 	},
 	bgTransparent: {
-		"backgroundColor": "#0000"
+		"backgroundColor": "transparent"
 	},
 	leading155: {
 		"--tw-leading": "1.55",
@@ -542,7 +542,7 @@ const sx = stylex.create({
 		"gap": "6px"
 	},
 	borderTransparent: {
-		"borderColor": "#0000"
+		"borderColor": "transparent"
 	},
 	bgAccentSoft: {
 		"backgroundColor": "var(--accent-soft)"
@@ -562,7 +562,7 @@ const sx = stylex.create({
 		"backgroundClip": "text"
 	},
 	textTransparent: {
-		"color": "#0000"
+		"color": "transparent"
 	},
 	WebkitBackgroundClipText: {
 		"WebkitbackgroundClip": "text"

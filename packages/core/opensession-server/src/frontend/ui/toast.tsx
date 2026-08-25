@@ -457,7 +457,7 @@ function ToastViewport({ container }: { container?: HTMLElement | null }) {
 		<BaseToast.Portal container={container ?? undefined}>
 			<BaseToast.Viewport
 				ref={viewportRef}
-				className={[TOAST_NOTICE_LANE, container ? "absolute" : "fixed", mergeStylexClassName("toast-viewport w-[min(480px,calc(100vw-32px))]", sx.mxAuto, sx.hVarToastFrontmostHeight, sx.outlineNone, sx.phoneWFull, sx.phonePx3)].filter(Boolean).join(" ")}
+				className={[TOAST_NOTICE_LANE, container ? mergeStylexClassName("", sx.absolute) : mergeStylexClassName("", sx.fixed), mergeStylexClassName("toast-viewport w-[min(480px,calc(100vw-32px))]", sx.mxAuto, sx.hVarToastFrontmostHeight, sx.outlineNone, sx.phoneWFull, sx.phonePx3)].filter(Boolean).join(" ")}
 			>
 				{items.map((item) => (
 					<ToastCard key={item.id} toast={item} />
@@ -481,7 +481,7 @@ function ToastCard({ toast: item }: { toast: BaseToast.Root.ToastObject<ToastDat
 			swipeDirection={data.ongoing ? [] : ["down", "right"]}
 			onClick={data.ongoing ? undefined : () => dismissToast(data.id)}
 			className={[
-				[data.ongoing ? "pointer-events-none" : "pointer-events-auto", mergeStylexClassName("", sx.absolute, sx.bottom0, sx.left12, sx.wMax, sx.maxWFull, sx.outlineNone, sx.phoneMaxWCalc100vw24px)].filter(Boolean).join(" "),
+				[data.ongoing ? mergeStylexClassName("", sx.pointerEventsNone) : mergeStylexClassName("", sx.pointerEventsAuto), mergeStylexClassName("", sx.absolute, sx.bottom0, sx.left12, sx.wMax, sx.maxWFull, sx.outlineNone, sx.phoneMaxWCalc100vw24px)].filter(Boolean).join(" "),
 				data.ongoing ? ONGOING_TOAST_POSITION : "",
 				mergeStylexClassName("", sx.ZIndexCalc100VarToastIndex, sx.TransformOriginCenterBottom),
 				mergeStylexClassName("", sx.TransformTranslateXCalc50VarToastSwipeMovementXTranslateYCalcVarToastSwipeMovementYVarToastIndex8pxScaleCalc1VarToastIndex004),

@@ -7,6 +7,7 @@ import { Button } from "../ui/button";
 import { PageLoader } from "../ui/page-loader";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -95,6 +96,33 @@ const sx = stylex.create({
 	leadingRelaxed: {
 			lineHeight: "var(--leading-relaxed)"
 	},
+
+	h2: {
+		"height": "8px"
+	},
+	w2: {
+		"width": "8px"
+	},
+	shrink0: {
+		"flexShrink": "0"
+	},
+	roundedFull: {
+		"borderRadius": "3.40282e38px"
+	},
+	hoverBgRedSoft: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--red-soft)"
+			}
+		}
+	},
+	hoverTextRed: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--red)"
+			}
+		}
+	},
 });
 
 /**
@@ -154,7 +182,7 @@ setStopping(false);
 		<div {...stylex.props(sx.flex, sx.hFull, sx.minH0, sx.flexCol)}>
 			<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.borderB, sx.borderDivider, sx.bgPanel, sx.px3, sx.py15)}>
 				<span
-					className={`h-2 w-2 shrink-0 rounded-full ${url ? "bg-green-500" : "animate-pulse bg-amber-400"}`}
+					className={[mergeStylexClassName("", sx.h2, sx.w2, sx.shrink0, sx.roundedFull), url ? "bg-green-500" : "animate-pulse bg-amber-400"].filter(Boolean).join(" ")}
 					aria-hidden="true"
 				/>
 				<div {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.fontMedium, sx.textDim, typography.supporting)}>
@@ -180,7 +208,7 @@ setStopping(false);
 				<Button
 					size="sm"
 					variant="soft"
-					className="hover:bg-red-soft hover:text-red"
+					className={mergeStylexClassName("", sx.hoverBgRedSoft, sx.hoverTextRed)}
 					disabled={stopping || (!status?.running && !status?.starting)}
 					onClick={stop}
 					title="Stop the dev server and release its container"

@@ -301,7 +301,7 @@ import {
 	TopBarLeading,
 	TopBarTitle,
 } from "../ui/top-bar";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import {
 	composerMenuIcon,
 	composerMenuItem,
@@ -777,7 +777,7 @@ const sx = stylex.create({
 			cursor: "pointer"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	pointerEventsAuto: {
 			pointerEvents: "auto"
@@ -842,6 +842,10 @@ const sx = stylex.create({
 	mobileControls: { pointerEvents: "auto", marginInline: "auto", display: "none", height: "48px", flexShrink: 0, alignItems: "center", borderRadius: "999px", borderStyle: "solid", borderWidth: "1px", borderColor: "var(--mobile-header-control-border)", paddingInline: "2px", color: "var(--text-dim)", boxShadow: "var(--mobile-header-control-shadow)", "@media (max-width: 720px)": { display: "flex" } },
 	panelTabActive: { backgroundColor: "var(--hover)", color: "var(--text)" },
 	hidden: { display: "none" },
+
+	Max380pxHidden: {
+		"display": "none"
+	},
 });
 
 type QueueReceipt = {
@@ -8206,7 +8210,7 @@ export function SessionViewer({
 									onClick={() => setPanelPage("changes")}
 								>
 									<IconFile size={15} {...stylex.props(sx.shrink0)} />
-									<span className="@max-[380px]:hidden">Changes</span>
+									<span className={mergeStylexClassName("", sx.Max380pxHidden)}>Changes</span>
 								</button>
 								<button
 									type="button"
@@ -8215,7 +8219,7 @@ export function SessionViewer({
 									onClick={() => setPanelPage("portals")}
 								>
 									<IconGlobe size={15} {...stylex.props(sx.shrink0)} />
-									<span className="@max-[380px]:hidden">Portals</span>
+									<span className={mergeStylexClassName("", sx.Max380pxHidden)}>Portals</span>
 									{livePortals > 0 && (
 										<span {...mergeStylexProps("tabular-nums @max-[380px]:hidden", sx.shrink0, sx.textFaint)}>
 											{livePortals}
@@ -8229,7 +8233,7 @@ export function SessionViewer({
 									onClick={() => setPanelPage("agents")}
 								>
 									<IconStack size={15} {...stylex.props(sx.shrink0)} />
-									<span className="@max-[380px]:hidden">Agents</span>
+									<span className={mergeStylexClassName("", sx.Max380pxHidden)}>Agents</span>
 									{runningAgents > 0 && (
 										<span {...mergeStylexProps("tabular-nums @max-[380px]:hidden", sx.shrink0, sx.textYellow)}>
 											{runningAgents}
@@ -8246,7 +8250,7 @@ export function SessionViewer({
 									}}
 								>
 									<IconTerminal size={15} {...stylex.props(sx.shrink0)} />
-									<span className="@max-[380px]:hidden">Terminal</span>
+									<span className={mergeStylexClassName("", sx.Max380pxHidden)}>Terminal</span>
 								</button>
 							</div>
 						)}

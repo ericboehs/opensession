@@ -13,6 +13,7 @@ import {
 import { UserAvatar } from "./UserAvatar";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -160,6 +161,29 @@ const sx = stylex.create({
 	textDim: {
 			color: "var(--text-dim)"
 	},
+
+	pyVarSidebarRowPad: {
+		"paddingBlock": "var(--sidebar-row-pad)"
+	},
+	pl25: {
+		"paddingLeft": "10px"
+	},
+	pr2: {
+		"paddingRight": "8px"
+	},
+	wFull: {
+		"width": "100%"
+	},
+	roundedRow: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	borderNone: {
+		"--tw-border-style": "none",
+		"borderStyle": "none"
+	},
+	bgTransparent: {
+		"backgroundColor": "transparent"
+	},
 });
 
 // The account lives at the bottom of Settings: who your sessions act as, and
@@ -221,14 +245,14 @@ export function SettingsAccountFooter() {
 		// the same rail as the sections above them.
 		<div {...stylex.props(sx.sticky, sx.bottom0, sx.Mx3, sx.Mb4, sx.mtAuto, sx.flex, sx.flexCol, sx.borderX0, sx.borderB0, sx.borderT, sx.borderSolid, sx.borderDivider, sx.bgSidebar, sx.px15, sx.pb4, sx.pt3)}>
 			{githubAuth ? (
-				<div className={`flex items-center ${SIDEBAR_RAIL_GAP} py-[var(--sidebar-row-pad)] pl-2.5 pr-2`}>
+				<div className={[mergeStylexClassName("", sx.flex, sx.itemsCenter), SIDEBAR_RAIL_GAP, mergeStylexClassName("", sx.pyVarSidebarRowPad, sx.pl25, sx.pr2)].filter(Boolean).join(" ")}>
 					<AccountIdentity name={currentUser} subtitle={subtitle} />
 				</div>
 			) : (
 				<Menu.Root>
 					<Menu.Trigger
 						aria-label="Switch account"
-						className={`flex w-full min-w-0 items-center ${SIDEBAR_RAIL_GAP} rounded-row border-none bg-transparent py-[var(--sidebar-row-pad)] pl-2.5 pr-2 text-left data-[popup-open]:bg-selected ${SIDEBAR_HOVER_LAYER}`}
+						className={[mergeStylexClassName("", sx.flex, sx.wFull, sx.minW0, sx.itemsCenter), SIDEBAR_RAIL_GAP, mergeStylexClassName("data-[popup-open]:bg-selected", sx.roundedRow, sx.borderNone, sx.bgTransparent, sx.pyVarSidebarRowPad, sx.pl25, sx.pr2, sx.textLeft), SIDEBAR_HOVER_LAYER].filter(Boolean).join(" ")}
 					>
 						<AccountIdentity name={currentUser} subtitle={subtitle} />
 						<IconChevronRight size={20} {...stylex.props(sx.shrink0, sx.textFaint)} />

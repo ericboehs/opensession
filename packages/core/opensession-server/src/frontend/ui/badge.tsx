@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 
@@ -38,6 +38,11 @@ const sx = stylex.create({
 	},
 	whitespaceNowrap: {
 			whiteSpace: "nowrap"
+	},
+
+	outline: {
+		"outlineStyle": "var(--tw-outline-style)",
+		"outlineWidth": "1px"
 	},
 });
 
@@ -114,7 +119,7 @@ export function Badge({
 	...rest
 }: BadgeProps) {
 	return (
-		<span {...mergeStylexProps(cn(variant === "outline" ? outline[tone] : soft[tone], className), sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap1, sx.roundedSm, sx.px15, sx.py05, typography.meta, sx.whitespaceNowrap)}
+		<span {...mergeStylexProps(cn(variant === mergeStylexClassName("", sx.outline) ? outline[tone] : soft[tone], className), sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap1, sx.roundedSm, sx.px15, sx.py05, typography.meta, sx.whitespaceNowrap)}
 			{...rest}
 		>
 			{dot && (

@@ -31,7 +31,7 @@ import {
 } from "./setup-shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -130,6 +130,17 @@ const sx = stylex.create({
 		display: "flex",
 		flexDirection: "column",
 		gap: "16px",
+	},
+
+	phoneMinH11: {
+		"@media (max-width: 720px)": {
+			"minHeight": "44px"
+		}
+	},
+	phoneFlex1: {
+		"@media (max-width: 720px)": {
+			"flex": "1"
+		}
 	},
 });
 
@@ -474,10 +485,10 @@ setSaving(false);
 										value={transport}
 										onValueChange={(next) => pickTransport(next as SlackTransport)} {...mergeStylexProps("phone:ml-0 phone:w-full", sx.mlAuto)}
 									>
-										<SegmentedOption value="socket" disabled={saving} className="phone:min-h-11 phone:flex-1">
+										<SegmentedOption value="socket" disabled={saving} className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneFlex1)}>
 											Socket Mode
 										</SegmentedOption>
-										<SegmentedOption value="http" disabled={saving || !httpAvailable} className="phone:min-h-11 phone:flex-1">
+										<SegmentedOption value="http" disabled={saving || !httpAvailable} className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneFlex1)}>
 											HTTP
 										</SegmentedOption>
 									</Segmented>

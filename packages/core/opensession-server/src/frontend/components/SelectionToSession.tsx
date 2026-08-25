@@ -140,7 +140,7 @@ const sx = stylex.create({
 			borderStyle: "none"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	py7px: {
 			paddingBlock: "7px"

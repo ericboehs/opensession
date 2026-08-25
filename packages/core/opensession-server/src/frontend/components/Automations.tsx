@@ -336,7 +336,7 @@ const sx = stylex.create({
 			paddingBlock: "8px"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	border0: {
 			borderStyle: "solid",
@@ -537,6 +537,10 @@ const sx = stylex.create({
 	},
 	itemsEnd: {
 		"alignItems": "flex-end"
+	},
+
+	mb35: {
+		"marginBottom": "14px"
 	},
 });
 
@@ -792,7 +796,7 @@ setError(e.message);
     >
     <div className={cn(mergeStylexClassName("", sx.mxAuto), !sel && mergeStylexClassName("", sx.maxW860px))}>
       <PageHeader
-        className={[mergeStylexClassName("", sx.max560pxMb5, sx.max560pxFlexCol, sx.max560pxItemsStart, sx.max560pxGap35), sel ? "mb-3.5 items-center" : ""].filter(Boolean).join(" ")}
+        className={[mergeStylexClassName("", sx.max560pxMb5, sx.max560pxFlexCol, sx.max560pxItemsStart, sx.max560pxGap35), sel ? mergeStylexClassName("", sx.mb35, sx.itemsCenter) : ""].filter(Boolean).join(" ")}
       >
         <div>
           <PageTitle className={sel ? mergeStylexClassName("", sx.textBase) : undefined}>Automations</PageTitle>
@@ -1292,7 +1296,7 @@ function TriggerGraph({ runs, compact }: { runs: AutomationRun[]; compact?: bool
   if (total === 0) return null;
 
   return (
-    <div className={[mergeStylexClassName("", sx.flex, sx.itemsEnd, sx.gap2), compact ? "" : "mt-2"].filter(Boolean).join(" ")}>
+    <div className={[mergeStylexClassName("", sx.flex, sx.itemsEnd, sx.gap2), compact ? "" : mergeStylexClassName("", sx.mt2)].filter(Boolean).join(" ")}>
       <svg
         width={GRAPH_DAYS * SLOT - 2}
         height={PLOT_H + 1}

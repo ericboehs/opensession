@@ -40,7 +40,7 @@ import {
 	tabCloseClass,
 	tabDotClass,
 } from "../lib/session-tab-classes";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexClassName } from "../ui/cn";
 import {
 	animateEmptyTabClose,
 	animateEmptyTabOpen,
@@ -71,6 +71,28 @@ const sx = stylex.create({
 	},
 	textFaint: {
 			color: "var(--text-faint)"
+	},
+
+	relative: {
+		"position": "relative"
+	},
+	z1: {
+		"zIndex": "1"
+	},
+	desktopMt11px: {
+		"@media (min-width: 721px)": {
+			"marginTop": "-11px"
+		}
+	},
+	desktopMr35: {
+		"@media (min-width: 721px)": {
+			"marginRight": "14px"
+		}
+	},
+	desktopPr7: {
+		"@media (min-width: 721px)": {
+			"paddingRight": "28px"
+		}
 	},
 });
 
@@ -399,7 +421,7 @@ export function SessionTabs({
 				render={
 					<button
 						type="button"
-						className={cn(TAB_NEW, "relative z-[1]")}
+						className={cn(TAB_NEW, mergeStylexClassName("", sx.relative, sx.z1))}
 						aria-label="New session in this workspace"
 						title="New session. Shares this workspace's worktree (right-click for options)"
 						onClick={(event) => {
@@ -451,7 +473,7 @@ export function SessionTabs({
 	);
 
 	return (
-		<div className={cn(TAB_STRIP, !inSplit && "desktop:-mt-[11px]")} role="tablist">
+		<div className={cn(TAB_STRIP, !inSplit && mergeStylexClassName("", sx.desktopMt11px))} role="tablist">
 			<div className={TAB_SCROLL} ref={scrollRef}>
 				<Reorder.Group
 					as="div"
@@ -494,7 +516,7 @@ export function SessionTabs({
 										{v.dotClass && <span className={`${PANEL_TAB_DOT} ${v.dotClass}`} />}
 										{v.icon ? (
 											<span
-												className={cn(TAB_VICON, v.closable !== false && "desktop:mr-3.5")}
+												className={cn(TAB_VICON, v.closable !== false && mergeStylexClassName("", sx.desktopMr35))}
 												aria-hidden="true"
 											>
 												{v.icon}
@@ -573,7 +595,7 @@ export function SessionTabs({
 														waiting,
 														colored: !!hex,
 													}),
-													emptyVisual && "desktop:pr-7",
+													emptyVisual && mergeStylexClassName("", sx.desktopPr7),
 												)}
 												style={{
 													...(hex ? { "--tab-color": hex } : {}),

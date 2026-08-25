@@ -31,7 +31,7 @@ import { MotionConfig } from "motion/react";
 import { MarkdownRepoProvider } from "./components/MarkdownBody";
 import { Sidebar, type SidebarHandle } from "./components/Sidebar";
 import { Tooltip, TooltipProvider } from "./ui/tooltip";
-import { cn, mergeStylexProps } from "./ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./ui/cn";
 import {
 	APP_BODY,
 	DETAIL_PANE,
@@ -447,6 +447,73 @@ const sx = stylex.create({
 	p0: { padding: "0" },
 	desktopInlineFlex: {
 		display: { default: null, "@media (min-width: 721px)": "inline-flex" },
+	},
+
+	right3px: {
+		"right": "-3px"
+	},
+	afterAbsolute: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	afterTop0: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"top": "0"
+		}
+	},
+	afterRight3px: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"right": "3px"
+		}
+	},
+	afterHFull: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"height": "100%"
+		}
+	},
+	afterW2px: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"width": "2px"
+		}
+	},
+	afterBgTransparent: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"backgroundColor": "transparent"
+		}
+	},
+	afterTransitionBackground: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"transitionProperty": "background",
+			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+		}
+	},
+	afterContent: {
+		"::after": {
+			"--tw-content": "\"\"",
+			"content": "var(--tw-content)"
+		}
+	},
+	hoverAfterBgLineStrong: {
+		"@media (hover: hover)": {
+			":hover": {
+				"::after": {
+					"content": "var(--tw-content)",
+					"backgroundColor": "var(--border-strong)"
+				}
+			}
+		}
+	},
+	topCalcVarDesktopHeaderH35px2: {
+		"top": "calc((var(--desktop-header-h) - 35px) / 2)"
 	},
 });
 
@@ -5610,8 +5677,8 @@ console.error("Rename failed:", e);
 						    edge while the list scrolls. */}
 						<div
 							className={cn(
-								"absolute top-0 right-[-3px] z-30 h-full w-[7px] cursor-col-resize after:absolute after:top-0 after:right-[3px] after:h-full after:w-[2px] after:bg-transparent after:transition-[background] after:content-[''] hover:after:bg-line-strong [body.resizing-sidebar_&]:after:bg-faint",
-								isPhone && "hidden",
+								mergeStylexClassName("[body.resizing-sidebar_&]:after:bg-faint", sx.absolute, sx.top0, sx.right3px, sx.z30, sx.hFull, sx.w7px, sx.cursorColResize, sx.afterAbsolute, sx.afterTop0, sx.afterRight3px, sx.afterHFull, sx.afterW2px, sx.afterBgTransparent, sx.afterTransitionBackground, sx.afterContent, sx.hoverAfterBgLineStrong),
+								isPhone && mergeStylexClassName("", sx.hidden),
 							)}
 							onMouseDown={startSidebarResize}
 							aria-hidden="true"
@@ -5640,8 +5707,8 @@ console.error("Rename failed:", e);
 							<button
 								className={cn(
 									SIDEBAR_CHROME_BTN,
-									"sidebar-reopen absolute top-[calc((var(--desktop-header-h)-35px)/2)] left-2 z-20 hidden size-[34px] p-0",
-									sidebarCollapsed && "desktop:inline-flex",
+									mergeStylexClassName("sidebar-reopen", sx.absolute, sx.topCalcVarDesktopHeaderH35px2, sx.left2, sx.z20, sx.hidden, sx.size34px, sx.p0),
+									sidebarCollapsed && mergeStylexClassName("", sx.desktopInlineFlex),
 								)}
 								onClick={toggleSidebarCollapsed}
 								aria-label="Show sidebar"

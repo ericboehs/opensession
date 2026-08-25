@@ -3,7 +3,7 @@ import { CHECK_TEXT } from "../../lib/pr-tone-classes";
 import type { PrCheck } from "../../lib/types";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps } from "../../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -53,6 +53,16 @@ const sx = stylex.create({
 	textFaint: {
 			color: "var(--text-faint)"
 	},
+
+	w35: {
+		"width": "14px"
+	},
+	shrink0: {
+		"flexShrink": "0"
+	},
+	textCenter: {
+		"textAlign": "center"
+	},
 });
 
 /** `pr-check-mark-pending` styles nothing — it is base.css's hook for keeping
@@ -71,9 +81,7 @@ export function CheckRow({ check }: { check: PrCheck }) {
         rel="noopener"
       >
         <span
-          className={`w-3.5 shrink-0 text-center text-label ${CHECK_TEXT[cls]} ${
-            cls === "check-pending" ? "pr-check-mark-pending animate-[pulse_1.4s_infinite]" : ""
-          }`}
+          className={[mergeStylexClassName("", sx.w35, sx.shrink0, sx.textCenter, typography.label), CHECK_TEXT[cls], cls === "check-pending" ? "pr-check-mark-pending animate-[pulse_1.4s_infinite]" : ""].filter(Boolean).join(" ")}
         >
           {mark}
         </span>

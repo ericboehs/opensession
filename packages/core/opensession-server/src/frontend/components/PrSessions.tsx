@@ -8,7 +8,7 @@ import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -74,6 +74,16 @@ const sx = stylex.create({
 	},
 	textRed: {
 			color: "var(--red)"
+	},
+
+	w15: {
+		"width": "6px"
+	},
+	h15: {
+		"height": "6px"
+	},
+	roundedFull: {
+		"borderRadius": "3.40282e38px"
 	},
 });
 
@@ -239,9 +249,7 @@ export function PrSessionsList({
 					}} {...mergeStylexProps("hover:bg-surface", sx.Mx2, sx.flex, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px2, sx.py15, sx.textFg, sx.noUnderline, typography.itemTitle)}
 				>
 					<span
-						className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-							s.isRunning ? "bg-yellow animate-pulse" : "bg-line"
-						}`}
+						className={[mergeStylexClassName("", sx.w15, sx.h15, sx.roundedFull, sx.shrink0), s.isRunning ? "bg-yellow animate-pulse" : "bg-line"].filter(Boolean).join(" ")}
 					/>
 					<span {...stylex.props(sx.truncate)}>{s.title}</span>
 					{s.id === currentSessionId && (

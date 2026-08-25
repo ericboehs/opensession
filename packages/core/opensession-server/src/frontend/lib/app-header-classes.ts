@@ -40,7 +40,7 @@ const sx = stylex.create({
 	},
 	phoneBgTransparent: {
 		"@media (max-width: 720px)": {
-			"backgroundColor": "#0000"
+			"backgroundColor": "transparent"
 		}
 	},
 	phoneFixed: {
@@ -554,7 +554,7 @@ const sx = stylex.create({
 	},
 	phoneShadowNone: {
 		"@media (max-width: 720px)": {
-			"--tw-shadow": "0 0 #0000",
+			"--tw-shadow": "0 0 transparent",
 			"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
 		}
 	},

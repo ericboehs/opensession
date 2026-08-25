@@ -136,7 +136,7 @@ import {
 } from "../lib/deferred-merge";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -329,7 +329,7 @@ const sx = stylex.create({
 			borderWidth: "0"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	textLink: {
 			color: "var(--link)"
@@ -710,6 +710,20 @@ const sx = stylex.create({
     transitionTimingFunction: "var(--tw-ease,var(--ease))",
     transitionDuration: "var(--tw-duration,var(--dur-micro))",
   },
+
+	desktopReviewFileTreeGap0px: {
+		"@media (min-width: 721px)": {
+			"--review-file-tree-gap": "0px"
+		}
+	},
+	desktopReviewFileTreeTop60px: {
+		"@media (min-width: 721px)": {
+			"--review-file-tree-top": "60px"
+		}
+	},
+	ReviewFileHeaderTop0px: {
+		"--review-file-header-top": "0px"
+	},
 });
 
 const STATUS_TEXT_STYLE = {
@@ -2759,13 +2773,13 @@ toast(e.message || "Couldn't unlink the PR");
       <div
         className={
           compactToolbar
-            ? `desktop:[--review-file-tree-gap:0px] desktop:[--review-file-tree-top:60px] ${stylex.props(
+            ? [mergeStylexClassName("", sx.desktopReviewFileTreeGap0px, sx.desktopReviewFileTreeTop60px), stylex.props(
                 sx.flex,
                 sx.minH0,
                 sx.flex1,
                 sx.summaryCanvasClearance,
                 sx.desktopFlexNone,
-              ).className}`
+              ).className].filter(Boolean).join(" ")
             : stylex.props(sx.flex, sx.minH0, sx.flex1, sx.desktopPt12)
                 .className
         }
@@ -2786,18 +2800,16 @@ toast(e.message || "Couldn't unlink the PR");
           // Wide review scrolls the toolbar and canvas in one container. Once
           // the toolbar sticks, file titles clear its 10px inset, 40px row,
           // 2px border, 8px section gap, and the file card's own 1px border.
-          className={`[--review-file-header-top:0px] ${
-            compactToolbar
+          className={[mergeStylexClassName("", sx.ReviewFileHeaderTop0px), compactToolbar
               ? "desktop:[--review-file-header-top:61px]"
-              : ""
-          } ${stylex.props(
+              : "", stylex.props(
             sx.minW0,
             sx.flex1,
             sx.bgSurface,
             compactToolbar ? sx.overflowYVisible : sx.overflowYAuto,
             reviewing ? sx.pb24 : sx.pb4,
             reviewing && sx.phonePb36,
-          ).className}`}
+          ).className].filter(Boolean).join(" ")}
         >
           {page === "overview" ? (
             <SelectionToSession

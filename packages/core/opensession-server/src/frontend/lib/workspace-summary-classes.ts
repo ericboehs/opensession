@@ -83,7 +83,7 @@ const sx = stylex.create({
 		"borderStyle": "none"
 	},
 	bgTransparent: {
-		"backgroundColor": "#0000"
+		"backgroundColor": "transparent"
 	},
 	px2: {
 		"paddingInline": "8px"

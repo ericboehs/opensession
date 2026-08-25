@@ -1,5 +1,5 @@
 import { repoLabel } from "../lib/repo-label";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { FALLBACK_REPO, sessionRepoOr } from "../lib/session-repo";
 import { sessionSourceLabel } from "../lib/brand";
 import { SOURCE_CHIP, sourceChipTone } from "../lib/source-chip-classes";
@@ -138,6 +138,17 @@ const sx = stylex.create({
 	},
 	pt4: {
 			paddingTop: "16px"
+	},
+
+	phoneTransitionNone: {
+		"@media (max-width: 720px)": {
+			"transitionProperty": "none"
+		}
+	},
+	phoneWillChangeTransform: {
+		"@media (max-width: 720px)": {
+			"willChange": "transform"
+		}
 	},
 });
 
@@ -680,8 +691,8 @@ setBusy(null);
 														<div
 															className={cn(
 																ARCHIVED_ROW,
-																dragging && "phone:transition-none phone:will-change-transform",
-																swipeOffset && "phone:will-change-transform",
+																dragging && mergeStylexClassName("", sx.phoneTransitionNone, sx.phoneWillChangeTransform),
+																swipeOffset && mergeStylexClassName("", sx.phoneWillChangeTransform),
 															)}
 															style={
 																swipeOffset

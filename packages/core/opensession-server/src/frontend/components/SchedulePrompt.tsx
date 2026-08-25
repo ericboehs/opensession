@@ -15,7 +15,7 @@ import {
   composerMenuWidth,
 } from "../lib/composer-classes";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 
@@ -223,6 +223,61 @@ const sx = stylex.create({
 	justifyEnd: {
 			justifyContent: "flex-end"
 	},
+
+	relative: {
+		"position": "relative"
+	},
+	block: {
+		"display": "block"
+	},
+	wFull: {
+		"width": "100%"
+	},
+	inlineFlex: {
+		"display": "inline-flex"
+	},
+	itemsStretch: {
+		"alignItems": "stretch"
+	},
+	justifyStart: {
+		"justifyContent": "flex-start"
+	},
+	disabledCursorDefault: {
+		":disabled": {
+			"cursor": "default"
+		}
+	},
+	disabledOpacity45: {
+		":disabled": {
+			"opacity": ".45"
+		}
+	},
+	disabledHoverBgTransparent: {
+		"@media (hover: hover)": {
+			":disabled": {
+				":hover": {
+					"backgroundColor": "transparent"
+				}
+			}
+		}
+	},
+	transitionTransform: {
+		"transitionProperty": "transform,translate,scale,rotate",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	rotate180: {
+		"rotate": "180deg"
+	},
+	flex1: {
+		"flex": "1"
+	},
+	flexNone: {
+		"flex": "none"
+	},
+	basis130px: {
+		"flexBasis": "130px"
+	},
 });
 
 /** "in 45m" / "in 3h" / "in 2d" for a future instant (short form). */
@@ -407,8 +462,8 @@ setError(e.message);
       // Positioned: the send-later menu below hangs off it.
       className={
         variant === "menu-item"
-          ? "relative block w-full"
-          : "relative inline-flex items-stretch"
+          ? mergeStylexClassName("", sx.relative, sx.block, sx.wFull)
+          : mergeStylexClassName("", sx.relative, sx.inlineFlex, sx.itemsStretch)
       }
     >
       <button
@@ -420,7 +475,7 @@ setError(e.message);
               // is what suppresses the row's own hover wash while disabled.
               cn(
                 composerMenuItem,
-                "relative justify-start disabled:cursor-default disabled:opacity-45 disabled:hover:bg-transparent",
+                mergeStylexClassName("", sx.relative, sx.justifyStart, sx.disabledCursorDefault, sx.disabledOpacity45, sx.disabledHoverBgTransparent),
               )
             : caretButton
         }
@@ -441,7 +496,7 @@ setError(e.message);
         ) : (
           <IconChevronDown
             size={20}
-            className={cn("transition-transform", open && "rotate-180")}
+            className={cn(mergeStylexClassName("", sx.transitionTransform), open && mergeStylexClassName("", sx.rotate180))}
           />
         )}
         {pending.length > 0 && (
@@ -506,7 +561,7 @@ await deleteScheduledPromptApi(p.id);
               role="menuitem"
               // text-label: the picks read a step larger than the "+" menu's
               // rows, which is what .composer-schedule-menu used to say.
-              className={cn(composerMenuItem, "text-label")}
+              className={cn(composerMenuItem, mergeStylexClassName("", typography.label))}
               onClick={() => schedule(o.at)}
               disabled={saving || !hasText}
             >
@@ -517,7 +572,7 @@ await deleteScheduledPromptApi(p.id);
           <button
             type="button"
             role="menuitem"
-            className={cn(composerMenuItem, "text-label")}
+            className={cn(composerMenuItem, mergeStylexClassName("", typography.label))}
             onClick={openCustom}
             disabled={!hasText}
           >
@@ -560,13 +615,13 @@ await deleteScheduledPromptApi(p.id);
                 value={date}
                 min={toDateInput(new Date())}
                 onChange={(e) => setDate(e.target.value)}
-                className={cn(scheduleField, "flex-1")}
+                className={cn(scheduleField, mergeStylexClassName("", sx.flex1))}
               />
               <input
                 type="time"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
-                className={cn(scheduleField, "flex-none basis-[130px]")}
+                className={cn(scheduleField, mergeStylexClassName("", sx.flexNone, sx.basis130px))}
               />
             </div>
             {error && (

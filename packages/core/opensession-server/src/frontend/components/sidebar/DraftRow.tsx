@@ -6,7 +6,7 @@ import {
 	SIDEBAR_WS_DRAFT,
 	SIDEBAR_WS_ROW,
 } from "../../lib/sidebar-classes";
-import { cn } from "../../ui/cn";
+import { cn, mergeStylexClassName } from "../../ui/cn";
 import { IconPencil, IconPlus } from "../icons";
 import { SIDEBAR_ROW, SIDEBAR_ROW_TITLE } from "./SidebarItem";
 import * as stylex from "@stylexjs/stylex";
@@ -18,6 +18,13 @@ const sx = stylex.create({
 	},
 	textFaint: {
 			color: "var(--text-faint)"
+	},
+
+	bgSelected: {
+		"backgroundColor": "var(--selected)"
+	},
+	ml15: {
+		"marginLeft": "6px"
 	},
 });
 
@@ -60,7 +67,7 @@ export function DraftRow({
 				SIDEBAR_ROW,
 				SIDEBAR_WS_ROW,
 				SIDEBAR_HOVER_LAYER,
-				active && "bg-selected",
+				active && mergeStylexClassName("", sx.bgSelected),
 			)}
 			data-sidebar-row=""
 			data-selected={active || undefined}
@@ -73,7 +80,7 @@ export function DraftRow({
 			<span className={SIDEBAR_ROW_TITLE}>New session</span>
 			{draft && (
 				<span
-					className={cn(SIDEBAR_WS_DRAFT, "ml-1.5")}
+					className={cn(SIDEBAR_WS_DRAFT, mergeStylexClassName("", sx.ml15))}
 					data-ws-draft=""
 					aria-label="Unsent draft"
 				>

@@ -366,10 +366,10 @@ const sx = stylex.create({
 		}
 	},
 	borderTransparent: {
-		"borderColor": "#0000"
+		"borderColor": "transparent"
 	},
 	bgTransparent: {
-		"backgroundColor": "#0000"
+		"backgroundColor": "transparent"
 	},
 	hoverTextFg: {
 		"@media (hover: hover)": {

@@ -45,7 +45,7 @@ const sx = stylex.create({
 	},
 	phoneBgTransparent: {
 		"@media (max-width: 720px)": {
-			"backgroundColor": "#0000"
+			"backgroundColor": "transparent"
 		}
 	},
 	phonePointerEventsNone: {
@@ -358,7 +358,7 @@ const sx = stylex.create({
 		}
 	},
 	bgTransparent: {
-		"backgroundColor": "#0000"
+		"backgroundColor": "transparent"
 	},
 	phoneBgVarMobileTabSurface: {
 		"@media (max-width: 720px)": {
@@ -649,7 +649,7 @@ const sx = stylex.create({
 		"paddingBlock": "6px"
 	},
 	shadowNone: {
-		"--tw-shadow": "0 0 #0000",
+		"--tw-shadow": "0 0 transparent",
 		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
 	},
 	phoneShadowVarMobileHeaderControlShadow: {
@@ -672,7 +672,7 @@ const sx = stylex.create({
 		"animation": "1.4s ease-in-out infinite pulse"
 	},
 	borderTransparent: {
-		"borderColor": "#0000"
+		"borderColor": "transparent"
 	},
 	px35: {
 		"paddingInline": "14px"

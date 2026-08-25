@@ -13,7 +13,7 @@ import { IconPlus, IconUndo, IconX } from "./icons";
 import { Spinner } from "../ui/spinner";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -127,7 +127,7 @@ const sx = stylex.create({
 			borderWidth: "0"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	p0: {
 			padding: "0"
@@ -225,6 +225,18 @@ const sx = stylex.create({
 	w28: {
 			width: "112px"
 	},
+
+	phoneSize10: {
+		"@media (max-width: 720px)": {
+			"width": "40px",
+			"height": "40px"
+		}
+	},
+	phoneMinH10: {
+		"@media (max-width: 720px)": {
+			"minHeight": "40px"
+		}
+	},
 });
 
 const MAX_SLACK_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -269,7 +281,7 @@ export function SlackSentNotice({
 						<Button
 							variant="ghost"
 							size="sm"
-							className="phone:size-10"
+							className={mergeStylexClassName("", sx.phoneSize10)}
 							icon={undoing ? <Spinner size="sm" /> : <IconUndo size={16} />}
 							aria-label="Undo"
 							disabled={undoing}
@@ -284,7 +296,7 @@ setUndoing(false);
 						/>
 					</Tooltip>
 				)}
-				<Button variant="ghost" size="sm" className="phone:min-h-10" onClick={onSendAnother}>
+				<Button variant="ghost" size="sm" className={mergeStylexClassName("", sx.phoneMinH10)} onClick={onSendAnother}>
 					Send another
 				</Button>
 			</div>

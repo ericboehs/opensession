@@ -18,7 +18,7 @@ import { mineStatus } from "../lib/sidebar-lanes";
 import { MINE_STATUS_META } from "../lib/sidebar-types";
 import { shortTime } from "../lib/time";
 import type { SupportThread, UnifiedSession } from "../lib/types";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexClassName } from "../ui/cn";
 import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
 import { ConversationPane } from "./ConversationPane";
 import { IconMail } from "./icons";
@@ -72,6 +72,17 @@ const sx = stylex.create({
 	},
 	p8: {
 			padding: "32px"
+	},
+
+	cursorDefault: {
+		"cursor": "default"
+	},
+	hoverTextDim: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text-dim)"
+			}
+		}
 	},
 });
 
@@ -268,7 +279,7 @@ export function SupportInbox({
 												SIDEBAR_GROUP_HEADER,
 												SIDEBAR_GROUP_HEADER_INSET,
 												SIDEBAR_LANE_HEADER,
-												"cursor-default hover:text-dim",
+												mergeStylexClassName("", sx.cursorDefault, sx.hoverTextDim),
 											)}
 										>
 											<span

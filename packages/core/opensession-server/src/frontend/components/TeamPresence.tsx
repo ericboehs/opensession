@@ -2,7 +2,7 @@ import React from "react";
 import type { UnifiedSession } from "../lib/types";
 import { PRODUCT_NAME } from "../lib/brand";
 import { usePeople, type Person } from "../lib/people";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { Menu } from "../ui/menu";
 import { IconChevronDown } from "./icons";
 import { UserAvatar } from "./UserAvatar";
@@ -95,6 +95,69 @@ const sx = stylex.create({
 	},
 	tabularNums: {
 		fontVariantNumeric: "tabular-nums",
+	},
+
+	border0: {
+		"borderStyle": "var(--tw-border-style)",
+		"borderWidth": "0"
+	},
+	bgTransparent: {
+		"backgroundColor": "transparent"
+	},
+	textDim: {
+		"color": "var(--text-dim)"
+	},
+	gap0: {
+		"gap": "0"
+	},
+	rounded999px: {
+		"borderRadius": "999px"
+	},
+	py05: {
+		"paddingBlock": "2px"
+	},
+	pr1: {
+		"paddingRight": "4px"
+	},
+	pl05: {
+		"paddingLeft": "2px"
+	},
+	hoverTeamFaceRingVarRowChipHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"--team-face-ring": "var(--row-chip-hover)"
+			}
+		}
+	},
+	hoverBgVarTeamFaceRing: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--team-face-ring)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	gap25: {
+		"gap": "10px"
+	},
+	roundedControl: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	p1: {
+		"padding": "4px"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
 	},
 });
 
@@ -449,10 +512,10 @@ export function TeamLensMenu({
 		<Menu.Root>
 			<Menu.Trigger
 				className={cn(
-					"flex min-w-0 items-center border-0 bg-transparent text-control-label text-dim",
+					mergeStylexClassName("", sx.flex, sx.minW0, sx.itemsCenter, sx.border0, sx.bgTransparent, typography.controlLabel, sx.textDim),
 					compact
-						? "gap-0 rounded-[999px] py-0.5 pr-1 pl-0.5 hover:[--team-face-ring:var(--row-chip-hover)] hover:bg-[var(--team-face-ring)] hover:text-fg data-[popup-open]:[--team-face-ring:var(--row-chip-hover)] data-[popup-open]:bg-[var(--team-face-ring)] data-[popup-open]:text-fg"
-						: "gap-2.5 rounded-control p-1 hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg",
+						? mergeStylexClassName("data-[popup-open]:[--team-face-ring:var(--row-chip-hover)] data-[popup-open]:bg-[var(--team-face-ring)] data-[popup-open]:text-fg", sx.gap0, sx.rounded999px, sx.py05, sx.pr1, sx.pl05, sx.hoverTeamFaceRingVarRowChipHover, sx.hoverBgVarTeamFaceRing, sx.hoverTextFg)
+						: mergeStylexClassName("data-[popup-open]:bg-hover data-[popup-open]:text-fg", sx.gap25, sx.roundedControl, sx.p1, sx.hoverBgHover, sx.hoverTextFg),
 					className,
 				)}
 				aria-label={`Whose work this shows: ${label}`}

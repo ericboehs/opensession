@@ -18,7 +18,7 @@ import { mineStatus } from "../../lib/sidebar-lanes";
 import { MINE_STATUS_META, type Group, type LaneChoice } from "../../lib/sidebar-types";
 import { shortTime } from "../../lib/time";
 import type { FeedDescriptor, FeedFilterSpec, FeedItem, SupportThread, UnifiedSession } from "../../lib/types";
-import { cn, mergeStylexProps } from "../../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 import { Menu } from "../../ui/menu";
 import { Popover } from "../../ui/popover";
 import { Tooltip } from "../../ui/tooltip";
@@ -94,6 +94,30 @@ const sx = stylex.create({
 	textFaint: {
 			color: "var(--text-faint)"
 	},
+
+	bgSelected: {
+		"backgroundColor": "var(--selected)"
+	},
+	textAccent: {
+		"color": "var(--accent-ink)"
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	hoverTextGreen: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--green)"
+			}
+		}
+	},
+	textFg: {
+		"color": "var(--text)"
+	},
 });
 
 // A Support row: one TODO Plain ticket, single-line in the workspace rows'
@@ -144,7 +168,7 @@ export function SupportRow({
 							SIDEBAR_ROW,
 							SIDEBAR_WS_ROW,
 							SIDEBAR_HOVER_LAYER,
-							active && "bg-selected",
+							active && mergeStylexClassName("", sx.bgSelected),
 						)}
 						data-sidebar-row=""
 						data-ws-row=""
@@ -182,7 +206,7 @@ export function SupportRow({
 							// One colour, picked here: a pinned action keeps its accent
 							// under the pointer, where two `text-*` utilities would leave
 							// the winner to Tailwind's ordering.
-							pinned ? "text-accent" : "text-faint hover:text-fg",
+							pinned ? mergeStylexClassName("", sx.textAccent) : mergeStylexClassName("", sx.textFaint, sx.hoverTextFg),
 						)}
 						aria-label={pinned ? "Unpin ticket" : "Pin ticket"}
 						onClick={(e) => {
@@ -202,7 +226,7 @@ export function SupportRow({
 						<span
 							role="button"
 							tabIndex={0}
-							className={cn(SIDEBAR_WS_ACTION, "text-faint hover:text-green")}
+							className={cn(SIDEBAR_WS_ACTION, mergeStylexClassName("", sx.textFaint, sx.hoverTextGreen))}
 							aria-label="Mark done in Plain"
 							onClick={(e) => {
 								e.stopPropagation();
@@ -302,7 +326,7 @@ export function FeedRow({
 							SIDEBAR_ROW,
 							SIDEBAR_WS_ROW,
 							SIDEBAR_HOVER_LAYER,
-							active && "bg-selected",
+							active && mergeStylexClassName("", sx.bgSelected),
 						)}
 						data-sidebar-row=""
 						data-ws-row=""
@@ -320,7 +344,7 @@ export function FeedRow({
 					/>
 				</span>
 				<span
-					className={cn(SIDEBAR_ROW_TITLE, unread && "font-semibold text-fg")}
+					className={cn(SIDEBAR_ROW_TITLE, unread && mergeStylexClassName("", sx.fontSemibold, sx.textFg))}
 				>
 					{item.title}
 				</span>
@@ -341,7 +365,7 @@ export function FeedRow({
 							// One colour, picked here: a pinned action keeps its accent
 							// under the pointer, where two `text-*` utilities would leave
 							// the winner to Tailwind's ordering.
-							pinned ? "text-accent" : "text-faint hover:text-fg",
+							pinned ? mergeStylexClassName("", sx.textAccent) : mergeStylexClassName("", sx.textFaint, sx.hoverTextFg),
 						)}
 						aria-label={pinned ? "Unpin" : "Pin"}
 						onClick={(e) => {
@@ -477,7 +501,7 @@ export function FeedFilterMenu({
 							// Unlike the workspace header's filter, this one's hover beat
 							// its filtered tint in the old sheet's source order — so the
 							// accent is a resting colour here, not a sticky one.
-							active ? "text-accent" : "text-dim",
+							active ? mergeStylexClassName("", sx.textAccent) : mergeStylexClassName("", sx.textDim),
 							active && SIDEBAR_FILTER_DOT,
 						)}
 						onClick={(e: React.MouseEvent) => e.stopPropagation()}

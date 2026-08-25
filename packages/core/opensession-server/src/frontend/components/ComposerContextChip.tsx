@@ -1,10 +1,11 @@
 import React from "react";
 import { motion } from "motion/react";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { duration, ease } from "../ui/motion";
 import { Tooltip } from "../ui/tooltip";
 import { IconX } from "./icons";
 import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -36,6 +37,70 @@ const sx = stylex.create({
 	},
 	originLeft: {
 			transformOrigin: "0"
+	},
+
+	inlineFlex: {
+		"display": "inline-flex"
+	},
+	h7: {
+		"height": "28px"
+	},
+	maxWFull: {
+		"maxWidth": "100%"
+	},
+	itemsCenter: {
+		"alignItems": "center"
+	},
+	gap1: {
+		"gap": "4px"
+	},
+	roundedFull: {
+		"borderRadius": "3.40282e38px"
+	},
+	px2: {
+		"paddingInline": "8px"
+	},
+	fontMedium: {
+		"--tw-font-weight": "var(--font-weight-medium)",
+		"fontWeight": "var(--font-weight-medium)"
+	},
+	relative: {
+		"position": "relative"
+	},
+	Mr1: {
+		"marginRight": "-4px"
+	},
+	size5: {
+		"width": "20px",
+		"height": "20px"
+	},
+	cursorPointer: {
+		"cursor": "pointer"
+	},
+	justifyCenter: {
+		"justifyContent": "center"
+	},
+	beforeAbsolute: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	beforeInset2: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"inset": "-8px"
+		}
+	},
+	disabledCursorDefault: {
+		":disabled": {
+			"cursor": "default"
+		}
+	},
+	disabledOpacity50: {
+		":disabled": {
+			"opacity": ".5"
+		}
 	},
 });
 
@@ -109,7 +174,7 @@ export function ComposerContextChip({
 	const chip = (
 		<div
 			className={cn(
-				"inline-flex h-7 max-w-full items-center gap-1 rounded-full px-2 text-label font-medium",
+				mergeStylexClassName("", sx.inlineFlex, sx.h7, sx.maxWFull, sx.itemsCenter, sx.gap1, sx.roundedFull, sx.px2, typography.label, sx.fontMedium),
 				colours.box,
 			)}
 		>
@@ -119,7 +184,7 @@ export function ComposerContextChip({
 			    square, so a translate here only pushes the mark off the row's
 			    centre: measured, it sat 1px below while the label's ink sat 0.5px
 			    above, which is the 1.5px step you can see at Retina. */}
-			<span className={cn("inline-flex shrink-0 items-center", colours.icon)}>
+			<span className={cn(mergeStylexClassName("", sx.inlineFlex, sx.shrink0, sx.itemsCenter), colours.icon)}>
 				{icon}
 			</span>
 			<span {...stylex.props(sx.truncate)}>{label}</span>
@@ -135,7 +200,7 @@ export function ComposerContextChip({
 					className={cn(
 						// `before:-inset-2` grows the hit area past the 20px box without
 						// growing the pill around it.
-						"relative -mr-1 flex size-5 shrink-0 cursor-pointer items-center justify-center before:absolute before:-inset-2 enabled:active:scale-[0.96] enabled:transition-[color,transform] disabled:cursor-default disabled:opacity-50",
+						mergeStylexClassName("enabled:active:scale-[0.96] enabled:transition-[color,transform]", sx.relative, sx.Mr1, sx.flex, sx.size5, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.beforeAbsolute, sx.beforeInset2, sx.disabledCursorDefault, sx.disabledOpacity50),
 						colours.remove,
 					)}
 				>

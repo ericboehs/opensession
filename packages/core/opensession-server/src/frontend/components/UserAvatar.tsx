@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -33,6 +33,14 @@ const sx = stylex.create({
 	fontBold: { fontWeight: "var(--font-weight-bold)" },
 	textDim: { color: "var(--text-dim)" },
 	selectNone: { userSelect: "none" },
+
+	AvatarEdge0000Transparent: {
+		"--avatar-edge": "0 0 0 0 transparent"
+	},
+	shadowVarAvatarEdge: {
+		"--tw-shadow": "var(--avatar-edge)",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
 });
 
 /**
@@ -123,8 +131,8 @@ export function UserAvatar({
 			{...mergeStylexProps(cn(
 				picture && edge
 					? "[--avatar-edge:inset_0_0_0_1px_color-mix(in_srgb,var(--text)_14%,transparent)]"
-					: "[--avatar-edge:0_0_0_0_transparent]",
-				"shadow-[var(--avatar-edge)]",
+					: mergeStylexClassName("", sx.AvatarEdge0000Transparent),
+				mergeStylexClassName("", sx.shadowVarAvatarEdge),
 				className,
 			), sx.relative, sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedAvatar, sx.bgActive, sx.fontBold, sx.textDim, sx.selectNone)}
 			style={{

@@ -1,9 +1,10 @@
 import * as React from "react";
 import { Tooltip as BaseTooltip } from "@base-ui/react/tooltip";
-import { cn } from "./cn";
+import { cn, mergeStylexClassName } from "./cn";
 import { ExclusivePopupProvider } from "./exclusive-popups";
 import { FLOATING_OVERLAY_LAYER } from "./popup-classes";
 import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -46,6 +47,73 @@ const sx = stylex.create({
 	},
 	textWhite75: {
 			color: "#ffffffbf"
+	},
+
+	pointerEventsNone: {
+		"pointerEvents": "none"
+	},
+	flex: {
+		"display": "flex"
+	},
+	gap2: {
+		"gap": "8px"
+	},
+	originVarTransformOrigin: {
+		"transformOrigin": "var(--transform-origin)"
+	},
+	duration120ms: {
+		"--tw-duration": ".12s",
+		"transitionDuration": ".12s"
+	},
+	easeOut: {
+		"--tw-ease": "var(--ease)",
+		"transitionTimingFunction": "var(--ease)"
+	},
+	roundedPanel: {
+		"borderRadius": "calc(var(--radius) * var(--rf))"
+	},
+	bgTooltip: {
+		"backgroundColor": "var(--tooltip-bg)"
+	},
+	px2: {
+		"paddingInline": "8px"
+	},
+	py1: {
+		"paddingBlock": "4px"
+	},
+	leadingSnug: {
+		"--tw-leading": "var(--leading-snug)",
+		"lineHeight": "var(--leading-snug)"
+	},
+	textTooltipFg: {
+		"color": "var(--tooltip-fg)"
+	},
+	maxW360px: {
+		"maxWidth": "360px"
+	},
+	itemsStart: {
+		"alignItems": "flex-start"
+	},
+	whitespacePreWrap: {
+		"whiteSpace": "pre-wrap"
+	},
+	maxW280px: {
+		"maxWidth": "280px"
+	},
+	whitespaceNowrap: {
+		"whiteSpace": "nowrap"
+	},
+	maxH50vh: {
+		"maxHeight": "50vh"
+	},
+	overflowYAuto: {
+		"overflowY": "auto"
+	},
+	overflowHidden: {
+		"overflow": "hidden"
+	},
+	textEllipsis: {
+		"textOverflow": "ellipsis"
 	},
 });
 
@@ -125,24 +193,24 @@ export function Tooltip({
 				>
 					<BaseTooltip.Popup
 						className={cn(
-							"pointer-events-none flex items-center gap-2",
-							"origin-[var(--transform-origin)] transition-[transform,opacity] duration-[120ms] ease-out",
+							mergeStylexClassName("", sx.pointerEventsNone, sx.flex, sx.itemsCenter, sx.gap2),
+							mergeStylexClassName("transition-[transform,opacity]", sx.originVarTransformOrigin, sx.duration120ms, sx.easeOut),
 							"data-[starting-style]:scale-[0.96] data-[starting-style]:opacity-0",
 							"data-[ending-style]:opacity-0 data-[instant]:transition-none",
 							// 13px medium text on a near-black chip with
 							// its soft `shadow-popup` + our theme ring.
-							"rounded-panel bg-tooltip px-2 py-1 text-label leading-snug font-medium text-tooltip-fg",
+							mergeStylexClassName("", sx.roundedPanel, sx.bgTooltip, sx.px2, sx.py1, typography.label, sx.leadingSnug, sx.fontMedium, sx.textTooltipFg),
 							"shadow-[0px_10px_38px_-10px_rgba(14,18,22,0.35),0px_10px_20px_-15px_rgba(14,18,22,0.2),0_0_0_1px_var(--tooltip-ring)]",
 							multiline
-								? "max-w-[360px] items-start whitespace-pre-wrap"
-								: "max-w-[280px] whitespace-nowrap",
+								? mergeStylexClassName("", sx.maxW360px, sx.itemsStart, sx.whitespacePreWrap)
+								: mergeStylexClassName("", sx.maxW280px, sx.whitespaceNowrap),
 						)}
 					>
 						<span
 							className={cn(
 								multiline
-									? "max-h-[50vh] overflow-y-auto"
-									: "overflow-hidden text-ellipsis",
+									? mergeStylexClassName("", sx.maxH50vh, sx.overflowYAuto)
+									: mergeStylexClassName("", sx.overflowHidden, sx.textEllipsis),
 							)}
 						>
 							{label}

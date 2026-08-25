@@ -126,7 +126,7 @@ const sx = stylex.create({
 	afterBgTransparent: {
 		"::after": {
 			"content": "var(--tw-content)",
-			"backgroundColor": "#0000"
+			"backgroundColor": "transparent"
 		}
 	},
 	afterTransitionBackgroundColor: {

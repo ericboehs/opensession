@@ -31,7 +31,7 @@ const sx = stylex.create({
 			borderStyle: "none"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	p0: {
 			padding: "0"

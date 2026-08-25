@@ -179,7 +179,7 @@ const sx = stylex.create({
 			borderRadius: "calc(4px * var(--rf))"
 	},
 	bgTransparent: {
-			backgroundColor: "#0000"
+			backgroundColor: "transparent"
 	},
 	p0: {
 			padding: "0"

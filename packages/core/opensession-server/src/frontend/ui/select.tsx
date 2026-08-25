@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Select as BaseSelect } from "@base-ui/react/select";
 import { IconCheck, IconChevronDown } from "../components/icons";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import { fieldClasses } from "./input";
 import {
 	FLOATING_OVERLAY_LAYER,
@@ -110,6 +110,26 @@ const sx = stylex.create({
 	bgLine: {
 			backgroundColor: "var(--border)"
 	},
+
+	inlineGrid: {
+		"display": "inline-grid"
+	},
+	cursorPointer: {
+		"cursor": "pointer"
+	},
+	pr2: {
+		"paddingRight": "8px"
+	},
+	textLeft: {
+		"textAlign": "left"
+	},
+	hoverBorderLineStrong: {
+		"@media (hover: hover)": {
+			":hover": {
+				"borderColor": "var(--border-strong)"
+			}
+		}
+	},
 });
 
 /**
@@ -213,7 +233,7 @@ function Trigger(triggerProps: TriggerProps) {
 					// The chevron sits in flow in its own grid column, so the
 					// field's own padding is what separates it from the edge.
 					cn(
-						"inline-grid cursor-pointer items-center gap-2 pr-2 text-left",
+						mergeStylexClassName("", sx.inlineGrid, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.pr2, sx.textLeft),
 						iconSlot
 							? "grid-cols-[auto_minmax(0,1fr)_auto]"
 							: "grid-cols-[minmax(0,1fr)_auto]",
@@ -221,7 +241,7 @@ function Trigger(triggerProps: TriggerProps) {
 				),
 				// A select lifts slightly under the pointer; opening still reads like
 				// focus, with the border carrying that state as on every other field.
-				"transition-[border-color,box-shadow] hover:border-line-strong enabled:hover:smooth-shadow-xs data-[popup-open]:border-accent",
+				mergeStylexClassName("transition-[border-color,box-shadow] enabled:hover:smooth-shadow-xs data-[popup-open]:border-accent", sx.hoverBorderLineStrong),
 				className,
 			)}
 		>

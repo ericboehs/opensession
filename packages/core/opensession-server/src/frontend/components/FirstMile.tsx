@@ -19,7 +19,7 @@ import { IconCheck, IconChevronLeft, IconGlobe, IconRepo } from "./icons";
 import { githubAuthState, type SetupStatus } from "./setup-shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -362,6 +362,12 @@ const sx = stylex.create({
 	},
 	footerAttached: { borderTopColor: "transparent", backgroundImage: "linear-gradient(to bottom, transparent, var(--bg) 30%)" },
 	desktopBackButton: { justifySelf: "start", "@media (max-width: 720px)": { display: "none" } },
+
+	phoneHidden: {
+		"@media (max-width: 720px)": {
+			"display": "none"
+		}
+	},
 });
 
 interface FirstMileStep {
@@ -894,7 +900,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 						Back
 					</Button>
 
-					<span className="phone:hidden" />
+					<span className={mergeStylexClassName("", sx.phoneHidden)} />
 
 					<Button
 						variant="primary"

@@ -201,7 +201,7 @@ const sx = stylex.create({
 			textDecorationLine: "underline"
 	},
 	decorationTransparent: {
-			textDecorationColor: "#0000"
+			textDecorationColor: "transparent"
 	},
 	underlineOffset2: {
 			textUnderlineOffset: "2px"
@@ -282,7 +282,7 @@ const sx = stylex.create({
 			borderRadius: "calc(infinity * 1px)"
 	},
 	borderTransparent: {
-			borderColor: "#0000"
+			borderColor: "transparent"
 	},
 	borderTCurrent: {
 			borderTopColor: "currentColor"
@@ -326,7 +326,7 @@ const sx = stylex.create({
 		"backgroundColor": "var(--text-faint)"
 	},
 	shadowNone: {
-		"--tw-shadow": "0 0 #0000",
+		"--tw-shadow": "0 0 transparent",
 		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
 	},
 	mlAuto: {

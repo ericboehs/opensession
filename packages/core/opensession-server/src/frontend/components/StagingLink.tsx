@@ -5,7 +5,7 @@ import { worstPrRef } from "../lib/pr-refs";
 import { sessionPrPresentation } from "../lib/session-prs";
 import { withPreviewPath } from "../lib/preview-url";
 import { WS_SUMMARY_ICON } from "../lib/workspace-summary-classes";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexClassName } from "../ui/cn";
 import { Tooltip } from "../ui/tooltip";
 import { toast } from "../ui/toast";
 import { CopyCheck, useCopy } from "../ui/copy";
@@ -89,6 +89,34 @@ const sx = stylex.create({
 	},
 	opacity80: {
 			opacity: ".8"
+	},
+
+	cursorDefault: {
+		"cursor": "default"
+	},
+	outlineNone: {
+		"--tw-outline-style": "none",
+		"outlineStyle": "none"
+	},
+	transitionColors: {
+		"transitionProperty": "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	focusVisibleBgHover: {
+		":focusVisible": {
+			"backgroundColor": "var(--hover)"
+		}
+	},
+	textYellow: {
+		"color": "var(--yellow)"
 	},
 });
 
@@ -298,7 +326,7 @@ export function StagingLink({
 							SUMMARY_MARK,
 							SUMMARY_MARK_PAIR,
 							WS_SUMMARY_ICON,
-							"cursor-default",
+							mergeStylexClassName("", sx.cursorDefault),
 						)}
 						aria-label="Preview environment starting"
 					>
@@ -467,7 +495,7 @@ export function StagingLink({
 				rel="noopener"
 				onClick={onClick}
 				aria-disabled={building || undefined}
-				className={`flex min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-supporting font-semibold no-underline outline-none transition-colors hover:bg-hover focus-visible:bg-hover ${building ? "cursor-default text-faint" : "text-fg"}`}
+				className={[mergeStylexClassName("", sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px25, sx.py2, sx.textLeft, typography.supporting, sx.fontSemibold, sx.noUnderline, sx.outlineNone, sx.transitionColors, sx.hoverBgHover, sx.focusVisibleBgHover), building ? "cursor-default text-faint" : "text-fg"].filter(Boolean).join(" ")}
 				/* A phone grid cell: no right-click, so no copy to advertise. */
 				title={`${tooltip("")} · ${href}`}
 			>
@@ -506,8 +534,8 @@ export function StagingLink({
 						// the same control moved into the card: green once the preview is
 						// up and testable, amber while a deploy is in flight. "Up" is the
 						// state you act on here, so it is not the state that goes quiet.
-						spinning ? "text-yellow" : "text-green",
-						building ? "cursor-default" : SUMMARY_MARK_HOVER,
+						spinning ? mergeStylexClassName("", sx.textYellow) : mergeStylexClassName("", sx.textGreen),
+						building ? mergeStylexClassName("", sx.cursorDefault) : SUMMARY_MARK_HOVER,
 					)}
 				>
 					{globe(20, RING_LG)}

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { SandboxConnectionInfo } from "../../lib/api";
-import { cn } from "../../ui/cn";
+import { cn, mergeStylexClassName } from "../../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -52,6 +52,25 @@ const sx = stylex.create({
 	text62de61: {
 			color: "#62de61"
 	},
+
+	relative: {
+		"position": "relative"
+	},
+	flex: {
+		"display": "flex"
+	},
+	shrink0: {
+		"flexShrink": "0"
+	},
+	itemsCenter: {
+		"alignItems": "center"
+	},
+	justifyCenter: {
+		"justifyContent": "center"
+	},
+	overflowHidden: {
+		"overflow": "hidden"
+	},
 });
 
 type SandboxProvider = SandboxConnectionInfo["provider"];
@@ -79,7 +98,7 @@ function SandboxProviderTile({
 	return (
 		<span
 			className={cn(
-				"relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg",
+				mergeStylexClassName("", sx.relative, sx.flex, sx.size10, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.overflowHidden, sx.roundedLg),
 				className,
 			)}
 		>
