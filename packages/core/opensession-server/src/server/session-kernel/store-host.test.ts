@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionKernelStoreHost } from "./store-host";
@@ -32,6 +32,30 @@ afterEach(() => {
 });
 
 describe("per-session session kernel storage", () => {
+  test("claims an unseen mutation route before opening its session database", () => {
+    const path = paths();
+    const host = new SessionKernelStoreHost(path.central, path.isolated);
+
+    expect(host.routeSession("routed-session", false)).toBe("legacy");
+    expect(host.central.sessionPlacement("routed-session")).toBeUndefined();
+    expect(host.routeSession("routed-session", true)).toBe("isolated");
+    expect(host.central.sessionPlacement("routed-session")).toMatchObject({
+      placement: "isolated",
+      needsScan: true,
+    });
+    expect(existsSync(sessionKernelSessionDbPath("routed-session", path.isolated)))
+      .toBe(false);
+
+    host.call("setRunState", [{
+      sessionId: "routed-session",
+      state: "running",
+      event: "first-turn",
+    }]);
+    expect(existsSync(sessionKernelSessionDbPath("routed-session", path.isolated)))
+      .toBe(true);
+    host.close();
+  });
+
   test("claims a new session before writing only its isolated database", () => {
     const path = paths();
     const host = new SessionKernelStoreHost(path.central, path.isolated);

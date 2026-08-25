@@ -41,7 +41,14 @@ export type KernelActorAsyncResponse =
       timers: DurableTimer[];
       outbox: DurableOutboxItem[];
     }
-  | { t: "error"; rpcId: string; error: string; retryable?: boolean };
+  | {
+      t: "error";
+      rpcId: string;
+      error: string;
+      retryable?: boolean;
+      /** Internal worker signal. The actor host fail-stops before forwarding it. */
+      fatal?: boolean;
+    };
 
 export type KernelActorServiceCall = {
   t: "call";
@@ -52,6 +59,19 @@ export type KernelActorServiceCall = {
   outputBytes: number;
 };
 
+/** Actor-host-only catalog lookup. It is not accepted by the HTTP transport. */
+export type KernelActorRouteRequest = {
+  t: "route";
+  rpcId: string;
+  sessionId: string;
+  mutation: boolean;
+};
+
+export type KernelActorWorkerRequest =
+  | KernelActorAsyncRequest
+  | KernelActorServiceCall
+  | KernelActorRouteRequest;
+
 export type KernelActorServiceResponse =
   | KernelActorAsyncResponse
   | {
@@ -60,6 +80,11 @@ export type KernelActorServiceResponse =
       status: -1 | 1 | 2;
       length: number;
       body?: string;
+    }
+  | {
+      t: "route_result";
+      rpcId: string;
+      placement: "legacy" | "isolated";
     };
 
 export type KernelActorTransportEnvelope = {

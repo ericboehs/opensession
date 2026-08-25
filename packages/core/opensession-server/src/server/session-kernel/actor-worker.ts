@@ -7,10 +7,10 @@ import {
   SESSION_KERNEL_ACTOR_VERSION,
   SESSION_KERNEL_MAX_RESPONSE_BYTES,
   isCriticalSettlementCommand,
-  type KernelActorAsyncRequest,
   type KernelActorServiceCall,
   type KernelActorServiceResponse,
   type KernelActorSyncRequest,
+  type KernelActorWorkerRequest,
 } from "./actor-protocol";
 import { isDeliveryReadRequest } from "./delivery-protocol";
 import type { SessionActorReducerCommand } from "./lifecycle-protocol";
@@ -342,9 +342,7 @@ export function startSessionKernelActorWorker(): void {
   }
 
   self.onmessage = (
-    event: MessageEvent<
-      KernelActorAsyncRequest | KernelActorSyncRequest | KernelActorServiceCall
-    >,
+    event: MessageEvent<KernelActorWorkerRequest | KernelActorSyncRequest>,
   ) => {
     const request = event.data;
     if (request.t === "call") {
@@ -353,6 +351,24 @@ export function startSessionKernelActorWorker(): void {
     }
     if (request.t === "store" || request.t === "reduce") {
       syncStore(request);
+      return;
+    }
+    if (request.t === "route") {
+      try {
+        post({
+          t: "route_result",
+          rpcId: request.rpcId,
+          placement: host.routeSession(request.sessionId, request.mutation),
+        });
+      } catch (error) {
+        post({
+          t: "error",
+          rpcId: request.rpcId,
+          error: error instanceof Error ? error.message : String(error),
+          fatal: true,
+        });
+        queueMicrotask(() => self.close());
+      }
       return;
     }
     if (request.t === "hello") {
@@ -400,6 +416,7 @@ export function startSessionKernelActorWorker(): void {
         !!sessionId &&
         isSessionKernelInfrastructureFailure(error) &&
         host.isIsolated(sessionId);
+      let fatal = false;
       if (isolatedFailure) {
         try {
           host.quarantineSession(
@@ -409,15 +426,18 @@ export function startSessionKernelActorWorker(): void {
             true,
           );
         } catch {
+          fatal = true;
           queueMicrotask(() => self.close());
         }
       } else if (!(error instanceof SessionQuarantinedError)) {
+        fatal = true;
         queueMicrotask(() => self.close());
       }
       post({
         t: "error",
         rpcId: request.rpcId,
         error: error instanceof Error ? error.message : String(error),
+        ...(fatal ? { fatal: true } : {}),
       });
     }
   };

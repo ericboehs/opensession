@@ -6,9 +6,9 @@ import {
   SESSION_KERNEL_MAX_RESPONSE_BYTES,
   SESSION_KERNEL_MAX_TRANSPORT_REQUESTS,
   SESSION_KERNEL_TRANSPORT_VERSION,
-  type KernelActorServiceCall,
   type KernelActorServiceResponse,
   type KernelActorTransportEnvelope,
+  type KernelActorWorkerRequest,
 } from "./actor-protocol";
 import { sessionActorServiceRoute } from "./actor-routing";
 import { workerEntry } from "../../runner-host/exe";
@@ -91,6 +91,7 @@ function json(value: unknown, init: ResponseInit = {}): Response {
 }
 
 function actorFatal(response: KernelActorServiceResponse): boolean {
+  if (response.t === "error") return response.fatal === true;
   if (response.t !== "call_result" || !response.body) return false;
   try {
     return (JSON.parse(response.body) as { code?: string }).code === "actor_fatal";
@@ -192,7 +193,7 @@ export async function startSessionKernelService(
 
   function sendToSlot(
     slot: WorkerSlot,
-    request: KernelActorTransportEnvelope["request"],
+    request: KernelActorWorkerRequest,
     allowUnready = false,
   ): Promise<KernelActorServiceResponse> {
     if (serviceError) return Promise.reject(serviceError);
@@ -300,8 +301,24 @@ export async function startSessionKernelService(
     return slot;
   }
 
+  async function resolveSessionPlacement(
+    sessionId: string,
+    mutation: boolean,
+  ): Promise<"legacy" | "isolated"> {
+    const response = await sendToSlot(slots[0], {
+      t: "route",
+      rpcId: crypto.randomUUID(),
+      sessionId,
+      mutation,
+    });
+    if (response.t !== "route_result")
+      throw new Error(`Session ${sessionId} route could not be resolved`);
+    return response.placement;
+  }
+
   function enqueueSession(
     sessionId: string,
+    mutation: boolean,
     request: KernelActorTransportEnvelope["request"],
   ): Promise<KernelActorServiceResponse> {
     const prior = sessionMailboxes.get(sessionId) ?? Promise.resolve();
@@ -309,7 +326,13 @@ export async function startSessionKernelService(
     const turn = prior
       .catch(() => {})
       .then(() => gate)
-      .then(() => sendToSlot(assignedSessionSlot(sessionId), request));
+      .then(async () => {
+        const placement = await resolveSessionPlacement(sessionId, mutation);
+        const slot = placement === "isolated"
+          ? assignedSessionSlot(sessionId)
+          : slots[0];
+        return sendToSlot(slot, request);
+      });
     const tail = turn.then(() => {}, () => {});
     sessionMailboxes.set(sessionId, tail);
     void tail.then(() => {
@@ -339,9 +362,13 @@ export async function startSessionKernelService(
   ): Promise<KernelActorServiceResponse> {
     const route = sessionActorServiceRoute(request);
     if (route.scope === "session")
-      return enqueueSession(route.sessionId, request);
+      return enqueueSession(route.sessionId, route.mutation, request);
     if (route.scope === "outbox")
-      return enqueueSession(await resolveOutboxSession(route.id), request);
+      return enqueueSession(
+        await resolveOutboxSession(route.id),
+        route.mutation,
+        request,
+      );
 
     if (request.t === "hello") return sendToSlot(slots[0], request);
     const active = [...sessionMailboxes.values()];

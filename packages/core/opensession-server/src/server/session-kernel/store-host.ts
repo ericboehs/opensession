@@ -80,6 +80,17 @@ export class SessionKernelStoreHost {
     return this.central.sessionPlacement(sessionId)?.placement === "isolated";
   }
 
+  routeSession(
+    sessionId: string,
+    mutation: boolean,
+  ): "legacy" | "isolated" {
+    if (this.isIsolated(sessionId)) return "isolated";
+    if (this.central.hasSessionDurableState(sessionId) || !mutation)
+      return "legacy";
+    this.central.claimIsolatedSession(sessionId);
+    return "isolated";
+  }
+
   quarantinedSession(sessionId: string): DurableSessionQuarantine | undefined {
     const infrastructure = this.central.quarantinedSession(sessionId);
     if (infrastructure) return infrastructure;
