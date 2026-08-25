@@ -57,7 +57,14 @@ const globalState = globalThis as typeof globalThis & {
 };
 const state = (globalState.__opensessionSessionKernel ??= {});
 function compatibilityStoreForTest(
-  domain: "ask" | "core" | "creation" | "delivery" | "gateway command" | "turn",
+  domain:
+    | "ask"
+    | "core"
+    | "creation"
+    | "delivery"
+    | "gateway command"
+    | "quarantine read"
+    | "turn",
 ) {
 	if (process.env.NODE_ENV !== "test")
 		throw new Error(
