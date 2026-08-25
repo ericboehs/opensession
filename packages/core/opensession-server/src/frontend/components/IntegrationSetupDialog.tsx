@@ -182,7 +182,7 @@ function guideFor(
 			return {
 				description: "Connect the GitHub App that handles PR comments, reviews, clones, and pushes.",
 				steps: [
-					<>Configure the App client id, slug, client secret, installation owner, and private key in the GitHub sign-in card below.</>,
+					<>Configure the App client id, slug, client secret, installation owner, and private key in Settings → Authentication.</>,
 					<>Install the App only on the organization and repositories Open Session should reach.</>,
 					<>
 						Add an organization webhook with content type <strong>application/json</strong> and this payload URL:
@@ -190,7 +190,6 @@ function guideFor(
 					</>,
 					<>Create a webhook secret, paste it both into GitHub and above, then add any legacy @handles that should also wake the PR agent.</>,
 					<>Enable GitHub, save, restart Open Session, and send a webhook test delivery.</>,
-					<>Keep <strong>GITHUB_API_TOKEN</strong> empty in App mode. It is only the explicit legacy PAT credential.</>,
 				],
 				permissions: [
 					<>Repository: <strong>Actions, Checks, Commit statuses, Deployments</strong> read; <strong>Contents, Issues, Pull requests</strong> read and write; Metadata read.</>,

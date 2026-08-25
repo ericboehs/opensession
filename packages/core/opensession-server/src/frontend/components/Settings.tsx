@@ -41,6 +41,7 @@ import {
 } from "./icons";
 import { MyAccountsPanel } from "./MyAccounts";
 import { AuditPanel } from "./settings/AuditPanel";
+import { AuthenticationPanel } from "./settings/AuthenticationPanel";
 import { DeploysPanel } from "./settings/DeploysPanel";
 import { GeneralPanel } from "./settings/GeneralPanel";
 import { IntegrationsPanel } from "./settings/IntegrationsPanel";
@@ -235,6 +236,7 @@ function SectionPanel({
 			)}
 			{section === "repos" && <ReposPanel />}
 			{section === "members" && <MembersPanel />}
+			{section === "authentication" && <AuthenticationPanel />}
 			{section === "library" && <LibraryPanel />}
 			{section === "integrations" && <IntegrationsPanel />}
 			{section === "audit" && <AuditPanel />}

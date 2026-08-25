@@ -18,7 +18,7 @@ import {
   serviceGithubCredential,
   type GithubCredential,
 } from "./github-auth";
-import { githubBotCredentialMode, githubToken } from "./github-app";
+import { githubToken } from "./github-app";
 import { reviewRequestRemovalSpecs } from "./github-review-requests";
 import { getPrStack, unmergedLayersBelow } from "./pr-stack";
 import type {
@@ -881,7 +881,7 @@ export async function prReviewerSpecs(
  * live body first (never a cached one: humans edit descriptions) and writes
  * via REST (PATCH pulls/{n} with an --input file so markdown/quotes/newlines
  * survive shell-free). NOT `gh pr edit`: its GraphQL preamble resolves org
- * teams and needs read:org, which neither the bot PAT nor the device-flow
+ * teams and needs read:org, which the installation and device-flow
  * OAuth tokens carry: it fails unconditionally on private org repos (verified
  * live on a private org repo; same class as the label-edit
  * gotcha).
@@ -1006,7 +1006,7 @@ export function prApiErrorMessage(msg: string): string {
   if (/authentication|bad credentials|requires authentication/i.test(msg))
     return "GitHub authentication failed. Check the GitHub connection.";
   if (/resource not accessible/i.test(msg))
-    return "The GitHub token is missing a permission for this API. Check the PAT's fine-grained permissions.";
+    return "The GitHub App is missing a permission for this API. Check its installation permissions.";
   return "GitHub's pull request API is unavailable right now.";
 }
 
@@ -1067,14 +1067,8 @@ function isPermanentPrApiError(msg: string): boolean {
 }
 
 // Fine-grained PATs can't be granted the Checks permission (GitHub App-only),
-// so statusCheckRollup fails with "Resource not accessible by personal access
-// token" under an org-scoped bot PAT. Preferred path: run the PR query
-// on a GitHub App installation token (github-app.ts), which has checks:read.
-// Fallback when no app key is configured: once the error is seen, skip the
-// field process-wide (checks render empty) instead of failing every PR fetch —
-// the flag resets on restart.
-let skipStatusCheckRollup = false;
-
+// The App permission set includes Checks: read, so every PR details query asks
+// for the rollup and fails visibly if the installation is misconfigured.
 async function fetchPrDetails(
   branch: string,
   repo: string
@@ -1087,12 +1081,10 @@ async function fetchPrDetails(
     // failures; a genuine "no pull requests found" stays a fast null.
     let raw = "";
     const selectedEnv = await selectedGhEnv();
-    const appSelected = githubBotCredentialMode() === "app";
     for (let attempt = 1; ; attempt++) {
       const baseFields =
         "number,title,url,state,isDraft,baseRefName,headRefName,headRefOid,additions,deletions,changedFiles,reviewDecision,author,body,mergeable,mergeStateStatus,comments,commits,files,latestReviews,reviewRequests";
-      const includeRollup = appSelected || !skipStatusCheckRollup;
-      const fields = includeRollup ? `${baseFields},statusCheckRollup` : baseFields;
+      const fields = `${baseFields},statusCheckRollup`;
       try {
         raw = await $`gh pr view ${branch} --repo ${repo} --json ${fields}`
           .env({ ...process.env, ...selectedEnv })
@@ -1101,16 +1093,6 @@ async function fetchPrDetails(
         break;
       } catch (e: any) {
         const msg = String(e?.stderr || e?.message || e).slice(0, 300);
-        // Keyed on THIS call's field list, not the global flag — a concurrent
-        // fetch may trip the flag while our rollup-carrying request is in
-        // flight, and that must not turn our retry into a hard failure.
-        if (includeRollup && /resource not accessible/i.test(msg) && /statusCheckRollup/.test(msg)) {
-          if (!skipStatusCheckRollup) {
-            skipStatusCheckRollup = true;
-            console.warn(`[pr-info] token can't read statusCheckRollup — dropping checks from PR queries until restart`);
-          }
-          continue;
-        }
         if (isNoPrError(msg) || isPermanentPrApiError(msg) || attempt >= 3) throw e;
         console.warn(`[pr-info] gh pr view ${branch} (${repo}) attempt ${attempt} failed, retrying: ${msg}`);
         await new Promise((r) => setTimeout(r, attempt * 2000));

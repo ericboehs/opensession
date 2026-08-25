@@ -29,7 +29,7 @@ import {
   repoSectionForMutation,
   withConfigMutationLock,
 } from "../config-mutation";
-import { githubCredentialForLogin, soleGithubAccount, type GithubCredential } from "../github-auth";
+import { githubCredentialForLogin, type GithubCredential } from "../github-auth";
 import { githubCredentialHelperCommand } from "../github-git-credential";
 import { homeDir } from "../paths";
 import { fetchWithTimeout } from "../shared/fetch-with-timeout";
@@ -74,15 +74,11 @@ async function normalizeInspectedDefaultBranch(value: unknown): Promise<string> 
 
 /**
  * The GitHub credential to act with for listing and cloning: the signed-in
- * user's stored token when web sign-in is active (operator mode), else the
- * single connected account in simple mode (soleGithubAccount, no authUser to
- * scope by there). Null falls back to the bot PAT or anonymous access.
+ * user's stored App token when GitHub authentication is active. With no
+ * authenticated teammate, repository setup uses the workspace App.
  */
 function actingGithubCredential(ctx: RouteContext): GithubCredential | null {
-  return (
-    (ctx.authUser?.login ? githubCredentialForLogin(ctx.authUser.login) : null) ??
-    soleGithubAccount()
-  );
+  return ctx.authUser?.login ? githubCredentialForLogin(ctx.authUser.login) : null;
 }
 
 // ── GitHub repo listing ──────────────────────────────────────────────────────
@@ -145,7 +141,7 @@ function registeredGhRepos(): Set<string> {
   );
 }
 
-/** PAT path: everything the token's user owns or is an org member of. */
+/** User-token path: everything the connected teammate can access. */
 async function listReposViaUserRepos(token: string): Promise<PickerRepo[]> {
   const registered = registeredGhRepos();
   const repos: PickerRepo[] = [];
@@ -185,7 +181,7 @@ export async function listReposViaAppInstallation(token: string): Promise<Picker
 }
 
 /** GitHub App user-token path: union of the token's accessible installations.
- *  Returns null when the token isn't installation-scoped (classic OAuth/PAT)
+ *  Returns null when the token isn't installation-scoped (a non-installation OAuth token)
  *  so the caller can fall back to /user/repos. */
 async function listReposViaInstallations(token: string): Promise<PickerRepo[] | null> {
   const installations = await githubJson(
@@ -574,13 +570,11 @@ export async function handleSetupRepoRoutes(
   const { req, path } = ctx;
 
   if (path === "/api/setup/github/repos" && req.method === "GET") {
-    // Credential preference: the acting user's stored GitHub token (signed-in
-    // user in operator mode, the sole connected account in simple mode), else
-    // the bot PAT, else an empty (but well-formed) answer.
+    // Prefer the authenticated teammate's App user token; otherwise use the
+    // workspace installation token. Missing App authority yields an empty,
+    // well-formed answer and never consults ambient credentials.
     const userCredential = actingGithubCredential(ctx);
-    // Bot credential: the App installation token when configured, else the PAT.
-    const { githubBotCredentialMode, githubToken } = await import("../github-app");
-    const botCredential = githubBotCredentialMode();
+    const { githubToken } = await import("../github-app");
     const botToken = userCredential ? null : await githubToken();
     const token = userCredential?.env.GH_TOKEN || botToken;
     const source: "user" | "bot" | null = userCredential
@@ -591,21 +585,19 @@ export async function handleSetupRepoRoutes(
     if (!token || !source) {
       return Response.json({ source: null, repos: [] });
     }
-    const cacheKey = userCredential
-      ? userCredential.principal
-      : `bot:${botCredential}`;
+    const cacheKey = userCredential ? userCredential.principal : "bot:app";
     const cached = repoListCache.get(cacheKey);
     if (cached && Date.now() - cached.at < REPO_CACHE_TTL_MS) {
       return Response.json(cached.payload);
     }
     try {
-      // App user tokens list via installations; anything else (PAT, classic
-      // OAuth) via /user/repos. The installations call itself tells us which
-      // kind we have — a non-App token gets an error and we fall back.
+      // Installation tokens have a direct repository list. App user tokens list
+      // through their installations, with /user/repos as a compatibility path
+      // for older non-expiring OAuth grants already stored before migration.
       const repos =
-        source === "bot" && botCredential === "app"
+        source === "bot"
           ? await listReposViaAppInstallation(token)
-          : (source === "user" ? await listReposViaInstallations(token) : null) ??
+          : (await listReposViaInstallations(token)) ??
             (await listReposViaUserRepos(token));
       repos.sort((a, b) => (b.pushedAt || "").localeCompare(a.pushedAt || ""));
       const payload = {

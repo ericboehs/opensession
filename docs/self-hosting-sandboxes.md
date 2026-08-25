@@ -327,7 +327,7 @@ to `provider: "local"` (today's host behavior). Env override for the path:
 
   // How remote sandboxes authenticate `git clone` (they can't mount host
   // creds). "none" = public clone; "https-token" injects the token into the
-  // https URL (GitHub PAT / x-access-token).
+  // https URL (GitHub App token / x-access-token).
   "cloneCredential": { "type": "https-token", "token": "ghp_…" },
 
   // Demand-driven by default. Add explicit keepReady targets when a project

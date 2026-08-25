@@ -61,7 +61,7 @@ export type SandboxTransport = "socket" | "ws";
 
 /** How remote providers authenticate `git clone` inside the sandbox (they
  *  can't mount host creds). "none" = public clone; "https-token" injects the
- *  token into the https URL (GitHub PAT / x-access-token). */
+ *  token into the https URL (GitHub App token / x-access-token). */
 export interface SandboxCloneCredential {
   type: "none" | "https-token";
   token?: string;
@@ -254,7 +254,7 @@ export interface SandboxConfig {
   automation?: SandboxAutomationConfig;
   /** Clone auth for remote-provider workspaces + runner bootstrap. The selected
    *  live GitHub service credential takes precedence; App mode never falls back
-   *  to a persisted token because it may be the retired PAT. */
+   *  to a persisted token because it may be stale static authority. */
   cloneCredential?: SandboxCloneCredential;
   /** Warm-on-typing prewarm pool. Absent = defaults, with `enabled` true
    *  whenever a provider with a prewarm adapter is configured. */

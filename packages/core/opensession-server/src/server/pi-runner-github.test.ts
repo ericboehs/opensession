@@ -8,7 +8,6 @@ import { githubCodeRunEnv } from "./pi-runner";
 const keys = [
   "OPENSESSION_CONFIG",
   "OPENSESSION_GITHUB_AUTH_STORE",
-  "GITHUB_API_TOKEN",
   GITHUB_RUN_AUTH_FILE_ENV,
 ] as const;
 const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
@@ -22,7 +21,7 @@ afterEach(() => {
 });
 
 describe("recovered GitHub code-run credentials", () => {
-  test("resolves the selected service credential instead of a connected human", async () => {
+  test("fails closed instead of selecting a connected human", async () => {
     const dir = mkdtempSync(join(tmpdir(), "opensession-recovered-github-"));
     try {
       const cwd = join(dir, "repo");
@@ -32,7 +31,7 @@ describe("recovered GitHub code-run credentials", () => {
       writeFileSync(
         config,
         JSON.stringify({
-          integrations: { github: { botCredential: "pat" } },
+          integrations: { github: {} },
           repos: {
             app: {
               repo: cwd,
@@ -46,17 +45,17 @@ describe("recovered GitHub code-run credentials", () => {
         users,
         JSON.stringify({
           users: {
-            alice: { login: "alice", token: "human-token", connectedAt: new Date().toISOString() },
+            alice: { login: "alice", token: "human-token", source: "device", connectedAt: new Date().toISOString() },
           },
         }),
       );
       process.env.OPENSESSION_CONFIG = config;
       process.env.OPENSESSION_GITHUB_AUTH_STORE = users;
-      process.env.GITHUB_API_TOKEN = "selected-service-pat";
       delete process.env[GITHUB_RUN_AUTH_FILE_ENV];
 
       const env = await githubCodeRunEnv(cwd);
-      expect(env.GH_TOKEN).toBe("selected-service-pat");
+      expect(env.GH_TOKEN).toBe("");
+      expect(env.GIT_CONFIG_VALUE_2).toBe("git@github.com:");
       expect(Object.values(env)).not.toContain("human-token");
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -69,11 +68,10 @@ describe("recovered GitHub code-run credentials", () => {
       const auth = join(dir, "github-auth.json");
       writeFileSync(auth, JSON.stringify({ GH_TOKEN: "projected-service-token" }));
       process.env[GITHUB_RUN_AUTH_FILE_ENV] = auth;
-      process.env.GITHUB_API_TOKEN = "unprojected-host-token";
 
       const env = await githubCodeRunEnv("/remote/unregistered/repo");
       expect(env.GH_TOKEN).toBe("projected-service-token");
-      expect(Object.values(env)).not.toContain("unprojected-host-token");
+      expect(env.GIT_CONFIG_VALUE_2).toBe("git@github.com:");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

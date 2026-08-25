@@ -196,20 +196,8 @@ export const INTEGRATIONS: IntegrationSpec[] = [
     doc: "docs/setup/github.md",
     enableFlag: "ENABLE_GITHUB_AGENT",
     env: [
-      {
-        name: "GITHUB_API_TOKEN",
-        required: true,
-        description: "legacy PAT bot credential; leave empty when the GitHub App is selected",
-      },
       { name: "GITHUB_WEBHOOK_SECRET", description: "verifies inbound webhook signatures" },
-      { name: "GITHUB_BOT_LOGIN", description: "legacy machine-user login recognised as our own" },
-      { name: "GITHUB_MENTION_HANDLES", description: "handles that trigger the PR agent" },
-    ],
-    links: [
-      {
-        label: "Create legacy fine-grained token",
-        url: "https://github.com/settings/personal-access-tokens/new",
-      },
+      { name: "GITHUB_MENTION_HANDLES", description: "additional handles that trigger the PR agent" },
     ],
     load: async (ctx) => {
       const { GithubAgent } = await import("../../agents/github/index");

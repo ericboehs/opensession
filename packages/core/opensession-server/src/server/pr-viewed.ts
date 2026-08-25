@@ -3,9 +3,8 @@
  * (`viewerViewedState` + the markFileAsViewed/unmarkFileAsViewed mutations).
  *
  * Viewed state is per GitHub account, so calls prefer the requester's
- * connected GitHub token (github-auth.ts) and fall back to the bot PAT —
- * with the fallback every teammate shares the bot's view, which is still the
- * pre-existing single-user behavior. GitHub also owns the staleness
+ * connected App user token (github-auth.ts) and fall back to the workspace App.
+ * With the fallback, teammates share the App's view state. GitHub also owns the staleness
  * semantics: a file changed after being viewed comes back DIRTY, which we
  * treat as not viewed (same as github.com's file list).
  */
@@ -23,7 +22,7 @@ export interface PrViewedFiles {
 	viewed: string[];
 }
 
-/** The requester's GitHub token: their connected account, else the bot PAT. */
+/** The requester's App user token, else the workspace installation token. */
 async function viewerToken(
 	ctx: RouteContext,
 	claimedUser?: string | null,
@@ -36,7 +35,7 @@ async function viewerToken(
 		return requestCredential.env.GH_TOKEN;
 
 	// Preserve the older identity-table lookup for deployments that still send
-	// a claimed user without web sign-in, then retain the historical bot fallback.
+	// a claimed user without web sign-in, then use the workspace App fallback.
 	const login = ctx.authUser?.login ?? githubUserLoginForRun(claimedUser);
 	if (login) {
 		const credential = githubCredentialForLogin(login);

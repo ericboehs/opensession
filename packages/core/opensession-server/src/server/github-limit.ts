@@ -27,11 +27,10 @@ interface GhLimitState {
   backoffUntil: number;
   probe: Promise<void> | null;
   /** Cached `gh auth token` output for direct REST calls (null = probed, none). */
-  botToken: string | null | undefined;
 }
 
 const state: GhLimitState = ((globalThis as any).__osGhLimitState ||= (() => {
-  const s: GhLimitState = { backoffUntil: 0, probe: null, botToken: undefined };
+  const s: GhLimitState = { backoffUntil: 0, probe: null };
   try {
     if (existsSync(PERSIST_PATH)) {
       const parsed = JSON.parse(readFileSync(PERSIST_PATH, "utf-8"));
@@ -139,29 +138,12 @@ export function noteGhRateLimited(source: string, resetEpochMs?: number): void {
 
 /**
  * Token for direct api.github.com calls made on the bot's behalf (conditional
- * change probes and the like): the App installation token (or GITHUB_API_TOKEN)
- * that the REST helpers use, else the gh CLI's own token, probed once and cached
- * for the process lifetime.
+ * change probes and the like): a short-lived App installation token. Missing
+ * App authority fails closed; ambient gh accounts are never consulted.
  */
 export async function botGhToken(
   opts: { write?: boolean } = {},
 ): Promise<string | null> {
-  const { githubBotCredentialMode, githubToken } = await import("./github-app");
-  const primary = await githubToken(opts);
-  if (primary) return primary;
-  // App mode is an explicit credential boundary. Do not silently resume with
-  // a user login or retired PAT cached by gh when App token minting fails.
-  if (githubBotCredentialMode() === "app") return null;
-  if (state.botToken !== undefined) return state.botToken;
-  try {
-    const proc = Bun.spawn(["gh", "auth", "token"], {
-      stdout: "pipe",
-      stderr: "ignore",
-    });
-    const raw = await new Response(proc.stdout).text();
-    state.botToken = (await proc.exited) === 0 && raw.trim() ? raw.trim() : null;
-  } catch {
-    state.botToken = null;
-  }
-  return state.botToken;
+  const { githubToken } = await import("./github-app");
+  return githubToken(opts);
 }

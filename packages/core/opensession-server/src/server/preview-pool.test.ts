@@ -48,7 +48,7 @@ describe("preview pool GitHub credential cutover", () => {
       const config = join(dir, "config.json");
       writeFileSync(
         config,
-        JSON.stringify({ integrations: { github: { botCredential: "app" } } }),
+        JSON.stringify({ integrations: { github: {} } }),
       );
       process.env.OPENSESSION_CONFIG = config;
       expect(

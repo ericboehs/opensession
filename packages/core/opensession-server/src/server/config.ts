@@ -926,7 +926,6 @@ export function githubWriteOwners(): string[] {
 }
 
 export function githubBotLogins(): string[] {
-  const env = process.env.GITHUB_BOT_LOGIN?.trim();
   // Resolve the App slug env-over-config, mirroring githubAppIdentity() — an App
   // set entirely through OPENSESSION_GITHUB_APP_SLUG (no appSlug in the file)
   // must still contribute its bot identity.
@@ -938,10 +937,9 @@ export function githubBotLogins(): string[] {
     ...new Set(
       [
         ...(getConfig().policy?.githubBotLogins || []),
-        ...(env ? [env] : []),
         // The App authors comments as "<app-slug>[bot]". Recognise it as ours
         // so the agent never treats its own App-posted comments as human
-        // replies to answer — the same reason the bot PAT's login is listed.
+        // replies to answer.
         ...(appSlug ? [`${appSlug}[bot]`] : []),
       ].map((login) => login.toLowerCase()),
     ),
@@ -949,8 +947,8 @@ export function githubBotLogins(): string[] {
 }
 
 /** Is `login` one of our bot identities? Membership over the whole
- *  githubBotLogins() set, not equality with the primary — the App bot, the PAT
- *  bot login and any policy logins can all be "ours", so identity checks (own
+ *  githubBotLogins() set, not equality with the primary — the App bot and any
+ *  policy aliases can all be "ours", so identity checks (own
  *  threads, replies, review authorship, webhook senders) must match any of
  *  them, not just the first. Case-insensitive. */
 export function isGithubBotLogin(login: string | null | undefined): boolean {

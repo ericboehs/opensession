@@ -10,7 +10,6 @@ const saved = {
   home: process.env.HOME,
   config: process.env.OPENSESSION_CONFIG,
   envFile: process.env.OPENSESSION_ENV_FILE,
-  token: process.env.GITHUB_API_TOKEN,
   enabled: process.env.ENABLE_GITHUB_AGENT,
 };
 const dirs: string[] = [];
@@ -24,13 +23,12 @@ afterEach(() => {
   restore("HOME", saved.home);
   restore("OPENSESSION_CONFIG", saved.config);
   restore("OPENSESSION_ENV_FILE", saved.envFile);
-  restore("GITHUB_API_TOKEN", saved.token);
   restore("ENABLE_GITHUB_AGENT", saved.enabled);
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 describe("GitHub integration status", () => {
-  test("does not require the retired PAT when the selected App credential is configured", async () => {
+  test("reports the App credential without a static-token field", async () => {
     const dir = mkdtempSync(join(tmpdir(), "opensession-github-app-status-"));
     dirs.push(dir);
     const state = join(dir, ".opensession");
@@ -43,7 +41,6 @@ describe("GitHub integration status", () => {
         integrations: {
           github: {
             enabled: true,
-            botCredential: "app",
             oauthClientId: "Iv-test-client",
             appSlug: "open-session-test",
             installationOwner: "acme",
@@ -63,7 +60,6 @@ describe("GitHub integration status", () => {
     process.env.OPENSESSION_CONFIG = config;
     process.env.OPENSESSION_ENV_FILE = envFile;
     process.env.ENABLE_GITHUB_AGENT = "true";
-    delete process.env.GITHUB_API_TOKEN;
 
     const url = new URL("http://localhost/api/setup/status");
     const context: RouteContext = {
@@ -83,10 +79,6 @@ describe("GitHub integration status", () => {
     });
     const github = body.integrations.find((item: any) => item.id === "github");
     expect(github.missingRequired).toEqual([]);
-    expect(github.env.find((item: any) => item.name === "GITHUB_API_TOKEN")).toMatchObject({
-      present: false,
-      required: false,
-      description: "legacy PAT; not used while the GitHub App is selected",
-    });
+    expect(github.env.map((item: any) => item.name)).not.toContain("GITHUB_API_TOKEN");
   });
 });

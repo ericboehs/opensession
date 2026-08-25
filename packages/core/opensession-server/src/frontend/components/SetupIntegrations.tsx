@@ -5,6 +5,7 @@ import { Disclosure } from "../ui/disclosure";
 import { Modal } from "../ui/modal";
 import { SettingCard, SettingsHint, SettingsSection } from "../ui/settings";
 import { InlineAlert } from "../ui/state";
+import { Segmented, SegmentedOption } from "../ui/segmented";
 import { Switch } from "../ui/switch";
 import { toast } from "../ui/toast";
 import {
@@ -197,7 +198,7 @@ function GithubAuthSetupDialog({
 							<ul className="m-0 flex flex-col gap-1.5 pl-5 text-supporting leading-relaxed text-dim">
 								<li>Contents write lets a connected teammate&rsquo;s interactive session push commits; pull-request and issue write cover PR creation, reviews, and conversation comments.</li>
 								<li>A connected user can reach only repositories allowed by both their own GitHub access and the app installation.</li>
-								<li>Personal tokens are injected only into interactive runs owned by that teammate. Automations continue to use the bot account.</li>
+								<li>Teammate App tokens are injected only into interactive runs owned by that teammate. Automations continue to use the installation credential.</li>
 							</ul>
 						</GuideBlock>
 					</div>
@@ -232,7 +233,7 @@ function githubSetupSteps(): React.ReactNode[] {
 			Paste the client id, app slug, installation owner, client secret, and private key above. The private key mints short-lived installation tokens for bot work; the client secret refreshes teammates&rsquo; device-flow tokens.
 		</>,
 		<>
-			Enable GitHub sign-in, save, restart Open Session, then have each teammate connect under Team → Account.
+			Choose GitHub authentication or None, save, then restart Open Session. With GitHub selected, each teammate connects under Team → Account.
 		</>,
 	];
 }
@@ -269,7 +270,6 @@ export function GithubAuthCard({
 	// The secret is never echoed; the status exposes presence only.
 	const secretConfigured = github.clientSecretConfigured;
 	const [userPrAuth, setUserPrAuth] = useState(github.userPrAuth);
-	const [botCredential, setBotCredential] = useState(github.botCredential);
 	const [clientId, setClientId] = useState("");
 	const [appSlug, setAppSlug] = useState(github.appSlug ?? "");
 	const [installationOwner, setInstallationOwner] = useState(
@@ -285,12 +285,10 @@ export function GithubAuthCard({
 
 	useEffect(() => {
 		setUserPrAuth(github.userPrAuth);
-		setBotCredential(github.botCredential);
 		setAppSlug(github.appSlug ?? "");
 		setInstallationOwner(github.installationOwner ?? github.appOrg ?? "");
 	}, [
 		github.userPrAuth,
-		github.botCredential,
 		github.appSlug,
 		github.installationOwner,
 		github.appOrg,
@@ -300,7 +298,6 @@ export function GithubAuthCard({
 	const secretCleared = secretConfigured && clearSecret && !clientSecret.trim();
 	const dirty =
 		userPrAuth !== github.userPrAuth ||
-		botCredential !== github.botCredential ||
 		clientId.trim() !== "" ||
 		appSlug.trim() !== (github.appSlug ?? "") ||
 		installationOwner.trim() !==
@@ -322,7 +319,6 @@ const body = await setupRequest<{
 				method: "PUT",
 				json: {
 					...(userPrAuth !== github.userPrAuth ? { userPrAuth } : {}),
-					...(botCredential !== github.botCredential ? { botCredential } : {}),
 					...(clientId.trim()
 						? { oauthClientId: clientId.trim() }
 						: idCleared
@@ -387,39 +383,24 @@ setSaving(false);
 	// protect behind a button, and the steps above end in these two fields.
 	const configuration = (
 		<>
-			<div className="flex items-center gap-4">
-				<div className="min-w-0 flex-1">
-					<div className="text-item-title font-medium text-fg">Enable GitHub sign-in</div>
-					<div className="mt-0.5 text-supporting text-dim">
-						Takes effect after you restart Open Session.
-					</div>
-				</div>
-				<Switch
-					checked={userPrAuth}
-					onCheckedChange={setUserPrAuth}
-					disabled={saving}
-					aria-label="Enable GitHub sign-in"
-				/>
-			</div>
-			<div className="mt-4 flex flex-col gap-4 border-t border-line pt-4">
-				<div className="flex items-center gap-4">
-					<div className="min-w-0 flex-1">
-						<div className="text-item-title font-medium text-fg">Use the GitHub App for bot actions</div>
-						<div className="mt-0.5 text-supporting text-dim">
-							Switches reviews, comments, clones and pushes away from the PAT.
+			<div className="flex flex-col gap-4">
+				{onboarding && (
+					<div className="flex items-center justify-between gap-4 phone:items-start">
+						<div className="min-w-0 flex-1">
+							<div className="text-item-title font-medium text-fg">Sign-in method</div>
+							<div className="mt-0.5 text-supporting text-dim">
+								Choose whether teammates sign in with GitHub.
+							</div>
 						</div>
+						<Segmented
+							label="Sign-in method"
+							value={userPrAuth ? "github" : "none"}
+							onValueChange={(value) => setUserPrAuth(value === "github")}
+						>
+							<SegmentedOption value="none">None</SegmentedOption>
+							<SegmentedOption value="github">GitHub</SegmentedOption>
+						</Segmented>
 					</div>
-					<Switch
-						checked={botCredential === "app"}
-						onCheckedChange={(checked) => setBotCredential(checked ? "app" : "pat")}
-						disabled={saving || !github.appCredentialConfigured}
-						aria-label="Use the GitHub App for bot actions"
-					/>
-				</div>
-				{!github.appCredentialConfigured && (
-					<p className="m-0 text-supporting text-faint">
-						Add the App private key before switching credentials.
-					</p>
 				)}
 				<SecretField
 					name="Client id"
@@ -507,8 +488,8 @@ setSaving(false);
 					/>
 					<span className="text-meta leading-snug text-faint">
 						In the App&rsquo;s Private keys, Generate a private key and paste the
-						.pem here. Lets the bot and PR checks run on the App; leave blank for
-						sign-in only.
+						.pem here. Required for bot work and PR checks; leave blank only to keep the
+						key already configured.
 					</span>
 				</label>
 				<p className="m-0 text-supporting text-faint">
@@ -533,14 +514,14 @@ setSaving(false);
 							)}
 						>
 							<div className="text-item-title font-semibold text-fg">
-								{onboarding ? "GitHub" : "GitHub App and sign-in"}
+								{onboarding ? "GitHub" : "Authentication"}
 							</div>
 							<StateChip tone={state.tone} label={state.label} />
 						</div>
 						{!onboarding && (
 							<div className="col-start-2 row-start-2 min-w-0 phone:col-span-2 phone:col-start-1 phone:mt-3">
 								<p className="m-0 text-supporting leading-relaxed text-dim">
-									The App handles bot work; connected teammates keep their identity in interactive sessions.
+									Choose None for an open workspace or GitHub to require teammate sign-in. The App always handles bot work.
 								</p>
 								{/* The Device Flow switch lives on GitHub, so nothing here can
 								    report whether it is on. It is also the only way in now, so
@@ -558,28 +539,22 @@ setSaving(false);
 						)}
 						{!onboarding && (
 						<div className="col-start-3 row-span-2 row-start-1 ml-4 flex min-h-10 shrink-0 items-center gap-2 phone:col-span-2 phone:col-start-1 phone:row-span-1 phone:row-start-3 phone:mt-4 phone:ml-0 phone:flex-col phone:items-stretch">
-							{(github.clientIdConfigured || github.userPrAuth) && (
-								<>
-									<div className="hidden min-h-11 items-center justify-between text-label font-medium text-dim phone:flex">
-										<span>GitHub sign-in</span>
-										<Switch
-											checked={github.userPrAuth}
-											onCheckedChange={(next) => void handleToggle(next)}
-											disabled={saving || !github.clientIdConfigured}
-											aria-label={`${github.userPrAuth ? "Disable" : "Enable"} GitHub sign-in`}
-										/>
-									</div>
-									<div className="flex items-center gap-2 phone:hidden">
-										<span className="text-label font-medium text-dim">Sign-in</span>
-										<Switch
-											checked={github.userPrAuth}
-											onCheckedChange={(next) => void handleToggle(next)}
-											disabled={saving || !github.clientIdConfigured}
-											aria-label={`${github.userPrAuth ? "Disable" : "Enable"} GitHub sign-in`}
-										/>
-									</div>
-								</>
-							)}
+							<Segmented
+								label="Sign-in method"
+								value={github.userPrAuth ? "github" : "none"}
+								onValueChange={(value) => {
+									if (value === "github" && !github.clientIdConfigured) {
+										setUserPrAuth(true);
+										setSetupOpen(true);
+										return;
+									}
+									void handleToggle(value === "github");
+								}}
+								className="phone:w-full"
+							>
+								<SegmentedOption className="phone:flex-1 phone:justify-center" value="none">None</SegmentedOption>
+								<SegmentedOption className="phone:flex-1 phone:justify-center" value="github">GitHub</SegmentedOption>
+							</Segmented>
 							<Button
 								size="sm"
 								className="phone:min-h-11 phone:w-full phone:justify-center"

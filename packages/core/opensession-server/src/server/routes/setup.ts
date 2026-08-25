@@ -45,25 +45,12 @@ async function integrationSnapshot(
     envValues && name in envValues
       ? envValues[name] !== ""
       : !!process.env[name];
-  let githubAppSuppliesBotCredential = false;
-  if (spec.id === "github") {
-    const { githubAppConfigured, githubBotCredentialMode } =
-      await import("../github-app");
-    githubAppSuppliesBotCredential =
-      githubBotCredentialMode() === "app" && githubAppConfigured();
-  }
-  const env = spec.env.map((e) => {
-    const retiredGithubPat =
-      e.name === "GITHUB_API_TOKEN" && githubAppSuppliesBotCredential;
-    return {
-      name: e.name,
-      required: retiredGithubPat ? false : envRequired(e, present),
-      description: retiredGithubPat
-        ? "legacy PAT; not used while the GitHub App is selected"
-        : e.description,
-      present: present(e.name),
-    };
-  });
+  const env = spec.env.map((e) => ({
+    name: e.name,
+    required: envRequired(e, present),
+    description: e.description,
+    present: present(e.name),
+  }));
   // Registry links are static; instance-dependent ones are computed here.
   const links = [...(spec.links ?? [])];
   if (spec.id === "grafana") {
@@ -154,8 +141,7 @@ async function githubSnapshot() {
     githubAppOrg,
     githubAuthOnConnect,
   } = await import("../github-auth");
-  const { githubAppConfigured, githubBotCredentialMode } =
-    await import("../github-app");
+  const { githubAppConfigured } = await import("../github-app");
   const { configuredIntegration, configuredServer } = await import("../config");
   const github = githubUserAuthSettings();
   const app = githubAppIdentity();
@@ -165,8 +151,6 @@ async function githubSnapshot() {
     userPrAuth: github.enabled,
     clientIdConfigured: !!github.clientId,
     clientSecretConfigured: !!github.clientSecret,
-    botTokenPresent: !!process.env.GITHUB_API_TOKEN,
-    botCredential: githubBotCredentialMode(),
     appCredentialConfigured: githubAppConfigured(),
     appSlug: app.slug,
     installationOwner:
@@ -375,7 +359,6 @@ export async function handleSetupRoutes(
       oauthClientSecret?: unknown;
       appSlug?: unknown;
       installationOwner?: unknown;
-      botCredential?: unknown;
       privateKey?: unknown;
     } | null;
     if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -383,21 +366,6 @@ export async function handleSetupRoutes(
     }
     if (body.userPrAuth !== undefined && typeof body.userPrAuth !== "boolean") {
       return Response.json({ error: "userPrAuth must be a boolean" }, { status: 400 });
-    }
-    if (
-      body.botCredential !== undefined &&
-      body.botCredential !== "pat" &&
-      body.botCredential !== "app"
-    ) {
-      return Response.json({ error: "botCredential must be pat or app" }, { status: 400 });
-    }
-    if (body.botCredential === "app") {
-      const { githubAppConfigured } = await import("../github-app");
-      if (!githubAppConfigured())
-        return Response.json(
-          { error: "Configure the GitHub App client id and private key before switching" },
-          { status: 409 },
-        );
     }
     for (const field of [
       "oauthClientId",
@@ -443,7 +411,6 @@ export async function handleSetupRoutes(
       body.oauthClientSecret === undefined &&
       body.appSlug === undefined &&
       body.installationOwner === undefined &&
-      body.botCredential === undefined &&
       !privateKey
     ) {
       return Response.json({ error: "Nothing to change" }, { status: 400 });
@@ -473,21 +440,62 @@ export async function handleSetupRoutes(
         (nextClientId !== undefined && github.oauthClientId !== nextClientId
           ? null
           : undefined);
-      const effectiveBotCredential = body.botCredential ?? github.botCredential ?? "pat";
       const { githubAppIdentity } = await import("../github-auth");
+      const { githubAppConfigured } = await import("../github-app");
       const effectiveAppSlug =
         body.appSlug !== undefined
           ? String(body.appSlug).trim()
           : githubAppIdentity().slug;
-      if (effectiveBotCredential === "app" && !effectiveAppSlug) {
+      const appSettingsChanging =
+        body.oauthClientId !== undefined ||
+        body.oauthClientSecret !== undefined ||
+        body.appSlug !== undefined ||
+        body.installationOwner !== undefined ||
+        !!privateKey;
+      if ((appSettingsChanging || body.userPrAuth === true) && !effectiveAppSlug) {
         return Response.json(
-          { error: "Configure the GitHub App slug before selecting App bot actions" },
+          { error: "Configure the GitHub App slug" },
           { status: 409 },
         );
       }
-      if (keyMutation === null && effectiveBotCredential === "app") {
+      if (keyMutation === null) {
         return Response.json(
-          { error: "Switch bot actions to the PAT before changing the GitHub App without a replacement key" },
+          { error: "Changing the GitHub App client id requires its replacement private key" },
+          { status: 409 },
+        );
+      }
+      const effectiveClientId =
+        body.oauthClientId !== undefined
+          ? String(body.oauthClientId).trim()
+          : typeof github.oauthClientId === "string"
+            ? github.oauthClientId
+            : "";
+      const effectiveOwner =
+        body.installationOwner !== undefined
+          ? String(body.installationOwner).trim()
+          : typeof github.installationOwner === "string"
+            ? github.installationOwner
+            : typeof github.appOrg === "string"
+              ? github.appOrg
+              : "";
+      const effectiveSecret =
+        body.oauthClientSecret !== undefined
+          ? String(body.oauthClientSecret).trim()
+          : typeof github.oauthClientSecret === "string"
+            ? github.oauthClientSecret
+            : "";
+      if (
+        (appSettingsChanging || body.userPrAuth === true) &&
+        (!effectiveClientId || !effectiveOwner || (!privateKey && !githubAppConfigured()))
+      ) {
+        return Response.json(
+          { error: "Client id, installation owner and private key are required for the GitHub App" },
+          { status: 409 },
+        );
+      }
+      if (body.userPrAuth === true && !effectiveSecret) {
+        return Response.json(
+          { error: "A client secret is required for GitHub authentication" },
           { status: 409 },
         );
       }
@@ -549,7 +557,6 @@ export async function handleSetupRoutes(
         }
       }
       if (body.userPrAuth !== undefined) github.userPrAuth = body.userPrAuth;
-      if (body.botCredential !== undefined) github.botCredential = body.botCredential;
       for (const field of [
         "oauthClientId",
         "oauthClientSecret",
@@ -581,7 +588,6 @@ export async function handleSetupRoutes(
           "oauthClientSecret",
           "appSlug",
           "installationOwner",
-          "botCredential",
         ] as const).filter(
           (f) => body[f] !== undefined,
         ),

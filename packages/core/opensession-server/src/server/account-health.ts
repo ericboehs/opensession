@@ -229,76 +229,16 @@ export function detectAccountIssues(): Issue[] {
   return [...claudeIssues(), ...codexIssues()];
 }
 
-// The bot's GitHub fine-grained PAT is the credential every gh/PR flow rides;
-// renewal needs a human
-// AND an org approval round-trip, so warn well ahead. Expiry comes from the
-// `github-authentication-token-expiration` header GitHub sets on any
-// authenticated call; a 401 means it's already dead.
-const GITHUB_PAT_WARN_MS = 21 * 24 * 60 * 60 * 1000;
-
-async function githubPatIssues(): Promise<Issue[]> {
-  const token = process.env.GITHUB_API_TOKEN;
-  if (!token) return [];
-  let res: globalThis.Response;
-  try {
-    res = await fetch("https://api.github.com/user", {
-      headers: { Authorization: `Bearer ${token}`, "User-Agent": "opensession" },
-    });
-  } catch {
-    return []; // transient network — never alert
-  }
-  if (res.status === 401) {
-    const agent = personaName();
-    const bot = githubBotLogins()[0] || "configured bot";
-    const owner = githubWriteOwners()[0] || "configured repository owner";
-    return [
-      {
-        key: "github:pat:dead",
-        message:
-          `${agent} here — the ${bot} GitHub PAT (GITHUB_API_TOKEN) is revoked or ` +
-          "expired: every bot gh/PR flow is down. Mint a new fine-grained PAT (resource " +
-          `owner ${owner}, with access to the required repositories) and get it approved if needed.`,
-        notify: FALLBACK_TEAMMATE,
-      },
-    ];
-  }
-  const raw = res.headers.get("github-authentication-token-expiration");
-  if (!raw) return [];
-  // Header format: "2027-07-27 19:19:35 UTC".
-  const expiresAt = Date.parse(raw.replace(" UTC", "Z").replace(" ", "T"));
-  if (!Number.isFinite(expiresAt)) return [];
-  const left = expiresAt - Date.now();
-  if (left > GITHUB_PAT_WARN_MS) return [];
-  const days = Math.max(0, Math.floor(left / 86_400_000));
-  const agent = personaName();
-  const bot = githubBotLogins()[0] || "configured bot";
-  const owner = githubWriteOwners()[0] || "configured repository owner";
-  return [
-    {
-      key: "github:pat:expiring",
-      message:
-        `${agent} here — the ${bot} GitHub PAT expires in ${days} day(s) ` +
-        `(${new Date(expiresAt).toISOString().slice(0, 10)}). Regenerate it at ` +
-        `github.com/settings/personal-access-tokens (resource owner ${owner}), approve it ` +
-        `if asked, then tell ${agent} to swap it into the configured credential stores.`,
-      notify: FALLBACK_TEAMMATE,
-    },
-  ];
-}
-
 /**
  * The GitHub App is the credential the bot now rides on most installs. If it is
  * configured (client id + key) but cannot mint an installation token — a revoked
  * key, an uninstalled App, a wrong installation owner — every bot gh/PR flow is
- * down, exactly like a dead PAT. Warn on that. Skipped when no App is set up, so
- * a PAT-only install is unaffected.
+ * down. Warn on that. Skipped when no App identity has been configured yet.
  */
 async function githubAppIssues(): Promise<Issue[]> {
-  const { githubAppConfigured, githubAppInstallationToken } = await import(
-    "./github-app"
-  );
+  const { githubAppConfigured, githubToken } = await import("./github-app");
   if (!githubAppConfigured()) return [];
-  if (await githubAppInstallationToken()) return [];
+  if (await githubToken()) return [];
   const agent = personaName();
   const owner = githubWriteOwners()[0] || "the configured owner";
   return [
@@ -313,13 +253,9 @@ async function githubAppIssues(): Promise<Issue[]> {
   ];
 }
 
-/** Check only the credential selected for bot traffic. Unselected credentials
- * may deliberately be absent or retired and must not trigger outage alerts. */
+/** Check the App installation token used for all service traffic. */
 export async function selectedGithubCredentialIssues(): Promise<Issue[]> {
-  const { githubBotCredentialMode } = await import("./github-app");
-  return githubBotCredentialMode() === "app"
-    ? githubAppIssues()
-    : githubPatIssues();
+  return githubAppIssues();
 }
 
 /** One sweep: detect, dedupe against state, DM, persist. Exported for tests/manual runs. */

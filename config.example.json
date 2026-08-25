@@ -112,14 +112,10 @@
     "github": {
       "enabled": false,
       "userPrAuth": false,
-      "botCredential": "app",
       "oauthClientId": "",
       "oauthClientSecret": "",
       "appSlug": "",
       "installationOwner": "acme",
-      "mentionHandles": [
-        "assistant"
-      ],
       "previewEnvironment": "Preview",
       "shippedChangesChannel": "C0123456789"
     },

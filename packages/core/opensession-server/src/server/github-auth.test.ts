@@ -50,7 +50,6 @@ const ENV_KEYS = [
   GITHUB_RUN_AUTH_FILE_ENV,
   "OPENSESSION_WEB_SESSIONS_STORE",
   "KEYPAD_TOKEN",
-  "GITHUB_API_TOKEN",
 ] as const;
 const saved: Record<string, string | undefined> = {};
 for (const k of ENV_KEYS) saved[k] = process.env[k];
@@ -109,6 +108,7 @@ function seedToken(login = "alice", token = "gho_test123"): void {
         [login.toLowerCase()]: {
           login,
           token,
+          source: "device",
           connectedAt: "2026-07-18T00:00:00.000Z",
         },
       },
@@ -117,15 +117,14 @@ function seedToken(login = "alice", token = "gho_test123"): void {
 }
 
 
-describe("selected bot credential boundary", () => {
-  test("App mode does not fall back to the PAT or ambient gh login", async () => {
+describe("service credential boundary", () => {
+  test("the App does not fall back to ambient gh login", async () => {
     const path = join(dir, "config.json");
     writeFileSync(
       path,
-      JSON.stringify({ integrations: { github: { botCredential: "app" } } }),
+      JSON.stringify({ integrations: { github: {} } }),
     );
     process.env.OPENSESSION_CONFIG = path;
-    process.env.GITHUB_API_TOKEN = "retired-pat";
     expect(await botGhToken()).toBeNull();
     await expect(resolveGithubCredential(serviceGithubCredential)).rejects.toThrow(
       "selected GitHub bot credential is unavailable",
@@ -210,13 +209,14 @@ describe("token lookups + runner env", () => {
   test("run env gives HTTPS git and gh the connected user's token", () => {
     enableFeature();
     seedToken();
-    expect(githubRunEnv("Alice")).toEqual({
+    expect(githubRunEnv("Alice")).toMatchObject({
       GH_TOKEN: "gho_test123",
       GITHUB_TOKEN: "gho_test123",
       GIT_TERMINAL_PROMPT: "0",
-      GIT_CONFIG_COUNT: "1",
-      GIT_CONFIG_KEY_0: "credential.https://github.com.helper",
-      GIT_CONFIG_VALUE_0: "!gh auth git-credential",
+      GIT_CONFIG_COUNT: "4",
+      GIT_CONFIG_VALUE_0: "",
+      GIT_CONFIG_VALUE_2: "git@github.com:",
+      GIT_CONFIG_VALUE_3: "ssh://git@github.com/",
     });
   });
 
@@ -234,7 +234,7 @@ describe("token lookups + runner env", () => {
     expect(githubRunEnv("Alice")).toMatchObject({
       GH_TOKEN: "ghu_remote123",
       GITHUB_TOKEN: "ghu_remote123",
-      GIT_CONFIG_VALUE_0: "!gh auth git-credential",
+      GIT_CONFIG_VALUE_2: "git@github.com:",
     });
     expect(JSON.stringify(githubRunEnv("Alice"))).not.toContain("must-not-be-read");
   });
@@ -254,7 +254,8 @@ describe("token lookups + runner env", () => {
             refreshToken: "ghr_secret",
             refreshTokenExpiresAt: "2027-01-01T00:00:00.000Z",
             expiresAt: "2026-07-18T08:00:00.000Z",
-            connectedAt: "2026-07-18T00:00:00.000Z",
+            source: "device",
+          connectedAt: "2026-07-18T00:00:00.000Z",
           },
         },
       }),
@@ -279,7 +280,8 @@ describe("token lookups + runner env", () => {
             token: "gho_test123",
             refreshToken: "ghr_dead",
             refreshFailedAt: "2026-08-04T10:00:00.000Z",
-            connectedAt: "2026-07-18T00:00:00.000Z",
+            source: "device",
+          connectedAt: "2026-07-18T00:00:00.000Z",
           },
         },
       }),
@@ -309,7 +311,8 @@ describe("token lookups + runner env", () => {
             token: "gho_test123",
             refreshToken: "ghr_dead",
             refreshFailedAt: "2026-08-04T10:00:00.000Z",
-            connectedAt: "2026-07-18T00:00:00.000Z",
+            source: "device",
+          connectedAt: "2026-07-18T00:00:00.000Z",
           },
         },
       }),
@@ -344,6 +347,31 @@ describe("token lookups + runner env", () => {
     expect(githubReconnectRequired("alice")).toBe(false);
   });
 
+  test("accepts pre-source App grants but rejects old static bearer records", () => {
+    enableFeature();
+    writeFileSync(
+      process.env.OPENSESSION_GITHUB_AUTH_STORE!,
+      JSON.stringify({
+        users: {
+          appuser: {
+            login: "appuser",
+            token: "app-user-token",
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            refreshToken: "refresh-token",
+            connectedAt: "2026-01-01T00:00:00.000Z",
+          },
+          staticuser: {
+            login: "staticuser",
+            token: "old-static-token",
+            connectedAt: "2026-01-01T00:00:00.000Z",
+          },
+        },
+      }),
+    );
+    expect(githubCredentialForLogin("appuser")?.principal).toBe("user:appuser");
+    expect(githubCredentialForLogin("staticuser")).toBeNull();
+  });
+
   test("builds a credential only for the exact connected login", () => {
     enableFeature();
     seedToken("Alice");
@@ -355,7 +383,7 @@ describe("token lookups + runner env", () => {
         GH_TOKEN: "gho_test123",
         GITHUB_TOKEN: "gho_test123",
         GIT_TERMINAL_PROMPT: "0",
-        GIT_CONFIG_COUNT: "2",
+        GIT_CONFIG_COUNT: "4",
         GIT_CONFIG_VALUE_0: "",
       },
     });

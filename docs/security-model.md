@@ -153,10 +153,10 @@ runs receive a token narrowed to the owner-verified `owner/repo`. Teammate
 device-flow tokens are limited by both that App installation and the person's
 own GitHub access. Out-of-installation writes therefore fail at GitHub's side.
 
-App mode is a fail-closed boundary: token-mint failure never consults the legacy
-`GITHUB_API_TOKEN`, ambient `gh` hosts.yml accounts, SSH credentials, or a
-connected human. PAT mode remains an explicit legacy option and should use a
-fine-grained token whose resource owner is the configured organization.
+The App is a fail-closed boundary: token-mint failure never consults ambient
+`gh` hosts.yml accounts, SSH credentials, or a connected human. Process-local
+Git config rewrites GitHub SSH remotes to HTTPS so the projected App or user
+credential is the only authority a run can use.
 
 ## Per-user GitHub auth + web sign-in (opt-in, config `integrations.github`)
 

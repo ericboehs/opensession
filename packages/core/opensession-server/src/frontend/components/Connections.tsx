@@ -523,7 +523,7 @@ interface GithubAuthData {
   /** A client id resolves (shipped app, env, or config) — connect is on offer
    *  even when the sign-in gate (webAuthRequired) is off. */
   connectAvailable: boolean;
-  /** Where that App client id came from, so the blocked-PAT note can name the
+  /** Where that App client id came from, so config controls can name the
    *  exact thing to unset. null when no App is configured. */
   appConfigSource?: "env" | "config" | null;
   /** The workspace is behind GitHub sign-in (operator mode). False = simple
@@ -1550,7 +1550,7 @@ setError(e.message);
               <SettingRowDescription className="leading-snug">
                 {active
                   ? "Interactive sessions of a connected teammate open PRs as their own GitHub account. Trusted GitHub automations use the repository-scoped App credential."
-                  : "Off. Interactive sessions use the workspace credential. Configure userPrAuth, client id, slug, owner, secret, and private key in Settings → Integrations."}
+                  : "Off. Interactive sessions use the workspace credential. Configure the GitHub App and sign-in method in Settings → Authentication."}
               </SettingRowDescription>
             )}
             {personal && active && (

@@ -6,7 +6,7 @@
  * they can never drift apart. Drift is exactly what left real Apps missing
  * `checks` and `issues`: the create builders under-requested, the mints asked
  * for scopes the App was never granted, and every installation token 422'd and
- * fell back silently to the bot PAT.
+ * failed open through unrelated host credentials.
  *
  * A mint is all-or-nothing: it succeeds only if every requested scope is a
  * subset of what the installation holds. So each mint set below is a strict
@@ -17,7 +17,7 @@
  *  params, and the superset of every mint. */
 export const GITHUB_APP_GRANT_PERMISSIONS: Record<string, string> = {
 	actions: "read", // workflow runs/logs for trusted autofix diagnosis
-	checks: "read", // CI check runs — App-only; no PAT can read them
+	checks: "read", // CI check runs
 	statuses: "read", // commit statuses, the other half of the status rollup
 	contents: "write", // push fixes, clone
 	pull_requests: "write", // reviews, comments, open/merge

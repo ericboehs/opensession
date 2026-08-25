@@ -7,7 +7,7 @@
  * Why this mechanism (empirical, measured against a private repo):
  * - GitHub's own attachment CDN (what the web UI uses — POST
  *   /upload/policies/assets) is a cookie-session form endpoint: it 422s under
- *   a PAT/Bearer token and has no documented API. Not usable for a bot.
+ *   an API bearer token and has no documented API. Not usable for a bot.
  * - Committed blob `?raw=true` URLs on a private repo do NOT render inline in
  *   comments: GitHub leaves them un-proxied in body_html, but the browser's
  *   <img> subresource fetch is not the top-level navigation the

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { generateKeyPairSync } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -196,13 +197,19 @@ describe("GitHub disconnect ownership", () => {
 });
 
 
+
+function validPrivateKey(): string {
+  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  return privateKey.export({ format: "pem", type: "pkcs8" }).toString();
+}
+
 const APP = "/api/connections/github/app";
 const GET = "/api/connections/github";
 
 describe("GitHub App config (simple mode)", () => {
   test("POST writes client id + slug + secret to config, connect goes live, and userPrAuth is untouched", async () => {
     const res = await handleConnectionsRoutes(
-      context(APP, "POST", null, { clientId: "Iv1.abc", slug: "my-app", secret: "shh" }),
+      context(APP, "POST", null, { clientId: "Iv1.abc", slug: "my-app", secret: "shh", appOrg: "acme", privateKey: validPrivateKey() }),
     );
     expect(res?.status).toBe(200);
     expect(await res?.json()).toEqual({ ok: true });
@@ -213,6 +220,7 @@ describe("GitHub App config (simple mode)", () => {
     expect(written.integrations.github.oauthClientId).toBe("Iv1.abc");
     expect(written.integrations.github.appSlug).toBe("my-app");
     expect(written.integrations.github.oauthClientSecret).toBe("shh");
+    expect(written.integrations.github.installationOwner).toBe("acme");
     expect(written.integrations.github.userPrAuth).toBeUndefined();
 
     // Live, no restart: the App now reads as configured-from-config, and the
@@ -254,7 +262,7 @@ describe("GitHub App config (simple mode)", () => {
             oauthClientId: "Iv1.app-a",
             appSlug: "app-a",
             oauthClientSecret: "shh",
-            botCredential: "app",
+            enabled: true,
           },
         },
       }),
@@ -273,9 +281,9 @@ describe("GitHub App config (simple mode)", () => {
     expect(readFileSync(keyPath, "utf-8")).toBe("app-a-key\n");
   });
 
-  test("changing App identity without a new key clears the previous key", async () => {
+  test("changing App identity without a new key is rejected", async () => {
     await handleConnectionsRoutes(
-      context(APP, "POST", null, { clientId: "Iv1.app-a", slug: "app-a", secret: "shh" }),
+      context(APP, "POST", null, { clientId: "Iv1.app-a", slug: "app-a", secret: "shh", appOrg: "acme", privateKey: validPrivateKey() }),
     );
     const keyPath = join(dir, "github-app.pem");
     writeFileSync(keyPath, "app-a-key\n", { mode: 0o600 });
@@ -283,13 +291,13 @@ describe("GitHub App config (simple mode)", () => {
     const response = await handleConnectionsRoutes(
       context(APP, "POST", null, { clientId: "Iv1.app-b", slug: "app-b", secret: "shh" }),
     );
-    expect(response?.status).toBe(200);
-    expect(existsSync(keyPath)).toBe(false);
+    expect(response?.status).toBe(409);
+    expect(existsSync(keyPath)).toBe(true);
   });
 
   test("DELETE clears the App keys but leaves other github config intact", async () => {
     await handleConnectionsRoutes(
-      context(APP, "POST", null, { clientId: "Iv1.abc", slug: "my-app", secret: "shh" }),
+      context(APP, "POST", null, { clientId: "Iv1.abc", slug: "my-app", secret: "shh", appOrg: "acme", privateKey: validPrivateKey() }),
     );
     // A UI-managed key must be removed with the App; an unrelated github
     // config key proves the config clear remains surgical.
@@ -492,7 +500,7 @@ describe("connect-time auth bootstrap", () => {
       storePath,
       JSON.stringify({
         users: {
-          alice: { login: "alice", token: "tok-alice", connectedAt: "2020-01-01T00:00:00.000Z" },
+          alice: { login: "alice", token: "tok-alice", source: "device", connectedAt: "2020-01-01T00:00:00.000Z" },
         },
       }),
     );

@@ -734,6 +734,19 @@ export async function handleConnectionsRoutes(
 		// mode and take the branch above. authOnConnect absent ⇒ this is skipped
 		// and the simple-mode path is byte-identical.
 		if (result.status === "ok" && !webAuthRequired()) {
+			// A personal App has no organization owner to capture in its wizard. The
+			// verified device-flow login is its installation owner, so persist it
+			// before service traffic is allowed to mint tokens.
+			const { rawConfig, persistRawConfig, withConfigMutationLock } =
+				await import("../config-mutation");
+			await withConfigMutationLock(async () => {
+				const config = rawConfig();
+				const github = githubIntegrationSection(config, true)!;
+				if (!github.installationOwner && !github.appOrg) {
+					github.installationOwner = result.login;
+					await persistRawConfig(config);
+				}
+			});
 			const { githubAuthOnConnect } = await import("../github-auth");
 			if (githubAuthOnConnect()) {
 				const boot = await bootstrapUserAuthOnConnect(result.login, result.name);
@@ -832,9 +845,9 @@ export async function handleConnectionsRoutes(
 		// a personal App (single-user).
 		const appOrg = typeof body?.appOrg === "string" ? body.appOrg.trim() : "";
 		// The App's private key (PEM), generated once in the App's settings UI.
-		// Optional here — an App can be configured for per-user sign-in (device
-		// flow, keyless) alone — but it is what lets installation tokens mint, so
-		// without it the bot/agent and checks-read stay on the PAT.
+		// Existing Apps may keep their current key while public fields change. A new
+		// App must include its key because installation tokens are the only service
+		// credential.
 		const privateKey =
 			typeof body?.privateKey === "string" ? body.privateKey.trim() : "";
 		// The secret is required on the UI config path: the device-flow token
@@ -876,9 +889,9 @@ export async function handleConnectionsRoutes(
 			const github = githubIntegrationSection(config, true)!;
 			const keyMutation = privateKey ||
 				(github.oauthClientId !== clientId ? null : undefined);
-			if (keyMutation === null && github.botCredential === "app") {
+			if (keyMutation === null) {
 				return Response.json(
-					{ error: "Switch bot actions to the PAT before changing the GitHub App without a replacement key" },
+					{ error: "Changing the GitHub App client id requires its replacement private key" },
 					{ status: 409 },
 				);
 			}
@@ -893,9 +906,11 @@ export async function handleConnectionsRoutes(
 			// mode.
 			if (appOrg) {
 				github.appOrg = appOrg;
+				github.installationOwner = appOrg;
 				github.authOnConnect = true;
 			} else {
 				delete github.appOrg;
+				delete github.installationOwner;
 				delete github.authOnConnect;
 			}
 			try {
@@ -935,9 +950,12 @@ export async function handleConnectionsRoutes(
 		return withConfigMutationLock(async () => {
 			const config = rawConfig();
 			const github = githubIntegrationSection(config, false);
-			if (github?.botCredential === "app") {
+			if (
+				github &&
+				(github.enabled === true || process.env.ENABLE_GITHUB_AGENT === "true")
+			) {
 				return Response.json(
-					{ error: "Switch bot actions to the PAT before removing the GitHub App" },
+					{ error: "Disable the GitHub integration before removing its App" },
 					{ status: 409 },
 				);
 			}
@@ -950,6 +968,7 @@ export async function handleConnectionsRoutes(
 				delete github.appSlug;
 				delete github.oauthClientSecret;
 				delete github.appOrg;
+				delete github.installationOwner;
 				delete github.authOnConnect;
 			}
 			try {

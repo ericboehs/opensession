@@ -5,7 +5,6 @@ import { SlackAgent } from "../slack/index";
 const originalGithub = process.env.ENABLE_GITHUB_AGENT;
 const originalSlack = process.env.ENABLE_SLACK_AGENT;
 const originalWebhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
-const originalApiToken = process.env.GITHUB_API_TOKEN;
 
 afterEach(() => {
   if (originalGithub === undefined) delete process.env.ENABLE_GITHUB_AGENT;
@@ -14,8 +13,6 @@ afterEach(() => {
   else process.env.ENABLE_SLACK_AGENT = originalSlack;
   if (originalWebhookSecret === undefined) delete process.env.GITHUB_WEBHOOK_SECRET;
   else process.env.GITHUB_WEBHOOK_SECRET = originalWebhookSecret;
-  if (originalApiToken === undefined) delete process.env.GITHUB_API_TOKEN;
-  else process.env.GITHUB_API_TOKEN = originalApiToken;
 });
 
 describe("webhook route ownership", () => {
@@ -30,11 +27,10 @@ describe("webhook route ownership", () => {
     process.env.ENABLE_GITHUB_AGENT = "false";
     process.env.ENABLE_SLACK_AGENT = "true";
     process.env.GITHUB_WEBHOOK_SECRET = "configured";
-    process.env.GITHUB_API_TOKEN = "configured";
     expect(new SlackAgent().getRoutes().has("POST /github/webhook")).toBe(true);
     expect(new SlackAgent().health()).toMatchObject({
       githubWebhookConfigured: true,
-      githubApiTokenConfigured: true,
+      githubCredentialMode: "app",
       githubWebhooksReceived: expect.any(Number),
     });
   });

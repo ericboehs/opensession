@@ -36,21 +36,43 @@ import { classifyPrActionIntent } from "../slack/mention-intent";
 import { configuredIntegration, isGithubBotLogin, personaName } from "../../server/config";
 import { isTrustedGithubLogin } from "../../server/shared/user-mappings";
 
-const configuredMentionHandles = configuredIntegration("github").mentionHandles;
-const defaultMentionHandles = [
-  personaName().toLowerCase().replace(/[^a-z0-9-]/g, ""),
-  BOT_LOGIN,
-].filter(Boolean).join(",");
-const MENTION_HANDLES = (
-  process.env.GITHUB_MENTION_HANDLES ||
-  (Array.isArray(configuredMentionHandles)
-    ? configuredMentionHandles.filter((value): value is string => typeof value === "string").join(",")
-    : defaultMentionHandles)
-)
-  .split(",")
-  .map((h) => h.trim().replace(/^@/, "").toLowerCase())
-  .filter(Boolean);
-const MENTION_RE = new RegExp(`@(${MENTION_HANDLES.join("|")})\\b`, "i");
+export function githubMentionHandles(input: {
+  persona: string;
+  appSlug?: string;
+  botLogin?: string;
+  configured?: unknown;
+  environment?: string;
+}): string[] {
+  return [
+    input.persona.toLowerCase().replace(/[^a-z0-9-]/g, ""),
+    input.appSlug || "",
+    (input.botLogin || "").replace(/\[bot\]$/i, ""),
+    ...(Array.isArray(input.configured)
+      ? input.configured.filter((value): value is string => typeof value === "string")
+      : []),
+    ...(input.environment || "").split(","),
+  ]
+    .map((handle) =>
+      handle.trim().replace(/^@/, "").replace(/\[bot\]$/i, "").toLowerCase(),
+    )
+    .filter((handle, index, handles) => !!handle && handles.indexOf(handle) === index);
+}
+
+const githubIntegration = configuredIntegration("github");
+const configuredAppSlug =
+  process.env.OPENSESSION_GITHUB_APP_SLUG?.trim() ||
+  (typeof githubIntegration.appSlug === "string" ? githubIntegration.appSlug.trim() : "");
+const MENTION_HANDLES = githubMentionHandles({
+  persona: personaName(),
+  appSlug: configuredAppSlug,
+  botLogin: BOT_LOGIN,
+  configured: githubIntegration.mentionHandles,
+  environment: process.env.GITHUB_MENTION_HANDLES,
+});
+const MENTION_RE = new RegExp(
+  `@(${MENTION_HANDLES.map((handle) => handle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`,
+  "i",
+);
 
 function mentionsAgent(body: string): boolean {
   if (!body) return false;

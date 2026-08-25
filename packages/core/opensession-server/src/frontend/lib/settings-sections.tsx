@@ -45,6 +45,7 @@ export type SettingsSectionKey =
 	| "setup"
 	| "repos"
 	| "members"
+	| "authentication"
 	| "providers"
 	| "sandboxes"
 	| "runners"
@@ -124,6 +125,13 @@ export const SECTIONS: {
 		group: "Organization",
 		adminOnly: true,
 		icon: <IconPeople />,
+	},
+	{
+		key: "authentication",
+		label: "Authentication",
+		group: "Organization",
+		adminOnly: true,
+		icon: <IconShieldCheck />,
 	},
 	{
 		key: "providers",

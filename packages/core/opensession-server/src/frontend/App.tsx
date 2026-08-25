@@ -411,6 +411,7 @@ const SETTINGS_SECTIONS = new Set<SettingsSectionKey>([
 	"setup",
 	"repos",
 	"members",
+	"authentication",
 	"providers",
 	"sandboxes",
 	"runners",

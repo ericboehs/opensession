@@ -23,10 +23,8 @@
  *   snapshot-capable providers. Every sandbox is sbxtest-labeled and destroyed;
  *   the section ends by listing the provider's sandboxes to prove nothing was
  *   left behind.
- * - Remote snapshot-capable providers clone this Open Session repo so the
- *   committed `.agents/setup` hook runs before publication. A private origin
- *   needs `cloneCredential`; the suite auto-wires a GitHub token from
- *   GITHUB_API_TOKEN or ~/.slack-agent.env when present.
+ * - Remote snapshot-capable providers clone this public Open Session repo so
+ *   the committed `.agents/setup` hook runs before publication.
  *
  * Everything is sbxtest-prefixed; the run journal, sandbox config, chat-store
  * dir AND repo-registry config are redirected to a scratch dir BEFORE any
@@ -154,16 +152,6 @@ const modalProfileAvailable = existsSync(process.env.MODAL_CONFIG_PATH || `${HOM
 const lambdaMicrovmImage: string = liveCfg?.awsLambdaMicrovm?.imageIdentifier || "";
 const microvmCallbackBase: string =
   process.env.SBX_CONF_MICROVM_BASE || liveCfg?.callbackBaseUrl || "";
-
-function githubToken(): string {
-  if (process.env.GITHUB_API_TOKEN) return process.env.GITHUB_API_TOKEN;
-  try {
-    const m = readFileSync(`${HOME}/.slack-agent.env`, "utf-8").match(/^GITHUB_API_TOKEN=(\S+)/m);
-    return m?.[1] || "";
-  } catch {
-    return "";
-  }
-}
 
 // ── account pool gate (real model runs) ───────────────────────────────────────
 
@@ -415,7 +403,6 @@ const entries: Entry[] = [
       // prewarms BEFORE the first ensure, which must then ADOPT the warmed
       // sandbox (same id, seconds not minutes) — total sandbox count stays 1.
       prewarm: { enabled: true, ttlMinutes: 20, maxLive: 2 },
-      ...(githubToken() ? { cloneCredential: { type: "https-token", token: githubToken() } } : {}),
     },
     repoId: PUB_REPO_ID,
     branch: PUB_BRANCH,
@@ -431,7 +418,6 @@ const entries: Entry[] = [
       callbackBaseUrl: remoteBase,
       previewPorts: [8080],
       e2b: { apiKey: e2bKey },
-      ...(githubToken() ? { cloneCredential: { type: "https-token", token: githubToken() } } : {}),
     },
     repoId: PUB_REPO_ID,
     branch: PUB_BRANCH,
@@ -447,7 +433,6 @@ const entries: Entry[] = [
       callbackBaseUrl: remoteBase,
       previewPorts: [8080],
       prewarm: { enabled: true, ttlMinutes: 20, maxLive: 2 },
-      ...(githubToken() ? { cloneCredential: { type: "https-token", token: githubToken() } } : {}),
     },
     repoId: PUB_REPO_ID,
     branch: PUB_BRANCH,
@@ -474,7 +459,6 @@ const entries: Entry[] = [
           : {}),
         publicPreviews: true,
       },
-      ...(githubToken() ? { cloneCredential: { type: "https-token", token: githubToken() } } : {}),
     },
     repoId: PUB_REPO_ID,
     branch: PUB_BRANCH,
@@ -493,7 +477,6 @@ const entries: Entry[] = [
       provider: "microvm",
       callbackBaseUrl: microvmCallbackBase,
       firecrackerMicrovm: liveCfg?.firecrackerMicrovm || {},
-      ...(githubToken() ? { cloneCredential: { type: "https-token", token: githubToken() } } : {}),
     },
     repoId: PUB_REPO_ID,
     branch: PUB_BRANCH,
@@ -510,7 +493,6 @@ const entries: Entry[] = [
       provider: "lambda-microvm",
       callbackBaseUrl: remoteBase,
       awsLambdaMicrovm: liveCfg?.awsLambdaMicrovm || {},
-      ...(githubToken() ? { cloneCredential: { type: "https-token", token: githubToken() } } : {}),
     },
     repoId: PUB_REPO_ID,
     branch: PUB_BRANCH,

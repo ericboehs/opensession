@@ -38,8 +38,6 @@ export interface SetupGithub {
 	userPrAuth: boolean;
 	clientIdConfigured: boolean;
 	clientSecretConfigured: boolean;
-	botTokenPresent: boolean;
-	botCredential: "pat" | "app";
 	appCredentialConfigured: boolean;
 	appSlug: string | null;
 	installationOwner: string | null;
@@ -246,23 +244,12 @@ export function integrationState(i: SetupIntegration): {
 }
 
 export function githubAuthState(g: SetupGithub): { tone: ChipTone; label: string } {
-	if (
-		g.botCredential === "app" &&
-		g.appCredentialConfigured &&
-		g.appSlug &&
-		(!g.userPrAuth || g.clientSecretConfigured)
-	)
-		return { tone: "on", label: g.userPrAuth ? "Active" : "App active" };
-	if (g.botCredential === "app" && !g.appCredentialConfigured)
+	if (!g.appCredentialConfigured)
 		return { tone: "warn", label: "Missing App credential" };
-	if (g.botCredential === "app" && !g.appSlug)
-		return { tone: "warn", label: "Missing App slug" };
-	if (g.userPrAuth && g.clientIdConfigured && g.clientSecretConfigured)
-		return { tone: "on", label: "Sign-in active" };
-	if (g.userPrAuth && g.clientIdConfigured)
+	if (!g.appSlug) return { tone: "warn", label: "Missing App slug" };
+	if (g.userPrAuth && !g.clientSecretConfigured)
 		return { tone: "warn", label: "Missing client secret" };
-	if (g.userPrAuth) return { tone: "warn", label: "Missing client id" };
-	return { tone: "off", label: "Off" };
+	return { tone: "on", label: g.userPrAuth ? "GitHub" : "None" };
 }
 
 /** Does this repo carry what a session needs to provision and boot it on its

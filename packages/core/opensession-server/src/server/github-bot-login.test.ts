@@ -1,8 +1,7 @@
 // When the GitHub PR agent posts on the App installation token, its comments
-// are authored by "<app-slug>[bot]", not the bot PAT's login. The agent must
-// recognise that identity as ours, from either the config slug or the env slug,
-// and identity checks must match ANY of our bot logins (App bot, PAT bot, policy
-// logins), not just the first — otherwise App-authored threads read as human.
+// are authored by "<app-slug>[bot]". The agent must recognise that identity
+// as ours from either the config slug or the env slug, alongside policy aliases
+// retained for historical App names.
 
 import { describe, test, expect, afterEach } from "bun:test";
 import { mkdtempSync, writeFileSync, rmSync } from "fs";
@@ -12,7 +11,6 @@ import { githubBotLogins, isGithubBotLogin } from "./config";
 
 const saved = {
 	config: process.env.OPENSESSION_CONFIG,
-	botLogin: process.env.GITHUB_BOT_LOGIN,
 	appSlug: process.env.OPENSESSION_GITHUB_APP_SLUG,
 };
 const dirs: string[] = [];
@@ -24,7 +22,6 @@ function withConfig(obj: unknown): void {
 	const path = join(dir, "config.json");
 	writeFileSync(path, JSON.stringify(obj));
 	process.env.OPENSESSION_CONFIG = path;
-	delete process.env.GITHUB_BOT_LOGIN;
 	delete process.env.OPENSESSION_GITHUB_APP_SLUG;
 }
 
@@ -32,7 +29,6 @@ afterEach(() => {
 	const restore = (k: string, v: string | undefined) =>
 		v === undefined ? delete process.env[k] : (process.env[k] = v);
 	restore("OPENSESSION_CONFIG", saved.config);
-	restore("GITHUB_BOT_LOGIN", saved.botLogin);
 	restore("OPENSESSION_GITHUB_APP_SLUG", saved.appSlug);
 	for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
@@ -68,7 +64,7 @@ describe("isGithubBotLogin", () => {
 			policy: { githubBotLogins: ["acme-automation"] },
 			integrations: { github: { appSlug: "open-session-v6a6" } },
 		});
-		// Both are ours — the PAT bot login (first) and the App bot (appended).
+		// Both the historical policy alias and current App bot are ours.
 		expect(isGithubBotLogin("acme-automation")).toBe(true);
 		expect(isGithubBotLogin("open-session-v6a6[bot]")).toBe(true);
 		// Case-insensitive.

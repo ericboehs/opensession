@@ -602,28 +602,8 @@ function isGithubHttpsUrl(httpsUrl: string): boolean {
   }
 }
 
-/** Pick clone authority without crossing the operator's credential cutover.
- * In App mode a missing live GitHub token fails closed; the persisted token may
- * be the retired PAT. Non-GitHub hosts retain their explicit clone credential. */
-export function selectedCloneToken(
-  liveToken: string | undefined,
-  persistedToken: string | undefined,
-  github: boolean,
-  mode: "pat" | "app",
-): string | undefined {
-  return liveToken || (github && mode === "app" ? undefined : persistedToken);
-}
-
-/** App sandboxes require a repository-scoped mint. Never widen a failed mint
- * to an installation-wide token; PAT mode uses only its selected PAT. */
-export function selectedGithubCloneLiveToken(
-  mode: "pat" | "app",
-  repositoryToken: string | undefined,
-  patToken: string | undefined,
-): string | undefined {
-  return mode === "app" ? repositoryToken : patToken;
-}
-
+/** GitHub clones receive only a fresh repository-scoped App token. Persisted
+ * clone credentials are never valid GitHub authority. */
 export async function injectCloneCredential(httpsUrl: string): Promise<string> {
   const cred = sandboxConfig().cloneCredential;
   let parsed: URL;
@@ -642,25 +622,8 @@ export async function injectCloneCredential(httpsUrl: string): Promise<string> {
     parsed.username = "";
     parsed.password = "";
     const repository = parsed.pathname.replace(/^\/+|\.git$/g, "");
-    const {
-      githubAppRepositoryToken,
-      githubBotCredentialMode,
-      githubToken,
-    } = await import("../../github-app");
-    const mode = githubBotCredentialMode();
-    const liveToken = selectedGithubCloneLiveToken(
-      mode,
-      mode === "app"
-        ? (await githubAppRepositoryToken(repository)) || undefined
-        : undefined,
-      mode === "pat" ? (await githubToken()) || undefined : undefined,
-    );
-    token = selectedCloneToken(
-      liveToken,
-      cred?.type === "https-token" ? cred.token : undefined,
-      true,
-      mode,
-    );
+    const { githubAppRepositoryToken } = await import("../../github-app");
+    token = (await githubAppRepositoryToken(repository)) || undefined;
   } else if (cred?.type === "https-token") {
     // Explicit credentials for non-GitHub hosts keep their existing behavior.
     token = cred.token;

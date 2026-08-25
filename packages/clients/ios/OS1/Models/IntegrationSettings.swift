@@ -47,7 +47,6 @@ struct GithubSignInSettings: Codable, Sendable, Equatable {
     var userPrAuth: Bool?
     var clientIdConfigured: Bool?
     var clientSecretConfigured: Bool?
-    var botTokenPresent: Bool?
     var appCreateUrl: String?
 }
 
@@ -64,7 +63,7 @@ enum IntegrationRules {
         "slack": "DMs, mentions, session channels, and interactive controls.",
         "stripe": "Dispute webhooks routed into scoped automations.",
         "grafana": "Loki failure signatures routed into investigation automations.",
-        "github": "PR comments, reviews, webhooks, and fallback PR authorship.",
+        "github": "PR comments, reviews, webhooks, and bot-authored work.",
         "codestorage": "Git hosting with branch-based reviews and local signing keys.",
     ]
 

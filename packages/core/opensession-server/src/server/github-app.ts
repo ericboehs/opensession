@@ -9,13 +9,13 @@
  * Key file: ~/.opensession/github-app.pem (0600), override with
  * OPENSESSION_GITHUB_APP_KEY (a file path). The JWT issuer is the App client
  * id from github-auth.ts. Token + installation id are cached on globalThis;
- * tokens live 1h and refresh 5 min early. App mode fails closed when identity,
- * key, installation selection, or permissions are invalid. It never falls
- * back to the retired PAT, ambient gh login, or a connected human.
+ * tokens live 1h and refresh 5 min early. GitHub App authority fails closed when
+ * identity, key, installation selection, or permissions are invalid. It never
+ * falls back to ambient gh, SSH credentials, or a connected human.
  */
 import { createSign } from "node:crypto";
 import { existsSync, rmSync } from "node:fs";
-import { githubUserAuthSettings } from "./github-auth";
+import { githubAppIdentity, githubUserAuthSettings } from "./github-auth";
 import { stateDir } from "./paths";
 import { configuredIntegration } from "./config";
 import { githubGitCredentialEnv } from "./github-git-credential";
@@ -44,6 +44,7 @@ type AppTokenCache = {
   expiresAt: number; // ms epoch
   installationId: number;
   installationOwner: string;
+  credentialIdentity: string;
 };
 
 const g = globalThis as {
@@ -52,14 +53,16 @@ const g = globalThis as {
   __ghAppTokenCacheRead?: AppTokenCache | null;
   __ghAppTokenCacheWrite?: AppTokenCache | null;
   __ghAppTokenWarned?: boolean;
+  __ghAppLastMintOk?: boolean;
+  __ghAppLastMintIdentity?: string;
 };
 
 // READ_PERMISSIONS / WRITE_PERMISSIONS are the canonical sets imported at the
 // top of the file (shared/github-app-permissions) — the same definition the
 // create-app URL grants, so a mint never asks for a scope the App was not
 // granted. Still installation-scoped, so an out-of-org write fails at GitHub's
-// side just as the scoped bot PAT does (security-model.md, GitHub credential
-// scoping). If the App does not hold a set, minting fails closed in App mode.
+// side as well (security-model.md, GitHub credential scoping). If the App does
+// not hold a set, minting fails closed.
 
 function appJwt(clientId: string, key: string): string {
   const now = Math.floor(Date.now() / 1000);
@@ -71,66 +74,84 @@ function appJwt(clientId: string, key: string): string {
 
 /**
  * Installation access token for the app's (sole) installation, or null when
- * the app key/client id isn't configured or minting fails. App mode callers
- * treat null as a closed credential boundary; PAT mode never calls this path.
+ * the App identity, key, installation selection, or permissions are invalid.
+ * Callers treat null as a closed credential boundary.
  */
 export async function githubAppInstallationToken(
   opts: { write?: boolean } = {},
 ): Promise<string | null> {
   const slot = opts.write ? "__ghAppTokenCacheWrite" : "__ghAppTokenCacheRead";
+  const { clientId } = githubUserAuthSettings();
+  const githubConfig = configuredIntegration("github");
+  const configuredInstallationId =
+    typeof githubConfig.installationId === "number"
+      ? githubConfig.installationId
+      : undefined;
+  const configuredOwner = (
+    [githubConfig.installationOwner, githubConfig.appOrg].find(
+      (value): value is string => typeof value === "string" && !!value.trim(),
+    ) ?? ""
+  ).toLowerCase();
+  const credentialIdentity = `${clientId || ""}:${configuredInstallationId || ""}:${configuredOwner}`;
   const cached = g[slot];
   if (
     cached &&
-    cached.installationOwner &&
+    cached.credentialIdentity === credentialIdentity &&
     cached.expiresAt - Date.now() > 5 * 60_000
-  ) return cached.token;
+  ) {
+    g.__ghAppLastMintOk = true;
+    g.__ghAppLastMintIdentity = credentialIdentity;
+    return cached.token;
+  }
 
-  const { clientId } = githubUserAuthSettings();
-  if (!clientId || !existsSync(keyPath())) return null;
+  if (!clientId || !existsSync(keyPath())) {
+    g.__ghAppLastMintOk = false;
+    g.__ghAppLastMintIdentity = credentialIdentity;
+    return null;
+  }
   try {
     const key = await Bun.file(keyPath()).text();
     const jwt = appJwt(clientId, key);
     const headers = { Authorization: `Bearer ${jwt}`, Accept: "application/vnd.github+json" };
-
-    const githubConfig = configuredIntegration("github");
-    const configuredInstallationId =
-      typeof githubConfig.installationId === "number"
-        ? githubConfig.installationId
-        : undefined;
     // Either cache slot can supply the installation id — it does not vary by scope.
     let installationId =
       configuredInstallationId ||
-      g.__ghAppTokenCacheRead?.installationId ||
-      g.__ghAppTokenCacheWrite?.installationId;
+      (g.__ghAppTokenCacheRead?.credentialIdentity === credentialIdentity
+        ? g.__ghAppTokenCacheRead.installationId
+        : undefined) ||
+      (g.__ghAppTokenCacheWrite?.credentialIdentity === credentialIdentity
+        ? g.__ghAppTokenCacheWrite.installationId
+        : undefined);
+    const matchingRead =
+      g.__ghAppTokenCacheRead?.credentialIdentity === credentialIdentity
+        ? g.__ghAppTokenCacheRead
+        : undefined;
+    const matchingWrite =
+      g.__ghAppTokenCacheWrite?.credentialIdentity === credentialIdentity
+        ? g.__ghAppTokenCacheWrite
+        : undefined;
     let installationOwner =
-      g.__ghAppTokenCacheRead?.installationId === installationId
-        ? g.__ghAppTokenCacheRead?.installationOwner
-        : g.__ghAppTokenCacheWrite?.installationId === installationId
-          ? g.__ghAppTokenCacheWrite?.installationOwner
+      matchingRead && matchingRead.installationId === installationId
+        ? matchingRead.installationOwner
+        : matchingWrite && matchingWrite.installationId === installationId
+          ? matchingWrite.installationOwner
           : undefined;
     if (!installationId) {
       const res = await fetch("https://api.github.com/app/installations", { headers });
       const installs = (await res.json()) as Array<{ id: number; account?: { login?: string } }>;
       if (!Array.isArray(installs) || !installs.length) throw new Error("no installations");
       // Prefer an explicit installation owner, then the org captured at setup
-      // (appOrg) — the same precedence setup-team.ts uses. Without the appOrg
-      // fallback, an org App installed on more than one account has no way to
-      // disambiguate and falls back to the bot PAT even though appOrg already
-      // names the intended owner.
-      const owner = (
-        [githubConfig.installationOwner, githubConfig.appOrg].find(
-          (value): value is string => typeof value === "string" && !!value.trim(),
-        ) ?? ""
-      ).toLowerCase();
-      const selected = owner
-        ? installs.find((installation) => installation.account?.login?.toLowerCase() === owner)
+      // (appOrg) — the same precedence setup-team.ts uses. An org App installed
+      // on more than one account must be selected explicitly.
+      const selected = configuredOwner
+        ? installs.find((installation) => installation.account?.login?.toLowerCase() === configuredOwner)
         : installs.length === 1
           ? installs[0]
           : undefined;
       if (!selected) {
         throw new Error(
-          owner
-            ? `no GitHub App installation for ${owner}`
+          configuredOwner
+            ? `no GitHub App installation for ${configuredOwner}`
             : "multiple GitHub App installations; configure integrations.github.installationOwner",
         );
       }
@@ -168,10 +189,15 @@ export async function githubAppInstallationToken(
       expiresAt: tok.expires_at ? Date.parse(tok.expires_at) : Date.now() + 55 * 60_000,
       installationId,
       installationOwner,
+      credentialIdentity,
     };
     g.__ghAppTokenWarned = false;
+    g.__ghAppLastMintOk = true;
+    g.__ghAppLastMintIdentity = credentialIdentity;
     return tok.token;
   } catch (e) {
+    g.__ghAppLastMintOk = false;
+    g.__ghAppLastMintIdentity = credentialIdentity;
     if (!g.__ghAppTokenWarned) {
       g.__ghAppTokenWarned = true;
       console.warn(`[github-app] installation token unavailable: ${String(e).slice(0, 200)}`);
@@ -180,28 +206,37 @@ export async function githubAppInstallationToken(
   }
 }
 
-/** The operator-controlled credential cutover. PAT remains the default so a
- * deploy cannot silently change the identity or permissions of live GitHub
- * operations. Selecting `app` is fail-closed: no hidden PAT fallback can mask a
- * broken App installation after the operator deliberately switches. */
-export function githubBotCredentialMode(): "pat" | "app" {
-  return configuredIntegration("github").botCredential === "app" ? "app" : "pat";
-}
-
-/** The selected GitHub credential for REST/GraphQL calls. */
+/** The selected GitHub credential for REST/GraphQL calls. GitHub App
+ * installation tokens are the only service credential. */
 export async function githubToken(
   opts: { write?: boolean } = {},
 ): Promise<string | null> {
-  if (githubBotCredentialMode() === "app")
-    return githubAppInstallationToken(opts);
-  return process.env.GITHUB_API_TOKEN || null;
+  if (!githubConfiguredCredential()) return null;
+  return githubAppInstallationToken(opts);
 }
 
-/** Whether the currently selected bot credential is configured. */
+/** Whether the App has the complete identity needed for service work. */
 export function githubConfiguredCredential(): boolean {
-  return githubBotCredentialMode() === "app"
-    ? githubAppConfigured()
-    : !!process.env.GITHUB_API_TOKEN;
+  const github = configuredIntegration("github");
+  const owner = github.installationOwner || github.appOrg;
+  return githubAppConfigured() && !!githubAppIdentity().slug && !!owner;
+}
+
+/** Last observed App availability for synchronous health snapshots. Startup and
+ * every GitHub request update this state through installation-token minting. */
+export function githubAppCredentialHealth():
+  | "operational"
+  | "unavailable"
+  | "unchecked" {
+  if (!githubConfiguredCredential()) return "unavailable";
+  const github = configuredIntegration("github");
+  const owner = String(github.installationOwner || github.appOrg || "").toLowerCase();
+  const installationId =
+    typeof github.installationId === "number" ? github.installationId : "";
+  const identity = `${githubUserAuthSettings().clientId || ""}:${installationId}:${owner}`;
+  if (g.__ghAppLastMintIdentity !== identity || g.__ghAppLastMintOk === undefined)
+    return "unchecked";
+  return g.__ghAppLastMintOk ? "operational" : "unavailable";
 }
 
 /** Whether a GitHub App can mint installation tokens (client id + private key). */
@@ -282,7 +317,7 @@ export function githubRepositoryMatchesInstallation(
 }
 
 export async function githubAppRepositoryToken(ghRepo: string): Promise<string | null> {
-  if (githubBotCredentialMode() !== "app") return null;
+  if (!githubConfiguredCredential()) return null;
   const [owner, repo] = ghRepo.split("/");
   if (!owner || !repo || ghRepo.split("/").length !== 2) return null;
   // Resolve the installation id through the existing credential path. It keeps
@@ -331,7 +366,7 @@ export async function githubAppRepositoryToken(ghRepo: string): Promise<string |
  * (GH_TOKEN beats hosts.yml), or null when unavailable.
  */
 export async function githubAppEnv(): Promise<Record<string, string> | null> {
-  const token = await githubAppInstallationToken();
+  const token = await githubToken();
   return token ? { GH_TOKEN: token } : null;
 }
 
@@ -341,11 +376,11 @@ export async function githubAppEnv(): Promise<Record<string, string> | null> {
 export async function githubServiceCredentialEnv(
   ghRepo?: string,
 ): Promise<Record<string, string>> {
-  const token =
-    githubBotCredentialMode() === "app"
-      ? ghRepo
-        ? await githubAppRepositoryToken(ghRepo)
-        : await githubAppInstallationToken({ write: true })
-      : process.env.GITHUB_API_TOKEN || null;
-  return token ? githubGitCredentialEnv(token) : {};
+  const token = ghRepo
+    ? await githubAppRepositoryToken(ghRepo)
+    : await githubToken({ write: true });
+  // Even a failed mint carries the process-local SSH-to-HTTPS rewrite. That
+  // turns an existing git@github.com origin into a non-interactive HTTPS
+  // failure instead of escaping through a host SSH key.
+  return githubGitCredentialEnv(token || "");
 }

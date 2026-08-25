@@ -4,9 +4,8 @@
  * calls the review/fix/simplify behaviors need: the single updating summary
  * comment, formal reviews with inline comments, and label removal.
  *
- * Auth: the App installation token (write-scoped) when an App is configured,
- * else the `GITHUB_API_TOKEN` PAT — resolved per call by `githubToken` because
- * an installation token is short-lived and refreshes, unlike a static PAT.
+ * Auth: a short-lived App installation token, resolved per call so expiry
+ * refresh is transparent and missing authority fails closed.
  */
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 import { defaultRepo, githubBotLogins, isGithubBotLogin, personaName } from "../../server/config";
@@ -59,7 +58,7 @@ export async function githubRequest<T = any>(
   body?: unknown
 ): Promise<GithubResult<T>> {
   const token = await githubToken({ write: true });
-  if (!token) return { ok: false, status: 0, data: null, error: "no GitHub credential (App or GITHUB_API_TOKEN)" };
+  if (!token) return { ok: false, status: 0, data: null, error: "GitHub App credential unavailable" };
   try {
     // Timeout matters here: these calls run while holding a per-PR lock with
     // no TTL — a hung fetch would block that PR until the next restart.
@@ -103,7 +102,7 @@ export async function githubRequest<T = any>(
 }
 
 /**
- * GraphQL request (the REST API can't resolve review threads). Same PAT/auth as
+ * GraphQL request (the REST API can't resolve review threads). Same App auth as
  * the REST helper. Returns the `data` object, or null on any error.
  */
 async function githubGraphQL<T = any>(

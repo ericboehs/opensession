@@ -150,7 +150,7 @@ export function SetupChecklist({
 				description={
 					githubState.tone === "on"
 						? "Sessions can access repositories and open pull requests with the workspace account."
-						: "Add the workspace GitHub token used for repositories and pull requests."
+						: "Configure the GitHub App used for repositories and pull requests."
 				}
 				tone={githubTone}
 				label={githubState.label}

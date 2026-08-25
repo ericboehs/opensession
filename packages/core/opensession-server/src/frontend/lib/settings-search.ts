@@ -108,6 +108,7 @@ export const SETTINGS_KEYWORDS: Record<string, string[]> = {
 	],
 	repos: ["repositories", "projects", "checkout", "worktree", "branch", "clone"],
 	members: ["team", "people", "teammates", "access"],
+	authentication: ["sign in", "login", "github", "oauth", "device flow", "none"],
 	providers: [
 		"models",
 		"default model",
@@ -129,7 +130,7 @@ export const SETTINGS_KEYWORDS: Record<string, string[]> = {
 	reliability: ["failed deliveries", "dead letters", "retry", "discard", "kernel", "outbox"],
 	library: ["templates", "prompts", "skills", "starters", "commands"],
 	sandboxes: ["docker", "daytona", "box", "ascii", "modal", "microvm", "firecracker", "isolation", "compute"],
-	integrations: ["github sign-in", "oauth app"],
+	integrations: ["tools", "webhooks", "credentials"],
 	connections: ["mcp servers", "tools", "agents", "add mcp server"],
 	memory: ["facts", "remember", "scopes"],
 	automations: ["scheduled", "cron", "triggers", "watchers", "jobs"],

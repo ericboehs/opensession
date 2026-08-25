@@ -2,8 +2,8 @@
 
 The GitHub integration has three parts: one GitHub App for bot and teammate
 credentials, webhook intake on the [webhook server](install.md#webhook-server),
-and the `gh` CLI used inside trusted runs. A legacy fine-grained PAT remains an
-explicit fallback mode, but new installs should use the App.
+and the `gh` CLI used inside trusted runs. Installation and App user tokens are
+the only GitHub credentials Open Session accepts.
 
 ## GitHub App
 
@@ -14,7 +14,7 @@ Create one organization-owned GitHub App. The same App provides:
 - device-flow user tokens so interactive sessions act as the signed-in person;
 - the bot identity `<app-slug>[bot]` for self-trigger protection and attribution.
 
-Configure it from Settings → Integrations → GitHub App and sign-in, or under
+Configure it from Settings → Authentication, or under
 `integrations.github` in `~/.opensession/config.json`:
 
 ```jsonc
@@ -22,7 +22,6 @@ Configure it from Settings → Integrations → GitHub App and sign-in, or under
   "integrations": {
     "github": {
       "enabled": true,
-      "botCredential": "app",
       "oauthClientId": "Iv…",
       "oauthClientSecret": "…",
       "appSlug": "open-session-example",
@@ -65,9 +64,9 @@ Enable **Device Flow**, generate a client secret and private key, then install
 the App only on the organization and repositories Open Session should reach.
 When permissions change, approve the updated installation permissions too.
 
-`botCredential: "app"` is fail-closed. A missing key, wrong installation owner,
-unapproved permission, or failed token mint never falls back to a PAT, ambient
-`gh` account, or connected human. Installation tokens remain process-local and
+GitHub service authority is fail-closed. A missing key, wrong installation
+owner, unapproved permission, or failed token mint never falls back to ambient
+`gh`, a host SSH key, or a connected human. Installation tokens remain process-local and
 short-lived; repository code runs receive a token scoped to that one verified
 repository.
 
@@ -79,20 +78,11 @@ to its own-author set so comments and pushes cannot trigger loops. The App slug
 itself is the preferred PR mention handle. Keep old names in
 `integrations.github.mentionHandles` only as compatibility aliases.
 
-## Legacy PAT mode
-
-Set `botCredential: "pat"` and `GITHUB_API_TOKEN` only when an installation
-cannot use a GitHub App. The PAT needs repository-scoped Contents, Issues, and
-Pull requests read/write plus the reads required by your workflows. PAT mode is
-also explicit: App credentials do not silently take over until the setting is
-changed.
-
-`policy.githubBotLogins` / `GITHUB_BOT_LOGIN` identify legacy machine accounts
-and historical activity. `GITHUB_MENTION_HANDLES` overrides the configured
-mention-handle list. Host `gh auth login` is not a bot credential source in App
-mode; server-owned `gh` calls receive the selected token in their process
-environment. HTTPS Git operations use a process-local credential helper and do
-not write tokens into remotes or Git config.
+`policy.githubBotLogins` may retain aliases for historical App names.
+`GITHUB_MENTION_HANDLES` adds compatibility mention handles. Server-owned `gh`
+calls receive a short-lived App token in their process environment. HTTPS Git
+operations use a process-local credential helper, and SSH GitHub remotes are
+rewritten to HTTPS for that process so host keys cannot bypass the App.
 
 ## Webhook intake
 
@@ -245,8 +235,7 @@ story.
    "integrations": {
      "github": {
        "userPrAuth": true,
-       "botCredential": "app",
-       "oauthClientId": "<client id>",
+        "oauthClientId": "<client id>",
        "oauthClientSecret": "<client secret>",
        "appSlug": "<app slug>",
        "installationOwner": "<organization>"
@@ -286,7 +275,7 @@ What turns on (`packages/core/opensession-server/src/server/github-auth.ts`, `we
 ## Connecting GitHub in simple mode
 
 A **simple-mode install** is one person on their own box: no operator config, no
-bot machine-user, no `gh auth login`, and no sign-in gate. Such a user still
+separate bot account, no `gh auth login`, and no sign-in gate. Such a user still
 needs their **private** repos available, to list them in the repo picker, clone
 them, and open PRs as themselves. Simple mode connects with a **GitHub App you
 create**, configured entirely in the UI: no file editing, no restart.
@@ -309,7 +298,7 @@ create**, configured entirely in the UI: no file editing, no restart.
 4. **Connect.** Enter the one-time code at `github.com/login/device`. The token
    is stored under the login GitHub reports (`~/.opensession/github-auth.json`,
    0600, never shown again). Interactive HTTPS clones and pushes receive it
-   through a process-local credential helper. No `GITHUB_API_TOKEN` is involved.
+   through a process-local credential helper. No static GitHub token is involved.
 
 The single connected account is *the* account for this install (there is no
 roster in simple mode; the one connected account is the acting identity).

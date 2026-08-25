@@ -355,7 +355,7 @@ private struct GithubSignInDetailView: View {
                         Label("Create GitHub App", systemImage: "arrow.up.forward.app")
                     }
                 } footer: {
-                    Text("The client id and secret are entered on the web, under Settings → Integrations.")
+                    Text("The App details and sign-in method are configured on the web, under Settings → Authentication.")
                 }
             }
         }
