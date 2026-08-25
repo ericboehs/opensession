@@ -1,7 +1,6 @@
 import * as React from "react";
 import type { SessionUsage } from "../lib/types";
 import { Popover } from "../ui/popover";
-import { cn } from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -55,6 +54,32 @@ const sx = stylex.create({
 			fontSize: "var(--type-label)",
 			lineHeight: "var(--tw-leading,var(--text-xs--line-height))"
 	},
+
+  transitionStroke: {
+    transitionProperty: "stroke-dashoffset",
+    transitionDuration: "300ms",
+  },
+  strokeRed: { stroke: "var(--red)" },
+  textRed: { color: "var(--red)" },
+  strokeAccent: { stroke: "var(--accent)" },
+  tabularNums: { fontVariantNumeric: "tabular-nums" },
+  spaceY15: { gap: "6px", display: "flex", flexDirection: "column" },
+  trigger: {
+    display: "flex",
+    minHeight: "32px",
+    alignItems: "center",
+    gap: "6px",
+    borderRadius: "9999px",
+    paddingInline: "6px",
+    paddingBlock: "4px",
+    fontWeight: "var(--font-weight-medium)",
+    color: "var(--text-dim)",
+    cursor: "pointer",
+    userSelect: "none",
+    outlineStyle: "none",
+    transitionProperty: "color, background-color",
+    ":hover": { backgroundColor: "var(--hover)", color: "var(--text)" },
+  },
 });
 
 /**
@@ -83,9 +108,9 @@ function fmtTokens(n: number): string {
 }
 
 /** Fill-level color: neutral under 85%, red once the window is nearly full. */
-function fillTone(frac: number): { stroke: string; text: string } {
-	if (frac >= 0.85) return { stroke: "stroke-red", text: "text-red" };
-	return { stroke: "stroke-accent", text: "text-dim" };
+function fillTone(frac: number) {
+  if (frac >= 0.85) return { stroke: sx.strokeRed, text: sx.textRed };
+  return { stroke: sx.strokeAccent, text: sx.textDim };
 }
 
 /** SVG progress ring for how full the context window is. */
@@ -95,7 +120,7 @@ function ContextRing({
 	size = 14,
 }: {
 	frac: number;
-	tone: string;
+  tone: stylex.StyleXStyles;
 	size?: number;
 }) {
 	const sw = 2;
@@ -127,7 +152,7 @@ function ContextRing({
 				strokeLinecap="round"
 				strokeDasharray={circ}
 				strokeDashoffset={offset}
-				className={cn("transition-[stroke-dashoffset] duration-300", tone)}
+        {...stylex.props(sx.transitionStroke, tone)}
 			/>
 		</svg>
 	);
@@ -143,9 +168,13 @@ function Row({
 	strong?: boolean;
 }) {
 	return (
-		<div {...stylex.props(sx.flex, sx.itemsBaseline, sx.justifyBetween, sx.gap6)}>
+    <div
+      {...stylex.props(sx.flex, sx.itemsBaseline, sx.justifyBetween, sx.gap6)}
+    >
 			<span {...stylex.props(sx.textDim)}>{label}</span>
-			<span className={cn("tabular-nums", strong && "text-fg")}>{value}</span>
+      <span {...stylex.props(sx.tabularNums, strong && sx.textFg)}>
+        {value}
+      </span>
 		</div>
 	);
 }
@@ -158,7 +187,7 @@ export function UsageCost({
 	className?: string;
 }) {
 	return (
-		<span className={cn("tabular-nums", className)}>
+    <span className={className} {...stylex.props(sx.tabularNums)}>
 			{fmtUsd(usage?.costUsd ?? 0)}
 		</span>
 	);
@@ -180,39 +209,49 @@ export function UsageDetails({
 		(usage?.cacheReadTokens ?? 0) +
 		(usage?.cacheCreationTokens ?? 0);
 	const cacheHit =
-		totalIn > 0 ? Math.round(((usage?.cacheReadTokens ?? 0) / totalIn) * 100) : 0;
+    totalIn > 0
+      ? Math.round(((usage?.cacheReadTokens ?? 0) / totalIn) * 100)
+      : 0;
 	const turns = usage?.turns ?? 0;
 
 	return (
-		<div className={cn("text-xs", className)}>
-			<div {...stylex.props(sx.mb2, sx.flex, sx.itemsBaseline, sx.justifyBetween)}>
-				<span {...stylex.props(sx.fontMedium, sx.textFg)}>This conversation</span>
+    <div className={className} {...stylex.props(sx.textXs)}>
+      <div
+        {...stylex.props(sx.mb2, sx.flex, sx.itemsBaseline, sx.justifyBetween)}
+      >
+        <span {...stylex.props(sx.fontMedium, sx.textFg)}>
+          This conversation
+        </span>
 				<span {...stylex.props(sx.textDim)}>
 					{turns} turn{turns === 1 ? "" : "s"}
 				</span>
 			</div>
-			<div className="space-y-1.5">
+      <div {...stylex.props(sx.spaceY15)}>
 				<Row label="Cost" value={<UsageCost usage={usage} />} strong />
 				{window > 0 && (
 					<Row
 						label="Context"
 						value={
-							<span className={tone.text}>
-								{fmtTokens(ctx)} / {fmtTokens(window)} ({Math.round(frac * 100)}%)
+              <span {...stylex.props(tone.text)}>
+                {fmtTokens(ctx)} / {fmtTokens(window)} ({Math.round(frac * 100)}
+                %)
 							</span>
 						}
 					/>
 				)}
 			</div>
 			<div {...stylex.props(sx.my2, sx.hPx, sx.bgLine)} />
-			<div className="space-y-1.5">
+      <div {...stylex.props(sx.spaceY15)}>
 				<Row label="Input" value={fmtTokens(usage?.inputTokens ?? 0)} />
 				<Row label="Output" value={fmtTokens(usage?.outputTokens ?? 0)} />
 				<Row
 					label="Cache read"
 					value={`${fmtTokens(usage?.cacheReadTokens ?? 0)} (${cacheHit}%)`}
 				/>
-				<Row label="Cache write" value={fmtTokens(usage?.cacheCreationTokens ?? 0)} />
+        <Row
+          label="Cache write"
+          value={fmtTokens(usage?.cacheCreationTokens ?? 0)}
+        />
 			</div>
 		</div>
 	);
@@ -244,14 +283,12 @@ export function UsageMeter({
 				openOnHover
 				delay={200}
 				closeDelay={100}
-				className={cn(
-					// A quiet pill in the session subtitle: this is a readout you can
-					// open, not a plate you press.
-				"group flex min-h-8 items-center gap-1.5 rounded-full px-1.5 py-1 text-xs font-medium",
-					"text-dim hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg",
-					"cursor-pointer select-none outline-none transition-colors",
-					className,
-				)}
+				className={
+					className
+						? `group data-[popup-open]:bg-hover data-[popup-open]:text-fg ${className}`
+						: "group data-[popup-open]:bg-hover data-[popup-open]:text-fg"
+				}
+				{...stylex.props(sx.trigger, sx.textXs)}
 				aria-label="Conversation cost & context"
 			>
 				<UsageCost usage={usage} {...stylex.props(sx.textFg)} />
@@ -267,7 +304,11 @@ export function UsageMeter({
 					</span>
 				)}
 			</Popover.Trigger>
-			<Popover.Popup side="top" align="end" {...stylex.props(sx.w64, sx.p3, sx.textXs)}>
+      <Popover.Popup
+        side="top"
+        align="end"
+        {...stylex.props(sx.w64, sx.p3, sx.textXs)}
+      >
 				<UsageDetails usage={usage} />
 			</Popover.Popup>
 		</Popover.Root>

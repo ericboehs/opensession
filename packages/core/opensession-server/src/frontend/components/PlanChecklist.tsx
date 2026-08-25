@@ -1,6 +1,6 @@
 import type { PlanItem } from "@tellahq/opensession-protocol/todo-plan";
-import { cn } from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -13,8 +13,34 @@ const sx = stylex.create({
 	pl22px: {
 			paddingLeft: "22px"
 	},
-	textFaint: {
-			color: "var(--text-faint)"
+  textFaint: { color: "var(--text-faint)" },
+  list: {
+    margin: 0,
+    display: "flex",
+    listStyle: "none",
+    flexDirection: "column",
+    gap: "6px",
+    padding: 0,
+    lineHeight: "16px",
+  },
+  row: { display: "flex", minWidth: 0, alignItems: "flex-start", gap: "8px" },
+  fontMedium: { fontWeight: "var(--font-weight-medium)" },
+  textFg: { color: "var(--text)" },
+  textDim: { color: "var(--text-dim)" },
+  mark: {
+    marginTop: "4px",
+    width: "8px",
+    height: "8px",
+    flex: "none",
+    borderRadius: "50%",
+  },
+  bgGreen: { backgroundColor: "var(--green)" },
+  bgYellow: { backgroundColor: "var(--yellow)" },
+  live: { animation: "composer-agents-pulse 1.4s ease-in-out infinite" },
+  pending: {
+    borderColor: "var(--border)",
+    borderStyle: "solid",
+    borderWidth: "1px",
 	},
 });
 
@@ -37,44 +63,46 @@ export function PlanChecklist({ items, max, live = false, className }: Props) {
 	const shown = max && items.length > max ? items.slice(0, max) : items;
 	const hidden = items.length - shown.length;
 	return (
-		<ol
-			className={cn(
-				"m-0 flex list-none flex-col gap-1.5 p-0 text-label leading-4",
-				className,
-			)}
-		>
+    <ol className={className} {...stylex.props(sx.list, typography.label)}>
 			{shown.map((item, i) => (
 				<li
 					key={`${i}-${item.content}`}
-					className={cn(
-						"flex min-w-0 items-start gap-2",
-						item.status === "in_progress" && "font-medium text-fg",
-						item.status === "completed" && "text-dim",
-						item.status === "pending" && "text-faint",
+          {...stylex.props(
+            sx.row,
+            item.status === "in_progress" && sx.fontMedium,
+            item.status === "in_progress" && sx.textFg,
+            item.status === "completed" && sx.textDim,
+            item.status === "pending" && sx.textFaint,
 					)}
 				>
 					<PlanMark status={item.status} live={live} />
 					<span {...stylex.props(sx.minW0, sx.flex1)}>{item.content}</span>
 				</li>
 			))}
-			{hidden > 0 && <li {...stylex.props(sx.pl22px, sx.textFaint)}>+{hidden} more</li>}
+      {hidden > 0 && (
+        <li {...stylex.props(sx.pl22px, sx.textFaint)}>+{hidden} more</li>
+      )}
 		</ol>
 	);
 }
 
 /** One quiet marker language: green when done, amber while active, and an
  *  empty ring for what's still ahead. */
-function PlanMark({ status, live }: { status: PlanItem["status"]; live: boolean }) {
+function PlanMark({
+  status,
+  live,
+}: {
+  status: PlanItem["status"];
+  live: boolean;
+}) {
 	return (
 		<span
-			className={cn(
-				"mt-1 size-2 flex-none rounded-full",
-				status === "completed" && "bg-green",
-				status === "in_progress" && [
-					"bg-yellow",
-					live && "animate-[composer-agents-pulse_1.4s_ease-in-out_infinite]",
-				],
-				status === "pending" && "border border-line",
+      {...stylex.props(
+        sx.mark,
+        status === "completed" && sx.bgGreen,
+        status === "in_progress" && sx.bgYellow,
+        status === "in_progress" && live && sx.live,
+        status === "pending" && sx.pending,
 			)}
 		/>
 	);

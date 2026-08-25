@@ -39,7 +39,6 @@ import { Popover } from "../ui/popover";
 import { Button } from "../ui/button";
 import { Menu } from "../ui/menu";
 import { Tooltip } from "../ui/tooltip";
-import { cn } from "../ui/cn";
 import type { PrDetails, PrReviewer, UnifiedSession } from "../lib/types";
 import {
 	WS_SUMMARY_ACTION,
@@ -178,10 +177,81 @@ const sx = stylex.create({
 	bgBlack45: {
 			backgroundColor: "#00000073"
 	},
-	textWhite: {
-			color: "var(--color-white)"
+  textWhite: { color: "var(--color-white)" },
+  trigger: {
+    display: "inline-flex",
+    width: "32px",
+    height: "32px",
+    flexShrink: 0,
+    cursor: "pointer",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "calc(12px * var(--rf))",
+    borderStyle: "none",
+    backgroundColor: "transparent",
+    padding: 0,
+    color: "var(--text-dim)",
+    ":hover": { backgroundColor: "var(--hover)", color: "var(--text)" },
 	},
+  chevron: {
+    flexShrink: 0,
+    color: "var(--text-faint)",
+    transitionProperty: "transform",
+    "@media (prefers-reduced-motion: reduce)": { transitionProperty: "none" },
+  },
+  rotate180: { transform: "rotate(180deg)" },
+  tabularNums: { fontVariantNumeric: "tabular-nums" },
+  noUnderline: { textDecorationLine: "none" },
+  cursorDefault: { cursor: "default" },
+  contents: { display: "contents" },
+  embeddedGroup: {
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
+    borderRadius: "calc(22px * var(--rf))",
+    backgroundColor: "var(--bg-raised)",
+    paddingBlock: "8px",
+    ":empty": { display: "none" },
+  },
+  rootEmbedded: { display: "flex", flexDirection: "column", gap: "10px" },
+  justifyBetween: { justifyContent: "space-between" },
+  h11: { height: "44px" },
+  h7: { height: "28px" },
+  disabledRow: { ":disabled": { cursor: "default", opacity: 0.7 } },
+  animatePulse: { animation: "var(--animate-pulse)" },
+  textAccent: { color: "var(--accent)" },
+  inlineFlex: { display: "inline-flex" },
+  gap05: { gap: "2px" },
+  cursorPointer: { cursor: "pointer" },
+  gap2: { gap: "8px" },
+  borderNone: { borderStyle: "none" },
+  bgTransparent: { backgroundColor: "transparent" },
+  textLeft: { textAlign: "left" },
+  transitionTransformOpacity: {
+    transitionProperty: "transform, opacity",
+    "@media (prefers-reduced-motion: reduce)": { transitionProperty: "none" },
+  },
+  opacity0: { opacity: 0 },
+  opacity100: { opacity: 1 },
+  sectionGap: { gap: "6px" },
+  frameWidth: { width: "calc((100% - 30px) / 2)" },
+  py0: { paddingBlock: 0 },
 });
+
+function toneStyle(tone: string | undefined): stylex.StyleXStyles {
+  switch (tone) {
+    case "text-green":
+      return sx.textGreen;
+    case "text-red":
+      return sx.textRed;
+    case "text-accent":
+      return sx.textAccent;
+    case "text-faint":
+      return sx.textFaint;
+    default:
+      return sx.textDim;
+  }
+}
 
 /**
  * The session header's compact stand-in for the right Workspace panel: one
@@ -511,7 +581,8 @@ export function WorkspaceSummary({
 					!nextOpen &&
 					(details.reason === "escape-key" ||
 						(canStand &&
-							(details.reason === "outside-press" || details.reason === "focus-out")))
+              (details.reason === "outside-press" ||
+                details.reason === "focus-out")))
 				)
 					return;
 				changeOpen(nextOpen);
@@ -519,13 +590,8 @@ export function WorkspaceSummary({
 		>
 			<Tooltip label="Workspace summary">
 				<Popover.Trigger
-					className={cn(
-						"inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-control",
-						"border-none bg-transparent p-0 text-dim hover:bg-hover hover:text-fg",
-						// Open state reads as pressed rather than hovered, so the card
-						// and its trigger stay visibly one object.
-						"data-[popup-open]:bg-pressed data-[popup-open]:text-fg",
-					)}
+          className="data-[popup-open]:bg-pressed data-[popup-open]:text-fg"
+          {...stylex.props(sx.trigger)}
 					aria-label="Workspace summary"
 				>
 					<IconListCircles size={20} />
@@ -653,12 +719,14 @@ export function WorkspaceSummaryBody({
 	const commits = overviewResource.data?.commits ?? [];
 	const media = (() => {
 		const seen = new Set<string>();
-		return [...liveMedia, ...(overviewResource.data?.media ?? [])].filter((item) => {
+    return [...liveMedia, ...(overviewResource.data?.media ?? [])].filter(
+      (item) => {
 			const key = `${item.kind}\0${item.src}\0${item.sessionId}`;
 			if (seen.has(key)) return false;
 			seen.add(key);
 			return true;
-		});
+      },
+    );
 	})();
 	const diff =
 		diffResource.data?.repos.reduce(
@@ -794,16 +862,22 @@ export function WorkspaceSummaryBody({
 		setReviewCancelling(true);
 		setReviewError(null);
 		await (async () => {
-await cancelPrReviewApi(session.id, getCurrentUser(), session.repo || undefined);
+      await cancelPrReviewApi(
+        session.id,
+        getCurrentUser(),
+        session.repo || undefined,
+      );
 			// The stop request is durable before the API answers. Return to the last
 			// completed result immediately while the worker unwinds in the background.
 			void prResource.mutate(
 				{ ...pr, reviewActive: false },
 				{ revalidate: false },
 			);
-})().catch(async (error: any) => {
+    })()
+      .catch(async (error: any) => {
 setReviewError(error?.message || "Couldn't cancel the review");
-}).finally(async () => {
+      })
+      .finally(async () => {
 setReviewCancelling(false);
 });
 	}
@@ -819,13 +893,16 @@ const result = await triggerPrActionApi(
 				getCurrentUser(),
 				session.repo || undefined,
 			);
-			if (!result.ok) throw new Error(result.error || result.message || "Couldn't start");
+      if (!result.ok)
+        throw new Error(result.error || result.message || "Couldn't start");
 			if (result.openSession && result.bksId && onOpenSession) {
 				go(() => onOpenSession(result.bksId!, result.session ?? null));
 			}
-})().catch(async (error: any) => {
+    })()
+      .catch(async (error: any) => {
 setFixError(error?.message || "Couldn't start Auto-fix");
-}).finally(async () => {
+      })
+      .finally(async () => {
 setFixBusy(false);
 });
 	}
@@ -877,10 +954,7 @@ setFixBusy(false);
 					{reviewMode && (
 						<IconChevronDown
 							size={14}
-							className={cn(
-								"shrink-0 text-faint transition-transform motion-reduce:transition-none",
-								changesOpen && "rotate-180",
-							)}
+              {...stylex.props(sx.chevron, changesOpen && sx.rotate180)}
 						/>
 					)}
 				</button>
@@ -889,7 +963,17 @@ setFixBusy(false);
 						{pr.files.map((file) => (
 							<div
 								key={file.path}
-								{...stylex.props(sx.mx2, sx.flex, sx.minH7, sx.minW0, sx.itemsCenter, sx.gap15, sx.px2, sx.textDim, typography.label)}
+                {...stylex.props(
+                  sx.mx2,
+                  sx.flex,
+                  sx.minH7,
+                  sx.minW0,
+                  sx.itemsCenter,
+                  sx.gap15,
+                  sx.px2,
+                  sx.textDim,
+                  typography.label,
+                )}
 							>
 								<span className={WS_SUMMARY_RAIL} aria-hidden />
 								<span className={WS_SUMMARY_LABEL} title={file.path}>
@@ -897,7 +981,9 @@ setFixBusy(false);
 								</span>
 								<span className={WS_SUMMARY_COUNT}>
 									{file.additions > 0 && (
-										<span {...stylex.props(sx.textGreen)}>+{file.additions}</span>
+                    <span {...stylex.props(sx.textGreen)}>
+                      +{file.additions}
+                    </span>
 									)}{" "}
 									{file.deletions > 0 && (
 										<span {...stylex.props(sx.textRed)}>−{file.deletions}</span>
@@ -918,7 +1004,10 @@ setFixBusy(false);
 					<IconGitCommit size={20} className={WS_SUMMARY_ICON} />
 				</span>
 				<span className={WS_SUMMARY_LABEL}>{commit.title}</span>
-				<span className={cn(WS_SUMMARY_STATE, "text-dim tabular-nums")}>
+        <span
+          className={WS_SUMMARY_STATE}
+          {...stylex.props(sx.textDim, sx.tabularNums)}
+        >
 					{commit.filesChanged} file{commit.filesChanged === 1 ? "" : "s"}
 				</span>
 			</>
@@ -927,7 +1016,8 @@ setFixBusy(false);
 		return commit.url ? (
 			<a
 				key={commit.sha}
-				className={cn(WS_SUMMARY_ROW, "no-underline")}
+        className={WS_SUMMARY_ROW}
+        {...stylex.props(sx.noUnderline)}
 				href={commit.url}
 				target="_blank"
 				rel="noopener"
@@ -938,7 +1028,8 @@ setFixBusy(false);
 		) : (
 			<div
 				key={commit.sha}
-				className={cn(WS_SUMMARY_ROW, "cursor-default")}
+        className={WS_SUMMARY_ROW}
+        {...stylex.props(sx.cursorDefault)}
 				title={title}
 			>
 				{content}
@@ -964,32 +1055,30 @@ setFixBusy(false);
 				<span className={WS_SUMMARY_LABEL}>
 					{commits.length} commit{commits.length === 1 ? "" : "s"}
 				</span>
-				<span className={cn(WS_SUMMARY_STATE, "text-dim tabular-nums")}>
+        <span
+          className={WS_SUMMARY_STATE}
+          {...stylex.props(sx.textDim, sx.tabularNums)}
+        >
 					{files} file{files === 1 ? "" : "s"}
 				</span>
 			</button>
 		);
 	}
 
-	const groupClass = embedded
-		? "flex flex-col overflow-hidden rounded-2xl bg-raised py-2 empty:hidden"
-		: "contents";
+  const groupStyle = embedded ? sx.embeddedGroup : sx.contents;
 	const prGroupClass = embedded
-		? cn(
-				groupClass,
-				"py-0 [&_.ws-summary-band]:mx-0 [&_.ws-summary-band]:mb-0 [&_.ws-summary-band]:px-2 [&_.ws-summary-band]:py-3 [&_.ws-summary-band]:[border-radius:inherit]",
-			)
-		: groupClass;
+    ? "[&_.ws-summary-band]:mx-0 [&_.ws-summary-band]:mb-0 [&_.ws-summary-band]:px-2 [&_.ws-summary-band]:py-3 [&_.ws-summary-band]:[border-radius:inherit]"
+    : undefined;
 
 	return (
 		<div
-			className={
-				embedded
-					? "flex flex-col gap-2.5 [&_button]:min-h-11 [&_a]:min-h-11"
-					: "contents"
-			}
+      className={embedded ? "[&_button]:min-h-11 [&_a]:min-h-11" : undefined}
+      {...stylex.props(embedded ? sx.rootEmbedded : sx.contents)}
 		>
-			<div className={prGroupClass}>
+      <div
+        className={prGroupClass}
+        {...stylex.props(groupStyle, embedded && sx.py0)}
+      >
 				{/* Which PR, where it stands, and the one thing to do about it. The
 				    strip owns all three; this card only says where they go. */}
 				<PrStatusBar
@@ -1037,7 +1126,12 @@ setFixBusy(false);
 						</span>
 						<span className={WS_SUMMARY_LABEL}>Overview</span>
 						{reviewPage === "overview" ? (
-							<span className={cn(WS_SUMMARY_STATE, "text-accent")}>Viewing</span>
+              <span
+                className={WS_SUMMARY_STATE}
+                {...stylex.props(sx.textAccent)}
+              >
+                Viewing
+              </span>
 						) : pr?.comments?.length ? (
 							<span className={WS_SUMMARY_COUNT}>{pr.comments.length}</span>
 						) : null}
@@ -1053,7 +1147,12 @@ setFixBusy(false);
 						</span>
 						<span className={WS_SUMMARY_LABEL}>Files</span>
 						{reviewPage === "files" ? (
-							<span className={cn(WS_SUMMARY_STATE, "text-accent")}>Viewing</span>
+              <span
+                className={WS_SUMMARY_STATE}
+                {...stylex.props(sx.textAccent)}
+              >
+                Viewing
+              </span>
 						) : changedFiles > 0 ? (
 							<span className={WS_SUMMARY_COUNT}>{changedFiles}</span>
 						) : null}
@@ -1061,23 +1160,21 @@ setFixBusy(false);
 				</div>
 			)}
 
-			<div className={groupClass}>
+      <div {...stylex.props(groupStyle)}>
 				{/* One review section for both the automated reading and the people asked
 				    to review. Its action opens the complete workspace review; the final row
 				    owns the picker, so neither action requires the workspace panel. */}
 				<div
-					className={cn(
-						WS_SUMMARY_SECTION,
-						"justify-between",
-						embedded ? "h-11" : "h-7",
-					)}
+          className={WS_SUMMARY_SECTION}
+          {...stylex.props(sx.justifyBetween, embedded ? sx.h11 : sx.h7)}
 				>
 					<span>Review</span>
 					{!reviewMode && (
 						<Button
 							variant="ghost"
 							size="sm"
-							className="phone:min-h-11" {...stylex.props(sx.minH6, sx.px2, typography.meta)}
+              className="phone:min-h-11"
+              {...stylex.props(sx.minH6, sx.px2, typography.meta)}
 							onClick={() => go(onOpenPr)}
 						>
 							Open
@@ -1087,10 +1184,8 @@ setFixBusy(false);
 			{showOsReview && (
 				<>
 					<button
-						className={cn(
-							WS_SUMMARY_ROW,
-							"disabled:cursor-default disabled:opacity-70",
-						)}
+              className={WS_SUMMARY_ROW}
+              {...stylex.props(sx.disabledRow)}
 						onClick={
 							osReviewActive
 								? () => void cancelOsReview()
@@ -1113,7 +1208,8 @@ setFixBusy(false);
 						<span className={WS_SUMMARY_RAIL}>
 							<IconRobot
 								size={20}
-								className={cn(WS_SUMMARY_ICON, osReviewActive && "animate-pulse")}
+                  className={WS_SUMMARY_ICON}
+                  {...stylex.props(osReviewActive && sx.animatePulse)}
 							/>
 						</span>
 						<span className={WS_SUMMARY_LABEL}>
@@ -1128,7 +1224,11 @@ setFixBusy(false);
 							) : osScore ? (
 								<>
 									<span {...stylex.props(sx.textFaint)}> · </span>
-									<span className={cn("tabular-nums", osScoreTone)}>{osScore}/5</span>
+                    <span
+                      {...stylex.props(sx.tabularNums, toneStyle(osScoreTone))}
+                    >
+                      {osScore}/5
+                    </span>
 								</>
 							) : null}
 						</span>
@@ -1137,18 +1237,21 @@ setFixBusy(false);
 								{reviewCancelling ? "Stopping" : "Cancel"}
 							</span>
 						) : canFixOsReview ? (
-							<span className={cn(WS_SUMMARY_ACTION, "text-red")}>
+                <span
+                  className={WS_SUMMARY_ACTION}
+                  {...stylex.props(sx.textRed)}
+                >
 								{fixBusy ? "Starting…" : "Fix"}
 							</span>
 						) : (
 							<span
-								className={cn(
-									WS_SUMMARY_STATE,
+                  className={WS_SUMMARY_STATE}
+                  {...stylex.props(
 									osReview?.stale
-										? "text-faint"
+                      ? sx.textFaint
 										: osReview?.blocking
-											? "text-red"
-											: "text-dim",
+                        ? sx.textRed
+                        : sx.textDim,
 								)}
 							>
 								{osReviewState}
@@ -1156,7 +1259,15 @@ setFixBusy(false);
 						)}
 					</button>
 					{fixError && (
-						<div {...stylex.props(sx.px4, sx.py1, sx.textRed, typography.supporting)} role="alert">
+              <div
+                {...stylex.props(
+                  sx.px4,
+                  sx.py1,
+                  sx.textRed,
+                  typography.supporting,
+                )}
+                role="alert"
+              >
 							{fixError}
 						</div>
 					)}
@@ -1178,7 +1289,10 @@ setFixBusy(false);
 						/>
 					</span>
 					<span className={WS_SUMMARY_LABEL}>{reviewer.name}</span>
-					<span className={cn(WS_SUMMARY_STATE, reviewer.tone)}>
+            <span
+              className={WS_SUMMARY_STATE}
+              {...stylex.props(toneStyle(reviewer.tone))}
+            >
 						{reviewer.state}
 					</span>
 				</button>
@@ -1201,22 +1315,25 @@ setFixBusy(false);
 							/>
 						</span>
 						<span className={WS_SUMMARY_LABEL}>{reviewer.name}</span>
-						<span className={cn(WS_SUMMARY_STATE, reviewer.tone)}>
+              <span
+                className={WS_SUMMARY_STATE}
+                {...stylex.props(toneStyle(reviewer.tone))}
+              >
 							{reviewer.state}
 						</span>
 					</button>
 				))}
 			{humanReviewers.length === 0 && (
 				<Menu.Root>
-					<Menu.Trigger
-						className={WS_SUMMARY_ROW}
-						disabled={reviewBusy}
-					>
+            <Menu.Trigger className={WS_SUMMARY_ROW} disabled={reviewBusy}>
 						<span className={WS_SUMMARY_RAIL}>
 							<IconPeople size={20} className={WS_SUMMARY_ICON} />
 						</span>
 						<span className={WS_SUMMARY_LABEL}>No reviewers</span>
-						<span className={cn(WS_SUMMARY_ACTION, "inline-flex items-center gap-0.5")}>
+              <span
+                className={WS_SUMMARY_ACTION}
+                {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap05)}
+              >
 							Add
 							<IconChevronDown size={14} />
 						</span>
@@ -1227,9 +1344,14 @@ setFixBusy(false);
 						{...stylex.props(sx.minW200px)}
 					>
 						{people.map((person) => (
-							<Menu.Item key={person.name} onClick={() => pickReviewer(person.name)}>
+                <Menu.Item
+                  key={person.name}
+                  onClick={() => pickReviewer(person.name)}
+                >
 								<UserAvatar name={person.name} size={22} />
-								<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>{person.name}</span>
+                  <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
+                    {person.name}
+                  </span>
 								<Menu.Check
 									on={selectedReview?.to === person.name}
 									size={20}
@@ -1243,10 +1365,19 @@ setFixBusy(false);
 								key={team.github}
 								onClick={() => pickReviewer(team.github, team.members)}
 							>
-								<span {...stylex.props(sx.grid, sx.size22px, sx.placeItemsCenter, sx.textDim)}>
+                  <span
+                    {...stylex.props(
+                      sx.grid,
+                      sx.size22px,
+                      sx.placeItemsCenter,
+                      sx.textDim,
+                    )}
+                  >
 									<IconStack size={20} />
 								</span>
-								<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>{team.name}</span>
+                  <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
+                    {team.name}
+                  </span>
 								<Menu.Check
 									on={selectedReview?.to === team.github}
 									size={20}
@@ -1258,22 +1389,37 @@ setFixBusy(false);
 				</Menu.Root>
 			)}
 				{reviewError && (
-					<div {...stylex.props(sx.px4, sx.py1, sx.fontMedium, sx.textRed, typography.meta)}>{reviewError}</div>
+          <div
+            {...stylex.props(
+              sx.px4,
+              sx.py1,
+              sx.fontMedium,
+              sx.textRed,
+              typography.meta,
+            )}
+          >
+            {reviewError}
+          </div>
 				)}
 			</div>
 
 			{(diffIsCommitted || commits.length > 0) && (
-				<div className={groupClass}>
+        <div {...stylex.props(groupStyle)}>
 					{commits.length > 0 ? (
 						/* The heading owns the toggle: it names the band the list belongs
 						   to, so it is the one place to open and close the whole band. The
 						   chevron waits for the cursor, so a card at rest keeps a plain
 						   label like every other section. */
 						<button
-							className={cn(
-								WS_SUMMARY_SECTION,
-								"group/committed w-full cursor-pointer justify-between gap-2",
-								"border-none bg-transparent text-left",
+              className={`${WS_SUMMARY_SECTION} group/committed`}
+              {...stylex.props(
+                sx.wFull,
+                sx.cursorPointer,
+                sx.justifyBetween,
+                sx.gap2,
+                sx.borderNone,
+                sx.bgTransparent,
+                sx.textLeft,
 							)}
 							onClick={() => setCommitsOpen((open) => !open)}
 							aria-expanded={commitsOpen}
@@ -1281,10 +1427,13 @@ setFixBusy(false);
 							<span>Committed</span>
 							<IconChevronDown
 								size={14}
-								className={cn(
-									"shrink-0 transition-[transform,opacity] motion-reduce:transition-none",
-									"opacity-0 group-hover/committed:opacity-100 group-focus-visible/committed:opacity-100",
-									commitsOpen && "rotate-180 opacity-100",
+                className="group-hover/committed:opacity-100 group-focus-visible/committed:opacity-100"
+                {...stylex.props(
+                  sx.chevron,
+                  sx.transitionTransformOpacity,
+                  sx.opacity0,
+                  commitsOpen && sx.rotate180,
+                  commitsOpen && sx.opacity100,
 								)}
 							/>
 						</button>
@@ -1300,7 +1449,7 @@ setFixBusy(false);
 			)}
 
 			{showDiffChanges && !diffIsCommitted && (
-				<div className={groupClass}>
+        <div {...stylex.props(groupStyle)}>
 					<div className={WS_SUMMARY_SECTION}>Changes</div>
 					{diffChangeRow(
 						`${changedFiles} file${changedFiles === 1 ? "" : "s"} changed`,
@@ -1309,7 +1458,7 @@ setFixBusy(false);
 			)}
 
 			{dirty > 0 && (
-				<div className={groupClass}>
+        <div {...stylex.props(groupStyle)}>
 					<div className={WS_SUMMARY_SECTION}>Uncommitted</div>
 					<button
 						className={WS_SUMMARY_ROW}
@@ -1330,18 +1479,18 @@ setFixBusy(false);
 			)}
 
 			{media.length > 0 && (
-				<div className={groupClass}>
+        <div {...stylex.props(groupStyle)}>
 					{/* The strip carries recordings too, but screenshots are what
 					    people call the set, so that is the word to head it with. What
 					    separates this band from the assets under it is still the
 					    source: one is what appeared in the conversation, the other is
 					    what the session wrote. Same word the Workspace panel uses. */}
-					<div className={cn(WS_SUMMARY_SECTION, "gap-1.5")}>
+          <div className={WS_SUMMARY_SECTION} {...stylex.props(sx.sectionGap)}>
 						<span>Screenshots</span>
 						{/* Every frame is available in the strip. Keep the count beside
 						    the label so the heading reads as one fact rather than two
 						    ends of a row. */}
-						<span className={cn(WS_SUMMARY_COUNT, "text-faint")}>
+            <span className={WS_SUMMARY_COUNT} {...stylex.props(sx.textFaint)}>
 							{media.length}
 						</span>
 					</div>
@@ -1357,7 +1506,8 @@ setFixBusy(false);
 								// picture taken up to the card's width reads as a hero in a
 								// list of quiet rows, and pushes everything under it a
 								// screenshot's height down for no more information.
-								className={cn(WS_SUMMARY_FRAME, "w-[calc((100%_-_30px)/2)]")}
+                className={WS_SUMMARY_FRAME}
+                {...stylex.props(sx.frameWidth)}
 								// Open the same complete set shown in the strip. The card stays
 								// up behind it while the lightbox pages between frames.
 								onClick={(event) =>
@@ -1377,8 +1527,26 @@ setFixBusy(false);
 												preload="metadata"
 												{...stylex.props(sx.hFull, sx.wFull, sx.objectContain)}
 											/>
-											<span {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.inset0, sx.grid, sx.placeItemsCenter)}>
-												<span className="backdrop-blur-sm" {...stylex.props(sx.grid, sx.size7, sx.placeItemsCenter, sx.roundedFull, sx.bgBlack45, sx.textWhite)}>
+                      <span
+                        {...stylex.props(
+                          sx.pointerEventsNone,
+                          sx.absolute,
+                          sx.inset0,
+                          sx.grid,
+                          sx.placeItemsCenter,
+                        )}
+                      >
+                        <span
+                          className="backdrop-blur-sm"
+                          {...stylex.props(
+                            sx.grid,
+                            sx.size7,
+                            sx.placeItemsCenter,
+                            sx.roundedFull,
+                            sx.bgBlack45,
+                            sx.textWhite,
+                          )}
+                        >
 													<IconPlay size={16} />
 												</span>
 											</span>
@@ -1399,16 +1567,17 @@ setFixBusy(false);
 			)}
 
 			{assets.length > 0 && (
-				<div className={groupClass}>
+        <div {...stylex.props(groupStyle)}>
 					<div
-						className={cn(
-							WS_SUMMARY_SECTION,
-							"group/assets justify-between gap-2",
-						)}
+            className={`${WS_SUMMARY_SECTION} group/assets`}
+            {...stylex.props(sx.justifyBetween, sx.gap2)}
 					>
 						<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap15)}>
 							<span>Assets</span>
-							<span className={cn(WS_SUMMARY_COUNT, "text-faint")}>
+              <span
+                className={WS_SUMMARY_COUNT}
+                {...stylex.props(sx.textFaint)}
+              >
 								{assets.length}
 							</span>
 						</span>
@@ -1425,7 +1594,8 @@ setFixBusy(false);
 									// lone picture blown up to the card reads as a hero in a
 									// list of quiet rows. It also keeps the two strips the same
 									// size when a card shows both.
-									className={cn(WS_SUMMARY_FRAME, "w-[calc((100%_-_30px)/2)]")}
+                  className={WS_SUMMARY_FRAME}
+                  {...stylex.props(sx.frameWidth)}
 									onClick={() => openAsset(file.path)}
 									title={file.path}
 								>
@@ -1439,10 +1609,32 @@ setFixBusy(false);
 													muted
 													playsInline
 													preload="metadata"
-													{...stylex.props(sx.hFull, sx.wFull, sx.objectContain)}
+                          {...stylex.props(
+                            sx.hFull,
+                            sx.wFull,
+                            sx.objectContain,
+                          )}
 												/>
-												<span {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.inset0, sx.grid, sx.placeItemsCenter)}>
-													<span className="backdrop-blur-sm" {...stylex.props(sx.grid, sx.size7, sx.placeItemsCenter, sx.roundedFull, sx.bgBlack45, sx.textWhite)}>
+                        <span
+                          {...stylex.props(
+                            sx.pointerEventsNone,
+                            sx.absolute,
+                            sx.inset0,
+                            sx.grid,
+                            sx.placeItemsCenter,
+                          )}
+                        >
+                          <span
+                            className="backdrop-blur-sm"
+                            {...stylex.props(
+                              sx.grid,
+                              sx.size7,
+                              sx.placeItemsCenter,
+                              sx.roundedFull,
+                              sx.bgBlack45,
+                              sx.textWhite,
+                            )}
+                          >
 														<IconPlay size={16} />
 													</span>
 												</span>
@@ -1458,7 +1650,15 @@ setFixBusy(false);
 											// A report or a data file has no picture to show, so it
 											// holds the same tile with a glyph in it rather than
 											// dropping out of the set and stranding itself below.
-											<span {...stylex.props(sx.grid, sx.hFull, sx.wFull, sx.placeItemsCenter, sx.textFaint)}>
+                      <span
+                        {...stylex.props(
+                          sx.grid,
+                          sx.hFull,
+                          sx.wFull,
+                          sx.placeItemsCenter,
+                          sx.textFaint,
+                        )}
+                      >
 												<IconFile size={22} />
 											</span>
 										)}
@@ -1506,7 +1706,7 @@ setFixBusy(false);
 					{assetView === "list" && assetsHidden > 0 && (
 						<button className={WS_SUMMARY_ROW} onClick={() => go(onOpenAssets)}>
 							<span className={WS_SUMMARY_RAIL} />
-							<span className={cn(WS_SUMMARY_LABEL, "text-dim")}>
+              <span className={WS_SUMMARY_LABEL} {...stylex.props(sx.textDim)}>
 								View all {assets.length}
 							</span>
 						</button>

@@ -1,6 +1,5 @@
 import type { ModelOption } from "../lib/api";
 import { Menu } from "../ui/menu";
-import { cn } from "../ui/cn";
 import { IconArrowDownRight } from "./icons";
 import { shortModelLabel } from "./ModelEffortSelect";
 import * as stylex from "@stylexjs/stylex";
@@ -38,9 +37,24 @@ const sx = stylex.create({
 	pl2: {
 			paddingLeft: "8px"
 	},
-	textFaint: {
-			color: "var(--text-faint)"
+  textFaint: { color: "var(--text-faint)" },
+  chip: {
+    display: "inline-flex",
+    maxWidth: "220px",
+    alignItems: "center",
+    gap: "4px",
+    borderRadius: "var(--radius-control)",
+    paddingInline: "6px",
+    paddingBlock: "2px",
+    fontWeight: "var(--font-weight-medium)",
+    color: "var(--text-dim)",
+    transitionProperty: "color, background-color",
+    ":hover": { backgroundColor: "var(--hover)", color: "var(--text)" },
 	},
+  tabularNums: { fontVariantNumeric: "tabular-nums" },
+  dot: { width: "6px", height: "6px", flexShrink: 0, borderRadius: "50%" },
+  bgYellow: { backgroundColor: "var(--yellow)" },
+  bgLineStrong: { backgroundColor: "var(--border-strong)" },
 });
 
 /**
@@ -62,13 +76,13 @@ export interface RelatedSession {
 	isRunning?: boolean;
 }
 
-function shortModel(model: string | undefined, models: ModelOption[]): string | null {
+function shortModel(
+  model: string | undefined,
+  models: ModelOption[],
+): string | null {
 	if (!model) return null;
 	return shortModelLabel(model, models);
 }
-
-const chip =
-	"inline-flex max-w-[220px] items-center gap-1 rounded-control px-1.5 py-[2px] text-label font-medium text-dim transition-colors hover:bg-hover hover:text-fg";
 
 export function SessionRelations({
 	workers,
@@ -92,12 +106,13 @@ export function SessionRelations({
 					    The glyph and the number take that room instead, and the
 					    accessible name still spells it out. */}
 					<Menu.Trigger
-						className={cn(chip, "data-[popup-open]:bg-hover data-[popup-open]:text-fg")}
+            className="data-[popup-open]:bg-hover data-[popup-open]:text-fg"
+            {...stylex.props(sx.chip, typography.label)}
 						aria-label={workerLabel}
 						title={workerLabel}
 					>
 						<IconArrowDownRight {...stylex.props(sx.size5, sx.shrink0)} />
-						<span className="tabular-nums">{workers!.length}</span>
+            <span {...stylex.props(sx.tabularNums)}>{workers!.length}</span>
 					</Menu.Trigger>
 					<Menu.Popup align="start" {...stylex.props(sx.maxW300px)}>
 						{/* GroupLabel MUST live inside a Group — bare it throws Base UI
@@ -107,14 +122,22 @@ export function SessionRelations({
 							{workers!.map((w) => (
 								<Menu.Item key={w.id} onClick={() => onOpen(w.id)}>
 									<span
-										className={cn(
-											"h-1.5 w-1.5 shrink-0 rounded-full",
-											w.isRunning ? "bg-yellow" : "bg-line-strong",
+                    {...stylex.props(
+                      sx.dot,
+                      w.isRunning ? sx.bgYellow : sx.bgLineStrong,
 										)}
 									/>
 									<span {...stylex.props(sx.truncate)}>{w.title}</span>
 									{shortModel(w.model, models) && (
-										<span {...stylex.props(sx.mlAuto, sx.shrink0, sx.pl2, sx.textFaint, typography.meta)}>
+                    <span
+                      {...stylex.props(
+                        sx.mlAuto,
+                        sx.shrink0,
+                        sx.pl2,
+                        sx.textFaint,
+                        typography.meta,
+                      )}
+                    >
 											{shortModel(w.model, models)}
 										</span>
 									)}

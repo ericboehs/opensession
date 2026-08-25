@@ -1,11 +1,5 @@
 import { AGENT_NAME } from "../lib/brand";
-import React, {
-	useEffect,
-	useLayoutEffect,
-	
-	useRef,
-	useState,
-} from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import type {
@@ -74,7 +68,12 @@ import {
 	VIEWER_OVERFLOW,
 	VIEWER_TITLE,
 } from "../lib/session-viewer-classes";
-import { loadDraft, saveDraft, clearDraft, workspaceDraftKey } from "../lib/drafts";
+import {
+  loadDraft,
+  saveDraft,
+  clearDraft,
+  workspaceDraftKey,
+} from "../lib/drafts";
 import {
 	addStaging,
 	attachToDraft,
@@ -249,9 +248,24 @@ const sx = stylex.create({
 	pb5: {
 			paddingBottom: "20px"
 	},
-	mt25: {
-			marginTop: "10px"
+  mt25: { marginTop: "10px" },
+  menuPhone: {
+    width: "44px",
+    height: "44px",
+    minHeight: "44px",
+    borderRadius: "calc(12px * var(--rf))",
+    borderColor: "transparent",
+    color: "var(--text-dim)",
+    boxShadow: "none",
 	},
+  menuOpen: { backgroundColor: "var(--hover)", color: "var(--text)" },
+  main: {
+    display: "flex",
+    height: "100%",
+    minHeight: 0,
+    flexDirection: "column",
+  },
+  reviewMain: { height: "100%", minHeight: 0, backgroundColor: "var(--bg)" },
 });
 
 interface Props {
@@ -357,17 +371,23 @@ export function WorkspacePane({
 	// Workspace drafts share the ordinary composer attachment path. The server
 	// draft carries text across devices; staged attachments stay in this
 	// browser's draft store until the first session consumes them.
-	const [images, setImages] = useState<string[]>(() => loadDraft(draftKey).images);
-	const [files, setFiles] = useState<FileAttachment[]>(() => loadDraft(draftKey).files);
+  const [images, setImages] = useState<string[]>(
+    () => loadDraft(draftKey).images,
+  );
+  const [files, setFiles] = useState<FileAttachment[]>(
+    () => loadDraft(draftKey).files,
+  );
 	const [staging, setStaging] = useState(NOTHING_STAGING);
 	const [fileDragActive, setFileDragActive] = useState(false);
-	const fileDragWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileDragWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 	const [overflowOpen, setOverflowOpen] = useState(false);
 	const [renameDraft, setRenameDraft] = useState<string | null>(null);
 	const [menuEntries, setMenuEntries] = useState<TranscriptEntry[]>([]);
-	const [menuEntriesSessionId, setMenuEntriesSessionId] = useState<string | null>(
-		null,
-	);
+  const [menuEntriesSessionId, setMenuEntriesSessionId] = useState<
+    string | null
+  >(null);
 	const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 	const [deleting, setDeleting] = useState(false);
 	const workspaceCopy = useCopy();
@@ -385,7 +405,9 @@ export function WorkspacePane({
 	const currentUserRef = useRef(currentUser);
 	currentUserRef.current = currentUser;
 	const serverDraftPresentRef = useRef(!!workspace.draft);
-	const serverDraftTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const serverDraftTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
 	// Emptying a draft writes null, while typing again writes an object. Keep
 	// those requests in edit order so a slower text write cannot resurrect a
 	// draft after its later deletion has landed.
@@ -424,7 +446,9 @@ export function WorkspacePane({
 	const [starting, setStarting] = useState(false);
 	const [startError, setStartError] = useState<string | null>(null);
 	const startingRef = useRef(false);
-	const startTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const startTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
 	// A debounced write in flight when the pane unmounts (navigating away)
 	// would otherwise be dropped entirely. Flush it instead of losing the
 	// last few keystrokes. Not when a session start is what unmounted the
@@ -450,10 +474,12 @@ export function WorkspacePane({
 	const [reviewPanelOpen, setReviewPanelOpen] = useState(false);
 	const [reviewPage, setReviewPage] = useState<PrReviewPage>("files");
 	const panelOpen = tab === "review" ? reviewPanelOpen : sidePanel.open;
-	const setPanelOpen = tab === "review" ? setReviewPanelOpen : sidePanel.setOpen;
+  const setPanelOpen =
+    tab === "review" ? setReviewPanelOpen : sidePanel.setOpen;
 
 	useEffect(() => {
-		const load = () => fetchModels(workspace.id)
+    const load = () =>
+      fetchModels(workspace.id)
 			.then(async (m) => {
 				setModels(m.models);
 				setDefaultModel(m.default);
@@ -465,7 +491,8 @@ export function WorkspacePane({
 			.catch(() => {});
 		void load();
 		window.addEventListener("opensession:workspaces-changed", load);
-		return () => window.removeEventListener("opensession:workspaces-changed", load);
+    return () =>
+      window.removeEventListener("opensession:workspaces-changed", load);
 	}, [workspace.id]);
 
 	// Success navigates away on session_created (App handles it); on failure the
@@ -537,7 +564,8 @@ setStaging((current) => subtractStaging(current, batch));
 		function handleDragLeave(event: DragEvent) {
 			if (!hasDraggedFiles(event.dataTransfer)) return;
 			const next = event.relatedTarget;
-			if (next instanceof Node && document.documentElement.contains(next)) return;
+      if (next instanceof Node && document.documentElement.contains(next))
+        return;
 			resetFileDrag();
 		}
 		function handleDragOver(event: DragEvent) {
@@ -586,7 +614,10 @@ setStaging((current) => subtractStaging(current, batch));
 		: workspace.branch
 			? { repo: workspace.repo || "repository", branch: workspace.branch }
 			: null;
-	useEffect(() => setReviewPage("files"), [reviewTarget?.repo, reviewTarget?.branch]);
+  useEffect(
+    () => setReviewPage("files"),
+    [reviewTarget?.repo, reviewTarget?.branch],
+  );
 	const reviewSessions = (() => {
 		if (!reviewTarget) return [];
 		return sessions.filter(
@@ -598,14 +629,16 @@ setStaging((current) => subtractStaging(current, batch));
 	// to the human conversation that produced the change. Keeping those roles
 	// separate prevents a newer bks-ghpr automation session from replacing the
 	// walkthrough, assets and summary of the implementation session.
-	const reviewSession = ([...reviewSessions].sort((a, b) =>
+  const reviewSession =
+    [...reviewSessions].sort((a, b) =>
 				(b.lastActivity || "").localeCompare(a.lastActivity || ""),
-			)[0] || null);
-	const listedPresentationSession = (mainSession(
+    )[0] || null;
+  const listedPresentationSession =
+    mainSession(
 				[...reviewSessions].sort((a, b) =>
 					(a.createdAt || "").localeCompare(b.createdAt || ""),
 				),
-			) ?? null);
+    ) ?? null;
 	const [hydratedPresentationSession, setHydratedPresentationSession] =
 		useState<UnifiedSession | null>(null);
 	useEffect(() => {
@@ -618,7 +651,10 @@ setStaging((current) => subtractStaging(current, batch));
 				// archived/filtered members. Its opening prompt identifies the human
 				// session even when the sidebar's live slice cannot see that session.
 				const overview = await fetchWorkspaceOverview(workspace.id);
-				const ids = [overview.prompt?.sessionId, overview.lastMessage?.sessionId];
+        const ids = [
+          overview.prompt?.sessionId,
+          overview.lastMessage?.sessionId,
+        ];
 				for (const id of ids) {
 					if (!id) continue;
 					const candidate = await fetchSession(id);
@@ -706,7 +742,8 @@ setStaging((current) => subtractStaging(current, batch));
 	// The session-scoped APIs the panel's PR / diff / git rows read through. A
 	// session-less workspace has none, and the panel simply shows what the
 	// workspace record and its overview already say.
-	const anchorSession = presentationSession ?? workspaceSessions[0] ?? reviewSession;
+  const anchorSession =
+    presentationSession ?? workspaceSessions[0] ?? reviewSession;
 
 	// The workspace's right column: the same panel a session shows, with the
 	// same Info block in it. A workspace is a first-class surface, so the chrome
@@ -745,7 +782,8 @@ setStaging((current) => subtractStaging(current, batch));
 	const headerRef = useRef<HTMLDivElement>(null);
 	const headerActionsRef = useRef<HTMLDivElement>(null);
 	const [headerW, setHeaderW] = useState(0);
-	const [reviewSummaryOpen, setReviewSummaryOpen] = useState(workspaceSummaryOpen);
+  const [reviewSummaryOpen, setReviewSummaryOpen] =
+    useState(workspaceSummaryOpen);
 	useLayoutEffect(() => {
 		const el = headerRef.current;
 		if (!el) return;
@@ -788,11 +826,13 @@ setStaging((current) => subtractStaging(current, batch));
 await onDeleteSession(presentationSession, cleanWorktree);
 			setOverflowOpen(false);
 			setShowDeleteConfirm(false);
-})().catch(async (error) => {
+    })()
+      .catch(async (error) => {
 toast(error instanceof Error ? error.message : "Delete failed", {
 				variant: "error",
 			});
-}).finally(async () => {
+      })
+      .finally(async () => {
 setDeleting(false);
 });
 	}
@@ -812,11 +852,10 @@ setDeleting(false);
 							icon={<IconDotsHorizontal size={22} />}
 						/>
 					}
-					className={cn(
-						"[corner-shape:squircle]",
-						isPhone &&
-							"size-11 min-h-11 rounded-control border-transparent text-dim shadow-none [corner-shape:squircle]",
-						overflowOpen && "bg-hover text-fg",
+          className="[corner-shape:squircle]"
+          {...stylex.props(
+            isPhone && sx.menuPhone,
+            overflowOpen && sx.menuOpen,
 					)}
 					title="More actions"
 					aria-label="More actions"
@@ -824,7 +863,8 @@ setDeleting(false);
 				<Menu.Popup
 					align={isPhone ? "end" : "start"}
 					sideOffset={6}
-					className="max-w-[min(300px,calc(100vw-24px))]" {...stylex.props(sx.minW240px)}
+          className="max-w-[min(300px,calc(100vw-24px))]"
+          {...stylex.props(sx.minW240px)}
 				>
 					{onRenameWorkspace && (
 						<Menu.Item onClick={() => setRenameDraft(workspace.name)}>
@@ -934,11 +974,13 @@ setDeleting(false);
 							</span>
 						</Menu.Item>
 					)}
-					{presentationSession && onDeleteSession &&
+          {presentationSession &&
+            onDeleteSession &&
 						(!showDeleteConfirm ? (
 							<Menu.Item
 								closeOnClick={false}
-								className="data-[highlighted]:bg-red-soft data-[highlighted]:text-red" {...stylex.props(sx.textRed)}
+                className="data-[highlighted]:bg-red-soft data-[highlighted]:text-red"
+                {...stylex.props(sx.textRed)}
 								onClick={() => setShowDeleteConfirm(true)}
 							>
 								<IconTrash size={20} />
@@ -951,7 +993,12 @@ setDeleting(false);
 										<Button
 											variant="danger"
 											size="sm"
-											{...stylex.props(sx.minH0, sx.px3, sx.py5px, typography.label)}
+                      {...stylex.props(
+                        sx.minH0,
+                        sx.px3,
+                        sx.py5px,
+                        typography.label,
+                      )}
 											onClick={() => void deletePresentationSession(true)}
 											disabled={deleting}
 										>
@@ -961,7 +1008,12 @@ setDeleting(false);
 								<Button
 									variant="warning"
 									size="sm"
-									{...stylex.props(sx.minH0, sx.px3, sx.py5px, typography.label)}
+                  {...stylex.props(
+                    sx.minH0,
+                    sx.px3,
+                    sx.py5px,
+                    typography.label,
+                  )}
 									onClick={() => void deletePresentationSession(false)}
 									disabled={deleting}
 								>
@@ -970,7 +1022,12 @@ setDeleting(false);
 								<Button
 									variant="soft"
 									size="sm"
-									{...stylex.props(sx.minH0, sx.px3, sx.py5px, typography.label)}
+                  {...stylex.props(
+                    sx.minH0,
+                    sx.px3,
+                    sx.py5px,
+                    typography.label,
+                  )}
 									onClick={() => setShowDeleteConfirm(false)}
 									disabled={deleting}
 								>
@@ -987,7 +1044,15 @@ setDeleting(false);
 		<TopBar ref={headerRef} className={VIEWER_HEADER}>
 			<TopBarLeading className={VIEWER_TITLE}>
 				{workspace.repo && (
-					<span {...stylex.props(sx.flex, sx.minW0, sx.shrink0, sx.itemsCenter, sx.gap7px)}>
+          <span
+            {...stylex.props(
+              sx.flex,
+              sx.minW0,
+              sx.shrink0,
+              sx.itemsCenter,
+              sx.gap7px,
+            )}
+          >
 						<RepoTile name={workspace.repo} />
 						<span {...stylex.props(sx.maxW180px, sx.TranslateYPx, sx.truncate)}>
 							{repoLabel(workspace.repo)}
@@ -1046,7 +1111,8 @@ setDeleting(false);
 								const reduceMotion = window.matchMedia(
 									"(prefers-reduced-motion: reduce)",
 								).matches;
-								const rect = event.detail > 0 && !reduceMotion
+                const rect =
+                  event.detail > 0 && !reduceMotion
 									? event.currentTarget.getBoundingClientRect()
 									: null;
 								onNewSession(
@@ -1089,7 +1155,8 @@ setDeleting(false);
 					<Button
 						variant="ghost"
 						size="md"
-						className="hover:bg-hover hover:text-fg" {...stylex.props(sx.roundedControl, sx.textDim)}
+            className="hover:bg-hover hover:text-fg"
+            {...stylex.props(sx.roundedControl, sx.textDim)}
 						onClick={() => setPanelOpen(!panelOpen)}
 						aria-label="Toggle side panel"
 						icon={<IconSidebarRight size={22} />}
@@ -1118,7 +1185,7 @@ setDeleting(false);
 
 	if (tab === "review" && reviewTarget) {
 		return withPanel(
-			<div className={cn(VIEW_MAIN, "h-full min-h-0 bg-surface")}>
+      <div className={VIEW_MAIN} {...stylex.props(sx.reviewMain)}>
 				<PrPanel
 					onOpenPr={onOpenPr}
 					key={`${reviewTarget.repo}:${reviewTarget.branch}`}
@@ -1144,7 +1211,7 @@ setDeleting(false);
 
 	if (tab === "conversation" && workspace.plainThreadId) {
 		return withPanel(
-			<div className={`${VIEW_MAIN} flex flex-col h-full min-h-0`}>
+      <div className={VIEW_MAIN} {...stylex.props(sx.main)}>
 				<ConversationPane
 					threadId={workspace.plainThreadId}
 					onOpenSession={onOpenSession}
@@ -1160,7 +1227,7 @@ setDeleting(false);
 	const webPanel = webRef ? refWebPanel(webRef) : null;
 	if (tab === "video" && webPanel) {
 		return withPanel(
-			<div className={`${VIEW_MAIN} flex flex-col h-full min-h-0`}>
+      <div className={VIEW_MAIN} {...stylex.props(sx.main)}>
 				{webPanel.component === "slack-channel" ? (
 					<SlackChannelPane channelId={webPanel.refId} />
 				) : (
@@ -1181,12 +1248,24 @@ setDeleting(false);
 	// it doesn't narrate that there are no sessions yet, and the header row and
 	// info panel already say which workspace it belongs to.
 	return withPanel(
-		<div className={`${VIEW_MAIN} flex flex-col h-full min-h-0`}>
+    <div className={VIEW_MAIN} {...stylex.props(sx.main)}>
 			{fileDragActive &&
 				createPortal(
 					<>
 						<motion.div
-							className="bg-[color-mix(in_srgb,var(--bg-panel)_68%,transparent)]" {...stylex.props(sx.pointerEventsNone, sx.fixed, sx.inset0, sx.z12000, sx.flex, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.px6, sx.textCenter)}
+              className="bg-[color-mix(in_srgb,var(--bg-panel)_68%,transparent)]"
+              {...stylex.props(
+                sx.pointerEventsNone,
+                sx.fixed,
+                sx.inset0,
+                sx.z12000,
+                sx.flex,
+                sx.flexCol,
+                sx.itemsCenter,
+                sx.justifyCenter,
+                sx.px6,
+                sx.textCenter,
+              )}
 							initial={{ opacity: 0 }}
 							animate={{ opacity: 1 }}
 							transition={{ type: "tween", duration: duration.base, ease }}
@@ -1194,7 +1273,12 @@ setDeleting(false);
 							data-file-drop-overlay
 						>
 							<IconArrowUpToLine size={40} {...stylex.props(sx.textFg)} />
-							<div className="text-title" {...stylex.props(sx.mt4, sx.fontSemibold, sx.textFg)}>Add files</div>
+              <div
+                className="text-title"
+                {...stylex.props(sx.mt4, sx.fontSemibold, sx.textFg)}
+              >
+                Add files
+              </div>
 							<div {...stylex.props(sx.mt1, sx.textDim, typography.label)}>
 								Drop here to attach them to your message.
 							</div>
@@ -1206,12 +1290,23 @@ setDeleting(false);
 					document.body,
 				)}
 			<div {...stylex.props(sx.flex1, sx.minH0, sx.overflowYAuto)} />
-			<div {...stylex.props(sx.wFull, sx.maxW760px, sx.mxAuto, sx.px5, sx.pb5, sx.shrink0)}>
+      <div
+        {...stylex.props(
+          sx.wFull,
+          sx.maxW760px,
+          sx.mxAuto,
+          sx.px5,
+          sx.pb5,
+          sx.shrink0,
+        )}
+      >
 				<Composer
 					value={prompt}
 					onChange={setPrompt}
 					onSend={handleStart}
-					placeholder={starting ? "Starting…" : "Start a session in this workspace…"}
+          placeholder={
+            starting ? "Starting…" : "Start a session in this workspace…"
+          }
 					disabled={starting}
 					sendDisabled={
 						starting ||
@@ -1232,7 +1327,9 @@ setDeleting(false);
 					staging={staging}
 					onAddAttachments={addWorkspaceAttachments}
 				/>
-				{startError && <InlineAlert {...stylex.props(sx.mt25)}>{startError}</InlineAlert>}
+        {startError && (
+          <InlineAlert {...stylex.props(sx.mt25)}>{startError}</InlineAlert>
+        )}
 			</div>
 		</div>,
 	);

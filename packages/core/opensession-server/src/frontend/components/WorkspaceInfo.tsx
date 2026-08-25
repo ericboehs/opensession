@@ -42,11 +42,11 @@ import type {
 import { formatPrCommentPrompt } from "./PrPanel";
 import { renderMarkdown } from "../lib/markdown";
 import { fullTime } from "../lib/time";
-import { isMachinePrComment, isOutdatedReviewComment } from "../lib/pr-comments";
 import {
-	personKey,
-	reviewRequestTargetsPerson,
-} from "../lib/review-queue";
+  isMachinePrComment,
+  isOutdatedReviewComment,
+} from "../lib/pr-comments";
+import { personKey, reviewRequestTargetsPerson } from "../lib/review-queue";
 import { MarkdownBody, useMarkdownRepo } from "./MarkdownBody";
 import type { OverviewSessionRef } from "../lib/workspace-overview";
 import {
@@ -195,7 +195,8 @@ const sx = stylex.create({
 			textAlign: "left"
 	},
 	transitionColors: {
-			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+    transitionProperty:
+      "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
 			transitionTimingFunction: "var(--tw-ease,var(--ease))",
 			transitionDuration: "var(--tw-duration,var(--dur-micro))"
 	},
@@ -407,7 +408,111 @@ const sx = stylex.create({
 	leadingSnug: {
 			lineHeight: "var(--leading-snug)"
 	},
+  statusMark: {
+    display: "inline-flex",
+    width: "16px",
+    height: "16px",
+    flexShrink: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "calc(7px * var(--rf))",
+    fontWeight: "var(--font-weight-bold)",
+    lineHeight: 1,
+  },
+  bgGreenSoftMark: {
+    backgroundColor: "var(--green-soft)",
+    color: "var(--green)",
+  },
+  bgRedSoftMark: { backgroundColor: "var(--red-soft)", color: "var(--red)" },
+  bgYellowSoftMark: {
+    backgroundColor: "var(--yellow-soft)",
+    color: "var(--yellow)",
+  },
+  rowRound: { borderRadius: "calc(7px * var(--rf))", paddingBlock: "8px" },
+  reviewTrigger: {
+    display: "flex",
+    minWidth: 0,
+    flex: 1,
+    alignItems: "center",
+    gap: "8px",
+  },
+  cursorHelp: { cursor: "help" },
+  animatePulse: { animation: "var(--animate-pulse)" },
+  tabularSemibold: {
+    fontWeight: "var(--font-weight-semibold)",
+    fontVariantNumeric: "tabular-nums",
+  },
+  labelScore: { flexShrink: 0, fontWeight: "var(--font-weight-semibold)" },
+  reviewMenu: {
+    marginRight: "-4px",
+    marginLeft: "4px",
+    display: "grid",
+    width: "24px",
+    height: "24px",
+    flexShrink: 0,
+    placeItems: "center",
+    borderRadius: "calc(7px * var(--rf))",
+    color: "var(--text-faint)",
+    transitionProperty: "color, background-color",
+    ":hover": { backgroundColor: "var(--hover)", color: "var(--text)" },
+  },
+  mediaFrame: {
+    display: "flex",
+    flexShrink: 0,
+    scrollSnapAlign: "start",
+    flexDirection: "column",
+    gap: "4px",
+    borderRadius: "calc(14px * var(--rf) - 12px)",
+    textAlign: "left",
+  },
+  mediaOne: { width: "100%" },
+  mediaTwo: { width: "calc((100% - 8px) / 2)" },
+  mediaMany: { width: "calc((100% - 30px) / 2)" },
+  labelRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+  },
+  assetRow: {
+    display: "flex",
+    width: "100%",
+    minWidth: 0,
+    gap: "8px",
+    borderRadius: "calc(12px * var(--rf))",
+    paddingInline: "8px",
+    paddingBlock: "5px",
+    textAlign: "left",
+    color: "var(--text)",
+    transitionProperty: "color, background-color",
+    ":hover": { backgroundColor: "var(--hover)" },
+  },
+  itemsStartLocal: { alignItems: "flex-start" },
+  assetThumb: {
+    width: "14px",
+    height: "14px",
+    flexShrink: 0,
+    borderRadius: "3px",
+    borderStyle: "solid",
+    borderWidth: "1px",
+    borderColor: "var(--border-strong)",
+    objectFit: "cover",
+  },
+  assetIcon: { flexShrink: 0, color: "var(--text-faint)" },
 });
+
+function localToneStyle(tone: string | undefined): stylex.StyleXStyles {
+  if (tone === "text-red") return sx.textRed;
+  if (tone === "text-green") return sx.textGreen;
+  if (tone === "text-faint") return sx.textFaint;
+  return sx.textDim;
+}
+
+function statusMarkStyle(className: string): stylex.StyleXStyles {
+  if (className.includes("green")) return sx.bgGreenSoftMark;
+  if (className.includes("red")) return sx.bgRedSoftMark;
+  return sx.bgYellowSoftMark;
+}
 
 /**
  * Workspace info block at the top of the right side panel (the "Info" tab): a
@@ -564,7 +669,10 @@ function fmtBytes(n: number): string {
 /** A dot: the mark for a file that already existed and was edited. Sized to
 		read as punctuation next to the ± counts rather than as a second glyph. */
 const STATUS_DOT = (
-	<span {...stylex.props(sx.size4px, sx.roundedFull, sx.bgCurrent)} aria-hidden />
+  <span
+    {...stylex.props(sx.size4px, sx.roundedFull, sx.bgCurrent)}
+    aria-hidden
+  />
 );
 /**
  * What the run did to the file, as a mark rather than a letter. A list of
@@ -636,7 +744,15 @@ function CommentAvatar({ author }: { author: string }) {
 	if (canAvatar && !failed) {
 		return (
 			<img
-				{...stylex.props(sx.size6, sx.shrink0, sx.roundedFull, sx.border, sx.borderLine, sx.objectCover, sx.bgActive)}
+        {...stylex.props(
+          sx.size6,
+          sx.shrink0,
+          sx.roundedFull,
+          sx.border,
+          sx.borderLine,
+          sx.objectCover,
+          sx.bgActive,
+        )}
 				src={`https://github.com/${login}.png?size=48`}
 				alt=""
 				aria-hidden
@@ -647,7 +763,19 @@ function CommentAvatar({ author }: { author: string }) {
 	}
 	return (
 		<span
-			{...stylex.props(sx.grid, sx.size6, sx.shrink0, sx.placeItemsCenter, sx.roundedFull, sx.border, sx.borderLine, sx.bgActive, sx.fontSemibold, sx.textWhite, typography.meta)}
+      {...stylex.props(
+        sx.grid,
+        sx.size6,
+        sx.shrink0,
+        sx.placeItemsCenter,
+        sx.roundedFull,
+        sx.border,
+        sx.borderLine,
+        sx.bgActive,
+        sx.fontSemibold,
+        sx.textWhite,
+        typography.meta,
+      )}
 			style={{ background: `hsl(${hueFor(login || "?")} 52% 42%)` }}
 			aria-hidden
 		>
@@ -672,14 +800,33 @@ function CommentCard({
 	onAddToInput?: (text: string) => void;
 }) {
 	const repo = useMarkdownRepo();
-	const html = (renderMarkdown(cleanCommentMarkdown(comment.body), { repo }));
+  const html = renderMarkdown(cleanCommentMarkdown(comment.body), { repo });
 	// The one-line label: lead with the comment's title/first words, flattened.
-	const title = (plainComment(comment.body));
+  const title = plainComment(comment.body);
 
 	const addBtn = onAddToInput && (
 		<button
 			type="button"
-			className="group-hover:opacity-100 hover:border-faint hover:bg-hover hover:text-fg" {...stylex.props(sx.absolute, sx.right15, sx.top12, sx.z1, sx.TranslateY12, sx.roundedControl, sx.border, sx.borderLineStrong, sx.bgPanel, sx.px2, sx.py05, sx.fontSemibold, sx.textDim, sx.opacity0, sx.transitionOpacity, sx.duration150, typography.meta)}
+      className="group-hover:opacity-100 hover:border-faint hover:bg-hover hover:text-fg"
+      {...stylex.props(
+        sx.absolute,
+        sx.right15,
+        sx.top12,
+        sx.z1,
+        sx.TranslateY12,
+        sx.roundedControl,
+        sx.border,
+        sx.borderLineStrong,
+        sx.bgPanel,
+        sx.px2,
+        sx.py05,
+        sx.fontSemibold,
+        sx.textDim,
+        sx.opacity0,
+        sx.transitionOpacity,
+        sx.duration150,
+        typography.meta,
+      )}
 			onClick={(e) => {
 				e.stopPropagation();
 				onAddToInput(formatPrCommentPrompt(comment, pr));
@@ -699,7 +846,19 @@ function CommentCard({
 				openOnHover
 				delay={200}
 				closeDelay={90}
-				className="group hover:bg-hover" {...stylex.props(sx.relative, sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px2, sx.py5px, sx.textLeft, sx.transitionColors)}
+        className="group hover:bg-hover"
+        {...stylex.props(
+          sx.relative,
+          sx.flex,
+          sx.minW0,
+          sx.itemsCenter,
+          sx.gap2,
+          sx.roundedMd,
+          sx.px2,
+          sx.py5px,
+          sx.textLeft,
+          sx.transitionColors,
+        )}
 				role="button"
 				tabIndex={0}
 				onClick={() => onOpenTab?.("pr")}
@@ -709,7 +868,17 @@ function CommentCard({
 				aria-label={`Comment by ${comment.author}`}
 			>
 				{avatar}
-				<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.fontMedium, sx.leading135, sx.textFg, typography.supporting)}>
+        <span
+          {...stylex.props(
+            sx.minW0,
+            sx.flex1,
+            sx.truncate,
+            sx.fontMedium,
+            sx.leading135,
+            sx.textFg,
+            typography.supporting,
+          )}
+        >
 					{title}
 				</span>
 				<span {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}>
@@ -722,22 +891,52 @@ function CommentCard({
 				align="start"
 				sideOffset={10}
 				elevation="lg"
-				className="max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))]" {...stylex.props(sx.flex, sx.cursorPointer, sx.gap9px, sx.overflowHidden, sx.bgPanel, sx.px3, sx.py11px)}
+        className="max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))]"
+        {...stylex.props(
+          sx.flex,
+          sx.cursorPointer,
+          sx.gap9px,
+          sx.overflowHidden,
+          sx.bgPanel,
+          sx.px3,
+          sx.py11px,
+        )}
 			>
 				<div {...stylex.props(sx.contents)} onClick={() => onOpenTab?.("pr")}>
 					{avatar}
 					<div {...stylex.props(sx.flex, sx.minH0, sx.flex1, sx.flexCol)}>
-						<div {...stylex.props(sx.mb15, sx.flex, sx.minW0, sx.itemsBaseline, sx.justifyBetween, sx.gap2)}>
-							<span {...stylex.props(sx.minW0, sx.truncate, sx.fontSemibold, sx.textFaint, typography.meta)}>
+            <div
+              {...stylex.props(
+                sx.mb15,
+                sx.flex,
+                sx.minW0,
+                sx.itemsBaseline,
+                sx.justifyBetween,
+                sx.gap2,
+              )}
+            >
+              <span
+                {...stylex.props(
+                  sx.minW0,
+                  sx.truncate,
+                  sx.fontSemibold,
+                  sx.textFaint,
+                  typography.meta,
+                )}
+              >
 								{comment.author}
 							</span>
 							{comment.createdAt && (
-								<span {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}>
+                <span
+                  {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}
+                >
 									{relTime(comment.createdAt)}
 								</span>
 							)}
 						</div>
-					<div {...stylex.props(sx.mb5px, sx.minH0, sx.flex1, sx.overflowYAuto)}>
+            <div
+              {...stylex.props(sx.mb5px, sx.minH0, sx.flex1, sx.overflowYAuto)}
+            >
 							<MarkdownBody html={html} className="markdown" />
 						</div>
 					</div>
@@ -762,13 +961,37 @@ const PREVIEW_DIFF_OPTIONS = {
 function CommitRow({ commit }: { commit: WorkspaceCommit }) {
 	const content = (
 		<>
-			<span {...stylex.props(sx.grid, sx.size4, sx.shrink0, sx.placeItemsCenter, sx.textFaint)}>
+      <span
+        {...stylex.props(
+          sx.grid,
+          sx.size4,
+          sx.shrink0,
+          sx.placeItemsCenter,
+          sx.textFaint,
+        )}
+      >
 				<IconGitCommit size={20} />
 			</span>
-			<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.textFg, typography.label)}>
+      <span
+        {...stylex.props(
+          sx.minW0,
+          sx.flex1,
+          sx.truncate,
+          sx.textFg,
+          typography.label,
+        )}
+      >
 				{commit.title}
 			</span>
-			<span className="tabular-nums" {...stylex.props(sx.shrink0, sx.fontMedium, sx.textDim, typography.meta)}>
+      <span
+        className="tabular-nums"
+        {...stylex.props(
+          sx.shrink0,
+          sx.fontMedium,
+          sx.textDim,
+          typography.meta,
+        )}
+      >
 				{commit.filesChanged} file{commit.filesChanged === 1 ? "" : "s"}
 			</span>
 		</>
@@ -814,13 +1037,23 @@ function FileRow({
 	const slash = file.path.lastIndexOf("/");
 	const dir = slash >= 0 ? file.path.slice(0, slash + 1) : "";
 	const base = slash >= 0 ? file.path.slice(slash + 1) : file.path;
-	const options = (({
+  const options = {
 			...PREVIEW_DIFF_OPTIONS,
 			theme: theme === "light" ? "pierre-light" : "pierre-dark",
 			themeType: theme,
-		}));
+  };
 	const stats = (
-		<span className="tabular-nums" {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap1, sx.fontSemibold, typography.meta)}>
+    <span
+      className="tabular-nums"
+      {...stylex.props(
+        sx.inlineFlex,
+        sx.shrink0,
+        sx.itemsCenter,
+        sx.gap1,
+        sx.fontSemibold,
+        typography.meta,
+      )}
+    >
 			{file.additions > 0 && (
 				<span {...stylex.props(sx.textGreen)}>+{file.additions}</span>
 			)}
@@ -832,9 +1065,20 @@ function FileRow({
 	// The directory is what gives, not the filename: a path long enough to cut
 	// is cut in the middle, so the name — the part being read — stays whole.
 	const path = (
-		<span {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.itemsBaseline, sx.textLeft, typography.label)}>
+    <span
+      {...stylex.props(
+        sx.flex,
+        sx.minW0,
+        sx.flex1,
+        sx.itemsBaseline,
+        sx.textLeft,
+        typography.label,
+      )}
+    >
 			{dir && <span {...stylex.props(sx.truncate, sx.textDim)}>{dir}</span>}
-			<span {...stylex.props(sx.maxWFull, sx.shrink0, sx.truncate, sx.textFg)}>{base}</span>
+      <span {...stylex.props(sx.maxWFull, sx.shrink0, sx.truncate, sx.textFg)}>
+        {base}
+      </span>
 		</span>
 	);
 	const mark = STATUS_MARK[file.status];
@@ -846,17 +1090,26 @@ function FileRow({
 				delay={200}
 				closeDelay={90}
 				type="button"
-				className="hover:bg-hover" {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px2, sx.py5px, sx.textLeft, sx.transitionColors)}
+        className="hover:bg-hover"
+        {...stylex.props(
+          sx.flex,
+          sx.minW0,
+          sx.itemsCenter,
+          sx.gap2,
+          sx.roundedMd,
+          sx.px2,
+          sx.py5px,
+          sx.textLeft,
+          sx.transitionColors,
+        )}
 				onClick={() => onOpenTab?.("changes")}
 				aria-label={`${file.path} · ${mark.label.toLowerCase()} · open in Changes`}
 			>
 				<span
-					className={cn(
-						// An even box around an even dot: 15px left half-pixels on
-						// both axes, which at Retina reads as a dot sitting off
-						// its own tile.
-						"inline-flex size-4 shrink-0 items-center justify-center rounded-md text-meta font-bold leading-none",
-						mark.className,
+          {...stylex.props(
+            sx.statusMark,
+            statusMarkStyle(mark.className),
+            typography.meta,
 					)}
 					title={mark.label}
 					aria-hidden
@@ -872,17 +1125,48 @@ function FileRow({
 					align="start"
 					sideOffset={10}
 					elevation="lg"
-					className="max-h-[min(720px,82vh,var(--available-height))] w-[min(720px,calc(100vw-24px))]" {...stylex.props(sx.flex, sx.cursorPointer, sx.flexCol, sx.overflowHidden, sx.bgPanel, sx.px3, sx.py25)}
+          className="max-h-[min(720px,82vh,var(--available-height))] w-[min(720px,calc(100vw-24px))]"
+          {...stylex.props(
+            sx.flex,
+            sx.cursorPointer,
+            sx.flexCol,
+            sx.overflowHidden,
+            sx.bgPanel,
+            sx.px3,
+            sx.py25,
+          )}
 				>
 					<div
-						{...stylex.props(sx.flex, sx.minH0, sx.flex1, sx.flexCol, sx.overflowHidden)}
+            {...stylex.props(
+              sx.flex,
+              sx.minH0,
+              sx.flex1,
+              sx.flexCol,
+              sx.overflowHidden,
+            )}
 						onClick={() => onOpenTab?.("changes")}
 					>
-						<div {...stylex.props(sx.mb2, sx.flex, sx.minW0, sx.itemsBaseline, sx.justifyBetween, sx.gap2)}>
+            <div
+              {...stylex.props(
+                sx.mb2,
+                sx.flex,
+                sx.minW0,
+                sx.itemsBaseline,
+                sx.justifyBetween,
+                sx.gap2,
+              )}
+            >
 							{path}
 							{stats}
 						</div>
-						<div {...stylex.props(sx.minH0, sx.flex1, sx.overflowAuto, typography.label)}>
+            <div
+              {...stylex.props(
+                sx.minH0,
+                sx.flex1,
+                sx.overflowAuto,
+                typography.label,
+              )}
+            >
 							<FileDiff fileDiff={meta} options={options} disableWorkerPool />
 						</div>
 					</div>
@@ -943,11 +1227,11 @@ function AgentReviewCard({
 		label: string;
 		bksId?: string;
 		session?: UnifiedSession | null;
-	} | null>(
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [reviewQueued, setReviewQueued] = useState<{ at?: string } | null>(
 		null,
 	);
-	const [error, setError] = useState<string | null>(null);
-	const [reviewQueued, setReviewQueued] = useState<{ at?: string } | null>(null);
 	const review = pr.osReview;
 	const score = review?.confidence;
 	const stale = !!review?.stale;
@@ -972,7 +1256,10 @@ function AgentReviewCard({
 	// plate, band and action alike. The reading is still coloured where it is
 	// actually read: the score below, and the state word beside it.
 	const rowTone: ReviewTone =
-		!active && review && !stale && (review.blocking > 0 || (!!score && score <= 2))
+    !active &&
+    review &&
+    !stale &&
+    (review.blocking > 0 || (!!score && score <= 2))
 			? "red"
 			: "muted";
 	// One line in the panel's git-status grammar: the reading, then the single
@@ -996,10 +1283,13 @@ function AgentReviewCard({
 				.reverse()
 				.find((comment) => comment.body.trim().startsWith("<!-- os-review -->"))
 		: undefined;
-	const reviewMessage = reviewComment?.body.replace(/^<!-- os-review -->\s*/, "");
-	const reviewHtml = (reviewMessage
+  const reviewMessage = reviewComment?.body.replace(
+    /^<!-- os-review -->\s*/,
+    "",
+  );
+  const reviewHtml = reviewMessage
 				? renderMarkdown(cleanCommentMarkdown(reviewMessage), { repo })
-				: "");
+    : "";
 
 	// Keep the just-started state latched until a later PR refresh observes the
 	// run or its new result; otherwise the button flashes idle after the POST.
@@ -1020,9 +1310,11 @@ function AgentReviewCard({
 		await (async () => {
 await cancelPrReviewApi(sessionId, getCurrentUser(), repo);
 			setReviewCancelRequested(true);
-})().catch(async (error: any) => {
+    })()
+      .catch(async (error: any) => {
 setError(error?.message || "Couldn't cancel the review");
-}).finally(async () => {
+      })
+      .finally(async () => {
 setReviewCancelling(false);
 });
 	}
@@ -1048,11 +1340,17 @@ const res = await triggerPrActionApi(
 					onOpenSession(res.bksId, res.session ?? null);
 					return;
 				}
-				setDone({ label: action.label, bksId: res.bksId, session: res.session });
+        setDone({
+          label: action.label,
+          bksId: res.bksId,
+          session: res.session,
+        });
 			} else setError(res.error || res.message || "Couldn't start");
-})().catch(async (e: any) => {
+    })()
+      .catch(async (e: any) => {
 setError(e?.message || "Couldn't start");
-}).finally(async () => {
+      })
+      .finally(async () => {
 setBusy(null);
 });
 	}
@@ -1074,25 +1372,50 @@ setBusy(null);
 				{actionable && (
 					<Menu.Root>
 						<Menu.Trigger
-							className="transition-[color,background-color] hover:bg-hover hover:text-fg disabled:opacity-50" {...stylex.props(sx.Mr1, sx.mlAuto, sx.grid, sx.size6, sx.shrink0, sx.placeItemsCenter, sx.roundedMd, sx.textFaint)}
+              className="transition-[color,background-color] hover:bg-hover hover:text-fg disabled:opacity-50"
+              {...stylex.props(
+                sx.Mr1,
+                sx.mlAuto,
+                sx.grid,
+                sx.size6,
+                sx.shrink0,
+                sx.placeItemsCenter,
+                sx.roundedMd,
+                sx.textFaint,
+              )}
 							disabled={busy !== null}
 							aria-label={`${AGENT_NAME} actions`}
 						>
 							<IconChevronDown size={14} />
 						</Menu.Trigger>
-						<Menu.Popup align="end" sideOffset={6} {...stylex.props(sx.minW280px)}>
+            <Menu.Popup
+              align="end"
+              sideOffset={6}
+              {...stylex.props(sx.minW280px)}
+            >
 							<Menu.Group>
 								<Menu.GroupLabel>{AGENT_NAME} actions</Menu.GroupLabel>
 								{PR_AGENT_ACTIONS.map((action) => (
 									<Menu.Item
 										key={action.kind}
-										disabled={busy !== null || (action.kind === "review" && active)}
+                    disabled={
+                      busy !== null || (action.kind === "review" && active)
+                    }
 										onClick={() => run(action)}
 										{...stylex.props(sx.itemsStart, sx.py2)}
 									>
 										<div {...stylex.props(sx.minW0)}>
-											<div {...stylex.props(sx.fontSemibold, sx.textFg)}>{action.label}</div>
-											<div {...stylex.props(sx.mt05, sx.leading135, sx.textFaint, typography.supporting)}>
+                      <div {...stylex.props(sx.fontSemibold, sx.textFg)}>
+                        {action.label}
+                      </div>
+                      <div
+                        {...stylex.props(
+                          sx.mt05,
+                          sx.leading135,
+                          sx.textFaint,
+                          typography.supporting,
+                        )}
+                      >
 												{action.hint}
 											</div>
 										</div>
@@ -1108,7 +1431,10 @@ setBusy(null);
 			    block; at most one row carries a band now, so the section goes
 			    back to the panel's own list grammar. */}
 			<div className={INFO_LIST_CLASS}>
-				<div className={cn(GIT_ROW, "rounded-md py-2", reviewBand(rowTone))}>
+        <div
+          className={cn(GIT_ROW, reviewBand(rowTone))}
+          {...stylex.props(sx.rowRound)}
+        >
 					<Popover.Root>
 						<Popover.Trigger
 							render={<div />}
@@ -1116,9 +1442,9 @@ setBusy(null);
 							openOnHover={Boolean(reviewMessage)}
 							delay={200}
 							closeDelay={120}
-							className={cn(
-								"flex min-w-0 flex-1 items-center gap-2",
-								reviewMessage && "cursor-help",
+              {...stylex.props(
+                sx.reviewTrigger,
+                Boolean(reviewMessage) && sx.cursorHelp,
 							)}
 							tabIndex={reviewMessage ? 0 : undefined}
 						>
@@ -1126,7 +1452,8 @@ setBusy(null);
 							    row leads with a face rather than the state dot the Git
 							    status rows use: the state's colour is on the words. */}
 							<span
-								className={cn(REVIEW_FACE, "text-dim", active && "animate-pulse")}
+                className={REVIEW_FACE}
+                {...stylex.props(sx.textDim, active && sx.animatePulse)}
 								aria-hidden
 							>
 								<IconRobot size={18} />
@@ -1141,7 +1468,12 @@ setBusy(null);
 									<>
 									{/* No live region: the panel repolls, and a `status` role
 									    here would re-announce an unchanged score every time. */}
-									<span className={cn("font-semibold tabular-nums", scoreTone)}>
+                    <span
+                      {...stylex.props(
+                        sx.tabularSemibold,
+                        localToneStyle(scoreTone),
+                      )}
+                    >
 										{score}/5
 									</span>
 										<span {...stylex.props(sx.textFaint)}> · </span>
@@ -1155,25 +1487,59 @@ setBusy(null);
 								side="left"
 								align="start"
 								sideOffset={12}
-								className="max-h-[min(680px,calc(100vh-24px),var(--available-height))] w-[min(680px,calc(100vw-24px),var(--available-width))]" {...stylex.props(sx.flex, sx.minH0, sx.overflowHidden)}
+                className="max-h-[min(680px,calc(100vh-24px),var(--available-height))] w-[min(680px,calc(100vw-24px),var(--available-width))]"
+                {...stylex.props(sx.flex, sx.minH0, sx.overflowHidden)}
 							>
 								<div {...stylex.props(sx.flex, sx.minH0, sx.wFull, sx.flexCol)}>
-									<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25, sx.borderB, sx.borderDivider, sx.px4, sx.py3)}>
-										<CommentAvatar author={reviewComment?.author || GITHUB_BOT_NAME || AGENT_NAME} />
+                  <div
+                    {...stylex.props(
+                      sx.flex,
+                      sx.itemsCenter,
+                      sx.gap25,
+                      sx.borderB,
+                      sx.borderDivider,
+                      sx.px4,
+                      sx.py3,
+                    )}
+                  >
+                    <CommentAvatar
+                      author={
+                        reviewComment?.author || GITHUB_BOT_NAME || AGENT_NAME
+                      }
+                    />
 										<div {...stylex.props(sx.minW0, sx.flex1)}>
-											<div {...stylex.props(sx.truncate, sx.fontSemibold, sx.textFg, typography.label)}>
+                      <div
+                        {...stylex.props(
+                          sx.truncate,
+                          sx.fontSemibold,
+                          sx.textFg,
+                          typography.label,
+                        )}
+                      >
 												{reviewComment?.author || GITHUB_BOT_NAME || AGENT_NAME}
 											</div>
 											<div {...stylex.props(sx.textFaint, typography.meta)}>
-												Automated review{reviewedAgo ? ` · reviewed ${reviewedAgo} ago` : ""}
+                        Automated review
+                        {reviewedAgo ? ` · reviewed ${reviewedAgo} ago` : ""}
 											</div>
 										</div>
-										<span className={cn("shrink-0 text-label font-semibold", scoreTone)}>
+                    <span
+                      {...stylex.props(
+                        sx.labelScore,
+                        localToneStyle(scoreTone),
+                        typography.label,
+                      )}
+                    >
 											{score ?? "–"}/5
 										</span>
 									</div>
-									<div {...stylex.props(sx.minH0, sx.overflowAuto, sx.px4, sx.py3)}>
-										<MarkdownBody html={reviewHtml} className="markdown review-preview-markdown" />
+                  <div
+                    {...stylex.props(sx.minH0, sx.overflowAuto, sx.px4, sx.py3)}
+                  >
+                    <MarkdownBody
+                      html={reviewHtml}
+                      className="markdown review-preview-markdown"
+                    />
 									</div>
 								</div>
 							</Popover.Popup>
@@ -1184,10 +1550,16 @@ setBusy(null);
 							type="button"
 							className={gitActionClass(rowTone)}
 							disabled={busy !== null || reviewCancelling}
-							onClick={active ? () => void cancelReview() : () => void run(primary)}
+              onClick={
+                active ? () => void cancelReview() : () => void run(primary)
+              }
 							title={active ? `Cancel ${AGENT_NAME} review` : primary.hint}
 						>
-							{active ? (reviewCancelling ? "Stopping" : "Cancel") : primaryLabel}
+              {active
+                ? reviewCancelling
+                  ? "Stopping"
+                  : "Cancel"
+                : primaryLabel}
 						</button>
 					)}
 				</div>
@@ -1201,7 +1573,8 @@ setBusy(null);
 							href={pr.url}
 							target="_blank"
 							rel="noopener"
-							className="decoration-line-strong" {...stylex.props(sx.textFg, sx.underline, sx.underlineOffset2)}
+              className="decoration-line-strong"
+              {...stylex.props(sx.textFg, sx.underline, sx.underlineOffset2)}
 						>
 							the PR
 						</a>
@@ -1221,7 +1594,8 @@ setBusy(null);
 									e.preventDefault();
 									onOpenSession(done.bksId!, done.session ?? null);
 								}}
-								className="decoration-line-strong" {...stylex.props(sx.textFg, sx.underline, sx.underlineOffset2)}
+                className="decoration-line-strong"
+                {...stylex.props(sx.textFg, sx.underline, sx.underlineOffset2)}
 							>
 								open run
 							</a>
@@ -1420,14 +1794,8 @@ function ReviewerChip({
 	return (
 		<>
 			<div
-				className={cn(
-					GIT_ROW,
-					"rounded-md py-2",
-					// Background only: the row's own `text-fg` and a tone utility on
-					// the same element would resolve by Tailwind's output order, so
-					// the ink goes on the spans inside it instead.
-					reviewBand(rowTone),
-				)}
+        className={cn(GIT_ROW, reviewBand(rowTone))}
+        {...stylex.props(sx.rowRound)}
 			>
 				{/* The reviewer's own picture, beside the agent's face on the row
 				    above. A team has no one face, and an unasked review has nobody
@@ -1435,7 +1803,11 @@ function ReviewerChip({
 				{faceName ? (
 					<UserAvatar name={faceName} size={20} edge={false} />
 				) : (
-					<span className={cn(REVIEW_FACE, "text-dim")} aria-hidden>
+          <span
+            className={REVIEW_FACE}
+            {...stylex.props(sx.textDim)}
+            aria-hidden
+          >
 						{selectedTeam ? <IconStack size={18} /> : <IconPeople size={18} />}
 					</span>
 				)}
@@ -1460,11 +1832,8 @@ function ReviewerChip({
 				)}
 			<Menu.Root>
 				<Menu.Trigger
-					className={
-						reviewNow
-							? "-mr-1 ml-1 grid size-6 shrink-0 place-items-center rounded-md text-faint transition-[color,background-color] hover:bg-hover hover:text-fg"
-							: gitActionClass(rowTone, true)
-					}
+            className={reviewNow ? undefined : gitActionClass(rowTone, true)}
+            {...stylex.props(reviewNow && sx.reviewMenu)}
 					aria-label="Review options"
 					title={rowTitle}
 				>
@@ -1477,7 +1846,11 @@ function ReviewerChip({
 						</>
 					)}
 				</Menu.Trigger>
-				<Menu.Popup align="start" sideOffset={6} {...stylex.props(sx.minW200px)}>
+          <Menu.Popup
+            align="start"
+            sideOffset={6}
+            {...stylex.props(sx.minW200px)}
+          >
 					{req &&
 						(accepted ? (
 							<Menu.Item
@@ -1488,20 +1861,30 @@ function ReviewerChip({
 								}
 							>
 								<IconBell size={20} {...stylex.props(sx.textDim)} />
-								<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>Reopen review</span>
+                  <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
+                    Reopen review
+                  </span>
 							</Menu.Item>
 						) : (
 							<Menu.Item onClick={() => accept(true)}>
 								<IconCheck size={20} {...stylex.props(sx.textDim)} />
-								<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>Mark as reviewed</span>
+                  <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
+                    Mark as reviewed
+                  </span>
 							</Menu.Item>
 						))}
 					{req && <Menu.Separator />}
 					{TEAM.map((name) => (
 						<Menu.Item key={name} onClick={() => pick(name)}>
 							<UserAvatar name={name} size={22} />
-							<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>{name}</span>
-							<Menu.Check on={req?.to === name} size={20} {...stylex.props(sx.textDim)} />
+                <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
+                  {name}
+                </span>
+                <Menu.Check
+                  on={req?.to === name}
+                  size={20}
+                  {...stylex.props(sx.textDim)}
+                />
 						</Menu.Item>
 					))}
 					{reviewTeams.length > 0 && <Menu.Separator />}
@@ -1510,17 +1893,33 @@ function ReviewerChip({
 							key={team.github}
 							onClick={() => pick(team.github, team.members)}
 						>
-							<span {...stylex.props(sx.grid, sx.size22px, sx.placeItemsCenter, sx.textDim)}>
+                <span
+                  {...stylex.props(
+                    sx.grid,
+                    sx.size22px,
+                    sx.placeItemsCenter,
+                    sx.textDim,
+                  )}
+                >
 								<IconStack size={20} />
 							</span>
-							<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>{team.name}</span>
-							<Menu.Check on={req?.to === team.github} size={20} {...stylex.props(sx.textDim)} />
+                <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
+                  {team.name}
+                </span>
+                <Menu.Check
+                  on={req?.to === team.github}
+                  size={20}
+                  {...stylex.props(sx.textDim)}
+                />
 						</Menu.Item>
 					))}
 					{(req || githubRequested.length > 0) && (
 						<>
 							<Menu.Separator />
-							<Menu.Item {...stylex.props(sx.textDim)} onClick={() => pick(null)}>
+                <Menu.Item
+                  {...stylex.props(sx.textDim)}
+                  onClick={() => pick(null)}
+                >
 								Clear review request
 							</Menu.Item>
 						</>
@@ -1529,7 +1928,17 @@ function ReviewerChip({
 			</Menu.Root>
 			</div>
 			{error && (
-				<div {...stylex.props(sx.px2, sx.pb1, sx.fontMedium, sx.textRed, typography.meta)}>{error}</div>
+        <div
+          {...stylex.props(
+            sx.px2,
+            sx.pb1,
+            sx.fontMedium,
+            sx.textRed,
+            typography.meta,
+          )}
+        >
+          {error}
+        </div>
 			)}
 		</>
 	);
@@ -1577,7 +1986,7 @@ function GitStatusRows({
 		<div className={INFO_SECTION_CLASS}>
 			<div className={INFO_LABEL_CLASS}>Uncommitted</div>
 			<div className={INFO_LIST_CLASS}>
-				<div className={`${GIT_ROW} py-2`}>
+        <div className={GIT_ROW} {...stylex.props(sx.py2)}>
 					<span className={`${GIT_DOT} ${GIT_DOT_BG.yellow}`} aria-hidden />
 					<span className={GIT_LABEL}>
 						{dirty} uncommitted file{dirty === 1 ? "" : "s"}
@@ -1594,7 +2003,11 @@ function GitStatusRows({
 					)}
 				</div>
 			</div>
-			{prompted && <div className={`${GIT_NOTE} text-faint`}>Asked {AGENT_NAME} to {prompted} ✓</div>}
+      {prompted && (
+        <div className={GIT_NOTE} {...stylex.props(sx.textFaint)}>
+          Asked {AGENT_NAME} to {prompted} ✓
+        </div>
+      )}
 		</div>
 	);
 }
@@ -1635,7 +2048,19 @@ function MediaStrip({ items }: { items: StripItem[] }) {
 			// own `px-2`, which puts row content 12px off the card edge. A frame is
 			// its own content, so the card holds all 12 itself and the frames line
 			// up with the rows and the label above them.
-			className="snap-x [&::-webkit-scrollbar]:hidden" {...stylex.props(sx.flex, sx.snapMandatory, sx.gap2, sx.overflowXAuto, sx.overflowYHidden, sx.roundedLg, sx.bgPanel, sx.p3, sx.ScrollPaddingLeft12px, sx.ScrollbarWidthNone)}
+      className="snap-x [&::-webkit-scrollbar]:hidden"
+      {...stylex.props(
+        sx.flex,
+        sx.snapMandatory,
+        sx.gap2,
+        sx.overflowXAuto,
+        sx.overflowYHidden,
+        sx.roundedLg,
+        sx.bgPanel,
+        sx.p3,
+        sx.ScrollPaddingLeft12px,
+        sx.ScrollbarWidthNone,
+      )}
 		>
 			{items.map((item) => (
 				<button
@@ -1643,16 +2068,14 @@ function MediaStrip({ items }: { items: StripItem[] }) {
 					type="button"
 					onClick={(event) => item.onOpen(event.currentTarget)}
 					title={item.title}
-					className={cn(
-						"focus-ring group/frame flex shrink-0 snap-start flex-col gap-1 rounded-[calc(14px*var(--rf)-12px)] text-left",
+          className="focus-ring group/frame"
+          {...stylex.props(
+            sx.mediaFrame,
 						items.length === 1
-							? "w-full"
+              ? sx.mediaOne
 							: items.length === 2
-								? "w-[calc((100%-8px)/2)]"
-								: // Two full frames + the 8px gap + a 22px sliver of the
-									// third, filling the card exactly, so the sliver sits
-									// inside the card's own padding, not against the panel.
-									"w-[calc((100%-30px)/2)]",
+                ? sx.mediaTwo
+                : sx.mediaMany,
 					)}
 				>
 					<span
@@ -1668,10 +2091,30 @@ function MediaStrip({ items }: { items: StripItem[] }) {
 						// at the same step every other image in the app is outlined
 						// with (NoteBubble, the Slack composer's thumbnails). Hover is
 						// the fill alone: there is no line above strong to escalate to.
-						className="group-hover/frame:bg-hover" {...stylex.props(sx.relative, sx.block, sx.aspectVideo, sx.wFull, sx.overflowHidden, sx.roundedCalc14pxVarRf12px, sx.border, sx.borderLineStrong, sx.bgSurface, sx.transitionColors)}
+            className="group-hover/frame:bg-hover"
+            {...stylex.props(
+              sx.relative,
+              sx.block,
+              sx.aspectVideo,
+              sx.wFull,
+              sx.overflowHidden,
+              sx.roundedCalc14pxVarRf12px,
+              sx.border,
+              sx.borderLineStrong,
+              sx.bgSurface,
+              sx.transitionColors,
+            )}
 					>
 						{item.kind === "file" ? (
-							<span {...stylex.props(sx.grid, sx.hFull, sx.wFull, sx.placeItemsCenter, sx.textFaint)}>
+              <span
+                {...stylex.props(
+                  sx.grid,
+                  sx.hFull,
+                  sx.wFull,
+                  sx.placeItemsCenter,
+                  sx.textFaint,
+                )}
+              >
 								<IconFile size={24} />
 							</span>
 						) : item.kind === "image" ? (
@@ -1697,8 +2140,26 @@ function MediaStrip({ items }: { items: StripItem[] }) {
 								/>
 								{/* Dark translucent disc so the wedge reads on any frame
 								    (a bare white glyph vanishes on light footage). */}
-								<span {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.inset0, sx.grid, sx.placeItemsCenter)}>
-									<span className="backdrop-blur-sm" {...stylex.props(sx.grid, sx.size8, sx.placeItemsCenter, sx.roundedFull, sx.bgBlack45, sx.textWhite)}>
+                <span
+                  {...stylex.props(
+                    sx.pointerEventsNone,
+                    sx.absolute,
+                    sx.inset0,
+                    sx.grid,
+                    sx.placeItemsCenter,
+                  )}
+                >
+                  <span
+                    className="backdrop-blur-sm"
+                    {...stylex.props(
+                      sx.grid,
+                      sx.size8,
+                      sx.placeItemsCenter,
+                      sx.roundedFull,
+                      sx.bgBlack45,
+                      sx.textWhite,
+                    )}
+                  >
 										<IconPlay size={18} />
 									</span>
 								</span>
@@ -1706,7 +2167,15 @@ function MediaStrip({ items }: { items: StripItem[] }) {
 						)}
 					</span>
 					{item.caption && (
-						<span {...stylex.props(sx.block, sx.wFull, sx.truncate, sx.textDim, typography.meta)}>
+            <span
+              {...stylex.props(
+                sx.block,
+                sx.wFull,
+                sx.truncate,
+                sx.textDim,
+                typography.meta,
+              )}
+            >
 							{item.caption}
 						</span>
 					)}
@@ -1796,11 +2265,11 @@ export function WorkspaceInfo({
 	// regex passes per comment, and this component re-renders on every live
 	// media frame while a session streams, which is not a reason to flatten
 	// the same markdown again.
-	const comments = ((pr?.comments ?? [])
+  const comments = (pr?.comments ?? [])
 				.filter((c) => !isMachinePrComment(c))
 				.filter((c) => !isOutdatedReviewComment(c.body))
 				.map((c) => ({ ...c, preview: plainComment(c.body) }))
-				.filter((c) => c.preview.length > 0));
+    .filter((c) => c.preview.length > 0);
 	const changed = files ?? [];
 	const totalAdd = changed.reduce((n, f) => n + (f.additions || 0), 0);
 	const totalDel = changed.reduce((n, f) => n + (f.deletions || 0), 0);
@@ -1874,7 +2343,10 @@ export function WorkspaceInfo({
 	// page reaches it from an ancestor — `[&_.workspace-info-panel]:pt-0` in
 	// INFO_OVERVIEW (lib/session-viewer-classes).
 	return (
-		<div className="workspace-info-panel" {...stylex.props(sx.flex, sx.flexCol, sx.gap4, sx.px2, sx.pb22px, sx.pt3)}>
+    <div
+      className="workspace-info-panel"
+      {...stylex.props(sx.flex, sx.flexCol, sx.gap4, sx.px2, sx.pb22px, sx.pt3)}
+    >
 			{/* Both reviewers in one section. With a PR the agent's card owns the
 			    plate and the teammate's row goes in under it; without one there is
 			    no agent reading to show, so the row stands in its own section. */}
@@ -1897,25 +2369,43 @@ export function WorkspaceInfo({
 				// `px-3`, the label inset: the badge is a section's worth of content
 				// with no plate under it, so it lines up with the labels rather than
 				// with the rows inside a plate.
-				<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap15, sx.px3)}>
+        <div
+          {...stylex.props(
+            sx.flex,
+            sx.flexWrap,
+            sx.itemsCenter,
+            sx.gap15,
+            sx.px3,
+          )}
+        >
 					<SandboxBadge sessionId={sessionId} sandbox={sandbox} />
 				</div>
 			)}
-			{showGit && (
-				<GitStatusRows sessionId={sessionId} git={git} send={send} />
-			)}
+      {showGit && <GitStatusRows sessionId={sessionId} git={git} send={send} />}
 			{hasBody ? (
 				<div {...stylex.props(sx.grid, sx.gap4)}>
 					{comments.length > 0 && (
 						<div className={INFO_SECTION_CLASS}>
-							<div className={cn(INFO_LABEL_CLASS, "flex items-center justify-between gap-2")}>
+              <div className={INFO_LABEL_CLASS} {...stylex.props(sx.labelRow)}>
 								<span>
 									{comments.length} PR comment{comments.length === 1 ? "" : "s"}
 								</span>
 								{onAddToInput && (
 									<button
 										type="button"
-										className="hover:border-line-strong hover:bg-hover hover:text-fg" {...stylex.props(sx.roundedControl, sx.border, sx.borderLine, sx.bgSurface, sx.px2, sx.py05, sx.fontSemibold, sx.textDim, sx.transitionColors, typography.meta)}
+                    className="hover:border-line-strong hover:bg-hover hover:text-fg"
+                    {...stylex.props(
+                      sx.roundedControl,
+                      sx.border,
+                      sx.borderLine,
+                      sx.bgSurface,
+                      sx.px2,
+                      sx.py05,
+                      sx.fontSemibold,
+                      sx.textDim,
+                      sx.transitionColors,
+                      typography.meta,
+                    )}
 										onClick={() =>
 											onAddToInput(formatFixCommentsPrompt(comments, pr!))
 										}
@@ -1964,11 +2454,21 @@ export function WorkspaceInfo({
 					)}
 					{changed.length > 0 && (
 						<div className={INFO_SECTION_CLASS}>
-							<div className={cn(INFO_LABEL_CLASS, "flex items-center justify-between gap-2")}>
+              <div className={INFO_LABEL_CLASS} {...stylex.props(sx.labelRow)}>
 								<span>
 									{changed.length} file{changed.length === 1 ? "" : "s"} changed
 								</span>
-								<span className="tabular-nums" {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap1, sx.fontSemibold, typography.meta)}>
+                <span
+                  className="tabular-nums"
+                  {...stylex.props(
+                    sx.inlineFlex,
+                    sx.shrink0,
+                    sx.itemsCenter,
+                    sx.gap1,
+                    sx.fontSemibold,
+                    typography.meta,
+                  )}
+                >
 									{totalAdd > 0 && (
 										<span {...stylex.props(sx.textGreen)}>+{totalAdd}</span>
 									)}
@@ -2006,12 +2506,7 @@ export function WorkspaceInfo({
 							    What separates this section from the assets below it is
 							    still the source: one is what appeared in the conversation,
 							    the other is what the session wrote. */}
-							<div
-								className={cn(
-									INFO_LABEL_CLASS,
-									"flex items-center justify-between gap-2",
-								)}
-							>
+              <div className={INFO_LABEL_CLASS} {...stylex.props(sx.labelRow)}>
 								<span>Screenshots</span>
 								<span className="tabular-nums">{media.length}</span>
 							</div>
@@ -2031,10 +2526,8 @@ export function WorkspaceInfo({
 					{assets.length > 0 && (
 						<div className={INFO_SECTION_CLASS}>
 							<div
-								className={cn(
-									INFO_LABEL_CLASS,
-									"group/assets flex items-center justify-between gap-2",
-								)}
+                className={`${INFO_LABEL_CLASS} group/assets`}
+                {...stylex.props(sx.labelRow)}
 							>
 								<span>Assets</span>
 								<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap15)}>
@@ -2070,12 +2563,10 @@ export function WorkspaceInfo({
 											type="button"
 											onClick={() => onOpenAsset?.(a.path)}
 											title={`Open ${a.path}`}
-											className={cn(
-												"flex w-full min-w-0 gap-2 rounded-control px-2 py-[5px] text-left text-label text-fg transition-colors hover:bg-hover",
-												// With a description the row is two lines and the icon
-												// and size ride the first one; a bare filename is a
-												// single line, so centre everything on it instead.
-												a.description ? "items-start" : "items-center",
+                      {...stylex.props(
+                        sx.assetRow,
+                        a.description ? sx.itemsStartLocal : sx.itemsCenter,
+                        typography.label,
 											)}
 										>
 											{assetPreviewKind(a.path) === "image" ? (
@@ -2086,9 +2577,9 @@ export function WorkspaceInfo({
 													// Too small to say what the capture is, which is
 													// what the frames are for. What it does is tell
 													// two rows apart once you already know them.
-													className={cn(
-														"size-3.5 shrink-0 rounded-[3px] border border-line-strong object-cover",
-														a.description && "mt-0.5",
+                          {...stylex.props(
+                            sx.assetThumb,
+                            Boolean(a.description) && sx.mt05,
 													)}
 												/>
 											) : assetPreviewKind(a.path) === "video" ? (
@@ -2096,29 +2587,45 @@ export function WorkspaceInfo({
 												// says what it is instead.
 												<IconPlayRectangle
 													size={14}
-													className={cn(
-														"shrink-0 text-faint",
-														a.description && "mt-0.5",
+                          {...stylex.props(
+                            sx.assetIcon,
+                            Boolean(a.description) && sx.mt05,
 													)}
 												/>
 											) : (
 												<IconFile
 													size={14}
-													className={cn(
-														"shrink-0 text-faint",
-														a.description && "mt-0.5",
+                          {...stylex.props(
+                            sx.assetIcon,
+                            Boolean(a.description) && sx.mt05,
 													)}
 												/>
 											)}
 											<span {...stylex.props(sx.minW0, sx.flex1)}>
-												<span {...stylex.props(sx.block, sx.truncate)}>{a.path}</span>
+                        <span {...stylex.props(sx.block, sx.truncate)}>
+                          {a.path}
+                        </span>
 												{a.description && (
-													<span className="line-clamp-2" {...stylex.props(sx.mt05, sx.leadingSnug, sx.textDim, typography.supporting)}>
+                          <span
+                            className="line-clamp-2"
+                            {...stylex.props(
+                              sx.mt05,
+                              sx.leadingSnug,
+                              sx.textDim,
+                              typography.supporting,
+                            )}
+                          >
 														{a.description}
 													</span>
 												)}
 											</span>
-											<span {...stylex.props(sx.shrink0, sx.textFaint, typography.meta)}>
+                      <span
+                        {...stylex.props(
+                          sx.shrink0,
+                          sx.textFaint,
+                          typography.meta,
+                        )}
+                      >
 												{fmtBytes(a.size)}
 											</span>
 										</button>

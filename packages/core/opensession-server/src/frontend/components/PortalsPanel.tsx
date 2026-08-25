@@ -1,5 +1,9 @@
 import { useState } from "react";
-import type { PreviewPortalRecipe, PreviewService, PreviewStatus } from "../lib/api";
+import type {
+  PreviewPortalRecipe,
+  PreviewService,
+  PreviewStatus,
+} from "../lib/api";
 import { portalTargetFor, type PortalTarget } from "../lib/portals";
 import {
 	INFO_LABEL_CLASS,
@@ -158,42 +162,37 @@ const sx = stylex.create({
 			paddingInline: "6px"
 	},
 	transitionColors: {
-			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+    transitionProperty:
+      "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
 			transitionTimingFunction: "var(--tw-ease,var(--ease))",
 			transitionDuration: "var(--tw-duration,var(--dur-micro))"
 	},
-	gap1: {
-		gap: "4px"
+  py7px: { paddingBlock: "7px" },
+  serviceRow: {
+    display: "flex",
+    minHeight: "44px",
+    minWidth: 0,
+    alignItems: "center",
+    gap: "4px",
+    borderRadius: "calc(12px * var(--rf))",
+    paddingRight: "4px",
+    transitionProperty: "color, background-color",
 	},
-	pr1: {
-		paddingRight: "4px"
-	},
-	bgHover: {
-		backgroundColor: "var(--hover)"
-	},
-	hoverBgHover: {
-		":hover": {
-			backgroundColor: "var(--hover)"
-		}
-	},
-	size7px: {
-		width: "7px",
-		height: "7px"
-	},
-	bgGreen: {
-		backgroundColor: "var(--green)"
-	},
-	bgLineStrong: {
-		backgroundColor: "var(--border-strong)"
-	},
-	py7px: {
-			paddingBlock: "7px"
-	},
+  active: { backgroundColor: "var(--hover)" },
+  inactive: { ":hover": { backgroundColor: "var(--hover)" } },
+  serviceDot: {
+    width: "7px",
+    height: "7px",
+    flexShrink: 0,
+    borderRadius: "50%",
+  },
+  bgGreen: { backgroundColor: "var(--green)" },
+  bgLineStrong: { backgroundColor: "var(--border-strong)" },
 });
 
 /** A plain divided list. Portal rows do not need a shared grey plate around
  * them: the panel itself is already their surface. */
-const PORTAL_LIST_CLASS = "divide-y divide-line/70";
+const PORTAL_LIST_RESIDUAL_CLASS = "divide-y divide-line/70";
 
 /** What a service row says on its right: where it is, in one word. */
 function statusLabel(
@@ -213,8 +212,27 @@ function statusLabel(
 
 function DiscoveringRow() {
 	return (
-		<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.px2, sx.py1, sx.textDim, typography.supporting)}>
-			<span {...stylex.props(sx.size35, sx.animateSpin, sx.roundedFull, sx.border2, sx.borderLineStrong, sx.borderTAccent)} />
+    <div
+      {...stylex.props(
+        sx.flex,
+        sx.itemsCenter,
+        sx.gap2,
+        sx.px2,
+        sx.py1,
+        sx.textDim,
+        typography.supporting,
+      )}
+    >
+      <span
+        {...stylex.props(
+          sx.size35,
+          sx.animateSpin,
+          sx.roundedFull,
+          sx.border2,
+          sx.borderLineStrong,
+          sx.borderTAccent,
+        )}
+      />
 			Discovering services…
 		</div>
 	);
@@ -262,7 +280,16 @@ export function PortalsPage({
 					onBack={onBack}
 					trailing={
 						liveCount > 0 && (
-							<span className="tabular-nums" {...stylex.props(sx.shrink0, sx.px1, sx.fontSemibold, sx.textFaint, typography.label)}>
+              <span
+                className="tabular-nums"
+                {...stylex.props(
+                  sx.shrink0,
+                  sx.px1,
+                  sx.fontSemibold,
+                  sx.textFaint,
+                  typography.label,
+                )}
+              >
 								{liveCount} live
 							</span>
 						)
@@ -271,7 +298,17 @@ export function PortalsPage({
 			)}
 			<div {...stylex.props(sx.grid, sx.gap4, sx.px2, sx.pt2, sx.pb22px)}>
 			{error ? (
-				<div role="alert" {...stylex.props(sx.roundedControl, sx.bgRedSoft, sx.px3, sx.py2, sx.textRed, typography.label)}>
+          <div
+            role="alert"
+            {...stylex.props(
+              sx.roundedControl,
+              sx.bgRedSoft,
+              sx.px3,
+              sx.py2,
+              sx.textRed,
+              typography.label,
+            )}
+          >
 					{error}
 				</div>
 			) : null}
@@ -282,7 +319,10 @@ export function PortalsPage({
 					{recipes.length ? (
 						<div className={INFO_SECTION_CLASS}>
 							<div className={INFO_LABEL_CLASS}>Start a portal</div>
-							<div className={PORTAL_LIST_CLASS} {...stylex.props(sx.grid)}>
+                <div
+                  className={PORTAL_LIST_RESIDUAL_CLASS}
+                  {...stylex.props(sx.grid)}
+                >
 								{recipes.map((recipe) => {
 									const service = recipe.serviceKey
 										? services.find(
@@ -296,7 +336,9 @@ export function PortalsPage({
 										<button
 											key={recipe.id}
 											type="button"
-											disabled={!target && (!onStartPortal || requestedId != null)}
+                        disabled={
+                          !target && (!onStartPortal || requestedId != null)
+                        }
 											onClick={() => {
 												if (target) {
 													onOpenPortal?.(target);
@@ -306,19 +348,69 @@ export function PortalsPage({
 												setError(null);
 												setRequestedId(recipe.id);
 												void onStartPortal(recipe)
-													.catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
+                            .catch((cause) =>
+                              setError(
+                                cause instanceof Error
+                                  ? cause.message
+                                  : String(cause),
+                              ),
+                            )
 													.finally(() => setRequestedId(null));
 											}}
-											className="transition-[background-color,scale] hover:bg-hover active:scale-[0.96] disabled:cursor-default disabled:opacity-45" {...stylex.props(sx.focusRing, sx.flex, sx.minH11, sx.wFull, sx.minW0, sx.itemsCenter, sx.gap3, sx.roundedControl, sx.px2, sx.py15, sx.textLeft)}
+                        className="transition-[background-color,scale] hover:bg-hover active:scale-[0.96] disabled:cursor-default disabled:opacity-45"
+                        {...stylex.props(
+                          sx.focusRing,
+                          sx.flex,
+                          sx.minH11,
+                          sx.wFull,
+                          sx.minW0,
+                          sx.itemsCenter,
+                          sx.gap3,
+                          sx.roundedControl,
+                          sx.px2,
+                          sx.py15,
+                          sx.textLeft,
+                        )}
 										>
 											<span {...stylex.props(sx.minW0, sx.flex1)}>
-												<span {...stylex.props(sx.block, sx.truncate, sx.fontMedium, sx.textFg, typography.label)}>{recipe.name}</span>
+                          <span
+                            {...stylex.props(
+                              sx.block,
+                              sx.truncate,
+                              sx.fontMedium,
+                              sx.textFg,
+                              typography.label,
+                            )}
+                          >
+                            {recipe.name}
+                          </span>
 												{recipe.description ? (
-													<span className="line-clamp-2" {...stylex.props(sx.mt05, sx.block, sx.textDim, typography.supporting)}>{recipe.description}</span>
+                            <span
+                              className="line-clamp-2"
+                              {...stylex.props(
+                                sx.mt05,
+                                sx.block,
+                                sx.textDim,
+                                typography.supporting,
+                              )}
+                            >
+                              {recipe.description}
+                            </span>
 												) : null}
 											</span>
-											<span {...stylex.props(sx.shrink0, sx.fontSemibold, sx.textFaint, typography.label)}>
-												{target ? "Open" : requestedId === recipe.id ? "Starting…" : "Start"}
+                        <span
+                          {...stylex.props(
+                            sx.shrink0,
+                            sx.fontSemibold,
+                            sx.textFaint,
+                            typography.label,
+                          )}
+                        >
+                          {target
+                            ? "Open"
+                            : requestedId === recipe.id
+                              ? "Starting…"
+                              : "Start"}
 											</span>
 										</button>
 									);
@@ -330,7 +422,10 @@ export function PortalsPage({
 						{recipes.length > 0 && (
 							<div className={INFO_LABEL_CLASS}>Services</div>
 						)}
-						<div className={PORTAL_LIST_CLASS} {...stylex.props(sx.grid)}>
+              <div
+                className={PORTAL_LIST_RESIDUAL_CLASS}
+                {...stylex.props(sx.grid)}
+              >
 							{services.length ? (
 								services.map((service) => {
 									const target = portalTargetFor(sessionId, service);
@@ -341,40 +436,55 @@ export function PortalsPage({
 									return (
 										<div
 											key={service.key}
-											className="group"
-											{...stylex.props(
-												sx.flex,
-												sx.minH11,
-												sx.minW0,
-												sx.itemsCenter,
-												sx.gap1,
-												sx.roundedControl,
-												sx.pr1,
-												sx.transitionColors,
-												active && sx.bgHover,
-												!active && sx.hoverBgHover,
+                        className="group"
+                        {...stylex.props(
+                          sx.serviceRow,
+                          active ? sx.active : sx.inactive,
 											)}
 										>
 											<button
 												type="button"
 												disabled={!target}
 												onClick={() => target && onOpenPortal?.(target)}
-												className="disabled:cursor-default" {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.px2, sx.py5px, sx.textLeft)}
+                          className="disabled:cursor-default"
+                          {...stylex.props(
+                            sx.flex,
+                            sx.minW0,
+                            sx.flex1,
+                            sx.itemsCenter,
+                            sx.gap2,
+                            sx.roundedControl,
+                            sx.px2,
+                            sx.py5px,
+                            sx.textLeft,
+                          )}
 											>
 												<span
-													{...stylex.props(
-														sx.size7px,
-														sx.shrink0,
-														sx.roundedFull,
-														service.running && sx.bgGreen,
-														!service.running && sx.bgLineStrong,
+                            {...stylex.props(
+                              sx.serviceDot,
+                              service.running ? sx.bgGreen : sx.bgLineStrong,
 													)}
 													aria-hidden="true"
 												/>
-												<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.textFg, typography.label)}>
+                          <span
+                            {...stylex.props(
+                              sx.minW0,
+                              sx.flex1,
+                              sx.truncate,
+                              sx.textFg,
+                              typography.label,
+                            )}
+                          >
 													{service.name}
 												</span>
-												<span {...stylex.props(sx.shrink0, sx.truncate, sx.textFaint, typography.label)}>
+                          <span
+                            {...stylex.props(
+                              sx.shrink0,
+                              sx.truncate,
+                              sx.textFaint,
+                              typography.label,
+                            )}
+                          >
 													{statusLabel(service, target, active)}
 												</span>
 											</button>
@@ -383,7 +493,18 @@ export function PortalsPage({
 													href={target.url}
 													target="_blank"
 													rel="noopener"
-													className="transition-[color,opacity] phone:opacity-100 hover:text-fg group-hover:opacity-100 focus-visible:opacity-100" {...stylex.props(sx.focusRing, sx.inlineFlex, sx.size11, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textFaint, sx.opacity0)}
+                            className="transition-[color,opacity] phone:opacity-100 hover:text-fg group-hover:opacity-100 focus-visible:opacity-100"
+                            {...stylex.props(
+                              sx.focusRing,
+                              sx.inlineFlex,
+                              sx.size11,
+                              sx.shrink0,
+                              sx.itemsCenter,
+                              sx.justifyCenter,
+                              sx.roundedControl,
+                              sx.textFaint,
+                              sx.opacity0,
+                            )}
 													aria-label={`Open ${service.name} in a separate browser window`}
 													title="Open in browser"
 												>
@@ -391,7 +512,16 @@ export function PortalsPage({
 												</a>
 											) : null}
 											{service.managed && onPortalAction ? (
-												<div className="phone:opacity-100 group-hover:opacity-100 focus-within:opacity-100" {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.opacity0, sx.transitionOpacity)}>
+                          <div
+                            className="phone:opacity-100 group-hover:opacity-100 focus-within:opacity-100"
+                            {...stylex.props(
+                              sx.flex,
+                              sx.shrink0,
+                              sx.itemsCenter,
+                              sx.opacity0,
+                              sx.transitionOpacity,
+                            )}
+                          >
 													<button
 														type="button"
 														disabled={working === service.name}
@@ -399,24 +529,58 @@ export function PortalsPage({
 															setError(null);
 															setWorking(service.name);
 															void onPortalAction(service.name, "restart")
-																.catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
+                                  .catch((cause) =>
+                                    setError(
+                                      cause instanceof Error
+                                        ? cause.message
+                                        : String(cause),
+                                    ),
+                                  )
 																.finally(() => setWorking(null));
 														}}
-														className="phone:min-h-11 hover:text-fg disabled:opacity-45" {...stylex.props(sx.focusRing, sx.roundedControl, sx.px15, sx.py1, sx.fontSemibold, sx.textFaint, sx.transitionColors, typography.label)}
+                              className="phone:min-h-11 hover:text-fg disabled:opacity-45"
+                              {...stylex.props(
+                                sx.focusRing,
+                                sx.roundedControl,
+                                sx.px15,
+                                sx.py1,
+                                sx.fontSemibold,
+                                sx.textFaint,
+                                sx.transitionColors,
+                                typography.label,
+                              )}
 													>
 														Restart
 													</button>
 													<button
 														type="button"
-														disabled={working === service.name || !service.running}
+                              disabled={
+                                working === service.name || !service.running
+                              }
 														onClick={() => {
 															setError(null);
 															setWorking(service.name);
 															void onPortalAction(service.name, "stop")
-																.catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
+                                  .catch((cause) =>
+                                    setError(
+                                      cause instanceof Error
+                                        ? cause.message
+                                        : String(cause),
+                                    ),
+                                  )
 																.finally(() => setWorking(null));
 														}}
-														className="phone:min-h-11 hover:text-red disabled:opacity-45" {...stylex.props(sx.focusRing, sx.roundedControl, sx.px15, sx.py1, sx.fontSemibold, sx.textRed, sx.transitionColors, typography.label)}
+                              className="phone:min-h-11 hover:text-red disabled:opacity-45"
+                              {...stylex.props(
+                                sx.focusRing,
+                                sx.roundedControl,
+                                sx.px15,
+                                sx.py1,
+                                sx.fontSemibold,
+                                sx.textRed,
+                                sx.transitionColors,
+                                typography.label,
+                              )}
 													>
 														Stop
 													</button>
@@ -426,7 +590,14 @@ export function PortalsPage({
 									);
 								})
 							) : (
-								<div {...stylex.props(sx.px2, sx.py7px, sx.textDim, typography.label)}>
+                  <div
+                    {...stylex.props(
+                      sx.px2,
+                      sx.py7px,
+                      sx.textDim,
+                      typography.label,
+                    )}
+                  >
 									{status.starting
 										? "Starting services…"
 										: "No Portals are running. Start one above, or ask the agent to expose a service."}

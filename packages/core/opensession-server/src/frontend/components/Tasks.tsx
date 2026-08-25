@@ -4,7 +4,6 @@ import { DEFAULT_DOC_TITLE, docTitle } from "../lib/brand";
 import type { TodoItem, WSServerMessage } from "../lib/types";
 import { Button } from "../ui/button";
 import { Card, CardList } from "../ui/card";
-import { cn } from "../ui/cn";
 import { PageDescription, PageHeader, PageTitle } from "../ui/page-header";
 import { EmptyState } from "../ui/state";
 import { getCurrentUser } from "./UserPicker";
@@ -126,9 +125,35 @@ const sx = stylex.create({
 	minH10: {
 			minHeight: "40px"
 	},
-	fontMedium: {
-			fontWeight: "var(--font-weight-medium)"
+  fontMedium: { fontWeight: "var(--font-weight-medium)" },
+  check: {
+    display: "flex",
+    width: "24px",
+    height: "24px",
+    flexShrink: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "50%",
+    borderStyle: "solid",
+    borderWidth: "1px",
+    transitionProperty: "color, background-color, border-color",
+    ":active": { scale: 0.96 },
 	},
+  checkDone: {
+    borderColor: "var(--green)",
+    backgroundColor: "var(--green)",
+    color: "var(--bg-panel)",
+  },
+  checkPending: {
+    borderColor: "var(--border-strong)",
+    color: "transparent",
+    ":hover": {
+      borderColor: "color-mix(in srgb, var(--text) 50%, transparent)",
+    },
+  },
+  taskTitle: { fontWeight: "var(--font-weight-medium)", color: "var(--text)" },
+  done: { color: "var(--text-dim)", textDecorationLine: "line-through" },
+  lineThrough: { textDecorationLine: "line-through" },
 });
 
 interface TasksProps {
@@ -163,15 +188,20 @@ function TaskRow({
 }) {
 	const done = task.status === "done";
 	return (
-		<li className="group sm:px-4" {...stylex.props(sx.flex, sx.minH11, sx.itemsCenter, sx.gap3, sx.px3, sx.py25)}>
+    <li
+      className="group sm:px-4"
+      {...stylex.props(
+        sx.flex,
+        sx.minH11,
+        sx.itemsCenter,
+        sx.gap3,
+        sx.px3,
+        sx.py25,
+      )}
+    >
 			<button
 				type="button"
-				className={cn(
-					"flex size-6 shrink-0 items-center justify-center rounded-full border transition-colors active:scale-[0.96]",
-					done
-						? "border-green bg-green text-panel"
-						: "border-line-strong text-transparent hover:border-fg/50",
-				)}
+        {...stylex.props(sx.check, done ? sx.checkDone : sx.checkPending)}
 				onClick={() => onToggle(task)}
 				aria-label={done ? `Reopen ${task.text}` : `Mark ${task.text} done`}
 			>
@@ -179,21 +209,33 @@ function TaskRow({
 			</button>
 			<div {...stylex.props(sx.minW0, sx.flex1)}>
 				<div
-					className={cn(
-						"text-item-title font-medium text-fg",
-						done && "text-dim line-through",
-					)}
+          {...stylex.props(sx.taskTitle, done && sx.done, typography.itemTitle)}
 				>
 					{task.text}
 				</div>
 				{task.note && (
-					<div {...stylex.props(sx.mt05, sx.textFaint, typography.label)}>{task.note}</div>
+          <div {...stylex.props(sx.mt05, sx.textFaint, typography.label)}>
+            {task.note}
+          </div>
 				)}
 				{(task.due || (task.remindAt && !done) || task.source.sessionId) && (
-					<div {...stylex.props(sx.mt1, sx.flex, sx.flexWrap, sx.itemsCenter, sx.gapX25, sx.gapY1, sx.textFaint, typography.label)}>
+          <div
+            {...stylex.props(
+              sx.mt1,
+              sx.flex,
+              sx.flexWrap,
+              sx.itemsCenter,
+              sx.gapX25,
+              sx.gapY1,
+              sx.textFaint,
+              typography.label,
+            )}
+          >
 						{task.due && <span>Due {task.due}</span>}
 						{task.remindAt && !done && (
-							<span className={cn(task.remindedAt && "line-through")}>
+              <span
+                {...stylex.props(Boolean(task.remindedAt) && sx.lineThrough)}
+              >
 								{task.remindedAt ? "Reminded" : "Reminder"}{" "}
 								{formatReminder(task.remindAt)}
 							</span>
@@ -201,7 +243,12 @@ function TaskRow({
 						{task.source.sessionId && (
 							<button
 								type="button"
-								className="hover:text-dim" {...stylex.props(sx.underline, sx.decorationDotted, sx.underlineOffset2)}
+                className="hover:text-dim"
+                {...stylex.props(
+                  sx.underline,
+                  sx.decorationDotted,
+                  sx.underlineOffset2,
+                )}
 								onClick={() => onOpenSession(task.source.sessionId!)}
 							>
 								Open source
@@ -276,16 +323,19 @@ const response = await fetch(
 			);
 			if (!response.ok) throw new Error(`HTTP ${response.status}`);
 			setError(null);
-})().catch(async () => {
+    })()
+      .catch(async () => {
 setError("The task could not be updated.");
-}).finally(async () => {
+      })
+      .finally(async () => {
 void load();
 });
 	}
 
 	function toggle(task: TodoItem) {
 		const status = task.status === "done" ? "open" : "done";
-		setTasks((current) =>
+    setTasks(
+      (current) =>
 			current?.map((item) =>
 				item.id === task.id ? { ...item, status } : item,
 			) ?? current,
@@ -313,9 +363,11 @@ const response = await fetch(`${BASE_PATH}/api/todos`, {
 			if (!response.ok) throw new Error(`HTTP ${response.status}`);
 			setDraft("");
 			setError(null);
-})().catch(async () => {
+    })()
+      .catch(async () => {
 setError("The task could not be added.");
-}).finally(async () => {
+      })
+      .finally(async () => {
 setAdding(false);
 			void load();
 });
@@ -325,7 +377,11 @@ setAdding(false);
 	const done = (tasks || []).filter((task) => task.status === "done");
 
 	return (
-		<div data-page-scroll className="sm:px-7 sm:py-7" {...stylex.props(sx.hFull, sx.overflowYAuto, sx.px4, sx.py5)}>
+    <div
+      data-page-scroll
+      className="sm:px-7 sm:py-7"
+      {...stylex.props(sx.hFull, sx.overflowYAuto, sx.px4, sx.py5)}
+    >
 			<div {...stylex.props(sx.mxAuto, sx.maxW760px)}>
 				<PageHeader>
 					<div>
@@ -361,11 +417,23 @@ setAdding(false);
 					</Button>
 				</form>
 
-				{error && <div {...stylex.props(sx.mb3, sx.textRed, typography.body)}>{error}</div>}
+        {error && (
+          <div {...stylex.props(sx.mb3, sx.textRed, typography.body)}>
+            {error}
+          </div>
+        )}
 
 				{tasks === null ? (
 					<Card>
-						<div {...stylex.props(sx.px4, sx.py8, sx.textCenter, sx.textDim, typography.body)}>
+            <div
+              {...stylex.props(
+                sx.px4,
+                sx.py8,
+                sx.textCenter,
+                sx.textDim,
+                typography.body,
+              )}
+            >
 							Loading…
 						</div>
 					</Card>
@@ -385,7 +453,12 @@ setAdding(false);
 					<div
 						// Empty reads as a soft, borderless well rather than a card with
 						// nothing in it: rounder, one step lighter, no outline.
-						{...stylex.props(sx.overflowHidden, sx.roundedXl, sx.bgRaised, sx.px4)}
+            {...stylex.props(
+              sx.overflowHidden,
+              sx.roundedXl,
+              sx.bgRaised,
+              sx.px4,
+            )}
 					>
 						<EmptyState
 							icon={<IconListCircles size={22} />}
@@ -400,7 +473,17 @@ setAdding(false);
 					<div {...stylex.props(sx.mt5)}>
 						<button
 							type="button"
-							className="hover:text-fg" {...stylex.props(sx.mb2, sx.flex, sx.minH10, sx.itemsCenter, sx.gap2, sx.fontMedium, sx.textDim, typography.controlLabel)}
+              className="hover:text-fg"
+              {...stylex.props(
+                sx.mb2,
+                sx.flex,
+                sx.minH10,
+                sx.itemsCenter,
+                sx.gap2,
+                sx.fontMedium,
+                sx.textDim,
+                typography.controlLabel,
+              )}
 							onClick={() => setShowDone((current) => !current)}
 							aria-expanded={showDone}
 						>

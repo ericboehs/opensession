@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { Popover } from "../ui/popover";
-import { cn } from "../ui/cn";
 import {
 	fetchSessionSandbox,
 	sandboxAction,
@@ -121,8 +120,27 @@ const sx = stylex.create({
 	whitespacePreWrap: {
 			whiteSpace: "pre-wrap"
 	},
-	leadingRelaxed: {
-			lineHeight: "var(--leading-relaxed)"
+  leadingRelaxed: { lineHeight: "var(--leading-relaxed)" },
+  dot: { width: "8px", height: "8px", borderRadius: "50%" },
+  bgGreen: { backgroundColor: "var(--green)" },
+  bgYellow: { backgroundColor: "var(--yellow)" },
+  bgFaint: { backgroundColor: "var(--text-faint)" },
+  action: {
+    display: "flex",
+    minHeight: "40px",
+    width: "100%",
+    alignItems: "center",
+    borderRadius: "calc(7px * var(--rf))",
+    paddingInline: "10px",
+    textAlign: "left",
+    fontWeight: "var(--font-weight-semibold)",
+    color: "var(--text-dim)",
+    outlineStyle: "none",
+    transitionProperty: "color, background-color, scale",
+    ":hover": { backgroundColor: "var(--hover)", color: "var(--text)" },
+    ":focusVisible": { backgroundColor: "var(--hover)", color: "var(--text)" },
+    ":active": { scale: 0.96 },
+    ":disabled": { pointerEvents: "none", opacity: 0.45 },
 	},
 });
 
@@ -139,9 +157,6 @@ type RunnerRef = {
 	lifecycle?: "preparing" | "awake" | "offline" | "needs_attention";
 	lastLifecycleError?: string;
 };
-
-const actionClass =
-	"flex min-h-10 w-full items-center rounded-md px-2.5 text-left text-xs font-semibold text-dim outline-none transition-[color,background-color,scale] hover:bg-hover hover:text-fg focus-visible:bg-hover focus-visible:text-fg active:scale-[0.96] disabled:pointer-events-none disabled:opacity-45";
 
 /** Live sandbox status + lifecycle controls. The compact trigger remains the
  * old provider badge; opening it resolves provider state without polling every
@@ -177,31 +192,126 @@ setError(cause?.message || "Sandbox status unavailable");
 	}, [open, load, runner]);
 
 	if (runner) {
-		const label = runner.lifecycle === "awake" ? "Ready" : runner.lifecycle === "offline" ? "Offline" : runner.lifecycle === "needs_attention" ? "Needs attention" : "Preparing";
-		const dot = runner.lifecycle === "awake" ? "bg-green" : runner.lifecycle === "offline" || runner.lifecycle === "needs_attention" ? "bg-faint" : "bg-yellow";
-		return <Popover.Root open={open} onOpenChange={setOpen}>
-			<Popover.Trigger className="transition-[color,background-color,border-color,scale] hover:border-line-strong hover:text-fg focus-visible:border-line-strong active:scale-[0.96]" {...stylex.props(sx.flex, sx.minH10, sx.flexNone, sx.itemsCenter, sx.gap15, sx.roundedMd, sx.border, sx.borderLine, sx.bgSurface, sx.px2, sx.fontMedium, sx.textDim, sx.outlineNone, typography.meta)} aria-label={`Runner · ${runner.name} · ${label}`}>
-				<span className={cn("size-2 rounded-full", dot)} aria-hidden="true" /><IconConnections size={20} {...stylex.props(sx.textFaint)} /><span>{runner.name}</span>
+    const label =
+      runner.lifecycle === "awake"
+        ? "Ready"
+        : runner.lifecycle === "offline"
+          ? "Offline"
+          : runner.lifecycle === "needs_attention"
+            ? "Needs attention"
+            : "Preparing";
+    const dot =
+      runner.lifecycle === "awake"
+        ? sx.bgGreen
+        : runner.lifecycle === "offline" ||
+            runner.lifecycle === "needs_attention"
+          ? sx.bgFaint
+          : sx.bgYellow;
+    return (
+      <Popover.Root open={open} onOpenChange={setOpen}>
+        <Popover.Trigger
+          className="transition-[color,background-color,border-color,scale] hover:border-line-strong hover:text-fg focus-visible:border-line-strong active:scale-[0.96]"
+          {...stylex.props(
+            sx.flex,
+            sx.minH10,
+            sx.flexNone,
+            sx.itemsCenter,
+            sx.gap15,
+            sx.roundedMd,
+            sx.border,
+            sx.borderLine,
+            sx.bgSurface,
+            sx.px2,
+            sx.fontMedium,
+            sx.textDim,
+            sx.outlineNone,
+            typography.meta,
+          )}
+          aria-label={`Runner · ${runner.name} · ${label}`}
+        >
+          <span {...stylex.props(sx.dot, dot)} aria-hidden="true" />
+          <IconConnections size={20} {...stylex.props(sx.textFaint)} />
+          <span>{runner.name}</span>
 			</Popover.Trigger>
-			<Popover.Popup side="bottom" align="start" initialFocus {...stylex.props(sx.w300px, sx.p25)}>
-				<div {...stylex.props(sx.px2, sx.pb2, sx.pt1)}><div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.textXs, sx.fontSemibold, sx.textFg)}><span className={cn("size-2 rounded-full", dot)} /><span>{label}</span><span {...stylex.props(sx.mlAuto, sx.fontMedium, sx.textFaint)}>Runtime</span></div><div {...stylex.props(sx.mt1, sx.textDim, typography.meta)}>Runner · trusted machine</div><div {...stylex.props(sx.mt1, sx.truncate, sx.fontMono, sx.textFaint, typography.meta)} title={runner.workspacePath}>{runner.workspacePath}</div></div>
-				{runner.lastLifecycleError ? <div {...stylex.props(sx.px2, sx.py15, sx.fontMedium, sx.textRed, typography.meta)}>{runner.lastLifecycleError}</div> : null}
+        <Popover.Popup
+          side="bottom"
+          align="start"
+          initialFocus
+          {...stylex.props(sx.w300px, sx.p25)}
+        >
+          <div {...stylex.props(sx.px2, sx.pb2, sx.pt1)}>
+            <div
+              {...stylex.props(
+                sx.flex,
+                sx.itemsCenter,
+                sx.gap2,
+                sx.textXs,
+                sx.fontSemibold,
+                sx.textFg,
+              )}
+            >
+              <span {...stylex.props(sx.dot, dot)} />
+              <span>{label}</span>
+              <span {...stylex.props(sx.mlAuto, sx.fontMedium, sx.textFaint)}>
+                Runtime
+              </span>
+            </div>
+            <div {...stylex.props(sx.mt1, sx.textDim, typography.meta)}>
+              Runner · trusted machine
+            </div>
+            <div
+              {...stylex.props(
+                sx.mt1,
+                sx.truncate,
+                sx.fontMono,
+                sx.textFaint,
+                typography.meta,
+              )}
+              title={runner.workspacePath}
+            >
+              {runner.workspacePath}
+            </div>
+          </div>
+          {runner.lastLifecycleError ? (
+            <div
+              {...stylex.props(
+                sx.px2,
+                sx.py15,
+                sx.fontMedium,
+                sx.textRed,
+                typography.meta,
+              )}
+            >
+              {runner.lastLifecycleError}
+            </div>
+          ) : null}
 			</Popover.Popup>
-		</Popover.Root>;
+      </Popover.Root>
+    );
 	}
 
 	if (!sandbox?.provider || sandbox.provider === "local") return null;
 	const state = status?.status || (sandbox.sandboxId ? "running" : "gone");
-	const lifecycle = status?.lifecycle || (state === "running" ? "awake" : state === "stopped" ? "sleeping" : "needs_attention");
+  const lifecycle =
+    status?.lifecycle ||
+    (state === "running"
+      ? "awake"
+      : state === "stopped"
+        ? "sleeping"
+        : "needs_attention");
 	const lifecycleLabel: Record<typeof lifecycle, string> = {
-		preparing: "Preparing", awake: "Awake", sleeping: "Sleeping", waking: "Waking", needs_attention: "Needs attention",
+    preparing: "Preparing",
+    awake: "Awake",
+    sleeping: "Sleeping",
+    waking: "Waking",
+    needs_attention: "Needs attention",
 	};
 	const dot =
 		lifecycle === "awake"
-			? "bg-green"
+      ? sx.bgGreen
 			: lifecycle === "sleeping" || lifecycle === "waking"
-				? "bg-yellow"
-				: "bg-faint";
+        ? sx.bgYellow
+        : sx.bgFaint;
 
 	async function act(action: "pause" | "resume" | "recreate") {
 		if (
@@ -215,9 +325,11 @@ setError(cause?.message || "Sandbox status unavailable");
 		setError(null);
 		await (async () => {
 setStatus(await sandboxAction(sessionId, action));
-})().catch(async (cause: any) => {
+    })()
+      .catch(async (cause: any) => {
 setError(cause?.message || `Could not ${action} sandbox`);
-}).finally(async () => {
+      })
+      .finally(async () => {
 setWorking(null);
 });
 	}
@@ -225,11 +337,27 @@ setWorking(null);
 	return (
 		<Popover.Root open={open} onOpenChange={setOpen}>
 			<Popover.Trigger
-				className="transition-[color,background-color,border-color,scale] hover:border-line-strong hover:text-fg focus-visible:border-line-strong active:scale-[0.96]" {...stylex.props(sx.flex, sx.minH10, sx.flexNone, sx.itemsCenter, sx.gap15, sx.roundedMd, sx.border, sx.borderLine, sx.bgSurface, sx.px2, sx.fontMedium, sx.textDim, sx.outlineNone, typography.meta)}
+        className="transition-[color,background-color,border-color,scale] hover:border-line-strong hover:text-fg focus-visible:border-line-strong active:scale-[0.96]"
+        {...stylex.props(
+          sx.flex,
+          sx.minH10,
+          sx.flexNone,
+          sx.itemsCenter,
+          sx.gap15,
+          sx.roundedMd,
+          sx.border,
+          sx.borderLine,
+          sx.bgSurface,
+          sx.px2,
+          sx.fontMedium,
+          sx.textDim,
+          sx.outlineNone,
+          typography.meta,
+        )}
 				data-testid="sandbox-badge"
 				aria-label={`Sandbox · ${lifecycleLabel}`}
 			>
-				<span className={cn("size-2 rounded-full", dot)} aria-hidden="true" />
+        <span {...stylex.props(sx.dot, dot)} aria-hidden="true" />
 				<IconBox size={20} {...stylex.props(sx.textFaint)} />
 				<span>Sandbox</span>
 			</Popover.Trigger>
@@ -240,30 +368,53 @@ setWorking(null);
 				{...stylex.props(sx.w300px, sx.p25)}
 			>
 				<div {...stylex.props(sx.px2, sx.pb2, sx.pt1)}>
-					<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.textXs, sx.fontSemibold, sx.textFg)}>
-						<span className={cn("size-2 rounded-full", dot)} />
+          <div
+            {...stylex.props(
+              sx.flex,
+              sx.itemsCenter,
+              sx.gap2,
+              sx.textXs,
+              sx.fontSemibold,
+              sx.textFg,
+            )}
+          >
+            <span {...stylex.props(sx.dot, dot)} />
 						<span>{lifecycleLabel[lifecycle]}</span>
-						<span {...stylex.props(sx.mlAuto, sx.fontMedium, sx.textFaint)}>Runtime</span>
+            <span {...stylex.props(sx.mlAuto, sx.fontMedium, sx.textFaint)}>
+              Runtime
+            </span>
 					</div>
-					<div {...stylex.props(sx.mt1, sx.textDim, typography.meta)}>{sandbox.provider} · session workspace</div>
+          <div {...stylex.props(sx.mt1, sx.textDim, typography.meta)}>
+            {sandbox.provider} · session workspace
+          </div>
 					{status?.cwd ? (
-						<div {...stylex.props(sx.mt1, sx.truncate, sx.fontMono, sx.textFaint, typography.meta)} title={status.cwd}>
+            <div
+              {...stylex.props(
+                sx.mt1,
+                sx.truncate,
+                sx.fontMono,
+                sx.textFaint,
+                typography.meta,
+              )}
+              title={status.cwd}
+            >
 							{status.cwd}
 						</div>
 					) : null}
 				</div>
 				{lifecycle === "awake" && status?.canPause ? (
 					<button
-						className={actionClass}
+            {...stylex.props(sx.action, typography.meta)}
 						disabled={Boolean(working || status.busy)}
 						onClick={() => void act("pause")}
 					>
 						{working === "pause" ? "Sleeping…" : "Sleep sandbox"}
 					</button>
 				) : null}
-				{(lifecycle === "sleeping" || lifecycle === "needs_attention") && status?.canResume ? (
+        {(lifecycle === "sleeping" || lifecycle === "needs_attention") &&
+        status?.canResume ? (
 					<button
-						className={actionClass}
+            {...stylex.props(sx.action, typography.meta)}
 						disabled={Boolean(working)}
 						onClick={() => void act("resume")}
 					>
@@ -271,22 +422,58 @@ setWorking(null);
 					</button>
 				) : null}
 				<button
-					className={cn(actionClass, "text-red hover:text-red")}
+          {...stylex.props(sx.action, sx.textRed, typography.meta)}
 					disabled={Boolean(working || status?.busy)}
 					onClick={() => void act("recreate")}
 				>
 					{working === "recreate" ? "Recreating…" : "Recreate from clean image"}
 				</button>
 				{status?.logs?.setup || status?.logs?.resume ? (
-					<details {...stylex.props(sx.mt1, sx.roundedMd, sx.bgSurface, sx.px25, sx.py2, sx.textDim, typography.meta)}>
-						<summary {...stylex.props(sx.cursorPointer, sx.fontSemibold, sx.textFg)}>Lifecycle logs</summary>
-						<pre {...stylex.props(sx.mt2, sx.maxH48, sx.overflowAuto, sx.whitespacePreWrap, sx.fontMono, sx.leadingRelaxed, typography.meta)}>
+          <details
+            {...stylex.props(
+              sx.mt1,
+              sx.roundedMd,
+              sx.bgSurface,
+              sx.px25,
+              sx.py2,
+              sx.textDim,
+              typography.meta,
+            )}
+          >
+            <summary
+              {...stylex.props(sx.cursorPointer, sx.fontSemibold, sx.textFg)}
+            >
+              Lifecycle logs
+            </summary>
+            <pre
+              {...stylex.props(
+                sx.mt2,
+                sx.maxH48,
+                sx.overflowAuto,
+                sx.whitespacePreWrap,
+                sx.fontMono,
+                sx.leadingRelaxed,
+                typography.meta,
+              )}
+            >
 							{status.logs.setup ? `setup\n${status.logs.setup}` : ""}
 							{status.logs.resume ? `\nresume\n${status.logs.resume}` : ""}
 						</pre>
 					</details>
 				) : null}
-				{status?.lastLifecycleError || error ? <div {...stylex.props(sx.px2, sx.py15, sx.fontMedium, sx.textRed, typography.meta)}>{status?.lastLifecycleError || error}</div> : null}
+        {status?.lastLifecycleError || error ? (
+          <div
+            {...stylex.props(
+              sx.px2,
+              sx.py15,
+              sx.fontMedium,
+              sx.textRed,
+              typography.meta,
+            )}
+          >
+            {status?.lastLifecycleError || error}
+          </div>
+        ) : null}
 			</Popover.Popup>
 		</Popover.Root>
 	);

@@ -1,10 +1,14 @@
 import React, { useEffect, useState } from "react";
 import type { Workspace } from "../lib/types";
 import { randomUUID } from "../lib/random-uuid";
-import { defaultWorkspaceModelSettings, fetchModels, updateWorkspaceApi, type ModelOption } from "../lib/api";
+import {
+  defaultWorkspaceModelSettings,
+  fetchModels,
+  updateWorkspaceApi,
+  type ModelOption,
+} from "../lib/api";
 import { Button } from "../ui/button";
 import { CardList } from "../ui/card";
-import { cn } from "../ui/cn";
 import { Modal } from "../ui/modal";
 import { Select } from "../ui/select";
 import { InlineAlert } from "../ui/state";
@@ -50,7 +54,8 @@ const sx = stylex.create({
 			textAlign: "left"
 	},
 	transitionColors: {
-			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+    transitionProperty:
+      "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
 			transitionTimingFunction: "var(--tw-ease,var(--ease))",
 			transitionDuration: "var(--tw-duration,var(--dur-micro))"
 	},
@@ -140,9 +145,27 @@ const sx = stylex.create({
 	py6: {
 			paddingBlock: "24px"
 	},
-	textCenter: {
-			textAlign: "center"
+  textCenter: { textAlign: "center" },
+  chevron: {
+    flexShrink: 0,
+    color: "var(--text-faint)",
+    transitionProperty: "transform",
 	},
+  rotate180: { transform: "rotate(180deg)" },
+  removeGrid: {
+    gridColumnStart: 2,
+    gridRowStart: 1,
+    "@media (min-width: 721px)": { gridColumnStart: 4 },
+  },
+  roleGrid: {
+    gridColumn: "span 2 / span 2",
+    "@media (min-width: 721px)": {
+      gridColumn: "span 1 / span 1",
+      gridColumnStart: 2,
+      gridRowStart: 1,
+    },
+  },
+  minH18: { minHeight: "72px" },
 });
 
 type Settings = NonNullable<Workspace["modelSettings"]>;
@@ -173,7 +196,11 @@ function ModelSelect({
 	className?: string;
 }) {
 	return (
-		<Select.Root items={items} value={value} onValueChange={(next) => onChange(String(next))}>
+    <Select.Root
+      items={items}
+      value={value}
+      onValueChange={(next) => onChange(String(next))}
+    >
 			<Select.Trigger aria-label={label} className={className} />
 			<Select.Popup>
 				{items.map((item) => (
@@ -209,16 +236,22 @@ function PresetRow({
 }) {
 	const supporting = preset.supporting || [];
 	const effortsFor = (model: string) => {
-		const supported = models.find((option) => option.id === model)?.efforts || [];
+    const supported =
+      models.find((option) => option.id === model)?.efforts || [];
 		return EFFORTS.filter((effort) => supported.includes(effort.id));
 	};
 	const leadEfforts = effortsFor(preset.lead.model);
 	// The catalog's own label, so a row reads the same as the select under it.
 	// shortModelLabel is the fallback for a model the catalog no longer lists.
 	const labelFor = (model: string) =>
-		models.find((option) => option.id === model)?.label || shortModelLabel(model, models);
+    models.find((option) => option.id === model)?.label ||
+    shortModelLabel(model, models);
 	const patchSupporting = (index: number, patch: Partial<Supporting>) =>
-		onPatch({ supporting: supporting.map((member, i) => (i === index ? { ...member, ...patch } : member)) });
+    onPatch({
+      supporting: supporting.map((member, i) =>
+        i === index ? { ...member, ...patch } : member,
+      ),
+    });
 	// "" is a real choice ("not set yet"), so it stays an item in the list
 	// rather than becoming the trigger's placeholder.
 	const modelItems = (prompt: string) => [
@@ -231,13 +264,39 @@ function PresetRow({
 				type="button"
 				aria-expanded={open}
 				onClick={onToggle}
-				className="hover:bg-hover" {...stylex.props(sx.flex, sx.wFull, sx.itemsCenter, sx.gap3, sx.px5, sx.py3, sx.textLeft, sx.transitionColors)}
+        className="hover:bg-hover"
+        {...stylex.props(
+          sx.flex,
+          sx.wFull,
+          sx.itemsCenter,
+          sx.gap3,
+          sx.px5,
+          sx.py3,
+          sx.textLeft,
+          sx.transitionColors,
+        )}
 			>
 				<span {...stylex.props(sx.minW0, sx.flex1)}>
-					<span {...stylex.props(sx.block, sx.truncate, sx.fontMedium, sx.textFg, typography.itemTitle)}>
+          <span
+            {...stylex.props(
+              sx.block,
+              sx.truncate,
+              sx.fontMedium,
+              sx.textFg,
+              typography.itemTitle,
+            )}
+          >
 						{preset.label.trim() || "Untitled preset"}
 					</span>
-					<span {...stylex.props(sx.mt05, sx.block, sx.truncate, sx.textDim, typography.supporting)}>
+          <span
+            {...stylex.props(
+              sx.mt05,
+              sx.block,
+              sx.truncate,
+              sx.textDim,
+              typography.supporting,
+            )}
+          >
 						{preset.lead.model
 							? [
 									labelFor(preset.lead.model),
@@ -252,7 +311,7 @@ function PresetRow({
 				</span>
 				<IconChevronDown
 					size={18}
-					className={cn("shrink-0 text-faint transition-transform", open && "rotate-180")}
+          {...stylex.props(sx.chevron, open && sx.rotate180)}
 				/>
 			</button>
 			{open && (
@@ -273,23 +332,34 @@ function PresetRow({
 								items={modelItems("Choose a lead model")}
 								value={preset.lead.model}
 								label="Lead model"
-								onChange={(model) => onPatch({ lead: { ...preset.lead, model } })}
+                onChange={(model) =>
+                  onPatch({ lead: { ...preset.lead, model } })
+                }
 							/>
 						</SettingsField>
 						{leadEfforts.length > 0 && (
 							<SettingsField {...stylex.props(sx.mb0, sx.w32)}>
 								Effort
 								<ModelSelect
-									items={leadEfforts.map((effort) => ({ value: effort.id, label: effort.label }))}
+                  items={leadEfforts.map((effort) => ({
+                    value: effort.id,
+                    label: effort.label,
+                  }))}
 									value={preset.lead.effort || ""}
 									label="Effort"
-									onChange={(effort) => onPatch({ lead: { ...preset.lead, effort } })}
+                  onChange={(effort) =>
+                    onPatch({ lead: { ...preset.lead, effort } })
+                  }
 								/>
 							</SettingsField>
 						)}
 					</div>
 					<div {...stylex.props(sx.flex, sx.flexCol, sx.gap2)}>
-						<span {...stylex.props(sx.fontMedium, sx.textDim, typography.label)}>Supporting models</span>
+            <span
+              {...stylex.props(sx.fontMedium, sx.textDim, typography.label)}
+            >
+              Supporting models
+            </span>
 						{supporting.map((member, index) => {
 							const memberEfforts = effortsFor(member.model);
 							return (
@@ -298,7 +368,8 @@ function PresetRow({
 								// effort under them, instead of four fields fighting over 200px.
 								<div
 									key={index}
-									className="grid-cols-[minmax(0,1fr)_auto] desktop:grid-cols-[minmax(0,1fr)_10rem_8rem_auto]" {...stylex.props(sx.grid, sx.itemsCenter, sx.gap2)}
+                  className="grid-cols-[minmax(0,1fr)_auto] desktop:grid-cols-[minmax(0,1fr)_10rem_8rem_auto]"
+                  {...stylex.props(sx.grid, sx.itemsCenter, sx.gap2)}
 								>
 									<ModelSelect
 										{...stylex.props(sx.colStart1, sx.rowStart1)}
@@ -309,23 +380,35 @@ function PresetRow({
 									/>
 									<button
 										type="button"
-										className={cn(rowMenuTriggerClasses, "col-start-2 row-start-1 desktop:col-start-4")}
+                    className={rowMenuTriggerClasses}
+                    {...stylex.props(sx.removeGrid)}
 										aria-label="Remove supporting model"
-										onClick={() => onPatch({ supporting: supporting.filter((_, i) => i !== index) })}
+                    onClick={() =>
+                      onPatch({
+                        supporting: supporting.filter((_, i) => i !== index),
+                      })
+                    }
 									>
 										<IconTrash size={16} />
 									</button>
 									<input
-										className={cn(settingsInputClass, "col-span-2 desktop:col-span-1 desktop:col-start-2 desktop:row-start-1")}
+                    className={settingsInputClass}
+                    {...stylex.props(sx.roleGrid)}
 										value={member.role || ""}
 										aria-label="What this model does"
 										placeholder="Role"
-										onChange={(event) => patchSupporting(index, { role: event.target.value })}
+                    onChange={(event) =>
+                      patchSupporting(index, { role: event.target.value })
+                    }
 									/>
 									{memberEfforts.length > 0 && (
 										<ModelSelect
-											className="desktop:col-span-1 desktop:col-start-3 desktop:row-start-1" {...stylex.props(sx.colSpan2)}
-											items={memberEfforts.map((effort) => ({ value: effort.id, label: effort.label }))}
+                      className="desktop:col-span-1 desktop:col-start-3 desktop:row-start-1"
+                      {...stylex.props(sx.colSpan2)}
+                      items={memberEfforts.map((effort) => ({
+                        value: effort.id,
+                        label: effort.label,
+                      }))}
 											value={member.effort || ""}
 											label="Supporting model effort"
 											onChange={(effort) => patchSupporting(index, { effort })}
@@ -338,7 +421,9 @@ function PresetRow({
 							size="sm"
 							icon={<IconPlus size={16} />}
 							{...stylex.props(sx.wFit)}
-							onClick={() => onPatch({ supporting: [...supporting, { model: "" }] })}
+              onClick={() =>
+                onPatch({ supporting: [...supporting, { model: "" }] })
+              }
 						>
 							Add supporting model
 						</Button>
@@ -346,9 +431,12 @@ function PresetRow({
 					<SettingsField {...stylex.props(sx.mb0)}>
 						Instructions
 						<textarea
-							className={cn(settingsTextareaClass, "min-h-18")}
+              className={settingsTextareaClass}
+              {...stylex.props(sx.minH18)}
 							value={preset.instructions || ""}
-							onChange={(event) => onPatch({ instructions: event.target.value })}
+              onChange={(event) =>
+                onPatch({ instructions: event.target.value })
+              }
 							placeholder="When to use supporting models and how to integrate their work."
 						/>
 					</SettingsField>
@@ -357,7 +445,8 @@ function PresetRow({
 							size="sm"
 							variant="ghost"
 							icon={<IconTrash size={16} />}
-							className="hover:bg-red-soft hover:text-red" {...stylex.props(sx.textRed)}
+              className="hover:bg-red-soft hover:text-red"
+              {...stylex.props(sx.textRed)}
 							onClick={onRemove}
 						>
 							Remove preset
@@ -388,24 +477,38 @@ export function WorkspaceModelPresets({
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	useEffect(
-		() => setSettings(workspace.modelSettings || defaultWorkspaceModelSettings() || {}),
+    () =>
+      setSettings(
+        workspace.modelSettings || defaultWorkspaceModelSettings() || {},
+      ),
 		[workspace],
 	);
 	useEffect(() => {
 		if (!open) return;
 		fetchModels(workspace.id)
-			.then((catalog) => setModels(catalog.models.filter((model) => !model.id.startsWith("workspace-preset/"))))
+      .then((catalog) =>
+        setModels(
+          catalog.models.filter(
+            (model) => !model.id.startsWith("workspace-preset/"),
+          ),
+        ),
+      )
 			.catch(() => setModels([]));
 	}, [open, workspace.id]);
 	const presets = settings.presets || [];
 	const patchPreset = (index: number, patch: Partial<Preset>) =>
 		setSettings((current) => ({
 			...current,
-			presets: (current.presets || []).map((preset, i) => i === index ? { ...preset, ...patch } : preset),
+      presets: (current.presets || []).map((preset, i) =>
+        i === index ? { ...preset, ...patch } : preset,
+      ),
 		}));
 	const addPreset = () => {
 		const preset = blankPreset();
-		setSettings((current) => ({ ...current, presets: [...(current.presets || []), preset] }));
+    setSettings((current) => ({
+      ...current,
+      presets: [...(current.presets || []), preset],
+    }));
 		setOpenPreset(preset.id);
 	};
 	const save = async () => {
@@ -421,16 +524,22 @@ const clean = {
 						label: preset.label.trim(),
 						instructions: preset.instructions?.trim() || undefined,
 						lead: { ...preset.lead, model: preset.lead.model.trim() },
-						supporting: (preset.supporting || []).filter((member) => member.model.trim()),
+            supporting: (preset.supporting || []).filter((member) =>
+              member.model.trim(),
+            ),
 					}))
 					.filter((preset) => preset.id && preset.label && preset.lead.model),
 			};
 			await updateWorkspaceApi(workspace.id, { modelSettings: clean });
 			onSaved();
 			onOpenChange(false);
-})().catch(async (e) => {
-setError(e instanceof Error ? e.message : "Could not save model presets.");
-}).finally(async () => {
+    })()
+      .catch(async (e) => {
+        setError(
+          e instanceof Error ? e.message : "Could not save model presets.",
+        );
+      })
+      .finally(async () => {
 setSaving(false);
 });
 	};
@@ -450,30 +559,54 @@ setSaving(false);
 									preset={preset}
 									models={models}
 									open={openPreset === preset.id}
-									onToggle={() => setOpenPreset((current) => (current === preset.id ? null : preset.id))}
+                  onToggle={() =>
+                    setOpenPreset((current) =>
+                      current === preset.id ? null : preset.id,
+                    )
+                  }
 									onPatch={(patch) => patchPreset(index, patch)}
 									onRemove={() =>
 										setSettings((current) => ({
 											...current,
-											presets: (current.presets || []).filter((_, i) => i !== index),
+                      presets: (current.presets || []).filter(
+                        (_, i) => i !== index,
+                      ),
 										}))
 									}
 								/>
 							))}
 						</CardList>
 					) : (
-						<div {...stylex.props(sx.roundedXl, sx.bgPanel, sx.px4, sx.py6, sx.textCenter, sx.textDim, typography.supporting)}>
+            <div
+              {...stylex.props(
+                sx.roundedXl,
+                sx.bgPanel,
+                sx.px4,
+                sx.py6,
+                sx.textCenter,
+                sx.textDim,
+                typography.supporting,
+              )}
+            >
 							No presets yet.
 						</div>
 					)}
-					<Button icon={<IconPlus size={16} />} {...stylex.props(sx.wFit)} onClick={addPreset}>
+          <Button
+            icon={<IconPlus size={16} />}
+            {...stylex.props(sx.wFit)}
+            onClick={addPreset}
+          >
 						Add preset
 					</Button>
 				</div>
 				{error && <InlineAlert>{error}</InlineAlert>}
 				<Modal.Footer>
 					<Modal.Close render={<Button variant="ghost">Cancel</Button>} />
-					<Button variant="primary" disabled={saving} onClick={() => void save()}>
+          <Button
+            variant="primary"
+            disabled={saving}
+            onClick={() => void save()}
+          >
 						{saving ? "Saving…" : "Save"}
 					</Button>
 				</Modal.Footer>
@@ -483,7 +616,11 @@ setSaving(false);
 }
 
 /** Workspace-specific entry inside Settings → Providers. */
-export function WorkspaceModelPresetSettings({ workspace }: { workspace?: Workspace }) {
+export function WorkspaceModelPresetSettings({
+  workspace,
+}: {
+  workspace?: Workspace;
+}) {
 	const [open, setOpen] = useState(false);
 	return (
 		<>
@@ -499,11 +636,22 @@ export function WorkspaceModelPresetSettings({ workspace }: { workspace?: Worksp
 						</SettingRowDescription>
 					</SettingRowText>
 					<SettingRowControl>
-						<Button disabled={!workspace} onClick={() => setOpen(true)}>Configure</Button>
+            <Button disabled={!workspace} onClick={() => setOpen(true)}>
+              Configure
+            </Button>
 					</SettingRowControl>
 				</SettingRow>
 			</SettingCard>
-			{workspace && <WorkspaceModelPresets workspace={workspace} open={open} onOpenChange={setOpen} onSaved={() => window.dispatchEvent(new Event("opensession:workspaces-changed"))} />}
+      {workspace && (
+        <WorkspaceModelPresets
+          workspace={workspace}
+          open={open}
+          onOpenChange={setOpen}
+          onSaved={() =>
+            window.dispatchEvent(new Event("opensession:workspaces-changed"))
+          }
+        />
+      )}
 		</>
 	);
 }
