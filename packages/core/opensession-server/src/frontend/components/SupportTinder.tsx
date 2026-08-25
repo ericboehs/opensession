@@ -215,6 +215,30 @@ const sx = stylex.create({
 		"--tw-tracking": "-.01em",
 		"letterSpacing": "-.01em"
 	},
+
+	phoneInlineFlex: {
+		"@media (max-width: 720px)": {
+			"display": "inline-flex"
+		}
+	},
+	pbMax16pxEnvSafeAreaInsetBottom: {
+		"paddingBottom": "max(16px, env(safe-area-inset-bottom))"
+	},
+	minH11: {
+		"minHeight": "44px"
+	},
+	bgRedSoft: {
+		"backgroundColor": "var(--red-soft)"
+	},
+	bgYellowSoft: {
+		"backgroundColor": "var(--yellow-soft)"
+	},
+	textYellow: {
+		"color": "var(--yellow)"
+	},
+	bgActive: {
+		"backgroundColor": "var(--bg-active)"
+	},
 });
 
 /**
@@ -250,15 +274,15 @@ interface Props {
  *  the app's chips are a wash of their own tone (lib/plain-status.ts, the
  *  source chips), so an outlined one here read as a different family. */
 const PRIORITY: Record<number, { label: string; cls: string }> = {
-	0: { label: "Urgent", cls: "bg-red-soft text-red" },
-	1: { label: "High", cls: "bg-yellow-soft text-yellow" },
-	2: { label: "Normal", cls: "bg-active text-dim" },
-	3: { label: "Low", cls: "bg-active text-faint" },
+	0: { label: "Urgent", cls: mergeStylexClassName("", sx.bgRedSoft, sx.textRed) },
+	1: { label: "High", cls: mergeStylexClassName("", sx.bgYellowSoft, sx.textYellow) },
+	2: { label: "Normal", cls: mergeStylexClassName("", sx.bgActive, sx.textDim) },
+	3: { label: "Low", cls: mergeStylexClassName("", sx.bgActive, sx.textFaint) },
 };
 
 /** The deck's action row keeps a 44px touch target: it is the phone's only
  * path through the queue, and `lg` alone is 36px. */
-const DECK_ACTION = "min-h-11";
+const DECK_ACTION = mergeStylexClassName("", sx.minH11);
 
 export function SupportTinder({ onExit, onOpenSession }: Props) {
 	const currentUser = useCurrentUser();
@@ -511,7 +535,7 @@ export function SupportTinder({ onExit, onOpenSession }: Props) {
 			<div {...stylex.props(sx.relative, sx.flex, sx.wFull, sx.itemsCenter, sx.justifyBetween, sx.px4, sx.py3)}>
 				<Button
 					variant="ghost"
-					size="md" {...mergeStylexProps("phone:inline-flex", sx.hidden)}
+					size="md" {...mergeStylexProps("", sx.phoneInlineFlex, sx.hidden)}
 					onClick={onExit}
 					title="Back (Esc)"
 					aria-label="Back"
@@ -612,7 +636,7 @@ export function SupportTinder({ onExit, onOpenSession }: Props) {
 
 			{/* Action bar (works without gestures). */}
 			{deck !== null && !done && !error && (
-				<div {...mergeStylexProps("pb-[max(16px,env(safe-area-inset-bottom))]", sx.flex, sx.wFull, sx.maxW640px, sx.itemsStretch, sx.gap25, sx.px4)}>
+				<div {...mergeStylexProps("", sx.pbMax16pxEnvSafeAreaInsetBottom, sx.flex, sx.wFull, sx.maxW640px, sx.itemsStretch, sx.gap25, sx.px4)}>
 					<Button
 						variant="danger"
 						size="lg"

@@ -20,7 +20,7 @@ test("archived phone search stays at the thumb edge", () => {
 	expect(css).toContain("bottom:0");
 	expect(css).toContain("@media (max-width: 720px)");
 	expect(css).toContain("display:block");
-	expect(ARCHIVED_PHONE_SEARCH_DOCK).toContain("safe-area-inset-bottom");
+	expect(css).toContain("safe-area-inset-bottom");
 });
 
 test("archived phone rows reveal Restore instead of reserving a button", () => {

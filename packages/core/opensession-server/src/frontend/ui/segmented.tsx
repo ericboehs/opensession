@@ -130,6 +130,19 @@ const sx = stylex.create({
 			}
 		}
 	},
+
+	px2: {
+		"paddingInline": "8px"
+	},
+	py05: {
+		"paddingBlock": "2px"
+	},
+	px25: {
+		"paddingInline": "10px"
+	},
+	py1: {
+		"paddingBlock": "4px"
+	},
 });
 
 /**
@@ -179,8 +192,8 @@ const sx = stylex.create({
 type Size = "sm" | "md";
 
 const optionSizes: Record<Size, string> = {
-	sm: "px-2 py-0.5",
-	md: "px-2.5 py-1",
+	sm: mergeStylexClassName("", sx.px2, sx.py05),
+	md: mergeStylexClassName("", sx.px25, sx.py1),
 };
 
 const SegmentedContext = React.createContext<{

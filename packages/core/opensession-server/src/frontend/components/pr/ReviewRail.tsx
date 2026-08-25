@@ -158,6 +158,37 @@ const sx = stylex.create({
 	rotate90: {
 		"rotate": "90deg"
 	},
+
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	wFull: {
+		"width": "100%"
+	},
+	roundedRow: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	py15: {
+		"paddingBlock": "6px"
+	},
+	textLeft: {
+		"textAlign": "left"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
 });
 
 /**
@@ -297,7 +328,7 @@ export function ReviewRail({
                   : "All passed"
             }
             trailing={
-              <span {...mergeStylexProps("tabular-nums", sx.inlineFlex, sx.gap15, typography.meta)}>
+              <span {...mergeStylexProps("", sx.tabularNums, sx.inlineFlex, sx.gap15, typography.meta)}>
                 {checkSummary.passed > 0 && <span {...stylex.props(sx.textGreen)}>{checkSummary.passed}</span>}
                 {checkSummary.failed > 0 && <span {...stylex.props(sx.textRed)}>{checkSummary.failed}</span>}
                 {checkSummary.pending > 0 && <span {...stylex.props(sx.textYellow)}>{checkSummary.pending}</span>}
@@ -379,13 +410,13 @@ export function ReviewRail({
               ))}
               <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3, sx.px15, sx.pt15)}>
                 {files.length > 8 && (
-                  <button {...mergeStylexProps("hover:text-fg", sx.border0, sx.bgTransparent, sx.p0, sx.fontMedium, sx.textDim, typography.meta)}
+                  <button {...mergeStylexProps("", sx.hoverTextFg, sx.border0, sx.bgTransparent, sx.p0, sx.fontMedium, sx.textDim, typography.meta)}
                     onClick={() => setAllFiles((o) => !o)}
                   >
                     {allFiles ? "Show fewer" : `Show all ${files.length}`}
                   </button>
                 )}
-                <button {...mergeStylexProps("hover:text-fg", sx.border0, sx.bgTransparent, sx.p0, sx.fontMedium, sx.textDim, typography.meta)}
+                <button {...mergeStylexProps("", sx.hoverTextFg, sx.border0, sx.bgTransparent, sx.p0, sx.fontMedium, sx.textDim, typography.meta)}
                   onClick={onOpenFiles}
                 >
                   Open files changed
@@ -457,7 +488,7 @@ function RailGroupLabel({ children }: { children: React.ReactNode }) {
 /** Shared shape for the rail's one-line summaries, whether they expand in
  *  place or lead somewhere. */
 const RAIL_ROW =
-  "flex w-full items-center gap-2 rounded-row border-0 bg-transparent px-1.5 py-1.5 text-left text-label text-fg hover:bg-hover";
+  mergeStylexClassName("", sx.flex, sx.wFull, sx.itemsCenter, sx.gap2, sx.roundedRow, sx.border0, sx.bgTransparent, sx.px15, sx.py15, sx.textLeft, typography.label, sx.textFg, sx.hoverBgHover);
 
 /** A one-line summary that opens its own detail in place. */
 function RollupRow({

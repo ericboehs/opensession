@@ -68,15 +68,28 @@ const sx = stylex.create({
 			"width": "100%"
 		}
 	},
+
+	maxW760px: {
+		"maxWidth": "760px"
+	},
+	maxW860px: {
+		"maxWidth": "860px"
+	},
+	maxW920px: {
+		"maxWidth": "920px"
+	},
+	maxWNone: {
+		"maxWidth": "none"
+	},
 });
 
 export type PageContentWidth = "narrow" | "default" | "wide" | "full";
 
 const contentWidths: Record<PageContentWidth, string> = {
-	narrow: "max-w-[760px]",
-	default: "max-w-[860px]",
-	wide: "max-w-[920px]",
-	full: "max-w-none",
+	narrow: mergeStylexClassName("", sx.maxW760px),
+	default: mergeStylexClassName("", sx.maxW860px),
+	wide: mergeStylexClassName("", sx.maxW920px),
+	full: mergeStylexClassName("", sx.maxWNone),
 };
 
 interface PageLayoutProps extends Omit<React.ComponentPropsWithoutRef<"div">, "title"> {

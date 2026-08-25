@@ -253,6 +253,59 @@ const sx = stylex.create({
 			"animation": "var(--animate-pulse)"
 		}
 	},
+
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	max560pxPx4: {
+		"@media not all and (min-width: 560px)": {
+			"paddingInline": "16px"
+		}
+	},
+	max560pxPb12: {
+		"@media not all and (min-width: 560px)": {
+			"paddingBottom": "48px"
+		}
+	},
+	max560pxPt18px: {
+		"@media not all and (min-width: 560px)": {
+			"paddingTop": "18px"
+		}
+	},
+	max560pxMb35: {
+		"@media not all and (min-width: 560px)": {
+			"marginBottom": "14px"
+		}
+	},
+	phoneHidden: {
+		"@media (max-width: 720px)": {
+			"display": "none"
+		}
+	},
+	phoneMinH14: {
+		"@media (max-width: 720px)": {
+			"minHeight": "56px"
+		}
+	},
+	phoneMinH11: {
+		"@media (max-width: 720px)": {
+			"minHeight": "44px"
+		}
+	},
+	phoneSize11: {
+		"@media (max-width: 720px)": {
+			"width": "44px",
+			"height": "44px"
+		}
+	},
 });
 
 interface Props {
@@ -371,7 +424,7 @@ function OverviewLine({
             }`
           : "Analytics are loading"
       }
-      aria-busy={!stats} {...mergeStylexProps("group tabular-nums hover:text-fg", sx.focusRing, sx.Mx1, sx.flex, sx.maxWFull, sx.cursorPointer, sx.flexWrap, sx.itemsCenter, sx.gapX15, sx.gapY05, sx.roundedSm, sx.px1, sx.textLeft, sx.textDim, sx.transitionColors, typography.supporting)}
+      aria-busy={!stats} {...mergeStylexProps("group", sx.tabularNums, sx.hoverTextFg, sx.focusRing, sx.Mx1, sx.flex, sx.maxWFull, sx.cursorPointer, sx.flexWrap, sx.itemsCenter, sx.gapX15, sx.gapY05, sx.roundedSm, sx.px1, sx.textLeft, sx.textDim, sx.transitionColors, typography.supporting)}
     >
       <span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
         <span
@@ -406,7 +459,7 @@ function OverviewLine({
         </span>
       ) : null}
       {!stats && (
-        <span {...mergeStylexProps("motion-safe:animate-pulse", sx.h25, sx.w40, sx.shrink, sx.roundedSm, sx.bgLine)} />
+        <span {...mergeStylexProps("", sx.motionSafeAnimatePulse, sx.h25, sx.w40, sx.shrink, sx.roundedSm, sx.bgLine)} />
       )}
     </button>
   );
@@ -772,7 +825,7 @@ setAddingToSidebar(false);
     // column at the shared width and padding, a PageHeader on top.
     <div data-page-scroll {...stylex.props(sx.minH0, sx.wFull, sx.flex1, sx.overflowYAuto, sx.bgSurface)}>
       {topbarActionsEl ? createPortal(actions, topbarActionsEl) : null}
-      <div {...mergeStylexProps("max-[560px]:px-4 max-[560px]:pb-12 max-[560px]:pt-[18px]", sx.mxAuto, sx.wFull, sx.maxW920px, sx.px6, sx.pb15, sx.pt7)}>
+      <div {...mergeStylexProps("", sx.max560pxPx4, sx.max560pxPb12, sx.max560pxPt18px, sx.mxAuto, sx.wFull, sx.maxW920px, sx.px6, sx.pb15, sx.pt7)}>
         {/* The page's name is the top bar's now. With no `PageTitle` under it
             the large-title handoff never has a heading to defer to, so the bar
             holds "Pull requests" in its left corner for good rather than
@@ -782,7 +835,7 @@ setAddingToSidebar(false);
 
             `min-w-0` because the line wraps, and a flex child asked for its
             content size takes the width of one clause rather than of the row. */}
-        <div {...mergeStylexProps("max-[560px]:mb-3.5", sx.mb18px, sx.flex, sx.minW0)}>
+        <div {...mergeStylexProps("", sx.max560pxMb35, sx.mb18px, sx.flex, sx.minW0)}>
           <OverviewLine
             running={running}
             stats={stats}
@@ -853,7 +906,7 @@ setAddingToSidebar(false);
                                 {row.title}
                               </span>
                               {row.number && (
-                                <span {...mergeStylexProps("tabular-nums", sx.shrink0, sx.textFaint, typography.meta)}>
+                                <span {...mergeStylexProps("", sx.tabularNums, sx.shrink0, sx.textFaint, typography.meta)}>
                                   #{row.number}
                                 </span>
                               )}
@@ -863,7 +916,7 @@ setAddingToSidebar(false);
                                 is the convention rather than a status, and it
                                 reads at a glance in a way a neutral pair of
                                 numbers does not. */}
-                            <span {...mergeStylexProps("tabular-nums phone:hidden", sx.justifySelfEnd, typography.meta)}>
+                            <span {...mergeStylexProps("", sx.tabularNums, sx.phoneHidden, sx.justifySelfEnd, typography.meta)}>
                               {row.additions !== undefined && (
                                 <span {...stylex.props(sx.textGreen)}>+{compactDiff(row.additions)}</span>
                               )}
@@ -871,7 +924,7 @@ setAddingToSidebar(false);
                                 <span {...stylex.props(sx.ml2, sx.textRed)}>−{compactDiff(row.deletions)}</span>
                               )}
                             </span>
-                            <span {...mergeStylexProps("tabular-nums", sx.justifySelfEnd, sx.textFaint, typography.meta)}>
+                            <span {...mergeStylexProps("", sx.tabularNums, sx.justifySelfEnd, sx.textFaint, typography.meta)}>
                               {compactAge(row.updatedAt)}
                             </span>
                           </button>
@@ -897,19 +950,19 @@ setAddingToSidebar(false);
       >
         {preview && (
           <>
-            <div {...mergeStylexProps("phone:min-h-14", sx.flex, sx.minH13, sx.shrink0, sx.itemsCenter, sx.gap2, sx.borderB, sx.borderLine, sx.bgPanel, sx.px3)}>
+            <div {...mergeStylexProps("", sx.phoneMinH14, sx.flex, sx.minH13, sx.shrink0, sx.itemsCenter, sx.gap2, sx.borderB, sx.borderLine, sx.bgPanel, sx.px3)}>
               <div {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.px1, sx.fontMedium, sx.textFg, typography.itemTitle)}>
                 <IconPullRequest size={19} {...stylex.props(sx.shrink0, sx.textDim)} />
                 <span {...stylex.props(sx.truncate)}>{repoLabel(preview.repo)}</span>
                 {preview.number && (
-                  <span {...mergeStylexProps("tabular-nums", sx.shrink0, sx.fontNormal, sx.textFaint)}>
+                  <span {...mergeStylexProps("", sx.tabularNums, sx.shrink0, sx.fontNormal, sx.textFaint)}>
                     #{preview.number}
                   </span>
                 )}
               </div>
               {preview.workspaceId ? (
                 <Button
-                  variant="default" {...mergeStylexProps("phone:min-h-11", sx.minH10, sx.shrink0)}
+                  variant="default" {...mergeStylexProps("", sx.phoneMinH11, sx.minH10, sx.shrink0)}
                   icon={<IconSidebarLeft size={18} />}
                   onClick={() => {
                     onOpenWorkspace(preview.workspaceId!, preview);
@@ -920,7 +973,7 @@ setAddingToSidebar(false);
                 </Button>
               ) : preview.state === "OPEN" ? (
                 <Button
-                  variant="default" {...mergeStylexProps("phone:min-h-11", sx.minH10, sx.shrink0)}
+                  variant="default" {...mergeStylexProps("", sx.phoneMinH11, sx.minH10, sx.shrink0)}
                   icon={<IconSidebarLeft size={18} />}
                   disabled={addingToSidebar}
                   onClick={() => void addPreviewToSidebar()}
@@ -929,7 +982,7 @@ setAddingToSidebar(false);
                 </Button>
               ) : null}
               <Button
-                variant="ghost" {...mergeStylexProps("phone:size-11", sx.size10, sx.shrink0)}
+                variant="ghost" {...mergeStylexProps("", sx.phoneSize11, sx.size10, sx.shrink0)}
                 icon={<IconX size={20} />}
                 aria-label="Close pull request"
                 onClick={() => setPreview(null)}

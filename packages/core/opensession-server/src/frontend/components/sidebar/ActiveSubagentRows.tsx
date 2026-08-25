@@ -36,7 +36,7 @@ const sx = stylex.create({	relative: {
 		"borderWidth": "0"
 	},
 	bgTransparent: {
-		"backgroundColor": "#0000"
+		"backgroundColor": "transparent"
 	},
 	pyVarSidebarRowPad: {
 		"paddingBlock": "var(--sidebar-row-pad)"

@@ -442,8 +442,8 @@ export const SETTINGS_SHEET_SEARCH_BAR =
 	// where a row would otherwise read THROUGH the field rather than behind it.
 	"before:[background:linear-gradient(to_top,color-mix(in_srgb,var(--bg)_88%,transparent)_0%,color-mix(in_srgb,var(--bg)_76%,transparent)_55%,color-mix(in_srgb,var(--bg)_45%,transparent)_78%,transparent_100%)] " +
 	mergeStylexClassName("", sx.beforeBackdropBlur16px, sx.beforeBackdropSaturate135) + " " +
-	"before:[-webkit-mask-image:linear-gradient(to_top,#000_0%,#000_62%,transparent_100%)] " +
-	"before:[mask-image:linear-gradient(to_top,#000_0%,#000_62%,transparent_100%)]";
+	"before:[-webkit-mask-image:linear-gradient(to_top,var(--color-black)_0%,var(--color-black)_62%,transparent_100%)] " +
+	"before:[mask-image:linear-gradient(to_top,var(--color-black)_0%,var(--color-black)_62%,transparent_100%)]";
 
 /**
  * A row in the settings navigation: the section list and the account block

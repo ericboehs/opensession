@@ -9,7 +9,7 @@ import { useMarkdownRepo } from "./MarkdownBody";
 import { ASK_CARD_SHELL, ASK_CHOICE_ROW } from "../lib/ask-card-classes";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -156,6 +156,14 @@ const sx = stylex.create({
 	h15Dot: { height: "6px", width: "6px" },
 	transitionBackground: { transitionProperty: "background-color" },
 	bgFg30: { backgroundColor: "color-mix(in srgb, var(--text) 30%, transparent)" },
+
+	shadow0003pxVarGreenSoft: {
+		"--tw-shadow": "0 0 0 3px var(--tw-shadow-color,var(--green-soft))",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	CornerShapeVarCs: {
+		"cornerShape": "var(--cs)"
+	},
 });
 
 interface Props {
@@ -329,7 +337,7 @@ export function AskCard({ questions, onAnswer }: Props) {
 		>
 			<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gapX2, sx.gapY05)}>
 				<span
-					aria-hidden="true" {...mergeStylexProps("shadow-[0_0_0_3px_var(--green-soft)]", sx.h15, sx.w15, sx.shrink0, sx.roundedFull, sx.bgGreen)}
+					aria-hidden="true" {...mergeStylexProps("", sx.shadow0003pxVarGreenSoft, sx.h15, sx.w15, sx.shrink0, sx.roundedFull, sx.bgGreen)}
 				/>
 				<span {...stylex.props(sx.fontSemibold, sx.textDim, typography.label)}>
 					{AGENT_NAME} needs input
@@ -435,7 +443,7 @@ export function AskCard({ questions, onAnswer }: Props) {
 									</Questionnaire.ChoiceLabel>
 									<span
 										aria-hidden="true"
-										{...mergeStylexProps(q.multiSelect ? "[corner-shape:var(--cs)]" : undefined, sx.mtPx, sx.flex, sx.h5, sx.w5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.border, sx.transitionColors, q.multiSelect ? sx.roundedCheckbox : sx.roundedFull, active ? sx.borderTransparent : sx.borderLineStrong, active ? sx.bgFg : sx.textTransparent, active && sx.textBg)}
+										{...mergeStylexProps(q.multiSelect ? mergeStylexClassName("", sx.CornerShapeVarCs) : undefined, sx.mtPx, sx.flex, sx.h5, sx.w5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.border, sx.transitionColors, q.multiSelect ? sx.roundedCheckbox : sx.roundedFull, active ? sx.borderTransparent : sx.borderLineStrong, active ? sx.bgFg : sx.textTransparent, active && sx.textBg)}
 									>
 										<IconCheck size={20} />
 									</span>
@@ -444,7 +452,7 @@ export function AskCard({ questions, onAnswer }: Props) {
 						})}
 						<Questionnaire.Input
 							aria-label={q.options?.length ? "Custom answer" : "Answer"}
-							{...mergeStylexProps("[corner-shape:var(--cs)]", sx.h11, sx.wFull, sx.roundedControl, sx.border0, sx.bgControl, sx.px3, typography.inputPhone, sx.desktopControlText, sx.textFg, sx.outlineNone, sx.placeholderFaint, sx.disabledOpacity60, Boolean(q.options?.length) && sx.mt15)}
+							{...mergeStylexProps("", sx.CornerShapeVarCs, sx.h11, sx.wFull, sx.roundedControl, sx.border0, sx.bgControl, sx.px3, typography.inputPhone, sx.desktopControlText, sx.textFg, sx.outlineNone, sx.placeholderFaint, sx.disabledOpacity60, Boolean(q.options?.length) && sx.mt15)}
 							placeholder={
 								q.options?.length ? "Or type your own answer…" : "Type your answer…"
 							}

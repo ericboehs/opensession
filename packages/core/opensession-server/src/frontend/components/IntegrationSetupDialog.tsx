@@ -142,6 +142,17 @@ const sx = stylex.create({
 			"flex": "1"
 		}
 	},
+
+	phoneMl0: {
+		"@media (max-width: 720px)": {
+			"marginLeft": "0"
+		}
+	},
+	phoneWFull: {
+		"@media (max-width: 720px)": {
+			"width": "100%"
+		}
+	},
 });
 
 // One integration's whole configuration, in the order you work through it:
@@ -483,7 +494,7 @@ setSaving(false);
 									<Segmented
 										label="Slack event delivery"
 										value={transport}
-										onValueChange={(next) => pickTransport(next as SlackTransport)} {...mergeStylexProps("phone:ml-0 phone:w-full", sx.mlAuto)}
+										onValueChange={(next) => pickTransport(next as SlackTransport)} {...mergeStylexProps("", sx.phoneMl0, sx.phoneWFull, sx.mlAuto)}
 									>
 										<SegmentedOption value="socket" disabled={saving} className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneFlex1)}>
 											Socket Mode

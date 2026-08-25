@@ -175,6 +175,35 @@ const sx = stylex.create({
 	mb0: {
 		"marginBottom": "0"
 	},
+
+	shadowVarAvatarEdge: {
+		"--tw-shadow": "var(--avatar-edge)",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	phonePtCalcVarHeaderH18px: {
+		"@media (max-width: 720px)": {
+			"paddingTop": "calc(var(--header-h) + 18px)"
+		}
+	},
+	max560pxPx4: {
+		"@media not all and (min-width: 560px)": {
+			"paddingInline": "16px"
+		}
+	},
+	max560pxPb12: {
+		"@media not all and (min-width: 560px)": {
+			"paddingBottom": "48px"
+		}
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	phoneHidden: {
+		"@media (max-width: 720px)": {
+			"display": "none"
+		}
+	},
 });
 
 /**
@@ -256,7 +285,7 @@ function FeedOwnerMark({ owner }: { owner: FeedOwner }) {
 		return <UserAvatar name={owner.label} size={24} title={owner.label} />;
 	}
 	return (
-		<span {...mergeStylexProps("shadow-[var(--avatar-edge)]", sx.flex, sx.size24px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedAvatar, sx.bgActive, sx.textDim)}
+		<span {...mergeStylexProps("", sx.shadowVarAvatarEdge, sx.flex, sx.size24px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedAvatar, sx.bgActive, sx.textDim)}
 			title={owner.label}
 		>
 			<IconRobot size={14} />
@@ -410,7 +439,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 		// The page frame every other list page in the app uses: one centred
 		// column at the shared width and padding, a PageHeader on top.
 		<div data-page-scroll {...stylex.props(sx.minH0, sx.wFull, sx.flex1, sx.overflowYAuto, sx.bgSurface)}>
-			<div {...mergeStylexProps("phone:pt-[calc(var(--header-h)+18px)] max-[560px]:px-4 max-[560px]:pb-12", sx.mxAuto, sx.wFull, sx.maxW920px, sx.px6, sx.pb15, sx.pt7)}>
+			<div {...mergeStylexProps("", sx.phonePtCalcVarHeaderH18px, sx.max560pxPx4, sx.max560pxPb12, sx.mxAuto, sx.wFull, sx.maxW920px, sx.px6, sx.pb15, sx.pt7)}>
 				<PageHeader>
 					<div {...stylex.props(sx.minW0)}>
 						<PageTitle>Feed</PageTitle>
@@ -601,7 +630,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 														{row.title}
 													</span>
 													{row.ref && (
-														<span {...mergeStylexProps("tabular-nums", sx.shrink0, sx.textFaint, typography.meta)}>
+														<span {...mergeStylexProps("", sx.tabularNums, sx.shrink0, sx.textFaint, typography.meta)}>
 															{row.ref}
 														</span>
 													)}
@@ -614,7 +643,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 												</span>
 												{/* A side that moved no lines is left off rather than
 												    written as a zero: every commit carries both counts. */}
-												<span {...mergeStylexProps("tabular-nums phone:hidden", sx.justifySelfEnd, typography.meta)}>
+												<span {...mergeStylexProps("", sx.tabularNums, sx.phoneHidden, sx.justifySelfEnd, typography.meta)}>
 													{!!row.additions && (
 														<span {...stylex.props(sx.textGreen)}>+{compactDiff(row.additions)}</span>
 													)}
@@ -622,7 +651,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 														<span {...stylex.props(sx.ml2, sx.textRed)}>−{compactDiff(row.deletions)}</span>
 													)}
 												</span>
-												<span {...mergeStylexProps("tabular-nums", sx.justifySelfEnd, sx.textFaint, typography.meta)}>
+												<span {...mergeStylexProps("", sx.tabularNums, sx.justifySelfEnd, sx.textFaint, typography.meta)}>
 													{compactAge(row.shippedAt)}
 												</span>
 											</button>

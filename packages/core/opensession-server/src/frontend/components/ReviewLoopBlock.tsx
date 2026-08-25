@@ -3,7 +3,7 @@ import { IconChevronDown, IconCheckCircle, IconX } from "./icons";
 import type { ReviewLoopResult } from "../lib/review-loop";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -158,6 +158,36 @@ const sx = stylex.create({
 	justifyCenter: { justifyContent: "center" },
 	textRed: { color: "var(--red)" },
 	itemsCenter: { alignItems: "center" },
+
+	hoverBgHover40: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in oklab, var(--hover) 40%, transparent)"
+				}
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	phoneMinH10: {
+		"@media (max-width: 720px)": {
+			"minHeight": "40px"
+		}
+	},
+	desktopBlock: {
+		"@media (min-width: 721px)": {
+			"display": "block"
+		}
+	},
 });
 
 /**
@@ -205,7 +235,7 @@ export function ReviewLoopBlock({
 						onOpenChange?.(next);
 						return next;
 					})
-				} {...mergeStylexProps("hover:bg-hover/40 hover:text-fg phone:min-h-10", sx.Mx2, sx.flex, sx.wCalc10016px, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px3, sx.py1, sx.textLeft, sx.fontSans, sx.leading5, sx.textDim, sx.transitionColors, typography.itemTitle)}
+				} {...mergeStylexProps("", sx.hoverBgHover40, sx.hoverTextFg, sx.phoneMinH10, sx.Mx2, sx.flex, sx.wCalc10016px, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px3, sx.py1, sx.textLeft, sx.fontSans, sx.leading5, sx.textDim, sx.transitionColors, typography.itemTitle)}
 			>
 				<span
 					{...stylex.props(sx.grid, sx.size5, sx.flexNone, sx.selfCenter, sx.placeItemsCenter, sx.leadingNone, sx.textFaint, sx.transitionTransform, sx.duration150, open ? sx.translateUpPx : sx.rotateNeg90)}
@@ -215,7 +245,7 @@ export function ReviewLoopBlock({
 				<span {...stylex.props(sx.shrink0, sx.fontMedium)}>Review loop</span>
 				<span {...stylex.props(sx.minW0, sx.truncate, sx.leading4, sx.textFaint, typography.label)}>{visibleDetail}</span>
 				{prNumber && (
-					<span {...mergeStylexProps("desktop:block", sx.hidden, sx.shrink0, sx.leading4, sx.textFaint, typography.label)}>PR #{prNumber}</span>
+					<span {...mergeStylexProps("", sx.desktopBlock, sx.hidden, sx.shrink0, sx.leading4, sx.textFaint, typography.label)}>PR #{prNumber}</span>
 				)}
 				{live && (
 					<span

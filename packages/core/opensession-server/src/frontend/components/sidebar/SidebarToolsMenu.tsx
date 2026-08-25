@@ -7,7 +7,7 @@ import {
 	type SupportSurface,
 } from "../../lib/support-surface";
 import { ContextMenu, Menu, MENU_ICON } from "../../ui/menu";
-import { cn, mergeStylexProps } from "../../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 import { IconDotsHorizontal, IconSliders } from "../icons";
 import * as stylex from "@stylexjs/stylex";
 
@@ -67,6 +67,17 @@ const sx = stylex.create({
 	p0: {
 			padding: "0"
 	},
+
+	inlineFlex: {
+		"display": "inline-flex"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
 });
 
 /**
@@ -88,7 +99,7 @@ const sx = stylex.create({
  * own parent, which closes the parent the moment you reach for it.
  */
 
-const ICON_SLOT = "inline-flex shrink-0 [&_svg]:size-[20px]";
+const ICON_SLOT = mergeStylexClassName("[&_svg]:size-[20px]", sx.inlineFlex, sx.shrink0);
 
 export type SidebarMenuTool = {
 	id: SidebarToolId;
@@ -171,7 +182,7 @@ export function SidebarToolRows({
 							    registers as a child menu, so opening it leaves the menu it
 							    sits in up. */}
 							<Menu.Root>
-								<Menu.Trigger {...mergeStylexProps("hover:bg-hover data-[popup-open]:bg-hover", sx.absolute, sx.top12, sx.right9, sx.flex, sx.size7, sx.TranslateY12, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.p0, sx.textFaint)}
+								<Menu.Trigger {...mergeStylexProps("data-[popup-open]:bg-hover", sx.hoverBgHover, sx.absolute, sx.top12, sx.right9, sx.flex, sx.size7, sx.TranslateY12, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.p0, sx.textFaint)}
 									aria-label="Where support tickets live"
 								>
 									<IconDotsHorizontal size={20} />

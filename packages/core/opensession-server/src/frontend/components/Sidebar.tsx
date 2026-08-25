@@ -785,11 +785,139 @@ const sx = stylex.create({
 		"paddingBottom": "max(24px, env(safe-area-inset-bottom,0px))"
 	},
 	WebkitMaskImageLinearGradientToBottomTransparent0000VarHeaderH: {
-		"WebkitmaskImage": "linear-gradient(to bottom,transparent 0,#000 var(--header-h))"
+		"WebkitMaskImage": "linear-gradient(to bottom,transparent 0,var(--color-black) var(--header-h))"
 	},
 	MaskImageLinearGradientToBottomTransparent0000VarHeaderH: {
-		"WebkitmaskImage": "linear-gradient(to bottom,transparent 0,#000 var(--header-h))",
-		"maskImage": "linear-gradient(to bottom,transparent 0,#000 var(--header-h))"
+		"WebkitMaskImage": "linear-gradient(to bottom,transparent 0,var(--color-black) var(--header-h))",
+		"maskImage": "linear-gradient(to bottom,transparent 0,var(--color-black) var(--header-h))"
+	},
+
+	borderVarAccent6b8afd: {
+		"borderColor": "var(--accent)"
+	},
+	ring2: {
+		"--tw-ring-shadow": "var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor)",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	desktopGap9px: {
+		"@media (min-width: 721px)": {
+			"gap": "9px"
+		}
+	},
+	focusVisibleOpacity100: {
+		":focusVisible": {
+			"opacity": "1"
+		}
+	},
+	mdOpacity0: {
+		"@media (min-width: 48rem)": {
+			"opacity": "0"
+		}
+	},
+	beforeAbsolute: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	beforeInset05: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"inset": "2px"
+		}
+	},
+	beforeZ0: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"zIndex": "0"
+		}
+	},
+	beforeRoundedSm: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"borderRadius": "calc(4px * var(--rf))"
+		}
+	},
+	beforeCornerShapeVarCs: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"cornerShape": "var(--cs)"
+		}
+	},
+	beforeTransitionBackground: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"transitionProperty": "background",
+			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+		}
+	},
+	beforeContent: {
+		"::before": {
+			"--tw-content": "\"\"",
+			"content": "var(--tw-content)"
+		}
+	},
+	hoverBeforeBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"::before": {
+					"content": "var(--tw-content)",
+					"backgroundColor": "var(--hover)"
+				}
+			}
+		}
+	},
+	phoneTranslateYPx: {
+		"@media (max-width: 720px)": {
+			"--tw-translate-y": "-1px",
+			"translate": "var(--tw-translate-x) var(--tw-translate-y)"
+		}
+	},
+	transitionColorScale: {
+		"transitionProperty": "color,scale",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	beforeInset2: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"inset": "8px"
+		}
+	},
+	beforeRoundedMd: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"borderRadius": "calc(7px * var(--rf))"
+		}
+	},
+	beforeTransitionColors: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"transitionProperty": "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+		}
+	},
+	activeScale096: {
+		":active": {
+			"scale": ".96"
+		}
+	},
+	motionReduceTransformNone: {
+		"@media (prefers-reduced-motion: reduce)": {
+			"transform": "none"
+		}
+	},
+	mdMr2: {
+		"@media (min-width: 48rem)": {
+			"marginRight": "8px"
+		}
+	},
+	mdMl4: {
+		"@media (min-width: 48rem)": {
+			"marginLeft": "16px"
+		}
 	},
 });
 
@@ -3512,7 +3640,7 @@ setClosingPrUrls((current) => {
 					<RepoTile name={wsRowRepo(row)} size={14} />
 				)}
 				{editing ? (
-					<input {...mergeStylexProps("border-[var(--accent,#6b8afd)] desktop:text-item-title", sx.minW0, sx.flex1, sx.roundedMd, sx.border, sx.bgBg, sx.px3px, sx.fontMedium, sx.textInherit, sx.outlineNone, typography.body)}
+					<input {...mergeStylexProps("", sx.borderVarAccent6b8afd, sx.desktopTextItemTitle, sx.minW0, sx.flex1, sx.roundedMd, sx.border, sx.bgBg, sx.px3px, sx.fontMedium, sx.textInherit, sx.outlineNone, typography.body)}
 						value={row.workspace ? workspaceDraft : sessionDraft}
 						autoFocus
 						onChange={(e) =>
@@ -3576,7 +3704,7 @@ setClosingPrUrls((current) => {
 					>
 						<UserAvatar name={row.mention} size={16} {...stylex.props(sx.shrink0)} />
 						<span
-							aria-hidden="true" {...mergeStylexProps("ring-2", sx.absolute, sx.Right1, sx.Bottom1, sx.flex, sx.size3, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgAccent, sx.text8px, sx.fontBold, sx.leadingNone, sx.textOnAccent, sx.ringPanel)}
+							aria-hidden="true" {...mergeStylexProps("", sx.ring2, sx.absolute, sx.Right1, sx.Bottom1, sx.flex, sx.size3, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgAccent, sx.text8px, sx.fontBold, sx.leadingNone, sx.textOnAccent, sx.ringPanel)}
 						>
 							@
 						</span>
@@ -4541,7 +4669,7 @@ fetchFeedItems("plain")
 							</span>
 							{/* The differently sized name and count share a baseline, while the
 							    pair stays vertically centred against the tile. */}
-							<span {...mergeStylexProps("desktop:gap-[9px]", sx.flex, sx.minW0, sx.flex01Auto, sx.itemsBaseline, sx.gap15)}>
+							<span {...mergeStylexProps("", sx.desktopGap9px, sx.flex, sx.minW0, sx.flex01Auto, sx.itemsBaseline, sx.gap15)}>
 								<span className={cn(SIDEBAR_GROUP_NAME, mergeStylexClassName("", sx.flex01Auto, sx.fontSemibold))}>
 									{repo === ASK_BAND ? "Ask" : repoLabel(repo)}
 								</span>
@@ -4586,7 +4714,7 @@ fetchFeedItems("plain")
 							{!borrowedLens && (
 								<span
 									role="button"
-									tabIndex={0} {...mergeStylexProps("transition-[opacity,color] hover:text-fg focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100 before:absolute before:inset-0.5 before:z-0 before:rounded-sm before:[corner-shape:var(--cs)] before:transition-[background] before:content-[''] hover:before:bg-hover [&>*]:relative [&>*]:z-[1]", sx.relative, sx.mlAuto, sx.inlineFlex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.textFaint, sx.opacity100, sx.duration150)}
+									tabIndex={0} {...mergeStylexProps("md:group-hover:opacity-100 [&>*]:relative [&>*]:z-[1]", sx.transitionOpacityColor, sx.hoverTextFg, sx.focusVisibleOpacity100, sx.mdOpacity0, sx.beforeAbsolute, sx.beforeInset05, sx.beforeZ0, sx.beforeRoundedSm, sx.beforeCornerShapeVarCs, sx.beforeTransitionBackground, sx.beforeContent, sx.hoverBeforeBgHover, sx.relative, sx.mlAuto, sx.inlineFlex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.textFaint, sx.opacity100, sx.duration150)}
 									title={
 										repo === ASK_BAND
 											? "New Ask session, no repo"
@@ -4870,7 +4998,7 @@ fetchFeedItems("plain")
 						<span className={SIDEBAR_RAIL}>
 							<RepoTile name={feed.id} className={SIDEBAR_REPO_TILE} />
 						</span>
-						<span {...mergeStylexProps("desktop:gap-[9px]", sx.flex, sx.minW0, sx.flex01Auto, sx.itemsBaseline, sx.gap15)}>
+						<span {...mergeStylexProps("", sx.desktopGap9px, sx.flex, sx.minW0, sx.flex01Auto, sx.itemsBaseline, sx.gap15)}>
 							<span className={cn(SIDEBAR_GROUP_NAME, mergeStylexClassName("", sx.flex01Auto, sx.fontSemibold))}>{feed.title}</span>
 							<span className={cn(SIDEBAR_GROUP_COUNT, mergeStylexClassName("", sx.shrink0))}>{count}</span>
 						</span>
@@ -5123,7 +5251,7 @@ fetchFeedItems("plain")
 							label={personLensName}
 							onPick={(next) =>
 								setFilter({ person: personLensFilter(next, currentUser) })
-							} {...mergeStylexProps("phone:py-2.5 group-hover/team-lens:[--team-face-ring:var(--row-chip)] data-[popup-open]:[--team-face-ring:var(--row-chip)]", sx.absolute, sx.right2, sx.top12, sx.TranslateY12, sx.TeamFaceRingVarSidebarBg)}
+							} {...mergeStylexProps("group-hover/team-lens:[--team-face-ring:var(--row-chip)] data-[popup-open]:[--team-face-ring:var(--row-chip)]", sx.phonePy25, sx.absolute, sx.right2, sx.top12, sx.TranslateY12, sx.TeamFaceRingVarSidebarBg)}
 						/>
 					</div>
 				);
@@ -5170,14 +5298,14 @@ fetchFeedItems("plain")
 					{/* The bar reports the active lens. Closing it is a separate
 					    action at the far edge, so the label stays visually stable and
 					    the close control gets a full touch target. */}
-					<div {...mergeStylexProps("phone:text-base", sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.textSm, sx.textFg)}
+					<div {...mergeStylexProps("", sx.phoneTextBase, sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.textSm, sx.textFg)}
 						ref={(node) => {
 							titleRef.current = node;
 						}}
 					>
 						{filter.person === "everyone" ? (
 							<IconPeople
-								size={20} {...mergeStylexProps("phone:-translate-y-px", sx.shrink0, sx.translateY05px, sx.textDim)}
+								size={20} {...mergeStylexProps("", sx.phoneTranslateYPx, sx.shrink0, sx.translateY05px, sx.textDim)}
 							/>
 						) : (
 							filter.person !== "unassigned" && (
@@ -5197,7 +5325,7 @@ fetchFeedItems("plain")
 						</span>
 					</div>
 					<Tooltip label="Back to your workspaces">
-						<button {...mergeStylexProps("transition-[color,scale] before:absolute before:inset-2 before:rounded-md before:transition-colors before:content-[''] hover:text-fg hover:before:bg-hover active:scale-[0.96] phone:size-11 motion-reduce:transform-none [&>*]:relative [&>*]:z-[1]", sx.relative, sx.flex, sx.size10, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.border0, sx.bgTransparent, sx.textDim)}
+						<button {...mergeStylexProps("[&>*]:relative [&>*]:z-[1]", sx.transitionColorScale, sx.beforeAbsolute, sx.beforeInset2, sx.beforeRoundedMd, sx.beforeTransitionColors, sx.beforeContent, sx.hoverTextFg, sx.hoverBeforeBgHover, sx.activeScale096, sx.phoneSize11, sx.motionReduceTransformNone, sx.relative, sx.flex, sx.size10, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.border0, sx.bgTransparent, sx.textDim)}
 							onClick={() => setFilter({ person: "me" })}
 							aria-label="Back to your workspaces"
 						>
@@ -5398,7 +5526,7 @@ fetchFeedItems("plain")
 
 				{/* Fallback row: only when the chip doesn't fit inline. */}
 				{filter.repo !== "all" && !repoInline && (
-					<div {...mergeStylexProps("md:mr-2 md:ml-4", sx.mx4, sx.mt2px, sx.mb2, sx.flex, sx.minW0)}>
+					<div {...mergeStylexProps("", sx.mdMr2, sx.mdMl4, sx.mx4, sx.mt2px, sx.mb2, sx.flex, sx.minW0)}>
 						<RepoFilterChip
 							repo={filter.repo}
 							repos={repos}
@@ -6347,7 +6475,7 @@ fetchFeedItems("plain")
 										)}
 										{open &&
 											(group.totalItems || group.items.length) > group.items.length && (
-												<div {...mergeStylexProps("tabular-nums", sx.px4, sx.pb1, sx.pt05, sx.textFaint, typography.meta)}>
+												<div {...mergeStylexProps("", sx.tabularNums, sx.px4, sx.pb1, sx.pt05, sx.textFaint, typography.meta)}>
 													Latest {group.items.length} of {group.totalItems} runs
 												</div>
 											)}

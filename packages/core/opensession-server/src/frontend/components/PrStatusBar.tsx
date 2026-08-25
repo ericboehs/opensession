@@ -148,7 +148,7 @@ const sx = stylex.create({
 			marginLeft: "6px"
 	},
 	bgWhite20: {
-			backgroundColor: "#fff3"
+			backgroundColor: "color-mix(in srgb, var(--color-white) 20%, transparent)"
 	},
 	px15: {
 			paddingInline: "6px"
@@ -360,6 +360,149 @@ const sx = stylex.create({
 		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
 		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
 	},
+
+	bgVarGreen: {
+		"backgroundColor": "var(--green)"
+	},
+	borderColorMixInSrgbVarGreen78Black: {
+		"borderColor": "var(--green)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in srgb,var(--green) 78%,black)"
+		}
+	},
+	textWhite: {
+		"color": "var(--color-white)"
+	},
+	bgVarPurple: {
+		"backgroundColor": "var(--purple)"
+	},
+	borderColorMixInSrgbVarPurple78Black: {
+		"borderColor": "var(--purple)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in srgb,var(--purple) 78%,black)"
+		}
+	},
+	bgVarRed: {
+		"backgroundColor": "var(--red)"
+	},
+	borderColorMixInSrgbVarRed78Black: {
+		"borderColor": "var(--red)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in srgb,var(--red) 78%,black)"
+		}
+	},
+	borderColorMixInSrgbVarRed45Transparent: {
+		"borderColor": "var(--red)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in srgb,var(--red) 45%,transparent)"
+		}
+	},
+	bgColorMixInSrgbVarRed12VarControlSurface: {
+		"backgroundColor": "var(--red)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--red) 12%,var(--control-surface))"
+		}
+	},
+	hoverBgRedSoft: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--red-soft)"
+			}
+		}
+	},
+	hoverBrightness100: {
+		"@media (hover: hover)": {
+			":hover": {
+				"--tw-brightness": "brightness(100%)",
+				"filter": "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+			}
+		}
+	},
+	borderColorMixInSrgbVarYellow35Transparent: {
+		"borderColor": "var(--yellow)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in srgb,var(--yellow) 35%,transparent)"
+		}
+	},
+	bgColorMixInSrgbVarYellow10VarControlSurface: {
+		"backgroundColor": "var(--yellow)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--yellow) 10%,var(--control-surface))"
+		}
+	},
+	textYellow: {
+		"color": "var(--yellow)"
+	},
+	hoverBgColorMixInSrgbVarYellow16VarControlSurface: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--yellow)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in srgb,var(--yellow) 16%,var(--control-surface))"
+				}
+			}
+		}
+	},
+	bgVarText: {
+		"backgroundColor": "var(--text)"
+	},
+	textVarBg: {
+		"color": "var(--bg)"
+	},
+	borderColorMixInSrgbVarText84Transparent: {
+		"borderColor": "var(--text)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in srgb,var(--text) 84%,transparent)"
+		}
+	},
+	bgRaised: {
+		"backgroundColor": "var(--bg-raised)"
+	},
+	borderLineStrong: {
+		"borderColor": "var(--border-strong)"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	borderDashed: {
+		"--tw-border-style": "dashed",
+		"borderStyle": "dashed"
+	},
+	borderColorMixInSrgbVarPurple45Transparent: {
+		"borderColor": "var(--purple)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in srgb,var(--purple) 45%,transparent)"
+		}
+	},
+	textPurple: {
+		"color": "var(--purple)"
+	},
+	shadowNone: {
+		"--tw-shadow": "0 0 transparent",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	hoverBgColorMixInSrgbVarPurple10Transparent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--purple)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in srgb,var(--purple) 10%,transparent)"
+				}
+			}
+		}
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
 });
 
 /**
@@ -465,22 +608,22 @@ function PrBarButton({
 }: PrBarButtonProps) {
 	const tones = {
 		green:
-			"bg-[var(--green)] border-[color-mix(in_srgb,var(--green)_78%,black)] text-white",
+			mergeStylexClassName("", sx.bgVarGreen, sx.borderColorMixInSrgbVarGreen78Black, sx.textWhite),
 		purple:
-			"bg-[var(--purple)] border-[color-mix(in_srgb,var(--purple)_78%,black)] text-white",
-		red: "bg-[var(--red)] border-[color-mix(in_srgb,var(--red)_78%,black)] text-white",
+			mergeStylexClassName("", sx.bgVarPurple, sx.borderColorMixInSrgbVarPurple78Black, sx.textWhite),
+		red: mergeStylexClassName("", sx.bgVarRed, sx.borderColorMixInSrgbVarRed78Black, sx.textWhite),
 		"status-red":
-			"border-[color-mix(in_srgb,var(--red)_45%,transparent)] bg-[color-mix(in_srgb,var(--red)_12%,var(--control-surface))] text-red hover:bg-red-soft hover:brightness-100",
+			mergeStylexClassName("", sx.borderColorMixInSrgbVarRed45Transparent, sx.bgColorMixInSrgbVarRed12VarControlSurface, sx.textRed, sx.hoverBgRedSoft, sx.hoverBrightness100),
 		"status-yellow":
-			"border-[color-mix(in_srgb,var(--yellow)_35%,transparent)] bg-[color-mix(in_srgb,var(--yellow)_10%,var(--control-surface))] text-yellow hover:bg-[color-mix(in_srgb,var(--yellow)_16%,var(--control-surface))] hover:brightness-100",
+			mergeStylexClassName("", sx.borderColorMixInSrgbVarYellow35Transparent, sx.bgColorMixInSrgbVarYellow10VarControlSurface, sx.textYellow, sx.hoverBgColorMixInSrgbVarYellow16VarControlSurface, sx.hoverBrightness100),
 		solid:
-			"bg-[var(--text)] text-[var(--bg)] border-[color-mix(in_srgb,var(--text)_84%,transparent)]",
-		secondary: "bg-raised text-fg border-line-strong hover:bg-hover hover:brightness-100",
+			mergeStylexClassName("", sx.bgVarText, sx.textVarBg, sx.borderColorMixInSrgbVarText84Transparent),
+		secondary: mergeStylexClassName("", sx.bgRaised, sx.textFg, sx.borderLineStrong, sx.hoverBgHover, sx.hoverBrightness100),
 		// The open outline beside a filled button: purple ink on the strip's own
 		// band, dashed, so it reads as the road not yet taken next to the solid
 		// action. Nothing to fill and nothing to lift, so it drops the shadow.
 		"purple-dashed":
-			"border-dashed border-[color-mix(in_srgb,var(--purple)_45%,transparent)] bg-transparent text-purple shadow-none hover:bg-[color-mix(in_srgb,var(--purple)_10%,transparent)] hover:brightness-100",
+			mergeStylexClassName("", sx.borderDashed, sx.borderColorMixInSrgbVarPurple45Transparent, sx.bgTransparent, sx.textPurple, sx.shadowNone, sx.hoverBgColorMixInSrgbVarPurple10Transparent, sx.hoverBrightness100),
 	} as const;
 	return (
 		<button
@@ -884,12 +1027,12 @@ export function PrStatusBar({
 	const prSettled = pr?.state === "MERGED" || pr?.state === "CLOSED";
 	const checksPr = pr && !prSettled && checksSummary.total > 0 ? pr : null;
 	const checksTone = checksSummary.failed > 0
-		? "text-red"
+		? mergeStylexClassName("", sx.textRed)
 		: checksSummary.pending > 0
-			? "text-yellow"
+			? mergeStylexClassName("", sx.textYellow)
 			: checksSummary.passed > 0
-				? "text-green"
-				: "text-faint";
+				? mergeStylexClassName("", sx.textGreen)
+				: mergeStylexClassName("", sx.textFaint);
 	const checksLabel = `${checksSummary.total} check${checksSummary.total === 1 ? "" : "s"}`;
 
 	async function run(name: string, fn: () => Promise<unknown>) {
@@ -1223,7 +1366,7 @@ setBusy(null);
 								? "Merge stack"
 								: "Merge"}
 						{stackMerge && !merging && (
-							<span {...mergeStylexProps("tabular-nums", sx.ml15, sx.roundedFull, sx.bgWhite20, sx.px15)}>
+							<span {...mergeStylexProps("", sx.tabularNums, sx.ml15, sx.roundedFull, sx.bgWhite20, sx.px15)}>
 								{stackMerge.layers.length}
 							</span>
 						)}

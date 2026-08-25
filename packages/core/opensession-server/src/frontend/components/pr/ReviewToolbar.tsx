@@ -78,6 +78,43 @@ const sx = stylex.create({
 			"overflow": "visible"
 		}
 	},
+
+	top0: {
+		"top": "0"
+	},
+	z20: {
+		"zIndex": "20"
+	},
+	desktopMb0: {
+		"@media (min-width: 721px)": {
+			"marginBottom": "0"
+		}
+	},
+	desktopMl2: {
+		"@media (min-width: 721px)": {
+			"marginLeft": "8px"
+		}
+	},
+	desktopPb2: {
+		"@media (min-width: 721px)": {
+			"paddingBottom": "8px"
+		}
+	},
+	desktopMx2: {
+		"@media (min-width: 721px)": {
+			"marginInline": "8px"
+		}
+	},
+	desktopMb2: {
+		"@media (min-width: 721px)": {
+			"marginBottom": "8px"
+		}
+	},
+	desktopBlock: {
+		"@media (min-width: 721px)": {
+			"display": "block"
+		}
+	},
 });
 
 /**
@@ -94,8 +131,8 @@ export function ReviewToolbar({
   compact: boolean;
 }) {
   const placement = compact
-    ? `sticky top-0 z-20 desktop:mb-0 desktop:ml-2 desktop:pb-2 ${WS_SUMMARY_REVIEW_BAR_CLEARANCE}`
-    : "desktop:mx-2 desktop:mb-2";
+    ? [mergeStylexClassName("", sx.sticky, sx.top0, sx.z20, sx.desktopMb0, sx.desktopMl2, sx.desktopPb2), WS_SUMMARY_REVIEW_BAR_CLEARANCE].filter(Boolean).join(" ")
+    : mergeStylexClassName("", sx.desktopMx2, sx.desktopMb2);
 
   return (
     <>
@@ -111,7 +148,7 @@ export function ReviewToolbar({
       {compact && (
         // File headers pin 61px below the scroll edge. Fill everything between
         // the toolbar and that edge so code cannot scroll above its own header.
-        <div {...mergeStylexProps("desktop:block", sx.pointerEventsNone, sx.sticky, sx.top52px, sx.z5, sx.mx2, sx.hidden, sx.h25, sx.Mb25, sx.overflowClip, sx.roundedTLg, sx.bgSurface)}
+        <div {...mergeStylexProps("", sx.desktopBlock, sx.pointerEventsNone, sx.sticky, sx.top52px, sx.z5, sx.mx2, sx.hidden, sx.h25, sx.Mb25, sx.overflowClip, sx.roundedTLg, sx.bgSurface)}
           aria-hidden="true"
         />
       )}

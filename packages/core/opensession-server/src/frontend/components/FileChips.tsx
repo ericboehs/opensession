@@ -57,6 +57,26 @@ const sx = stylex.create({
 	animatePulse: {
 		"animation": "var(--animate-pulse)"
 	},
+
+	enabledHoverTextFg: {
+		"@media (hover: hover)": {
+			":enabled": {
+				":hover": {
+					"color": "var(--text)"
+				}
+			}
+		}
+	},
+	disabledCursorDefault: {
+		":disabled": {
+			"cursor": "default"
+		}
+	},
+	disabledOpacity50: {
+		":disabled": {
+			"opacity": ".5"
+		}
+	},
 });
 
 interface Props {
@@ -85,7 +105,7 @@ export function FileChips({ files, onRemove, disabled, pending = 0 }: Props) {
             <span className={fileChipSub}>Attachment</span>
           </span>
           <button
-            type="button" {...mergeStylexProps("enabled:hover:text-fg disabled:cursor-default disabled:opacity-50", sx.absolute, sx.top1, sx.right5px, sx.shrink0, sx.text15px, sx.leadingNone, sx.textFaint)}
+            type="button" {...mergeStylexProps("", sx.enabledHoverTextFg, sx.disabledCursorDefault, sx.disabledOpacity50, sx.absolute, sx.top1, sx.right5px, sx.shrink0, sx.text15px, sx.leadingNone, sx.textFaint)}
             onClick={() => onRemove(i)}
             disabled={disabled}
             title="Remove file"

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useSetupStatus } from "../hooks/useSetupStatus";
 import { DEFAULT_DOC_TITLE, docTitle } from "../lib/brand";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import {
   SettingCard,
   SettingsHeader,
@@ -161,6 +161,54 @@ const sx = stylex.create({
 	scrollMt4: {
 		scrollMarginTop: "16px",
 	},
+
+	desktopSticky: {
+		"@media (min-width: 721px)": {
+			"position": "sticky"
+		}
+	},
+	desktopTop0: {
+		"@media (min-width: 721px)": {
+			"top": "0"
+		}
+	},
+	desktopColStart2: {
+		"@media (min-width: 721px)": {
+			"gridColumnStart": "2"
+		}
+	},
+	desktopRowStart1: {
+		"@media (min-width: 721px)": {
+			"gridRowStart": "1"
+		}
+	},
+	desktopMt0: {
+		"@media (min-width: 721px)": {
+			"marginTop": "0"
+		}
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	desktopGridColsMinmax0720px220px: {
+		"@media (min-width: 721px)": {
+			"gridTemplateColumns": "minmax(0,720px) 220px"
+		}
+	},
+	desktopGap10: {
+		"@media (min-width: 721px)": {
+			"gap": "40px"
+		}
+	},
+	desktopColStart1: {
+		"@media (min-width: 721px)": {
+			"gridColumnStart": "1"
+		}
+	},
 });
 
 // Settings → Setup: every part of a new instance, in the order someone fills
@@ -225,7 +273,7 @@ function SetupSummary({
 
   return (
     <aside
-      aria-labelledby="setup-summary-title" {...mergeStylexProps("desktop:sticky desktop:top-0 desktop:col-start-2 desktop:row-start-1 desktop:mt-0", sx.mt10)}
+      aria-labelledby="setup-summary-title" {...mergeStylexProps("", sx.desktopSticky, sx.desktopTop0, sx.desktopColStart2, sx.desktopRowStart1, sx.desktopMt0, sx.mt10)}
     >
       <h2
         id="setup-summary-title"
@@ -238,7 +286,7 @@ function SetupSummary({
           <button
             key={step.id}
             type="button"
-            onClick={() => onSelect(step.id)} {...mergeStylexProps("hover:bg-hover", sx.focusRing, sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap25, sx.px4, sx.py3, sx.textLeft)}
+            onClick={() => onSelect(step.id)} {...mergeStylexProps("", sx.hoverBgHover, sx.focusRing, sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap25, sx.px4, sx.py3, sx.textLeft)}
           >
             <span
               {...stylex.props(
@@ -337,8 +385,8 @@ export function SetupPanel({
           {failed ? "Couldn't load setup status." : "Loading…"}
         </LoadingState>
       ) : (
-        <div {...mergeStylexProps("desktop:grid-cols-[minmax(0,720px)_220px] desktop:gap-10", sx.grid, sx.itemsStart)}>
-          <div {...mergeStylexProps("desktop:col-start-1 desktop:row-start-1", sx.minW0)}>
+        <div {...mergeStylexProps("", sx.desktopGridColsMinmax0720px220px, sx.desktopGap10, sx.grid, sx.itemsStart)}>
+          <div {...mergeStylexProps("", sx.desktopColStart1, sx.desktopRowStart1, sx.minW0)}>
             <SetupPageSection
               id="server"
               title="Server access"

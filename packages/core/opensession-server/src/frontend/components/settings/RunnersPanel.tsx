@@ -11,7 +11,7 @@ import { markTileClass, markTileGradient, markTileInk, markTileShadow } from "..
 import { IconServer } from "../icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps } from "../../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -164,6 +164,20 @@ const sx = stylex.create({
 		backgroundColor: "var(--hover)",
 		color: "var(--text-dim)",
 	},
+
+	smGridCols3: {
+		"@media (min-width: 40rem)": {
+			"gridTemplateColumns": "repeat(3,minmax(0,1fr))"
+		}
+	},
+	gridColsMinmax01fr575rem: {
+		"gridTemplateColumns": "minmax(0,1fr) 5.75rem"
+	},
+	desktopGridColsMinmax01fr13rem: {
+		"@media (min-width: 721px)": {
+			"gridTemplateColumns": "minmax(0,1fr) 13rem"
+		}
+	},
 });
 
 const stateStyle = {
@@ -276,7 +290,7 @@ setBusyId(null);
 		{connectChoice === "choices" && <div {...stylex.props(sx.mx4, sx.mb4, sx.roundedLg, sx.bgRaised, sx.p4)}>
 			<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>Connect a Runner</div>
 			<p {...stylex.props(sx.mb3, sx.mt1, sx.leadingRelaxed, sx.textDim, typography.supporting)}>Choose the machine path first. Runners are trusted computers, not isolated Sandboxes.</p>
-			<div {...mergeStylexProps("sm:grid-cols-3", sx.grid, sx.gap2)}>
+			<div {...mergeStylexProps("", sx.smGridCols3, sx.grid, sx.gap2)}>
 				<Button size="sm" onClick={() => void pair()}>Connect on this machine</Button>
 				<Button size="sm" variant="soft" onClick={() => void chooseBootstrap("ssh")}>Migrate SSH machine</Button>
 				<Button size="sm" variant="soft" onClick={() => void chooseBootstrap("kubernetes")}>Connect Kubernetes GPU</Button>
@@ -356,7 +370,7 @@ function RunnerRow({ runner, admin, busy, onChange, onRevoke }: { runner: Runner
 	const labelRef = useRef<HTMLInputElement>(null);
 	return <>
 		<SettingCard>
-			<div {...mergeStylexProps("grid-cols-[minmax(0,1fr)_5.75rem] desktop:grid-cols-[minmax(0,1fr)_13rem]", sx.grid, sx.gapX4, sx.px5, sx.py4)}>
+			<div {...mergeStylexProps("", sx.gridColsMinmax01fr575rem, sx.desktopGridColsMinmax01fr13rem, sx.grid, sx.gapX4, sx.px5, sx.py4)}>
 				<div {...stylex.props(sx.colStart1, sx.rowStart1, sx.flex, sx.minW0, sx.itemsStart, sx.gap3)}>
 					<RunnerIcon />
 					<div {...stylex.props(sx.minW0, sx.flex1)}>

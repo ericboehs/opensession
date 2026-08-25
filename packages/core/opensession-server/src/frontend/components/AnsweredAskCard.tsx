@@ -9,7 +9,7 @@ import { IconCheck } from "./icons";
 import { useMarkdownRepo } from "./MarkdownBody";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -125,6 +125,10 @@ const sx = stylex.create({
 	mt05: { marginTop: "2px" },
 	h5: { height: "20px" },
 	w5: { width: "20px" },
+
+	maxWMin600px90: {
+		"maxWidth": "min(600px,90%)"
+	},
 });
 
 function ChoiceRow({
@@ -143,20 +147,20 @@ function ChoiceRow({
 			role="listitem"
 			aria-label={`${label}${selected ? ", selected" : ""}`}
 			data-selected={selected ? "" : undefined}
-			{...mergeStylexProps("[corner-shape:var(--cs)]", sx.flex, sx.minH9, sx.itemsStart, sx.gap25, sx.roundedMd, sx.px25, sx.py2, selected ? sx.bgControl : sx.textDim)}
+			{...mergeStylexProps("", sx.CornerShapeVarCs, sx.flex, sx.minH9, sx.itemsStart, sx.gap25, sx.roundedMd, sx.px25, sx.py2, selected ? sx.bgControl : sx.textDim)}
 		>
 			<span {...stylex.props(sx.w35, sx.shrink0, sx.ptPx, sx.leading5, sx.textFaint, typography.meta)}>
 				{letter}
 			</span>
 			<span {...stylex.props(sx.minW0, sx.flex1)}>
 				<span
-					{...mergeStylexProps("[overflow-wrap:anywhere]", sx.block, typography.controlLabel, sx.leading5, selected ? sx.fontSemibold : sx.fontMedium, selected && sx.textFg)}
+					{...mergeStylexProps("", sx.OverflowWrapAnywhere, sx.block, typography.controlLabel, sx.leading5, selected ? sx.fontSemibold : sx.fontMedium, selected && sx.textFg)}
 				>
 					{label}
 				</span>
 				{description && (
 					<span
-						{...mergeStylexProps("[overflow-wrap:anywhere]", sx.mt05, sx.block, typography.supporting, sx.leading145, selected ? sx.textDim : sx.textFaint)}
+						{...mergeStylexProps("", sx.OverflowWrapAnywhere, sx.mt05, sx.block, typography.supporting, sx.leading145, selected ? sx.textDim : sx.textFaint)}
 					>
 						{description}
 					</span>
@@ -189,7 +193,7 @@ export function AnsweredAskCard({
 
 	return (
 		<div className={msgRow} data-eid={entryId} data-answered-ask="">
-			<div {...mergeStylexProps("max-w-[min(600px,90%)]", sx.selfEnd, sx.rounded2xl, sx.bgPanel, sx.p4, sx.CornerShapeVarCs)}>
+			<div {...mergeStylexProps("", sx.maxWMin600px90, sx.selfEnd, sx.rounded2xl, sx.bgPanel, sx.p4, sx.CornerShapeVarCs)}>
 				<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gapX15, sx.gapY05, sx.fontSemibold, typography.label)}>
 					<span
 						aria-hidden="true"

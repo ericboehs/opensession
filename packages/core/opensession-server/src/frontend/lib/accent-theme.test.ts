@@ -96,7 +96,7 @@ describe("accent theme", () => {
 		// Black is the only accent that overrides the glyph, and the only one
 		// whose fill inverts with the page.
 		expect(css).toContain("--on-accent-light: #ffffff");
-		expect(css).toContain("--on-accent-dark: #000000");
+		expect(css).toContain("--on-accent-dark: transparent00");
 		expect(css).toContain("--accent-ink-light: #8d7110");
 		// Honey cannot carry a control in either appearance, so it borrows the
 		// blue outright; Black only needs it where its own fill turns white.

@@ -542,6 +542,108 @@ const sx = stylex.create({
 	mb35: {
 		"marginBottom": "14px"
 	},
+
+	focusVisibleRing2: {
+		":focusVisible": {
+			"--tw-ring-shadow": "var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor)",
+			"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+		}
+	},
+	focusVisibleRingInset: {
+		":focusVisible": {
+			"--tw-ring-inset": "inset"
+		}
+	},
+	focusVisibleRingAccent50: {
+		":focusVisible": {
+			"--tw-ring-color": "var(--accent)"
+		},
+		"@supports (color: color-mix(in lab, red, red))": {
+			":focusVisible": {
+				"--tw-ring-color": "color-mix(in oklab, var(--accent) 50%, transparent)"
+			}
+		}
+	},
+	max560pxMaxW92px: {
+		"@media not all and (min-width: 560px)": {
+			"maxWidth": "92px"
+		}
+	},
+	max560pxOverflowHidden: {
+		"@media not all and (min-width: 560px)": {
+			"overflow": "hidden"
+		}
+	},
+	max560pxTextEllipsis: {
+		"@media not all and (min-width: 560px)": {
+			"textOverflow": "ellipsis"
+		}
+	},
+	max900pxBorderL0: {
+		"@media not all and (min-width: 900px)": {
+			"borderLeftStyle": "var(--tw-border-style)",
+			"borderLeftWidth": "0"
+		}
+	},
+	max900pxInlineFlex: {
+		"@media not all and (min-width: 900px)": {
+			"display": "inline-flex"
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	mb15: {
+		"marginBottom": "6px"
+	},
+	px175: {
+		"paddingInline": "7px"
+	},
+	pyPx: {
+		"paddingBlock": "1px"
+	},
+	textLink: {
+		"color": "var(--link)"
+	},
+	noUnderline: {
+		"textDecorationLine": "none"
+	},
+	hoverUnderline: {
+		"@media (hover: hover)": {
+			":hover": {
+				"textDecorationLine": "underline"
+			}
+		}
+	},
+	phoneMaxHNone: {
+		"@media (max-width: 720px)": {
+			"maxHeight": "none"
+		}
+	},
+	desktopMaxH32dvh: {
+		"@media (min-width: 721px)": {
+			"maxHeight": "32dvh"
+		}
+	},
+	placeholderTextFaint: {
+		"::placeholder": {
+			"color": "var(--text-faint)"
+		}
+	},
+	phoneFlexCol: {
+		"@media (max-width: 720px)": {
+			"flexDirection": "column"
+		}
+	},
+	phoneGridCols1: {
+		"@media (max-width: 720px)": {
+			"gridTemplateColumns": "repeat(1,minmax(0,1fr))"
+		}
+	},
 });
 
 /* The old .automation-form family, as utilities. Two of its rules reached in
@@ -554,20 +656,20 @@ const FORM_FIELDS =
 /** The form's own layout, with no chrome of its own: whatever hosts it (the
  *  detail drawer, the create dialog) already provides the surface, the padding
  *  and the heading. */
-const FORM_INLINE = `flex flex-col gap-3.5 ${FORM_FIELDS}`;
+const FORM_INLINE = [mergeStylexClassName("", sx.flex, sx.flexCol, sx.gap35), FORM_FIELDS].filter(Boolean).join(" ");
 /** .automation-form label */
-const FIELD_LABEL = "flex flex-1 flex-col gap-1.5 text-label font-medium text-dim";
+const FIELD_LABEL = mergeStylexClassName("", sx.flex, sx.flex1, sx.flexCol, sx.gap15, typography.label, sx.fontMedium, sx.textDim);
 
 /** .automation-form-actions */
-const FORM_ACTIONS = "flex justify-end gap-2.5";
+const FORM_ACTIONS = mergeStylexClassName("", sx.flex, sx.justifyEnd, sx.gap25);
 /** .automation-form-row */
-const FORM_ROW = "flex gap-3.5 phone:flex-col";
+const FORM_ROW = mergeStylexClassName("", sx.flex, sx.gap35, sx.phoneFlexCol);
 /** .automations-drawer-section-label */
-const SECTION_LABEL = "mb-1.5 text-label font-semibold text-faint";
+const SECTION_LABEL = mergeStylexClassName("", sx.mb15, typography.label, sx.fontSemibold, sx.textFaint);
 /** .automation-session-link */
-const LINK = "cursor-pointer text-link no-underline hover:underline";
+const LINK = mergeStylexClassName("", sx.cursorPointer, sx.textLink, sx.noUnderline, sx.hoverUnderline);
 /** .automation-cron — the cron/event chip in the Configuration grid. */
-const CHIP = "rounded-sm bg-active px-1.75 py-px text-meta";
+const CHIP = mergeStylexClassName("", sx.roundedSm, sx.bgActive, sx.px175, sx.pyPx, typography.meta);
 
 interface AutomationRun {
   at: string;
@@ -845,7 +947,7 @@ setError(e.message);
                     content instead, which keeps the whole row clickable and
                     keyboard-reachable without nesting one inside the other.
                     Content above it is inert unless it has its own tooltip. */}
-                <button {...mergeStylexProps("focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50", sx.absolute, sx.inset0, sx.roundedSm, sx.outlineNone)}
+                <button {...mergeStylexProps("", sx.focusVisibleRing2, sx.focusVisibleRingInset, sx.focusVisibleRingAccent50, sx.absolute, sx.inset0, sx.roundedSm, sx.outlineNone)}
                   onClick={() => onSelect(a.id)}
                 >
                   <span {...stylex.props(sx.srOnly)}>Open {a.name}</span>
@@ -861,7 +963,7 @@ setError(e.message);
                   <span {...stylex.props(sx.truncate, sx.textFaint, typography.meta)}>{triggerSummary(a)}</span>
                 </span>
                 {running ? (
-                  <WorkingPill {...mergeStylexProps("max-[560px]:max-w-[92px] max-[560px]:overflow-hidden max-[560px]:text-ellipsis", sx.pointerEventsNone, sx.relative)} />
+                  <WorkingPill {...mergeStylexProps("", sx.max560pxMaxW92px, sx.max560pxOverflowHidden, sx.max560pxTextEllipsis, sx.pointerEventsNone, sx.relative)} />
                 ) : a.lastRunStatus === "ok" || a.lastRunStatus === "error" ? (
                   // Its own click target rather than an inert glyph: keeping
                   // pointer events is what keeps the tooltip, and the click
@@ -921,10 +1023,10 @@ setError(e.message);
     </div>
 
       {sel && (
-        <aside {...mergeStylexProps("max-[900px]:border-l-0", sx.flex, sx.minH0, sx.minW0, sx.flexAuto, sx.flexCol, sx.borderL, sx.borderLine, sx.bgPanel)}>
+        <aside {...mergeStylexProps("", sx.max900pxBorderL0, sx.flex, sx.minH0, sx.minW0, sx.flexAuto, sx.flexCol, sx.borderL, sx.borderLine, sx.bgPanel)}>
           <div {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.gap25, sx.borderB, sx.borderDivider, sx.px4, sx.py3)}>
             {/* Phones get Back instead of Close: there the drawer is the page. */}
-            <button {...mergeStylexProps("max-[900px]:inline-flex", sx.My1, sx.Ml05, sx.hidden, sx.shrink0, sx.itemsCenter, sx.gap175, sx.px15, sx.py1, sx.fontMedium, sx.textFg, typography.itemTitle)}
+            <button {...mergeStylexProps("", sx.max900pxInlineFlex, sx.My1, sx.Ml05, sx.hidden, sx.shrink0, sx.itemsCenter, sx.gap175, sx.px15, sx.py1, sx.fontMedium, sx.textFg, typography.itemTitle)}
               onClick={() => onSelect("")}
               title="Back to automations"
             >
@@ -959,7 +1061,7 @@ setError(e.message);
                 </Button>
               </div>
             )}
-            <button {...mergeStylexProps("hover:bg-hover hover:text-fg max-[900px]:hidden", sx.flex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.textDim)}
+            <button {...mergeStylexProps("", sx.hoverBgHover, sx.hoverTextFg, sx.max900pxHidden, sx.flex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.textDim)}
               onClick={() => onSelect("")}
               title="Close"
             >
@@ -1534,7 +1636,7 @@ function ChooserRow({
 }) {
   return (
     <button
-      type="button" {...mergeStylexProps("hover:bg-hover", sx.flex, sx.wFull, sx.cursorPointer, sx.itemsStart, sx.gap3, sx.roundedRow, sx.px25, sx.py225, sx.textLeft, sx.transitionColors)}
+      type="button" {...mergeStylexProps("", sx.hoverBgHover, sx.flex, sx.wFull, sx.cursorPointer, sx.itemsStart, sx.gap3, sx.roundedRow, sx.px25, sx.py225, sx.textLeft, sx.transitionColors)}
       onClick={onClick}
     >
       {/* Normalize the drawn height, not the SVG box, the way the list rows do. */}
@@ -1633,7 +1735,7 @@ setError(e.message);
           <div className={cn(SECTION_LABEL, mergeStylexClassName("", sx.px25))}>Templates</div>
           {/* The gallery scrolls inside the dialog rather than growing it, so
               the describe field and the two blank starts stay on screen. */}
-          <div {...mergeStylexProps("phone:max-h-none desktop:max-h-[32dvh]", sx.minH0, sx.overflowYAuto, sx.overscrollContain)}>
+          <div {...mergeStylexProps("", sx.phoneMaxHNone, sx.desktopMaxH32dvh, sx.minH0, sx.overflowYAuto, sx.overscrollContain)}>
             {templates.map((t) => (
               <ChooserRow
                 key={t.id}
@@ -1715,14 +1817,14 @@ function McpPicker({
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search MCPs…" {...mergeStylexProps("placeholder:text-faint", sx.flex1, sx.bgTransparent, sx.border0, sx.outlineNone, sx.textFg, typography.label)}
+            placeholder="Search MCPs…" {...mergeStylexProps("", sx.placeholderTextFaint, sx.flex1, sx.bgTransparent, sx.border0, sx.outlineNone, sx.textFg, typography.label)}
             style={{ border: "none", padding: 0, background: "transparent" }}
           />
           <span {...stylex.props(sx.textFaint, sx.shrink0, typography.meta)}>
             {all ? "all connectors" : `${selected.length} selected`}
           </span>
         </div>
-        <label {...mergeStylexProps("hover:bg-hover", sx.flex, sx.itemsCenter, sx.gap25, sx.borderB, sx.borderLine, sx.px3, sx.py2, sx.cursorPointer, typography.label)}
+        <label {...mergeStylexProps("", sx.hoverBgHover, sx.flex, sx.itemsCenter, sx.gap25, sx.borderB, sx.borderLine, sx.px3, sx.py2, sx.cursorPointer, typography.label)}
         >
           <Checkbox checked={all} onCheckedChange={() => onChange(all ? [] : undefined)} />
           <span {...stylex.props(sx.textFg)}>All connectors</span>
@@ -1733,7 +1835,7 @@ function McpPicker({
         <div {...stylex.props(sx.maxH180px, sx.overflowYAuto)}>
           {shown.map((s) => (
             <label
-              key={s.name} {...mergeStylexProps("hover:bg-hover", sx.flex, sx.itemsCenter, sx.gap25, sx.px3, sx.py15, sx.cursorPointer, typography.label)}
+              key={s.name} {...mergeStylexProps("", sx.hoverBgHover, sx.flex, sx.itemsCenter, sx.gap25, sx.px3, sx.py15, sx.cursorPointer, typography.label)}
             >
               <Checkbox
                 checked={all || selected.includes(s.name)}
@@ -1880,7 +1982,7 @@ function DataFlowEditor({
                     placeholder="Label"
                   />
                   <Button
-                    size="sm" {...mergeStylexProps("hover:text-red", sx.shrink0, sx.textDim)}
+                    size="sm" {...mergeStylexProps("", sx.hoverTextRed, sx.shrink0, sx.textDim)}
                     onClick={() => onInputsChange(inputs.filter((_, at) => at !== index))}
                   >
                     Remove
@@ -2091,14 +2193,14 @@ function DataFlowEditor({
                   </>
                 )}
                 <Button
-                  size="sm" {...mergeStylexProps("hover:text-red", sx.shrink0, sx.textDim)}
+                  size="sm" {...mergeStylexProps("", sx.hoverTextRed, sx.shrink0, sx.textDim)}
                   onClick={() => onOutputsChange(outputs.filter((_, at) => at !== index))}
                 >
                   Remove
                 </Button>
               </div>
               {output.type === "slack" && (
-                <div {...mergeStylexProps("phone:grid-cols-1", sx.mt2, sx.grid, sx.gridCols2, sx.gap3)}>
+                <div {...mergeStylexProps("", sx.phoneGridCols1, sx.mt2, sx.grid, sx.gridCols2, sx.gap3)}>
                   <label className={FIELD_LABEL}>
                     Minimum urgency
                     <Select

@@ -252,7 +252,7 @@ function Trigger(triggerProps: TriggerProps) {
 	// Presence, not truthiness: an icon-bearing list keeps the slot for the
 	// values that have no glyph, so the labels stay on one x.
 	const iconSlot = "icon" in triggerProps;
-	const label = iconSlot ? "col-start-2" : "col-start-1";
+	const label = iconSlot ? mergeStylexClassName("", sx.colStart2) : mergeStylexClassName("", sx.colStart1);
 	return (
 		<BaseSelect.Trigger
 			{...props}

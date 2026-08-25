@@ -109,6 +109,52 @@ const sx = stylex.create({
 	textRed: {
 			color: "var(--red)"
 	},
+
+	hoverBorderLine: {
+		"@media (hover: hover)": {
+			":hover": {
+				"borderColor": "var(--border)"
+			}
+		}
+	},
+	hoverBgHover50: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in oklab, var(--hover) 50%, transparent)"
+				}
+			}
+		}
+	},
+	textYellow: {
+		"color": "var(--yellow)"
+	},
+	disabledCursorDefault: {
+		":disabled": {
+			"cursor": "default"
+		}
+	},
+	disabledHoverBorderTransparent: {
+		"@media (hover: hover)": {
+			":disabled": {
+				":hover": {
+					"borderColor": "transparent"
+				}
+			}
+		}
+	},
+	disabledHoverBgTransparent: {
+		"@media (hover: hover)": {
+			":disabled": {
+				":hover": {
+					"backgroundColor": "transparent"
+				}
+			}
+		}
+	},
 });
 
 export function ReviewerRow({ reviewer, provider }: { reviewer: PrReviewer; provider: Provider }) {
@@ -116,14 +162,14 @@ export function ReviewerRow({ reviewer, provider }: { reviewer: PrReviewer; prov
   const meta = reviewerStateMeta(reviewer.state);
   const toneClass =
     meta.tone === "green"
-      ? "text-green"
+      ? mergeStylexClassName("", sx.textGreen)
       : meta.tone === "red"
-        ? "text-red"
+        ? mergeStylexClassName("", sx.textRed)
         : meta.tone === "yellow"
-          ? "text-yellow"
-          : "text-faint";
+          ? mergeStylexClassName("", sx.textYellow)
+          : mergeStylexClassName("", sx.textFaint);
   return (
-    <div {...mergeStylexProps("hover:border-line hover:bg-hover/50", sx.flex, sx.itemsCenter, sx.gap3, sx.roundedRow, sx.border, sx.borderTransparent, sx.px15, sx.py15)}>
+    <div {...mergeStylexProps("", sx.hoverBorderLine, sx.hoverBgHover50, sx.flex, sx.itemsCenter, sx.gap3, sx.roundedRow, sx.border, sx.borderTransparent, sx.px15, sx.py15)}>
       {src ? (
         <img {...stylex.props(sx.size7, sx.roundedFull, sx.objectCover)} src={src} alt="" loading="lazy" />
       ) : (
@@ -173,7 +219,7 @@ export function FileRow({ file, onClick }: { file: PrFile; onClick?: () => void 
   const base = slash >= 0 ? file.path.slice(slash + 1) : file.path;
   return (
     <button
-      type="button" {...mergeStylexProps("hover:border-line hover:bg-hover/50 disabled:cursor-default disabled:hover:border-transparent disabled:hover:bg-transparent", sx.flex, sx.wFull, sx.itemsCenter, sx.gap2, sx.roundedRow, sx.border, sx.borderTransparent, sx.px15, sx.py1, sx.textLeft)}
+      type="button" {...mergeStylexProps("", sx.hoverBorderLine, sx.hoverBgHover50, sx.disabledCursorDefault, sx.disabledHoverBorderTransparent, sx.disabledHoverBgTransparent, sx.flex, sx.wFull, sx.itemsCenter, sx.gap2, sx.roundedRow, sx.border, sx.borderTransparent, sx.px15, sx.py1, sx.textLeft)}
       onClick={onClick}
       disabled={!onClick}
       title={file.path}

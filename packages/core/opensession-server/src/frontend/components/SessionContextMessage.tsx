@@ -7,7 +7,7 @@ import {
 import { Button } from "../ui/button";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -88,6 +88,14 @@ const sx = stylex.create({
 	},
 	textFg: {
 			color: "var(--text)"
+	},
+
+	hoverBgTransparent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "transparent"
+			}
+		}
 	},
 });
 
@@ -183,7 +191,7 @@ setLoading(false);
 					size="sm"
 					variant="ghost"
 					aria-expanded={open}
-					onClick={toggle} {...mergeStylexProps("hover:bg-transparent", sx.hAuto, sx.minH0, sx.cursorPointer, sx.bgTransparent, sx.p0, sx.FontFamilyInherit, sx.textInherit)}
+					onClick={toggle} {...mergeStylexProps("", sx.hoverBgTransparent, sx.hAuto, sx.minH0, sx.cursorPointer, sx.bgTransparent, sx.p0, sx.FontFamilyInherit, sx.textInherit)}
 				>
 					{title} ·{" "}
 					<span {...stylex.props(sx.fontMedium, sx.textDim)}>

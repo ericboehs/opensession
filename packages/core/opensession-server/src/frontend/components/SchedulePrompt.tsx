@@ -166,7 +166,7 @@ const sx = stylex.create({
 			justifyContent: "center"
 	},
 	bgBlack40: {
-			backgroundColor: "#0006"
+			backgroundColor: "var(--color-black)6"
 	},
 	p5: {
 			padding: "20px"
@@ -278,6 +278,125 @@ const sx = stylex.create({
 	basis130px: {
 		"flexBasis": "130px"
 	},
+
+	w30px: {
+		"width": "30px"
+	},
+	roundedRLg: {
+		"borderTopRightRadius": "calc(14px * var(--rf))",
+		"borderBottomRightRadius": "calc(14px * var(--rf))"
+	},
+	bgAccent: {
+		"backgroundColor": "var(--accent)"
+	},
+	textOnAccent: {
+		"color": "var(--on-accent)"
+	},
+	transitionBackgroundColor: {
+		"transitionProperty": "background-color",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	beforeAbsolute: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	beforeTop12: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"top": "50%"
+		}
+	},
+	beforeLeft0: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"left": "0"
+		}
+	},
+	beforeH4: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"height": "16px"
+		}
+	},
+	beforeWPx: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"width": "1px"
+		}
+	},
+	beforeTranslateY12: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"--tw-translate-y": "calc(calc(1 / 2 * 100%) * -1)",
+			"translate": "var(--tw-translate-x) var(--tw-translate-y)"
+		}
+	},
+	beforeBgWhite45: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"backgroundColor": "color-mix(in srgb, var(--color-white) 45%, transparent)"
+		},
+		"@supports (color: color-mix(in lab, red, red))": {
+			"::before": {
+				"backgroundColor": "color-mix(in oklab, var(--color-white) 45%, transparent)"
+			}
+		}
+	},
+	beforeContent: {
+		"::before": {
+			"--tw-content": "\"\"",
+			"content": "var(--tw-content)"
+		}
+	},
+	enabledHoverBgAccentHover: {
+		"@media (hover: hover)": {
+			":enabled": {
+				":hover": {
+					"backgroundColor": "var(--accent-hover)"
+				}
+			}
+		}
+	},
+	disabledOpacity35: {
+		":disabled": {
+			"opacity": ".35"
+		}
+	},
+	shadow0002pxVarBg: {
+		"--tw-shadow": "0 0 0 2px var(--tw-shadow-color,var(--bg))",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	hoverTextRed: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--red)"
+			}
+		}
+	},
+	roundedControl: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	bgTransparent: {
+		"backgroundColor": "transparent"
+	},
+	px3: {
+		"paddingInline": "12px"
+	},
+	py9px: {
+		"paddingBlock": "9px"
+	},
+	outlineNone: {
+		"--tw-outline-style": "none",
+		"outlineStyle": "none"
+	},
+	focusBorderLineStrong: {
+		":focus": {
+			"borderColor": "var(--border-strong)"
+		}
+	},
 });
 
 /** "in 45m" / "in 3h" / "in 2d" for a future instant (short form). */
@@ -293,7 +412,7 @@ function inTime(iso: string): string {
  *  a thin inset divider (short of the top/bottom edges, Slack-style) rather
  *  than a full-height seam. */
 const caretButton =
-	"relative inline-flex w-[30px] items-center justify-center rounded-r-lg bg-accent text-on-accent transition-[background-color] before:absolute before:top-1/2 before:left-0 before:h-4 before:w-px before:-translate-y-1/2 before:bg-white/45 before:content-[''] enabled:hover:bg-accent-hover disabled:cursor-default disabled:opacity-35";
+	mergeStylexClassName("", sx.relative, sx.inlineFlex, sx.w30px, sx.itemsCenter, sx.justifyCenter, sx.roundedRLg, sx.bgAccent, sx.textOnAccent, sx.transitionBackgroundColor, sx.beforeAbsolute, sx.beforeTop12, sx.beforeLeft0, sx.beforeH4, sx.beforeWPx, sx.beforeTranslateY12, sx.beforeBgWhite45, sx.beforeContent, sx.enabledHoverBgAccentHover, sx.disabledCursorDefault, sx.disabledOpacity35);
 
 /** Date / time field in the custom-time dialog. `bg-transparent` is deliberate:
  *  the stylesheet asked for `var(--bg-surface)`, a token that has never been
@@ -301,7 +420,7 @@ const caretButton =
  *  fell back to `transparent` — these fields have always shown the dialog's own
  *  surface. Without it they would pick up the UA's opaque field colour. */
 const scheduleField =
-	"min-w-0 rounded-control border border-line bg-transparent px-3 py-[9px] text-item-title font-medium text-fg outline-none focus:border-line-strong";
+	mergeStylexClassName("", sx.minW0, sx.roundedControl, sx.border, sx.borderLine, sx.bgTransparent, sx.px3, sx.py9px, typography.itemTitle, sx.fontMedium, sx.textFg, sx.outlineNone, sx.focusBorderLineStrong);
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const fmtTime = (d: Date) =>
@@ -500,7 +619,7 @@ setError(e.message);
           />
         )}
         {pending.length > 0 && (
-          <span {...mergeStylexProps("shadow-[0_0_0_2px_var(--bg)]", sx.pointerEventsNone, sx.absolute, sx.Top5px, sx.Right5px, sx.h15px, sx.minW15px, sx.roundedFull, sx.bgYellow, sx.px3px, sx.textCenter, sx.text10px, sx.leading15px, sx.fontBold, sx.textWhite)}>
+          <span {...mergeStylexProps("", sx.shadow0002pxVarBg, sx.pointerEventsNone, sx.absolute, sx.Top5px, sx.Right5px, sx.h15px, sx.minW15px, sx.roundedFull, sx.bgYellow, sx.px3px, sx.textCenter, sx.text10px, sx.leading15px, sx.fontBold, sx.textWhite)}>
             {pending.length}
           </span>
         )}
@@ -533,7 +652,7 @@ setError(e.message);
                     {p.prompt}
                   </span>
                   <button
-                    type="button" {...mergeStylexProps("hover:text-red", sx.mlAuto, sx.shrink0, sx.textFaint, typography.meta)}
+                    type="button" {...mergeStylexProps("", sx.hoverTextRed, sx.mlAuto, sx.shrink0, sx.textFaint, typography.meta)}
                     title="Cancel this scheduled message"
                     onClick={async () => {
                       await (async () => {

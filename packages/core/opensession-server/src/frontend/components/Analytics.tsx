@@ -365,6 +365,27 @@ const sx = stylex.create({
 	maxW40: {
 		"maxWidth": "160px"
 	},
+
+	mdPx6: {
+		"@media (min-width: 48rem)": {
+			"paddingInline": "24px"
+		}
+	},
+	mdGridCols4: {
+		"@media (min-width: 48rem)": {
+			"gridTemplateColumns": "repeat(4,minmax(0,1fr))"
+		}
+	},
+	lgGridCols2: {
+		"@media (min-width: 64rem)": {
+			"gridTemplateColumns": "repeat(2,minmax(0,1fr))"
+		}
+	},
+	smInline: {
+		"@media (min-width: 40rem)": {
+			"display": "inline"
+		}
+	},
 });
 
 /**
@@ -660,7 +681,7 @@ function BarChart({ labels, series, values, mode, height = 190, formatValue = fm
 						<div key={r.label} {...stylex.props(sx.flex, sx.itemsCenter, sx.gap15, sx.whitespaceNowrap, sx.leading45, typography.meta)}>
 							<span {...stylex.props(sx.size2, sx.shrink0, sx.roundedFull)} style={{ background: r.color }} />
 							<span {...stylex.props(sx.textDim)}>{r.label}</span>
-							<span {...mergeStylexProps("tabular-nums", sx.mlAuto, sx.pl3, sx.fontMedium, sx.textFg)}>{formatValue(r.value)}</span>
+							<span {...mergeStylexProps("", sx.tabularNums, sx.mlAuto, sx.pl3, sx.fontMedium, sx.textFg)}>{formatValue(r.value)}</span>
 						</div>
 					))}
 				</ChartTooltip>
@@ -966,7 +987,7 @@ function PersonRepoBars({
 							))}
 						</span>
 					</span>
-					<span {...mergeStylexProps("tabular-nums", sx.w14, sx.shrink0, sx.textRight, sx.textDim)}>{metric.format(p.total)}</span>
+					<span {...mergeStylexProps("", sx.tabularNums, sx.w14, sx.shrink0, sx.textRight, sx.textDim)}>{metric.format(p.total)}</span>
 				</div>
 			))}
 			{hover && row && (
@@ -1296,7 +1317,7 @@ export function Analytics() {
 				    this row in this same column, has scrolled away. Held at rest it
 				    was a small copy of the word stacked 60px above the real one, which
 				    read as a mistake rather than as chrome. */}
-				<div {...mergeStylexProps("md:px-6", sx.mxAuto, sx.flex, sx.wFull, sx.maxW1080px, sx.flexWrap, sx.itemsCenter, sx.justifyBetween, sx.gap3, sx.px4)}>
+				<div {...mergeStylexProps("", sx.mdPx6, sx.mxAuto, sx.flex, sx.wFull, sx.maxW1080px, sx.flexWrap, sx.itemsCenter, sx.justifyBetween, sx.gap3, sx.px4)}>
 					<TopBarTitle
 						className={cn(
 							mergeStylexClassName("", typography.itemTitle, sx.fontSemibold, sx.textFg),
@@ -1328,7 +1349,7 @@ export function Analytics() {
 			<div {...mergeStylexProps("analytics-scroll", sx.minH0, sx.flex1, sx.overflowYAuto)}>
 				{/* No top padding: every block in here opens with its own `mt-4`,
 				    which is the gap under the bar. */}
-				<div {...mergeStylexProps("md:px-6", sx.mxAuto, sx.wFull, sx.maxW1080px, sx.px4, sx.pb10)}>
+				<div {...mergeStylexProps("", sx.mdPx6, sx.mxAuto, sx.wFull, sx.maxW1080px, sx.px4, sx.pb10)}>
 					{/* The page's own heading, at the step every other page opens on.
 					    It scrolls away under the range bar, which is why that bar is
 					    fixed and this is not. */}
@@ -1340,7 +1361,7 @@ export function Analytics() {
 
 					{data && derived && (
 						<div className={loading ? mergeStylexClassName("", sx.opacity60, sx.transitionOpacity) : mergeStylexClassName("", sx.transitionOpacity)}>
-							<div {...mergeStylexProps("md:grid-cols-4", sx.mt4, sx.grid, sx.gridCols2, sx.gap3)}>
+							<div {...mergeStylexProps("", sx.mdGridCols4, sx.mt4, sx.grid, sx.gridCols2, sx.gap3)}>
 								<StatTile
 									label="Active sessions"
 									value={fmtInt(data.totals.sessions)}
@@ -1412,7 +1433,7 @@ export function Analytics() {
 								</p>
 							)}
 
-							<div {...mergeStylexProps("lg:grid-cols-2", sx.mt4, sx.grid, sx.gridCols1, sx.gap3)}>
+							<div {...mergeStylexProps("", sx.lgGridCols2, sx.mt4, sx.grid, sx.gridCols1, sx.gap3)}>
 								<ChartCard title="Sessions per day" subtitle="Distinct sessions with agent activity" series={derived.kindSeries}>
 									<BarChart labels={derived.labels} series={derived.kindSeries} values={derived.kindValues} mode="stacked" />
 								</ChartCard>
@@ -1487,8 +1508,8 @@ export function Analytics() {
 												return rows.map(([label, a, b]) => (
 													<tr key={label} {...stylex.props(sx.borderT, sx.borderLine)}>
 														<td {...stylex.props(sx.py15, sx.textFg)}>{label}</td>
-														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{a}</td>
-														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{b}</td>
+														<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textDim)}>{a}</td>
+														<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textDim)}>{b}</td>
 													</tr>
 												));
 											})()}
@@ -1541,8 +1562,8 @@ export function Analytics() {
 														return rows.map(([label, a, b]) => (
 															<tr key={label} {...stylex.props(sx.borderT, sx.borderLine)}>
 																<td {...stylex.props(sx.py15, sx.textFg)}>{label}</td>
-																<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{a}</td>
-																<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{b}</td>
+																<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textDim)}>{a}</td>
+																<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textDim)}>{b}</td>
 															</tr>
 														));
 													})()}
@@ -1557,7 +1578,7 @@ export function Analytics() {
 								)}
 							</div>
 
-							<div {...mergeStylexProps("lg:grid-cols-2", sx.mt4, sx.grid, sx.gridCols1, sx.gap3)}>
+							<div {...mergeStylexProps("", sx.lgGridCols2, sx.mt4, sx.grid, sx.gridCols1, sx.gap3)}>
 								<ChartCard title="Models" subtitle="Tokens and cost per model">
 									<div {...stylex.props(sx.overflowXAuto)}>
 										<table {...stylex.props(sx.wFull, sx.borderCollapse, typography.label)}>
@@ -1580,17 +1601,17 @@ export function Analytics() {
 														<td {...stylex.props(sx.maxW32, sx.truncate, sx.py15, sx.textFg)} title={m.model}>
 															{m.model}
 														</td>
-														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{fmtInt(m.requests ?? m.turns)}</td>
-														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textFg)}>
+														<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textDim)}>{fmtInt(m.requests ?? m.turns)}</td>
+														<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textFg)}>
 															{fmt(
 																m.totalTokens ??
 																	m.inputTokens + m.outputTokens + m.cacheReadTokens + m.cacheWriteTokens,
 															)}
 														</td>
-														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{fmtUsdCell(m.costUsd ?? 0)}</td>
-														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{fmt(m.inputTokens)}</td>
-														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{fmt(m.outputTokens)}</td>
-														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{fmt(m.cacheReadTokens)}</td>
+														<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textDim)}>{fmtUsdCell(m.costUsd ?? 0)}</td>
+														<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textDim)}>{fmt(m.inputTokens)}</td>
+														<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textDim)}>{fmt(m.outputTokens)}</td>
+														<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textDim)}>{fmt(m.cacheReadTokens)}</td>
 													</tr>
 												))}
 											</tbody>
@@ -1621,15 +1642,15 @@ export function Analytics() {
 														<td className={[mergeStylexClassName("", sx.maxW32, sx.truncate, sx.py15), r.repo ? mergeStylexClassName("", sx.textFg) : mergeStylexClassName("", sx.textFaint)].filter(Boolean).join(" ")}>
 															{r.repo ? repoLabel(r.repo) : "No repo"}
 														</td>
-														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{fmtInt(r.sessions || 0)}</td>
-														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{fmtInt(r.turns || 0)}</td>
-														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>
+														<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textDim)}>{fmtInt(r.sessions || 0)}</td>
+														<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textDim)}>{fmtInt(r.turns || 0)}</td>
+														<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textDim)}>
 															{fmtInt(r.prsOpened)} <span {...stylex.props(sx.textFaint)}>/ {fmtInt(r.allOpened)}</span>
 														</td>
-														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>
+														<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textDim)}>
 															{fmtInt(r.prsMerged)} <span {...stylex.props(sx.textFaint)}>/ {fmtInt(r.allMerged)}</span>
 														</td>
-														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textFg)}>
+														<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textFg)}>
 															{r.allMerged ? `${Math.round((100 * r.prsMerged) / r.allMerged)}%` : "–"}
 														</td>
 													</tr>
@@ -1643,7 +1664,7 @@ export function Analytics() {
 								</ChartCard>
 							</div>
 
-							<div {...mergeStylexProps("lg:grid-cols-2", sx.mt4, sx.grid, sx.gridCols1, sx.gap3)}>
+							<div {...mergeStylexProps("", sx.lgGridCols2, sx.mt4, sx.grid, sx.gridCols1, sx.gap3)}>
 								<ChartCard title="People" subtitle="Sessions and turns per person">
 									<div {...stylex.props(sx.overflowXAuto)}>
 										<table {...stylex.props(sx.wFull, sx.borderCollapse, typography.label)}>
@@ -1670,9 +1691,9 @@ export function Analytics() {
 																<span {...stylex.props(sx.minW0, sx.truncate)}>{p.name}</span>
 															</span>
 														</td>
-														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{fmtInt(p.sessionsCreated)}</td>
-														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{fmtInt(p.sessionsActive)}</td>
-														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{fmtInt(p.turns)}</td>
+														<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textDim)}>{fmtInt(p.sessionsCreated)}</td>
+														<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textDim)}>{fmtInt(p.sessionsActive)}</td>
+														<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textDim)}>{fmtInt(p.turns)}</td>
 													</tr>
 												))}
 											</tbody>
@@ -1696,8 +1717,8 @@ export function Analytics() {
 														<td {...stylex.props(sx.maxW44, sx.truncate, sx.py15, sx.textFg)} title={a.name}>
 															{a.name}
 														</td>
-														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{fmtInt(a.runs)}</td>
-														<td {...mergeStylexProps("tabular-nums", sx.py15, sx.textRight, sx.textDim)}>{fmtInt(a.turns)}</td>
+														<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textDim)}>{fmtInt(a.runs)}</td>
+														<td {...mergeStylexProps("", sx.tabularNums, sx.py15, sx.textRight, sx.textDim)}>{fmtInt(a.turns)}</td>
 														<td className={[mergeStylexClassName("", sx.py15, sx.textRight, sx.tabularNums), a.errors ? mergeStylexClassName("", sx.textRed) : mergeStylexClassName("", sx.textFaint)].filter(Boolean).join(" ")}>
 															{fmtInt(a.errors)}
 														</td>
@@ -1764,18 +1785,18 @@ export function Analytics() {
 														key={`${pr.repo}#${pr.number}`}
 														href={pr.url}
 														target="_blank"
-														rel="noopener noreferrer" {...mergeStylexProps("hover:bg-hover", sx.Mx2, sx.flex, sx.itemsCenter, sx.gap25, sx.roundedRow, sx.px2, sx.py15, sx.noUnderline, typography.label)}
+														rel="noopener noreferrer" {...mergeStylexProps("", sx.hoverBgHover, sx.Mx2, sx.flex, sx.itemsCenter, sx.gap25, sx.roundedRow, sx.px2, sx.py15, sx.noUnderline, typography.label)}
 													>
 														<span
 															{...stylex.props(sx.size2, sx.shrink0, sx.roundedFull)}
 															style={{ background: state.color }}
 														/>
-														<span {...mergeStylexProps("tabular-nums", sx.shrink0, sx.textFaint)}>
+														<span {...mergeStylexProps("", sx.tabularNums, sx.shrink0, sx.textFaint)}>
 															{repoLabel(pr.repo)}#{pr.number}
 														</span>
 														<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.textFg)}>{pr.title}</span>
-														<span {...mergeStylexProps("sm:inline", sx.hidden, sx.shrink0, sx.textFaint)}>{state.label}</span>
-														<span {...mergeStylexProps("tabular-nums", sx.shrink0, sx.textFaint)}>
+														<span {...mergeStylexProps("", sx.smInline, sx.hidden, sx.shrink0, sx.textFaint)}>{state.label}</span>
+														<span {...mergeStylexProps("", sx.tabularNums, sx.shrink0, sx.textFaint)}>
 															{shortDate(pr.mergedAt || pr.createdAt)}
 														</span>
 													</a>

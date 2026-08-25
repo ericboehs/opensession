@@ -692,7 +692,7 @@ const sx = stylex.create({
 		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
 	},
 	borderRgba255255255015: {
-		"borderColor": "#ffffff26"
+		"borderColor": "color-mix(in srgb, var(--color-white) 15%, transparent)"
 	},
 });
 
@@ -803,7 +803,7 @@ export const TAB_SCROLL =
 	"supports-[animation-timeline:scroll()]:[animation:session-tabs-fade-start_1ms_both,session-tabs-fade-end_1ms_both] " +
 	"supports-[animation-timeline:scroll()]:[animation-timeline:scroll(self_inline),scroll(self_inline)] " +
 	"supports-[animation-timeline:scroll()]:[animation-range:0_24px,calc(100%_-_24px)_100%] " +
-	"supports-[animation-timeline:scroll()]:data-[overflow]:[mask-image:linear-gradient(to_right,transparent_0,#000_var(--tabs-fade-start),#000_calc(100%_-_max(var(--tabs-fade-end),var(--tabs-control-fade-end,0px))),transparent_100%)]";
+	"supports-[animation-timeline:scroll()]:data-[overflow]:[mask-image:linear-gradient(to_right,transparent_0,var(--color-black)_var(--tabs-fade-start),var(--color-black)_calc(100%_-_max(var(--tabs-fade-end),var(--tabs-control-fade-end,0px))),transparent_100%)]";
 
 /**
  * The drag-to-reorder group wraps EVERY tab — sessions and view panes alike —
@@ -900,10 +900,10 @@ export function tabClass(state: TabState): string {
  *  reveals close over the title, with a wider fade keeping both legible. */
 export const TAB_TITLE =
 	mergeStylexClassName("session-tab-title", sx.block, sx.minW0, sx.maxW150px, sx.overflowHidden) + " " +
-	"data-[overflow]:[mask-image:linear-gradient(to_right,#000_0,#000_calc(100%_-_10px),transparent_100%)] " +
+	"data-[overflow]:[mask-image:linear-gradient(to_right,var(--color-black)_0,var(--color-black)_calc(100%_-_10px),transparent_100%)] " +
 	mergeStylexClassName("", sx.desktopMaxW166px) + " " +
-	"desktop:group-hover/tab:[mask-image:linear-gradient(to_right,#000_0,#000_calc(100%_-_36px),transparent_100%)] " +
-	"desktop:group-focus-within/tab:[mask-image:linear-gradient(to_right,#000_0,#000_calc(100%_-_36px),transparent_100%)]";
+	"desktop:group-hover/tab:[mask-image:linear-gradient(to_right,var(--color-black)_0,var(--color-black)_calc(100%_-_36px),transparent_100%)] " +
+	"desktop:group-focus-within/tab:[mask-image:linear-gradient(to_right,var(--color-black)_0,var(--color-black)_calc(100%_-_36px),transparent_100%)]";
 
 /** An icon-only view tab (Staging → a globe): drop the label's text metrics so
  *  the tab sizes to the glyph. */

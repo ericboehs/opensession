@@ -12,7 +12,7 @@ import type { FeedDescriptor, Project } from "../lib/types";
 import { fieldClasses } from "../ui/input";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -130,6 +130,21 @@ const sx = stylex.create({
     opacity: 0,
     transitionProperty: "color, opacity, background",
     ":hover": { "@media (hover: hover)": { color: "var(--red)" } },
+	},
+
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
 	},
 });
 
@@ -333,7 +348,7 @@ const res = await fetch(`${BASE_PATH}/api/feeds`);
 					</div>
 				))}
 				<button
-          {...mergeStylexProps("hover:bg-hover hover:text-fg", sx.flex, sx.wFull, sx.itemsCenter, sx.gap2, sx.px5, sx.py3, sx.fontMedium, sx.textDim, sx.transitionColors, typography.controlLabel)}
+          {...mergeStylexProps("", sx.hoverBgHover, sx.hoverTextFg, sx.flex, sx.wFull, sx.itemsCenter, sx.gap2, sx.px5, sx.py3, sx.fontMedium, sx.textDim, sx.transitionColors, typography.controlLabel)}
 					onClick={() => setOpen(true)}
 				>
 					<IconPlus size={16} /> New project

@@ -234,6 +234,33 @@ const sx = stylex.create({
 		"--tw-numeric-spacing": "tabular-nums",
 		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
 	},
+
+	ptMax12pxEnvSafeAreaInsetTop: {
+		"paddingTop": "max(12px, env(safe-area-inset-top))"
+	},
+	phoneHAuto: {
+		"@media (max-width: 720px)": {
+			"height": "auto"
+		}
+	},
+	phoneInlineFlex: {
+		"@media (max-width: 720px)": {
+			"display": "inline-flex"
+		}
+	},
+	pbMax16pxEnvSafeAreaInsetBottom: {
+		"paddingBottom": "max(16px, env(safe-area-inset-bottom))"
+	},
+	lineClamp1: {
+		"WebkitlineClamp": "1",
+		"WebkitboxOrient": "vertical",
+		"display": "-webkit-box",
+		"overflow": "hidden"
+	},
+	touchPanY: {
+		"--tw-pan-y": "pan-y",
+		"touchAction": "var(--tw-pan-x,) var(--tw-pan-y,) var(--tw-pinch-zoom,)"
+	},
 });
 
 /**
@@ -449,8 +476,8 @@ export function CatchUpDeck({
 			    a desktop-width card), and the up-fling of Keep Unread crosses the
 			    whole row. Cards pass UNDER the bar instead of over it, so the
 			    counter stays readable through every swipe. */}
-			<PhoneTopBar {...mergeStylexProps("pt-[max(12px,env(safe-area-inset-top))] phone:h-auto", sx.relative, sx.z10, sx.wFull, sx.bgSurface, sx.px4, sx.pb3)}>
-				<PhoneTopBarAction {...mergeStylexProps("phone:inline-flex", sx.hidden)}
+			<PhoneTopBar {...mergeStylexProps("", sx.ptMax12pxEnvSafeAreaInsetTop, sx.phoneHAuto, sx.relative, sx.z10, sx.wFull, sx.bgSurface, sx.px4, sx.pb3)}>
+				<PhoneTopBarAction {...mergeStylexProps("", sx.phoneInlineFlex, sx.hidden)}
 					onClick={onExit}
 					title="Back"
 					aria-label="Back"
@@ -523,7 +550,7 @@ export function CatchUpDeck({
 			    the card stack for the same reason the header is: a tilted card
 			    reaches past its own box at both ends. */}
 			{!done && (
-				<div {...mergeStylexProps("pb-[max(16px,env(safe-area-inset-bottom))]", sx.relative, sx.z10, sx.flex, sx.wFull, sx.maxW860px, sx.shrink0, sx.itemsStretch, sx.gap25, sx.bgSurface, sx.px4)}>
+				<div {...mergeStylexProps("", sx.pbMax16pxEnvSafeAreaInsetBottom, sx.relative, sx.z10, sx.flex, sx.wFull, sx.maxW860px, sx.shrink0, sx.itemsStretch, sx.gap25, sx.bgSurface, sx.px4)}>
 					<Button
 						size="lg"
 						{...stylex.props(sx.flex1, sx.py3, sx.textSm)}
@@ -665,7 +692,7 @@ function CardBody({
 				onClick={onOpen}
 				title="Open the full session"
 			>
-				<span {...mergeStylexProps("line-clamp-1", sx.fontSemibold, sx.textFg, typography.itemTitle)}>
+				<span {...mergeStylexProps("", sx.lineClamp1, sx.fontSemibold, sx.textFg, typography.itemTitle)}>
 					{card.name}
 				</span>
 				<span {...stylex.props(sx.textXs, sx.textFaint)}>{meta}</span>
@@ -675,7 +702,7 @@ function CardBody({
 			    ones bubble up to the card's drag handler (otherwise the scroll
 			    container eats the swipe on touch devices). */}
 			<div
-				ref={setScrollEl} {...mergeStylexProps("catchup-scroll touch-pan-y", sx.minH0, sx.flex1, sx.overflowYAuto, sx.px4, sx.py3)}
+				ref={setScrollEl} {...mergeStylexProps("catchup-scroll", sx.touchPanY, sx.minH0, sx.flex1, sx.overflowYAuto, sx.px4, sx.py3)}
 			>
 				{/* One wrapper so the bottom-pin has a single box to measure: a
 				    ResizeObserver on the scroll container itself never sees its

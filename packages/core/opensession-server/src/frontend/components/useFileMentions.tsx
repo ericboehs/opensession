@@ -146,6 +146,13 @@ const sx = stylex.create({
 	bgPressed: {
 		"backgroundColor": "var(--hover-strong)"
 	},
+
+	bgColorMixInSrgbVarAccent14Transparent: {
+		"backgroundColor": "var(--accent)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--accent) 14%,transparent)"
+		}
+	},
 });
 
 /**
@@ -640,7 +647,7 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
                     {item.icon || <IconPlug size={16} />}
                   </span>
                 ) : item.repo ? (
-                  <span {...mergeStylexProps("bg-[color-mix(in_srgb,var(--accent)_14%,transparent)]", sx.shrink0, sx.roundedMd, sx.px5px, sx.pyPx, sx.fontSemibold, sx.textAccent, typography.meta)}>
+                  <span {...mergeStylexProps("", sx.bgColorMixInSrgbVarAccent14Transparent, sx.shrink0, sx.roundedMd, sx.px5px, sx.pyPx, sx.fontSemibold, sx.textAccent, typography.meta)}>
                     {repoLabel(item.repo)}
                   </span>
                 ) : (

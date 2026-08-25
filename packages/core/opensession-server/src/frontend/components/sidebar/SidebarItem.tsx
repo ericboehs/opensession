@@ -270,6 +270,78 @@ const sx = stylex.create({
 	rightCalcVarSidebarRowAction26px11px: {
 		"right": "calc(var(--sidebar-row-action,26px) + 11px)"
 	},
+
+	mt05: {
+		"marginTop": "2px"
+	},
+	wFull: {
+		"width": "100%"
+	},
+	roundedRow: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	border0: {
+		"borderStyle": "var(--tw-border-style)",
+		"borderWidth": "0"
+	},
+	bgTransparent: {
+		"backgroundColor": "transparent"
+	},
+	pyVarSidebarRowPad: {
+		"paddingBlock": "var(--sidebar-row-pad)"
+	},
+	pr2: {
+		"paddingRight": "8px"
+	},
+	textLeft: {
+		"textAlign": "left"
+	},
+	textFg: {
+		"color": "var(--text)"
+	},
+	phonePr2: {
+		"@media (max-width: 720px)": {
+			"paddingRight": "8px"
+		}
+	},
+	phonePlCalcVarSidebarIconLeft16px12px: {
+		"@media (max-width: 720px)": {
+			"paddingLeft": "calc(var(--sidebar-icon-left,16px) - 12px)"
+		}
+	},
+	phonePy13px: {
+		"@media (max-width: 720px)": {
+			"paddingBlock": "13px"
+		}
+	},
+	desktopTextItemTitle: {
+		"@media (min-width: 721px)": {
+			"fontSize": "var(--type-item-title)"
+		}
+	},
+	phoneTextInputPhone: {
+		"@media (max-width: 720px)": {
+			"fontSize": "var(--type-input-phone)"
+		}
+	},
+	WebkitMaskImageLinearGradientToRight000Calc10024pxTransparent: {
+		"WebkitMaskImage": "linear-gradient(90deg,var(--color-black) calc(100% - 24px),transparent)"
+	},
+	MaskImageLinearGradientToRight000Calc10024pxTransparent: {
+		"WebkitMaskImage": "linear-gradient(90deg,var(--color-black) calc(100% - 24px),transparent)",
+		"maskImage": "linear-gradient(90deg,var(--color-black) calc(100% - 24px),transparent)"
+	},
+	leading135: {
+		"--tw-leading": "1.35",
+		"lineHeight": "1.35"
+	},
+	textDim: {
+		"color": "var(--text-dim)"
+	},
+	ring2: {
+		"--tw-ring-shadow": "var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor)",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
 });
 
 /** The sidebar's selectable row — the shape every list family wears: session,
@@ -297,7 +369,7 @@ const sx = stylex.create({
  *  Phones keep `py-[13px]` at both densities: 36px is a reading height, not a
  *  tap target, so the compact values are gated to desktop where they are set. */
 export const SIDEBAR_ROW =
-	`group relative mt-0.5 w-full rounded-row border-0 bg-transparent py-[var(--sidebar-row-pad)] pr-2 ${SIDEBAR_RAIL_PAD} text-left text-fg phone:pr-2 phone:pl-[calc(var(--sidebar-icon-left,16px)-12px)] phone:py-[13px]`;
+	[mergeStylexClassName("group", sx.relative, sx.mt05, sx.wFull, sx.roundedRow, sx.border0, sx.bgTransparent, sx.pyVarSidebarRowPad, sx.pr2), SIDEBAR_RAIL_PAD, mergeStylexClassName("", sx.textLeft, sx.textFg, sx.phonePr2, sx.phonePlCalcVarSidebarIconLeft16px12px, sx.phonePy13px)].filter(Boolean).join(" ");
 
 /** A row's title: one line that fades smoothly at the available edge instead
  *  of ending in an ellipsis. Read conversations stay quiet; unread ones
@@ -319,7 +391,7 @@ const ROW_ACTION = cn(
 );
 
 export const SIDEBAR_ROW_TITLE =
-	"min-w-0 flex-1 overflow-hidden whitespace-nowrap [-webkit-mask-image:linear-gradient(to_right,#000_calc(100%_-_24px),transparent)] [mask-image:linear-gradient(to_right,#000_calc(100%_-_24px),transparent)] text-body font-medium leading-[1.35] text-dim desktop:text-item-title group-data-[selected]:text-fg group-data-[waiting]:font-semibold group-data-[unread]:font-semibold group-data-[unread]:text-fg";
+	mergeStylexClassName("group-data-[selected]:text-fg group-data-[waiting]:font-semibold group-data-[unread]:font-semibold group-data-[unread]:text-fg", sx.minW0, sx.flex1, sx.overflowHidden, sx.whitespaceNowrap, sx.WebkitMaskImageLinearGradientToRight000Calc10024pxTransparent, sx.MaskImageLinearGradientToRight000Calc10024pxTransparent, typography.body, sx.fontMedium, sx.leading135, sx.textDim, sx.desktopTextItemTitle);
 
 export function SidebarItem({
 	session,
@@ -740,7 +812,7 @@ export function SidebarItem({
 					)}
 				</span>
 				{editing ? (
-					<input {...mergeStylexProps("desktop:text-item-title phone:text-input-phone", sx.minW0, sx.flex1, sx.roundedMd, sx.border, sx.borderAccent, sx.bgBg, sx.px3px, sx.py0, sx.fontMedium, sx.textInherit, sx.outlineNone, typography.body)}
+					<input {...mergeStylexProps("", sx.desktopTextItemTitle, sx.phoneTextInputPhone, sx.minW0, sx.flex1, sx.roundedMd, sx.border, sx.borderAccent, sx.bgBg, sx.px3px, sx.py0, sx.fontMedium, sx.textInherit, sx.outlineNone, typography.body)}
 						value={draft}
 						autoFocus
 						onChange={(e) => setDraft(e.target.value)}
@@ -784,7 +856,7 @@ export function SidebarItem({
 					>
 						<UserAvatar name={mention} size={16} {...stylex.props(sx.shrink0)} />
 						<span
-							aria-hidden="true" {...mergeStylexProps("ring-2", sx.absolute, sx.Right1, sx.Bottom1, sx.flex, sx.size3, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgAccent, sx.text8px, sx.fontBold, sx.leadingNone, sx.textOnAccent, sx.ringPanel)}
+							aria-hidden="true" {...mergeStylexProps("", sx.ring2, sx.absolute, sx.Right1, sx.Bottom1, sx.flex, sx.size3, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgAccent, sx.text8px, sx.fontBold, sx.leadingNone, sx.textOnAccent, sx.ringPanel)}
 						>
 							@
 						</span>
@@ -823,7 +895,7 @@ export function SidebarItem({
 			    clears the hover-revealed buttons, so this line needs no reserve of
 			    its own. */}
 			{!mine && (
-				<div {...mergeStylexProps("phone:text-label group-data-[unread]:text-dim", sx.mt3px, sx.flex, sx.itemsCenter, sx.gap1, sx.overflowHidden, sx.pl7, sx.whitespaceNowrap, sx.textFaint, typography.meta)}>
+				<div {...mergeStylexProps("group-data-[unread]:text-dim", sx.phoneTextLabel, sx.mt3px, sx.flex, sx.itemsCenter, sx.gap1, sx.overflowHidden, sx.pl7, sx.whitespaceNowrap, sx.textFaint, typography.meta)}>
 					{metaParts.map((part, i) => (
 						<React.Fragment key={i}>
 							{i > 0 && <span {...stylex.props(sx.opacity50)}>·</span>}

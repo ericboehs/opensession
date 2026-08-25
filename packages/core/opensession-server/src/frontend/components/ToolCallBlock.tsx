@@ -12,7 +12,7 @@ import { currentPlanItem, parsePlanItems, planDoneCount } from "@tellahq/openses
 import { PlanChecklist } from "./PlanChecklist";
 import { resolveEntryImageSrc } from "../lib/osBlob";
 import { BASE_PATH } from "../lib/base";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import {
   TOOL_CODE_WELL,
   TOOL_PRE,
@@ -243,6 +243,35 @@ const sx = stylex.create({
 	opacity100: { opacity: 1 },
 	subagentTransition: { transitionProperty: "opacity, color, background-color", ":focus": { opacity: 1 } },
 	desktopHoverReveal: { "@media (min-width: 721px)": { opacity: 0, ":hover": { "@media (hover: hover)": { opacity: 1 } } } },
+
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	phoneFlexShrink0: {
+		"@media (max-width: 720px)": {
+			"flexShrink": "0"
+		}
+	},
+	hoverBgHover40: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in oklab, var(--hover) 40%, transparent)"
+				}
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
 });
 
 interface Props {
@@ -469,7 +498,7 @@ function RunningToolDuration({ entry }: { entry: TranscriptEntry }) {
   if (durationMs === null) return null;
   return (
     <span
-      data-tool-duration {...mergeStylexProps("tabular-nums group-hover:block", sx.hidden, sx.flexShrink0, sx.textFaint, typography.meta)}
+      data-tool-duration {...mergeStylexProps("group-hover:block", sx.tabularNums, sx.hidden, sx.flexShrink0, sx.textFaint, typography.meta)}
     >
       {formatToolDuration(durationMs)}
     </span>
@@ -622,7 +651,7 @@ export const ToolCallBlock = function ToolCallBlock({
           // strength: down a fold of Open Session calls the product name is the
           // same on every row, so it should read as the path to the part that
           // differs rather than compete with it.
-          <span {...mergeStylexProps("group-hover:text-fg phone:flex-shrink-0", sx.flex, sx.minW0, sx.itemsBaseline, sx.gap1, sx.overflowHidden, sx.leading5, sx.fontMedium, sx.textDim, sx.transitionColors, typography.itemTitle)}
+          <span {...mergeStylexProps("group-hover:text-fg", sx.phoneFlexShrink0, sx.flex, sx.minW0, sx.itemsBaseline, sx.gap1, sx.overflowHidden, sx.leading5, sx.fontMedium, sx.textDim, sx.transitionColors, typography.itemTitle)}
             title={mcpParts.join(" · ")}
           >
             {mcpParts.map((part, i) => {
@@ -728,7 +757,7 @@ export const ToolCallBlock = function ToolCallBlock({
         )}
 
         {duration && (
-          <span {...mergeStylexProps("tabular-nums", sx.flexShrink0, sx.textFaint, typography.meta)}>{duration}</span>
+          <span {...mergeStylexProps("", sx.tabularNums, sx.flexShrink0, sx.textFaint, typography.meta)}>{duration}</span>
         )}
         {pending && <RunningToolDuration entry={entry} />}
 
@@ -966,7 +995,7 @@ function DetailDisclosure({
   return (
     <button
       type="button"
-      aria-expanded={expanded} {...mergeStylexProps("hover:bg-hover/40 hover:text-fg", sx.mt1, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px15, sx.py1, sx.fontSans, sx.fontMedium, sx.textFaint, typography.meta)}
+      aria-expanded={expanded} {...mergeStylexProps("", sx.hoverBgHover40, sx.hoverTextFg, sx.mt1, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px15, sx.py1, sx.fontSans, sx.fontMedium, sx.textFaint, typography.meta)}
       onClick={onClick}
     >
       {expanded ? "Show preview" : `Show full detail · ${Math.round(length / 1024)} KB`}

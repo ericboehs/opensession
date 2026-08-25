@@ -237,6 +237,115 @@ const sx = stylex.create({
 			"minHeight": "40px"
 		}
 	},
+
+	decorationLine: {
+		"WebkittextDecorationColor": "var(--border)",
+		"textDecorationColor": "var(--border)"
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	hoverDecorationCurrent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"textDecorationColor": "currentColor"
+			}
+		}
+	},
+	shadowVarComposerShadow: {
+		"--tw-shadow": "var(--composer-shadow)",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	transitionBorderColorBoxShadow: {
+		"transitionProperty": "border-color,box-shadow",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	focusWithinBorderAccent: {
+		":focusWithin": {
+			"borderColor": "var(--accent)"
+		}
+	},
+	desktopBorderTransparent: {
+		"@media (min-width: 721px)": {
+			"borderColor": "transparent"
+		}
+	},
+	desktopSmoothRingColorVarComposerBorder: {
+		"@media (min-width: 721px)": {
+			"--smooth-ring-color": "var(--composer-border)"
+		}
+	},
+	desktopSmoothShadowRingSoft: {
+		"@media (min-width: 721px)": {
+			"--smooth-shadow-color": "var(--tw-shadow-color,black)",
+			"boxShadow": "0 3px 10px -3px var(--smooth-shadow-color), 0 20px 56px -16px var(--smooth-shadow-color), 0 0 0 var(--smooth-ring-width,1px) var(--smooth-ring-color)",
+			"@supports (color: color-mix(in lab, red, red))": {
+				"boxShadow": "0 3px 10px -3px color-mix(in srgb, var(--smooth-shadow-color) 4%, transparent), 0 20px 56px -16px color-mix(in srgb, var(--smooth-shadow-color) 12%, transparent), 0 0 0 var(--smooth-ring-width,1px) color-mix(in srgb, var(--smooth-ring-color) 35%, transparent)"
+			}
+		}
+	},
+	phonePx3: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "12px"
+		}
+	},
+	phonePt3: {
+		"@media (max-width: 720px)": {
+			"paddingTop": "12px"
+		}
+	},
+	phonePb2: {
+		"@media (max-width: 720px)": {
+			"paddingBottom": "8px"
+		}
+	},
+	placeholderTextFaint: {
+		"::placeholder": {
+			"color": "var(--text-faint)"
+		}
+	},
+	phoneTextInputPhone: {
+		"@media (max-width: 720px)": {
+			"fontSize": "var(--type-input-phone)"
+		}
+	},
+	phoneMt2: {
+		"@media (max-width: 720px)": {
+			"marginTop": "8px"
+		}
+	},
+	transitionBackgroundColorColorScale: {
+		"transitionProperty": "background-color,color,scale",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	activeScale096: {
+		":active": {
+			"scale": ".96"
+		}
+	},
+	disabledOpacity40: {
+		":disabled": {
+			"opacity": ".4"
+		}
+	},
+	phoneW32: {
+		"@media (max-width: 720px)": {
+			"width": "128px"
+		}
+	},
 });
 
 const MAX_SLACK_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -266,7 +375,7 @@ export function SlackSentNotice({
 			{permalink && (
 				<>
 					<span aria-hidden {...stylex.props(sx.textFaint)}>·</span>
-					<a {...mergeStylexProps("decoration-line hover:text-fg hover:decoration-current", sx.focusRing, sx.roundedSm, sx.textDim, sx.underline, sx.underlineOffset2, sx.transitionColors)}
+					<a {...mergeStylexProps("", sx.decorationLine, sx.hoverTextFg, sx.hoverDecorationCurrent, sx.focusRing, sx.roundedSm, sx.textDim, sx.underline, sx.underlineOffset2, sx.transitionColors)}
 						href={permalink}
 						target="_blank"
 						rel="noreferrer"
@@ -472,7 +581,7 @@ setAwaitingSlack(false);
 					<Tooltip label="Close" side="bottom">
 						<Button
 							variant="ghost"
-							size="md" {...mergeStylexProps("phone:size-10", sx.mlAuto)}
+							size="md" {...mergeStylexProps("", sx.phoneSize10, sx.mlAuto)}
 							icon={<IconX size={18} />}
 							aria-label="Close"
 							disabled={status !== "idle"}
@@ -482,14 +591,14 @@ setAwaitingSlack(false);
 				)}
 			</div>
 			{/* `pwa-composer-edge` keeps this card aligned with the shared composer. */}
-			<div {...mergeStylexProps("pwa-composer-edge shadow-[var(--composer-shadow)] transition-[border-color,box-shadow] focus-within:border-accent desktop:border-transparent desktop:[--smooth-ring-color:var(--composer-border)] desktop:smooth-shadow-ring-soft phone:px-3 phone:pt-3 phone:pb-2", sx.roundedVarComposerRadius, sx.border, sx.borderColorVarComposerBorder, sx.bgVarComposerSurface, sx.px35, sx.pt35, sx.pb25)}
+			<div {...mergeStylexProps("pwa-composer-edge", sx.shadowVarComposerShadow, sx.transitionBorderColorBoxShadow, sx.focusWithinBorderAccent, sx.desktopBorderTransparent, sx.desktopSmoothRingColorVarComposerBorder, sx.desktopSmoothShadowRingSoft, sx.phonePx3, sx.phonePt3, sx.phonePb2, sx.roundedVarComposerRadius, sx.border, sx.borderColorVarComposerBorder, sx.bgVarComposerSurface, sx.px35, sx.pt35, sx.pb25)}
 				onDragOver={(event) => event.preventDefault()}
 				onDrop={(event) => {
 					event.preventDefault();
 					if (status === "idle") void addImages(Array.from(event.dataTransfer.files));
 				}}
 			>
-				<textarea {...mergeStylexProps("placeholder:text-faint phone:text-input-phone", sx.block, sx.minH14, sx.maxH32, sx.wFull, sx.resizeNone, sx.border0, sx.bgTransparent, sx.p0, sx.leading155, sx.textFg, sx.outlineNone, sx.FieldSizingContent, typography.body)}
+				<textarea {...mergeStylexProps("", sx.placeholderTextFaint, sx.phoneTextInputPhone, sx.block, sx.minH14, sx.maxH32, sx.wFull, sx.resizeNone, sx.border0, sx.bgTransparent, sx.p0, sx.leading155, sx.textFg, sx.outlineNone, sx.FieldSizingContent, typography.body)}
 					aria-label="Slack message"
 					{...noAutofill}
 					value={message}
@@ -523,9 +632,9 @@ setAwaitingSlack(false);
 						))}
 					</div>
 				)}
-				<div {...mergeStylexProps("phone:mt-2", sx.mt25, sx.flex, sx.itemsCenter, sx.gap15)}>
+				<div {...mergeStylexProps("", sx.phoneMt2, sx.mt25, sx.flex, sx.itemsCenter, sx.gap15)}>
 					<input ref={fileInputRef} {...stylex.props(sx.srOnly)} type="file" accept="image/*" multiple onChange={(event) => { void addImages(Array.from(event.target.files || [])); event.currentTarget.value = ""; }} />
-					<button type="button" aria-label="Add images" title="Add images" {...mergeStylexProps("transition-[background-color,color,scale] hover:bg-hover hover:text-fg active:scale-[0.96] disabled:opacity-40 phone:size-10", sx.focusRing, sx.inlineFlex, sx.size8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textDim)} disabled={status !== "idle" || uploading || screenshots.length >= 10} onClick={() => fileInputRef.current?.click()}>
+					<button type="button" aria-label="Add images" title="Add images" {...mergeStylexProps("", sx.transitionBackgroundColorColorScale, sx.hoverBgHover, sx.hoverTextFg, sx.activeScale096, sx.disabledOpacity40, sx.phoneSize10, sx.focusRing, sx.inlineFlex, sx.size8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textDim)} disabled={status !== "idle" || uploading || screenshots.length >= 10} onClick={() => fileInputRef.current?.click()}>
 						{uploading ? <Spinner size="md" /> : <IconPlus size={20} />}
 					</button>
 					<div {...stylex.props(sx.flex1)} />
@@ -534,7 +643,7 @@ setAwaitingSlack(false);
 					    position it, which is the primitive rebuilt by hand around a
 					    control it exists to replace. */}
 					<OptionSelect
-						label="Slack channel" {...mergeStylexProps("phone:w-32", sx.w28)}
+						label="Slack channel" {...mergeStylexProps("", sx.phoneW32, sx.w28)}
 						value={channel}
 						options={
 							channels.length === 0

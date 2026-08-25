@@ -3,7 +3,7 @@ import type { ExternalRef } from "../lib/types";
 import { feedForRefKind } from "../lib/feeds-meta";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -71,6 +71,14 @@ const sx = stylex.create({
 	},
 	hFull: { height: "100%" },
 	flexCol: { flexDirection: "column" },
+
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
 });
 
 /**
@@ -148,7 +156,7 @@ export function FeedWebPane({
 						key={l.href}
 						href={l.href}
 						target="_blank"
-						rel="noreferrer" {...mergeStylexProps("hover:text-fg", sx.whitespaceNowrap, sx.textXs, sx.fontMedium, sx.textDim)}
+						rel="noreferrer" {...mergeStylexProps("", sx.hoverTextFg, sx.whitespaceNowrap, sx.textXs, sx.fontMedium, sx.textDim)}
 					>
 						{l.label} ↗
 					</a>

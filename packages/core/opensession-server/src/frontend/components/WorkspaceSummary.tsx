@@ -77,7 +77,7 @@ import {
 } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -176,7 +176,7 @@ const sx = stylex.create({
 			borderRadius: "calc(infinity * 1px)"
 	},
 	bgBlack45: {
-			backgroundColor: "#00000073"
+			backgroundColor: "transparent0073"
 	},
   textWhite: { color: "var(--color-white)" },
   trigger: {
@@ -237,6 +237,17 @@ const sx = stylex.create({
   sectionGap: { gap: "6px" },
   frameWidth: { width: "calc((100% - 30px) / 2)" },
   py0: { paddingBlock: 0 },
+
+	phoneMinH11: {
+		"@media (max-width: 720px)": {
+			"minHeight": "44px"
+		}
+	},
+	backdropBlurSm: {
+		"--tw-backdrop-blur": "blur(var(--blur-sm))",
+		"WebkitBackdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)",
+		"backdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+	},
 });
 
 function toneStyle(tone: string | undefined): stylex.StyleXStyles {
@@ -1164,7 +1175,7 @@ setFixBusy(false);
 						<Button
 							variant="ghost"
 							size="sm"
-              {...mergeStylexProps("phone:min-h-11", sx.minH6, sx.px2, typography.meta)}
+              {...mergeStylexProps("", sx.phoneMinH11, sx.minH6, sx.px2, typography.meta)}
 							onClick={() => go(onOpenPr)}
 						>
 							Open
@@ -1497,7 +1508,7 @@ setFixBusy(false);
                         )}
                       >
                         <span
-                          {...mergeStylexProps("backdrop-blur-sm", sx.grid, sx.size7, sx.placeItemsCenter, sx.roundedFull, sx.bgBlack45, sx.textWhite)}
+                          {...mergeStylexProps("", sx.backdropBlurSm, sx.grid, sx.size7, sx.placeItemsCenter, sx.roundedFull, sx.bgBlack45, sx.textWhite)}
                         >
 													<IconPlay size={16} />
 												</span>
@@ -1569,7 +1580,7 @@ setFixBusy(false);
                           )}
                         >
                           <span
-                            {...mergeStylexProps("backdrop-blur-sm", sx.grid, sx.size7, sx.placeItemsCenter, sx.roundedFull, sx.bgBlack45, sx.textWhite)}
+                            {...mergeStylexProps("", sx.backdropBlurSm, sx.grid, sx.size7, sx.placeItemsCenter, sx.roundedFull, sx.bgBlack45, sx.textWhite)}
                           >
 														<IconPlay size={16} />
 													</span>

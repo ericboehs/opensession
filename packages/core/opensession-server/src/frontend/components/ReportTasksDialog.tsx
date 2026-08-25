@@ -22,7 +22,7 @@ import { InlineAlert } from "../ui/state";
 import { toast } from "../ui/toast";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -108,6 +108,20 @@ const sx = stylex.create({
 	gap2: {
 			gap: "8px"
 	},
+
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	lineClamp2: {
+		"WebkitlineClamp": "2",
+		"WebkitboxOrient": "vertical",
+		"display": "-webkit-box",
+		"overflow": "hidden"
+	},
 });
 
 export function ReportTasksDialog({
@@ -179,7 +193,7 @@ setStarting(false);
 				<div {...stylex.props(sx.Mx1, sx.flex, sx.maxH46dvh, sx.minH0, sx.flexCol, sx.gap05, sx.overflowYAuto, sx.overscrollContain, sx.px1)}>
 					{tasks.map((task, index) => (
 						<label
-							key={index} {...mergeStylexProps("hover:bg-hover", sx.flex, sx.cursorPointer, sx.itemsStart, sx.gap25, sx.roundedRow, sx.px2, sx.py2)}
+							key={index} {...mergeStylexProps("", sx.hoverBgHover, sx.flex, sx.cursorPointer, sx.itemsStart, sx.gap25, sx.roundedRow, sx.px2, sx.py2)}
 						>
 							<Checkbox
 								{...stylex.props(sx.mt05)}
@@ -193,7 +207,7 @@ setStarting(false);
 								</span>
 								{/* No `block` beside the clamp: both set `display`, and the
 								    plain one wins, which silently unclamps the preview. */}
-								<span {...mergeStylexProps("line-clamp-2", sx.mt05, sx.leadingNormal, sx.textFaint, typography.supporting)}>
+								<span {...mergeStylexProps("", sx.lineClamp2, sx.mt05, sx.leadingNormal, sx.textFaint, typography.supporting)}>
 									{task.prompt}
 								</span>
 							</span>

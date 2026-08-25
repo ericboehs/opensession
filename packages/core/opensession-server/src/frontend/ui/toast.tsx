@@ -243,6 +243,114 @@ const sx = stylex.create({
 		"--tw-ease": "cubic-bezier(.23,1,.32,1)",
 		"transitionTimingFunction": "cubic-bezier(.23,1,.32,1)"
 	},
+
+	lineClamp2: {
+		"WebkitlineClamp": "2",
+		"WebkitboxOrient": "vertical",
+		"display": "-webkit-box",
+		"overflow": "hidden"
+	},
+	transitionBackgroundColorTransform: {
+		"transitionProperty": "background-color,transform",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	activeScale096: {
+		":active": {
+			"scale": ".96"
+		}
+	},
+	phoneMy15: {
+		"@media (max-width: 720px)": {
+			"marginBlock": "-6px"
+		}
+	},
+	phoneMl05: {
+		"@media (max-width: 720px)": {
+			"marginLeft": "2px"
+		}
+	},
+	phoneGrid: {
+		"@media (max-width: 720px)": {
+			"display": "grid"
+		}
+	},
+	phoneMinH7: {
+		"@media (max-width: 720px)": {
+			"minHeight": "28px"
+		}
+	},
+	phonePlaceItemsCenter: {
+		"@media (max-width: 720px)": {
+			"placeItems": "center"
+		}
+	},
+	phoneRounded999px: {
+		"@media (max-width: 720px)": {
+			"borderRadius": "999px"
+		}
+	},
+	phonePx25: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "10px"
+		}
+	},
+	phoneAfterAbsolute: {
+		"@media (max-width: 720px)": {
+			"::after": {
+				"content": "var(--tw-content)",
+				"position": "absolute"
+			}
+		}
+	},
+	phoneAfterInsetX0: {
+		"@media (max-width: 720px)": {
+			"::after": {
+				"content": "var(--tw-content)",
+				"insetInline": "0"
+			}
+		}
+	},
+	phoneAfterTop12: {
+		"@media (max-width: 720px)": {
+			"::after": {
+				"content": "var(--tw-content)",
+				"top": "50%"
+			}
+		}
+	},
+	phoneAfterH11: {
+		"@media (max-width: 720px)": {
+			"::after": {
+				"content": "var(--tw-content)",
+				"height": "44px"
+			}
+		}
+	},
+	phoneAfterTranslateY12: {
+		"@media (max-width: 720px)": {
+			"::after": {
+				"content": "var(--tw-content)",
+				"--tw-translate-y": "calc(calc(1 / 2 * 100%) * -1)",
+				"translate": "var(--tw-translate-x) var(--tw-translate-y)"
+			}
+		}
+	},
+	phoneAfterContent: {
+		"@media (max-width: 720px)": {
+			"::after": {
+				"--tw-content": "\"\"",
+				"content": "var(--tw-content)"
+			}
+		}
+	},
 });
 
 export type ToastVariant = "default" | "success" | "error";
@@ -514,7 +622,7 @@ function ToastCard({ toast: item }: { toast: BaseToast.Root.ToastObject<ToastDat
 				<ToastStatusIcon name={iconName} ongoing={data.ongoing} />
 				{/* Description renders a <p>; remove its browser margins so the
 				    visible height comes from the pill padding alone. */}
-				<BaseToast.Description {...mergeStylexProps("line-clamp-2", sx.my0, sx.minW0)}
+				<BaseToast.Description {...mergeStylexProps("", sx.lineClamp2, sx.my0, sx.minW0)}
 					title={data.message}
 				>
 					{data.message}
@@ -525,7 +633,7 @@ function ToastCard({ toast: item }: { toast: BaseToast.Root.ToastObject<ToastDat
 							onClick={(event) => {
 								event.stopPropagation();
 								runToastAction(data.id);
-							}} {...mergeStylexProps("transition-[background-color,transform] hover:bg-hover active:scale-[0.96] phone:-my-1.5 phone:ml-0.5 phone:grid phone:min-h-7 phone:place-items-center phone:rounded-[999px] phone:px-2.5 phone:after:absolute phone:after:inset-x-0 phone:after:top-1/2 phone:after:h-11 phone:after:-translate-y-1/2 phone:after:content-['']", sx.focusRing, sx.relative, sx.My1, sx.ml1, sx.shrink0, sx.cursorPointer, sx.roundedMd, sx.px2, sx.py1, sx.fontSemibold, sx.textAccent, sx.duration150, typography.supporting)}
+							}} {...mergeStylexProps("", sx.transitionBackgroundColorTransform, sx.hoverBgHover, sx.activeScale096, sx.phoneMy15, sx.phoneMl05, sx.phoneGrid, sx.phoneMinH7, sx.phonePlaceItemsCenter, sx.phoneRounded999px, sx.phonePx25, sx.phoneAfterAbsolute, sx.phoneAfterInsetX0, sx.phoneAfterTop12, sx.phoneAfterH11, sx.phoneAfterTranslateY12, sx.phoneAfterContent, sx.focusRing, sx.relative, sx.My1, sx.ml1, sx.shrink0, sx.cursorPointer, sx.roundedMd, sx.px2, sx.py1, sx.fontSemibold, sx.textAccent, sx.duration150, typography.supporting)}
 						>
 							{data.action.label}
 						</BaseToast.Action>
@@ -546,7 +654,7 @@ function ToastStatusIcon({
 	name: ToastIconName | null;
 	ongoing?: boolean;
 }) {
-	const className = "shrink-0 text-dim";
+	const className = mergeStylexClassName("", sx.shrink0, sx.textDim);
 	if (ongoing) return <Spinner {...stylex.props(sx.textDim)} />;
 
 	switch (name) {

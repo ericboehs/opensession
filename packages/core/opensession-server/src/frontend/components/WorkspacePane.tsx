@@ -51,7 +51,7 @@ import { CopyCheck, useCopy } from "../ui/copy";
 import { toast } from "../ui/toast";
 import { Tooltip } from "../ui/tooltip";
 import { OverflowFadeText } from "../ui/overflow-fade-text";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { TopBar, TopBarActions, TopBarLeading } from "../ui/top-bar";
 import {
 	PANEL_BODY,
@@ -266,6 +266,38 @@ const sx = stylex.create({
     flexDirection: "column",
   },
   reviewMain: { height: "100%", minHeight: 0, backgroundColor: "var(--bg)" },
+
+	CornerShapeSquircle: {
+		"cornerShape": "squircle"
+	},
+	maxWMin300pxCalc100vw24px: {
+		"maxWidth": "min(300px,100vw - 24px)"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	phonePtCalcVarPaneHeaderHVarStripClearance0px: {
+		"@media (max-width: 720px)": {
+			"paddingTop": "calc(var(--pane-header-h) + var(--strip-clearance,0px))"
+		}
+	},
+	bgColorMixInSrgbVarBgPanel68Transparent: {
+		"backgroundColor": "var(--bg-panel)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--bg-panel) 68%,transparent)"
+		}
+	},
 });
 
 interface Props {
@@ -327,7 +359,7 @@ interface Props {
  * neither, which is why this is phone-only.
  */
 const VIEW_MAIN =
-	"phone:pt-[calc(var(--pane-header-h)+var(--strip-clearance,0px))]";
+	mergeStylexClassName("", sx.phonePtCalcVarPaneHeaderHVarStripClearance0px);
 
 /**
  * The session-less workspace container: what a /workspace/<id> route renders when
@@ -852,14 +884,14 @@ setDeleting(false);
 							icon={<IconDotsHorizontal size={22} />}
 						/>
 					}
-          {...mergeStylexProps("[corner-shape:squircle]", isPhone && sx.menuPhone, overflowOpen && sx.menuOpen)}
+          {...mergeStylexProps("", sx.CornerShapeSquircle, isPhone && sx.menuPhone, overflowOpen && sx.menuOpen)}
 					title="More actions"
 					aria-label="More actions"
 				/>
 				<Menu.Popup
 					align={isPhone ? "end" : "start"}
 					sideOffset={6}
-          {...mergeStylexProps("max-w-[min(300px,calc(100vw-24px))]", sx.minW240px)}
+          {...mergeStylexProps("", sx.maxWMin300pxCalc100vw24px, sx.minW240px)}
 				>
 					{onRenameWorkspace && (
 						<Menu.Item onClick={() => setRenameDraft(workspace.name)}>
@@ -1149,7 +1181,7 @@ setDeleting(false);
 					<Button
 						variant="ghost"
 						size="md"
-            {...mergeStylexProps("hover:bg-hover hover:text-fg", sx.roundedControl, sx.textDim)}
+            {...mergeStylexProps("", sx.hoverBgHover, sx.hoverTextFg, sx.roundedControl, sx.textDim)}
 						onClick={() => setPanelOpen(!panelOpen)}
 						aria-label="Toggle side panel"
 						icon={<IconSidebarRight size={22} />}
@@ -1246,7 +1278,7 @@ setDeleting(false);
 				createPortal(
 					<>
 						<motion.div
-              {...mergeStylexProps("bg-[color-mix(in_srgb,var(--bg-panel)_68%,transparent)]", sx.pointerEventsNone, sx.fixed, sx.inset0, sx.z12000, sx.flex, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.px6, sx.textCenter)}
+              {...mergeStylexProps("", sx.bgColorMixInSrgbVarBgPanel68Transparent, sx.pointerEventsNone, sx.fixed, sx.inset0, sx.z12000, sx.flex, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.px6, sx.textCenter)}
 							initial={{ opacity: 0 }}
 							animate={{ opacity: 1 }}
 							transition={{ type: "tween", duration: duration.base, ease }}

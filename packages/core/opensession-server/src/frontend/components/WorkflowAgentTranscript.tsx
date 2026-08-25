@@ -5,7 +5,7 @@ import type { WorkflowAgentSnapshot } from "../../server/workflow-types";
 import { TranscriptBlocks } from "./TranscriptBlocks";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -122,6 +122,18 @@ const sx = stylex.create({
 	py3: { paddingBlock: "12px" },
 	leadingRelaxed: { lineHeight: "var(--leading-relaxed)" },
 	textRed: { color: "var(--red)" },
+
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
 });
 
 /**
@@ -210,7 +222,7 @@ if (cancelled) return;
 	return (
 		<div {...stylex.props(sx.flex, sx.minH0, sx.flexCol)}>
 			<div {...stylex.props(sx.sticky, sx.top0, sx.z10, sx.borderB, sx.borderDivider, sx.bgPanel, sx.px2, sx.py2)}>
-				<button {...mergeStylexProps("hover:bg-hover", sx.flex, sx.wFull, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.px1, sx.py05, sx.textLeft, sx.transitionColors)}
+				<button {...mergeStylexProps("", sx.hoverBgHover, sx.flex, sx.wFull, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.px1, sx.py05, sx.textLeft, sx.transitionColors)}
 					onClick={onBack}
 				>
 					<svg
@@ -232,7 +244,7 @@ if (cancelled) return;
 						<span {...stylex.props(sx.size15, sx.shrink0, sx.animatePulse, sx.roundedFull, sx.bgYellow)} />
 					)}
 				</button>
-				<div {...mergeStylexProps("tabular-nums", sx.mt05, sx.pl18px, sx.textFaint, typography.meta)}>
+				<div {...mergeStylexProps("", sx.tabularNums, sx.mt05, sx.pl18px, sx.textFaint, typography.meta)}>
 					{[
 						`agent ${agent.seq}`,
 						agent.status,

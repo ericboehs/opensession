@@ -3,7 +3,7 @@ import { personNameForGithubLogin } from "../lib/people";
 import { UserAvatar } from "./UserAvatar";
 import { IconEye } from "./icons";
 import * as stylex from "@stylexjs/stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -48,6 +48,11 @@ const sx = stylex.create({
 			color: "var(--color-white)"
 	},
 	ringPanel: { "--tw-ring-color": "var(--bg-panel)" },
+
+	ring2: {
+		"--tw-ring-shadow": "var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor)",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
 });
 
 /**
@@ -85,7 +90,7 @@ export function ReviewAskerFace({ asker }: { asker: ReviewAsker }) {
 			{/* Same 12px corner mark the mention badge uses: big enough to read as
 			    deliberate, small enough to leave the face recognisable. */}
 			<span
-				aria-hidden="true" {...mergeStylexProps("ring-2", sx.absolute, sx.Bottom1, sx.Right1, sx.flex, sx.size3, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgBlue, sx.textWhite, sx.ringPanel)}
+				aria-hidden="true" {...mergeStylexProps("", sx.ring2, sx.absolute, sx.Bottom1, sx.Right1, sx.flex, sx.size3, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgBlue, sx.textWhite, sx.ringPanel)}
 			>
 				<IconEye size={8} />
 			</span>

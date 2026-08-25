@@ -67,6 +67,18 @@ const sx = stylex.create({
 	animatePulse14sInfinite: {
 		"animation": "1.4s infinite pulse"
 	},
+
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
 });
 
 /** `pr-check-mark-pending` styles nothing — it is base.css's hook for keeping
@@ -77,7 +89,7 @@ export function CheckRow({ check }: { check: PrCheck }) {
   const mark = cls === "check-success" ? "✓" : cls === "check-failure" ? "✕" : "●";
   const duration = formatCheckDuration(check);
   return (
-    <div {...mergeStylexProps("group hover:bg-hover", sx.flex, sx.itemsCenter, sx.gap2, sx.roundedRow, sx.px15, sx.py1, sx.textFg, sx.transitionBackground, typography.label)}>
+    <div {...mergeStylexProps("group", sx.hoverBgHover, sx.flex, sx.itemsCenter, sx.gap2, sx.roundedRow, sx.px15, sx.py1, sx.textFg, sx.transitionBackground, typography.label)}>
       <a
         {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.textInherit, sx.noUnderline)}
         href={check.url}
@@ -90,7 +102,7 @@ export function CheckRow({ check }: { check: PrCheck }) {
           {mark}
         </span>
         <span {...stylex.props(sx.flex1, sx.truncate)}>{check.name}</span>
-        {duration && <span {...mergeStylexProps("tabular-nums", sx.textFaint, typography.meta)}>{duration}</span>}
+        {duration && <span {...mergeStylexProps("", sx.tabularNums, sx.textFaint, typography.meta)}>{duration}</span>}
         {check.url && (
           <span {...mergeStylexProps("group-hover:text-fg", sx.textFaint, typography.itemTitle)}>↗</span>
         )}

@@ -237,6 +237,21 @@ const sx = stylex.create({
 	Container: {
 		"containerType": "inline-size"
 	},
+
+	u560pxGridCols2: {
+		"gridTemplateColumns": "repeat(2,minmax(0,1fr))"
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	hoverOpacity80: {
+		"@media (hover: hover)": {
+			":hover": {
+				"opacity": ".8"
+			}
+		}
+	},
 });
 
 // ── The library: one browsable catalog over the things this instance can be
@@ -440,7 +455,7 @@ function CatalogSkeleton() {
 		<Skeleton label="Loading the library" {...stylex.props(sx.mt11, sx.px5)}>
 			<SkeletonBar {...stylex.props(sx.mb4, sx.h4, sx.w22, sx.borderB, sx.borderDivider, sx.pb3)} />
 			<div className={mergeStylexClassName("", sx.Container)}>
-				<div {...mergeStylexProps("@[560px]:grid-cols-2", sx.grid, sx.gridCols1, sx.gapX12)}>
+				<div {...mergeStylexProps("", sx.u560pxGridCols2, sx.grid, sx.gridCols1, sx.gapX12)}>
 					{CATALOG_GHOST_ROWS.map((row, index) => (
 						<div key={index} {...stylex.props(sx.flex, sx.itemsCenter, sx.gap35, sx.py35)}>
 							<SkeletonBar {...stylex.props(sx.size9, sx.shrink0, sx.roundedControl)} />
@@ -479,7 +494,7 @@ function SectionHeading({
 				{children}
 			</h2>
 			{count != null && (
-				<span {...mergeStylexProps("tabular-nums", sx.textFaint, typography.supporting)}>{count}</span>
+				<span {...mergeStylexProps("", sx.tabularNums, sx.textFaint, typography.supporting)}>{count}</span>
 			)}
 		</div>
 	);
@@ -628,7 +643,7 @@ export function LibraryPanel() {
 								key={entry.id}
 								href={`${BASE_PATH}${entry.href}`}
 								title={entry.name}
-								aria-label={entry.name} {...mergeStylexProps("hover:opacity-80", sx.roundedControl, sx.transitionOpacity)}
+								aria-label={entry.name} {...mergeStylexProps("", sx.hoverOpacity80, sx.roundedControl, sx.transitionOpacity)}
 							>
 								<EntryIcon entry={entry} size={36} />
 							</a>
@@ -681,7 +696,7 @@ export function LibraryPanel() {
 					    fill under a row, the air is what tells the two columns
 					    apart. */}
 					<div className={mergeStylexClassName("", sx.Container)}>
-						<div {...mergeStylexProps("@[560px]:grid-cols-2", sx.grid, sx.gridCols1, sx.gapX12)}>
+						<div {...mergeStylexProps("", sx.u560pxGridCols2, sx.grid, sx.gridCols1, sx.gapX12)}>
 							{group.entries.map((entry) => (
 								<EntryCard
 									key={entry.id}

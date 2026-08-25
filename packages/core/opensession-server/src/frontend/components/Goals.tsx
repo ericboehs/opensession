@@ -37,7 +37,7 @@ import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
 import { WorkingPill } from "../ui/status";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -321,6 +321,37 @@ const sx = stylex.create({
     ":hover": { "@media (hover: hover)": { textDecorationLine: "underline" } },
   },
   textWhite: { color: "var(--color-white)" },
+
+	max900pxHidden: {
+		"@media not all and (min-width: 900px)": {
+			"display": "none"
+		}
+	},
+	max900pxBorderL0: {
+		"@media not all and (min-width: 900px)": {
+			"borderLeftStyle": "var(--tw-border-style)",
+			"borderLeftWidth": "0"
+		}
+	},
+	max900pxInlineFlex: {
+		"@media not all and (min-width: 900px)": {
+			"display": "inline-flex"
+		}
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
 });
 
 /* Goals is a tool surface hosted inside Settings, so it reads as one of its
@@ -460,7 +491,7 @@ setError(e.message);
     {/* Drawer open: the list compresses to a narrow rail, and on phones it
         steps aside entirely — Back returns to it. */}
     <div
-        {...mergeStylexProps(sel ? "max-[900px]:hidden" : undefined, sx.listPane, sel ? sx.listPaneSelected : sx.listPaneDefault)}
+        {...mergeStylexProps(sel ? mergeStylexClassName("", sx.max900pxHidden) : undefined, sx.listPane, sel ? sx.listPaneSelected : sx.listPaneDefault)}
     >
         <SettingsPanel {...stylex.props(sx.selfStart, sel && sx.maxWNone)}>
       <SettingsHeader
@@ -605,7 +636,7 @@ setError(e.message);
 
       {sel && (
         <aside
-          {...mergeStylexProps("max-[900px]:border-l-0", sx.flex, sx.minH0, sx.minW0, sx.flexAuto, sx.flexCol, sx.borderL, sx.borderLine, sx.bgPanel)}
+          {...mergeStylexProps("", sx.max900pxBorderL0, sx.flex, sx.minH0, sx.minW0, sx.flexAuto, sx.flexCol, sx.borderL, sx.borderLine, sx.bgPanel)}
         >
           <div
             {...stylex.props(
@@ -621,7 +652,7 @@ setError(e.message);
           >
             {/* Phones get Back instead of Close: there the drawer is the page. */}
             <button
-              {...mergeStylexProps("max-[900px]:inline-flex", sx.My1, sx.Ml05, sx.hidden, sx.shrink0, sx.itemsCenter, sx.gap175, sx.px15, sx.py1, sx.fontMedium, sx.textFg, typography.itemTitle)}
+              {...mergeStylexProps("", sx.max900pxInlineFlex, sx.My1, sx.Ml05, sx.hidden, sx.shrink0, sx.itemsCenter, sx.gap175, sx.px15, sx.py1, sx.fontMedium, sx.textFg, typography.itemTitle)}
               onClick={() => onSelect("")}
               title="Back to goals"
             >
@@ -693,7 +724,7 @@ setError(e.message);
               </div>
             )}
             <button
-              {...mergeStylexProps("hover:bg-hover hover:text-fg max-[900px]:hidden", sx.flex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.textDim)}
+              {...mergeStylexProps("", sx.hoverBgHover, sx.hoverTextFg, sx.max900pxHidden, sx.flex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.textDim)}
               onClick={() => onSelect("")}
               title="Close"
             >

@@ -366,12 +366,23 @@ const sx = stylex.create({
 	ReviewFileHeaderTopCalcVarDiffPanelTop0px50px: {
 		"--review-file-header-top": "calc(var(--diff-panel-top,0px) + 50px)"
 	},
+
+	fontSemibold: {
+		"--tw-font-weight": "var(--font-weight-semibold)",
+		"fontWeight": "var(--font-weight-semibold)"
+	},
+	textGreen: {
+		"color": "var(--green)"
+	},
+	textRed: {
+		"color": "var(--red)"
+	},
 });
 
 /* The +/− counts. Kept as constants because CommentableDiff carries the same
    pair on its file rows and group headers, and the two must read alike. */
-const DIFF_ADD = "font-semibold text-green";
-const DIFF_DEL = "font-semibold text-red";
+const DIFF_ADD = mergeStylexClassName("", sx.fontSemibold, sx.textGreen);
+const DIFF_DEL = mergeStylexClassName("", sx.fontSemibold, sx.textRed);
 
 interface Props {
   sessionId: string;
@@ -825,7 +836,7 @@ if (generation === flowGeneration.current) setFlowLoading(false);
       ref={panelRef}
     >
       {multi && (
-        <div {...mergeStylexProps("top-[var(--diff-panel-top,0px)]", sx.sticky, sx.z2, sx.flex, sx.gap1, sx.overflowXAuto, sx.borderB, sx.borderDivider, sx.bgPanelSurface, sx.px25, sx.py15)}>
+        <div {...mergeStylexProps("", sx.topVarDiffPanelTop0px, sx.sticky, sx.z2, sx.flex, sx.gap1, sx.overflowXAuto, sx.borderB, sx.borderDivider, sx.bgPanelSurface, sx.px25, sx.py15)}>
           {changed.map((r, i) => {
             return (
               <button

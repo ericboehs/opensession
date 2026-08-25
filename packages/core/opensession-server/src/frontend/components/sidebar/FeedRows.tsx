@@ -118,6 +118,13 @@ const sx = stylex.create({
 	textFg: {
 		"color": "var(--text)"
 	},
+
+	lineClamp4: {
+		"WebkitlineClamp": "4",
+		"WebkitboxOrient": "vertical",
+		"display": "-webkit-box",
+		"overflow": "hidden"
+	},
 });
 
 // A Support row: one TODO Plain ticket, single-line in the workspace rows'
@@ -386,7 +393,7 @@ export function FeedRow({
 			<RowCardPopup>
 				<div {...stylex.props(sx.mt5px, sx.fontSemibold, sx.leading13, typography.label)}>{item.title}</div>
 				{item.preview && (
-					<div {...mergeStylexProps("selectable line-clamp-4", sx.mt1, sx.textXs, sx.leadingSnug, sx.textDim)}>
+					<div {...mergeStylexProps("selectable", sx.lineClamp4, sx.mt1, sx.textXs, sx.leadingSnug, sx.textDim)}>
 						{item.preview}
 					</div>
 				)}

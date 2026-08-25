@@ -850,6 +850,105 @@ const sx = stylex.create({
 	DiffPanelTopCalcEnvSafeAreaInsetTop0px52px: {
 		"--diff-panel-top": "calc(env(safe-area-inset-top,0px) + 52px)"
 	},
+
+	bgColorMixInSrgbVarBg72Transparent: {
+		"backgroundColor": "var(--bg)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--bg) 72%,transparent)"
+		}
+	},
+	backdropBlur2px: {
+		"--tw-backdrop-blur": "blur(2px)",
+		"WebkitBackdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)",
+		"backdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	maxWMin300pxCalc100vw24px: {
+		"maxWidth": "min(300px,100vw - 24px)"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	phoneOrder2: {
+		"@media (max-width: 720px)": {
+			"order": "2"
+		}
+	},
+	phoneH38px: {
+		"@media (max-width: 720px)": {
+			"height": "38px"
+		}
+	},
+	phoneMinH38px: {
+		"@media (max-width: 720px)": {
+			"minHeight": "38px"
+		}
+	},
+	phoneW38px: {
+		"@media (max-width: 720px)": {
+			"width": "38px"
+		}
+	},
+	phoneBgColorMixInSrgbVarAccent12Transparent: {
+		"@media (max-width: 720px)": {
+			"backgroundColor": "var(--accent)",
+			"@supports (color: color-mix(in lab, red, red))": {
+				"backgroundColor": "color-mix(in srgb,var(--accent) 12%,transparent)"
+			}
+		}
+	},
+	hoverBgPanel: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--bg-panel)"
+			}
+		}
+	},
+	bgColorMixInSrgbVarBgPanel68Transparent: {
+		"backgroundColor": "var(--bg-panel)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--bg-panel) 68%,transparent)"
+		}
+	},
+	borderColorMixInSrgbVarAccent40Transparent: {
+		"borderColor": "var(--accent)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in srgb,var(--accent) 40%,transparent)"
+		}
+	},
+	bgColorMixInSrgbVarAccent12Transparent: {
+		"backgroundColor": "var(--accent)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--accent) 12%,transparent)"
+		}
+	},
+	hoverBorderLine: {
+		"@media (hover: hover)": {
+			":hover": {
+				"borderColor": "var(--border)"
+			}
+		}
+	},
+
+	phoneTextAccent: {
+		"@media (max-width: 720px)": {
+			"color": "var(--accent-ink)"
+		}
+	},
 });
 
 type QueueReceipt = {
@@ -6021,7 +6120,7 @@ export function SessionViewer({
 	return (
 		<div {...stylex.props(sx.relative, sx.flex, sx.hFull, sx.minH0, sx.flexCol)}>
 			{deleting && (
-				<div {...mergeStylexProps("session-delete-overlay bg-[color-mix(in_srgb,var(--bg)_72%,transparent)] backdrop-blur-[2px]", sx.absolute, sx.inset0, sx.z30, sx.flex, sx.itemsCenter, sx.justifyCenter)}
+				<div {...mergeStylexProps("session-delete-overlay", sx.bgColorMixInSrgbVarBg72Transparent, sx.backdropBlur2px, sx.absolute, sx.inset0, sx.z30, sx.flex, sx.itemsCenter, sx.justifyCenter)}
 					role="status"
 					aria-live="polite"
 				>
@@ -6227,7 +6326,7 @@ export function SessionViewer({
 						<IconGlobe size={20} className={MENU_ICON} />
 						<span {...stylex.props(sx.grow)}>Portals</span>
 						{livePortals > 0 && (
-							<span {...mergeStylexProps("tabular-nums", sx.shrink0, sx.textFaint)}>
+							<span {...mergeStylexProps("", sx.tabularNums, sx.shrink0, sx.textFaint)}>
 								{livePortals} live
 							</span>
 						)}
@@ -6506,7 +6605,7 @@ export function SessionViewer({
 										/>
 									)
 								}
-								{...mergeStylexProps(!infoPageOpen ? "[corner-shape:squircle]" : undefined, !infoPageOpen && isPhone && sx.phoneMenuButton, overflowOpen && sx.menuOpen)}
+								{...mergeStylexProps(!infoPageOpen ? mergeStylexClassName("", sx.CornerShapeSquircle) : undefined, !infoPageOpen && isPhone && sx.phoneMenuButton, overflowOpen && sx.menuOpen)}
 								title="More actions"
 								aria-label="More actions"
 							/>
@@ -6514,7 +6613,7 @@ export function SessionViewer({
 								// Desktop: opens rightward from a trigger that now sits at the
 								// left of the bar. Phones keep it flush with the right edge.
 								align={isPhone ? "end" : "start"}
-								sideOffset={6} {...mergeStylexProps("max-w-[min(300px,calc(100vw-24px))]", sx.minW240px)}
+								sideOffset={6} {...mergeStylexProps("", sx.maxWMin300pxCalc100vw24px, sx.minW240px)}
 							>
 								{/* Quick session actions use the same focus, spacing, collision,
 								    and dismissal behavior as every other app menu. Each group is
@@ -6701,7 +6800,7 @@ export function SessionViewer({
 					{session.automation ? (
 						<Tooltip label={`Automation · ${session.automation}`} side="bottom">
 							<a
-								href={`${BASE_PATH}/automations/${encodeURIComponent(session.automationId || session.automation)}`} {...mergeStylexProps("hover:bg-hover hover:text-fg", sx.Ml1, sx.inlineFlex, sx.size6, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textFaint, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase)}
+								href={`${BASE_PATH}/automations/${encodeURIComponent(session.automationId || session.automation)}`} {...mergeStylexProps("", sx.hoverBgHover, sx.hoverTextFg, sx.Ml1, sx.inlineFlex, sx.size6, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textFaint, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase)}
 								aria-label={`Open ${session.automation} automation settings`}
 							>
 								<IconRobot size={18} />
@@ -6935,7 +7034,7 @@ export function SessionViewer({
 						>
 							<Button
 								variant="ghost"
-								size="md" {...mergeStylexProps("hover:bg-hover hover:text-fg phone:order-2 phone:h-[38px] phone:min-h-[38px] phone:w-[38px] phone:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] phone:text-accent", sx.roundedControl, sx.textDim)}
+								size="md" {...mergeStylexProps("", sx.phoneTextAccent, sx.hoverBgHover, sx.hoverTextFg, sx.phoneOrder2, sx.phoneH38px, sx.phoneMinH38px, sx.phoneW38px, sx.phoneBgColorMixInSrgbVarAccent12Transparent, sx.roundedControl, sx.textDim)}
 								onClick={() => setActivePanelOpen(!activePanelOpen)}
 								aria-label="Toggle side panel"
 								// Iconic sidebar-right glyph — reads as "right side panel".
@@ -7355,7 +7454,7 @@ export function SessionViewer({
 												type="button"
 												onClick={() =>
 													shareLink(stagingUrl, { toast: "Link copied" })
-												} {...mergeStylexProps("hover:text-fg", sx.inlineFlex, sx.itemsCenter, sx.gap1, sx.transitionColors)}
+												} {...mergeStylexProps("", sx.hoverTextFg, sx.inlineFlex, sx.itemsCenter, sx.gap1, sx.transitionColors)}
 											>
 												<IconCopy size={13} />
 												Copy link
@@ -7364,7 +7463,7 @@ export function SessionViewer({
 												href={stagingUrl}
 												target="_blank"
 												rel="noopener"
-												title="Open first-party in a new tab. Needed if the frame is blank because you aren't logged in to the preview environment yet." {...mergeStylexProps("hover:text-fg", sx.inlineFlex, sx.itemsCenter, sx.gap1, sx.transitionColors)}
+												title="Open first-party in a new tab. Needed if the frame is blank because you aren't logged in to the preview environment yet." {...mergeStylexProps("", sx.hoverTextFg, sx.inlineFlex, sx.itemsCenter, sx.gap1, sx.transitionColors)}
 											>
 												Open
 												<IconArrowUpRight size={13} />
@@ -7400,7 +7499,7 @@ export function SessionViewer({
 									<a
 										href={stagingUrl}
 										target="_blank"
-										rel="noopener" {...mergeStylexProps("hover:bg-panel", sx.inlineFlex, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.border, sx.borderLine, sx.bgSurface, sx.px4, sx.py2, sx.textSm, sx.fontMedium, sx.textFg, sx.transitionColors)}
+										rel="noopener" {...mergeStylexProps("", sx.hoverBgPanel, sx.inlineFlex, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.border, sx.borderLine, sx.bgSurface, sx.px4, sx.py2, sx.textSm, sx.fontMedium, sx.textFg, sx.transitionColors)}
 									>
 										<IconGlobe size={16} />
 										Open staging
@@ -7410,7 +7509,7 @@ export function SessionViewer({
 										type="button"
 										onClick={() =>
 											shareLink(stagingUrl, { toast: "Link copied" })
-										} {...mergeStylexProps("hover:text-fg", sx.inlineFlex, sx.itemsCenter, sx.gap15, sx.textXs, sx.textDim, sx.transitionColors)}
+										} {...mergeStylexProps("", sx.hoverTextFg, sx.inlineFlex, sx.itemsCenter, sx.gap15, sx.textXs, sx.textDim, sx.transitionColors)}
 									>
 										<IconCopy size={14} />
 										Copy link
@@ -7518,7 +7617,7 @@ export function SessionViewer({
 					{fileDragActive &&
 						createPortal(
 							<>
-								<motion.div {...mergeStylexProps("bg-[color-mix(in_srgb,var(--bg-panel)_68%,transparent)]", sx.pointerEventsNone, sx.fixed, sx.inset0, sx.z12000, sx.flex, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.px6, sx.textCenter)}
+								<motion.div {...mergeStylexProps("", sx.bgColorMixInSrgbVarBgPanel68Transparent, sx.pointerEventsNone, sx.fixed, sx.inset0, sx.z12000, sx.flex, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.px6, sx.textCenter)}
 									initial={{ opacity: 0 }}
 									animate={{ opacity: 1 }}
 									transition={{ type: "tween", duration: duration.base, ease }}
@@ -7899,12 +7998,12 @@ export function SessionViewer({
 								) : (
 									<>
 										{forkFrom && (
-											<div {...mergeStylexProps("border-[color-mix(in_srgb,var(--accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]", sx.mb2, sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap3, sx.roundedControl, sx.border, sx.px3, sx.py7px, sx.textFg, typography.supporting)}>
+											<div {...mergeStylexProps("", sx.borderColorMixInSrgbVarAccent40Transparent, sx.bgColorMixInSrgbVarAccent12Transparent, sx.mb2, sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap3, sx.roundedControl, sx.border, sx.px3, sx.py7px, sx.textFg, typography.supporting)}>
 												<span>
 													⑂ Forking a new session from the selected message. Type
 													the new direction.
 												</span>
-												<button {...mergeStylexProps("hover:text-fg", sx.cursorPointer, sx.bgTransparent, sx.textDim, typography.label)}
+												<button {...mergeStylexProps("", sx.hoverTextFg, sx.cursorPointer, sx.bgTransparent, sx.textDim, typography.label)}
 													onClick={() => setForkFrom(null)}
 												>
 											Cancel
@@ -7956,7 +8055,7 @@ export function SessionViewer({
 														shortcut={nextChatKeys ?? undefined}
 													>
 														<Button
-															size="lg" {...mergeStylexProps("hover:border-line", sx.minH10, sx.shrink0, sx.borderDivider)}
+															size="lg" {...mergeStylexProps("", sx.hoverBorderLine, sx.minH10, sx.shrink0, sx.borderDivider)}
 															trailing={<IconChevronRight size={18} aria-hidden />}
 															aria-label="Next chat"
 															onClick={onNextChat}
@@ -8225,7 +8324,7 @@ export function SessionViewer({
 									<IconGlobe size={15} {...stylex.props(sx.shrink0)} />
 									<span className={mergeStylexClassName("", sx.Max380pxHidden)}>Portals</span>
 									{livePortals > 0 && (
-										<span {...mergeStylexProps("tabular-nums @max-[380px]:hidden", sx.shrink0, sx.textFaint)}>
+										<span {...mergeStylexProps("", sx.tabularNums, sx.Max380pxHidden, sx.shrink0, sx.textFaint)}>
 											{livePortals}
 										</span>
 									)}
@@ -8239,7 +8338,7 @@ export function SessionViewer({
 									<IconStack size={15} {...stylex.props(sx.shrink0)} />
 									<span className={mergeStylexClassName("", sx.Max380pxHidden)}>Agents</span>
 									{runningAgents > 0 && (
-										<span {...mergeStylexProps("tabular-nums @max-[380px]:hidden", sx.shrink0, sx.textYellow)}>
+										<span {...mergeStylexProps("", sx.tabularNums, sx.Max380pxHidden, sx.shrink0, sx.textYellow)}>
 											{runningAgents}
 										</span>
 									)}

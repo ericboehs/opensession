@@ -174,6 +174,33 @@ const sx = stylex.create({
 			}
 		}
 	},
+
+	phoneBgSettingsPlate: {
+		"@media (max-width: 720px)": {
+			"backgroundColor": "var(--settings-plate)"
+		}
+	},
+	selectNone: {
+		"WebkitUserSelect": "none",
+		"userSelect": "none"
+	},
+	activeCursorGrabbing: {
+		":active": {
+			"cursor": "grabbing"
+		}
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	phoneMinH11: {
+		"@media (max-width: 720px)": {
+			"minHeight": "44px"
+		}
+	},
 });
 
 type OrderItem<T extends string> = {
@@ -246,7 +273,7 @@ function OrderSection<T extends string>({
 			</h3>
 			{order.length === 0 ? (
 				// Left-aligned like the rows it stands in for.
-				<p {...mergeStylexProps("phone:bg-settings-plate", sx.m0, sx.roundedLg, sx.bgPanel, sx.px2, sx.py4, sx.textFaint, typography.label)}>
+				<p {...mergeStylexProps("", sx.phoneBgSettingsPlate, sx.m0, sx.roundedLg, sx.bgPanel, sx.px2, sx.py4, sx.textFaint, typography.label)}>
 					No {label.toLowerCase()} available.
 				</p>
 			) : (
@@ -254,7 +281,7 @@ function OrderSection<T extends string>({
 					as="div"
 					axis="y"
 					values={order}
-					onReorder={setDraft} {...mergeStylexProps("phone:bg-settings-plate", sx.roundedLg, sx.bgPanel, sx.p05)}
+					onReorder={setDraft} {...mergeStylexProps("", sx.phoneBgSettingsPlate, sx.roundedLg, sx.bgPanel, sx.p05)}
 					role="list"
 				>
 					{order.map((id, index) => {
@@ -266,7 +293,7 @@ function OrderSection<T extends string>({
 								key={id}
 								value={id}
 								onDragEnd={commit}
-								whileDrag={{ scale: 1.015, zIndex: 2 }} {...mergeStylexProps("group select-none active:cursor-grabbing hover:bg-hover phone:min-h-11 phone:bg-settings-plate", sx.focusRing, sx.flex, sx.minH9, sx.cursorGrab, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.bgPanel, sx.px15, sx.py15, sx.textFg, typography.itemTitle)}
+								whileDrag={{ scale: 1.015, zIndex: 2 }} {...mergeStylexProps("group", sx.selectNone, sx.activeCursorGrabbing, sx.hoverBgHover, sx.phoneMinH11, sx.phoneBgSettingsPlate, sx.focusRing, sx.flex, sx.minH9, sx.cursorGrab, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.bgPanel, sx.px15, sx.py15, sx.textFg, typography.itemTitle)}
 								role="listitem"
 								tabIndex={0}
 								aria-label={`${item.label}, position ${index + 1} of ${order.length}. Use the up and down arrow keys to move it.`}

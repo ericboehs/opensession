@@ -220,7 +220,7 @@ const sx = stylex.create({
 			paddingInline: "24px"
 	},
 	textWhite60: {
-			color: "#fff9"
+			color: "color-mix(in srgb, var(--color-white) 60%, transparent)"
 	},
 	px5: {
 			paddingInline: "20px"
@@ -257,7 +257,7 @@ const sx = stylex.create({
 			borderRadius: "calc(infinity * 1px)"
 	},
 	bgWhite15: {
-			backgroundColor: "#ffffff26"
+			backgroundColor: "color-mix(in srgb, var(--color-white) 15%, transparent)"
 	},
 	textWhite: {
 			color: "var(--color-white)"
@@ -284,7 +284,7 @@ const sx = stylex.create({
 	hoverBgWhite15: {
 		"@media (hover: hover)": {
 			":hover": {
-				"backgroundColor": "#ffffff26"
+				"backgroundColor": "color-mix(in srgb, var(--color-white) 15%, transparent)"
 			},
 			"@supports (color: color-mix(in lab, red, red))": {
 				":hover": {
@@ -364,7 +364,7 @@ const sx = stylex.create({
 	hoverBgWhite10: {
 		"@media (hover: hover)": {
 			":hover": {
-				"backgroundColor": "#ffffff1a"
+				"backgroundColor": "color-mix(in srgb, var(--color-white) 10%, transparent)"
 			},
 			"@supports (color: color-mix(in lab, red, red))": {
 				":hover": {
@@ -415,7 +415,7 @@ const sx = stylex.create({
 		"lineHeight": "var(--tw-leading,var(--text-xs--line-height))"
 	},
 	bgWhite10: {
-		"backgroundColor": "#ffffff1a",
+		"backgroundColor": "color-mix(in srgb, var(--color-white) 10%, transparent)",
 		"@supports (color: color-mix(in lab, red, red))": {
 			"backgroundColor": "color-mix(in oklab, var(--color-white) 10%, transparent)"
 		}
@@ -425,7 +425,7 @@ const sx = stylex.create({
 		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
 	},
 	ringWhite10: {
-		"--tw-ring-color": "#ffffff1a",
+		"--tw-ring-color": "color-mix(in srgb, var(--color-white) 10%, transparent)",
 		"@supports (color: color-mix(in lab, red, red))": {
 			"--tw-ring-color": "color-mix(in oklab, var(--color-white) 10%, transparent)"
 		}
@@ -486,6 +486,24 @@ const sx = stylex.create({
 	},
 	maxWMin720px90vw: {
 		"maxWidth": "min(720px,90vw)"
+	},
+
+	transitionTransformBackgroundColor: {
+		"transitionProperty": "transform,background-color",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	hoverBgWhite20: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "color-mix(in srgb, var(--color-white) 20%, transparent)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in oklab, var(--color-white) 20%, transparent)"
+				}
+			}
+		}
 	},
 });
 
@@ -1005,7 +1023,7 @@ export function AssetActions({
 			<div {...stylex.props(sx.minW0, sx.flex1)} title={file.path}>
 				<div {...stylex.props(sx.truncate, sx.fontMedium, sx.textFg, typography.label)}>{name}</div>
 				{file.description && (
-					<div {...mergeStylexProps("line-clamp-2", sx.leadingSnug, sx.textDim, typography.supporting)}>
+					<div {...mergeStylexProps("", sx.lineClamp2, sx.leadingSnug, sx.textDim, typography.supporting)}>
 						{file.description}
 					</div>
 				)}
@@ -1398,7 +1416,7 @@ export function AssetOverlay({
 			{isPhone ? (
 				<button
 					type="button"
-					aria-label="Close" {...mergeStylexProps("backdrop-blur-xl transition-[transform,background-color] active:scale-[0.96] hover:bg-white/20", sx.absolute, sx.right3, sx.top3, sx.z20, sx.grid, sx.size11, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgWhite15, sx.textWhite)}
+					aria-label="Close" {...mergeStylexProps("", sx.backdropBlurXl, sx.transitionTransformBackgroundColor, sx.activeScale096, sx.hoverBgWhite20, sx.absolute, sx.right3, sx.top3, sx.z20, sx.grid, sx.size11, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgWhite15, sx.textWhite)}
 					onClick={onClose}
 				>
 					<IconX size={24} />
@@ -1407,7 +1425,7 @@ export function AssetOverlay({
 				<Tooltip label="Close">
 					<button
 						type="button"
-						aria-label="Close" {...mergeStylexProps("backdrop-blur-xl transition-[transform,background-color] active:scale-[0.96] hover:bg-white/20", sx.absolute, sx.right0, sx.top0, sx.z20, sx.grid, sx.size10, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgWhite15, sx.textWhite)}
+						aria-label="Close" {...mergeStylexProps("", sx.backdropBlurXl, sx.transitionTransformBackgroundColor, sx.activeScale096, sx.hoverBgWhite20, sx.absolute, sx.right0, sx.top0, sx.z20, sx.grid, sx.size10, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgWhite15, sx.textWhite)}
 						onClick={onClose}
 					>
 						<IconX size={20} />

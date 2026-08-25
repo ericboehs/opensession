@@ -209,7 +209,7 @@ const sx = stylex.create({
 			color: "var(--color-white)"
 	},
 	bgBlack55: {
-			backgroundColor: "#0000008c"
+			backgroundColor: "transparent008c"
 	},
 	textXs: {
 			fontSize: "var(--type-label)",
@@ -248,6 +248,24 @@ const sx = stylex.create({
 	fontMedium: {
 		"--tw-font-weight": "var(--font-weight-medium)",
 		"fontWeight": "var(--font-weight-medium)"
+	},
+
+	lineClamp2: {
+		"WebkitlineClamp": "2",
+		"WebkitboxOrient": "vertical",
+		"display": "-webkit-box",
+		"overflow": "hidden"
+	},
+	textYellow: {
+		"color": "var(--yellow)"
+	},
+	snapX: {
+		"scrollSnapType": "x var(--tw-scroll-snap-strictness)"
+	},
+	dropShadow: {
+		"--tw-drop-shadow-size": "drop-shadow(0 1px 2px var(--tw-drop-shadow-color,color-mix(in srgb, var(--color-black) 10%, transparent))) drop-shadow(0 1px 1px var(--tw-drop-shadow-color,color-mix(in srgb, var(--color-black) 6%, transparent)))",
+		"--tw-drop-shadow": "drop-shadow(0 1px 2px color-mix(in srgb, var(--color-black) 10%, transparent)) drop-shadow(0 1px 1px color-mix(in srgb, var(--color-black) 6%, transparent))",
+		"filter": "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
 	},
 });
 
@@ -337,7 +355,7 @@ export function SessionCardBody({ session: s }: { session: UnifiedSession }) {
 				</div>
 			)}
 			{!s.waitingForInput && runNeedsAttention(s) && (
-				<div {...mergeStylexProps("line-clamp-2", sx.mt7px, sx.roundedMd, sx.bgAccentSoft, sx.px2, sx.py5px, sx.leadingSnug, sx.textDim, typography.meta)}
+				<div {...mergeStylexProps("", sx.lineClamp2, sx.mt7px, sx.roundedMd, sx.bgAccentSoft, sx.px2, sx.py5px, sx.leadingSnug, sx.textDim, typography.meta)}
 					title={s.lastRunError!.message}
 				>
 					{cardRunErrorDetail(s.lastRunError!.message)}
@@ -501,12 +519,12 @@ export function WsPrStatusMark({
 	const changesRequested = session.prReviewDecision === "CHANGES_REQUESTED";
 	const className =
 		session.prState === "CLOSED" || failed || changesRequested
-			? "text-red"
+			? mergeStylexClassName("", sx.textRed)
 			: pending
-				? "text-yellow"
+				? mergeStylexClassName("", sx.textYellow)
 				: session.prIsDraft
-					? "text-faint"
-					: "text-green";
+					? mergeStylexClassName("", sx.textFaint)
+					: mergeStylexClassName("", sx.textGreen);
 	const label =
 		session.prState === "CLOSED"
 			? "PR closed"
@@ -606,7 +624,7 @@ export function CardOverview({ ov }: { ov: WorkspaceOverview | null }) {
 	return (
 		<>
 			{desc && (
-				<div {...mergeStylexProps("selectable line-clamp-2", sx.mt1, sx.leadingSnug, sx.textDim, typography.meta)}>
+				<div {...mergeStylexProps("selectable", sx.lineClamp2, sx.mt1, sx.leadingSnug, sx.textDim, typography.meta)}>
 					{desc}
 				</div>
 			)}
@@ -618,7 +636,7 @@ export function CardOverview({ ov }: { ov: WorkspaceOverview | null }) {
 				// everything is reachable instead of hidden behind a "+3". Bleed
 				// through the card's right inset so the carousel peek is clipped
 				// at the card edge rather than stopping inside its padding.
-				<div {...mergeStylexProps("snap-x [&::-webkit-scrollbar]:hidden", sx.mt2, sx.Mr13px, sx.flex, sx.snapMandatory, sx.gap15, sx.overflowXAuto, sx.pr13px, sx.ScrollbarWidthNone)}>
+				<div {...mergeStylexProps("[&::-webkit-scrollbar]:hidden", sx.snapX, sx.mt2, sx.Mr13px, sx.flex, sx.snapMandatory, sx.gap15, sx.overflowXAuto, sx.pr13px, sx.ScrollbarWidthNone)}>
 					{media.slice(0, MAX_HOVERCARD_MEDIA).map((m, i) => (
 						<button
 							key={`${m.sessionId}:${m.at}:${i}`}
@@ -645,7 +663,7 @@ export function CardOverview({ ov }: { ov: WorkspaceOverview | null }) {
 										preload="metadata"
 										{...stylex.props(sx.hFull, sx.wFull, sx.objectContain)}
 									/>
-									<span {...mergeStylexProps("drop-shadow", sx.pointerEventsNone, sx.absolute, sx.inset0, sx.grid, sx.placeItemsCenter, sx.textSm, sx.textWhite)}>
+									<span {...mergeStylexProps("", sx.dropShadow, sx.pointerEventsNone, sx.absolute, sx.inset0, sx.grid, sx.placeItemsCenter, sx.textSm, sx.textWhite)}>
 										▶
 									</span>
 								</>
@@ -735,7 +753,7 @@ function WsOverviewInfo({
 						Blocked on a question. Open to answer.
 					</div>
 				) : (
-					<div {...mergeStylexProps("line-clamp-2", sx.mt7px, sx.roundedMd, sx.bgAccentSoft, sx.px2, sx.py5px, sx.leadingSnug, sx.textDim, typography.meta)}
+					<div {...mergeStylexProps("", sx.lineClamp2, sx.mt7px, sx.roundedMd, sx.bgAccentSoft, sx.px2, sx.py5px, sx.leadingSnug, sx.textDim, typography.meta)}
 						title={failedSession?.lastRunError?.message}
 					>
 						{cardRunErrorDetail(

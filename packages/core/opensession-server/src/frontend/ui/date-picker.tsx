@@ -309,6 +309,27 @@ const sx = stylex.create({
 		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
 		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
 	},
+
+	phoneMx15: {
+		"@media (max-width: 720px)": {
+			"marginInline": "6px"
+		}
+	},
+	phoneH5: {
+		"@media (max-width: 720px)": {
+			"height": "20px"
+		}
+	},
+	phoneW308px: {
+		"@media (max-width: 720px)": {
+			"width": "308px"
+		}
+	},
+	phoneH12: {
+		"@media (max-width: 720px)": {
+			"height": "48px"
+		}
+	},
 });
 
 /**
@@ -419,7 +440,7 @@ export function DateRangeField({
 					    track's full height, so it separates the options without
 					    reading as the edge of a second box. */}
 					<span
-						aria-hidden {...mergeStylexProps("phone:mx-1.5 phone:h-5", sx.mx1, sx.h35, sx.wPx, sx.shrink0, sx.bgLineStrong)}
+						aria-hidden {...mergeStylexProps("", sx.phoneMx15, sx.phoneH5, sx.mx1, sx.h35, sx.wPx, sx.shrink0, sx.bgLineStrong)}
 					/>
 				</>
 			)}
@@ -658,7 +679,7 @@ function RangeCalendar({
 						// Wider on a phone, where a day is a thumb target rather than a
 						// click: 308px puts the columns on 44px and still clears the
 						// 390px viewport.
-						<div key={month} {...mergeStylexProps("phone:w-[308px]", sx.w252px)}>
+						<div key={month} {...mergeStylexProps("", sx.phoneW308px, sx.w252px)}>
 							{/* The title is centred between the chevrons rather than sitting
 							    on the grid's left edge: with two grids side by side, a
 							    left-aligned title and one pair of chevrons can't say which
@@ -721,7 +742,7 @@ function RangeCalendar({
 											// twice, once in each, and a range band would be painted
 											// across both copies.
 											if (!isSameMonth(day, month)) {
-												return <div key={day} role="gridcell" {...mergeStylexProps("phone:h-12", sx.h9)} />;
+												return <div key={day} role="gridcell" {...mergeStylexProps("", sx.phoneH12, sx.h9)} />;
 											}
 											const span = rangeSpanAt(day, week, i, bandFrom, bandTo);
 											return (
@@ -818,7 +839,7 @@ function Day({
 		// span instead of standing a step taller than it.
 		<div
 			role="gridcell"
-			aria-selected={selected} {...mergeStylexProps("phone:h-12", sx.relative, sx.grid, sx.h9, sx.placeItemsCenter)}
+			aria-selected={selected} {...mergeStylexProps("", sx.phoneH12, sx.relative, sx.grid, sx.h9, sx.placeItemsCenter)}
 		>
 			{span && (
 				<span

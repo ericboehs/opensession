@@ -451,57 +451,208 @@ const sx = stylex.create({
 	invisible: {
 		"visibility": "hidden"
 	},
+
+	mx2: {
+		"marginInline": "8px"
+	},
+	my15: {
+		"marginBlock": "6px"
+	},
+	bgPanel: {
+		"backgroundColor": "var(--bg-panel)"
+	},
+	isolate: {
+		"isolation": "isolate"
+	},
+	maxWFull: {
+		"maxWidth": "100%"
+	},
+	overflowClip: {
+		"overflow": "clip"
+	},
+	roundedLg: {
+		"borderRadius": "calc(14px * var(--rf))"
+	},
+	relative: {
+		"position": "relative"
+	},
+	minH9: {
+		"minHeight": "36px"
+	},
+	px2: {
+		"paddingInline": "8px"
+	},
+	phoneMinH11: {
+		"@media (max-width: 720px)": {
+			"minHeight": "44px"
+		}
+	},
+	phonePx25: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "10px"
+		}
+	},
+	sticky: {
+		"position": "sticky"
+	},
+	topVarReviewFileHeaderTop0px: {
+		"top": "var(--review-file-header-top,0px)"
+	},
+	z6: {
+		"zIndex": "6"
+	},
+	shadowInset0001pxVarBorderInset01px0VarDivider: {
+		"--tw-shadow": "inset 0 0 0 1px var(--tw-shadow-color,var(--border)), inset 0 -1px 0 var(--tw-shadow-color,var(--divider))",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	selfStretch: {
+		"alignSelf": "stretch"
+	},
+	p0: {
+		"padding": "0"
+	},
+	transitionColorBackgroundOpacity: {
+		"transitionProperty": "color,background,opacity",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	opacity0: {
+		"opacity": "0"
+	},
+	focusVisiblePointerEventsAuto: {
+		":focusVisible": {
+			"pointerEvents": "auto"
+		}
+	},
+	focusVisibleOpacity100: {
+		":focusVisible": {
+			"opacity": "1"
+		}
+	},
+	beforeTextMeta: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"fontSize": "var(--type-meta)",
+			"fontWeight": "var(--tw-font-weight,var(--font-weight-normal))"
+		}
+	},
+	shadowNone: {
+		"--tw-shadow": "0 0 transparent",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	top12: {
+		"top": "50%"
+	},
+	TranslateY12: {
+		"--tw-translate-y": "calc(calc(1 / 2 * 100%) * -1)",
+		"translate": "var(--tw-translate-x) var(--tw-translate-y)"
+	},
+	pointerEventsAuto: {
+		"pointerEvents": "auto"
+	},
+	opacity100: {
+		"opacity": "1"
+	},
+	z0: {
+		"zIndex": "0"
+	},
+	mrAuto: {
+		"marginRight": "auto"
+	},
+	Max540pxHidden: {
+		"display": "none"
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	m0: {
+		"margin": "0"
+	},
+	maxWMin480px100: {
+		"maxWidth": "min(480px,100%)"
+	},
+	flex01Auto: {
+		"flex": "0 auto"
+	},
+	block: {
+		"display": "block"
+	},
+	maxH360px: {
+		"maxHeight": "360px"
+	},
+	bgRepeatingConicGradientRgba128128128018025Transparent050: {
+		"backgroundImage": "repeating-conic-gradient(color-mix(in srgb, var(--neutral-mid) 18%, transparent) 0% 25%,transparent 0% 50%)"
+	},
+	bgLength16px16px: {
+		"backgroundSize": "16px 16px"
+	},
+	mt1: {
+		"marginTop": "4px"
+	},
+	resizeY: {
+		"resize": "vertical"
+	},
+	outlineNone: {
+		"--tw-outline-style": "none",
+		"outlineStyle": "none"
+	},
+	focusBorderAccent: {
+		":focus": {
+			"borderColor": "var(--accent)"
+		}
+	},
 });
 
 /* The +/− counts. DiffPanel's summary strip carries the same pair, and the two
    must read alike. */
-const DIFF_ADD = "font-semibold text-green";
-const DIFF_DEL = "font-semibold text-red";
+const DIFF_ADD = mergeStylexClassName("", sx.fontSemibold, sx.textGreen);
+const DIFF_DEL = mergeStylexClassName("", sx.fontSemibold, sx.textRed);
 
 /* One collapsible file. The header is the hover group for the edit and discard
    actions revealed inside editable worktree diffs. */
 const FILE_ROW =
-  "isolate min-w-0 max-w-full overflow-clip rounded-lg border border-line bg-bg";
+  mergeStylexClassName("", sx.isolate, sx.minW0, sx.maxWFull, sx.overflowClip, sx.roundedLg, sx.border, sx.borderLine, sx.bgBg);
 const FILE_HEADER =
-  "group relative flex min-h-9 w-full min-w-0 items-center gap-1.5 overflow-clip px-2 text-left text-fg hover:bg-hover phone:min-h-11 phone:px-2.5";
-const FILE_BODY = "relative z-0 max-w-full overflow-clip";
+  mergeStylexClassName("group", sx.relative, sx.flex, sx.minH9, sx.wFull, sx.minW0, sx.itemsCenter, sx.gap15, sx.overflowClip, sx.px2, sx.textLeft, sx.textFg, sx.hoverBgHover, sx.phoneMinH11, sx.phonePx25);
+const FILE_BODY = mergeStylexClassName("", sx.relative, sx.z0, sx.maxWFull, sx.overflowClip);
 const STICKY_FILE_HEADER =
-  "sticky top-[var(--review-file-header-top,0px)] z-[6] rounded-t-lg bg-bg data-[stuck]:shadow-[inset_0_-1px_0_var(--divider)]";
+  mergeStylexClassName("data-[stuck]:shadow-[inset_0_-1px_0_var(--divider)]", sx.sticky, sx.topVarReviewFileHeaderTop0px, sx.z6, sx.roundedTLg, sx.bgBg);
 const FILE_TOGGLE =
-  "focus-ring flex min-w-0 cursor-pointer items-center gap-2 self-stretch border-none bg-transparent p-0 text-left text-fg";
+  mergeStylexClassName("", sx.focusRing, sx.flex, sx.minW0, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.selfStretch, sx.borderNone, sx.bgTransparent, sx.p0, sx.textLeft, sx.textFg);
 
 /* Revealed on row hover but always occupying its space (opacity, not display),
    so nothing can shift under the pointer. Focus reveals it too — hover cannot
    be the only way to reach a control. */
 const REVEAL =
-  "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100";
-const REVEALED = "pointer-events-auto opacity-100";
+  mergeStylexClassName("group-hover:pointer-events-auto group-hover:opacity-100", sx.pointerEventsNone, sx.opacity0, sx.focusVisiblePointerEventsAuto, sx.focusVisibleOpacity100);
+const REVEALED = mergeStylexClassName("", sx.pointerEventsAuto, sx.opacity100);
 /* The edit action sits directly after the filename and always reserves its
    space, so revealing it cannot shift the rest of the row. */
 const INLINE_ACTION =
-  "inline-flex shrink-0 items-center justify-center rounded-md border-none bg-transparent transition-[color,background,opacity]";
+  mergeStylexClassName("", sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.borderNone, sx.bgTransparent, sx.transitionColorBackgroundOpacity);
 /* The discard action overlays the stats at the row's trailing edge. No cursor
    here on purpose: the in-flight state wants `cursor-default`, and two cursor
    utilities on one element resolve by Tailwind's output order, not by which
    was written last. */
 const ROW_ACTION =
-  "absolute top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-md border-none bg-transparent transition-[color,background,opacity]";
+  mergeStylexClassName("", sx.absolute, sx.top12, sx.inlineFlex, sx.TranslateY12, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.borderNone, sx.bgTransparent, sx.transitionColorBackgroundOpacity);
 
 /* The comment card and the pending-comment card share their surface. */
-const CARD = "mx-2 my-1.5 flex flex-col rounded-md bg-panel font-sans";
+const CARD = mergeStylexClassName("", sx.mx2, sx.my15, sx.flex, sx.flexCol, sx.roundedMd, sx.bgPanel, sx.fontSans);
 const CARD_INPUT =
-  "resize-y rounded-md border border-line-strong bg-raised px-2.5 py-2 font-sans text-label leading-[1.45] text-fg outline-none focus:border-accent";
+  mergeStylexClassName("", sx.resizeY, sx.roundedMd, sx.border, sx.borderLineStrong, sx.bgRaised, sx.px25, sx.py2, sx.fontSans, typography.label, sx.leading145, sx.textFg, sx.outlineNone, sx.focusBorderAccent);
 
 /* The "Organizing files…" / "AI organized" note, left of the toolbar's actions. */
 const GROUPS_NOTE =
-  "mr-auto flex items-center gap-[7px] text-label text-faint phone:hidden @max-[540px]:hidden";
+  mergeStylexClassName("", sx.mrAuto, sx.flex, sx.itemsCenter, sx.gap7px, typography.label, sx.textFaint, sx.phoneHidden, sx.Max540pxHidden);
 
 /* A changed image, shown as the actual picture. Checkerboard backing so
    transparency reads as transparency rather than as white. */
-const IMAGE_CELL = "m-0 max-w-[min(480px,100%)] min-w-0 flex-[0_1_auto]";
+const IMAGE_CELL = mergeStylexClassName("", sx.m0, sx.maxWMin480px100, sx.minW0, sx.flex01Auto);
 const IMAGE =
-  "block max-h-[360px] max-w-full rounded-md border border-line bg-[repeating-conic-gradient(rgba(128,128,128,0.18)_0%_25%,transparent_0%_50%)] bg-[length:16px_16px]";
-const IMAGE_CAPTION = "mt-1 text-meta text-dim";
+  mergeStylexClassName("", sx.block, sx.maxH360px, sx.maxWFull, sx.roundedMd, sx.border, sx.borderLine, sx.bgRepeatingConicGradientRgba128128128018025Transparent050, sx.bgLength16px16px);
+const IMAGE_CAPTION = mergeStylexClassName("", sx.mt1, typography.meta, sx.textDim);
 
 export interface CommentTarget {
   path: string;
@@ -1047,7 +1198,7 @@ setSavingEdit(false);
               {comment.side === "deletions" ? " (removed)" : ""}
             </span>
             {onRemovePending && (
-              <button {...mergeStylexProps("hover:text-red", sx.cursorPointer, sx.borderNone, sx.bgTransparent, sx.px1, sx.py05, sx.textFaint, typography.meta)}
+              <button {...mergeStylexProps("", sx.hoverTextRed, sx.cursorPointer, sx.borderNone, sx.bgTransparent, sx.px1, sx.py05, sx.textFaint, typography.meta)}
                 onClick={() => onRemovePending(comment.id)}
                 title="Remove this pending comment"
               >
@@ -1191,7 +1342,7 @@ const pendingByFile = m;
         >
           {stickyFileHeaders && (
             <span
-              aria-hidden="true" {...mergeStylexProps("shadow-[inset_0_0_0_1px_var(--border),inset_0_-1px_0_var(--divider)] group-data-[stuck]:block", sx.pointerEventsNone, sx.absolute, sx.inset0, sx.hidden, sx.roundedTLg)}
+              aria-hidden="true" {...mergeStylexProps("group-data-[stuck]:block", sx.shadowInset0001pxVarBorderInset01px0VarDivider, sx.pointerEventsNone, sx.absolute, sx.inset0, sx.hidden, sx.roundedTLg)}
             />
           )}
           <button
@@ -1257,7 +1408,7 @@ const pendingByFile = m;
             />
           </Tooltip>
           {pend.length > 0 && (
-            <span {...mergeStylexProps("before:text-meta before:content-['💬']", sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap3px, sx.fontSans, sx.textFaint, typography.meta)}>
+            <span {...mergeStylexProps("before:content-['💬']", sx.beforeTextMeta, sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap3px, sx.fontSans, sx.textFaint, typography.meta)}>
               {pend.length}
             </span>
           )}
@@ -1282,7 +1433,7 @@ const pendingByFile = m;
               </Button>
               <Button
                 variant="primary"
-                size="sm" {...mergeStylexProps("shadow-none", sx.minH0, sx.px25, sx.py3px, sx.textXs, sx.fontMedium)}
+                size="sm" {...mergeStylexProps("", sx.shadowNone, sx.minH0, sx.px25, sx.py3px, sx.textXs, sx.fontMedium)}
                 onClick={saveEdit}
                 disabled={savingEdit}
               >
@@ -1463,7 +1614,7 @@ const pendingByFile = m;
         </span>
       )}
       {viewedEnabled && showViewedProgress && (
-        <span {...mergeStylexProps("tabular-nums", sx.flex, sx.itemsCenter, sx.gap1, sx.textFaint, typography.meta)}
+        <span {...mergeStylexProps("", sx.tabularNums, sx.flex, sx.itemsCenter, sx.gap1, sx.textFaint, typography.meta)}
           aria-label={`${viewedCount} of ${files.length} files viewed`}
         >
           <IconEye size={20} />
@@ -1519,7 +1670,7 @@ const pendingByFile = m;
                 key={groupKey}
               >
                 <button
-                  type="button" {...mergeStylexProps("hover:text-fg", sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap7px, sx.borderNone, sx.bgTransparent, sx.px3px, sx.py1, sx.textLeft, sx.fontSans, sx.textDim)}
+                  type="button" {...mergeStylexProps("", sx.hoverTextFg, sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap7px, sx.borderNone, sx.bgTransparent, sx.px3px, sx.py1, sx.textLeft, sx.fontSans, sx.textDim)}
                   data-diff-group-files={JSON.stringify(
                     group.indices.map((index) => files[index].name),
                   )}
@@ -1597,7 +1748,7 @@ function ResolvedReviewThread({
   return (
     <article {...stylex.props(sx.overflowHidden, sx.roundedMd, sx.border, sx.borderDividerSoft, sx.bgBg)}>
       <button
-        type="button" {...mergeStylexProps("hover:bg-hover", sx.focusRing, sx.flex, sx.minH11, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.border0, sx.bgTransparent, sx.px3, sx.py2, sx.textLeft, sx.textDim, typography.label)}
+        type="button" {...mergeStylexProps("", sx.hoverBgHover, sx.focusRing, sx.flex, sx.minH11, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.border0, sx.bgTransparent, sx.px3, sx.py2, sx.textLeft, sx.textDim, typography.label)}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
@@ -1787,7 +1938,7 @@ setError(e.message || "Failed to submit");
             </Button>
             <Button
               variant="primary"
-              size="sm" {...mergeStylexProps("shadow-none", sx.minH0, sx.px14px, sx.py6px, sx.fontMedium, typography.supporting)}
+              size="sm" {...mergeStylexProps("", sx.shadowNone, sx.minH0, sx.px14px, sx.py6px, sx.fontMedium, typography.supporting)}
               onClick={submit}
               disabled={sending || !text.trim()}
             >

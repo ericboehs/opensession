@@ -56,7 +56,7 @@ const sx = stylex.create({
 			position: "absolute"
 	},
 	bgBlack45: {
-			backgroundColor: "#00000073"
+			backgroundColor: "transparent0073"
 	},
 	flexCol: {
 			flexDirection: "column"
@@ -255,13 +255,33 @@ const sx = stylex.create({
 		"borderTopRightRadius": "calc(var(--sheet-radius,34px) * var(--rf))"
 	},
 	shadow012px40pxRgba000035: {
-		"--tw-shadow": "0 -12px 40px var(--tw-shadow-color,#00000059)",
+		"--tw-shadow": "0 -12px 40px var(--tw-shadow-color,transparent0059)",
 		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
 	},
 	transitionTransformOpacity: {
 		"transitionProperty": "transform,opacity",
 		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
 		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+
+	textFg: {
+		"color": "var(--text)"
+	},
+	textRed: {
+		"color": "var(--red)"
+	},
+	fontSemibold: {
+		"--tw-font-weight": "var(--font-weight-semibold)",
+		"fontWeight": "var(--font-weight-semibold)"
+	},
+	textAccent: {
+		"color": "var(--accent-ink)"
+	},
+	textGreen: {
+		"color": "var(--green)"
+	},
+	textPurple: {
+		"color": "var(--purple)"
 	},
 });
 
@@ -606,11 +626,11 @@ export function SheetSeparator({ className }: { className?: string }) {
  */
 const SHEET_ITEM_TONE = {
 	/** Icons stay quiet against the label — the legacy sheet's look. */
-	default: "text-fg [&_svg]:text-faint",
-	danger: "text-red [&_svg]:text-red",
-	accent: "font-semibold text-accent [&_svg]:text-faint",
-	green: "font-semibold text-green [&_svg]:text-faint",
-	purple: "font-semibold text-purple [&_svg]:text-faint",
+	default: mergeStylexClassName("[&_svg]:text-faint", sx.textFg),
+	danger: mergeStylexClassName("[&_svg]:text-red", sx.textRed),
+	accent: mergeStylexClassName("[&_svg]:text-faint", sx.fontSemibold, sx.textAccent),
+	green: mergeStylexClassName("[&_svg]:text-faint", sx.fontSemibold, sx.textGreen),
+	purple: mergeStylexClassName("[&_svg]:text-faint", sx.fontSemibold, sx.textPurple),
 } as const;
 
 export type SheetItemTone = keyof typeof SHEET_ITEM_TONE;

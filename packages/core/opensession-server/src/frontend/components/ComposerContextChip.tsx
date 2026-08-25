@@ -117,6 +117,83 @@ const sx = stylex.create({
 			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
 		}
 	},
+
+	border: {
+		"borderStyle": "var(--tw-border-style)",
+		"borderWidth": "1px"
+	},
+	borderLine60: {
+		"borderColor": "var(--border)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in oklab, var(--border) 60%, transparent)"
+		}
+	},
+	bgSurface: {
+		"backgroundColor": "var(--bg)"
+	},
+	textFg: {
+		"color": "var(--text)"
+	},
+	opacity60: {
+		"opacity": ".6"
+	},
+	enabledHoverTextFg: {
+		"@media (hover: hover)": {
+			":enabled": {
+				":hover": {
+					"color": "var(--text)"
+				}
+			}
+		}
+	},
+	bgColorMixInSrgbVarYellowTint18Transparent: {
+		"backgroundColor": "var(--yellow-tint)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--yellow-tint) 18%,transparent)"
+		}
+	},
+	textYellow: {
+		"color": "var(--yellow)"
+	},
+	textYellow60: {
+		"color": "var(--yellow)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"color": "color-mix(in oklab, var(--yellow) 60%, transparent)"
+		}
+	},
+	enabledHoverTextYellow: {
+		"@media (hover: hover)": {
+			":enabled": {
+				":hover": {
+					"color": "var(--yellow)"
+				}
+			}
+		}
+	},
+	bgColorMixInSrgbVarGreen18Transparent: {
+		"backgroundColor": "var(--green)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--green) 18%,transparent)"
+		}
+	},
+	textGreen: {
+		"color": "var(--green)"
+	},
+	textGreen60: {
+		"color": "var(--green)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"color": "color-mix(in oklab, var(--green) 60%, transparent)"
+		}
+	},
+	enabledHoverTextGreen: {
+		"@media (hover: hover)": {
+			":enabled": {
+				":hover": {
+					"color": "var(--green)"
+				}
+			}
+		}
+	},
 });
 
 /** Per-tone colour, spelled out in full: Tailwind scans source as text, so a
@@ -125,19 +202,19 @@ const sx = stylex.create({
  *  alone for cleaner labels on the matching composer washes. */
 const CHIP_TONE = {
 	neutral: {
-		box: "border border-line/60 bg-surface text-fg",
-		icon: "text-faint opacity-60",
-		remove: "text-faint enabled:hover:text-fg",
+		box: mergeStylexClassName("", sx.border, sx.borderLine60, sx.bgSurface, sx.textFg),
+		icon: mergeStylexClassName("", sx.textFaint, sx.opacity60),
+		remove: mergeStylexClassName("", sx.textFaint, sx.enabledHoverTextFg),
 	},
 	note: {
-		box: "bg-[color-mix(in_srgb,var(--yellow-tint)_18%,transparent)] text-yellow",
-		icon: "text-yellow",
-		remove: "text-yellow/60 enabled:hover:text-yellow",
+		box: mergeStylexClassName("", sx.bgColorMixInSrgbVarYellowTint18Transparent, sx.textYellow),
+		icon: mergeStylexClassName("", sx.textYellow),
+		remove: mergeStylexClassName("", sx.textYellow60, sx.enabledHoverTextYellow),
 	},
 	ask: {
-		box: "bg-[color-mix(in_srgb,var(--green)_18%,transparent)] text-green",
-		icon: "text-green",
-		remove: "text-green/60 enabled:hover:text-green",
+		box: mergeStylexClassName("", sx.bgColorMixInSrgbVarGreen18Transparent, sx.textGreen),
+		icon: mergeStylexClassName("", sx.textGreen),
+		remove: mergeStylexClassName("", sx.textGreen60, sx.enabledHoverTextGreen),
 	},
 } as const;
 

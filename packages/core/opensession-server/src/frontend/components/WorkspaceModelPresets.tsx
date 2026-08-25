@@ -29,7 +29,7 @@ import { EFFORTS, shortModelLabel } from "./ModelEffortSelect";
 import { IconChevronDown, IconPlus, IconTrash } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -167,6 +167,51 @@ const sx = stylex.create({
     },
   },
   minH18: { minHeight: "72px" },
+
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	gridColsMinmax01frAuto: {
+		"gridTemplateColumns": "minmax(0,1fr) auto"
+	},
+	desktopGridColsMinmax01fr10rem8remAuto: {
+		"@media (min-width: 721px)": {
+			"gridTemplateColumns": "minmax(0,1fr) 10rem 8rem auto"
+		}
+	},
+	desktopColSpan1: {
+		"@media (min-width: 721px)": {
+			"gridColumn": "span 1/span 1"
+		}
+	},
+	desktopColStart3: {
+		"@media (min-width: 721px)": {
+			"gridColumnStart": "3"
+		}
+	},
+	desktopRowStart1: {
+		"@media (min-width: 721px)": {
+			"gridRowStart": "1"
+		}
+	},
+	hoverBgRedSoft: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--red-soft)"
+			}
+		}
+	},
+	hoverTextRed: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--red)"
+			}
+		}
+	},
 });
 
 type Settings = NonNullable<Workspace["modelSettings"]>;
@@ -265,7 +310,7 @@ function PresetRow({
 				type="button"
 				aria-expanded={open}
 				onClick={onToggle}
-        {...mergeStylexProps("hover:bg-hover", sx.flex, sx.wFull, sx.itemsCenter, sx.gap3, sx.px5, sx.py3, sx.textLeft, sx.transitionColors)}
+        {...mergeStylexProps("", sx.hoverBgHover, sx.flex, sx.wFull, sx.itemsCenter, sx.gap3, sx.px5, sx.py3, sx.textLeft, sx.transitionColors)}
 			>
 				<span {...stylex.props(sx.minW0, sx.flex1)}>
           <span
@@ -359,7 +404,7 @@ function PresetRow({
 								// effort under them, instead of four fields fighting over 200px.
 								<div
 									key={index}
-                  {...mergeStylexProps("grid-cols-[minmax(0,1fr)_auto] desktop:grid-cols-[minmax(0,1fr)_10rem_8rem_auto]", sx.grid, sx.itemsCenter, sx.gap2)}
+                  {...mergeStylexProps("", sx.gridColsMinmax01frAuto, sx.desktopGridColsMinmax01fr10rem8remAuto, sx.grid, sx.itemsCenter, sx.gap2)}
 								>
 									<ModelSelect
 										{...stylex.props(sx.colStart1, sx.rowStart1)}
@@ -391,7 +436,7 @@ function PresetRow({
 									/>
 									{memberEfforts.length > 0 && (
 										<ModelSelect
-                      {...mergeStylexProps("desktop:col-span-1 desktop:col-start-3 desktop:row-start-1", sx.colSpan2)}
+                      {...mergeStylexProps("", sx.desktopColSpan1, sx.desktopColStart3, sx.desktopRowStart1, sx.colSpan2)}
                       items={memberEfforts.map((effort) => ({
                         value: effort.id,
                         label: effort.label,
@@ -431,7 +476,7 @@ function PresetRow({
 							size="sm"
 							variant="ghost"
 							icon={<IconTrash size={16} />}
-              {...mergeStylexProps("hover:bg-red-soft hover:text-red", sx.textRed)}
+              {...mergeStylexProps("", sx.hoverBgRedSoft, sx.hoverTextRed, sx.textRed)}
 							onClick={onRemove}
 						>
 							Remove preset

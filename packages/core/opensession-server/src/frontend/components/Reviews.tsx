@@ -407,6 +407,154 @@ const sx = stylex.create({
 	textAccent: {
 		"color": "var(--accent-ink)"
 	},
+
+	animatePulse14sEaseInOutInfinite: {
+		"animation": "1.4s ease-in-out infinite pulse"
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	phoneOverflowXHidden: {
+		"@media (max-width: 720px)": {
+			"overflowX": "hidden"
+		}
+	},
+	transitionBorderColorBackgroundColor: {
+		"transitionProperty": "border-color,background-color",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	focusWithinBorderLineStrong: {
+		":focusWithin": {
+			"borderColor": "var(--border-strong)"
+		}
+	},
+	focusWithinBgPanel: {
+		":focusWithin": {
+			"backgroundColor": "var(--bg-panel)"
+		}
+	},
+	placeholderTextFaint: {
+		"::placeholder": {
+			"color": "var(--text-faint)"
+		}
+	},
+	phoneOverflowXAuto: {
+		"@media (max-width: 720px)": {
+			"overflowX": "auto"
+		}
+	},
+	phoneScrollbarWidthNone: {
+		"@media (max-width: 720px)": {
+			"scrollbarWidth": "none"
+		}
+	},
+	grid: {
+		"display": "grid"
+	},
+	wFull: {
+		"width": "100%"
+	},
+	gridCols92pxMinmax01fr156px132px116px132px78px: {
+		"gridTemplateColumns": "92px minmax(0,1fr) 156px 132px 116px 132px 78px"
+	},
+	gap35: {
+		"gap": "14px"
+	},
+	textLeft: {
+		"textAlign": "left"
+	},
+	max1180pxGridCols88pxMinmax01fr150px118px78px: {
+		"@media not all and (min-width: 1180px)": {
+			"gridTemplateColumns": "88px minmax(0,1fr) 150px 118px 78px"
+		}
+	},
+	phoneOrder1: {
+		"@media (max-width: 720px)": {
+			"order": "1"
+		}
+	},
+	gap3px: {
+		"gap": "3px"
+	},
+	phoneOrder2: {
+		"@media (max-width: 720px)": {
+			"order": "2"
+		}
+	},
+	phoneFlex11Calc10090px: {
+		"@media (max-width: 720px)": {
+			"flex": "calc(100% - 90px)"
+		}
+	},
+	phoneOrder3: {
+		"@media (max-width: 720px)": {
+			"order": "3"
+		}
+	},
+	phoneInlineFlex: {
+		"@media (max-width: 720px)": {
+			"display": "inline-flex"
+		}
+	},
+	desktopMax1180pxHidden: {
+		"@media (min-width: 721px)": {
+			"@media not all and (min-width: 1180px)": {
+				"display": "none"
+			}
+		}
+	},
+	phoneOrder5: {
+		"@media (max-width: 720px)": {
+			"order": "5"
+		}
+	},
+	phoneOrder4: {
+		"@media (max-width: 720px)": {
+			"order": "4"
+		}
+	},
+	phoneFlexRow: {
+		"@media (max-width: 720px)": {
+			"flexDirection": "row"
+		}
+	},
+	phoneGap2: {
+		"@media (max-width: 720px)": {
+			"gap": "8px"
+		}
+	},
+	phoneOrder6: {
+		"@media (max-width: 720px)": {
+			"order": "6"
+		}
+	},
+	phoneOrder7: {
+		"@media (max-width: 720px)": {
+			"order": "7"
+		}
+	},
+	phoneMlAuto: {
+		"@media (max-width: 720px)": {
+			"marginLeft": "auto"
+		}
+	},
+	textPurple: {
+		"color": "var(--purple)"
+	},
+	focusVisibleOpacity100: {
+		":focusVisible": {
+			"opacity": "1"
+		}
+	},
+	hoverTextLink: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--link)"
+			}
+		}
+	},
 });
 
 interface Props {
@@ -436,30 +584,30 @@ const STATE_RANK: Record<string, number> = { OPEN: 0, CLOSED: 1, MERGED: 2 };
    `desktop:max-[1180px]` keeps it independent of how Tailwind happens to
    order two max-* variants against each other. */
 const ROW =
-	"grid w-full grid-cols-[92px_minmax(0,1fr)_156px_132px_116px_132px_78px] items-center gap-3.5 border-b border-line px-[22px] text-left max-[1180px]:grid-cols-[88px_minmax(0,1fr)_150px_118px_78px]";
+	mergeStylexClassName("", sx.grid, sx.wFull, sx.gridCols92pxMinmax01fr156px132px116px132px78px, sx.itemsCenter, sx.gap35, sx.borderB, sx.borderLine, sx.px22px, sx.textLeft, sx.max1180pxGridCols88pxMinmax01fr150px118px78px);
 
-const C_STATE = "flex items-center gap-[7px] text-meta font-medium phone:order-1";
+const C_STATE = mergeStylexClassName("", sx.flex, sx.itemsCenter, sx.gap7px, typography.meta, sx.fontMedium, sx.phoneOrder1);
 const C_TITLE =
-	"flex min-w-0 flex-col gap-[3px] phone:order-2 phone:flex-[1_1_calc(100%-90px)]";
-const C_CHECKS = "phone:order-3 phone:inline-flex";
+	mergeStylexClassName("", sx.flex, sx.minW0, sx.flexCol, sx.gap3px, sx.phoneOrder2, sx.phoneFlex11Calc10090px);
+const C_CHECKS = mergeStylexClassName("", sx.phoneOrder3, sx.phoneInlineFlex);
 const C_CHANGES =
-	"phone:order-4 phone:inline-flex phone:flex-row phone:items-center phone:gap-2";
+	mergeStylexClassName("", sx.phoneOrder4, sx.phoneInlineFlex, sx.phoneFlexRow, sx.phoneItemsCenter, sx.phoneGap2);
 const C_REVIEW =
-	"desktop:max-[1180px]:hidden phone:order-5 phone:inline-flex";
+	mergeStylexClassName("", sx.desktopMax1180pxHidden, sx.phoneOrder5, sx.phoneInlineFlex);
 const C_AUTHOR =
-	"flex min-w-0 items-center gap-2 desktop:max-[1180px]:hidden phone:order-6 phone:inline-flex";
+	mergeStylexClassName("", sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.desktopMax1180pxHidden, sx.phoneOrder6, sx.phoneInlineFlex);
 const C_UPDATED =
-	"text-meta whitespace-nowrap text-faint tabular-nums phone:order-7 phone:ml-auto";
+	mergeStylexClassName("", typography.meta, sx.whitespaceNowrap, sx.textFaint, sx.tabularNums, sx.phoneOrder7, sx.phoneMlAuto);
 
 /** "—" and other absent values, wherever a cell has nothing to say. */
-const DIM = "text-meta text-faint";
+const DIM = mergeStylexClassName("", typography.meta, sx.textFaint);
 
 /** Ink per PR state — replaces the render-time `rv-state-${key}`. */
 const STATE_TONE: Record<string, string> = {
-	open: "text-green",
-	draft: "text-dim",
-	merged: "text-purple",
-	closed: "text-red",
+	open: mergeStylexClassName("", sx.textGreen),
+	draft: mergeStylexClassName("", sx.textDim),
+	merged: mergeStylexClassName("", sx.textPurple),
+	closed: mergeStylexClassName("", sx.textRed),
 };
 
 type ChecksTone = "pass" | "fail" | "pending";
@@ -470,11 +618,11 @@ type ChecksTone = "pass" | "fail" | "pending";
  *  in the reduced-motion exceptions, so dropping it would freeze the one dot
  *  that means "still running". */
 const CHECKS_TONE: Record<ChecksTone, { dot: string; label: string }> = {
-	pass: { dot: "bg-green", label: "text-green" },
-	fail: { dot: "bg-red", label: "text-red" },
+	pass: { dot: mergeStylexClassName("", sx.bgGreen), label: mergeStylexClassName("", sx.textGreen) },
+	fail: { dot: mergeStylexClassName("", sx.bgRed), label: mergeStylexClassName("", sx.textRed) },
 	pending: {
-		dot: "bg-yellow rv-check-dot-pending animate-[pulse_1.4s_ease-in-out_infinite]",
-		label: "text-yellow",
+		dot: mergeStylexClassName("rv-check-dot-pending", sx.bgYellow, sx.animatePulse14sEaseInOutInfinite),
+		label: mergeStylexClassName("", sx.textYellow),
 	},
 };
 
@@ -551,7 +699,7 @@ function ChecksCell({ s }: { s: UnifiedSession }) {
     >
       <span className={[mergeStylexClassName("", sx.size2, sx.shrink0, sx.roundedFull), CHECKS_TONE[tone].dot].filter(Boolean).join(" ")} />
       <span className={[mergeStylexClassName("", sx.whitespaceNowrap), CHECKS_TONE[tone].label].filter(Boolean).join(" ")}>{label}</span>
-      <span {...mergeStylexProps("phone:hidden", sx.inlineFlex, sx.h1, sx.w46px, sx.shrink0, sx.overflowHidden, sx.roundedFull, sx.bgActive)}
+      <span {...mergeStylexProps("", sx.phoneHidden, sx.inlineFlex, sx.h1, sx.w46px, sx.shrink0, sx.overflowHidden, sx.roundedFull, sx.bgActive)}
         aria-hidden
       >
         <span {...stylex.props(sx.hFull, sx.bgGreen)} style={{ width: pct(c.passed) }} />
@@ -564,7 +712,7 @@ function ChecksCell({ s }: { s: UnifiedSession }) {
 
 function ReviewCell({ s }: { s: UnifiedSession }) {
   const d = s.prReviewDecision || "";
-  const review = "text-meta font-medium whitespace-nowrap";
+  const review = mergeStylexClassName("", typography.meta, sx.fontMedium, sx.whitespaceNowrap);
   if ((s.prState || "OPEN") !== "OPEN") return <span className={DIM}>–</span>;
   if (d === "APPROVED") return <span className={[review, mergeStylexClassName("", sx.textGreen)].filter(Boolean).join(" ")}>Approved</span>;
   if (d === "CHANGES_REQUESTED")
@@ -588,7 +736,7 @@ function ChangesCell({ s }: { s: UnifiedSession }) {
       {...stylex.props(sx.inlineFlex, sx.flexCol, sx.gap1)}
       title={`${files} file${files === 1 ? "" : "s"} changed`}
     >
-      <span {...mergeStylexProps("tabular-nums", sx.inlineFlex, sx.gap7px, typography.meta)}>
+      <span {...mergeStylexProps("", sx.tabularNums, sx.inlineFlex, sx.gap7px, typography.meta)}>
         <span {...stylex.props(sx.textGreen)}>+{add}</span>
         <span {...stylex.props(sx.textRed)}>−{del}</span>
       </span>
@@ -712,8 +860,8 @@ export function Reviews({
   if (selected) {
     return (
       <div {...stylex.props(sx.flex, sx.hFull, sx.minH0, sx.flexCol, sx.bgSurface)}>
-        <div {...mergeStylexProps("phone:flex", sx.hidden, sx.shrink0, sx.itemsCenter, sx.borderB, sx.borderDivider, sx.px3, sx.py2)}>
-          <button {...mergeStylexProps("hover:bg-hover", sx.inlineFlex, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px2, sx.py15, sx.textSm, sx.fontMedium, sx.textFg)}
+        <div {...mergeStylexProps("", sx.phoneFlex, sx.hidden, sx.shrink0, sx.itemsCenter, sx.borderB, sx.borderDivider, sx.px3, sx.py2)}>
+          <button {...mergeStylexProps("", sx.hoverBgHover, sx.inlineFlex, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px2, sx.py15, sx.textSm, sx.fontMedium, sx.textFg)}
             onClick={() => onSelect("")}
           >
             <svg width="17" height="17" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
@@ -742,15 +890,15 @@ export function Reviews({
 
   return (
     <div {...stylex.props(sx.relative, sx.flex, sx.minH0, sx.flex1)}>
-      <div {...mergeStylexProps("phone:overflow-x-hidden", sx.flex, sx.minW0, sx.flex1, sx.flexCol, sx.overflowYAuto)}>
+      <div {...mergeStylexProps("", sx.phoneOverflowXHidden, sx.flex, sx.minW0, sx.flex1, sx.flexCol, sx.overflowYAuto)}>
         <div {...stylex.props(sx.sticky, sx.top0, sx.z3, sx.bgSurface, sx.px22px, sx.pt4)}>
           <div {...stylex.props(sx.mb3, sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap4)}>
             <h1 {...stylex.props(sx.m0, sx.fontTitle, sx.tracking001em, typography.sectionTitle)}>Reviews</h1>
-            <div {...mergeStylexProps("transition-[border-color,background-color] focus-within:border-line-strong focus-within:bg-panel", sx.flex, sx.w60, sx.itemsCenter, sx.gap7px, sx.roundedMd, sx.border, sx.borderLine, sx.bgRaised, sx.px25, sx.py15, sx.textFaint)}>
+            <div {...mergeStylexProps("", sx.transitionBorderColorBackgroundColor, sx.focusWithinBorderLineStrong, sx.focusWithinBgPanel, sx.flex, sx.w60, sx.itemsCenter, sx.gap7px, sx.roundedMd, sx.border, sx.borderLine, sx.bgRaised, sx.px25, sx.py15, sx.textFaint)}>
               <svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
                 <path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z" />
               </svg>
-              <input {...mergeStylexProps("placeholder:text-faint", sx.minW0, sx.flex1, sx.border0, sx.bgTransparent, sx.textFg, sx.outlineNone, typography.label)}
+              <input {...mergeStylexProps("", sx.placeholderTextFaint, sx.minW0, sx.flex1, sx.border0, sx.bgTransparent, sx.textFg, sx.outlineNone, typography.label)}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search pull requests…"
@@ -762,7 +910,7 @@ export function Reviews({
               underline sits on top of it. The negative margin cancels the
               header's 22px padding. Five tabs + counts don't fit a phone, so
               below 720px the strip scrolls edge to edge instead. */}
-          <div {...mergeStylexProps("phone:overflow-x-auto phone:[scrollbar-width:none] phone:[&::-webkit-scrollbar]:hidden", sx.Mx22px, sx.flex, sx.gap05, sx.borderB, sx.borderDivider, sx.px22px)}>
+          <div {...mergeStylexProps("phone:[&::-webkit-scrollbar]:hidden", sx.phoneOverflowXAuto, sx.phoneScrollbarWidthNone, sx.Mx22px, sx.flex, sx.gap05, sx.borderB, sx.borderDivider, sx.px22px)}>
             {TABS.map((t) => {
               const on = filter === t.key;
               return (
@@ -833,12 +981,12 @@ export function Reviews({
                         {cleanTitle(s)}
                       </span>
                       {prNum(s) && (
-                        <span {...mergeStylexProps("tabular-nums", sx.shrink0, sx.textFaint, typography.meta)}>
+                        <span {...mergeStylexProps("", sx.tabularNums, sx.shrink0, sx.textFaint, typography.meta)}>
                           {prNum(s)}
                         </span>
                       )}
                       {s.prUrl && (
-                        <span {...mergeStylexProps("group-hover:opacity-100 focus-visible:opacity-100 hover:text-link", sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.selfCenter, sx.roundedSm, sx.p05, sx.textFaint, sx.opacity0, sx.transitionOpacity)}
+                        <span {...mergeStylexProps("group-hover:opacity-100", sx.focusVisibleOpacity100, sx.hoverTextLink, sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.selfCenter, sx.roundedSm, sx.p05, sx.textFaint, sx.opacity0, sx.transitionOpacity)}
                           title={`Open on ${providerFromUrl(s.prUrl).name}`}
                           onClick={(e) => {
                             e.stopPropagation();

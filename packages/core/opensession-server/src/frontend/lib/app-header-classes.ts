@@ -731,8 +731,8 @@ const APP_HEADER_OVERLAY =
 	// what does the work, which is how an iOS scroll edge behaves.
 	"phone:before:[background:linear-gradient(to_bottom,var(--bg)_0%,color-mix(in_srgb,var(--bg)_55%,transparent)_52%,color-mix(in_srgb,var(--bg)_18%,transparent)_78%,transparent_100%)] " +
 	mergeStylexClassName("", sx.phoneBeforeBackdropBlur20px, sx.phoneBeforeBackdropSaturate14) + " " +
-	"phone:before:[-webkit-mask-image:linear-gradient(to_bottom,#000_0%,#000_62%,transparent_100%)] " +
-	"phone:before:[mask-image:linear-gradient(to_bottom,#000_0%,#000_62%,transparent_100%)]";
+	"phone:before:[-webkit-mask-image:linear-gradient(to_bottom,var(--color-black)_0%,var(--color-black)_62%,transparent_100%)] " +
+	"phone:before:[mask-image:linear-gradient(to_bottom,var(--color-black)_0%,var(--color-black)_62%,transparent_100%)]";
 
 /**
  * The bar's three faces, assembled so that only one of them is ever on the

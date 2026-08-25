@@ -1,4 +1,4 @@
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import { type as typography } from "../styles/typography.stylex";
 import * as stylex from "@stylexjs/stylex";
 
@@ -45,6 +45,20 @@ const sx = stylex.create({
 	textYellow: {
 			color: "var(--yellow)"
 	},
+
+	animatePulse14sEaseInOutInfinite: {
+		"animation": "1.4s ease-in-out infinite pulse"
+	},
+	motionReduceAnimationDuration14s: {
+		"@media (prefers-reduced-motion: reduce)": {
+			"animationDuration": "1.4s"
+		}
+	},
+	motionReduceAnimationIterationCountInfinite: {
+		"@media (prefers-reduced-motion: reduce)": {
+			"animationIterationCount": "infinite"
+		}
+	},
 });
 
 /**
@@ -86,8 +100,8 @@ const sx = stylex.create({
 // and hands specific liveness signals back by class, so a rename silently
 // freezes the indicator. This one cannot be orphaned by a rename.
 const PULSE =
-	"animate-[pulse_1.4s_ease-in-out_infinite] " +
-	"motion-reduce:[animation-duration:1.4s]! motion-reduce:[animation-iteration-count:infinite]!";
+	mergeStylexClassName("", sx.animatePulse14sEaseInOutInfinite) +
+	mergeStylexClassName("", sx.motionReduceAnimationDuration14s, sx.motionReduceAnimationIterationCountInfinite);
 
 export function PulseDot({
 	size = 8,

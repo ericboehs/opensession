@@ -150,6 +150,52 @@ const sx = stylex.create({
 			"willChange": "transform"
 		}
 	},
+
+	phoneMinH11: {
+		"@media (max-width: 720px)": {
+			"minHeight": "44px"
+		}
+	},
+	phoneWFull: {
+		"@media (max-width: 720px)": {
+			"width": "100%"
+		}
+	},
+	phonePx35: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "14px"
+		}
+	},
+	phoneTextInputPhone: {
+		"@media (max-width: 720px)": {
+			"fontSize": "var(--type-input-phone)"
+		}
+	},
+	phonePbCalc55remEnvSafeAreaInsetBottom0px: {
+		"@media (max-width: 720px)": {
+			"paddingBottom": "calc(5.5rem + env(safe-area-inset-bottom,0px))"
+		}
+	},
+	phonePt2: {
+		"@media (max-width: 720px)": {
+			"paddingTop": "8px"
+		}
+	},
+	phoneMb35: {
+		"@media (max-width: 720px)": {
+			"marginBottom": "14px"
+		}
+	},
+	phoneInline: {
+		"@media (max-width: 720px)": {
+			"display": "inline"
+		}
+	},
+	phoneBlock: {
+		"@media (max-width: 720px)": {
+			"display": "block"
+		}
+	},
 });
 
 interface Props {
@@ -474,7 +520,7 @@ setBusy(null);
 	// Match Pull requests on desktop. On a phone the title and filter share the
 	// top bar, while Search floats at the thumb edge below the list.
 	const searchAction = (
-		<Input {...mergeStylexProps("phone:min-h-11 phone:w-full phone:px-3.5 phone:text-input-phone", sx.w200px, sx.minW90px, sx.shrink100)}
+		<Input {...mergeStylexProps("", sx.phoneMinH11, sx.phoneWFull, sx.phonePx35, sx.phoneTextInputPhone, sx.w200px, sx.minW90px, sx.shrink100)}
 			type="search"
 			aria-label="Search archived sessions"
 			placeholder="Search archived…"
@@ -594,11 +640,11 @@ setBusy(null);
 		>
 			{desktopPortaled ? createPortal(actions, topbarActionsEl) : null}
 			{mobileFilterPortaled ? createPortal(filterAction, mobileActionsEl) : null}
-			<div {...mergeStylexProps("phone:px-3.5 phone:pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] phone:pt-2 phone:[body.kb-open_&]:pb-[5rem] phone:[body.kb-open_&]:pt-[max(env(safe-area-inset-top,0px),8px)]", sx.mxAuto, sx.wFull, sx.maxW860px, sx.px6, sx.pb60px, sx.pt7)}>
+			<div {...mergeStylexProps("phone:[body.kb-open_&]:pb-[5rem] phone:[body.kb-open_&]:pt-[max(env(safe-area-inset-top,0px),8px)]", sx.phonePx35, sx.phonePbCalc55remEnvSafeAreaInsetBottom0px, sx.phonePt2, sx.mxAuto, sx.wFull, sx.maxW860px, sx.px6, sx.pb60px, sx.pt7)}>
 				{!isPhone && !desktopPortaled ? (
 					<div {...stylex.props(sx.mb3, sx.flex, sx.itemsCenter, sx.gap2)}>{actions}</div>
 				) : null}
-				<p {...mergeStylexProps("phone:mb-3.5", sx.m0, sx.mb18px, sx.textDim, typography.supporting)}>
+				<p {...mergeStylexProps("", sx.phoneMb35, sx.m0, sx.mb18px, sx.textDim, typography.supporting)}>
 					{count}
 				</p>
 			{archived.length === 0 && !loaded ? (
@@ -722,12 +768,12 @@ setBusy(null);
 														{meta.length > 0 ? (
 															<span className={ARCHIVED_ROW_META}>
 																{meta}
-																<span {...mergeStylexProps("phone:inline", sx.hidden, sx.shrink0)}>
+																<span {...mergeStylexProps("", sx.phoneInline, sx.hidden, sx.shrink0)}>
 																	{relativeTime(s.lastActivity)}
 																</span>
 															</span>
 														) : (
-															<span {...mergeStylexProps("phone:block", sx.mt1, sx.hidden, sx.textFaint, typography.meta)}>
+															<span {...mergeStylexProps("", sx.phoneBlock, sx.mt1, sx.hidden, sx.textFaint, typography.meta)}>
 																{relativeTime(s.lastActivity)}
 															</span>
 														)}

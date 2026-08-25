@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -22,6 +22,27 @@ const sx = stylex.create({
 	borderTCurrent: {
 			borderTopColor: "currentColor"
 	},
+
+	size3: {
+		"width": "12px",
+		"height": "12px"
+	},
+	border: {
+		"borderStyle": "var(--tw-border-style)",
+		"borderWidth": "1px"
+	},
+	size4: {
+		"width": "16px",
+		"height": "16px"
+	},
+	border2: {
+		"borderStyle": "var(--tw-border-style)",
+		"borderWidth": "2px"
+	},
+	size5: {
+		"width": "20px",
+		"height": "20px"
+	},
 });
 
 /**
@@ -43,9 +64,9 @@ const sx = stylex.create({
 export type SpinnerSize = "sm" | "md" | "lg";
 
 const sizes: Record<SpinnerSize, string> = {
-	sm: "size-3 border",
-	md: "size-4 border-2",
-	lg: "size-5 border-2",
+	sm: mergeStylexClassName("", sx.size3, sx.border),
+	md: mergeStylexClassName("", sx.size4, sx.border2),
+	lg: mergeStylexClassName("", sx.size5, sx.border2),
 };
 
 export function Spinner({

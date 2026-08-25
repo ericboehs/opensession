@@ -5,6 +5,7 @@ import { duration, ease } from "../ui/motion";
 import { Tooltip } from "../ui/tooltip";
 import { cn, mergeStylexClassName } from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -38,11 +39,155 @@ const sx = stylex.create({
 	},
 
 	WebkitMaskImageLinearGradientToRightVarReplyFadeStart000016px000Calc10016pxVarReplyFadeEnd100: {
-		"WebkitmaskImage": "linear-gradient(to right,var(--reply-fade-start) 0,#000 16px,#000 calc(100% - 16px),var(--reply-fade-end) 100%)"
+		"WebkitMaskImage": "linear-gradient(to right,var(--reply-fade-start) 0,var(--color-black) 16px,var(--color-black) calc(100% - 16px),var(--reply-fade-end) 100%)"
 	},
 	MaskImageLinearGradientToRightVarReplyFadeStart000016px000Calc10016pxVarReplyFadeEnd100: {
-		"WebkitmaskImage": "linear-gradient(to right,var(--reply-fade-start) 0,#000 16px,#000 calc(100% - 16px),var(--reply-fade-end) 100%)",
-		"maskImage": "linear-gradient(to right,var(--reply-fade-start) 0,#000 16px,#000 calc(100% - 16px),var(--reply-fade-end) 100%)"
+		"WebkitMaskImage": "linear-gradient(to right,var(--reply-fade-start) 0,var(--color-black) 16px,var(--color-black) calc(100% - 16px),var(--reply-fade-end) 100%)",
+		"maskImage": "linear-gradient(to right,var(--reply-fade-start) 0,var(--color-black) 16px,var(--color-black) calc(100% - 16px),var(--reply-fade-end) 100%)"
+	},
+
+	relative: {
+		"position": "relative"
+	},
+	inlineFlex: {
+		"display": "inline-flex"
+	},
+	h7: {
+		"height": "28px"
+	},
+	wFull: {
+		"width": "100%"
+	},
+	itemsCenter: {
+		"alignItems": "center"
+	},
+	whitespaceNowrap: {
+		"whiteSpace": "nowrap"
+	},
+	rounded999px: {
+		"borderRadius": "999px"
+	},
+	px3: {
+		"paddingInline": "12px"
+	},
+	bgVarComposerSurface: {
+		"backgroundColor": "var(--composer-surface)"
+	},
+	SmoothRingColorVarComposerBorder: {
+		"--smooth-ring-color": "var(--composer-border)"
+	},
+	fontMedium: {
+		"--tw-font-weight": "var(--font-weight-medium)",
+		"fontWeight": "var(--font-weight-medium)"
+	},
+	textDim: {
+		"color": "var(--text-dim)"
+	},
+	transitionColorScale: {
+		"transitionProperty": "color,scale",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	focusVisibleTextFg: {
+		":focusVisible": {
+			"color": "var(--text)"
+		}
+	},
+	activeScale096: {
+		":active": {
+			"scale": ".96"
+		}
+	},
+	beforePointerEventsNone: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"pointerEvents": "none"
+		}
+	},
+	beforeAbsolute: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	beforeInset0: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"inset": "0"
+		}
+	},
+	beforeRoundedInherit: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"borderRadius": "inherit"
+		}
+	},
+	beforeCornerShapeInherit: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"cornerShape": "inherit"
+		}
+	},
+	beforeBgTransparent: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"backgroundColor": "transparent"
+		}
+	},
+	beforeTransitionColors: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"transitionProperty": "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+		}
+	},
+	beforeContent: {
+		"::before": {
+			"--tw-content": "\"\"",
+			"content": "var(--tw-content)"
+		}
+	},
+	hoverBeforeBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"::before": {
+					"content": "var(--tw-content)",
+					"backgroundColor": "var(--hover)"
+				}
+			}
+		}
+	},
+	focusVisibleBeforeBgHover: {
+		":focusVisible": {
+			"::before": {
+				"content": "var(--tw-content)",
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	focusVisibleOutline2: {
+		":focusVisible": {
+			"outlineStyle": "var(--tw-outline-style)",
+			"outlineWidth": "2px"
+		}
+	},
+	focusVisibleOutlineOffset2: {
+		":focusVisible": {
+			"outlineOffset": "2px"
+		}
+	},
+	focusVisibleOutlineFg: {
+		":focusVisible": {
+			"outlineColor": "var(--text)"
+		}
 	},
 });
 
@@ -100,19 +245,19 @@ const sx = stylex.create({
  * otherwise decide how much of the answer the row covers.
  */
 const chip =
-	"relative inline-flex h-7 w-full items-center whitespace-nowrap rounded-[999px] px-3 " +
-	"bg-[var(--composer-surface)] " +
-	"[--smooth-ring-color:var(--composer-border)] smooth-shadow-ring-md " +
-	"text-label font-medium text-dim transition-[color,scale] " +
-	"hover:text-fg focus-visible:text-fg active:scale-[0.96] " +
+	mergeStylexClassName("", sx.relative, sx.inlineFlex, sx.h7, sx.wFull, sx.itemsCenter, sx.whitespaceNowrap, sx.rounded999px, sx.px3) +
+	mergeStylexClassName("", sx.bgVarComposerSurface) +
+	mergeStylexClassName("smooth-shadow-ring-md", sx.SmoothRingColorVarComposerBorder) +
+	mergeStylexClassName("", typography.label, sx.fontMedium, sx.textDim, sx.transitionColorScale) +
+	mergeStylexClassName("", sx.hoverTextFg, sx.focusVisibleTextFg, sx.activeScale096) +
 	// The hover wash layers over the lid rather than replacing it, so it paints
 	// on a pseudo-element, which needs the pill's corner treatment of its own:
 	// base.css grants `corner-shape` by matching `rounded-*` on an ELEMENT, and
 	// a pseudo-element matches no selector.
-	"before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] " +
-	"before:[corner-shape:inherit] before:bg-transparent before:transition-colors " +
-	"before:content-[''] hover:before:bg-hover focus-visible:before:bg-hover " +
-	"focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg";
+	mergeStylexClassName("", sx.beforePointerEventsNone, sx.beforeAbsolute, sx.beforeInset0, sx.beforeRoundedInherit) +
+	mergeStylexClassName("", sx.beforeCornerShapeInherit, sx.beforeBgTransparent, sx.beforeTransitionColors) +
+	mergeStylexClassName("", sx.beforeContent, sx.hoverBeforeBgHover, sx.focusVisibleBeforeBgHover) +
+	mergeStylexClassName("", sx.focusVisibleOutline2, sx.focusVisibleOutlineOffset2, sx.focusVisibleOutlineFg);
 
 interface Props {
 	suggestions: ReplySuggestion[];

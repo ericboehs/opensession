@@ -122,6 +122,199 @@ const sx = stylex.create({
 	textFg: {
 		"color": "var(--text)"
 	},
+
+	size8: {
+		"width": "32px",
+		"height": "32px"
+	},
+	roundedControl: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	border: {
+		"borderStyle": "var(--tw-border-style)",
+		"borderWidth": "1px"
+	},
+	borderTransparent: {
+		"borderColor": "transparent"
+	},
+	bgTransparent: {
+		"backgroundColor": "transparent"
+	},
+	textDim: {
+		"color": "var(--text-dim)"
+	},
+	grid: {
+		"display": "grid"
+	},
+	size7: {
+		"width": "28px",
+		"height": "28px"
+	},
+	placeItemsCenter: {
+		"placeItems": "center"
+	},
+	focusRing: {
+		":focusVisible": {
+			"outline": "2px solid var(--accent-ink)",
+			"outlineOffset": "2px"
+		},
+		"@media (forced-colors: active)": {
+			":focusVisible": {
+				"outlineColor": "highlight"
+			}
+		}
+	},
+	transitionBackgroundColorScale: {
+		"transitionProperty": "background-color,scale",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	duration150: {
+		"--tw-duration": ".15s",
+		"transitionDuration": ".15s"
+	},
+	easeOut: {
+		"--tw-ease": "var(--ease)",
+		"transitionTimingFunction": "var(--ease)"
+	},
+	mr05: {
+		"marginRight": "2px"
+	},
+	gap5px: {
+		"gap": "5px"
+	},
+	whitespaceNowrap: {
+		"whiteSpace": "nowrap"
+	},
+	px11px: {
+		"paddingInline": "11px"
+	},
+	py5px: {
+		"paddingBlock": "5px"
+	},
+	borderLine: {
+		"borderColor": "var(--border)"
+	},
+	pointerEventsNone: {
+		"pointerEvents": "none"
+	},
+	absolute: {
+		"position": "absolute"
+	},
+	top12: {
+		"top": "50%"
+	},
+	left12: {
+		"left": "50%"
+	},
+	roundedFull: {
+		"borderRadius": "3.40282e38px"
+	},
+	borderTCurrent: {
+		"borderTopColor": "currentColor"
+	},
+	opacity90: {
+		"opacity": ".9"
+	},
+	animatePreviewSpin07sLinearInfinite: {
+		"animation": ".7s linear infinite preview-spin"
+	},
+	motionReduceAnimationDuration07s: {
+		"@media (prefers-reduced-motion: reduce)": {
+			"animationDuration": ".7s"
+		}
+	},
+	motionReduceAnimationIterationCountInfinite: {
+		"@media (prefers-reduced-motion: reduce)": {
+			"animationIterationCount": "infinite"
+		}
+	},
+	opacity72: {
+		"opacity": ".72"
+	},
+	hoverBgYellow13: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--yellow)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in oklab, var(--yellow) 13%, transparent)"
+				}
+			}
+		}
+	},
+	hoverOpacity100: {
+		"@media (hover: hover)": {
+			":hover": {
+				"opacity": "1"
+			}
+		}
+	},
+	cursorPointer: {
+		"cursor": "pointer"
+	},
+	hoverBgGreenSoft: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--green-soft)"
+			}
+		}
+	},
+	hoverBgColorMixInSrgbCurrentColor26Transparent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "currentColor"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in srgb,currentColor 26%,transparent)"
+				}
+			}
+		}
+	},
+	activeScale096: {
+		":active": {
+			"scale": ".96"
+		}
+	},
+	activeBgColorMixInSrgbCurrentColor34Transparent: {
+		":active": {
+			"backgroundColor": "currentColor"
+		},
+		"@supports (color: color-mix(in lab, red, red))": {
+			":active": {
+				"backgroundColor": "color-mix(in srgb,currentColor 34%,transparent)"
+			}
+		}
+	},
+	opacity55: {
+		"opacity": ".55"
+	},
+	borderYellow45: {
+		"borderColor": "var(--yellow)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in oklab, var(--yellow) 45%, transparent)"
+		}
+	},
+	hoverBgYellow12: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--yellow)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in oklab, var(--yellow) 12%, transparent)"
+				}
+			}
+		}
+	},
+	borderGreen45: {
+		"borderColor": "var(--green)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in oklab, var(--green) 45%, transparent)"
+		}
+	},
 });
 
 // The open-preview chord's handler lives in SessionViewer: this component
@@ -137,29 +330,29 @@ const sx = stylex.create({
    thing: green once the deploy is up and the link actually works, amber while
    one is in flight. */
 const LINK_BASE =
-	"inline-flex items-center gap-[5px] whitespace-nowrap rounded-md border px-[11px] py-[5px] text-label font-semibold no-underline";
-const LINK_READY = "border-green/45 text-green hover:bg-green-soft";
+	mergeStylexClassName("", sx.inlineFlex, sx.itemsCenter, sx.gap5px, sx.whitespaceNowrap, sx.roundedMd, sx.border, sx.px11px, sx.py5px, typography.label, sx.fontSemibold, sx.noUnderline);
+const LINK_READY = mergeStylexClassName("", sx.borderGreen45, sx.textGreen, sx.hoverBgGreenSoft);
 /* A deploy is in flight. A rebuild still opens the previous deploy, so it stays
    a live link; a first build is not testable yet, so LINK_BUILDING below
    swallows the click (see onClick) on top of this. */
-const LINK_DEPLOYING = "border-yellow/45 text-yellow hover:bg-yellow/12";
-const LINK_BUILDING = `${LINK_DEPLOYING} cursor-default opacity-55`;
+const LINK_DEPLOYING = mergeStylexClassName("", sx.borderYellow45, sx.textYellow, sx.hoverBgYellow12);
+const LINK_BUILDING = [LINK_DEPLOYING, mergeStylexClassName("", sx.cursorDefault, sx.opacity55)].filter(Boolean).join(" ");
 /* Nothing to link to yet: quiet, and no hover wash to imply it opens. */
-const LINK_PENDING = "border-line text-dim cursor-default";
+const LINK_PENDING = mergeStylexClassName("", sx.borderLine, sx.textDim, sx.cursorDefault);
 
 /* The header globe rides in the session header's icon cluster, so it takes the
    same 32px square box as the share / ⋯ / panel buttons. Its state colouring
    (dim → amber → green) is its own — that's what the control communicates. */
 const ICON_BASE =
-	"inline-flex size-8 items-center justify-center rounded-control border border-transparent bg-transparent no-underline";
-const ICON_READY = "cursor-pointer text-green hover:bg-green-soft";
+	mergeStylexClassName("", sx.inlineFlex, sx.size8, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.border, sx.borderTransparent, sx.bgTransparent, sx.noUnderline);
+const ICON_READY = mergeStylexClassName("", sx.cursorPointer, sx.textGreen, sx.hoverBgGreenSoft);
 /* Amber while a deploy is in flight. Building swallows the click (see onClick),
    so it gets no pointer; rebuilding still opens the previous deploy. */
 const ICON_BUILDING =
-	"cursor-default text-yellow opacity-72 hover:bg-yellow/13 hover:opacity-100";
+	mergeStylexClassName("", sx.cursorDefault, sx.textYellow, sx.opacity72, sx.hoverBgYellow13, sx.hoverOpacity100);
 const ICON_REBUILDING =
-	"cursor-pointer text-yellow opacity-72 hover:bg-yellow/13 hover:opacity-100";
-const ICON_PENDING = "cursor-default text-dim";
+	mergeStylexClassName("", sx.cursorPointer, sx.textYellow, sx.opacity72, sx.hoverBgYellow13, sx.hoverOpacity100);
+const ICON_PENDING = mergeStylexClassName("", sx.cursorDefault, sx.textDim);
 
 /* The summary card's preview mark. It rides immediately before the PR band's
    primary action, so the place to test the work stays with Merge, Push or Pull
@@ -173,31 +366,31 @@ const ICON_PENDING = "cursor-default text-dim";
    than reading as a disabled grey control. Its own ink supplies the hover and
    press washes, which makes the band darken under the pointer. */
 const SUMMARY_MARK =
-	"grid size-7 shrink-0 place-items-center rounded-md no-underline focus-ring " +
-	"transition-[background-color,scale] duration-150 ease-out";
+	mergeStylexClassName("", sx.grid, sx.size7, sx.shrink0, sx.placeItemsCenter, sx.roundedMd, sx.noUnderline, sx.focusRing) +
+	mergeStylexClassName("", sx.transitionBackgroundColorScale, sx.duration150, sx.easeOut);
 /** Pointer and press. The press step also takes a hair of scale, which is what
  *  makes a 28px target feel like it answered. */
 const SUMMARY_MARK_HOVER =
-	"hover:bg-[color-mix(in_srgb,currentColor_26%,transparent)] " +
-	"active:scale-[0.96] active:bg-[color-mix(in_srgb,currentColor_34%,transparent)]";
+	mergeStylexClassName("", sx.hoverBgColorMixInSrgbCurrentColor26Transparent) +
+	mergeStylexClassName("", sx.activeScale096, sx.activeBgColorMixInSrgbCurrentColor34Transparent);
 /* The mark's 20px glyph sits inside a 28px target, so its visible edge already
    sits 4px inside the box. Push the box 2px off the following action to land a
    12px gap between the globe and Merge: the two are a pair, not one control,
    and at the row's bare 6px they read as a split button. */
-const SUMMARY_MARK_PAIR = "mr-0.5";
+const SUMMARY_MARK_PAIR = mergeStylexClassName("", sx.mr05);
 
 /* Spinning ring around the globe while the preview environment builds.
    border-t-current picks up the amber/green icon tone; the ring sits just
    outside the thin globe circle so it reads as a halo, not a second outline.
    The bar variant's globe is only 15px, so its ring shrinks to hug it. */
 const RING_BASE =
-	"pointer-events-none absolute top-1/2 left-1/2 rounded-full border border-transparent border-t-current opacity-90 animate-[preview-spin_0.7s_linear_infinite]";
+	mergeStylexClassName("", sx.pointerEventsNone, sx.absolute, sx.top12, sx.left12, sx.roundedFull, sx.border, sx.borderTransparent, sx.borderTCurrent, sx.opacity90, sx.animatePreviewSpin07sLinearInfinite);
 /* base.css freezes every animation under prefers-reduced-motion and then hands
    the progress spinners their duration back — this is one of them (a stopped
    spinner makes a live deploy look hung), so it restates it for itself now that
    it no longer carries the class base.css lists. */
 const RING_MOTION =
-	"motion-reduce:[animation-duration:0.7s]! motion-reduce:[animation-iteration-count:infinite]!";
+	mergeStylexClassName("", sx.motionReduceAnimationDuration07s, sx.motionReduceAnimationIterationCountInfinite);
 // The 22px ring haloes the 17/25px glyphs; the bar's 15px globe gets a 16px one.
 const RING_LG = "size-[22px] -mt-[11px] -ml-[11px]";
 const RING_SM = "size-4 -mt-2 -ml-2";

@@ -194,6 +194,110 @@ const sx = stylex.create({
 	gap05: {
 		"gap": "2px"
 	},
+
+	py10: {
+		"paddingBlock": "40px"
+	},
+	textCenter: {
+		"textAlign": "center"
+	},
+	rounded2xl: {
+		"borderRadius": "calc(22px * var(--rf))"
+	},
+	bgRaised: {
+		"backgroundColor": "var(--bg-raised)"
+	},
+	px5: {
+		"paddingInline": "20px"
+	},
+	py4: {
+		"paddingBlock": "16px"
+	},
+	w62: {
+		"width": "62%"
+	},
+	w41: {
+		"width": "41%"
+	},
+	w73: {
+		"width": "73%"
+	},
+	w52: {
+		"width": "52%"
+	},
+	w35: {
+		"width": "35%"
+	},
+	w66: {
+		"width": "66%"
+	},
+	w47: {
+		"width": "47%"
+	},
+	w58: {
+		"width": "58%"
+	},
+	borderRed40: {
+		"borderColor": "var(--red)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in oklab, var(--red) 40%, transparent)"
+		}
+	},
+	bgRedSoft: {
+		"backgroundColor": "var(--red-soft)"
+	},
+	textRed: {
+		"color": "var(--red)"
+	},
+	borderYellow40: {
+		"borderColor": "var(--yellow)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in oklab, var(--yellow) 40%, transparent)"
+		}
+	},
+	bgYellowSoft: {
+		"backgroundColor": "var(--yellow-soft)"
+	},
+	textYellow: {
+		"color": "var(--yellow)"
+	},
+	borderBlue40: {
+		"borderColor": "var(--blue)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in oklab, var(--blue) 40%, transparent)"
+		}
+	},
+	bgBlueSoft: {
+		"backgroundColor": "var(--blue-soft)"
+	},
+	textBlue: {
+		"color": "var(--blue)"
+	},
+	hoverOpacity100: {
+		"@media (hover: hover)": {
+			":hover": {
+				"opacity": "1"
+			}
+		}
+	},
+	beforeAbsolute: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	beforeInset2: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"inset": "-8px"
+		}
+	},
+	beforeContent: {
+		"::before": {
+			"--tw-content": "\"\"",
+			"content": "var(--tw-content)"
+		}
+	},
 });
 
 /**
@@ -240,13 +344,13 @@ export type StatePlacement = "block" | "card" | "row";
 const placements: Record<StatePlacement, string> = {
 	// Stands in for a whole region: the `.loading`/`.empty` look (40px of air,
 	// centred) so it reads as "this area is empty", not "this row is".
-	block: "flex flex-col items-center justify-center gap-2 py-10 text-center",
+	block: mergeStylexClassName("", sx.flex, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.gap2, sx.py10, sx.textCenter),
 	// Stands in for a card: borrows SettingCard's surface so the page's rhythm
 	// survives the emptiness.
-	card: "rounded-2xl bg-raised px-5 py-4",
+	card: mergeStylexClassName("", sx.rounded2xl, sx.bgRaised, sx.px5, sx.py4),
 	// Lives inside a card's row list: matches SettingRow's padding so it lands
 	// on the same left edge as the rows it replaces.
-	row: "px-5 py-4",
+	row: mergeStylexClassName("", sx.px5, sx.py4),
 };
 
 export function EmptyState({
@@ -372,14 +476,14 @@ export function SkeletonBar({
  * width: Tailwind only compiles class names it can find in the source.
  */
 const SKELETON_WIDTHS = [
-	"w-[62%]",
-	"w-[41%]",
-	"w-[73%]",
-	"w-[52%]",
-	"w-[35%]",
-	"w-[66%]",
-	"w-[47%]",
-	"w-[58%]",
+	mergeStylexClassName("", sx.w62),
+	mergeStylexClassName("", sx.w41),
+	mergeStylexClassName("", sx.w73),
+	mergeStylexClassName("", sx.w52),
+	mergeStylexClassName("", sx.w35),
+	mergeStylexClassName("", sx.w66),
+	mergeStylexClassName("", sx.w47),
+	mergeStylexClassName("", sx.w58),
 ];
 
 /**
@@ -492,9 +596,9 @@ type AlertVariant = "error" | "warn" | "info";
 // spells it; a hand-written color-mix here is a second vocabulary for one
 // recipe.
 const alertVariants: Record<AlertVariant, string> = {
-	error: "border-red/40 bg-red-soft text-red",
-	warn: "border-yellow/40 bg-yellow-soft text-yellow",
-	info: "border-blue/40 bg-blue-soft text-blue",
+	error: mergeStylexClassName("", sx.borderRed40, sx.bgRedSoft, sx.textRed),
+	warn: mergeStylexClassName("", sx.borderYellow40, sx.bgYellowSoft, sx.textYellow),
+	info: mergeStylexClassName("", sx.borderBlue40, sx.bgBlueSoft, sx.textBlue),
 };
 
 export function InlineAlert({
@@ -532,7 +636,7 @@ export function InlineAlert({
 			</div>
 			{onRetry && (
 				<button
-					type="button" {...mergeStylexProps("hover:opacity-100", sx.focusRing, sx.shrink0, sx.selfCenter, sx.whitespaceNowrap, sx.fontMedium, sx.underline, sx.underlineOffset2, sx.opacity80, sx.transitionOpacity, typography.supporting)}
+					type="button" {...mergeStylexProps("", sx.hoverOpacity100, sx.focusRing, sx.shrink0, sx.selfCenter, sx.whitespaceNowrap, sx.fontMedium, sx.underline, sx.underlineOffset2, sx.opacity80, sx.transitionOpacity, typography.supporting)}
 					onClick={(e) => {
 						e.stopPropagation();
 						onRetry();
@@ -544,7 +648,7 @@ export function InlineAlert({
 			{onDismiss && (
 				<button
 					type="button"
-					aria-label="Dismiss" {...mergeStylexProps("hover:opacity-100 before:absolute before:-inset-2 before:content-['']", sx.focusRing, sx.relative, sx.Mr1, sx.flex, sx.size6, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.opacity60, sx.transitionOpacity)}
+					aria-label="Dismiss" {...mergeStylexProps("", sx.hoverOpacity100, sx.beforeAbsolute, sx.beforeInset2, sx.beforeContent, sx.focusRing, sx.relative, sx.Mr1, sx.flex, sx.size6, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.opacity60, sx.transitionOpacity)}
 					onClick={(e) => {
 						e.stopPropagation();
 						onDismiss();

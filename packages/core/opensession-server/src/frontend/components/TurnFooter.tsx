@@ -24,7 +24,7 @@ import { pointerCanHover } from "../lib/pointer";
 import { ExtBadge } from "./lang-marks";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -151,6 +151,10 @@ const sx = stylex.create({
 	footerText: { fontWeight: "var(--font-weight-medium)", lineHeight: "16px" },
 	turnFooterLift: { marginTop: "-10px" },
 	lineStats: { display: "flex", flexShrink: 0, alignItems: "center", gap: "4px", fontWeight: "var(--font-weight-medium)", lineHeight: "16px" },
+
+	maxHMin60vh420px: {
+		"maxHeight": "min(60vh,420px)"
+	},
 });
 
 export interface TouchedFile {
@@ -642,7 +646,7 @@ export function TurnLineStatsCard({
             anchor={anchor}
             {...DIFF_CARD}
           >
-            <div {...mergeStylexProps("max-h-[min(60vh,420px)]", sx.flex, sx.flexCol, sx.gap2, sx.overflowYAuto)}
+            <div {...mergeStylexProps("", sx.maxHMin60vh420px, sx.flex, sx.flexCol, sx.gap2, sx.overflowYAuto)}
               onMouseEnter={hold}
               onMouseLeave={() => schedule(false, CARD_CLOSE_MS)}
             >

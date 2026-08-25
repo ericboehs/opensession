@@ -1032,8 +1032,8 @@ export const VIEWER_MESSAGES =
 	// Dissolve the transcript into the header as it scrolls up under the pills.
 	// A non-linear fade mirrored into mask alpha:
 	// hidden for the first fifth, 45% by three fifths, full at the bar height.
-	"phone:[-webkit-mask-image:linear-gradient(to_bottom,transparent_0,transparent_calc(var(--pane-header-h)*0.2),rgba(0,0,0,0.45)_calc(var(--pane-header-h)*0.6),#000_var(--pane-header-h))] " +
-	"phone:[mask-image:linear-gradient(to_bottom,transparent_0,transparent_calc(var(--pane-header-h)*0.2),rgba(0,0,0,0.45)_calc(var(--pane-header-h)*0.6),#000_var(--pane-header-h))]";
+	"phone:[-webkit-mask-image:linear-gradient(to_bottom,transparent_0,transparent_calc(var(--pane-header-h)*0.2),rgba(0,0,0,0.45)_calc(var(--pane-header-h)*0.6),var(--color-black)_var(--pane-header-h))] " +
+	"phone:[mask-image:linear-gradient(to_bottom,transparent_0,transparent_calc(var(--pane-header-h)*0.2),rgba(0,0,0,0.45)_calc(var(--pane-header-h)*0.6),var(--color-black)_var(--pane-header-h))]";
 
 /**
  * The composer floats up over the transcript so the session scrolls UNDER it,

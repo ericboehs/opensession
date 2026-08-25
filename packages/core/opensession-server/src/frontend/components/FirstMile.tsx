@@ -368,6 +368,101 @@ const sx = stylex.create({
 			"display": "none"
 		}
 	},
+
+	ring1: {
+		"--tw-ring-shadow": "var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor)",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	phoneGridCols2: {
+		"@media (max-width: 720px)": {
+			"gridTemplateColumns": "repeat(2,minmax(0,1fr))"
+		}
+	},
+	gridRows76pxMinmax01fr84px: {
+		"gridTemplateRows": "76px minmax(0,1fr) 84px"
+	},
+	phoneGridRows68pxMinmax01fr90px: {
+		"@media (max-width: 720px)": {
+			"gridTemplateRows": "68px minmax(0,1fr) 90px"
+		}
+	},
+	phonePbEnvSafeAreaInsetBottom: {
+		"@media (max-width: 720px)": {
+			"paddingBottom": "env(safe-area-inset-bottom)"
+		}
+	},
+	BackgroundRadialGradientCircleAt188VarAccentSoftTransparent34RadialGradientCircleAt8292VarBlueSoftTransparent36: {
+		"background": "radial-gradient(circle at 18% 8%,var(--accent-soft),transparent 34%),radial-gradient(circle at 82% 92%,var(--blue-soft),transparent 36%)"
+	},
+	phonePx4: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "16px"
+		}
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	FilterDropShadow018px28pxRgba000016: {
+		"filter": "drop-shadow(0 18px 28px color-mix(in srgb, var(--color-black) 16%, transparent))"
+	},
+	phoneMb6: {
+		"@media (max-width: 720px)": {
+			"marginBottom": "24px"
+		}
+	},
+	phoneSize16: {
+		"@media (max-width: 720px)": {
+			"width": "64px",
+			"height": "64px"
+		}
+	},
+	textClamp16rem2vw215rem: {
+		"fontSize": "clamp(1.6rem,2vw,2.15rem)"
+	},
+	textClamp16rem25vw225rem: {
+		"fontSize": "clamp(1.6rem,2.5vw,2.25rem)"
+	},
+	phoneGridCols1: {
+		"@media (max-width: 720px)": {
+			"gridTemplateColumns": "repeat(1,minmax(0,1fr))"
+		}
+	},
+	phoneItemsStart: {
+		"@media (max-width: 720px)": {
+			"alignItems": "flex-start"
+		}
+	},
+	phoneMinH12: {
+		"@media (max-width: 720px)": {
+			"minHeight": "48px"
+		}
+	},
+	phoneWFull: {
+		"@media (max-width: 720px)": {
+			"width": "100%"
+		}
+	},
+	phoneJustifyCenter: {
+		"@media (max-width: 720px)": {
+			"justifyContent": "center"
+		}
+	},
+	phoneRoundedLg: {
+		"@media (max-width: 720px)": {
+			"borderRadius": "calc(14px * var(--rf))"
+		}
+	},
 });
 
 interface FirstMileStep {
@@ -522,7 +617,7 @@ function FirstMileSummary({
 								size={24}
 								{...stylex.props(sx.roundedFull)}
 							/>
-							<span {...mergeStylexProps("ring-1", sx.absolute, sx.Right05, sx.Bottom05, sx.flex, sx.size25, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgFg, sx.textBg, sx.ringBg)}>
+							<span {...mergeStylexProps("", sx.ring1, sx.absolute, sx.Right05, sx.Bottom05, sx.flex, sx.size25, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgFg, sx.textBg, sx.ringBg)}>
 								<BrandMark name="github" size={7} />
 							</span>
 						</span>
@@ -595,7 +690,7 @@ function FirstMileSummary({
 	];
 
 	return (
-		<div {...mergeStylexProps("phone:grid-cols-2", sx.grid, sx.gridCols5, sx.gap3)}>
+		<div {...mergeStylexProps("", sx.phoneGridCols2, sx.grid, sx.gridCols5, sx.gap3)}>
 			{tiles.map((tile) => {
 				const tileProps = stylex.props(
 					sx.summaryTile,
@@ -709,14 +804,14 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 
 	return (
 		<div
-			data-first-mile {...mergeStylexProps("grid-rows-[76px_minmax(0,1fr)_84px] phone:grid-rows-[68px_minmax(0,1fr)_90px] phone:pb-[env(safe-area-inset-bottom)]", sx.relative, sx.grid, sx.h100dvh, sx.wFull, sx.overflowHidden, sx.bgBg, sx.textFg)}
+			data-first-mile {...mergeStylexProps("", sx.gridRows76pxMinmax01fr84px, sx.phoneGridRows68pxMinmax01fr90px, sx.phonePbEnvSafeAreaInsetBottom, sx.relative, sx.grid, sx.h100dvh, sx.wFull, sx.overflowHidden, sx.bgBg, sx.textFg)}
 		>
-			<div {...mergeStylexProps("[background:radial-gradient(circle_at_18%_8%,var(--accent-soft),transparent_34%),radial-gradient(circle_at_82%_92%,var(--blue-soft),transparent_36%)]", sx.pointerEventsNone, sx.absolute, sx.inset0, sx.opacity70)}
+			<div {...mergeStylexProps("", sx.BackgroundRadialGradientCircleAt188VarAccentSoftTransparent34RadialGradientCircleAt8292VarBlueSoftTransparent36, sx.pointerEventsNone, sx.absolute, sx.inset0, sx.opacity70)}
 				aria-hidden="true"
 			/>
 
 			<TopBar
-				as="header" {...mergeStylexProps("phone:px-4", sx.relative, sx.z10, sx.grid, sx.gridCols1frAuto1fr, sx.px8)}
+				as="header" {...mergeStylexProps("", sx.phonePx4, sx.relative, sx.z10, sx.grid, sx.gridCols1frAuto1fr, sx.px8)}
 			>
 				<Button
 					variant="ghost"
@@ -756,7 +851,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 				{index > 0 && index < STEPS.length - 1 ? (
 					<button
 						type="button"
-						onClick={() => goTo(index + 1)} {...mergeStylexProps("hover:bg-hover hover:text-fg", sx.focusRing, sx.colStart3, sx.minH9, sx.justifySelfEnd, sx.roundedControl, sx.px3, sx.fontMedium, sx.textDim, typography.label)}
+						onClick={() => goTo(index + 1)} {...mergeStylexProps("", sx.hoverBgHover, sx.hoverTextFg, sx.focusRing, sx.colStart3, sx.minH9, sx.justifySelfEnd, sx.roundedControl, sx.px3, sx.fontMedium, sx.textDim, typography.label)}
 					>
 						Skip
 					</button>
@@ -766,7 +861,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 			</TopBar>
 
 			<main
-				ref={mainRef} {...mergeStylexProps("phone:px-4", sx.relative, sx.z10, sx.minH0, sx.overflowYAuto, sx.px6, sx.ScrollbarWidthThin)}
+				ref={mainRef} {...mergeStylexProps("", sx.phonePx4, sx.relative, sx.z10, sx.minH0, sx.overflowYAuto, sx.px6, sx.ScrollbarWidthThin)}
 			>
 				{!status ? (
 					<div {...stylex.props(sx.flex, sx.hFull, sx.itemsCenter, sx.justifyCenter)}>
@@ -794,10 +889,10 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 								<div {...stylex.props(sx.flex, sx.maxW560px, sx.flexCol, sx.itemsCenter, sx.textCenter)}>
 									<img
 										src={`${BASE_PATH}/mac-app-icon.png`}
-										alt="" {...mergeStylexProps("[filter:drop-shadow(0_18px_28px_rgba(0,0,0,0.16))] phone:mb-6 phone:size-16", sx.mb7, sx.size20, sx.scale113)}
+										alt="" {...mergeStylexProps("", sx.FilterDropShadow018px28pxRgba000016, sx.phoneMb6, sx.phoneSize16, sx.mb7, sx.size20, sx.scale113)}
 									/>
 									<h1
-										ref={headingRef} {...mergeStylexProps("text-[clamp(1.6rem,2vw,2.15rem)]", sx.m0, sx.textCenter, sx.fontTitle, sx.leading108, sx.tracking003em, sx.textFg, sx.outlineNone)}
+										ref={headingRef} {...mergeStylexProps("", sx.textClamp16rem2vw215rem, sx.m0, sx.textCenter, sx.fontTitle, sx.leading108, sx.tracking003em, sx.textFg, sx.outlineNone)}
 									>
 										{step.title}
 									</h1>
@@ -825,10 +920,10 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 								</div>
 							) : (
 								<>
-									<div {...mergeStylexProps("phone:mb-6", sx.mb8, sx.maxW700px, sx.textCenter)}>
+									<div {...mergeStylexProps("", sx.phoneMb6, sx.mb8, sx.maxW700px, sx.textCenter)}>
 										<h1
 											ref={headingRef}
-											tabIndex={-1} {...mergeStylexProps("text-[clamp(1.6rem,2.5vw,2.25rem)]", sx.m0, sx.textBalance, sx.fontTitle, sx.leading108, sx.tracking0035em, sx.textFg, sx.outlineNone)}
+											tabIndex={-1} {...mergeStylexProps("", sx.textClamp16rem25vw225rem, sx.m0, sx.textBalance, sx.fontTitle, sx.leading108, sx.tracking0035em, sx.textFg, sx.outlineNone)}
 										>
 											{step.title}
 										</h1>
@@ -889,7 +984,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 					index === 0 && sx.invisible,
 				)}
 			>
-				<div {...mergeStylexProps("phone:grid-cols-1 phone:items-start", sx.mxAuto, sx.grid, sx.hFull, sx.wFull, sx.maxW820px, sx.gridCols1frAuto1fr, sx.itemsCenter)}>
+				<div {...mergeStylexProps("", sx.phoneGridCols1, sx.phoneItemsStart, sx.mxAuto, sx.grid, sx.hFull, sx.wFull, sx.maxW820px, sx.gridCols1frAuto1fr, sx.itemsCenter)}>
 					<Button
 						variant="ghost"
 						size="lg"
@@ -909,7 +1004,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 							if (index === STEPS.length - 1) onDone();
 							else goTo(index + 1);
 						}}
-						disabled={!status} {...mergeStylexProps("phone:min-h-12 phone:w-full phone:justify-center phone:rounded-lg", sx.justifySelfEnd)}
+						disabled={!status} {...mergeStylexProps("", sx.phoneMinH12, sx.phoneWFull, sx.phoneJustifyCenter, sx.phoneRoundedLg, sx.justifySelfEnd)}
 					>
 						{index === 0
 							? "Continue"

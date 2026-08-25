@@ -388,7 +388,7 @@ const sx = stylex.create({
 			height: "32px"
 	},
 	bgBlack45: {
-			backgroundColor: "#00000073"
+			backgroundColor: "transparent0073"
 	},
 	gap4: {
 			gap: "16px"
@@ -504,6 +504,111 @@ const sx = stylex.create({
 		"--tw-numeric-spacing": "tabular-nums",
 		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
 	},
+
+	hoverBorderFaint: {
+		"@media (hover: hover)": {
+			":hover": {
+				"borderColor": "var(--text-faint)"
+			}
+		}
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	maxHMin560px70vhVarAvailableHeight: {
+		"maxHeight": "min(560px, 70vh, var(--available-height))"
+	},
+	wMin440pxCalc100vw24px: {
+		"width": "min(440px,100vw - 24px)"
+	},
+	noUnderline: {
+		"textDecorationLine": "none"
+	},
+	maxHMin720px82vhVarAvailableHeight: {
+		"maxHeight": "min(720px, 82vh, var(--available-height))"
+	},
+	wMin720pxCalc100vw24px: {
+		"width": "min(720px,100vw - 24px)"
+	},
+	transitionColorBackgroundColor: {
+		"transitionProperty": "color,background-color",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	disabledOpacity50: {
+		":disabled": {
+			"opacity": ".5"
+		}
+	},
+	bgRedSoft: {
+		"backgroundColor": "var(--red-soft)"
+	},
+	size5: {
+		"width": "20px",
+		"height": "20px"
+	},
+	justifyCenter: {
+		"justifyContent": "center"
+	},
+	maxHMin680pxCalc100vh24pxVarAvailableHeight: {
+		"maxHeight": "min(680px, calc(100vh - 24px), var(--available-height))"
+	},
+	wMin680pxCalc100vw24pxVarAvailableWidth: {
+		"width": "min(680px, calc(100vw - 24px), var(--available-width))"
+	},
+	decorationLineStrong: {
+		"WebkittextDecorationColor": "var(--border-strong)",
+		"textDecorationColor": "var(--border-strong)"
+	},
+	textYellow: {
+		"color": "var(--yellow)"
+	},
+	snapX: {
+		"scrollSnapType": "x var(--tw-scroll-snap-strictness)"
+	},
+	focusRing: {
+		":focusVisible": {
+			"outline": "2px solid var(--accent-ink)",
+			"outlineOffset": "2px"
+		},
+		"@media (forced-colors: active)": {
+			":focusVisible": {
+				"outlineColor": "highlight"
+			}
+		}
+	},
+	backdropBlurSm: {
+		"--tw-backdrop-blur": "blur(var(--blur-sm))",
+		"WebkitBackdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)",
+		"backdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+	},
+	hoverBorderLineStrong: {
+		"@media (hover: hover)": {
+			":hover": {
+				"borderColor": "var(--border-strong)"
+			}
+		}
+	},
+	py7px: {
+		"paddingBlock": "7px"
+	},
+	lineClamp2: {
+		"WebkitlineClamp": "2",
+		"WebkitboxOrient": "vertical",
+		"display": "-webkit-box",
+		"overflow": "hidden"
+	},
 });
 
 function localToneStyle(tone: string | undefined): stylex.StyleXStyles {
@@ -607,14 +712,14 @@ interface Props {
     instead, which is where a row is read anyway. */
 type ReviewTone = "green" | "yellow" | "red" | "blue" | "muted";
 const reviewBand = (tone: ReviewTone): string =>
-	tone === "red" ? "bg-red-soft" : "";
+	tone === "red" ? mergeStylexClassName("", sx.bgRedSoft) : "";
 
 /** The leading visual on a Review row: the box a `UserAvatar size={20}` fills,
     so a glyph and a face line up down the section. */
 const REVIEW_FACE =
-	"inline-flex size-5 shrink-0 items-center justify-center [&_svg]:block";
+	mergeStylexClassName("[&_svg]:block", sx.inlineFlex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter);
 const INFO_MORE_BUTTON_CLASS =
-	"cursor-pointer bg-panel px-2 py-[7px] text-left text-label font-semibold text-faint transition-colors hover:bg-hover hover:text-fg";
+	mergeStylexClassName("", sx.cursorPointer, sx.bgPanel, sx.px2, sx.py7px, sx.textLeft, typography.label, sx.fontSemibold, sx.textFaint, sx.transitionColors, sx.hoverBgHover, sx.hoverTextFg);
 
 function initial(name: string): string {
 	return (name.trim()[0] || "?").toUpperCase();
@@ -812,7 +917,7 @@ function CommentCard({
 	const addBtn = onAddToInput && (
 		<button
 			type="button"
-      {...mergeStylexProps("group-hover:opacity-100 hover:border-faint hover:bg-hover hover:text-fg", sx.absolute, sx.right15, sx.top12, sx.z1, sx.TranslateY12, sx.roundedControl, sx.border, sx.borderLineStrong, sx.bgPanel, sx.px2, sx.py05, sx.fontSemibold, sx.textDim, sx.opacity0, sx.transitionOpacity, sx.duration150, typography.meta)}
+      {...mergeStylexProps("group-hover:opacity-100", sx.hoverBorderFaint, sx.hoverBgHover, sx.hoverTextFg, sx.absolute, sx.right15, sx.top12, sx.z1, sx.TranslateY12, sx.roundedControl, sx.border, sx.borderLineStrong, sx.bgPanel, sx.px2, sx.py05, sx.fontSemibold, sx.textDim, sx.opacity0, sx.transitionOpacity, sx.duration150, typography.meta)}
 			onClick={(e) => {
 				e.stopPropagation();
 				onAddToInput(formatPrCommentPrompt(comment, pr));
@@ -832,7 +937,7 @@ function CommentCard({
 				openOnHover
 				delay={200}
 				closeDelay={90}
-        {...mergeStylexProps("group hover:bg-hover", sx.relative, sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px2, sx.py5px, sx.textLeft, sx.transitionColors)}
+        {...mergeStylexProps("group", sx.hoverBgHover, sx.relative, sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px2, sx.py5px, sx.textLeft, sx.transitionColors)}
 				role="button"
 				tabIndex={0}
 				onClick={() => onOpenTab?.("pr")}
@@ -865,7 +970,7 @@ function CommentCard({
 				align="start"
 				sideOffset={10}
 				elevation="lg"
-        {...mergeStylexProps("max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))]", sx.flex, sx.cursorPointer, sx.gap9px, sx.overflowHidden, sx.bgPanel, sx.px3, sx.py11px)}
+        {...mergeStylexProps("", sx.maxHMin560px70vhVarAvailableHeight, sx.wMin440pxCalc100vw24px, sx.flex, sx.cursorPointer, sx.gap9px, sx.overflowHidden, sx.bgPanel, sx.px3, sx.py11px)}
 			>
 				<div {...stylex.props(sx.contents)} onClick={() => onOpenTab?.("pr")}>
 					{avatar}
@@ -949,7 +1054,7 @@ function CommitRow({ commit }: { commit: WorkspaceCommit }) {
 				{commit.title}
 			</span>
       <span
-        {...mergeStylexProps("tabular-nums", sx.shrink0, sx.fontMedium, sx.textDim, typography.meta)}
+        {...mergeStylexProps("", sx.tabularNums, sx.shrink0, sx.fontMedium, sx.textDim, typography.meta)}
       >
 				{commit.filesChanged} file{commit.filesChanged === 1 ? "" : "s"}
 			</span>
@@ -957,7 +1062,7 @@ function CommitRow({ commit }: { commit: WorkspaceCommit }) {
 	);
 	const title = `${commit.title} · ${commit.sha.slice(0, 8)} · ${fullTime(commit.committedAt)}`;
 	const className =
-		"flex min-w-0 items-center gap-2 rounded-md px-2 py-[5px] text-left no-underline transition-colors hover:bg-hover";
+		mergeStylexClassName("", sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px2, sx.py5px, sx.textLeft, sx.noUnderline, sx.transitionColors, sx.hoverBgHover);
 	return commit.url ? (
 		<a
 			className={className}
@@ -1003,7 +1108,7 @@ function FileRow({
   };
 	const stats = (
     <span
-      {...mergeStylexProps("tabular-nums", sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap1, sx.fontSemibold, typography.meta)}
+      {...mergeStylexProps("", sx.tabularNums, sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap1, sx.fontSemibold, typography.meta)}
     >
 			{file.additions > 0 && (
 				<span {...stylex.props(sx.textGreen)}>+{file.additions}</span>
@@ -1041,7 +1146,7 @@ function FileRow({
 				delay={200}
 				closeDelay={90}
 				type="button"
-        {...mergeStylexProps("hover:bg-hover", sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px2, sx.py5px, sx.textLeft, sx.transitionColors)}
+        {...mergeStylexProps("", sx.hoverBgHover, sx.flex, sx.minW0, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px2, sx.py5px, sx.textLeft, sx.transitionColors)}
 				onClick={() => onOpenTab?.("changes")}
 				aria-label={`${file.path} · ${mark.label.toLowerCase()} · open in Changes`}
 			>
@@ -1065,7 +1170,7 @@ function FileRow({
 					align="start"
 					sideOffset={10}
 					elevation="lg"
-          {...mergeStylexProps("max-h-[min(720px,82vh,var(--available-height))] w-[min(720px,calc(100vw-24px))]", sx.flex, sx.cursorPointer, sx.flexCol, sx.overflowHidden, sx.bgPanel, sx.px3, sx.py25)}
+          {...mergeStylexProps("", sx.maxHMin720px82vhVarAvailableHeight, sx.wMin720pxCalc100vw24px, sx.flex, sx.cursorPointer, sx.flexCol, sx.overflowHidden, sx.bgPanel, sx.px3, sx.py25)}
 				>
 					<div
             {...stylex.props(
@@ -1303,7 +1408,7 @@ setBusy(null);
 				{actionable && (
 					<Menu.Root>
 						<Menu.Trigger
-              {...mergeStylexProps("transition-[color,background-color] hover:bg-hover hover:text-fg disabled:opacity-50", sx.Mr1, sx.mlAuto, sx.grid, sx.size6, sx.shrink0, sx.placeItemsCenter, sx.roundedMd, sx.textFaint)}
+              {...mergeStylexProps("", sx.transitionColorBackgroundColor, sx.hoverBgHover, sx.hoverTextFg, sx.disabledOpacity50, sx.Mr1, sx.mlAuto, sx.grid, sx.size6, sx.shrink0, sx.placeItemsCenter, sx.roundedMd, sx.textFaint)}
 							disabled={busy !== null}
 							aria-label={`${AGENT_NAME} actions`}
 						>
@@ -1406,7 +1511,7 @@ setBusy(null);
 								side="left"
 								align="start"
 								sideOffset={12}
-                {...mergeStylexProps("max-h-[min(680px,calc(100vh-24px),var(--available-height))] w-[min(680px,calc(100vw-24px),var(--available-width))]", sx.flex, sx.minH0, sx.overflowHidden)}
+                {...mergeStylexProps("", sx.maxHMin680pxCalc100vh24pxVarAvailableHeight, sx.wMin680pxCalc100vw24pxVarAvailableWidth, sx.flex, sx.minH0, sx.overflowHidden)}
 							>
 								<div {...stylex.props(sx.flex, sx.minH0, sx.wFull, sx.flexCol)}>
                   <div
@@ -1491,7 +1596,7 @@ setBusy(null);
 							href={pr.url}
 							target="_blank"
 							rel="noopener"
-              {...mergeStylexProps("decoration-line-strong", sx.textFg, sx.underline, sx.underlineOffset2)}
+              {...mergeStylexProps("", sx.decorationLineStrong, sx.textFg, sx.underline, sx.underlineOffset2)}
 						>
 							the PR
 						</a>
@@ -1511,7 +1616,7 @@ setBusy(null);
 									e.preventDefault();
 									onOpenSession(done.bksId!, done.session ?? null);
 								}}
-                {...mergeStylexProps("decoration-line-strong", sx.textFg, sx.underline, sx.underlineOffset2)}
+                {...mergeStylexProps("", sx.decorationLineStrong, sx.textFg, sx.underline, sx.underlineOffset2)}
 							>
 								open run
 							</a>
@@ -1692,12 +1797,12 @@ function ReviewerChip({
 				? "requested"
 				: "No reviewer";
 	const stateTone = needsMyReview
-		? "font-semibold text-red"
+		? mergeStylexClassName("", sx.fontSemibold, sx.textRed)
 		: accepted
-			? "text-green"
+			? mergeStylexClassName("", sx.textGreen)
 			: req || githubTarget
-				? "text-yellow"
-				: "text-dim";
+				? mergeStylexClassName("", sx.textYellow)
+				: mergeStylexClassName("", sx.textDim);
 	const rowTitle = needsMyReview
 		? `Review requested by ${req?.by || "a teammate"}`
 		: accepted
@@ -1952,7 +2057,7 @@ type StripItem = {
 function MediaStrip({ items }: { items: StripItem[] }) {
 	return (
 		<div
-      {...mergeStylexProps("snap-x [&::-webkit-scrollbar]:hidden", sx.flex, sx.snapMandatory, sx.gap2, sx.overflowXAuto, sx.overflowYHidden, sx.roundedLg, sx.bgPanel, sx.p3, sx.ScrollPaddingLeft12px, sx.ScrollbarWidthNone)}
+      {...mergeStylexProps("[&::-webkit-scrollbar]:hidden", sx.snapX, sx.flex, sx.snapMandatory, sx.gap2, sx.overflowXAuto, sx.overflowYHidden, sx.roundedLg, sx.bgPanel, sx.p3, sx.ScrollPaddingLeft12px, sx.ScrollbarWidthNone)}
 		>
 			{items.map((item) => (
 				<button
@@ -1960,7 +2065,7 @@ function MediaStrip({ items }: { items: StripItem[] }) {
 					type="button"
 					onClick={(event) => item.onOpen(event.currentTarget)}
 					title={item.title}
-          {...mergeStylexProps("focus-ring group/frame", sx.mediaFrame, items.length === 1
+          {...mergeStylexProps("group/frame", sx.focusRing, sx.mediaFrame, items.length === 1
               ? sx.mediaOne
 							: items.length === 2
                 ? sx.mediaTwo
@@ -2014,7 +2119,7 @@ function MediaStrip({ items }: { items: StripItem[] }) {
                   )}
                 >
                   <span
-                    {...mergeStylexProps("backdrop-blur-sm", sx.grid, sx.size8, sx.placeItemsCenter, sx.roundedFull, sx.bgBlack45, sx.textWhite)}
+                    {...mergeStylexProps("", sx.backdropBlurSm, sx.grid, sx.size8, sx.placeItemsCenter, sx.roundedFull, sx.bgBlack45, sx.textWhite)}
                   >
 										<IconPlay size={18} />
 									</span>
@@ -2248,7 +2353,7 @@ export function WorkspaceInfo({
 								{onAddToInput && (
 									<button
 										type="button"
-                    {...mergeStylexProps("hover:border-line-strong hover:bg-hover hover:text-fg", sx.roundedControl, sx.border, sx.borderLine, sx.bgSurface, sx.px2, sx.py05, sx.fontSemibold, sx.textDim, sx.transitionColors, typography.meta)}
+                    {...mergeStylexProps("", sx.hoverBorderLineStrong, sx.hoverBgHover, sx.hoverTextFg, sx.roundedControl, sx.border, sx.borderLine, sx.bgSurface, sx.px2, sx.py05, sx.fontSemibold, sx.textDim, sx.transitionColors, typography.meta)}
 										onClick={() =>
 											onAddToInput(formatFixCommentsPrompt(comments, pr!))
 										}
@@ -2302,7 +2407,7 @@ export function WorkspaceInfo({
 									{changed.length} file{changed.length === 1 ? "" : "s"} changed
 								</span>
                 <span
-                  {...mergeStylexProps("tabular-nums", sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap1, sx.fontSemibold, typography.meta)}
+                  {...mergeStylexProps("", sx.tabularNums, sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap1, sx.fontSemibold, typography.meta)}
                 >
 									{totalAdd > 0 && (
 										<span {...stylex.props(sx.textGreen)}>+{totalAdd}</span>
@@ -2441,7 +2546,7 @@ export function WorkspaceInfo({
                         </span>
 												{a.description && (
                           <span
-                            {...mergeStylexProps("line-clamp-2", sx.mt05, sx.leadingSnug, sx.textDim, typography.supporting)}
+                            {...mergeStylexProps("", sx.lineClamp2, sx.mt05, sx.leadingSnug, sx.textDim, typography.supporting)}
                           >
 														{a.description}
 													</span>

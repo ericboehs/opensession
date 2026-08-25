@@ -18,7 +18,7 @@ import { getLiveTypingPref } from "../lib/live-typing-pref";
 import { randomUUID } from "../lib/random-uuid";
 import { isTimelineOnlyRunnerNotice } from "../lib/runner-events";
 import { otherTypingUsers } from "../lib/typing";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { msgBubbleUser, msgOwnTurn, msgRow } from "../lib/msg-classes";
 import { SessionTranscript } from "./SessionTranscript";
 import { TypingIndicator } from "./TypingIndicator";
@@ -121,7 +121,29 @@ const sx = stylex.create({
 	overflowYAuto: { overflowY: "auto" },
 	flex1: { flex: "1" },
 	pt2: { paddingTop: "8px" },
-	deskMessagesMask: { paddingBottom: "calc(var(--desk-under) + 12px)", WebkitMaskImage: "linear-gradient(to bottom, #000 calc(100% - var(--desk-under)), transparent 100%)", maskImage: "linear-gradient(to bottom, #000 calc(100% - var(--desk-under)), transparent 100%)" },
+	deskMessagesMask: { paddingBottom: "calc(var(--desk-under) + 12px)", WebkitMaskImage: "linear-gradient(to bottom, var(--color-black) calc(100% - var(--desk-under)), transparent 100%)", maskImage: "linear-gradient(to bottom, var(--color-black) calc(100% - var(--desk-under)), transparent 100%)" },
+
+	WebkitMaskImageLinearGradientToRight0000000Calc10032pxTransparent100: {
+		"WebkitMaskImage": "linear-gradient(90deg,var(--color-black) 0 calc(100% - 32px),transparent 100%)"
+	},
+	MaskImageLinearGradientToRight0000000Calc10032pxTransparent100: {
+		"WebkitMaskImage": "linear-gradient(90deg,var(--color-black) 0 calc(100% - 32px),transparent 100%)",
+		"maskImage": "linear-gradient(90deg,var(--color-black) 0 calc(100% - 32px),transparent 100%)"
+	},
+	hoverBgActive: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--bg-active)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
 });
 
 interface DeskConversationProps {
@@ -629,12 +651,12 @@ setDropStaging((current) => subtractStaging(current, batch));
 									initial={{ y: 40 }}
 									animate={{ y: 0 }}
 									exit={{ y: 40 }}
-									transition={{ type: "tween", duration: duration.base, ease }} {...mergeStylexProps("[-webkit-mask-image:linear-gradient(to_right,#000_0,#000_calc(100%_-_32px),transparent_100%)] [mask-image:linear-gradient(to_right,#000_0,#000_calc(100%_-_32px),transparent_100%)] [&::-webkit-scrollbar]:hidden", sx.flex, sx.gap15, sx.overflowXAuto, sx.px1, sx.pb3, sx.pr8, sx.ScrollbarWidthNone)}
+									transition={{ type: "tween", duration: duration.base, ease }} {...mergeStylexProps("[&::-webkit-scrollbar]:hidden", sx.WebkitMaskImageLinearGradientToRight0000000Calc10032pxTransparent100, sx.MaskImageLinearGradientToRight0000000Calc10032pxTransparent100, sx.flex, sx.gap15, sx.overflowXAuto, sx.px1, sx.pb3, sx.pr8, sx.ScrollbarWidthNone)}
 								>
 									{suggestions.map((s) => (
 										<button
 											type="button"
-											key={s} {...mergeStylexProps("hover:bg-active hover:text-fg", sx.shrink0, sx.whitespaceNowrap, sx.roundedFull, sx.bgHover, sx.px3, sx.py15, sx.fontMedium, sx.textDim, typography.label)}
+											key={s} {...mergeStylexProps("", sx.hoverBgActive, sx.hoverTextFg, sx.shrink0, sx.whitespaceNowrap, sx.roundedFull, sx.bgHover, sx.px3, sx.py15, sx.fontMedium, sx.textDim, typography.label)}
 											onClick={() => {
 												setPrefill((current) => ({
 													seq: (current?.seq ?? 0) + 1,

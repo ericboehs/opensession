@@ -92,6 +92,12 @@ const sx = stylex.create({
 	maxWMin360pxCalc100vw1rem: {
 		"maxWidth": "min(360px,100vw - 1rem)"
 	},
+
+	disabledCursorDefault: {
+		":disabled": {
+			"cursor": "default"
+		}
+	},
 });
 
 export type PaletteSelectOption = {
@@ -159,7 +165,7 @@ export function PaletteSelect({
 				    get a real OS menu without hand-rolling a popover. There is no
 				    modifier on a phone, so this stays single-select; a second repo
 				    is added from the session's own repo menu instead. */}
-				<select {...mergeStylexProps("disabled:cursor-default", sx.absolute, sx.inset0, sx.hFull, sx.wFull, sx.cursorPointer, sx.appearanceNone, sx.borderNone, sx.opacity0)}
+				<select {...mergeStylexProps("", sx.disabledCursorDefault, sx.absolute, sx.inset0, sx.hFull, sx.wFull, sx.cursorPointer, sx.appearanceNone, sx.borderNone, sx.opacity0)}
 					value={value}
 					onChange={(e) => onChange(e.target.value)}
 					disabled={disabled}

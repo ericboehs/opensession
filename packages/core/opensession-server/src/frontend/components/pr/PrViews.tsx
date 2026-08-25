@@ -3,7 +3,7 @@ import { formatPrCommentPrompt, stripHtmlComments } from "../../lib/pr-prompts";
 import type { PrComment, PrDetails } from "../../lib/types";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps } from "../../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -140,6 +140,26 @@ const sx = stylex.create({
 	noUnderline: {
 			textDecorationLine: "none"
 	},
+
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	focusVisibleOpacity100: {
+		":focusVisible": {
+			"opacity": "1"
+		}
+	},
 });
 
 function PrDescriptionCard({
@@ -231,14 +251,14 @@ export function ConversationView({
                   )}
                 </div>
                 {onAddToInput && pr && (
-                  <button {...mergeStylexProps("hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover:opacity-100", sx.roundedMd, sx.border0, sx.bgTransparent, sx.px15, sx.py1, sx.textFaint, sx.opacity0, sx.transitionOpacity, typography.meta)}
+                  <button {...mergeStylexProps("group-hover:opacity-100", sx.hoverBgHover, sx.hoverTextFg, sx.focusVisibleOpacity100, sx.roundedMd, sx.border0, sx.bgTransparent, sx.px15, sx.py1, sx.textFaint, sx.opacity0, sx.transitionOpacity, typography.meta)}
                     onClick={() => onAddToInput(formatPrCommentPrompt(comment, pr))}
                   >
                     Add to session
                   </button>
                 )}
                 {comment.url && (
-                  <a {...mergeStylexProps("hover:text-fg", sx.textFaint, sx.noUnderline, typography.meta)}
+                  <a {...mergeStylexProps("", sx.hoverTextFg, sx.textFaint, sx.noUnderline, typography.meta)}
                     href={comment.url}
                     target="_blank"
                     rel="noopener"

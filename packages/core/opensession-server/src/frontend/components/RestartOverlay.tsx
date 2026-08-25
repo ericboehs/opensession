@@ -5,7 +5,7 @@ import { dismissToast, toast } from "../ui/toast";
 import { fetchHealthStatus } from "../lib/health";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 const spin = stylex.keyframes({ to: { transform: "rotate(360deg)" } });
 
@@ -30,7 +30,7 @@ const sx = stylex.create({
 			justifyContent: "center"
 	},
 	bgBlack82: {
-			backgroundColor: "#000000d1"
+			backgroundColor: "transparent00d1"
 	},
 	p6: {
 			padding: "24px"
@@ -106,6 +106,12 @@ const sx = stylex.create({
 	spin: { animationName: spin, animationDuration: "0.8s", animationTimingFunction: "linear", animationIterationCount: "infinite" },
 	borderLineStrong: { borderColor: "var(--border-strong)" },
 	borderTopAccent: { borderTopColor: "var(--accent)" },
+
+	backdropBlur4px: {
+		"--tw-backdrop-blur": "blur(4px)",
+		"WebkitBackdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)",
+		"backdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+	},
 });
 
 // Give foreground recovery enough time to probe and replace the stale PWA
@@ -354,7 +360,7 @@ await fetchHealthStatus();
   if (phase !== "crashed") return null;
 
   return (
-    <div {...mergeStylexProps("backdrop-blur-[4px]", sx.fixed, sx.inset0, sx.z10000, sx.flex, sx.itemsCenter, sx.justifyCenter, sx.bgBlack82, sx.p6)} role="alertdialog" aria-live="assertive">
+    <div {...mergeStylexProps("", sx.backdropBlur4px, sx.fixed, sx.inset0, sx.z10000, sx.flex, sx.itemsCenter, sx.justifyCenter, sx.bgBlack82, sx.p6)} role="alertdialog" aria-live="assertive">
       <div {...stylex.props(sx.flex, sx.maxW340px, sx.flexCol, sx.itemsCenter, sx.gap35, sx.roundedLg, sx.border, sx.borderLine, sx.bgPanel, sx.px26px, sx.py7, sx.textCenter)}>
         <div
           {...stylex.props(

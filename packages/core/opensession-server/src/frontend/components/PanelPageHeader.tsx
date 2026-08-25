@@ -7,7 +7,7 @@ import {
 } from "../ui/top-bar";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -58,6 +58,21 @@ const sx = stylex.create({
 	textFg: {
 			color: "var(--text)"
 	},
+
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
 });
 
 /**
@@ -81,7 +96,7 @@ export function PanelPageHeader({
 			<TopBarBack
 				onClick={onBack}
 				aria-label="Back to workspace"
-				iconSize={18} {...mergeStylexProps("hover:bg-hover hover:text-fg", sx.shrink0, sx.roundedControl, sx.textDim)}
+				iconSize={18} {...mergeStylexProps("", sx.hoverBgHover, sx.hoverTextFg, sx.shrink0, sx.roundedControl, sx.textDim)}
 			/>
 			<TopBarTitle {...stylex.props(sx.flex1, sx.truncate, sx.fontSemibold, sx.textFg, typography.supporting)}>
 				{title}

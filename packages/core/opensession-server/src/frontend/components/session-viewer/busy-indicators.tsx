@@ -8,7 +8,7 @@ import { PulseDot } from "../../ui/status";
 import { msgRow } from "../../lib/msg-classes";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps } from "../../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -103,6 +103,11 @@ const sx = stylex.create({
 	px1: { paddingInline: "4px" },
 	py125: { paddingBlock: "5px" },
 	gap2: { gap: "8px" },
+
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
 });
 
 /** The chat canvas while a new session's worktree is being prepared. The
@@ -186,7 +191,7 @@ function BusyElapsed({ since }: { since: number }) {
 		label = `${Math.floor(s / 60)}m, ${(s % 60).toFixed(1)}s`;
 	else label = `${Math.floor(s / 3600)}h, ${Math.floor((s % 3600) / 60)}m`;
 	// Tabular figures so a 10Hz counter doesn't jitter its own width.
-	return <span {...mergeStylexProps("tabular-nums", sx.textFaint, typography.meta)}>{label}</span>;
+	return <span {...mergeStylexProps("", sx.tabularNums, sx.textFaint, typography.meta)}>{label}</span>;
 }
 
 // How long a steer may wait before the chip starts showing how long it has
@@ -223,7 +228,7 @@ export function SteerWaiting({ since }: { since?: number }) {
 	const s = Math.floor(waited / 1000);
 	const label =
 		s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
-	return <span {...mergeStylexProps("tabular-nums", sx.fontNormal, sx.opacity70)}>{label}</span>;
+	return <span {...mergeStylexProps("", sx.tabularNums, sx.fontNormal, sx.opacity70)}>{label}</span>;
 }
 
 // How long a stop may sit there before the label stops sounding confident.

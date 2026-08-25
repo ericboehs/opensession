@@ -159,6 +159,12 @@ const sx = stylex.create({
 			}
 		}
 	},
+
+	max860pxHidden: {
+		"@media not all and (min-width: 860px)": {
+			"display": "none"
+		}
+	},
 });
 
 /**
@@ -534,7 +540,7 @@ export function TeamLensMenu({
 				/>
 				{!compact && (
 					<>
-						<span {...mergeStylexProps("max-[860px]:hidden", sx.truncate)}>{label}</span>
+						<span {...mergeStylexProps("", sx.max860pxHidden, sx.truncate)}>{label}</span>
 						{/* The Button primitive's `caret` step (ui/button.tsx): this
 						    trigger is a facepile, so it can't be a Button, but the
 						    affordance has to read the same as every other menu. */}

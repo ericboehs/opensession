@@ -184,6 +184,64 @@ const sx = stylex.create({
 	bgTransparent: {
 		"backgroundColor": "transparent"
 	},
+
+	relative: {
+		"position": "relative"
+	},
+	gap3: {
+		"gap": "12px"
+	},
+	border0: {
+		"borderStyle": "var(--tw-border-style)",
+		"borderWidth": "0"
+	},
+	px35: {
+		"paddingInline": "14px"
+	},
+	py3: {
+		"paddingBlock": "12px"
+	},
+	afterAbsolute: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	afterBottom0: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"bottom": "0"
+		}
+	},
+	afterLeft54px: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"left": "54px"
+		}
+	},
+	afterRight0: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"right": "0"
+		}
+	},
+	afterHPx: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"height": "1px"
+		}
+	},
+	afterBgDividerSoft: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"backgroundColor": "var(--divider-soft)"
+		}
+	},
+	activeBgHover: {
+		":active": {
+			"backgroundColor": "var(--hover)"
+		}
+	},
 });
 
 // The account lives at the bottom of Settings: who your sessions act as, and
@@ -295,7 +353,7 @@ export function SettingsAccountFooter() {
 export function SettingsAccountCard() {
 	const { currentUser, githubAuth, canSignOut, subtitle } = useAccount();
 	const rowClass =
-		"relative flex w-full items-center gap-3 border-0 bg-transparent px-3.5 py-3 text-left after:absolute after:bottom-0 after:left-[54px] after:right-0 after:h-px after:bg-divider-soft last:after:hidden active:bg-hover";
+		mergeStylexClassName("last:after:hidden", sx.relative, sx.flex, sx.wFull, sx.itemsCenter, sx.gap3, sx.border0, sx.bgTransparent, sx.px35, sx.py3, sx.textLeft, sx.afterAbsolute, sx.afterBottom0, sx.afterLeft54px, sx.afterRight0, sx.afterHPx, sx.afterBgDividerSoft, sx.activeBgHover);
 
 	return (
 		<div>

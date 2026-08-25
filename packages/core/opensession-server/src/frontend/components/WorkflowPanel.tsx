@@ -309,6 +309,40 @@ const sx = stylex.create({
 	GridTemplateRows0fr: {
 		"gridTemplateRows": "0fr"
 	},
+
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	bgPanel: {
+		"backgroundColor": "var(--bg-panel)"
+	},
+	p1: {
+		"padding": "4px"
+	},
+	wFull: {
+		"width": "100%"
+	},
+	roundedControl: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	textLeft: {
+		"textAlign": "left"
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	hoverUnderline: {
+		"@media (hover: hover)": {
+			":hover": {
+				"textDecorationLine": "underline"
+			}
+		}
+	},
 });
 
 /**
@@ -365,14 +399,14 @@ const RUN_TONE: Record<
 /** The card's plate and the rows inside it: the Info panel's list grammar
  *  (INFO_LIST_CLASS), so an agent row lines up with a portal or a changed
  *  file rather than inventing a third row shape. */
-const CARD_CLASS = "overflow-hidden rounded-lg bg-panel p-1";
+const CARD_CLASS = mergeStylexClassName("", sx.overflowHidden, sx.roundedLg, sx.bgPanel, sx.p1);
 const ROW_CLASS =
-	"flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left transition-colors";
+	mergeStylexClassName("", sx.flex, sx.wFull, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.px2, sx.py15, sx.textLeft, sx.transitionColors);
 /** A toggle under the agent rows (tool calls, the result): the same row, in
  *  the quieter ink a reading gets. */
 const FOOTER_ROW =
-	"flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left text-meta " +
-	"font-medium text-dim transition-colors hover:bg-hover hover:text-fg";
+	mergeStylexClassName("", sx.flex, sx.wFull, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.px2, sx.py15, sx.textLeft, typography.meta) +
+	mergeStylexClassName("", sx.fontMedium, sx.textDim, sx.transitionColors, sx.hoverBgHover, sx.hoverTextFg);
 
 /** Status mark: glyphs for the terminal states (✓/✕ stay legible at a glance
  *  — a red accent dot and an error dot would read the same), pulsing yellow
@@ -481,7 +515,7 @@ function WriteLine({ a }: { a: WorkflowAgentSnapshot }) {
 				</span>
 			)}
 			{a.changed ? (
-				<span {...mergeStylexProps("tabular-nums", sx.shrink0)}>
+				<span {...mergeStylexProps("", sx.tabularNums, sx.shrink0)}>
 					<span {...stylex.props(sx.textGreen)}>+{a.insertions ?? 0}</span>{" "}
 					<span {...stylex.props(sx.textRed)}>−{a.deletions ?? 0}</span>
 					{files > 0 && (
@@ -523,10 +557,10 @@ function AgentRail({
 					{shortModel(model)}
 				</span>
 			)}
-			<span {...mergeStylexProps("tabular-nums", sx.w46px, sx.shrink0, sx.whitespaceNowrap, sx.textRight, sx.textFaint, typography.meta)}>
+			<span {...mergeStylexProps("", sx.tabularNums, sx.w46px, sx.shrink0, sx.whitespaceNowrap, sx.textRight, sx.textFaint, typography.meta)}>
 				{tokens ? `${fmtTokens(tokens)} tok` : ""}
 			</span>
-			<span {...mergeStylexProps("tabular-nums", sx.w11, sx.shrink0, sx.whitespaceNowrap, sx.textRight, sx.textFaint, typography.meta)}>
+			<span {...mergeStylexProps("", sx.tabularNums, sx.w11, sx.shrink0, sx.whitespaceNowrap, sx.textRight, sx.textFaint, typography.meta)}>
 				{duration}
 			</span>
 		</>
@@ -695,7 +729,7 @@ function SubagentsCard({
 						</Badge>
 					)}
 				</div>
-				<div {...mergeStylexProps("tabular-nums", sx.mt05, sx.truncate, sx.textFaint, typography.meta)}>
+				<div {...mergeStylexProps("", sx.tabularNums, sx.mt05, sx.truncate, sx.textFaint, typography.meta)}>
 					{meta.join(" · ")}
 				</div>
 			</div>
@@ -938,7 +972,7 @@ setDetails((prev) => ({ ...prev, [seq]: "missing" }));
 							</Badge>
 						)}
 					</div>
-					<div {...mergeStylexProps("tabular-nums", sx.mt05, sx.truncate, sx.textFaint, typography.meta)}>
+					<div {...mergeStylexProps("", sx.tabularNums, sx.mt05, sx.truncate, sx.textFaint, typography.meta)}>
 						{meta.join(" · ")}
 					</div>
 				</div>
@@ -983,7 +1017,7 @@ setDetails((prev) => ({ ...prev, [seq]: "missing" }));
 									>
 										{title}
 									</span>
-									<span {...mergeStylexProps("tabular-nums", sx.shrink0, sx.textFaint, typography.meta)}>
+									<span {...mergeStylexProps("", sx.tabularNums, sx.shrink0, sx.textFaint, typography.meta)}>
 										{agents.length ? `${doneN}/${agents.length}` : "queued"}
 									</span>
 								</div>
@@ -1007,7 +1041,7 @@ setDetails((prev) => ({ ...prev, [seq]: "missing" }));
 				<div>
 					<button className={FOOTER_ROW} onClick={() => setShowMcp((v) => !v)}>
 						{showMcp ? "Hide" : "Show"} tool calls
-						<span {...mergeStylexProps("tabular-nums", sx.mlAuto, sx.shrink0, sx.textFaint)}>
+						<span {...mergeStylexProps("", sx.tabularNums, sx.mlAuto, sx.shrink0, sx.textFaint)}>
 							{run.totals.mcpCalls ?? run.mcpCalls.length}
 						</span>
 					</button>
@@ -1026,7 +1060,7 @@ setDetails((prev) => ({ ...prev, [seq]: "missing" }));
 									<span {...stylex.props(sx.truncate, sx.textDim)}>
 										{c.server}.{c.tool}
 									</span>
-									<span {...mergeStylexProps("tabular-nums", sx.mlAuto, sx.shrink0, sx.textFaint, typography.meta)}>
+									<span {...mergeStylexProps("", sx.tabularNums, sx.mlAuto, sx.shrink0, sx.textFaint, typography.meta)}>
 										{c.cached ? "cached" : `${c.ms}ms`}
 									</span>
 								</div>
@@ -1048,7 +1082,7 @@ setDetails((prev) => ({ ...prev, [seq]: "missing" }));
 						))}
 					</div>
 					{run.logs.length > 20 && (
-						<button {...mergeStylexProps("hover:text-fg", sx.mt1, sx.fontMedium, sx.textDim, sx.transitionColors, typography.meta)}
+						<button {...mergeStylexProps("", sx.hoverTextFg, sx.mt1, sx.fontMedium, sx.textDim, sx.transitionColors, typography.meta)}
 							onClick={() => setAllLogs((v) => !v)}
 						>
 							{allLogs ? "Show recent" : `Show all ${run.logs.length}`}
@@ -1188,7 +1222,7 @@ const AgentRow = function AgentRow({
 							)}
 							{detail === undefined &&
 								(a.status === "done" || a.status === "error") && (
-									<button {...mergeStylexProps("hover:underline", sx.selfStart, sx.fontMedium, sx.textLink, typography.meta)}
+									<button {...mergeStylexProps("", sx.hoverUnderline, sx.selfStart, sx.fontMedium, sx.textLink, typography.meta)}
 										onClick={() => onLoadDetail(a.seq)}
 									>
 										Show full prompt & result
@@ -1200,7 +1234,7 @@ const AgentRow = function AgentRow({
 							{detail === "missing" && (
 								// Transient failures happen (the snapshot flips done before
 								// the journal entry lands) — keep the miss retryable.
-								<button {...mergeStylexProps("hover:underline", sx.selfStart, sx.fontMedium, sx.textLink, typography.meta)}
+								<button {...mergeStylexProps("", sx.hoverUnderline, sx.selfStart, sx.fontMedium, sx.textLink, typography.meta)}
 									onClick={() => onLoadDetail(a.seq)}
 								>
 									Couldn't load the full record. Retry

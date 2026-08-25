@@ -118,6 +118,25 @@ const sx = stylex.create({
 	py25: {
 		"paddingBlock": "10px"
 	},
+
+	itemsStretch: {
+		"alignItems": "stretch"
+	},
+	gap25: {
+		"gap": "10px"
+	},
+	pr15: {
+		"paddingRight": "6px"
+	},
+	pl3: {
+		"paddingLeft": "12px"
+	},
+	maxHMin560px70vhVarAvailableHeight: {
+		"maxHeight": "min(560px, 70vh, var(--available-height))"
+	},
+	wMin460pxCalc100vw24px: {
+		"width": "min(460px,100vw - 24px)"
+	},
 });
 
 /**
@@ -134,7 +153,7 @@ const sx = stylex.create({
 /* The rail and its nodes live in ./StackRail so this component stays focused
    on the popup and its navigation rows. */
 
-const ROW = "flex items-stretch gap-2.5 pr-1.5 pl-3";
+const ROW = mergeStylexClassName("", sx.flex, sx.itemsStretch, sx.gap25, sx.pr15, sx.pl3);
 
 function StackRow({
 	layer,
@@ -247,7 +266,7 @@ export function PrStackChip({
 			<Popover.Popup
 				side="bottom"
 				align="start"
-				sideOffset={6} {...mergeStylexProps("max-h-[min(560px,70vh,var(--available-height))] w-[min(460px,calc(100vw-24px))]", sx.flex, sx.flexCol, sx.overflowHidden, sx.p0)}
+				sideOffset={6} {...mergeStylexProps("", sx.maxHMin560px70vhVarAvailableHeight, sx.wMin460pxCalc100vw24px, sx.flex, sx.flexCol, sx.overflowHidden, sx.p0)}
 			>
 				{/* The strip's headline, in the strip's tone: the popup opens under a
 				    green chip and has to keep saying what the green means. */}

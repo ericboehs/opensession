@@ -10,7 +10,7 @@ import { useIsPhone } from "../../hooks/useIsPhone";
 import { refreshPeople } from "../../lib/people";
 import { isTouchPrimary } from "../../lib/platform";
 import { Button } from "../../ui/button";
-import { cn, mergeStylexProps } from "../../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 import { Field, FieldGrid, Input } from "../../ui/input";
 import { OverlayAction } from "../../ui/overlay-action";
 import { SettingsForm, SettingsGroupLabel } from "../../ui/settings";
@@ -176,6 +176,16 @@ const sx = stylex.create({
 	},
 	minH11: {
 		minHeight: "44px",
+	},
+
+	shadowSm: {
+		"--tw-shadow": "0 1px 3px 0 var(--tw-shadow-color,color-mix(in srgb, var(--color-black) 10%, transparent)), 0 1px 2px -1px var(--tw-shadow-color,color-mix(in srgb, var(--color-black) 10%, transparent))",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	disabledPointerEventsNone: {
+		":disabled": {
+			"pointerEvents": "none"
+		}
 	},
 });
 
@@ -394,7 +404,7 @@ setBusy(null);
 					    themed surface: it sits on whatever photo a person uploaded,
 					    so it has to hold its own contrast in both themes instead of
 					    following the page. Same reason its ink is hard black. */}
-					<span {...mergeStylexProps("shadow-sm", sx.absolute, sx.Bottom05, sx.Right05, sx.grid, sx.size8, sx.placeItemsCenter, sx.roundedFull, sx.bgWhite, sx.textBlack)}
+					<span {...mergeStylexProps("", sx.shadowSm, sx.absolute, sx.Bottom05, sx.Right05, sx.grid, sx.size8, sx.placeItemsCenter, sx.roundedFull, sx.bgWhite, sx.textBlack)}
 						aria-hidden
 					>
 						{busy === "picture" ? (
@@ -453,7 +463,7 @@ setBusy(null);
 								disabled={busy !== null}
 								onClick={() => fileRef.current?.click()}
 								aria-label={pictureAction}
-								title={pictureAction} {...mergeStylexProps("group disabled:pointer-events-none", sx.focusRing, sx.relative, sx.flex, sx.roundedAvatar)}
+								title={pictureAction} {...mergeStylexProps("group", sx.disabledPointerEventsNone, sx.focusRing, sx.relative, sx.flex, sx.roundedAvatar)}
 							>
 								<UserAvatar
 									name={name || profile.name}

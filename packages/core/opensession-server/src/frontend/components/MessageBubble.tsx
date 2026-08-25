@@ -43,7 +43,7 @@ import {
 	msgSystemToned,
 	msgTime,
 } from "../lib/msg-classes";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 
@@ -229,6 +229,61 @@ const sx = stylex.create({
 	mb875: { marginBottom: "35px" },
 	hoverMb875: { "@media (hover: hover)": { marginBottom: "35px" } },
 	textFg: { color: "var(--text)" },
+
+	hoverBgHover40: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in oklab, var(--hover) 40%, transparent)"
+				}
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	selectNone: {
+		"WebkitUserSelect": "none",
+		"userSelect": "none"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextDim: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text-dim)"
+			}
+		}
+	},
+	MediaHoverHoverOpacity0: {
+		"@media (hover: hover)": {
+			"opacity": "0"
+		}
+	},
+	MediaHoverHoverTransitionOpacity: {
+		"@media (hover: hover)": {
+			"transitionProperty": "opacity",
+			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+		}
+	},
+	MediaHoverHoverBlock: {
+		"@media (hover: hover)": {
+			"display": "block"
+		}
+	},
 });
 
 // Only this much of a message is markdown-parsed eagerly. marked is
@@ -326,7 +381,7 @@ setFetching(false);
 				<Button
 					variant="ghost"
 					size="sm"
-					onClick={showAll ? () => setShowAll(false) : expand} {...mergeStylexProps("hover:bg-hover/40", sx.mt1, sx.minH0, sx.justifyStart, sx.whitespaceNormal, sx.roundedMd, sx.border0, sx.px2, sx.py1, sx.textLeft, sx.fontSans, sx.fontMedium, sx.leadingNormal, typography.label)}
+					onClick={showAll ? () => setShowAll(false) : expand} {...mergeStylexProps("", sx.hoverBgHover40, sx.mt1, sx.minH0, sx.justifyStart, sx.whitespaceNormal, sx.roundedMd, sx.border0, sx.px2, sx.py1, sx.textLeft, sx.fontSans, sx.fontMedium, sx.leadingNormal, typography.label)}
 				>
 					{fetching
 						? "Loading…"
@@ -422,7 +477,7 @@ function NoticeRow({
 						// The delegated click handler on the transcript navigates on
 						// data-session-id, so this opens in place; the href is there
 						// for cmd-click and copy-link.
-						<a {...mergeStylexProps("hover:text-fg", sx.mt25, sx.block, sx.textXs, sx.textDim, sx.noUnderline)}
+						<a {...mergeStylexProps("", sx.hoverTextFg, sx.mt25, sx.block, sx.textXs, sx.textDim, sx.noUnderline)}
 							data-session-id={notice.link.sessionId}
 							href={`${BASE_PATH}/session/${notice.link.sessionId}`}
 						>
@@ -561,7 +616,7 @@ function EditAgainButton({ onClick }: { onClick: () => void }) {
 			<button
 				type="button"
 				onClick={onClick}
-				aria-label="Edit and send again" {...mergeStylexProps("select-none hover:bg-hover hover:text-dim [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:transition-opacity [@media(hover:hover)]:group-hover/bubble:opacity-100 [@media(hover:hover)]:group-focus-within/bubble:opacity-100", sx.flex, sx.size7, sx.flexNone, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.border0, sx.bgTransparent, sx.p0, sx.textFaint)}
+				aria-label="Edit and send again" {...mergeStylexProps("[@media(hover:hover)]:group-hover/bubble:opacity-100 [@media(hover:hover)]:group-focus-within/bubble:opacity-100", sx.selectNone, sx.hoverBgHover, sx.hoverTextDim, sx.MediaHoverHoverOpacity0, sx.MediaHoverHoverTransitionOpacity, sx.flex, sx.size7, sx.flexNone, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.border0, sx.bgTransparent, sx.p0, sx.textFaint)}
 			>
 				<IconPencil size={16} />
 			</button>
@@ -587,7 +642,7 @@ function BubbleMeta({ ts, onEdit }: { ts?: string; onEdit?: () => void }) {
 		<div {...stylex.props(sx.absolute, sx.topCalc1002px, sx.right0, sx.flex, sx.itemsCenter, sx.gap1)}>
 			{onEdit && <EditAgainButton onClick={onEdit} />}
 			{label && (
-				<span {...mergeStylexProps("select-none selection:bg-[rgba(0,0,0,0.01)] [@media(hover:hover)]:block [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:transition-opacity [@media(hover:hover)]:group-hover/bubble:opacity-100 [@media(hover:hover)]:group-focus-within/bubble:opacity-100", sx.hidden, sx.leadingNone, sx.fontMedium, sx.whitespaceNowrap, sx.textFaint, typography.meta)}>
+				<span {...mergeStylexProps("selection:bg-[rgba(0,0,0,0.01)] [@media(hover:hover)]:group-hover/bubble:opacity-100 [@media(hover:hover)]:group-focus-within/bubble:opacity-100", sx.selectNone, sx.MediaHoverHoverBlock, sx.MediaHoverHoverOpacity0, sx.MediaHoverHoverTransitionOpacity, sx.hidden, sx.leadingNone, sx.fontMedium, sx.whitespaceNowrap, sx.textFaint, typography.meta)}>
 					{label}
 				</span>
 			)}

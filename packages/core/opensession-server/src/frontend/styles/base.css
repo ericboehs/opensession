@@ -395,6 +395,7 @@
 	--blur-xl: 24px;
 	--color-white: #fff;
 	--color-black: #000;
+	--neutral-mid: #808080;
 	--radius-control: calc(12px * var(--rf));
 	--radius-row: calc(12px * var(--rf));
 	--radius-popup: calc(16px * var(--rf));

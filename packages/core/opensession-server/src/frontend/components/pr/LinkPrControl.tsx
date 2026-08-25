@@ -63,6 +63,10 @@ const sx = stylex.create({
 			"fontSize": "var(--type-input-phone)"
 		}
 	},
+
+	wMin380pxCalc100vw16px: {
+		"width": "min(380px,100vw - 16px)"
+	},
 });
 
 /**
@@ -130,7 +134,7 @@ setBusy(false);
       <Popover.Popup
         side="bottom"
         align="start"
-        initialFocus {...mergeStylexProps("w-[min(380px,calc(100vw-16px))]", sx.p4)}
+        initialFocus {...mergeStylexProps("", sx.wMin380pxCalc100vw16px, sx.p4)}
       >
         <form
           {...stylex.props(sx.flex, sx.flexCol, sx.gap4)}

@@ -351,6 +351,481 @@ const sx = stylex.create({
 	maxWMin360pxCalc100vw1rem: {
 		"maxWidth": "min(360px,100vw - 1rem)"
 	},
+
+	borderB: {
+		"borderBottomStyle": "var(--tw-border-style)",
+		"borderBottomWidth": "1px"
+	},
+	borderTransparent: {
+		"borderColor": "transparent"
+	},
+	pt4: {
+		"paddingTop": "16px"
+	},
+	pb11px: {
+		"paddingBottom": "11px"
+	},
+	phoneHAuto: {
+		"@media (max-width: 720px)": {
+			"height": "auto"
+		}
+	},
+	phonePx18px: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "18px"
+		}
+	},
+	phonePb3: {
+		"@media (max-width: 720px)": {
+			"paddingBottom": "12px"
+		}
+	},
+	phonePt18px: {
+		"@media (max-width: 720px)": {
+			"paddingTop": "18px"
+		}
+	},
+	borderLine: {
+		"borderColor": "var(--border)"
+	},
+	desktopContents: {
+		"@media (min-width: 721px)": {
+			"display": "contents"
+		}
+	},
+	phoneFlex: {
+		"@media (max-width: 720px)": {
+			"display": "flex"
+		}
+	},
+	phoneMinW0: {
+		"@media (max-width: 720px)": {
+			"minWidth": "0"
+		}
+	},
+	phoneFlex1: {
+		"@media (max-width: 720px)": {
+			"flex": "1"
+		}
+	},
+	phoneJustifyCenter: {
+		"@media (max-width: 720px)": {
+			"justifyContent": "center"
+		}
+	},
+	inlineFlex: {
+		"display": "inline-flex"
+	},
+	maxWFull: {
+		"maxWidth": "100%"
+	},
+	cursorPointer: {
+		"cursor": "pointer"
+	},
+	gap15: {
+		"gap": "6px"
+	},
+	roundedControl: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	py5px: {
+		"paddingBlock": "5px"
+	},
+	textFg: {
+		"color": "var(--text)"
+	},
+	transitionColors: {
+		"transitionProperty": "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	disabledCursorDefault: {
+		":disabled": {
+			"cursor": "default"
+		}
+	},
+	disabledOpacity55: {
+		":disabled": {
+			"opacity": ".55"
+		}
+	},
+	phoneGap1: {
+		"@media (max-width: 720px)": {
+			"gap": "4px"
+		}
+	},
+	phonePx25: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "10px"
+		}
+	},
+	phonePy15: {
+		"@media (max-width: 720px)": {
+			"paddingBlock": "6px"
+		}
+	},
+	phoneTextLabel: {
+		"@media (max-width: 720px)": {
+			"fontSize": "var(--type-label)"
+		}
+	},
+	phoneFontMedium: {
+		"@media (max-width: 720px)": {
+			"--tw-font-weight": "var(--font-weight-medium)",
+			"fontWeight": "var(--font-weight-medium)"
+		}
+	},
+	Ml05: {
+		"marginLeft": "-2px"
+	},
+	phoneSize4: {
+		"@media (max-width: 720px)": {
+			"width": "16px",
+			"height": "16px"
+		}
+	},
+	phonePx3: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "12px"
+		}
+	},
+	phonePt1: {
+		"@media (max-width: 720px)": {
+			"paddingTop": "4px"
+		}
+	},
+	phoneBlock: {
+		"@media (max-width: 720px)": {
+			"display": "block"
+		}
+	},
+	desktopHidden: {
+		"@media (min-width: 721px)": {
+			"display": "none"
+		}
+	},
+	mx4: {
+		"marginInline": "16px"
+	},
+	mb2: {
+		"marginBottom": "8px"
+	},
+	roundedMd: {
+		"borderRadius": "calc(7px * var(--rf))"
+	},
+	bgRedSoft: {
+		"backgroundColor": "var(--red-soft)"
+	},
+	px25: {
+		"paddingInline": "10px"
+	},
+	py7px: {
+		"paddingBlock": "7px"
+	},
+	textRed: {
+		"color": "var(--red)"
+	},
+	gapX2: {
+		"columnGap": "8px"
+	},
+	gapY2: {
+		"rowGap": "8px"
+	},
+	borderT: {
+		"borderTopStyle": "var(--tw-border-style)",
+		"borderTopWidth": "1px"
+	},
+	pt9px: {
+		"paddingTop": "9px"
+	},
+	pb35: {
+		"paddingBottom": "14px"
+	},
+	phoneFlexWrap: {
+		"@media (max-width: 720px)": {
+			"flexWrap": "wrap"
+		}
+	},
+	phonePbCalc075remEnvSafeAreaInsetBottom: {
+		"@media (max-width: 720px)": {
+			"paddingBottom": "calc(.75rem + env(safe-area-inset-bottom))"
+		}
+	},
+	max560pxGapX15: {
+		"@media not all and (min-width: 560px)": {
+			"columnGap": "6px"
+		}
+	},
+	max560pxGap1: {
+		"@media not all and (min-width: 560px)": {
+			"gap": "4px"
+		}
+	},
+	minH8: {
+		"minHeight": "32px"
+	},
+	phonePx35: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "14px"
+		}
+	},
+	bgColorMixInSrgbVarGreen18Transparent: {
+		"backgroundColor": "var(--green)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--green) 18%,transparent)"
+		}
+	},
+	textGreen: {
+		"color": "var(--green)"
+	},
+	hoverBgColorMixInSrgbVarGreen26Transparent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--green)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in srgb,var(--green) 26%,transparent)"
+				}
+			}
+		}
+	},
+	disabledOpacity50: {
+		":disabled": {
+			"opacity": ".5"
+		}
+	},
+	phoneContents: {
+		"@media (max-width: 720px)": {
+			"display": "contents"
+		}
+	},
+	itemsStretch: {
+		"alignItems": "stretch"
+	},
+	phoneOrder2: {
+		"@media (max-width: 720px)": {
+			"order": "2"
+		}
+	},
+	phoneMt05: {
+		"@media (max-width: 720px)": {
+			"marginTop": "2px"
+		}
+	},
+	phoneWFull: {
+		"@media (max-width: 720px)": {
+			"width": "100%"
+		}
+	},
+	gap7px: {
+		"gap": "7px"
+	},
+	borderNone: {
+		"--tw-border-style": "none",
+		"borderStyle": "none"
+	},
+	bgAccent: {
+		"backgroundColor": "var(--accent)"
+	},
+	px35: {
+		"paddingInline": "14px"
+	},
+	textOnAccent: {
+		"color": "var(--on-accent)"
+	},
+	transitionBackgroundColorOpacity: {
+		"transitionProperty": "background-color,opacity",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	enabledHoverBgAccentHover: {
+		"@media (hover: hover)": {
+			":enabled": {
+				":hover": {
+					"backgroundColor": "var(--accent-hover)"
+				}
+			}
+		}
+	},
+	disabledOpacity40: {
+		":disabled": {
+			"opacity": ".4"
+		}
+	},
+	max560pxPx3: {
+		"@media not all and (min-width: 560px)": {
+			"paddingInline": "12px"
+		}
+	},
+	desktopRoundedControl: {
+		"@media (min-width: 721px)": {
+			"borderRadius": "calc(12px * var(--rf))"
+		}
+	},
+	desktopRoundedLControl: {
+		"@media (min-width: 721px)": {
+			"borderTopLeftRadius": "calc(12px * var(--rf))",
+			"borderBottomLeftRadius": "calc(12px * var(--rf))"
+		}
+	},
+	phoneRoundedL999px: {
+		"@media (max-width: 720px)": {
+			"borderTopLeftRadius": "999px",
+			"borderBottomLeftRadius": "999px"
+		}
+	},
+	phoneRoundedRNone: {
+		"@media (max-width: 720px)": {
+			"borderTopRightRadius": "0",
+			"borderBottomRightRadius": "0"
+		}
+	},
+	opacity70: {
+		"opacity": ".7"
+	},
+	roundedRControl: {
+		"borderTopRightRadius": "calc(12px * var(--rf))",
+		"borderBottomRightRadius": "calc(12px * var(--rf))"
+	},
+	phoneMinW11: {
+		"@media (max-width: 720px)": {
+			"minWidth": "44px"
+		}
+	},
+	phoneRoundedR999px: {
+		"@media (max-width: 720px)": {
+			"borderTopRightRadius": "999px",
+			"borderBottomRightRadius": "999px"
+		}
+	},
+	p7px: {
+		"padding": "7px"
+	},
+	shadowInset1px00Rgba000014: {
+		"--tw-shadow": "inset 1px 0 0 var(--tw-shadow-color,color-mix(in srgb, var(--color-black) 14%, transparent))",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	absolute: {
+		"position": "absolute"
+	},
+	bottomCalc1006px: {
+		"bottom": "calc(100% + 6px)"
+	},
+	right0: {
+		"right": "0"
+	},
+	z20: {
+		"zIndex": "20"
+	},
+	minW208px: {
+		"minWidth": "208px"
+	},
+	bgPopupGlass: {
+		"backgroundColor": "var(--popup-glass)"
+	},
+	BackdropFilterVarPopupBlur: {
+		"WebkitBackdropFilter": "var(--popup-blur)",
+		"backdropFilter": "var(--popup-blur)"
+	},
+	SmoothRingColorVarPopupRing: {
+		"--smooth-ring-color": "var(--popup-ring)"
+	},
+	p5px: {
+		"padding": "5px"
+	},
+	gap9px: {
+		"gap": "9px"
+	},
+	bgTransparent: {
+		"backgroundColor": "transparent"
+	},
+	px9px: {
+		"paddingInline": "9px"
+	},
+	textLeft: {
+		"textAlign": "left"
+	},
+	isolate: {
+		"isolation": "isolate"
+	},
+	beforePointerEventsNone: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"pointerEvents": "none"
+		}
+	},
+	beforeAbsolute: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	beforeInset0: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"inset": "0"
+		}
+	},
+	beforeZ0: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"zIndex": "0"
+		}
+	},
+	beforeRoundedInherit: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"borderRadius": "inherit"
+		}
+	},
+	beforeCornerShapeInherit: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"cornerShape": "inherit"
+		}
+	},
+	beforeBgVarPaletteAskBg: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"backgroundColor": "var(--palette-ask-bg)"
+		}
+	},
+	beforeOpacity0: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"opacity": "0"
+		}
+	},
+	beforeTransitionOpacity: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"transitionProperty": "opacity",
+			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+		}
+	},
+	beforeDuration150: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"--tw-duration": ".15s",
+			"transitionDuration": ".15s"
+		}
+	},
+	beforeEaseCubicBezier03207201: {
+		"::before": {
+			"content": "var(--tw-content)",
+			"--tw-ease": "cubic-bezier(.32,.72,0,1)",
+			"transitionTimingFunction": "cubic-bezier(.32,.72,0,1)"
+		}
+	},
 });
 
 interface Props {
@@ -446,9 +921,9 @@ const LAST_REPO_KEY = "opensession-new-session-repo";
  *  than the strip a keyboard leaves visible, which cut the bar off the top of
  *  the screen as soon as an attachment took its own space. */
 const HEADER =
-	"flex items-center gap-2 border-b border-transparent px-4 pt-4 pb-[11px] phone:h-auto phone:px-[18px] phone:pb-3 phone:pt-[18px]";
+	mergeStylexClassName("", sx.flex, sx.itemsCenter, sx.gap2, sx.borderB, sx.borderTransparent, sx.px4, sx.pt4, sx.pb11px, sx.phoneHAuto, sx.phonePx18px, sx.phonePb3, sx.phonePt18px);
 /** Merged onto HEADER/FOOTER by `cn()`, which drops the transparent colour. */
-const EDGE_DIVIDER = "border-line";
+const EDGE_DIVIDER = mergeStylexClassName("", sx.borderLine);
 /** The header's picker, which doubles as the palette's title: bigger, solid,
  *  heavier than a footer control.
  *
@@ -458,14 +933,14 @@ const EDGE_DIVIDER = "border-line";
  *  sized below its content, so a long repo name would push the row wider than
  *  the card instead of ellipsizing. */
 const TRIGGER_STRONG =
-	"relative inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-control px-2 py-[5px] text-item-title font-semibold text-fg transition-colors hover:bg-hover disabled:cursor-default disabled:opacity-55";
-const CHEVRON = "-ml-0.5 shrink-0 text-faint phone:size-4";
+	mergeStylexClassName("", sx.relative, sx.inlineFlex, sx.minW0, sx.maxWFull, sx.cursorPointer, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.px2, sx.py5px, typography.itemTitle, sx.fontSemibold, sx.textFg, sx.transitionColors, sx.hoverBgHover, sx.disabledCursorDefault, sx.disabledOpacity55);
+const CHEVRON = mergeStylexClassName("", sx.Ml05, sx.shrink0, sx.textFaint, sx.phoneSize4);
 /** A pass-through on a desktop, where the picker is the header's one control.
  *  On a phone it is the middle slot of the title bar: it takes the space the
  *  two discs leave and centres the title inside it, so the row reads as one
  *  balanced bar rather than a label pushed against the close button. */
 const MOBILE_PICKER =
-	"desktop:contents phone:flex phone:min-w-0 phone:flex-1 phone:justify-center";
+	mergeStylexClassName("", sx.desktopContents, sx.phoneFlex, sx.phoneMinW0, sx.phoneFlex1, sx.phoneJustifyCenter);
 /** On a phone the trigger is the sheet's title: the row's name, centred
  *  between the two discs that dismiss and commit. It carries no fill and no
  *  edge of its own. Those discs are the bar's only surfaces, and a third one
@@ -479,7 +954,7 @@ const MOBILE_PICKER =
  *  target, and it has to fit the row it shares, which is what `max-w-full`
  *  plus the label's own truncation buy. */
 const MOBILE_TRIGGER =
-	"phone:min-h-11 phone:gap-1 phone:rounded-[999px] phone:px-2.5 phone:py-1.5 phone:text-label phone:font-medium phone:[&_svg:first-child]:size-4";
+	mergeStylexClassName("phone:[&_svg:first-child]:size-4", sx.phoneMinH11, sx.phoneGap1, sx.phoneRounded999px, sx.phonePx25, sx.phonePy15, sx.phoneTextLabel, sx.phoneFontMedium);
 /** The composer's own send disc, so the gesture that commits a prompt looks the
  *  same in the palette as it does in a session. Sized up to the 44px target the
  *  rest of this bar keeps. */
@@ -487,7 +962,7 @@ const PHONE_SEND = cn(composerSend, composerSendDefault, mergeStylexClassName(""
 
 /* (The prompt's own surface — the scroller and the field — moved to
    NewSessionPrompt, with the draft state it belongs to.) */
-const ERROR = "mx-4 mb-2 rounded-md bg-red-soft px-2.5 py-[7px] text-supporting text-red";
+const ERROR = mergeStylexClassName("", sx.mx4, sx.mb2, sx.roundedMd, sx.bgRedSoft, sx.px25, sx.py7px, typography.supporting, sx.textRed);
 
 /* Single-line footer: the model pill is the only flexible item — it gives way
    (its label ellipsizes) while the icon buttons and Create keep their size.
@@ -500,9 +975,9 @@ const ERROR = "mx-4 mb-2 rounded-md bg-red-soft px-2.5 py-[7px] text-supporting 
    inset clears the home indicator at rest, but the keyboard covers that edge
    while a field is focused, so the ordinary 12px pad takes over then. */
 const FOOTER =
-	"flex items-center justify-between gap-x-2 gap-y-2 border-t border-transparent px-4 pt-[9px] pb-3.5 phone:flex-wrap phone:px-3 phone:pb-[calc(0.75rem+env(safe-area-inset-bottom))] phone:[body.kb-open_&]:pb-3 max-[560px]:gap-x-1.5";
-const FOOTER_LEFT = "flex min-w-0 items-center gap-1.5 phone:flex-1 max-[560px]:gap-1";
-const FOOTER_RIGHT = "flex min-w-0 items-center gap-1.5 phone:contents max-[560px]:gap-1";
+	mergeStylexClassName("phone:[body.kb-open_&]:pb-3", sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gapX2, sx.gapY2, sx.borderT, sx.borderTransparent, sx.px4, sx.pt9px, sx.pb35, sx.phoneFlexWrap, sx.phonePx3, sx.phonePbCalc075remEnvSafeAreaInsetBottom, sx.max560pxGapX15);
+const FOOTER_LEFT = mergeStylexClassName("", sx.flex, sx.minW0, sx.itemsCenter, sx.gap15, sx.phoneFlex1, sx.max560pxGap1);
+const FOOTER_RIGHT = mergeStylexClassName("", sx.flex, sx.minW0, sx.itemsCenter, sx.gap15, sx.phoneContents, sx.max560pxGap1);
 /** Round on a phone, where the bar's two controls are discs and the repo is a
  *  pill: a 12px corner among them is the one square thing on the card. The
  *  hover wash rides a pseudo-element, so it has to be rounded with them. */
@@ -522,7 +997,7 @@ const FOOTER_ICON_BTN = cn(
  *  the size the icon buttons' hover wash paints, so the row keeps one rhythm;
  *  44px on a phone, where the whole row is thumb-sized. */
 const ASK_BTN_ON =
-	"inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-control px-2.5 text-label font-medium transition-colors phone:min-h-11 phone:rounded-[999px] phone:px-3.5 bg-[color-mix(in_srgb,var(--green)_18%,transparent)] text-green hover:bg-[color-mix(in_srgb,var(--green)_26%,transparent)] disabled:cursor-default disabled:opacity-50";
+	mergeStylexClassName("", sx.inlineFlex, sx.minH8, sx.shrink0, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.px25, typography.label, sx.fontMedium, sx.transitionColors, sx.phoneMinH11, sx.phoneRounded999px, sx.phonePx35, sx.bgColorMixInSrgbVarGreen18Transparent, sx.textGreen, sx.hoverBgColorMixInSrgbVarGreen26Transparent, sx.disabledCursorDefault, sx.disabledOpacity50);
 /** Ask mode paints the whole card, not just its toggle — the same thing the
  *  session composer does for ask and for note mode, because the mode governs
  *  everything you are about to type rather than one control in the corner.
@@ -532,8 +1007,8 @@ const ASK_BTN_ON =
  *  out with it intact. Children are lifted above it, and the shell's own
  *  `overflow-hidden` clips it to the rounded corner. */
 const ASK_SURFACE =
-	"isolate " +
-	"before:pointer-events-none before:absolute before:inset-0 before:z-0 before:rounded-[inherit] before:[corner-shape:inherit] before:bg-[var(--palette-ask-bg)] before:opacity-0 before:transition-opacity before:duration-150 before:ease-[cubic-bezier(0.32,0.72,0,1)] " +
+	mergeStylexClassName("", sx.isolate) +
+	mergeStylexClassName("", sx.beforePointerEventsNone, sx.beforeAbsolute, sx.beforeInset0, sx.beforeZ0, sx.beforeRoundedInherit, sx.beforeCornerShapeInherit, sx.beforeBgVarPaletteAskBg, sx.beforeOpacity0, sx.beforeTransitionOpacity, sx.beforeDuration150, sx.beforeEaseCubicBezier03207201) +
 	"[&>*]:relative [&>*]:z-[1]";
 /** The one flexible footer item. The palette has room for the model's full
  *  name, so it opts out of palettePill's generic 180px cap. On phones the
@@ -579,9 +1054,9 @@ const CREATE_LABELS: Record<CreateAction, string> = {
    `rounded-md` — one step down, 9.45px against 13.5px — which on a 36px-tall
    plate read visibly square next to its neighbours. */
 const CREATE_SPLIT =
-	"relative inline-flex shrink-0 items-stretch phone:order-2 phone:mt-0.5 phone:w-full";
+	mergeStylexClassName("", sx.relative, sx.inlineFlex, sx.shrink0, sx.itemsStretch, sx.phoneOrder2, sx.phoneMt05, sx.phoneWFull);
 const CREATE_MAIN =
-	"inline-flex cursor-pointer items-center gap-[7px] border-none bg-accent px-3.5 py-[7px] text-label font-semibold text-on-accent transition-[background-color,opacity] enabled:hover:bg-accent-hover disabled:cursor-default disabled:opacity-40 phone:min-h-11 phone:flex-1 phone:justify-center max-[560px]:px-3";
+	mergeStylexClassName("", sx.inlineFlex, sx.cursorPointer, sx.itemsCenter, sx.gap7px, sx.borderNone, sx.bgAccent, sx.px35, sx.py7px, typography.label, sx.fontSemibold, sx.textOnAccent, sx.transitionBackgroundColorOpacity, sx.enabledHoverBgAccentHover, sx.disabledCursorDefault, sx.disabledOpacity40, sx.phoneMinH11, sx.phoneFlex1, sx.phoneJustifyCenter, sx.max560pxPx3);
 /** The desktop corner, split between the two shapes the button takes: half of
  *  a split button beside its caret, or the whole button when there is no caret
  *  (inline). Written as two whole classes rather than one plus an override,
@@ -591,15 +1066,15 @@ const CREATE_MAIN =
  *  The phone overlay moves Create into its title bar and does not render this
  *  pair. Only the inline card reaches these phone classes, where it has no
  *  caret and rounds the whole button. */
-const CREATE_MAIN_SPLIT = "desktop:rounded-l-control phone:rounded-l-[999px] phone:rounded-r-none";
-const CREATE_MAIN_WHOLE = "desktop:rounded-control phone:rounded-[999px]";
+const CREATE_MAIN_SPLIT = mergeStylexClassName("", sx.desktopRoundedLControl, sx.phoneRoundedL999px, sx.phoneRoundedRNone);
+const CREATE_MAIN_WHOLE = mergeStylexClassName("", sx.desktopRoundedControl, sx.phoneRounded999px);
 const CREATE_CARET =
-	"inline-flex cursor-pointer items-center gap-[7px] rounded-r-control phone:min-w-11 phone:justify-center phone:rounded-r-[999px] border-none bg-accent p-[7px] text-label font-semibold text-on-accent shadow-[inset_1px_0_0_rgba(0,0,0,0.14)] transition-[background-color,opacity] enabled:hover:bg-accent-hover disabled:cursor-default disabled:opacity-40";
-const CREATE_KBD = "opacity-70";
+	mergeStylexClassName("", sx.inlineFlex, sx.cursorPointer, sx.itemsCenter, sx.gap7px, sx.roundedRControl, sx.phoneMinW11, sx.phoneJustifyCenter, sx.phoneRoundedR999px, sx.borderNone, sx.bgAccent, sx.p7px, typography.label, sx.fontSemibold, sx.textOnAccent, sx.shadowInset1px00Rgba000014, sx.transitionBackgroundColorOpacity, sx.enabledHoverBgAccentHover, sx.disabledCursorDefault, sx.disabledOpacity40);
+const CREATE_KBD = mergeStylexClassName("", sx.opacity70);
 const CREATE_MENU =
-	"absolute bottom-[calc(100%+6px)] right-0 z-20 min-w-[208px] rounded-control bg-popup-glass [backdrop-filter:var(--popup-blur)] [--smooth-ring-color:var(--popup-ring)] p-[5px] smooth-shadow-ring-md";
+	mergeStylexClassName("smooth-shadow-ring-md", sx.absolute, sx.bottomCalc1006px, sx.right0, sx.z20, sx.minW208px, sx.roundedControl, sx.bgPopupGlass, sx.BackdropFilterVarPopupBlur, sx.SmoothRingColorVarPopupRing, sx.p5px);
 const CREATE_MENU_ITEM =
-	"flex w-full cursor-pointer items-start gap-[9px] rounded-md border-none bg-transparent px-[9px] py-[7px] text-left text-fg transition-colors hover:bg-hover";
+	mergeStylexClassName("", sx.flex, sx.wFull, sx.cursorPointer, sx.itemsStart, sx.gap9px, sx.roundedMd, sx.borderNone, sx.bgTransparent, sx.px9px, sx.py7px, sx.textLeft, sx.textFg, sx.transitionColors, sx.hoverBgHover);
 
 /**
  * The same card rendered on the page rather than over a dimmed one: what the
@@ -1886,9 +2361,9 @@ pendingDraftParks.delete(operation);
           so without this the only trace of a pick is a count on the overflow
           button, and the pick governs the whole session rather than one
           prompt. The row stays mounted so the last chip can animate out. */}
-      <div {...mergeStylexProps("phone:px-3 phone:pt-1", sx.flex, sx.flexWrap, sx.itemsStart, sx.gapX1, sx.px4)}>
+      <div {...mergeStylexProps("", sx.phonePx3, sx.phonePt1, sx.flex, sx.flexWrap, sx.itemsStart, sx.gapX1, sx.px4)}>
         {selectedMcpServers.length > 0 && (
-          <span {...mergeStylexProps("phone:block desktop:hidden", sx.mr1, sx.selfCenter, sx.fontMedium, sx.textFaint, typography.meta)}>
+          <span {...mergeStylexProps("", sx.phoneBlock, sx.desktopHidden, sx.mr1, sx.selfCenter, sx.fontMedium, sx.textFaint, typography.meta)}>
             Using
           </span>
         )}
@@ -2023,7 +2498,7 @@ pendingDraftParks.delete(operation);
               </Tooltip>
               <Menu.Popup
                 align="start"
-                sideOffset={6} {...mergeStylexProps("max-w-[min(360px,calc(100vw-1rem))]", sx.minW260px)}
+                sideOffset={6} {...mergeStylexProps("", sx.maxWMin360pxCalc100vw1rem, sx.minW260px)}
               >
                 {showBranchPicker && (
                   <Menu.SubmenuRoot>

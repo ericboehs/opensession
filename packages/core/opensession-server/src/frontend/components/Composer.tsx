@@ -507,6 +507,22 @@ const sx = stylex.create({
 			}
 		}
 	},
+
+	phoneWCalc100vw15rem: {
+		"@media (max-width: 720px)": {
+			"width": "calc(100vw - 1.5rem)"
+		}
+	},
+	phoneP6: {
+		"@media (max-width: 720px)": {
+			"padding": "24px"
+		}
+	},
+	phoneHidden: {
+		"@media (max-width: 720px)": {
+			"display": "none"
+		}
+	},
 });
 
 interface Props {
@@ -795,7 +811,7 @@ function StopConfirmModal({
     <Modal.Root open={open} onOpenChange={onOpenChange}>
       <Modal.Content
         initialFocus={stopRef}
-        widthClassName="max-w-[32rem]" {...mergeStylexProps("phone:w-[calc(100vw-1.5rem)] phone:p-6", sx.gap5, sx.p7)}
+        widthClassName="max-w-[32rem]" {...mergeStylexProps("", sx.phoneWCalc100vw15rem, sx.phoneP6, sx.gap5, sx.p7)}
       >
         <div {...stylex.props(sx.flex, sx.flexCol)}>
           <Modal.Title {...stylex.props(sx.m0, sx.textBalance, sx.fontSemibold, sx.leadingTight, sx.tracking001em, sx.textFg, typography.sectionTitle)}>
@@ -1404,7 +1420,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
     const top = scrollTop > 1;
     const under = scrollTop + el.clientHeight < el.scrollHeight - 1;
     const mask = top
-      ? `linear-gradient(to bottom, transparent 0, #000 ${FADE_PX}px, #000 100%)`
+      ? `linear-gradient(to bottom, transparent 0, var(--color-black) ${FADE_PX}px, var(--color-black) 100%)`
       : "";
     const applied =
       appliedEdges.current?.wrap === wrap ? appliedEdges.current : null;
@@ -1876,7 +1892,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
             typing looks identical with the pref on. Sits above the input wrap's
             scroll-fade mask. */}
         {vimEnabled && vim.mode !== "insert" && (
-          <div {...mergeStylexProps("select-none", sx.pointerEventsNone, sx.absolute, sx.right3, sx.top2, sx.z2, sx.roundedSm, sx.border, sx.borderLine, sx.bgSurface, sx.px15, sx.py05, sx.fontSemibold, sx.trackingWider, sx.textDim, typography.meta)}>
+          <div {...mergeStylexProps("", sx.selectNone, sx.pointerEventsNone, sx.absolute, sx.right3, sx.top2, sx.z2, sx.roundedSm, sx.border, sx.borderLine, sx.bgSurface, sx.px15, sx.py05, sx.fontSemibold, sx.trackingWider, sx.textDim, typography.meta)}>
             {vim.mode === "normal"
               ? "NORMAL"
               : vim.mode === "visual"
@@ -2621,7 +2637,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
       {/* The keyboard-shortcut hint is irrelevant on touch and eats vertical
           space right where the keyboard appears. */}
       {hint && (
-        <div {...mergeStylexProps("phone:hidden", sx.mt7px, sx.textCenter, sx.textFaint, typography.meta)}>
+        <div {...mergeStylexProps("", sx.phoneHidden, sx.mt7px, sx.textCenter, sx.textFaint, typography.meta)}>
           {hint}
         </div>
       )}

@@ -81,7 +81,7 @@ import { Tooltip } from "../../ui/tooltip";
 import { Select, SettingRow } from "./shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps } from "../../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -289,6 +289,38 @@ const sx = stylex.create({
 	gapY1: {
 			rowGap: "4px"
 	},
+
+	desktopW28: {
+		"@media (min-width: 721px)": {
+			"width": "112px"
+		}
+	},
+	transitionBorderColorBoxShadow: {
+		"transitionProperty": "border-color,box-shadow",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	bgLinearGradient135degColorMixInSrgbVarSwatch97WhiteColorMixInSrgbVarSwatch94Black: {
+		"backgroundImage": "linear-gradient(135deg,var(--swatch),var(--swatch))",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundImage": "linear-gradient(135deg,color-mix(in srgb,var(--swatch) 97%,white),color-mix(in srgb,var(--swatch) 94%,black))"
+		}
+	},
+	transitionScaleBoxShadow: {
+		"transitionProperty": "scale,box-shadow",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	activeScale096: {
+		":active": {
+			"scale": ".96"
+		}
+	},
+	desktopGap4: {
+		"@media (min-width: 721px)": {
+			"gap": "16px"
+		}
+	},
 });
 
 // The look of the app, as it appears inside Settings → Preferences. These used
@@ -361,13 +393,13 @@ function ThemeCard({
 		// old rules were compound selectors (`.theme-card.active .theme-swatch`),
 		// which outrank a single utility: leaving the class here would have let
 		// it keep winning against everything below.
-		<button {...mergeStylexProps("group desktop:w-28", sx.flex, sx.w20, sx.cursorPointer, sx.flexCol, sx.itemsCenter, sx.gap25, sx.borderNone, sx.bgTransparent, sx.p0)}
+		<button {...mergeStylexProps("group", sx.desktopW28, sx.flex, sx.w20, sx.cursorPointer, sx.flexCol, sx.itemsCenter, sx.gap25, sx.borderNone, sx.bgTransparent, sx.p0)}
 			role="radio"
 			aria-checked={active}
 			data-active={active || undefined}
 			onClick={onClick}
 		>
-			<div {...mergeStylexProps("transition-[border-color,box-shadow] group-hover:border-faint group-data-active:border-accent group-data-active:shadow-[0_0_0_1px_var(--accent)]", sx.relative, sx.aspect1610, sx.wFull, sx.overflowHidden, sx.roundedRow, sx.border2, sx.borderLine)}>
+			<div {...mergeStylexProps("group-hover:border-faint group-data-active:border-accent group-data-active:shadow-[0_0_0_1px_var(--accent)]", sx.transitionBorderColorBoxShadow, sx.relative, sx.aspect1610, sx.wFull, sx.overflowHidden, sx.roundedRow, sx.border2, sx.borderLine)}>
 				{/* System = light base with the dark mock clipped over the right half. */}
 				<ThemeMock tone={option === "dark" ? "dark" : "light"} />
 				{option === "system" && (
@@ -416,7 +448,7 @@ function AccentSwatch({
 					onChange={onClick}
 					aria-label={option.label} {...mergeStylexProps("peer", sx.srOnly)}
 				/>
-				<span {...mergeStylexProps("bg-[linear-gradient(135deg,color-mix(in_srgb,var(--swatch)_97%,white),color-mix(in_srgb,var(--swatch)_94%,black))] transition-[scale,box-shadow] active:scale-[0.96] peer-checked:shadow-[0_0_0_2px_var(--bg-raised),0_0_0_4px_var(--swatch)] peer-focus-visible:outline-2 peer-focus-visible:outline-accent-ink", sx.flex, sx.size8, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.border, sx.borderLine, sx.textSwatchInk, sx.outlineOffset4, sx.duration150)}>
+				<span {...mergeStylexProps("peer-checked:shadow-[0_0_0_2px_var(--bg-raised),0_0_0_4px_var(--swatch)] peer-focus-visible:outline-2 peer-focus-visible:outline-accent-ink", sx.bgLinearGradient135degColorMixInSrgbVarSwatch97WhiteColorMixInSrgbVarSwatch94Black, sx.transitionScaleBoxShadow, sx.activeScale096, sx.flex, sx.size8, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.border, sx.borderLine, sx.textSwatchInk, sx.outlineOffset4, sx.duration150)}>
 					{active && <IconCheck size={16} strokeWidth={2.4} />}
 				</span>
 			</label>
@@ -447,7 +479,7 @@ export function AppearanceSection() {
 		<>
 			<SettingsGroupLabel>Appearance</SettingsGroupLabel>
 			<SettingsSection>
-				<div {...mergeStylexProps("desktop:gap-4", sx.flex, sx.justifyStart, sx.gap3)}
+				<div {...mergeStylexProps("", sx.desktopGap4, sx.flex, sx.justifyStart, sx.gap3)}
 					role="radiogroup"
 					aria-label="Theme"
 				>

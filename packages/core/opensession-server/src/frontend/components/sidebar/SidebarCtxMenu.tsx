@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 import { MenuCheck, MenuShortcut } from "../../ui/menu";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { mergeStylexClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -31,6 +32,13 @@ const sx = stylex.create({
 	},
 	tracking001em: {
 			letterSpacing: "-.01em"
+	},
+
+	SmoothRingColorVarPopupRing: {
+		"--smooth-ring-color": "var(--popup-ring)"
+	},
+	CornerShapeSquircle: {
+		"cornerShape": "squircle"
 	},
 });
 
@@ -141,7 +149,7 @@ function CtxFlyoutRow({
 
 // The popup surface, worn by the menu and by every flyout it opens.
 const POPUP_CLASS =
-	"smooth-shadow-ring-md [--smooth-ring-color:var(--popup-ring)] [corner-shape:squircle] [&_button:not(.tab-color-swatch):hover]:bg-hover!";
+	mergeStylexClassName("smooth-shadow-ring-md [&_button:not(.tab-color-swatch):hover]:bg-hover!", sx.SmoothRingColorVarPopupRing, sx.CornerShapeSquircle);
 
 export function SidebarCtxMenu({
 	x,

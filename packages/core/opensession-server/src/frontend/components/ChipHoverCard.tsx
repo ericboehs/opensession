@@ -48,7 +48,7 @@ import { SessionCardBody } from "./sidebar/HoverCards";
 import { IconGitCommit, IconGitMerge, IconPullRequest } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -113,6 +113,13 @@ const sx = stylex.create({
 	},
 	fontMedium: {
 		fontWeight: "var(--font-weight-medium)",
+	},
+
+	lineClamp3: {
+		"WebkitlineClamp": "3",
+		"WebkitboxOrient": "vertical",
+		"display": "-webkit-box",
+		"overflow": "hidden"
 	},
 });
 
@@ -460,7 +467,7 @@ function CommitChipCardBody({ commit }: { commit: CommitDetails }) {
 			</div>
 
 			{lede && (
-				<div {...mergeStylexProps("line-clamp-3", sx.mt3px, sx.leading14, sx.textDim, typography.supporting)}>
+				<div {...mergeStylexProps("", sx.lineClamp3, sx.mt3px, sx.leading14, sx.textDim, typography.supporting)}>
 					{lede}
 				</div>
 			)}

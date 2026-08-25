@@ -2,7 +2,7 @@ import * as React from "react";
 import { Menu as BaseMenu } from "@base-ui/react/menu";
 import { ContextMenu as BaseContextMenu } from "@base-ui/react/context-menu";
 import { IconCheck } from "../components/icons";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexClassName, mergeStylexProps } from "./cn";
 import {
 	FLOATING_OVERLAY_LAYER,
 	POPUP_HOOK,
@@ -32,6 +32,9 @@ const sx = stylex.create({
 	},
 	textFaint: {
 			color: "var(--text-faint)"
+	},
+	textDim: {
+		color: "var(--text-dim)"
 	},
 	textAccent: {
 			color: "var(--accent-ink)"
@@ -221,7 +224,7 @@ function CheckboxItem({
  * for a glyph that carries state in its colour (a running preview's green, a
  * pinned row's yellow).
  */
-export const MENU_ICON = "text-dim";
+export const MENU_ICON = mergeStylexClassName("", sx.textDim);
 
 /** Right-aligned keyboard-shortcut hint on a menu row ("⌘ W"). Place it after
  * the row's `grow` label so it pins to the trailing edge. Exported on its own

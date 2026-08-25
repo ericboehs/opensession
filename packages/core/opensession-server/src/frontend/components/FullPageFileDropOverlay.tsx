@@ -5,7 +5,7 @@ import { IconArrowUpToLine } from "./icons";
 import { duration, ease } from "../ui/motion";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -65,6 +65,17 @@ const sx = stylex.create({
 			position: "absolute",
 			overflow: "hidden"
 	},
+
+	bgColorMixInSrgbVarBgPanel68Transparent: {
+		"backgroundColor": "var(--bg-panel)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--bg-panel) 68%,transparent)"
+		}
+	},
+	BackdropFilterBlur8px: {
+		"WebkitBackdropFilter": "blur(8px)",
+		"backdropFilter": "blur(8px)"
+	},
 });
 
 interface FullPageFileDropOverlayProps {
@@ -83,7 +94,7 @@ export function FullPageFileDropOverlay({
     <>
       <AnimatePresence initial={false}>
         {active && (
-          <motion.div {...mergeStylexProps("bg-[color-mix(in_srgb,var(--bg-panel)_68%,transparent)] [backdrop-filter:blur(8px)]", sx.pointerEventsNone, sx.fixed, sx.inset0, sx.z12000, sx.flex, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.px6, sx.textCenter)}
+          <motion.div {...mergeStylexProps("", sx.bgColorMixInSrgbVarBgPanel68Transparent, sx.BackdropFilterBlur8px, sx.pointerEventsNone, sx.fixed, sx.inset0, sx.z12000, sx.flex, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.px6, sx.textCenter)}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

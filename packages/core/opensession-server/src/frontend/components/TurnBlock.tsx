@@ -27,7 +27,7 @@ import { transcriptDisclosureLedger } from "../lib/transcript-disclosures";
 import { turnScrollAnchor } from "../lib/transcript-block-identity";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -230,6 +230,93 @@ const sx = stylex.create({
 	transitionOpacityTransform: { transitionProperty: "opacity, transform" },
 	rotateNeg90Opacity0: { transform: "rotate(-90deg)", opacity: 0 },
 	textFg: { color: "var(--text)" },
+
+	hoverBgHover40: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in oklab, var(--hover) 40%, transparent)"
+				}
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	afterAbsolute: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	afterInsetY0: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"insetBlock": "0"
+		}
+	},
+	afterLeft12: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"left": "50%"
+		}
+	},
+	afterBorderL: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"borderLeftStyle": "var(--tw-border-style)",
+			"borderLeftWidth": "1px"
+		}
+	},
+	afterBorderTransparent: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"borderColor": "transparent"
+		}
+	},
+	afterTransitionColors: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"transitionProperty": "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+		}
+	},
+	hoverAfterBorderLineStrong: {
+		"@media (hover: hover)": {
+			":hover": {
+				"::after": {
+					"content": "var(--tw-content)",
+					"borderColor": "var(--border-strong)"
+				}
+			}
+		}
+	},
+	focusVisibleAfterBorderLineStrong: {
+		":focusVisible": {
+			"::after": {
+				"content": "var(--tw-content)",
+				"borderColor": "var(--border-strong)"
+			}
+		}
+	},
+	desktopMl0: {
+		"@media (min-width: 721px)": {
+			"marginLeft": "0"
+		}
+	},
+	phoneMinH10: {
+		"@media (max-width: 720px)": {
+			"minHeight": "40px"
+		}
+	},
 });
 
 interface Props {
@@ -394,7 +481,7 @@ export const TurnBlock = function TurnBlock({
             ? `${live ? "Working" : "Worked"}. ${countsLabel}. ${toolOnlyAggregate.statusLabel}`
             : undefined
         }
-        onClick={() => rememberExpansion(!expanded)} {...mergeStylexProps("hover:bg-hover/40 hover:text-fg", sx.Mx2, sx.flex, sx.wCalc10016px, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.py1, sx.pl1, sx.pr3, sx.textLeft, sx.fontSans, sx.leading5, sx.textDim, sx.transitionColors, typography.itemTitle)}
+        onClick={() => rememberExpansion(!expanded)} {...mergeStylexProps("", sx.hoverBgHover40, sx.hoverTextFg, sx.Mx2, sx.flex, sx.wCalc10016px, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.py1, sx.pl1, sx.pr3, sx.textLeft, sx.fontSans, sx.leading5, sx.textDim, sx.transitionColors, typography.itemTitle)}
       >
         <span
           {...stylex.props(sx.grid, sx.size5, sx.flexShrink0, sx.selfCenter, sx.placeItemsCenter, sx.leadingNone, sx.textFaint, sx.transitionTransform, sx.duration150, !expanded && sx.rotateNeg90)}
@@ -443,7 +530,7 @@ export const TurnBlock = function TurnBlock({
           <button
             type="button"
             aria-label={`Collapse ${live ? "Working" : "Worked"}`}
-            onClick={() => rememberExpansion(false)} {...mergeStylexProps("after:absolute after:inset-y-0 after:left-1/2 after:border-l after:border-transparent after:transition-colors hover:after:border-line-strong focus-visible:after:border-line-strong", sx.absolute, sx.insetY0, sx.Left2, sx.w4, sx.cursorPointer, sx.border0, sx.bgTransparent, sx.p0)}
+            onClick={() => rememberExpansion(false)} {...mergeStylexProps("", sx.afterAbsolute, sx.afterInsetY0, sx.afterLeft12, sx.afterBorderL, sx.afterBorderTransparent, sx.afterTransitionColors, sx.hoverAfterBorderLineStrong, sx.focusVisibleAfterBorderLineStrong, sx.absolute, sx.insetY0, sx.Left2, sx.w4, sx.cursorPointer, sx.border0, sx.bgTransparent, sx.p0)}
           />
           {sections.map((sec) =>
             sec.kind === "msg" ? (
@@ -456,7 +543,7 @@ export const TurnBlock = function TurnBlock({
               // Tool icons align with the fold chevron on desktop. Phones use
               // the 1px optical correction for the icon's inset glyph.
               <div
-                key={sec.items[0].id} {...mergeStylexProps("desktop:ml-0", sx.MlPx)}
+                key={sec.items[0].id} {...mergeStylexProps("", sx.desktopMl0, sx.MlPx)}
                 data-eid={`${sec.items[sec.items.length - 1].id}#sec`}
               >
                 {/* The outer Working row is already the tool-only run's
@@ -611,7 +698,7 @@ function ToolRunBlock({
         aria-expanded={expanded}
         aria-label={`${expanded ? "Hide" : "Show"} ${items.length} grouped steps: ${label}${statusLabel ? `. ${statusLabel}` : ""}`}
         title={`${items.length} grouped steps`}
-        onClick={() => rememberExpansion(!expanded)} {...mergeStylexProps("group hover:bg-hover/40 phone:min-h-10", sx.flex, sx.wFull, sx.minW0, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px1, sx.py3px, sx.textLeft, sx.fontSans, sx.transitionColors)}
+        onClick={() => rememberExpansion(!expanded)} {...mergeStylexProps("group", sx.hoverBgHover40, sx.phoneMinH10, sx.flex, sx.wFull, sx.minW0, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px1, sx.py3px, sx.textLeft, sx.fontSans, sx.transitionColors)}
       >
         {/* Open, the row is a heading for the steps under it, so it keeps the
             chevron rather than a stack of what is already on screen. Closed,

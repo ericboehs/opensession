@@ -140,7 +140,7 @@ const sx = stylex.create({
 			placeItems: "center"
 	},
 	bgBlack25: {
-			backgroundColor: "#00000040"
+			backgroundColor: "transparent0040"
 	},
 	textWhite: {
 			color: "var(--color-white)"
@@ -367,6 +367,60 @@ const sx = stylex.create({
 		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
 		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
 	},
+
+	hoverBgHover40: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in oklab, var(--hover) 40%, transparent)"
+				}
+			}
+		}
+	},
+	phoneMaxW24: {
+		"@media (max-width: 720px)": {
+			"maxWidth": "96px"
+		}
+	},
+	lineClamp3: {
+		"WebkitlineClamp": "3",
+		"WebkitboxOrient": "vertical",
+		"display": "-webkit-box",
+		"overflow": "hidden"
+	},
+	w40: {
+		"width": "160px"
+	},
+	desktopW64: {
+		"@media (min-width: 721px)": {
+			"width": "256px"
+		}
+	},
+	desktopW56: {
+		"@media (min-width: 721px)": {
+			"width": "224px"
+		}
+	},
+	aspect1610: {
+		"aspectRatio": "16/10"
+	},
+	hoverBrightness098: {
+		"@media (hover: hover)": {
+			":hover": {
+				"--tw-brightness": "brightness(.98)",
+				"filter": "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+			}
+		}
+	},
+	focusVisibleShadowInset0003pxVarAccentSoft: {
+		":focusVisible": {
+			"--tw-shadow": "inset 0 0 0 3px var(--tw-shadow-color,var(--accent-soft))",
+			"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+		}
+	},
 });
 
 /** Stream server-side media (staged under the uploads dir) through the
@@ -488,7 +542,7 @@ export function WalkthroughCard({
 	// shows a picture and a half.
 	const fill = gallery.items.length <= 2;
 	const tile =
-		gallery.items.length <= 4 ? "w-40 desktop:w-64" : "w-40 desktop:w-56";
+		gallery.items.length <= 4 ? mergeStylexClassName("", sx.w40, sx.desktopW64) : mergeStylexClassName("", sx.w40, sx.desktopW56);
 
 	// What a folded tile does with a picture that is not the shape of the tile.
 	// Cropping to 16/10 is honest for a landscape screenshot and useless for a
@@ -514,10 +568,10 @@ export function WalkthroughCard({
 	const isTall = (key: string) => (ownRatio[key] ?? TILE_RATIO) < TILE_RATIO;
 	const tileBox = (key: string) => {
 		const ratio = ownRatio[key];
-		if (!ratio) return { className: "aspect-[16/10] w-full", style: undefined };
+		if (!ratio) return { className: mergeStylexClassName("", sx.aspect1610, sx.wFull), style: undefined };
 		if (!isTall(key))
 			return {
-				className: "w-full",
+				className: mergeStylexClassName("", sx.wFull),
 				style: { aspectRatio: String(ratio) } as React.CSSProperties,
 			};
 		return {
@@ -555,7 +609,7 @@ export function WalkthroughCard({
 					<button
 						type="button"
 						aria-expanded={expanded}
-						onClick={() => setExpanded(!expanded)} {...mergeStylexProps("group hover:bg-hover/40 focus-visible:shadow-[0_0_0_3px_var(--accent-soft)]", sx.M1, sx.flex, sx.minW0, sx.flex1, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.p1, sx.textLeft, sx.fontSans, sx.leading5, sx.textDim, sx.outlineNone, sx.transitionColors, typography.itemTitle)}
+						onClick={() => setExpanded(!expanded)} {...mergeStylexProps("group", sx.hoverBgHover40, sx.focusVisibleShadow0003pxVarAccentSoft, sx.M1, sx.flex, sx.minW0, sx.flex1, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.p1, sx.textLeft, sx.fontSans, sx.leading5, sx.textDim, sx.outlineNone, sx.transitionColors, typography.itemTitle)}
 					>
 						{/* The walkthrough's own icon leads the line, so the row is
 					    named before it is operated; the chevron trails at the far
@@ -565,7 +619,7 @@ export function WalkthroughCard({
 						<span {...stylex.props(sx.flexShrink0, sx.fontSemibold, sx.textFg)}>
 							Walkthrough
 						</span>
-						<span {...mergeStylexProps("phone:max-w-24", sx.mlAuto, sx.maxW40, sx.flexShrink, sx.truncate, sx.leading4, sx.textFaint, typography.label)}>
+						<span {...mergeStylexProps("", sx.phoneMaxW24, sx.mlAuto, sx.maxW40, sx.flexShrink, sx.truncate, sx.leading4, sx.textFaint, typography.label)}>
 							{expanded
 								? walkthrough.publishedAt
 									? relativeTime(walkthrough.publishedAt)
@@ -596,7 +650,7 @@ export function WalkthroughCard({
 				// transcript. Three lines is what the paragraph usually is; the
 				// rest of the writeup stays behind the fold, which is what the
 				// fold is for.
-				<p {...mergeStylexProps("line-clamp-3", sx.m0, sx.mt2, sx.leading5, sx.textDim, sx.OverflowWrapAnywhere, sx.TextWrapPretty, typography.supporting)}>
+				<p {...mergeStylexProps("", sx.lineClamp3, sx.m0, sx.mt2, sx.leading5, sx.textDim, sx.OverflowWrapAnywhere, sx.TextWrapPretty, typography.supporting)}>
 					{lede}
 				</p>
 			)}
@@ -833,7 +887,7 @@ export function WalkthroughCard({
 													shot[side] && (
 														<figure {...stylex.props(sx.m0, sx.minW0)} key={side}>
 															<button
-																type="button" {...mergeStylexProps("hover:brightness-[0.98] focus-visible:shadow-[inset_0_0_0_3px_var(--accent-soft)]", sx.relative, sx.flex, sx.wFull, sx.cursorZoomIn, sx.itemsStart, sx.justifyCenter, sx.overflowHidden, sx.roundedMd, sx.border, sx.borderLine, sx.bgSurface, sx.p0, sx.textLeft, sx.outlineNone, sx.transitionFilter)}
+																type="button" {...mergeStylexProps("", sx.hoverBrightness098, sx.focusVisibleShadowInset0003pxVarAccentSoft, sx.relative, sx.flex, sx.wFull, sx.cursorZoomIn, sx.itemsStart, sx.justifyCenter, sx.overflowHidden, sx.roundedMd, sx.border, sx.borderLine, sx.bgSurface, sx.p0, sx.textLeft, sx.outlineNone, sx.transitionFilter)}
 																onClick={(event) =>
 																	open(`${i}:${side}`, event.currentTarget)
 																}

@@ -47,6 +47,85 @@ const sx = stylex.create({
 			"gridTemplateColumns": "repeat(1,minmax(0,1fr))"
 		}
 	},
+
+	wFull: {
+		"width": "100%"
+	},
+	roundedControl: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	border: {
+		"borderStyle": "var(--tw-border-style)",
+		"borderWidth": "1px"
+	},
+	borderLine: {
+		"borderColor": "var(--border)"
+	},
+	bgSurface: {
+		"backgroundColor": "var(--bg)"
+	},
+	textFg: {
+		"color": "var(--text)"
+	},
+	outlineNone: {
+		"--tw-outline-style": "none",
+		"outlineStyle": "none"
+	},
+	transitionColors: {
+		"transitionProperty": "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	placeholderTextFaint: {
+		"::placeholder": {
+			"color": "var(--text-faint)"
+		}
+	},
+	focusBorderAccent: {
+		":focus": {
+			"borderColor": "var(--accent)"
+		}
+	},
+	disabledCursorDefault: {
+		":disabled": {
+			"cursor": "default"
+		}
+	},
+	disabledOpacity40: {
+		":disabled": {
+			"opacity": ".4"
+		}
+	},
+	minH26px: {
+		"minHeight": "26px"
+	},
+	px2: {
+		"paddingInline": "8px"
+	},
+	textXs: {
+		"fontSize": "var(--type-label)",
+		"lineHeight": "var(--tw-leading,var(--text-xs--line-height))"
+	},
+	minH8: {
+		"minHeight": "32px"
+	},
+	px25: {
+		"paddingInline": "10px"
+	},
+	textSm: {
+		"fontSize": "var(--type-label)",
+		"lineHeight": "var(--tw-leading,var(--text-sm--line-height))"
+	},
+	minH9: {
+		"minHeight": "36px"
+	},
+	px3: {
+		"paddingInline": "12px"
+	},
+	textBase: {
+		"fontSize": "var(--type-body)",
+		"lineHeight": "var(--tw-leading,var(--text-base--line-height))"
+	},
 });
 
 /**
@@ -78,9 +157,9 @@ type Size = "sm" | "md" | "lg";
  * Inputs take the exact step height rather than only a minimum, so their
  * single line can be centered consistently across Chromium and WebKit. */
 const sizes: Record<Size, string> = {
-	sm: "min-h-[26px] px-2 text-xs [&:where(input)]:h-[26px]",
-	md: "min-h-8 px-2.5 text-sm [&:where(input)]:h-8",
-	lg: "min-h-9 px-3 text-base [&:where(input)]:h-9",
+	sm: mergeStylexClassName("[&:where(input)]:h-[26px]", sx.minH26px, sx.px2, sx.textXs),
+	md: mergeStylexClassName("[&:where(input)]:h-8", sx.minH8, sx.px25, sx.textSm),
+	lg: mergeStylexClassName("[&:where(input)]:h-9", sx.minH9, sx.px3, sx.textBase),
 };
 
 /**
@@ -92,7 +171,7 @@ const sizes: Record<Size, string> = {
 export const fieldClass =
 	// Block padding and a one-line box center input text vertically. The element
 	// selector deliberately leaves multiline textareas and native selects alone.
-	"w-full rounded-control border border-line bg-surface text-fg outline-none transition-colors placeholder:text-faint focus:border-accent disabled:cursor-default disabled:opacity-40 [&:where(input)]:py-0 [&:where(input)]:leading-none";
+	mergeStylexClassName("[&:where(input)]:py-0 [&:where(input)]:leading-none", sx.wFull, sx.roundedControl, sx.border, sx.borderLine, sx.bgSurface, sx.textFg, sx.outlineNone, sx.transitionColors, sx.placeholderTextFaint, sx.focusBorderAccent, sx.disabledCursorDefault, sx.disabledOpacity40);
 
 export function fieldClasses(size: Size = "md", className?: string) {
 	return cn(fieldClass, sizes[size], className);

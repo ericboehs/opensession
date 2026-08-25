@@ -13,6 +13,7 @@
  */
 import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import ts from "typescript";
 
 const FRONTEND = join(import.meta.dir, "../packages/core/opensession-server/src/frontend");
 const SHEET = process.argv.find((a) => a.endsWith(".css")) ?? "/tmp/tw-current.css";
@@ -24,35 +25,144 @@ function walkFiles(dir: string, out: string[] = []) {
 		const p = join(dir, e);
 		const st = statSync(p);
 		if (st.isDirectory()) walkFiles(p, out);
-		else if (/\.(tsx|ts|html)$/.test(e)) out.push(p);
+		else if (/\.(tsx|ts|html)$/.test(e) && !e.includes(".test.")) out.push(p);
 	}
 	return out;
 }
 
 const tokens = new Set<string>();
+const add = (text: string) => {
+	for (const token of text.split(/\s+/)) if (token) tokens.add(token);
+};
+
+let valueDeclarations = new Map<string, ts.Expression>();
+let functionReturns = new Map<string, ts.Expression[]>();
+const resolving = new Set<string>();
+
+function collectResolved(node: ts.Node, file: ts.SourceFile): void {
+	if (ts.isObjectLiteralExpression(node)) {
+		for (const prop of node.properties) {
+			if (ts.isPropertyAssignment(prop)) collectClassValue(prop.initializer, file);
+		}
+		return;
+	}
+	collectClassValue(node, file);
+}
+
+/** Walk only positions that can produce a class value. In particular, do not
+ * recursively harvest every string below cn(): `mode === "hover"` is state,
+ * not a class, and StyleX declaration values such as "flex" are not markup. */
+function collectClassValue(node: ts.Node, file: ts.SourceFile): void {
+	if (ts.isStringLiteralLike(node)) {
+		add(node.text);
+		return;
+	}
+	if (ts.isIdentifier(node)) {
+		const value = valueDeclarations.get(node.text);
+		if (value && !resolving.has(node.text)) {
+			resolving.add(node.text);
+			collectResolved(value, file);
+			resolving.delete(node.text);
+		}
+		return;
+	}
+	if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+		collectClassValue(node.expression, file);
+		return;
+	}
+	if (ts.isCallExpression(node)) {
+		const name = node.expression.getText(file);
+		for (const result of functionReturns.get(name) ?? []) collectClassValue(result, file);
+		return;
+	}
+	if (ts.isTemplateExpression(node)) {
+		add(node.head.text);
+		for (const span of node.templateSpans) {
+			collectClassValue(span.expression, file);
+			add(span.literal.text);
+		}
+		return;
+	}
+	if (ts.isConditionalExpression(node)) {
+		collectClassValue(node.whenTrue, file);
+		collectClassValue(node.whenFalse, file);
+		return;
+	}
+	if (ts.isBinaryExpression(node)) {
+		if (node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
+			collectClassValue(node.right, file);
+		} else if (node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+			collectClassValue(node.left, file);
+			collectClassValue(node.right, file);
+		}
+		return;
+	}
+	if (ts.isArrayLiteralExpression(node)) {
+		for (const element of node.elements) collectClassValue(element, file);
+		return;
+	}
+	if (ts.isObjectLiteralExpression(node)) {
+		for (const prop of node.properties) {
+			if (ts.isPropertyAssignment(prop)) add(prop.name.getText(file).replace(/^['"]|['"]$/g, ""));
+		}
+		return;
+	}
+	if (ts.isParenthesizedExpression(node)) collectClassValue(node.expression, file);
+}
+
 for (const f of walkFiles(FRONTEND)) {
-	const src = readFileSync(f, "utf8");
-	if (src.includes("@stylexjs/stylex") === false && !f.endsWith(".html")) {
-		// files without stylex may still carry classes through cn() constants
+	if (f.endsWith(".html")) {
+		for (const match of readFileSync(f, "utf8").matchAll(/\bclass="([^"]*)"/g)) add(match[1]);
+		continue;
 	}
-	for (const m of src.matchAll(/\bclassName="([^"]*)"/g)) {
-		for (const t of m[1].split(/\s+/)) if (t) tokens.add(t);
-	}
-	for (const m of src.matchAll(/className=\{`([^`]*)`\}/g)) {
-		for (const raw of m[1].split(/\s+/)) {
-			const t = raw.replace(/\$\{[^}]*\}/g, "").trim();
-			if (t) tokens.add(t);
+	const text = readFileSync(f, "utf8");
+	const file = ts.createSourceFile(
+		f,
+		text,
+		ts.ScriptTarget.Latest,
+		true,
+		f.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+	);
+	valueDeclarations = new Map();
+	functionReturns = new Map();
+	function index(node: ts.Node) {
+		if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+			valueDeclarations.set(node.name.text, node.initializer);
 		}
-	}
-	// quoted strings inside cn()/constants: keep anything that could be a
-	// utility; the sheet-intersection below is the real authority.
-	for (const m of src.matchAll(/"([^"\n]{2,160})"/g)) {
-		for (const t of m[1].split(/\s+/)) {
-			if (!/^[a-zA-Z@[[]/.test(t)) continue;
-			if (!/[-:\]]/.test(t)) continue;
-			tokens.add(t);
+		if (ts.isFunctionDeclaration(node) && node.name) {
+			const returns: ts.Expression[] = [];
+			function findReturn(child: ts.Node) {
+				if (ts.isReturnStatement(child) && child.expression) returns.push(child.expression);
+				else ts.forEachChild(child, findReturn);
+			}
+			if (node.body) findReturn(node.body);
+			functionReturns.set(node.name.text, returns);
 		}
+		ts.forEachChild(node, index);
 	}
+	index(file);
+	function visit(node: ts.Node) {
+		if (ts.isCallExpression(node)) {
+			const name = node.expression.getText(file);
+			if (name === "mergeStylexClassName" || name === "mergeStylexProps") {
+				if (node.arguments[0]) collectClassValue(node.arguments[0], file);
+				return;
+			}
+			if (name === "cn" || name === "clsx") {
+				for (const arg of node.arguments) collectClassValue(arg, file);
+				return;
+			}
+		}
+		if (ts.isJsxAttribute(node) && node.name.getText(file) === "className" && node.initializer) {
+			if (ts.isStringLiteral(node.initializer)) add(node.initializer.text);
+			else if (ts.isJsxExpression(node.initializer) && node.initializer.expression) {
+				collectClassValue(node.initializer.expression, file);
+			}
+			return;
+		}
+		ts.forEachChild(node, visit);
+	}
+	visit(file);
 }
 
 /** Class names present in the compiled sheet (the utility authority). */
@@ -85,6 +195,36 @@ for (const t of [...tokens]) {
 		const base = t.split(":").pop()!;
 		if (!sheetNames.has(base)) tokens.delete(t);
 	}
+}
+
+const semanticHooks = new Set([
+	"app",
+	"app-header-actions",
+	"archived-row",
+	"detail-pane",
+	"session-info-status",
+	"session-tab-new",
+	"session-tab-reorder",
+	"session-tabs",
+	"staging-icon",
+	"tool-pre",
+	"viewer-header-actions",
+	"viewer-panel",
+	"workspace-info-panel",
+	"ws-summary-band",
+]);
+const isPermittedResidual = (token: string) =>
+	token.startsWith("[") ||
+	token.startsWith("phone:[") ||
+	/^(?:data-|data-active|aria-|group-|first:|last:|empty:|space-y-|divide-|smooth-shadow|plate-sheen)/.test(
+		token,
+	) ||
+	semanticHooks.has(token);
+const convertible = [...tokens].filter((token) => !isPermittedResidual(token));
+if (convertible.length > 0) {
+	throw new Error(
+		`StyleX-expressible classes remain outside StyleX:\n${convertible.sort().join("\n")}`,
+	);
 }
 const kept: string[] = [];
 let matchedTokens = new Set<string>();
@@ -169,3 +309,4 @@ if (WRITE) writeFileSync(join(FRONTEND, "styles/residual.css"), outCss);
 console.log(`tokens seen: ${tokens.size}, matched: ${matchedTokens.size}, rules kept: ${kept.length}, bytes: ${outCss.length}`);
 console.log(`unmatched (component classes / already handled): ${unmatched.length}`);
 if (process.env.SHOW_UNMATCHED) console.log(unmatched.join(" "));
+if (process.env.SHOW_TOKENS) console.log([...tokens].sort().join("\n"));

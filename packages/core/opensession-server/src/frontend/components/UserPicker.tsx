@@ -13,7 +13,7 @@ import { PulseDot } from "../ui/status";
 import { AUTH_STATUS_EVENT, authGatesOut } from "../lib/auth-ready";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -185,6 +185,42 @@ const sx = stylex.create({
 			"@media (max-width: 720px)": "repeat(1, minmax(0, 1fr))",
 		},
 	},
+
+	selectNone: {
+		"WebkitUserSelect": "none",
+		"userSelect": "none"
+	},
+	motionReduceHidden: {
+		"@media (prefers-reduced-motion: reduce)": {
+			"display": "none"
+		}
+	},
+	shadowAuthCardEdge: {
+		"--tw-shadow": "var(--auth-card-edge)",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	phoneP6: {
+		"@media (max-width: 720px)": {
+			"padding": "24px"
+		}
+	},
+	transitionBorderColorScale: {
+		"transitionProperty": "border-color,scale",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	hoverBorderLineStrong: {
+		"@media (hover: hover)": {
+			":hover": {
+				"borderColor": "var(--border-strong)"
+			}
+		}
+	},
+	activeScale098: {
+		":active": {
+			"scale": ".98"
+		}
+	},
 });
 
 /**
@@ -320,11 +356,11 @@ function AuthBackdrop() {
 	const poster = `${BASE_PATH}/${name}.webp`;
 	return (
 		<div
-			aria-hidden="true" {...mergeStylexProps("select-none", sx.pointerEventsNone, sx.absolute, sx.inset0, sx.bgSurface, sx.bgCover, sx.bgCenter)}
+			aria-hidden="true" {...mergeStylexProps("", sx.selectNone, sx.pointerEventsNone, sx.absolute, sx.inset0, sx.bgSurface, sx.bgCover, sx.bgCenter)}
 			style={{ backgroundImage: `url(${poster})` }}
 		>
 			<video
-				key={name} {...mergeStylexProps("motion-reduce:hidden", sx.sizeFull, sx.objectCover)}
+				key={name} {...mergeStylexProps("", sx.motionReduceHidden, sx.sizeFull, sx.objectCover)}
 				autoPlay
 				loop
 				muted
@@ -376,7 +412,7 @@ function AuthCard({
 		// shell capability keeps this working if WCO geometry disappears.
 		<div {...mergeStylexProps("[html.wco_&]:[-webkit-app-region:drag] [html.wco_&]:[app-region:drag] [html.desktop-shell_&]:[-webkit-app-region:drag] [html.desktop-shell_&]:[app-region:drag]", sx.relative, sx.flex, sx.hScreen, sx.itemsCenter, sx.justifyCenter, sx.overflowHidden, sx.p6)}>
 			<AuthBackdrop />
-			<div {...mergeStylexProps("shadow-(--auth-card-edge) phone:p-6 [html.wco_&]:[-webkit-app-region:no-drag] [html.wco_&]:[app-region:no-drag] [html.desktop-shell_&]:[-webkit-app-region:no-drag] [html.desktop-shell_&]:[app-region:no-drag]", sx.relative, sx.w400px, sx.maxWFull, sx.rounded2xl, sx.bgSurface, sx.p8, sx.textCenter)}>
+			<div {...mergeStylexProps("[html.wco_&]:[-webkit-app-region:no-drag] [html.wco_&]:[app-region:no-drag] [html.desktop-shell_&]:[-webkit-app-region:no-drag] [html.desktop-shell_&]:[app-region:no-drag]", sx.shadowAuthCardEdge, sx.phoneP6, sx.relative, sx.w400px, sx.maxWFull, sx.rounded2xl, sx.bgSurface, sx.p8, sx.textCenter)}>
 				<img
 					src={`${BASE_PATH}/mac-app-icon.png?v=7`}
 					alt=""
@@ -526,7 +562,7 @@ export function UserGate({ children }: { children: React.ReactNode }) {
         {(roster.length ? roster.map(({ name }) => name) : ["Local User"]).map(
           (name) => (
             <button
-              key={name} {...mergeStylexProps("transition-[border-color,scale] hover:border-line-strong active:scale-[0.98]", sx.flex, sx.flexCol, sx.itemsCenter, sx.gap2, sx.roundedLg, sx.border, sx.borderLine, sx.bgButton, sx.px3, sx.py4, sx.fontMedium, sx.textFg, sx.smoothShadowXs, sx.focusRing, typography.itemTitle)}
+              key={name} {...mergeStylexProps("", sx.transitionBorderColorScale, sx.hoverBorderLineStrong, sx.activeScale098, sx.flex, sx.flexCol, sx.itemsCenter, sx.gap2, sx.roundedLg, sx.border, sx.borderLine, sx.bgButton, sx.px3, sx.py4, sx.fontMedium, sx.textFg, sx.smoothShadowXs, sx.focusRing, typography.itemTitle)}
               onClick={() => setStoredUser(name)}
             >
               <UserAvatar name={name} size={36} />

@@ -173,6 +173,20 @@ const sx = stylex.create({
 			"gridTemplateColumns": "repeat(1,minmax(0,1fr))"
 		}
 	},
+
+	rounded2xl: {
+		"borderRadius": "calc(22px * var(--rf))"
+	},
+	border: {
+		"borderStyle": "var(--tw-border-style)",
+		"borderWidth": "1px"
+	},
+	borderDividerSoft: {
+		"borderColor": "var(--divider-soft)"
+	},
+	bgSettingsPlate: {
+		"backgroundColor": "var(--settings-plate)"
+	},
 });
 
 export function SettingsPanel({
@@ -269,7 +283,7 @@ export function SettingsGroupLabel({
  * `divider-soft` is `line` at a third, so it lands well under the rules it
  * contains and the block reads as one object rather than a frame. */
 const settingsSurface =
-	"rounded-2xl border border-divider-soft bg-settings-plate";
+	mergeStylexClassName("", sx.rounded2xl, sx.border, sx.borderDividerSoft, sx.bgSettingsPlate);
 
 /**
  * The rule between two groups of rows: inset from the card's edges, so it

@@ -5,7 +5,7 @@ import { Badge } from "../../ui/badge";
 import { Button } from "../../ui/button";
 import { toast } from "../../ui/toast";
 import * as stylex from "@stylexjs/stylex";
-import { mergeStylexProps } from "../../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -42,6 +42,12 @@ const sx = stylex.create({
 	},
 	textRed: {
 			color: "var(--red)"
+	},
+
+	phonePx3: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "12px"
+		}
 	},
 });
 
@@ -80,7 +86,7 @@ setLinking(false);
 	};
 
 	return (
-		<section {...mergeStylexProps("phone:px-3", sx.flex, sx.shrink0, sx.itemsCenter, sx.gap3, sx.px6, sx.py3)}>
+		<section {...mergeStylexProps("", sx.phonePx3, sx.flex, sx.shrink0, sx.itemsCenter, sx.gap3, sx.px6, sx.py3)}>
 			<div {...stylex.props(sx.minW0, sx.textXs, sx.leadingRelaxed, sx.textDim)}>
 				This branch was cut from <Badge variant="outline">{pr.stackBase}</Badge>,
 				 but the PRs are not linked on GitHub yet.

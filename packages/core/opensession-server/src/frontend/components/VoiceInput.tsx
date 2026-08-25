@@ -164,6 +164,131 @@ const sx = stylex.create({
 			}
 		}
 	},
+
+	pointerEventsAuto: {
+		"pointerEvents": "auto"
+	},
+	z6: {
+		"zIndex": "6"
+	},
+	itemsEnd: {
+		"alignItems": "flex-end"
+	},
+	gap15: {
+		"gap": "6px"
+	},
+	bgVarComposerSurface: {
+		"backgroundColor": "var(--composer-surface)"
+	},
+	px35: {
+		"paddingInline": "14px"
+	},
+	pb25: {
+		"paddingBottom": "10px"
+	},
+	phonePx3: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "12px"
+		}
+	},
+	phonePb9px: {
+		"@media (max-width: 720px)": {
+			"paddingBottom": "9px"
+		}
+	},
+	roundedVarComposerRadius: {
+		"borderRadius": "var(--composer-radius)"
+	},
+	phoneGap15: {
+		"@media (max-width: 720px)": {
+			"gap": "6px"
+		}
+	},
+	size10: {
+		"width": "40px",
+		"height": "40px"
+	},
+	cursorPointer: {
+		"cursor": "pointer"
+	},
+	roundedMd: {
+		"borderRadius": "calc(7px * var(--rf))"
+	},
+	borderNone: {
+		"--tw-border-style": "none",
+		"borderStyle": "none"
+	},
+	bgTransparent: {
+		"backgroundColor": "transparent"
+	},
+	transitionColors: {
+		"transitionProperty": "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	disabledCursorDefault: {
+		":disabled": {
+			"cursor": "default"
+		}
+	},
+	disabledOpacity35: {
+		":disabled": {
+			"opacity": ".35"
+		}
+	},
+	phoneMx18px: {
+		"@media (max-width: 720px)": {
+			"marginInline": "18px"
+		}
+	},
+	h05: {
+		"height": "2px"
+	},
+	w3px: {
+		"width": "3px"
+	},
+	roundedFull: {
+		"borderRadius": "3.40282e38px"
+	},
+	bgDim: {
+		"backgroundColor": "var(--text-dim)"
+	},
+	transitionHeight: {
+		"transitionProperty": "height",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	duration90ms: {
+		"--tw-duration": "90ms",
+		"transitionDuration": "90ms"
+	},
+	easeLinear: {
+		"--tw-ease": "linear",
+		"transitionTimingFunction": "linear"
+	},
+	bgFaint: {
+		"backgroundColor": "var(--text-faint)"
+	},
+	borderColorMixInSrgbVarRed40Transparent: {
+		"borderColor": "var(--red)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in srgb,var(--red) 40%,transparent)"
+		}
+	},
 });
 
 type Phase = "idle" | "requesting" | "recording" | "cancelling" | "transcribing";
@@ -187,23 +312,23 @@ const BAR_GAP = 4;
    the waveform reads as drawn straight onto the container, not onto a second
    raised slab inside it. */
 const OVERLAY =
-	"pointer-events-auto absolute inset-0 z-[6] flex items-end gap-1.5 bg-[var(--composer-surface)] px-3.5 pb-2.5 phone:px-3 phone:pb-[9px]";
+	mergeStylexClassName("", sx.pointerEventsAuto, sx.absolute, sx.inset0, sx.z6, sx.flex, sx.itemsEnd, sx.gap15, sx.bgVarComposerSurface, sx.px35, sx.pb25, sx.phonePx3, sx.phonePb9px);
 /** Default corner. A host whose container is rounded differently passes its
  *  own (the new-session card is `rounded-2xl`). */
-const OVERLAY_RADIUS = "rounded-[var(--composer-radius)]";
+const OVERLAY_RADIUS = mergeStylexClassName("", sx.roundedVarComposerRadius);
 
 /* Waveform bars. Colour lives on the variant, never alongside a second colour
    utility on the same element. Two of those don't compose, the sheet's order
    decides the winner. Bars without a sample yet are a 2px baseline dot; live
    ones get their height inline from the level meter. */
-const WAVE_BAR_IDLE = "h-0.5 w-[3px] shrink-0 rounded-full bg-faint";
+const WAVE_BAR_IDLE = mergeStylexClassName("", sx.h05, sx.w3px, sx.shrink0, sx.roundedFull, sx.bgFaint);
 const WAVE_BAR_LIVE =
-	"h-0.5 w-[3px] shrink-0 rounded-full bg-dim transition-[height] duration-[90ms] ease-linear";
+	mergeStylexClassName("", sx.h05, sx.w3px, sx.shrink0, sx.roundedFull, sx.bgDim, sx.transitionHeight, sx.duration90ms, sx.easeLinear);
 
 /* Hosts can match cancel to the control it replaces. This fallback keeps the
    standalone VoiceInput target at the same 40px size as its idle mic. */
 const GLYPH_CANCEL =
-	"inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-md border-none bg-transparent text-dim transition-colors hover:bg-hover hover:text-fg disabled:cursor-default disabled:opacity-35";
+	mergeStylexClassName("", sx.inlineFlex, sx.size10, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.borderNone, sx.bgTransparent, sx.textDim, sx.transitionColors, sx.hoverBgHover, sx.hoverTextFg, sx.disabledCursorDefault, sx.disabledOpacity35);
 
 /** Each period fades in after the one before it, then all three clear together.
  *  Their spans stay in layout while transparent so the label never shifts. */
@@ -653,7 +778,7 @@ if (request === requestRef.current) {
     >
       {phase === "recording" || phase === "requesting" || phase === "cancelling" ? (
         <motion.div
-          key="recording" {...mergeStylexProps("phone:gap-1.5", sx.flex, sx.h10, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2)}
+          key="recording" {...mergeStylexProps("", sx.phoneGap15, sx.flex, sx.h10, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2)}
           {...ROW_MOTION}
         >
           <span {...stylex.props(sx.srOnly)} role="status" aria-live="polite">
@@ -690,7 +815,7 @@ if (request === requestRef.current) {
           {/* Full-width track: baseline dots on the quiet/older left, live
               bars accumulating on the right by the accept buttons. */}
           <div
-            ref={waveformRef} {...mergeStylexProps("phone:mx-[18px]", sx.relative, sx.mx4, sx.flex, sx.hFull, sx.minW0, sx.flex1, sx.itemsCenter, sx.justifyCenter, sx.gap1, sx.overflowHidden)}
+            ref={waveformRef} {...mergeStylexProps("", sx.phoneMx18px, sx.relative, sx.mx4, sx.flex, sx.hFull, sx.minW0, sx.flex1, sx.itemsCenter, sx.justifyCenter, sx.gap1, sx.overflowHidden)}
             aria-hidden="true"
           >
             <div
@@ -818,7 +943,7 @@ if (request === requestRef.current) {
       </Tooltip>
       {error && phase === "idle" && (
         <div
-          role="alert" {...mergeStylexProps("border-[color-mix(in_srgb,var(--red)_40%,transparent)]", sx.absolute, sx.bottomCalc1008px, sx.right0, sx.z7, sx.whitespaceNowrap, sx.roundedControl, sx.border, sx.bgRedSoft, sx.px11px, sx.py7px, sx.fontMedium, sx.textRed, typography.supporting)}
+          role="alert" {...mergeStylexProps("", sx.borderColorMixInSrgbVarRed40Transparent, sx.absolute, sx.bottomCalc1008px, sx.right0, sx.z7, sx.whitespaceNowrap, sx.roundedControl, sx.border, sx.bgRedSoft, sx.px11px, sx.py7px, sx.fontMedium, sx.textRed, typography.supporting)}
         >
           {error}
         </div>

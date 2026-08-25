@@ -30,6 +30,7 @@ import { FileChips } from "./FileChips";
 import { cn, mergeStylexClassName } from "../ui/cn";
 import { getCurrentUser } from "./UserPicker";
 import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -97,6 +98,74 @@ const sx = stylex.create({
 	caretVarText: {
 		"caretColor": "var(--text)"
 	},
+
+	minH0: {
+		"minHeight": "0"
+	},
+	flex1: {
+		"flex": "1"
+	},
+	overflowXHidden: {
+		"overflowX": "hidden"
+	},
+	overflowYAuto: {
+		"overflowY": "auto"
+	},
+	overscrollContain: {
+		"overscrollBehavior": "contain"
+	},
+	px4: {
+		"paddingInline": "16px"
+	},
+	pt1: {
+		"paddingTop": "4px"
+	},
+	ScrollbarWidthNone: {
+		"scrollbarWidth": "none"
+	},
+	block: {
+		"display": "block"
+	},
+	minH132px: {
+		"minHeight": "132px"
+	},
+	wFull: {
+		"width": "100%"
+	},
+	resizeNone: {
+		"resize": "none"
+	},
+	borderNone: {
+		"--tw-border-style": "none",
+		"borderStyle": "none"
+	},
+	bgTransparent: {
+		"backgroundColor": "transparent"
+	},
+	fontSans: {
+		"fontFamily": "var(--sans)"
+	},
+	leading155: {
+		"--tw-leading": "1.55",
+		"lineHeight": "1.55"
+	},
+	textFg: {
+		"color": "var(--text)"
+	},
+	outlineNone: {
+		"--tw-outline-style": "none",
+		"outlineStyle": "none"
+	},
+	placeholderTextFaint: {
+		"::placeholder": {
+			"color": "var(--text-faint)"
+		}
+	},
+	disabledOpacity60: {
+		":disabled": {
+			"opacity": ".6"
+		}
+	},
 });
 
 /** One scroll surface for the prompt and its attachments. Keeping the image in
@@ -108,9 +177,9 @@ const sx = stylex.create({
  *  appears once the prompt scrolls, the header and the prompt read as one
  *  block, and that gap read as a hole in it. */
 const BODY =
-	"relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
+	mergeStylexClassName("[&::-webkit-scrollbar]:hidden", sx.relative, sx.minH0, sx.flex1, sx.overflowXHidden, sx.overflowYAuto, sx.overscrollContain, sx.px4, sx.pt1, sx.ScrollbarWidthNone);
 const TEXTAREA =
-	"block min-h-[132px] w-full resize-none overflow-hidden border-none bg-transparent font-sans text-body leading-[1.55] text-fg outline-none placeholder:text-faint disabled:opacity-60";
+	mergeStylexClassName("", sx.block, sx.minH132px, sx.wFull, sx.resizeNone, sx.overflowHidden, sx.borderNone, sx.bgTransparent, sx.fontSans, typography.body, sx.leading155, sx.textFg, sx.outlineNone, sx.placeholderTextFaint, sx.disabledOpacity60);
 
 /** How long the draft has to hold still before the palette is handed it. This
  *  is the branch-name suggestion's debounce, moved down here: the palette is

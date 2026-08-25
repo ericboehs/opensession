@@ -11,7 +11,7 @@ import { Modal, useEnterOnMount } from "../ui/modal";
 import { IconX } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -156,6 +156,44 @@ const sx = stylex.create({
 	px15: { paddingInline: "6px" },
 	fontSans: { fontFamily: "var(--font-sans)" },
 	textDim: { color: "var(--text-dim)" },
+
+	afterAbsolute: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	afterInset1: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"inset": "-4px"
+		}
+	},
+	afterContent: {
+		"::after": {
+			"--tw-content": "\"\"",
+			"content": "var(--tw-content)"
+		}
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	desktopColumns2: {
+		"@media (min-width: 721px)": {
+			"columns": "2"
+		}
+	},
 });
 
 /**
@@ -226,7 +264,7 @@ function CheatSheet({
 						</Button>
 					)}
 					<Modal.Close
-						aria-label="Close" {...mergeStylexProps("after:absolute after:-inset-1 after:content-[''] hover:bg-hover hover:text-fg", sx.focusRing, sx.relative, sx.Mr15, sx.flex, sx.size8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.p0, sx.textFaint, sx.transitionColors)}
+						aria-label="Close" {...mergeStylexProps("", sx.afterAbsolute, sx.afterInset1, sx.afterContent, sx.hoverBgHover, sx.hoverTextFg, sx.focusRing, sx.relative, sx.Mr15, sx.flex, sx.size8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.p0, sx.textFaint, sx.transitionColors)}
 					>
 						<IconX size={20} />
 					</Modal.Close>
@@ -253,7 +291,7 @@ export function ShortcutCheatSheetBody() {
 	// actually answers to rather than the shipped defaults.
 	useShortcutsVersion();
 	return (
-		<div {...mergeStylexProps("desktop:columns-2", sx.columns1, sx.gap8)}>
+		<div {...mergeStylexProps("", sx.desktopColumns2, sx.columns1, sx.gap8)}>
 			{SHORTCUT_GROUPS.map((group) => {
 				const rows = SHORTCUT_COMMANDS.filter((c) => c.group === group);
 				if (rows.length === 0) return null;

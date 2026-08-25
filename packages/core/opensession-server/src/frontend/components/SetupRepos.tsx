@@ -4,7 +4,7 @@ import { Field, Input } from "../ui/input";
 import { Modal } from "../ui/modal";
 import { Popover } from "../ui/popover";
 import { Switch } from "../ui/switch";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
 import {
 	SettingCard,
@@ -269,6 +269,31 @@ const sx = stylex.create({
 	tileChoiceActive: {
 		boxShadow: "0 0 0 2px var(--bg-panel), 0 0 0 4px var(--text)",
 	},
+
+	gridColsMinmax01frAuto: {
+		"gridTemplateColumns": "minmax(0,1fr) auto"
+	},
+	phoneMl11: {
+		"@media (max-width: 720px)": {
+			"marginLeft": "-44px"
+		}
+	},
+	phoneMaxWCalc100275rem: {
+		"@media (max-width: 720px)": {
+			"maxWidth": "calc(100% + 2.75rem)"
+		}
+	},
+	focusVisibleRing2: {
+		":focusVisible": {
+			"--tw-ring-shadow": "var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor)",
+			"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+		}
+	},
+	focusVisibleRingVarAccent6b8afd: {
+		":focusVisible": {
+			"--tw-ring-color": "var(--accent)"
+		}
+	},
 });
 
 // Settings → Setup → Repositories: the registered repos sessions work in,
@@ -531,7 +556,7 @@ setSaving(null);
 						{branchError}
 					</InlineAlert>
 				)}
-				<div {...mergeStylexProps("grid-cols-[minmax(0,1fr)_auto] phone:-ml-11 phone:max-w-[calc(100%+2.75rem)]", sx.mt3, sx.grid, sx.minH11, sx.maxW36rem, sx.itemsCenter, sx.gapX3, sx.gapY1, sx.py1)}>
+				<div {...mergeStylexProps("", sx.gridColsMinmax01frAuto, sx.phoneMl11, sx.phoneMaxWCalc100275rem, sx.mt3, sx.grid, sx.minH11, sx.maxW36rem, sx.itemsCenter, sx.gapX3, sx.gapY1, sx.py1)}>
 					<span {...stylex.props(sx.minW0, sx.fontMedium, sx.textFg, typography.label)}>
 						Use isolated worktrees
 					</span>
@@ -622,7 +647,7 @@ setBusy(false);
 
 	return (
 		<Popover.Root>
-			<Popover.Trigger {...mergeStylexProps("focus-visible:ring-2 focus-visible:ring-[var(--accent,#6b8afd)]", sx.shrink0, sx.roundedMd, sx.outlineNone)}
+			<Popover.Trigger {...mergeStylexProps("", sx.focusVisibleRing2, sx.focusVisibleRingVarAccent6b8afd, sx.shrink0, sx.roundedMd, sx.outlineNone)}
 				aria-label={`Change ${id}'s icon`}
 			>
 				<RepoTile name={id} size={28} />

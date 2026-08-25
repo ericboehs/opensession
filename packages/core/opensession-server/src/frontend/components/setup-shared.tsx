@@ -2,7 +2,7 @@ import { BASE_PATH } from "../lib/base";
 import React from "react";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { CopyCheck, useCopy } from "../ui/copy";
 import { fieldClasses } from "../ui/input";
 import { IconCopy } from "./icons";
@@ -225,6 +225,25 @@ const sx = stylex.create({
 		marginTop: "2px",
 		fontFamily: "var(--mono)",
 		"::placeholder": { fontFamily: "var(--sans)" },
+	},
+
+	hoverBgActive: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--bg-active)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
 	},
 });
 
@@ -538,7 +557,7 @@ export function LinkChips({
 					key={link.url}
 					href={link.url}
 					target="_blank"
-					rel="noreferrer" {...mergeStylexProps("hover:bg-active hover:text-fg", sx.inlineFlex, sx.itemsCenter, sx.gap1, sx.roundedSm, sx.bgSurface, sx.px2, sx.py1, sx.textDim, sx.transitionColors, typography.label)}
+					rel="noreferrer" {...mergeStylexProps("", sx.hoverBgActive, sx.hoverTextFg, sx.inlineFlex, sx.itemsCenter, sx.gap1, sx.roundedSm, sx.bgSurface, sx.px2, sx.py1, sx.textDim, sx.transitionColors, typography.label)}
 				>
 					{link.label}
 					<span aria-hidden {...stylex.props(sx.textFaint)}>
@@ -560,7 +579,7 @@ export function SetupSteps({ steps }: { steps: React.ReactNode[] }) {
 					key={index}
 					{...stylex.props(sx.flex, sx.itemsStart, sx.gap25, sx.leadingRelaxed, sx.textDim, typography.supporting)}
 				>
-					<span {...mergeStylexProps("tabular-nums", sx.mtPx, sx.flex, sx.size18px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgSurface, sx.text10px, sx.fontSemibold, sx.textFaint)}>
+					<span {...mergeStylexProps("", sx.tabularNums, sx.mtPx, sx.flex, sx.size18px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgSurface, sx.text10px, sx.fontSemibold, sx.textFaint)}>
 						{index + 1}
 					</span>
 					<span {...stylex.props(sx.minW0, sx.flex1)}>{step}</span>
@@ -706,7 +725,7 @@ export function SecretField({
 				)}
 				{present && (
 					<button
-						type="button" {...mergeStylexProps("hover:text-fg", sx.focusRing, sx.shrink0, sx.roundedSm, sx.fontMedium, sx.textFaint, sx.underline, sx.underlineOffset2, sx.transitionColors, typography.meta)}
+						type="button" {...mergeStylexProps("", sx.hoverTextFg, sx.focusRing, sx.shrink0, sx.roundedSm, sx.fontMedium, sx.textFaint, sx.underline, sx.underlineOffset2, sx.transitionColors, typography.meta)}
 						onClick={onToggleClear}
 					>
 						{cleared ? "Keep" : "Clear"}
@@ -745,7 +764,7 @@ export function CopyableCode({ value }: { value: string }) {
 	const { copied, copy } = useCopy();
 	return (
 		<button
-			type="button" {...mergeStylexProps("hover:bg-active", sx.inlineFlex, sx.maxWFull, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.bgSurface, sx.py05, sx.pl15, sx.pr1, sx.textLeft, sx.fontMono, sx.text092em, sx.textFg, sx.transitionColors)}
+			type="button" {...mergeStylexProps("", sx.hoverBgActive, sx.inlineFlex, sx.maxWFull, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.bgSurface, sx.py05, sx.pl15, sx.pr1, sx.textLeft, sx.fontMono, sx.text092em, sx.textFg, sx.transitionColors)}
 			onClick={() => copy(value, { toast: "Copied" })}
 			title="Copy"
 		>

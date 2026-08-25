@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { useScrollEdge } from "../hooks/useScrollEdge";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import { useAuthStatus } from "./UserPicker";
 import {
 	SETTINGS_BACK,
@@ -248,6 +248,48 @@ const sx = stylex.create({
 	},
 	detailVisible: { transform: "translateX(0)" },
 	detailHidden: { transform: "translateX(100%)" },
+
+	afterAbsolute: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	afterBottom0: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"bottom": "0"
+		}
+	},
+	afterLeft54px: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"left": "54px"
+		}
+	},
+	afterRight0: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"right": "0"
+		}
+	},
+	afterHPx: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"height": "1px"
+		}
+	},
+	afterBgDividerSoft: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"backgroundColor": "var(--divider-soft)"
+		}
+	},
+	activeBgHover: {
+		":active": {
+			"backgroundColor": "var(--hover)"
+		}
+	},
 });
 
 // The full-window Settings surface: a left sub-nav + a scrolling body, reached
@@ -692,7 +734,7 @@ function MobileSettings({
 										<div {...stylex.props(sx.overflowHidden, sx.rounded2xl, sx.border, sx.borderDividerSoft, sx.bgSettingsPlate)}>
 											{g.hits.map(({ item: s, hint }) => (
 												<button
-													key={s.key} {...mergeStylexProps("after:absolute after:bottom-0 after:left-[54px] after:right-0 after:h-px after:bg-divider-soft last:after:hidden active:bg-hover", sx.relative, sx.flex, sx.wFull, sx.itemsCenter, sx.gap3, sx.border0, sx.bgTransparent, sx.px35, sx.py3, sx.textLeft)}
+													key={s.key} {...mergeStylexProps("last:after:hidden", sx.afterAbsolute, sx.afterBottom0, sx.afterLeft54px, sx.afterRight0, sx.afterHPx, sx.afterBgDividerSoft, sx.activeBgHover, sx.relative, sx.flex, sx.wFull, sx.itemsCenter, sx.gap3, sx.border0, sx.bgTransparent, sx.px35, sx.py3, sx.textLeft)}
 													onClick={() => onSelect(s.key)}
 												>
 													<span {...stylex.props(sx.flex, sx.h7, sx.w7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textDim)}>

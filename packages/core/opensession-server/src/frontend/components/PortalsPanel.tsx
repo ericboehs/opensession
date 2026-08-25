@@ -13,7 +13,7 @@ import { IconArrowUpRight } from "./icons";
 import { PanelPageHeader } from "./PanelPageHeader";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -189,6 +189,83 @@ const sx = stylex.create({
   },
   bgGreen: { backgroundColor: "var(--green)" },
   bgLineStrong: { backgroundColor: "var(--border-strong)" },
+
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	transitionBackgroundColorScale: {
+		"transitionProperty": "background-color,scale",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	activeScale096: {
+		":active": {
+			"scale": ".96"
+		}
+	},
+	disabledCursorDefault: {
+		":disabled": {
+			"cursor": "default"
+		}
+	},
+	disabledOpacity45: {
+		":disabled": {
+			"opacity": ".45"
+		}
+	},
+	lineClamp2: {
+		"WebkitlineClamp": "2",
+		"WebkitboxOrient": "vertical",
+		"display": "-webkit-box",
+		"overflow": "hidden"
+	},
+	transitionColorOpacity: {
+		"transitionProperty": "color,opacity",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	phoneOpacity100: {
+		"@media (max-width: 720px)": {
+			"opacity": "1"
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	focusVisibleOpacity100: {
+		":focusVisible": {
+			"opacity": "1"
+		}
+	},
+	focusWithinOpacity100: {
+		":focusWithin": {
+			"opacity": "1"
+		}
+	},
+	phoneMinH11: {
+		"@media (max-width: 720px)": {
+			"minHeight": "44px"
+		}
+	},
+	hoverTextRed: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--red)"
+			}
+		}
+	},
 });
 
 /** A plain divided list. Portal rows do not need a shared grey plate around
@@ -282,7 +359,7 @@ export function PortalsPage({
 					trailing={
 						liveCount > 0 && (
               <span
-                {...mergeStylexProps("tabular-nums", sx.shrink0, sx.px1, sx.fontSemibold, sx.textFaint, typography.label)}
+                {...mergeStylexProps("", sx.tabularNums, sx.shrink0, sx.px1, sx.fontSemibold, sx.textFaint, typography.label)}
               >
 								{liveCount} live
 							</span>
@@ -350,7 +427,7 @@ export function PortalsPage({
                             )
 													.finally(() => setRequestedId(null));
 											}}
-                        {...mergeStylexProps("transition-[background-color,scale] hover:bg-hover active:scale-[0.96] disabled:cursor-default disabled:opacity-45", sx.focusRing, sx.flex, sx.minH11, sx.wFull, sx.minW0, sx.itemsCenter, sx.gap3, sx.roundedControl, sx.px2, sx.py15, sx.textLeft)}
+                        {...mergeStylexProps("", sx.transitionBackgroundColorScale, sx.hoverBgHover, sx.activeScale096, sx.disabledCursorDefault, sx.disabledOpacity45, sx.focusRing, sx.flex, sx.minH11, sx.wFull, sx.minW0, sx.itemsCenter, sx.gap3, sx.roundedControl, sx.px2, sx.py15, sx.textLeft)}
 										>
 											<span {...stylex.props(sx.minW0, sx.flex1)}>
                           <span
@@ -366,7 +443,7 @@ export function PortalsPage({
                           </span>
 												{recipe.description ? (
                             <span
-                              {...mergeStylexProps("line-clamp-2", sx.mt05, sx.block, sx.textDim, typography.supporting)}
+                              {...mergeStylexProps("", sx.lineClamp2, sx.mt05, sx.block, sx.textDim, typography.supporting)}
                             >
                               {recipe.description}
                             </span>
@@ -415,7 +492,7 @@ export function PortalsPage({
 												type="button"
 												disabled={!target}
 												onClick={() => target && onOpenPortal?.(target)}
-                          {...mergeStylexProps("disabled:cursor-default", sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.px2, sx.py5px, sx.textLeft)}
+                          {...mergeStylexProps("", sx.disabledCursorDefault, sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.px2, sx.py5px, sx.textLeft)}
 											>
 												<span
                             {...stylex.props(
@@ -451,7 +528,7 @@ export function PortalsPage({
 													href={target.url}
 													target="_blank"
 													rel="noopener"
-                            {...mergeStylexProps("transition-[color,opacity] phone:opacity-100 hover:text-fg group-hover:opacity-100 focus-visible:opacity-100", sx.focusRing, sx.inlineFlex, sx.size11, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textFaint, sx.opacity0)}
+                            {...mergeStylexProps("group-hover:opacity-100", sx.transitionColorOpacity, sx.phoneOpacity100, sx.hoverTextFg, sx.focusVisibleOpacity100, sx.focusRing, sx.inlineFlex, sx.size11, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.textFaint, sx.opacity0)}
 													aria-label={`Open ${service.name} in a separate browser window`}
 													title="Open in browser"
 												>
@@ -460,7 +537,7 @@ export function PortalsPage({
 											) : null}
 											{service.managed && onPortalAction ? (
                           <div
-                            {...mergeStylexProps("phone:opacity-100 group-hover:opacity-100 focus-within:opacity-100", sx.flex, sx.shrink0, sx.itemsCenter, sx.opacity0, sx.transitionOpacity)}
+                            {...mergeStylexProps("group-hover:opacity-100", sx.phoneOpacity100, sx.focusWithinOpacity100, sx.flex, sx.shrink0, sx.itemsCenter, sx.opacity0, sx.transitionOpacity)}
                           >
 													<button
 														type="button"
@@ -478,7 +555,7 @@ export function PortalsPage({
                                   )
 																.finally(() => setWorking(null));
 														}}
-                              {...mergeStylexProps("phone:min-h-11 hover:text-fg disabled:opacity-45", sx.focusRing, sx.roundedControl, sx.px15, sx.py1, sx.fontSemibold, sx.textFaint, sx.transitionColors, typography.label)}
+                              {...mergeStylexProps("", sx.phoneMinH11, sx.hoverTextFg, sx.disabledOpacity45, sx.focusRing, sx.roundedControl, sx.px15, sx.py1, sx.fontSemibold, sx.textFaint, sx.transitionColors, typography.label)}
 													>
 														Restart
 													</button>
@@ -500,7 +577,7 @@ export function PortalsPage({
                                   )
 																.finally(() => setWorking(null));
 														}}
-                              {...mergeStylexProps("phone:min-h-11 hover:text-red disabled:opacity-45", sx.focusRing, sx.roundedControl, sx.px15, sx.py1, sx.fontSemibold, sx.textRed, sx.transitionColors, typography.label)}
+                              {...mergeStylexProps("", sx.phoneMinH11, sx.hoverTextRed, sx.disabledOpacity45, sx.focusRing, sx.roundedControl, sx.px15, sx.py1, sx.fontSemibold, sx.textRed, sx.transitionColors, typography.label)}
 													>
 														Stop
 													</button>

@@ -14,7 +14,7 @@ import {
 import { EmptyState, InlineAlert } from "../../ui/state";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps } from "../../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -86,6 +86,39 @@ const sx = stylex.create({
 			transitionProperty: "transform,translate,scale,rotate",
 			transitionTimingFunction: "var(--tw-ease,var(--ease))",
 			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	},
+
+	phoneItemsStart: {
+		"@media (max-width: 720px)": {
+			"alignItems": "flex-start"
+		}
+	},
+	phoneFlexCol: {
+		"@media (max-width: 720px)": {
+			"flexDirection": "column"
+		}
+	},
+	phoneWFull: {
+		"@media (max-width: 720px)": {
+			"width": "100%"
+		}
+	},
+	activeScale096: {
+		":active": {
+			"scale": ".96"
+		}
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	transitionBackgroundColorScale: {
+		"transitionProperty": "background-color,scale",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
 	},
 });
 
@@ -175,21 +208,21 @@ export function ReliabilityPanel({ initialBody = null }: { initialBody?: Respons
       ) : (
         <SettingCard>
           {entries.map((entry) => (
-            <div key={`${entry.timerId ? "timer" : "outbox"}:${entry.sessionId}:${entry.timerId || entry.id}`} {...mergeStylexProps("last:border-b-0 phone:items-start phone:flex-col", sx.flex, sx.minH14, sx.itemsCenter, sx.gap3, sx.borderB, sx.borderLine, sx.px3, sx.py2)}>
+            <div key={`${entry.timerId ? "timer" : "outbox"}:${entry.sessionId}:${entry.timerId || entry.id}`} {...mergeStylexProps("last:border-b-0", sx.phoneItemsStart, sx.phoneFlexCol, sx.flex, sx.minH14, sx.itemsCenter, sx.gap3, sx.borderB, sx.borderLine, sx.px3, sx.py2)}>
               <div {...stylex.props(sx.minW0, sx.flex1)}>
                 <div {...stylex.props(sx.truncate, sx.fontMedium, sx.textFg, typography.itemTitle)}>{entry.kind}</div>
                 <div {...stylex.props(sx.truncate, sx.textDim, typography.meta)}>{entry.lastError || "Delivery failed"} · {entry.attempts} attempts</div>
               </div>
-              <div {...mergeStylexProps("phone:w-full", sx.flex, sx.shrink0, sx.gap2)}>
-                <button {...mergeStylexProps("active:scale-[0.96]", sx.minH10, sx.roundedMd, sx.bgButton, sx.px3, sx.textSm, sx.textFg, sx.transitionTransform)} onClick={() => void change(entry, "retry").catch((cause) => setError(String(cause)))}>Retry</button>
-                <button {...mergeStylexProps("text-danger hover:bg-hover active:scale-[0.96] transition-[background-color,scale]", sx.minH10, sx.roundedMd, sx.px3, sx.textSm)} onClick={() => void change(entry, "discard").catch((cause) => setError(String(cause)))}>Discard</button>
+              <div {...mergeStylexProps("", sx.phoneWFull, sx.flex, sx.shrink0, sx.gap2)}>
+                <button {...mergeStylexProps("", sx.activeScale096, sx.minH10, sx.roundedMd, sx.bgButton, sx.px3, sx.textSm, sx.textFg, sx.transitionTransform)} onClick={() => void change(entry, "retry").catch((cause) => setError(String(cause)))}>Retry</button>
+                <button {...mergeStylexProps("text-danger", sx.hoverBgHover, sx.activeScale096, sx.transitionBackgroundColorScale, sx.minH10, sx.roundedMd, sx.px3, sx.textSm)} onClick={() => void change(entry, "discard").catch((cause) => setError(String(cause)))}>Discard</button>
               </div>
             </div>
           ))}
         </SettingCard>
       )}
       {body?.nextOffset !== undefined && (
-        <button {...mergeStylexProps("active:scale-[0.96]", sx.minH10, sx.roundedMd, sx.bgButton, sx.px3, sx.textSm, sx.textFg, sx.transitionTransform)} onClick={() => void loadMore().catch((cause) => setError(String(cause)))}>Load more</button>
+        <button {...mergeStylexProps("", sx.activeScale096, sx.minH10, sx.roundedMd, sx.bgButton, sx.px3, sx.textSm, sx.textFg, sx.transitionTransform)} onClick={() => void loadMore().catch((cause) => setError(String(cause)))}>Load more</button>
       )}
       <SettingsGroupLabel>Pending sends</SettingsGroupLabel>
       {pendingSends.length === 0 ? (
@@ -197,14 +230,14 @@ export function ReliabilityPanel({ initialBody = null }: { initialBody?: Respons
       ) : (
         <SettingCard>
           {pendingSends.map(({ command, outbox }) => (
-            <div key={command.requestId} {...mergeStylexProps("last:border-b-0 phone:items-start phone:flex-col", sx.flex, sx.minH14, sx.itemsCenter, sx.gap3, sx.borderB, sx.borderLine, sx.px3, sx.py2)}>
+            <div key={command.requestId} {...mergeStylexProps("last:border-b-0", sx.phoneItemsStart, sx.phoneFlexCol, sx.flex, sx.minH14, sx.itemsCenter, sx.gap3, sx.borderB, sx.borderLine, sx.px3, sx.py2)}>
               <div {...stylex.props(sx.minW0, sx.flex1)}>
                 <div {...stylex.props(sx.fontMedium, sx.textFg, typography.itemTitle)}>{command.type}</div>
                 <div {...stylex.props(sx.truncate, sx.textDim, typography.meta)}>{command.requestId}</div>
               </div>
-              <div {...mergeStylexProps("phone:w-full", sx.flex, sx.shrink0, sx.gap2)}>
-                <button {...mergeStylexProps("active:scale-[0.96]", sx.minH10, sx.roundedMd, sx.bgButton, sx.px3, sx.textSm, sx.textFg, sx.transitionTransform)} onClick={() => window.dispatchEvent(new Event("opensession-command-outbox-retry"))}>Retry</button>
-                <button {...mergeStylexProps("text-danger hover:bg-hover active:scale-[0.96] transition-[background-color,scale]", sx.minH10, sx.roundedMd, sx.px3, sx.textSm)} onClick={() => {
+              <div {...mergeStylexProps("", sx.phoneWFull, sx.flex, sx.shrink0, sx.gap2)}>
+                <button {...mergeStylexProps("", sx.activeScale096, sx.minH10, sx.roundedMd, sx.bgButton, sx.px3, sx.textSm, sx.textFg, sx.transitionTransform)} onClick={() => window.dispatchEvent(new Event("opensession-command-outbox-retry"))}>Retry</button>
+                <button {...mergeStylexProps("text-danger", sx.hoverBgHover, sx.activeScale096, sx.transitionBackgroundColorScale, sx.minH10, sx.roundedMd, sx.px3, sx.textSm)} onClick={() => {
                   if (!window.confirm("Forget this pending send? It may already have reached the server.")) return;
                   outbox.forget(command.requestId);
                   setPendingVersion((value) => value + 1);

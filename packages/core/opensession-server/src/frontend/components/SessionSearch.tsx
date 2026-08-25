@@ -283,6 +283,47 @@ const sx = stylex.create({
 			"height": "min(560px,82vh)"
 		}
 	},
+
+	placeholderTextFaint: {
+		"::placeholder": {
+			"color": "var(--text-faint)"
+		}
+	},
+	mxPx: {
+		"marginInline": "1px"
+	},
+	minW4: {
+		"minWidth": "16px"
+	},
+	roundedMd: {
+		"borderRadius": "calc(7px * var(--rf))"
+	},
+	bgHover: {
+		"backgroundColor": "var(--hover)"
+	},
+	wFull: {
+		"width": "100%"
+	},
+	cursorPointer: {
+		"cursor": "pointer"
+	},
+	roundedLg: {
+		"borderRadius": "calc(14px * var(--rf))"
+	},
+	textLeft: {
+		"textAlign": "left"
+	},
+	max560pxHidden: {
+		"@media not all and (min-width: 560px)": {
+			"display": "none"
+		}
+	},
+	bgColorMixInSrgbVarYellow16Transparent: {
+		"backgroundColor": "var(--yellow)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in srgb,var(--yellow) 16%,transparent)"
+		}
+	},
 });
 
 export interface CommandPaletteAction {
@@ -321,7 +362,7 @@ type Status = "needsinput" | "failed" | "running" | "review" | "merged" | "pendi
  *  surface reads as an opaque chip cut out of it (and in dark it sat *below*
  *  the popup fill, so a "keycap" rendered sunken). */
 const KBD =
-	"mx-px inline-flex min-w-4 items-center justify-center rounded-md bg-hover px-1.5 py-px font-sans text-meta text-dim phone:hidden";
+	mergeStylexClassName("", sx.mxPx, sx.inlineFlex, sx.minW4, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.bgHover, sx.px15, sx.pyPx, sx.fontSans, typography.meta, sx.textDim, sx.phoneHidden);
 
 /** A result row. The selected wash rides on `aria-selected`, which the button
  *  already carries for the listbox — so the icon and keycap tones that used to
@@ -329,7 +370,7 @@ const KBD =
  *  `bg-pressed` rather than the `--bg-active` surface: the palette shell is
  *  glass, and an absolute surface would land on it as an opaque patch. */
 const ITEM =
-	"group flex w-full cursor-pointer items-center gap-3 rounded-lg border-none bg-transparent px-3 py-2.5 text-left text-fg aria-selected:bg-pressed";
+	mergeStylexClassName("group aria-selected:bg-pressed", sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap3, sx.roundedLg, sx.borderNone, sx.bgTransparent, sx.px3, sx.py25, sx.textLeft, sx.textFg);
 
 const STATUS_META: Record<Status, { label: string; dotStyle: stylex.StyleXStyles }> = {
 	needsinput: { label: "Needs input", dotStyle: sx.bgAccent },
@@ -767,7 +808,7 @@ if (!ctrl.signal.aborted) setSearching(false);
 				<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3, sx.borderB, sx.borderDivider, sx.px5, sx.py4)}>
 					<IconSearch {...stylex.props(sx.shrink0, sx.textFaint)} size={22} />
 					<input
-						ref={inputRef} {...mergeStylexProps("placeholder:text-faint", sx.flex1, sx.borderNone, sx.bgTransparent, sx.fontSans, sx.textInputPhone, sx.leading14, sx.textFg, sx.outlineNone)}
+						ref={inputRef} {...mergeStylexProps("", sx.placeholderTextFaint, sx.flex1, sx.borderNone, sx.bgTransparent, sx.fontSans, sx.textInputPhone, sx.leading14, sx.textFg, sx.outlineNone)}
 						value={query}
 						onChange={(e) => {
 							setQuery(e.target.value);
@@ -881,7 +922,7 @@ if (!ctrl.signal.aborted) setSearching(false);
 											)}
 										</span>
 										{result.action.shortcut && (
-											<span {...mergeStylexProps("max-[560px]:hidden", sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap3px)}>
+											<span {...mergeStylexProps("", sx.max560pxHidden, sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap3px)}>
 												{result.action.shortcut.map((key) => <kbd key={key} className={KBD}>{key}</kbd>)}
 											</span>
 										)}
@@ -914,11 +955,11 @@ if (!ctrl.signal.aborted) setSearching(false);
 											<span {...stylex.props(sx.truncate, sx.fontMedium, typography.label)}>{pr.title}</span>
 											<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.overflowHidden, sx.whitespaceNowrap, sx.textFaint, typography.meta)}>
 												<span {...stylex.props(sx.textDim)}>{repoLabel(pr.repo)} #{pr.number}</span>
-												<span {...mergeStylexProps("max-[560px]:hidden", sx.maxW220px, sx.truncate)}>{pr.branch}</span>
+												<span {...mergeStylexProps("", sx.max560pxHidden, sx.maxW220px, sx.truncate)}>{pr.branch}</span>
 												<span>{pr.author}</span>
 											</span>
 										</span>
-										<span {...mergeStylexProps("max-[560px]:hidden", sx.shrink0, sx.textFaint, typography.meta)}>{prStatus(pr)}</span>
+										<span {...mergeStylexProps("", sx.max560pxHidden, sx.shrink0, sx.textFaint, typography.meta)}>{prStatus(pr)}</span>
 									</button>
 								</React.Fragment>
 							);
@@ -952,16 +993,16 @@ if (!ctrl.signal.aborted) setSearching(false);
 										)}
 										<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.overflowHidden, sx.whitespaceNowrap, sx.textFaint, typography.meta)}>
 											{s.automation ? (
-												<span {...mergeStylexProps("bg-[color-mix(in_srgb,var(--yellow)_16%,transparent)]", sx.roundedSm, sx.px15, sx.pyPx, sx.textYellow, typography.meta)}>{s.automation}</span>
+												<span {...mergeStylexProps("", sx.bgColorMixInSrgbVarYellow16Transparent, sx.roundedSm, sx.px15, sx.pyPx, sx.textYellow, typography.meta)}>{s.automation}</span>
 											) : (
 												s.startedBy && <span>{s.startedBy}</span>
 											)}
 											<span {...stylex.props(sx.textDim)}>{sessionRepo(s)}</span>
-											{s.branch && <span {...mergeStylexProps("max-[560px]:hidden", sx.maxW220px, sx.truncate)}>{s.branch}</span>}
+											{s.branch && <span {...mergeStylexProps("", sx.max560pxHidden, sx.maxW220px, sx.truncate)}>{s.branch}</span>}
 											<span {...stylex.props(sx.mlAuto, sx.shrink0)}>{relativeTime(s.lastActivity)}</span>
 										</span>
 									</span>
-									<span {...mergeStylexProps("max-[560px]:hidden", sx.shrink0, sx.textFaint, typography.meta)}>{meta.label}</span>
+									<span {...mergeStylexProps("", sx.max560pxHidden, sx.shrink0, sx.textFaint, typography.meta)}>{meta.label}</span>
 								</button>
 							</React.Fragment>
 						);

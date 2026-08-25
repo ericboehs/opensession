@@ -276,12 +276,12 @@ const sx = stylex.create({
 	},
 	max920pxBgRgba000045: {
 		"@media not all and (min-width: 920px)": {
-			"backgroundColor": "#00000073"
+			"backgroundColor": "transparent0073"
 		}
 	},
 	phoneBgRgba00005: {
 		"@media (max-width: 720px)": {
-			"backgroundColor": "#00000080"
+			"backgroundColor": "color-mix(in srgb, var(--color-black) 50%, transparent)"
 		}
 	},
 });

@@ -207,6 +207,26 @@ const sx = stylex.create({
 		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
 		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
 	},
+
+	activeBgHover: {
+		":active": {
+			"backgroundColor": "var(--hover)"
+		}
+	},
+	transitionColorRotate: {
+		"transitionProperty": "color,rotate",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	phoneMinH11: {
+		"@media (max-width: 720px)": {
+			"minHeight": "44px"
+		}
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
 });
 
 type OrganizationAccount = {
@@ -284,7 +304,7 @@ export function OrganizationSwitcher({
 	}
 
 	const subtitle = `${status}${memberCount === null ? "" : ` · ${memberCount} ${memberCount === 1 ? "member" : "members"}`}`;
-	const itemClass = "phone:min-h-11";
+	const itemClass = mergeStylexClassName("", sx.phoneMinH11);
 	const organizationUrl = `${window.location.origin}${BASE_PATH}/`;
 
 	function openAddOrganization() {
@@ -329,7 +349,7 @@ toast("Couldn’t copy the organization link", { variant: "error" });
 		<>
 		<Menu.Root onOpenChange={(open) => open && loadMenu()}>
 			{variant === "topbar" ? (
-				<Menu.Trigger {...mergeStylexProps("transition-[background-color,scale] active:scale-[0.96] active:bg-hover motion-reduce:transform-none", sx.focusRing, sx.relative, sx.flex, sx.size11, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.bgTransparent, sx.p0, sx.textFg)}
+				<Menu.Trigger {...mergeStylexProps("", sx.transitionBackgroundColorScale, sx.activeScale096, sx.activeBgHover, sx.motionReduceTransformNone, sx.focusRing, sx.relative, sx.flex, sx.size11, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.bgTransparent, sx.p0, sx.textFg)}
 					aria-label={`Open organization menu, current: ${name}`}
 				>
 					<span {...stylex.props(sx.relative, sx.inlineFlex, sx.size10, sx.itemsCenter, sx.justifyCenter)}>
@@ -356,7 +376,7 @@ toast("Couldn’t copy the organization link", { variant: "error" });
 					</span>
 					<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>{name}</span>
 					<IconChevronDown
-						size={16} {...mergeStylexProps("transition-[color,rotate] group-hover:text-dim group-data-[popup-open]:rotate-180", sx.shrink0, sx.textFaint)}
+						size={16} {...mergeStylexProps("group-hover:text-dim group-data-[popup-open]:rotate-180", sx.transitionColorRotate, sx.shrink0, sx.textFaint)}
 						aria-hidden="true"
 					/>
 				</Menu.Trigger>
@@ -391,7 +411,7 @@ toast("Couldn’t copy the organization link", { variant: "error" });
 					<IconPeople size={19} className={MENU_ICON} />
 					<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>Members</span>
 					{memberCount !== null && (
-						<span {...mergeStylexProps("tabular-nums", sx.textFaint, typography.label)}>{memberCount}</span>
+						<span {...mergeStylexProps("", sx.tabularNums, sx.textFaint, typography.label)}>{memberCount}</span>
 					)}
 				</Menu.Item>
 				<Menu.Item
@@ -428,7 +448,7 @@ toast("Couldn’t copy the organization link", { variant: "error" });
 										{active ? name : account.label}
 									</span>
 									{account.unread > 0 && (
-										<span {...mergeStylexProps("tabular-nums", sx.roundedFull, sx.bgAccent, sx.px15, sx.fontSemibold, sx.textOnAccent, typography.meta)}>
+										<span {...mergeStylexProps("", sx.tabularNums, sx.roundedFull, sx.bgAccent, sx.px15, sx.fontSemibold, sx.textOnAccent, typography.meta)}>
 											{account.unread}
 										</span>
 									)}

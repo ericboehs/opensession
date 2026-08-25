@@ -7,7 +7,7 @@ import { PANEL_BODY } from "../lib/session-panel-classes";
 import { Badge } from "../ui/badge";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 const pulse = stylex.keyframes({
   "0%, 100%": { opacity: 1 },
@@ -116,6 +116,14 @@ const sx = stylex.create({
 	liveDot: { width: "7px", height: "7px", flexShrink: 0, borderRadius: "calc(infinity * 1px)", backgroundColor: "var(--green)", animationName: pulse, animationDuration: "1.6s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite", "@media (prefers-reduced-motion: reduce)": { animationDuration: "1.6s !important", animationIterationCount: "infinite !important" } },
 	px35: { paddingInline: "14px" },
 	py3: { paddingBlock: "12px" },
+
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
 });
 
 export interface SubagentRef {
@@ -251,7 +259,7 @@ if (cancelled) return;
             />}
         </div>
         {stack.length > 1 && (
-          <button {...mergeStylexProps("hover:text-fg", sx.mt2, sx.maxWFull, sx.overflowHidden, sx.borderNone, sx.bgTransparent, sx.p0, sx.textEllipsis, sx.whitespaceNowrap, sx.textDim, typography.supporting)}
+          <button {...mergeStylexProps("", sx.hoverTextFg, sx.mt2, sx.maxWFull, sx.overflowHidden, sx.borderNone, sx.bgTransparent, sx.p0, sx.textEllipsis, sx.whitespaceNowrap, sx.textDim, typography.supporting)}
             onClick={onBack}
           >
             ← {stack[stack.length - 2].label}

@@ -12,7 +12,7 @@ import { noAutofill } from "../lib/composer-autofill";
 import { noteSurface } from "../lib/tinted-surface";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -155,6 +155,51 @@ const sx = stylex.create({
 	menuInteractive: {
 		":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)", color: "var(--text)" } },
 		":focusVisible": { opacity: 1 },
+	},
+
+	borderColorColorMixInSrgbVarYellowTint45Transparent: {
+		"borderColor": "var(--yellow-tint)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in srgb,var(--yellow-tint) 45%,transparent)"
+		}
+	},
+	focusVisibleBorderColorVarYellow: {
+		":focusVisible": {
+			"borderColor": "var(--yellow)"
+		}
+	},
+	enabledHoverBgAccentHover: {
+		"@media (hover: hover)": {
+			":enabled": {
+				":hover": {
+					"backgroundColor": "var(--accent-hover)"
+				}
+			}
+		}
+	},
+	disabledCursorDefault: {
+		":disabled": {
+			"cursor": "default"
+		}
+	},
+	disabledOpacity50: {
+		":disabled": {
+			"opacity": ".5"
+		}
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
 	},
 });
 
@@ -299,13 +344,13 @@ setBusy(false);
 								e.preventDefault();
 								void save();
 							}
-						}} {...mergeStylexProps("border-[color:color-mix(in_srgb,var(--yellow-tint)_45%,transparent)] focus-visible:border-[color:var(--yellow)]", sx.wFull, sx.resizeNone, sx.roundedLg, sx.border, sx.bgSurface, sx.px25, sx.py2, sx.leadingRelaxed, sx.textFg, sx.outlineNone, typography.body)}
+						}} {...mergeStylexProps("", sx.borderColorColorMixInSrgbVarYellowTint45Transparent, sx.focusVisibleBorderColorVarYellow, sx.wFull, sx.resizeNone, sx.roundedLg, sx.border, sx.bgSurface, sx.px25, sx.py2, sx.leadingRelaxed, sx.textFg, sx.outlineNone, typography.body)}
 					/>
 					<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
 						<button
 							type="button"
 							onClick={() => void save()}
-							disabled={busy || !draft.trim()} {...mergeStylexProps("enabled:hover:bg-accent-hover disabled:cursor-default disabled:opacity-50", sx.roundedControl, sx.bgAccent, sx.px25, sx.py1, sx.fontMedium, sx.textOnAccent, typography.label)}
+							disabled={busy || !draft.trim()} {...mergeStylexProps("", sx.enabledHoverBgAccentHover, sx.disabledCursorDefault, sx.disabledOpacity50, sx.roundedControl, sx.bgAccent, sx.px25, sx.py1, sx.fontMedium, sx.textOnAccent, typography.label)}
 						>
 							Save
 						</button>
@@ -315,7 +360,7 @@ setBusy(false);
 								setEditing(false);
 								setDraft(note.text);
 							}}
-							disabled={busy} {...mergeStylexProps("hover:bg-hover hover:text-fg", sx.roundedControl, sx.px25, sx.py1, sx.fontMedium, sx.textDim, typography.label)}
+							disabled={busy} {...mergeStylexProps("", sx.hoverBgHover, sx.hoverTextFg, sx.roundedControl, sx.px25, sx.py1, sx.fontMedium, sx.textDim, typography.label)}
 						>
 							Cancel
 						</button>

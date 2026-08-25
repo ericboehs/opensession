@@ -16,7 +16,7 @@ import { IconCheck, IconPlus, IconX, IconChevronRight } from "./icons";
 import { RepoTile, repoLabel } from "./RepoTile";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -174,6 +174,34 @@ const sx = stylex.create({
 	textRed: {
 			color: "var(--red)"
 	},
+
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	transitionColorBackgroundColorScale: {
+		"transitionProperty": "color,background-color,scale",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	activeScale096: {
+		":active": {
+			"scale": ".96"
+		}
+	},
+	gap2: {
+		"gap": "8px"
+	},
 });
 
 interface Props {
@@ -315,12 +343,12 @@ setBusy(null);
   }
 
   // Static (non-menu-item) row — current repo when it can't switch, attached rows.
-  const staticRow = "flex items-center gap-2 rounded-md px-2.5 py-2 text-control-label text-fg";
+  const staticRow = mergeStylexClassName("", sx.flex, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px25, sx.py2, typography.controlLabel, sx.textFg);
 
   const trigger =
     variant === "menu-row" ? (
       // ⋯ overflow menu row (phone): matches the other menu items' shape.
-      <Menu.Trigger {...mergeStylexProps("hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg", sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap7px, sx.whitespaceNowrap, sx.roundedControl, sx.border, sx.borderLineStrong, sx.bgTransparent, sx.px3, sx.py7px, sx.fontMedium, sx.textFaint, typography.controlLabel)}
+      <Menu.Trigger {...mergeStylexProps("data-[popup-open]:bg-hover data-[popup-open]:text-fg", sx.hoverBgHover, sx.hoverTextFg, sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap7px, sx.whitespaceNowrap, sx.roundedControl, sx.border, sx.borderLineStrong, sx.bgTransparent, sx.px3, sx.py7px, sx.fontMedium, sx.textFaint, typography.controlLabel)}
         title="Switch or attach another repo"
       >
         <RepoTile name={primary} size={18} />
@@ -336,7 +364,7 @@ setBusy(null);
         <IconChevronRight size={16} {...stylex.props(sx.shrink0, sx.textFaint)} />
       </Menu.Trigger>
     ) : variant === "hero" ? (
-      <Menu.Trigger {...mergeStylexProps("transition-[color,background-color,scale] hover:bg-hover hover:text-fg active:scale-[0.96] data-[popup-open]:bg-hover data-[popup-open]:text-fg", sx.inlineFlex, sx.minH11, sx.maxWFull, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.roundedMd, sx.border0, sx.bgTransparent, sx.px15, sx.fontMedium, sx.textDim, typography.label)}
+      <Menu.Trigger {...mergeStylexProps("data-[popup-open]:bg-hover data-[popup-open]:text-fg", sx.transitionColorBackgroundColorScale, sx.hoverBgHover, sx.hoverTextFg, sx.activeScale096, sx.inlineFlex, sx.minH11, sx.maxWFull, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.roundedMd, sx.border0, sx.bgTransparent, sx.px15, sx.fontMedium, sx.textDim, typography.label)}
         title="Switch or attach another repository"
         aria-label={`Repository: ${repoLabel(primary)}. Change repository`}
       >
@@ -346,7 +374,7 @@ setBusy(null);
         )}
       </Menu.Trigger>
     ) : (
-      <Menu.Trigger {...mergeStylexProps("hover:bg-hover data-[popup-open]:bg-hover", sx.Mx15, sx.My1, sx.flex, sx.minW0, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.gap7px, sx.roundedMd, sx.border0, sx.bgTransparent, sx.px15, sx.py1, sx.fontMedium, sx.textFg, typography.itemTitle)}
+      <Menu.Trigger {...mergeStylexProps("data-[popup-open]:bg-hover", sx.hoverBgHover, sx.Mx15, sx.My1, sx.flex, sx.minW0, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.gap7px, sx.roundedMd, sx.border0, sx.bgTransparent, sx.px15, sx.py1, sx.fontMedium, sx.textFg, typography.itemTitle)}
         title="Click to switch or attach another repo"
       >
         <RepoTile name={primary} />
@@ -401,7 +429,7 @@ setBusy(null);
                         <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
                           {repoLabel(r.repo)} <span {...stylex.props(sx.textFaint)}>· {r.branch}</span>
                         </span>
-                        <button {...mergeStylexProps("hover:text-fg", sx.cursorPointer, sx.rounded, sx.border0, sx.bgTransparent, sx.p05, sx.textFaint)}
+                        <button {...mergeStylexProps("", sx.hoverTextFg, sx.cursorPointer, sx.rounded, sx.border0, sx.bgTransparent, sx.p05, sx.textFaint)}
                           onClick={() => detach(r.repo)}
                           title="Detach (leaves the worktree on disk)"
                           aria-label={`Detach ${repoLabel(r.repo)}`}

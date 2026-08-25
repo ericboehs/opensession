@@ -5,7 +5,7 @@ import { LoadingState } from "../ui/state";
 import { Code } from "./setup-shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -94,6 +94,12 @@ const sx = stylex.create({
 	pb8: {
 			paddingBottom: "32px"
 	},
+
+	backdropBlur2px: {
+		"--tw-backdrop-blur": "blur(2px)",
+		"WebkitBackdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)",
+		"backdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+	},
 });
 
 // The "changes saved — restart to apply" banner, and the veil it puts over the
@@ -131,7 +137,7 @@ export function SetupRestart({ setup }: { setup: SetupController }) {
 				</div>
 			)}
 			{restartState === "working" && (
-				<div {...mergeStylexProps("backdrop-blur-[2px]", sx.absolute, sx.inset0, sx.z30, sx.roundedLg, sx.bgBg75)}>
+				<div {...mergeStylexProps("", sx.backdropBlur2px, sx.absolute, sx.inset0, sx.z30, sx.roundedLg, sx.bgBg75)}>
 					<div {...stylex.props(sx.sticky, sx.top30vh, sx.pb8)}>
 						<LoadingState>Restarting…</LoadingState>
 					</div>

@@ -739,7 +739,7 @@ const sx = stylex.create({
 	},
 
 	shadowInset0001pxVarAccent6b8afd: {
-		"--tw-shadow": "inset 0 0 0 1px var(--tw-shadow-color,var(--accent,#6b8afd))",
+		"--tw-shadow": "inset 0 0 0 1px var(--tw-shadow-color,var(--accent))",
 		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
 	},
 	transitionTransformOpacity: {

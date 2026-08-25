@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import type { PrFile } from "../../lib/types";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps } from "../../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -169,6 +169,122 @@ const sx = stylex.create({
 	touchNone: {
 			touchAction: "none"
 	},
+
+	topVarReviewFileTreeTop0px: {
+		"top": "var(--review-file-tree-top,0px)"
+	},
+	mtVarReviewFileTreeGap8px: {
+		"marginTop": "var(--review-file-tree-gap,8px)"
+	},
+	maxHCalc100dvhVarReviewFileTreeTop0px16px: {
+		"maxHeight": "calc(100dvh - var(--review-file-tree-top,0px) - 16px)"
+	},
+	desktopMaxHCalc100dvhVarDesktopHeaderHVarReviewFileTreeTop0px16px: {
+		"@media (min-width: 721px)": {
+			"maxHeight": "calc(100dvh - var(--desktop-header-h) - var(--review-file-tree-top,0px) - 16px)"
+		}
+	},
+	shadowInset01px0VarDivider: {
+		"--tw-shadow": "inset 0 -1px 0 var(--tw-shadow-color,var(--divider))",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	focusVisibleOutline2: {
+		":focusVisible": {
+			"outlineStyle": "var(--tw-outline-style)",
+			"outlineWidth": "2px"
+		}
+	},
+	focusVisibleOutlineAccent: {
+		":focusVisible": {
+			"outlineColor": "var(--accent)"
+		}
+	},
+	afterAbsolute: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	afterInsetY1: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"insetBlock": "4px"
+		}
+	},
+	afterLeft1: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"left": "4px"
+		}
+	},
+	afterWPx: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"width": "1px"
+		}
+	},
+	afterBgTransparent: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"backgroundColor": "transparent"
+		}
+	},
+	afterTransitionBackgroundColor: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"transitionProperty": "background-color",
+			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+		}
+	},
+	afterContent: {
+		"::after": {
+			"--tw-content": "\"\"",
+			"content": "var(--tw-content)"
+		}
+	},
+	hoverAfterBgAccent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"::after": {
+					"content": "var(--tw-content)",
+					"backgroundColor": "var(--accent)"
+				}
+			}
+		}
+	},
+	focusVisibleOutlineNone: {
+		":focusVisible": {
+			"--tw-outline-style": "none",
+			"outlineStyle": "none"
+		}
+	},
+	focusVisibleAfterBgAccent: {
+		":focusVisible": {
+			"::after": {
+				"content": "var(--tw-content)",
+				"backgroundColor": "var(--accent)"
+			}
+		}
+	},
 });
 
 const WIDTH_KEY = "opensession-pr-file-tree-width";
@@ -300,15 +416,15 @@ export function PrFileTree({
     <aside
       ref={rootRef}
       id="pr-file-tree"
-      aria-label="Changed files" {...mergeStylexProps("top-[var(--review-file-tree-top,0px)] mt-[var(--review-file-tree-gap,8px)] max-h-[calc(100dvh-var(--review-file-tree-top,0px)-16px)] desktop:max-h-[calc(100dvh-var(--desktop-header-h)-var(--review-file-tree-top,0px)-16px)]", sx.sticky, sx.mb2, sx.ml2, sx.flex, sx.minH0, sx.shrink0, sx.flexCol, sx.roundedLg, sx.border, sx.borderLine, sx.bgSurface)}
+      aria-label="Changed files" {...mergeStylexProps("", sx.topVarReviewFileTreeTop0px, sx.mtVarReviewFileTreeGap8px, sx.maxHCalc100dvhVarReviewFileTreeTop0px16px, sx.desktopMaxHCalc100dvhVarDesktopHeaderHVarReviewFileTreeTop0px16px, sx.sticky, sx.mb2, sx.ml2, sx.flex, sx.minH0, sx.shrink0, sx.flexCol, sx.roundedLg, sx.border, sx.borderLine, sx.bgSurface)}
       style={{
         width: renderedWidth,
         maxWidth: `calc(100% - ${MIN_DIFF_WIDTH}px)`,
       }}
     >
-      <div {...mergeStylexProps("shadow-[inset_0_-1px_0_var(--divider)]", sx.flex, sx.h11, sx.shrink0, sx.itemsCenter, sx.gap2, sx.px3, sx.fontMedium, sx.textFg, typography.label)}>
+      <div {...mergeStylexProps("", sx.shadowInset01px0VarDivider, sx.flex, sx.h11, sx.shrink0, sx.itemsCenter, sx.gap2, sx.px3, sx.fontMedium, sx.textFg, typography.label)}>
         <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>Changed files</span>
-        <span {...mergeStylexProps("tabular-nums", sx.fontNormal, sx.textFaint, typography.meta)}>
+        <span {...mergeStylexProps("", sx.tabularNums, sx.fontNormal, sx.textFaint, typography.meta)}>
           {files.length}
         </span>
       </div>
@@ -331,7 +447,7 @@ export function PrFileTree({
               return (
                 <button
                   key={file.path}
-                  type="button" {...mergeStylexProps("group hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent", sx.flex, sx.minH8, sx.minW0, sx.itemsCenter, sx.gap2, sx.roundedRow, sx.border0, sx.bgTransparent, sx.px2, sx.textLeft, sx.textDim, typography.label)}
+                  type="button" {...mergeStylexProps("group", sx.hoverBgHover, sx.hoverTextFg, sx.focusVisibleOutline2, sx.focusVisibleOutlineAccent, sx.flex, sx.minH8, sx.minW0, sx.itemsCenter, sx.gap2, sx.roundedRow, sx.border0, sx.bgTransparent, sx.px2, sx.textLeft, sx.textDim, typography.label)}
                   title={file.path}
                   onClick={() => onOpenFile(file.path)}
                 >
@@ -344,7 +460,7 @@ export function PrFileTree({
                     )}
                   </span>
                   {showFileStats && (
-                    <span {...mergeStylexProps("tabular-nums", sx.flex, sx.shrink0, sx.gap1, typography.meta)}>
+                    <span {...mergeStylexProps("", sx.tabularNums, sx.flex, sx.shrink0, sx.gap1, typography.meta)}>
                       {file.additions > 0 && (
                         <span {...stylex.props(sx.textGreen)}>+{file.additions}</span>
                       )}
@@ -366,7 +482,7 @@ export function PrFileTree({
         aria-valuemin={MIN_WIDTH}
         aria-valuemax={maxWidth}
         aria-valuenow={Math.round(renderedWidth)}
-        tabIndex={0} {...mergeStylexProps("after:absolute after:inset-y-1 after:left-1 after:w-px after:bg-transparent after:transition-[background-color] after:content-[''] hover:after:bg-accent focus-visible:outline-none focus-visible:after:bg-accent [body.resizing-pr-file-tree_&]:after:bg-accent", sx.absolute, sx.insetY0, sx.Right1, sx.z10, sx.w9px, sx.cursorColResize, sx.touchNone)}
+        tabIndex={0} {...mergeStylexProps("[body.resizing-pr-file-tree_&]:after:bg-accent", sx.afterAbsolute, sx.afterInsetY1, sx.afterLeft1, sx.afterWPx, sx.afterBgTransparent, sx.afterTransitionBackgroundColor, sx.afterContent, sx.hoverAfterBgAccent, sx.focusVisibleOutlineNone, sx.focusVisibleAfterBgAccent, sx.absolute, sx.insetY0, sx.Right1, sx.z10, sx.w9px, sx.cursorColResize, sx.touchNone)}
         onPointerDown={startResize}
         onDoubleClick={() => commitWidth(DEFAULT_WIDTH)}
         onKeyDown={(event) => {

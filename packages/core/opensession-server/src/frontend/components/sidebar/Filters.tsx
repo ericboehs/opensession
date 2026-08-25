@@ -30,7 +30,7 @@ import {
 	ValueRow,
 } from "../../ui/setting-row";
 import { SwitchIndicator } from "../../ui/switch";
-import { cn, mergeStylexProps } from "../../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 import { RepoTile, repoLabel } from "../RepoTile";
 import { IconChevronRight, IconRepo } from "../icons";
 import {
@@ -135,6 +135,24 @@ const sx = stylex.create({
 	},
 	filterChipInline: { flexShrink: 0, maxWidth: "none" },
 	filterChipProbe: { pointerEvents: "none", position: "absolute", left: "-9999px", top: 0, maxWidth: "none", visibility: "hidden" },
+
+	SmoothRingColorVarPopupRing: {
+		"--smooth-ring-color": "var(--popup-ring)"
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
 });
 
 // ── Filter popover ─────────────────────────────────────────────────────────
@@ -147,7 +165,7 @@ const sx = stylex.create({
  *  The row menus portal above it (Base UI positions them at z-10001), so a
  *  press inside an open menu never reaches this. */
 const FILTER_POPOVER_RESIDUAL =
-	"[--smooth-ring-color:var(--popup-ring)] smooth-shadow-ring-md";
+	mergeStylexClassName("smooth-shadow-ring-md", sx.SmoothRingColorVarPopupRing);
 
 /** The same control as a row inside the Advanced menu: label, current value,
  *  and its options one level in. Reads as a menu row rather than a panel row,
@@ -508,7 +526,7 @@ export const RepoFilterChip = React.forwardRef<
 				</Menu.Root>
 			)}
 			<button
-				type="button" {...mergeStylexProps("hover:bg-hover hover:text-fg", sx.inlineFlex, sx.size19px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.leadingNone, sx.textFaint, typography.itemTitle)}
+				type="button" {...mergeStylexProps("", sx.hoverBgHover, sx.hoverTextFg, sx.inlineFlex, sx.size19px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.leadingNone, sx.textFaint, typography.itemTitle)}
 				title="Clear repo filter"
 				tabIndex={probe ? -1 : undefined}
 				onClick={probe ? undefined : onClear}

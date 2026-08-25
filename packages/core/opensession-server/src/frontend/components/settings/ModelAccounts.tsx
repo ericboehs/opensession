@@ -290,6 +290,144 @@ const sx = stylex.create({
 			"minHeight": "44px"
 		}
 	},
+
+	phoneGridCols1: {
+		"@media (max-width: 720px)": {
+			"gridTemplateColumns": "repeat(1,minmax(0,1fr))"
+		}
+	},
+	phoneGap15: {
+		"@media (max-width: 720px)": {
+			"gap": "6px"
+		}
+	},
+	gridColsMinmax01frAuto: {
+		"gridTemplateColumns": "minmax(0,1fr) auto"
+	},
+	phoneGridColsMinmax01fr72pxMinmax38pxAuto: {
+		"@media (max-width: 720px)": {
+			"gridTemplateColumns": "minmax(0,1fr) 72px minmax(38px,auto)"
+		}
+	},
+	phoneGapX2: {
+		"@media (max-width: 720px)": {
+			"columnGap": "8px"
+		}
+	},
+	phoneGapY0: {
+		"@media (max-width: 720px)": {
+			"rowGap": "0"
+		}
+	},
+	phoneOverflowVisible: {
+		"@media (max-width: 720px)": {
+			"overflow": "visible"
+		}
+	},
+	phoneWhitespaceNormal: {
+		"@media (max-width: 720px)": {
+			"whiteSpace": "normal"
+		}
+	},
+	desktopContents: {
+		"@media (min-width: 721px)": {
+			"display": "contents"
+		}
+	},
+	desktopColStart1: {
+		"@media (min-width: 721px)": {
+			"gridColumnStart": "1"
+		}
+	},
+	desktopRowStart1: {
+		"@media (min-width: 721px)": {
+			"gridRowStart": "1"
+		}
+	},
+	desktopColSpan2: {
+		"@media (min-width: 721px)": {
+			"gridColumn": "span 2/span 2"
+		}
+	},
+	desktopRowStart3: {
+		"@media (min-width: 721px)": {
+			"gridRowStart": "3"
+		}
+	},
+	desktopRowStart2: {
+		"@media (min-width: 721px)": {
+			"gridRowStart": "2"
+		}
+	},
+	phoneColStart2: {
+		"@media (max-width: 720px)": {
+			"gridColumnStart": "2"
+		}
+	},
+	phoneRowStart1: {
+		"@media (max-width: 720px)": {
+			"gridRowStart": "1"
+		}
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	desktopColStart2: {
+		"@media (min-width: 721px)": {
+			"gridColumnStart": "2"
+		}
+	},
+	phoneColStart3: {
+		"@media (max-width: 720px)": {
+			"gridColumnStart": "3"
+		}
+	},
+	phonePx4: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "16px"
+		}
+	},
+	phoneMt1: {
+		"@media (max-width: 720px)": {
+			"marginTop": "4px"
+		}
+	},
+	phoneMl0: {
+		"@media (max-width: 720px)": {
+			"marginLeft": "0"
+		}
+	},
+	phoneWFull: {
+		"@media (max-width: 720px)": {
+			"width": "100%"
+		}
+	},
+	phoneBasisFull: {
+		"@media (max-width: 720px)": {
+			"flexBasis": "100%"
+		}
+	},
+	phoneGap25: {
+		"@media (max-width: 720px)": {
+			"gap": "10px"
+		}
+	},
+	phonePl10: {
+		"@media (max-width: 720px)": {
+			"paddingLeft": "40px"
+		}
+	},
+	phoneFlexCol: {
+		"@media (max-width: 720px)": {
+			"flexDirection": "column"
+		}
+	},
+	phoneItemsStretch: {
+		"@media (max-width: 720px)": {
+			"alignItems": "stretch"
+		}
+	},
 });
 
 // The Claude and Codex subscription accounts runs draw from, and how full each
@@ -509,7 +647,7 @@ function absoluteReset(resetsAt: string | null): string | undefined {
  */
 function MeterGroup({ children }: { children: React.ReactNode }) {
 	return (
-		<div {...mergeStylexProps("phone:grid-cols-1 phone:gap-1.5", sx.mt2, sx.grid, sx.maxW420px, sx.gridCols3, sx.gap3, typography.meta)}>
+		<div {...mergeStylexProps("", sx.phoneGridCols1, sx.phoneGap15, sx.mt2, sx.grid, sx.maxW420px, sx.gridCols3, sx.gap3, typography.meta)}>
 			{children}
 		</div>
 	);
@@ -533,17 +671,17 @@ function Meter({
 	noteTitle?: string;
 }) {
 	return (
-		<div {...mergeStylexProps("grid-cols-[minmax(0,1fr)_auto] phone:grid-cols-[minmax(0,1fr)_72px_minmax(38px,auto)] phone:gap-x-2 phone:gap-y-0", sx.grid, sx.minW0, sx.itemsCenter, sx.gapX2, sx.gapY1)}>
+		<div {...mergeStylexProps("", sx.gridColsMinmax01frAuto, sx.phoneGridColsMinmax01fr72pxMinmax38pxAuto, sx.phoneGapX2, sx.phoneGapY0, sx.grid, sx.minW0, sx.itemsCenter, sx.gapX2, sx.gapY1)}>
 			{/* `contents` gives the desktop label and reset time separate rows.
 			    On phones they become one cell beside the track and value. */}
-			<span {...mergeStylexProps("phone:overflow-visible phone:whitespace-normal desktop:contents", sx.minW0)}>
-				<span {...mergeStylexProps("desktop:col-start-1 desktop:row-start-1", sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.textDim)}
+			<span {...mergeStylexProps("", sx.phoneOverflowVisible, sx.phoneWhitespaceNormal, sx.desktopContents, sx.minW0)}>
+				<span {...mergeStylexProps("", sx.desktopColStart1, sx.desktopRowStart1, sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.textDim)}
 					title={labelTitle}
 				>
 					{label}
 				</span>
 				{note ? (
-					<span {...mergeStylexProps("desktop:col-span-2 desktop:row-start-3", sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.textFaint)}
+					<span {...mergeStylexProps("", sx.desktopColSpan2, sx.desktopRowStart3, sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.textFaint)}
 						title={noteTitle}
 					>
 						<span className={mergeStylexClassName("", sx.phoneInline, sx.desktopHidden)}> · </span>
@@ -551,13 +689,13 @@ function Meter({
 					</span>
 				) : null}
 			</span>
-			<div {...mergeStylexProps("desktop:col-span-2 desktop:row-start-2 phone:col-start-2 phone:row-start-1", sx.h1, sx.overflowHidden, sx.roundedFull, sx.bgActive)}>
+			<div {...mergeStylexProps("", sx.desktopColSpan2, sx.desktopRowStart2, sx.phoneColStart2, sx.phoneRowStart1, sx.h1, sx.overflowHidden, sx.roundedFull, sx.bgActive)}>
 				<div
 					{...stylex.props(sx.meterFill, usageToneStyles[usageTone(pct)])}
 					style={{ width: `${Math.min(100, Math.max(0, pct ?? 0))}%` }}
 				/>
 			</div>
-			<span {...mergeStylexProps("tabular-nums desktop:col-start-2 desktop:row-start-1 phone:col-start-3 phone:row-start-1", sx.textRight, sx.textDim)}>
+			<span {...mergeStylexProps("", sx.tabularNums, sx.desktopColStart2, sx.desktopRowStart1, sx.phoneColStart3, sx.phoneRowStart1, sx.textRight, sx.textDim)}>
 				{value}
 			</span>
 		</div>
@@ -769,7 +907,7 @@ function ClaudeAccountRows({ state }: { state: ClaudeAccountsState }) {
 				)
 				.map((account) => (
 					<React.Fragment key={account.id}>
-						<SettingRow {...mergeStylexProps("phone:px-4", sx.itemsStart, sx.gapX3)}>
+						<SettingRow {...mergeStylexProps("", sx.phonePx4, sx.itemsStart, sx.gapX3)}>
 							<AccountProviderMark name="claude" />
 							<SettingRowText>
 								<div {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
@@ -809,8 +947,8 @@ function ClaudeAccountRows({ state }: { state: ClaudeAccountsState }) {
 									</>
 								)}
 							</SettingRowText>
-							<SettingRowControl {...mergeStylexProps("phone:mt-1 phone:ml-0 phone:w-full phone:basis-full phone:gap-2.5 phone:pl-10", sx.flex, sx.itemsCenter, sx.gap15)}>
-								<span {...mergeStylexProps("phone:inline", sx.hidden, sx.shrink0, sx.textFaint, typography.meta)}>Used by</span>
+							<SettingRowControl {...mergeStylexProps("", sx.phoneMt1, sx.phoneMl0, sx.phoneWFull, sx.phoneBasisFull, sx.phoneGap25, sx.phonePl10, sx.flex, sx.itemsCenter, sx.gap15)}>
+								<span {...mergeStylexProps("", sx.phoneInline, sx.hidden, sx.shrink0, sx.textFaint, typography.meta)}>Used by</span>
 								<OwnerSelect
 									value={account.owner || ""}
 									onChange={(owner) => state.setOwner(account, owner)}
@@ -1079,7 +1217,7 @@ function CodexAccountRows({ state }: { state: CodexAccountsState }) {
 						left.id.localeCompare(right.id),
 				)
 				.map((account) => (
-					<SettingRow key={account.id} {...mergeStylexProps("phone:px-4", sx.itemsStart, sx.gapX3)}>
+					<SettingRow key={account.id} {...mergeStylexProps("", sx.phonePx4, sx.itemsStart, sx.gapX3)}>
 						<AccountProviderMark name="codex" />
 						<SettingRowText>
 							<div {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
@@ -1097,8 +1235,8 @@ function CodexAccountRows({ state }: { state: CodexAccountsState }) {
 							</SettingRowDescription>
 							<CodexUsageMeters account={account} />
 						</SettingRowText>
-						<SettingRowControl {...mergeStylexProps("phone:mt-1 phone:ml-0 phone:w-full phone:basis-full phone:gap-2.5 phone:pl-10", sx.flex, sx.itemsCenter, sx.gap15)}>
-							<span {...mergeStylexProps("phone:inline", sx.hidden, sx.shrink0, sx.textFaint, typography.meta)}>Used by</span>
+						<SettingRowControl {...mergeStylexProps("", sx.phoneMt1, sx.phoneMl0, sx.phoneWFull, sx.phoneBasisFull, sx.phoneGap25, sx.phonePl10, sx.flex, sx.itemsCenter, sx.gap15)}>
+							<span {...mergeStylexProps("", sx.phoneInline, sx.hidden, sx.shrink0, sx.textFaint, typography.meta)}>Used by</span>
 							<OwnerSelect
 								value={account.owner || ""}
 								onChange={(owner) => state.setOwner(account, owner)}
@@ -1733,7 +1871,7 @@ setError(e.message);
 			</SettingRowDescription>
 
 			{login ? (
-				<div {...mergeStylexProps("phone:flex-col phone:items-stretch", sx.flex, sx.itemsEnd, sx.gap35)}>
+				<div {...mergeStylexProps("", sx.phoneFlexCol, sx.phoneItemsStretch, sx.flex, sx.itemsEnd, sx.gap35)}>
 					<a {...stylex.props(sx.shrink0)} href={login.url} target="_blank" rel="noreferrer">
 						<Button icon={<IconPlug size={16} />}>Open Claude sign-in</Button>
 					</a>

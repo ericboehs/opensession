@@ -144,6 +144,21 @@ const sx = stylex.create({
 		"--tw-pan-y": "pan-y",
 		"touchAction": "var(--tw-pan-x,) var(--tw-pan-y,) var(--tw-pinch-zoom,)"
 	},
+
+	hoverBgSurface: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--bg)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
 });
 
 /**
@@ -279,13 +294,13 @@ export function DeckDone({
 			<div {...stylex.props(sx.maxWXs, sx.textSm, sx.textDim)}>{message}</div>
 			<div {...stylex.props(sx.mt2, sx.flex, sx.gap2)}>
 				{secondary && (
-					<button {...mergeStylexProps("hover:bg-surface hover:text-fg", sx.roundedControl, sx.border, sx.borderLine, sx.bgPanel, sx.px4, sx.py25, sx.textSm, sx.fontSemibold, sx.textDim)}
+					<button {...mergeStylexProps("", sx.hoverBgSurface, sx.hoverTextFg, sx.roundedControl, sx.border, sx.borderLine, sx.bgPanel, sx.px4, sx.py25, sx.textSm, sx.fontSemibold, sx.textDim)}
 						onClick={secondary.onClick}
 					>
 						{secondary.label}
 					</button>
 				)}
-				<button {...mergeStylexProps("hover:bg-surface", sx.roundedControl, sx.bgPanel, sx.px4, sx.py25, sx.textSm, sx.fontSemibold, sx.textFg)}
+				<button {...mergeStylexProps("", sx.hoverBgSurface, sx.roundedControl, sx.bgPanel, sx.px4, sx.py25, sx.textSm, sx.fontSemibold, sx.textFg)}
 					onClick={onExit}
 				>
 					Done

@@ -112,7 +112,7 @@ const sx = stylex.create({
 			borderRadius: "inherit"
 	},
 	bgBlack50: {
-			backgroundColor: "#00000080"
+			backgroundColor: "color-mix(in srgb, var(--color-black) 50%, transparent)"
 	},
 	textWhite: {
 			color: "var(--color-white)"
@@ -152,6 +152,20 @@ const sx = stylex.create({
 	phoneHidden: {
 		"@media (max-width: 720px)": {
 			"display": "none"
+		}
+	},
+
+	outline: {
+		"outlineStyle": "var(--tw-outline-style)",
+		"outlineWidth": "1px"
+	},
+	outline1: {
+		"outlineStyle": "var(--tw-outline-style)",
+		"outlineWidth": "1px"
+	},
+	disabledPointerEventsNone: {
+		":disabled": {
+			"pointerEvents": "none"
 		}
 	},
 });
@@ -322,7 +336,7 @@ setBusy(false);
 										type="button"
 										disabled={busy}
 										onClick={() => fileInput.current?.click()}
-										aria-label={showIcon ? "Change organization icon" : "Upload organization icon"} {...mergeStylexProps("group/upload outline outline-1 disabled:pointer-events-none", sx.focusRing, sx.relative, sx.flex, sx.size14, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.overflowHidden, sx.roundedLg, sx.fontSemibold, sx.outlineDivider, typography.sectionTitle)}
+										aria-label={showIcon ? "Change organization icon" : "Upload organization icon"} {...mergeStylexProps("group/upload", sx.outline, sx.outline1, sx.disabledPointerEventsNone, sx.focusRing, sx.relative, sx.flex, sx.size14, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.overflowHidden, sx.roundedLg, sx.fontSemibold, sx.outlineDivider, typography.sectionTitle)}
 										style={
 											showIcon
 												? undefined

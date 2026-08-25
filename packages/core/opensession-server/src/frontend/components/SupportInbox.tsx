@@ -84,6 +84,149 @@ const sx = stylex.create({
 			}
 		}
 	},
+
+	mt05: {
+		"marginTop": "2px"
+	},
+	wFull: {
+		"width": "100%"
+	},
+	cursorPointer: {
+		"cursor": "pointer"
+	},
+	itemsStart: {
+		"alignItems": "flex-start"
+	},
+	roundedRow: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	border0: {
+		"borderStyle": "var(--tw-border-style)",
+		"borderWidth": "0"
+	},
+	bgTransparent: {
+		"backgroundColor": "transparent"
+	},
+	py25: {
+		"paddingBlock": "10px"
+	},
+	pr3: {
+		"paddingRight": "12px"
+	},
+	pl25: {
+		"paddingLeft": "10px"
+	},
+	textLeft: {
+		"textAlign": "left"
+	},
+	itemsBaseline: {
+		"alignItems": "baseline"
+	},
+	gap2: {
+		"gap": "8px"
+	},
+	truncate: {
+		"textOverflow": "ellipsis",
+		"whiteSpace": "nowrap",
+		"overflow": "hidden"
+	},
+	fontMedium: {
+		"--tw-font-weight": "var(--font-weight-medium)",
+		"fontWeight": "var(--font-weight-medium)"
+	},
+	textDim: {
+		"color": "var(--text-dim)"
+	},
+	phoneText15px: {
+		"@media (max-width: 720px)": {
+			"fontSize": "15px"
+		}
+	},
+	shrink0: {
+		"flexShrink": "0"
+	},
+	textRight: {
+		"textAlign": "right"
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	mt1: {
+		"marginTop": "4px"
+	},
+	block: {
+		"display": "block"
+	},
+	phoneText14px: {
+		"@media (max-width: 720px)": {
+			"fontSize": "14px"
+		}
+	},
+	phoneWFull: {
+		"@media (max-width: 720px)": {
+			"width": "100%"
+		}
+	},
+	phoneFlex1: {
+		"@media (max-width: 720px)": {
+			"flex": "1"
+		}
+	},
+	desktopW320px: {
+		"@media (min-width: 721px)": {
+			"width": "320px"
+		}
+	},
+	desktopShrink0: {
+		"@media (min-width: 721px)": {
+			"flexShrink": "0"
+		}
+	},
+	desktopBorderR: {
+		"@media (min-width: 721px)": {
+			"borderRightStyle": "var(--tw-border-style)",
+			"borderRightWidth": "1px"
+		}
+	},
+	desktopBorderDivider: {
+		"@media (min-width: 721px)": {
+			"borderColor": "var(--divider)"
+		}
+	},
+	m0: {
+		"margin": "0"
+	},
+	fontSemibold: {
+		"--tw-font-weight": "var(--font-weight-semibold)",
+		"fontWeight": "var(--font-weight-semibold)"
+	},
+	textFg: {
+		"color": "var(--text)"
+	},
+	phoneTextSectionTitle: {
+		"@media (max-width: 720px)": {
+			"fontSize": "var(--type-section-title)"
+		}
+	},
+	mlAuto: {
+		"marginLeft": "auto"
+	},
+	overflowYAuto: {
+		"overflowY": "auto"
+	},
+	px15: {
+		"paddingInline": "6px"
+	},
+	pt2: {
+		"paddingTop": "8px"
+	},
+	pb3: {
+		"paddingBottom": "12px"
+	},
+	ScrollbarWidthNone: {
+		"scrollbarWidth": "none"
+	},
 });
 
 /**
@@ -107,37 +250,37 @@ const sx = stylex.create({
  *  the Reports page's list column, whose doc argues that shape at length. On a
  *  phone the two panes are separate pages, so it is the whole width there. */
 const COLUMN =
-	"flex min-h-0 flex-col " +
-	"phone:w-full phone:flex-1 " +
-	"desktop:w-[320px] desktop:shrink-0 desktop:border-r desktop:border-divider";
+	mergeStylexClassName("", sx.flex, sx.minH0, sx.flexCol) +
+	mergeStylexClassName("", sx.phoneWFull, sx.phoneFlex1) +
+	mergeStylexClassName("", sx.desktopW320px, sx.desktopShrink0, sx.desktopBorderR, sx.desktopBorderDivider);
 
-const COLUMN_TITLE = "m-0 text-item-title font-semibold text-fg phone:text-section-title";
+const COLUMN_TITLE = mergeStylexClassName("", sx.m0, typography.itemTitle, sx.fontSemibold, sx.textFg, sx.phoneTextSectionTitle);
 
-const COLUMN_COUNT = "ml-auto shrink-0 text-meta font-medium tabular-nums text-faint";
+const COLUMN_COUNT = mergeStylexClassName("", sx.mlAuto, sx.shrink0, typography.meta, sx.fontMedium, sx.tabularNums, sx.textFaint);
 
 const LIST =
-	"min-h-0 flex-1 overflow-y-auto px-1.5 pt-2 pb-3 " +
-	"[scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
+	mergeStylexClassName("", sx.minH0, sx.flex1, sx.overflowYAuto, sx.px15, sx.pt2, sx.pb3) +
+	mergeStylexClassName("[&::-webkit-scrollbar]:hidden", sx.ScrollbarWidthNone);
 
 /** A ticket. Two lines, so it sets its own vertical rhythm rather than taking
  *  the sidebar's one-line row padding; everything else — corner, rail gap,
  *  hover layer, `bg-selected` for the open one — is the shared row grammar. */
 const ROW =
-	"group mt-0.5 flex w-full cursor-pointer items-start rounded-row border-0 " +
-	"bg-transparent py-2.5 pr-3 pl-2.5 text-left data-active:bg-selected " +
+	mergeStylexClassName("group", sx.mt05, sx.flex, sx.wFull, sx.cursorPointer, sx.itemsStart, sx.roundedRow, sx.border0) +
+	mergeStylexClassName("data-active:bg-selected", sx.bgTransparent, sx.py25, sx.pr3, sx.pl25, sx.textLeft) +
 	`${SIDEBAR_RAIL_GAP} ${SIDEBAR_HOVER_LAYER}`;
 
-const ROW_HEAD = "flex min-w-0 items-baseline gap-2";
+const ROW_HEAD = mergeStylexClassName("", sx.flex, sx.minW0, sx.itemsBaseline, sx.gap2);
 
 const ROW_NAME =
-	"min-w-0 flex-1 truncate text-label font-medium text-dim " +
-	"group-hover:text-fg group-data-active:text-fg phone:text-[15px]";
+	mergeStylexClassName("", sx.minW0, sx.flex1, sx.truncate, typography.label, sx.fontMedium, sx.textDim) +
+	mergeStylexClassName("group-hover:text-fg group-data-active:text-fg", sx.phoneText15px);
 
-const ROW_TIME = "shrink-0 text-right text-meta tabular-nums text-faint";
+const ROW_TIME = mergeStylexClassName("", sx.shrink0, sx.textRight, typography.meta, sx.tabularNums, sx.textFaint);
 
 const ROW_SUBJECT =
-	"mt-1 block truncate text-label text-faint " +
-	"group-data-active:text-dim phone:text-[14px]";
+	mergeStylexClassName("", sx.mt1, sx.block, sx.truncate, typography.label, sx.textFaint) +
+	mergeStylexClassName("group-data-active:text-dim", sx.phoneText14px);
 
 interface Props {
 	/** The open ticket, or null for the list on its own. */

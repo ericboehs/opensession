@@ -95,6 +95,14 @@ const sx = stylex.create({
 	bgLine: {
 		"backgroundColor": "var(--border)"
 	},
+
+	hoverBgSurface: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--bg)"
+			}
+		}
+	},
 });
 
 /**
@@ -256,7 +264,7 @@ export function PrSessionsList({
 						if (e.metaKey || e.ctrlKey || e.shiftKey) return;
 						e.preventDefault();
 						onOpenSession?.(s.id);
-					}} {...mergeStylexProps("hover:bg-surface", sx.Mx2, sx.flex, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px2, sx.py15, sx.textFg, sx.noUnderline, typography.itemTitle)}
+					}} {...mergeStylexProps("", sx.hoverBgSurface, sx.Mx2, sx.flex, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.px2, sx.py15, sx.textFg, sx.noUnderline, typography.itemTitle)}
 				>
 					<span
 						className={[mergeStylexClassName("", sx.w15, sx.h15, sx.roundedFull, sx.shrink0), s.isRunning ? mergeStylexClassName("", sx.bgYellow, sx.animatePulse) : mergeStylexClassName("", sx.bgLine)].filter(Boolean).join(" ")}

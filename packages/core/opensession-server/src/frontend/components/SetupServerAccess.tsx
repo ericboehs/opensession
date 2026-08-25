@@ -125,6 +125,14 @@ const sx = stylex.create({
 			"minHeight": "44px"
 		}
 	},
+
+	hoverUnderline: {
+		"@media (hover: hover)": {
+			":hover": {
+				"textDecorationLine": "underline"
+			}
+		}
+	},
 });
 
 function CaddyConfigBlock({ value }: { value: string }) {
@@ -137,7 +145,7 @@ function CaddyConfigBlock({ value }: { value: string }) {
 			<Button
 				type="button"
 				variant="soft"
-				size="sm" {...mergeStylexProps("phone:min-h-11", sx.absolute, sx.right2, sx.top2)}
+				size="sm" {...mergeStylexProps("", sx.phoneMinH11, sx.absolute, sx.right2, sx.top2)}
 				onClick={() => copy(value, { toast: "Caddy config copied" })}
 			>
 				<CopyCheck copied={copied} size={14} idle={<IconCopy size={14} />} />
@@ -224,7 +232,7 @@ setSaving(false);
 								type="url"
 								value={appAddress}
 								placeholder="https://os.example.com"
-								disabled={saving} {...mergeStylexProps("phone:min-h-11", sx.fontMono)}
+								disabled={saving} {...mergeStylexProps("", sx.phoneMinH11, sx.fontMono)}
 								autoCapitalize="none"
 								autoCorrect="off"
 								spellCheck={false}
@@ -255,7 +263,7 @@ setSaving(false);
 								type="url"
 								value={webhookAddress}
 								placeholder="https://hooks.example.com"
-								disabled={saving} {...mergeStylexProps("phone:min-h-11", sx.fontMono)}
+								disabled={saving} {...mergeStylexProps("", sx.phoneMinH11, sx.fontMono)}
 								autoCapitalize="none"
 								autoCorrect="off"
 								spellCheck={false}
@@ -325,7 +333,7 @@ setSaving(false);
 											<a
 												href="https://caddyserver.com/docs/install"
 												target="_blank"
-												rel="noreferrer" {...mergeStylexProps("hover:underline", sx.fontMedium, sx.textBlue)}
+												rel="noreferrer" {...mergeStylexProps("", sx.hoverUnderline, sx.fontMedium, sx.textBlue)}
 											>
 												Install Caddy
 											</a>{" "}

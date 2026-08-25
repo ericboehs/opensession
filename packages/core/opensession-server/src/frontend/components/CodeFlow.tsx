@@ -6,7 +6,7 @@ import { IconBranches } from "./icons";
 import { Badge } from "../ui/badge";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -177,6 +177,24 @@ const sx = stylex.create({
 	textGreen: { color: "var(--green)" },
 	textRed: { color: "var(--red)" },
 	textYellow: { color: "var(--yellow)" },
+
+	hoverTextLink: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--link)"
+			}
+		}
+	},
+	phoneMaxW32: {
+		"@media (max-width: 720px)": {
+			"maxWidth": "128px"
+		}
+	},
+	phonePx2: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "8px"
+		}
+	},
 });
 
 const TONE = {
@@ -212,7 +230,7 @@ function FlowNode({
 	const location = node.file && node.file !== sectionFile && node.status !== "same" && onOpenLocation && (
 		<Button
 			variant="ghost"
-			size="md" {...mergeStylexProps("hover:text-link phone:max-w-32", sx.mlAuto, sx.maxW52, sx.shrink0, sx.truncate, sx.px15, sx.fontSans, sx.textFaint, typography.meta)}
+			size="md" {...mergeStylexProps("", sx.hoverTextLink, sx.phoneMaxW32, sx.mlAuto, sx.maxW52, sx.shrink0, sx.truncate, sx.px15, sx.fontSans, sx.textFaint, typography.meta)}
 			onClick={() => onOpenLocation?.(node.file!)}
 			title={`Open ${node.file} in the file diff`}
 		>
@@ -301,7 +319,7 @@ export function CodeFlow({
 		);
 	}
 	return (
-		<section {...mergeStylexProps("phone:px-2", sx.mxAuto, sx.wFull, sx.maxW1100px, sx.px3, sx.py4)} aria-labelledby={titleId}>
+		<section {...mergeStylexProps("", sx.phonePx2, sx.mxAuto, sx.wFull, sx.maxW1100px, sx.px3, sx.py4)} aria-labelledby={titleId}>
 			<header {...stylex.props(sx.mb3, sx.flex, sx.itemsCenter, sx.gap2, sx.px1)}>
 				<IconBranches size={17} {...stylex.props(sx.textDim)} />
 				<h2 id={titleId} {...stylex.props(sx.m0, sx.textSm, sx.fontSemibold, sx.textFg)}>Code flow</h2>
@@ -313,11 +331,11 @@ export function CodeFlow({
 			<div className="space-y-2">
 				{[...files].map(([file, trees]) => (
 					<article key={file} {...stylex.props(sx.overflowHidden, sx.roundedXl, sx.bgPanel)}>
-						<header {...mergeStylexProps("phone:px-2", sx.flex, sx.minH10, sx.itemsCenter, sx.borderB, sx.borderDivider, sx.bgRaised, sx.px3)}>
+						<header {...mergeStylexProps("", sx.phonePx2, sx.flex, sx.minH10, sx.itemsCenter, sx.borderB, sx.borderDivider, sx.bgRaised, sx.px3)}>
 							{file !== "Project structure" && onOpenLocation ? (
 								<Button
 									variant="ghost"
-									size="md" {...mergeStylexProps("hover:text-link", sx.minW0, sx.maxWFull, sx.justifyStart, sx.truncate, sx.px1, sx.fontMono, sx.textXs, sx.fontSemibold, sx.textFg)}
+									size="md" {...mergeStylexProps("", sx.hoverTextLink, sx.minW0, sx.maxWFull, sx.justifyStart, sx.truncate, sx.px1, sx.fontMono, sx.textXs, sx.fontSemibold, sx.textFg)}
 									onClick={() => onOpenLocation(file)}
 									title={`Open ${file} in the file diff`}
 								>
@@ -330,7 +348,7 @@ export function CodeFlow({
 								{trees.length} changed {trees.length === 1 ? "flow" : "flows"}
 							</span>
 						</header>
-						<div {...mergeStylexProps("divide-y divide-line/70 phone:px-2", sx.px3, sx.py1)}>
+						<div {...mergeStylexProps("divide-y divide-line/70", sx.phonePx2, sx.px3, sx.py1)}>
 							{trees.map(({ entry, tree }) => (
 								<ol key={entry} {...stylex.props(sx.m0, sx.py1, sx.p0)}>
 									<FlowNode node={tree} depth={0} sectionFile={file} onOpenLocation={onOpenLocation} />

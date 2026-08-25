@@ -41,7 +41,7 @@ const sx = stylex.create({
 			zIndex: "300"
 	},
 	bgBlack60: {
-			backgroundColor: "#0009"
+			backgroundColor: "var(--color-black)9"
 	},
 	flex: {
 			display: "flex"
@@ -521,6 +521,112 @@ const sx = stylex.create({
 			}
 		}
 	},
+
+	size10px: {
+		"width": "10px",
+		"height": "10px"
+	},
+	borderLineStrong: {
+		"borderColor": "var(--border-strong)"
+	},
+	borderTAccent: {
+		"borderTopColor": "var(--accent)"
+	},
+	hoverBorderLineStrong: {
+		"@media (hover: hover)": {
+			":hover": {
+				"borderColor": "var(--border-strong)"
+			}
+		}
+	},
+	activeScale097: {
+		":active": {
+			"scale": ".97"
+		}
+	},
+	hoverDecorationCurrent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"textDecorationColor": "currentColor"
+			}
+		}
+	},
+	focusVisibleDecorationCurrent: {
+		":focusVisible": {
+			"textDecorationColor": "currentColor"
+		}
+	},
+	wFull: {
+		"width": "100%"
+	},
+	borderColorMixInSrgbVarRed40Transparent: {
+		"borderColor": "var(--red)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"borderColor": "color-mix(in srgb,var(--red) 40%,transparent)"
+		}
+	},
+	bgTransparent: {
+		"backgroundColor": "transparent"
+	},
+	disabledCursorDefault: {
+		":disabled": {
+			"cursor": "default"
+		}
+	},
+	disabledOpacity45: {
+		":disabled": {
+			"opacity": ".45"
+		}
+	},
+	disabledHoverBgTransparent: {
+		"@media (hover: hover)": {
+			":disabled": {
+				":hover": {
+					"backgroundColor": "transparent"
+				}
+			}
+		}
+	},
+	hoverBgColorMixInSrgbVarRed12Transparent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--red)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in srgb,var(--red) 12%,transparent)"
+				}
+			}
+		}
+	},
+	roundedRNone: {
+		"borderTopRightRadius": "0",
+		"borderBottomRightRadius": "0"
+	},
+	py2: {
+		"paddingBlock": "8px"
+	},
+	textLeft: {
+		"textAlign": "left"
+	},
+	focusVisibleBgHover: {
+		":focusVisible": {
+			"backgroundColor": "var(--hover)"
+		}
+	},
+	disabledOpacity50: {
+		":disabled": {
+			"opacity": ".5"
+		}
+	},
+	focusVisibleTextFg: {
+		":focusVisible": {
+			"color": "var(--text)"
+		}
+	},
+	px5px: {
+		"paddingInline": "5px"
+	},
 });
 
 // Any worktree session gets the control; whether a repo can actually boot a
@@ -532,16 +638,16 @@ function isPreviewable(session: UnifiedSession): boolean {
 }
 
 const headerIconBase =
-  "inline-flex cursor-pointer items-center justify-center rounded-md border border-transparent bg-transparent px-[5px] py-[3px] text-faint no-underline";
+  mergeStylexClassName("", sx.inlineFlex, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.border, sx.borderTransparent, sx.bgTransparent, sx.px5px, sx.py3px, sx.textFaint, sx.noUnderline);
 
 const splitSegmentBase =
-  "inline-flex items-center justify-center border border-line-strong bg-transparent text-dim";
+  mergeStylexClassName("", sx.inlineFlex, sx.itemsCenter, sx.justifyCenter, sx.border, sx.borderLineStrong, sx.bgTransparent, sx.textDim);
 
 const spinnerClass =
-  "size-[10px] shrink-0 rounded-full border border-line-strong border-t-accent animate-[preview-spin_0.7s_linear_infinite]";
+  mergeStylexClassName("", sx.size10px, sx.shrink0, sx.roundedFull, sx.border, sx.borderLineStrong, sx.borderTAccent, sx.animatePreviewSpin07sLinearInfinite);
 
 const popoverActionClass =
-  "w-full rounded-control border border-[color-mix(in_srgb,var(--red)_40%,transparent)] bg-transparent px-2.5 py-[5px] text-xs font-semibold text-red disabled:cursor-default disabled:opacity-45 disabled:hover:bg-transparent hover:bg-[color-mix(in_srgb,var(--red)_12%,transparent)]";
+  mergeStylexClassName("", sx.wFull, sx.roundedControl, sx.border, sx.borderColorMixInSrgbVarRed40Transparent, sx.bgTransparent, sx.px25, sx.py5px, sx.textXs, sx.fontSemibold, sx.textRed, sx.disabledCursorDefault, sx.disabledOpacity45, sx.disabledHoverBgTransparent, sx.hoverBgColorMixInSrgbVarRed12Transparent);
 
 /**
  * Header control for a session's local dev server ("Preview"). When the
@@ -782,7 +888,7 @@ setShotError(e.message);
             </Button>
           )}
           {shot && (
-            <a {...mergeStylexProps("hover:border-line-strong hover:text-fg active:scale-[0.97]", sx.inlineFlex, sx.minH26px, sx.itemsCenter, sx.justifyCenter, sx.whitespaceNowrap, sx.roundedXs, sx.border, sx.borderLine, sx.bgControl, sx.px25, sx.textXs, sx.fontMedium, sx.textDim, sx.smoothShadowSm, sx.transition)}
+            <a {...mergeStylexProps("", sx.hoverBorderLineStrong, sx.hoverTextFg, sx.activeScale097, sx.inlineFlex, sx.minH26px, sx.itemsCenter, sx.justifyCenter, sx.whitespaceNowrap, sx.roundedXs, sx.border, sx.borderLine, sx.bgControl, sx.px25, sx.textXs, sx.fontMedium, sx.textDim, sx.smoothShadowSm, sx.transition)}
               href={shot}
               download={`preview-${session.id}.png`}
             >
@@ -841,7 +947,7 @@ setShotError(e.message);
                 <a
                   href={s.previewUrl}
                   target="_blank"
-                  rel="noreferrer" {...mergeStylexProps("hover:decoration-current focus-visible:decoration-current", sx.fontSemibold, sx.textFg, sx.underline, sx.decorationTransparent, sx.underlineOffset2, sx.transitionTextDecorationColor)}
+                  rel="noreferrer" {...mergeStylexProps("", sx.hoverDecorationCurrent, sx.focusVisibleDecorationCurrent, sx.fontSemibold, sx.textFg, sx.underline, sx.decorationTransparent, sx.underlineOffset2, sx.transitionTextDecorationColor)}
                 >
                   {s.name}
                 </a>
@@ -909,7 +1015,7 @@ setShotError(e.message);
 
   if (variant === "action") {
     const mainClass =
-      "flex min-w-0 flex-1 items-center gap-2 rounded-md rounded-r-none px-2.5 py-2 text-left text-supporting font-semibold text-fg no-underline outline-none transition-colors hover:bg-hover focus-visible:bg-hover disabled:cursor-default disabled:opacity-50 aria-disabled:cursor-default aria-disabled:opacity-50";
+      mergeStylexClassName("aria-disabled:cursor-default aria-disabled:opacity-50", sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.roundedMd, sx.roundedRNone, sx.px25, sx.py2, sx.textLeft, typography.supporting, sx.fontSemibold, sx.textFg, sx.noUnderline, sx.outlineNone, sx.transitionColors, sx.hoverBgHover, sx.focusVisibleBgHover, sx.disabledCursorDefault, sx.disabledOpacity50);
     const mainContent = (
       <>
         <span {...stylex.props(sx.inlineFlex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textFaint)}>
@@ -958,7 +1064,7 @@ setShotError(e.message);
           )}
           <Popover.Trigger
             render={
-              <button {...mergeStylexProps("hover:bg-hover hover:text-fg focus-visible:bg-hover focus-visible:text-fg", sx.flex, sx.w8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.roundedLNone, sx.textFaint, sx.outlineNone, sx.transitionColors)}
+              <button {...mergeStylexProps("", sx.hoverBgHover, sx.hoverTextFg, sx.focusVisibleBgHover, sx.focusVisibleTextFg, sx.flex, sx.w8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.roundedLNone, sx.textFaint, sx.outlineNone, sx.transitionColors)}
                 title="Dev services"
                 aria-label="Dev services"
               >

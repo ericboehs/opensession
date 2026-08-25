@@ -7,7 +7,7 @@ import { OptionSelect } from "../ui/select";
 import { ReportFrame } from "./ReportFrame";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -88,6 +88,21 @@ const sx = stylex.create({
 	},
 	leading5: {
 			lineHeight: "20px"
+	},
+
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
 	},
 });
 
@@ -171,7 +186,7 @@ export function SessionReportsPanel({
 							{formatDate(selected.createdAt)}
 						</div>
 					</div>
-					<a {...mergeStylexProps("hover:bg-hover hover:text-fg", sx.shrink0, sx.roundedSm, sx.px15, sx.py05, sx.textDim, typography.meta)}
+					<a {...mergeStylexProps("", sx.hoverBgHover, sx.hoverTextFg, sx.shrink0, sx.roundedSm, sx.px15, sx.py05, sx.textDim, typography.meta)}
 						href={fullReportUrl}
 					>
 						Open full report

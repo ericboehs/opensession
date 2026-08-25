@@ -1,7 +1,7 @@
 import type React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps } from "../../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -48,6 +48,12 @@ const sx = stylex.create({
 	gap2: {
 			gap: "8px"
 	},
+
+	smPx5: {
+		"@media (min-width: 40rem)": {
+			"paddingInline": "20px"
+		}
+	},
 });
 
 /** A titled card: a label row over a body of rows.
@@ -67,11 +73,11 @@ export function PrCard({
 }) {
   return (
     <div {...stylex.props(sx.roundedXl, sx.bgPanel)}>
-      <div {...mergeStylexProps("sm:px-5", sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap3, sx.borderB, sx.borderDivider, sx.px4, sx.py3)}>
+      <div {...mergeStylexProps("", sx.smPx5, sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap3, sx.borderB, sx.borderDivider, sx.px4, sx.py3)}>
         <span {...stylex.props(sx.fontSemibold, sx.textFaint, typography.label)}>{title}</span>
         {headExtra}
       </div>
-      <div {...mergeStylexProps("sm:px-5", sx.flex, sx.flexCol, sx.gap2, sx.px4, sx.py3)}>{children}</div>
+      <div {...mergeStylexProps("", sx.smPx5, sx.flex, sx.flexCol, sx.gap2, sx.px4, sx.py3)}>{children}</div>
     </div>
   );
 }

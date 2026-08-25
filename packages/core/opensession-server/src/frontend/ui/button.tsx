@@ -78,6 +78,248 @@ const sx = stylex.create({
 		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
 		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
 	},
+
+	opacity60: {
+		"opacity": ".6"
+	},
+	opacity80: {
+		"opacity": ".8"
+	},
+	gap15: {
+		"gap": "6px"
+	},
+	gap1: {
+		"gap": "4px"
+	},
+	minH26px: {
+		"minHeight": "26px"
+	},
+	px25: {
+		"paddingInline": "10px"
+	},
+	textXs: {
+		"fontSize": "var(--type-label)",
+		"lineHeight": "var(--tw-leading,var(--text-xs--line-height))"
+	},
+	roundedControl: {
+		"borderRadius": "calc(12px * var(--rf))"
+	},
+	minH8: {
+		"minHeight": "32px"
+	},
+	px3: {
+		"paddingInline": "12px"
+	},
+	textSm: {
+		"fontSize": "var(--type-label)",
+		"lineHeight": "var(--tw-leading,var(--text-sm--line-height))"
+	},
+	minH9: {
+		"minHeight": "36px"
+	},
+	px35: {
+		"paddingInline": "14px"
+	},
+	textBase: {
+		"fontSize": "var(--type-body)",
+		"lineHeight": "var(--tw-leading,var(--text-base--line-height))"
+	},
+	bgButton: {
+		"backgroundColor": "var(--button-surface)"
+	},
+	borderLine: {
+		"borderColor": "var(--border)"
+	},
+	textDim: {
+		"color": "var(--text-dim)"
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
+	},
+	hoverBorderLineStrong: {
+		"@media (hover: hover)": {
+			":hover": {
+				"borderColor": "var(--border-strong)"
+			}
+		}
+	},
+	bgAccent: {
+		"backgroundColor": "var(--accent)"
+	},
+	borderTransparent: {
+		"borderColor": "transparent"
+	},
+	textOnAccent: {
+		"color": "var(--on-accent)"
+	},
+	plateSheen: {
+		"backgroundImage": "linear-gradient(transparent,color-mix(in srgb, var(--color-white) 3.5%, transparent) 35%,color-mix(in srgb, var(--color-white) 1%, transparent) 55%,color-mix(in srgb, var(--color-black) 5%, transparent))"
+	},
+	hoverBgAccentHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--accent-hover)"
+			}
+		}
+	},
+	bgFg8: {
+		"backgroundColor": "var(--text)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in oklab, var(--text) 8%, transparent)"
+		}
+	},
+	hoverBgFg13: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--text)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in oklab, var(--text) 13%, transparent)"
+				}
+			}
+		}
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	bgTransparent: {
+		"backgroundColor": "transparent"
+	},
+	textWhite60: {
+		"color": "color-mix(in srgb, var(--color-white) 60%, transparent)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"color": "color-mix(in oklab, var(--color-white) 60%, transparent)"
+		}
+	},
+	hoverBgWhite15: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "color-mix(in srgb, var(--color-white) 15%, transparent)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in oklab, var(--color-white) 15%, transparent)"
+				}
+			}
+		}
+	},
+	hoverTextWhite: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--color-white)"
+			}
+		}
+	},
+	bgGreenSoft: {
+		"backgroundColor": "var(--green-soft)"
+	},
+	textGreen: {
+		"color": "var(--green)"
+	},
+	hoverBgGreen22: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--green)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in oklab, var(--green) 22%, transparent)"
+				}
+			}
+		}
+	},
+	bgRedSoft: {
+		"backgroundColor": "var(--red-soft)"
+	},
+	textRed: {
+		"color": "var(--red)"
+	},
+	hoverBgRed22: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--red)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in oklab, var(--red) 22%, transparent)"
+				}
+			}
+		}
+	},
+	bgYellowSoft: {
+		"backgroundColor": "var(--yellow-soft)"
+	},
+	textYellow: {
+		"color": "var(--yellow)"
+	},
+	hoverBgYellow22: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--yellow)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in oklab, var(--yellow) 22%, transparent)"
+				}
+			}
+		}
+	},
+	bgRed: {
+		"backgroundColor": "var(--red)"
+	},
+	textWhite: {
+		"color": "var(--color-white)"
+	},
+	hoverBrightness110: {
+		"@media (hover: hover)": {
+			":hover": {
+				"--tw-brightness": "brightness(110%)",
+				"filter": "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+			}
+		}
+	},
+	bgGreen: {
+		"backgroundColor": "var(--green)"
+	},
+	pl15: {
+		"paddingLeft": "6px"
+	},
+	pl2: {
+		"paddingLeft": "8px"
+	},
+	pl25: {
+		"paddingLeft": "10px"
+	},
+	pr15: {
+		"paddingRight": "6px"
+	},
+	pr2: {
+		"paddingRight": "8px"
+	},
+	pr25: {
+		"paddingRight": "10px"
+	},
+	w26px: {
+		"width": "26px"
+	},
+	px0: {
+		"paddingInline": "0"
+	},
+	w8: {
+		"width": "32px"
+	},
+	w9: {
+		"width": "36px"
+	},
 });
 
 /**
@@ -149,31 +391,31 @@ const sizes: Record<Size, string> = {
 	// There used to be an `xs` between nothing and `sm`, 24px against 26px with
 	// the same padding, type and corner. Two names for one control: the 2px
 	// never told anyone anything, and choosing between them was a coin toss.
-	sm: "min-h-[26px] px-2.5 text-xs rounded-control",
-	md: "min-h-8 px-3 text-sm rounded-control",
-	lg: "min-h-9 px-3.5 text-base rounded-control",
+	sm: mergeStylexClassName("", sx.minH26px, sx.px25, sx.textXs, sx.roundedControl),
+	md: mergeStylexClassName("", sx.minH8, sx.px3, sx.textSm, sx.roundedControl),
+	lg: mergeStylexClassName("", sx.minH9, sx.px35, sx.textBase, sx.roundedControl),
 };
 
 // Leading icon + label: shave 4px off the icon side, which is the glyph's own
 // whitespace minus the label's side bearing (see doc block).
 const iconLeadPad: Record<Size, string> = {
-	sm: "pl-1.5",
-	md: "pl-2",
-	lg: "pl-2.5",
+	sm: mergeStylexClassName("", sx.pl15),
+	md: mergeStylexClassName("", sx.pl2),
+	lg: mergeStylexClassName("", sx.pl25),
 };
 
 // Trailing caret + label: the same 4px shave, on the caret's side.
 const caretTrailPad: Record<Size, string> = {
-	sm: "pr-1.5",
-	md: "pr-2",
-	lg: "pr-2.5",
+	sm: mergeStylexClassName("", sx.pr15),
+	md: mergeStylexClassName("", sx.pr2),
+	lg: mergeStylexClassName("", sx.pr25),
 };
 
 // The air between glyph and label. One gap utility only: a second one on the
 // same element resolves by Tailwind's output order rather than by the order
 // they are written, so the two cases pick a value instead of layering.
-const LEAD_GAP = "gap-1.5";
-const PLAIN_GAP = "gap-1";
+const LEAD_GAP = mergeStylexClassName("", sx.gap15);
+const PLAIN_GAP = mergeStylexClassName("", sx.gap1);
 
 // The caret keys off the label, not the 20px icon step: an iconic-pro glyph at
 // 14 draws an arrow about as tall as the cap height of a 12px label, which is
@@ -183,9 +425,9 @@ const caretSize: Record<Size, number> = { sm: 14, md: 16, lg: 18 };
 
 // Icon-only: square hit target, symmetric.
 const iconOnlyPad: Record<Size, string> = {
-	sm: "w-[26px] px-0",
-	md: "w-8 px-0",
-	lg: "w-9 px-0",
+	sm: mergeStylexClassName("", sx.w26px, sx.px0),
+	md: mergeStylexClassName("", sx.w8, sx.px0),
+	lg: mergeStylexClassName("", sx.w9, sx.px0),
 };
 
 // Solid ink: the heaviest weight, for the one dominant action on a surface (a
@@ -205,7 +447,7 @@ const iconOnlyPad: Record<Size, string> = {
 // so it costs the variant nothing per palette and survives the ink accent at
 // both ends of the light/dark range.
 const INK =
-	"bg-accent border-transparent text-on-accent plate-sheen smooth-shadow-xs hover:bg-accent-hover";
+	mergeStylexClassName("smooth-shadow-xs", sx.bgAccent, sx.borderTransparent, sx.textOnAccent, sx.plateSheen, sx.hoverBgAccentHover);
 
 /**
  * Which one, in one line each. The question a variant answers is what the
@@ -234,7 +476,7 @@ const variants: Record<Variant, string> = {
 	// shadow are what say "raised", so the fill does not have to — see the
 	// --button-surface note in base.css.
 	default:
-		"bg-button border-line text-dim smooth-shadow-xs hover:text-fg hover:border-line-strong",
+		mergeStylexClassName("smooth-shadow-xs", sx.bgButton, sx.borderLine, sx.textDim, sx.hoverTextFg, sx.hoverBorderLineStrong),
 	primary: INK,
 	// A plate with no hairline: the quiet neutral button, and the one to reach
 	// for whenever a row holds more than one action (Cancel beside Save, a
@@ -251,7 +493,7 @@ const variants: Record<Variant, string> = {
 	// that same #ebebeb over the white page, so nothing moved where the old
 	// value was right, and it holds its shape on a panel, a card, or the
 	// sidebar's translucent material.
-	soft: "bg-fg/8 border-transparent text-dim hover:bg-fg/13 hover:text-fg data-[popup-open]:bg-fg/13 data-[popup-open]:text-fg",
+	soft: mergeStylexClassName("data-[popup-open]:bg-fg/13 data-[popup-open]:text-fg", sx.bgFg8, sx.borderTransparent, sx.textDim, sx.hoverBgFg13, sx.hoverTextFg),
 	// No plate at all until you reach for it. A ghost is the right weight for a
 	// control that is *reporting state* as much as inviting a press — a filter
 	// that says "In all workspaces" is mostly a label — so the row stays quiet
@@ -259,13 +501,13 @@ const variants: Record<Variant, string> = {
 	// ghost is a menu trigger it has to stay lit while its own menu is open, or
 	// the thing you just clicked disappears out from under the popup.
 	ghost:
-		"border-transparent text-dim hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg",
+		mergeStylexClassName("data-[popup-open]:bg-hover data-[popup-open]:text-fg", sx.borderTransparent, sx.textDim, sx.hoverBgHover, sx.hoverTextFg),
 	// Media previews float directly on a dark scrim rather than an app surface.
 	// Keep their safe action clusters as quiet inverse ghosts until hover; the
 	// shared variant lets lightboxes use Button's spacing, focus, and anchor
 	// rendering instead of rebuilding those fundamentals around raw controls.
 	overlay:
-		"border-transparent bg-transparent text-white/60 hover:bg-white/15 hover:text-white",
+		mergeStylexClassName("", sx.borderTransparent, sx.bgTransparent, sx.textWhite60, sx.hoverBgWhite15, sx.hoverTextWhite),
 	// The tones come in two weights and no third: a tinted plate that PROPOSES
 	// the action, and a solid one that COMMITS it. Both are fills, like every
 	// variant above — a tone used to be an outline, which put a red box around
@@ -279,35 +521,35 @@ const variants: Record<Variant, string> = {
 	//
 	// Green is the second-most reached-for colour in the app after the accent
 	// (approve a review, merge, mark read), so it earns a pair of its own.
-	success: "bg-green-soft border-transparent text-green hover:bg-green/22",
-	danger: "bg-red-soft border-transparent text-red hover:bg-red/22",
+	success: mergeStylexClassName("", sx.bgGreenSoft, sx.borderTransparent, sx.textGreen, sx.hoverBgGreen22),
+	danger: mergeStylexClassName("", sx.bgRedSoft, sx.borderTransparent, sx.textRed, sx.hoverBgRed22),
 	// Yellow has no strong half: it qualifies an action ("delete the session,
 	// keep the worktree"), and nothing in the app commits in yellow.
-	warning: "bg-yellow-soft border-transparent text-yellow hover:bg-yellow/22",
+	warning: mergeStylexClassName("", sx.bgYellowSoft, sx.borderTransparent, sx.textYellow, sx.hoverBgYellow22),
 	// Solid red plate — the button that actually does the irreversible thing
 	// (a modal's confirm, the second click of a two-click close). Shares
 	// `primary`'s shape, so the two swap cleanly in a footer.
 	"danger-strong":
-		"bg-red border-transparent text-white plate-sheen smooth-shadow-xs hover:brightness-110",
+		mergeStylexClassName("smooth-shadow-xs", sx.bgRed, sx.borderTransparent, sx.textWhite, sx.plateSheen, sx.hoverBrightness110),
 	// Solid green plate, for the affirmative action a surface wants read first
 	// — the deck's Skip, a workspace's Approve — where the tint would let a
 	// destructive neighbour dominate the row.
 	"success-strong":
-		"bg-green border-transparent text-white plate-sheen smooth-shadow-xs hover:brightness-110",
+		mergeStylexClassName("smooth-shadow-xs", sx.bgGreen, sx.borderTransparent, sx.textWhite, sx.plateSheen, sx.hoverBrightness110),
 };
 
 // Leading-icon dimming per variant (icon-only stays full strength).
 const iconDim: Record<Variant, string> = {
-	default: "opacity-60",
-	primary: "opacity-80",
-	soft: "opacity-60",
-	ghost: "opacity-60",
-	overlay: "opacity-60",
-	success: "opacity-80",
-	danger: "opacity-80",
-	warning: "opacity-80",
-	"danger-strong": "opacity-80",
-	"success-strong": "opacity-80",
+	default: mergeStylexClassName("", sx.opacity60),
+	primary: mergeStylexClassName("", sx.opacity80),
+	soft: mergeStylexClassName("", sx.opacity60),
+	ghost: mergeStylexClassName("", sx.opacity60),
+	overlay: mergeStylexClassName("", sx.opacity60),
+	success: mergeStylexClassName("", sx.opacity80),
+	danger: mergeStylexClassName("", sx.opacity80),
+	warning: mergeStylexClassName("", sx.opacity80),
+	"danger-strong": mergeStylexClassName("", sx.opacity80),
+	"success-strong": mergeStylexClassName("", sx.opacity80),
 };
 
 export type ButtonProps = React.ComponentPropsWithoutRef<"button"> & {

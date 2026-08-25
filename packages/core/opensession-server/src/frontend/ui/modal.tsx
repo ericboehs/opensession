@@ -109,7 +109,7 @@ const sx = stylex.create({
 			zIndex: "6000"
 	},
 	bgBlack22: {
-			backgroundColor: "#00000038"
+			backgroundColor: "color-mix(in srgb, var(--color-black) 22%, transparent)"
 	},
 	durationVarDurMicro: {
 			transitionDuration: "var(--dur-micro)"
@@ -118,7 +118,7 @@ const sx = stylex.create({
 			zIndex: "10000"
 	},
 	bgBlack25: {
-			backgroundColor: "#00000040"
+			backgroundColor: "transparent0040"
 	},
 	durationVarDur: {
 			transitionDuration: "var(--dur)"
@@ -287,6 +287,39 @@ const sx = stylex.create({
 	},
 	wMin820px100: {
 		"width": "min(820px,100%)"
+	},
+
+	afterAbsolute: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"position": "absolute"
+		}
+	},
+	afterInset1: {
+		"::after": {
+			"content": "var(--tw-content)",
+			"inset": "-4px"
+		}
+	},
+	afterContent: {
+		"::after": {
+			"--tw-content": "\"\"",
+			"content": "var(--tw-content)"
+		}
+	},
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
+	hoverTextFg: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--text)"
+			}
+		}
 	},
 });
 
@@ -542,7 +575,7 @@ function Header({
 					{title}
 				</BaseDialog.Title>
 				<BaseDialog.Close
-					aria-label="Close" {...mergeStylexProps("after:absolute after:-inset-1 after:content-[''] hover:bg-hover hover:text-fg", sx.focusRing, sx.relative, sx.Mr15, sx.Mt1, sx.flex, sx.size8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.p0, sx.textFaint, sx.transitionColors)}
+					aria-label="Close" {...mergeStylexProps("", sx.afterAbsolute, sx.afterInset1, sx.afterContent, sx.hoverBgHover, sx.hoverTextFg, sx.focusRing, sx.relative, sx.Mr15, sx.Mt1, sx.flex, sx.size8, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.p0, sx.textFaint, sx.transitionColors)}
 				>
 					<IconX size={20} />
 				</BaseDialog.Close>

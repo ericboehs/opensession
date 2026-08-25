@@ -73,7 +73,7 @@ const sx = stylex.create({
 			borderWidth: "1px"
 	},
 	borderWhite20: {
-			borderColor: "#fff3"
+			borderColor: "color-mix(in srgb, var(--color-white) 20%, transparent)"
 	},
 	bgVarDiagramCanvas: {
 			backgroundColor: "var(--diagram-canvas)"
@@ -136,7 +136,7 @@ const sx = stylex.create({
 			flexDirection: "column"
 	},
 	bgBlack85: {
-			backgroundColor: "#000000d9"
+			backgroundColor: "transparent00d9"
 	},
 	flex1: {
 			flex: "1"
@@ -252,10 +252,10 @@ const sx = stylex.create({
 			borderRadius: "calc(infinity * 1px)"
 	},
 	borderWhite10: {
-			borderColor: "#ffffff1a"
+			borderColor: "color-mix(in srgb, var(--color-white) 10%, transparent)"
 	},
 	bgBlack55: {
-			backgroundColor: "#0000008c"
+			backgroundColor: "transparent008c"
 	},
 	py1: {
 			paddingBlock: "4px"
@@ -313,7 +313,7 @@ const sx = stylex.create({
 			height: "36px"
 	},
 	textWhite60: {
-			color: "#fff9"
+			color: "color-mix(in srgb, var(--color-white) 60%, transparent)"
 	},
 	bgAccent: {
 			backgroundColor: "var(--accent)"
@@ -358,7 +358,7 @@ const sx = stylex.create({
 		"userSelect": "none"
 	},
 	dropShadow002pxRgb00005: {
-		"--tw-drop-shadow-size": "drop-shadow(0 0 2px var(--tw-drop-shadow-color,#00000080))",
+		"--tw-drop-shadow-size": "drop-shadow(0 0 2px var(--tw-drop-shadow-color,color-mix(in srgb, var(--color-black) 50%, transparent)))",
 		"--tw-drop-shadow": "var(--tw-drop-shadow-size)",
 		"filter": "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
 	},
@@ -398,7 +398,7 @@ const sx = stylex.create({
 		"display": "none"
 	},
 	bgWhite15: {
-		"backgroundColor": "#ffffff26",
+		"backgroundColor": "color-mix(in srgb, var(--color-white) 15%, transparent)",
 		"@supports (color: color-mix(in lab, red, red))": {
 			"backgroundColor": "color-mix(in oklab, var(--color-white) 15%, transparent)"
 		}
@@ -441,7 +441,7 @@ const sx = stylex.create({
 		"--tw-gradient-stops": "var(--tw-gradient-via-stops,var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position))"
 	},
 	viaBlack85: {
-		"--tw-gradient-via": "#000000d9",
+		"--tw-gradient-via": "transparent00d9",
 		"@supports (color: color-mix(in lab, red, red))": {
 			"--tw-gradient-via": "color-mix(in oklab, var(--color-black) 85%, transparent)"
 		},
@@ -559,6 +559,182 @@ const sx = stylex.create({
 		"transitionProperty": "scale,background-color",
 		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
 		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+
+	shadow0009999pxRgb00005: {
+		"--tw-shadow": "0 0 0 9999px var(--tw-shadow-color,color-mix(in srgb, var(--color-black) 50%, transparent))",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	shadow0001pxRgb000022: {
+		"--tw-shadow": "0 0 0 1px var(--tw-shadow-color,color-mix(in srgb, var(--color-black) 22%, transparent))",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	phoneH100dvh: {
+		"@media (max-width: 720px)": {
+			"height": "100dvh"
+		}
+	},
+	phoneBgBlack: {
+		"@media (max-width: 720px)": {
+			"backgroundColor": "var(--color-black)"
+		}
+	},
+	h10: {
+		"height": "40px"
+	},
+	w10: {
+		"width": "40px"
+	},
+	bgWhite10: {
+		"backgroundColor": "color-mix(in srgb, var(--color-white) 10%, transparent)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"backgroundColor": "color-mix(in oklab, var(--color-white) 10%, transparent)"
+		}
+	},
+	hoverBgWhite20: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "color-mix(in srgb, var(--color-white) 20%, transparent)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in oklab, var(--color-white) 20%, transparent)"
+				}
+			}
+		}
+	},
+	phoneH11: {
+		"@media (max-width: 720px)": {
+			"height": "44px"
+		}
+	},
+	phoneW11: {
+		"@media (max-width: 720px)": {
+			"width": "44px"
+		}
+	},
+	lineClamp2: {
+		"WebkitlineClamp": "2",
+		"WebkitboxOrient": "vertical",
+		"display": "-webkit-box",
+		"overflow": "hidden"
+	},
+	snapX: {
+		"scrollSnapType": "x var(--tw-scroll-snap-strictness)"
+	},
+	transitionTransformBackgroundColorOpacity: {
+		"transitionProperty": "transform,background-color,opacity",
+		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
+		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
+	},
+	durationVarDurMicro: {
+		"--tw-duration": "var(--dur-micro)",
+		"transitionDuration": "var(--dur-micro)"
+	},
+	activeScale096: {
+		":active": {
+			"scale": ".96"
+		}
+	},
+	disabledOpacity035: {
+		":disabled": {
+			"opacity": ".35"
+		}
+	},
+	shadowInset01px0Rgb255255255008012px44pxRgb00005: {
+		"--tw-shadow": "inset 0 1px 0 var(--tw-shadow-color,color-mix(in srgb, var(--color-white) 8%, transparent)), 0 12px 44px var(--tw-shadow-color,color-mix(in srgb, var(--color-black) 50%, transparent))",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	backdropBlur2xl: {
+		"--tw-backdrop-blur": "blur(var(--blur-2xl))",
+		"WebkitBackdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)",
+		"backdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+	},
+	backdropSaturate150: {
+		"--tw-backdrop-saturate": "saturate(150%)",
+		"WebkitBackdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)",
+		"backdropFilter": "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+	},
+	hoverBgWhite10: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "color-mix(in srgb, var(--color-white) 10%, transparent)"
+			},
+			"@supports (color: color-mix(in lab, red, red))": {
+				":hover": {
+					"backgroundColor": "color-mix(in oklab, var(--color-white) 10%, transparent)"
+				}
+			}
+		}
+	},
+	hoverTextWhite: {
+		"@media (hover: hover)": {
+			":hover": {
+				"color": "var(--color-white)"
+			}
+		}
+	},
+	phoneMinH11: {
+		"@media (max-width: 720px)": {
+			"minHeight": "44px"
+		}
+	},
+	shadowInset01px0Rgb255255255008016px50pxRgb00005: {
+		"--tw-shadow": "inset 0 1px 0 var(--tw-shadow-color,color-mix(in srgb, var(--color-white) 8%, transparent)), 0 16px 50px var(--tw-shadow-color,color-mix(in srgb, var(--color-black) 50%, transparent))",
+		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+	},
+	placeholderTextWhite45: {
+		"::placeholder": {
+			"color": "color-mix(in srgb, var(--color-white) 45%, transparent)"
+		},
+		"@supports (color: color-mix(in lab, red, red))": {
+			"::placeholder": {
+				"color": "color-mix(in oklab, var(--color-white) 45%, transparent)"
+			}
+		}
+	},
+	phoneTextInputPhone: {
+		"@media (max-width: 720px)": {
+			"fontSize": "var(--type-input-phone)"
+		}
+	},
+	phoneSize11: {
+		"@media (max-width: 720px)": {
+			"width": "44px",
+			"height": "44px"
+		}
+	},
+	activeScale094: {
+		":active": {
+			"scale": ".94"
+		}
+	},
+	disabledBgWhite15: {
+		":disabled": {
+			"backgroundColor": "color-mix(in srgb, var(--color-white) 15%, transparent)"
+		},
+		"@supports (color: color-mix(in lab, red, red))": {
+			":disabled": {
+				"backgroundColor": "color-mix(in oklab, var(--color-white) 15%, transparent)"
+			}
+		}
+	},
+	disabledTextWhite40: {
+		":disabled": {
+			"color": "color-mix(in srgb, var(--color-white) 40%, transparent)"
+		},
+		"@supports (color: color-mix(in lab, red, red))": {
+			":disabled": {
+				"color": "color-mix(in oklab, var(--color-white) 40%, transparent)"
+			}
+		}
+	},
+	maxWMin720px90vw: {
+		"maxWidth": "min(720px,90vw)"
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
 	},
 });
 
@@ -1913,7 +2089,7 @@ function ZoomableMedia({
 							}}
 							aria-hidden="true"
 						>
-							<div {...mergeStylexProps("shadow-[0_0_0_9999px_rgb(0_0_0/0.5)]", sx.absolute)}
+							<div {...mergeStylexProps("", sx.shadow0009999pxRgb00005, sx.absolute)}
 								style={{
 									left: shownRegionBox.left - imageBox.left,
 									top: shownRegionBox.top - imageBox.top,
@@ -1928,7 +2104,7 @@ function ZoomableMedia({
 							// The region is a thing you can take hold of, not a mark:
 							// press it to move it, press a handle to resize it.
 							// Dragging bare picture still starts a new one.
-							data-region-handle="move" {...mergeStylexProps("shadow-[0_0_0_1px_rgb(0_0_0/0.22)]", sx.absolute, sx.cursorMove, sx.touchNone, sx.rounded3px, sx.border, sx.borderWhite)}
+							data-region-handle="move" {...mergeStylexProps("", sx.shadow0001pxRgb000022, sx.absolute, sx.cursorMove, sx.touchNone, sx.rounded3px, sx.border, sx.borderWhite)}
 							style={shownRegionBox}
 							aria-hidden="true"
 						>
@@ -1986,7 +2162,7 @@ const MAX_VISIBLE_DOTS = 7;
 
 // Download / Open: quiet buttons in the top action cluster, matching the asset
 // preview's separation between actions above and descriptions below.
-const lightboxAction = "shrink-0 cursor-pointer";
+const lightboxAction = mergeStylexClassName("", sx.shrink0, sx.cursorPointer);
 
 const PREVIEW_LABEL: Record<LightboxItem["kind"], string> = {
 	image: "Image preview",
@@ -2367,7 +2543,7 @@ sendingCommentRef.current = false;
 	// spread under it across the whole viewport (z-index applies to flex items
 	// without needing position).
 	const navBtn =
-		"z-10 grid h-10 w-10 shrink-0 place-items-center rounded-full border-0 bg-white/10 p-0 text-white hover:bg-white/20 phone:h-11 phone:w-11";
+		mergeStylexClassName("", sx.z10, sx.grid, sx.h10, sx.w10, sx.shrink0, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgWhite10, sx.p0, sx.textWhite, sx.hoverBgWhite20, sx.phoneH11, sx.phoneW11);
 	// Wide enough for a sentence, never wider than the screen it floats on.
 	const commentCardWidth = Math.min(340, Math.max(220, viewport.width - 24));
 	const commentAnchor =
@@ -2385,12 +2561,12 @@ sendingCommentRef.current = false;
 	// top and bottom so the image's center stays at the viewport's center.
 	const phoneStagePadding = (68 + phoneBottomHeight) / 2;
 	const phoneAction =
-		"grid size-11 shrink-0 place-items-center rounded-full border-0 bg-transparent p-0 text-white transition-[transform,background-color,opacity] duration-[var(--dur-micro)] ease-[var(--ease)] active:scale-[0.96] disabled:opacity-[0.35]";
+		mergeStylexClassName("", sx.grid, sx.size11, sx.shrink0, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgTransparent, sx.p0, sx.textWhite, sx.transitionTransformBackgroundColorOpacity, sx.durationVarDurMicro, sx.easeVarEase, sx.activeScale096, sx.disabledOpacity035);
 
 	return (
 		<motion.div
 			ref={dialogRef}
-			data-media-lightbox="" {...mergeStylexProps("phone:h-[100dvh] phone:bg-black", sx.fixed, sx.inset0, sx.z11000, sx.flex, sx.flexCol, sx.bgBlack85)}
+			data-media-lightbox="" {...mergeStylexProps("", sx.phoneH100dvh, sx.phoneBgBlack, sx.fixed, sx.inset0, sx.z11000, sx.flex, sx.flexCol, sx.bgBlack85)}
 			role="dialog"
 			tabIndex={-1}
 			aria-modal="true"
@@ -2676,7 +2852,7 @@ sendingCommentRef.current = false;
 						<div {...stylex.props(sx.flex, sx.maxWFull, sx.flexCol, sx.itemsCenter, sx.gap05, sx.px6, sx.textCenter)}>
 							<div {...stylex.props(sx.flex, sx.maxWFull, sx.itemsCenter, sx.justifyCenter, sx.gap2)}>
 								{caption && (
-									<div {...mergeStylexProps("line-clamp-2", sx.minW0, sx.maxWFull, sx.textSm, sx.fontMedium, sx.leadingSnug, sx.textWhite)}>
+									<div {...mergeStylexProps("", sx.lineClamp2, sx.minW0, sx.maxWFull, sx.textSm, sx.fontMedium, sx.leadingSnug, sx.textWhite)}>
 										{caption}
 									</div>
 								)}
@@ -2692,7 +2868,7 @@ sendingCommentRef.current = false;
 								)}
 							</div>
 							{description && (
-								<div {...mergeStylexProps("line-clamp-2", sx.maxWFull, sx.textSm, sx.leadingSnug, sx.textWhite75)}>
+								<div {...mergeStylexProps("", sx.lineClamp2, sx.maxWFull, sx.textSm, sx.leadingSnug, sx.textWhite75)}>
 									{description}
 								</div>
 							)}
@@ -2701,7 +2877,7 @@ sendingCommentRef.current = false;
 
 					{many && (
 						<div
-							ref={filmstripRef} {...mergeStylexProps("snap-x [&::-webkit-scrollbar]:hidden", sx.flex, sx.h12, sx.snapMandatory, sx.itemsCenter, sx.gap1, sx.overflowXAuto, sx.pxCalc5022px, sx.ScrollbarWidthNone)}
+							ref={filmstripRef} {...mergeStylexProps("[&::-webkit-scrollbar]:hidden", sx.snapX, sx.flex, sx.h12, sx.snapMandatory, sx.itemsCenter, sx.gap1, sx.overflowXAuto, sx.pxCalc5022px, sx.ScrollbarWidthNone)}
 							role="group"
 							aria-label="Media filmstrip"
 						>
@@ -2810,12 +2986,12 @@ sendingCommentRef.current = false;
 
 			{commenting && !selection && (
 				<div {...stylex.props(sx.pointerEventsNone, sx.absolute, sx.insetX0, sx.bottomCalc16pxEnvSafeAreaInsetBottom, sx.z20, sx.flex, sx.justifyCenter, sx.px4)}>
-					<div {...mergeStylexProps("shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_12px_44px_rgb(0_0_0/0.5)] backdrop-blur-2xl backdrop-saturate-150", sx.pointerEventsAuto, sx.flex, sx.itemsCenter, sx.gap1, sx.roundedFull, sx.border, sx.borderWhite10, sx.bgBlack55, sx.py1, sx.pl4, sx.pr1)}>
+					<div {...mergeStylexProps("", sx.shadowInset01px0Rgb255255255008012px44pxRgb00005, sx.backdropBlur2xl, sx.backdropSaturate150, sx.pointerEventsAuto, sx.flex, sx.itemsCenter, sx.gap1, sx.roundedFull, sx.border, sx.borderWhite10, sx.bgBlack55, sx.py1, sx.pl4, sx.pr1)}>
 						<span {...stylex.props(sx.fontMedium, sx.textWhite, typography.label)}>
 							Drag over the part you mean
 						</span>
 						<button
-							type="button" {...mergeStylexProps("hover:bg-white/10 hover:text-white phone:min-h-11", sx.minH9, sx.roundedFull, sx.px3, sx.fontMedium, sx.textWhite70, typography.label)}
+							type="button" {...mergeStylexProps("", sx.hoverBgWhite10, sx.hoverTextWhite, sx.phoneMinH11, sx.minH9, sx.roundedFull, sx.px3, sx.fontMedium, sx.textWhite70, typography.label)}
 							onClick={resetComment}
 						>
 							Cancel
@@ -2826,7 +3002,7 @@ sendingCommentRef.current = false;
 
 			{commentAnchor && (
 				<motion.form
-					ref={commentCardRef} {...mergeStylexProps("shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_16px_50px_rgb(0_0_0/0.5)] backdrop-blur-2xl backdrop-saturate-150", sx.fixed, sx.z20, sx.flex, sx.cursorText, sx.flexCol, sx.gap1, sx.rounded22px, sx.bgBlack55, sx.p15)}
+					ref={commentCardRef} {...mergeStylexProps("", sx.shadowInset01px0Rgb255255255008016px50pxRgb00005, sx.backdropBlur2xl, sx.backdropSaturate150, sx.fixed, sx.z20, sx.flex, sx.cursorText, sx.flexCol, sx.gap1, sx.rounded22px, sx.bgBlack55, sx.p15)}
 					// It grows out of the corner of the region it belongs to, rather
 					// than fading in beside it.
 					initial={reduceMotion ? false : { opacity: 0, scale: 0.94 }}
@@ -2875,11 +3051,11 @@ sendingCommentRef.current = false;
 								}
 							}}
 							rows={1}
-							placeholder="What should change here?" {...mergeStylexProps("placeholder:text-white/45 phone:text-input-phone [&::-webkit-scrollbar]:hidden", sx.block, sx.wFull, sx.flex1, sx.resizeNone, sx.appearanceNone, sx.border0, sx.bgTransparent, sx.px25, sx.py2, sx.leadingSnug, sx.textWhite, sx.outlineNone, sx.ScrollbarWidthNone, typography.body)}
+							placeholder="What should change here?" {...mergeStylexProps("[&::-webkit-scrollbar]:hidden", sx.placeholderTextWhite45, sx.phoneTextInputPhone, sx.block, sx.wFull, sx.flex1, sx.resizeNone, sx.appearanceNone, sx.border0, sx.bgTransparent, sx.px25, sx.py2, sx.leadingSnug, sx.textWhite, sx.outlineNone, sx.ScrollbarWidthNone, typography.body)}
 							disabled={sendingComment}
 						/>
 						<button
-							type="button" {...mergeStylexProps("hover:bg-white/10 hover:text-white phone:size-11", sx.grid, sx.size9, sx.shrink0, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgTransparent, sx.p0, sx.textWhite60)}
+							type="button" {...mergeStylexProps("", sx.hoverBgWhite10, sx.hoverTextWhite, sx.phoneSize11, sx.grid, sx.size9, sx.shrink0, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgTransparent, sx.p0, sx.textWhite60)}
 							onClick={resetComment}
 							disabled={sendingComment}
 							aria-label="Cancel comment"
@@ -2887,7 +3063,7 @@ sendingCommentRef.current = false;
 							<IconX size={16} />
 						</button>
 						<button
-							type="submit" {...mergeStylexProps("active:scale-[0.94] disabled:bg-white/15 disabled:text-white/40 phone:size-11", sx.grid, sx.size9, sx.shrink0, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgAccent, sx.p0, sx.textWhite, sx.transitionTransform)}
+							type="submit" {...mergeStylexProps("", sx.activeScale094, sx.disabledBgWhite15, sx.disabledTextWhite40, sx.phoneSize11, sx.grid, sx.size9, sx.shrink0, sx.placeItemsCenter, sx.roundedFull, sx.border0, sx.bgAccent, sx.p0, sx.textWhite, sx.transitionTransform)}
 							disabled={!commentText.trim() || sendingComment}
 							aria-label={sendingComment ? "Sending comment" : "Send comment"}
 						>
@@ -2937,7 +3113,7 @@ sendingCommentRef.current = false;
 							)}
 						</div>
 						{description && (
-							<div {...mergeStylexProps("max-w-[min(720px,90vw)] line-clamp-2", sx.textSm, sx.leadingSnug, sx.textWhite75)}>
+							<div {...mergeStylexProps("", sx.maxWMin720px90vw, sx.lineClamp2, sx.textSm, sx.leadingSnug, sx.textWhite75)}>
 								{description}
 							</div>
 						)}
@@ -2973,7 +3149,7 @@ sendingCommentRef.current = false;
 						</div>
 					)}
 					{many && (
-						<span {...mergeStylexProps("tabular-nums", sx.fontMedium, sx.textWhite50, typography.meta)}>
+						<span {...mergeStylexProps("", sx.tabularNums, sx.fontMedium, sx.textWhite50, typography.meta)}>
 							{index + 1} of {items.length}
 						</span>
 					)}

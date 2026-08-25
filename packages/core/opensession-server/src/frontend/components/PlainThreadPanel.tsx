@@ -332,6 +332,19 @@ const sx = stylex.create({
 			}
 		}
 	},
+
+	phoneHidden: {
+		"@media (max-width: 720px)": {
+			"display": "none"
+		}
+	},
+	hoverUnderline: {
+		"@media (hover: hover)": {
+			":hover": {
+				"textDecorationLine": "underline"
+			}
+		}
+	},
 });
 
 interface Props {
@@ -1123,7 +1136,7 @@ setSending(false);
 						Internal note
 					</button>
 				</Tooltip>
-				<span {...mergeStylexProps("phone:hidden", sx.minW0, sx.truncate, sx.textFaint, typography.meta)}>
+				<span {...mergeStylexProps("", sx.phoneHidden, sx.minW0, sx.truncate, sx.textFaint, typography.meta)}>
 					{kind === "note"
 						? `Posted as ${currentUser} (via ${PRODUCT_NAME})`
 						: `Via Plain, signed “${currentUser.split(/\s+/)[0]}”`}
@@ -1369,7 +1382,7 @@ export function PlainEntryRow({
 					)}
 					<span className={plainEntryMeta}>{timeOf(entry.timestamp)}</span>
 					{author.isAgent && threadId && (
-						<a {...mergeStylexProps("hover:underline", sx.mlAuto, sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap05, sx.whitespaceNowrap, sx.fontSemibold, sx.textLink, sx.noUnderline, typography.meta)}
+						<a {...mergeStylexProps("", sx.hoverUnderline, sx.mlAuto, sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap05, sx.whitespaceNowrap, sx.fontSemibold, sx.textLink, sx.noUnderline, typography.meta)}
 							href={`${BASE_PATH}/plain-triage/${encodeURIComponent(threadId)}`}
 							target="_blank"
 							rel="noreferrer"

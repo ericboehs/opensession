@@ -43,7 +43,7 @@ const sx = stylex.create({
 			fontFamily: "inherit"
 	},
 	bgWhite20: {
-			backgroundColor: "#fff3"
+			backgroundColor: "color-mix(in srgb, var(--color-white) 20%, transparent)"
 	},
 	textWhite75: {
 			color: "#ffffffbf"

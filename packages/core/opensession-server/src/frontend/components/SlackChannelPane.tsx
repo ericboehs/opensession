@@ -1,7 +1,7 @@
 import { BASE_PATH } from "../lib/base";
 import React, { useEffect, useRef, useState } from "react";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 import {
 	composerBox,
 	composerBoxExpanded,
@@ -233,6 +233,29 @@ const sx = stylex.create({
 	flexCol: { flexDirection: "column" },
 	opacity60: { opacity: 0.6 },
 	textFgPlaceholderFaint: { color: "var(--text)", "::placeholder": { color: "var(--text-faint)" } },
+
+	decorationLine: {
+		"WebkittextDecorationColor": "var(--border)",
+		"textDecorationColor": "var(--border)"
+	},
+	hoverDecorationCurrent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"textDecorationColor": "currentColor"
+			}
+		}
+	},
+	selectText: {
+		"WebkitUserSelect": "text",
+		"userSelect": "text"
+	},
+	hoverUnderline: {
+		"@media (hover: hover)": {
+			":hover": {
+				"textDecorationLine": "underline"
+			}
+		}
+	},
 });
 
 interface MessageReaction {
@@ -294,7 +317,7 @@ function MessageText({ text }: { text: string }) {
 					key={key++}
 					href={href}
 					target="_blank"
-					rel="noreferrer" {...mergeStylexProps("decoration-line hover:decoration-current", sx.textLink, sx.underline, sx.underlineOffset2)}
+					rel="noreferrer" {...mergeStylexProps("", sx.decorationLine, sx.hoverDecorationCurrent, sx.textLink, sx.underline, sx.underlineOffset2)}
 				>
 					{label}
 				</a>,
@@ -304,7 +327,7 @@ function MessageText({ text }: { text: string }) {
 	}
 	if (last < text.length) parts.push(text.slice(last));
 	return (
-		<div {...mergeStylexProps("select-text", sx.whitespacePreWrap, sx.breakWords, sx.leadingSnug, sx.textFg, typography.body)}>
+		<div {...mergeStylexProps("", sx.selectText, sx.whitespacePreWrap, sx.breakWords, sx.leadingSnug, sx.textFg, typography.body)}>
 			{parts}
 		</div>
 	);
@@ -388,7 +411,7 @@ setLoadingReplies(false);
 			)}
 			<div {...stylex.props(sx.minW0, sx.flex1)}>
 				<div {...stylex.props(sx.flex, sx.itemsBaseline, sx.gap2)}>
-					<span {...mergeStylexProps("select-text", sx.fontSemibold, sx.textFg, typography.itemTitle)}>
+					<span {...mergeStylexProps("", sx.selectText, sx.fontSemibold, sx.textFg, typography.itemTitle)}>
 						{m.userName}
 					</span>
 					<span {...stylex.props(sx.textFaint, typography.meta)}>{timeOf(m.ts)}</span>
@@ -396,7 +419,7 @@ setLoadingReplies(false);
 				<MessageText text={m.text} />
 				<ReactionPills reactions={m.reactions} />
 				{depth === 0 && (m.replyCount || 0) > 0 && (
-					<button {...mergeStylexProps("hover:underline", sx.mt1, sx.fontMedium, sx.textLink, typography.meta)}
+					<button {...mergeStylexProps("", sx.hoverUnderline, sx.mt1, sx.fontMedium, sx.textLink, typography.meta)}
 						onClick={toggleThread}
 					>
 						{expanded

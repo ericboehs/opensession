@@ -6,7 +6,7 @@ import { withPreviewPath } from "../lib/preview-url";
 import { PageLoader } from "../ui/page-loader";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -87,6 +87,25 @@ const sx = stylex.create({
 	},
 	noUnderline: {
 			textDecorationLine: "none"
+	},
+
+	selectNone: {
+		"WebkitUserSelect": "none",
+		"userSelect": "none"
+	},
+	hoverBorderAccent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"borderColor": "var(--accent)"
+			}
+		}
+	},
+	hoverBgAccentSoft: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--accent-soft)"
+			}
+		}
 	},
 });
 
@@ -199,7 +218,7 @@ if (e instanceof ApiError && e.status === 404) {
 
 	return (
 		<div {...stylex.props(sx.fixed, sx.inset0, sx.flex, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.gap4, sx.bgSurface, sx.px6, sx.textCenter)}>
-			<div {...mergeStylexProps("select-none", sx.fontSemibold, sx.trackingWide, sx.textFaint, typography.label)}>
+			<div {...mergeStylexProps("", sx.selectNone, sx.fontSemibold, sx.trackingWide, sx.textFaint, typography.label)}>
 				{PRODUCT_NAME}
 			</div>
 			{state === "waiting" ? (
@@ -231,7 +250,7 @@ if (e instanceof ApiError && e.status === 404) {
 							: "It's been a few minutes with nothing listening, so the boot may have failed. Check the session's Preview services for details, or try starting it again."}
 					</div>
 					<a
-						href={backHref} {...mergeStylexProps("hover:border-accent hover:bg-accent-soft", sx.roundedControl, sx.border, sx.borderLineStrong, sx.px35, sx.py15, sx.fontSemibold, sx.textFg, sx.noUnderline, typography.label)}
+						href={backHref} {...mergeStylexProps("", sx.hoverBorderAccent, sx.hoverBgAccentSoft, sx.roundedControl, sx.border, sx.borderLineStrong, sx.px35, sx.py15, sx.fontSemibold, sx.textFg, sx.noUnderline, typography.label)}
 					>
 						{state === "gone" ? "Open " + PRODUCT_NAME : "Back to the session"}
 					</a>

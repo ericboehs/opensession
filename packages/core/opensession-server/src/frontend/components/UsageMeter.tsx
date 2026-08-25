@@ -2,7 +2,7 @@ import * as React from "react";
 import type { SessionUsage } from "../lib/types";
 import { Popover } from "../ui/popover";
 import * as stylex from "@stylexjs/stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -297,7 +297,7 @@ export function UsageMeter({
 					// name, and the cache rate is the one thing on that line nobody
 					// navigates by — it was pushing "Opus 5 + Fable oracle" down to
 					// "Opus 5 + …".
-					<span {...mergeStylexProps("tabular-nums", sx.textDim)}>
+					<span {...mergeStylexProps("", sx.tabularNums, sx.textDim)}>
 						{cacheHit}% cached
 					</span>
 				)}

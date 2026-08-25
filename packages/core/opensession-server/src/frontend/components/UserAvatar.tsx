@@ -153,7 +153,7 @@ export function UserAvatar({
 			{picture ? (
 				<img
 					src={src}
-					alt={name} {...mergeStylexProps("shadow-[var(--avatar-edge)]", sx.absolute, sx.inset0, sx.sizeFull, sx.roundedInherit, sx.CornerShapeInherit, sx.objectCover)}
+					alt={name} {...mergeStylexProps("", sx.shadowVarAvatarEdge, sx.absolute, sx.inset0, sx.sizeFull, sx.roundedInherit, sx.CornerShapeInherit, sx.objectCover)}
 					loading="lazy"
 					draggable={false}
 					onError={() => setFailed(true)}

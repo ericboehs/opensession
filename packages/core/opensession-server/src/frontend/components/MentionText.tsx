@@ -3,7 +3,7 @@ import { parseMentions } from "../lib/mention-text";
 import { usePeople } from "../lib/people";
 import { githubLoginFor } from "./UserAvatar";
 import * as stylex from "@stylexjs/stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps , mergeStylexClassName} from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -15,6 +15,23 @@ const sx = stylex.create({
 	},
 	underlineOffset2: {
 			textUnderlineOffset: "2px"
+	},
+
+	decorationAccent40: {
+		"WebkittextDecorationColor": "var(--accent)",
+		"textDecorationColor": "var(--accent)",
+		"@supports (color: color-mix(in lab, red, red))": {
+			"WebkittextDecorationColor": "color-mix(in oklab, var(--accent) 40%, transparent)",
+			"textDecorationColor": "color-mix(in oklab, var(--accent) 40%, transparent)"
+		}
+	},
+	hoverDecorationAccent: {
+		"@media (hover: hover)": {
+			":hover": {
+				"WebkittextDecorationColor": "var(--accent)",
+				"textDecorationColor": "var(--accent)"
+			}
+		}
 	},
 });
 
@@ -43,7 +60,7 @@ export function MentionText({ text }: { text: string }) {
 							key={i}
 							href={token.text}
 							target="_blank"
-							rel="noreferrer" {...mergeStylexProps("decoration-accent/40 hover:decoration-accent", sx.textAccent, sx.underline, sx.underlineOffset2)}
+							rel="noreferrer" {...mergeStylexProps("", sx.decorationAccent40, sx.hoverDecorationAccent, sx.textAccent, sx.underline, sx.underlineOffset2)}
 						>
 							{token.text}
 						</a>

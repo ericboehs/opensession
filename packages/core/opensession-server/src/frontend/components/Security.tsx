@@ -204,6 +204,35 @@ const sx = stylex.create({
 	opacity50: {
 		"opacity": ".5"
 	},
+
+	phonePx4: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "16px"
+		}
+	},
+	phonePt5: {
+		"@media (max-width: 720px)": {
+			"paddingTop": "20px"
+		}
+	},
+	phonePb12: {
+		"@media (max-width: 720px)": {
+			"paddingBottom": "48px"
+		}
+	},
+	textLink: {
+		"color": "var(--link)"
+	},
+	noUnderline: {
+		"textDecorationLine": "none"
+	},
+	hoverUnderline: {
+		"@media (hover: hover)": {
+			":hover": {
+				"textDecorationLine": "underline"
+			}
+		}
+	},
 });
 
 /* Security is a tool surface hosted inside Settings, so it reads as one of its
@@ -216,7 +245,7 @@ const sx = stylex.create({
 const FORM_FIELDS =
   "[&_textarea]:leading-normal phone:[&_input]:text-input-phone phone:[&_select]:text-input-phone phone:[&_textarea]:text-input-phone";
 /** A link inside a row: the session an entry points at, the page that owns it. */
-const LINK = "cursor-pointer text-link no-underline hover:underline";
+const LINK = mergeStylexClassName("", sx.cursorPointer, sx.textLink, sx.noUnderline, sx.hoverUnderline);
 
 interface Props {
   onOpenSession: (sessionId: string) => void;
@@ -321,7 +350,7 @@ setError(e.message);
   }
 
   return (
-    <div {...mergeStylexProps("phone:px-4 phone:pt-5 phone:pb-12", sx.flex, sx.minH0, sx.flex1, sx.justifyCenter, sx.overflowYAuto, sx.px8, sx.pt11, sx.pb22)}>
+    <div {...mergeStylexProps("", sx.phonePx4, sx.phonePt5, sx.phonePb12, sx.flex, sx.minH0, sx.flex1, sx.justifyCenter, sx.overflowYAuto, sx.px8, sx.pt11, sx.pb22)}>
       <SettingsPanel {...stylex.props(sx.selfStart)}>
         <SettingsHeader
           title="Security"

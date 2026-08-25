@@ -208,6 +208,22 @@ const sx = stylex.create({
 			"backgroundColor": "color-mix(in srgb,var(--bg-panel) 80%,var(--composer-surface))"
 		}
 	},
+
+	bgYellow: {
+		"backgroundColor": "var(--yellow)"
+	},
+	animateComposerAgentsPulse14sEaseInOutInfinite: {
+		"animation": "1.4s ease-in-out infinite composer-agents-pulse"
+	},
+	tabularNums: {
+		"--tw-numeric-spacing": "tabular-nums",
+		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+	},
+	activeBgPressed: {
+		":active": {
+			"backgroundColor": "var(--hover-strong)"
+		}
+	},
 });
 
 /**
@@ -256,13 +272,13 @@ const OPEN_KEY = "opensession-composer-status-open";
 /** Section caption inside the expanded card (the workflow's name, "Plan · 2/5").
  *  text-meta rather than the stylesheet's off-scale 12px: it is secondary
  *  metadata above the list it labels. */
-const sectionName = "truncate text-meta font-semibold text-dim";
+const sectionName = mergeStylexClassName("", sx.truncate, typography.meta, sx.fontSemibold, sx.textDim);
 
 /** The live dot. The keyframes stay in the stylesheet (see the report — they
  *  belong in base.css now that no class of ours carries them), and the
  *  reduced-motion blanket in base.css deliberately stops this one. */
 const liveDot =
-	"flex-none rounded-full bg-yellow animate-[composer-agents-pulse_1.4s_ease-in-out_infinite]";
+	mergeStylexClassName("", sx.flexNone, sx.roundedFull, sx.bgYellow, sx.animateComposerAgentsPulse14sEaseInOutInfinite);
 
 export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 	const [open, setOpen] = useState(
@@ -351,7 +367,7 @@ export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 		>
 			{!open && <span className={cn(liveDot, mergeStylexClassName("", sx.size2))} />}
 			{total === 0 && (
-				<span {...mergeStylexProps("tabular-nums", sx.flexNone, sx.fontMedium, sx.textFaint)}>
+				<span {...mergeStylexProps("", sx.tabularNums, sx.flexNone, sx.fontMedium, sx.textFaint)}>
 					{planDone}/{planTotal}
 				</span>
 			)}
@@ -522,7 +538,7 @@ export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 							)}
 
 							<button
-								type="button" {...mergeStylexProps("active:bg-pressed", sx.inlineFlex, sx.itemsCenter, sx.gap05, sx.selfStart, sx.roundedFull, sx.border, sx.borderLine, sx.bgVarBgHover, sx.py5px, sx.pr25, sx.pl3, sx.fontSemibold, sx.textFg, typography.meta)}
+								type="button" {...mergeStylexProps("", sx.activeBgPressed, sx.inlineFlex, sx.itemsCenter, sx.gap05, sx.selfStart, sx.roundedFull, sx.border, sx.borderLine, sx.bgVarBgHover, sx.py5px, sx.pr25, sx.pl3, sx.fontSemibold, sx.textFg, typography.meta)}
 								onClick={onOpenPanel}
 							>
 								Open full panel

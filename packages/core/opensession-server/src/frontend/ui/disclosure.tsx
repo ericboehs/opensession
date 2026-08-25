@@ -1,6 +1,6 @@
 import * as React from "react";
 import { IconChevronRight } from "../components/icons";
-import { cn, mergeStylexProps } from "./cn";
+import { cn, mergeStylexProps , mergeStylexClassName} from "./cn";
 import { Collapsible, collapsiblePanelClasses } from "./collapsible";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -85,6 +85,14 @@ const sx = stylex.create({
 	pt3: {
 			paddingTop: "12px"
 	},
+
+	hoverBgHover: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--hover)"
+			}
+		}
+	},
 });
 
 /**
@@ -125,7 +133,7 @@ export function Disclosure({
 			<div {...stylex.props(sx.flex, sx.minW0, sx.flexWrap, sx.itemsCenter, sx.justifyBetween, sx.gapX3, sx.gapY15)}>
 				{/* -mx-2 lets the row's hover wash bleed past the text without
 				    indenting the title away from the content it labels. */}
-				<Collapsible.Trigger {...mergeStylexProps("group hover:bg-hover", sx.focusRing, sx.Mx2, sx.flex, sx.minW0, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.px2, sx.py1, sx.fontSemibold, sx.textFg, sx.transitionColors, typography.label)}>
+				<Collapsible.Trigger {...mergeStylexProps("group", sx.hoverBgHover, sx.focusRing, sx.Mx2, sx.flex, sx.minW0, sx.itemsCenter, sx.gap15, sx.roundedControl, sx.px2, sx.py1, sx.fontSemibold, sx.textFg, sx.transitionColors, typography.label)}>
 					<IconChevronRight
 						size={14} {...mergeStylexProps("group-data-[panel-open]:rotate-90", sx.shrink0, sx.textFaint, sx.transitionTransform, sx.durationVarDurMicro, sx.easeVarEase)}
 					/>

@@ -56,7 +56,7 @@ test("phone navigation chrome has no hard divider bars", async () => {
 	);
 	expect(TAB_STRIP).not.toContain("phone:border-b");
 	expect(TAB_STRIP).not.toContain("phone:shadow-[");
-	expect(tabCss).toContain("background-color:#0000");
+	expect(tabCss).toContain("background-color:transparent");
 	expect(tabCss).toContain("::after{display:none}");
 	expect(infoTopbarClass(true)).not.toContain("border-b");
 	expect(infoTopbarClass(false)).not.toContain("border-b");

@@ -212,6 +212,10 @@ const sx = stylex.create({
 	maxWMin360pxCalc100vw1rem: {
 		"maxWidth": "min(360px,100vw - 1rem)"
 	},
+
+	mb05: {
+		"marginBottom": "2px"
+	},
 });
 
 export const EFFORTS = [
@@ -500,7 +504,7 @@ type ModelMenuOption = {
 	description?: string;
 };
 
-const PICKER_ROW_GAP = "mb-0.5 last:mb-0";
+const PICKER_ROW_GAP = mergeStylexClassName("last:mb-0", sx.mb05);
 
 /**
  * Combined model + reasoning-effort menu: one trigger opens a short list of
@@ -931,7 +935,7 @@ export function ModelEffortSelect({
 									<IconChevronRight {...stylex.props(sx.shrink0)} size={17} />
 								</span>
 							</Menu.SubmenuTrigger>
-							<Menu.Popup {...mergeStylexProps("max-w-[min(360px,calc(100vw-1rem))]", sx.w64)}>
+							<Menu.Popup {...mergeStylexProps("", sx.maxWMin360pxCalc100vw1rem, sx.w64)}>
 								<UsageDetails usage={usage} {...stylex.props(sx.p15)} />
 							</Menu.Popup>
 						</Menu.SubmenuRoot>

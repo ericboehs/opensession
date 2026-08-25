@@ -82,6 +82,45 @@ const sx = stylex.create({
 			}
 		}
 	},
+
+	flexCol: {
+		"flexDirection": "column"
+	},
+	itemsStart: {
+		"alignItems": "flex-start"
+	},
+	gap05: {
+		"gap": "2px"
+	},
+	roundedNone: {
+		"borderRadius": "0"
+	},
+	borderB: {
+		"borderBottomStyle": "var(--tw-border-style)",
+		"borderBottomWidth": "1px"
+	},
+	borderLine: {
+		"borderColor": "var(--border)"
+	},
+	px35: {
+		"paddingInline": "14px"
+	},
+	py25: {
+		"paddingBlock": "10px"
+	},
+	borderLineStrong: {
+		"borderColor": "var(--border-strong)"
+	},
+	textSm: {
+		"fontSize": "var(--type-label)",
+		"lineHeight": "var(--tw-leading,var(--text-sm--line-height))"
+	},
+	focusShadow0003pxVarAccentSoft: {
+		":focus": {
+			"--tw-shadow": "0 0 0 3px var(--tw-shadow-color,var(--accent-soft))",
+			"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+		}
+	},
 });
 
 type Flavor = "build" | "learnings" | "analyze";
@@ -219,13 +258,13 @@ export function SpinOffMenu({
 
   // Two-line rows in a flush-edged popup (no inner padding, divider between rows).
   const itemCls =
-    "flex-col items-start gap-0.5 rounded-none border-b border-line px-3.5 py-2.5 last:border-b-0";
+    mergeStylexClassName("last:border-b-0", sx.flexCol, sx.itemsStart, sx.gap05, sx.roundedNone, sx.borderB, sx.borderLine, sx.px35, sx.py25);
 
   // The menu's own field look — the primitive's corner/fill/focus, plus the
   // accent halo this surface authored.
   const fieldCls = fieldClasses(
     "lg",
-    "border-line-strong text-sm focus:shadow-[0_0_0_3px_var(--accent-soft)]",
+    mergeStylexClassName("", sx.borderLineStrong, sx.textSm, sx.focusShadow0003pxVarAccentSoft),
   );
 
   const flavorMeta: Record<Flavor, { title: string; description: string }> = {

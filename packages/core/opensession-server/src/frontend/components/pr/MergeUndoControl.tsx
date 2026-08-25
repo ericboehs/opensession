@@ -123,6 +123,12 @@ const sx = stylex.create({
 		"borderTopRightRadius": "calc(12px * var(--rf))",
 		"borderBottomRightRadius": "calc(12px * var(--rf))"
 	},
+
+	phoneHidden: {
+		"@media (max-width: 720px)": {
+			"display": "none"
+		}
+	},
 });
 
 /** The merge button's five-second inline result and its reversal. */
@@ -166,7 +172,7 @@ export function MergeUndoControl({
               : mergeStylexClassName("", sx.roundedRControl, sx.phoneMinH26px, sx.phonePx15),
           )}
         >
-          <IconUndo size={20} {...mergeStylexProps("phone:hidden", sx.shrink0, sx.opacity60)} />
+          <IconUndo size={20} {...mergeStylexProps("", sx.phoneHidden, sx.shrink0, sx.opacity60)} />
           <span {...stylex.props(sx.TextBoxTrimBothCapAlphabetic)}>Undo</span>
         </Button>
       </Tooltip>

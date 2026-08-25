@@ -275,6 +275,85 @@ const sx = stylex.create({
 			"justifyContent": "center"
 		}
 	},
+
+	phonePx0: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "0"
+		}
+	},
+	gridColsAutoMinmax01frAuto: {
+		"gridTemplateColumns": "auto minmax(0,1fr) auto"
+	},
+	phoneGridColsAutoMinmax01fr: {
+		"@media (max-width: 720px)": {
+			"gridTemplateColumns": "auto minmax(0,1fr)"
+		}
+	},
+	phonePx3: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "12px"
+		}
+	},
+	phonePy2: {
+		"@media (max-width: 720px)": {
+			"paddingBlock": "8px"
+		}
+	},
+	phoneColSpan2: {
+		"@media (max-width: 720px)": {
+			"gridColumn": "span 2/span 2"
+		}
+	},
+	phoneColStart1: {
+		"@media (max-width: 720px)": {
+			"gridColumnStart": "1"
+		}
+	},
+	phoneMt3: {
+		"@media (max-width: 720px)": {
+			"marginTop": "12px"
+		}
+	},
+	phoneRowSpan1: {
+		"@media (max-width: 720px)": {
+			"gridRow": "span 1/span 1"
+		}
+	},
+	phoneRowStart3: {
+		"@media (max-width: 720px)": {
+			"gridRowStart": "3"
+		}
+	},
+	phoneMt4: {
+		"@media (max-width: 720px)": {
+			"marginTop": "16px"
+		}
+	},
+	phoneMl0: {
+		"@media (max-width: 720px)": {
+			"marginLeft": "0"
+		}
+	},
+	phoneFlexCol: {
+		"@media (max-width: 720px)": {
+			"flexDirection": "column"
+		}
+	},
+	phoneItemsStretch: {
+		"@media (max-width: 720px)": {
+			"alignItems": "stretch"
+		}
+	},
+	phoneFlex: {
+		"@media (max-width: 720px)": {
+			"display": "flex"
+		}
+	},
+	phoneGridCols1: {
+		"@media (max-width: 720px)": {
+			"gridTemplateColumns": "repeat(1,minmax(0,1fr))"
+		}
+	},
 });
 
 // The configuration forms behind the integration registry: paste the
@@ -716,9 +795,9 @@ setSaving(false);
 
 	return (
 		<>
-			<div {...mergeStylexProps("phone:px-0", sx.grid, sx.px4)}>
+			<div {...mergeStylexProps("", sx.phonePx0, sx.grid, sx.px4)}>
 				<SettingCard {...stylex.props(onboarding && !active && sx.hidden)}>
-					<div {...mergeStylexProps("grid-cols-[auto_minmax(0,1fr)_auto] phone:grid-cols-[auto_minmax(0,1fr)] phone:px-3 phone:py-2", sx.grid, sx.itemsStart, sx.gapX3, sx.gapY1, sx.px5, sx.py4)}>
+					<div {...mergeStylexProps("", sx.gridColsAutoMinmax01frAuto, sx.phoneGridColsAutoMinmax01fr, sx.phonePx3, sx.phonePy2, sx.grid, sx.itemsStart, sx.gapX3, sx.gapY1, sx.px5, sx.py4)}>
 						<IconTile name="github" size={40} />
 						<div
 							{...stylex.props(
@@ -734,7 +813,7 @@ setSaving(false);
 							<StateChip tone={state.tone} label={state.label} />
 						</div>
 						{!onboarding && (
-							<div {...mergeStylexProps("phone:col-span-2 phone:col-start-1 phone:mt-3", sx.colStart2, sx.rowStart2, sx.minW0)}>
+							<div {...mergeStylexProps("", sx.phoneColSpan2, sx.phoneColStart1, sx.phoneMt3, sx.colStart2, sx.rowStart2, sx.minW0)}>
 								<p {...stylex.props(sx.m0, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 									Interactive sessions open PRs as their connected owner instead of the bot.
 								</p>
@@ -753,10 +832,10 @@ setSaving(false);
 							</div>
 						)}
 						{!onboarding && (
-						<div {...mergeStylexProps("phone:col-span-2 phone:col-start-1 phone:row-span-1 phone:row-start-3 phone:mt-4 phone:ml-0 phone:flex-col phone:items-stretch", sx.colStart3, sx.rowSpan2, sx.rowStart1, sx.ml4, sx.flex, sx.minH10, sx.shrink0, sx.itemsCenter, sx.gap2)}>
+						<div {...mergeStylexProps("", sx.phoneColSpan2, sx.phoneColStart1, sx.phoneRowSpan1, sx.phoneRowStart3, sx.phoneMt4, sx.phoneMl0, sx.phoneFlexCol, sx.phoneItemsStretch, sx.colStart3, sx.rowSpan2, sx.rowStart1, sx.ml4, sx.flex, sx.minH10, sx.shrink0, sx.itemsCenter, sx.gap2)}>
 							{(github.clientIdConfigured || github.userPrAuth) && (
 								<>
-									<div {...mergeStylexProps("phone:flex", sx.hidden, sx.minH11, sx.itemsCenter, sx.justifyBetween, sx.fontMedium, sx.textDim, typography.label)}>
+									<div {...mergeStylexProps("", sx.phoneFlex, sx.hidden, sx.minH11, sx.itemsCenter, sx.justifyBetween, sx.fontMedium, sx.textDim, typography.label)}>
 										<span>GitHub sign-in</span>
 										<Switch
 											checked={github.userPrAuth}
@@ -791,7 +870,7 @@ setSaving(false);
 				    whole workspace, so the work is a one-time setup on GitHub that a
 				    person should be able to read before opening a credentials form. */}
 				{onboarding && (
-					<div {...mergeStylexProps("phone:grid-cols-1", sx.mt3, sx.grid, sx.gridCols2, sx.itemsStart, sx.gap3)}>
+					<div {...mergeStylexProps("", sx.phoneGridCols1, sx.mt3, sx.grid, sx.gridCols2, sx.itemsStart, sx.gap3)}>
 						<SettingsSection {...stylex.props(sx.flex, sx.hFull, sx.flexCol, sx.gap3)}>
 							<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>How to connect</div>
 							<SetupSteps steps={GITHUB_ONBOARDING_STEPS} />

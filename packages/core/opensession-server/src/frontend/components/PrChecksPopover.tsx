@@ -120,6 +120,20 @@ const sx = stylex.create({
 		"width": "16px",
 		"height": "16px"
 	},
+
+	maxHMin560px70vhVarAvailableHeight: {
+		"maxHeight": "min(560px, 70vh, var(--available-height))"
+	},
+	wMin440pxCalc100vw24px: {
+		"width": "min(440px,100vw - 24px)"
+	},
+	hoverBgSurface: {
+		"@media (hover: hover)": {
+			":hover": {
+				"backgroundColor": "var(--bg)"
+			}
+		}
+	},
 });
 
 /** A shared checks preview: hover for detail, click its trigger to open Review's Checks tab. */
@@ -172,7 +186,7 @@ export function PrChecksPopover({
 				portalContainer={nested && typeof document !== "undefined" ? document.body : undefined}
 				side="left"
 				align="start"
-				sideOffset={10} {...mergeStylexProps("max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))]", sx.flex, sx.flexCol, sx.overflowHidden, sx.p0)}
+				sideOffset={10} {...mergeStylexProps("", sx.maxHMin560px70vhVarAvailableHeight, sx.wMin440pxCalc100vw24px, sx.flex, sx.flexCol, sx.overflowHidden, sx.p0)}
 			>
 				<div {...stylex.props(sx.flex, sx.itemsBaseline, sx.justifyBetween, sx.gap25, sx.borderB, sx.borderDivider, sx.bgSurface, sx.px3, sx.py9px)}>
 					<span {...stylex.props(sx.fontSemibold, sx.textFg, typography.label)}>
@@ -202,7 +216,7 @@ export function PrChecksPopover({
 						);
 						return check.url ? (
 							<a
-								key={`${check.name}:${i}`} {...mergeStylexProps("hover:bg-surface", sx.flex, sx.itemsCenter, sx.gap9px, sx.roundedMd, sx.px2, sx.py15, sx.textFg, sx.noUnderline)}
+								key={`${check.name}:${i}`} {...mergeStylexProps("", sx.hoverBgSurface, sx.flex, sx.itemsCenter, sx.gap9px, sx.roundedMd, sx.px2, sx.py15, sx.textFg, sx.noUnderline)}
 								href={check.url}
 								target="_blank"
 								rel="noopener"
