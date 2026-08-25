@@ -447,6 +447,213 @@ export class SessionKernelActorClient {
     return result;
   }
 
+  /**
+   * Awaited store/reduce RPC over the posted-message transport. Unlike
+   * callSync this never blocks the gateway event loop; callers await.
+   */
+  callAsync<TResult>(
+    request:
+      | { t: "store"; method: string; args: unknown[] }
+      | { t: "reduce"; command: SessionActorReducerCommand },
+    label: string,
+    large = false,
+  ): Promise<TResult> {
+    if (this.deadError) return Promise.reject(this.deadError);
+    const rpcId = crypto.randomUUID();
+    return new Promise<TResult>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pending.delete(rpcId);
+        reject(
+          new SessionKernelActorError(
+            `Session kernel actor timed out handling ${label}`,
+            true,
+          ),
+        );
+      }, 15_000);
+      const parse = (value: unknown): TResult => {
+        const response = value as {
+          status: number;
+          body?: string;
+          length?: number;
+        };
+        if (response.status !== 1 || !response.body)
+          throw new SessionKernelActorError(
+            `Session kernel ${label} returned no result`,
+            true,
+          );
+        const body = JSON.parse(response.body) as {
+          ok: boolean;
+          result?: TResult;
+          error?: string;
+          code?: string;
+          sessionId?: string;
+        };
+        if (!body.ok) {
+          const message = body.error || `Session kernel ${label} failed`;
+          if (body.code === "session_quarantined" && body.sessionId)
+            throw new SessionKernelQuarantinedError(body.sessionId, message);
+          const error = new SessionKernelActorError(message, false);
+          if (body.code === "actor_fatal") this.markDead(error);
+          throw error;
+        }
+        return body.result as TResult;
+      };
+      this.pending.set(rpcId, {
+        resolve: (value) => {
+          clearTimeout(timeout);
+          try {
+            resolve(parse(value));
+          } catch (error) {
+            reject(error instanceof Error ? error : new Error(String(error)));
+          }
+        },
+        reject: (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        },
+      });
+      try {
+        this.worker.postMessage({ ...request, rpcId });
+      } catch (error) {
+        clearTimeout(timeout);
+        this.pending.delete(rpcId);
+        const failure = error instanceof Error ? error : new Error(String(error));
+        this.markDead(failure);
+        reject(failure);
+      }
+    });
+  }
+
+  async decideAskAsync<T extends AskActorRequest>(
+    request: T,
+  ): Promise<AskActorResult<T>> {
+    return this.callAsync<AskActorResult<T>>(
+      {
+        t: "reduce",
+        command: { kind: "ask", commandId: crypto.randomUUID(), request },
+      },
+      `ask ${request.op}`,
+    );
+  }
+
+  async decideTurnAsync<T extends TurnActorRequest>(
+    request: T,
+  ): Promise<TurnActorResult<T>> {
+    const result = await this.callAsync<TurnActorResult<T>>(
+      {
+        t: "reduce",
+        command: { kind: "turn", commandId: crypto.randomUUID(), request },
+      },
+      `turn ${request.op}`,
+    );
+    if (request.op === "prepare_cancel")
+      (this.store as RemoteStore).noteRunState(
+        request.sessionId,
+        (
+          result as TurnActorResult<
+            Extract<TurnActorRequest, { op: "prepare_cancel" }>
+          >
+        ).runState,
+      );
+    else if (
+      request.op === "prepare_outcome_projection" ||
+      request.op === "settle_outcome_projection"
+    )
+      (this.store as RemoteStore).noteChange(request.sessionId);
+    return result;
+  }
+
+  decideTimerAsync<T extends TimerActorRequest>(
+    request: T,
+  ): Promise<TimerActorResult<T>> {
+    return this.callAsync<TimerActorResult<T>>(
+      {
+        t: "reduce",
+        command: { kind: "timer", commandId: crypto.randomUUID(), request },
+      },
+      `timer ${request.op}`,
+    );
+  }
+
+  decideCoreAsync<T extends CoreActorRequest>(
+    request: T,
+  ): Promise<CoreActorResult<T>> {
+    return this.callAsync<CoreActorResult<T>>(
+      {
+        t: "reduce",
+        command: { kind: "core", commandId: crypto.randomUUID(), request },
+      },
+      `core ${request.op}`,
+    );
+  }
+
+  decideGatewayAsync<T extends GatewayCommandRequest>(
+    request: T,
+  ): Promise<GatewayCommandResult<T>> {
+    return this.callAsync<GatewayCommandResult<T>>(
+      {
+        t: "reduce",
+        command: { kind: "gateway", commandId: crypto.randomUUID(), request },
+      },
+      `gateway ${request.operation} ${request.op}`,
+    );
+  }
+
+  async decideDeliveryAsync<T extends DeliveryActorRequest>(
+    request: T,
+  ): Promise<DeliveryActorResult<T>> {
+    const response = await this.callAsync<
+      DeliveryActorResult<T> | DeliveryMutationReply<DeliveryActorResult<T>>
+    >(
+      {
+        t: "reduce",
+        command: {
+          kind: "delivery",
+          commandId: crypto.randomUUID(),
+          request,
+        },
+      },
+      `delivery ${request.op}`,
+    );
+    return (response as DeliveryMutationReply<DeliveryActorResult<T>>).result;
+  }
+
+  async decideCreationEventAsync(
+    decision: CreationEventDecision,
+  ): Promise<CreationEventDecisionResult> {
+    return this.callAsync<CreationEventDecisionResult>(
+      {
+        t: "reduce",
+        command: {
+          kind: "creation_event",
+          commandId: crypto.randomUUID(),
+          decision,
+        },
+      },
+      "creation event decision",
+      true,
+    );
+  }
+
+  async decideRunEventAsync(
+    decision: RunEventDecision,
+  ): Promise<RunEventDecisionResult> {
+    const result = await this.callAsync<RunEventDecisionResult>(
+      {
+        t: "reduce",
+        command: {
+          kind: "run_event",
+          commandId: crypto.randomUUID(),
+          decision,
+        },
+      },
+      "run event decision",
+    );
+    if (result.accepted)
+      (this.store as RemoteStore).noteRunState(decision.sessionId, result.state);
+    return result;
+  }
+
   callStore<TResult>(method: string, args: unknown[]): TResult {
     return this.callSync<TResult>(
       { t: "store", method, args },

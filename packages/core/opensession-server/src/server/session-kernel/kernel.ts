@@ -106,10 +106,10 @@ export function claimAgentHostSupervision(
   return compatibilityStoreForTest("core").claimAgentHostSupervision(request);
 }
 
-export function sessionAsk<T extends AskActorRequest>(
+export async function sessionAsk<T extends AskActorRequest>(
   request: T,
-): AskActorResult<T> {
-  if (state.actor) return state.actor.decideAsk(request);
+): Promise<AskActorResult<T>> {
+  if (state.actor) return state.actor.decideAskAsync(request);
   const store = compatibilityStoreForTest("ask");
   let result: unknown;
   if (request.op === "snapshot") result = store.askSnapshot(request.sessionId);
@@ -129,9 +129,9 @@ export function sessionAsk<T extends AskActorRequest>(
   return result as AskActorResult<T>;
 }
 
-export function sessionTurn<T extends TurnActorRequest>(
+export async function sessionTurn<T extends TurnActorRequest>(
   request: T,
-): TurnActorResult<T> {
+): Promise<TurnActorResult<T>> {
   const actor = state.actor;
   if (actor) return actor.decideTurn(request);
   const store = compatibilityStoreForTest("turn");
@@ -156,10 +156,10 @@ export function sessionTurn<T extends TurnActorRequest>(
   return store.settleTurnOutcomeProjection(request) as TurnActorResult<T>;
 }
 
-export function sessionTimer<T extends TimerActorRequest>(
+export async function sessionTimer<T extends TimerActorRequest>(
   request: T,
-): TimerActorResult<T> {
-  if (state.actor) return state.actor.decideTimer(request);
+): Promise<TimerActorResult<T>> {
+  if (state.actor) return state.actor.decideTimerAsync(request);
   const store = compatibilityStoreForTest("turn");
   if (request.op === "schedule")
     return store.scheduleTimer(request) as TimerActorResult<T>;
@@ -174,10 +174,10 @@ export function sessionTimer<T extends TimerActorRequest>(
   return store.recordTimerRuntimeFailure(request) as TimerActorResult<T>;
 }
 
-export function sessionCore<T extends CoreActorRequest>(
+export async function sessionCore<T extends CoreActorRequest>(
   request: T,
-): CoreActorResult<T> {
-  if (state.actor) return state.actor.decideCore(request);
+): Promise<CoreActorResult<T>> {
+  if (state.actor) return state.actor.decideCoreAsync(request);
   const store = compatibilityStoreForTest("core");
   if (request.op === "enqueue_effect")
     return store.enqueueOutbox(
@@ -208,10 +208,10 @@ export async function sessionCoreAsync<T extends CoreActorRequest>(
   return sessionCore(request);
 }
 
-export function sessionGatewayCommand<T extends GatewayCommandRequest>(
+export async function sessionGatewayCommand<T extends GatewayCommandRequest>(
   request: T,
-): GatewayCommandResult<T> {
-  if (state.actor) return state.actor.decideGateway(request);
+): Promise<GatewayCommandResult<T>> {
+  if (state.actor) return state.actor.decideGatewayAsync(request);
   const store = compatibilityStoreForTest("gateway command");
   if (request.op === "request")
     return store.requestGatewayCommand(request) as GatewayCommandResult<T>;
@@ -227,9 +227,9 @@ export async function sessionGatewayCommandAsync<T extends GatewayCommandRequest
   return sessionGatewayCommand(request);
 }
 
-export function sessionDelivery<T extends DeliveryActorRequest>(
+export async function sessionDelivery<T extends DeliveryActorRequest>(
   request: T,
-): DeliveryActorResult<T> {
+): Promise<DeliveryActorResult<T>> {
   const projection = (state.deliveryProjection ??= new Map());
   if (request.op === "snapshot") {
     const cached = projection.get(request.sessionId);
@@ -237,7 +237,7 @@ export function sessionDelivery<T extends DeliveryActorRequest>(
   }
   const actor = state.actor;
   let result: unknown;
-  if (actor) result = actor.decideDelivery(request);
+  if (actor) result = await actor.decideDeliveryAsync(request);
   else {
     const store = compatibilityStoreForTest("delivery");
     if (request.op === "snapshot")
@@ -326,11 +326,13 @@ export async function sessionDeliveryAsync<T extends DeliveryActorRequest>(
   return sessionDelivery(request);
 }
 
-export function sessionDeliveryProjection(sessionId: string): DurableDeliveryState {
+export async function sessionDeliveryProjection(
+  sessionId: string,
+): Promise<DurableDeliveryState> {
   const projection = (state.deliveryProjection ??= new Map());
   const cached = projection.get(sessionId);
   if (cached) return cached;
-  return sessionDelivery({ op: "snapshot", sessionId });
+  return await sessionDelivery({ op: "snapshot", sessionId });
 }
 
 export function sessionKernelActorActive(): boolean {
@@ -484,7 +486,7 @@ export class SessionKernel {
 		kind: K,
 		payload: SessionActorEffectFor<K>["payload"],
 		effectKey: string = crypto.randomUUID(),
-	): number {
+	): Promise<number> {
 		this.touch();
     return sessionCore({
       op: "enqueue_effect",
