@@ -319,6 +319,7 @@ import {
 	SidebarItem,
 } from "./sidebar/SidebarItem";
 import * as stylex from "@stylexjs/stylex";
+import { tokens } from "../styles/tokens.stylex";
 import { type as typography } from "../styles/typography.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -582,6 +583,149 @@ const sx = stylex.create({
 	pt05: {
 			paddingTop: "2px"
 	},
+	transitionColors: {
+		transitionProperty: "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to",
+		transitionTimingFunction: "var(--ease)",
+		transitionDuration: "var(--dur-micro)",
+	},
+	bgSelected: { backgroundColor: tokens.selected },
+	hoverPr68: { ":hover": { paddingRight: "68px" } },
+	z1: { zIndex: 1 },
+	mt0: { marginTop: 0 },
+	touchPanY: { touchAction: "pan-y" },
+	transformSwipe: { transform: "translateX(var(--swipe-x,0))" },
+	transitionNone: { transitionProperty: "none" },
+	transitionTransform: {
+		transitionProperty: "transform, translate, scale, rotate",
+		transitionTimingFunction: "var(--ease)",
+		transitionDuration: "var(--dur-micro)",
+	},
+	durationMicro: { transitionDuration: "var(--dur-micro)" },
+	duration: { transitionDuration: "var(--dur)" },
+	willChangeTransform: { willChange: "transform" },
+	size2: { width: "8px", height: "8px" },
+	hidden: { display: "none" },
+	hoverNoneInlineFlex: { "@media (hover: none)": { display: "inline-flex" } },
+	ml15: { marginLeft: "6px" },
+	textAccent: { color: tokens.accentInk },
+	hoverTextFg: { ":hover": { color: tokens.fg } },
+	hoverTextRed: { ":hover": { color: tokens.red } },
+	cursorGrab: { cursor: "grab" },
+	activeCursorGrabbing: { ":active": { cursor: "grabbing" } },
+	desktopGap9: { "@media (min-width: 721px)": { gap: "9px" } },
+	bgBlue: { backgroundColor: tokens.blue },
+	bgRed: { backgroundColor: tokens.red },
+	phoneHidden: { "@media (max-width: 720px)": { display: "none" } },
+	wFull: { width: "100%" },
+	textLeft: { textAlign: "left" },
+	roundedRow: { borderRadius: tokens.radiusRow },
+	pxSidebarNav: { paddingInline: "var(--sidebar-nav-x)" },
+	pxSidebarTool: { paddingInline: "calc(var(--sidebar-icon-left) - var(--sidebar-nav-x))" },
+	pySidebarTool: { paddingBlock: "var(--sidebar-tool-pad)" },
+	phonePy13: { "@media (max-width: 720px)": { paddingBlock: "13px" } },
+	desktopItemTitle: { "@media (min-width: 721px)": { fontSize: "var(--type-item-title)" } },
+	phonePy25: { "@media (max-width: 720px)": { paddingBlock: "10px" } },
+	gap05: { gap: "2px" },
+	pt2: { paddingTop: "8px" },
+	pb15: { paddingBottom: "6px" },
+	desktopPt05: { "@media (min-width: 721px)": { paddingTop: "2px" } },
+	pb05: { paddingBottom: "2px" },
+	pt3: { paddingTop: "12px" },
+	phoneMt0: { "@media (max-width: 720px)": { marginTop: 0 } },
+	phonePt0: { "@media (max-width: 720px)": { paddingTop: 0 } },
+	phonePt4: { "@media (max-width: 720px)": { paddingTop: "16px" } },
+	px2: { paddingInline: "8px" },
+	px16px: { paddingInline: "16px" },
+	pr7px: { paddingRight: "7px" },
+	minH10: { minHeight: "40px" },
+	bgBlueSoft: { backgroundColor: tokens.blueSoft },
+	pl3: { paddingLeft: "12px" },
+	pr1: { paddingRight: "4px" },
+	phoneMinH12: { "@media (max-width: 720px)": { minHeight: "48px" } },
+	phonePl35: { "@media (max-width: 720px)": { paddingLeft: "14px" } },
+	desktopHFull: { "@media (min-width: 721px)": { height: "100%" } },
+	desktopMinH0: { "@media (min-width: 721px)": { minHeight: 0 } },
+	gap5px: { gap: "5px" },
+	fontInherit: { font: "inherit" },
+	minH38px: { minHeight: "38px" },
+	minW38px: { minWidth: "38px" },
+	borderLineStrong: { borderColor: tokens.lineStrong },
+	bgPressed: { backgroundColor: tokens.pressed },
+	hoverBgHover: { ":hover": { backgroundColor: tokens.hover } },
+	minH0: { minHeight: 0 },
+	overflowXHidden: { overflowX: "hidden" },
+	overflowYAuto: { overflowY: "auto" },
+	phoneScrollPadding: {
+		paddingTop: "var(--header-h)",
+		paddingBottom: "max(24px, env(safe-area-inset-bottom,0px))",
+	},
+	mb1: { marginBottom: "4px" },
+	py15: { paddingBlock: "6px" },
+	pb7: { paddingBottom: "28px" },
+	pl0: { paddingLeft: 0 },
+	pr2: { paddingRight: "8px" },
+	desktopPr0: { "@media (min-width: 721px)": { paddingRight: 0 } },
+	phoneTextBase: {
+		"@media (max-width: 720px)": {
+			fontSize: "var(--type-body)",
+			lineHeight: "var(--text-base--line-height)",
+		},
+	},
+	phoneTranslateYMinus1: { "@media (max-width: 720px)": { translate: "0 -1px" } },
+	closeButtonMotion: {
+		transitionProperty: "color, scale",
+		transitionTimingFunction: "var(--ease)",
+		transitionDuration: "var(--dur-micro)",
+		":active": { scale: 0.96 },
+		"@media (prefers-reduced-motion: reduce)": { transform: "none" },
+	},
+	closeButtonBefore: {
+		"::before": {
+			content: "''",
+			position: "absolute",
+			inset: "8px",
+			borderRadius: "calc(7px * var(--rf))",
+			transitionProperty: "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to",
+			transitionTimingFunction: "var(--ease)",
+			transitionDuration: "var(--dur-micro)",
+		},
+		":hover::before": { backgroundColor: tokens.hover },
+	},
+	phoneSize11: { "@media (max-width: 720px)": { width: "44px", height: "44px" } },
+	flexColGap05Nav: { display: "flex", flexDirection: "column", gap: "2px" },
+	beforePlusWash: {
+		"::before": {
+			content: "''",
+			position: "absolute",
+			inset: "2px",
+			zIndex: 0,
+			borderRadius: "calc(4px * var(--rf))",
+			transitionProperty: "background-color",
+			transitionTimingFunction: "var(--ease)",
+			transitionDuration: "var(--dur-micro)",
+		},
+		":hover::before": { backgroundColor: tokens.hover },
+	},
+	transitionOpacityColor: {
+		transitionProperty: "opacity, color",
+		transitionDuration: ".15s",
+		":hover": { color: tokens.fg },
+		":focusVisible": { opacity: 1 },
+		"@media (min-width: 768px)": { opacity: 0 },
+	},
+	borrowedBand: {
+		minHeight: "40px",
+		width: "100%",
+		borderRadius: tokens.radiusRow,
+		backgroundColor: tokens.blueSoft,
+		paddingLeft: "12px",
+		paddingRight: "4px",
+		"@media (max-width: 720px)": { minHeight: "48px", paddingLeft: "14px" },
+		"@media (min-width: 721px)": { height: "100%", minHeight: 0 },
+	},
+	mdFallbackMargins: { "@media (min-width: 768px)": { marginRight: "8px", marginLeft: "16px" } },
+	tabularNums: { fontVariantNumeric: "tabular-nums" },
+
 });
 
 // Re-exported for App.tsx, which holds the sidebar ref.
@@ -2994,8 +3138,11 @@ setClosingPrUrls((current) => {
 				// fill. Its neighbours in the rail collapse a group instead and
 				// deliberately take none. See the two signals in sidebar-classes.ts.
 				SIDEBAR_HOVER_LAYER,
-				"transition-colors",
-				archivedActive && "bg-selected text-fg",
+			)}
+			{...stylex.props(
+				sx.transitionColors,
+				archivedActive && sx.bgSelected,
+				archivedActive && sx.textFg,
 			)}
 			data-selected={archivedActive || undefined}
 			onClick={onOpenArchived}
@@ -3004,7 +3151,7 @@ setClosingPrUrls((current) => {
 			<span className={SIDEBAR_RAIL}>
 				<IconArchive size={20} />
 			</span>
-			<span className={cn(SIDEBAR_GROUP_NAME, "font-semibold")}>Archived</span>
+			<span className={SIDEBAR_GROUP_NAME} {...stylex.props(sx.fontSemibold)}>Archived</span>
 		</button>
 	);
 
@@ -3136,8 +3283,9 @@ setClosingPrUrls((current) => {
 							SIDEBAR_SWIPE_ACTION,
 							SIDEBAR_SWIPE_ACTION_ARCHIVE,
 							swipeSide === "archive" && SIDEBAR_SWIPE_ACTION_OPEN,
-							draggingRow ? "transition-none" : SIDEBAR_SWIPE_ACTION_TRANSITION,
+							draggingRow ? undefined : SIDEBAR_SWIPE_ACTION_TRANSITION,
 						)}
+						{...stylex.props(draggingRow && sx.transitionNone)}
 						data-swipe-action="archive"
 						onClick={(e) => {
 							e.stopPropagation();
@@ -3159,8 +3307,9 @@ setClosingPrUrls((current) => {
 							SIDEBAR_SWIPE_ACTION,
 							SIDEBAR_SWIPE_ACTION_ARCHIVE,
 							swipeSide === "archive" && SIDEBAR_SWIPE_ACTION_OPEN,
-							draggingRow ? "transition-none" : SIDEBAR_SWIPE_ACTION_TRANSITION,
+							draggingRow ? undefined : SIDEBAR_SWIPE_ACTION_TRANSITION,
 						)}
+						{...stylex.props(draggingRow && sx.transitionNone)}
 						data-swipe-action="delete"
 						onClick={(e) => {
 							e.stopPropagation();
@@ -3179,8 +3328,9 @@ setClosingPrUrls((current) => {
 							SIDEBAR_SWIPE_ACTION,
 							pinned ? SIDEBAR_SWIPE_ACTION_STAR_ON : SIDEBAR_SWIPE_ACTION_STAR,
 							swipeSide === "star" && SIDEBAR_SWIPE_ACTION_OPEN,
-							draggingRow ? "transition-none" : SIDEBAR_SWIPE_ACTION_TRANSITION,
+							draggingRow ? undefined : SIDEBAR_SWIPE_ACTION_TRANSITION,
 						)}
+						{...stylex.props(draggingRow && sx.transitionNone)}
 						data-swipe-action="star"
 						onClick={(e) => {
 							e.stopPropagation();
@@ -3200,23 +3350,25 @@ setClosingPrUrls((current) => {
 						// row carries the slide. The drag writes --swipe-x straight onto
 						// the node, so the transform reads it rather than a React style.
 						SIDEBAR_WS_ROW,
+						SIDEBAR_HOVER_LAYER,
+					)}
+					{...stylex.props(
 						// The reserve follows the chips that actually appear: an
 						// unpinned row reveals snooze + archive, not the pin, so it
 						// gives up one chip less of its right end (26px + the 4px gap).
-						!pinned && "hover:pr-[68px]",
-						"z-1 mt-0 touch-pan-y transform-[translateX(var(--swipe-x,0))]",
-						SIDEBAR_HOVER_LAYER,
+						!pinned && sx.hoverPr68,
+						sx.z1,
+						sx.mt0,
+						sx.touchPanY,
+						sx.transformSwipe,
 						// "Needs you" paints no fill of its own: it is a question
 						// waiting, not a failure, and the row's one background slot
 						// belongs to selection. The blue mark in the rail and the bold
-						// title carry it — same as the native app.
-						active && "bg-selected",
-						draggingRow
-							? "transition-none"
-							: swipeSide
-								? "transition-transform duration-(--dur-micro)"
-								: "transition-transform duration-(--dur)",
-						(draggingRow || swipeSide) && "will-change-transform",
+						// title carry it, same as the native app.
+						active && sx.bgSelected,
+						draggingRow ? sx.transitionNone : sx.transitionTransform,
+						!draggingRow && (swipeSide ? sx.durationMicro : sx.duration),
+						(draggingRow || swipeSide) && sx.willChangeTransform,
 					)}
 					data-sidebar-row=""
 					data-ws-row=""
@@ -3293,17 +3445,20 @@ setClosingPrUrls((current) => {
 				<span className={SIDEBAR_RAIL}>
 					{waiting || needsMyReview ? (
 						<span
-							className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.waiting}`}
+							className={SIDEBAR_STATUS_DOT.waiting}
+							{...stylex.props(sx.size2, sx.shrink0, sx.roundedFull)}
 						/>
 					) : failed ? (
 						<span
-							className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.failed}`}
+							className={SIDEBAR_STATUS_DOT.failed}
+							{...stylex.props(sx.size2, sx.shrink0, sx.roundedFull)}
 						/>
 					) : noSectionHeading ? (
 						<WsStatusMark row={row} size={18} />
 					) : row.running ? (
 						<span
-							className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.running}`}
+							className={SIDEBAR_STATUS_DOT.running}
+							{...stylex.props(sx.size2, sx.shrink0, sx.roundedFull)}
 						/>
 					) : (
 						<WsPrStatusMark
