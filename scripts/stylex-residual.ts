@@ -111,7 +111,13 @@ function consider(selText: string): boolean {
 	return false;
 }
 
-function walk(chunk: string, wrapper?: string) {
+function wrappedRule(rule: string, wrappers: readonly string[]): string {
+	let out = rule;
+	for (let i = wrappers.length - 1; i >= 0; i--) out = `${wrappers[i]}{${out}}`;
+	return out;
+}
+
+function walk(chunk: string, wrappers: readonly string[] = []) {
 	let i = 0;
 	while (i < chunk.length) {
 		const open = chunk.indexOf("{", i);
@@ -127,20 +133,18 @@ function walk(chunk: string, wrapper?: string) {
 		const body = chunk.slice(open, j); // includes braces
 		if (selRaw.startsWith("@")) {
 			if (selRaw.startsWith("@media") || selRaw.startsWith("@supports")) {
-				walk(chunk.slice(open + 1, j - 1), selRaw);
+				walk(chunk.slice(open + 1, j - 1), [...wrappers, selRaw]);
 			} else if (
 				selRaw.startsWith("@property") ||
 				selRaw.startsWith("@keyframes") ||
 				selRaw.startsWith("@container")
 			) {
-				kept.push(`${wrapper ? wrapper + " " : ""}${selRaw}${body}`);
+				kept.push(wrappedRule(selRaw + body, wrappers));
 			}
 			i = j;
 			continue;
 		}
-		if (consider(selRaw)) {
-			kept.push(wrapper ? `${wrapper}{${body}}` : selRaw + body);
-		}
+		if (consider(selRaw)) kept.push(wrappedRule(selRaw + body, wrappers));
 		i = j;
 	}
 }
