@@ -1887,7 +1887,7 @@ export async function handleSessionsRoutes(
 			// nested compatibility write re-enters through a fresh kernel and is fenced
 			// as a late writer, leaving a visible but immutable ghost session behind.
 			deleteSession(session);
-			tombstoneSessionKernel(session.id);
+			await tombstoneSessionKernel(session.id);
 			await finishDeletion();
 			return { status: 200, body: { ok: true } };
 		} catch (e: any) {

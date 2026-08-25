@@ -133,7 +133,7 @@ export async function sessionTurn<T extends TurnActorRequest>(
   request: T,
 ): Promise<TurnActorResult<T>> {
   const actor = state.actor;
-  if (actor) return actor.decideTurn(request);
+  if (actor) return actor.decideTurnAsync(request);
   const store = compatibilityStoreForTest("turn");
   if (request.op === "snapshot")
     return store.turnSnapshot(request.sessionId) as TurnActorResult<T>;
@@ -474,12 +474,12 @@ export class SessionKernel {
 			| "deadLetteredAt"
 			| "createdAt"
 		>,
-	): void {
-    sessionTimer({ op: "schedule", sessionId: this.sessionId, ...timer });
+	): Promise<void> {
+    return sessionTimer({ op: "schedule", sessionId: this.sessionId, ...timer });
 	}
 
-	cancelTimer(timerId: string): void {
-    sessionTimer({ op: "cancel", sessionId: this.sessionId, timerId });
+	cancelTimer(timerId: string): Promise<void> {
+    return sessionTimer({ op: "cancel", sessionId: this.sessionId, timerId }).then(() => {});
 	}
 
 	enqueueEffect<K extends SessionActorEffectKind>(
@@ -497,12 +497,12 @@ export class SessionKernel {
     });
 	}
 
-	clear(): void {
-    sessionCore({ op: "clear", sessionId: this.sessionId });
+	clear(): Promise<void> {
+    return sessionCore({ op: "clear", sessionId: this.sessionId }).then(() => {});
 	}
 
-	tombstone(): void {
-    sessionCore({ op: "tombstone", sessionId: this.sessionId });
+	tombstone(): Promise<void> {
+    return sessionCore({ op: "tombstone", sessionId: this.sessionId }).then(() => {});
 	}
 
 	private touch(): void {
@@ -547,9 +547,9 @@ export function passivateIdleSessionKernels(
 	return count;
 }
 
-export function clearSessionKernel(sessionId: string): void {
+export async function clearSessionKernel(sessionId: string): Promise<void> {
 	const kernel = kernels().get(sessionId) ?? sessionKernel(sessionId);
-	kernel.clear();
+	await kernel.clear();
 	kernels().delete(sessionId);
 }
 
@@ -633,8 +633,8 @@ export async function maintainSessionKernel(): Promise<boolean> {
 	return sessionKernelStore().maintain();
 }
 
-export function tombstoneSessionKernel(sessionId: string): void {
+export async function tombstoneSessionKernel(sessionId: string): Promise<void> {
 	const kernel = state.kernels?.get(sessionId) ?? new SessionKernel(sessionId);
-	kernel.tombstone();
+	await kernel.tombstone();
 	state.kernels?.delete(sessionId);
 }

@@ -327,25 +327,42 @@ export function startSessionKernelActorWorker(): void {
   }
 
   function asyncCall(request: KernelActorClientCallRequest): void {
-    const control = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2);
-    const output = new SharedArrayBuffer(SESSION_KERNEL_MAX_RESPONSE_BYTES);
-    syncStore({ ...request, control, output } as unknown as KernelActorSyncRequest);
-    const view = new Int32Array(control);
-    const status = Atomics.load(view, 0) as -1 | 1 | 2;
-    const length = Atomics.load(view, 1);
-    post({
-      t: "call_result",
-      rpcId: request.rpcId,
-      status,
-      length,
-      ...(status === 2
-        ? {}
-        : {
-            body: new TextDecoder().decode(
-              new Uint8Array(output, 0, Math.min(length, output.byteLength)),
-            ),
-          }),
-    });
+    // Bounded allocation with an exactly-sized retry: most results are small,
+    // so starting at max response size would churn hundreds of MiB per call.
+    // Status 2 means the encoded result needs more space; only large read
+    // snapshots produce it (mutating reductions always fit small buffers and
+    // are never retried by callers).
+    let outputBytes = 256 * 1024;
+    for (;;) {
+      const control = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2);
+      const output = new SharedArrayBuffer(outputBytes);
+      syncStore({ ...request, control, output } as unknown as KernelActorSyncRequest);
+      const view = new Int32Array(control);
+      const status = Atomics.load(view, 0) as -1 | 1 | 2;
+      const length = Atomics.load(view, 1);
+      if (
+        status === 2 &&
+        length > outputBytes &&
+        length <= SESSION_KERNEL_MAX_RESPONSE_BYTES
+      ) {
+        outputBytes = length;
+        continue;
+      }
+      post({
+        t: "call_result",
+        rpcId: request.rpcId,
+        status,
+        length,
+        ...(status === 2
+          ? {}
+          : {
+              body: new TextDecoder().decode(
+                new Uint8Array(output, 0, Math.min(length, output.byteLength)),
+              ),
+            }),
+      });
+      return;
+    }
   }
 
   function serviceCall(request: KernelActorServiceCall): void {

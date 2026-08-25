@@ -112,14 +112,14 @@ export function cancelAgentWait(sessionId: string): boolean {
 	return true;
 }
 
-export function registerTimerAgentWait(input: {
+export async function registerTimerAgentWait(input: {
 	sessionId: string;
 	user: string;
 	prompt?: string;
 	seconds: number;
 	waitId?: string;
 	now?: number;
-}): AgentWaitRegistration {
+}): Promise<AgentWaitRegistration> {
 	const sessionId = input.sessionId.trim();
 	if (!sessionId) return { ok: false, error: "Current session id is required." };
 	if (!Number.isFinite(input.seconds) || input.seconds < MIN_TIMER_SECONDS)
@@ -142,7 +142,7 @@ export function registerTimerAgentWait(input: {
 	};
 	const current = getAgentWait(sessionId);
 	if (current?.id === wait.id) return { ok: true, wait: current, replaced: false };
-	sessionKernel(sessionId).scheduleTimer({
+	await sessionKernel(sessionId).scheduleTimer({
 		timerId: TIMER_ID,
 		kind: TIMER_KIND,
 		dueAt: wait.dueAt,

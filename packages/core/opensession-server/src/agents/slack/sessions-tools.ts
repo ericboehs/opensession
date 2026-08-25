@@ -680,7 +680,7 @@ export function createSessionsMcpServer(
           const current = getSessionControl().getSession(sessionId);
           const result =
             args.kind === "timer"
-              ? registerTimerAgentWait({
+              ? await registerTimerAgentWait({
                   sessionId,
                   user: ctx.createdBy,
                   seconds: args.seconds ?? Number.NaN,
