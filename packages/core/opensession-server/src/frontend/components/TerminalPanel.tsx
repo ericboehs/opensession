@@ -66,6 +66,11 @@ const sx = stylex.create({
 	overflowHidden: {
 			overflow: "hidden"
 	},
+	flex1: { flex: "1" },
+	pl4: { paddingLeft: "16px" },
+	pt2: { paddingTop: "8px" },
+	pb15: { paddingBottom: "6px" },
+	hidden: { display: "none" },
 });
 
 /**
@@ -383,7 +388,7 @@ function ShellView({
 
   return (
     <div
-      className={`flex-1 min-h-0 overflow-hidden bg-surface pl-4 pt-2 pb-1.5 ${visible ? "" : "hidden"}`}
+      {...stylex.props(sx.flex1, sx.minH0, sx.overflowHidden, sx.bgSurface, sx.pl4, sx.pt2, sx.pb15, !visible && sx.hidden)}
     >
       {/* Ghostty mounts its hidden keyboard textarea absolutely. Keep this
           host positioned so that input remains inside the terminal instead of

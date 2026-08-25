@@ -9,6 +9,7 @@ import {
 	repoIconRevision,
 } from "../lib/repo-colors";
 import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -22,6 +23,13 @@ const sx = stylex.create({
 	BorderRadiusInherit: {
 			borderRadius: "inherit"
 	},
+	inlineFlex: { display: "inline-flex" },
+	size18px: { width: "18px", height: "18px" },
+	shrink0: { flexShrink: "0" },
+	itemsCenter: { alignItems: "center" },
+	justifyCenter: { justifyContent: "center" },
+	roundedSm: { borderRadius: "calc(4px * var(--rf))" },
+	fontBold: { fontWeight: "var(--font-weight-bold)" },
 });
 
 // The display-name map lives in lib/repo-label and the tile colors in
@@ -64,8 +72,7 @@ const ICON_VERSION = 6;
 // session-info hero). The phone header used to be a second, but its tile moved
 // out of the metadata line and into the title pill's own leading slot, and the
 // rule that held it there had been matching nothing since.
-const TILE =
-	"repo-tile inline-flex size-[18px] shrink-0 items-center justify-center rounded-sm text-meta font-bold";
+const TILE = "repo-tile";
 
 export function RepoTile({
 	name,
@@ -101,7 +108,7 @@ export function RepoTile({
 	const attempt = `${name}:${rev ?? 0}`;
 	if (hasRepoIcon(name) && failedFor !== attempt) {
 		return (
-			<span className={cn(TILE, className)} style={style}>
+			<span className={cn(TILE, className)} style={style} {...stylex.props(sx.inlineFlex, sx.size18px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.fontBold, typography.meta)}>
 				{/* The img fills the tile and inherits its rounding; the tile keeps
 				    no colored backing, so icons with transparency sit on the
 				    surface itself. No inset on purpose, at either end: the route
@@ -129,7 +136,7 @@ export function RepoTile({
 	style.background = repoIconFill(repoColor(name));
 	const letter = repoLetter(name);
 	return (
-		<span className={cn(TILE, className)} style={style}>
+		<span className={cn(TILE, className)} style={style} {...stylex.props(sx.inlineFlex, sx.size18px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.fontBold, typography.meta)}>
 			{letter}
 		</span>
 	);

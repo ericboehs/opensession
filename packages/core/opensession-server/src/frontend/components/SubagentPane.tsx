@@ -8,6 +8,11 @@ import { Badge } from "../ui/badge";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 
+const pulse = stylex.keyframes({
+  "0%, 100%": { opacity: 1 },
+  "50%": { opacity: 0.5 },
+});
+
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
 	flex: {
@@ -107,6 +112,9 @@ const sx = stylex.create({
 	minW0: {
 			minWidth: "0"
 	},
+	liveDot: { width: "7px", height: "7px", flexShrink: 0, borderRadius: "calc(infinity * 1px)", backgroundColor: "var(--green)", animationName: pulse, animationDuration: "1.6s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite", "@media (prefers-reduced-motion: reduce)": { animationDuration: "1.6s !important", animationIterationCount: "infinite !important" } },
+	px35: { paddingInline: "14px" },
+	py3: { paddingBlock: "12px" },
 });
 
 export interface SubagentRef {
@@ -141,10 +149,6 @@ interface Props {
  * animation with !important and hands specific "still working" signals back,
  * and a name in that list stops matching the moment a migration renames the
  * element. */
-const LIVE_DOT =
-  "size-[7px] shrink-0 rounded-full bg-green animate-[pulse_1.6s_ease-in-out_infinite] " +
-  "motion-reduce:[animation-duration:1.6s]! motion-reduce:[animation-iteration-count:infinite]!";
-
 export function SubagentPane({
   sessionId,
   stack,
@@ -241,7 +245,7 @@ if (cancelled) return;
           )}
           {/* No close button: the tab's × owns that, like Review and Assets. */}
           {data?.sessionRunning && <span
-              className={LIVE_DOT}
+              {...stylex.props(sx.liveDot)}
               title="Session running"
             />}
         </div>
@@ -256,7 +260,7 @@ if (cancelled) return;
         {meta?.description && <div {...stylex.props(sx.mt15, sx.leading14, sx.textDim, typography.supporting)}>{meta.description}</div>}
       </div>
 
-      <div className={`${PANEL_BODY} px-3.5 py-3`} ref={bodyRef} onScroll={onScroll}>
+      <div className={PANEL_BODY} {...stylex.props(sx.px35, sx.py3)} ref={bodyRef} onScroll={onScroll}>
         {loading ? (
           <LoadingState>Loading sub-agent…</LoadingState>
         ) : error ? (

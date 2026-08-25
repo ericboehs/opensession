@@ -8,7 +8,6 @@ import {
 } from "../lib/shortcuts";
 import { Button } from "../ui/button";
 import { Modal, useEnterOnMount } from "../ui/modal";
-import { cn } from "../ui/cn";
 import { IconX } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -147,6 +146,15 @@ const sx = stylex.create({
 	gap1: {
 			gap: "4px"
 	},
+	inlineFlex: { display: "inline-flex" },
+	minW6: { minWidth: "24px" },
+	roundedMd: { borderRadius: "calc(7px * var(--rf))" },
+	border: { borderStyle: "solid", borderWidth: "1px" },
+	borderLineStrong: { borderColor: "var(--border-strong)" },
+	bgHover: { backgroundColor: "var(--hover)" },
+	px15: { paddingInline: "6px" },
+	fontSans: { fontFamily: "var(--font-sans)" },
+	textDim: { color: "var(--text-dim)" },
 });
 
 /**
@@ -315,12 +323,7 @@ function Row({ title, keys }: { title: string; keys?: string[] }) {
  *  four declarations that have never diverged. */
 function Keycap({ children }: { children: React.ReactNode }) {
 	return (
-		<kbd
-			className={cn(
-				"inline-flex min-w-6 items-center justify-center rounded-md border border-line-strong bg-hover px-1.5 py-0.5",
-				"font-sans text-meta text-dim",
-			)}
-		>
+		<kbd {...stylex.props(sx.inlineFlex, sx.minW6, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.border, sx.borderLineStrong, sx.bgHover, sx.px15, sx.py05, sx.fontSans, sx.textDim, typography.meta)}>
 			{children}
 		</kbd>
 	);

@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { BASE_PATH } from "../lib/base";
 import type { TranscriptEntry } from "../lib/types";
 import type { WorkflowAgentSnapshot } from "../../server/workflow-types";
-import { cn } from "../ui/cn";
 import { TranscriptBlocks } from "./TranscriptBlocks";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -119,6 +118,9 @@ const sx = stylex.create({
 	pl18px: {
 			paddingLeft: "18px"
 	},
+	py3: { paddingBlock: "12px" },
+	leadingRelaxed: { lineHeight: "var(--leading-relaxed)" },
+	textRed: { color: "var(--red)" },
 });
 
 /**
@@ -272,12 +274,7 @@ function Placeholder({
 	tone?: "error";
 }) {
 	return (
-		<div
-			className={cn(
-				"px-1 py-3 text-xs leading-relaxed",
-				tone === "error" ? "text-red" : "text-faint",
-			)}
-		>
+		<div {...stylex.props(sx.px1, sx.py3, sx.leadingRelaxed, typography.label, tone === "error" ? sx.textRed : sx.textFaint)}>
 			{children}
 		</div>
 	);

@@ -272,6 +272,10 @@ const sx = stylex.create({
 			width: "40px",
 			height: "40px"
 	},
+	borderB: { borderBottomStyle: "solid", borderBottomWidth: "1px" },
+	borderDivider: { borderColor: "var(--divider)" },
+	px3: { paddingInline: "12px" },
+	py2: { paddingBlock: "8px" },
 });
 
 type AssetNavigation = {
@@ -787,12 +791,7 @@ export function AssetActions({
 		: null;
 
 	return (
-		<div
-			className={cn(
-				"flex shrink-0 items-center gap-2 border-b border-divider px-3 py-2",
-				className,
-			)}
-		>
+		<div className={className} {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.gap2, sx.borderB, sx.borderDivider, sx.px3, sx.py2)}>
 			<div {...stylex.props(sx.minW0, sx.flex1)} title={file.path}>
 				<div {...stylex.props(sx.truncate, sx.fontMedium, sx.textFg, typography.label)}>{name}</div>
 				{file.description && (
@@ -888,7 +887,7 @@ export function AssetPreview({
 	}, [rawUrl, kind]);
 
 	return (
-		<div className={cn("min-h-0 flex-1 overflow-auto", className)}>
+		<div className={className} {...stylex.props(sx.minH0, sx.flex1, sx.overflowAuto)}>
 			{kind === "html" ? (
 				// allow-same-origin so the page can fetch() sibling assets
 				// (./data.json); the sandbox still blocks top navigation. The

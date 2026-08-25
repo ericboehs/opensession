@@ -118,6 +118,10 @@ const sx = stylex.create({
 	px5: {
 			paddingInline: "20px"
 	},
+	overflowYAuto: { overflowY: "auto" },
+	flex1: { flex: "1" },
+	pt2: { paddingTop: "8px" },
+	deskMessagesMask: { paddingBottom: "calc(var(--desk-under) + 12px)", WebkitMaskImage: "linear-gradient(to bottom, #000 calc(100% - var(--desk-under)), transparent 100%)", maskImage: "linear-gradient(to bottom, #000 calc(100% - var(--desk-under)), transparent 100%)" },
 });
 
 interface DeskConversationProps {
@@ -564,12 +568,8 @@ setDropStaging((current) => subtractStaging(current, batch));
 			{/* The shared transcript virtualizer and lazy markdown/code renderers
 			    resolve their scroll root through this marker, as in SessionViewer. */}
 			<div
-				className={cn(
-					"viewer-messages min-h-0 flex-1 overflow-y-auto px-3 pt-2",
-					"pb-[calc(var(--desk-under)_+_12px)]",
-					"[-webkit-mask-image:linear-gradient(to_bottom,#000_calc(100%_-_var(--desk-under)),transparent_100%)]",
-					"[mask-image:linear-gradient(to_bottom,#000_calc(100%_-_var(--desk-under)),transparent_100%)]",
-				)}
+				className="viewer-messages"
+				{...stylex.props(sx.minH0, sx.flex1, sx.overflowYAuto, sx.px3, sx.pt2, sx.deskMessagesMask)}
 				ref={bodyRef}
 				onScroll={onScroll}
 			>

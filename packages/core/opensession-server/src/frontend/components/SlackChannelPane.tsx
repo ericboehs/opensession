@@ -226,6 +226,13 @@ const sx = stylex.create({
 	basis0: {
 			flexBasis: "0"
 	},
+	mt2: { marginTop: "8px" },
+	mb0: { marginBottom: "0" },
+	gap25: { gap: "10px" },
+	hFull: { height: "100%" },
+	flexCol: { flexDirection: "column" },
+	opacity60: { opacity: 0.6 },
+	textFgPlaceholderFaint: { color: "var(--text)", "::placeholder": { color: "var(--text-faint)" } },
 });
 
 interface MessageReaction {
@@ -368,7 +375,7 @@ setLoadingReplies(false);
 	};
 
 	return (
-		<div className={`mb-3 flex gap-2.5 ${depth ? "mt-2 mb-0" : ""}`}>
+		<div {...stylex.props(sx.mb3, sx.flex, sx.gap25, depth > 0 && sx.mt2, depth > 0 && sx.mb0)}>
 			{m.avatarUrl ? (
 				<img
 					src={m.avatarUrl}
@@ -559,7 +566,7 @@ setSending(false);
 	}
 
 	return (
-		<div className={`flex h-full min-h-0 flex-col ${className || ""}`}>
+		<div className={className} {...stylex.props(sx.flex, sx.hFull, sx.minH0, sx.flexCol)}>
 			<div
 				ref={scrollRef}
 				{...stylex.props(sx.minH0, sx.flex1, sx.overflowYAuto)}
@@ -612,8 +619,8 @@ setSending(false);
 						"composer",
 						composerBox,
 						composerBoxExpanded,
-						!asUser && "opacity-60",
 					)}
+					{...stylex.props(!asUser && sx.opacity60)}
 				>
 					<textarea
 						// `composer-textarea` stays as a class NAME hook (the sidebar
@@ -622,8 +629,8 @@ setSending(false);
 							"composer-textarea",
 							composerTextarea,
 							composerTextareaPadding,
-							"text-fg placeholder:text-faint",
 						)}
+						{...stylex.props(sx.textFgPlaceholderFaint)}
 						style={{ minHeight: 48 }}
 						placeholder={
 							asUser

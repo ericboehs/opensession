@@ -128,6 +128,12 @@ const sx = stylex.create({
 	pb5: {
 			paddingBottom: "20px"
 	},
+	pt12: { paddingTop: "48px" },
+	pt1: { paddingTop: "4px" },
+	pt6: { paddingTop: "24px" },
+	pointerEventsAuto: { pointerEvents: "auto" },
+	fontNormal: { fontWeight: "var(--font-weight-normal)" },
+	textRed: { color: "var(--red)" },
 });
 
 interface Props {
@@ -299,7 +305,7 @@ if (aliveRef.current) setTriaging(false);
 	return (
 		<div
 			ref={setPaneEl}
-			className={cn("flex min-h-0 flex-1 flex-col", className)}
+			className={className} {...stylex.props(sx.flex, sx.minH0, sx.flex1, sx.flexCol)}
 		>
 			{headerInTopBar && (
 				<div className={SUPPORT_COLUMN_BAR}>
@@ -354,18 +360,10 @@ if (aliveRef.current) setTriaging(false);
 			<div {...stylex.props(sx.relative, sx.minH0, sx.flex1)}>
 				<div {...stylex.props(sx.hFull, sx.overflowYAuto)}>
 					<div
-						className={cn(
-							"mx-auto w-full max-w-[760px] px-5 pb-5",
-							// The rail floats, so the thread owes it the space it sits in:
-							// 12px of offset plus a 32px pill, and 4px clear of it.
-							rail
-								? "pt-12"
-								: // With the identity in the bar, the first block's own top
-									// margin is the whole gap under it.
-									headerInTopBar
-									? "pt-1"
-									: "pt-6",
-						)}
+						{...stylex.props(
+						sx.mxAuto, sx.wFull, sx.maxW760px, sx.px5, sx.pb5,
+						rail ? sx.pt12 : headerInTopBar ? sx.pt1 : sx.pt6,
+					)}
 					>
 						{loading && !thread ? (
 							<LoadingState>Loading ticket…</LoadingState>
@@ -445,7 +443,7 @@ if (aliveRef.current) setTriaging(false);
 							>
 								<button
 									type="button"
-									className={cn(FLOATING_PILL_BUTTON, "pointer-events-auto")}
+									className={FLOATING_PILL_BUTTON} {...stylex.props(sx.pointerEventsAuto)}
 									onClick={() => onOpenSession(session.id)}
 								>
 									<span
@@ -467,7 +465,7 @@ if (aliveRef.current) setTriaging(false);
 							<Tooltip label="Investigates, posts an internal note, and can open a PR for review.">
 								<button
 									type="button"
-									className={cn(FLOATING_PILL_BUTTON, "pointer-events-auto")}
+									className={FLOATING_PILL_BUTTON} {...stylex.props(sx.pointerEventsAuto)}
 									onClick={handleTriage}
 								>
 									<IconSparkle size={14} {...stylex.props(sx.textDim)} aria-hidden />
@@ -477,10 +475,8 @@ if (aliveRef.current) setTriaging(false);
 						)}
 						{triageError && (
 							<div
-								className={cn(
-									FLOATING_PILL,
-									"pointer-events-auto min-w-0 font-normal text-red",
-								)}
+								className={FLOATING_PILL}
+								{...stylex.props(sx.pointerEventsAuto, sx.minW0, sx.fontNormal, sx.textRed)}
 								role="alert"
 							>
 								<span {...stylex.props(sx.minW0, sx.truncate)} title={triageError}>

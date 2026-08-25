@@ -1,9 +1,16 @@
 import React, { useState } from "react";
-import { cn } from "../ui/cn";
+import * as stylex from "@stylexjs/stylex";
 import {
 	DEFAULT_APP_ICON_URL,
 	useOrganizationIcon,
 } from "../hooks/useOrganizationIcon";
+
+const sx = stylex.create({
+	block: { display: "block" },
+	size11: { width: "44px", height: "44px" },
+	roundedControl: { borderRadius: "var(--radius-control)" },
+	objectCover: { objectFit: "cover" },
+});
 
 /** The organization mark when configured, with the bundled app mark as fallback. */
 export function OrganizationAppIcon({ className }: { className?: string }) {
@@ -15,11 +22,12 @@ export function OrganizationAppIcon({ className }: { className?: string }) {
 
 	return (
 		<img
-			className={cn(
-				usesOrganizationIcon
-					? "block size-11 rounded-control object-cover"
-					: "block size-11",
-				className,
+			className={className}
+			{...stylex.props(
+				sx.block,
+				sx.size11,
+				usesOrganizationIcon && sx.roundedControl,
+				usesOrganizationIcon && sx.objectCover,
 			)}
 			src={src}
 			alt=""

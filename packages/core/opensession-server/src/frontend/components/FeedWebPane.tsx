@@ -68,6 +68,8 @@ const sx = stylex.create({
 	bgBlack: {
 			backgroundColor: "var(--color-black)"
 	},
+	hFull: { height: "100%" },
+	flexCol: { flexDirection: "column" },
 });
 
 /**
@@ -135,7 +137,7 @@ export function FeedWebPane({
 	className?: string;
 }) {
 	return (
-		<div className={`flex h-full min-h-0 flex-col ${className || ""}`}>
+		<div className={className} {...stylex.props(sx.flex, sx.hFull, sx.minH0, sx.flexCol)}>
 			<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3, sx.borderB, sx.borderDivider, sx.px3, sx.py2)}>
 				<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.fontMedium, sx.textFg, typography.label)}>
 					{title || panel.label}

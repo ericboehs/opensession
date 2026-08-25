@@ -6,6 +6,8 @@ import { fetchHealthStatus } from "../lib/health";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 
+const spin = stylex.keyframes({ to: { transform: "rotate(360deg)" } });
+
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
 	fixed: {
@@ -95,6 +97,14 @@ const sx = stylex.create({
 	opacity80: {
 			opacity: ".8"
 	},
+	size30px: { width: "30px", height: "30px" },
+	roundedFull: { borderRadius: "calc(infinity * 1px)" },
+	border2: { borderStyle: "solid", borderWidth: "2px" },
+	borderGreen: { borderColor: "var(--green)" },
+	borderTopGreen: { borderTopColor: "var(--green)" },
+	spin: { animationName: spin, animationDuration: "0.8s", animationTimingFunction: "linear", animationIterationCount: "infinite" },
+	borderLineStrong: { borderColor: "var(--border-strong)" },
+	borderTopAccent: { borderTopColor: "var(--accent)" },
 });
 
 // Give foreground recovery enough time to probe and replace the stale PWA
@@ -346,11 +356,14 @@ await fetchHealthStatus();
     <div className="backdrop-blur-[4px]" {...stylex.props(sx.fixed, sx.inset0, sx.z10000, sx.flex, sx.itemsCenter, sx.justifyCenter, sx.bgBlack82, sx.p6)} role="alertdialog" aria-live="assertive">
       <div {...stylex.props(sx.flex, sx.maxW340px, sx.flexCol, sx.itemsCenter, sx.gap35, sx.roundedLg, sx.border, sx.borderLine, sx.bgPanel, sx.px26px, sx.py7, sx.textCenter)}>
         <div
-          className={`size-[30px] rounded-full border-2 ${
-            backOnline
-              ? "border-green border-t-green"
-              : "animate-[spin_0.8s_linear_infinite] border-line-strong border-t-accent"
-          }`}
+          {...stylex.props(
+            sx.size30px,
+            sx.roundedFull,
+            sx.border2,
+            backOnline ? sx.borderGreen : sx.borderLineStrong,
+            backOnline ? sx.borderTopGreen : sx.borderTopAccent,
+            !backOnline && sx.spin,
+          )}
         />
         {/* Deliberately not "is restarting": that's the calm pill's copy, and
             this state is the one that reloads your page. */}

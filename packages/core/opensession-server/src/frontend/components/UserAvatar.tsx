@@ -23,6 +23,16 @@ const sx = stylex.create({
 	objectCover: {
 			objectFit: "cover"
 	},
+	relative: { position: "relative" },
+	inlineFlex: { display: "inline-flex" },
+	shrink0: { flexShrink: "0" },
+	itemsCenter: { alignItems: "center" },
+	justifyCenter: { justifyContent: "center" },
+	roundedAvatar: { borderRadius: "var(--radius-avatar)" },
+	bgActive: { backgroundColor: "var(--bg-active)" },
+	fontBold: { fontWeight: "var(--font-weight-bold)" },
+	textDim: { color: "var(--text-dim)" },
+	selectNone: { userSelect: "none" },
 });
 
 /**
@@ -110,18 +120,16 @@ export function UserAvatar({
 	const picture = !!src && !failed;
 	return (
 		<span
+			// The variable utilities remain residual because callers compose the
+			// edge into larger shadows.
 			className={cn(
-				// The hairline separates a photo from the surface behind it. The
-				// initial fallback is already its own flat tile, so it takes no
-				// edge — the variable stays defined (transparent) because callers
-				// compose it into a larger box-shadow (TeamPresence's pile ring).
 				picture && edge
 					? "[--avatar-edge:inset_0_0_0_1px_color-mix(in_srgb,var(--text)_14%,transparent)]"
 					: "[--avatar-edge:0_0_0_0_transparent]",
-				"relative inline-flex shrink-0 items-center justify-center",
-				"rounded-avatar bg-active font-bold text-dim shadow-[var(--avatar-edge)] select-none",
+				"shadow-[var(--avatar-edge)]",
 				className,
 			)}
+			{...stylex.props(sx.relative, sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedAvatar, sx.bgActive, sx.fontBold, sx.textDim, sx.selectNone)}
 			style={{
 				width: size,
 				height: size,
