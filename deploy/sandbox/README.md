@@ -16,7 +16,7 @@ session's git worktree **bind-mounted at its identical host path**.
 | `python3`, `build-essential` | worktree `bun install` native deps | apt |
 | `just`, `direnv`, `lsof` | common repo dev-server bring-up chains (in-sandbox previews) | apt / pinned release |
 | Claude Code CLI | baked at the identical host CLI path for session-resume parity | `2.1.218` (host); build FAILS on version mismatch |
-| runner bundle | `/home/ubuntu/projects/opensession` (`src/`, `opensession.ts`, `tsconfig.json`) + `node_modules` | from lockfile |
+| runner bundle | `/home/ubuntu/projects/opensession`: root manifests, lockfile, patches and `tsconfig.json`; copied protocol and server packages; `scripts/workload-identity-client.ts`; installed dependencies | from lockfile |
 | minimal `~/.claude/settings.json` | so `settingSources:["user"]` doesn't error | `{}` |
 
 Runs as uid **1000** user `ubuntu` (matches the host uid) so bind-mounted
@@ -44,22 +44,27 @@ deploy/sandbox/build.sh
 Tags `opensession-runner:latest` and `opensession-runner:<git-sha>` from the repo
 root context. Override the name with `IMAGE=... deploy/sandbox/build.sh`.
 
-Version pins are `ARG`s in the Dockerfile (`BUN_VERSION`, `CLAUDE_VERSION`,
-`NODE_MAJOR`) — override per build with `--build-arg` if
-needed.
+Version pins are Dockerfile `ARG`s: `BUN_VERSION`, `CLAUDE_VERSION`,
+`NODE_MAJOR`, and `JUST_VERSION`. `build.sh` supports `IMAGE=...` but does not
+forward command-line options. To override a pin, invoke `docker build` directly
+with `--build-arg` or change the Dockerfile default.
 
 ## Runtime design (Phase 1 — DockerProvider)
 
 `packages/core/opensession-server/src/server/sandbox/docker.ts` runs one container per session
 (`bks-sbx-<sessionId>`, labels `opensession.sandbox=1` +
 `opensession.session=<id>`, `--init`, `--restart no`, `--cpus`/`--memory` from
-`~/.opensession-sandbox.json`, defaults 4 / 8g). A run is the same runner-host
+`~/.opensession/sandbox.json`, defaults 4 / 8g). A run is the same runner-host
 entry the systemd path uses (`packages/core/opensession-server/src/runner-host/host.ts`), `docker exec -d`'d
 into the container; its unix socket + spec/meta/journal/log live in a
-bind-mounted per-session run dir (`~/.opensession-sessions/sandbox-runs/<id>`), so
+bind-mounted per-session run dir (`~/.opensession/sessions/sandbox-runs/<id>`), so
 the server drives it with the normal HostHandle machinery and can reattach
 after a restart. Idle containers are `docker stop`ped after
 `idleStopMinutes` (default 30) and restarted on the next turn.
+
+These are the canonical paths for fresh installations. An existing legacy
+top-level entry remains supported when it exists and its canonical
+`~/.opensession/` replacement does not.
 
 Mounts (rationale in the docker.ts header):
 
@@ -69,17 +74,22 @@ Mounts (rationale in the docker.ts header):
 | session worktree at identical path | rw | diff/files/status/push/preview unchanged host-side |
 | main checkout `.git` at identical path | rw | worktrees aren't self-contained (`rev-parse --git-common-dir`); accepted Phase 1 tradeoff |
 | host `~/.claude/projects/<munged-cwd>` | rw | engine transcripts stay host-visible (viewer tail, resume continuity) |
-| `~/.opensession-sessions/opensession-rpc.sock` | rw | opensession-* stdio proxies (socket filename kept for protocol compat); goes stale across a server restart until the container restarts |
+| `~/.opensession/sessions/opensession-rpc.sock` | rw | opensession-* stdio proxies (socket filename kept for protocol compat); goes stale across a server restart until the container restarts |
 | `~/.ssh`, `~/.gitconfig`, `~/.config/gh` | ro | git push / PR parity — interactive-level ambient trust, same as host runs today; automations use the separate MicroVM-only trust profile |
-| `mcp-config.json`, `~/.opensession-claude-accounts.json` | ro | external MCP servers + in-container account-pool selection |
-| `~/.opensession-audit` | rw | one audit jsonl stream for host + sandboxed runs |
+| `mcp-config.json`, `~/.opensession/claude-accounts.json` | ro | external MCP servers + in-container account-pool selection |
+| `~/.opensession/codex-accounts.json`, each home account's `<CODEX_HOME>/auth.json` | ro | seed access-token-only Pi/OpenAI authentication |
+| `~/.opensession/model-providers.json` → `~/.opensession-model-providers.json`; `~/.opensession/pi.json` → `~/.opensession-pi.json` | ro | model-provider and Pi configuration, readable in the sandbox |
+| `~/.opensession/audit` | rw | one audit jsonl stream for host + sandboxed runs |
 
-Known Phase 1 caveats: external MCP servers now spawn inside the container
-(host-only deps won't start); native Codex account homes are never mounted —
-the capability matrix keeps GPT (Codex) runs host-only, and GPT-in-a-sandbox
-goes through `pi/openai/*` models. Sandboxes never inherit host cloud
-credentials or use IMDS. An operator may grant a lifecycle an OIDC audience;
-the repository then exchanges its per-launch lease with its cloud provider.
+Known Phase 1 caveats: external MCP servers spawn inside the container, so
+host-only dependencies will not work. Full writable Codex account homes are not
+mounted and native Codex remains host-only; sandbox code can read the mounted
+registry and per-account authentication files used to seed access-token-only
+Pi/OpenAI authentication. Sandboxes cannot reach IMDS directly. Runs use
+workload identity. Preview lifecycle commands use workload identity when
+allowed, but retain a migration fallback that can inject short-lived
+instance-role credentials minted on the host and write a sandbox-local AWS
+profile.
 
 ## Phase 2 — exec-routed surfaces, volume workspaces, preview ports
 
@@ -90,7 +100,7 @@ the repository then exchanges its per-launch lease with its cloud provider.
   kill-switch absent + container **running**; a stopped container is never
   started for a read). With bind mounts this is redundant by design — it's
   the seam volume workspaces and Phase 3 remote providers run through.
-- **Volume workspaces** (`~/.opensession-sandbox.json` → `"workspace":
+- **Volume workspaces** (`~/.opensession/sandbox.json` → `"workspace":
   "volume"`, default `"bind"`): new sandboxes whose canonical worktree path
   has no host dir get a per-session `<name>-ws` volume mounted at that path
   and cloned **inside** the container from the repo's origin (ro-mounted
@@ -126,7 +136,7 @@ lsof, but blind to container netns: a sandbox and a host session (or two
 sandboxes) can hold the same webapp port number. Sandbox routes therefore use
 a dedicated allocated range **[20000, 28000)**, keyed by
 `(sandboxId, containerPort)` and persisted in
-`~/.opensession-sessions/sandbox-preview-ports.json`
+`~/.opensession/sessions/sandbox-preview-ports.json`
 (packages/core/opensession-server/src/server/sandbox/preview-ports.ts): host-vs-sandbox collisions are
 impossible by range disjointness, sandbox-vs-sandbox by the allocator's
 uniqueness probe. Allocations survive restarts/recreations (stable preview
@@ -139,10 +149,11 @@ every sandbox container publishes the `previewPorts` set (default 3 ports,
 port nothing listens on, and seeds/rewrites `.ports.conf` so the dev flow
 adopts it (a repo dev script that sources an existing `.ports.conf` and keeps
 free ports will keep ours — inside the fresh netns they always are). **Range
-exhaustion** (every published port busy) refuses to start; the fallback is
-widening `previewPorts` in `~/.opensession-sandbox.json` and letting the
-container be recreated (stop it or change the attach set — mounts/ports are
-create-time).
+exhaustion** (every published port busy) refuses to start. Widen
+`previewPorts` in `~/.opensession/sandbox.json`, then use the Sandbox panel's
+destructive Recreate action or otherwise destroy and re-ensure the sandbox. A
+stop/start cycle preserves the old mappings. Changing the attachment set also
+forces recreation.
 
 **Bring-up resolution (repo-local lifecycle scripts, background-agents
 convention).** ONE chain — `resolvePreviewBoot` in preview.ts — shared by
@@ -168,20 +179,25 @@ No rung resolves → the status reports `bootable: false` and the UI renders a
 disabled Start explaining what to add. A matching operator workload-identity
 grant injects only an exchange lease into the lifecycle command. The repository
 can mint an OIDC token with `opensession sandbox id-token` and let a standard
-cloud SDK exchange it. No AWS CLI, profile, host credential, or IMDS access is
-required for that flow.
+cloud SDK exchange it. If no grant matches, preview lifecycle commands retain a
+migration fallback that injects short-lived host-minted instance-role
+credentials and writes a profile under `/tmp/opensession-preview-aws/` in the
+sandbox. The sandbox cannot reach IMDS directly.
 
-`<worktree>/.agents/setup` is the sibling one-shot hook: it runs once
-per workspace materialization (first ensure of the sandbox, cwd = workspace,
-same `OPENSESSION_BOOT_MODE` env), is **skipped on snapshot restore** (the
-restored container layer already carries its effects), is never retried once
-settled (log: `~/.opensession-sessions/sandbox-runs/<session>/workspace-setup.log`),
-and never blocks the session on failure. Keep both scripts convention-level:
-no framework, no arguments beyond env. Host previews honor the setup hook too, with
-one asymmetry: there is no workspace-materialization moment on the host, so it
-runs (and settles, success or not) as part of the FIRST repo-script preview
-start, stamped per worktree under `<chats-dir>/preview-setup/` (SETUP_STAMP_DIR
-in preview.ts).
+`<worktree>/.agents/setup` behavior depends on the provider:
+
+- Docker runs it with Bash once per workspace materialization, skips it on a
+  snapshot restore, and settles it even after failure. Failures do not block the
+  session. The log is
+  `~/.opensession/sessions/sandbox-runs/<session>/workspace-setup.log`.
+- Host previews run and settle it, success or failure, on the first repo-script
+  preview start. The stamp is under `<sessions-dir>/preview-setup/`.
+- Remote providers and MicroVMs require the hook to be executable. Failure
+  blocks materialization and leaves it unstamped, so a later ensure retries it.
+  Logs are under `/home/ubuntu/.opensession/lifecycle/` in the sandbox.
+
+Keep lifecycle scripts convention-level: no framework and no arguments beyond
+the environment.
 
 **`.tunnels.env` contract** (adopted from background-agents): when a preview
 starts, Open Session writes `<worktree>/.tunnels.env` — dotenv, consumable by
@@ -196,12 +212,13 @@ Stale files are removed whenever ensure() (re)starts the container and on
 preview stop; each start rewrites the file whole. It's kept out of session
 diffs via the repo's `.git/info/exclude`.
 
-**External `previewCommand` scripts in-container.** When a repo's configured
-`previewCommand` is an absolute path outside the repo, its directory is
-mounted read-only at its identical path in every sandbox
-(`externalPreviewCommandDirs` in preview.ts), so the same bring-up script
-works host-side and in-sandbox. The image bakes the common dev-chain deps
-such scripts tend to need — bash/coreutils/curl/python3/git, plus `just`,
+**External `previewCommand` scripts in-container.** Docker sandboxes mount the
+directory of a configured absolute preview command read-only at the identical
+path (`externalPreviewCommandDirs` in preview.ts). Remote providers and
+MicroVMs cannot mount host paths; use a repo-committed `.agents/start.sh` or
+install the configured command inside that environment. The Docker image bakes
+the common dev-chain deps such scripts tend to need —
+bash/coreutils/curl/python3/git, plus `just`,
 `direnv` (`direnv exec . just dev` chains) and `lsof` (port probes).
 Deliberately NOT installed: the **aws CLI** and heavyweight backing services
 (Postgres/Redis-class daemons are out of image scope — the dev server points
@@ -235,9 +252,11 @@ happens.
 - **Box**: Box's authenticated API installs a dedicated Open Session public
   key on the selected Box, then the host opens a normal SSH PTY. The private
   key remains on the Open Session host. Opening the tab wakes an archived Box.
-- **Anything else / any failure** (kill-switch, gone container, provider
-  unconfigured, e2b): host login shell in the worktree with a dim fallback
-  notice — the pre-sandbox behavior.
+- **MicroVM**: a native PTY over the guest's private control lane. Opening it
+  wakes the preserved guest when needed.
+- **Unsupported providers / any failure**: a host login shell with a dim
+  fallback notice. It starts in the host worktree when that directory exists,
+  otherwise in the host home directory.
 
 Deliberately NOT ttyd-in-the-sandbox: these providers already have an
 interactive exec transport that plugs into the existing PTY plumbing, so the
@@ -253,28 +272,30 @@ needed after changing it.
 
 ## Phase 3 — WS transport + remote adapters
 
-- **WS transport** (`~/.opensession-sandbox.json` → `"transport": "ws"` +
+- **WS transport** (`~/.opensession/sandbox.json` → `"transport": "ws"` +
   `"callbackBaseUrl": "ws://<reachable-host>:3850"`): the in-sandbox run host
   DIALS OUT to the server's `/run-ws/<hostId>` route (token-authed,
   same NDJSON protocol, one JSON message per WS text frame) instead of
   serving a unix socket, and the opensession-* MCP proxies dial
   `/rpc-ws`. Docker containers created in ws mode don't mount the
   rpc socket. `callbackBaseUrl` must be reachable FROM the sandbox (Tailscale
-  URL for self-hosters; 127.0.0.1 never works). For remote providers that
-  means the PUBLIC internet: enable the isolated `publicIngress` listener
-  (packages/core/opensession-server/src/server/public-ingress.ts — serves run-ws/rpc-ws, health, and the
-  narrowly scoped workload-identity OIDC endpoints; see docs/self-hosting-sandboxes.md "Public dial-back
-  ingress") instead of exposing the main server. Transport code is runner
-  internals — restart + image rebuild to take effect.
-- **Remote adapters** (`provider: "daytona"` / `"e2b"` / `"box"` / `"modal"`,
-  packages/core/opensession-server/src/server/sandbox/adapters/): always volume-style workspaces cloned
-  in-sandbox over https (`cloneCredential`), always ws transport, runner
-  payload installed on first ensure by `bootstrapRemoteSandbox` for engines
-  that run inside the sandbox. Pi engines (OpenAI, Claude and other
-  providers) stay on the host and use `bootstrapRemoteWorkspaceRuntime`
-  instead (Git/Bun/ripgrep/core tools only; no runner checkout,
-  Claude CLI, credentials, or dial-back requirement). Daytona
-  idle-stops natively (`autoStopInterval`); E2B lives on a countdown that
+  URL for self-hosters; 127.0.0.1 never works). The isolated public listener
+  starts at boot on `127.0.0.1:3860`. Configure its public origin in Settings →
+  Public ingress (`ingress.publicBaseUrl`); the legacy sandbox `publicIngress`
+  block only overrides the internal bind. The listener exposes registered
+  webhook/OAuth routes, `/run-ws/*`, `/rpc-ws`, `/sandbox-portal-ws`,
+  `/ingress-health`, and `/workload-identity/*` without exposing the main app.
+  Transport code is runner internals, so restart and rebuild the image after
+  changing it.
+- **Remote adapters** (`provider: "daytona"` / `"e2b"` / `"box"` / `"modal"` /
+  `"lambda-microvm"`, packages/core/opensession-server/src/server/sandbox/adapters/):
+  always use volume-style workspaces cloned
+  in-sandbox over https (`cloneCredential`) and always use WS transport. Every
+  adapter installs the full runner payload with `bootstrapRemoteSandbox`. The
+  selected Claude or Pi engine runs inside the sandbox with narrowly projected
+  per-launch credentials. Native Codex remains host-only because its writable,
+  rotating `CODEX_HOME` is not projected. Daytona idle-stops natively
+  (`autoStopInterval`); E2B lives on a countdown that
   activity extends — expiry KILLS the sandbox and its workspace. NOTE:
   Daytona Tier 1/2 orgs restrict sandbox egress, which blocks the WS
   dial-back entirely — launchRun there needs a Tier 3 org or self-hosted
@@ -282,36 +303,29 @@ needed after changing it.
 - **Local Firecracker adapter** (`provider: "microvm"`): restores a
   credential-free golden from `/opt/firecracker/sandbox-store`; the selected
   engine and workspace both run inside the guest through the same run-ws/rpc-ws
-  transport as remote providers. Build the
-  golden with `deploy/sandbox/microvm/refresh-sandbox-golden.sh`; by default
-  that builds `Dockerfile.workspace` (the minimal guest tool baseline: Git,
-  Bun, Node, ripgrep, jq, sqlite3, iproute2, Python, native-build basics) and
-  then `Dockerfile.runner` on top — the full runner payload in the BOOTSTRAP
-  layout (`~/.bun/bin/bun`, `~/.local/bin/claude`, and a
-  shallow git clone of the runner repo at the pinned `runnerSha` +
-  `bun install`, and the exact `~/.bks-bootstrapped` /
-  `~/.bks-workspace-runtime` marker strings), so `bootstrapRemoteSandbox` at
-  ensure() is a marker no-op instead of a minutes-cold install. The payload
-  pins are computed from the live sandbox config by importing bootstrap.ts;
-  the clone URL (which may carry a token) rides into the build as a BuildKit
-  secret and the baked origin is scrubbed back to plain https — the golden
-  stays credential-free (all credentials arrive per launch). The refresh also
-  writes `<store>/golden.json` (`{ signature, builtAt, runnerSha }`)
-  as build metadata for staleness reporting; the in-VM marker remains the
-  runtime source of truth, and a pin bump between refreshes just re-runs the
-  incremental in-VM bootstrap (private runner repos: the scrubbed origin can't
-  fetch a new pin — refresh the golden instead). Golden publication is locked
-  against concurrent clone creation and rolls back as one
-  disk/memory/vmstate/metadata generation on failure. Passing an explicit
-  image argument still skips both builds for controlled experiments. Never
-  reuse the preview-pool golden in `/opt/firecracker/store`.
+  transport as remote providers. The payload-baked golden design layers
+  `Dockerfile.runner` over `Dockerfile.workspace`. Runtime recognizes only the
+  exact `~/.bks-bootstrapped` marker. A mismatch triggers the normal
+  incremental `bootstrapRemoteSandbox` path.
+
+  Golden refresh is currently unavailable in this checkout. Do not run
+  `deploy/sandbox/microvm/refresh-sandbox-golden.sh` until it is repaired: its
+  Bun snippet imports obsolete root `src/` paths, and metadata generation
+  references an unset `RUNNER_PIN`. The attempted `golden.json` is build
+  metadata only; no runtime staleness reader consumes it. Never reuse the
+  preview-pool golden in `/opt/firecracker/store`.
 - `deploy/sandbox/conformance.ts` — the provider conformance matrix
   (`bun run deploy/sandbox/conformance.ts [docker-socket|docker-ws|daytona|e2b|box|modal|microvm|lambda-microvm]`):
   verify.ts's checks parameterized over providers. Docker entries always run
-  and must stay green; daytona/e2b/box/modal run only with credentials (else
-  `SKIPPED: no credentials`). Providers with hard deletion leave zero
-  sandboxes behind; Box leaves only archived, non-billing conformance entries
-  because its public API exposes archive rather than hard deletion.
+  and must stay green; configured providers otherwise skip when their required
+  credentials are not discovered. The harness currently reads live sandbox
+  configuration and workspace secrets only from the legacy top-level
+  `~/.opensession-sandbox.json` and `~/.opensession-workspace-secrets.json`,
+  plus its environment/profile fallbacks. Fresh consolidated-state connections
+  under `~/.opensession/` can therefore be reported as skipped. Providers with
+  hard deletion leave zero sandboxes behind; Box leaves only archived,
+  non-billing conformance entries because its public API exposes archive rather
+  than hard deletion.
 
 ## Host setup + verification
 
@@ -326,35 +340,20 @@ needed after changing it.
   WS transport, snapshots, and the sandboxed preview/lifecycle flow. Uses
   only `sbxtest-*` scratch resources and a redirected run journal; safe next
   to the live server.
-- `deploy/sandbox/verify-external-engine.ts` — legacy boundary certification
-  retained for regression coverage. The shipped path is now brain-inside; use
-  `conformance.ts` for current provider certification. This script creates a disposable
-  real WebSocket session, requires all six `opensession-workspace` methods,
-  proves the engine/credentials/filesystem boundary, and destroys the session
-  plus provider resource in `finally`. Repeat `--provider` to cover several
-  providers; add `--restart` to prove sticky placement and reattachment:
-
-  ```sh
-  bun run deploy/sandbox/verify-external-engine.ts --provider daytona --provider modal
-  bun run deploy/sandbox/verify-external-engine.ts --provider microvm --restart
-  ```
-
-  It defaults to OpenAI GPT-5.6 Sol. Use `--model
-  pi/anthropic/claude-sonnet-5` to certify the Claude path instead. For
-  a UI-driven smoke test, paste
-  `deploy/sandbox/external-engine-test-prompt.md` into a new code session.
 
 ## When to rebuild
 
 - **Claude CLI bump** on the host (`claude --version` changes) → bump
   `CLAUDE_VERSION`. The in-container CLI must match host session-resume behavior
   (the build asserts the installed version and fails on drift).
-- **Lockfile change** (`bun.lock`) — any dependency add/upgrade → rebuild
-  (the deps layer re-installs).
+- **Dependency input changes** (`package.json`, package manifests, `bun.lock`,
+  or `patches/`) → rebuild so the dependency layer is current.
 - **Bun bump** on the host → bump `BUN_VERSION` to keep parity.
-- Source changes to `src/` / `opensession.ts` that the runner-host path uses →
-  rebuild (fast: only the final COPY layers change). In particular ANY change
-  under `packages/core/opensession-server/src/runner-host/` (protocol/entry) must be rebuilt before the next
-  sandboxed run — the container executes the image's copy, not the checkout.
+- **Runner-runtime source changes** under `packages/core/opensession-server` or
+  `packages/core/protocol`, especially
+  `packages/core/opensession-server/src/runner-host/` → rebuild before the
+  next sandboxed run. Rebuild after changes to the copied
+  `scripts/workload-identity-client.ts` too. The container executes the image's
+  copy, not the host checkout.
 
 Keep the image's pins in lockstep with the host; parity is the whole point.

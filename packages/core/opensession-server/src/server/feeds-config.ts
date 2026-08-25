@@ -10,18 +10,18 @@
  *
  * Example entry:
  * {
- *   "id": "loom", "title": "Loom", "refKind": "loom", "tileBg": "#625df5",
- *   "mcpServers": ["loom"],
+ *   "id": "video-library", "title": "Video library", "refKind": "video-library", "tileBg": "#625df5",
+ *   "mcpServers": ["video-library"],
  *   "items": {
- *     "server": "loom", "tool": "list_videos", "args": { "limit": 30 },
+ *     "server": "video-library", "tool": "list_videos", "args": { "limit": 30 },
  *     "path": "videos",
  *     "map": { "id": "id", "title": "name", "preview": "description",
  *              "ts": "updatedAt", "url": "links.viewPage" }
  *   },
  *   "panel": {
  *     "label": "Video",
- *     "embedUrlTemplate": "https://www.loom.com/embed/{id}",
- *     "links": [{ "label": "Open", "hrefTemplate": "https://www.loom.com/share/{id}" }]
+ *     "embedUrlTemplate": "https://www.video-library.com/embed/{id}",
+ *     "links": [{ "label": "Open", "hrefTemplate": "https://www.video-library.com/share/{id}" }]
  *   }
  * }
  */

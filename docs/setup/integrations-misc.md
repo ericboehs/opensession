@@ -2,29 +2,29 @@
 
 ## Boot guards
 
-Every integration is declared in the registry
-(`packages/core/opensession-server/src/server/integrations/registry.ts`); `loadAgents()` in `opensession.ts`
-is a loop over it (`loadIntegrations`, `packages/core/opensession-server/src/server/integrations/load.ts`).
-Enable resolution per integration:
+Optional boot-loaded integrations are declared in
+`packages/core/opensession-server/src/server/integrations/registry.ts` and
+loaded by `loadIntegrations()` from `opensession.ts`. MCP-only integrations,
+push, transcription, AWS credentials, and account health do not use this
+registry.
 
-- Every agent is **OFF by default**. An integration loads only when you enable
-  it, so a fresh install runs nothing you did not ask for.
-- Flags: `ENABLE_SLACK_AGENT`, `ENABLE_LINEAR_AGENT`, `ENABLE_PLAIN_AGENT`,
-  `ENABLE_GITHUB_AGENT`, `ENABLE_GRAFANA_POLLER`, `ENABLE_STRIPE_AGENT`.
-- **Only the literal string `true` enables via env.** `ENABLE_SLACK_AGENT=1`
-  does *not* turn Slack on — any other value disables. The asymmetry is
-  deliberate: anything unrecognised means off.
-- The env flag wins when set; otherwise `integrations.<id>.enabled` in
-  `config.json` decides. Onboarding writes explicit values rather than relying
-  on either default.
+- Every registry integration is **off by default**.
+- Flags: `ENABLE_PLAIN_AGENT`, `ENABLE_LINEAR_AGENT`, `ENABLE_SLACK_AGENT`,
+  `ENABLE_STRIPE_AGENT`, `ENABLE_GRAFANA_POLLER`, `ENABLE_GITHUB_AGENT`, and
+  `ENABLE_CODESTORAGE`.
+- **Only the literal string `true` enables via env.** For example,
+  `ENABLE_SLACK_AGENT=1` does not enable Slack; any set value other than
+  `true` disables it.
+- The env flag wins when set. Otherwise `integrations.<id>.enabled` in
+  `config.json` decides. Onboarding writes both settings explicitly.
 
-Enabling an integration without its credentials is the one state to avoid: it
-loads and degrades with warnings (Slack calls fail, webhook verification
-rejects everything, the Grafana poller no-ops) rather than refusing. That costs
-log noise and health warnings, not crashes. Missing webhook secrets are
-fail-closed (401), so nothing untrusted gets in. The exception is Stripe: its
-registry entry carries a `requires` gate, so without `STRIPE_WEBHOOK_SECRET`
-the agent is skipped entirely (no route worth exposing).
+Most enabled integrations still load when required credentials are missing:
+outbound calls fail, and webhook handlers with no signing secret reject input.
+The setup UI and `opensession doctor` report registry credentials marked as
+required. Grafana instead starts as a no-op without its URL or token. Stripe is
+skipped entirely without `STRIPE_WEBHOOK_SECRET`; code.storage is skipped
+without its required config. Change boot flags or boot-loaded credentials, then
+restart Open Session.
 
 ## Stripe
 
@@ -36,35 +36,55 @@ Two separate pieces:
    `charge.dispute.created`, firing the `stripe:charge.dispute.created`
    automation event with a minimal payload (the automation re-fetches details
    via MCP). Everything else is acked and ignored.
-2. **Stripe MCP server** (`mcp-config.json`): an HTTP server pointing at
-   `https://mcp.stripe.com` with a **restricted key** (`rk_live_…`) in the
-   config file, not env. Use a restricted key with write on Refunds +
-   Subscriptions (+ Invoices if you want invoice voiding) only and read on
-   core billing resources — Stripe enforces that ceiling server-side no
-   matter what the agent asks for.
+2. **Stripe MCP server** (the effective `mcp-config.json`): add an HTTP
+   server with a **restricted key** (`rk_live_…`) in its authorization header:
 
-On top of the key ceiling, the money-moving tools are **confirm-listed**
-(`STRIPE_CONFIRM_TOOLS`, `packages/core/opensession-server/src/server/runner-shared.ts`; override with
-`policy.stripeConfirmTools` in config): `mcp__stripe__create_refund`,
-`mcp__stripe__cancel_subscription`, `mcp__stripe__update_subscription`, and
-the raw-API mutators `mcp__stripe__stripe_api_execute` /
-`mcp__stripe__stripe_api_write` (they can hit any endpoint the key permits).
-The pi engine has no per-call approval card, so these tools are
-STRIPPED from the model's tool list on every run — the server stays mounted
-and Stripe reads keep working. The instructions tell the agent to propose
-the action instead: unattended runs post it in their internal note for a
-human to approve by opening the session; interactive runs ask the human in
-the session.
+   ```json
+   {
+     "mcpServers": {
+       "stripe": {
+         "type": "http",
+         "url": "https://mcp.stripe.com",
+         "headers": { "Authorization": "Bearer rk_live_…" }
+       }
+     }
+   }
+   ```
+
+   Use a restricted key with write on Refunds + Subscriptions (+ Invoices if
+   you want invoice voiding) only and read on core billing resources. Stripe
+   enforces that ceiling server-side. The MCP config path resolves from
+   `OPENSESSION_MCP_CONFIG`, then `paths.mcpConfig`, then
+   `<checkout>/mcp-config.json`.
+
+On top of the key ceiling, the money-moving tools are **confirm-listed** in
+`STRIPE_CONFIRM_TOOLS`
+(`packages/core/opensession-server/src/server/runner-shared.ts`):
+`mcp__stripe__create_refund`, the retained cancel/update subscription names,
+and the raw-API mutators `mcp__stripe__stripe_api_execute` and
+`mcp__stripe__stripe_api_write`. The current Stripe MCP exposes
+`stripe_api_write`; the older names remain blocked in case a server still
+exposes them.
+
+Pi has no per-call approval card, so standard interactive and unattended paths
+strip these tools from the model's tool list while leaving Stripe reads
+available. Unattended runs propose the exact action in their internal note;
+interactive runs ask the human to carry it out separately. The one execution
+exception is Plain's fail-closed approval flow: a verified teammate explicitly
+approves a previously proposed refund or cancellation in the same Plain thread,
+and a dedicated run receives the mutators for that action.
 
 ## WorkOS
 
-No server code — it's a stdio MCP server in `mcp-config.json` (a wrapper
-script that loads its own credentials; the repo doesn't contain one, so
-bring your own WorkOS MCP). Automation runs
-hard-deny its entire write/impersonation surface
-(`AUTOMATION_DENIED_TOOLS` in `packages/core/opensession-server/src/server/automations.ts` — see
-[plain.md](plain.md#the-triage-automation-least-privilege-model) for the
-exact list); reads (`get_*`, `list_*`) stay allowed.
+No WorkOS server ships in this repo. Add your own stdio or HTTP WorkOS MCP to
+the effective `mcp-config.json`; this instance's stdio wrapper is
+operator-provided and loads its own credentials. Automation runs and
+interactive resumes of automation-owned sessions strip the explicit
+write/destructive and impersonation tools listed in
+`packages/core/opensession-server/src/server/automation-denied-tools.ts`.
+WorkOS lookup tools remain available when the automation's MCP allowlist names
+the server. Review that deny list when the WorkOS MCP adds mutators; matching is
+by explicit tool name, not by a wildcard.
 
 ## Grafana poller
 
@@ -77,30 +97,45 @@ investigation automations with a Slack control card per fresh failure.
 | `GRAFANA_SERVICE_ACCOUNT_TOKEN` | — | bearer token for the datasource proxy |
 | `LOKI_DATASOURCE_UID` | `loki` | queried via `/api/datasources/proxy/uid/<uid>/loki/api/v1/query` |
 
-Each poll is configuration on an automation (`grafanaPoll` in
-`packages/core/opensession-server/src/server/automations.ts`): the LogQL to run (`lokiQuery`, with `$LOOKBACK`
-substituted with the poll window), the dedup label, and the Slack channel the
-control card posts to (`slackChannel`) — so pointing the poller at your own
-failure signatures is configuration, not a code edit. Dedup state lives in
-`~/.opensession-grafana-poll/<automationId>/` (default window 7 days).
+The Slack integration and bot token must also work because each investigation
+uses a Slack control card. Configure each enabled automation with a
+`grafanaPoll` object. Required fields are `lokiQuery` (an instant LogQL query;
+`$LOOKBACK` is replaced), `dedupLabel`, `slackChannel` (a channel ID), and
+`cardTitle`. Optional defaults are `lookback: "20m"`, `pollMinutes: 15`,
+`dedupDays: 7`, and `namespace: "prod"`; set `namespace: ""` to accept every
+namespace. The engine wakes every minute and polls each automation when due.
+Adding or changing a poll is configuration, not a code edit or restart.
+
+Fresh installs keep dedup state in
+`~/.opensession/grafana-poll/<automationId>/`. If the legacy
+`~/.opensession-grafana-poll` exists and the new path does not, Open Session
+continues using the legacy path.
 
 ## Sentry and Tinybird
 
-MCP-only — no server code, no env vars. Configure them as HTTP MCP servers
-in `mcp-config.json` (`https://mcp.sentry.dev/mcp`;
-`https://mcp.tinybird.co?token=<token>` with the token in the URL). Omit
-them and nothing breaks; runs just don't get those tools.
+MCP-only, with no integration agent or dedicated server env vars. Configure
+them as HTTP MCP servers in the effective `mcp-config.json`:
+`https://mcp.sentry.dev/mcp` and
+`https://mcp.tinybird.co?token=<token>`. These entries are shown in
+`mcp-config.example.json`. Omit them and runs simply do not receive those
+tools.
 
 ## Web push
 
-`packages/core/opensession-server/src/server/push.ts`. Zero configuration: VAPID keys are generated on first
-use and stored in `~/.opensession-push/vapid.json`; per-user subscriptions in
-`~/.opensession-push/subscriptions.json` (dead ones pruned on send). The VAPID
-contact comes from `integrations.push.vapidSubject` and defaults to
-`mailto:admin@example.com` — push works regardless, but set it to a real
-address so a push service can reach you about your own subscriptions. Push
-requires the UI to be served over HTTPS (e.g. Tailscale
-`ts.net` certs); on iOS it needs the PWA installed.
+`packages/core/opensession-server/src/server/push.ts`. No key provisioning is
+required: VAPID keys are generated when push is first used. On a fresh install,
+keys live in `~/.opensession/push/vapid.json` and per-user subscriptions in
+`~/.opensession/push/subscriptions.json`; an existing legacy
+`~/.opensession-push` remains in use when the new directory is absent. Dead
+subscriptions are pruned after a 404/410 response.
+
+Each user must opt in per device under **Settings → Notifications** and grant
+browser notification permission. Push requires a secure HTTPS origin; on iOS,
+the PWA must be installed. The VAPID contact is
+`integrations.push.vapidSubject`, defaulting to
+`mailto:admin@example.com`. Set a real `mailto:` or HTTPS subject so push
+services can contact the operator; restart Open Session if you change it after
+push was first used in the current process.
 
 ## Voice / transcription
 
@@ -114,45 +149,33 @@ failure:
    `~/tools/whisper.cpp/models/ggml-small-q5_1.bin`), with `ffmpeg` for
    audio conversion. Build whisper.cpp yourself; it's outside the repo.
 
-All optional — with no provider configured, dictation throws and the rest of
-the app is unaffected.
+The endpoint accepts at most 25 MiB per clip. Providers are optional: if no
+hosted key works and the local binary or model is unavailable, dictation
+returns an error and the rest of the app is unaffected.
 
 ## AWS creds for runs (`AGENT_AWS_REGION`)
 
-`packages/core/opensession-server/src/server/aws-creds.ts` mints short-lived instance-role credentials for
-agent runs that opt into AWS (`aws: true`), injecting `AWS_REGION` /
-`AWS_DEFAULT_REGION` (resolved `AGENT_AWS_REGION` → `AWS_REGION` →
-`integrations.aws.region` in config → default `us-east-1`) plus
-temporary keys into the child env. It exists because the service cgroup
-blocks the EC2 metadata endpoint (`IPAddressDeny=169.254.169.254/32` in
-`opensession.service`) so untrusted agent code can't mint the role itself; the
-main process escapes via a transient systemd unit (`sudo -n systemd-run`) to
-fetch read-only creds.
+`packages/core/opensession-server/src/server/aws-creds.ts` mints short-lived
+EC2 instance-role credentials for eligible host runs and previews. Pi receives
+a rotating shared-credentials-file pointer; other callers receive temporary
+keys. Both receive `AWS_REGION` / `AWS_DEFAULT_REGION`, resolved as
+`AGENT_AWS_REGION` → `AWS_REGION` → `integrations.aws.region` →
+`us-east-1`.
 
-Two limits of that block, worth knowing on a cloud box:
+The credentials have the permissions of the attached instance role; Open
+Session does not make a broad role read-only. Attach a read-only or otherwise
+least-privileged role. The mint uses `sudo -n systemd-run` to run the IMDSv2
+request outside the blocked agent cgroups as an unprivileged user.
 
-- The `IPAddressDeny=` directive covers only processes inside the unit's own
-  cgroup, and the engine deliberately detaches each session into its own
-  `systemd --user` scope outside it (`opencode-detach.ts`, so a restart does
-  not kill in-flight turns). So the agent's shell tools run in the engine
-  scope, which the unit's filter never reaches — under the **user** unit and
-  the **system** unit alike. The unit directive is defense-in-depth for the
-  non-detached path, not the boundary.
-- The boundary on a cloud box is a **host firewall rule**, which applies to
-  every process a uid runs regardless of cgroup:
-  `sudo iptables -I OUTPUT -d 169.254.169.254 -m owner --uid-owner <uid> -j REJECT`
-  (drop `--uid-owner` to block the whole host). `OPENSESSION_OC_DETACH=0`
-  keeps engines inside the system unit's cgroup instead, trading detached-run
-  survival across restarts for the unit filter covering them.
-- Because of this, `opensession service install` (user scope, the default)
-  probes 169.254.169.254 and refuses when anything answers. It explains the EC2
-  role-credential risk, prints the uid-scoped host firewall rule, and tells the
-  operator to rerun the installation afterward. On a box with no role to
-  protect, `OPENSESSION_ALLOW_IMDS=1` explicitly skips the check. A per-user
-  manager additionally cannot apply `IPAddressDeny=` at all on stock Ubuntu
-  (it needs `PrivateUsers=`, which the apparmor unprivileged-userns restriction
-  denies, silently), so the user unit could not carry even the
-  defense-in-depth copy.
+On Linux system-scope installs, `opensession.service` and every detached
+run-host system unit deny `169.254.169.254`; the executor denies all network.
+`OPENSESSION_PI_DETACH=0` is the rollback switch that keeps Pi turns in the
+gateway service cgroup, where the gateway's deny still applies. User-scope
+installs disable detached run hosts and cannot reliably apply
+`IPAddressDeny=`. Therefore `opensession service install` probes the metadata
+endpoint before installing user scope and refuses if it responds. Apply the
+printed uid-scoped firewall rule and rerun. Only on a host with no cloud role
+to protect, set `OPENSESSION_ALLOW_IMDS=1` to skip that installer check.
 
 **Off by default.** The mint is EC2-specific and needs passwordless sudo, so it
 only runs when you turn it on:
@@ -162,24 +185,38 @@ only runs when you turn it on:
 | `AGENT_AWS_CREDS` | Only the literal `true` enables, any other value disables. Checked first, so it is also the off switch on a host that pins a region. |
 | `integrations.aws.enabled` | Used when `AGENT_AWS_CREDS` is unset. |
 | `AGENT_AWS_REGION` / `integrations.aws.region` | With neither of the above set, pinning a region for agent runs enables the mint. |
-| `AGENT_AWS_MINT_USER` / `integrations.aws.mintUser` | The unprivileged account the transient unit runs as. Defaults to the account the server runs as, which is what a sudoers rule is written for. The separate uid is what keeps the mint out of root, so keep it unprivileged. |
+| `AGENT_AWS_MINT_USER` / `integrations.aws.mintUser` | The unprivileged account the transient unit runs as. Defaults to the account the server runs as. This selects the unit's UID/GID; it does not grant sudo. |
+
+The service installer's fixed run-host helper permission does not grant the
+separate `sudo -n systemd-run` access this mint needs. Provision a narrowly
+scoped passwordless sudo policy for the exact `mintCommand()` in
+`aws-creds.ts`. If a user-scope install uses the printed owner-based firewall
+rule, that rule also blocks a mint running as the service user; use system scope
+or a separate unprivileged mint user that is not covered by the rule.
 
 A bare `AWS_REGION` does not enable anything: it names the region for a run
 that already has credentials, and it is set on plenty of machines with no
 instance role to mint.
 
 With the mint off, `getAgentAwsEnv` / `ensureAgentAwsCredsFile` return `{}`
-without spawning anything, and runs proceed without AWS. That is the state a
-laptop or a plain VPS wants, including every simple-mode install: the enabled
-path would otherwise cost a sudo attempt and up to three 3-second IMDS curl
-timeouts on every session start. With the mint on but failing (no instance
-role, no sudo rule, or inside a docker sandbox where IMDS is blocked for the
-helper too) the result is the same `{}`, logged so the misconfiguration is
-visible.
+without spawning anything, and runs proceed without AWS. That is the expected
+state on a laptop or plain VPS. When enabled, credentials are cached until five
+minutes before expiry; the first mint or a refresh may make a sudo attempt and
+up to three 3-second IMDS requests. If minting fails because there is no role,
+no sudo rule, or a sandbox blocks IMDS, the run receives no AWS credentials and
+the failure is logged.
 
 ## Account health (`integrations.accountHealth`)
 
-Hourly credential-health sweep over both model-account pools, DMing whoever
-can fix a rotting credential before a run dies on it. Needs the Slack
-integration. Documented with the pools it watches —
-[engines.md](engines.md#usage-visibility--account-health).
+This monitor starts on every non-development boot, runs first after 10 minutes,
+then hourly. It checks both model-account pools and the configured GitHub App
+credential, and attempts to refresh idle Codex tokens before alerting. Standing
+issues re-alert daily; state is stored in
+`~/.opensession/account-health.json` on fresh installs.
+
+Delivery requires a working `SLACK_BOT_TOKEN` and resolvable teammates in the
+identity configuration. Personal Claude-account alerts go to that account's
+`owner`. Pool-wide, Codex, and GitHub App alerts go to
+`integrations.accountHealth.notifyUser`, falling back to the first configured
+team member. Restart after changing that setting. The model-account pools are
+documented in [engines.md](engines.md#configure-model-access).

@@ -2,13 +2,15 @@
 
 Keyless regression fixtures for the run pipeline. A scenario drives a scripted
 session through the real pipeline (`run-session` → `agent-runner` → the event
-loop → the transcript store) with a fake engine at the seam, then freezes two
-things as JSON:
+loop → the transcript store) with a fake engine at the seam, then freezes these
+normalized JSON views:
 
-- **what the run wrote**: the unified transcript entries in the owned store;
-- **what the run sent**: the prompt bodies and config the engine received, plus
-  the MCP servers and tool strips the pi adapter's own policy resolves
-  from them.
+- **what the run wrote**: selected fields from the last 200 unified transcript
+  entries in the owned store;
+- **what the run sent**: selected engine-call options, including the prompt,
+  session note, MCP scope and tool-policy inputs;
+- **what policy resolves**: the filtered MCP configuration and stripped tool
+  ids produced from those options by production policy helpers.
 
 No API key, no network, no engine subprocess. The point is that the highest
 risk plumbing (context fencing, MCP filtering, engine handoff notes, memory
@@ -19,21 +21,25 @@ Contributor doc. Nothing here is operator configuration.
 
 ## Running
 
+From the repository root:
+
 ```sh
-bun run test:snapshots                                             # compare
-OPENSESSION_SNAPSHOT=record bun test packages/core/opensession-server/src/server/zz-snapshot-runs.test.ts   # re-record
+bun run test:snapshots                              # compare
+OPENSESSION_SNAPSHOT=record bun run test:snapshots # re-record
 ```
 
-Run the file **directly**. Like `zz-fake-run.test.ts`, it redirects module
-state (sessions dir, transcript store, MCP config, memory store) that an
-earlier file in a full `bun test` may already have frozen; when that happens
-the harness says so and every scenario skips rather than snapshotting this
-machine's real sessions, memories and MCP servers.
+Run the file **directly**, through the command above. Like
+`zz-fake-run.test.ts`, it redirects instance state, the sessions directory,
+transcript store, run journal, engine-session map, MCP config and memory store.
+An earlier file in a full `bun test` may already have frozen shared module
+state; when the harness detects that, every scenario skips rather than touching
+this machine's real data.
 
 That skip is why the suite has its own command and its own CI step: inside the
 sweep these scenarios protect nothing. The script sets
 `OPENSESSION_SNAPSHOT_STRICT=1`, which turns an unready harness into a failure
-rather than a silent pass, so the step cannot go green by skipping everything.
+rather than a silent pass. Use the same script when recording so an unready
+harness cannot leave the fixtures unchanged and report success.
 
 Fixtures live in `packages/core/opensession-server/src/server/testing/snapshots/`.
 
@@ -41,11 +47,11 @@ Fixtures live in `packages/core/opensession-server/src/server/testing/snapshots/
 
 | Fixture | What it pins |
 | --- | --- |
-| `plain-turn-context-fencing` | A teammate's prompt with a sibling session attached as context. The store keeps the human's message; the model gets the `<opensession:context>` block and the `[Name]` attribution. |
-| `mcp-allowlist-filtering` | An automation-owned session prompted by a human. The allowlist drops one server, the per-user `allowedUsers` gate drops another, and the automation's denied tools are stripped from the model's tool list. |
-| `session-stamped-mcp-allowlist` | An ordinary session created with a picked set of servers. The stamp on the session file survives the read back, so the scope holds on every turn and not just the first. |
-| `engine-switch-handoff` | Two turns with a model change in between. Turn two starts a fresh engine session and carries the handoff note built from the stored transcript. |
-| `memory-scope-injection` | Repo, user and team memory rendered into the run's session note, and logged into the transcript as a context-injection entry. |
+| `plain-turn-context-fencing` | A teammate's prompt with a sibling session attached as context. The visible prompt and transcript keep the human's message; the model gets an `<opensession:context>` attachment block and the `[Name]` attribution. |
+| `mcp-allowlist-filtering` | An automation-owned session prompted by a human. The allowlist drops one server, the `allowedUsers` gate drops another, and the automation's denied tools are stripped from the projected tool list. |
+| `session-stamped-mcp-allowlist` | An ordinary session whose file contains a picked server set. Reading the session back preserves that scope for the turn. |
+| `engine-switch-handoff` | Two turns with a model/provider change between them. Turn two carries the handoff note built from stored history and supplies prior entries for transcript seeding. |
+| `memory-scope-injection` | Query-matched repo and team/workspace memories injected as fenced turn context and logged as a context-injection entry. The seeded but unrelated user preference is intentionally not retrieved. |
 
 ## When a change requires re-recording
 
@@ -59,18 +65,20 @@ transcript holds, and the diff shows exactly that intent and nothing else:
 - a deliberate change to what the session note carries;
 - a new transcript entry kind, or a changed entry shape;
 - a tool added to (or removed from) a deny/confirm list;
-- a new field on the recorded engine options.
+- a field deliberately added to or changed in `engineCallView` or
+  `enginePolicyView`.
 
 **Do not re-record; you found a bug.** The diff shows something the change was
 not about:
 
-- injected context appearing in `transcript` (the fence stopped hiding it) or
-  disappearing from `injectedContext` (the model stopped getting it);
-- `mountedMcpServers` gaining a server (a filter stopped filtering) or the
-  `unattended` flag flipping to false on an automation-owned run;
+- injected context appearing in `prompt.visible` or a visible user entry, or
+  disappearing from `prompt.injectedContext` or its tagged
+  `context-injection` transcript entry;
+- projected `mountedMcpServers` gaining a server (a filter stopped filtering)
+  or the `unattended` flag flipping to false on an automation-owned run;
 - `strippedTools` losing an entry, especially a money-moving one;
-- `resumesEngineSession` becoming true across an engine switch, or the handoff
-  note going missing;
+- an engine-switch handoff going missing or its prior-entry seed unexpectedly
+  becoming empty;
 - entries changing `seq` order, or one entry's content replacing another's
   (an id collision upserting the wrong row).
 
@@ -79,13 +87,16 @@ before you commit it. A fixture whose diff nobody read is worth nothing.
 
 ## Adding a scenario
 
-1. Add a `test(...)` to `packages/core/opensession-server/src/server/zz-snapshot-runs.test.ts`. Start it with
-   `if (!h.ready) return;` so it skips with the rest when module state is warm.
+1. Add a `test(...)` to
+   `packages/core/opensession-server/src/server/zz-snapshot-runs.test.ts`. Start
+   it with `if (!h.ready) return;` so it skips with the rest when module state
+   is warm.
 2. Build the session with `h.writeSession(id, {...})`. Prefer `mode: "scratch"`
-   plus an explicit `repo` id: a scratch session's working directory is created
-   under the harness temp dir, and an explicit repo id keeps the memory scopes
-   off whatever repo this machine calls its default. Do not set `worktreeDir`
-   to a path no registered repo owns; the repos note throws on it.
+   plus an explicit `repo` id: the scratch working directory is created under
+   the harness's temporary state directory, and the repo id keeps memory scope
+   selection independent of the machine's default repo. An explicit
+   `worktreeDir` is normally unnecessary; repo-aware notes can reject a path
+   that no registered repo owns.
 3. Drive turns with `h.prompt({ sessionId, content, user, turns, collect })`.
    `turns` is the fake engine's script (see `testing/fake-engine.ts`): text,
    tool calls, errors, usage exhaustion, and the `provider` a turn claims.
@@ -99,38 +110,41 @@ Useful helpers on the harness:
 
 - `h.patchSession(id, {...})` merges fields into an existing session file,
   which is how a scenario models a mid-session model or engine change.
-- `h.writeEngineTranscript(engineSessionId, lines)` gives a sibling session a
-  transcript file. A session's `transcriptPath` is derived, never read off its
-  file, so this is the way to get a session with history.
+- `h.writeEngineTranscript(engineSessionId, lines)` requires an existing
+  session that owns that engine id. It parses legacy JSONL-shaped lines,
+  imports them into the owned transcript store and records the engine-to-session
+  mapping. It does not create an engine-native transcript file or populate
+  `session.transcriptPath`; code paths that read such a file will still see no
+  native history.
 - `h.withMemory({ scope: entries }, fn)` runs `fn` against its own memory
   store, so a memory scenario cannot leak into another one.
 
 ## What is real and what is projected
 
-Everything up to the engine seam is production code: the prompt assembly, the
-context fences, the session note, the queue and run-state machinery, and the
-transcript writes.
+Everything up to the engine seam is production code: prompt assembly, context
+fences, the session note, queue and run-state machinery, and pipeline transcript
+writes.
 
-Two deliberate exceptions, both because the pi adapter spawns
-the Pi runtime and cannot run hermetically:
+Two deliberate exceptions, both because the Pi adapter loads the model runtime
+and cannot run hermetically:
 
-1. **The MCP mount and tool strip are projected, not observed.**
-   `enginePolicyView` (`testing/snapshot-views.ts`) calls the adapter's own
-   policy functions from `run-policy.ts` (`piGateReason`,
-   `runGateReason`, `filterMcpServers`, and `runToolPolicy`) on
-   the recorded options, with the same arguments Pi dispatch passes them. The
-   decision is real production code; only the caller is the harness. If that
-   call site in `pi-runner.ts` changes, change this one with it.
+1. **MCP filtering and tool stripping are projected, not observed.**
+   `enginePolicyView` (`testing/snapshot-views.ts`) calls `runGateReason` and
+   `runToolPolicy` from `run-policy.ts` and `filterMcpServers` from
+   `runner-shared.ts` using the recorded options. This exercises production
+   policy functions, but it does not start `pi-mcp-bridge`, connect to servers,
+   discover their tool catalogs or prove that a server mounted successfully.
+   Keep the projection aligned with the adapter's call sites when those change.
 
 2. **The fake engine persists its own turn.** Writing assistant text and tool
    calls into the store is the engine adapter's job, not `run-session`'s, which
-   only broadcasts those events. So the fake engine does it too, through the
-   same `appendTranscriptEntries` path and the same `transcriptLine*` builders
-   the pi adapter uses. The adapter's streaming bookkeeping (rewrites of
-   a part mid-stream, compaction, blob splitting of oversized entries) is
-   outside the harness.
+   only broadcasts those events. The fake engine therefore uses
+   `appendTranscriptEntries` and the same `transcriptLine*` builders as the Pi
+   adapter. Adapter-specific SDK events, streaming behavior, compaction and MCP
+   bridge behavior remain outside the harness.
 
-Volatile values are scrubbed by `Normalizer` in `testing/snapshot.ts`:
-timestamps, uuids, engine session ids, loopback ports, and the harness temp
-paths. If a fixture ever shows a value from the machine that recorded it, add
-the pattern there rather than editing the fixture.
+`Normalizer` in `testing/snapshot.ts` removes volatile timestamp/identity fields
+and scrubs timestamps, selected session ids, loopback ports, and registered
+checkout, home and harness paths. If a fixture ever shows a value from the
+machine that recorded it, add the pattern there rather than editing the
+fixture.

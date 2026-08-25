@@ -1,8 +1,14 @@
 # Screenshots
 
-All shot from a demo instance (`OPENSESSION_DEV=1 OPENSESSION_DEMO=1`), so
-everything in frame is synthetic: fictional teammates, a fictional `acme-todo`
-repo, a fictional PR #128.
+All were captured from an isolated demo instance. Start one with
+`WEBAPP_PORT=3900 ./.agents/start.sh`; the script sets `OPENSESSION_DEV=1`,
+`OPENSESSION_DEMO=1` and an isolated `OPENSESSION_STATE_DIR`. Everything in
+frame is synthetic: fictional teammates, a fictional `acme-todo` repo and a
+fictional PR #128.
+
+**Naming note:** These captures predate the **Home** to **Pull requests** and
+**Create workspace** to **New session** renames. The current interface uses the
+latter names.
 
 ## A session, mid-run
 
@@ -21,8 +27,9 @@ own answer, and the turn continues.
 
 ## The work it produced
 
-Every session carries its branch, its git status and its PR — merge state,
-checks and changed files, without leaving the session.
+Repository-backed code sessions show their branch and working-tree status.
+When a PR exists, the session also shows its merge state, checks and changed
+files without leaving the session.
 
 ![](screenshots/session-pr.png)
 
@@ -39,10 +46,11 @@ with line comments batched into one review.
 
 ![](screenshots/pr-review.png)
 
-## Home
+## Pull requests
 
-Open pull requests across your repos, with the workspace sidebar's lanes —
-needs input, in progress, ready to merge, backlog.
+Pull requests across your repos, with search and filters for person, workspace
+and repo. The sidebar groups work into needs input, in progress, ready to merge,
+backlog and done.
 
 ![](screenshots/home.png)
 

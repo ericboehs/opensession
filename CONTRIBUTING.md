@@ -1,8 +1,10 @@
 # Contributing
 
-Thanks for looking. Open Session is a self-hosted agent-infrastructure server —
-one Bun process serving a web UI, a set of integrations, and the machinery that
-runs agent sessions in git worktrees.
+Thanks for looking. Open Session is a self-hosted agent-infrastructure system.
+A Bun gateway serves the web UI and integrations, while an independently
+supervised session-kernel service owns session state. System-scope Linux installs
+also use a separate executor service. Agent turns run in detached hosts against
+worktrees or sandboxes.
 
 ## How contributions work
 
@@ -39,8 +41,12 @@ git clone https://github.com/tellahq/opensession.git
 cd opensession
 bun install
 bun run setup          # writes ~/.opensession/config.json and ~/.opensession.env
-bun run packages/core/opensession-server/opensession.ts # or: opensession start --foreground
 ```
+
+`bun run setup` offers to install and start the service. If you accept, open the
+URL it prints. If you decline, run `bun run opensession start --foreground`.
+Do not invoke `opensession.ts` directly unless you separately start and configure
+the session-kernel service.
 
 You need [Bun](https://bun.sh) and `git`. Everything else is optional until you
 touch the feature that needs it — `gh` for pull-request work, the bundled Pi runtime for agent turns, and Docker
@@ -53,29 +59,37 @@ anywhere but loopback.
 ## Verifying your changes
 
 ```sh
-bun run typecheck      # must be clean
-bun run test           # must be green
+bun run typecheck
+bun run lint
+bun run test
 bun run test:snapshots # the run-pipeline fixtures, which only work run alone
 ```
 
-`bun run test` is `bun test packages/core/opensession-server/src scripts`, which is where every server-side test
-lives.
+`bun run test` is the broad `opensession-server/src` and `scripts` sweep. It is
+currently order-dependent, so CI reports it with `continue-on-error` rather than
+treating green as a reliable gate. Run focused tests for the area changed.
+Deployment tests live under `deploy/`, and shared protocol tests under
+`packages/core/protocol/src/`.
 
 The snapshot suite needs its own command because it redirects module state that
 an earlier file in a sweep may already have frozen, in which case it skips
 itself. See [transcript snapshots](docs/transcript-snapshots.md).
 
-CI runs all of these, plus an end-to-end install on Linux and macOS. If you
-touched `install.sh`, the CLI or the service definitions, that installer job is
-the one that matters — it catches the things unit tests cannot, like a `PATH`
-that works interactively and not from a script.
+CI gates type-checking, lint, the focused session-ownership and executor suite in
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml), transcript snapshots,
+Linux and macOS installer jobs, and Windows runner checks. If you touched
+`install.sh`, the CLI or the service definitions, the installer jobs matter:
+they catch things unit tests cannot, like a `PATH` that works interactively and
+not from a script.
 
 ## Things that will surprise you
 
 **Backend changes need a real restart.** The in-process watcher rebuilds the
-frontend live, but nothing reloads the server. `opensession restart` (or
-`systemctl restart opensession`) after a backend edit — and once, not after
-every save.
+frontend live, but nothing reloads the server. Gateway or session-kernel changes
+need `opensession restart`; a bare `systemctl restart opensession` does not
+restart the kernel. Executor changes on a system-scope Linux install need
+`sudo systemctl restart opensession-executor`. If running in the foreground,
+stop and relaunch `bun run opensession start --foreground`.
 
 **`bun --hot` is deliberately not used in production.** On Bun 1.3.14 a failed
 reload can permanently stop timer delivery while HTTP keeps serving, which
@@ -83,7 +97,7 @@ looks like "sessions are running but never progress".
 
 **Integrations are declared, not hand-wired.** Adding one means appending an
 entry to `packages/core/opensession-server/src/server/integrations/registry.ts` — config key, env flag,
-credentials, constructor. `loadAgents()` is a loop over that array; you should
+credentials, constructor. `loadIntegrations()` loops over that array; you should
 not need to touch `opensession.ts`. The array order is boot order, because
 agents register webhook routes in sequence.
 
@@ -112,8 +126,14 @@ Agent runs process untrusted text — customer tickets, pull-request diffs, issu
 bodies. The rule is that constraints are enforced at the tool and environment
 layer, never in a prompt:
 
-- automation runs get a minimal environment with none of your tokens
-- each automation carries an MCP-server allowlist
+- automation local tools receive a minimal, explicitly constructed environment;
+  they do not inherit the full server environment or `~/.opensession.env`.
+  Eligible runs may receive repository-scoped GitHub credentials for trusted
+  GitHub code workflows, short-lived AWS credentials for host automations, or
+  operator-enabled Claude or Codex CLI credentials
+- automations may define an `mcpServers` allowlist. Sandbox automations require
+  an explicit list, including `[]` for none. An omitted list on a host
+  automation exposes all configured MCP servers, so set it for least privilege
 - customer-facing and identity-mutating tools are hard-denied for unattended runs
 - money-moving tools are stripped from the model's tool list entirely
 

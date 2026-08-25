@@ -1,188 +1,211 @@
 # Slack
 
-The Slack agent (`packages/core/opensession-server/src/agents/slack/`) is the main chat surface: DMs and
-@-mentions become agent runs, worktree channels drive coding sessions, and
-watched channels fire automations.
+The Slack agent lives in
+`packages/core/opensession-server/src/agents/slack/`. It turns DMs and
+@-mentions into agent runs, keeps worktree-channel sessions, handles Block Kit
+actions and link unfurls, and supplies watched-channel events to automations.
 
-## Creating the app (manifest)
+## Current transport support
 
-Don't tick scopes by hand. **Settings → Setup → Slack** generates an
-app manifest from this instance's own configuration and opens Slack's
-"Create new app → From a manifest" flow with it pre-loaded
-(`src/frontend/lib/slack-manifest.ts`). The manifest carries the bot scopes,
-the bot event subscriptions, interactivity, the public UI domain for session-link
-unfurls, and — for the HTTP transport — the two request URLs derived from the
-instance's webhook base.
+The running server currently supports **HTTP Events API intake only**.
+`SlackAgent.getRoutes()` always registers `/slack/events` and `/slack/actions`,
+and its health response always reports `transport: "http"`. There is no Socket
+Mode client in the server.
 
-Pick the transport in that dialog before creating the app: **Socket Mode**
-emits `socket_mode_enabled: true` and no request URLs, **HTTP** emits
-both `/slack/events` and `/slack/actions`. The JSON is also copyable, for
-pasting into an existing app under **App Manifest**.
+The setup UI and manifest generator currently expose a Socket Mode choice and
+accept `SLACK_APP_TOKEN`, but the runtime never reads that token. Do not select
+Socket Mode or rely on an `xapp-…` token. Configure public ingress, select
+**HTTP**, and set `SLACK_SIGNING_SECRET`. An app token does not make the signing
+secret optional and does not remove the HTTP routes.
 
-A manifest cannot carry credentials. After creating and installing the app you
-still paste the bot token (and either the app-level token or the signing
-secret) into the setup dialog by hand.
+## Set up the app
 
-## Tokens and env vars
+1. Configure an HTTPS origin under **Settings → Public ingress**. It must route
+   to the fail-closed gateway on `127.0.0.1:3860`; see
+   [Public ingress](install.md#public-ingress).
+2. Open **Settings → Integrations → Slack → Set up**, select **HTTP**, and click
+   **Create Slack app**. The generated manifest comes from
+   `src/frontend/lib/slack-manifest.ts` and includes the bot scopes, bot event
+   subscriptions, interactivity, the two request URLs, the assistant surface,
+   and the public UI hostname used for session-link unfurls. The JSON is also
+   copyable for Slack's **App Manifest** page.
+3. Create the app from that manifest and install it to the workspace.
+4. Copy the `xoxb-…` bot token from **OAuth & Permissions** and the signing
+   secret from **Basic Information** into the Open Session dialog. Set
+   `ALLOWED_SLACK_USER_ID` to the trusted operator's Slack member ID.
+5. Enable Slack, save, and restart Open Session. Saving writes credentials and
+   the explicit enable flag to `~/.opensession.env`; the loaded module and its
+   process-level credentials change only after restart.
+6. Invite the bot to every existing channel whose history it should read. Then
+   test a DM, an @-mention, and a Block Kit action.
 
-Outbound Web API calls always use the **bot token** (`xoxb-…`). Event intake
-runs one of two transports: Socket Mode (an outbound WebSocket, no inbound
-exposure) when an **app-level token** (`xapp-…`) is set, otherwise the HTTP
-Events API guarded by the **signing secret**. See
-[Event intake](#event-intake-socket-mode-or-http) below.
+A manifest cannot contain credentials. For a manually managed installation,
+put the same values in `~/.opensession.env`, set
+`ENABLE_SLACK_AGENT=true`, and run `opensession restart`. Alternatively,
+`integrations.slack.enabled: true` in `~/.opensession/config.json` enables the
+agent only when `ENABLE_SLACK_AGENT` is absent. If the env flag exists, only the
+literal value `true` enables it; see
+[integration boot guards](integrations-misc.md#boot-guards).
 
-| Var | Required | Notes |
+## Environment variables
+
+| Variable | Required | Purpose |
 | --- | --- | --- |
-| `SLACK_BOT_TOKEN` | yes | `xoxb-…`; used as Bearer for every Web API call (`packages/core/opensession-server/src/agents/slack/slack-api.ts`). Missing → the agent loads and every Slack call fails with logged auth warnings (no crash) |
-| `SLACK_APP_TOKEN` | for Socket Mode | `xapp-…` app-level token with `connections:write`. When set, the agent runs Socket Mode (`packages/core/opensession-server/src/agents/slack/socket-mode.ts`) and registers no `/slack/events` or `/slack/actions` HTTP routes. Leave unset to keep the HTTP transport |
-| `SLACK_SIGNING_SECRET` | HTTP transport only | HMAC verification of `/slack/events` and `/slack/actions`; missing → real Slack requests fail verification → 401, so HTTP event intake is dead. Unused (and not needed) in Socket Mode |
-| `ALLOWED_SLACK_USER_ID` | recommended | admin gating, see below. **Unset = everyone is admin** (fail-open) |
-| `WORKTREE_HOOK_SECRET` | for `/worktree/*` hooks | shared secret; fail-closed (empty → all worktree-hook requests rejected) |
-| `SLACK_MENTION_INTENT_MODEL` | no | mention intent-router model, default `claude-haiku-4-5` |
-| `SCHEDULE_WHEN_MODEL` | no | natural-language schedule parsing, default `claude-haiku-4-5` |
+| `ENABLE_SLACK_AGENT` | to enable by environment | Only the literal `true` enables Slack. When absent, `integrations.slack.enabled` decides |
+| `SLACK_BOT_TOKEN` | yes | Bot user token (`xoxb-…`) for the agent's Slack Web API calls. Missing or invalid credentials produce warnings and failed Slack operations rather than stopping the server |
+| `SLACK_SIGNING_SECRET` | yes | Verifies both HTTP endpoints. Missing or invalid signatures fail closed with 401; request timestamps must be within five minutes |
+| `ALLOWED_SLACK_USER_ID` | strongly recommended | Restricts ordinary DMs and mentions and sets the `isAdmin` gate for admin, session-control and human-ask tools. Unset means every sender admitted by routing is an admin |
+| `WORKTREE_HOOK_SECRET` | only for worktree hooks | Value callers send as `x-worktree-secret` to the two `/worktree/*` routes. Missing means every hook request is rejected with 403 |
+| `SLACK_MENTION_INTENT_MODEL` | no | Mention intent classifier; default `claude-haiku-4-5` |
+| `SCHEDULE_WHEN_MODEL` | no | Natural-language parser used by one-off scheduling tools; default `claude-haiku-4-5` |
+| `SLACK_APP_TOKEN` | do not use | Declared by the setup registry but not consumed by the runtime; it does not enable Socket Mode |
 
-The agent is off unless enabled: `integrations.slack.enabled: true` in
-`~/.opensession/config.json`, or the `ENABLE_SLACK_AGENT` env flag (which
-wins when set — see
-[integrations-misc.md](integrations-misc.md#boot-guards)).
+The setup dialog manages the bot token, signing secret, allowed user and
+worktree-hook secret. It does not expose the two model overrides. Set those
+directly in `~/.opensession.env` and restart.
 
-## Event intake: Socket Mode or HTTP
+## HTTP intake and routes
 
-The agent picks its transport from configuration. Both feed the same shared
-dispatch (`dispatchSlackEvent` / `dispatchSlackInteractive` in
-`agents/slack/index.ts`), so the two paths behave identically once a payload
-arrives. The event subscriptions the code consumes are the same either way:
-`message.im` (DMs), `app_mention`, `link_shared` (session-link unfurls), and
-plain `message` events in channels (for session-linked mirroring and
-watched-channel automations).
+With the Slack integration enabled, its exact routes are registered on public
+ingress:
 
-### Socket Mode (recommended for simple installs)
+- `POST /slack/events`: Events API callbacks and Slack's `url_verification`
+  challenge.
+- `POST /slack/actions`: Block Kit actions and modal submissions.
+- `POST /worktree/create-channel` and `POST /worktree/archive-channel`: shared-
+  secret worktree-channel hooks.
+- `POST /github/webhook`: a compatibility fallback only when the separate
+  GitHub integration is disabled. When GitHub is enabled it owns this route;
+  see [GitHub](github.md).
 
-Set `SLACK_APP_TOKEN` and the agent opens an outbound WebSocket to Slack
-(`apps.connections.open` → dial the returned `wss://` URL). Slack pushes the
-same Events API and interactivity payloads down that socket, wrapped in
-envelopes. This needs **no inbound internet exposure**: no public URL, no
-reverse proxy, no signing secret. Every envelope that carries an `envelope_id`
-is acked immediately (before the work) so Slack does not retry; Slack rotates
-the socket roughly hourly and redelivers on reconnect, so nothing is buffered.
+`/slack/events` and `/slack/actions` verify Slack's v0 HMAC over the exact body.
+Slack request bodies are capped at 1 MiB; worktree-hook bodies at 64 KiB.
+DM, mention, watched-channel and unfurl event IDs are persisted for a
+five-minute deduplication window. DM and mention handlers enqueue work
+asynchronously after dispatch; interactive actions are dispatched before their
+200 response.
 
-To set it up in your Slack app:
+The generated manifest subscribes to:
 
-1. **Socket Mode** → toggle **Enable Socket Mode** on.
-2. **Basic Information** → **App-Level Tokens** → **Generate Token and Scopes**,
-   add the `connections:write` scope, and copy the `xapp-…` token into
-   `SLACK_APP_TOKEN`.
-3. Under **Event Subscriptions** and **Interactivity & Shortcuts**, keep the
-   same subscriptions and enable interactivity, but you can leave the Request
-   URLs blank. Socket Mode delivers both.
+- `app_mention`
+- `assistant_thread_started`
+- `link_shared`
+- `message.channels`, `message.groups`, `message.im`, and `message.mpim`
 
-With `SLACK_APP_TOKEN` present the agent registers no `/slack/events` or
-`/slack/actions` HTTP routes at all.
+Plain channel messages are used for watched-channel automations. They do not
+mirror every message from a channel into an Open Session session.
 
-### HTTP Events API
+## Bot scopes
 
-Leave `SLACK_APP_TOKEN` unset and the agent registers routes on the
-[public ingress gateway](install.md#public-ingress) (`127.0.0.1:3860`
-behind Funnel, Cloudflare Tunnel, or Caddy):
+The generated manifest currently grants these bot scopes:
 
-- `POST /slack/events` — Events API callbacks (handles Slack's
-  `url_verification` challenge)
-- `POST /slack/actions` — Block Kit interactivity
-- `POST /worktree/create-channel`, `POST /worktree/archive-channel`
-- `POST /github/webhook` only when GitHub is disabled. This is a compatibility
-  fallback using GitHub's shared handler; when GitHub is enabled, GitHub owns
-  the route (see [github.md](github.md)).
+- Writing: `chat:write`, `chat:write.customize`, `files:write`,
+  `reactions:write`, `assistant:write`
+- History: `channels:history`, `groups:history`, `im:history`, `mpim:history`
+- Events, links, and emoji: `app_mentions:read`, `links:read`, `links:write`,
+  `emoji:read`
+- Channels and people: `channels:read`, `groups:read`, `im:read`,
+  `channels:manage`, `groups:write`, `channels:join`, `im:write`, `users:read`
 
-Point your Slack app's Event Subscriptions and Interactivity request URLs at
-the first two, and set `SLACK_SIGNING_SECRET`. Events are acked 200 immediately
-and handled async, with persisted dedup so Slack retries don't double-run. The
-`/github/webhook` and `/worktree/*` routes are registered under both transports.
+These cover posting and updating messages, assistant streaming and status,
+reactions, session-link unfurls, response-media uploads, channel management,
+history and user lookup. The bot must be a channel member to read that
+channel's history. Open Session joins channels it creates or manages; invite it
+to pre-existing channels yourself.
 
-## OAuth scopes
+Slack responses can upload at most 10 files, each no larger than 20 MiB.
+Inbound prompt image handling inlines at most six images and skips an image
+over 4 MiB; non-image attachments are listed to the agent but not inlined.
 
-Derived from the Web API methods the code actually calls
-(`slack-api.ts`, `worktree-channels.ts`, `github-reviews.ts`, `index.ts`,
-`streamer.ts`): `auth.test`, `chat.postMessage`, `chat.update`,
-`chat.startStream`/`appendStream`/`stopStream`,
-`assistant.threads.setStatus`/`setSuggestedPrompts`, `reactions.add`/
-`remove`, `conversations.history`/`replies`/`info`/`open`/`list`/`create`/
-`archive`/`setTopic`/`join`/`invite`, `users.info`, `views.open`.
+## Who can drive it
 
-Bot token scopes to grant:
-
-- `chat:write`, `chat:write.customize`
-- `files:write` (merged visual-change screenshots)
-- `reactions:write`
-- `app_mentions:read`
-- `links:read`, `links:write` (session-link unfurls)
-- `emoji:read` (custom workspace emoji)
-- `channels:history`, `groups:history`, `im:history`, `mpim:history`
-- `channels:read`, `groups:read`, `im:read`
-- `channels:manage`, `groups:write` (create/archive/topic/invite worktree
-  channels), `channels:join`
-- `im:write`
-- `users:read`
-- `assistant:write` (assistant threads + streaming)
-
-The bot must be a member of a channel to read its history and to share files;
-the code calls `conversations.join` for channels it manages, but invite it to
-any pre-existing channel you want it to read or post shipped changes into.
-
-Socket Mode adds one method, `apps.connections.open`, called with the
-app-level token rather than the bot token. Its scope, `connections:write`, is
-granted on the app-level token itself (Basic Information → App-Level Tokens),
-not in the bot scope list above.
-
-## Who can drive it (`ALLOWED_SLACK_USER_ID`)
-
+`ALLOWED_SLACK_USER_ID` is checked in
 `packages/core/opensession-server/src/agents/slack/handlers.ts`:
 
-- DMs and mentions are ignored unless the sender matches
-  `ALLOWED_SLACK_USER_ID` — **except** mentions in worktree channels or
-  channels linked to an Open Session session, where the whole team can drive.
+- Ordinary DMs and ordinary channel mentions are ignored when the sender does
+  not match the configured ID.
+- A mention in a managed worktree channel may come from any channel member.
+- A mention, or a DM reply, in a thread already linked to an Open Session
+  session steers that session. An exact teammate reply to a pending human ask
+  is also accepted. These narrow reply paths run before the ordinary allowlist.
 - `isAdmin = !ALLOWED_SLACK_USER_ID || sender === ALLOWED_SLACK_USER_ID`.
-  Admin unlocks the mutating tools of the in-process MCP servers
-  (`opensession-admin` self-management, session control, goals, human-asks);
-  non-admins keep the read-only subsets.
-- Leaving it unset makes every workspace member an admin. Set it.
+  Admin access unlocks automation and MCP-connection changes, session-control
+  mutations, and creating or cancelling teammate asks. A non-admin whose
+  message reached a bypass path keeps memory, read-only session and human-ask
+  subsets, the current-user question handler, and the Slack-loop GitHub PR
+  action tools.
+
+External MCP servers still apply their own `allowedUsers` gate at the runner
+layer. Configure `identity.team` with each member's `slackId` so Slack senders
+resolve to the same people used for commit attribution and connector access.
 
 ## What triggers what
 
-- **DM** → conversational agent run.
-- **@-mention** → intent-classified (haiku): PR action, read-only "ask" in
-  thread, or "code" (new worktree + dedicated channel).
-- **Message in a session-linked channel** → mirrored into the session's chat
-  panel; an @-mention there steers the linked session.
-- **Top-level message in a watched channel** → fires channel-watch
-  automations (thread replies and bot posts don't).
+- A new top-level **DM** starts a code-mode Slack session using the default
+  repository's configured checkout policy; replies in that DM thread continue
+  it.
+- A regular-channel **@-mention** is classified as a dedicated PR action, an
+  ask in the selected repository without a new worktree, or a code task using
+  that repository's configured checkout policy.
+- A **worktree-channel @-mention** drives the one session associated with that
+  channel, across its Slack threads.
+- A mention or DM reply in a **session-linked Slack thread** is queued into the
+  linked Open Session session and replies back into that thread. A reply
+  beginning with `retrigger` reruns the linked automation when applicable.
+- A **top-level message in a watched channel** fires matching channel-watch
+  automations. Thread replies, bot messages, and messages that mention the bot
+  do not fire that watch path.
+- A **shared Open Session link** for the configured UI hostname is unfurled with
+  in-process session data.
+- `assistant_thread_started` sets the suggested prompts for Slack's assistant
+  surface.
 
 ## Channel memory
 
-`packages/core/opensession-server/src/agents/slack/memory.ts`, stored under
-`~/.opensession-memory/`, one JSON file per scope,
-injected into the system prompt each run and edited via the admin
-`remember`/`list_memory`/`forget` tools:
+Slack-loop memory is scoped like Slack visibility and injected into each run:
 
-- public channel → shared `workspace.json`
-- private channel → isolated `channel-<id>.json` + read-only workspace view
-- DM → isolated `user-<id>.json` + read-only workspace view
+- public channel: shared `workspace` scope
+- private channel: writable `channel-<id>` scope plus read-only workspace scope
+- DM: writable `user-<id>` scope plus read-only workspace scope
 
-## Channel IDs
+The `remember`, `list_memory`, and `forget` tools manage those scopes. Memory
+v2 is the default and stores records in
+`~/.opensession/memory/memory-v2.sqlite` (or `OPENSESSION_MEMORY_DB`). Legacy
+and shadow modes, selected with `OPENSESSION_MEMORY_MODE=legacy|shadow`, use
+one JSON file per scope in `~/.opensession/memory/`. Existing
+`~/.opensession-memory/` state remains the fallback when the grouped directory
+does not exist.
 
-No channel or user id is compiled in. Everything that posts to Slack resolves
-its destination from config, and an unset channel means that particular
-message is skipped rather than misdelivered:
+## Channel and identity configuration
+
+No destination channel or user is compiled into the agent. Optional destinations
+and display metadata live in `~/.opensession/config.json`:
 
 | Setting | Used for |
 | --- | --- |
-| `integrations.slack.workspaceId` | building `app.slack.com` deep links in session labels |
-| `integrations.slack.channelNames` | channel-id→name map for rendering transcripts |
-| `integrations.github.docsSyncChannel` | where docs-sync announces its PRs |
-| `integrations.github.shippedChangesChannel` | where merged visual changes are shared with their walkthrough screenshot |
-| `grafanaPoll.slackChannel` (per-automation poll config) | Grafana-poller failure cards ([integrations-misc.md](integrations-misc.md#grafana-poller)) |
+| `integrations.slack.workspaceId` | Building `app.slack.com` deep links when Slack channel references are rendered in transcripts |
+| `integrations.slack.channelNames` | Mapping `C…` channel IDs to names in transcripts and providing the configured Slack-channel list for feed and composer UI |
+| `integrations.github.docsSyncChannel` | Channel scanned after a docs-sync PR merges so Open Session can find its existing bot announcement and add a check reaction; this setting does not post the announcement |
+| `integrations.github.shippedChangesChannel` | Default channel for sharing merged visual changes; it must also appear in `integrations.slack.channelNames` |
+| `grafanaPoll.slackChannel` | Destination on each Grafana-poll automation; see [Grafana poller](integrations-misc.md#grafana-poller) |
 
-Identity mapping (Slack id → person, for attribution and per-user MCP
-gating) is **not** hardcoded: it derives from `identity.team` /
-`identity.slackNames` in `~/.opensession/config.json`
-([install.md](install.md#5-opensessionconfigjson)); with no configured team
-the mapping tables are empty and attribution/gating become no-ops.
+Slack IDs map to people through `identity.team[].slackId`; extra display-only
+mappings can go in `identity.slackNames`. Without a roster, only exact raw-ID
+fallbacks work; names, aliases, cross-provider identities, commit attribution
+and teammate resolution cannot identify Slack senders.
+
+## Separate Slack connections
+
+Two optional facilities are separate from inbound Slack-agent setup:
+
+- The repository's `scripts/mcp-slack.ts` is a direct Slack MCP server. When
+  you add it to `mcp-config.json`, its per-server environment requires
+  `SLACK_BOT_TOKEN` and `SLACK_TEAM_ID`; `SLACK_CHANNEL_IDS` optionally limits
+  channel listing to a comma-separated set. Apply normal MCP `allowedUsers`
+  gating.
+- Personal Slack grants let signed-in people read or post as themselves. Set
+  `SLACK_OAUTH_CLIENT_ID` and `SLACK_OAUTH_CLIENT_SECRET`, register
+  `<OPENSESSION_UI_BASE>/api/connections/mcp-oauth/callback` as the Slack OAuth
+  redirect, then connect under **Settings → Account** (personal) or
+  **Settings → Connections** (workspace grant). These variables are not needed
+  for the inbound bot agent.

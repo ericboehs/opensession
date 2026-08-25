@@ -13,9 +13,14 @@ Automation runs (especially event-triggered ones like support-ticket triage)
 process untrusted text — ticket content is data the agent reads, never
 configuration for the run.
 
-- Agent subprocesses get a minimal env (PATH, HOME, LANG, OPENSESSION_MODEL) —
-  no tokens from `~/.opensession.env`. MCP servers receive their own
-  credentials via mcp-config.json per-server `env` or load it themselves.
+- Runner local tools receive an explicit, non-inherited environment. The base
+  includes PATH/HOME/LANG, scoped session scratch variables when available,
+  and Git identity. Eligible runs may additionally receive projected GitHub
+  authority, short-lived AWS credentials through a fixed credentials-file
+  pointer, or human-enabled Claude/Codex pool credentials. `OPENSESSION_MODEL`
+  is not added to Pi's local-tool environment. MCP subprocesses use safe SDK
+  defaults plus their configured headers/env or OAuth projection. Neither path
+  inherits the server's full environment or `~/.opensession.env`.
 - Each automation has an optional `mcpServers` allowlist (per-automation
   field, settable via the API); runs only see those servers. Example: a
   support-triage automation might name only its support-inbox, identity,
@@ -28,38 +33,46 @@ configuration for the run.
   reductions are not stored in the checkpoint. A Slack input never grants the
   primary model Slack tools; optional Slack output is likewise server-side,
   disabled independently, and derived from the final structured report.
-- Automation runs hard-deny *customer-facing and identity-mutating* tools
-  (enforced for direct runs and interactive resumes of automation sessions):
+- Automation runs hard-deny *customer-facing, identity-mutating, and incident.io
+  mutation* tools (enforced for direct runs and interactive resumes of
+  automation sessions):
   Plain thread writes (reply_to_thread, mark_thread_done/todo, snooze_thread)
   and the WorkOS write/destructive subset (create/delete/update user+org,
   revoke, invitations, password/verification emails, impersonation URLs).
-  Reads stay allowed; suggested customer replies go in an internal Plain note.
-  Linear (incl. issue creation) and Sentry are internal, so their writes are
-  allowed — that's the "spin off work" affordance.
+  incident.io is declare-and-read only: `incident_create` may create a triage
+  incident, while incident updates, follow-up writes, escalation responses,
+  alert attachment changes, investigation controls, extension writes, and
+  skill-feedback writes are stripped. Reads stay allowed; suggested customer
+  replies go in an internal Plain note. Linear (including issue creation) and
+  Sentry are internal, so their writes are allowed. That is the "spin off
+  work" affordance.
 - Automations run on Pi in detached run hosts. `runAutomation` maps every
   native or legacy Pi model id onto Pi at dispatch (`automationModel`;
   unset uses `DEFAULT_PI_AUTOMATION_MODEL` in automations.ts). Deny-sets are
   enforced before Pi registers MCP tools, and its guarded local tools keep
-  filesystem and environment access contained. opensession-admin,
-  opensession-sessions, and per-user (`allowedUsers`) servers stay out of
-  automation runs. Both engine run gates are
+  filesystem and environment access contained. `opensession-admin`, the
+  unrestricted `opensession-sessions`, and per-user (`allowedUsers`) servers
+  stay out of automation runs. The scoped automation-safe set is documented
+  below. Both engine run gates are
   deny-by-default on journal kind: interactive kinds
   (prompt/goal/create/linear/slack), unattended kinds
   (automation/plain/action/security-scan/github-*), everything else refused.
-- `mode` is per-automation: "ask" runs read-only on the main checkout (no
-  worktree, no Write/Edit); "code" gets an isolated worktree with Write/Edit
-  and can open PRs (never merge — PRs are the human gate). Code mode still
-  carries every other scoping (MCP allowlist, denied customer/identity
-  writes, IMDS blocked, minimal env) — only the worktree + write tools differ
-  from ask.
+- `mode` is per automation. Ask has guarded read/find/grep/ls/bash tools but
+  no Write/Edit. For an unsandboxed ordinary repository it uses a stable,
+  shared detached worktree pinned to `origin/<defaultBranch>`; only a
+  repository configured as a shared self-development checkout uses its live
+  checkout. Sandboxed ask runs use the sandbox workspace. Code gets an
+  isolated writable workspace/worktree and can edit and commit. Ordinary
+  automations currently receive no GitHub credential, so they cannot push or
+  open a GitHub PR; trusted `github-*` code workflows have a separate,
+  repository-scoped credential path. Every other scope still applies: MCP
+  allowlist, denied writes, IMDS blocking, and the explicit environment.
 - When adding an automation, scope it: pick ask mode unless it must write, and
   name only the MCP servers it uses.
-- The PR gate is only a gate if a human is asked. A code automation's
-  `prReviewer` (a GitHub login, `org/team` slug, or list) is requested as
-  reviewer on the PRs it opens; without one the PR reaches nobody's review
-  queue and the human gate degrades into an unread backlog. Set it on every
-  code automation — see
-  [Getting automation PRs reviewed](setup/github.md#getting-automation-prs-reviewed).
+- A code automation's `prReviewer` is preserved and added to its instructions,
+  but it grants no GitHub authority. It matters only when the run already has
+  an authorized publication path. See
+  [Automation PR credentials and review requests](setup/github.md#automation-pr-credentials-and-review-requests).
 
 ## Stripe: a third enforcement tier
 
@@ -70,51 +83,51 @@ stripe_api_write since they can hit any permitted endpoint — keep this list in
 sync with mcp.stripe.com's live catalog). Run the MCP on a restricted key
 (write on Refunds + Subscriptions + Invoices only — invoice voiding included;
 read on core billing resources, nothing else — Stripe enforces this ceiling
-server-side). On the pi engine there is no per-call approval card, so
-the confirm tools are STRIPPED from the model's tool list on every run — the
-server stays mounted and Stripe reads keep working. Guidance differs by run
-type: unattended runs get post-the-proposal-in-your-note wording, interactive
-runs get ask-the-human-in-this-session wording. (Dropping the whole server
-from interactive runs was tried and reverted: it blanked Stripe reads for no
-security gain — the money-movers were never reachable either way, and the
-restricted key's write ceiling is enforced by Stripe server-side.)
+server-side). On Pi there is no per-call approval card, so ordinary
+interactive and unattended runs strip the confirm tools from the model's tool
+list. The server stays mounted and Stripe reads keep working. Guidance differs
+by run type:
+unattended runs put the proposal in their internal note; interactive runs ask
+the human in the session. The explicit exception is Plain's refund/cancellation
+approval path: after a teammate's go-ahead is classified against an existing
+proposal, a dedicated execution run omits both the deny and confirm sets and
+therefore exposes the Stripe mutators. Its execution prompt directs the model
+to perform the approved action. (Dropping the whole server from interactive
+runs was tried and reverted: it blanked Stripe reads for no security gain. The
+money movers were unreachable either way, and Stripe enforces the restricted
+key's write ceiling.)
 
 ## Per-user MCP servers (`allowedUsers`)
 
 An MCP server in `mcp-config.json` can carry an optional
-`allowedUsers: string[]`. When set (non-empty), only runs whose **user**
-resolves to one of those people get that server's tools; everyone else's
-sessions never see it. Omitted/empty = available to everyone (the default).
-Entries are matched by `userMatchesAny` (packages/core/opensession-server/src/server/shared/user-mappings.ts)
-through the same identity table as commit attribution, so a teammate's name
-matches a run user given as their short name, a nickname, their email, or
-their Slack id. Example use: scope a finance/expenses MCP server to the one or
-two people who should see it.
+`allowedUsers: string[]`. When non-empty, the gate checks both the current
+prompter and, for an ordinary session, its creator. A match by either identity
+exposes the server in that session, so a teammate steering a session created by
+an allowed person can use it. Omitted/empty means available to everyone, the
+default. Entries are matched by `userMatchesAny`
+(packages/core/opensession-server/src/server/shared/user-mappings.ts) through
+the same identity table as commit attribution, so names, nicknames, email
+addresses, GitHub logins, and Slack ids resolve to the configured person.
 
 - Enforcement is at the runner layer, not the prompt:
-  `filterMcpServers(allowlist, user)` (runner-shared.ts, consumed by
-  the MCP bridge in pi-mcp-bridge.ts) drops a restricted server
-  the run's user isn't cleared for, and strips the `allowedUsers` field before
-  the config reaches the engine. Both the per-automation allowlist and the
-  per-user gate apply.
-- The `user` is threaded from the run paths (`runSessionPrompt`, both
-  `create_session` paths, goal wakes, the Slack/Linear loops) through
-  `runAgent` → `runPi`, and is journaled on the `ActiveRunRecord` so a
-  resume after a restart keeps the same visibility. **Automation runs pass no
-  user**, so an `allowedUsers`-restricted server is invisible to them —
-  untrusted ticket text can never reach a restricted server, even if the
-  automation's own `mcpServers` allowlist names it (fail-closed).
+  `filterMcpServers(scope, user, grantUsers)` (runner-shared.ts, consumed by
+  pi-mcp-bridge.ts) drops a restricted server unless one of the gate identities
+  is cleared, then strips `allowedUsers` before the config reaches the engine.
+  Both the automation allowlist and this gate apply.
+- Ordinary session runs supply the current prompter and, where applicable, the
+  session creator as a grant identity. Automation dispatch and automation-owned
+  resumes explicitly drop both identities, so an `allowedUsers`-restricted
+  server remains invisible even if the automation's `mcpServers` allowlist
+  names it.
 - Manage it from the Connections UI (the Add-MCP form has an "Allowed users"
   field; each server card has a Restrict/Edit-access button →
   `PUT /api/connections/mcp/:name` with `{allowedUsers}`), or via
   opensession-admin (`add_mcp_server`'s `allowedUsers`, and
   `set_mcp_allowed_users`). Backing helpers: `addMcpServer` /
   `setMcpAllowedUsers` in packages/core/opensession-server/src/server/connections.ts.
-- A change to the runner-layer filtering needs a real `systemctl restart`.
-  Adding/removing/re-scoping a server in `mcp-config.json` itself is read
-  fresh per run, but until the process runs the new `filterMcpServers`,
-  `allowedUsers` is neither enforced nor stripped — so restart after wiring a
-  restricted server.
+- Deploying runner-layer filtering code requires a real `systemctl restart`.
+  Adding, removing, or re-scoping a server in `mcp-config.json` is picked up on
+  the next run/message and does not require a restart.
 
 ## Personal MCP OAuth grants
 
@@ -219,14 +232,19 @@ Enabling `userPrAuth` activates both halves below:
 - **GitHub web sign-in** (packages/core/opensession-server/src/server/web-auth.ts + routes/auth.ts): when
   active, the UI's name picker is replaced by a real sign-in (UserGate →
   device flow → HttpOnly `opensession_auth` cookie; sessions in
-  `~/.opensession-web-sessions.json`, sliding 90d). Every API request and the
-  UI WebSocket 401 without it (gate in opensession.ts's fetch preamble;
-  exempt: `/api/auth/*`, run-ws/rpc-ws dial-backs, page/asset loads). Only
-  logins on identity.team may sign in. The verified identity OVERRIDES
+  `~/.opensession/web-sessions.json`, sliding 90d). Ordinary `/api/*` requests
+  and the UI `/ws` require that web session. Exceptions are `/api/auth/*`;
+  health/readiness endpoints; client update feeds and artifacts; runner
+  registration/heartbeat; the scoped keychain broker; the separately
+  bearer-gated keypad route; workload-identity discovery, JWKS, and
+  lease-gated token endpoints; and machine WebSocket transports authenticated
+  by their own transport credentials. Page and static-asset loads remain open
+  so sign-in can render, while published `/d` applications are authenticated.
+  Only logins on identity.team may sign in. The verified identity OVERRIDES
   client-claimed `user` on every WS message and stamps `createdByLogin` on
   new sessions; a one-time boot migration backfills `createdByLogin` onto
   existing sessions from `createdBy` (marker:
-  `~/.opensession-sessions/.github-user-migration.json`). Non-browser callers
+  `~/.opensession/sessions/.github-user-migration.json`). Non-browser callers
   (curl/CDP recipes) authenticate with `Authorization: Bearer <token>` using a
   token from the web-sessions file.
 
@@ -275,11 +293,13 @@ Both `opensession-admin` and `opensession-sessions` are ALSO available inside
 **interactive Open Session sessions** (web UI + loops), not just Slack:
 `interactiveMcpServers(user, sessionId)` (packages/core/opensession-server/src/server/interactive-mcp.ts)
 builds them and they are passed as `inProcessMcp` from the interactive run
-paths (`runSessionPrompt`, both `create_session` paths). They're withheld from
-automation runs **and** from interactive resumes of automation-owned sessions
-(gated on `!isAutomationSession`, the same gate as `deniedTools`) — untrusted
-ticket text must never reach these tools. Open Session is network- and
-team-gated and already exposes all of this through its UI, so interactive
+paths (`runSessionPrompt`, both `create_session` paths). This unrestricted
+interactive set is withheld from automation runs **and** from interactive
+resumes of automation-owned sessions (gated on `!isAutomationSession`, the same
+gate as `deniedTools`). Automation-owned runs instead receive only the explicit
+set documented below. Untrusted ticket text must never reach the interactive
+set. Open Session is network- and team-gated and already exposes all of this
+through its UI, so interactive
 users are treated as `isAdmin: true` there. The in-process servers are built
 with `packages/core/opensession-server/src/server/inprocess-mcp.ts` (a thin @modelcontextprotocol/sdk wrapper)
 and reach pi runs as stdio MCP proxies that forward to the in-process
@@ -290,8 +310,9 @@ so those proxies execute the right context. The runner adds a short "Managing
 knows they exist.
 
 The `opensession-sessions` in-process MCP (packages/core/opensession-server/src/agents/slack/sessions-tools.ts)
-is a sibling, wired the same way (interactive runs only — never automations).
-It lets the agent see and steer every *other* Open Session session: read tools
+is a sibling, wired in its unrestricted shape only to interactive runs. The
+scoped `automationSelf` shape is described below. It lets the agent see and
+steer every *other* Open Session session: read tools
 `list_sessions` (with a `waiting` state filter and an exact `createdBy`
 identity filter) and `get_session` (explicit creator/creation timestamp, state,
 pending question, and transcript tail) are open to any whitelisted user; the control tools —
@@ -304,44 +325,46 @@ the WebSocket handlers use — so steering from here behaves exactly like a
 human in the web UI, and an autonomous monitor can call the same registry
 directly without the MCP. Sessions whose runs aren't owned by this process
 (CLI/tmux) are surfaced as `observe-only` and can't be steered/cancelled. Do
-NOT wire `opensession-sessions` into automation/`runAgent` paths —
-cross-session control from untrusted ticket text would be a
-privilege-escalation path. (Sole carve-out: `automation.selfImprove` below,
-which grants the spawn_task suite only — never answer/send/cancel/create.)
+not wire the unrestricted `opensession-sessions` server into automation paths.
+Cross-session control from untrusted ticket text is a privilege-escalation path.
 
-### Exception 1: papercuts
+### Automation-safe in-process servers
 
-`opensession-papercuts` (packages/core/opensession-server/src/agents/slack/papercuts-tools.ts, store in
-packages/core/opensession-server/src/server/papercuts.ts → ~/.opensession-papercuts) is the one deliberate
-exception to "no in-process servers for automations": an append-only friction
-log with no reads of anything sensitive and no control surface, so automation
-runs DO carry it (automations.ts registers the instances per run). Two
-invariants keep that safe: the run-rpc interactive builder
-(interactive-mcp.ts) fails closed for automation-owned sessions — a
-registered automation run token can never resolve the admin/sessions siblings
-through the socket — and the "Managing <persona.name>" instructions block is
-gated on `opensession-sessions` presence, not on any in-process server.
-Per-repo toggle (default on) in Settings → Papercuts; entries mirror into the
-audit log. Hold new additions to automation runs to the same bar: append-only,
-nothing sensitive readable, no control surface — anything more stays
-interactive-only.
+Automations never receive `opensession-admin` or the unrestricted interactive
+`opensession-sessions` server. `automationRunInProcessMcp` mounts this explicit
+set:
 
-### Exception 2: self-improving automations (`automation.selfImprove`)
+- Every automation receives `opensession-report`, `opensession-turn`,
+  `opensession-health`, and `opensession-audit`. The latter two expose aggregate
+  host metrics and a bounded daily audit digest, not arbitrary filesystem or
+  command access.
+- `opensession-papercuts` is mounted when the repository toggle is enabled
+  (default on; Settings → Papercuts). It can append a papercut and list at most
+  50 recent entries, using 14 days by default and at most 120 days. Reads include
+  stored text, the `by` label, repository, and timestamp.
+  The store is `~/.opensession/papercuts`, and entries also mirror to the audit
+  log. It has no session-control or configuration-mutation tools.
+- `opensession-workflows` is mounted only when a human enables the automation's
+  `workflows` flag. Workflow MCP calls retain that automation's MCP allowlist
+  and `AUTOMATION_DENIED_TOOLS` policy.
+- The scoped `opensession-sessions`/`opensession-self` pair is mounted only when
+  a human enables `automation.selfImprove`.
 
-The second exception is human-set per instance (e.g. a nightly reflection
-automation over the agent's own telemetry). A flagged automation's runs — and
-thread-reply resumes of its sessions (run-session.ts + the run-rpc fallback
-builder both honor the flag) — additionally carry two scoped servers:
-`opensession-sessions` in `automationSelf` shape (sessions-tools.ts — list/get
-reads plus the `spawn_task`/`task_status`/`cancel_task` suite ONLY; the
-answer/send/cancel/create controls on other sessions stay isAdmin-gated and
-are never included) and `opensession-self`
-(packages/core/opensession-server/src/agents/slack/self-improve-tools.ts — read own record +
-`update_own_prompt`, own automation only, timestamped backup +
-`automation_self_update` audit event, length floor against degenerate
-rewrites; schedule/model/mode/repo stay human-only via
-`updateAutomationPromptSelf` in automations.ts). Containment: spawned children
-go through the same createSession path (PR-gated, spawn-depth ≤ 2), and the
-flag is settable only by humans (API/UI) — never grant it to automations
-triggered by untrusted event/ticket text (ticket triage, channel watches);
-it's meant for introspective/scheduled ones whose input is your own telemetry.
+A self-improving automation's runs and thread-reply resumes receive session
+list/get reads plus `spawn_task`, `task_status`, and `cancel_task`; the direct
+`answer_session_question`, `send_to_session`, `cancel_session`, and
+`create_session` controls are omitted. This is not child-only containment:
+`task_status` accepts any session id, and `cancel_task` currently passes any
+process-owned session id to `SessionControl.cancelSession` without proving the
+target is a child. Treat `selfImprove` as carrying cross-session read and
+cancellation capability until those tools are narrowed.
+
+`opensession-self`
+(packages/core/opensession-server/src/agents/slack/self-improve-tools.ts) can
+read the automation's own record and run `update_own_prompt` for that automation
+only, with a timestamped backup, `automation_self_update` audit event, and a
+length floor against degenerate rewrites. Schedule, model, mode, and repository
+remain human-only. Spawned children use the normal session-creation path, are
+PR-gated, and have spawn depth limited to 2. Never enable `selfImprove` for an
+automation triggered by untrusted event or ticket text; it is intended for
+introspective scheduled runs over trusted telemetry.

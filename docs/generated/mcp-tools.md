@@ -8,7 +8,7 @@ Every tool Open Session serves from inside its own process — the
 call it. Tool names and inputs are read from the live server objects
 (`tools/list`), so this file cannot drift from the code; the run classes
 and conditions are declared in `packages/core/opensession-server/src/server/mcp-catalog.ts` beside each
-entry and checked against the real wiring by `mcp-catalog.test.ts`.
+entry and checked against the interactive and automation wiring by `mcp-catalog.test.ts`.
 
 External MCP servers (`mcp-config.json`) are NOT listed here: they are
 per-instance configuration, and their per-user `allowedUsers` scoping is
@@ -26,14 +26,15 @@ boundary:
   interactive server yields nothing.
 - **Slack loop**, **goal wake** — their own narrow sets.
 
-Two further layers apply to every run, and neither currently touches an
-in-process tool (both name external MCP tools):
+Additional external-tool filters apply selectively; neither currently
+touches an in-process tool:
 
 - `AUTOMATION_DENIED_TOOLS` (`packages/core/opensession-server/src/server/automation-denied-tools.ts`) —
   stripped from automation runs and from interactive resumes of
   automation-owned sessions.
 - `STRIPE_CONFIRM_TOOLS` (`packages/core/opensession-server/src/server/runner-shared.ts`) — money movers,
-  stripped from every run's tool list.
+  stripped on standard run paths. The Plain integration's separately
+  classified explicit-approval path deliberately runs without this filter.
 
 ## Servers
 
@@ -51,10 +52,10 @@ in-process tool (both name external MCP tools):
 | [`opensession-repos`](#opensession-repos) | 4 | interactive | Needs a session id. |
 | [`opensession-memory`](#opensession-memory) | 9 | interactive | Needs a session id. |
 | [`opensession-web`](#opensession-web) | 3 | interactive | Needs a session id. |
-| [`opensession-portals`](#opensession-portals) | 5 | interactive | Needs a session id. |
+| [`opensession-portals`](#opensession-portals) | 6 | interactive | Needs a session id. |
 | [`opensession-walkthrough`](#opensession-walkthrough) | 2 | interactive | Needs a session id. |
 | [`opensession-slack`](#opensession-slack) | 1 | interactive | Needs a session id. |
-| [`opensession-ask`](#opensession-ask) | 1 | interactive, Slack loop | Needs a session id. claude-runner strips it so Claude keeps its native AskUserQuestion. |
+| [`opensession-ask`](#opensession-ask) | 1 | interactive, Slack loop | Needs a session id. |
 | [`opensession-workflows`](#opensession-workflows) | 5 | interactive, automation | Automation runs get it ONLY with the human-set `workflows` flag. |
 | [`opensession-assets`](#opensession-assets) | 4 | interactive | Needs a session id. Works in read-only Ask mode — assets land outside the checkout. |
 | [`opensession-todos`](#opensession-todos) | 5 | interactive | Needs a session id. |
@@ -62,11 +63,12 @@ in-process tool (both name external MCP tools):
 | [`opensession-report`](#opensession-report) | 1 | automation | – |
 | [`opensession-turn`](#opensession-turn) | 2 | automation | – |
 | [`opensession-health`](#opensession-health) | 1 | automation | – |
+| [`opensession-audit`](#opensession-audit) | 1 | automation | – |
 | [`opensession-self`](#opensession-self) | 2 | automation | Only with the human-set `selfImprove` flag on that automation. |
 | [`opensession-github`](#opensession-github) | 4 | Slack loop | – |
 | [`opensession-goal-self`](#opensession-goal-self) | 6 | goal wake | Only on a session that carries a goalId. |
 
-26 servers, 111 tools.
+27 servers, 113 tools.
 
 ## opensession-sessions
 
@@ -142,7 +144,7 @@ Spin up a visible Open Session session and start it on a prompt. Use this as the
 
 `mcp__opensession-sessions__migrate_session_engine` · input: `sessionId` (string, required), `model` (string, required)
 
-Migrate an existing session onto the Pi engine by flipping its model to an pi/* id (e.g. pi/anthropic/claude-sonnet-5). Does NOT start a run: the session's NEXT prompt builds a transcript handoff from its claude/codex history and continues on a fresh Pi session — file, workspace, branch, title and UI history all stay. Refuses automation-owned sessions (the pi engine hard-gates automations off) and sessions that are mid-run.
+Migrate an existing session onto the Pi engine by flipping its model to a pi/* id (e.g. pi/anthropic/claude-sonnet-5). Does NOT start a run: the session's NEXT prompt builds a transcript handoff from its claude/codex history and continues on a fresh Pi session — file, workspace, branch, title and UI history all stay. Automation-owned sessions may migrate to Pi but not to a non-Pi engine; sessions with an in-flight run are refused.
 
 ### `spawn_task`
 
@@ -203,7 +205,7 @@ List all of Assistant's automations (routines): scheduled, event- and webhook-tr
 
 `mcp__opensession-admin__create_automation` · input: `name` (string, required), `prompt` (string, required), `schedule` (string), `mode` ("ask" | "code"), `repo` (string), `mcpServers` (string[]), `model` (string), `accountId` (string), `accountStrict` (boolean), `usageCredits` (boolean), `prReviewer` (string), `owner` (string), `workspaceId` (string)
 
-Create a new automation (routine). Provide a clear prompt describing the task. Set `repo` to the repository it works in, or it runs against the instance default. Use a 5-field UTC cron `schedule` for recurring jobs (omit for manual/webhook only). Pick mode 'ask' for read-only or 'code' if it must edit files / open PRs. Optionally restrict tools with mcpServers and set a model.
+Create a new automation (routine). Provide a clear prompt describing the task. Set `repo` to the repository it works in, or it runs against the instance default. Use a 5-field UTC cron `schedule` for recurring jobs (omit for manual/webhook only). Pick mode 'ask' for read-only or 'code' if it must edit and commit files. Ordinary automations receive no GitHub credential, so code mode alone cannot push or open a GitHub PR. Optionally restrict tools with mcpServers and set a model.
 
 ### `update_automation`
 
@@ -615,6 +617,12 @@ Supervised HTTP/WebSocket services for this session's workspace.
 
 Start a supervised HTTP or WebSocket service in this session workspace. Open Session allocates a port when omitted, sets PORT and PORTAL_URL, waits for it to listen, and returns its authenticated Portal URL. Never use an upstream URL: Portals expose only this session's process.
 
+### `start_declared_portal`
+
+`mcp__opensession-portals__start_declared_portal` · input: `id` (string, required)
+
+Start a repository-declared Portal by its ID. Use this instead of copying its command: Open Session applies the trusted command, port contract, readiness timeout, and sandbox workload identity from .agents/portals.json.
+
 ### `list_portals`
 
 `mcp__opensession-portals__list_portals` · input: none
@@ -631,7 +639,7 @@ Stop one supervised Portal in this session. It never affects services in another
 
 `mcp__opensession-portals__restart_portal` · input: `name` (string, required)
 
-Restart one supervised Portal using its registered command and port.
+Restart one supervised Portal using its registered command and port. Repository-declared Portals are refreshed from their trusted recipe before restart.
 
 ### `set_portal_path`
 
@@ -658,7 +666,7 @@ Publish a walkthrough of this session's change: a demo video, before/after scree
 
 `mcp__opensession-walkthrough__comment_on_pr_with_images` · input: `comment` (string, required), `images` (object[], required), `repo` (string), `pr_number` (number)
 
-Post a comment on this session's PR (or an explicit PR) with screenshots that RENDER INLINE on GitHub. Images are copied to durable storage and served from unguessable URLs on http://127.0.0.1:3850 (our own infrastructure, never a third-party host or repository commit); GitHub's camo proxy fetches them so they render everywhere, private repos included. The URLs are capability links: anyone holding one can fetch the image, so don't attach anything that must stay strictly repo-member-only. Place images in the markdown with {{image:1}}, {{image:2}}, … (1-based); images you don't reference are appended at the end.
+Post a comment on this session's PR (or an explicit PR) with screenshots that RENDER INLINE on GitHub. Images are copied to durable storage and served from unguessable URLs on the configured public media origin. This requires a GitHub-reachable HTTPS origin configured through OPENSESSION_PR_IMAGES_BASE, integrations.media.publicBaseUrl, or server.publicBaseUrl; loopback, private-network, and tailnet URLs will not render. The URLs are capability links: anyone holding one can fetch the image, so don't attach anything that must stay strictly repo-member-only. Place images in the markdown with {{image:1}}, {{image:2}}, … (1-based); images you don't reference are appended at the end.
 
 ## opensession-slack
 
@@ -677,12 +685,12 @@ Open an editable Slack composer in this Open Session and wait for the signed-in 
 
 ## opensession-ask
 
-Ask the human a blocking question (for engines with no native ask tool).
+Ask the human a blocking question.
 
 - **Source** `packages/core/opensession-server/src/agents/slack/ask-tools.ts`
 - **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`, `packages/core/opensession-server/src/agents/slack/handlers.ts`
 - **Runs** interactive, Slack loop
-- **Condition** Needs a session id. claude-runner strips it so Claude keeps its native AskUserQuestion.
+- **Condition** Needs a session id.
 
 ### `ask_user`
 
@@ -811,7 +819,7 @@ Append-only friction log.
 - **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`, `packages/core/opensession-server/src/server/automations.ts`
 - **Runs** interactive, automation
 - **Condition** Dropped when the session's repo opted out (Settings → Papercuts).
-- **Note** One of the two deliberate automation exceptions in docs/security-model.md: append-only, reads nothing sensitive, no control surface.
+- **Note** Automation-safe friction log: append-only, reads nothing sensitive, and exposes no control surface.
 
 ### `log_papercut`
 
@@ -874,6 +882,21 @@ Read this instance's own disk, memory, load, process fleets and agent status.
 `mcp__opensession-health__read_host_metrics` · input: none
 
 Read this instance's health: disk usage on /, memory and swap, load averages against core count, counts of the process fleets that have leaked before (detached run hosts, MCP proxies, headless Chrome, dev stacks, git operations), cgroup memory accounting, and each agent's status. Returns the same fields as the health endpoint. Use it for a health check instead of trying to fetch the server over HTTP, which is refused for loopback addresses.
+
+## opensession-audit
+
+Read one day's rolled-up audit digest.
+
+- **Source** `packages/core/opensession-server/src/server/audit-mcp.ts`
+- **Wired in** `packages/core/opensession-server/src/server/automations.ts`
+- **Runs** automation
+- **Note** One optional UTC date selects a rolled-up daily digest; it exposes no raw audit files or writes.
+
+### `read_audit_digest`
+
+`mcp__opensession-audit__read_audit_digest` · input: `date` (string)
+
+Read one day of this instance's audit log, rolled up: totals (events, sessions, turns, errors, tool errors, cost), turn verdicts including silent drops, per-run-kind breakdown, model usage, the top recurring error and tool-error groups, top tools, one-shot counts, logged papercuts, and the most troubled sessions. Defaults to yesterday (UTC). Use this instead of trying to read the audit state directory or fetch the server over HTTP. Neither is reachable from an unattended run.
 
 ## opensession-self
 

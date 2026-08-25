@@ -2,11 +2,13 @@
  * The catalog's DECLARED wiring against the real one.
  *
  * scripts/gen-catalogs.test.ts proves the committed catalog matches what the
- * servers expose; this proves the catalog still lists the right servers. A new
- * interactive server is the drift that matters most — it hands a capability to
- * every session — so it fails here until it is catalogued.
+ * servers expose; this proves the catalog still lists the right servers. The
+ * interactive and complete automation sets both fail here until new wiring is
+ * catalogued.
  */
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "fs";
+import { resolve } from "path";
 import { MCP_SERVER_CATALOG, catalogFor, type McpServerCatalogEntry } from "./mcp-catalog";
 import { interactiveMcpServers } from "./interactive-mcp";
 const ENGINE_IDS = ["pi"] as const;
@@ -20,6 +22,30 @@ function find(name: string): McpServerCatalogEntry | undefined {
 
 function wiredInteractive(): string[] {
   return Object.keys(interactiveMcpServers("You", SESSION_ID, "all"));
+}
+
+/** Read the two object literals that compose the complete automation surface.
+ * This checks the existing wiring without importing automations.ts, whose store
+ * path is initialized at module load. */
+function wiredAutomation(): string[] {
+  const source = readFileSync(resolve(import.meta.dir, "automations.ts"), "utf-8");
+  const section = (startMarker: string, endMarker: string): string => {
+    const start = source.indexOf(startMarker);
+    const end = source.indexOf(endMarker, start);
+    if (start < 0 || end < 0) throw new Error(`automation wiring marker missing: ${startMarker}`);
+    return source.slice(start, end);
+  };
+  const wiring = [
+    section(
+      "export function selfImproveMcpServers(",
+      "/** selfImproveMcpServers for a session file",
+    ),
+    section(
+      "function automationRunInProcessMcp(",
+      "/**\n * automationRunInProcessMcp for a session file",
+    ),
+  ].join("\n");
+  return [...wiring.matchAll(/"(opensession-[a-z-]+)"\s*:/g)].map((match) => match[1]!);
 }
 
 describe("MCP server catalog", () => {
@@ -45,6 +71,14 @@ describe("MCP server catalog", () => {
       .filter((e) => !wired.has(e.name) && !e.condition)
       .map((e) => e.name);
     expect(unexplained).toEqual([]);
+  });
+
+  test("complete automation wiring matches the catalog", () => {
+    const wired = wiredAutomation();
+    expect(wired.length).toBeGreaterThan(5);
+    expect([...new Set(wired)].sort()).toEqual(
+      catalogFor("automation").map((entry) => entry.name).sort(),
+    );
   });
 
   test("an unwired entry names no wiring, and a wired one names some", () => {

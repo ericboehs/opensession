@@ -2,7 +2,7 @@
 
 Self-hosted agent-infrastructure server: a web UI plus Slack, Linear, Plain,
 and GitHub agents, driving coding sessions through the Pi engine
-(any model provider) in git worktrees on your own box, or in isolated
+(supported model providers) in git worktrees on your own box, or in isolated
 sandboxes — Docker locally, with pluggable adapters for other providers.
 
 <picture>
@@ -25,8 +25,9 @@ first.
 curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash
 ```
 
-To install Tailscale at the same time on Linux, pass the option after Bash's
-stdin argument separator:
+On Linux, `--tailscale` asks the installer to add Tailscale when passwordless
+`sudo` is available. If it reports that `sudo` is needed, run the manual command
+it prints. Without `TS_AUTHKEY`, installing the client does not join a tailnet.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale
@@ -46,8 +47,9 @@ download.
 
 Open the URL, add a model account in Workspace → Providers, pick a repo, write
 a prompt, and create the session. A turn that actually runs is the proof the
-install works, not a health check. Connect GitHub and the other integrations
-later from Settings → Connections; see
+install works, not a health check. Connect your GitHub account later from
+Settings → Connections. Configure Slack, Linear, Plain, GitHub agent intake,
+and other integrations under Settings → Integrations; see
 [docs/setup/github.md](docs/setup/github.md).
 
 Check on it any time:
@@ -66,13 +68,16 @@ contributing:
 ```sh
 git clone https://github.com/tellahq/opensession.git
 cd opensession && bun install
-bun run setup                             # same wizard, without the installer
+bun run setup                             # interactive onboarding
 ```
 
-With no flags it writes a default configuration, installs and starts the
-service, and ends with the URL. `--advanced` runs the full onboarding wizard;
-`--help` lists the rest (`--dir`, `--channel`, `--tailscale`, `--codex`,
-`--no-engine`, `--no-modify-path`, `--yes`, `--uninstall`).
+`bun run setup` runs the interactive onboarding wizard, writes the
+configuration, and offers to install and start a user service. For unattended
+defaults, run `bun scripts/cli.ts onboard --defaults`. Run
+`bun scripts/cli.ts --help` for CLI commands. Options such as `--source`,
+`--dir`, `--channel`, `--tailscale`, and `--no-engine` belong to `install.sh`;
+run `bash install.sh --help` for the complete installer list. A source checkout
+requires Bun and git.
 
 > Letting the agent improve Open Session itself? Clone your fork, not this
 > repo. Self-sessions commit and push to `origin` (and `deploy_self`
@@ -99,14 +104,16 @@ service, and ends with the URL. `--advanced` runs the full onboarding wizard;
 - [CLIENTS.md](CLIENTS.md) — web UI, PWA, desktop shell, native app, extension
 - [docs/worktrees.md](docs/worktrees.md) — how sessions map to git worktrees,
   and where the disk goes
-- [docs/repo-lifecycle.md](docs/repo-lifecycle.md) — the `.opensession/`
+- [docs/repo-lifecycle.md](docs/repo-lifecycle.md) — the `.agents/` lifecycle
   scripts a repo commits so sessions provision and boot it themselves
 - [docs/extending.md](docs/extending.md) — adding tools, recipes, integrations
   and providers
 - [docs/security-model.md](docs/security-model.md) — least-privilege
   automations, per-user MCP/GitHub scoping, self-management boundaries
-- [docs/self-hosting-sandboxes.md](docs/self-hosting-sandboxes.md) — isolated
-  Docker/Daytona/E2B/Box/Modal/AWS Lambda MicroVM execution
+- [docs/self-hosting-sandboxes.md](docs/self-hosting-sandboxes.md) — certified
+  Docker, Daytona, Box, Modal, and local Firecracker MicroVM sandboxes;
+  implemented E2B and AWS Lambda MicroVM adapters remain unavailable until
+  live-certified
 - [docs/instance-configuration.md](docs/instance-configuration.md) — repos,
   identity, branding, integrations, deployment policy
 
@@ -118,7 +125,7 @@ talks to the same instance. [CLIENTS.md](CLIENTS.md) has the full tour.
 | Client | Where |
 | --- | --- |
 | Web UI | served by the server itself — start here |
-| PWA | the web UI on your phone's home screen (iOS push notifications) |
+| PWA | the web UI on your phone's home screen (iOS push notifications require the installed PWA and an HTTPS origin) |
 | macOS desktop shell (Electron) | [`packages/clients/mac/`](packages/clients/mac/) |
 | Native Swift app (iOS + macOS) | [`packages/clients/ios/`](packages/clients/ios/) |
 | Chrome extension (page context → session) | [`packages/clients/chrome/`](packages/clients/chrome/) |

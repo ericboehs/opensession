@@ -1,24 +1,28 @@
 # Executor architecture
 
-Open Session separates run-host launch policy from the process that owns the
-web UI, session queues, and durable transcript. This is the first deployment
-boundary in the gateway, kernel, executor architecture.
+Open Session separates authoritative session decisions and run-host launch
+policy from the gateway process.
 
 ```text
-Clients -> Open Session gateway and kernel -> executor launcher -> run host
-                                             |                 -> engine
-                                             + fixed policy
+Clients -> gateway <-> session-kernel service
+                   \-> executor launcher -> run host -> engine
+                       + fixed policy
 ```
 
-The Open Session process remains the session kernel. It owns prompt admission,
-queues, asks, run journals, transcript writes, WebSocket broadcasts, and final
-bookkeeping. The executor launcher can only start, inspect, or stop a detached
-local run host from a persisted `RunHostSpec`. It cannot execute an arbitrary
-command, accept an arbitrary path, or change systemd properties.
+Over authenticated loopback RPC, the gateway uses the independently supervised
+session-kernel service for authoritative prompt admission and durable run,
+queue, ask, timer, outbox, and lifecycle decisions. It uses the executor
+launcher for detached local run-host launch policy. The gateway retains HTTP
+and WebSocket handling, schedulers, run journals, transcript writes,
+projections, and physical effects.
+
+The executor launcher can only start, inspect, or stop a detached local run host
+from a persisted `RunHostSpec`. It cannot execute an arbitrary command, accept
+an arbitrary path, or change systemd properties.
 
 ## Control protocol
 
-The kernel and executor communicate over `executor.sock` in the active session
+The gateway and executor communicate over `executor.sock` in the active session
 state directory. The socket is mode `0600`. Messages are newline-delimited JSON
 using `@tellahq/opensession-protocol/executor`.
 
@@ -34,22 +38,28 @@ boundary: the gateway, executor, and local agents still use one Unix identity.
 A future executor security boundary requires run hosts to use a distinct
 identity or the executor to authenticate peer processes through the kernel.
 
-The executor persists its launch record inside the host directory before it
-calls a root-owned helper. That helper validates the host id, state directory,
-and spec hash before applying a fixed `systemd-run` policy. The installer grants
-the service user passwordless sudo for this helper only. If the executor
-restarts while a launch is in progress, the next request reconciles the existing
-unit and host socket instead of starting a second run.
+Before recording and launching, the executor verifies the persisted spec's
+SHA-256 and matching host id. The root-owned helper then validates the host-id
+format, exact configured host directory, spec presence, and hash format before
+applying its fixed `systemd-run` policy. The run host recomputes the hash at
+startup and refuses spec bytes changed after executor validation.
+
+The installer grants the service user passwordless sudo for the root-owned
+helper and four fixed `systemctl` invocations used to restart the gateway or
+executor and check executor readiness. It does not grant passwordless access to
+raw `systemd-run` or arbitrary `systemctl` arguments. If the executor restarts
+while a launch is in progress, the next request reconciles the existing unit and
+host socket instead of starting a second run.
 
 ## Failure behavior
 
 | Failure | Behavior |
 | --- | --- |
-| Executor unavailable before launch | Launch fails closed; direct launch requires the explicit `OPENSESSION_EXECUTOR=0` operator bypass |
-| Executor incompatible | New launch fails; no direct fallback |
-| Executor disconnects after launch request | Kernel checks the host locally, then preserves recovery state if still uncertain |
-| Executor restarts during an active run | Run host and engine continue; the kernel remains attached directly |
-| Kernel restarts during an active run | Existing run-host journal and socket reattachment recover the turn |
+| Executor unavailable before detached launch | Delegated launch fails closed and does not invoke the direct helper. `runAgentHosted` logs the failure and falls back to in-process execution unless launch effects are ambiguous. |
+| Executor incompatible | Detached launch fails without a direct-helper fallback. `runAgentHosted` logs the failure and falls back to in-process execution. |
+| Executor disconnects after launch request | The gateway checks the host locally and retries through the executor, then preserves recovery state if the launch remains uncertain. |
+| Executor restarts during an active run | Run host and engine continue; the gateway remains attached directly. |
+| Gateway restarts during an active run | Existing run-host journal and socket reattachment recover the turn. |
 
 The executor is not the parent of active run hosts. Hosts run in transient
 systemd units, so restarting `opensession-executor.service` affects only launch
@@ -57,29 +67,35 @@ requests currently crossing the control socket.
 
 ## Deployment
 
-Linux installs two independent units:
+Linux system scope installs three units:
 
-- `opensession.service`: gateway, session kernel, schedulers, and projections.
-- `opensession-executor.service`: local run-host launch policy.
+- `opensession.service`: gateway, schedulers, projections, transcripts, and
+  physical effects.
+- `opensession-session-kernel.service`: authoritative durable session decisions.
+- `opensession-executor.service`: fixed-policy local run-host launch.
 
-The main unit wants the executor but does not require or own it. There is no
-`PartOf=` relationship. An executor-only deployment restarts only the executor.
-Mixed changes drain the main service before replacing the executor, then restart
-the main service against the new launcher.
+The gateway `Requires=` the kernel service and `Wants=` the executor. The
+executor has no `PartOf=` relationship. Linux user scope installs the gateway
+and kernel units but disables the executor and detached local runs.
 
-Self-deploy restarts an executor that was installed by
-`opensession service install`, but does not copy privileged units or helpers from the writable
-checkout. Run the service installer again when a release changes those system
-artifacts. Instances intentionally operating without the executor must set
-`OPENSESSION_EXECUTOR=0`; an unavailable configured executor never silently
-changes launch paths.
+An executor-only deployment restarts only the executor. A kernel replacement
+stops the gateway first; deployment restarts and health-checks the executor and
+kernel before starting the gateway. Self-deploy refreshes an installed executor,
+records the kernel schema floor, stops the gateway, refreshes the installed
+kernel service, and then restarts the gateway. It does not copy privileged
+units, credentials, or helpers from the writable checkout. Run
+`opensession service install` again when a release changes those system
+artifacts.
 
 During the first upgrade only, installations that already granted the previous
 fixed `systemd-run` launch command keep using it until the service installer
 puts the root-owned helper in place.
 
-Set `OPENSESSION_EXECUTOR=0` to deliberately bypass the sidecar for new launches. Existing
-run hosts are unaffected.
+Set `OPENSESSION_EXECUTOR=0` to deliberately bypass the sidecar and select the
+fixed direct helper path for an otherwise supported detached host. Existing run
+hosts are unaffected. An unavailable configured executor never falls through to
+the direct helper, although the run may fall back to in-process execution after
+logging the detached-launch failure.
 
 Detached local hosts require Linux with a booted systemd and the installed
 run-host helper. Other platforms keep using the in-process runner.
@@ -92,15 +108,16 @@ receives only path settings plus its systemd credential directory. The gateway,
 executor and run hosts still share one Unix identity; a future privilege boundary
 requires a distinct executor identity and peer credentials.
 
-Normal production launch has one path through the executor. The direct fixed
-helper remains only as an explicit operator bypass for recovery and development.
+Normal production detached launch has one path through the executor. The direct
+fixed helper remains only as an explicit operator bypass for recovery and
+development.
 Active hosts are still controlled directly through their private host protocol;
 the executor is not their parent and does not own session lifecycle.
 
 ## Rollback compatibility
 
-The session-kernel schema has a tracked compatibility version. Self-deploy records
-the highest schema that may have opened the durable database before restarting
-the gateway, and refuses an automatic rollback to a revision with an older or
-missing reader. This turns an unsafe rollback into an explicit operator action
-instead of letting an old binary replay indeterminate physical work.
+The session-kernel schema has a tracked compatibility version. Before restarting
+the kernel service, self-deploy records the highest schema that may have opened
+the durable database and refuses an automatic rollback to a revision with an
+older or missing reader. This turns an unsafe rollback into an explicit operator
+action instead of letting an old binary replay indeterminate physical work.

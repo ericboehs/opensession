@@ -1,17 +1,15 @@
 # Networking: keeping Open Session private
 
-**Open Session has no built-in authentication.** It trusts everyone who can
-reach the address it binds to. The "user" in the UI is a self-selected display
-name in localStorage — it drives attribution and per-user tool scoping, not
-access control.
+**By default, Open Session has no sign-in gate.** It trusts everyone who can
+reach the address it binds to. In that mode, the "user" in the UI is a
+self-selected display name in localStorage. It drives attribution and per-user
+tool scoping, not access control. Optional GitHub-backed sign-in replaces that
+name with a verified team identity, but a private network remains the
+recommended boundary.
 
-That is a deliberate design choice, not an oversight: safety comes from
-least-privilege scoping of what *runs* can do, and from only being reachable on
-a private network. The second half is your job.
-
-Anyone who reaches it can start sessions that execute code on your box, read
-every repository you have registered, and use your model subscriptions. Treat
-the bind address as the security boundary.
+On a default install, anyone who reaches the app can start sessions that
+execute code on your box, read registered repositories, and use your model
+subscriptions. Treat the bind address as the security boundary.
 
 ## The short version
 
@@ -20,13 +18,13 @@ the bind address as the security boundary.
 | Default | binds `127.0.0.1` — reachable only from the box itself |
 | Sharing with a team | bind a **Tailscale** IP |
 | Occasional access | leave it on `127.0.0.1`, use an **SSH tunnel** |
-| Never | `HOST=0.0.0.0`, a public port, or a reverse proxy without auth |
+| Never | expose port 3850 publicly with `HOST=0.0.0.0` or a public reverse proxy |
 
 ## Tailscale (recommended)
 
 [Tailscale](https://tailscale.com) puts your machines on a private WireGuard
-network. Devices reach each other; nothing else can. The free tier covers a
-small team.
+network. Authorized tailnet devices can reach one another without opening a
+public port. The free tier covers a small team.
 
 ### 1. Install it on the box
 
@@ -90,20 +88,26 @@ tailscale ip -4        # e.g. 100.64.12.34
 
 ### 5. Bind Open Session to it
 
-If you joined the tailnet *before* onboarding, this is already done — the
-wizard offers the tailnet address as the bind default. Otherwise:
+If you joined the tailnet before **interactive** onboarding (`--advanced` or
+`opensession onboard`), the wizard offers the tailnet address as its bind
+default. The normal non-interactive installer still chooses `127.0.0.1` even
+when Tailscale is already connected. To change either kind of install:
 
 ```sh
 opensession bind
 ```
 
-That is the whole fix: it rewrites the bind address (and the public base URL,
-when it still pointed at the old address) in both `~/.opensession/config.json`
-and `~/.opensession.env`, then restarts the service — the bind address is the
-one setting a live config re-read cannot apply. `opensession bind <ip>` names
-an address explicitly, for boxes that are not on a tailnet.
+That changes `server.host` in `~/.opensession/config.json` and restarts an
+installed service, because a live config re-read cannot move the listening
+socket. When the host changes, it also replaces an existing `HOST` entry in
+`~/.opensession.env`. The configured app origin and an existing
+`OPENSESSION_UI_BASE` entry follow only while the configured origin still
+points at the old bind address. `opensession bind <ip>` names an address
+explicitly, including `127.0.0.1` when moving back behind a local proxy.
 
-Then reach it from any device on the tailnet at `http://<tailnet-ip>:3850`.
+Then reach it from any device on the tailnet at
+`http://<tailnet-ip>:<port>` (`3850` by default; `PORT` overrides
+`server.port`).
 
 If you manage the files by hand instead, change `HOST` in
 `~/.opensession.env` (it overrides `server.host` in config.json), set
@@ -112,29 +116,34 @@ will point somewhere unreachable — and restart.
 
 ### 6. Install Tailscale on the devices you want to use
 
-Phone, laptop, whatever. They must be on the same tailnet. That is the whole
-access-control story — adding a device to the tailnet grants access, removing
-it revokes access.
+Phone, laptop, whatever. They must be able to reach the server through the
+same tailnet. Tailscale ACLs and grants still apply; with the default permissive
+policy, adding a device grants access and removing it revokes access.
 
 ### Nicer URLs and HTTPS
 
-MagicDNS gives the box a stable name, and Tailscale can issue a real
-certificate for it:
+MagicDNS gives the box a stable name, and Tailscale can issue a certificate
+for that exact `*.ts.net` name after HTTPS certificates are enabled for the
+tailnet:
 
 ```sh
 sudo tailscale cert <machine>.<tailnet>.ts.net
 ```
 
-Point a local reverse proxy (Caddy, nginx) at `127.0.0.1:3850` using that
-certificate. This is how Tella runs it. Note that a proxy does not add
-authentication — it only adds TLS. Reachability is still whatever the proxy
-binds to, so bind the proxy to the tailnet address too.
+To proxy to `127.0.0.1:3850`, first move Open Session back to loopback with
+`opensession bind 127.0.0.1`; otherwise point the proxy at the tailnet address
+where Open Session is actually listening. Configure the proxy with the
+certificate files and bind the proxy itself to the tailnet address. A proxy
+adds TLS, not authentication.
 
 ### Verify you are actually private
 
 ```sh
-# What is Open Session listening on? Should be 127.0.0.1 or a 100.x tailnet IP.
+# Linux: 3850 should use loopback or a 100.x IP; 3860 defaults to loopback.
 ss -tlnp | grep -E '3850|3860'
+
+# macOS equivalent:
+lsof -nP -iTCP -sTCP:LISTEN | grep -E ':(3850|3860)\b'
 
 # From somewhere off the tailnet (your phone on cellular, a cloud shell):
 curl -m 5 http://<public-ip>:3850/    # must fail
@@ -178,7 +187,8 @@ which proves control of the domain by writing a TXT record instead.
 With [lego](https://go-acme.github.io/lego/) and, say, Cloudflare DNS:
 
 ```sh
-CLOUDFLARE_DNS_API_TOKEN=... lego \
+sudo env CLOUDFLARE_DNS_API_TOKEN=... lego \
+  --path /etc/lego \
   --email you@company.dev \
   --dns cloudflare \
   --domains os.company.dev \
@@ -187,13 +197,17 @@ CLOUDFLARE_DNS_API_TOKEN=... lego \
 
 Most providers have a lego plugin; Caddy and Traefik can also do DNS-01
 themselves with the matching plugin, which avoids running lego separately.
+Ensure the Caddy service user can read the resulting private key without making
+it world-readable.
 
-Renewal is the part people forget — put it on a timer.
+Renewal is the part people forget. Put renewal, key permissions, and a Caddy
+reload on a timer.
 
 ### 3. Terminate TLS in front of the server
 
-Keep Open Session on `127.0.0.1:3850` and let a proxy hold the certificate.
-Caddy, bound to the tailnet address:
+Keep Open Session on `127.0.0.1:3850` and let a proxy hold the certificate. If
+it currently binds the tailnet address, run `opensession bind 127.0.0.1`
+first. Then configure Caddy to bind only the tailnet address:
 
 ```caddy
 os.company.dev {
@@ -212,13 +226,27 @@ proxy can use Open Session.
 
 ### 4. Tell Open Session its own name
 
+Set the durable app origin in `~/.opensession/config.json`:
+
+```json
+{
+  "server": {
+    "publicBaseUrl": "https://os.company.dev"
+  }
+}
+```
+
+A normal onboarded service also has this environment override, so update it
+too:
+
 ```sh
 # ~/.opensession.env
 OPENSESSION_UI_BASE=https://os.company.dev
 ```
 
-Links posted into Slack, Linear and notes are built from this. Get it wrong and
-everything works except that every link you share points somewhere unreachable.
+Then run `opensession restart`; the environment file is loaded only when the
+service starts. Links posted into Slack, Linear and notes are built from this
+origin. Get it wrong and shared links point somewhere unreachable.
 
 The clients (Chrome extension, Electron shell, Swift app) each take a server
 address too — see [instance-configuration.md](../instance-configuration.md).
@@ -250,9 +278,12 @@ Nothing is exposed; the tunnel exists only while the SSH session does.
 
 ## If you must expose it more widely
 
-Turn on real authentication first. `integrations.github` adds GitHub sign-in:
-every `/api/*` request and the UI WebSocket require a session cookie, and only
-logins listed in `identity.team` can sign in. See
+Turn on real authentication first. Set
+`integrations.github.userPrAuth: true`, enable Device Flow on the GitHub App,
+and configure its client ID and client secret. The private app API and UI
+WebSocket then require a session cookie or bearer token, apart from explicit
+health, update-feed, Runner and broker routes. Only
+GitHub logins mapped by `identity.team[].github` can sign in. See
 [github.md](github.md#per-user-github-auth-prs-as-the-session-owner).
 
 Even then, prefer keeping the network boundary. Sign-in protects the UI and
@@ -260,18 +291,24 @@ API; it is not a reason to put an agent runner on the public internet.
 
 ## Public ingress is separate
 
-Open Session binds one fail-closed public gateway on `127.0.0.1:3860`. It
-serves exact registered webhook and OAuth routes, remote Sandbox WebSockets,
-and workload identity. Unknown methods and paths return 404. The private app
-on 3850 is not part of this listener and must not be routed through the public
-origin.
+By default, Open Session binds one fail-closed public gateway on
+`127.0.0.1:3860`. It serves exact registered webhook and OAuth routes, remote
+Sandbox WebSockets, and workload identity. Unknown methods and paths return a
+bodyless 404. The private app on 3850 is not part of this listener and must not
+be routed through the public origin. Upgrade and workload-token exchange
+attempts are limited to 30 per client IP per minute.
 
-Every webhook route still verifies its provider signature
-(`GITHUB_WEBHOOK_SECRET`, `LINEAR_WEBHOOK_SECRET`, `PLAIN_WEBHOOK_SECRET`,
-`STRIPE_WEBHOOK_SECRET`). The network boundary and signature checks are both
-required.
+Each registered route keeps its own authentication. Provider webhooks verify
+their configured signatures, including `GITHUB_WEBHOOK_SECRET`,
+`SLACK_SIGNING_SECRET`, `LINEAR_WEBHOOK_SECRET`, `PLAIN_WEBHOOK_SECRET`,
+`STRIPE_WEBHOOK_SECRET`, and `integrations.codestorage.webhookSecret`. Other
+public routes use OAuth state, path secrets, or short-lived tokens as
+appropriate. Routes that require credentials reject missing credentials;
+`/ingress-health` is intentionally public.
 
-Configure the canonical origin in Settings → Public ingress or directly:
+Configure the canonical origin in Settings → Public ingress or directly. It
+must be a public HTTPS origin on a hostname different from the private app,
+with no path, credentials, or custom port:
 
 ```json
 {
@@ -293,15 +330,18 @@ the independent private app origin.
 ### Tailscale Funnel
 
 Choose Tailscale Funnel in Settings for automatic HTTPS without DNS records or
-inbound firewall ports. Open Session routes the machine's `*.ts.net` Funnel
-hostname to `127.0.0.1:3860`. Funnel cannot serve a custom hostname.
+inbound firewall ports. The server must be connected to Tailscale, have a
+Tailscale DNS name, and be allowed to use Funnel by the tailnet policy. Open
+Session routes that `*.ts.net` hostname to `127.0.0.1:3860`. Funnel cannot
+serve a custom hostname.
 
 ### Cloudflare Tunnel
 
-Create a named tunnel, then enter its UUID, connector token and public URL in
-Settings. Open Session stores the token write-only, runs `cloudflared` with the
-token file, and restarts the connector if it exits. Point the public hostname
-at the tunnel and set its only service to:
+Install `cloudflared` and create a named tunnel, then enter its UUID,
+connector token and public URL in Settings. Open Session stores the token in a
+`0600` state file without returning it through the API, runs `cloudflared` with
+that token file, and restarts the connector if it exits. Point the public
+hostname at the tunnel and set its only service to:
 
 ```text
 http://127.0.0.1:3860
@@ -318,18 +358,29 @@ have separately decided to make the authenticated app public.
 
 ### Custom domain with Caddy
 
-Point the hostname's A/AAAA records at the server, then choose Custom domain in
-Settings. Open Session writes its marked Caddy section, validates the complete
-Caddyfile, reloads Caddy, verifies the public health route, and restores the
-prior file on failure. The resulting site is intentionally simple because the
-application owns the exact public route allowlist:
+Install Caddy, point the hostname's A/AAAA records at the server's **public**
+address, and allow inbound TCP 80 and 443. Then choose Custom domain in
+Settings. Managed setup requires passwordless `sudo` for the service user. It
+backs up and updates `/etc/caddy/Caddyfile`, validates the complete file, and
+reloads Caddy; validation, install, reload, or config-save failures restore the
+prior file. DNS may still be propagating afterward, so health remains
+**Waiting for DNS** rather than rolling back a valid listener.
+
+If Open Session cannot discover a NATed server's public address, set
+`OPENSESSION_PUBLIC_IPV4` or `OPENSESSION_PUBLIC_IPV6` in
+`~/.opensession.env` and restart. `OPENSESSION_CADDYFILE` overrides the managed
+Caddyfile path. The application, not Caddy, owns the exact public route
+allowlist:
 
 ```caddy
 ingress.example.com {
+    # BEGIN OPENSESSION SANDBOX INGRESS
     handle {
         reverse_proxy 127.0.0.1:3860
     }
+    # END OPENSESSION SANDBOX INGRESS
 }
 ```
 
-The maintained example lives at `deploy/caddy/sandbox-ingress.caddy.example`.
+See the maintained
+[`deploy/caddy/sandbox-ingress.caddy.example`](../../deploy/caddy/sandbox-ingress.caddy.example).

@@ -16,29 +16,29 @@ import {
 } from "./plugins";
 
 const MANIFEST: PackageManifest = {
-	name: "loom",
+	name: "video-library",
 	version: "1.0.0",
-	description: "Your Loom videos as a project.",
+	description: "Your team's videos as a project.",
 	mcpServers: {
-		loom: { type: "http", url: "https://mcp.loom.example/mcp", headers: { Authorization: "${LOOM_TOKEN}" } },
+		"video-library": { type: "http", url: "https://mcp.video-library.example/mcp", headers: { Authorization: "${VIDEO_LIBRARY_TOKEN}" } },
 	},
 	feeds: [
 		{
-			id: "loom",
-			title: "Loom",
-			refKind: "loom",
-			mcpServers: ["loom"],
-			items: { server: "loom", tool: "list_videos", map: { id: "id", title: "name" } },
+			id: "video-library",
+			title: "Video library",
+			refKind: "video-library",
+			mcpServers: ["video-library"],
+			items: { server: "video-library", tool: "list_videos", map: { id: "id", title: "name" } },
 		},
 	],
 	automations: [
 		{
 			id: "weekly",
 			label: "Weekly digest",
-			automation: { name: "Loom weekly digest", prompt: "Summarise last week.", schedule: "0 9 * * 1" },
+			automation: { name: "Video library weekly digest", prompt: "Summarise last week.", schedule: "0 9 * * 1" },
 		},
 	],
-	skills: ["skills/loom-editing"],
+	skills: ["skills/video-library-editing"],
 };
 
 /**
@@ -109,7 +109,7 @@ async function install(
 		plan,
 		stores: fake.stores,
 		dir: "/tmp/pkg",
-		source: "acme/opensession-loom",
+		source: "acme/opensession-video-library",
 		commit: "deadbeef",
 		allowedUsers,
 	});
@@ -118,8 +118,8 @@ async function install(
 
 describe("resolveSource", () => {
 	test("owner/repo becomes a GitHub clone URL", () => {
-		expect(resolveSource("acme/opensession-loom")).toEqual({
-			url: "https://github.com/acme/opensession-loom.git",
+		expect(resolveSource("acme/opensession-video-library")).toEqual({
+			url: "https://github.com/acme/opensession-video-library.git",
 		});
 	});
 
@@ -145,35 +145,35 @@ describe("planInstall", () => {
 	test("every artifact in the manifest becomes an add", () => {
 		const plan = planInstall(MANIFEST, empty);
 		expect(plan.actions.map((a) => `${a.kind}:${a.ref}`)).toEqual([
-			"mcp:loom",
-			"feed:loom",
-			"automation:Loom weekly digest",
-			"skill:loom-editing",
+			"mcp:video-library",
+			"feed:video-library",
+			"automation:Video library weekly digest",
+			"skill:video-library-editing",
 		]);
 		expect(plan.actions.every((a) => a.verb === "add")).toBe(true);
 		expect(plan.conflicts).toEqual([]);
 	});
 
 	test("a name already taken by somebody else is a conflict, not a merge", () => {
-		const plan = planInstall(MANIFEST, { ...empty, mcpServers: ["loom"] });
+		const plan = planInstall(MANIFEST, { ...empty, mcpServers: ["video-library"] });
 		expect(plan.conflicts).toHaveLength(1);
 		expect(plan.conflicts[0]).toContain("not from this package");
 		expect(plan.actions.map((a) => a.kind)).not.toContain("mcp");
 	});
 
 	test("a name this package already owns is an update", () => {
-		const owned: InstalledArtifact[] = [{ kind: "mcp", ref: "loom" }];
-		const plan = planInstall(MANIFEST, { ...empty, mcpServers: ["loom"] }, owned);
+		const owned: InstalledArtifact[] = [{ kind: "mcp", ref: "video-library" }];
+		const plan = planInstall(MANIFEST, { ...empty, mcpServers: ["video-library"] }, owned);
 		expect(plan.conflicts).toEqual([]);
 		expect(plan.actions.find((a) => a.kind === "mcp")?.verb).toBe("update");
 	});
 
 	test("an artifact the new manifest drops becomes a removal", () => {
 		const owned: InstalledArtifact[] = [
-			{ kind: "mcp", ref: "loom" },
+			{ kind: "mcp", ref: "video-library" },
 			{ kind: "feed", ref: "gone" },
 		];
-		const plan = planInstall(MANIFEST, { ...empty, mcpServers: ["loom"], feeds: ["gone"] }, owned);
+		const plan = planInstall(MANIFEST, { ...empty, mcpServers: ["video-library"], feeds: ["gone"] }, owned);
 		expect(plan.removals).toEqual([{ kind: "feed", ref: "gone" }]);
 	});
 
@@ -186,8 +186,8 @@ describe("planInstall", () => {
 
 	test("the review names every artifact it would write", () => {
 		const lines = reviewLines(MANIFEST, planInstall(MANIFEST, empty)).join("\n");
-		expect(lines).toContain("mcp.loom.example");
-		expect(lines).toContain("LOOM_TOKEN");
+		expect(lines).toContain("mcp.video-library.example");
+		expect(lines).toContain("VIDEO_LIBRARY_TOKEN");
 		expect(lines).toContain("installs disabled");
 	});
 
@@ -195,20 +195,20 @@ describe("planInstall", () => {
 		// The ADR's promise: a SKILL.md is text an agent loads into context, so an
 		// upstream edit is a code change and the review has to say so rather than
 		// print the same line it prints for an untouched one.
-		const owned: InstalledArtifact[] = [{ kind: "skill", ref: "loom-editing", hash: "a".repeat(64) }];
-		const state = { ...empty, mcpServers: ["loom"], feeds: ["loom"], skills: ["loom-editing"] };
+		const owned: InstalledArtifact[] = [{ kind: "skill", ref: "video-library-editing", hash: "a".repeat(64) }];
+		const state = { ...empty, mcpServers: ["video-library"], feeds: ["video-library"], skills: ["video-library-editing"] };
 		const changed = planInstall(MANIFEST, state, owned, () => "b".repeat(64));
-		const line = reviewLines(MANIFEST, changed).find((l) => l.includes("loom-editing"))!;
+		const line = reviewLines(MANIFEST, changed).find((l) => l.includes("video-library-editing"))!;
 		expect(line).toContain("content changed: aaaaaaaa to bbbbbbbb");
 		const action = changed.actions.find((a) => a.kind === "skill")!;
 		expect(action).toMatchObject({ hash: "b".repeat(64), previousHash: "a".repeat(64) });
 
 		const same = planInstall(MANIFEST, state, owned, () => "a".repeat(64));
-		expect(reviewLines(MANIFEST, same).find((l) => l.includes("loom-editing"))).toContain("(unchanged)");
+		expect(reviewLines(MANIFEST, same).find((l) => l.includes("video-library-editing"))).toContain("(unchanged)");
 
 		// A first install has nothing to compare against and says nothing.
 		const fresh = planInstall(MANIFEST, empty, [], () => "b".repeat(64));
-		const freshLine = reviewLines(MANIFEST, fresh).find((l) => l.includes("loom-editing"))!;
+		const freshLine = reviewLines(MANIFEST, fresh).find((l) => l.includes("video-library-editing"))!;
 		expect(freshLine).not.toContain("changed");
 		expect(freshLine).not.toContain("unchanged");
 	});
@@ -216,11 +216,11 @@ describe("planInstall", () => {
 
 describe("recipeFor", () => {
 	test("a package automation always installs disabled", () => {
-		const recipe = recipeFor("loom", {
+		const recipe = recipeFor("video-library", {
 			id: "weekly",
 			automation: { name: "n", prompt: "p", enabled: true },
 		});
-		expect(recipe.id).toBe("loom/weekly");
+		expect(recipe.id).toBe("video-library/weekly");
 		expect(recipe.automation.enabled).toBe(false);
 	});
 });
@@ -229,16 +229,16 @@ describe("install and remove", () => {
 	test("installing writes every artifact and records what it wrote", async () => {
 		const fake = fakeStores();
 		const { record } = await install(fake);
-		expect([...fake.mcp.keys()]).toEqual(["loom"]);
-		expect([...fake.feeds.keys()]).toEqual(["loom"]);
-		expect([...fake.automations.keys()]).toEqual(["Loom weekly digest"]);
-		expect([...fake.skills.keys()]).toEqual(["loom-editing"]);
-		expect(fake.automations.get("Loom weekly digest")).toBe("opensession package: loom");
+		expect([...fake.mcp.keys()]).toEqual(["video-library"]);
+		expect([...fake.feeds.keys()]).toEqual(["video-library"]);
+		expect([...fake.automations.keys()]).toEqual(["Video library weekly digest"]);
+		expect([...fake.skills.keys()]).toEqual(["video-library-editing"]);
+		expect(fake.automations.get("Video library weekly digest")).toBe("opensession package: video-library");
 		expect(record.artifacts).toEqual([
-			{ kind: "mcp", ref: "loom" },
-			{ kind: "feed", ref: "loom" },
-			{ kind: "automation", ref: "Loom weekly digest" },
-			{ kind: "skill", ref: "loom-editing", hash: "sha-loom-editing" },
+			{ kind: "mcp", ref: "video-library" },
+			{ kind: "feed", ref: "video-library" },
+			{ kind: "automation", ref: "Video library weekly digest" },
+			{ kind: "skill", ref: "video-library-editing", hash: "sha-video-library-editing" },
 		]);
 		expect(record.commit).toBe("deadbeef");
 		expect(record.updatedAt).toBeUndefined();
@@ -259,11 +259,11 @@ describe("install and remove", () => {
 	test("scoping is applied to the servers, and an update keeps it", async () => {
 		const fake = fakeStores();
 		const first = await install(fake, MANIFEST, [], ["michiel", "kent"]);
-		expect(fake.mcp.get("loom")).toMatchObject({ allowedUsers: ["michiel", "kent"] });
+		expect(fake.mcp.get("video-library")).toMatchObject({ allowedUsers: ["michiel", "kent"] });
 		expect(first.record.allowedUsers).toEqual(["michiel", "kent"]);
 
 		await install(fake, MANIFEST, first.record.artifacts, first.record.allowedUsers);
-		expect(fake.mcp.get("loom")).toMatchObject({ allowedUsers: ["michiel", "kent"] });
+		expect(fake.mcp.get("video-library")).toMatchObject({ allowedUsers: ["michiel", "kent"] });
 	});
 
 	test("an update drops what the manifest no longer declares", async () => {
@@ -271,10 +271,10 @@ describe("install and remove", () => {
 		const first = await install(fake);
 		const trimmed: PackageManifest = { ...MANIFEST, feeds: [], skills: [] };
 		const second = await install(fake, trimmed, first.record.artifacts);
-		expect(second.plan.removals.map((r) => r.ref)).toEqual(["loom", "loom-editing"]);
+		expect(second.plan.removals.map((r) => r.ref)).toEqual(["video-library", "video-library-editing"]);
 		expect([...fake.feeds.keys()]).toEqual([]);
 		expect([...fake.skills.keys()]).toEqual([]);
-		expect([...fake.mcp.keys()]).toEqual(["loom"]);
+		expect([...fake.mcp.keys()]).toEqual(["video-library"]);
 	});
 
 	test("removing reverses everything, and removing twice is not an error", async () => {
@@ -298,7 +298,7 @@ describe("install and remove", () => {
 	// A half-installed package is worse than a failed one: nothing can cleanly
 	// remove it, because nothing recorded what landed.
 	test("a failure part-way through rolls back what it had already written", async () => {
-		const fake = fakeStores({ failOn: "skill:loom-editing" });
+		const fake = fakeStores({ failOn: "skill:video-library-editing" });
 		await expect(install(fake)).rejects.toThrow("boom");
 		expect([...fake.mcp.keys()]).toEqual([]);
 		expect([...fake.feeds.keys()]).toEqual([]);
@@ -316,17 +316,17 @@ describe("install and remove", () => {
 		};
 		const failing = fakeStores({ failOn: "mcp:extra" });
 		// Reuse the first fake's state by replaying the install into it.
-		failing.mcp.set("loom", fake.mcp.get("loom"));
-		failing.feeds.set("loom", fake.feeds.get("loom"));
-		failing.automations.set("Loom weekly digest", "opensession package: loom");
-		failing.skills.set("loom-editing", "/tmp/pkg/skills/loom-editing");
+		failing.mcp.set("video-library", fake.mcp.get("video-library"));
+		failing.feeds.set("video-library", fake.feeds.get("video-library"));
+		failing.automations.set("Video library weekly digest", "opensession package: video-library");
+		failing.skills.set("video-library-editing", "/tmp/pkg/skills/video-library-editing");
 
 		const plan = planInstall(grown, await failing.stores.state(), first.record.artifacts);
 		await expect(
 			applyPlan({ manifest: grown, plan, stores: failing.stores, dir: "/tmp/pkg", source: "x" }),
 		).rejects.toThrow("boom");
-		expect([...failing.mcp.keys()]).toEqual(["loom"]);
-		expect([...failing.feeds.keys()]).toEqual(["loom"]);
+		expect([...failing.mcp.keys()]).toEqual(["video-library"]);
+		expect([...failing.feeds.keys()]).toEqual(["video-library"]);
 	});
 });
 

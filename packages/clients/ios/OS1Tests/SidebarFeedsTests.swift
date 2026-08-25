@@ -5,17 +5,17 @@ final class SidebarFeedsTests: XCTestCase {
     func testHidingKeepsSourcesThisBuildDoesNotRender() {
         // The list is the account's, and the browser has bands the phone has
         // never heard of. Rewriting it must not quietly restore them.
-        let stored = #"["loom","linear"]"#
+        let stored = #"["video-library","linear"]"#
         let next = SidebarFeeds.setting(SidebarFeeds.plain, hidden: true, in: stored)
 
-        XCTAssertEqual(SidebarFeeds.decode(next), ["loom", "linear", "plain"])
+        XCTAssertEqual(SidebarFeeds.decode(next), ["video-library", "linear", "plain"])
     }
 
     func testShowingRemovesOnlyThatSource() {
-        let stored = #"["loom","plain","linear"]"#
+        let stored = #"["video-library","plain","linear"]"#
         let next = SidebarFeeds.setting(SidebarFeeds.plain, hidden: false, in: stored)
 
-        XCTAssertEqual(SidebarFeeds.decode(next), ["loom", "linear"])
+        XCTAssertEqual(SidebarFeeds.decode(next), ["video-library", "linear"])
         XCTAssertFalse(SidebarFeeds.isHidden(SidebarFeeds.plain, in: next))
     }
 
@@ -27,7 +27,7 @@ final class SidebarFeedsTests: XCTestCase {
             SidebarFeeds.setting(SidebarFeeds.plain, hidden: true, in: hidden),
             hidden
         )
-        let shown = #"["loom"]"#
+        let shown = #"["video-library"]"#
         XCTAssertEqual(
             SidebarFeeds.setting(SidebarFeeds.plain, hidden: false, in: shown),
             shown
@@ -51,8 +51,8 @@ final class SidebarFeedsTests: XCTestCase {
 
     func testDecodeTrimsBlanksAndDuplicates() {
         XCTAssertEqual(
-            SidebarFeeds.decode(#"[" plain ","","plain","loom"]"#),
-            ["plain", "loom"]
+            SidebarFeeds.decode(#"[" plain ","","plain","video-library"]"#),
+            ["plain", "video-library"]
         )
     }
 
@@ -76,28 +76,28 @@ final class SidebarFeedsTests: XCTestCase {
     func testHiddenSourceTheServerDoesNotDescribeStillGetsARow() {
         let rows = SidebarFeeds.sources(
             known: [SidebarFeeds.Feed(id: "plain", title: "Plain")],
-            hidden: #"["loom","plain"]"#
+            hidden: #"["video-library","plain"]"#
         )
 
-        XCTAssertEqual(rows.map(\.id), ["plain", "loom"])
+        XCTAssertEqual(rows.map(\.id), ["plain", "video-library"])
         // Nothing names it, so the id is the name rather than nothing at all.
-        XCTAssertEqual(rows.last?.title, "loom")
+        XCTAssertEqual(rows.last?.title, "video-library")
         XCTAssertEqual(rows.last?.unknown, true)
     }
 
     func testSourcesFallBackToTheIdWhenTheServerNamesNothing() {
         let rows = SidebarFeeds.sources(
             known: [
-                SidebarFeeds.Feed(id: "loom", title: nil),
+                SidebarFeeds.Feed(id: "video-library", title: nil),
                 SidebarFeeds.Feed(id: " ", title: "Blank"),
                 SidebarFeeds.Feed(id: "plain", title: "  "),
-                SidebarFeeds.Feed(id: "loom", title: "Loom"),
+                SidebarFeeds.Feed(id: "video-library", title: "Video library"),
             ],
             hidden: "[]"
         )
 
-        XCTAssertEqual(rows.map(\.id), ["loom", "plain"])
-        XCTAssertEqual(rows.map(\.title), ["loom", "plain"])
+        XCTAssertEqual(rows.map(\.id), ["video-library", "plain"])
+        XCTAssertEqual(rows.map(\.title), ["video-library", "plain"])
     }
 
     func testSourcesAreEmptyWhenThereIsNothingToShow() {

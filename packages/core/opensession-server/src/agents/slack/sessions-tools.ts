@@ -1028,7 +1028,7 @@ export function createSessionsMcpServer(
       ),
       tool(
         "migrate_session_engine",
-        "Migrate an existing session onto the Pi engine by flipping its model to an pi/* id (e.g. pi/anthropic/claude-sonnet-5). Does NOT start a run: the session's NEXT prompt builds a transcript handoff from its claude/codex history and continues on a fresh Pi session — file, workspace, branch, title and UI history all stay. Refuses automation-owned sessions (the pi engine hard-gates automations off) and sessions that are mid-run.",
+        "Migrate an existing session onto the Pi engine by flipping its model to a pi/* id (e.g. pi/anthropic/claude-sonnet-5). Does NOT start a run: the session's NEXT prompt builds a transcript handoff from its claude/codex history and continues on a fresh Pi session — file, workspace, branch, title and UI history all stay. Automation-owned sessions may migrate to Pi but not to a non-Pi engine; sessions with an in-flight run are refused.",
         {
           sessionId: z.string().describe("The opensession session id to migrate, e.g. 'bks-…'."),
           model: z
