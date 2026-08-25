@@ -212,11 +212,18 @@ function configuredMcpServer(
   }
 }
 
-function configuredBinding(name: string): ServerBinding | undefined {
+function configuredBinding(
+  name: string,
+  expectedServerUrl?: string,
+): ServerBinding | undefined {
   const cfg = configuredMcpServer(name);
   if (typeof cfg?.url !== "string") return undefined;
   try {
-    return { kind: "http", url: new URL(cfg.url).toString() };
+    const url = new URL(cfg.url).toString();
+    if (expectedServerUrl && new URL(expectedServerUrl).toString() !== url) {
+      return undefined;
+    }
+    return { kind: "http", url };
   } catch {
     return undefined;
   }
@@ -281,7 +288,7 @@ function readStore(): Store {
   // installed atomically replaces the plaintext v1 document with ciphertext.
   const legacy = parsed as Store;
   for (const [name, auth] of Object.entries(legacy)) {
-    auth.binding ||= configuredBinding(name);
+    auth.binding ||= configuredBinding(name, auth.serverUrl);
   }
   writeStore(legacy);
   audit({
@@ -446,7 +453,7 @@ async function ensureServerAuth(
   const cur = store[name];
   if (cur?.clientInfo?.clientId && cur.serverUrl === serverUrl) {
     if (!cur.binding) {
-      cur.binding = configuredBinding(name);
+      cur.binding = configuredBinding(name, cur.serverUrl);
       writeStore(store);
     }
     return cur;
@@ -511,7 +518,7 @@ async function ensureServerAuth(
     ...(scopes ? { scopes } : {}),
     endpoints,
     clientInfo: { clientId: reg.client_id },
-    binding: configuredBinding(name),
+    binding: configuredBinding(name, serverUrl),
     ...(cur ? { shared: cur.shared, users: cur.users } : {}),
   };
   const fresh = readStore();
@@ -585,9 +592,9 @@ export async function startMcpOauthFlow(
       serverUrl,
       endpoints: { authorize: preset.authorize, token: preset.token },
       clientInfo: { clientId: process.env[preset.clientIdEnv]! },
-      binding: configuredBinding(name),
+      binding: configuredBinding(name, serverUrl),
     };
-    store[name].binding ||= configuredBinding(name);
+    store[name].binding ||= configuredBinding(name, serverUrl);
     writeStore(store);
     return { url: url.toString() };
   }

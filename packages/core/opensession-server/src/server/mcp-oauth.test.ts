@@ -174,6 +174,23 @@ describe("personal MCP OAuth credential storage", () => {
     ).toBe(false);
   });
 
+  test("does not bless a repointed URL while migrating a legacy grant", () => {
+    const legacy = legacyStore();
+    legacy.tella.serverUrl = "https://original.example.test/mcp";
+    writeFileSync(store, JSON.stringify(legacy), { mode: 0o600 });
+
+    expect(oauth.mcpOauthStatus("tella").shared).toBeDefined();
+    expect(
+      oauth.mcpOauthBindingMatches("tella", {
+        type: "http",
+        url: "https://tella.example.test/mcp",
+      }),
+    ).toBe(false);
+    expect(
+      Object.keys(proxy.mcpOauthProxyServers("all", undefined, [])),
+    ).not.toContain("tella");
+  });
+
   test("mints its own 0600 key when no systemd credential is present", () => {
     // The rootless install: no CREDENTIALS_DIRECTORY, so the store still has
     // to be ciphertext at rest rather than the feature failing closed.
