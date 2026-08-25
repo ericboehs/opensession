@@ -296,6 +296,114 @@ describe("session kernel actor service", () => {
     }
   });
 
+  test("restarts one failed lane and lazily reactivates its session", async () => {
+    const root = mkdtempSync(join(tmpdir(), "opensession-kernel-restart-"));
+    const databasePath = join(root, "sessions", "session-kernel.sqlite");
+    let isolatedService = await startSessionKernelService({
+      port: 0,
+      token,
+      databasePath,
+      workerCount: 2,
+      responseTimeoutMs: 200,
+    });
+    let epoch: string | undefined;
+    const invoke = async (request: KernelActorTransportEnvelope["request"]) => {
+      if (!epoch && request.t !== "hello") {
+        const handshake = await invoke({
+          t: "hello",
+          rpcId: crypto.randomUUID(),
+          version: SESSION_KERNEL_ACTOR_VERSION,
+        });
+        expect(handshake.response.status).toBe(200);
+      }
+      const response = await fetch(`${isolatedService.url}/rpc`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          version: SESSION_KERNEL_TRANSPORT_VERSION,
+          actorVersion: SESSION_KERNEL_ACTOR_VERSION,
+          ...(epoch ? { serviceEpoch: epoch } : {}),
+          request,
+        }),
+      });
+      const body = (await response.json()) as Record<string, any>;
+      if (body.t === "ready") epoch = body.serviceEpoch;
+      return { response, body };
+    };
+    const setState = (sessionId: string, event: string) => invoke({
+      t: "call",
+      rpcId: crypto.randomUUID(),
+      outputBytes: 256 * 1024,
+      request: {
+        t: "store",
+        method: "setRunState",
+        args: [{ sessionId, state: "running", event, currentRunId: event }],
+      },
+    });
+
+    try {
+      // These IDs hash to different lanes in the stable two-lane pool.
+      expect((await setState("restart-a", "seed-a")).response.status).toBe(200);
+      expect((await setState("restart-b", "seed-b")).response.status).toBe(200);
+      const isolatedRoot = join(root, "sessions", "session-kernel-sessions");
+      const lock = new Database(sessionKernelSessionDbPath("restart-a", isolatedRoot));
+      lock.exec("BEGIN IMMEDIATE;");
+      try {
+        const timedOut = setState("restart-a", "blocked");
+        await Bun.sleep(20);
+        const healthyStartedAt = performance.now();
+        expect((await setState("restart-b", "healthy")).response.status).toBe(200);
+        expect(performance.now() - healthyStartedAt).toBeLessThan(500);
+        expect((await timedOut).response.status).toBe(429);
+      } finally {
+        lock.exec("ROLLBACK;");
+        lock.close();
+      }
+
+      let reactivated: Awaited<ReturnType<typeof setState>> | undefined;
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        const candidate = await setState("restart-a", "reactivated");
+        if (candidate.response.status === 200) {
+          reactivated = candidate;
+          break;
+        }
+        expect(candidate.response.status).toBe(429);
+        await Bun.sleep(20);
+      }
+      expect(reactivated?.body).toMatchObject({ t: "call_result", status: 1 });
+
+      isolatedService.stop();
+      isolatedService = await startSessionKernelService({
+        port: 0,
+        token,
+        databasePath,
+        workerCount: 2,
+      });
+      epoch = undefined;
+      const recovered = await invoke({
+        t: "call",
+        rpcId: crypto.randomUUID(),
+        outputBytes: 256 * 1024,
+        request: {
+          t: "store",
+          method: "runState",
+          args: ["restart-a"],
+        },
+      });
+      expect(recovered.response.status).toBe(200);
+      expect(JSON.parse(recovered.body.body)).toMatchObject({
+        ok: true,
+        result: { currentRunId: "reactivated" },
+      });
+    } finally {
+      isolatedService.stop();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("keeps reductions responsive while an executor owns physical work", async () => {
     const active = await rpc({
       t: "call",
