@@ -5,7 +5,6 @@ import {
 	INFO_LABEL_CLASS,
 	INFO_SECTION_CLASS,
 } from "../lib/session-viewer-classes";
-import { cn } from "../ui/cn";
 import { IconArrowUpRight } from "./icons";
 import { PanelPageHeader } from "./PanelPageHeader";
 import * as stylex from "@stylexjs/stylex";
@@ -163,6 +162,30 @@ const sx = stylex.create({
 			transitionTimingFunction: "var(--tw-ease,var(--ease))",
 			transitionDuration: "var(--tw-duration,var(--dur-micro))"
 	},
+	gap1: {
+		gap: "4px"
+	},
+	pr1: {
+		paddingRight: "4px"
+	},
+	bgHover: {
+		backgroundColor: "var(--hover)"
+	},
+	hoverBgHover: {
+		":hover": {
+			backgroundColor: "var(--hover)"
+		}
+	},
+	size7px: {
+		width: "7px",
+		height: "7px"
+	},
+	bgGreen: {
+		backgroundColor: "var(--green)"
+	},
+	bgLineStrong: {
+		backgroundColor: "var(--border-strong)"
+	},
 	py7px: {
 			paddingBlock: "7px"
 	},
@@ -170,7 +193,7 @@ const sx = stylex.create({
 
 /** A plain divided list. Portal rows do not need a shared grey plate around
  * them: the panel itself is already their surface. */
-const PORTAL_LIST_CLASS = "grid divide-y divide-line/70";
+const PORTAL_LIST_CLASS = "divide-y divide-line/70";
 
 /** What a service row says on its right: where it is, in one word. */
 function statusLabel(
@@ -259,7 +282,7 @@ export function PortalsPage({
 					{recipes.length ? (
 						<div className={INFO_SECTION_CLASS}>
 							<div className={INFO_LABEL_CLASS}>Start a portal</div>
-							<div className={PORTAL_LIST_CLASS}>
+							<div className={PORTAL_LIST_CLASS} {...stylex.props(sx.grid)}>
 								{recipes.map((recipe) => {
 									const service = recipe.serviceKey
 										? services.find(
@@ -307,7 +330,7 @@ export function PortalsPage({
 						{recipes.length > 0 && (
 							<div className={INFO_LABEL_CLASS}>Services</div>
 						)}
-						<div className={PORTAL_LIST_CLASS}>
+						<div className={PORTAL_LIST_CLASS} {...stylex.props(sx.grid)}>
 							{services.length ? (
 								services.map((service) => {
 									const target = portalTargetFor(sessionId, service);
@@ -318,9 +341,18 @@ export function PortalsPage({
 									return (
 										<div
 											key={service.key}
-											className={cn(
-												"group flex min-h-11 min-w-0 items-center gap-1 rounded-control pr-1 transition-colors",
-												active ? "bg-hover" : "hover:bg-hover",
+											className="group"
+											{...stylex.props(
+												sx.flex,
+												sx.minH11,
+												sx.minW0,
+												sx.itemsCenter,
+												sx.gap1,
+												sx.roundedControl,
+												sx.pr1,
+												sx.transitionColors,
+												active && sx.bgHover,
+												!active && sx.hoverBgHover,
 											)}
 										>
 											<button
@@ -330,9 +362,12 @@ export function PortalsPage({
 												className="disabled:cursor-default" {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.px2, sx.py5px, sx.textLeft)}
 											>
 												<span
-													className={cn(
-														"size-[7px] shrink-0 rounded-full",
-														service.running ? "bg-green" : "bg-line-strong",
+													{...stylex.props(
+														sx.size7px,
+														sx.shrink0,
+														sx.roundedFull,
+														service.running && sx.bgGreen,
+														!service.running && sx.bgLineStrong,
 													)}
 													aria-hidden="true"
 												/>
