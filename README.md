@@ -39,7 +39,7 @@ install works, not a health check. Connect GitHub and the other integrations
 later from Settings → Connections; see
 [docs/setup/github.md](docs/setup/github.md).
 
-Check on it any time:
+Check it any time:
 
 ```sh
 opensession doctor     # verify the install and report engine readiness
