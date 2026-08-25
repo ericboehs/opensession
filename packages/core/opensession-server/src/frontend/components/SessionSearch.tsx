@@ -33,8 +33,9 @@ import {
 } from "../lib/session-owner";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { motionStyles } from "../styles/animations.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -517,7 +518,7 @@ function FilterMenu({
 						type="button"
 						variant="ghost"
 						size="sm"
-						className={mergeStylexClassName("", sx.phoneMinH11)}
+						className={mergeStylexOverrideClassName("", sx.phoneMinH11)}
 						icon={icon}
 						caret
 						data-session-filter
@@ -527,14 +528,14 @@ function FilterMenu({
 					</Button>
 				}
 			/>
-			<Menu.Popup align="start" sideOffset={6} className={mergeStylexClassName("", sx.maxWMin320pxCalc100vw1rem)}>
+			<Menu.Popup align="start" sideOffset={6} className={mergeStylexOverrideClassName("", sx.maxWMin320pxCalc100vw1rem)}>
 				<Menu.RadioGroup value={value} onValueChange={(next) => onChange(String(next))}>
 					{options.map((option) => (
 						<Menu.RadioItem
 							key={option.value}
 							value={option.value}
 							closeOnClick
-							{...stylex.props(sx.justifyBetween, sx.gap3)}
+							className={mergeStylexOverrideClassName("", sx.justifyBetween, sx.gap3)}
 						>
 							<span {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap25)}>
 								{hasIcons && (
@@ -803,14 +804,14 @@ if (!ctrl.signal.aborted) setSearching(false);
 		>
 			<Modal.Content
 				variant="palette"
-				widthClassName="w-[min(640px,100%)]"
-				className={mergeStylexClassName("", sx.hMin500px76vh, sx.max560pxHMin560px82vh)}
+				widthClassName={mergeStylexClassName("", sharedClassStyles.wMin640px100)}
+				className={mergeStylexOverrideClassName("", sx.hMin500px76vh, sx.max560pxHMin560px82vh)}
 				aria-label="Command menu"
 				initialFocus={inputRef}
 				onKeyDown={onKeyDown}
 			>
 				<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3, sx.borderB, sx.borderDivider, sx.px5, sx.py4)}>
-					<IconSearch {...stylex.props(sx.shrink0, sx.textFaint)} size={22} />
+					<IconSearch className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)} size={22} />
 					<input
 						ref={inputRef} {...mergeStylexProps("", sx.placeholderTextFaint, sx.flex1, sx.borderNone, sx.bgTransparent, sx.fontSans, sx.textInputPhone, sx.leading14, sx.textFg, sx.outlineNone)}
 						value={query}
@@ -833,7 +834,7 @@ if (!ctrl.signal.aborted) setSearching(false);
 								mergeStylexClassName("", sx.size13px, sx.shrink0, sx.animateSpin07sLinearInfinite, sx.roundedFull, sx.border2, sx.borderLineStrong, sx.borderTAccent) +
 								// Keeps turning under reduced motion — it is the only "still
 								// searching" signal, and the blanket rule would freeze it.
-								mergeStylexClassName("", sx.motionReduceAnimationDuration07s, sx.motionReduceAnimationIterationCountInfinite)
+								" " + mergeStylexClassName("", sx.motionReduceAnimationDuration07s, sx.motionReduceAnimationIterationCountInfinite)
 							}
 							aria-label="Searching"
 						/>
@@ -871,7 +872,7 @@ if (!ctrl.signal.aborted) setSearching(false);
 							type="button"
 							variant="ghost"
 							size="sm"
-							{...stylex.props(sx.mlAuto, sx.textFaint)}
+							className={mergeStylexOverrideClassName("", sx.mlAuto, sx.textFaint)}
 							data-session-filter-clear
 							onClick={() => {
 								setPerson("all");

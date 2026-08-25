@@ -5,6 +5,7 @@ import { PhoneTopBar, PhoneTopBarTitle } from "../../ui/top-bar";
 import { IconCheck, IconChevronLeft, IconChevronRight } from "../icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -122,13 +123,13 @@ export function SheetPageHeader({
 	return (
 		<PhoneTopBar>
 			<SheetIconButton
-				{...stylex.props(sx.absolute, sx.left3)}
+				className={mergeStylexOverrideClassName("", sx.absolute, sx.left3)}
 				onClick={onBack}
 				aria-label="Back to actions"
 			>
 				<IconChevronLeft size={24} />
 			</SheetIconButton>
-			<PhoneTopBarTitle {...stylex.props(typography.sectionTitle)}>
+			<PhoneTopBarTitle className={mergeStylexOverrideClassName("", typography.sectionTitle)}>
 				{title}
 			</PhoneTopBarTitle>
 		</PhoneTopBar>
@@ -156,7 +157,7 @@ export function LanePickerPage({
 						/>
 						{item.label}
 						{current === item.key && (
-							<IconCheck size={20} {...stylex.props(sx.mlAuto, sx.textDim)} />
+							<IconCheck size={20} className={mergeStylexOverrideClassName("", sx.mlAuto, sx.textDim)} />
 						)}
 					</SheetItem>
 				))}
@@ -164,7 +165,7 @@ export function LanePickerPage({
 					<span {...stylex.props(sx.size2, sx.shrink0, sx.roundedFull, sx.border, sx.borderLineStrong)} />
 					Auto
 					{current === null && (
-						<IconCheck size={20} {...stylex.props(sx.mlAuto, sx.textDim)} />
+						<IconCheck size={20} className={mergeStylexOverrideClassName("", sx.mlAuto, sx.textDim)} />
 					)}
 				</SheetItem>
 			</SheetBody>

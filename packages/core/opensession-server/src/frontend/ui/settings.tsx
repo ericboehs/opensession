@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Card } from "./card";
-import { cn, mergeStylexProps, mergeStylexClassName } from "./cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "./cn";
 import { fieldClasses } from "./input";
 import { markTileClass } from "../lib/mark-tile";
 import { Skeleton, SkeletonBar } from "./state";
@@ -16,7 +16,8 @@ const sx = stylex.create({
 			margin: "0"
 	},
 	fontTitle: {
-			fontWeight: "var(--title-weight)"
+			fontWeight: "var(--title-weight)",
+		"--settings-leading": "1.1"
 	},
 	tracking002em: {
 			letterSpacing: "-.02em"
@@ -380,7 +381,7 @@ export function SettingCardSkeleton({
 		<Skeleton label={label} className={className} {...props}>
 			<SettingCard>
 				{GHOST_ROWS.slice(0, rows).map((row) => (
-					<SettingRow key={row.title} {...stylex.props(icon !== undefined && sx.gap3)}>
+					<SettingRow key={row.title} className={mergeStylexOverrideClassName("", icon !== undefined && sx.gap3)}>
 						{icon !== undefined && (
 							// Inline size, like IconTile's own: the tile scale is a
 							// number a caller passes, not a step in the class scale.

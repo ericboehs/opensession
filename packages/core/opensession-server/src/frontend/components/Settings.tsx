@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { useScrollEdge } from "../hooks/useScrollEdge";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { useAuthStatus } from "./UserPicker";
 import {
 	SETTINGS_BACK,
@@ -382,10 +382,7 @@ function NavSearch({
 			<div {...stylex.props(sx.relative)}>
 				<IconSearch
 					size={sheet ? 20 : 18}
-					{...stylex.props(
-						sx.searchIcon,
-						sheet ? sx.searchIconSheet : sx.searchIconDesktop,
-					)}
+					className={mergeStylexOverrideClassName("", sx.searchIcon, sheet ? sx.searchIconSheet : sx.searchIconDesktop)}
 				/>
 				<Input
 					value={value}
@@ -696,7 +693,7 @@ function MobileSettings({
 					<PhoneTopBar>
 						{detail && (
 							<SheetIconButton
-								{...stylex.props(sx.absolute, sx.left3)}
+								className={mergeStylexOverrideClassName("", sx.absolute, sx.left3)}
 								onClick={() => onShowRoot?.()}
 								aria-label="Back to settings"
 							>
@@ -711,7 +708,7 @@ function MobileSettings({
 							{detail ? shownLabel : "Settings"}
 						</PhoneTopBarTitle>
 						<SheetIconButton
-							{...stylex.props(sx.absolute, sx.right3)}
+							className={mergeStylexOverrideClassName("", sx.absolute, sx.right3)}
 							onClick={dismiss}
 							aria-label="Close settings"
 						>
@@ -749,7 +746,7 @@ function MobileSettings({
 															</span>
 														)}
 													</span>
-													<IconChevronRight size={20} {...stylex.props(sx.shrink0, sx.textFaint)} />
+													<IconChevronRight size={20} className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)} />
 												</button>
 											))}
 										</div>

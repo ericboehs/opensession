@@ -106,6 +106,7 @@ import { RepoTile } from "../RepoTile";
 import { IconRepo, IconSparkle } from "../icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -425,10 +426,10 @@ setStatus("idle");
 					// ten-row grey slab, which is the editor's box rather than its
 					// contents and reads as a field you have been locked out of.
 					<Skeleton label="Loading your prompt">
-						<SettingsSection {...stylex.props(sx.flex, sx.flexCol, sx.gap25)}>
-							<SkeletonBar {...stylex.props(sx.h25, sx.w72)} />
-							<SkeletonBar {...stylex.props(sx.h25, sx.w88)} />
-							<SkeletonBar {...stylex.props(sx.h25, sx.w46)} />
+						<SettingsSection className={mergeStylexOverrideClassName("", sx.flex, sx.flexCol, sx.gap25)}>
+							<SkeletonBar className={mergeStylexOverrideClassName("", sx.h25, sx.w72)} />
+							<SkeletonBar className={mergeStylexOverrideClassName("", sx.h25, sx.w88)} />
+							<SkeletonBar className={mergeStylexOverrideClassName("", sx.h25, sx.w46)} />
 						</SettingsSection>
 					</Skeleton>
 				)}
@@ -582,7 +583,7 @@ export function PreferencesPanel() {
 	return (
 		<SettingsPanel>
 			<SettingsHeader title="Preferences" />
-			<SettingsGroupLabel {...stylex.props(sx.mt0)}>Messages</SettingsGroupLabel>
+			<SettingsGroupLabel className={mergeStylexOverrideClassName("", sx.mt0)}>Messages</SettingsGroupLabel>
 			<SettingCard>
 				{/* These four choices become one starting state for every new session. */}
 				<SettingGroup>

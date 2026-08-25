@@ -11,7 +11,8 @@ import { Modal, useEnterOnMount } from "../ui/modal";
 import { IconX } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -253,11 +254,11 @@ function CheatSheet({
 		>
 			<Modal.Content
 				variant="palette"
-				widthClassName="w-[min(720px,100%)]"
+				widthClassName={mergeStylexClassName("", sharedClassStyles.wMin720px100)}
 				initialFocus={listRef}
 			>
 				<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3, sx.borderB, sx.borderDivider, sx.px5, sx.py4)}>
-					<Modal.Title {...stylex.props(sx.m0, sx.minW0, sx.flex1, sx.fontSemibold, sx.leadingTight, sx.tracking001em, sx.textFg, typography.itemTitle)}>
+					<Modal.Title className={mergeStylexOverrideClassName("", sx.m0, sx.minW0, sx.flex1, sx.fontSemibold, sx.leadingTight, sx.tracking001em, sx.textFg, typography.itemTitle)}>
 						Keyboard shortcuts
 					</Modal.Title>
 					{onCustomize && (

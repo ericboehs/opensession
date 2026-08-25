@@ -47,7 +47,7 @@ import {
 } from "../icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps } from "../../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -370,7 +370,7 @@ export function ShortcutsPanel() {
 		const conflicted = conflict?.id === id ? conflict : null;
 
 		return (
-			<SettingRow key={id} {...stylex.props(sx.itemsStart)}>
+			<SettingRow key={id} className={mergeStylexOverrideClassName("", sx.itemsStart)}>
 				<SettingRowText>
 					<SettingRowTitle>{command.title}</SettingRowTitle>
 					<SettingRowDescription>{command.description}</SettingRowDescription>
@@ -397,7 +397,7 @@ export function ShortcutsPanel() {
 						</div>
 					)}
 				</SettingRowText>
-				<SettingRowControl {...stylex.props(sx.flex, sx.flexCol, sx.itemsEnd, sx.gap15)}>
+				<SettingRowControl className={mergeStylexOverrideClassName("", sx.flex, sx.flexCol, sx.itemsEnd, sx.gap15)}>
 					{keys.length === 0 && recording?.id !== id && (
 						<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap15)}>
 							<span {...stylex.props(sx.textFaint, typography.supporting)}>Unassigned</span>
@@ -502,10 +502,10 @@ export function ShortcutsPanel() {
 			<div {...stylex.props(sx.relative, sx.px5)}>
 				<IconSearch
 					size={20}
-					{...stylex.props(sx.pointerEventsNone, sx.absolute, sx.left8, sx.top12, sx.TranslateY12, sx.textFaint)}
+					className={mergeStylexOverrideClassName("", sx.pointerEventsNone, sx.absolute, sx.left8, sx.top12, sx.TranslateY12, sx.textFaint)}
 				/>
 				<Input
-					{...stylex.props(sx.pl11)}
+					className={mergeStylexOverrideClassName("", sx.pl11)}
 					type="search"
 					value={query}
 					onChange={(e) => setQuery(e.target.value)}

@@ -31,7 +31,7 @@ import { MotionConfig } from "motion/react";
 import { MarkdownRepoProvider } from "./components/MarkdownBody";
 import { Sidebar, type SidebarHandle } from "./components/Sidebar";
 import { Tooltip, TooltipProvider } from "./ui/tooltip";
-import { cn, mergeStylexProps, mergeStylexClassName } from "./ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "./ui/cn";
 import {
 	APP_BODY,
 	DETAIL_PANE,
@@ -307,6 +307,7 @@ import "./styles/residual.css";
 import { EmptyState, LoadingState } from "./ui/state";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "./styles/typography.stylex";
+import { sharedClassStyles } from "./styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -5169,16 +5170,16 @@ console.error("Rename workspace failed:", error);
 				}}
 				disablePointerDismissal
 			>
-				<Modal.Content widthClassName="max-w-[34rem]" {...stylex.props(sx.gap5)}>
-					<Modal.Title {...stylex.props(sx.m0, sx.fontSemibold, sx.tracking001em, sx.textFg, typography.dialogTitle)}>
+				<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW34rem)} className={mergeStylexOverrideClassName("", sx.gap5)}>
+					<Modal.Title className={mergeStylexOverrideClassName("", sx.m0, sx.fontSemibold, sx.tracking001em, sx.textFg, typography.dialogTitle)}>
 						Close running session{runningCloseConfirmation?.runningCount === 1 ? "" : "s"}?
 					</Modal.Title>
-					<Modal.Description {...stylex.props(sx.m0, sx.leadingRelaxed, sx.textDim, typography.body)}>
+					<Modal.Description className={mergeStylexOverrideClassName("", sx.m0, sx.leadingRelaxed, sx.textDim, typography.body)}>
 						{runningCloseConfirmation?.runningCount === 1
 							? "This session is currently running. Closing it will cancel its current run."
 							: `These ${runningCloseConfirmation?.runningCount ?? 0} sessions are currently running. Closing them will cancel their current runs.`}
 					</Modal.Description>
-					<Modal.Footer {...stylex.props(sx.mt3, sx.justifyEnd, sx.gap3)}>
+					<Modal.Footer className={mergeStylexOverrideClassName("", sx.mt3, sx.justifyEnd, sx.gap3)}>
 						<Modal.Close render={<Button size="lg">Cancel</Button>} />
 						<Button
 							variant="danger-strong"
@@ -5220,7 +5221,7 @@ console.error("Rename workspace failed:", error);
 						route.view === "archived" && ARCHIVED_SEARCH_HEADER,
 					)}
 				>
-					<TopBarLeading {...stylex.props(sx.shrink0)}>
+					<TopBarLeading className={mergeStylexOverrideClassName("", sx.shrink0)}>
 						{mobileDetail ? (
 							<TopBarBack
 								floating
@@ -5306,7 +5307,7 @@ console.error("Rename workspace failed:", error);
 									{currentSession && sessionWasAgentStarted(currentSession) && (
 										<IconRobot
 											size={16}
-											{...stylex.props(sx.shrink0, sx.textFaint)}
+											className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)}
 											aria-label="Started by an agent"
 										/>
 									)}
@@ -6057,10 +6058,10 @@ console.error("Archive failed:", e);
 								onConnect={() =>
 									navigate({ view: "settings", section: "myAccounts" })
 								}
-								{...stylex.props(sx.minH0, sx.flex1)}
+								className={mergeStylexOverrideClassName("", sx.minH0, sx.flex1)}
 							/>
 						) : productEmpty && githubConnectionState === "loading" ? (
-							<LoadingState {...stylex.props(sx.minH0, sx.flex1)}>Checking GitHub…</LoadingState>
+							<LoadingState className={mergeStylexOverrideClassName("", sx.minH0, sx.flex1)}>Checking GitHub…</LoadingState>
 						) : productEmpty ? (
 							/* With nothing to open, the page IS the new-session card: the
 							   same palette rendered in place, so the empty state is

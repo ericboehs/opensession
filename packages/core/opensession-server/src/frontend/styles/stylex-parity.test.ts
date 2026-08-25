@@ -81,6 +81,108 @@ describe("stylex port guards", () => {
 		expect(offenders).toEqual([]);
 	});
 
+	test("custom components preserve StyleX metadata through className", () => {
+		const offenders: string[] = [];
+		for (const f of sources.filter((file) => file.endsWith(".tsx"))) {
+			const src = readFileSync(f, "utf8");
+			if (!src.includes("stylex.props")) continue;
+			const file = ts.createSourceFile(
+				f,
+				src,
+				ts.ScriptTarget.Latest,
+				true,
+				ts.ScriptKind.TSX,
+			);
+			function visit(node: ts.Node) {
+				if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+					const customComponent = /^[A-Z]/.test(node.tagName.getText(file));
+					const directStylexSpread = node.attributes.properties.some(
+						(attribute) =>
+							ts.isJsxSpreadAttribute(attribute) &&
+							ts.isCallExpression(attribute.expression) &&
+							attribute.expression.expression.getText(file) === "stylex.props",
+					);
+					if (customComponent && directStylexSpread) {
+						offenders.push(
+							`${f}:${file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1}`,
+						);
+					}
+				}
+				ts.forEachChild(node, visit);
+			}
+			visit(file);
+		}
+		expect(offenders).toEqual([]);
+	});
+
+	test("concatenated StyleX class fragments keep token boundaries", () => {
+		const offenders: string[] = [];
+		for (const f of sources) {
+			const src = readFileSync(f, "utf8");
+			if (!src.includes("mergeStylexClassName")) continue;
+			const file = ts.createSourceFile(
+				f,
+				src,
+				ts.ScriptTarget.Latest,
+				true,
+				f.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+			);
+			const flatten = (node: ts.Expression, out: ts.Expression[] = []) => {
+				if (
+					ts.isBinaryExpression(node) &&
+					node.operatorToken.kind === ts.SyntaxKind.PlusToken
+				) {
+					flatten(node.left, out);
+					flatten(node.right, out);
+				} else out.push(node);
+				return out;
+			};
+			function visit(node: ts.Node) {
+				if (
+					ts.isBinaryExpression(node) &&
+					node.operatorToken.kind === ts.SyntaxKind.PlusToken &&
+					node.getText(file).includes("mergeStylexClassName") &&
+					!(
+						ts.isBinaryExpression(node.parent) &&
+						node.parent.operatorToken.kind === ts.SyntaxKind.PlusToken
+					)
+				) {
+					const fragments = flatten(node);
+					for (let index = 1; index < fragments.length; index++) {
+						const previous = fragments[index - 1];
+						const next = fragments[index];
+						const previousEndsWithSpace =
+							ts.isStringLiteralLike(previous) && /\s$/.test(previous.text);
+						const nextStartsWithSpace =
+							ts.isStringLiteralLike(next) && /^\s/.test(next.text);
+						if (!previousEndsWithSpace && !nextStartsWithSpace) {
+							offenders.push(
+								`${f}:${file.getLineAndCharacterOfPosition(next.getStart(file)).line + 1}`,
+							);
+						}
+					}
+				}
+				ts.forEachChild(node, visit);
+			}
+			visit(file);
+		}
+		expect(offenders).toEqual([]);
+	});
+
+	test("residual selectors bridge StyleX property specificity", () => {
+		const residual = readFileSync(join(STYLES, "residual.css"), "utf8");
+		const generator = readFileSync(
+			join(FRONTEND, "../../../../../scripts/stylex-residual.ts"),
+			"utf8",
+		);
+		expect(generator).toContain('const RESIDUAL_SPECIFICITY = ":not(#\\\\#)".repeat(10)');
+		const mobileDetailRule = residual
+			.split("\n")
+			.find((line) => line.includes("app-body\\.mobile-detail") && line.includes("translateX"));
+		expect(mobileDetailRule).toBeDefined();
+		expect(mobileDetailRule?.match(/:not\(#\\#\)/g)?.length).toBe(10);
+	});
+
 	test("Tailwind hover semantics remain gated to hover-capable pointers", () => {
 		const bare: string[] = [];
 		for (const f of sources) {

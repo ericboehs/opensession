@@ -10,7 +10,7 @@ import { Segmented, SegmentedOption } from "../ui/segmented";
 import { DateRangeField } from "../ui/date-picker";
 import { PageTitle } from "../ui/page-header";
 import { TopBar, TopBarActions, TopBarTitle } from "../ui/top-bar";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import {
 	DETAIL_TOPBAR_TITLE_TEXT,
 	SCROLL_EDGE_DIVIDER,
@@ -679,7 +679,7 @@ function BarChart({ labels, series, values, mode, height = 190, formatValue = fm
 				})}
 			</svg>
 			{hover !== null && tooltipRows.length > 0 && (
-				<ChartTooltip {...stylex.props(sx.top1, sx.TranslateX12)} style={{ left: tooltipLeft }}>
+				<ChartTooltip className={mergeStylexOverrideClassName("", sx.top1, sx.TranslateX12)} style={{ left: tooltipLeft }}>
 					<div {...stylex.props(sx.mb1, sx.fontSemibold, sx.textFg, typography.meta)}>{shortDate(labels[hover])}</div>
 					{tooltipRows.map((r) => (
 						<div key={r.label} {...stylex.props(sx.flex, sx.itemsCenter, sx.gap15, sx.whitespaceNowrap, sx.leading45, typography.meta)}>
@@ -782,7 +782,7 @@ function ChartCard({
 }) {
 	const heading = <h3 {...stylex.props(sx.m0, sx.fontSemibold, sx.tracking001em, sx.textFg, typography.itemTitle)}>{title}</h3>;
 	return (
-		<Card as="section" {...stylex.props(sx.minW0, sx.p5)}>
+		<Card as="section" className={mergeStylexOverrideClassName("", sx.minW0, sx.p5)}>
 			{actions ? (
 				<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsStart, sx.justifyBetween, sx.gapX3, sx.gapY2)}>
 					{heading}
@@ -819,7 +819,7 @@ function StatTile({
 	sub?: string;
 }) {
 	return (
-		<Card {...stylex.props(sx.minW0, sx.px5, sx.py4)}>
+		<Card className={mergeStylexOverrideClassName("", sx.minW0, sx.px5, sx.py4)}>
 			<div {...stylex.props(sx.fontMedium, sx.textDim, typography.label)}>{label}</div>
 			<div {...stylex.props(sx.mt1, sx.fontSemibold, sx.textFg, typography.stat)}>
 				{value}
@@ -997,7 +997,7 @@ function PersonRepoBars({
 			{hover && row && (
 				<ChartTooltip
 					ref={tipRef}
-					{...stylex.props(sx.TranslateX12)}
+					className={mergeStylexOverrideClassName("", sx.TranslateX12)}
 					style={{ left, top: above ? hover.top - tip.h - 8 : hover.bottom + 8 }}
 				>
 					{/* Same size as the row's own picture, so the readout draws the
@@ -1357,7 +1357,7 @@ export function Analytics() {
 					{/* The page's own heading, at the step every other page opens on.
 					    It scrolls away under the range bar, which is why that bar is
 					    fixed and this is not. */}
-					<PageTitle {...stylex.props(sx.mt7)}>Analytics</PageTitle>
+					<PageTitle className={mergeStylexOverrideClassName("", sx.mt7)}>Analytics</PageTitle>
 					{error && <p {...stylex.props(sx.mt4, sx.textRed, typography.body)}>{error}</p>}
 					{!data && !error && (
 						<div {...stylex.props(sx.flex, sx.h60, sx.itemsCenter, sx.justifyCenter, sx.textDim, typography.body)}>Loading analytics…</div>
@@ -1810,7 +1810,7 @@ export function Analytics() {
 										{data.prs.length > 12 && (
 											<Button
 												size="sm"
-												{...stylex.props(sx.mt2, typography.controlLabel)}
+												className={mergeStylexOverrideClassName("", sx.mt2, typography.controlLabel)}
 												onClick={() => setShowAllPrs((v) => !v)}
 											>
 												{showAllPrs ? "Show fewer" : `Show all ${fmtInt(data.prs.length)}`}

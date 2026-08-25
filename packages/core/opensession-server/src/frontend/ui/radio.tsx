@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Radio as BaseRadio } from "@base-ui/react/radio";
 import { RadioGroup as BaseRadioGroup } from "@base-ui/react/radio-group";
-import { cn, mergeStylexProps, mergeStylexClassName } from "./cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "./cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -110,7 +110,7 @@ export function Radio({ className, ...props }: RadioProps) {
 		<BaseRadio.Root {...mergeStylexProps(cn(mergeStylexClassName("", sx.transitionBackgroundColorBorderColor), mergeStylexClassName("", sx.hoverBorderFaint), "data-[checked]:border-accent-control data-[checked]:bg-accent-control data-[checked]:hover:border-accent-control", mergeStylexClassName("", sx.focusVisibleRing2, sx.focusVisibleRingAccent50, sx.focusVisibleRingOffset2, sx.focusVisibleRingOffsetBg), "data-[disabled]:cursor-default data-[disabled]:opacity-40", className), sx.flex, sx.size4, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.border, sx.borderLineStrong, sx.bgSurface, sx.p0, sx.outlineNone, sx.durationVarDurMicro, sx.easeVarEase)}
 			{...props}
 		>
-			<BaseRadio.Indicator {...stylex.props(sx.size15, sx.roundedFull, sx.bgOnAccentControl)} />
+			<BaseRadio.Indicator className={mergeStylexOverrideClassName("", sx.size15, sx.roundedFull, sx.bgOnAccentControl)} />
 		</BaseRadio.Root>
 	);
 }

@@ -136,7 +136,7 @@ import {
 } from "../lib/deferred-merge";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -2006,14 +2006,7 @@ toast(e.message || "Couldn't unlink the PR");
             <Button
               variant="ghost"
               size="sm"
-              {...stylex.props(
-                sx.minW0,
-                sx.maxW180px,
-                sx.px2,
-                typography.label,
-                sx.phoneMinH9,
-                sx.phoneMaxW104px,
-              )}
+              className={mergeStylexOverrideClassName("", sx.minW0, sx.maxW180px, sx.px2, typography.label, sx.phoneMinH9, sx.phoneMaxW104px)}
               aria-label={`Switch review target. Current: ${active?.label || "repository"}`}
               caret
             >
@@ -2031,7 +2024,7 @@ toast(e.message || "Couldn't unlink the PR");
         side="bottom"
         align="start"
         initialFocus
-        {...stylex.props(sx.w280px, sx.p15)}
+        className={mergeStylexOverrideClassName("", sx.w280px, sx.p15)}
       >
         <div {...stylex.props(sx.px2, sx.py15, sx.fontMedium, sx.textFaint, typography.meta)}>
           Review target
@@ -2070,7 +2063,7 @@ toast(e.message || "Couldn't unlink the PR");
                   setActiveKey(target.key);
                 }}
               >
-                <IconBranches size={17} {...stylex.props(sx.shrink0, sx.textDim)} />
+                <IconBranches size={17} className={mergeStylexOverrideClassName("", sx.shrink0, sx.textDim)} />
                 <span {...stylex.props(sx.minW0, sx.flex1)}>
                   <span {...stylex.props(sx.block, sx.truncate, sx.fontMedium, sx.textFg, typography.label)}>
                     {target.label}
@@ -2080,7 +2073,7 @@ toast(e.message || "Couldn't unlink the PR");
                   </span>
                 </span>
                 {selected && (
-                  <IconCheck size={16} {...stylex.props(sx.shrink0, sx.textFg)} />
+                  <IconCheck size={16} className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFg)} />
                 )}
               </button>
             );
@@ -2128,7 +2121,7 @@ toast(e.message || "Couldn't unlink the PR");
         <EmptyState
           className={reviewStateClass}
           role="alert"
-          icon={<IconX size={22} {...stylex.props(sx.textRed)} />}
+          icon={<IconX size={22} className={mergeStylexOverrideClassName("", sx.textRed)} />}
           title="Couldn’t load pull request"
           action={
             <Button
@@ -2190,7 +2183,7 @@ toast(e.message || "Couldn't unlink the PR");
               <Button
                 variant="primary"
                 size="sm"
-                {...stylex.props(sx.phoneMinH11)}
+                className={mergeStylexOverrideClassName("", sx.phoneMinH11)}
                 icon={<IconPullRequest size={20} />}
                 disabled={prRequested}
                 onClick={createPr}
@@ -2339,7 +2332,7 @@ toast(e.message || "Couldn't unlink the PR");
             <Button
               variant="ghost"
               size="sm"
-              {...stylex.props(sx.desktopMrMinus15)}
+              className={mergeStylexOverrideClassName("", sx.desktopMrMinus15)}
               aria-label="Code view settings"
               icon={<IconSliders size={18} />}
             />
@@ -2354,7 +2347,7 @@ toast(e.message || "Couldn't unlink the PR");
         side="bottom"
         align="end"
         initialFocus
-        {...stylex.props(sx.flex, sx.w340px, sx.flexCol, sx.gap05, sx.p3)}
+        className={mergeStylexOverrideClassName("", sx.flex, sx.w340px, sx.flexCol, sx.gap05, sx.p3)}
       >
         {worktreeAvailable && (
           <>
@@ -2544,7 +2537,7 @@ toast(e.message || "Couldn't unlink the PR");
           the summary only relocates page navigation. Phone keeps one
           edge-to-edge navigation and controls row below the identity. */}
       <ReviewToolbar compact={compactToolbar}>
-      <TopBar as="header" {...stylex.props(sx.h10, sx.shrink0, sx.gap25, sx.px4, sx.phonePx3)}>
+      <TopBar as="header" className={mergeStylexOverrideClassName("", sx.h10, sx.shrink0, sx.gap25, sx.px4, sx.phonePx3)}>
         {/* State, in the app's own PR language, filled rather than drawn: the
             tone washes the whole chip and the glyph and word share its ink.
             It is its own object, so it gets more air than the pieces of the
@@ -2587,7 +2580,7 @@ toast(e.message || "Couldn't unlink the PR");
               />
               <span {...stylex.props(sx.maxW180px, sx.truncate)}>{pr.author}</span>
             </span>
-            <IconChevronRight size={18} {...stylex.props(sx.shrink0, sx.textFaint)} />
+            <IconChevronRight size={18} className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)} />
           </>
         )}
         {/* Title only. Counts, commits and the sessions on this PR are the
@@ -2686,7 +2679,7 @@ toast(e.message || "Couldn't unlink the PR");
                 <Button
                   variant="ghost"
                   size="sm"
-                  {...stylex.props(sx.Mr15)}
+                  className={mergeStylexOverrideClassName("", sx.Mr15)}
                   aria-label="Pull request actions"
                   icon={<IconDotsHorizontal size={18} />}
                 />
@@ -3087,7 +3080,7 @@ toast(e.message || "Couldn't unlink the PR");
             {onOpenSession && (
               <Button
                 variant="soft"
-                {...stylex.props(sx.textXs)}
+                className={mergeStylexOverrideClassName("", sx.textXs)}
                 onClick={onOpenSession}
               >
                 Open workspace
@@ -3095,7 +3088,7 @@ toast(e.message || "Couldn't unlink the PR");
             )}
             <Button
               variant="soft"
-              {...stylex.props(sx.textXs)}
+              className={mergeStylexOverrideClassName("", sx.textXs)}
               onClick={() => setReviewing(false)}
             >
               Exit review
@@ -3103,7 +3096,7 @@ toast(e.message || "Couldn't unlink the PR");
             {pr.state === "OPEN" && !pr.isDraft && caps.reviewComments && (
               <Button
                 variant="success"
-                {...stylex.props(sx.textXs)}
+                className={mergeStylexOverrideClassName("", sx.textXs)}
                 onClick={() => setReviewOpen(true)}
               >
                 Finish review
@@ -3207,7 +3200,7 @@ function FinishReviewDialog({
     <Modal.Root open={open} onOpenChange={(next) => !next && onClose(summary)}>
       <Modal.Content
         widthClassName={stylex.props(sx.maxW30rem).className}
-        {...stylex.props(sx.modalPosition)}
+        className={mergeStylexOverrideClassName("", sx.modalPosition)}
         initialFocus={summaryRef}
       >
         <Modal.Header
@@ -3283,7 +3276,7 @@ function FinishReviewDialog({
         <Textarea
           ref={summaryRef}
           size="sm"
-          {...stylex.props(sx.h20, sx.resizeNone)}
+          className={mergeStylexOverrideClassName("", sx.h20, sx.resizeNone)}
           placeholder={
             event === "APPROVE" || pendingCount > 0
               ? "Summary (optional)"
@@ -3313,7 +3306,7 @@ function FinishReviewDialog({
             <Button
               variant="danger"
               size="sm"
-              {...stylex.props(sx.shrink0)}
+              className={mergeStylexOverrideClassName("", sx.shrink0)}
               onClick={() => onFixChecks(summary)}
             >
               Fix checks

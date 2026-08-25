@@ -15,7 +15,7 @@ import {
   composerMenuWidth,
 } from "../lib/composer-classes";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 
@@ -726,7 +726,7 @@ await deleteScheduledPromptApi(p.id);
               <Button
                 variant="ghost"
                 size="sm"
-                {...stylex.props(sx.Mt05, sx.Mr1)}
+                className={mergeStylexOverrideClassName("", sx.Mt05, sx.Mr1)}
                 onClick={() => setCustomOpen(false)}
                 aria-label="Close"
                 icon={<IconX size={20} />}

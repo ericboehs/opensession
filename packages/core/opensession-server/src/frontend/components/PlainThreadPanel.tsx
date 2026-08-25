@@ -30,7 +30,7 @@ import { renderMarkdown } from "../lib/markdown";
 import { MarkdownBody } from "./MarkdownBody";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { useCurrentUser } from "./UserPicker";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { PLAIN_WORKSPACE_ID, PRODUCT_NAME } from "../lib/brand";
 import { PlainStatusBadge } from "./PlainStatusBadge";
 import {
@@ -448,7 +448,7 @@ export function PlainThreadPanel({ sessionId, threadId, plainUrl }: Props) {
 			{thread?.waitingSince && (
 				<PlainWaitingBanner
 					thread={thread}
-					{...stylex.props(sx.shrink0, sx.mx3, sx.mt2, sx.roundedMd)}
+					className={mergeStylexOverrideClassName("", sx.shrink0, sx.mx3, sx.mt2, sx.roundedMd)}
 				/>
 			)}
 
@@ -457,7 +457,7 @@ export function PlainThreadPanel({ sessionId, threadId, plainUrl }: Props) {
 					threadId={threadId}
 					thread={thread}
 					onChanged={load}
-					{...stylex.props(sx.shrink0, sx.px3, sx.py2, sx.borderB, sx.borderDivider)}
+					className={mergeStylexOverrideClassName("", sx.shrink0, sx.px3, sx.py2, sx.borderB, sx.borderDivider)}
 				/>
 			)}
 
@@ -488,7 +488,7 @@ export function PlainThreadPanel({ sessionId, threadId, plainUrl }: Props) {
 					threadId={threadId}
 					customerName={thread.customer?.name || thread.customer?.email || null}
 					onSent={load}
-					{...stylex.props(sx.mx3, sx.mb3)}
+					className={mergeStylexOverrideClassName("", sx.mx3, sx.mb3)}
 				/>
 			)}
 		</div>
@@ -515,7 +515,7 @@ const SNOOZE_OPTIONS: { label: string; seconds: number }[] = [
  *  grammar (see Archived.tsx), where this row used to lead with a "✓" glyph in
  *  a hand-measured 16px gutter. */
 function MenuTick({ on }: { on: boolean }) {
-	return <Menu.Check on={on} {...stylex.props(sx.mlAuto)} />;
+	return <Menu.Check on={on} className={mergeStylexOverrideClassName("", sx.mlAuto)} />;
 }
 
 /**
@@ -684,7 +684,7 @@ setBusy(false);
 							size="sm"
 							variant="default"
 							icon={<IconCheck size={20} />}
-							className={mergeStylexClassName("", sx.hoverTextGreen)}
+							className={mergeStylexOverrideClassName("", sx.hoverTextGreen)}
 							disabled={busy}
 							onClick={() => setStatus("done")}
 							aria-label="Mark this thread Done in Plain"
@@ -1197,7 +1197,7 @@ export function PlainWaitingBanner({
 				className,
 			)}
 		>
-			<IconClock size={16} {...stylex.props(sx.shrink0, sx.textYellow)} />
+			<IconClock size={16} className={mergeStylexOverrideClassName("", sx.shrink0, sx.textYellow)} />
 			<span {...stylex.props(sx.minW0, sx.truncate)}>
 				{thread.awaitingFirstResponse ? (
 					<>
@@ -1265,7 +1265,7 @@ function PlainAttachments({
 							/>
 						) : (
 							<>
-								<IconPaperclip size={16} {...stylex.props(sx.shrink0, sx.opacity60)} />
+								<IconPaperclip size={16} className={mergeStylexOverrideClassName("", sx.shrink0, sx.opacity60)} />
 								<span {...stylex.props(sx.truncate)}>{a.fileName}</span>
 								{a.sizeBytes ? (
 									<span {...stylex.props(sx.shrink0, sx.textFaint)}>

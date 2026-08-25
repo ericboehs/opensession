@@ -7,7 +7,7 @@ import { Button } from "../ui/button";
 import { PageLoader } from "../ui/page-loader";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexClassName } from "../ui/cn";
+import { mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -220,7 +220,7 @@ setStopping(false);
 				<Button
 					size="sm"
 					variant="soft"
-					className={mergeStylexClassName("", sx.hoverBgRedSoft, sx.hoverTextRed)}
+					className={mergeStylexOverrideClassName("", sx.hoverBgRedSoft, sx.hoverTextRed)}
 					disabled={stopping || (!status?.running && !status?.starting)}
 					onClick={stop}
 					title="Stop the dev server and release its container"
@@ -239,7 +239,7 @@ setStopping(false);
 				/>
 			) : (
 				<div {...stylex.props(sx.flex, sx.flex1, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.gap3, sx.textCenter)}>
-					<PageLoader {...stylex.props(sx.textDim)} />
+					<PageLoader className={mergeStylexOverrideClassName("", sx.textDim)} />
 					<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>
 						{status?.starting || !status ? "Starting the dev server…" : "Preview is not running"}
 					</div>

@@ -2,6 +2,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { mergeStylexClassName } from "../ui/cn";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 const sx = stylex.create({
 	relative: {
@@ -199,8 +200,8 @@ const sx = stylex.create({
      written here. */
 export const paletteIconBtn =
 	mergeStylexClassName("", sx.relative, sx.inlineFlex, sx.size10, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.border, sx.borderTransparent, typography.itemTitle, sx.textDim, sx.transitionColor, sx.hoverTextFg, sx.disabledCursorDefault, sx.disabledOpacity50) + " " +
-	"before:absolute before:inset-1 before:z-0 before:rounded-control before:[corner-shape:var(--cs)] before:transition-[background,box-shadow] before:content-[''] hover:before:bg-hover " +
-	"[&>*]:relative [&>*]:z-[1] phone:[&_svg]:size-5";
+	mergeStylexClassName("", sharedClassStyles.beforeAbsolute, sharedClassStyles.beforeInset1, sharedClassStyles.beforeZ0, sharedClassStyles.beforeRoundedControl, sharedClassStyles.beforeCornerShapeVarCs, sharedClassStyles.beforeTransitionBackgroundBoxShadow, sharedClassStyles.beforeContent, sharedClassStyles.hoverBeforeBgHover) +
+	" " + "[&>*]:relative [&>*]:z-[1] phone:[&_svg]:size-5";
 
 /** The phone composer's resting pill, and the ONE place `rounded-full` is the
  *  right spelling in this family. base.css grants `corner-shape: squircle` to

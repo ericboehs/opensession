@@ -33,7 +33,7 @@ import {
 } from "../lib/undo";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "./cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "./cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -658,7 +658,7 @@ function ToastStatusIcon({
 	ongoing?: boolean;
 }) {
 	const className = mergeStylexClassName("", sx.shrink0, sx.textDim);
-	if (ongoing) return <Spinner {...stylex.props(sx.textDim)} />;
+	if (ongoing) return <Spinner className={mergeStylexOverrideClassName("", sx.textDim)} />;
 
 	switch (name) {
 		case "archive":

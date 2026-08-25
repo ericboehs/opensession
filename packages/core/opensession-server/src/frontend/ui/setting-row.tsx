@@ -5,7 +5,7 @@ import {
 	SETTING_ROW_PRESSABLE,
 } from "../lib/setting-row-classes";
 import { IconChevronDown } from "../components/icons";
-import { cn, mergeStylexClassName } from "./cn";
+import { cn, mergeStylexClassName, mergeStylexOverrideClassName } from "./cn";
 import { Menu } from "./menu";
 import { Switch } from "./switch";
 import * as stylex from "@stylexjs/stylex";
@@ -112,7 +112,7 @@ export function SwitchRow({
 				{label}
 			</span>
 			<Switch
-				{...stylex.props(sx.mlAuto)}
+				className={mergeStylexOverrideClassName("", sx.mlAuto)}
 				size="sm"
 				checked={checked}
 				disabled={disabled}
@@ -148,7 +148,7 @@ export function ValueOptions({
 					key={option.value}
 					value={option.value}
 					closeOnClick
-					{...stylex.props(sx.justifyBetween, sx.gap3)}
+					className={mergeStylexOverrideClassName("", sx.justifyBetween, sx.gap3)}
 				>
 					<span {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
 						{glyphs && <span className={SETTING_GLYPH}>{option.icon}</span>}
@@ -197,7 +197,7 @@ export function ValueRow({
 					)}
 					<span {...stylex.props(sx.truncate)}>{current?.label ?? value}</span>
 					{trailing}
-					<IconChevronDown size={16} {...stylex.props(sx.Mr05, sx.shrink0, sx.textFaint)} />
+					<IconChevronDown size={16} className={mergeStylexOverrideClassName("", sx.Mr05, sx.shrink0, sx.textFaint)} />
 				</span>
 			</Menu.Trigger>
 			<Menu.Popup align="end" sideOffset={6}>

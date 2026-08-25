@@ -17,7 +17,7 @@ import { CommitIcon } from "./PrViews";
 import { FileRow, ReviewerRow } from "./PrRows";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 import { motionStyles } from "../../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -396,7 +396,7 @@ export function ReviewRail({
           <RollupRow
             open={filesOpen}
             onToggle={() => setFilesOpen((o) => !o)}
-            icon={<IconFile size={15} {...stylex.props(sx.textFaint)} />}
+            icon={<IconFile size={15} className={mergeStylexOverrideClassName("", sx.textFaint)} />}
             label={`${files.length} file${files.length === 1 ? "" : "s"}`}
             trailing={
               <span {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap15, typography.meta)}>
@@ -437,14 +437,14 @@ export function ReviewRail({
             title="Sessions working on this pull request"
           >
             <span {...mergeStylexProps("[&>svg]:block", sx.inlineFlex, sx.w4, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>
-              <IconMessages size={15} {...stylex.props(sx.textFaint)} />
+              <IconMessages size={15} className={mergeStylexOverrideClassName("", sx.textFaint)} />
             </span>
             <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.fontMedium)}>
               {sessionCount > 0
                 ? `${sessionCount} session${sessionCount === 1 ? "" : "s"}`
                 : "No sessions"}
             </span>
-            <IconChevronRight size={14} {...stylex.props(sx.shrink0, sx.textFaint)} />
+            <IconChevronRight size={14} className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)} />
           </button>
         </RailSection>
       )}

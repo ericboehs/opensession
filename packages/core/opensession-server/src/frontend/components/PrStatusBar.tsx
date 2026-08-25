@@ -61,7 +61,7 @@ import { Tooltip } from "../ui/tooltip";
 import { ContextMenu, Menu, MENU_ICON } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
 import { Skeleton, SkeletonBar } from "../ui/state";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { useShortcutLabel } from "../hooks/useShortcutBindings";
 import { useDeferredMergePhase } from "../hooks/useDeferredMerge";
 import {
@@ -707,7 +707,7 @@ function PrCopyItems({ pr }: { pr: PrDetails }) {
 			</ContextMenu.Item>
 			<ContextMenu.Item closeOnClick={false} onClick={() => copy("link", pr.url)}>
 				{copied === "link" ? (
-					<IconCheck size={20} {...stylex.props(sx.textGreen)} />
+					<IconCheck size={20} className={mergeStylexOverrideClassName("", sx.textGreen)} />
 				) : (
 					<IconCopy size={20} className={MENU_ICON} />
 				)}
@@ -718,7 +718,7 @@ function PrCopyItems({ pr }: { pr: PrDetails }) {
 				onClick={() => copy("number", `#${pr.number}`)}
 			>
 				{copied === "number" ? (
-					<IconCheck size={20} {...stylex.props(sx.textGreen)} />
+					<IconCheck size={20} className={mergeStylexOverrideClassName("", sx.textGreen)} />
 				) : (
 					<IconHash size={20} className={MENU_ICON} />
 				)}
@@ -1117,8 +1117,8 @@ setBusy(null);
 				<div className={WS_SUMMARY_BAND}>
 					<Skeleton label="Loading PR status">
 						<div className={WS_SUMMARY_STATUS_ROW}>
-							<SkeletonBar {...stylex.props(sx.size4, sx.shrink0, sx.roundedFull)} />
-							<SkeletonBar {...stylex.props(sx.w58)} />
+							<SkeletonBar className={mergeStylexOverrideClassName("", sx.size4, sx.shrink0, sx.roundedFull)} />
+							<SkeletonBar className={mergeStylexOverrideClassName("", sx.w58)} />
 						</div>
 					</Skeleton>
 					{children}
@@ -1415,7 +1415,7 @@ setBusy(null);
 				</span>
 				{pr && provider && (
 					<span {...mergeStylexProps("group-hover/prsum:text-dim", sx.flex, sx.itemsCenter, sx.gap1, sx.truncate, sx.textFaint, typography.meta)}>
-						<BrandMark name={provider.key} size={12} {...stylex.props(sx.shrink0)} />
+						<BrandMark name={provider.key} size={12} className={mergeStylexOverrideClassName("", sx.shrink0)} />
 						<span {...stylex.props(sx.shrink0)}>#{pr.number}</span>
 						{checksPr && (
 							<>

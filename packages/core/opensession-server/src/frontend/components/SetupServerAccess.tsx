@@ -19,7 +19,7 @@ import {
 } from "./setup-shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -286,7 +286,7 @@ setSaving(false);
 							type="submit"
 							variant="primary"
 							disabled={!dirty || saving}
-							className={mergeStylexClassName("", sx.phoneMinH11)}
+							className={mergeStylexOverrideClassName("", sx.phoneMinH11)}
 						>
 							{saving ? "Saving…" : "Save addresses"}
 						</Button>
@@ -297,7 +297,7 @@ setSaving(false);
 				Saving updates the addresses Open Session uses in links and setup guides. DNS and Caddy are configured separately below.
 			</SettingsHint>
 
-			<SettingsSection {...stylex.props(sx.mt3)}>
+			<SettingsSection className={mergeStylexOverrideClassName("", sx.mt3)}>
 				<Disclosure
 					title="Configure Caddy on this server"
 					defaultOpen={appState.tone !== "on" || !access.webhookBaseUrl}
@@ -361,10 +361,10 @@ setSaving(false);
 
 						<GuideBlock title="Apply">
 							<div {...stylex.props(sx.flex, sx.flexWrap, sx.gap2)}>
-								<Code {...stylex.props(sx.px2, sx.py1, typography.meta)}>
+								<Code className={mergeStylexOverrideClassName("", sx.px2, sx.py1, typography.meta)}>
 									sudo caddy validate --config /etc/caddy/Caddyfile
 								</Code>
-								<Code {...stylex.props(sx.px2, sx.py1, typography.meta)}>
+								<Code className={mergeStylexOverrideClassName("", sx.px2, sx.py1, typography.meta)}>
 									sudo systemctl reload caddy
 								</Code>
 							</div>

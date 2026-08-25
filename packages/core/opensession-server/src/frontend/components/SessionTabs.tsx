@@ -40,7 +40,7 @@ import {
 	tabCloseClass,
 	tabDotClass,
 } from "../lib/session-tab-classes";
-import { cn, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import {
 	animateEmptyTabClose,
 	animateEmptyTabOpen,
@@ -444,7 +444,7 @@ export function SessionTabs({
 			>
 				<IconPlus size={ctrlIconSize} />
 			</ContextMenu.Trigger>
-			<ContextMenu.Popup {...stylex.props(sx.minW250px)}>
+			<ContextMenu.Popup className={mergeStylexOverrideClassName("", sx.minW250px)}>
 				<ContextMenu.Item onClick={() => onNewSession("share")}>
 					New session · share worktree
 				</ContextMenu.Item>
@@ -466,7 +466,7 @@ export function SessionTabs({
 			<Menu.Trigger className={TAB_HISTORY} aria-label="Archived sessions" title="Archived sessions">
 				<IconHistory size={ctrlIconSize} />
 			</Menu.Trigger>
-			<Menu.Popup align="end" sideOffset={4} {...stylex.props(sx.minW240px, sx.maxW320px)}>
+			<Menu.Popup align="end" sideOffset={4} className={mergeStylexOverrideClassName("", sx.minW240px, sx.maxW320px)}>
 				<ArchivedSessionItems sessions={archived} onSelect={onSelect} onRestore={onRestore} />
 			</Menu.Popup>
 		</Menu.Root>
@@ -687,7 +687,7 @@ export function SessionTabs({
 									{/* finalFocus=false: "Rename session" mounts the inline rename
 							    input (autoFocus) — the closing menu must not steal focus
 							    back to the tab. */}
-									<ContextMenu.Popup {...stylex.props(sx.minW250px)} finalFocus={false}>
+									<ContextMenu.Popup className={mergeStylexOverrideClassName("", sx.minW250px)} finalFocus={false}>
 										<ContextMenu.Item
 											onClick={() => {
 												setDraft(session.title);
@@ -708,7 +708,7 @@ export function SessionTabs({
 										<ContextMenu.SubmenuRoot>
 											<ContextMenu.SubmenuTrigger>
 												<span {...stylex.props(sx.grow)}>Copy transcript</span>
-												<IconChevronRight size={16} {...stylex.props(sx.textFaint)} />
+												<IconChevronRight size={16} className={mergeStylexOverrideClassName("", sx.textFaint)} />
 											</ContextMenu.SubmenuTrigger>
 											<Menu.Popup>
 												<Menu.Item onClick={() => void copySessionTranscript(session, "concise", onToast)}>

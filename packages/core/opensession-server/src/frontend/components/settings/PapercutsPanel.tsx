@@ -18,7 +18,7 @@ import { Switch } from "../../ui/switch";
 import { Select, SettingRow } from "./shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps } from "../../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -137,7 +137,7 @@ export function PapercutsPanel() {
 				))}
 			</SettingCard>
 
-			<SettingsGroupLabel {...stylex.props(sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap2)}>
+			<SettingsGroupLabel className={mergeStylexOverrideClassName("", sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap2)}>
 				Last 30 days · {entries.length} logged
 				<Select
 					label="Filter papercuts by repo"

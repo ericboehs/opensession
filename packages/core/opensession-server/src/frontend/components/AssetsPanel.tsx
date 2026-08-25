@@ -20,6 +20,7 @@ import { AssetActions, AssetPreview } from "./AssetView";
 import { resolvedAssetPath } from "../lib/asset-preview";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -168,7 +169,7 @@ function AssetsTree({
 	});
 	// Same forced dark color-scheme as the docs tree (Notes.tsx) — the tree's
 	// own shadow styles use light-dark() and would otherwise follow the OS.
-	return <FileTree model={model} {...stylex.props(sx.block, sx.hFull, sx.ColorSchemeDark)} />;
+	return <FileTree model={model} className={mergeStylexOverrideClassName("", sx.block, sx.hFull, sx.ColorSchemeDark)} />;
 }
 
 export function AssetsPanel({
@@ -221,7 +222,7 @@ export function AssetsPanel({
 					<Button
 						variant="ghost"
 						size="sm"
-						{...stylex.props(sx.textFaint)}
+						className={mergeStylexOverrideClassName("", sx.textFaint)}
 						onClick={refresh}
 						title="Refresh the file list"
 					>

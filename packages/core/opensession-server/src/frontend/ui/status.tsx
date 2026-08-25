@@ -103,7 +103,7 @@ const sx = stylex.create({
 // freezes the indicator. This one cannot be orphaned by a rename.
 const PULSE =
 	mergeStylexClassName("", sx.animatePulse14sEaseInOutInfinite) +
-	mergeStylexClassName("", sx.motionReduceAnimationDuration14s, sx.motionReduceAnimationIterationCountInfinite);
+	" " + mergeStylexClassName("", sx.motionReduceAnimationDuration14s, sx.motionReduceAnimationIterationCountInfinite);
 
 export function PulseDot({
 	size = 8,

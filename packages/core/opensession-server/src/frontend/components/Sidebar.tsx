@@ -169,7 +169,7 @@ import { useConfirm } from "../ui/confirm";
 import { Tooltip } from "../ui/tooltip";
 import { ContextMenu, MENU_ICON, Menu } from "../ui/menu";
 import { Popover } from "../ui/popover";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { RowCardPopup } from "./SidebarRowCards";
 import { pointerCanHover } from "../lib/pointer";
 import { RepoTile, repoLabel } from "./RepoTile";
@@ -321,6 +321,7 @@ import {
 import * as stylex from "@stylexjs/stylex";
 import { tokens } from "../styles/tokens.stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -3202,7 +3203,7 @@ setClosingPrUrls((current) => {
 		{
 			id: "prs",
 			label: SIDEBAR_TOOL_LABELS.prs,
-			icon: <IconPullRequest {...stylex.props(sx.translateXPx, sx.TranslateYPx)} />,
+			icon: <IconPullRequest className={mergeStylexOverrideClassName("", sx.translateXPx, sx.TranslateYPx)} />,
 			active: prsActive,
 			onClick: onOpenPrs,
 			title: "Pull request worktrees",
@@ -3705,7 +3706,7 @@ setClosingPrUrls((current) => {
 						title={`${row.mention} mentioned you`}
 						aria-label={`${row.mention} mentioned you`}
 					>
-						<UserAvatar name={row.mention} size={16} {...stylex.props(sx.shrink0)} />
+						<UserAvatar name={row.mention} size={16} className={mergeStylexOverrideClassName("", sx.shrink0)} />
 						<span
 							aria-hidden="true" {...mergeStylexProps("", sx.ring2, sx.absolute, sx.Right1, sx.Bottom1, sx.flex, sx.size3, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgAccent, sx.text8px, sx.fontBold, sx.leadingNone, sx.textOnAccent, sx.ringPanel)}
 						>
@@ -4665,7 +4666,7 @@ fetchFeedItems("plain")
 								    mode, so the band reads as "these are Ask sessions"
 								    rather than as a project called Ask. */}
 								{repo === ASK_BAND ? (
-									<IconEye size={16} {...stylex.props(sx.textFaint)} />
+									<IconEye size={16} className={mergeStylexOverrideClassName("", sx.textFaint)} />
 								) : (
 									<RepoTile name={repo} className={SIDEBAR_REPO_TILE} />
 								)}
@@ -5315,7 +5316,7 @@ fetchFeedItems("plain")
 								<UserAvatar
 									name={personLensName}
 									size={20}
-									{...stylex.props(sx.shrink0)}
+									className={mergeStylexOverrideClassName("", sx.shrink0)}
 								/>
 							)
 						)}
@@ -5789,8 +5790,8 @@ fetchFeedItems("plain")
 						variant="bare"
 						rows={8}
 						label="Loading sessions"
-						{...stylex.props(sx.py2)}
-						rowClassName="px-2.5 py-[9px] phone:px-2 phone:py-[13px]"
+						className={mergeStylexOverrideClassName("", sx.py2)}
+						rowClassName={mergeStylexClassName("", sharedClassStyles.sidebarSkeletonRowPadding)}
 					/>
 				)}
 				{/* A list that failed to fetch is an empty list with a reason, not a
@@ -5800,7 +5801,7 @@ fetchFeedItems("plain")
 				    sidebar's own column in a border and outshouted the rows. */}
 				{sessionsError && sessions.length === 0 && !sessionsLoading && (
 					<EmptyState
-						{...stylex.props(sx.mx4, sx.my7, sx.gap15, sx.py0)}
+						className={mergeStylexOverrideClassName("", sx.mx4, sx.my7, sx.gap15, sx.py0)}
 						action={
 							<Button size="sm" onClick={onRetrySessions}>
 								Try again
@@ -5853,11 +5854,11 @@ fetchFeedItems("plain")
 					githubConnectionRequired ? (
 						<GithubConnectEmptyState
 							onConnect={onNewSession}
-							{...stylex.props(sx.minH360px, sx.py12)}
+							className={mergeStylexOverrideClassName("", sx.minH360px, sx.py12)}
 						/>
 					) : (
 						<div {...stylex.props(sx.flex, sx.minH360px, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.px7, sx.py12, sx.textCenter)}>
-							<IconMessages size={30} {...stylex.props(sx.mb3, sx.textDim)} />
+							<IconMessages size={30} className={mergeStylexOverrideClassName("", sx.mb3, sx.textDim)} />
 							<div {...stylex.props(sx.leading115, sx.fontSemibold, sx.tracking002em, sx.textFg, typography.sectionTitle)}>
 								No sessions
 							</div>
@@ -5868,7 +5869,7 @@ fetchFeedItems("plain")
 								<Button
 									variant="soft"
 									size="md"
-									{...stylex.props(sx.roundedFull, sx.px4)}
+									className={mergeStylexOverrideClassName("", sx.roundedFull, sx.px4)}
 									onClick={onNewSession}
 								>
 									New session
@@ -6326,7 +6327,7 @@ fetchFeedItems("plain")
 							})
 						}
 					>
-						<IconRobot size={20} {...stylex.props(sx.shrink0)} />
+						<IconRobot size={20} className={mergeStylexOverrideClassName("", sx.shrink0)} />
 						<span {...stylex.props(sx.minW0, sx.truncate)}>
 							{filter.autoCreated === "hide" ? "Show" : "Hide"}{" "}
 							{autoCreatedRows} started by an agent

@@ -18,7 +18,7 @@ import { getLiveTypingPref } from "../lib/live-typing-pref";
 import { randomUUID } from "../lib/random-uuid";
 import { isTimelineOnlyRunnerNotice } from "../lib/runner-events";
 import { otherTypingUsers } from "../lib/typing";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { msgBubbleUser, msgOwnTurn, msgRow } from "../lib/msg-classes";
 import { SessionTranscript } from "./SessionTranscript";
 import { TypingIndicator } from "./TypingIndicator";
@@ -675,7 +675,7 @@ setDropStaging((current) => subtractStaging(current, batch));
 					</AnimatePresence>
 				</div>
 
-				<TypingIndicator users={typingUsers} {...stylex.props(sx.mb1, sx.px5)} />
+				<TypingIndicator users={typingUsers} className={mergeStylexOverrideClassName("", sx.mb1, sx.px5)} />
 				{/* The open Desk owns the app-wide drop over the session underneath. */}
 				<div
 					ref={globalFileComposerRef}

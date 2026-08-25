@@ -10,7 +10,7 @@ import { EmptyState } from "../ui/state";
 import { Badge } from "../ui/badge";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -176,7 +176,8 @@ const sx = stylex.create({
 			margin: "0"
 	},
 	fontTitle: {
-			fontWeight: "var(--title-weight)"
+			fontWeight: "var(--title-weight)",
+		"--settings-leading": "1.1"
 	},
 	tracking001em: {
 			letterSpacing: "-.01em"
@@ -1019,7 +1020,7 @@ export function Reviews({
                         </span>
                       )}
                       {s.linearIssue && (
-                        <Badge {...stylex.props(sx.tracking002em)}>{s.linearIssue.identifier}</Badge>
+                        <Badge className={mergeStylexOverrideClassName("", sx.tracking002em)}>{s.linearIssue.identifier}</Badge>
                       )}
                       {s.isRunning && (
                         <span {...stylex.props(sx.shrink0, sx.textYellow, typography.meta)}>● running</span>

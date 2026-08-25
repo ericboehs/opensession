@@ -13,7 +13,7 @@ import {
 import { UserAvatar } from "./UserAvatar";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexClassName } from "../ui/cn";
+import { mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -282,7 +282,7 @@ function AccountIdentity({
 }) {
 	return (
 		<>
-			<UserAvatar name={name} size={28} {...stylex.props(sx.shrink0)} />
+			<UserAvatar name={name} size={28} className={mergeStylexOverrideClassName("", sx.shrink0)} />
 			<span {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.flexCol, sx.gap05, sx.textLeft, sx.leadingTight)}>
 				<span {...stylex.props(sx.truncate, sx.fontSemibold, sx.textFg, typography.label)}>{name}</span>
 				<span {...stylex.props(sx.truncate, sx.fontMedium, sx.textFaint, typography.meta)}>
@@ -316,10 +316,10 @@ export function SettingsAccountFooter() {
 						className={[mergeStylexClassName("", sx.flex, sx.wFull, sx.minW0, sx.itemsCenter), SIDEBAR_RAIL_GAP, mergeStylexClassName("data-[popup-open]:bg-selected", sx.roundedRow, sx.borderNone, sx.bgTransparent, sx.pyVarSidebarRowPad, sx.pl25, sx.pr2, sx.textLeft), SIDEBAR_HOVER_LAYER].filter(Boolean).join(" ")}
 					>
 						<AccountIdentity name={currentUser} subtitle={subtitle} />
-						<IconChevronRight size={20} {...stylex.props(sx.shrink0, sx.textFaint)} />
+						<IconChevronRight size={20} className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)} />
 					</Menu.Trigger>
 					{/* The trigger sits at the very bottom — open upward. */}
-					<Menu.Popup side="top" align="start" sideOffset={8} {...stylex.props(sx.minW200px)}>
+					<Menu.Popup side="top" align="start" sideOffset={8} className={mergeStylexOverrideClassName("", sx.minW200px)}>
 						<Menu.RadioGroup
 							value={currentUser}
 							onValueChange={(value) => setCurrentUser(String(value))}
@@ -329,7 +329,7 @@ export function SettingsAccountFooter() {
 									key={name}
 									value={name}
 									closeOnClick
-									{...stylex.props(sx.gap9px, sx.roundedSm, sx.px2, sx.py15)}
+									className={mergeStylexOverrideClassName("", sx.gap9px, sx.roundedSm, sx.px2, sx.py15)}
 								>
 									<UserAvatar name={name} size={22} />
 									<span {...stylex.props(sx.minW0, sx.flex1, sx.fontMedium)}>{name}</span>
@@ -375,12 +375,12 @@ export function SettingsAccountCard() {
 							className={rowClass}
 							onClick={() => setCurrentUser(name)}
 						>
-							<UserAvatar name={name} size={28} {...stylex.props(sx.shrink0)} />
+							<UserAvatar name={name} size={28} className={mergeStylexOverrideClassName("", sx.shrink0)} />
 							<span {...stylex.props(sx.minW0, sx.flex1, sx.fontMedium, sx.textFg, typography.itemTitle)}>
 								{name}
 							</span>
 							{name === currentUser && (
-								<IconCheck size={22} {...stylex.props(sx.shrink0, sx.textAccent)} />
+								<IconCheck size={22} className={mergeStylexOverrideClassName("", sx.shrink0, sx.textAccent)} />
 							)}
 						</button>
 					))

@@ -361,7 +361,7 @@ export const PANEL_SHELL =
 	// From 920px down it stops being a column in the layout and becomes an
 	// overlay over the session, anchored under the top bar (--header-h is 0 on
 	// desktop, the bar's height on a phone) with PANEL_OVERLAY dimming behind it.
-	mergeStylexClassName("", sx.max920pxFixed, sx.max920pxTopVarHeaderH, sx.max920pxRight0, sx.max920pxBottom0) + " " +
+	" " + mergeStylexClassName("", sx.max920pxFixed, sx.max920pxTopVarHeaderH, sx.max920pxRight0, sx.max920pxBottom0) + " " +
 	mergeStylexClassName("", sx.max920pxWMin480px94vw, sx.max920pxZ30, sx.max920pxMaxWNone, sx.max920pxMinW0) + " " +
 	"max-[920px]:shadow-[-12px_0_32px_rgba(0,0,0,0.5)]";
 

@@ -25,7 +25,7 @@ import { IconTile } from "./BrandTile";
 import { IconDotsHorizontal, IconPlus, IconTrash } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -192,11 +192,11 @@ toast(e.message, { variant: "error" });
 					</EmptyState>
 				) : (
 					providers.map((p) => (
-						<SettingRow key={p.id} {...stylex.props(sx.itemsStart, sx.gapX3)}>
+						<SettingRow key={p.id} className={mergeStylexOverrideClassName("", sx.itemsStart, sx.gapX3)}>
 							<IconTile name={p.id} size={28} />
 							<SettingRowText>
 								<SettingRowTitle>{p.id}</SettingRowTitle>
-								<SettingRowDescription {...stylex.props(sx.truncate)}>
+								<SettingRowDescription className={mergeStylexOverrideClassName("", sx.truncate)}>
 									{p.apiKeyMasked || "no API key stored"}
 									{p.baseURL && ` · ${p.baseURL}`}
 								</SettingRowDescription>
@@ -305,7 +305,7 @@ setError(e.message);
 	return (
 		<SettingsForm>
 			<SettingsFormTitle>Add provider</SettingsFormTitle>
-			<SettingRowDescription {...stylex.props(sx.Mt2, sx.mb3)}>
+			<SettingRowDescription className={mergeStylexOverrideClassName("", sx.Mt2, sx.mb3)}>
 				The provider id must match pi's slug for it (xai, openrouter,
 				groq, …). Models are registered in the picker as{" "}
 				<code>pi/&lt;provider&gt;/&lt;model&gt;</code>. List the

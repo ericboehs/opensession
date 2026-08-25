@@ -11,7 +11,7 @@ import { markTileClass, markTileGradient, markTileInk, markTileShadow } from "..
 import { IconServer } from "../icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -296,7 +296,7 @@ setBusyId(null);
 				<Button size="sm" variant="soft" onClick={() => void chooseBootstrap("ssh")}>Migrate SSH machine</Button>
 				<Button size="sm" variant="soft" onClick={() => void chooseBootstrap("kubernetes")}>Connect Kubernetes GPU</Button>
 			</div>
-			<Button {...stylex.props(sx.mt3)} size="sm" variant="ghost" onClick={() => setConnectChoice(null)}>Cancel</Button>
+			<Button className={mergeStylexOverrideClassName("", sx.mt3)} size="sm" variant="ghost" onClick={() => setConnectChoice(null)}>Cancel</Button>
 		</div>}
 		{(connectChoice === "ssh" || connectChoice === "kubernetes") && <div {...stylex.props(sx.mx4, sx.mb4, sx.roundedLg, sx.bgRaised, sx.p4)}>
 			<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>{connectChoice === "ssh" ? "Migrate an SSH machine" : "Connect a Kubernetes GPU Runner"}</div>
@@ -312,14 +312,14 @@ setBusyId(null);
 					onChange={setBootstrapTargetId}
 				/>
 				<div {...stylex.props(sx.mt3, sx.flex, sx.gap2)}><Button size="sm" onClick={() => void startBootstrap()}>Connect</Button><Button size="sm" variant="ghost" onClick={() => setConnectChoice("choices")}>Back</Button></div>
-			</> : <><p {...stylex.props(sx.mb0, sx.textDim, typography.supporting)}>No configured {connectChoice === "ssh" ? "SSH" : "Kubernetes"} targets are available.</p><Button {...stylex.props(sx.mt3)} size="sm" variant="ghost" onClick={() => setConnectChoice("choices")}>Back</Button></>}
+			</> : <><p {...stylex.props(sx.mb0, sx.textDim, typography.supporting)}>No configured {connectChoice === "ssh" ? "SSH" : "Kubernetes"} targets are available.</p><Button className={mergeStylexOverrideClassName("", sx.mt3)} size="sm" variant="ghost" onClick={() => setConnectChoice("choices")}>Back</Button></>}
 		</div>}
 
 		{pairing && <div {...stylex.props(sx.mx4, sx.mb4, sx.roundedLg, sx.bgRaised, sx.p4)}>
 			<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>Connect on this machine</div>
 			<p {...stylex.props(sx.mb3, sx.mt1, sx.leadingRelaxed, sx.textDim, typography.supporting)}>Run this once on the computer. It detects capabilities and opens a reconnecting Runner channel.</p>
 			<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap2)}>
-				<Input readOnly value={pairingCommand(pairing.code)} {...stylex.props(sx.minW0, sx.flex1, sx.fontMono, sx.textXs)} />
+				<Input readOnly value={pairingCommand(pairing.code)} className={mergeStylexOverrideClassName("", sx.minW0, sx.flex1, sx.fontMono, sx.textXs)} />
 				<Button size="sm" onClick={() => void copy()}>Copy</Button>
 				<Button size="sm" variant="ghost" onClick={() => setPairing(null)}>Done</Button>
 			</div>

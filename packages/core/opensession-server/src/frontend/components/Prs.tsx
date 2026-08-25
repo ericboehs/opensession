@@ -44,7 +44,8 @@ import {
 } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -655,7 +656,7 @@ setAddingToSidebar(false);
           and past the field's floor the labels do truncate, which is the honest
           end of a bar that has run out of room. */}
       <Input
-        {...stylex.props(sx.w200px, sx.minW90px, sx.shrink100)}
+        className={mergeStylexOverrideClassName("", sx.w200px, sx.minW90px, sx.shrink100)}
         type="search"
         aria-label="Search pull requests"
         placeholder="Search pull requests…"
@@ -668,14 +669,14 @@ setAddingToSidebar(false);
         <Menu.Root>
           <Menu.Trigger
             render={
-              <Button variant="ghost" {...stylex.props(sx.minW0)} icon={<IconPeople size={18} />} caret>
+              <Button variant="ghost" className={mergeStylexOverrideClassName("", sx.minW0)} icon={<IconPeople size={18} />} caret>
                 <span {...stylex.props(sx.maxW150px, sx.truncate)}>
                   {person === "all" ? "Anyone" : personLabel(person)}
                 </span>
               </Button>
             }
           />
-          <Menu.Popup align="end" {...stylex.props(sx.minW200px, sx.maxW320px)}>
+          <Menu.Popup align="end" className={mergeStylexOverrideClassName("", sx.minW200px, sx.maxW320px)}>
             <Menu.RadioGroup
               value={person}
               onValueChange={(value) => setPerson(String(value))}
@@ -708,7 +709,7 @@ setAddingToSidebar(false);
       <Menu.Root>
         <Menu.Trigger
           render={
-            <Button variant="ghost" {...stylex.props(sx.minW0)} icon={<IconFolder size={18} />} caret>
+            <Button variant="ghost" className={mergeStylexOverrideClassName("", sx.minW0)} icon={<IconFolder size={18} />} caret>
               <span {...stylex.props(sx.maxW150px, sx.truncate)}>
                 {workspaceId === "all"
                   ? "All workspaces"
@@ -722,7 +723,7 @@ setAddingToSidebar(false);
         {/* Capped, because a workspace is named after the pull request it was
             opened for and those names run long. Uncapped, one of them sets the
             width of the whole popup and the menu spans half the page. */}
-        <Menu.Popup align="end" {...stylex.props(sx.minW200px, sx.maxW320px)}>
+        <Menu.Popup align="end" className={mergeStylexOverrideClassName("", sx.minW200px, sx.maxW320px)}>
           <Menu.RadioGroup
             value={workspaceId}
             onValueChange={(value) => setWorkspaceId(String(value))}
@@ -749,14 +750,14 @@ setAddingToSidebar(false);
         <Menu.Root>
           <Menu.Trigger
             render={
-              <Button variant="ghost" {...stylex.props(sx.minW0)} icon={<IconRepo size={18} />} caret>
+              <Button variant="ghost" className={mergeStylexOverrideClassName("", sx.minW0)} icon={<IconRepo size={18} />} caret>
                 <span {...stylex.props(sx.maxW150px, sx.truncate)}>
                   {repo === "all" ? "All repos" : repoLabel(repo)}
                 </span>
               </Button>
             }
           />
-          <Menu.Popup align="end" {...stylex.props(sx.minW200px, sx.maxW320px)}>
+          <Menu.Popup align="end" className={mergeStylexOverrideClassName("", sx.minW200px, sx.maxW320px)}>
             <Menu.RadioGroup value={repo} onValueChange={(value) => setRepo(String(value))}>
               <Menu.RadioItem value="all" closeOnClick>
                 {/* Sized to the tiles below so every label shares one edge. */}
@@ -813,7 +814,7 @@ setAddingToSidebar(false);
           is what makes it scan as the button that makes something. */}
       <Button
         variant="primary"
-        {...stylex.props(sx.shrink0)}
+        className={mergeStylexOverrideClassName("", sx.shrink0)}
         icon={<IconPlus size={18} />}
         onClick={onNewSession}
       >
@@ -947,14 +948,14 @@ setAddingToSidebar(false);
         phone={isPhone}
         label={preview ? `Pull request: ${preview.title}` : "Pull request"}
         showPhoneGrabber={false}
-        modalClassName="h-[min(820px,85vh)] w-[min(1280px,92vw)] max-w-none bg-surface"
-        sheetClassName="top-0 h-[100dvh] max-h-none bg-surface [border-radius:0]! [box-shadow:none]!"
+        modalClassName={mergeStylexClassName("", sharedClassStyles.hMin820px85vh, sharedClassStyles.wMin1280px92vw, sharedClassStyles.maxWNone, sharedClassStyles.bgSurface)}
+        sheetClassName={mergeStylexClassName("[border-radius:0]! [box-shadow:none]!", sharedClassStyles.top0, sharedClassStyles.h100dvh, sharedClassStyles.maxHNone, sharedClassStyles.bgSurface)}
       >
         {preview && (
           <>
             <div {...mergeStylexProps("", sx.phoneMinH14, sx.flex, sx.minH13, sx.shrink0, sx.itemsCenter, sx.gap2, sx.borderB, sx.borderLine, sx.bgPanel, sx.px3)}>
               <div {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.px1, sx.fontMedium, sx.textFg, typography.itemTitle)}>
-                <IconPullRequest size={19} {...stylex.props(sx.shrink0, sx.textDim)} />
+                <IconPullRequest size={19} className={mergeStylexOverrideClassName("", sx.shrink0, sx.textDim)} />
                 <span {...stylex.props(sx.truncate)}>{repoLabel(preview.repo)}</span>
                 {preview.number && (
                   <span {...mergeStylexProps("", sx.tabularNums, sx.shrink0, sx.fontNormal, sx.textFaint)}>

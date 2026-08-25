@@ -14,6 +14,7 @@ import { getCurrentUser } from "../UserPicker";
 import { Select, SettingRow } from "./shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -132,7 +133,7 @@ export function PersonalSandboxDefaultRow() {
 export function WorkspaceSandboxDefaults({ canManage = true }: { canManage?: boolean }) {
 	return (
 		<>
-			<SettingsGroupLabel {...stylex.props(sx.mt0)}>Session environment</SettingsGroupLabel>
+			<SettingsGroupLabel className={mergeStylexOverrideClassName("", sx.mt0)}>Session environment</SettingsGroupLabel>
 			<SettingCard>
 				<SandboxDefaultRow scope="workspace" canManage={canManage} />
 			</SettingCard>

@@ -6,7 +6,7 @@ import {
 	SIDEBAR_WS_DRAFT,
 	SIDEBAR_WS_ROW,
 } from "../../lib/sidebar-classes";
-import { cn, mergeStylexClassName } from "../../ui/cn";
+import { cn, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 import { IconPencil, IconPlus } from "../icons";
 import { SIDEBAR_ROW, SIDEBAR_ROW_TITLE } from "./SidebarItem";
 import * as stylex from "@stylexjs/stylex";
@@ -75,7 +75,7 @@ export function DraftRow({
 			aria-label="New session, not started yet"
 		>
 			<span className={SIDEBAR_RAIL}>
-				<IconPlus {...stylex.props(sx.shrink0, sx.textFaint)} size={16} />
+				<IconPlus className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)} size={16} />
 			</span>
 			<span className={SIDEBAR_ROW_TITLE}>New session</span>
 			{draft && (

@@ -313,7 +313,7 @@ export const REPORTS_LIST =
 export const REPORTS_ROW =
 	mergeStylexClassName("group", sx.mt15, sx.flex, sx.wFull, sx.cursorPointer, sx.itemsStart, sx.roundedRow, sx.border0) + " " +
 	mergeStylexClassName("data-active:bg-selected", sx.bgTransparent, sx.py35, sx.pr3, sx.pl25, sx.textLeft) +
-	[SIDEBAR_RAIL_GAP, SIDEBAR_HOVER_LAYER].filter(Boolean).join(" ");
+	" " + [SIDEBAR_RAIL_GAP, SIDEBAR_HOVER_LAYER].filter(Boolean).join(" ");
 
 /** The name and the time share the row's first line. */
 export const REPORTS_ROW_HEAD = mergeStylexClassName("", sx.flex, sx.minW0, sx.itemsBaseline, sx.gap2);

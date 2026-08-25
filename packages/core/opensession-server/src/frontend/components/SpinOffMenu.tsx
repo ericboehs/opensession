@@ -13,7 +13,8 @@ import { composerSessionRef } from "../lib/share-link";
 import type { NewSessionPrefill } from "../lib/new-session-link";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -292,9 +293,9 @@ export function SpinOffMenu({
               a fresh agent run rather than branching this one. */}
           <IconSparkle size={20} className={MENU_ICON} />
           <span {...stylex.props(sx.grow)}>Spin off</span>
-          <IconChevronRight size={16} {...stylex.props(sx.textFaint)} />
+          <IconChevronRight size={16} className={mergeStylexOverrideClassName("", sx.textFaint)} />
         </Menu.SubmenuTrigger>
-        <Menu.Popup {...stylex.props(sx.w80, sx.overflowHidden, sx.p0)}>
+        <Menu.Popup className={mergeStylexOverrideClassName("", sx.w80, sx.overflowHidden, sx.p0)}>
           {isAsk && (
             <Menu.Item closeOnClick={false} onClick={() => pick("build")} className={itemCls}>
               <span {...stylex.props(sx.fontSemibold, sx.textFg, typography.label)}>Build this</span>
@@ -332,7 +333,7 @@ export function SpinOffMenu({
         disablePointerDismissal={starting}
       >
         <Modal.Content
-          widthClassName="max-w-[28rem]"
+          widthClassName={mergeStylexClassName("", sharedClassStyles.maxW28rem)}
           initialFocus={needsBranch ? branchRef : undefined}
         >
           <Modal.Header

@@ -43,7 +43,7 @@ import {
 	msgSystemToned,
 	msgTime,
 } from "../lib/msg-classes";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 
@@ -499,7 +499,7 @@ function NoticeRow({
 						setContinued(true);
 						onContinue();
 					}}
-					{...stylex.props(sx.mt2, sx.selfCenter)}
+					className={mergeStylexOverrideClassName("", sx.mt2, sx.selfCenter)}
 				>
 					{continued ? "Continuing…" : "Continue"}
 				</Button>

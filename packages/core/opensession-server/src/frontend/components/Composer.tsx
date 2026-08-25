@@ -75,7 +75,6 @@ import {
   composerTextareaPadding,
   composerTextareaPaddingMinimized,
   composerToolbar,
-  composerToolbarMinimized,
   composerToolbarPill,
   composerToolbarScrollDivider,
   composerToolbarSelect,
@@ -87,7 +86,7 @@ import {
   palettePill,
 } from "../lib/palette-classes";
 import { askSurface, noteSurface } from "../lib/tinted-surface";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { Tooltip } from "../ui/tooltip";
 import { ContextMenu, Menu, MenuShortcut, MENU_ICON } from "../ui/menu";
 import { Button } from "../ui/button";
@@ -118,6 +117,7 @@ import { ModelEffortSelect, shortModelLabel } from "./ModelEffortSelect";
 import type { SessionUsage } from "../lib/types";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -785,7 +785,7 @@ function GoalModal({
           <div {...stylex.props(sx.flex1)} />
           <Button
             variant="primary"
-            {...stylex.props(sx.px5)}
+            className={mergeStylexOverrideClassName("", sx.px5)}
             onClick={() => onSubmit(text.trim() || null)}
             disabled={text.trim() === initial.trim()}
           >
@@ -814,17 +814,17 @@ function StopConfirmModal({
     <Modal.Root open={open} onOpenChange={onOpenChange}>
       <Modal.Content
         initialFocus={stopRef}
-        widthClassName="max-w-[32rem]" {...mergeStylexProps("", sx.phoneWCalc100vw15rem, sx.phoneP6, sx.gap5, sx.p7)}
+        widthClassName={mergeStylexClassName("", sharedClassStyles.maxW32rem)} {...mergeStylexProps("", sx.phoneWCalc100vw15rem, sx.phoneP6, sx.gap5, sx.p7)}
       >
         <div {...stylex.props(sx.flex, sx.flexCol)}>
-          <Modal.Title {...stylex.props(sx.m0, sx.textBalance, sx.fontSemibold, sx.leadingTight, sx.tracking001em, sx.textFg, typography.sectionTitle)}>
+          <Modal.Title className={mergeStylexOverrideClassName("", sx.m0, sx.textBalance, sx.fontSemibold, sx.leadingTight, sx.tracking001em, sx.textFg, typography.sectionTitle)}>
             Stop this response?
           </Modal.Title>
-          <Modal.Description {...stylex.props(sx.m0, sx.mt2, sx.textPretty, sx.textBase, sx.fontNormal, sx.leadingRelaxed, sx.textDim)}>
+          <Modal.Description className={mergeStylexOverrideClassName("", sx.m0, sx.mt2, sx.textPretty, sx.textBase, sx.fontNormal, sx.leadingRelaxed, sx.textDim)}>
             You can ask again or send a follow-up anytime.
           </Modal.Description>
         </div>
-        <Modal.Footer {...stylex.props(sx.mt3, sx.gap3)}>
+        <Modal.Footer className={mergeStylexOverrideClassName("", sx.mt3, sx.gap3)}>
           <Modal.Close render={<Button size="lg">Keep going</Button>} />
           <Button
             ref={stopRef}
@@ -2165,8 +2165,8 @@ setLocalStaging((current) => subtractStaging(current, batch));
           className={cn(
             composerToolbar,
             composerToolbarScrollDivider,
-            minimized && composerToolbarMinimized,
           )}
+          style={minimized ? { display: "contents" } : undefined}
           ref={toolbarRef}
           // Phones: a toolbar tap must not blur the textarea — the blur would
           // collapse the empty composer mid-tap (unmounting the model pill and
@@ -2438,8 +2438,17 @@ setLocalStaging((current) => subtractStaging(current, batch));
               // capsule rather than the expanded box's radius.
               overlayClassName={
                 minimized
-                  ? "rounded-[999px] phone:pl-2 phone:pr-0.5 phone:pb-1"
-                  : "rounded-[var(--composer-radius)]"
+                  ? mergeStylexClassName(
+                      "",
+                      sharedClassStyles.rounded999px,
+                      sharedClassStyles.phonePl2,
+                      sharedClassStyles.phonePr05,
+                      sharedClassStyles.phonePb1,
+                    )
+                  : mergeStylexClassName(
+                      "",
+                      sharedClassStyles.roundedVarComposerRadius,
+                    )
               }
               disabled={disabled}
             />
@@ -2559,7 +2568,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
                     )}
                   </ContextMenu.Trigger>
                 </Tooltip>
-                <ContextMenu.Popup {...stylex.props(sx.minW230px)}>
+                <ContextMenu.Popup className={mergeStylexOverrideClassName("", sx.minW230px)}>
                   <ContextMenu.Item
                     onClick={() => pickBusySend("queue")}
                   >

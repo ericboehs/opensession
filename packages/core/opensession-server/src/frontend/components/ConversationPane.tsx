@@ -25,7 +25,7 @@ import {
 	PlainThreadActions,
 	PlainWaitingBanner,
 } from "./PlainThreadPanel";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { IconSparkle } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -350,7 +350,7 @@ if (aliveRef.current) setTriaging(false);
 									thread={thread}
 									onChanged={load}
 									layout="bar"
-									{...stylex.props(sx.shrink0)}
+									className={mergeStylexOverrideClassName("", sx.shrink0)}
 								/>
 							)}
 						</>
@@ -398,7 +398,7 @@ if (aliveRef.current) setTriaging(false);
 								{/* Is anyone still owed an answer? Plain leads with this;
 							    so should we. */}
 								{thread && (
-									<PlainWaitingBanner thread={thread} {...stylex.props(sx.mt3)} />
+									<PlainWaitingBanner thread={thread} className={mergeStylexOverrideClassName("", sx.mt3)} />
 								)}
 
 								{/* One-click ticket admin, straight from here: status,
@@ -409,7 +409,7 @@ if (aliveRef.current) setTriaging(false);
 										threadId={threadId}
 										thread={thread}
 										onChanged={load}
-										{...stylex.props(sx.mt3)}
+										className={mergeStylexOverrideClassName("", sx.mt3)}
 									/>
 								)}
 
@@ -466,7 +466,7 @@ if (aliveRef.current) setTriaging(false);
 									type="button" {...mergeStylexProps(FLOATING_PILL_BUTTON, sx.pointerEventsAuto)}
 									onClick={handleTriage}
 								>
-									<IconSparkle size={14} {...stylex.props(sx.textDim)} aria-hidden />
+									<IconSparkle size={14} className={mergeStylexOverrideClassName("", sx.textDim)} aria-hidden />
 									Triage this ticket
 								</button>
 							</Tooltip>

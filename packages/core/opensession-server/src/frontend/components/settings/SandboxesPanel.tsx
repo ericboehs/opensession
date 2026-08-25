@@ -36,7 +36,8 @@ import { WorkspaceSandboxDefaults } from "./SandboxDefaults";
 import { SandboxProviderLogo } from "./SandboxProviderLogo";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
+import { sharedClassStyles } from "../../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -550,7 +551,7 @@ setSaving(false);
 				onOpenChange(next);
 			}}
 		>
-			<Modal.Content widthClassName="max-w-[31rem]" initialFocus={firstFieldRef}>
+			<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW31rem)} initialFocus={firstFieldRef}>
 				<Modal.Header
 					title={`${exists ? "Configure" : "Connect"} ${provider.label}`}
 					description={
@@ -663,7 +664,7 @@ setSaving(false);
 					</>
 				)}
 
-				<Modal.Footer {...stylex.props(sx.mt1)}>
+				<Modal.Footer className={mergeStylexOverrideClassName("", sx.mt1)}>
 					{exists &&
 						(confirmingDisconnect ? (
 							<>
@@ -887,7 +888,7 @@ setSaving(false);
 
 	return (
 		<Modal.Root open={open} onOpenChange={onOpenChange}>
-			<Modal.Content widthClassName="max-w-[32rem]">
+			<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW32rem)}>
 				<Modal.Header
 					title={target ? `Configure ${target.repo} snapshot` : "Create a project snapshot"}
 					description="Open Session builds a reusable, credential-free project snapshot only when you opt in here. Each new session still gets its own isolated sandbox."
@@ -1168,7 +1169,7 @@ export function SandboxesPanel() {
 													</details>
 												)}
 												<Button
-													{...stylex.props(sx.mlAuto, sx.shrink0)}
+													className={mergeStylexOverrideClassName("", sx.mlAuto, sx.shrink0)}
 													size="sm"
 													disabled={!canManage || running}
 													onClick={() => {

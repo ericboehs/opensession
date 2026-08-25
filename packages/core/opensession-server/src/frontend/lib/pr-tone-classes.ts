@@ -5,6 +5,7 @@ import * as stylex from "@stylexjs/stylex";
 import { mergeStylexClassName } from "../ui/cn";
 import { type as typography } from "../styles/typography.stylex";
 import { motionStyles } from "../styles/animations.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 const sx = stylex.create({
 	bgGreen: {
@@ -699,7 +700,7 @@ export const PR_BAR =
 	// thing the strip is for — was the part that got squeezed out.
 	mergeStylexClassName("", sx.Container, sx.flex, sx.minHVarDesktopHeaderH, sx.itemsCenter, sx.gap25, sx.px3, sx.py2) +
 	// The globe (staging) icon rides inside the strip, flush to its padding.
-	"[&>.staging-icon]:-ml-0.5 [&>.staging-icon]:shrink-0 " +
+	" " + "[&>.staging-icon]:-ml-0.5 [&>.staging-icon]:shrink-0 " +
 	// Phone: a row of the bottom sheet, and a row of the info card.
 	"phone:[.viewer-panel_&]:min-h-[50px] phone:[.viewer-panel_&]:px-3.5 " +
 	"phone:[.session-info-status_&]:min-h-[46px] phone:[.session-info-status_&]:px-2.5 " +
@@ -721,9 +722,9 @@ export const PR_BAR_IN_CARD =
  *  the token re-themes them. */
 export const PR_BAR_BG: Record<PrTone, string> = {
 	green: mergeStylexClassName("", sx.bgGreenSoft),
-	purple: "bg-[color-mix(in_srgb,var(--purple)_10%,transparent)]",
+	purple: mergeStylexClassName("", sharedClassStyles.bgColorMixInSrgbVarPurple10Transparent),
 	red: mergeStylexClassName("", sx.bgRedSoft),
-	yellow: "bg-[color-mix(in_srgb,var(--yellow)_9%,transparent)]",
+	yellow: mergeStylexClassName("", sharedClassStyles.bgColorMixInSrgbVarYellow9Transparent),
 	// The plate fill its neighbours in the panel wear (`--bg-panel` is
 	// re-pointed to `--panel-plate` inside the column), so a strip with nothing
 	// to report sits in the same family as the sections under it rather than
@@ -740,10 +741,10 @@ export const PR_BAR_BG: Record<PrTone, string> = {
  *  popup's own raised surface, where the strip's weight reads as a highlight
  *  band instead of a tint. */
 export const PR_SUMMARY_BAND_BG: Record<PrTone, string> = {
-	green: "bg-[color-mix(in_srgb,var(--green)_11%,transparent)]",
-	purple: "bg-[color-mix(in_srgb,var(--purple)_10%,transparent)]",
-	red: "bg-[color-mix(in_srgb,var(--red)_11%,transparent)]",
-	yellow: "bg-[color-mix(in_srgb,var(--yellow)_10%,transparent)]",
+	green: mergeStylexClassName("", sharedClassStyles.bgColorMixInSrgbVarGreen11Transparent),
+	purple: mergeStylexClassName("", sharedClassStyles.bgColorMixInSrgbVarPurple10Transparent),
+	red: mergeStylexClassName("", sharedClassStyles.bgColorMixInSrgbVarRed11Transparent),
+	yellow: mergeStylexClassName("", sharedClassStyles.bgColorMixInSrgbVarYellow10Transparent),
 	muted: "",
 };
 
@@ -864,7 +865,7 @@ export function prChipClass(tone: PrTone, size: ChipSize): string {
 	// pointer. Mixed from its own ink so a green chip washes green.
 	const hover =
 		size === "card"
-			? " hover:bg-[color-mix(in_srgb,currentColor_12%,transparent)] active:bg-[color-mix(in_srgb,currentColor_18%,transparent)]"
+			? mergeStylexClassName("", sharedClassStyles.hoverBgColorMixInSrgbCurrentColor12Transparent, sharedClassStyles.activeBgColorMixInSrgbCurrentColor18Transparent)
 			: "";
 	return [CHIP_BASE, CHIP_SIZE[size], flat ? CHIP_TONE_FLAT[tone] : CHIP_TONE[tone], shadow ? " smooth-shadow-sm" : "", hover].filter(Boolean).join(" ");
 }
@@ -929,9 +930,9 @@ export const PR_ROW =
 	mergeStylexClassName("", sx.flex, sx.minH38px, sx.itemsCenter, sx.gap05, sx.borderT, sx.borderDivider, sx.pr2, sx.hoverBrightness108);
 export const PR_ROW_BG: Record<PrTone, string> = {
 	green: mergeStylexClassName("", sx.bgGreenSoft),
-	purple: "bg-[color-mix(in_srgb,var(--purple)_10%,transparent)]",
+	purple: mergeStylexClassName("", sharedClassStyles.bgColorMixInSrgbVarPurple10Transparent),
 	red: mergeStylexClassName("", sx.bgRedSoft),
-	yellow: "bg-[color-mix(in_srgb,var(--yellow)_9%,transparent)]",
+	yellow: mergeStylexClassName("", sharedClassStyles.bgColorMixInSrgbVarYellow9Transparent),
 	muted: mergeStylexClassName("", sx.bgPanel),
 };
 export const PR_ROW_MAIN =

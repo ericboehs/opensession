@@ -3,7 +3,7 @@ import { IconChevronDown, IconCheckCircle, IconX } from "./icons";
 import type { ReviewLoopResult } from "../lib/review-loop";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -243,7 +243,7 @@ export function ReviewLoopBlock({
 				<span
 					{...stylex.props(sx.grid, sx.size5, sx.flexNone, sx.selfCenter, sx.placeItemsCenter, sx.leadingNone, sx.textFaint, sx.transitionTransform, sx.duration150, open ? sx.translateUpPx : sx.rotateNeg90)}
 				>
-					<IconChevronDown size={20} {...stylex.props(sx.block)} />
+					<IconChevronDown size={20} className={mergeStylexOverrideClassName("", sx.block)} />
 				</span>
 				<span {...stylex.props(sx.shrink0, sx.fontMedium)}>Review loop</span>
 				<span {...stylex.props(sx.minW0, sx.truncate, sx.leading4, sx.textFaint, typography.label)}>{visibleDetail}</span>

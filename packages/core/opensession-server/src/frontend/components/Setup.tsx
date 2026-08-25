@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useSetupStatus } from "../hooks/useSetupStatus";
 import { DEFAULT_DOC_TITLE, docTitle } from "../lib/brand";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import {
   SettingCard,
   SettingsHeader,
@@ -93,7 +93,8 @@ const sx = stylex.create({
 			paddingInline: "20px"
 	},
 	fontTitle: {
-			fontWeight: "var(--title-weight)"
+			fontWeight: "var(--title-weight)",
+		"--settings-leading": "1.1"
 	},
 	tracking0015em: {
 			letterSpacing: "-.015em"
@@ -391,7 +392,7 @@ export function SetupPanel({
               id="server"
               title="Server access"
               description="Add a private app domain and a separate public address for signed webhooks."
-              {...stylex.props(sx.mt0)}
+              className={mergeStylexOverrideClassName("", sx.mt0)}
             >
               <SetupServerAccess
                 access={status.access}

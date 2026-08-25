@@ -1,6 +1,6 @@
 import * as React from "react";
 import { IconChevronDown } from "../components/icons";
-import { cn, mergeStylexProps, mergeStylexClassName } from "./cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "./cn";
 import * as stylex from "@stylexjs/stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -634,7 +634,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 				)}
 				{caret && (
 					<IconChevronDown
-						{...stylex.props(sx.shrink0, sx.opacity55)}
+						className={mergeStylexOverrideClassName("", sx.shrink0, sx.opacity55)}
 						size={caretSize[size]}
 					/>
 				)}

@@ -1,6 +1,6 @@
 import * as React from "react";
 import { IconX } from "../components/icons";
-import { cn, mergeStylexProps, mergeStylexClassName } from "./cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "./cn";
 import { PageLoader } from "./page-loader";
 import { Spinner } from "./spinner";
 import * as stylex from "@stylexjs/stylex";
@@ -416,7 +416,7 @@ export function LoadingState({
 			className={cn(placements[placement], className)}
 			{...props}
 		>
-			{block && spinner && <PageLoader {...stylex.props(sx.textDim)} />}
+			{block && spinner && <PageLoader className={mergeStylexOverrideClassName("", sx.textDim)} />}
 			<div {...stylex.props(sx.inlineFlex, sx.itemsCenter, sx.gap2, sx.textFaint, typography.supporting)}>
 				{!block && spinner && <Spinner />}
 				{children}
@@ -540,7 +540,7 @@ export function ListSkeleton({
 					key={i} {...mergeStylexProps(cn(rowClassName), cards && sx.roundedControl, cards && sx.border, cards && sx.borderLine, cards && sx.bgPanel, cards && sx.px35, cards && sx.py11px, !(cards) && sx.px35, !(cards) && sx.py13px)}
 				>
 					<SkeletonBar className={SKELETON_WIDTHS[i % SKELETON_WIDTHS.length]} />
-					{cards && <SkeletonBar {...stylex.props(sx.mt2, sx.h25, sx.w26)} />}
+					{cards && <SkeletonBar className={mergeStylexOverrideClassName("", sx.mt2, sx.h25, sx.w26)} />}
 				</div>
 			))}
 		</Skeleton>

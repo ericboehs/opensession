@@ -5,7 +5,7 @@ import { IconArrowUpToLine } from "./icons";
 import { duration, ease } from "../ui/motion";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -102,7 +102,7 @@ export function FullPageFileDropOverlay({
             aria-hidden="true"
             data-composer-file-drop-overlay
           >
-            <IconArrowUpToLine size={40} {...stylex.props(sx.textFg)} />
+            <IconArrowUpToLine size={40} className={mergeStylexOverrideClassName("", sx.textFg)} />
             <div {...mergeStylexProps("text-title", sx.mt4, sx.fontSemibold, sx.textFg)}>Add files</div>
             <div {...stylex.props(sx.mt1, sx.textDim, typography.label)}>
               Drop anywhere to attach them to your message.

@@ -27,7 +27,7 @@ import { IconSparkle } from "../icons";
 import { Radio, RadioGroup } from "../../ui/radio";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -116,12 +116,12 @@ function SharedCheckoutSetting() {
 
 	if (!settings) {
 		return error ? (
-			<InlineAlert {...stylex.props(sx.mt9)}>{error}</InlineAlert>
+			<InlineAlert className={mergeStylexOverrideClassName("", sx.mt9)}>{error}</InlineAlert>
 		) : (
 			<SettingCardSkeleton
 				rows={1}
 				label="Loading worktree settings"
-				{...stylex.props(sx.mt9)}
+				className={mergeStylexOverrideClassName("", sx.mt9)}
 			/>
 		);
 	}
@@ -157,7 +157,7 @@ setSaving(false);
 					className="[&>*+*]:relative [&>*+*]:before:pointer-events-none [&>*+*]:before:absolute [&>*+*]:before:inset-x-5 [&>*+*]:before:top-0 [&>*+*]:before:h-px [&>*+*]:before:bg-line [&>*+*]:before:content-['']"
 				>
 					<label {...mergeStylexProps("", sx.hoverBgHover, sx.flex, sx.minH11, sx.cursorPointer, sx.itemsStart, sx.gap3, sx.px5, sx.py4, sx.transitionBackgroundColor)}>
-						<Radio value="shared" {...stylex.props(sx.mt05)} />
+						<Radio value="shared" className={mergeStylexOverrideClassName("", sx.mt05)} />
 						<span {...stylex.props(sx.minW0)}>
 							<span {...stylex.props(sx.block, sx.fontMedium, sx.textFg, typography.itemTitle)}>
 								Local checkout
@@ -169,7 +169,7 @@ setSaving(false);
 						</span>
 					</label>
 					<label {...mergeStylexProps("", sx.hoverBgHover, sx.flex, sx.minH11, sx.cursorPointer, sx.itemsStart, sx.gap3, sx.px5, sx.py4, sx.transitionBackgroundColor)}>
-						<Radio value="worktree" {...stylex.props(sx.mt05)} />
+						<Radio value="worktree" className={mergeStylexOverrideClassName("", sx.mt05)} />
 						<span {...stylex.props(sx.minW0)}>
 							<span {...stylex.props(sx.block, sx.fontMedium, sx.textFg, typography.itemTitle)}>
 								Separate pull request branch
@@ -257,7 +257,7 @@ export function ReposPanel() {
 						{/* mt-9 stands in for the group label above the list, which
 						    counts the repos and so cannot be drawn before they
 						    arrive. */}
-						<SettingCardSkeleton rows={3} icon={28} {...stylex.props(sx.mt9)} />
+						<SettingCardSkeleton rows={3} icon={28} className={mergeStylexOverrideClassName("", sx.mt9)} />
 					</>
 				)
 			) : (

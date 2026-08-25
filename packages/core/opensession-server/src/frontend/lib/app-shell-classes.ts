@@ -2,6 +2,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { mergeStylexClassName } from "../ui/cn";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 const sx = stylex.create({
 	flex: {
@@ -324,7 +325,7 @@ export const WORKSPACE_SHELL =
 	// cannot cut the shadow. The resize grabber stays above both at z 30.
 	mergeStylexClassName("", sx.relative, sx.z25, sx.flex, sx.minH0, sx.minW0, sx.flex1, sx.overflowHidden, sx.borderL, sx.borderDivider, sx.bgSurface, sx.desktopBoxShadowVarContentEdgeShadow) +
 	// Collapsed sidebar: nothing to divide from or cast depth onto.
-	"[.app-body.sidebar-collapsed_&]:border-l-0 [.app-body.sidebar-collapsed_&]:[box-shadow:none] " +
+	" " + "[.app-body.sidebar-collapsed_&]:border-l-0 [.app-body.sidebar-collapsed_&]:[box-shadow:none] " +
 	mergeStylexClassName("", sx.phoneContents);
 
 /**
@@ -354,7 +355,7 @@ export const DETAIL_PANE =
 	// Pushed on top. The shadow rides the pushed state rather than the pane,
 	// or its left-side shadow bleeds back onto the sidebar while it rests just
 	// off the right edge.
-	"phone:[.app-body.mobile-detail_&]:[transform:translateX(0)] " +
+	" " + "phone:[.app-body.mobile-detail_&]:[transform:translateX(0)] " +
 	"phone:[.app-body.mobile-detail_&]:shadow-[-10px_0_28px_rgba(0,0,0,0.35)] " +
 	// How much extra top room the phone's DOCKED tab bar takes, published to
 	// everything inside the pane that has to start below it — the transcript
@@ -381,12 +382,12 @@ export const DETAIL_PANE =
  */
 export const tabSplitDropPreviewClass = (side: "left" | "right") =>
 	mergeStylexClassName("", sx.pointerEventsNone, sx.absolute, sx.topCalcVarDesktopHeaderH36px, sx.bottom2, sx.z25) + " " +
-	"w-[calc(var(--split-preview-share,50%)-12px)] " +
-	mergeStylexClassName("", sx.roundedCalc10pxVarRf, sx.CornerShapeVarCs, sx.border2, sx.borderAccent) + " " +
-	"bg-[color-mix(in_srgb,var(--accent)_18%,transparent)] " +
+	mergeStylexClassName("", sharedClassStyles.wCalcVarSplitPreviewShare5012px) +
+	" " + mergeStylexClassName("", sx.roundedCalc10pxVarRf, sx.CornerShapeVarCs, sx.border2, sx.borderAccent) + " " +
+	mergeStylexClassName("", sharedClassStyles.bgColorMixInSrgbVarAccent18Transparent) +
 	// A hairline of white inside the accent edge, so the outline still reads
 	// against a light screenshot or a pale diff behind it.
-	"shadow-[inset_0_0_0_1px_color-mix(in_srgb,white_16%,transparent)] " +
+	" " + "shadow-[inset_0_0_0_1px_color-mix(in_srgb,white_16%,transparent)] " +
 	(side === "left" ? mergeStylexClassName("", sx.left2) : mergeStylexClassName("", sx.right2));
 
 /**
@@ -426,7 +427,7 @@ export const SCROLL_EDGE_DIVIDER =
  *  level down from this row. */
 export const DETAIL_TOPBAR =
 	[mergeStylexClassName("detail-topbar empty:hidden", sx.flex, sx.minW0, sx.shrink0, sx.flexCol, sx.itemsStretch), SCROLL_EDGE_DIVIDER].filter(Boolean).join(" ") +
-	"[.detail-pane:has(.session-tabs)_&]:after:content-none";
+	" " + "[.detail-pane:has(.session-tabs)_&]:after:content-none";
 
 /**
  * The plain title. Matches `.viewer-header` and the sidebar brand row's height
@@ -456,7 +457,7 @@ export const DETAIL_TOPBAR_TITLE =
 	mergeStylexClassName("", typography.itemTitle, sx.fontSemibold, sx.textFg) +
 	// Collapsed desktop sidebar: clear the floating re-open control and the
 	// fallback nav/search cluster beside it.
-	"desktop:[.app-body.sidebar-collapsed_&]:pl-[148px] " +
+	" " + "desktop:[.app-body.sidebar-collapsed_&]:pl-[148px] " +
 	mergeStylexClassName("", sx.phoneHidden);
 
 /**
@@ -497,8 +498,8 @@ export const DETAIL_TOPBAR_TITLE_TEXT =
 	// otherwise be cutting a page's controls to hold room for a title nobody can
 	// see yet. Scrolled, it truncates, which is what a name in a bar does.
 	mergeStylexClassName("", sx.minW0, sx.shrink100, sx.truncate, sx.translateY1, sx.opacity0) + " " +
-	"transition-[opacity,translate] " +
-	"data-[shown]:translate-y-0 data-[shown]:opacity-100";
+	mergeStylexClassName("", sharedClassStyles.transitionOpacityTranslate) +
+	" " + "data-[shown]:translate-y-0 data-[shown]:opacity-100";
 
 /**
  * The right panel portals into this slot. `contents` dissolves it so the panel

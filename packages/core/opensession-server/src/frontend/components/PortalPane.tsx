@@ -5,6 +5,7 @@ import { PageLoader } from "../ui/page-loader";
 import { IconArrowUpRight, IconGlobe, IconRestore } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -138,7 +139,7 @@ export function PortalPane({ target }: { target: PortalTarget }) {
 					{...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.border, sx.borderLine, sx.bgSurface, sx.px3, sx.py15, sx.textDim, typography.supporting)}
 					title={target.url}
 				>
-					<IconGlobe size={14} {...stylex.props(sx.shrink0, sx.opacity60)} />
+					<IconGlobe size={14} className={mergeStylexOverrideClassName("", sx.shrink0, sx.opacity60)} />
 					<span {...stylex.props(sx.truncate)}>{target.url}</span>
 				</div>
 				<Button
@@ -174,7 +175,7 @@ export function PortalPane({ target }: { target: PortalTarget }) {
 						aria-label={`Loading ${target.name}`}
 						{...stylex.props(sx.pointerEventsNone, sx.absolute, sx.inset0, sx.z10, sx.flex, sx.itemsCenter, sx.justifyCenter, sx.bgPanel)}
 					>
-						<PageLoader {...stylex.props(sx.textDim)} />
+						<PageLoader className={mergeStylexOverrideClassName("", sx.textDim)} />
 					</div>
 				) : null}
 				<iframe

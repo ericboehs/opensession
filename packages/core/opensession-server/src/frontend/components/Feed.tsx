@@ -29,7 +29,7 @@ import { PageDescription, PageHeader, PageTitle } from "../ui/page-header";
 import { EmptyState, ListSkeleton } from "../ui/state";
 import { Button } from "../ui/button";
 import { Menu } from "../ui/menu";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { IconFeed, IconPeople, IconRepo, IconRobot } from "./icons";
 import {
 	PEOPLE_CHIP,
@@ -41,6 +41,7 @@ import {
 } from "../lib/people-classes";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -506,7 +507,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 							rows={6}
 							label="Loading feed"
 							className={PR_LIST}
-							rowClassName="py-[18px]"
+							rowClassName={mergeStylexClassName("", sharedClassStyles.py18px)}
 						/>
 					</>
 				) : recentPrs.length === 0 && commits.length === 0 ? (
@@ -536,7 +537,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 											</Button>
 										}
 									/>
-									<Menu.Popup align="end" {...stylex.props(sx.minW200px)}>
+									<Menu.Popup align="end" className={mergeStylexOverrideClassName("", sx.minW200px)}>
 										<Menu.RadioGroup
 											value={repo}
 											onValueChange={(value) => setRepo(String(value))}
@@ -567,7 +568,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 								rows={6}
 								label="Loading feed"
 								className={PR_LIST}
-								rowClassName="py-[18px]"
+								rowClassName={mergeStylexClassName("", sharedClassStyles.py18px)}
 							/>
 						) : dayGroups.length === 0 ? (
 							// A picked teammate or repo with nothing shipped is an answer,
@@ -626,7 +627,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 												    as tall as it needed to be. The name is in the row's
 												    tooltip and in the repo filter above. */}
 												<span {...stylex.props(sx.flex, sx.minW0, sx.itemsBaseline, sx.gap2)}>
-													<RepoTile name={row.repo} size={16} {...stylex.props(sx.selfCenter)} />
+													<RepoTile name={row.repo} size={16} className={mergeStylexOverrideClassName("", sx.selfCenter)} />
 													<span {...stylex.props(sx.truncate, sx.fontMedium, sx.leading13, sx.textFg, typography.itemTitle)}>
 														{row.title}
 													</span>

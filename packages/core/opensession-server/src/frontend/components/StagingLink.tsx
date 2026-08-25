@@ -5,7 +5,7 @@ import { worstPrRef } from "../lib/pr-refs";
 import { sessionPrPresentation } from "../lib/session-prs";
 import { withPreviewPath } from "../lib/preview-url";
 import { WS_SUMMARY_ICON } from "../lib/workspace-summary-classes";
-import { cn, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { Tooltip } from "../ui/tooltip";
 import { toast } from "../ui/toast";
 import { CopyCheck, useCopy } from "../ui/copy";
@@ -370,12 +370,12 @@ const ICON_PENDING = mergeStylexClassName("", sx.cursorDefault, sx.textDim);
    press washes, which makes the band darken under the pointer. */
 const SUMMARY_MARK =
 	mergeStylexClassName("", sx.grid, sx.size7, sx.shrink0, sx.placeItemsCenter, sx.roundedMd, sx.noUnderline, sx.focusRing) +
-	mergeStylexClassName("", sx.transitionBackgroundColorScale, sx.duration150, sx.easeOut);
+	" " + mergeStylexClassName("", sx.transitionBackgroundColorScale, sx.duration150, sx.easeOut);
 /** Pointer and press. The press step also takes a hair of scale, which is what
  *  makes a 28px target feel like it answered. */
 const SUMMARY_MARK_HOVER =
 	mergeStylexClassName("", sx.hoverBgColorMixInSrgbCurrentColor26Transparent) +
-	mergeStylexClassName("", sx.activeScale096, sx.activeBgColorMixInSrgbCurrentColor34Transparent);
+	" " + mergeStylexClassName("", sx.activeScale096, sx.activeBgColorMixInSrgbCurrentColor34Transparent);
 /* The mark's 20px glyph sits inside a 28px target, so its visible edge already
    sits 4px inside the box. Push the box 2px off the following action to land a
    12px gap between the globe and Merge: the two are a pair, not one control,
@@ -652,7 +652,7 @@ export function StagingLink({
 				    matching the PR menu's copy rows. */}
 				<ContextMenu.Item closeOnClick={false} onClick={() => copy(href)}>
 					{copied ? (
-						<IconCheck size={20} {...stylex.props(sx.textGreen)} />
+						<IconCheck size={20} className={mergeStylexOverrideClassName("", sx.textGreen)} />
 					) : (
 						<IconCopy size={20} className={MENU_ICON} />
 					)}
@@ -756,7 +756,7 @@ export function StagingLink({
 		>
 			{globe(15, RING_SM)}
 			Preview environment
-			<IconArrowUpRight size={15} {...stylex.props(sx.MlPx, sx.opacity80)} />
+			<IconArrowUpRight size={15} className={mergeStylexOverrideClassName("", sx.MlPx, sx.opacity80)} />
 		</a>,
 	);
 }

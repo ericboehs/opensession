@@ -301,7 +301,7 @@ import {
 	TopBarLeading,
 	TopBarTitle,
 } from "../ui/top-bar";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import {
 	composerMenuIcon,
 	composerMenuItem,
@@ -4842,7 +4842,7 @@ export function SessionViewer({
 			: classified.content;
 		return (
 			<div className={composerQueueContent}>
-				{isReview && <IconPullRequest size={18} {...stylex.props(sx.flexNone, sx.textFaint)} />}
+				{isReview && <IconPullRequest size={18} className={mergeStylexOverrideClassName("", sx.flexNone, sx.textFaint)} />}
 				{firstImage && (
 					<div className={composerQueueImage}>
 						<img className={composerQueueImageThumb} src={firstImage} alt="" />
@@ -6150,7 +6150,7 @@ export function SessionViewer({
 			>
 				<Modal.Content>
 					<Modal.Header title="Move to a branch?" />
-					<Modal.Description {...stylex.props(sx.m0, sx.textPretty, sx.fontNormal, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
+					<Modal.Description className={mergeStylexOverrideClassName("", sx.m0, sx.textPretty, sx.fontNormal, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 						{branchConfirmMode === "create"
 							? "You need to move this session to a branch before you can create a PR."
 							: "Copies this session’s changes to a new branch without removing them from the shared checkout."}
@@ -6197,7 +6197,7 @@ export function SessionViewer({
 						<Button
 							size="md"
 							variant="default"
-							{...stylex.props(sx.mr15)}
+							className={mergeStylexOverrideClassName("", sx.mr15)}
 							icon={<IconInbox size={20} />}
 							onClick={addToSidebar}
 							title="Keep this workspace in your sidebar"
@@ -6256,9 +6256,9 @@ export function SessionViewer({
 							<Menu.SubmenuTrigger title="Closed sessions in this workspace">
 								<IconHistory size={20} className={MENU_ICON} />
 								<span {...stylex.props(sx.grow)}>Archived sessions</span>
-								<IconChevronRight size={16} {...stylex.props(sx.textFaint)} />
+								<IconChevronRight size={16} className={mergeStylexOverrideClassName("", sx.textFaint)} />
 							</Menu.SubmenuTrigger>
-							<Menu.Popup {...stylex.props(sx.minW240px, sx.maxW320px)}>
+							<Menu.Popup className={mergeStylexOverrideClassName("", sx.minW240px, sx.maxW320px)}>
 								<ArchivedSessionItems
 									sessions={archivedSessions}
 									onSelect={(s) => {
@@ -6284,7 +6284,7 @@ export function SessionViewer({
 						<Menu.SubmenuTrigger title="Copy this session's transcript">
 							<IconCopy size={20} className={MENU_ICON} />
 							<span {...stylex.props(sx.grow)}>Copy transcript</span>
-							<IconChevronRight size={16} {...stylex.props(sx.textFaint)} />
+							<IconChevronRight size={16} className={mergeStylexOverrideClassName("", sx.textFaint)} />
 						</Menu.SubmenuTrigger>
 						<Menu.Popup>
 							<Menu.Item
@@ -6490,7 +6490,7 @@ export function SessionViewer({
 							<Button
 								variant="danger"
 								size="sm"
-								{...stylex.props(sx.minH0, sx.px3, sx.py5px, typography.label)}
+								className={mergeStylexOverrideClassName("", sx.minH0, sx.px3, sx.py5px, typography.label)}
 								onClick={() => handleDelete(true)}
 								disabled={deleting}
 							>
@@ -6500,7 +6500,7 @@ export function SessionViewer({
 						<Button
 							variant="warning"
 							size="sm"
-							{...stylex.props(sx.minH0, sx.px3, sx.py5px, typography.label)}
+							className={mergeStylexOverrideClassName("", sx.minH0, sx.px3, sx.py5px, typography.label)}
 							onClick={() => handleDelete(false)}
 							disabled={deleting}
 						>
@@ -6509,7 +6509,7 @@ export function SessionViewer({
 						<Button
 							variant="soft"
 							size="sm"
-							{...stylex.props(sx.minH0, sx.px3, sx.py5px, typography.label)}
+							className={mergeStylexOverrideClassName("", sx.minH0, sx.px3, sx.py5px, typography.label)}
 							onClick={() => setShowDeleteConfirm(false)}
 							disabled={deleting}
 						>
@@ -6677,7 +6677,7 @@ export function SessionViewer({
 											name={session.externalRefs?.[0]?.kind || "scratch"}
 										/>
 									) : (
-										<IconEye size={16} {...stylex.props(sx.shrink0, sx.textFaint)} />
+										<IconEye size={16} className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)} />
 									)}
 									<span {...stylex.props(sx.truncate)}>
 										{session.mode === "scratch"
@@ -6687,7 +6687,7 @@ export function SessionViewer({
 								</span>
 								<IconChevronDown
 									size={18}
-									{...stylex.props(sx.shrink0, sx.Rotate90, sx.textFaint)}
+									className={mergeStylexOverrideClassName("", sx.shrink0, sx.Rotate90, sx.textFaint)}
 								/>
 							</span>
 						) : (
@@ -6714,7 +6714,7 @@ export function SessionViewer({
 							</button>
 							<IconChevronDown
 								size={18}
-								{...stylex.props(sx.Mx1, sx.shrink0, sx.Rotate90, sx.textFaint)}
+								className={mergeStylexOverrideClassName("", sx.Mx1, sx.shrink0, sx.Rotate90, sx.textFaint)}
 								aria-hidden="true"
 							/>
 						</>
@@ -6873,7 +6873,7 @@ export function SessionViewer({
 										<Button
 											variant="ghost"
 											size="md"
-											{...stylex.props(sx.flexNone, sx.roundedControl)}
+											className={mergeStylexOverrideClassName("", sx.flexNone, sx.roundedControl)}
 											onClick={(event) => {
 												const animate =
 													event.detail > 0 &&
@@ -7085,7 +7085,7 @@ export function SessionViewer({
 								>
 									<TopBarBack
 										floating
-										{...stylex.props(sx.relative, sx.z1)}
+										className={mergeStylexOverrideClassName("", sx.relative, sx.z1)}
 										onClick={() =>
 											panelPage
 												? setPanelPage(null)
@@ -7111,7 +7111,7 @@ export function SessionViewer({
 									</TopBarTitle>
 									{/* The same session menu moves with the person into Workspace
 									    details instead of remaining behind the full-screen page. */}
-									<TopBarActions {...stylex.props(sx.relative, sx.z1)}>
+									<TopBarActions className={mergeStylexOverrideClassName("", sx.relative, sx.z1)}>
 										{overflowMenu}
 									</TopBarActions>
 								</TopBar>
@@ -7154,7 +7154,7 @@ export function SessionViewer({
 									<>
 										<div className={INFO_HERO}>
 											{session.desk ? (
-												<IconDesk size={40} {...stylex.props(sx.textDim)} />
+												<IconDesk size={40} className={mergeStylexOverrideClassName("", sx.textDim)} />
 											) : (
 												<RepoTile name={session.repo || "repository"} size={40} />
 											)}
@@ -7304,7 +7304,7 @@ export function SessionViewer({
 				createPortal(
 					session.archived ? (
 						<span role="img" aria-label="Archived" title="Archived">
-							<IconArchive size={20} {...stylex.props(sx.textDim)} />
+							<IconArchive size={20} className={mergeStylexOverrideClassName("", sx.textDim)} />
 						</span>
 					) : session.desk ? (
 						deskOwner && personKey(deskOwner) !== personKey(currentUser) ? (
@@ -7317,7 +7317,7 @@ export function SessionViewer({
 							// 20, not the tile's 18: these 24-grid glyphs are clamped
 							// at 20 (MIN_SIZE in icons.tsx) and only ink ~60% of
 							// their box, so the lamp still reads smaller than a face.
-							<IconDesk size={20} {...stylex.props(sx.textDim)} />
+							<IconDesk size={20} className={mergeStylexOverrideClassName("", sx.textDim)} />
 						)
 					) : (
 						<RepoTile name={session.repo || "repository"} size={18} round />
@@ -7491,7 +7491,7 @@ export function SessionViewer({
 							// first-party in a new tab rather than show a blocked frame.
 							<div className={VIEWER_REVIEW_MAIN}>
 								<div {...stylex.props(sx.flex, sx.flex1, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.gap4, sx.p8, sx.textCenter)}>
-									<IconGlobe size={40} {...stylex.props(sx.textDim)} />
+									<IconGlobe size={40} className={mergeStylexOverrideClassName("", sx.textDim)} />
 									<div {...stylex.props(sx.flex, sx.flexCol, sx.itemsCenter, sx.gap1)}>
 										<div {...stylex.props(sx.textBase, sx.fontMedium, sx.textFg)}>
 											Preview environment
@@ -7630,7 +7630,7 @@ export function SessionViewer({
 									aria-hidden="true"
 									data-file-drop-overlay
 								>
-									<IconArrowUpToLine size={40} {...stylex.props(sx.textFg)} />
+									<IconArrowUpToLine size={40} className={mergeStylexOverrideClassName("", sx.textFg)} />
 									<div {...mergeStylexProps("text-title", sx.mt4, sx.fontSemibold, sx.textFg)}>Add files</div>
 									<div {...stylex.props(sx.mt1, sx.textDim, typography.label)}>
 										Drop here to attach them to your message.
@@ -7731,7 +7731,7 @@ export function SessionViewer({
 														icon={
 															<ChipIcon
 																size={16}
-																{...stylex.props(selected && sx.textGreen)}
+																className={mergeStylexOverrideClassName("", selected && sx.textGreen)}
 															/>
 														}
 														onClick={() =>
@@ -7746,7 +7746,7 @@ export function SessionViewer({
 																? "Attached · its transcript rides along with your first message"
 																: "Attach this session's transcript as context"
 														}
-														{...stylex.props(selected ? sx.contextSelected : sx.contextIdle)}
+														className={mergeStylexOverrideClassName("", selected ? sx.contextSelected : sx.contextIdle)}
 													>
 														<span {...stylex.props(sx.maxW200px, sx.truncate)}>
 															{c.title || "Untitled session"}
@@ -7768,7 +7768,7 @@ export function SessionViewer({
 									<EmptyState
 										icon={<IconMessage size={22} />}
 										title="Start a conversation"
-										{...stylex.props(sx.minHFull, sx.px4)}
+										className={mergeStylexOverrideClassName("", sx.minHFull, sx.px4)}
 									>
 										Ask a question or describe your task.
 									</EmptyState>
@@ -7840,7 +7840,7 @@ export function SessionViewer({
 							{inlineRunFailure && (
 								<InlineAlert
 									title="Run failed"
-									{...stylex.props(sx.mxAuto, sx.mt3, sx.maxWVarSessionCol)}
+									className={mergeStylexOverrideClassName("", sx.mxAuto, sx.mt3, sx.maxWVarSessionCol)}
 								>
 									{inlineRunFailure.message}
 								</InlineAlert>
@@ -8079,7 +8079,7 @@ export function SessionViewer({
 														<Button
 															variant="ghost"
 															size="lg"
-															{...stylex.props(sx.size11, sx.minH11, sx.roundedControl, sx.CornerShapeSquircle)}
+															className={mergeStylexOverrideClassName("", sx.size11, sx.minH11, sx.roundedControl, sx.CornerShapeSquircle)}
 															icon={<IconArchive size={22} aria-hidden />}
 															aria-label="Archive and open next chat"
 															disabled={archiving}
@@ -8091,7 +8091,7 @@ export function SessionViewer({
 													<Button
 														variant="ghost"
 														size="lg"
-														{...stylex.props(sx.size11, sx.minH11, sx.roundedControl, sx.CornerShapeSquircle)}
+														className={mergeStylexOverrideClassName("", sx.size11, sx.minH11, sx.roundedControl, sx.CornerShapeSquircle)}
 														icon={<IconPlus size={22} aria-hidden />}
 														aria-label="New workspace"
 														disabled={!onNewWorkspace}
@@ -8101,7 +8101,7 @@ export function SessionViewer({
 														<Button
 															variant="ghost"
 															size="lg"
-															{...stylex.props(sx.size11, sx.minH11, sx.roundedControl, sx.CornerShapeSquircle)}
+															className={mergeStylexOverrideClassName("", sx.size11, sx.minH11, sx.roundedControl, sx.CornerShapeSquircle)}
 															icon={<IconArrowRight size={22} aria-hidden />}
 															aria-label="Next chat"
 															disabled={!onNextChat}
@@ -8115,7 +8115,7 @@ export function SessionViewer({
 								)}
 								<TypingIndicator
 									users={typingUsers}
-									{...stylex.props(sx.mxAuto, sx.mb1, sx.wFull, sx.maxWCalcVarSessionCol40px, sx.px5)}
+									className={mergeStylexOverrideClassName("", sx.mxAuto, sx.mb1, sx.wFull, sx.maxWCalcVarSessionCol40px, sx.px5)}
 								/>
 								<Composer
 									// Uncontrolled: the draft lives in the Composer (persisted
@@ -8318,7 +8318,7 @@ export function SessionViewer({
 									{...mergeStylexProps(PANEL_TAB, desktopPanelPage === "changes" && sx.panelTabActive)}
 									onClick={() => setPanelPage("changes")}
 								>
-									<IconFile size={15} {...stylex.props(sx.shrink0)} />
+									<IconFile size={15} className={mergeStylexOverrideClassName("", sx.shrink0)} />
 									<span className={mergeStylexClassName("", sx.Max380pxHidden)}>Changes</span>
 								</button>
 								<button
@@ -8327,7 +8327,7 @@ export function SessionViewer({
 									{...mergeStylexProps(PANEL_TAB, desktopPanelPage === "portals" && sx.panelTabActive)}
 									onClick={() => setPanelPage("portals")}
 								>
-									<IconGlobe size={15} {...stylex.props(sx.shrink0)} />
+									<IconGlobe size={15} className={mergeStylexOverrideClassName("", sx.shrink0)} />
 									<span className={mergeStylexClassName("", sx.Max380pxHidden)}>Portals</span>
 									{livePortals > 0 && (
 										<span {...mergeStylexProps("", sx.tabularNums, sx.Max380pxHidden, sx.shrink0, sx.textFaint)}>
@@ -8341,7 +8341,7 @@ export function SessionViewer({
 									{...mergeStylexProps(PANEL_TAB, desktopPanelPage === "agents" && sx.panelTabActive)}
 									onClick={() => setPanelPage("agents")}
 								>
-									<IconStack size={15} {...stylex.props(sx.shrink0)} />
+									<IconStack size={15} className={mergeStylexOverrideClassName("", sx.shrink0)} />
 									<span className={mergeStylexClassName("", sx.Max380pxHidden)}>Agents</span>
 									{runningAgents > 0 && (
 										<span {...mergeStylexProps("", sx.tabularNums, sx.Max380pxHidden, sx.shrink0, sx.textYellow)}>
@@ -8358,7 +8358,7 @@ export function SessionViewer({
 										setPanelPage("terminal");
 									}}
 								>
-									<IconTerminal size={15} {...stylex.props(sx.shrink0)} />
+									<IconTerminal size={15} className={mergeStylexOverrideClassName("", sx.shrink0)} />
 									<span className={mergeStylexClassName("", sx.Max380pxHidden)}>Terminal</span>
 								</button>
 							</div>

@@ -29,7 +29,8 @@ import { EFFORTS, shortModelLabel } from "./ModelEffortSelect";
 import { IconChevronDown, IconPlus, IconTrash } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -348,12 +349,12 @@ function PresetRow({
 				</span>
 				<IconChevronDown
 					size={18}
-          {...stylex.props(sx.chevron, open && sx.rotate180)}
+          className={mergeStylexOverrideClassName("", sx.chevron, open && sx.rotate180)}
 				/>
 			</button>
 			{open && (
 				<div {...stylex.props(sx.flex, sx.flexCol, sx.gap3, sx.px5, sx.pb4)}>
-					<SettingsField {...stylex.props(sx.mb0)}>
+					<SettingsField className={mergeStylexOverrideClassName("", sx.mb0)}>
 						Name
 						<input
 							className={settingsInputClass}
@@ -363,7 +364,7 @@ function PresetRow({
 						/>
 					</SettingsField>
 					<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsEnd, sx.gap2)}>
-						<SettingsField {...stylex.props(sx.mb0, sx.minW13rem, sx.flex1)}>
+						<SettingsField className={mergeStylexOverrideClassName("", sx.mb0, sx.minW13rem, sx.flex1)}>
 							Lead model
 							<ModelSelect
 								items={modelItems("Choose a lead model")}
@@ -375,7 +376,7 @@ function PresetRow({
 							/>
 						</SettingsField>
 						{leadEfforts.length > 0 && (
-							<SettingsField {...stylex.props(sx.mb0, sx.w32)}>
+							<SettingsField className={mergeStylexOverrideClassName("", sx.mb0, sx.w32)}>
 								Effort
 								<ModelSelect
                   items={leadEfforts.map((effort) => ({
@@ -408,7 +409,7 @@ function PresetRow({
                   {...mergeStylexProps("", sx.gridColsMinmax01frAuto, sx.desktopGridColsMinmax01fr10rem8remAuto, sx.grid, sx.itemsCenter, sx.gap2)}
 								>
 									<ModelSelect
-										{...stylex.props(sx.colStart1, sx.rowStart1)}
+										className={mergeStylexOverrideClassName("", sx.colStart1, sx.rowStart1)}
 										items={modelItems("Choose a supporting model")}
 										value={member.model}
 										label="Supporting model"
@@ -453,7 +454,7 @@ function PresetRow({
 						<Button
 							size="sm"
 							icon={<IconPlus size={16} />}
-							{...stylex.props(sx.wFit)}
+							className={mergeStylexOverrideClassName("", sx.wFit)}
               onClick={() =>
                 onPatch({ supporting: [...supporting, { model: "" }] })
               }
@@ -461,7 +462,7 @@ function PresetRow({
 							Add supporting model
 						</Button>
 					</div>
-					<SettingsField {...stylex.props(sx.mb0)}>
+					<SettingsField className={mergeStylexOverrideClassName("", sx.mb0)}>
 						Instructions
 						<textarea
               {...mergeStylexProps(settingsTextareaClass, sx.minH18)}
@@ -576,7 +577,7 @@ setSaving(false);
 	};
 	return (
 		<Modal.Root open={open} onOpenChange={onOpenChange}>
-			<Modal.Content widthClassName="max-w-[42rem]">
+			<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW42rem)}>
 				<Modal.Header
 					title="Model presets"
 					description="A lead model, the supporting models it can delegate to, and how to use them. Sessions in this workspace pick one from the model menu."
@@ -624,7 +625,7 @@ setSaving(false);
 					)}
           <Button
             icon={<IconPlus size={16} />}
-            {...stylex.props(sx.wFit)}
+            className={mergeStylexOverrideClassName("", sx.wFit)}
             onClick={addPreset}
           >
 						Add preset

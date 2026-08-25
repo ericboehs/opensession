@@ -14,6 +14,7 @@ import {
 } from "../ui/settings";
 import { Switch } from "../ui/switch";
 import * as stylex from "@stylexjs/stylex";
+import { mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -46,7 +47,7 @@ export function ModelDefaultsSection({
 } = {}) {
 	return (
 		<>
-			<SettingsGroupLabel {...stylex.props(sx.mt0)}>Default model</SettingsGroupLabel>
+			<SettingsGroupLabel className={mergeStylexOverrideClassName("", sx.mt0)}>Default model</SettingsGroupLabel>
 			<SettingCard>
 				<DefaultModelRow onChanged={onChanged} />
 				<AutoFallbackRow />

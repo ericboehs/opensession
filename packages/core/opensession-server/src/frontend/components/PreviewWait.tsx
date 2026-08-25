@@ -6,7 +6,7 @@ import { withPreviewPath } from "../lib/preview-url";
 import { PageLoader } from "../ui/page-loader";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -224,7 +224,7 @@ if (e instanceof ApiError && e.status === 404) {
 			</div>
 			{state === "waiting" ? (
 				<>
-					<PageLoader {...stylex.props(sx.textDim)} />
+					<PageLoader className={mergeStylexOverrideClassName("", sx.textDim)} />
 					<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>
 						Starting the dev server…
 					</div>

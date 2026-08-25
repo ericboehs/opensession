@@ -15,7 +15,7 @@ import { SNOOZE_SOMEDAY, formatRemaining, snoozePresets } from "../../lib/snooze
 import { elapsedSince, fullTime } from "../../lib/time";
 import type { UnifiedSession } from "../../lib/types";
 import { Button } from "../../ui/button";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 import { BottomSheet, SheetBody, SheetItem, SheetSeparator } from "../../ui/sheet";
 import {
 	LanePickerPage,
@@ -471,7 +471,7 @@ export function WsPrStatusMark({
 	if (sessions.some(sessionPrMerged)) {
 		return (
 			<span {...stylex.props(sx.flex, sx.itemsCenter)} title="PR merged">
-				<IconPullRequest size={size} {...stylex.props(sx.textPurple)} />
+				<IconPullRequest size={size} className={mergeStylexOverrideClassName("", sx.textPurple)} />
 			</span>
 		);
 	}
@@ -489,7 +489,7 @@ export function WsPrStatusMark({
 			if (workspace?.draft)
 				return (
 					<span {...stylex.props(sx.flex, sx.itemsCenter)} title="Draft">
-						<IconPencil size={size} {...stylex.props(sx.textFaint)} />
+						<IconPencil size={size} className={mergeStylexOverrideClassName("", sx.textFaint)} />
 					</span>
 				);
 			return (
@@ -513,7 +513,7 @@ export function WsPrStatusMark({
 			);
 		return (
 			<span {...stylex.props(sx.flex, sx.itemsCenter)} title="No pull request">
-				<IconPullRequest size={size} {...stylex.props(sx.textFaint)} />
+				<IconPullRequest size={size} className={mergeStylexOverrideClassName("", sx.textFaint)} />
 			</span>
 		);
 	}
@@ -587,7 +587,7 @@ export function WsStatusMark({
 	if (row.workspace?.draft && row.sessions.length === 0)
 		return (
 			<span {...stylex.props(sx.flex, sx.itemsCenter)} title="Draft">
-				<IconPencil size={size} {...stylex.props(sx.textFaint)} />
+				<IconPencil size={size} className={mergeStylexOverrideClassName("", sx.textFaint)} />
 			</span>
 		);
 	if (row.status === "review") {
@@ -601,7 +601,7 @@ export function WsStatusMark({
 		);
 	}
 	if (row.status === "merged")
-		return slot(<IconGitMerge size={size} {...stylex.props(sx.textPurple)} />);
+		return slot(<IconGitMerge size={size} className={mergeStylexOverrideClassName("", sx.textPurple)} />);
 	// A landed PR files its idle row under Done (prLaneForSessions), but a
 	// human-pinned lane wins, so a row parked in Backlog stays there after its
 	// PR merges. Its mark should carry the PR lifecycle anyway, like the
@@ -609,7 +609,7 @@ export function WsStatusMark({
 	// reads as "no PR".
 	const prSession = frontingPrSession(row.sessions);
 	if (row.status === "pending" && prSession && sessionPrMerged(prSession))
-		return slot(<IconGitMerge size={size} {...stylex.props(sx.textPurple)} />);
+		return slot(<IconGitMerge size={size} className={mergeStylexOverrideClassName("", sx.textPurple)} />);
 	return dot(SIDEBAR_STATUS_DOT.idle);
 }
 
@@ -823,7 +823,7 @@ export function WsCardBody({
 					<Button
 						size="sm"
 						variant={prReady ? "success-strong" : "soft"}
-						trailing={<IconArrowUpRight size={15} {...stylex.props(sx.opacity80)} />}
+						trailing={<IconArrowUpRight size={15} className={mergeStylexOverrideClassName("", sx.opacity80)} />}
 						render={
 							<a
 								href={prSession.prUrl}

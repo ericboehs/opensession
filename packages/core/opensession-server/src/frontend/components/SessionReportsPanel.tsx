@@ -7,7 +7,7 @@ import { OptionSelect } from "../ui/select";
 import { ReportFrame } from "./ReportFrame";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -197,7 +197,7 @@ export function SessionReportsPanel({
 					<OptionSelect
 						size="sm"
 						label="Report from this session"
-						{...stylex.props(sx.mt2)}
+						className={mergeStylexOverrideClassName("", sx.mt2)}
 						value={reportKey(selected)}
 						options={reports.map((report) => ({
 							value: reportKey(report),

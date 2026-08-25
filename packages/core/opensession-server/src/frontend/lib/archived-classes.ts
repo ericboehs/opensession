@@ -2,6 +2,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { mergeStylexClassName } from "../ui/cn";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 const sx = stylex.create({
 	Mx3: {
@@ -430,8 +431,8 @@ export const ARCHIVED_PHONE_SEARCH_DOCK =
 	mergeStylexClassName("", sx.pbMax12pxEnvSafeAreaInsetBottom0px, sx.phoneBlock) + " " +
 	"phone:[body.kb-open_&]:pb-3 " +
 	mergeStylexClassName("", sx.beforePointerEventsNone, sx.beforeAbsolute, sx.beforeInset0, sx.beforeZ1) + " " +
-	"before:bg-[linear-gradient(to_bottom,transparent_0%,var(--bg)_48%)] " +
-	"[&>input]:pointer-events-auto";
+	mergeStylexClassName("", sharedClassStyles.beforeBgLinearGradientToBottomTransparent0VarBg48) +
+	" " + "[&>input]:pointer-events-auto";
 
 /** Section labels and row contents share the page's content edge. The list
  * itself extends 12px beyond it so the hover wash has room to breathe. */

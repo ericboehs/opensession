@@ -323,7 +323,7 @@ export const WS_SUMMARY_SECTION =
 	mergeStylexClassName("first:mt-1", sx.mt3, sx.flex, sx.h22px, sx.shrink0, sx.itemsCenter, sx.px4, typography.label, sx.fontMedium, sx.textFaint) +
 	// The PR plate already closes with its own bottom breathing room. Do not
 	// stack the next section's full top gap on it as well.
-	"[.ws-summary-band+&]:mt-0";
+	" " + "[.ws-summary-band+&]:mt-0";
 
 /**
  * A row. 31px tall on a 300px card, which is the proportion a dense list needs
@@ -352,7 +352,7 @@ export const WS_SUMMARY_ROW =
 	// hover plate would sit as a grey patch on a tinted surface. Give up the
 	// gutter and wash with the row's own ink instead, so the hover reads as the
 	// band getting darker rather than as a second colour landing on it.
-	BAND_ROW +
+	" " + BAND_ROW +
 	" [.ws-summary-band_&]:hover:bg-[color-mix(in_srgb,currentColor_8%,transparent)]";
 
 /**
@@ -364,7 +364,7 @@ export const WS_SUMMARY_ROW =
 export const WS_SUMMARY_STATUS_ROW =
 	mergeStylexClassName("", sx.mx2, sx.flex, sx.minH38px, sx.wCalc10016px, sx.minW0, sx.shrink0, sx.itemsCenter, sx.gap15) + " " +
 	mergeStylexClassName("", sx.roundedRow, sx.pr2, sx.pl25, sx.textLeft, typography.itemTitle, sx.textFg) +
-	BAND_ROW;
+	" " + BAND_ROW;
 
 /**
  * The PR band: the card's one plate, at the top, holding everything about the

@@ -37,7 +37,7 @@ import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
 import { WorkingPill } from "../ui/status";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -496,7 +496,7 @@ setError(e.message);
     <div
         {...mergeStylexProps(sel ? mergeStylexClassName("", sx.max900pxHidden) : undefined, sx.listPane, sel ? sx.listPaneSelected : sx.listPaneDefault)}
     >
-        <SettingsPanel {...stylex.props(sx.selfStart, sel && sx.maxWNone)}>
+        <SettingsPanel className={mergeStylexOverrideClassName("", sx.selfStart, sel && sx.maxWNone)}>
       <SettingsHeader
         title="Goals"
         description={
@@ -518,7 +518,7 @@ setError(e.message);
 
       {error && (
             <InlineAlert
-              {...stylex.props(sx.mb3)}
+              className={mergeStylexOverrideClassName("", sx.mb3)}
               onDismiss={() => setError(null)}
             >
           {error}
@@ -1210,7 +1210,7 @@ setError(e.message);
           value={mcpServers}
           onChange={(e) => setMcpServers(e.target.value)}
           placeholder="ahrefs, slack"
-          {...stylex.props(sx.fontMono)}
+          className={mergeStylexOverrideClassName("", sx.fontMono)}
         />
       </Field>
 
@@ -1267,7 +1267,7 @@ setError(e.message);
     <SettingsForm
       {...mergeStylexProps(FORM_FIELDS, sx.mb3, sx.formStack)}
     >
-      <SettingsFormTitle {...stylex.props(sx.mb0)}>
+      <SettingsFormTitle className={mergeStylexOverrideClassName("", sx.mb0)}>
         {initial ? `Edit "${initial.name}"` : "New goal"}
       </SettingsFormTitle>
       {fields}

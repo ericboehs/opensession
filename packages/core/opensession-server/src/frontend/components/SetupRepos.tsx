@@ -4,7 +4,7 @@ import { Field, Input } from "../ui/input";
 import { Modal } from "../ui/modal";
 import { Popover } from "../ui/popover";
 import { Switch } from "../ui/switch";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
 import {
 	SettingCard,
@@ -42,6 +42,7 @@ import {
 import { Badge } from "../ui/badge";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -369,7 +370,7 @@ export function ReposSection({
 			    pushing the registered repos down the page to browse a second
 			    list made the two read as one. Adding stays a detour. */}
 			<Modal.Root open={pickerOpen} onOpenChange={setPickerOpen}>
-				<Modal.Content widthClassName="max-w-[34rem]" initialFocus={pickerInput}>
+				<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW34rem)} initialFocus={pickerInput}>
 					<Modal.Header
 						title="Add repository"
 						description="Clone a repository onto the server so sessions can work in it."
@@ -518,7 +519,7 @@ setSaving(null);
 	}
 
 	return (
-		<SettingRow {...stylex.props(sx.itemsStart)}>
+		<SettingRow className={mergeStylexOverrideClassName("", sx.itemsStart)}>
 			<RepoTileButton
 				repo={appearance}
 				id={repo.id}
@@ -526,13 +527,13 @@ setSaving(null);
 			/>
 			<SettingRowText>
 				<SettingRowTitle>{repo.label}</SettingRowTitle>
-				<SettingRowDescription {...stylex.props(sx.truncate, sx.fontMono, typography.meta)}>
+				<SettingRowDescription className={mergeStylexOverrideClassName("", sx.truncate, sx.fontMono, typography.meta)}>
 					{repo.path}
 				</SettingRowDescription>
 				<form {...stylex.props(sx.mt2, sx.flex, sx.flexWrap, sx.itemsEnd, sx.gap2)} onSubmit={saveBranch}>
-					<Field label="Default branch" {...stylex.props(sx.w44)}>
+					<Field label="Default branch" className={mergeStylexOverrideClassName("", sx.w44)}>
 						<Input
-							{...stylex.props(sx.fontMono)}
+							className={mergeStylexOverrideClassName("", sx.fontMono)}
 							value={branch}
 							onChange={(event) => {
 								setBranch(event.target.value);
@@ -555,7 +556,7 @@ setSaving(null);
 					</Button>
 				</form>
 				{branchError && (
-					<InlineAlert id={branchErrorId} {...stylex.props(sx.mt15)}>
+					<InlineAlert id={branchErrorId} className={mergeStylexOverrideClassName("", sx.mt15)}>
 						{branchError}
 					</InlineAlert>
 				)}
@@ -578,7 +579,7 @@ setSaving(null);
 					</span>
 				</div>
 				{worktreeError && (
-					<InlineAlert id={worktreeErrorId} {...stylex.props(sx.mt15)}>
+					<InlineAlert id={worktreeErrorId} className={mergeStylexOverrideClassName("", sx.mt15)}>
 						{worktreeError}
 					</InlineAlert>
 				)}
@@ -655,7 +656,7 @@ setBusy(false);
 			>
 				<RepoTile name={id} size={28} />
 			</Popover.Trigger>
-			<Popover.Popup {...stylex.props(sx.w248px, sx.p3)} initialFocus>
+			<Popover.Popup className={mergeStylexOverrideClassName("", sx.w248px, sx.p3)} initialFocus>
 				<div {...stylex.props(sx.mb2, sx.fontMedium, sx.textDim, typography.meta)}>Icon</div>
 				{/* Faded while automatic is on: these choices aren't in effect.
 				    Still live, though — picking one is how you leave automatic,
@@ -753,7 +754,7 @@ setBusy(false);
 							? `Automatic keeps this repo on a color no other repo has. The avatar is ${repo?.ghRepo?.split("/")[0]}’s. Every repo that owner has shows the same picture.`
 							: "Automatic keeps this repo on a color no other repo has."}
 				</div>
-				{error && <InlineAlert {...stylex.props(sx.mt2)}>{error}</InlineAlert>}
+				{error && <InlineAlert className={mergeStylexOverrideClassName("", sx.mt2)}>{error}</InlineAlert>}
 			</Popover.Popup>
 		</Popover.Root>
 	);
@@ -986,7 +987,7 @@ setAddingRepo(null);
 					/>
 					<div {...stylex.props(sx.mt2, sx.maxH320px, sx.overflowYAuto)}>
 						{filtered.length === 0 ? (
-							<EmptyState placement="row" {...stylex.props(sx.px1)}>
+							<EmptyState placement="row" className={mergeStylexOverrideClassName("", sx.px1)}>
 								No repositories match.
 							</EmptyState>
 						) : (
@@ -1056,13 +1057,13 @@ setAddingRepo(null);
 						code.storage
 					</div>
 					{csError ? (
-						<InlineAlert {...stylex.props(sx.mt15)}>
+						<InlineAlert className={mergeStylexOverrideClassName("", sx.mt15)}>
 							code.storage is configured but its repo list failed: {csError}
 						</InlineAlert>
 					) : (
 						<div {...stylex.props(sx.mt1, sx.maxH240px, sx.overflowYAuto)}>
 							{csFiltered.length === 0 ? (
-								<EmptyState placement="row" {...stylex.props(sx.px1)}>
+								<EmptyState placement="row" className={mergeStylexOverrideClassName("", sx.px1)}>
 									{filter.trim()
 										? "No code.storage repositories match."
 										: "No repositories visible to the org's signing key."}
@@ -1085,7 +1086,7 @@ setAddingRepo(null);
 					)}
 				</>
 			)}
-			{error && <InlineAlert {...stylex.props(sx.mt25)}>{error}</InlineAlert>}
+			{error && <InlineAlert className={mergeStylexOverrideClassName("", sx.mt25)}>{error}</InlineAlert>}
 		</div>
 	);
 }

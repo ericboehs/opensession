@@ -41,7 +41,7 @@ import {
 import { absoluteLink, copyToClipboard } from "../lib/share-link";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { Menu } from "../ui/menu";
 import { ResponsiveDialog } from "../ui/sheet";
 import { toast } from "../ui/toast";
@@ -62,6 +62,7 @@ import {
 } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -720,7 +721,7 @@ toast("Could not delete that file");
 								? { onClick: onDownload }
 								: { render: <a href={sessionAssetDownloadUrl(sessionId, file)} /> })}
 						>
-							<IconArrowDown size={18} {...stylex.props(sx.textFaint)} />
+							<IconArrowDown size={18} className={mergeStylexOverrideClassName("", sx.textFaint)} />
 							Download
 						</Menu.Item>
 						<Menu.Item
@@ -728,7 +729,7 @@ toast("Could not delete that file");
 								? { onClick: onOpen }
 								: { render: <a href={rawUrl} target="_blank" rel="noreferrer" /> })}
 						>
-							<IconArrowUpRight size={18} {...stylex.props(sx.textFaint)} />
+							<IconArrowUpRight size={18} className={mergeStylexOverrideClassName("", sx.textFaint)} />
 							{nativeShare ? "Open or share" : "Open in a browser tab"}
 						</Menu.Item>
 						<Menu.Item
@@ -736,13 +737,13 @@ toast("Could not delete that file");
 								copyToClipboard(absoluteLink(stableUrl), () => toast("Link copied"))
 							}
 						>
-							<IconCopy size={18} {...stylex.props(sx.textFaint)} />
+							<IconCopy size={18} className={mergeStylexOverrideClassName("", sx.textFaint)} />
 							Copy link
 						</Menu.Item>
 						<Menu.Separator />
 					</>
 				)}
-				<Menu.Item onClick={onDelete} {...stylex.props(sx.textRed)}>
+				<Menu.Item onClick={onDelete} className={mergeStylexOverrideClassName("", sx.textRed)}>
 					<IconTrash size={18} />
 					Delete
 				</Menu.Item>
@@ -1043,7 +1044,7 @@ export function AssetActions({
 				<Button
 					variant="ghost"
 					size="sm"
-					{...stylex.props(sx.shrink0)}
+					className={mergeStylexOverrideClassName("", sx.shrink0)}
 					onClick={onOpenAsTab}
 				>
 					Open as tab
@@ -1062,7 +1063,7 @@ export function AssetActions({
 					variant="ghost"
 					size="sm"
 					aria-label="Close"
-					{...stylex.props(sx.size7, sx.shrink0, sx.justifyCenter, sx.px0)}
+					className={mergeStylexOverrideClassName("", sx.size7, sx.shrink0, sx.justifyCenter, sx.px0)}
 					onClick={onClose}
 				>
 					<IconX size={16} />
@@ -1368,9 +1369,9 @@ export function AssetOverlay({
 			label={`Preview ${name}`}
 			// Assets float directly on the scrim, like transcript media. Files
 			// that need a page surface bring their own inside the stage below.
-			modalClassName="h-[min(820px,78vh)] w-[min(1120px,84vw)] max-w-none overflow-visible bg-transparent [box-shadow:none]!"
-			sheetClassName="top-0 h-[100dvh] max-h-none bg-black [border-radius:0]! [box-shadow:none]!"
-			backdropClassName="bg-black/85"
+			modalClassName={mergeStylexClassName("[box-shadow:none]!", sharedClassStyles.hMin820px78vh, sharedClassStyles.wMin1120px84vw, sharedClassStyles.maxWNone, sharedClassStyles.overflowVisible, sharedClassStyles.bgTransparent)}
+			sheetClassName={mergeStylexClassName("[border-radius:0]! [box-shadow:none]!", sharedClassStyles.top0, sharedClassStyles.h100dvh, sharedClassStyles.maxHNone, sharedClassStyles.bgBlack)}
+			backdropClassName={mergeStylexClassName("", sharedClassStyles.bgBlack85)}
 			showPhoneGrabber={false}
 		>
 			<div

@@ -24,7 +24,7 @@ import { pointerCanHover } from "../lib/pointer";
 import { ExtBadge } from "./lang-marks";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -250,7 +250,7 @@ export const TurnFooter = function TurnFooter({
             aria-label={copied ? "Copied" : "Copy message"}
           >
             {copied ? (
-              <IconCheck size={20} {...stylex.props(sx.textGreen)} />
+              <IconCheck size={20} className={mergeStylexOverrideClassName("", sx.textGreen)} />
             ) : (
               <IconCopy size={20} />
             )}
@@ -267,15 +267,15 @@ export const TurnFooter = function TurnFooter({
             side="bottom"
             align="start"
             sideOffset={4}
-            {...stylex.props(sx.maxW380px)}
+            className={mergeStylexOverrideClassName("", sx.maxW380px)}
           >
             {onFork && (
               <Menu.Item onClick={() => onFork(entry.id)}>
-                <IconBranches size={20} {...stylex.props(sx.textFaint)} />
+                <IconBranches size={20} className={mergeStylexOverrideClassName("", sx.textFaint)} />
                 Fork from here
               </Menu.Item>
             )}
-            {onFork && <Menu.Separator {...stylex.props(sx.my1)} />}
+            {onFork && <Menu.Separator className={mergeStylexOverrideClassName("", sx.my1)} />}
             <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.px25, sx.py15, sx.textXs, sx.fontMedium, sx.textFaint)}>
               <IconClock size={20} />
               {fullTime(entry.timestamp)}
@@ -291,11 +291,11 @@ export const TurnFooter = function TurnFooter({
                 same-named files a turn touched is worth more than the space. */}
             {files.length > 0 && (
               <>
-                <Menu.Separator {...stylex.props(sx.my1)} />
+                <Menu.Separator className={mergeStylexOverrideClassName("", sx.my1)} />
                 {/* GroupLabel MUST live inside a Group — bare it throws Base UI
                     error #31 and white-screens the app on open. */}
                 <Menu.Group>
-                  <Menu.GroupLabel {...stylex.props(sx.px25, sx.pt05)}>
+                  <Menu.GroupLabel className={mergeStylexOverrideClassName("", sx.px25, sx.pt05)}>
                     Changed files
                   </Menu.GroupLabel>
                   {files.slice(0, MAX_MENU_FILES).map((f) => (
@@ -435,7 +435,7 @@ function AssetChip({ path }: { path: string }) {
       <span {...stylex.props(sx.maxW180px, sx.truncate, sx.textDim, typography.label, sx.footerText)}>
         {name}
       </span>
-      <IconArrowUpRight size={20} {...stylex.props(sx.size4, sx.flexShrink0, sx.textFaint)} />
+      <IconArrowUpRight size={20} className={mergeStylexOverrideClassName("", sx.size4, sx.flexShrink0, sx.textFaint)} />
     </>
   );
   if (!asset.available)

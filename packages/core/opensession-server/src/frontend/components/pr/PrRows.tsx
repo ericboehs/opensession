@@ -10,7 +10,7 @@ import {
 } from "../icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -226,7 +226,7 @@ export function FileRow({ file, onClick }: { file: PrFile; onClick?: () => void 
       disabled={!onClick}
       title={file.path}
     >
-      <IconFile size={14} {...stylex.props(sx.shrink0, sx.textFaint)} />
+      <IconFile size={14} className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)} />
       <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.textFg, typography.label)}>{base}</span>
       <span {...stylex.props(sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap15, typography.meta)}>
         {file.additions > 0 && <span {...stylex.props(sx.textGreen)}>+{file.additions}</span>}

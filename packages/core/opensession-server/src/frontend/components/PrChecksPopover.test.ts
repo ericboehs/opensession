@@ -24,7 +24,9 @@ const floatingPrimitiveSources = await Promise.all([
 ]);
 
 test("shared floating interactions paint above the workspace summary", () => {
-	expect(summarySource).toContain('positionerClassName="z-[2147483646]"');
+	expect(summarySource).toContain(
+		'positionerClassName={mergeStylexClassName("", sharedClassStyles.z2147483646)}',
+	);
 	expect(popupClassesSource).toContain(
 		'"zIndex": "2147483647"',
 	);

@@ -3,7 +3,7 @@ import { GITHUB_APP_GRANT_PERMISSIONS } from "../../shared/github-app-permission
 import React, { useEffect, useState, useRef } from "react";
 import { Menu } from "../ui/menu";
 import { OptionSelect } from "../ui/select";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { Button } from "../ui/button";
 import { DeviceCode } from "../ui/device-code";
 import { Modal } from "../ui/modal";
@@ -55,6 +55,7 @@ import {
 } from "../lib/api";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -426,14 +427,14 @@ function ConnectionsSkeleton() {
         label="Checking connections" {...mergeStylexProps("", sx.gridColsRepeatAutoFillMinmax230px1fr, sx.grid, sx.gap25)}
       >
         {Array.from({ length: 3 }, (_, index) => (
-          <SettingsSection key={index} {...stylex.props(sx.flex, sx.flexCol, sx.gap2, sx.p35)}>
+          <SettingsSection key={index} className={mergeStylexOverrideClassName("", sx.flex, sx.flexCol, sx.gap2, sx.p35)}>
             <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25)}>
-              <SkeletonBar {...stylex.props(sx.size30px, sx.shrink0, sx.roundedControl)} />
-              <SkeletonBar {...stylex.props(sx.w38)} />
-              <SkeletonBar {...stylex.props(sx.mlAuto, sx.h5, sx.w16, sx.rounded999px)} />
+              <SkeletonBar className={mergeStylexOverrideClassName("", sx.size30px, sx.shrink0, sx.roundedControl)} />
+              <SkeletonBar className={mergeStylexOverrideClassName("", sx.w38)} />
+              <SkeletonBar className={mergeStylexOverrideClassName("", sx.mlAuto, sx.h5, sx.w16, sx.rounded999px)} />
             </div>
-            <SkeletonBar {...stylex.props(sx.h25, sx.w72)} />
-            <SkeletonBar {...stylex.props(sx.h25, sx.w34)} />
+            <SkeletonBar className={mergeStylexOverrideClassName("", sx.h25, sx.w72)} />
+            <SkeletonBar className={mergeStylexOverrideClassName("", sx.h25, sx.w34)} />
           </SettingsSection>
         ))}
       </Skeleton>
@@ -591,7 +592,7 @@ setRemoveError(e.message);
           <>
             <Button
               variant="soft"
-              icon={<IconHistory size={16} {...stylex.props(refreshing && sx.spinning)} />}
+              icon={<IconHistory size={16} className={mergeStylexOverrideClassName("", refreshing && sx.spinning)} />}
               onClick={() => load(true)}
               disabled={refreshing}
             >
@@ -632,7 +633,7 @@ setRemoveError(e.message);
               const ok = health?.status === "operational";
               const count = typeof health?.activeSessions === "number" ? health.activeSessions : null;
               return (
-                <SettingsSection key={name} {...stylex.props(sx.flex, sx.flexCol, sx.gap2, sx.p35)}>
+                <SettingsSection key={name} className={mergeStylexOverrideClassName("", sx.flex, sx.flexCol, sx.gap2, sx.p35)}>
                   <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25)}>
                     <IconTile name={name} size={30} />
                     <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.fontMedium, sx.textFg, typography.itemTitle)}>
@@ -730,19 +731,19 @@ setRemoveError(e.message);
                       {(s.transport === "http" || oauthByName[s.name]?.capable) && (
                         <>
                           <Menu.Item onClick={() => handleOauthConnect(s, "shared")}>
-                            <IconPlus size={16} {...stylex.props(sx.textFaint)} />
+                            <IconPlus size={16} className={mergeStylexOverrideClassName("", sx.textFaint)} />
                             {oauthByName[s.name]?.shared
                               ? "Reconnect (workspace)"
                               : "Connect (workspace)"}
                           </Menu.Item>
                           <Menu.Item onClick={() => handleOauthConnect(s, "me")}>
-                            <IconPlus size={16} {...stylex.props(sx.textFaint)} />
+                            <IconPlus size={16} className={mergeStylexOverrideClassName("", sx.textFaint)} />
                             Connect my account
                           </Menu.Item>
                           {s.transport === "http" &&
                           oauthByName[s.name]?.manualToken ? (
                             <Menu.Item onClick={() => setTokenConnect(s)}>
-                              <IconPlus size={16} {...stylex.props(sx.textFaint)} />
+                              <IconPlus size={16} className={mergeStylexOverrideClassName("", sx.textFaint)} />
                               Connect with API token
                             </Menu.Item>
                           ) : null}
@@ -756,7 +757,7 @@ setRemoveError(e.message);
                                 )
                               }
                             >
-                              <IconTrash size={16} {...stylex.props(sx.textFaint)} />
+                              <IconTrash size={16} className={mergeStylexOverrideClassName("", sx.textFaint)} />
                               Disconnect OAuth
                             </Menu.Item>
                           ) : null}
@@ -764,7 +765,7 @@ setRemoveError(e.message);
                         </>
                       )}
                       <Menu.Item onClick={() => handleRestrict(s)}>
-                        <IconSliders size={16} {...stylex.props(sx.textFaint)} />
+                        <IconSliders size={16} className={mergeStylexOverrideClassName("", sx.textFaint)} />
                         {restricted ? "Edit access" : "Restrict access"}
                       </Menu.Item>
                       <Menu.Item
@@ -1022,7 +1023,7 @@ function GithubAppWizard({
 
   return (
     <Modal.Root open={open} onOpenChange={(next) => !saving && onOpenChange(next)}>
-      <Modal.Content widthClassName="max-w-[34rem]" initialFocus={stepFocusRef}>
+      <Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW34rem)} initialFocus={stepFocusRef}>
         <Modal.Header
           title="Set up a GitHub App"
           description={`Step ${step} of 4 · ${titles[step - 1]}`}
@@ -1227,7 +1228,7 @@ function GithubAppWizard({
               <Button
                 variant="ghost"
                 onClick={() => setStep(1)}
-                {...stylex.props(sx.mrAuto)}
+                className={mergeStylexOverrideClassName("", sx.mrAuto)}
               >
                 Back
               </Button>
@@ -1262,7 +1263,7 @@ function GithubAppWizard({
               <Button
                 variant="ghost"
                 onClick={() => setStep(2)}
-                {...stylex.props(sx.mrAuto)}
+                className={mergeStylexOverrideClassName("", sx.mrAuto)}
               >
                 Back
               </Button>
@@ -1324,7 +1325,7 @@ function GithubAppWizard({
                   if (flow) onCancelFlow();
                   setStep(3);
                 }}
-                {...stylex.props(sx.mrAuto)}
+                className={mergeStylexOverrideClassName("", sx.mrAuto)}
               >
                 Back
               </Button>
@@ -1560,7 +1561,7 @@ setError(e.message);
         <Button
           size="sm"
           variant="ghost"
-          {...stylex.props(sx.mlAuto)}
+          className={mergeStylexOverrideClassName("", sx.mlAuto)}
           onClick={() => {
             setFlow(null);
             setFlowState("idle");
@@ -1586,7 +1587,7 @@ setError(e.message);
         <SectionHeading>GitHub</SectionHeading>
         {error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
         <SettingCard>
-          <SettingRow {...stylex.props(sx.itemsStart, sx.gapX3)}>
+          <SettingRow className={mergeStylexOverrideClassName("", sx.itemsStart, sx.gapX3)}>
             {connected ? (
               <span {...stylex.props(sx.flex, sx.size30px, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>
                 <UserAvatar
@@ -1599,7 +1600,7 @@ setError(e.message);
               <IconTile name="github" size={30} />
             )}
             <SettingRowText>
-              <SettingRowTitle {...stylex.props(sx.truncate)}>
+              <SettingRowTitle className={mergeStylexOverrideClassName("", sx.truncate)}>
                 {connected ? account.name || account.login : "GitHub"}
                 {connected && (
                   <span {...stylex.props(sx.ml2, sx.fontNormal, sx.textFaint, typography.label)}>
@@ -1607,13 +1608,13 @@ setError(e.message);
                   </span>
                 )}
               </SettingRowTitle>
-              <SettingRowDescription {...stylex.props(sx.leadingSnug)}>
+              <SettingRowDescription className={mergeStylexOverrideClassName("", sx.leadingSnug)}>
                 {connected
                   ? `All sessions clone and open pull requests as @${account.login}.`
                   : "Connect a GitHub App to clone your private repositories and open pull requests."}
               </SettingRowDescription>
             </SettingRowText>
-            <SettingRowControl {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3)}>
+            <SettingRowControl className={mergeStylexOverrideClassName("", sx.flex, sx.itemsCenter, sx.gap3)}>
               <StatusChip
                 label={connected ? "Connected" : "Not connected"}
                 dot={
@@ -1635,7 +1636,7 @@ setError(e.message);
                         a configured App. */}
                     {data.connectAvailable && (
                       <Menu.Item onClick={startConnect} disabled={flowState !== "idle"}>
-                        <IconPlug size={16} {...stylex.props(sx.textFaint)} />
+                        <IconPlug size={16} className={mergeStylexOverrideClassName("", sx.textFaint)} />
                         Reconnect
                       </Menu.Item>
                     )}
@@ -1809,7 +1810,7 @@ setError(e.message);
             into a one-word column. The admin row is top-aligned because its
             description runs several lines; the compact personal row stays
             centered with its button. */}
-        <SettingRow {...stylex.props(sx.gapX3, !personal && sx.itemsStart)}>
+        <SettingRow className={mergeStylexOverrideClassName("", sx.gapX3, !personal && sx.itemsStart)}>
           {signedIn ? (
             // Same 30px slot as the brand tile, so the row's text column does
             // not shift when the tile gives way to the avatar.
@@ -1820,21 +1821,21 @@ setError(e.message);
             <IconTile name="github" size={30} />
           )}
           <SettingRowText>
-            <SettingRowTitle {...stylex.props(personal && sx.truncate)}>
+            <SettingRowTitle className={mergeStylexOverrideClassName("", personal && sx.truncate)}>
               {signedIn ? own!.name : personal ? "GitHub" : "Per-user GitHub auth"}
               {signedIn && (
                 <span {...stylex.props(sx.ml2, sx.fontNormal, sx.textFaint, typography.label)}>@{own!.github}</span>
               )}
             </SettingRowTitle>
             {!personal && (
-              <SettingRowDescription {...stylex.props(sx.leadingSnug)}>
+              <SettingRowDescription className={mergeStylexOverrideClassName("", sx.leadingSnug)}>
                 {active
                   ? "Interactive sessions of a connected teammate open PRs as their own GitHub account. Everyone else (and all automations) keeps the bot."
                   : "Off. Sessions open PRs as the bot account. Opt in via config: integrations.github { userPrAuth: true, oauthClientId } in ~/.opensession/config.json."}
               </SettingRowDescription>
             )}
             {personal && active && (
-              <SettingRowDescription {...stylex.props(sx.textFaint, typography.meta)}>
+              <SettingRowDescription className={mergeStylexOverrideClassName("", sx.textFaint, typography.meta)}>
                 {signedIn && ownAccount
                   ? `since ${new Date(ownAccount.connectedAt).toLocaleDateString()}`
                   : signedIn
@@ -1843,7 +1844,7 @@ setError(e.message);
               </SettingRowDescription>
             )}
           </SettingRowText>
-          <SettingRowControl {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3)}>
+          <SettingRowControl className={mergeStylexOverrideClassName("", sx.flex, sx.itemsCenter, sx.gap3)}>
             {/* Personal: the chip reports YOUR connection, and an unconnected
                 row says so with its Connect button alone, the way every tool
                 row above it does. The admin row reports the workspace switch. */}
@@ -1903,7 +1904,7 @@ setError(e.message);
                 </Menu.Trigger>
                 <Menu.Popup align="end" sideOffset={4}>
                   <Menu.Item onClick={startConnect} disabled={flowState !== "idle"}>
-                    <IconPlug size={16} {...stylex.props(sx.textFaint)} />
+                    <IconPlug size={16} className={mergeStylexOverrideClassName("", sx.textFaint)} />
                     Reconnect
                   </Menu.Item>
                   <Menu.Item
@@ -1927,14 +1928,14 @@ setError(e.message);
               (a) => a.login.toLowerCase() === m.github.toLowerCase(),
             );
             return (
-              <SettingRow key={m.github} {...stylex.props(sx.gapX3, sx.py3)}>
+              <SettingRow key={m.github} className={mergeStylexOverrideClassName("", sx.gapX3, sx.py3)}>
                 {/* Keep the smaller settings-avatar step inside the same slot
                     as the GitHub tile so every row's text stays aligned. */}
                 <span {...stylex.props(sx.flex, sx.size30px, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>
                   <UserAvatar name={m.name} login={m.github} size={28} />
                 </span>
                 <SettingRowText>
-                  <SettingRowTitle {...stylex.props(sx.truncate)}>
+                  <SettingRowTitle className={mergeStylexOverrideClassName("", sx.truncate)}>
                     {m.name}
                     <span {...stylex.props(sx.ml2, sx.fontNormal, sx.textFaint, typography.label)}>@{m.github}</span>
                   </SettingRowTitle>
@@ -1942,12 +1943,12 @@ setError(e.message);
                       had nothing to shrink into on a phone and overlapped the
                       name it belongs to. */}
                   {account && (
-                    <SettingRowDescription {...stylex.props(sx.textFaint, typography.meta)}>
+                    <SettingRowDescription className={mergeStylexOverrideClassName("", sx.textFaint, typography.meta)}>
                       since {new Date(account.connectedAt).toLocaleDateString()}
                     </SettingRowDescription>
                   )}
                 </SettingRowText>
-                <SettingRowControl {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3)}>
+                <SettingRowControl className={mergeStylexOverrideClassName("", sx.flex, sx.itemsCenter, sx.gap3)}>
                   <StatusChip
                     label={
                       m.needsReconnect
@@ -2312,7 +2313,7 @@ setError(e.message);
       {error && (
         <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
       )}
-      <SettingsSection {...stylex.props(sx.minW0, sx.maxW720px)}>
+      <SettingsSection className={mergeStylexOverrideClassName("", sx.minW0, sx.maxW720px)}>
         <div {...stylex.props(sx.mb2, sx.leading145, sx.textDim, typography.supporting)}>
           Every new Plain ticket goes through one cheap Haiku call before triage: spam is skipped
           entirely, a very basic ask (simple refund, how-do-I) runs triage on the model below, and
@@ -2322,7 +2323,7 @@ setError(e.message);
         <div {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap25, sx.textFaint, typography.meta)}>
           <span {...stylex.props(sx.whitespaceNowrap)}>Model for basic tickets:</span>
           <OptionSelect
-            {...stylex.props(sx.minW0, sx.flex1)}
+            className={mergeStylexOverrideClassName("", sx.minW0, sx.flex1)}
             label="Model for basic tickets"
             value={cfg.basicModel}
             disabled={saving}
@@ -2435,7 +2436,7 @@ setSaving(false);
         if (!next && !saving) onClose();
       }}
     >
-      <Modal.Content widthClassName="max-w-[30rem]">
+      <Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW30rem)}>
         <Modal.Header
           title={`Connect ${displayName(server.name)} with an API token`}
           description="The token is checked with the provider, then stored for agent runs."
@@ -2547,7 +2548,7 @@ setError(e.message);
     name.trim() && (transport === "http" ? url.trim() : command.trim());
 
   return (
-    <SettingsForm {...stylex.props(sx.mb18px, sx.flex, sx.flexCol, sx.gap35)}>
+    <SettingsForm className={mergeStylexOverrideClassName("", sx.mb18px, sx.flex, sx.flexCol, sx.gap35)}>
       <SettingsFormTitle>Add MCP server</SettingsFormTitle>
 
       <SettingsFormRow>

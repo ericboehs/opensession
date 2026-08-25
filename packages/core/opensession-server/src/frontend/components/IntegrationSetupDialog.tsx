@@ -31,7 +31,8 @@ import {
 } from "./setup-shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -450,7 +451,7 @@ setSaving(false);
 
 	return (
 		<Modal.Root open={open} onOpenChange={onOpenChange}>
-			<Modal.Content widthClassName="max-w-[34rem]">
+			<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW34rem)}>
 				<Modal.Header
 					title={
 						<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25)}>
@@ -462,7 +463,7 @@ setSaving(false);
 				/>
 
 				{(canToggle || integration.env.length > 0) && (
-					<SettingsSection {...stylex.props(sx.p4)}>
+					<SettingsSection className={mergeStylexOverrideClassName("", sx.p4)}>
 						{canToggle && (
 							<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap4)}>
 								<div {...stylex.props(sx.minW0, sx.flex1)}>
@@ -497,16 +498,16 @@ setSaving(false);
 										value={transport}
 										onValueChange={(next) => pickTransport(next as SlackTransport)} {...mergeStylexProps("", sx.phoneMl0, sx.phoneWFull, sx.mlAuto)}
 									>
-										<SegmentedOption value="socket" disabled={saving} className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneFlex1)}>
+										<SegmentedOption value="socket" disabled={saving} className={mergeStylexOverrideClassName("", sx.phoneMinH11, sx.phoneFlex1)}>
 											Socket Mode
 										</SegmentedOption>
-										<SegmentedOption value="http" disabled={saving || !httpAvailable} className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneFlex1)}>
+										<SegmentedOption value="http" disabled={saving || !httpAvailable} className={mergeStylexOverrideClassName("", sx.phoneMinH11, sx.phoneFlex1)}>
 											HTTP
 										</SegmentedOption>
 									</Segmented>
 								</div>
 								{transport === "http" && !httpAvailable && (
-									<InlineAlert variant="warn" {...stylex.props(sx.mt3)}>
+									<InlineAlert variant="warn" className={mergeStylexOverrideClassName("", sx.mt3)}>
 										This instance has no public webhook URL. Choose Socket Mode or configure a public URL first.
 									</InlineAlert>
 								)}
@@ -561,7 +562,7 @@ setSaving(false);
 				<Disclosure
 					title="Setup guide"
 					defaultOpen={!configured}
-					actions={<LinkChips links={integration.links} {...stylex.props(sx.mt0)} />}
+					actions={<LinkChips links={integration.links} className={mergeStylexOverrideClassName("", sx.mt0)} />}
 				>
 					<div {...stylex.props(sx.flex, sx.flexCol, sx.gap4)}>
 						{guide.intro}

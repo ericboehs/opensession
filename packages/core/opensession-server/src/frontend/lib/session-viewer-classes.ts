@@ -42,6 +42,7 @@ import * as stylex from "@stylexjs/stylex";
 import { mergeStylexClassName } from "../ui/cn";
 import { type as typography } from "../styles/typography.stylex";
 import { motionStyles } from "../styles/animations.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 const sx = stylex.create({
 	flex: {
@@ -839,7 +840,7 @@ export const VIEWER_HEADER =
 	mergeStylexClassName("", sx.bgSurface, sx.px4) +
 	// Collapsed desktop sidebar: the floating re-open + nav cluster overlays the
 	// pane's left edge, so the row's text starts past it.
-	"desktop:[.app-body.sidebar-collapsed_&]:pl-[148px] " +
+	" " + "desktop:[.app-body.sidebar-collapsed_&]:pl-[148px] " +
 	// On phones the bar is a set of floating pills inside the app header, not a
 	// row of its own.
 	"phone:[.app-header-actions_&]:h-auto phone:[.app-header-actions_&]:gap-1.5 " +
@@ -902,7 +903,7 @@ export const VIEWER_HEADER_ACTIONS =
 	// lets this outrank the primitive's own padding, exactly as the legacy rule
 	// did. `inline-flex` and `items-center` are not carried because the primitive
 	// is already both on every viewport.
-	"phone:[&_button]:min-h-11 phone:[&_button]:px-[11px] phone:[&_button]:py-[7px] " +
+	" " + "phone:[&_button]:min-h-11 phone:[&_button]:px-[11px] phone:[&_button]:py-[7px] " +
 	"phone:[&_button]:text-label";
 
 /** The presence facepile (Figma/Notion-style), just before Share. Labelled
@@ -943,7 +944,7 @@ export const SESSION_LINK =
 	// 11px sides are already the resting value. A `phone:` variant beats the
 	// unprefixed `py-[5px]` and `text-label` on the same element because Tailwind
 	// emits every breakpoint variant after the unprefixed utilities.
-	mergeStylexClassName("", sx.phoneInlineFlex, sx.phoneMinH11, sx.phoneItemsCenter, sx.phonePy7px, sx.phoneTextLabel);
+	" " + mergeStylexClassName("", sx.phoneInlineFlex, sx.phoneMinH11, sx.phoneItemsCenter, sx.phonePy7px, sx.phoneTextLabel);
 export const SESSION_LINK_LINEAR = mergeStylexClassName("", sx.borderRgba9410621005, sx.text7b86e8);
 export const SESSION_LINK_PLAIN = mergeStylexClassName("", sx.borderRgba1314813605, sx.text5eead4);
 
@@ -975,7 +976,7 @@ export const VIEWER_DELETE_CONFIRM = mergeStylexClassName("", sx.flex, sx.gap15)
  */
 export const VIEWER_REVIEW_MAIN =
 	mergeStylexClassName("", sx.flex, sx.minH0, sx.flex1, sx.flexCol) + " " +
-	"phone:pt-[calc(var(--pane-header-h)+var(--strip-clearance,0px))]";
+	mergeStylexClassName("", sharedClassStyles.phonePtCalcVarPaneHeaderHVarStripClearance0px);
 
 /* ── Transcript ─────────────────────────────────────────────────────────── */
 
@@ -1016,17 +1017,17 @@ export const VIEWER_MESSAGES_REGION = mergeStylexClassName("", sx.relative, sx.f
 export const VIEWER_MESSAGES =
 	mergeStylexClassName("viewer-messages", sx.flex, sx.minH0, sx.flex1, sx.flexCol, sx.overflowXHidden, sx.overflowYAuto, sx.overscrollContain) +
 	// Keep the reader's place when content loads or expands above them.
-	mergeStylexClassName("", sx.OverflowAnchorAuto, sx.px5, sx.pt0) + " " +
-	"pb-[calc(var(--session-under)_+_var(--suggestions-under,0px)_+_16px)] " +
+	" " + mergeStylexClassName("", sx.OverflowAnchorAuto, sx.px5, sx.pt0) + " " +
+	mergeStylexClassName("", sharedClassStyles.pbCalcVarSessionUnderVarSuggestionsUnder0px16px) +
 	// A focused phone composer is fixed and no longer reserves flow height,
 	// while the transcript's layout viewport still extends behind the keyboard.
 	// Clear both measured obstructions so even a tall draft and the last live
 	// status row can scroll completely into the visible strip above them.
-	"phone:[body.kb-open_&]:pb-[calc(var(--kb-inset,0px)_+_var(--viewer-input-height,64px)_+_var(--suggestions-under,0px)_+_8px)] " +
+	" " + "phone:[body.kb-open_&]:pb-[calc(var(--kb-inset,0px)_+_var(--viewer-input-height,64px)_+_var(--suggestions-under,0px)_+_8px)] " +
 	// Wider side padding where the message rail lives, so its ticks have a
 	// gutter of their own instead of sitting on the bubbles (lib/message-rail.ts).
 	`${RAIL_GUTTER_CLASS} ` +
-	"[&>*]:w-full [&>*]:shrink-0 " +
+	" " + "[&>*]:w-full [&>*]:shrink-0 " +
 	// 12px of clear space under the bar so the first row starts below it rather
 	// than against it, and so a tab strip's baseline rule (the only line that
 	// still sits above the transcript) has nothing resting on it. Only at rest:
@@ -1035,12 +1036,12 @@ export const VIEWER_MESSAGES =
 	// Phone: clear the floating pills at rest, then scroll under them.
 	// --strip-clearance is 0 by default and the docked tab bar's height on a
 	// multi-session workspace.
-	mergeStylexClassName("", sx.phonePx3) + " " +
-	"phone:pt-[calc(var(--pane-header-h)+var(--strip-clearance,0px)+8px)] " +
+	" " + mergeStylexClassName("", sx.phonePx3) + " " +
+	mergeStylexClassName("", sharedClassStyles.phonePtCalcVarPaneHeaderHVarStripClearance0px8px) +
 	// Dissolve the transcript into the header as it scrolls up under the pills.
 	// A non-linear fade mirrored into mask alpha:
 	// hidden for the first fifth, 45% by three fifths, full at the bar height.
-	"phone:[-webkit-mask-image:linear-gradient(to_bottom,transparent_0,transparent_calc(var(--pane-header-h)*0.2),rgba(0,0,0,0.45)_calc(var(--pane-header-h)*0.6),var(--color-black)_var(--pane-header-h))] " +
+	" " + "phone:[-webkit-mask-image:linear-gradient(to_bottom,transparent_0,transparent_calc(var(--pane-header-h)*0.2),rgba(0,0,0,0.45)_calc(var(--pane-header-h)*0.6),var(--color-black)_var(--pane-header-h))] " +
 	"phone:[mask-image:linear-gradient(to_bottom,transparent_0,transparent_calc(var(--pane-header-h)*0.2),rgba(0,0,0,0.45)_calc(var(--pane-header-h)*0.6),var(--color-black)_var(--pane-header-h))]";
 
 /**
@@ -1058,11 +1059,11 @@ export const VIEWER_INPUT =
 	mergeStylexClassName("", sx.relative, sx.z1, sx.mtCalc1VarSessionUnder, sx.shrink0, sx.px5, sx.pt1, sx.pb35) +
 	// The same gutter the transcript keeps, so the input stays on the column's
 	// edges rather than reaching past them.
-	`${RAIL_GUTTER_CLASS} ` +
+	" " + `${RAIL_GUTTER_CLASS} ` +
 	// The fade is a later sibling of the native scroller, so painting it edge to
 	// edge also fades an overlay scrollbar. Leave its narrow gutter unpainted;
 	// raising the scroller would incorrectly lift transcript content too.
-	"[background:linear-gradient(to_bottom,transparent_0,var(--bg)_var(--session-under))_left_top/calc(100%_-_14px)_100%_no-repeat] " +
+	" " + "[background:linear-gradient(to_bottom,transparent_0,var(--bg)_var(--session-under))_left_top/calc(100%_-_14px)_100%_no-repeat] " +
 	// Phone: clear the home indicator rather than jamming the composer against
 	// the very bottom edge. That gap is also all the room the composer's shadow
 	// gets in mobile Safari, where there is no safe-area inset.
@@ -1073,7 +1074,7 @@ export const VIEWER_INPUT =
 	// not add `--kb-inset` again: that double-counts the keyboard and lifts the
 	// composer by hundreds of pixels. The painted wrapper keeps the solid tail of
 	// the fade behind a compact 8px gap down to the keyboard.
-	"phone:[body.kb-open_&]:fixed phone:[body.kb-open_&]:inset-x-0 phone:[body.kb-open_&]:bottom-0 " +
+	" " + "phone:[body.kb-open_&]:fixed phone:[body.kb-open_&]:inset-x-0 phone:[body.kb-open_&]:bottom-0 " +
 	"phone:[body.kb-open_&]:pb-2";
 
 /**
@@ -1133,7 +1134,7 @@ export const VIEWER_ACTION_ROW_WITH_SCROLL =
  */
 export const VIEWER_SUGGESTIONS =
 	mergeStylexClassName("", sx.pointerEventsNone, sx.absolute, sx.insetX0, sx.bottomFull, sx.flex, sx.justifyCenter, sx.px5, sx.pb15) +
-	[RAIL_GUTTER_CLASS, mergeStylexClassName("", sx.phonePx3)].filter(Boolean).join(" ");
+	" " + [RAIL_GUTTER_CLASS, mergeStylexClassName("", sx.phonePx3)].filter(Boolean).join(" ");
 
 /**
  * The room the transcript keeps clear while that band is up, set on the session
@@ -1296,7 +1297,7 @@ export const FLOATING_PILL_BUTTON = [FLOATING_PILL, PILL_PRESSABLE, mergeStylexC
 export const TRANSCRIPT_ICON_BUTTON =
 	mergeStylexClassName("", sx.inlineFlex, sx.size8, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgPopupGlass, sx.textFg) + " " +
 	mergeStylexClassName("smooth-shadow-ring-sm", sx.BackdropFilterVarPopupBlur, sx.SmoothRingColorVarPopupRing) +
-	[PILL_PRESSABLE, mergeStylexClassName("", sx.afterInset15)].filter(Boolean).join(" ");
+	" " + [PILL_PRESSABLE, mergeStylexClassName("", sx.afterInset15)].filter(Boolean).join(" ");
 
 /**
  * Centring for a pill that floats over the transcript.
@@ -1315,7 +1316,7 @@ export const TRANSCRIPT_ICON_BUTTON =
  * case at a plain -50%.
  */
 export const PILL_CENTRED =
-	"translate-x-[calc(-50%+var(--ws-summary-step,0px))]";
+	mergeStylexClassName("", sharedClassStyles.translateXCalc50VarWsSummaryStep0px);
 
 /** The loading state's leading spinner, and the wider gap it asks for: an arrow
  *  glyph carries side bearing of its own, a bare 12px ring carries none, so at
@@ -1344,8 +1345,8 @@ export const TRANSCRIPT_PILL_SPINNER =
  */
 export const TRANSCRIPT_PILL_TOP =
 	[mergeStylexClassName("", sx.pointerEventsNone, sx.absolute, sx.top3, sx.left12, sx.z5), PILL_CENTRED].filter(Boolean).join(" ") +
-	"phone:top-[calc(var(--pane-header-h)+var(--strip-clearance,0px)+8px)] " +
-	mergeStylexClassName("", sx.phoneTransitionPropertyTransform, sx.phoneDurationVarDurLg) + " " +
+	" " + mergeStylexClassName("", sharedClassStyles.phoneTopCalcVarPaneHeaderHVarStripClearance0px8px) +
+	" " + mergeStylexClassName("", sx.phoneTransitionPropertyTransform, sx.phoneDurationVarDurLg) + " " +
 	mergeStylexClassName("", sx.phoneEaseVarEase) + " " +
 	"phone:[body.chrome-collapsed_&]:[transform:translateY(calc(4px-var(--pane-header-h)-var(--strip-clearance,0px)))]";
 
@@ -1377,22 +1378,22 @@ export const TRANSCRIPT_PILL_TOP =
  *  viewport, while the sections that cannot shrink kept theirs. */
 export const INFO_PAGE =
 	mergeStylexClassName("", sx.fixed, sx.inset0, sx.z60, sx.flex, sx.flexCol, sx.gap05, sx.overflowYAuto, sx.overscrollContain, sx.bgSurface) + " " +
-	"pb-[max(16px,env(safe-area-inset-bottom,0px))] [&>*]:shrink-0 " +
-	mergeStylexClassName("", sx.AnimationSessionInfoInVarDurVarEase);
+	mergeStylexClassName("[&>*]:shrink-0", sharedClassStyles.pbMax16pxEnvSafeAreaInsetBottom0px) +
+	" " + mergeStylexClassName("", sx.AnimationSessionInfoInVarDurVarEase);
 
 const INFO_TOPBAR =
 	mergeStylexClassName("session-info-topbar", sx.sticky, sx.top0, sx.z4, sx.flex, sx.itemsCenter) + " " +
-	"min-h-[calc(env(safe-area-inset-top,0px)+52px)] " +
-	mergeStylexClassName("", sx.ptEnvSafeAreaInsetTop0px, sx.px2, sx.pb0) + " " +
+	mergeStylexClassName("", sharedClassStyles.minHCalcEnvSafeAreaInsetTop0px52px) +
+	" " + mergeStylexClassName("", sx.ptEnvSafeAreaInsetTop0px, sx.px2, sx.pb0) + " " +
 	mergeStylexClassName("", sx.TransitionBackgroundColorVarDurVarEase);
 
 /** Transparent until the page scrolls, then a frosted surface. The fill and
  *  blur separate the fixed chrome without drawing a grey rule across it. */
 export const infoTopbarClass = (scrolled: boolean) =>
 	`${INFO_TOPBAR} ` +
-	(scrolled
-		? "bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] " +
-			mergeStylexClassName("", sx.backdropBlur18px, sx.backdropSaturate135)
+	" " + (scrolled
+		? mergeStylexClassName("", sharedClassStyles.bgColorMixInSrgbVarBg92Transparent) +
+			" " + mergeStylexClassName("", sx.backdropBlur18px, sx.backdropSaturate135)
 		: mergeStylexClassName("", sx.bgTransparent));
 
 const INFO_TOPBAR_TITLE =
@@ -1400,13 +1401,13 @@ const INFO_TOPBAR_TITLE =
 	mergeStylexClassName("", sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.textCenter, typography.itemTitle, sx.fontSemibold, sx.leading52px, sx.tracking001em, sx.textFg) +
 	// `transform`, not Tailwind's `translate` property: that is what the
 	// transition beside it names.
-	"[transition:opacity_var(--dur)_var(--ease),transform_var(--dur)_var(--ease)]";
+	" " + "[transition:opacity_var(--dur)_var(--ease),transform_var(--dur)_var(--ease)]";
 
 /** The bar's own title can fade with a page hero or stay visible when the
  * compact summary starts immediately below it. */
 export const infoTopbarTitleClass = (scrolled: boolean) =>
 	`${INFO_TOPBAR_TITLE} ` +
-	(scrolled ? mergeStylexClassName("", sx.opacity100, sx.TransformTranslateY0) : mergeStylexClassName("", sx.opacity0, sx.TransformTranslateY5px));
+	" " + (scrolled ? mergeStylexClassName("", sx.opacity100, sx.TransformTranslateY0) : mergeStylexClassName("", sx.opacity0, sx.TransformTranslateY5px));
 
 /** Identity block: repo tile, name, and the repo · model line. The tile gets a
  *  soft key shadow here that it doesn't carry elsewhere. */

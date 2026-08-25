@@ -7,7 +7,7 @@ import { Popover } from "../ui/popover";
 import { scrollToVirtualTranscriptEntry } from "../lib/transcript-virtual-navigation";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -456,7 +456,7 @@ export function MessageRail({ messages, containerRef, leaveLatest }: Props) {
 				delay={220}
 				closeDelay={140}
 				aria-label="Jump to a message"
-				{...stylex.props(sx.absolute, sx.topHalf, sx.z4, sx.hidden, sx.translateYHalf, sx.cursorPointer, sx.roundedMd, sx.border0, sx.bgTransparent, sx.p0, sx.focusRing, sx.desktopHoverBlock)}
+				className={mergeStylexOverrideClassName("", sx.absolute, sx.topHalf, sx.z4, sx.hidden, sx.translateYHalf, sx.cursorPointer, sx.roundedMd, sx.border0, sx.bgTransparent, sx.p0, sx.focusRing, sx.desktopHoverBlock)}
 				style={{ left: RAIL_EDGE, width: RAIL_W, height: boxH }}
 				onPointerEnter={(event) => {
 					if (event.pointerType === "touch") return;
@@ -554,7 +554,7 @@ export function MessageRail({ messages, containerRef, leaveLatest }: Props) {
 					// The card answers a question, it does not take one: every
 					// target is on the rail, so the pointer never has to reach it
 					// and the transcript underneath stays selectable.
-					{...stylex.props(sx.pointerEventsNone, sx.w320px, sx.p4)}
+					className={mergeStylexOverrideClassName("", sx.pointerEventsNone, sx.w320px, sx.p4)}
 				>
 					{/* `m-0` on both: no Preflight ships (styles/tailwind.css), so a
 					    bare `<p>` keeps the UA's `margin-block: 1em`. That put a

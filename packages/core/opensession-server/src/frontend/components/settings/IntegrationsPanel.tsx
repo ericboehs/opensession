@@ -10,6 +10,7 @@ import { InlineAlert } from "../../ui/state";
 import { GithubAuthCard, IntegrationsList } from "../SetupIntegrations";
 import { SetupRestart } from "../SetupRestart";
 import * as stylex from "@stylexjs/stylex";
+import { mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -27,7 +28,7 @@ export function IntegrationsPanel() {
 	const setup = useSetupStatus();
 	const { status, failed } = setup;
 	return (
-		<SettingsPanel {...stylex.props(sx.relative)}>
+		<SettingsPanel className={mergeStylexOverrideClassName("", sx.relative)}>
 			<SettingsHeader title="Integrations" />
 			{!status ? (
 				// A failure is an alert, not a quiet label under a spinner: it used

@@ -30,7 +30,7 @@ import {
 	ValueRow,
 } from "../../ui/setting-row";
 import { SwitchIndicator } from "../../ui/switch";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 import { RepoTile, repoLabel } from "../RepoTile";
 import { IconChevronRight, IconRepo } from "../icons";
 import {
@@ -185,12 +185,12 @@ function FilterSubmenu({
 	const current = options.find((option) => option.value === value);
 	return (
 		<Menu.SubmenuRoot>
-			<Menu.SubmenuTrigger {...stylex.props(sx.justifyBetween, sx.gap3)}>
+			<Menu.SubmenuTrigger className={mergeStylexOverrideClassName("", sx.justifyBetween, sx.gap3)}>
 				<span {...stylex.props(sx.truncate)}>{label}</span>
 				<span {...stylex.props(sx.flex, sx.flexNone, sx.itemsCenter, sx.gap2, sx.textDim)}>
 					{current?.icon && <span className={SETTING_GLYPH}>{current.icon}</span>}
 					<span {...stylex.props(sx.truncate)}>{current?.label ?? value}</span>
-					<IconChevronRight {...stylex.props(sx.shrink0, sx.textFaint)} size={17} />
+					<IconChevronRight className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)} size={17} />
 				</span>
 			</Menu.SubmenuTrigger>
 			<Menu.Popup>
@@ -334,7 +334,7 @@ export function FilterPopover({
 							)}
 							<IconChevronRight
 								size={16}
-								{...stylex.props(sx.Mr05, sx.shrink0, sx.textFaint)}
+								className={mergeStylexOverrideClassName("", sx.Mr05, sx.shrink0, sx.textFaint)}
 							/>
 						</span>
 					</Menu.Trigger>
@@ -496,7 +496,7 @@ export const RepoFilterChip = React.forwardRef<
 							<Menu.RadioItem
 								value="all"
 								closeOnClick
-								{...stylex.props(sx.justifyBetween, sx.gap3)}
+								className={mergeStylexOverrideClassName("", sx.justifyBetween, sx.gap3)}
 							>
 								<span {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
 									<span className={SETTING_GLYPH}>
@@ -511,7 +511,7 @@ export const RepoFilterChip = React.forwardRef<
 									key={name}
 									value={name}
 									closeOnClick
-									{...stylex.props(sx.justifyBetween, sx.gap3)}
+									className={mergeStylexOverrideClassName("", sx.justifyBetween, sx.gap3)}
 								>
 									<span {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
 										<span className={SETTING_GLYPH}>

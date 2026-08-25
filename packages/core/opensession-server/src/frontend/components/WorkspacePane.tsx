@@ -51,7 +51,7 @@ import { CopyCheck, useCopy } from "../ui/copy";
 import { toast } from "../ui/toast";
 import { Tooltip } from "../ui/tooltip";
 import { OverflowFadeText } from "../ui/overflow-fade-text";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { TopBar, TopBarActions, TopBarLeading } from "../ui/top-bar";
 import {
 	PANEL_BODY,
@@ -952,9 +952,9 @@ setDeleting(false);
 							<Menu.SubmenuTrigger title="Copy this session's transcript">
 								<IconCopy size={20} className={MENU_ICON} />
 								<span {...stylex.props(sx.grow)}>Copy transcript</span>
-								<IconChevronRight size={16} {...stylex.props(sx.textFaint)} />
+								<IconChevronRight size={16} className={mergeStylexOverrideClassName("", sx.textFaint)} />
 							</Menu.SubmenuTrigger>
-							<Menu.Popup {...stylex.props(sx.minW210px)}>
+							<Menu.Popup className={mergeStylexOverrideClassName("", sx.minW210px)}>
 								<Menu.Item
 									onClick={() =>
 										void copySessionTranscript(
@@ -1020,12 +1020,7 @@ setDeleting(false);
 										<Button
 											variant="danger"
 											size="sm"
-                      {...stylex.props(
-                        sx.minH0,
-                        sx.px3,
-                        sx.py5px,
-                        typography.label,
-                      )}
+                      className={mergeStylexOverrideClassName("", sx.minH0, sx.px3, sx.py5px, typography.label)}
 											onClick={() => void deletePresentationSession(true)}
 											disabled={deleting}
 										>
@@ -1035,12 +1030,7 @@ setDeleting(false);
 								<Button
 									variant="warning"
 									size="sm"
-                  {...stylex.props(
-                    sx.minH0,
-                    sx.px3,
-                    sx.py5px,
-                    typography.label,
-                  )}
+                  className={mergeStylexOverrideClassName("", sx.minH0, sx.px3, sx.py5px, typography.label)}
 									onClick={() => void deletePresentationSession(false)}
 									disabled={deleting}
 								>
@@ -1049,12 +1039,7 @@ setDeleting(false);
 								<Button
 									variant="soft"
 									size="sm"
-                  {...stylex.props(
-                    sx.minH0,
-                    sx.px3,
-                    sx.py5px,
-                    typography.label,
-                  )}
+                  className={mergeStylexOverrideClassName("", sx.minH0, sx.px3, sx.py5px, typography.label)}
 									onClick={() => setShowDeleteConfirm(false)}
 									disabled={deleting}
 								>
@@ -1089,7 +1074,7 @@ setDeleting(false);
 				{workspace.repo && (
 					<IconChevronRight
 						size={18}
-						{...stylex.props(sx.Mx1, sx.shrink0, sx.textFaint)}
+						className={mergeStylexOverrideClassName("", sx.Mx1, sx.shrink0, sx.textFaint)}
 						aria-hidden="true"
 					/>
 				)}
@@ -1133,7 +1118,7 @@ setDeleting(false);
 						<Button
 							variant="ghost"
 							size="md"
-							{...stylex.props(sx.Ml1, sx.flexNone, sx.roundedControl)}
+							className={mergeStylexOverrideClassName("", sx.Ml1, sx.flexNone, sx.roundedControl)}
 							onClick={(event) => {
 								const reduceMotion = window.matchMedia(
 									"(prefers-reduced-motion: reduce)",
@@ -1286,7 +1271,7 @@ setDeleting(false);
 							aria-hidden="true"
 							data-file-drop-overlay
 						>
-							<IconArrowUpToLine size={40} {...stylex.props(sx.textFg)} />
+							<IconArrowUpToLine size={40} className={mergeStylexOverrideClassName("", sx.textFg)} />
               <div
                 {...mergeStylexProps("text-title", sx.mt4, sx.fontSemibold, sx.textFg)}
               >
@@ -1341,7 +1326,7 @@ setDeleting(false);
 					onAddAttachments={addWorkspaceAttachments}
 				/>
         {startError && (
-          <InlineAlert {...stylex.props(sx.mt25)}>{startError}</InlineAlert>
+          <InlineAlert className={mergeStylexOverrideClassName("", sx.mt25)}>{startError}</InlineAlert>
         )}
 			</div>
 		</div>,

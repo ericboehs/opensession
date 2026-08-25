@@ -11,7 +11,7 @@ import { IconCheck, IconListCircles, IconPlus, IconX } from "./icons";
 import { Input } from "../ui/input";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -280,7 +280,7 @@ function TaskRow({
 				<Button
 					variant="ghost"
 					size="md"
-					{...stylex.props(sx.shrink0, sx.textFaint)}
+					className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)}
 					onClick={() => onDrop(task)}
 					aria-label={`Drop ${task.text}`}
 					title="Drop task"
@@ -419,7 +419,7 @@ setAdding(false);
 				>
 					<Input
 						size="lg"
-						{...stylex.props(sx.minW0, sx.flex1)}
+						className={mergeStylexOverrideClassName("", sx.minW0, sx.flex1)}
 						value={draft}
 						placeholder="Add a task"
 						onChange={(event) => setDraft(event.target.value)}

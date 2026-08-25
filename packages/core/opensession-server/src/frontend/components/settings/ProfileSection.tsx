@@ -10,7 +10,7 @@ import { useIsPhone } from "../../hooks/useIsPhone";
 import { refreshPeople } from "../../lib/people";
 import { isTouchPrimary } from "../../lib/platform";
 import { Button } from "../../ui/button";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 import { Field, FieldGrid, Input } from "../../ui/input";
 import { OverlayAction } from "../../ui/overlay-action";
 import { SettingsForm, SettingsGroupLabel } from "../../ui/settings";
@@ -23,6 +23,7 @@ import { useCurrentUser } from "../UserPicker";
 import { UserAvatar } from "../UserAvatar";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { sharedClassStyles } from "../../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -225,7 +226,7 @@ export function ProfileSection() {
 
 	return (
 		<>
-			<SettingsGroupLabel {...stylex.props(sx.mt0)}>Profile</SettingsGroupLabel>
+			<SettingsGroupLabel className={mergeStylexOverrideClassName("", sx.mt0)}>Profile</SettingsGroupLabel>
 			{loadError ? (
 				<InlineAlert>{loadError}</InlineAlert>
 			) : !profile ? (
@@ -255,9 +256,9 @@ export function ProfileSection() {
 function ProfileSkeleton() {
 	return (
 		<Skeleton label="Loading your profile">
-			<SettingsForm {...stylex.props(sx.itemsCenter, sx.gap0, sx.py7)}>
-				<SkeletonBar {...stylex.props(sx.size20, sx.roundedAvatar)} />
-				<SkeletonBar {...stylex.props(sx.mt4, sx.h3, sx.w40)} />
+			<SettingsForm className={mergeStylexOverrideClassName("", sx.itemsCenter, sx.gap0, sx.py7)}>
+				<SkeletonBar className={mergeStylexOverrideClassName("", sx.size20, sx.roundedAvatar)} />
+				<SkeletonBar className={mergeStylexOverrideClassName("", sx.mt4, sx.h3, sx.w40)} />
 			</SettingsForm>
 		</Skeleton>
 	);
@@ -384,7 +385,7 @@ setBusy(null);
 				{...stylex.props(sx.hidden)}
 				onChange={(e) => void pickPicture(e.target.files?.[0])}
 			/>
-			<SettingsForm {...stylex.props(sx.itemsCenter, sx.gap0, sx.py7)}>
+			<SettingsForm className={mergeStylexOverrideClassName("", sx.itemsCenter, sx.gap0, sx.py7)}>
 				{/* The whole portrait opens the editor, with the badge as the mark
 				    that says so. A badge that is the only target makes a 28px hit
 				    area out of a 80px one, and the picture is what the eye goes to
@@ -434,7 +435,7 @@ setBusy(null);
 				onClose={() => setEditing(false)}
 				phone={isPhone}
 				label="Edit profile"
-				modalClassName="w-[min(420px,calc(100vw-32px))]"
+				modalClassName={mergeStylexClassName("", sharedClassStyles.wMin420pxCalc100vw32px)}
 			>
 				{(dismiss) => (
 					<form {...stylex.props(sx.flex, sx.flexCol, sx.gap35, sx.p5)} onSubmit={submit}>
@@ -508,7 +509,7 @@ setBusy(null);
 									onClick={() => void removePicture()}
 									aria-label="Remove picture"
 									title="Remove picture"
-									icon={<IconTrash {...stylex.props(sx.textRed)} size={16} />}
+									icon={<IconTrash className={mergeStylexOverrideClassName("", sx.textRed)} size={16} />}
 								/>
 							)}
 						</div>
@@ -563,14 +564,14 @@ setBusy(null);
 						<div {...stylex.props(sx.mt1, sx.flex, sx.justifyEnd, sx.gap2)}>
 							<Button
 								variant="ghost"
-								{...stylex.props(isPhone && sx.minH11)}
+								className={mergeStylexOverrideClassName("", isPhone && sx.minH11)}
 								onClick={dismiss}
 							>
 								Cancel
 							</Button>
 							<Button
 								variant="primary"
-								{...stylex.props(isPhone && sx.minH11)}
+								className={mergeStylexOverrideClassName("", isPhone && sx.minH11)}
 								type="submit"
 								disabled={!name.trim() || !dirty || busy !== null}
 							>

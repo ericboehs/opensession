@@ -13,7 +13,7 @@ import { Switch } from "../../ui/switch";
 import { Select } from "./shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -195,14 +195,14 @@ export function AuditPanel() {
 
 			<div {...stylex.props(sx.mb3, sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap2, sx.px5)}>
 				<Select
-					{...stylex.props(sx.wAuto)}
+					className={mergeStylexOverrideClassName("", sx.wAuto)}
 					label="Date"
 					value={date}
 					options={dates.map((d) => ({ value: d, label: d }))}
 					onChange={setDate}
 				/>
 				<Select
-					{...stylex.props(sx.wAuto)}
+					className={mergeStylexOverrideClassName("", sx.wAuto)}
 					label="Event type"
 					value={type}
 					options={[
@@ -216,7 +216,7 @@ export function AuditPanel() {
 					Include tool firehose
 				</label>
 				<Input
-					{...stylex.props(sx.minW140px, sx.flex1)}
+					className={mergeStylexOverrideClassName("", sx.minW140px, sx.flex1)}
 					value={q}
 					onChange={(e) => setQ(e.target.value)}
 					placeholder="Search (session id, tool, text…)"

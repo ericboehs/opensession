@@ -18,7 +18,7 @@ import { AGENT_NAME, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 import { Segmented, SegmentedOption } from "../ui/segmented";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { Menu } from "../ui/menu";
 import { Modal } from "../ui/modal";
 import { CheckStatusIcon } from "./CheckStatusIcon";
@@ -42,6 +42,7 @@ import {
 import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -352,11 +353,11 @@ setError(e.message);
 
   return (
     <div {...mergeStylexProps("", sx.phonePx4, sx.phonePt5, sx.phonePb12, sx.flex, sx.minH0, sx.flex1, sx.justifyCenter, sx.overflowYAuto, sx.px8, sx.pt11, sx.pb22)}>
-      <SettingsPanel {...stylex.props(sx.selfStart)}>
+      <SettingsPanel className={mergeStylexOverrideClassName("", sx.selfStart)}>
         <SettingsHeader
           title="Security"
           description="deepsec scans across your repos. Every confirmed finding lands as its own PR."
-          className={mergeStylexClassName("", sx.phoneFlexCol, sx.phoneItemsStart, sx.phoneGap3)}
+          className={mergeStylexOverrideClassName("", sx.phoneFlexCol, sx.phoneItemsStart, sx.phoneGap3)}
           actions={
             tab === "profiles" ? (
               <Button
@@ -392,7 +393,7 @@ setError(e.message);
         </div>
 
         {error && (
-          <InlineAlert {...stylex.props(sx.mb3)} onDismiss={() => setError(null)}>
+          <InlineAlert className={mergeStylexOverrideClassName("", sx.mb3)} onDismiss={() => setError(null)}>
             {error}
           </InlineAlert>
         )}
@@ -408,10 +409,10 @@ setError(e.message);
               </EmptyState>
             ) : (
               profiles.map((p) => (
-                <SettingRow key={p.id} {...stylex.props(sx.itemsStart)}>
+                <SettingRow key={p.id} className={mergeStylexOverrideClassName("", sx.itemsStart)}>
                   <SettingRowText>
                     <SettingRowTitle>{p.name}</SettingRowTitle>
-                    <SettingRowDescription className={mergeStylexClassName("", sx.lineClamp2)}>
+                    <SettingRowDescription className={mergeStylexOverrideClassName("", sx.lineClamp2)}>
                       {p.prompt}
                     </SettingRowDescription>
                     <div {...stylex.props(sx.mt1, sx.textFaint, typography.meta)}>by {p.createdBy}</div>
@@ -446,7 +447,7 @@ setError(e.message);
           <>
             {recurring.length > 0 && (
               <>
-                <SettingsGroupLabel {...stylex.props(sx.mt0)}>Recurring</SettingsGroupLabel>
+                <SettingsGroupLabel className={mergeStylexOverrideClassName("", sx.mt0)}>Recurring</SettingsGroupLabel>
                 <SettingCard>
                   {recurring.map((r) => (
                     <SettingRow key={r.id}>
@@ -457,7 +458,7 @@ setError(e.message);
                           {r.lastRunAt ? ` · last run ${relativeTime(r.lastRunAt)}` : ""}
                         </SettingRowDescription>
                       </SettingRowText>
-                      <SettingRowControl {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3)}>
+                      <SettingRowControl className={mergeStylexOverrideClassName("", sx.flex, sx.itemsCenter, sx.gap3)}>
                         {r.lastRunStatus === "ok" || r.lastRunStatus === "error" ? (
                           <RunGlyph
                             ok={r.lastRunStatus === "ok"}
@@ -488,7 +489,7 @@ setError(e.message);
                 </EmptyState>
               ) : (
                 scans.map((s) => (
-                  <SettingRow key={s.id} {...stylex.props(sx.itemsStart)}>
+                  <SettingRow key={s.id} className={mergeStylexOverrideClassName("", sx.itemsStart)}>
                     <SettingRowText>
                       <div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap2)}>
                         <SettingRowTitle>
@@ -503,7 +504,7 @@ setError(e.message);
                       </div>
 
                       {s.instructions && (
-                        <SettingRowDescription className={mergeStylexClassName("", sx.lineClamp2)}>
+                        <SettingRowDescription className={mergeStylexOverrideClassName("", sx.lineClamp2)}>
                           {s.instructions}
                         </SettingRowDescription>
                       )}
@@ -551,7 +552,7 @@ setError(e.message);
                         {` · by ${s.createdBy}`}
                       </div>
                     </SettingRowText>
-                    <SettingRowControl {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
+                    <SettingRowControl className={mergeStylexOverrideClassName("", sx.flex, sx.itemsCenter, sx.gap2)}>
                       <StatusChip {...scanStatus(s.status)} />
                       <Menu.Root>
                         <Menu.Trigger className={rowMenuTriggerClasses} aria-label="Manage scan">
@@ -673,7 +674,7 @@ setError(e.message);
       }}
     >
       <Modal.Content
-        widthClassName="max-w-[34rem]"
+        widthClassName={mergeStylexClassName("", sharedClassStyles.maxW34rem)}
         className={FORM_FIELDS}
         initialFocus={repoRef}
       >
@@ -687,7 +688,7 @@ setError(e.message);
               its children, and a stretched segmented control is a full-width
               well with a knob sitting in one corner of it. */}
           <Segmented
-            {...stylex.props(sx.selfStart)}
+            className={mergeStylexOverrideClassName("", sx.selfStart)}
             label="Scan scope"
             value={scope}
             onValueChange={(next) => {
@@ -768,7 +769,7 @@ setError(e.message);
             )}
           >
             <Checkbox
-              {...stylex.props(sx.mt3px)}
+              className={mergeStylexOverrideClassName("", sx.mt3px)}
               checked={canInteractive && interactive}
               disabled={!canInteractive}
               onCheckedChange={setInteractive}
@@ -856,7 +857,7 @@ setError(e.message);
       }}
     >
       <Modal.Content
-        widthClassName="max-w-[34rem]"
+        widthClassName={mergeStylexClassName("", sharedClassStyles.maxW34rem)}
         className={FORM_FIELDS}
         initialFocus={nameRef}
       >

@@ -84,7 +84,7 @@ import {
 import { FullPageFileDropOverlay } from "./FullPageFileDropOverlay";
 import { askSurface } from "../lib/tinted-surface";
 import { toast } from "../ui/toast";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { PhoneTopBar, PhoneTopBarAction } from "../ui/top-bar";
 import {
 	paletteIconBtn,
@@ -93,6 +93,7 @@ import {
 } from "../lib/palette-classes";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -1012,8 +1013,8 @@ const ASK_BTN_ON =
  *  `overflow-hidden` clips it to the rounded corner. */
 const ASK_SURFACE =
 	mergeStylexClassName("", sx.isolate) +
-	mergeStylexClassName("", sx.beforePointerEventsNone, sx.beforeAbsolute, sx.beforeInset0, sx.beforeZ0, sx.beforeRoundedInherit, sx.beforeCornerShapeInherit, sx.beforeBgVarPaletteAskBg, sx.beforeOpacity0, sx.beforeTransitionOpacity, sx.beforeDuration150, sx.beforeEaseCubicBezier03207201) +
-	"[&>*]:relative [&>*]:z-[1]";
+	" " + mergeStylexClassName("", sx.beforePointerEventsNone, sx.beforeAbsolute, sx.beforeInset0, sx.beforeZ0, sx.beforeRoundedInherit, sx.beforeCornerShapeInherit, sx.beforeBgVarPaletteAskBg, sx.beforeOpacity0, sx.beforeTransitionOpacity, sx.beforeDuration150, sx.beforeEaseCubicBezier03207201) +
+	" " + "[&>*]:relative [&>*]:z-[1]";
 /** The one flexible footer item. The palette has room for the model's full
  *  name, so it opts out of palettePill's generic 180px cap. On phones the
  *  effort suffix steps aside first and leaves that room to the model. */
@@ -2200,7 +2201,7 @@ pendingDraftParks.delete(operation);
             />
             {/* The sheet still has a name, it just isn't drawn: the dialog
                 needs one, and a screen reader has no card to look at. */}
-            <Modal.Title {...stylex.props(sx.srOnly)}>New session</Modal.Title>
+            <Modal.Title className={mergeStylexOverrideClassName("", sx.srOnly)}>New session</Modal.Title>
           </>
         )}
         <div className={MOBILE_PICKER}>
@@ -2280,9 +2281,9 @@ pendingDraftParks.delete(operation);
             isPhone={isPhone}
           >
             {repo === NO_REPO ? (
-              <IconMessage {...stylex.props(sx.shrink0)} size={18} />
+              <IconMessage className={mergeStylexOverrideClassName("", sx.shrink0)} size={18} />
             ) : repo === AUTO_REPO && !autoResolved?.repo ? (
-              <IconSparkle {...stylex.props(sx.shrink0)} size={18} />
+              <IconSparkle className={mergeStylexOverrideClassName("", sx.shrink0)} size={18} />
             ) : (
               <RepoTile name={effectiveRepo || repo} />
             )}
@@ -2506,17 +2507,17 @@ pendingDraftParks.delete(operation);
               >
                 {showBranchPicker && (
                   <Menu.SubmenuRoot>
-                    <Menu.SubmenuTrigger {...stylex.props(sx.justifyBetween, sx.gap3)}>
+                    <Menu.SubmenuTrigger className={mergeStylexOverrideClassName("", sx.justifyBetween, sx.gap3)}>
                       <span {...stylex.props(sx.flex, sx.flexNone, sx.itemsCenter, sx.gap2)}>
-                        <IconNewBranch {...stylex.props(sx.shrink0, sx.textDim)} size={20} />
+                        <IconNewBranch className={mergeStylexOverrideClassName("", sx.shrink0, sx.textDim)} size={20} />
                         <span>Branch</span>
                       </span>
                       <span {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap1, sx.textDim)}>
                         <span {...stylex.props(sx.truncate)}>{createFromLabel}</span>
-                        <IconChevronRight {...stylex.props(sx.shrink0, sx.textFaint)} size={17} />
+                        <IconChevronRight className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)} size={17} />
                       </span>
                     </Menu.SubmenuTrigger>
-                    <Menu.Popup className={mergeStylexClassName("", sx.maxWMin340pxCalc100vw1rem)}>
+                    <Menu.Popup className={mergeStylexOverrideClassName("", sx.maxWMin340pxCalc100vw1rem)}>
                       {createFromOptions.map((opt) => (
                         <Menu.Item
                           key={opt.value}
@@ -2524,7 +2525,7 @@ pendingDraftParks.delete(operation);
                         >
                           <Menu.Check
                             on={selectedWorktree === opt.value}
-                            {...stylex.props(sx.textDim)}
+                            className={mergeStylexOverrideClassName("", sx.textDim)}
                           />
                           <span {...stylex.props(sx.minW0, sx.truncate)}>{opt.label}</span>
                         </Menu.Item>
@@ -2534,9 +2535,9 @@ pendingDraftParks.delete(operation);
                 )}
                 {showSandboxPicker && (
                   <Menu.SubmenuRoot>
-                    <Menu.SubmenuTrigger {...stylex.props(sx.justifyBetween, sx.gap3)}>
+                    <Menu.SubmenuTrigger className={mergeStylexOverrideClassName("", sx.justifyBetween, sx.gap3)}>
                       <span {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
-                        <IconBox {...stylex.props(sx.shrink0, sx.textDim)} size={20} />
+                        <IconBox className={mergeStylexOverrideClassName("", sx.shrink0, sx.textDim)} size={20} />
                         <span {...stylex.props(sx.truncate)}>Sandbox</span>
                       </span>
                       <span {...stylex.props(sx.flex, sx.flexNone, sx.itemsCenter, sx.gap1, sx.textDim)}>
@@ -2544,10 +2545,10 @@ pendingDraftParks.delete(operation);
                         {sandboxWarmed && shouldPrewarm && (
                           <span {...stylex.props(sx.textFaint)}>· ready</span>
                         )}
-                        <IconChevronRight {...stylex.props(sx.shrink0, sx.textFaint)} size={17} />
+                        <IconChevronRight className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)} size={17} />
                       </span>
                     </Menu.SubmenuTrigger>
-                    <Menu.Popup className={mergeStylexClassName("", sx.maxWMin340pxCalc100vw1rem)}>
+                    <Menu.Popup className={mergeStylexOverrideClassName("", sx.maxWMin340pxCalc100vw1rem)}>
                       {[{ id: "", note: undefined as string | undefined }, ...visibleSandboxChoices].map(
                         (opt) => {
                           const selected = sandboxProvider === opt.id;
@@ -2558,9 +2559,9 @@ pendingDraftParks.delete(operation);
                                 sandboxSelectionTouched.current = true;
                                 setSandboxProvider(opt.id);
                               }}
-                              {...stylex.props(sx.itemsStart)}
+                              className={mergeStylexOverrideClassName("", sx.itemsStart)}
                             >
-                              <Menu.Check on={selected} {...stylex.props(sx.mt05, sx.textDim)} />
+                              <Menu.Check on={selected} className={mergeStylexOverrideClassName("", sx.mt05, sx.textDim)} />
                               <span {...stylex.props(sx.flex, sx.minW0, sx.flexCol, sx.gap05)}>
                                 <span>
                                   {sandboxLabel(opt.id)}
@@ -2579,9 +2580,9 @@ pendingDraftParks.delete(operation);
                   </Menu.SubmenuRoot>
                 )}
                 <Menu.SubmenuRoot>
-                  <Menu.SubmenuTrigger {...stylex.props(sx.justifyBetween, sx.gap3)}>
+                  <Menu.SubmenuTrigger className={mergeStylexOverrideClassName("", sx.justifyBetween, sx.gap3)}>
                     <span {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
-                      <IconConnections {...stylex.props(sx.shrink0, sx.textDim)} size={20} />
+                      <IconConnections className={mergeStylexOverrideClassName("", sx.shrink0, sx.textDim)} size={20} />
                       <span {...stylex.props(sx.truncate)}>Connected services</span>
                     </span>
                     <span {...stylex.props(sx.flex, sx.flexNone, sx.itemsCenter, sx.gap1, sx.textDim)}>
@@ -2590,17 +2591,17 @@ pendingDraftParks.delete(operation);
                           (filterMcpServers, scope "all"), so the readout says
                           so rather than promising a session with no tools. */}
                       {selectedMcpServers.length ? `${selectedMcpServers.length} on` : "All"}
-                      <IconChevronRight {...stylex.props(sx.shrink0, sx.textFaint)} size={17} />
+                      <IconChevronRight className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)} size={17} />
                     </span>
                   </Menu.SubmenuTrigger>
-                  <Menu.Popup className={mergeStylexClassName("", sx.maxWMin360pxCalc100vw1rem)}>
+                  <Menu.Popup className={mergeStylexOverrideClassName("", sx.maxWMin360pxCalc100vw1rem)}>
                     {availableMcpServers.length > 0 && (
                       <div {...stylex.props(sx.maxW300px, sx.px2, sx.pb1, sx.leadingSnug, sx.textFaint, typography.supporting)}>
                         Picked services are the only ones the session gets.
                       </div>
                     )}
                     {availableMcpServers.length === 0 && (
-                      <Menu.Item disabled {...stylex.props(sx.textFaint)}>
+                      <Menu.Item disabled className={mergeStylexOverrideClassName("", sx.textFaint)}>
                         No services available
                       </Menu.Item>
                     )}
@@ -2618,7 +2619,7 @@ pendingDraftParks.delete(operation);
                             <IconTile name={mcp} size={20} />
                             <span {...stylex.props(sx.minW0, sx.truncate)}>{displayName(mcp)}</span>
                           </span>
-                          <Menu.Check on={checked} {...stylex.props(sx.textDim)} />
+                          <Menu.Check on={checked} className={mergeStylexOverrideClassName("", sx.textDim)} />
                         </Menu.CheckboxItem>
                       );
                     })}
@@ -2641,7 +2642,7 @@ pendingDraftParks.delete(operation);
                       >
                         <Menu.Check
                           on={createAction === action}
-                          {...stylex.props(sx.textDim)}
+                          className={mergeStylexOverrideClassName("", sx.textDim)}
                         />
                         <span {...stylex.props(sx.minW0, sx.truncate)}>
                           {CREATE_LABELS[action]}
@@ -2693,7 +2694,7 @@ pendingDraftParks.delete(operation);
               }}
               // The parent card owns the only visible surface. This layer is
               // just controls and waveform clipped by that card's outer edge.
-              overlayClassName="rounded-none bg-transparent [backdrop-filter:none]"
+              overlayClassName={mergeStylexClassName("[backdrop-filter:none]", sharedClassStyles.roundedNone, sharedClassStyles.bgTransparent)}
             />
 
             {!phoneBar && (
@@ -2784,7 +2785,7 @@ pendingDraftParks.delete(operation);
                       <Menu.Check
                         on={createAction === opt.action}
                         size={22}
-                        {...stylex.props(sx.mtPx, sx.textDim)}
+                        className={mergeStylexOverrideClassName("", sx.mtPx, sx.textDim)}
                       />
                       <span {...stylex.props(sx.flex, sx.minW0, sx.flexCol, sx.gapPx)}>
                         <span {...stylex.props(sx.fontSemibold, typography.label)}>{opt.title}</span>
@@ -2846,13 +2847,13 @@ pendingDraftParks.delete(operation);
       <Modal.Content
         data-global-file-composer="new-session"
         variant="palette"
-        widthClassName="w-[min(820px,100%)] phone:w-full"
+        widthClassName={mergeStylexClassName("", sharedClassStyles.wMin820px100PhoneFull)}
         // The bottom pad is the keyboard's own height (lib/keyboard-inset).
         // The sheet is anchored to the bottom of the LAYOUT viewport, which iOS
         // does not shrink for the keyboard, so without it the composer sits
         // behind the keys and the page has to be panned to reach it. It is 0px
         // wherever nothing covers the window.
-        viewportClassName="phone:items-end phone:px-0 phone:pb-[var(--kb-inset,0px)] phone:pt-3"
+        viewportClassName={mergeStylexClassName("", sharedClassStyles.phoneItemsEnd, sharedClassStyles.phonePx0, sharedClassStyles.phonePbVarKbInset0px, sharedClassStyles.phonePt3)}
         className={cn(
           // A phone sheet carries a rounder top corner than the floating
           // palette does: it meets the screen's own edge on three sides, so the

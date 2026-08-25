@@ -4,9 +4,10 @@ import { Segmented, SegmentedOption } from "../ui/segmented";
 import { Button } from "../ui/button";
 import { Modal } from "../ui/modal";
 import { fieldClasses } from "../ui/input";
-import { cn } from "../ui/cn";
+import { cn, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -132,14 +133,14 @@ setAdding(false);
 			}}
 			disablePointerDismissal={adding}
 		>
-			<Modal.Content widthClassName="max-w-[28rem]" initialFocus={inputRef}>
+			<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW28rem)} initialFocus={inputRef}>
 				<Modal.Header
 					title="Add repository"
 					description="Clone a Git repository (GitHub or a code.storage remote), or register a checkout already on this Mac."
 				/>
 
 				<Segmented
-					{...stylex.props(sx.wFull)}
+					className={mergeStylexOverrideClassName("", sx.wFull)}
 					label="Repository source"
 					value={mode}
 					onValueChange={(next) => {
@@ -154,7 +155,7 @@ setAdding(false);
 						<SegmentedOption
 							key={nextMode}
 							value={nextMode}
-							{...stylex.props(sx.flex1, sx.justifyCenter)}
+							className={mergeStylexOverrideClassName("", sx.flex1, sx.justifyCenter)}
 							disabled={adding}
 						>
 							{label}

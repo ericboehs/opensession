@@ -3,6 +3,7 @@ import * as stylex from "@stylexjs/stylex";
 import { mergeStylexClassName } from "../ui/cn";
 import { type as typography } from "../styles/typography.stylex";
 import { motionStyles } from "../styles/animations.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 const sx = stylex.create({
 	roundedCalc8pxVarRf: {
@@ -756,7 +757,7 @@ export const TAB_STRIP =
 	// Every desktop tab bar has one closing hairline. A pseudo-element avoids
 	// changing its height. Phones stay borderless so fixed chrome never becomes
 	// a grey rule across the screen.
-	mergeStylexClassName("", sx.desktopAfterPointerEventsNone, sx.desktopAfterAbsolute, sx.desktopAfterInsetX0) + " " +
+	" " + mergeStylexClassName("", sx.desktopAfterPointerEventsNone, sx.desktopAfterAbsolute, sx.desktopAfterInsetX0) + " " +
 	mergeStylexClassName("", sx.desktopAfterBottom0, sx.desktopAfterHPx, sx.desktopAfterBgDivider, sx.desktopAfterContent) +
 	// Desktop: a compact band. The active tab's own surface supplies the
 	// selection boundary, so the line closes the bar rather than underlining it.
@@ -769,11 +770,11 @@ export const TAB_STRIP =
 	// The strip closes the distance by climbing into the header's slack. Split
 	// bars start at the top of an overflow-clipped column, so their full box stays
 	// in flow instead of losing its top edge outside that column.
-	mergeStylexClassName("", sx.desktopH10, sx.desktopPy0) +
+	" " + mergeStylexClassName("", sx.desktopH10, sx.desktopPy0) +
 	// When overflowing tabs pass under the pinned +, pointing at the control
 	// softens enough of the edge to reach the adjacent label. TAB_SCROLL gates
 	// the mask itself on data-overflow, so tabs that fit never fade.
-	"desktop:[&:has(.session-tab-new:hover)]:[--tabs-control-fade-end:64px] " +
+	" " + "desktop:[&:has(.session-tab-new:hover)]:[--tabs-control-fade-end:64px] " +
 	// Phone: pulled out of flow and pinned flush under the header's bottom edge,
 	// so it reads as fixed chrome rather than a strip the transcript scrolls by.
 	// The header's scroll-edge blur continues behind these glass controls.
@@ -783,7 +784,7 @@ export const TAB_STRIP =
 	// transcript's scroll direction and this secondary strip slides away while
 	// the navigation bar remains pinned. `transform`, not the `translate`
 	// property, because that is what the transition names.
-	mergeStylexClassName("", sx.phoneTransitionTransformVarDurLgVarEase) + " " +
+	" " + mergeStylexClassName("", sx.phoneTransitionTransformVarDurLgVarEase) + " " +
 	"phone:[body.chrome-collapsed_&]:[transform:translateY(calc(-100%_-_var(--pane-header-h)_-_8px))] " +
 	// A lone session with no view tabs has nothing to switch between, so the
 	// strip is pure chrome on a phone — every tab is a .session-tab-reorder
@@ -804,7 +805,7 @@ export const TAB_SCROLL =
 	// Hug the content on desktop so the pinned "+" sits right after the last tab
 	// rather than being pushed to the far right. The group keeps its intrinsic
 	// height so the selected tab floats vertically inside the 40px band.
-	mergeStylexClassName("", sx.desktopFlex01Auto) + " " +
+	" " + mergeStylexClassName("", sx.desktopFlex01Auto) + " " +
 	"supports-[animation-timeline:scroll()]:[animation:session-tabs-fade-start_1ms_both,session-tabs-fade-end_1ms_both] " +
 	"supports-[animation-timeline:scroll()]:[animation-timeline:scroll(self_inline),scroll(self_inline)] " +
 	"supports-[animation-timeline:scroll()]:[animation-range:0_24px,calc(100%_-_24px)_100%] " +
@@ -830,7 +831,7 @@ export const TAB_ITEM =
 	mergeStylexClassName("last:after:hidden", sx.afterBgDivider, sx.afterContent, sx.phoneAfterHidden) +
 	// The active surface supplies both edges. Hide the trailing divider when
 	// either this item or its next sibling is active.
-	"[&:has(>[aria-selected=true])]:after:hidden data-[next-active]:after:hidden";
+	" " + "[&:has(>[aria-selected=true])]:after:hidden data-[next-active]:after:hidden";
 
 /** Picked up: an inactive desktop tab has no surface of its own and would smear
  *  over every label it passes. It lifts into an opaque chip while dragging. */
@@ -865,10 +866,10 @@ export const TAB_ACTIONS = mergeStylexClassName("", sx.mlAuto, sx.flex, sx.flexN
  */
 const TAB_BASE =
 	mergeStylexClassName("", sx.relative, sx.inlineFlex, sx.maxW200px, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.gap15, sx.whitespaceNowrap) +
-	[TAB_SHAPE, mergeStylexClassName("", sx.border0, sx.px25, sx.py15, typography.label, sx.shadowNone)].filter(Boolean).join(" ") +
-	"transition-[background-color,color] " +
-	mergeStylexClassName("", sx.phoneRoundedFull, sx.phoneBorder, sx.phoneBorderColorVarMobileHeaderControlBorder) +
-	[mergeStylexClassName("", sx.phoneShadowVarMobileHeaderControlShadow), MOBILE_CONTROL_GLASS_EFFECTS].filter(Boolean).join(" ");
+	" " + [TAB_SHAPE, mergeStylexClassName("", sx.border0, sx.px25, sx.py15, typography.label, sx.shadowNone)].filter(Boolean).join(" ") +
+	" " + mergeStylexClassName("", sharedClassStyles.transitionBackgroundColorColor) +
+	" " + mergeStylexClassName("", sx.phoneRoundedFull, sx.phoneBorder, sx.phoneBorderColorVarMobileHeaderControlBorder) +
+	" " + [mergeStylexClassName("", sx.phoneShadowVarMobileHeaderControlShadow), MOBILE_CONTROL_GLASS_EFFECTS].filter(Boolean).join(" ");
 
 export type TabState = {
 	active: boolean;
@@ -888,12 +889,12 @@ export function tabClass(state: TabState): string {
 	const ink = active || waiting ? mergeStylexClassName("", sx.textFg) : mergeStylexClassName("", sx.textDim, sx.hoverTextFg);
 	const surface = colored
 		? active
-			? "bg-[color-mix(in_srgb,var(--tab-color)_22%,var(--bg-panel))] " +
-				"hover:bg-[color-mix(in_srgb,var(--tab-color)_28%,var(--bg-panel))] " +
-				"phone:bg-[color-mix(in_srgb,var(--tab-color)_22%,var(--mobile-tab-surface-selected))]"
-			: "bg-[color-mix(in_srgb,var(--tab-color)_9%,transparent)] " +
-				"hover:bg-[color-mix(in_srgb,var(--tab-color)_16%,transparent)] " +
-				"phone:bg-[color-mix(in_srgb,var(--tab-color)_9%,var(--mobile-tab-surface))]"
+			? mergeStylexClassName("", sharedClassStyles.bgColorMixInSrgbVarTabColor22VarBgPanel) +
+				" " + mergeStylexClassName("", sharedClassStyles.hoverBgColorMixInSrgbVarTabColor28VarBgPanel) +
+				" " + mergeStylexClassName("", sharedClassStyles.phoneBgColorMixInSrgbVarTabColor22VarMobileTabSurfaceSelected)
+			: mergeStylexClassName("", sharedClassStyles.bgColorMixInSrgbVarTabColor9Transparent) +
+				" " + mergeStylexClassName("", sharedClassStyles.hoverBgColorMixInSrgbVarTabColor16Transparent) +
+				" " + mergeStylexClassName("", sharedClassStyles.phoneBgColorMixInSrgbVarTabColor9VarMobileTabSurface)
 		: active
 			? mergeStylexClassName("", sx.bgPanel, sx.hoverBgHover, sx.phoneBgVarMobileTabSurfaceSelected)
 			: mergeStylexClassName("", sx.bgTransparent, sx.hoverBgHover, sx.phoneBgVarMobileTabSurface);
@@ -974,9 +975,9 @@ const DOT_BASE = mergeStylexClassName("", sx.size15, sx.shrink0, sx.roundedFull)
 export const tabDotClass = (waiting: boolean) =>
 	waiting
 		? [DOT_BASE, mergeStylexClassName("", sx.bgBlue, sx.shadow006pxVarBlue, sx.animatePulse12sEaseInOutInfinite)].filter(Boolean).join(" ") +
-			mergeStylexClassName("", sx.motionReduceAnimationDuration12s, sx.motionReduceAnimationIterationCountInfinite)
+			" " + mergeStylexClassName("", sx.motionReduceAnimationDuration12s, sx.motionReduceAnimationIterationCountInfinite)
 		: [DOT_BASE, mergeStylexClassName("", sx.bgYellow, sx.animatePulse14sEaseInOutInfinite)].filter(Boolean).join(" ") +
-			mergeStylexClassName("", sx.motionReduceAnimationDuration14s, sx.motionReduceAnimationIterationCountInfinite);
+			" " + mergeStylexClassName("", sx.motionReduceAnimationDuration14s, sx.motionReduceAnimationIterationCountInfinite);
 
 /** A view tab's status dot (PR state). Shared with the right panel's tabs,
  *  which render the same mark. The caller adds the tone's fill. */
@@ -1048,8 +1049,8 @@ const CTRL_REVEAL =
 
 const CTRL_BASE =
 	mergeStylexClassName("", sx.inlineFlex, sx.minH36px, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.whitespaceNowrap) +
-	[mergeStylexClassName("", sx.border, sx.borderTransparent, sx.bgTransparent, sx.px35, sx.py15), PILL].filter(Boolean).join(" ") +
-	mergeStylexClassName("", sx.transitionBackgroundColorColor, sx.fontInherit, sx.leadingNone, sx.textDim) + " " +
+	" " + [mergeStylexClassName("", sx.border, sx.borderTransparent, sx.bgTransparent, sx.px35, sx.py15), PILL].filter(Boolean).join(" ") +
+	" " + mergeStylexClassName("", sx.transitionBackgroundColorColor, sx.fontInherit, sx.leadingNone, sx.textDim) + " " +
 	mergeStylexClassName("", sx.hoverBgHover, sx.hoverTextFg);
 
 /** Desktop trailing controls match the tabs' 28px box and medium radius. */
@@ -1071,7 +1072,7 @@ export const TAB_NEW =
  */
 export const TAB_HISTORY =
 	[CTRL_BASE, CTRL_DESKTOP, mergeStylexClassName("", sx.justifyCenter)].filter(Boolean).join(" ") +
-	"data-[popup-open]:bg-hover data-[popup-open]:text-fg " +
+	" " + "data-[popup-open]:bg-hover data-[popup-open]:text-fg " +
 	CTRL_REVEAL;
 
 /* ── Tab colour swatches ─────────────────────────────────────────────────────

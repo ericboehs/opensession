@@ -48,7 +48,7 @@ import { SessionCardBody } from "./sidebar/HoverCards";
 import { IconGitCommit, IconGitMerge, IconPullRequest } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -458,7 +458,7 @@ function CommitChipCardBody({ commit }: { commit: CommitDetails }) {
 					)}
 				</span>
 				<span {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter)}>
-					<IconGitCommit {...stylex.props(sx.textDim)} size={20} />
+					<IconGitCommit className={mergeStylexOverrideClassName("", sx.textDim)} size={20} />
 				</span>
 			</div>
 
@@ -544,7 +544,7 @@ function PrChipCardBody({ pr }: { pr: ChipPr }) {
 				)}
 				<span {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter)}>
 					{pr.state === "MERGED" ? (
-						<IconGitMerge {...stylex.props(sx.textPurple)} size={20} />
+						<IconGitMerge className={mergeStylexOverrideClassName("", sx.textPurple)} size={20} />
 					) : (
 						<IconPullRequest className={PR_STATE_TEXT[tone]} size={20} />
 					)}

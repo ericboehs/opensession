@@ -2,7 +2,7 @@ import { BASE_PATH } from "../lib/base";
 import React from "react";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { CopyCheck, useCopy } from "../ui/copy";
 import { fieldClasses } from "../ui/input";
 import { IconCopy } from "./icons";
@@ -658,7 +658,7 @@ export function ScopeGroups({ groups }: { groups: SetupScopeGroup[] }) {
 			))}
 			<Button
 				size="sm"
-				{...stylex.props(sx.selfStart)}
+				className={mergeStylexOverrideClassName("", sx.selfStart)}
 				onClick={() => copy(all.join(", "), { toast: `Copied ${all.length} scopes` })}
 			>
 				<CopyCheck copied={copied} size={14} idle={<IconCopy size={14} />} />
@@ -777,7 +777,7 @@ export function CopyableCode({ value }: { value: string }) {
 			<CopyCheck
 				copied={copied}
 				size={14}
-				{...stylex.props(sx.shrink0, sx.textFaint)}
+				className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)}
 				idle={<IconCopy size={14} />}
 			/>
 		</button>

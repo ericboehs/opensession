@@ -4,7 +4,7 @@ import { IconArrowDownRight } from "./icons";
 import { shortModelLabel } from "./ModelEffortSelect";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -111,10 +111,10 @@ export function SessionRelations({
 						aria-label={workerLabel}
 						title={workerLabel}
 					>
-						<IconArrowDownRight {...stylex.props(sx.size5, sx.shrink0)} />
+						<IconArrowDownRight className={mergeStylexOverrideClassName("", sx.size5, sx.shrink0)} />
             <span {...stylex.props(sx.tabularNums)}>{workers!.length}</span>
 					</Menu.Trigger>
-					<Menu.Popup align="start" {...stylex.props(sx.maxW300px)}>
+					<Menu.Popup align="start" className={mergeStylexOverrideClassName("", sx.maxW300px)}>
 						{/* GroupLabel MUST live inside a Group — bare it throws Base UI
 						    error #31 and white-screens the app on open. */}
 						<Menu.Group>

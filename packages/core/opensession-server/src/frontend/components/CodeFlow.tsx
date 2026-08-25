@@ -6,7 +6,7 @@ import { IconBranches } from "./icons";
 import { Badge } from "../ui/badge";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -297,17 +297,17 @@ export function CodeFlow({
 		entries.push(tree);
 		files.set(file, entries);
 	}
-	if (loading && !data) return <LoadingState {...stylex.props(sx.minH48)}>Mapping code flow…</LoadingState>;
+	if (loading && !data) return <LoadingState className={mergeStylexOverrideClassName("", sx.minH48)}>Mapping code flow…</LoadingState>;
 	if (error && !data) {
 		return (
-			<InlineAlert {...stylex.props(sx.m4)} onRetry={onRetry}>{error}</InlineAlert>
+			<InlineAlert className={mergeStylexOverrideClassName("", sx.m4)} onRetry={onRetry}>{error}</InlineAlert>
 		);
 	}
 	if (!data?.trees.length) {
 		const limited = Boolean(data?.truncated || data?.skippedFiles);
 		return (
 			<div {...stylex.props(sx.flex, sx.minH48, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.gap2, sx.px4, sx.textCenter)}>
-				<IconBranches size={24} {...stylex.props(sx.textFaint)} />
+				<IconBranches size={24} className={mergeStylexOverrideClassName("", sx.textFaint)} />
 				<div {...stylex.props(sx.textSm, sx.fontMedium, sx.textDim)}>
 					{limited ? "Code flow was limited" : "No code-flow changes detected"}
 				</div>
@@ -322,13 +322,13 @@ export function CodeFlow({
 	return (
 		<section {...mergeStylexProps("", sx.phonePx2, sx.mxAuto, sx.wFull, sx.maxW1100px, sx.px3, sx.py4)} aria-labelledby={titleId}>
 			<header {...stylex.props(sx.mb3, sx.flex, sx.itemsCenter, sx.gap2, sx.px1)}>
-				<IconBranches size={17} {...stylex.props(sx.textDim)} />
+				<IconBranches size={17} className={mergeStylexOverrideClassName("", sx.textDim)} />
 				<h2 id={titleId} {...stylex.props(sx.m0, sx.textSm, sx.fontSemibold, sx.textFg)}>Code flow</h2>
 				<span {...stylex.props(sx.textXs, sx.textFaint)}>{data.languages.join(" · ")}</span>
 				{loading && <span {...stylex.props(sx.mlAuto, sx.textFaint, typography.meta)} role="status">Updating…</span>}
-				{data.truncated && !loading && <Badge tone="warning" {...stylex.props(sx.mlAuto)}>bounded</Badge>}
+				{data.truncated && !loading && <Badge tone="warning" className={mergeStylexOverrideClassName("", sx.mlAuto)}>bounded</Badge>}
 			</header>
-			{error && <InlineAlert {...stylex.props(sx.mb3)} onRetry={onRetry}>{error}</InlineAlert>}
+			{error && <InlineAlert className={mergeStylexOverrideClassName("", sx.mb3)} onRetry={onRetry}>{error}</InlineAlert>}
 			<div className="space-y-2">
 				{[...files].map(([file, trees]) => (
 					<article key={file} {...stylex.props(sx.overflowHidden, sx.roundedXl, sx.bgPanel)}>

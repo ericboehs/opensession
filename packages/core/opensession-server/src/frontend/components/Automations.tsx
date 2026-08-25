@@ -35,7 +35,7 @@ import {
 import { AGENT_NAME, WEBHOOK_BASE_URL, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { Input, Select, Textarea } from "../ui/input";
 import { Modal, useEnterOnMount } from "../ui/modal";
 import { PageDescription, PageHeader, PageTitle } from "../ui/page-header";
@@ -45,6 +45,7 @@ import { Switch } from "../ui/switch";
 import { formatDuration } from "../lib/time";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -914,7 +915,7 @@ setError(e.message);
 					variant="primary"
 					size="lg"
 					icon={<IconPlus size={20} />}
-					{...stylex.props(sx.fontMedium, typography.controlLabel)}
+					className={mergeStylexOverrideClassName("", sx.fontMedium, typography.controlLabel)}
 					onClick={() => setShowModal(true)}
 				>
 					New automation
@@ -1013,7 +1014,7 @@ setError(e.message);
                     here, so it sits on the edge, in a column of its own. */}
                 <Switch
                   size="sm"
-                  {...stylex.props(sx.relative)}
+                  className={mergeStylexOverrideClassName("", sx.relative)}
                   checked={a.enabled}
                   onCheckedChange={() => handleToggle(a)}
                   aria-label={`${a.name} · ${a.enabled ? "on" : "off"}`}
@@ -1058,7 +1059,7 @@ setError(e.message);
                 <Button
                   size="sm"
                   variant="soft"
-                  className={mergeStylexClassName("", sx.hoverBgRedSoft, sx.hoverTextRed)}
+                  className={mergeStylexOverrideClassName("", sx.hoverBgRedSoft, sx.hoverTextRed)}
                   onClick={() => handleDelete(sel)}
                 >
                   Delete
@@ -1523,7 +1524,7 @@ function WebhookUrl({ id, secret }: { id: string; secret: string }) {
       <Button
         size="sm"
         variant="soft"
-        {...stylex.props(sx.shrink0)}
+        className={mergeStylexOverrideClassName("", sx.shrink0)}
         onClick={() => {
           navigator.clipboard.writeText(url).then(() => {
             setCopied(true);
@@ -1582,7 +1583,7 @@ function CreateAutomationModal({
       }}
     >
       <Modal.Content
-        widthClassName="max-w-[40rem]"
+        widthClassName={mergeStylexClassName("", sharedClassStyles.maxW40rem)}
         initialFocus={step === "type" ? describeRef : undefined}
       >
         {step === "type" ? (
@@ -1645,7 +1646,7 @@ function ChooserRow({
     >
       {/* Normalize the drawn height, not the SVG box, the way the list rows do. */}
       <span {...stylex.props(sx.flex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textFaint)}>
-        <Icon size={20} {...stylex.props(sx.maxWNone, sx.scale115)} />
+        <Icon size={20} className={mergeStylexOverrideClassName("", sx.maxWNone, sx.scale115)} />
       </span>
       <span {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.flexCol, sx.gap075)}>
         <span {...stylex.props(sx.fontSemibold, sx.leading5, sx.textFg, typography.itemTitle)}>{title}</span>
@@ -1962,7 +1963,7 @@ function DataFlowEditor({
               <div key={input.id} {...stylex.props(sx.roundedPanel, sx.bgSurface, sx.p3)}>
                 <div {...stylex.props(sx.mb2, sx.flex, sx.minH10, sx.itemsCenter, sx.gap2)}>
                   <Select
-                    {...stylex.props(sx.maxW150px)}
+                    className={mergeStylexOverrideClassName("", sx.maxW150px)}
                     value={input.source.type}
                     onChange={(e) => {
                       const source = e.target.value === "slack_channel"
@@ -2648,7 +2649,7 @@ setError(e.message);
         {onBack && (
           <Button
             variant="ghost"
-            {...stylex.props(sx.mrAuto)}
+            className={mergeStylexOverrideClassName("", sx.mrAuto)}
             icon={<IconChevronLeft size={20} />}
             onClick={onBack}
             disabled={saving}

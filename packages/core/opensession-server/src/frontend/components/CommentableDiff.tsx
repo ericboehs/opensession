@@ -50,7 +50,7 @@ import { UserAvatar } from "./UserAvatar";
 import { ExtBadge, fileExt } from "./lang-marks";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -1429,7 +1429,7 @@ const pendingByFile = m;
               <Button
                 variant="soft"
                 size="sm"
-                {...stylex.props(sx.minH0, sx.px25, sx.py3px, sx.textXs, sx.fontNormal)}
+                className={mergeStylexOverrideClassName("", sx.minH0, sx.px25, sx.py3px, sx.textXs, sx.fontNormal)}
                 onClick={cancelEdit}
                 disabled={savingEdit}
               >
@@ -1511,7 +1511,7 @@ const pendingByFile = m;
                   }
                 />
               </Tooltip>
-              <Menu.Popup align="end" {...stylex.props(sx.minW230px)}>
+              <Menu.Popup align="end" className={mergeStylexOverrideClassName("", sx.minW230px)}>
                 {fileUrl && (
                   <>
                     <Menu.Item
@@ -1606,7 +1606,7 @@ const pendingByFile = m;
     <>
       {showGroupsStatus && groupsLoading && (
         <span className={GROUPS_NOTE} role="status">
-          <Spinner {...stylex.props(sx.textFaint)} />
+          <Spinner className={mergeStylexOverrideClassName("", sx.textFaint)} />
           Organizing files…
         </span>
       )}
@@ -1756,7 +1756,7 @@ function ResolvedReviewThread({
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        <IconCheckCircle size={17} {...stylex.props(sx.shrink0, sx.textDim)} />
+        <IconCheckCircle size={17} className={mergeStylexOverrideClassName("", sx.shrink0, sx.textDim)} />
         <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
           {count} resolved {count === 1 ? "comment" : "comments"} from {author}
         </span>
@@ -1934,7 +1934,7 @@ setError(e.message || "Failed to submit");
             <Button
               variant="soft"
               size="sm"
-              {...stylex.props(sx.minH0, sx.px3, sx.py5px, sx.fontNormal, typography.label)}
+              className={mergeStylexOverrideClassName("", sx.minH0, sx.px3, sx.py5px, sx.fontNormal, typography.label)}
               onClick={onCancel}
               disabled={sending}
             >

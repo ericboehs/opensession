@@ -11,9 +11,10 @@ import {
 	type DeskVoiceState,
 } from "../lib/desk-voice-client";
 import { getDeskVoicePref, onDeskVoiceChanged } from "../lib/desk-voice-pref";
-import { cn, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -249,7 +250,7 @@ const res = await fetch(`${BASE_PATH}/api/desk/clear`, {
 		<div {...stylex.props(sx.flex, sx.minH0, sx.flex1, sx.flexCol)}>
 			{/* Header */}
 			<div {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.gap25, sx.borderB, sx.borderDivider, sx.px4, sx.py25)}>
-				<IconDesk size={22} {...stylex.props(sx.textDim)} />
+				<IconDesk size={22} className={mergeStylexOverrideClassName("", sx.textDim)} />
 				<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.fontSemibold, sx.textFg, typography.itemTitle)}>
 					Desk
 				</span>
@@ -266,7 +267,7 @@ const res = await fetch(`${BASE_PATH}/api/desk/clear`, {
 				<Button
 					variant="ghost"
 					size="sm"
-					{...stylex.props(sx.shrink0, sx.textFaint)}
+					className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)}
 					onClick={clearSession}
 					title="Clear the session here. The full transcript stays in the expanded session."
 				>
@@ -276,7 +277,7 @@ const res = await fetch(`${BASE_PATH}/api/desk/clear`, {
 					<Button
 						variant="ghost"
 						size="sm"
-						{...stylex.props(sx.shrink0, sx.textFaint)}
+						className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)}
 						icon={<IconExpand size={20} />}
 						onClick={() => {
 							onClose();
@@ -289,7 +290,7 @@ const res = await fetch(`${BASE_PATH}/api/desk/clear`, {
 				<Button
 					variant="ghost"
 					size="sm"
-					{...stylex.props(sx.shrink0, sx.textFaint)}
+					className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)}
 					icon={<IconMinus size={20} />}
 					onClick={onClose}
 					title="Minimise Desk"
@@ -363,7 +364,7 @@ export function DeskOverlay({
 			<Modal.Content
 				variant="palette"
 				keepMounted
-				widthClassName="w-[min(650px,100%)]"
+				widthClassName={mergeStylexClassName("", sharedClassStyles.wMin650px100)}
 				className={cn(
 					phone
 						? mergeStylexClassName("", sx.hMin600px85dvh)

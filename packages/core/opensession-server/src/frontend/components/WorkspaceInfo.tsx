@@ -32,7 +32,7 @@ import { personNameForKey, usePeople, useReviewTeams } from "../lib/people";
 import { UserAvatar } from "./UserAvatar";
 import { Menu } from "../ui/menu";
 import { Popover } from "../ui/popover";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import type {
 	DiffFile,
 	GitStatusInfo,
@@ -1423,7 +1423,7 @@ setBusy(null);
             <Menu.Popup
               align="end"
               sideOffset={6}
-              {...stylex.props(sx.minW280px)}
+              className={mergeStylexOverrideClassName("", sx.minW280px)}
             >
 							<Menu.Group>
 								<Menu.GroupLabel>{AGENT_NAME} actions</Menu.GroupLabel>
@@ -1434,7 +1434,7 @@ setBusy(null);
                       busy !== null || (action.kind === "review" && active)
                     }
 										onClick={() => run(action)}
-										{...stylex.props(sx.itemsStart, sx.py2)}
+										className={mergeStylexOverrideClassName("", sx.itemsStart, sx.py2)}
 									>
 										<div {...stylex.props(sx.minW0)}>
                       <div {...stylex.props(sx.fontSemibold, sx.textFg)}>
@@ -1473,10 +1473,7 @@ setBusy(null);
 							openOnHover={Boolean(reviewMessage)}
 							delay={200}
 							closeDelay={120}
-              {...stylex.props(
-                sx.reviewTrigger,
-                Boolean(reviewMessage) && sx.cursorHelp,
-							)}
+              className={mergeStylexOverrideClassName("", sx.reviewTrigger, Boolean(reviewMessage) && sx.cursorHelp)}
 							tabIndex={reviewMessage ? 0 : undefined}
 						>
 							{/* Who, then the reading. The section is about people, so the
@@ -1873,7 +1870,7 @@ function ReviewerChip({
           <Menu.Popup
             align="start"
             sideOffset={6}
-            {...stylex.props(sx.minW200px)}
+            className={mergeStylexOverrideClassName("", sx.minW200px)}
           >
 					{req &&
 						(accepted ? (
@@ -1884,14 +1881,14 @@ function ReviewerChip({
 										: accept(false)
 								}
 							>
-								<IconBell size={20} {...stylex.props(sx.textDim)} />
+								<IconBell size={20} className={mergeStylexOverrideClassName("", sx.textDim)} />
                   <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
                     Reopen review
                   </span>
 							</Menu.Item>
 						) : (
 							<Menu.Item onClick={() => accept(true)}>
-								<IconCheck size={20} {...stylex.props(sx.textDim)} />
+								<IconCheck size={20} className={mergeStylexOverrideClassName("", sx.textDim)} />
                   <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
                     Mark as reviewed
                   </span>
@@ -1907,7 +1904,7 @@ function ReviewerChip({
                 <Menu.Check
                   on={req?.to === name}
                   size={20}
-                  {...stylex.props(sx.textDim)}
+                  className={mergeStylexOverrideClassName("", sx.textDim)}
                 />
 						</Menu.Item>
 					))}
@@ -1933,7 +1930,7 @@ function ReviewerChip({
                 <Menu.Check
                   on={req?.to === team.github}
                   size={20}
-                  {...stylex.props(sx.textDim)}
+                  className={mergeStylexOverrideClassName("", sx.textDim)}
                 />
 						</Menu.Item>
 					))}
@@ -1941,7 +1938,7 @@ function ReviewerChip({
 						<>
 							<Menu.Separator />
                 <Menu.Item
-                  {...stylex.props(sx.textDim)}
+                  className={mergeStylexOverrideClassName("", sx.textDim)}
                   onClick={() => pick(null)}
                 >
 								Clear review request
@@ -2532,18 +2529,12 @@ export function WorkspaceInfo({
 												// says what it is instead.
 												<IconPlayRectangle
 													size={14}
-                          {...stylex.props(
-                            sx.assetIcon,
-                            Boolean(a.description) && sx.mt05,
-													)}
+                          className={mergeStylexOverrideClassName("", sx.assetIcon, Boolean(a.description) && sx.mt05)}
 												/>
 											) : (
 												<IconFile
 													size={14}
-                          {...stylex.props(
-                            sx.assetIcon,
-                            Boolean(a.description) && sx.mt05,
-													)}
+                          className={mergeStylexOverrideClassName("", sx.assetIcon, Boolean(a.description) && sx.mt05)}
 												/>
 											)}
 											<span {...stylex.props(sx.minW0, sx.flex1)}>

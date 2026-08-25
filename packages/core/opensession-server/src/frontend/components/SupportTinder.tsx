@@ -11,7 +11,7 @@ import {
 import { PlainEntryRow, plainThreadUrl } from "./PlainThreadPanel";
 import { useCurrentUser } from "./UserPicker";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { DeckDone, SwipeCard } from "../ui/swipe-deck";
 import { dismissToast, toast } from "../ui/toast";
 import { UNDO_MS, ageLabel, ageTone, shuffle } from "../lib/swipe-deck";
@@ -565,7 +565,7 @@ export function SupportTinder({ onExit, onOpenSession }: Props) {
 				<Button
 					variant="ghost"
 					size="md"
-					{...stylex.props(sx.mlAuto)}
+					className={mergeStylexOverrideClassName("", sx.mlAuto)}
 					onClick={undoLast}
 					disabled={historyLen === 0 || busy}
 					title="Undo last action (z)"
@@ -712,7 +712,7 @@ function TicketCard({
 		// Exit flings left for spam/done (dealt with and gone), right for skip;
 		// the card lives in normal flow, hence popOnExit.
 		<SwipeCard
-			{...stylex.props(sx.relative, sx.z10, sx.wFull)}
+			className={mergeStylexOverrideClassName("", sx.relative, sx.z10, sx.wFull)}
 			custom={custom}
 			exitFor={(a) => (a === "spam" || a === "done" ? "left" : "right")}
 			exitDistance={640}

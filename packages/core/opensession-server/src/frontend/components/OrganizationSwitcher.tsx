@@ -23,7 +23,7 @@ import {
 import { OrganizationAppIcon } from "./OrganizationAppIcon";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -358,7 +358,7 @@ toast("Couldn’t copy the organization link", { variant: "error" });
 					aria-label={`Open organization menu, current: ${name}`}
 				>
 					<span {...stylex.props(sx.relative, sx.inlineFlex, sx.size10, sx.itemsCenter, sx.justifyCenter)}>
-						<OrganizationAppIcon {...stylex.props(sx.size10, sx.roundedControl, sx.objectCover)} />
+						<OrganizationAppIcon className={mergeStylexOverrideClassName("", sx.size10, sx.roundedControl, sx.objectCover)} />
 						<span
 							className={APP_LOGO_STATUS}
 							style={{ background: connected ? "var(--green)" : "var(--red)" }}
@@ -372,7 +372,7 @@ toast("Couldn’t copy the organization link", { variant: "error" });
 					aria-label={`Open organization menu, current: ${name}`}
 				>
 					<span {...stylex.props(sx.relative, sx.inlineFlex, sx.size22px, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>
-						<OrganizationAppIcon {...stylex.props(sx.size5, sx.roundedSm, sx.objectCover)} />
+						<OrganizationAppIcon className={mergeStylexOverrideClassName("", sx.size5, sx.roundedSm, sx.objectCover)} />
 						<span
 							className={APP_LOGO_STATUS}
 							style={{ background: connected ? "var(--green)" : "var(--red)" }}
@@ -391,11 +391,11 @@ toast("Couldn’t copy the organization link", { variant: "error" });
 				side="bottom"
 				align="start"
 				sideOffset={5}
-				{...stylex.props(sx.w290px, sx.maxWCalc100vw16px)}
+				className={mergeStylexOverrideClassName("", sx.w290px, sx.maxWCalc100vw16px)}
 			>
 				<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3, sx.px2, sx.py2)}>
 					<span {...stylex.props(sx.relative, sx.inlineFlex, sx.size9, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>
-						<OrganizationAppIcon {...stylex.props(sx.size9, sx.roundedMd, sx.objectCover)} />
+						<OrganizationAppIcon className={mergeStylexOverrideClassName("", sx.size9, sx.roundedMd, sx.objectCover)} />
 						<span
 							className={APP_LOGO_STATUS}
 							style={{ background: connected ? "var(--green)" : "var(--red)" }}
@@ -423,7 +423,7 @@ toast("Couldn’t copy the organization link", { variant: "error" });
 					className={[itemClass, mergeStylexClassName("", sx.textAccent)].filter(Boolean).join(" ")}
 					onClick={() => setInviteOpen(true)}
 				>
-					<IconPlus size={19} {...stylex.props(sx.textAccent)} />
+					<IconPlus size={19} className={mergeStylexOverrideClassName("", sx.textAccent)} />
 					<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>Invite member</span>
 				</Menu.Item>
 				<Menu.Separator />
@@ -444,7 +444,7 @@ toast("Couldn’t copy the organization link", { variant: "error" });
 								>
 									<span {...stylex.props(sx.flex, sx.size22px, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>
 										{active ? (
-											<OrganizationAppIcon {...stylex.props(sx.size22px, sx.roundedSm, sx.objectCover)} />
+											<OrganizationAppIcon className={mergeStylexOverrideClassName("", sx.size22px, sx.roundedSm, sx.objectCover)} />
 										) : (
 											<IconTile name={account.label} size={22} />
 										)}
@@ -460,7 +460,7 @@ toast("Couldn’t copy the organization link", { variant: "error" });
 									{account.shortcut !== null && (
 										<Menu.Shortcut>⌘⇧{account.shortcut}</Menu.Shortcut>
 									)}
-									<Menu.Check on={active} {...stylex.props(sx.textDim)} />
+									<Menu.Check on={active} className={mergeStylexOverrideClassName("", sx.textDim)} />
 								</Menu.RadioItem>
 							);
 						})}
@@ -470,7 +470,7 @@ toast("Couldn’t copy the organization link", { variant: "error" });
 							className={[itemClass, mergeStylexClassName("", sx.textAccent)].filter(Boolean).join(" ")}
 							onClick={openAddOrganization}
 						>
-							<IconPlus size={19} {...stylex.props(sx.textAccent)} />
+							<IconPlus size={19} className={mergeStylexOverrideClassName("", sx.textAccent)} />
 							<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>Add organization</span>
 						</Menu.Item>
 					)}

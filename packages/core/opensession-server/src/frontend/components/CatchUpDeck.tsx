@@ -34,7 +34,7 @@ import {
 import { IconChevronLeft, IconPlus } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -486,13 +486,13 @@ export function CatchUpDeck({
 					aria-label="Back"
 					icon={<IconChevronLeft size={24} />}
 				/>
-				<PhoneTopBarTitle {...stylex.props(sx.absolute, sx.left12, sx.TranslateX12, sx.textSm, sx.fontSemibold)}>
+				<PhoneTopBarTitle className={mergeStylexOverrideClassName("", sx.absolute, sx.left12, sx.TranslateX12, sx.textSm, sx.fontSemibold)}>
 					{done ? "All caught up" : `${remaining} Left`}
 				</PhoneTopBarTitle>
 				{/* ml-auto, not just justify-between: with Back hidden this is the
 				    row's only in-flow child on desktop. */}
 				<PhoneTopBarAction
-					{...stylex.props(sx.mlAuto)}
+					className={mergeStylexOverrideClassName("", sx.mlAuto)}
 					onClick={onNewWorkspace}
 					title="New workspace"
 					aria-label="New workspace"
@@ -516,7 +516,7 @@ export function CatchUpDeck({
 						    the card is already absolutely positioned, so no popOnExit. */}
 						<SwipeCard
 							key={card.key}
-							{...stylex.props(sx.absolute, sx.insetX4, sx.top1, sx.bottom5)}
+							className={mergeStylexOverrideClassName("", sx.absolute, sx.insetX4, sx.top1, sx.bottom5)}
 							custom={dir}
 							exitFor={(a) =>
 								a === "archive"
@@ -556,7 +556,7 @@ export function CatchUpDeck({
 				<div {...mergeStylexProps("", sx.pbMax16pxEnvSafeAreaInsetBottom, sx.relative, sx.z10, sx.flex, sx.wFull, sx.maxW860px, sx.shrink0, sx.itemsStretch, sx.gap25, sx.bgSurface, sx.px4)}>
 					<Button
 						size="lg"
-						{...stylex.props(sx.flex1, sx.py3, sx.textSm)}
+						className={mergeStylexOverrideClassName("", sx.flex1, sx.py3, sx.textSm)}
 						onClick={() => act("keep")}
 						title="Keep unread (↑)"
 					>
@@ -568,7 +568,7 @@ export function CatchUpDeck({
 						/* The soft fill is always on here rather than only on hover:
 						   this is a standing choice in a triage deck, not a
 						   warning you hover into. */
-						{...stylex.props(sx.bgRedSoft, sx.py3, sx.textSm)}
+						className={mergeStylexOverrideClassName("", sx.bgRedSoft, sx.py3, sx.textSm)}
 						onClick={() => act("archive")}
 						title="Archive (←)"
 						aria-label="Archive"
@@ -585,7 +585,7 @@ export function CatchUpDeck({
 						   than proposes, because it's the deck's dominant action. */
 						variant="success-strong"
 						size="lg"
-						{...stylex.props(sx.flex1, sx.py3, sx.textSm)}
+						className={mergeStylexOverrideClassName("", sx.flex1, sx.py3, sx.textSm)}
 						onClick={() => act("read")}
 						title="Mark as read (→)"
 					>
@@ -938,7 +938,7 @@ function CaughtUp({ total, onExit }: { total: number; onExit: () => void }) {
 			</div>
 			<Button
 				size="lg"
-				{...stylex.props(sx.mt2, sx.textSm)}
+				className={mergeStylexOverrideClassName("", sx.mt2, sx.textSm)}
 				onClick={onExit}
 			>
 				Done

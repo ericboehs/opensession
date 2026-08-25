@@ -211,7 +211,7 @@ describe("hover cards drop the repo and the idle timestamp", () => {
 // colour says how it stands. Both come off the derivation the header uses
 // (lib/pr-refs), so the two surfaces cannot disagree about one PR.
 describe("workspace PR status marks", () => {
-	test("shows merged for a discovered PR without legacy flat PR fields", () => {
+	test("shows merged for a discovered PR without legacy flat PR fields", async () => {
 		const html = renderToStaticMarkup(
 			<WsPrStatusMark
 				sessions={[
@@ -231,7 +231,9 @@ describe("workspace PR status marks", () => {
 			/>,
 		);
 		expect(html).toContain('title="PR merged"');
-		expect(html).toContain("color:var(--purple)");
+		expect(
+			await Bun.file(new URL("./HoverCards.tsx", import.meta.url)).text(),
+		).toContain('mergeStylexOverrideClassName("", sx.textPurple)');
 		expect(html).not.toContain("text-faint");
 	});
 

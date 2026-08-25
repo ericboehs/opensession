@@ -42,6 +42,7 @@ import {
 import * as stylex from "@stylexjs/stylex";
 import { mergeStylexClassName } from "../ui/cn";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 const sx = stylex.create({
 	flex: {
@@ -441,10 +442,10 @@ export const SETTINGS_SHEET_SEARCH_BAR =
 	// Translucent all the way down, not opaque at the base: glass that admits
 	// nothing is just a panel. It only firms up (88%) at the very bottom edge,
 	// where a row would otherwise read THROUGH the field rather than behind it.
-	"before:[background:linear-gradient(to_top,color-mix(in_srgb,var(--bg)_88%,transparent)_0%,color-mix(in_srgb,var(--bg)_76%,transparent)_55%,color-mix(in_srgb,var(--bg)_45%,transparent)_78%,transparent_100%)] " +
-	mergeStylexClassName("", sx.beforeBackdropBlur16px, sx.beforeBackdropSaturate135) + " " +
-	"before:[-webkit-mask-image:linear-gradient(to_top,var(--color-black)_0%,var(--color-black)_62%,transparent_100%)] " +
-	"before:[mask-image:linear-gradient(to_top,var(--color-black)_0%,var(--color-black)_62%,transparent_100%)]";
+	" " + mergeStylexClassName("", sharedClassStyles.beforeBackgroundLinearGradientToTopColorMixInSrgbVarBg88Transparent0ColorMixInSrgbVarBg76Transparent55ColorMixInSrgbVarBg45Transparent78Transparent100) +
+	" " + mergeStylexClassName("", sx.beforeBackdropBlur16px, sx.beforeBackdropSaturate135) + " " +
+	mergeStylexClassName("", sharedClassStyles.beforeWebkitMaskImageLinearGradientToTopVarColorBlack0VarColorBlack62Transparent100) +
+	" " + mergeStylexClassName("", sharedClassStyles.beforeMaskImageLinearGradientToTopVarColorBlack0VarColorBlack62Transparent100);
 
 /**
  * A row in the settings navigation: the section list and the account block

@@ -12,7 +12,8 @@ import type { FeedDescriptor, Project } from "../lib/types";
 import { fieldClasses } from "../ui/input";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -552,7 +553,7 @@ setBusy(null);
 
 	return (
 		<Modal.Root open={open} onOpenChange={(v) => !v && onClose()}>
-			<Modal.Content widthClassName="max-w-[34rem]">
+			<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW34rem)}>
 				<Modal.Header
 					title="New project"
 					description="A sidebar feed built from one MCP tool call. Pick a server and its list-tool, fetch a sample, then adjust the mapping."
@@ -612,7 +613,7 @@ setBusy(null);
             />
 						<Button
 							variant="primary"
-							{...stylex.props(sx.flexShrink0, typography.controlLabel)}
+							className={mergeStylexOverrideClassName("", sx.flexShrink0, typography.controlLabel)}
 							onClick={fetchSample}
 							disabled={!server || !tool || !!busy}
 						>
@@ -707,7 +708,7 @@ setBusy(null);
           />
 
           {error && (
-            <InlineAlert {...stylex.props(sx.mt3)}>{error}</InlineAlert>
+            <InlineAlert className={mergeStylexOverrideClassName("", sx.mt3)}>{error}</InlineAlert>
           )}
           {busy && (
             <div {...stylex.props(sx.mt3, sx.textFaint, typography.label)}>
@@ -720,7 +721,7 @@ setBusy(null);
           <Modal.Close render={<Button variant="ghost">Cancel</Button>} />
 					<Button
 						variant="primary"
-						{...stylex.props(sx.px5)}
+						className={mergeStylexOverrideClassName("", sx.px5)}
 						onClick={save}
 						disabled={!canSave || !!busy}
 					>

@@ -8,7 +8,7 @@ import { PulseDot } from "../../ui/status";
 import { msgRow } from "../../lib/msg-classes";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -125,7 +125,7 @@ export function WorkspaceSetup() {
 			{...stylex.props(sx.flex, sx.minHFull, sx.wFull, sx.itemsCenter, sx.justifyCenter, sx.px6)}
 		>
 			<div {...stylex.props(sx.flex, sx.flexCol, sx.itemsCenter, sx.textCenter)}>
-				<Spinner size="md" {...stylex.props(sx.mb3, sx.textFaint)} />
+				<Spinner size="md" className={mergeStylexOverrideClassName("", sx.mb3, sx.textFaint)} />
 				<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>
 					Setting up workspace
 				</div>
@@ -142,7 +142,7 @@ export function WorkspaceSetup() {
 export function WorkspaceWaiting({ detail }: { detail: string }) {
 	return (
 		<div {...stylex.props(sx.relative, sx.flex, sx.hFull, sx.minH240px, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.gap1, sx.px6, sx.textCenter)}>
-			<PageLoader {...stylex.props(sx.mb2, sx.textDim)} />
+			<PageLoader className={mergeStylexOverrideClassName("", sx.mb2, sx.textDim)} />
 			<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>
 				Creating your workspace
 			</div>

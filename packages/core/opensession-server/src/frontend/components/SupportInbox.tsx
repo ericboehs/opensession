@@ -18,7 +18,7 @@ import { mineStatus } from "../lib/sidebar-lanes";
 import { MINE_STATUS_META } from "../lib/sidebar-types";
 import { shortTime } from "../lib/time";
 import type { SupportThread, UnifiedSession } from "../lib/types";
-import { cn, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
 import { ConversationPane } from "./ConversationPane";
 import { IconMail } from "./icons";
@@ -253,8 +253,8 @@ const sx = stylex.create({
  *  phone the two panes are separate pages, so it is the whole width there. */
 const COLUMN =
 	mergeStylexClassName("", sx.flex, sx.minH0, sx.flexCol) +
-	mergeStylexClassName("", sx.phoneWFull, sx.phoneFlex1) +
-	mergeStylexClassName("", sx.desktopW320px, sx.desktopShrink0, sx.desktopBorderR, sx.desktopBorderDivider);
+	" " + mergeStylexClassName("", sx.phoneWFull, sx.phoneFlex1) +
+	" " + mergeStylexClassName("", sx.desktopW320px, sx.desktopShrink0, sx.desktopBorderR, sx.desktopBorderDivider);
 
 const COLUMN_TITLE = mergeStylexClassName("", sx.m0, typography.itemTitle, sx.fontSemibold, sx.textFg, sx.phoneTextSectionTitle);
 
@@ -262,27 +262,27 @@ const COLUMN_COUNT = mergeStylexClassName("", sx.mlAuto, sx.shrink0, typography.
 
 const LIST =
 	mergeStylexClassName("", sx.minH0, sx.flex1, sx.overflowYAuto, sx.px15, sx.pt2, sx.pb3) +
-	mergeStylexClassName("[&::-webkit-scrollbar]:hidden", sx.ScrollbarWidthNone);
+	" " + mergeStylexClassName("[&::-webkit-scrollbar]:hidden", sx.ScrollbarWidthNone);
 
 /** A ticket. Two lines, so it sets its own vertical rhythm rather than taking
  *  the sidebar's one-line row padding; everything else — corner, rail gap,
  *  hover layer, `bg-selected` for the open one — is the shared row grammar. */
 const ROW =
 	mergeStylexClassName("group", sx.mt05, sx.flex, sx.wFull, sx.cursorPointer, sx.itemsStart, sx.roundedRow, sx.border0) +
-	mergeStylexClassName("data-active:bg-selected", sx.bgTransparent, sx.py25, sx.pr3, sx.pl25, sx.textLeft) +
-	`${SIDEBAR_RAIL_GAP} ${SIDEBAR_HOVER_LAYER}`;
+	" " + mergeStylexClassName("data-active:bg-selected", sx.bgTransparent, sx.py25, sx.pr3, sx.pl25, sx.textLeft) +
+	" " + `${SIDEBAR_RAIL_GAP} ${SIDEBAR_HOVER_LAYER}`;
 
 const ROW_HEAD = mergeStylexClassName("", sx.flex, sx.minW0, sx.itemsBaseline, sx.gap2);
 
 const ROW_NAME =
 	mergeStylexClassName("", sx.minW0, sx.flex1, sx.truncate, typography.label, sx.fontMedium, sx.textDim) +
-	mergeStylexClassName("group-hover:text-fg group-data-active:text-fg", sx.phoneText15px);
+	" " + mergeStylexClassName("group-hover:text-fg group-data-active:text-fg", sx.phoneText15px);
 
 const ROW_TIME = mergeStylexClassName("", sx.shrink0, sx.textRight, typography.meta, sx.tabularNums, sx.textFaint);
 
 const ROW_SUBJECT =
 	mergeStylexClassName("", sx.mt1, sx.block, sx.truncate, typography.label, sx.textFaint) +
-	mergeStylexClassName("group-data-active:text-dim", sx.phoneText14px);
+	" " + mergeStylexClassName("group-data-active:text-dim", sx.phoneText14px);
 
 interface Props {
 	/** The open ticket, or null for the list on its own. */
@@ -404,7 +404,7 @@ export function SupportInbox({
 						{threads === null ? (
 							<LoadingState>Loading tickets…</LoadingState>
 						) : error && threads.length === 0 ? (
-							<InlineAlert {...stylex.props(sx.mt2)}>{error}</InlineAlert>
+							<InlineAlert className={mergeStylexOverrideClassName("", sx.mt2)}>{error}</InlineAlert>
 						) : threads.length === 0 ? (
 							<div {...stylex.props(sx.px3, sx.py6, sx.textCenter, sx.textFaint, typography.label)}>
 								Nothing waiting in Plain.

@@ -8,7 +8,7 @@ import { toast } from "../../ui/toast";
 import type { LinkedPrEntry } from "../PrPanel";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -155,7 +155,7 @@ setBusy(false);
           <Field label="Pull request URL">
             <Input
               autoFocus
-              className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneTextInputPhone)}
+              className={mergeStylexOverrideClassName("", sx.phoneMinH11, sx.phoneTextInputPhone)}
               placeholder="https://github.com/org/repo/pull/123"
               value={val}
               onChange={(event) => setVal(event.target.value)}
@@ -166,7 +166,7 @@ setBusy(false);
               render={
                 <Button
                   variant="soft"
-                  className={mergeStylexClassName("", sx.phoneMinH11)}
+                  className={mergeStylexOverrideClassName("", sx.phoneMinH11)}
                   disabled={busy}
                 >
                   Cancel
@@ -176,7 +176,7 @@ setBusy(false);
             <Button
               type="submit"
               variant="primary"
-              className={mergeStylexClassName("", sx.phoneMinH11)}
+              className={mergeStylexOverrideClassName("", sx.phoneMinH11)}
               disabled={busy || !val.trim()}
             >
               {busy ? "Linking…" : "Link PR"}

@@ -28,7 +28,7 @@ import {
 	SettingsHint,
 	rowMenuTriggerClasses,
 } from "../../ui/settings";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 import { toast } from "../../ui/toast";
 import { BrandMark, IconTile } from "../BrandTile";
 import {
@@ -42,6 +42,7 @@ import {
 } from "../icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
+import { sharedClassStyles } from "../../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -913,13 +914,13 @@ function ClaudeAccountRows({ state }: { state: ClaudeAccountsState }) {
 							<AccountProviderMark name="claude" />
 							<SettingRowText>
 								<div {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
-									<SettingRowTitle {...stylex.props(sx.truncate)}>
+									<SettingRowTitle className={mergeStylexOverrideClassName("", sx.truncate)}>
 										{providerAccountLabel(account)}
 									</SettingRowTitle>
 									<ClaudeAccountStatus a={account} />
 								</div>
 								<SettingRowDescription
-									{...stylex.props(sx.truncate, typography.meta)}
+									className={mergeStylexOverrideClassName("", sx.truncate, typography.meta)}
 									title={["Anthropic", account.plan?.replace("default_claude_", ""), account.tokenMasked]
 										.filter(Boolean)
 										.join(" · ")}
@@ -956,7 +957,7 @@ function ClaudeAccountRows({ state }: { state: ClaudeAccountsState }) {
 									onChange={(owner) => state.setOwner(account, owner)}
 									label={`Owner of ${providerAccountLabel(account)}`}
 									quiet
-									className={mergeStylexClassName("", sx.phoneMlAuto)}
+									className={mergeStylexOverrideClassName("", sx.phoneMlAuto)}
 									title={
 										account.owner
 											? `${account.owner}'s personal subscription. Their runs use it first, everyone else never does.`
@@ -972,12 +973,12 @@ function ClaudeAccountRows({ state }: { state: ClaudeAccountsState }) {
 									</Menu.Trigger>
 									<Menu.Popup align="end" sideOffset={4}>
 										<Menu.Item onClick={() => state.setSignIn(account)}>
-											<IconPlug size={16} {...stylex.props(sx.textFaint)} />
+											<IconPlug size={16} className={mergeStylexOverrideClassName("", sx.textFaint)} />
 											Connect usage…
 										</Menu.Item>
 										{account.authKind === "setup-token" && (
 											<Menu.Item onClick={() => state.setCredentialsPath(account)}>
-												<IconSliders size={16} {...stylex.props(sx.textFaint)} />
+												<IconSliders size={16} className={mergeStylexOverrideClassName("", sx.textFaint)} />
 												Usage credentials…
 											</Menu.Item>
 										)}
@@ -1031,7 +1032,7 @@ export function ClaudeAccountsSection({
 				Claude
 			</SettingsGroupLabel>
 			<Modal.Root open={showAdd} onOpenChange={setShowAdd}>
-				<Modal.Content widthClassName="max-w-[32rem]">
+				<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW32rem)}>
 					<AddClaudeAccountForm
 						onAccountAdded={() => {
 							void state.load();
@@ -1223,12 +1224,12 @@ function CodexAccountRows({ state }: { state: CodexAccountsState }) {
 						<AccountProviderMark name="codex" />
 						<SettingRowText>
 							<div {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
-								<SettingRowTitle {...stylex.props(sx.truncate)}>
+								<SettingRowTitle className={mergeStylexOverrideClassName("", sx.truncate)}>
 									{providerAccountLabel(account)}
 								</SettingRowTitle>
 								<CodexAccountStatus account={account} />
 							</div>
-							<SettingRowDescription {...stylex.props(sx.truncate, typography.meta)} title={account.valueMasked}>
+							<SettingRowDescription className={mergeStylexOverrideClassName("", sx.truncate, typography.meta)} title={account.valueMasked}>
 								OpenAI · {account.kind === "api_key" ? "API key" : "ChatGPT login"}
 								{account.usage?.buckets.find((bucket) => bucket.plan)?.plan
 									? ` · ${account.usage.buckets.find((bucket) => bucket.plan)!.plan}`
@@ -1244,7 +1245,7 @@ function CodexAccountRows({ state }: { state: CodexAccountsState }) {
 								onChange={(owner) => state.setOwner(account, owner)}
 								label={`Owner of ${providerAccountLabel(account)}`}
 								quiet
-								className={mergeStylexClassName("", sx.phoneMlAuto)}
+								className={mergeStylexOverrideClassName("", sx.phoneMlAuto)}
 								title={
 									account.owner
 										? `${account.owner}'s personal subscription. Their runs use it first, everyone else never does.`
@@ -1369,12 +1370,12 @@ function ProviderSummaryRow({
 							: `${total} account${total === 1 ? "" : "s"} · ${available} available`}
 					</SettingRowDescription>
 				</SettingRowText>
-				<SettingRowControl {...stylex.props(sx.flex, sx.itemsCenter, sx.gap15)}>
+				<SettingRowControl className={mergeStylexOverrideClassName("", sx.flex, sx.itemsCenter, sx.gap15)}>
 					{total > 0 && (
 						<Button
 							size="sm"
 							variant="ghost"
-							className={mergeStylexClassName("", sx.phoneMinH11)}
+							className={mergeStylexOverrideClassName("", sx.phoneMinH11)}
 							aria-expanded={expanded}
 							onClick={onToggle}
 						>
@@ -1384,7 +1385,7 @@ function ProviderSummaryRow({
 					<Button
 						size="sm"
 						variant="ghost"
-						className={mergeStylexClassName("", sx.phoneMinH11)}
+						className={mergeStylexOverrideClassName("", sx.phoneMinH11)}
 						icon={<IconPlus size={16} />}
 						onClick={onAdd}
 					>
@@ -1444,8 +1445,8 @@ export function ProviderAccountsSection({
 						<Button
 							size="sm"
 							variant="ghost"
-							className={mergeStylexClassName("", sx.phoneMinH11)}
-							icon={<IconHistory size={16} {...stylex.props(refreshing && sx.spinning)} />}
+							className={mergeStylexOverrideClassName("", sx.phoneMinH11)}
+							icon={<IconHistory size={16} className={mergeStylexOverrideClassName("", refreshing && sx.spinning)} />}
 							onClick={refreshUsage}
 							disabled={refreshing}
 						>
@@ -1457,7 +1458,7 @@ export function ProviderAccountsSection({
 							render={
 								<Button
 									size="sm"
-									className={mergeStylexClassName("", sx.phoneMinH11)}
+									className={mergeStylexOverrideClassName("", sx.phoneMinH11)}
 									icon={<IconPlus size={16} />}
 									caret
 								>
@@ -1483,18 +1484,18 @@ export function ProviderAccountsSection({
 			</SettingsGroupLabel>
 
 			{claude.error && (
-				<InlineAlert {...stylex.props(sx.mb2)} onDismiss={() => claude.setError(null)}>
+				<InlineAlert className={mergeStylexOverrideClassName("", sx.mb2)} onDismiss={() => claude.setError(null)}>
 					{claude.error}
 				</InlineAlert>
 			)}
 			{codex.error && (
-				<InlineAlert {...stylex.props(sx.mb2)} onDismiss={() => codex.setError(null)}>
+				<InlineAlert className={mergeStylexOverrideClassName("", sx.mb2)} onDismiss={() => codex.setError(null)}>
 					{codex.error}
 				</InlineAlert>
 			)}
 
 			<Modal.Root open={adding === "claude"} onOpenChange={(open) => !open && setAdding(null)}>
-				<Modal.Content widthClassName="max-w-[32rem]">
+				<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW32rem)}>
 					<AddClaudeAccountForm
 						onAccountAdded={() => {
 							void claude.load();
@@ -1877,7 +1878,7 @@ setError(e.message);
 					<a {...stylex.props(sx.shrink0)} href={login.url} target="_blank" rel="noreferrer">
 						<Button icon={<IconPlug size={16} />}>Open Claude sign-in</Button>
 					</a>
-					<Field {...stylex.props(sx.flex1)} label="Code">
+					<Field className={mergeStylexOverrideClassName("", sx.flex1)} label="Code">
 						<Input
 							value={code}
 							onChange={(e) => setCode(e.target.value)}
@@ -2196,7 +2197,7 @@ setError(e.message);
 							<div {...stylex.props(sx.mt15)}>2. Enter this one-time code (expires in 15 min):</div>
 							{login.code && (
 								<div {...stylex.props(sx.my2)}>
-									<DeviceCode code={login.code} {...stylex.props(typography.sectionTitle)} />
+									<DeviceCode code={login.code} className={mergeStylexOverrideClassName("", typography.sectionTitle)} />
 								</div>
 							)}
 							<div {...stylex.props(sx.textDim)}>
@@ -2212,7 +2213,7 @@ setError(e.message);
 					)}
 					{login.state === "error" && (
 						<InlineAlert
-							{...stylex.props(sx.whitespacePreWrap)}
+							className={mergeStylexOverrideClassName("", sx.whitespacePreWrap)}
 							onRetry={() => setLogin(null)}
 							retryLabel="Try again"
 						>
@@ -2241,7 +2242,7 @@ setError(e.message);
 						full address (starts with <code>http://localhost:1455/…</code>) and paste it:
 					</div>
 					<Input
-						{...stylex.props(sx.mt2)}
+						className={mergeStylexOverrideClassName("", sx.mt2)}
 						value={oauthCode}
 						onChange={(e) => setOauthCode(e.target.value)}
 						placeholder="http://localhost:1455/auth/callback?code=…"

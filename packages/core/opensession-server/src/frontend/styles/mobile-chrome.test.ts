@@ -69,8 +69,8 @@ test("archived search focus collapses the phone header without clipping its shad
 	expect(ARCHIVED_SEARCH_HEADER).toContain("+60px");
 	expect(ARCHIVED_SEARCH_HEADER).toContain("phone:[body.kb-open_&]:h-0!");
 	expect(ARCHIVED_SEARCH_HEADER).toContain("phone:[body.kb-open_&]:opacity-0");
-	expect(ARCHIVED_SEARCH_HEADER).toContain(
-		"phone:transition-[height,padding-top,opacity,transform]",
+	expect(readFileSync(HEADER_SOURCE, "utf8")).toContain(
+		"sharedClassStyles.phoneTransitionHeightPaddingTopOpacityTransform",
 	);
 	expect(headerCss).toContain("@media (prefers-reduced-motion: reduce)");
 	expect(headerCss).toContain("transition-property:none");

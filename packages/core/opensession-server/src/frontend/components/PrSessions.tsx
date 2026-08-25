@@ -8,7 +8,7 @@ import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -298,7 +298,7 @@ export function PrSessionsList({
 					}}
 				>
 					<Input
-						{...stylex.props(sx.minW0, sx.flex1)}
+						className={mergeStylexOverrideClassName("", sx.minW0, sx.flex1)}
 						placeholder="Start a new session on this PR…"
 						value={prompt}
 						onChange={(e) => setPrompt(e.target.value)}
@@ -307,7 +307,7 @@ export function PrSessionsList({
 					<Button
 						type="submit"
 						variant="primary"
-						{...stylex.props(sx.shrink0, sx.textXs)}
+						className={mergeStylexOverrideClassName("", sx.shrink0, sx.textXs)}
 						disabled={starting || !prompt.trim()}
 					>
 						{starting ? "Starting…" : "Start"}

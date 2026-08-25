@@ -247,18 +247,18 @@ const sx = stylex.create({
  */
 const chip =
 	mergeStylexClassName("", sx.relative, sx.inlineFlex, sx.h7, sx.wFull, sx.itemsCenter, sx.whitespaceNowrap, sx.rounded999px, sx.px3) +
-	mergeStylexClassName("", sx.bgVarComposerSurface) +
-	mergeStylexClassName("smooth-shadow-ring-md", sx.SmoothRingColorVarComposerBorder) +
-	mergeStylexClassName("", typography.label, sx.fontMedium, sx.textDim, sx.transitionColorScale) +
-	mergeStylexClassName("", sx.hoverTextFg, sx.focusVisibleTextFg, sx.activeScale096) +
+	" " + mergeStylexClassName("", sx.bgVarComposerSurface) +
+	" " + mergeStylexClassName("smooth-shadow-ring-md", sx.SmoothRingColorVarComposerBorder) +
+	" " + mergeStylexClassName("", typography.label, sx.fontMedium, sx.textDim, sx.transitionColorScale) +
+	" " + mergeStylexClassName("", sx.hoverTextFg, sx.focusVisibleTextFg, sx.activeScale096) +
 	// The hover wash layers over the lid rather than replacing it, so it paints
 	// on a pseudo-element, which needs the pill's corner treatment of its own:
 	// base.css grants `corner-shape` by matching `rounded-*` on an ELEMENT, and
 	// a pseudo-element matches no selector.
-	mergeStylexClassName("", sx.beforePointerEventsNone, sx.beforeAbsolute, sx.beforeInset0, sx.beforeRoundedInherit) +
-	mergeStylexClassName("", sx.beforeCornerShapeInherit, sx.beforeBgTransparent, sx.beforeTransitionColors) +
-	mergeStylexClassName("", sx.beforeContent, sx.hoverBeforeBgHover, sx.focusVisibleBeforeBgHover) +
-	mergeStylexClassName("", sx.focusVisibleOutline2, sx.focusVisibleOutlineOffset2, sx.focusVisibleOutlineFg);
+	" " + mergeStylexClassName("", sx.beforePointerEventsNone, sx.beforeAbsolute, sx.beforeInset0, sx.beforeRoundedInherit) +
+	" " + mergeStylexClassName("", sx.beforeCornerShapeInherit, sx.beforeBgTransparent, sx.beforeTransitionColors) +
+	" " + mergeStylexClassName("", sx.beforeContent, sx.hoverBeforeBgHover, sx.focusVisibleBeforeBgHover) +
+	" " + mergeStylexClassName("", sx.focusVisibleOutline2, sx.focusVisibleOutlineOffset2, sx.focusVisibleOutlineFg);
 
 interface Props {
 	suggestions: ReplySuggestion[];
@@ -303,9 +303,9 @@ export function ReplySuggestions({ suggestions, onPick, className }: Props) {
 				// Fade only the edge with more content. A hard clip beside Next made
 				// a complete chip look broken, while the fade says the row scrolls.
 				mergeStylexClassName("", sx.ReplyFadeStart000, sx.ReplyFadeEnd000) +
-					"data-[overflow-start]:[--reply-fade-start:transparent] data-[overflow-end]:[--reply-fade-end:transparent] " +
+					" " + "data-[overflow-start]:[--reply-fade-start:transparent] data-[overflow-end]:[--reply-fade-end:transparent] " +
 					mergeStylexClassName("", sx.WebkitMaskImageLinearGradientToRightVarReplyFadeStart000016px000Calc10016pxVarReplyFadeEnd100) +
-					mergeStylexClassName("", sx.MaskImageLinearGradientToRightVarReplyFadeStart000016px000Calc10016pxVarReplyFadeEnd100),
+					" " + mergeStylexClassName("", sx.MaskImageLinearGradientToRightVarReplyFadeStart000016px000Calc10016pxVarReplyFadeEnd100),
 				// The caller floats this over the transcript, so the row spans the
 				// whole column while the chips fill only part of it. Nothing but the
 				// chips may take a click: the rest of that band is transcript you

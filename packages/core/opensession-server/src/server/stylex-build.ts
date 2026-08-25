@@ -108,6 +108,12 @@ export function stylexTransform(
 					dev: false,
 					runtimeInjection: false,
 					genConditionalClasses: true,
+					// The plugin's cross-file evaluator mutates shared style objects
+					// while sorting media keys. Reusing a shared StyleX map across the
+					// next transform then throws "Invalid media query syntax". Open
+					// Session has one non-overlapping phone/desktop boundary, and
+					// processStylexRules still orders emitted rules by priority.
+					enableMediaQueryOrder: false,
 					treeshakeCompensation: true,
 					// Cross-file tokens (styles/tokens.stylex.ts) need the import
 					// resolved to a canonical path; commonJS mode walks

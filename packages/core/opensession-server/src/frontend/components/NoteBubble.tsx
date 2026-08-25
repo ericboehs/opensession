@@ -12,7 +12,7 @@ import { noAutofill } from "../lib/composer-autofill";
 import { noteSurface } from "../lib/tinted-surface";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -313,11 +313,11 @@ setBusy(false);
 									setEditing(true);
 								}}
 							>
-								<IconPencil size={18} {...stylex.props(sx.textFaint)} />
+								<IconPencil size={18} className={mergeStylexOverrideClassName("", sx.textFaint)} />
 								Edit
 							</Menu.Item>
 							<Menu.Separator />
-							<Menu.Item onClick={remove} {...stylex.props(sx.textRed)}>
+							<Menu.Item onClick={remove} className={mergeStylexOverrideClassName("", sx.textRed)}>
 								<IconTrash size={18} />
 								Delete
 							</Menu.Item>

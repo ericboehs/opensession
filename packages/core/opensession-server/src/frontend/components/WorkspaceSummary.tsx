@@ -77,8 +77,9 @@ import {
 } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { motionStyles } from "../styles/animations.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -622,7 +623,7 @@ export function WorkspaceSummary({
 				positionMethod="absolute"
 				// The summary stays above sticky workspace chrome, but reserves the
 				// final z-index step for hover previews opened from inside the card.
-				positionerClassName="z-[2147483646]"
+				positionerClassName={mergeStylexClassName("", sharedClassStyles.z2147483646)}
 				// Pull past the header action row's 16px inset to leave a consistent
 				// 12px edge gutter. Its quiet shadow does not need more clearance.
 				alignOffset={-4}
@@ -967,7 +968,7 @@ setFixBusy(false);
 					{reviewMode && (
 						<IconChevronDown
 							size={14}
-              {...stylex.props(sx.chevron, changesOpen && sx.rotate180)}
+              className={mergeStylexOverrideClassName("", sx.chevron, changesOpen && sx.rotate180)}
 						/>
 					)}
 				</button>
@@ -1335,7 +1336,7 @@ setFixBusy(false);
 					<Menu.Popup
 						align="end"
 						sideOffset={6}
-						{...stylex.props(sx.minW200px)}
+						className={mergeStylexOverrideClassName("", sx.minW200px)}
 					>
 						{people.map((person) => (
                 <Menu.Item
@@ -1349,7 +1350,7 @@ setFixBusy(false);
 								<Menu.Check
 									on={selectedReview?.to === person.name}
 									size={20}
-									{...stylex.props(sx.textDim)}
+									className={mergeStylexOverrideClassName("", sx.textDim)}
 								/>
 							</Menu.Item>
 						))}
@@ -1375,7 +1376,7 @@ setFixBusy(false);
 								<Menu.Check
 									on={selectedReview?.to === team.github}
 									size={20}
-									{...stylex.props(sx.textDim)}
+									className={mergeStylexOverrideClassName("", sx.textDim)}
 								/>
 							</Menu.Item>
 						))}

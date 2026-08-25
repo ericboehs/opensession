@@ -4,8 +4,9 @@
  * (data-[…] variants, group-*, arbitrary selectors, structural pseudos,
  * container queries, component classes shipped by stylesheets…).
  *
- * Rules are copied VERBATIM from the compiled sheet — parity by construction;
- * this stylesheet is hand-editable afterwards, one comment per section.
+ * Declarations are copied from the compiled sheet. A generated specificity
+ * bridge lets unsupported state selectors override StyleX base declarations
+ * without !important; this stylesheet is hand-editable afterwards.
  *
  * Run after conversions, before cutover:
  *   ./node_modules/.bin/tailwindcss -i packages/core/opensession-server/src/frontend/styles/tailwind.css -o /tmp/tw-current.css
@@ -34,6 +35,16 @@ const tokens = new Set<string>();
 const add = (text: string) => {
 	for (const token of text.split(/\s+/)) if (token) tokens.add(token);
 };
+
+/** Selectors StyleX cannot represent directly. These can live in exported
+ * class constants that are consumed from another module, so collecting only
+ * className/cn() call sites in the declaring file misses them. */
+const looksResidual = (token: string) =>
+	token.startsWith("[") ||
+	/^(?:phone|desktop):\[/.test(token) ||
+	/(?:^|:)(?:data-\[|data-active|aria-|group(?:$|[/:-])|peer(?:$|[/:-])|has-|supports-\[|enabled:|empty:|shadow-\[)/.test(token) ||
+	/(?:^|:)phone:[^\s]+!$/.test(token) ||
+	/^(?:selection:|first:|last:|-space-|space-y-|divide-|md:group-|phone:\*|smooth-shadow|plate-sheen)/.test(token);
 
 let valueDeclarations = new Map<string, ts.Expression>();
 let functionReturns = new Map<string, ts.Expression[]>();
@@ -141,6 +152,52 @@ for (const f of walkFiles(FRONTEND)) {
 		ts.forEachChild(node, index);
 	}
 	index(file);
+	// Shared class modules export finished class strings. Their consumers only
+	// expose an imported identifier at the JSX site, which this file-local AST
+	// resolver cannot follow. Residual-looking string tokens are narrow enough
+	// to collect globally; the compiled Tailwind sheet below remains the final
+	// authority and drops anything that is not an actual utility.
+	function collectResidualLiterals(node: ts.Node) {
+		if (ts.isStringLiteralLike(node)) {
+			for (const token of node.text.split(/\s+/)) if (looksResidual(token)) tokens.add(token);
+		}
+		ts.forEachChild(node, collectResidualLiterals);
+	}
+	collectResidualLiterals(file);
+	// The mechanical converter could not see through imported shared class
+	// maps. Audit every literal outside stylex.create() in *-classes modules;
+	// the compiled sheet filters prose/import paths, while expressible utility
+	// tokens intentionally trip the cutover gate below until converted.
+	if (/classes\.(?:ts|tsx)$/.test(f)) {
+		function collectSharedClassLiterals(node: ts.Node) {
+			if (
+				ts.isCallExpression(node) &&
+				node.expression.getText(file) === "stylex.create"
+			) return;
+			if (ts.isStringLiteralLike(node)) add(node.text);
+			ts.forEachChild(node, collectSharedClassLiterals);
+		}
+		collectSharedClassLiterals(file);
+	}
+	// Imported class constants can live outside a *-classes module. Follow
+	// exported declarations as another cross-file boundary; exact matching
+	// against the compiled sheet below discards event names and prose values.
+	function collectExportedClassLiterals(node: ts.Node) {
+		if (
+			ts.isVariableDeclaration(node) &&
+			ts.isIdentifier(node.name) &&
+			/(?:CLASS|TONE)/.test(node.name.text) &&
+			node.initializer
+		) {
+			function collect(node: ts.Node) {
+				if (ts.isStringLiteralLike(node)) add(node.text);
+				ts.forEachChild(node, collect);
+			}
+			collect(node.initializer);
+		}
+		ts.forEachChild(node, collectExportedClassLiterals);
+	}
+	collectExportedClassLiterals(file);
 	function visit(node: ts.Node) {
 		if (ts.isCallExpression(node)) {
 			const name = node.expression.getText(file);
@@ -153,7 +210,11 @@ for (const f of walkFiles(FRONTEND)) {
 				return;
 			}
 		}
-		if (ts.isJsxAttribute(node) && node.name.getText(file) === "className" && node.initializer) {
+		if (
+			ts.isJsxAttribute(node) &&
+			/ClassName$/.test(node.name.getText(file)) &&
+			node.initializer
+		) {
 			if (ts.isStringLiteral(node.initializer)) add(node.initializer.text);
 			else if (ts.isJsxExpression(node.initializer) && node.initializer.expression) {
 				collectClassValue(node.initializer.expression, file);
@@ -165,46 +226,44 @@ for (const f of walkFiles(FRONTEND)) {
 	visit(file);
 }
 
-/** Class names present in the compiled sheet (the utility authority). */
-function sheetClassNames(sheetText: string): Set<string> {
-	const names = new Set<string>();
-	// strip at-rules bodies we do not need; selectors only
-	for (const m of sheetText.matchAll(/([.#])([A-Za-z_@\][^\s{},>~+:#()[\]]*)/g)) {
-		void m;
-	}
-	for (const line of sheetText.split(/[{;]/)) {
-		const sel = line.trim().replace(/\\/g, "").replace(/}/g, "");
-		for (const part of sel.split(",")) {
-			for (const mm of part.matchAll(/[.]([A-Za-z_@][^\s:,>~+#]*)/g)) {
-				names.add(mm[1]);
-			}
-		}
-	}
-	return names;
-}
-
 // ── walk the compiled sheet, keep matched rules verbatim ────────────────────
 const src = readFileSync(SHEET, "utf8");
 // Drop candidates the sheet has never heard of: component classes styled
 // elsewhere (markdown, mono-input…) and prose strings.
-const sheetNames = sheetClassNames(src);
 for (const token of [...tokens]) {
 	const escaped = token.replace(/([^a-zA-Z0-9_-])/g, "\\$1");
-	if (!src.includes(`.${escaped}`) && !sheetNames.has(token)) tokens.delete(token);
+	const exact = new RegExp(
+		`\\.${escaped.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=[\\s,{.:#\\[])`,
+	).test(src);
+	if (!exact) tokens.delete(token);
 }
 
 const semanticHooks = new Set([
 	"app",
 	"app-body",
 	"app-header-actions",
+	"app-header-overlay",
 	"archived-row",
 	"detail-pane",
+	"mobile-detail",
+	"panel-pr-plate",
+	"settings-sheet",
+	"sidebar-collapsed",
 	"session-info-status",
+	"session-menu-sep",
 	"session-tab-new",
 	"session-tab-reorder",
 	"session-tab-view",
 	"session-tabs",
 	"staging-icon",
+	// Dynamic tone strings are also protocol values consumed by status helpers;
+	// keep their semantic spelling while the components map the same values.
+	"text-accent",
+	"text-blue",
+	"text-faint",
+	"text-green",
+	"text-purple",
+	"text-yellow",
 	"tool-pre",
 	"viewer-header",
 	"viewer-header-actions",
@@ -213,12 +272,7 @@ const semanticHooks = new Set([
 	"ws-summary-band",
 ]);
 const isPermittedResidual = (token: string) =>
-	token.startsWith("[") ||
-	token.startsWith("phone:[") ||
-	/^(?:data-|data-active|aria-|group(?:$|[/:-])|peer(?:$|-)|has-|selection:|first:|last:|empty:|-space-|space-y-|divide-|md:group-|phone:(?:\*|group-)|smooth-shadow|plate-sheen)/.test(
-		token,
-	) ||
-	semanticHooks.has(token);
+	looksResidual(token) || semanticHooks.has(token);
 const convertible = [...tokens].filter((token) => !isPermittedResidual(token));
 if (convertible.length > 0) {
 	throw new Error(
@@ -233,21 +287,48 @@ function esc(t: string): string {
 	return t.replace(/([^a-zA-Z0-9_-])/g, "\\$1");
 }
 
+// StyleX's property-specificity mode can emit up to nine zero-match ID
+// pseudos so longhands and shorthands resolve independently. Residual selectors
+// represent states StyleX cannot express and must still override the base
+// StyleX declaration, just as their Tailwind rules did by source order. Ten
+// zero-match pseudos beat StyleX without !important, preserving inline-style
+// precedence and the declarations themselves.
+const RESIDUAL_SPECIFICITY = ":not(#\\#)".repeat(10);
+function boostResidualSelector(selText: string): string {
+	let boosted = selText;
+	for (const token of tokens) {
+		const target = `.${esc(token)}`;
+		let from = 0;
+		while (true) {
+			const index = boosted.indexOf(target, from);
+			if (index < 0) break;
+			const after = boosted[index + target.length];
+			if (after === undefined || ":#[.>~+* ,(:){]".includes(after)) {
+				boosted = boosted.slice(0, index + target.length) + RESIDUAL_SPECIFICITY + boosted.slice(index + target.length);
+				from = index + target.length + RESIDUAL_SPECIFICITY.length;
+			} else from = index + target.length;
+		}
+	}
+	return boosted;
+}
+
 function consider(selText: string): boolean {
+	let matched = false;
 	for (const t of tokens) {
 		if (matchedTokens.has(t)) continue;
 		const e = esc(t);
 		const idx = selText.indexOf("." + e);
 		if (idx >= 0) {
 			const after = selText[idx + 1 + e.length];
-			// must end at a selector boundary, not mid-name
+			// must end at a selector boundary, not mid-name. A grouped rule can
+			// satisfy several tokens, so mark all of them before returning.
 			if (after === undefined || ":#[.>~+* ,(:){]".includes(after)) {
 				matchedTokens.add(t);
-				return true;
+				matched = true;
 			}
 		}
 	}
-	return false;
+	return matched;
 }
 
 function wrappedRule(rule: string, wrappers: readonly string[]): string {
@@ -283,7 +364,25 @@ function walk(chunk: string, wrappers: readonly string[] = []) {
 			i = j;
 			continue;
 		}
-		if (consider(selRaw)) kept.push(wrappedRule(selRaw + body, wrappers));
+		if (consider(selRaw)) {
+			const adjustedBody = selRaw.includes("\\[\\&_\\*\\]\\:\\!leading-normal")
+				? body
+						.replaceAll(
+							"var(--leading-normal) !important",
+							"var(--settings-leading, var(--leading-normal)) !important",
+						)
+						.replaceAll(
+							"var(--leading-normal)!important",
+							"var(--settings-leading,var(--leading-normal))!important",
+						)
+				: body;
+			kept.push(
+				wrappedRule(
+					boostResidualSelector(selRaw) + adjustedBody,
+					wrappers,
+				),
+			);
+		}
 		i = j;
 	}
 }
@@ -292,18 +391,37 @@ walk(src);
 // Unmatched tokens: mostly component classes styled by base.css/legacy.css
 // (markdown, mono-input…) or already-converted tokens — report, don't fail.
 const unmatched = [...tokens].filter((t) => !matchedTokens.has(t));
+const unmatchedRules = unmatched.filter(
+	(token) =>
+		token !== "[" &&
+		token !== "peer" &&
+		token !== "aria-selected" &&
+		!token.startsWith("group") &&
+		!semanticHooks.has(token),
+);
+if (unmatchedRules.length > 0) {
+	throw new Error(
+		`Residual utility classes have no emitted rule:\n${unmatchedRules.sort().join("\n")}`,
+	);
+}
 
 const header = `/* ─────────────────────────────────────────────────────────────
-   residual.css — the Tailwind rules StyleX cannot express, kept
-   verbatim from the last compiled utilities sheet so behavior is
-   identical by construction. Generated by scripts/stylex-residual.ts
+   residual.css — declarations from the last compiled Tailwind rules
+   for selectors StyleX cannot express. Selectors receive a zero-match
+   specificity bridge so their state overrides beat StyleX's generated
+   property specificity without !important. Generated by
+   scripts/stylex-residual.ts
    (${kept.length} rules for ${matchedTokens.size} class tokens); hand-editable after
    this point. Classes referenced here stay in markup alongside
    stylex.props spreads — see styles/STYLEX-MIGRATION.md.
    ───────────────────────────────────────────────────────────── */
 
 `;
-const outCss = header + kept.join("\n") + "\n";
+const outCss = (header + kept.join("\n") + "\n")
+	// Bun's CSS bundler does not yet parse Media Queries level 4 range syntax.
+	// These spellings are exactly equivalent and keep the shipped sheet valid.
+	.replaceAll("@media (width < 920px)", "@media not all and (min-width: 920px)")
+	.replaceAll("@media (width >= 48rem)", "@media (min-width: 48rem)");
 if (WRITE) writeFileSync(join(FRONTEND, "styles/residual.css"), outCss);
 console.log(`tokens seen: ${tokens.size}, matched: ${matchedTokens.size}, rules kept: ${kept.length}, bytes: ${outCss.length}`);
 console.log(`unmatched (component classes / already handled): ${unmatched.length}`);

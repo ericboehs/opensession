@@ -8,7 +8,7 @@ import {
 	pushRecentModel,
 } from "../lib/model-recents";
 import { Menu } from "../ui/menu";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { Tooltip } from "../ui/tooltip";
 import { IconBolt, IconChevronRight, IconSparkle, IconUndo } from "./icons";
 import type { SessionUsage } from "../lib/types";
@@ -846,7 +846,7 @@ export function ModelEffortSelect({
 				) : (
 					<span {...stylex.props(sx.minW0, sx.truncate)}>{optionLabel}</span>
 				)}
-				<Menu.Check on={selected} {...stylex.props(sx.textDim)} />
+				<Menu.Check on={selected} className={mergeStylexOverrideClassName("", sx.textDim)} />
 			</Menu.Item>
 		);
 		return optionDescription ? (
@@ -888,14 +888,14 @@ export function ModelEffortSelect({
 			>
 				{menuRowTrigger ? (
 					<>
-						<IconSparkle size={18} {...stylex.props(sx.shrink0, sx.textFaint)} />
+						<IconSparkle size={18} className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)} />
 						<span {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.flexCol, sx.gap05, sx.textLeft)}>
 							<span {...stylex.props(sx.fontSemibold, sx.leadingNone, sx.textFaint, typography.meta)}>Model</span>
 							<span {...stylex.props(sx.truncate, sx.leading12, sx.textFg, typography.controlLabel)}>
 								{modelLabel}
 							</span>
 						</span>
-						<IconChevronRight size={16} {...stylex.props(sx.shrink0, sx.textFaint)} />
+						<IconChevronRight size={16} className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)} />
 					</>
 				) : heroTrigger ? (
 					<span {...stylex.props(sx.truncate)}>{modelLabel}</span>
@@ -906,7 +906,7 @@ export function ModelEffortSelect({
 						    model name keeps the room, and the composer toolbar does not. */}
 						{hasFastMode && effectiveFastMode && (
 							<>
-								<IconBolt {...stylex.props(sx.flexNone, sx.textFaint)} size={20} />
+								<IconBolt className={mergeStylexOverrideClassName("", sx.flexNone, sx.textFaint)} size={20} />
 								<span {...stylex.props(sx.srOnly)}>Fast mode</span>
 							</>
 						)}
@@ -930,18 +930,18 @@ export function ModelEffortSelect({
 				{showUsage && (
 					<>
 						<Menu.SubmenuRoot>
-							<Menu.SubmenuTrigger {...stylex.props(sx.justifyBetween, sx.gap3)}>
+							<Menu.SubmenuTrigger className={mergeStylexOverrideClassName("", sx.justifyBetween, sx.gap3)}>
 								<span {...stylex.props(sx.minW0, sx.truncate)}>Conversation usage</span>
 								<span {...stylex.props(sx.flex, sx.flexNone, sx.itemsCenter, sx.gap1, sx.textDim)}>
 									<UsageCost usage={usage} />
-									<IconChevronRight {...stylex.props(sx.shrink0)} size={17} />
+									<IconChevronRight className={mergeStylexOverrideClassName("", sx.shrink0)} size={17} />
 								</span>
 							</Menu.SubmenuTrigger>
 							<Menu.Popup {...mergeStylexProps("", sx.maxWMin360pxCalc100vw1rem, sx.w64)}>
-								<UsageDetails usage={usage} {...stylex.props(sx.p15)} />
+								<UsageDetails usage={usage} className={mergeStylexOverrideClassName("", sx.p15)} />
 							</Menu.Popup>
 						</Menu.SubmenuRoot>
-						<Menu.Separator {...stylex.props(sx.my1)} />
+						<Menu.Separator className={mergeStylexOverrideClassName("", sx.my1)} />
 					</>
 				)}
 				{recentOptions.length > 0 && (
@@ -950,23 +950,23 @@ export function ModelEffortSelect({
 							<Menu.GroupLabel>Recent models</Menu.GroupLabel>
 							{recentOptions.map((option) => renderModelOption(option, true))}
 						</Menu.Group>
-						<Menu.Separator {...stylex.props(sx.my1)} />
+						<Menu.Separator className={mergeStylexOverrideClassName("", sx.my1)} />
 					</>
 				)}
 				<Menu.SubmenuRoot>
-					<Menu.SubmenuTrigger {...stylex.props(sx.justifyBetween, sx.gap3)}>
+					<Menu.SubmenuTrigger className={mergeStylexOverrideClassName("", sx.justifyBetween, sx.gap3)}>
 						<span {...stylex.props(sx.minW0, sx.truncate)}>Model</span>
 						<span {...stylex.props(sx.flex, sx.minW0, sx.flexNone, sx.itemsCenter, sx.gap1, sx.textDim)}>
 							<span {...stylex.props(sx.truncate)}>{modelLabel}</span>
-							<IconChevronRight {...stylex.props(sx.shrink0)} size={17} />
+							<IconChevronRight className={mergeStylexOverrideClassName("", sx.shrink0)} size={17} />
 						</span>
 					</Menu.SubmenuTrigger>
-					<Menu.Popup className={mergeStylexClassName("", sx.maxWMin360pxCalc100vw1rem)}>
+					<Menu.Popup className={mergeStylexOverrideClassName("", sx.maxWMin360pxCalc100vw1rem)}>
 						{reuploadHint && <MenuHint>{reuploadHint}</MenuHint>}
 						{groupedPrimary
 							? providerGroups.map((g, i) => (
 									<React.Fragment key={g.provider}>
-										{i > 0 && <Menu.Separator {...stylex.props(sx.my1)} />}
+										{i > 0 && <Menu.Separator className={mergeStylexOverrideClassName("", sx.my1)} />}
 										<Menu.Group>
 											<Menu.GroupLabel>{g.label}</Menu.GroupLabel>
 											{g.options.map((option) => renderModelOption(option))}
@@ -986,14 +986,14 @@ export function ModelEffortSelect({
 										{selectedLegacyLabel && (
 											<span {...stylex.props(sx.textFaint)}>{selectedLegacyLabel}</span>
 										)}
-										<IconChevronRight {...stylex.props(sx.shrink0)} size={17} />
+										<IconChevronRight className={mergeStylexOverrideClassName("", sx.shrink0)} size={17} />
 									</span>
 								</Menu.SubmenuTrigger>
-								<Menu.Popup className={mergeStylexClassName("", sx.maxWMin360pxCalc100vw1rem)}>
+								<Menu.Popup className={mergeStylexOverrideClassName("", sx.maxWMin360pxCalc100vw1rem)}>
 									{!primaryFirst && otherGroups.length > 1
 										? otherGroups.map((g, i) => (
 												<React.Fragment key={g.engine}>
-													{i > 0 && <Menu.Separator {...stylex.props(sx.my1)} />}
+													{i > 0 && <Menu.Separator className={mergeStylexOverrideClassName("", sx.my1)} />}
 													<Menu.Group>
 														<Menu.GroupLabel>{g.label}</Menu.GroupLabel>
 														{g.options.map((option) => renderModelOption(option))}
@@ -1014,14 +1014,14 @@ export function ModelEffortSelect({
 				</Menu.SubmenuRoot>
 				{hasEffort && (
 					<Menu.SubmenuRoot>
-						<Menu.SubmenuTrigger {...stylex.props(sx.justifyBetween, sx.gap3)}>
+						<Menu.SubmenuTrigger className={mergeStylexOverrideClassName("", sx.justifyBetween, sx.gap3)}>
 							<span {...stylex.props(sx.minW0, sx.truncate)}>Effort</span>
 							<span {...stylex.props(sx.flex, sx.flexNone, sx.itemsCenter, sx.gap1, sx.textDim)}>
 								{effortLabel}
-								<IconChevronRight {...stylex.props(sx.shrink0, sx.textDim)} size={17} />
+								<IconChevronRight className={mergeStylexOverrideClassName("", sx.shrink0, sx.textDim)} size={17} />
 							</span>
 						</Menu.SubmenuTrigger>
-						<Menu.Popup className={mergeStylexClassName("", sx.maxWMin360pxCalc100vw1rem)}>
+						<Menu.Popup className={mergeStylexOverrideClassName("", sx.maxWMin360pxCalc100vw1rem)}>
 							{effortReuploadHint && <MenuHint>{effortReuploadHint}</MenuHint>}
 							{effortOptions.map((e) => {
 								const selected = effectiveEffort === e.id;
@@ -1036,7 +1036,7 @@ export function ModelEffortSelect({
 										)}
 									>
 										<span {...stylex.props(sx.minW0, sx.truncate)}>{e.label}</span>
-										<Menu.Check on={selected} {...stylex.props(sx.textDim)} />
+										<Menu.Check on={selected} className={mergeStylexOverrideClassName("", sx.textDim)} />
 									</Menu.Item>
 								);
 							})}
@@ -1045,14 +1045,14 @@ export function ModelEffortSelect({
 				)}
 				{hasFastMode && (
 					<Menu.SubmenuRoot>
-						<Menu.SubmenuTrigger {...stylex.props(sx.justifyBetween, sx.gap3)}>
+						<Menu.SubmenuTrigger className={mergeStylexOverrideClassName("", sx.justifyBetween, sx.gap3)}>
 							<span {...stylex.props(sx.minW0, sx.truncate)}>Speed</span>
 							<span {...stylex.props(sx.flex, sx.flexNone, sx.itemsCenter, sx.gap1, sx.textDim)}>
 								{effectiveFastMode ? "Fast" : "Standard"}
-								<IconChevronRight {...stylex.props(sx.shrink0, sx.textDim)} size={17} />
+								<IconChevronRight className={mergeStylexOverrideClassName("", sx.shrink0, sx.textDim)} size={17} />
 							</span>
 						</Menu.SubmenuTrigger>
-						<Menu.Popup className={mergeStylexClassName("", sx.maxWMin360pxCalc100vw1rem)}>
+						<Menu.Popup className={mergeStylexOverrideClassName("", sx.maxWMin360pxCalc100vw1rem)}>
 							{speedOptions.map((o) => {
 								const selected = effectiveFastMode === o.fast;
 								return (
@@ -1069,7 +1069,7 @@ export function ModelEffortSelect({
 										className={cn(mergeStylexClassName("", sx.justifyBetween, sx.gap3), selected && mergeStylexClassName("", sx.bgHover))}
 									>
 										<span {...stylex.props(sx.minW0, sx.truncate)}>{o.label}</span>
-										<Menu.Check on={selected} {...stylex.props(sx.textDim)} />
+										<Menu.Check on={selected} className={mergeStylexOverrideClassName("", sx.textDim)} />
 									</Menu.Item>
 								);
 							})}
@@ -1078,14 +1078,14 @@ export function ModelEffortSelect({
 				)}
 				{hasAccount && (
 					<Menu.SubmenuRoot>
-						<Menu.SubmenuTrigger {...stylex.props(sx.justifyBetween, sx.gap3)}>
+						<Menu.SubmenuTrigger className={mergeStylexOverrideClassName("", sx.justifyBetween, sx.gap3)}>
 							<span {...stylex.props(sx.minW0, sx.truncate)}>Account</span>
 							<span {...stylex.props(sx.flex, sx.flexNone, sx.itemsCenter, sx.gap1, sx.textDim)}>
 								{accountLabel}
-								<IconChevronRight {...stylex.props(sx.shrink0, sx.textDim)} size={17} />
+								<IconChevronRight className={mergeStylexOverrideClassName("", sx.shrink0, sx.textDim)} size={17} />
 							</span>
 						</Menu.SubmenuTrigger>
-						<Menu.Popup className={mergeStylexClassName("", sx.maxWMin360pxCalc100vw1rem)}>
+						<Menu.Popup className={mergeStylexOverrideClassName("", sx.maxWMin360pxCalc100vw1rem)}>
 							<Menu.Item
 								onClick={() => onAccountChange!("")}
 								className={cn(
@@ -1095,7 +1095,7 @@ export function ModelEffortSelect({
 								)}
 							>
 								<span {...stylex.props(sx.minW0, sx.truncate)}>Auto</span>
-								<Menu.Check on={!accountId} {...stylex.props(sx.textDim)} />
+								<Menu.Check on={!accountId} className={mergeStylexOverrideClassName("", sx.textDim)} />
 							</Menu.Item>
 							{providerAccounts.map((a) => {
 								const selected = a.id === accountId;
@@ -1114,14 +1114,14 @@ export function ModelEffortSelect({
 											{a.owner ? ` · ${a.owner}` : ""}
 											{a.usable ? "" : " · exhausted"}
 										</span>
-										<Menu.Check on={selected} {...stylex.props(sx.textDim)} />
+										<Menu.Check on={selected} className={mergeStylexOverrideClassName("", sx.textDim)} />
 									</Menu.Item>
 								);
 							})}
 						</Menu.Popup>
 					</Menu.SubmenuRoot>
 				)}
-				<Menu.Separator {...stylex.props(sx.my1)} />
+				<Menu.Separator className={mergeStylexOverrideClassName("", sx.my1)} />
 				{onSetAsDefault && (
 					<Menu.Item
 						onClick={() => onSetAsDefault(effectiveModel)}
@@ -1133,7 +1133,7 @@ export function ModelEffortSelect({
 						)}
 					>
 						<span {...stylex.props(sx.minW0, sx.truncate)}>Set as default</span>
-						<Menu.Check on={isPreferredDefault} {...stylex.props(sx.textDim)} />
+						<Menu.Check on={isPreferredDefault} className={mergeStylexOverrideClassName("", sx.textDim)} />
 					</Menu.Item>
 				)}
 				<Menu.Item
@@ -1142,7 +1142,7 @@ export function ModelEffortSelect({
 					className={cn(mergeStylexClassName("", sx.justifyBetween, sx.gap3), atDefault && mergeStylexClassName("", sx.opacity55))}
 				>
 					<span {...stylex.props(sx.minW0, sx.truncate)}>Reset to default</span>
-					<IconUndo {...stylex.props(sx.shrink0, sx.textDim)} size={17} />
+					<IconUndo className={mergeStylexOverrideClassName("", sx.shrink0, sx.textDim)} size={17} />
 				</Menu.Item>
 			</Menu.Popup>
 		</Menu.Root>

@@ -22,7 +22,8 @@ import { InlineAlert } from "../ui/state";
 import { toast } from "../ui/toast";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -183,7 +184,7 @@ setStarting(false);
 			}}
 			disablePointerDismissal={starting}
 		>
-			<Modal.Content widthClassName="max-w-[34rem]">
+			<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW34rem)}>
 				<Modal.Header
 					title="Fix each"
 					description="Every task starts its own session, workspace and branch, so you can review and test them one at a time."
@@ -197,7 +198,7 @@ setStarting(false);
 							key={index} {...mergeStylexProps("", sx.hoverBgHover, sx.flex, sx.cursorPointer, sx.itemsStart, sx.gap25, sx.roundedRow, sx.px2, sx.py2)}
 						>
 							<Checkbox
-								{...stylex.props(sx.mt05)}
+								className={mergeStylexOverrideClassName("", sx.mt05)}
 								checked={picked.has(index)}
 								onCheckedChange={() => toggle(index)}
 								disabled={starting}

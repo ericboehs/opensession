@@ -13,7 +13,7 @@ import { PulseDot } from "../ui/status";
 import { AUTH_STATUS_EVENT, authGatesOut } from "../lib/auth-ready";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -96,7 +96,8 @@ const sx = stylex.create({
 			margin: "0"
 	},
 	fontTitle: {
-			fontWeight: "var(--title-weight)"
+			fontWeight: "var(--title-weight)",
+		"--settings-leading": "1.1"
 	},
 	textFg: {
 			color: "var(--text)"
@@ -511,7 +512,7 @@ export function UserGate({ children }: { children: React.ReactNode }) {
 			return (
 				<AuthCard title="Couldn't check sign-in">
 					<AuthCopy>The server didn't answer. It may still be starting up.</AuthCopy>
-					<Button variant="primary" size="lg" {...stylex.props(sx.minH10, sx.wFull)} onClick={loadAuth}>
+					<Button variant="primary" size="lg" className={mergeStylexOverrideClassName("", sx.minH10, sx.wFull)} onClick={loadAuth}>
 						Try again
 					</Button>
 				</AuthCard>
@@ -688,7 +689,7 @@ setError(e.message);
           <Button
             variant="primary"
             size="lg"
-            {...stylex.props(sx.minH10, sx.wFull)}
+            className={mergeStylexOverrideClassName("", sx.minH10, sx.wFull)}
             icon={<BrandMark name="github" size={20} />}
             disabled={starting}
             onClick={() => void start()}
@@ -713,7 +714,7 @@ setError(e.message);
               and room to breathe rather than the inline chip size. */}
           <DeviceCode
             code={flow.userCode}
-            {...stylex.props(sx.px4, sx.py25, typography.pageTitle)}
+            className={mergeStylexOverrideClassName("", sx.px4, sx.py25, typography.pageTitle)}
           />
           <a
             href={flow.verificationUri}
@@ -724,7 +725,7 @@ setError(e.message);
             <Button
               variant="primary"
               size="lg"
-              {...stylex.props(sx.minH10, sx.wFull)}
+              className={mergeStylexOverrideClassName("", sx.minH10, sx.wFull)}
               icon={<IconArrowUpRight size={20} />}
             >
               Open GitHub
@@ -737,7 +738,7 @@ setError(e.message);
         </div>
       )}
       {error && (
-        <InlineAlert variant="error" {...stylex.props(sx.mt5, sx.textLeft)}>
+        <InlineAlert variant="error" className={mergeStylexOverrideClassName("", sx.mt5, sx.textLeft)}>
           {error}
         </InlineAlert>
       )}

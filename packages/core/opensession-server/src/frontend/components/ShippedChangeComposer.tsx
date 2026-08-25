@@ -13,7 +13,7 @@ import { IconPlus, IconUndo, IconX } from "./icons";
 import { Spinner } from "../ui/spinner";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -394,7 +394,7 @@ export function SlackSentNotice({
 						<Button
 							variant="ghost"
 							size="sm"
-							className={mergeStylexClassName("", sx.phoneSize10)}
+							className={mergeStylexOverrideClassName("", sx.phoneSize10)}
 							icon={undoing ? <Spinner size="sm" /> : <IconUndo size={16} />}
 							aria-label="Undo"
 							disabled={undoing}
@@ -409,7 +409,7 @@ setUndoing(false);
 						/>
 					</Tooltip>
 				)}
-				<Button variant="ghost" size="sm" className={mergeStylexClassName("", sx.phoneMinH10)} onClick={onSendAnother}>
+				<Button variant="ghost" size="sm" className={mergeStylexOverrideClassName("", sx.phoneMinH10)} onClick={onSendAnother}>
 					Send another
 				</Button>
 			</div>
@@ -627,7 +627,7 @@ setAwaitingSlack(false);
 								<OverlayAction
 									aria-label="Remove screenshot"
 									disabled={status !== "idle"}
-									icon={<IconX {...stylex.props(sx.textRed)} size={16} />}
+									icon={<IconX className={mergeStylexOverrideClassName("", sx.textRed)} size={16} />}
 									onClick={() =>
 										setScreenshots((current) => current.filter((_, i) => i !== index))
 									}

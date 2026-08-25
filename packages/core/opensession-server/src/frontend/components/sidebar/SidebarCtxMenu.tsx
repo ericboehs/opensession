@@ -8,7 +8,7 @@ import { createPortal } from "react-dom";
 import { MenuCheck, MenuShortcut } from "../../ui/menu";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexClassName } from "../../ui/cn";
+import { mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -199,7 +199,7 @@ export function SidebarCtxMenu({
 		(e): e is Extract<CtxEntry, { kind: "snooze" }> => e.kind === "snooze",
 	);
 	const check = (on: boolean) => (
-		<MenuCheck on={on} size={20} {...stylex.props(sx.textDim)} />
+		<MenuCheck on={on} size={20} className={mergeStylexOverrideClassName("", sx.textDim)} />
 	);
 
 	const SUB_W = 210;

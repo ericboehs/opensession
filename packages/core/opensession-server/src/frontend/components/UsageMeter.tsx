@@ -2,7 +2,7 @@ import * as React from "react";
 import type { SessionUsage } from "../lib/types";
 import { Popover } from "../ui/popover";
 import * as stylex from "@stylexjs/stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -289,7 +289,7 @@ export function UsageMeter({
 						: "group data-[popup-open]:bg-hover data-[popup-open]:text-fg", sx.trigger, sx.textXs)}
 				aria-label="Conversation cost & context"
 			>
-				<UsageCost usage={usage} {...stylex.props(sx.textFg)} />
+				<UsageCost usage={usage} className={mergeStylexOverrideClassName("", sx.textFg)} />
 				{window > 0 && <ContextRing frac={frac} tone={tone.stroke} />}
 				{showCacheRate && (
 					// Off by default, and the phone header's meter leaves it off: there
@@ -305,7 +305,7 @@ export function UsageMeter({
       <Popover.Popup
         side="top"
         align="end"
-        {...stylex.props(sx.w64, sx.p3, sx.textXs)}
+        className={mergeStylexOverrideClassName("", sx.w64, sx.p3, sx.textXs)}
       >
 				<UsageDetails usage={usage} />
 			</Popover.Popup>

@@ -4,7 +4,7 @@ import { Button } from "../ui/button";
 import { noAutofill } from "../lib/composer-autofill";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -300,7 +300,7 @@ export function SelectionToSession({ sessionId, label, send, children }: Props) 
                 <Button
                   variant="soft"
                   size="sm"
-                  {...stylex.props(sx.minH0, sx.px3, sx.py5px, sx.fontNormal, typography.label)}
+                  className={mergeStylexOverrideClassName("", sx.minH0, sx.px3, sx.py5px, sx.fontNormal, typography.label)}
                   onClick={dismiss}
                 >
                   Cancel

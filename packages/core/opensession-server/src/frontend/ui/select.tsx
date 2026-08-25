@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Select as BaseSelect } from "@base-ui/react/select";
 import { IconCheck, IconChevronDown } from "../components/icons";
-import { cn, mergeStylexProps, mergeStylexClassName } from "./cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "./cn";
 import { fieldClasses } from "./input";
 import {
 	FLOATING_OVERLAY_LAYER,
@@ -292,7 +292,7 @@ function Trigger(triggerProps: TriggerProps) {
 			))}
 			<IconChevronDown
 				size={16}
-				{...stylex.props(sx.rowStart1, sx.shrink0, sx.textFaint, iconSlot && sx.colStart3, !(iconSlot) && sx.colStart2)}
+				className={mergeStylexOverrideClassName("", sx.rowStart1, sx.shrink0, sx.textFaint, iconSlot && sx.colStart3, !(iconSlot) && sx.colStart2)}
 			/>
 		</BaseSelect.Trigger>
 	);
@@ -356,7 +356,7 @@ function Item(itemProps: ItemProps) {
 						{icon}
 					</span>
 				)}
-				<BaseSelect.ItemText {...stylex.props(sx.minW0, sx.truncate)}>{children}</BaseSelect.ItemText>
+				<BaseSelect.ItemText className={mergeStylexOverrideClassName("", sx.minW0, sx.truncate)}>{children}</BaseSelect.ItemText>
 			</span>
 			{/* The tick's column is reserved on every row, the way `ui/menu`'s
 			    `Check` reserves it: an indicator that only takes space while

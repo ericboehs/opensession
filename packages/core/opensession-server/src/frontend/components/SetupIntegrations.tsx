@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { Disclosure } from "../ui/disclosure";
 import { Modal } from "../ui/modal";
 import { SettingCard, SettingsHint, SettingsSection } from "../ui/settings";
@@ -23,6 +23,7 @@ import { IntegrationSetupDialog } from "./IntegrationSetupDialog";
 import { IconTile } from "./BrandTile";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -438,7 +439,7 @@ setToggling(false);
 						)}
 						<Button
 							size="sm"
-							className={mergeStylexClassName("", sx.maxSmMinH10)}
+							className={mergeStylexOverrideClassName("", sx.maxSmMinH10)}
 							variant={!hasCredentials && integration.env.length > 0 ? "primary" : "default"}
 							onClick={() => setSetupOpen(true)}
 						>
@@ -505,7 +506,7 @@ function GithubAuthSetupDialog({
 }) {
 	return (
 		<Modal.Root open={open} onOpenChange={onOpenChange}>
-			<Modal.Content widthClassName="max-w-[34rem]">
+			<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW34rem)}>
 				<Modal.Header
 					title={
 						<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25)}>
@@ -515,13 +516,13 @@ function GithubAuthSetupDialog({
 					}
 					description="Let teammates connect GitHub so interactive sessions open PRs as them."
 				/>
-				<SettingsSection {...stylex.props(sx.p4)}>{configuration}</SettingsSection>
+				<SettingsSection className={mergeStylexOverrideClassName("", sx.p4)}>{configuration}</SettingsSection>
 				<Disclosure
 					title="Setup guide"
 					defaultOpen={!github.clientIdConfigured}
 					actions={
 						<LinkChips
-							{...stylex.props(sx.mt0)}
+							className={mergeStylexOverrideClassName("", sx.mt0)}
 							links={[{ label: "Create GitHub App", url: github.appCreateUrl }]}
 						/>
 					}
@@ -797,7 +798,7 @@ setSaving(false);
 	return (
 		<>
 			<div {...mergeStylexProps("", sx.phonePx0, sx.grid, sx.px4)}>
-				<SettingCard {...stylex.props(onboarding && !active && sx.hidden)}>
+				<SettingCard className={mergeStylexOverrideClassName("", onboarding && !active && sx.hidden)}>
 					<div {...mergeStylexProps("", sx.gridColsAutoMinmax01frAuto, sx.phoneGridColsAutoMinmax01fr, sx.phonePx3, sx.phonePy2, sx.grid, sx.itemsStart, sx.gapX3, sx.gapY1, sx.px5, sx.py4)}>
 						<IconTile name="github" size={40} />
 						<div
@@ -857,7 +858,7 @@ setSaving(false);
 							)}
 							<Button
 								size="sm"
-								className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneWFull, sx.phoneJustifyCenter)}
+								className={mergeStylexOverrideClassName("", sx.phoneMinH11, sx.phoneWFull, sx.phoneJustifyCenter)}
 								variant={github.clientIdConfigured ? "default" : "primary"}
 								onClick={() => setSetupOpen(true)}
 							>
@@ -872,21 +873,21 @@ setSaving(false);
 				    person should be able to read before opening a credentials form. */}
 				{onboarding && (
 					<div {...mergeStylexProps("", sx.phoneGridCols1, sx.mt3, sx.grid, sx.gridCols2, sx.itemsStart, sx.gap3)}>
-						<SettingsSection {...stylex.props(sx.flex, sx.hFull, sx.flexCol, sx.gap3)}>
+						<SettingsSection className={mergeStylexOverrideClassName("", sx.flex, sx.hFull, sx.flexCol, sx.gap3)}>
 							<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>How to connect</div>
 							<SetupSteps steps={GITHUB_ONBOARDING_STEPS} />
 							<LinkChips
-								{...stylex.props(sx.mtAuto, sx.pt1)}
+								className={mergeStylexOverrideClassName("", sx.mtAuto, sx.pt1)}
 								links={[{ label: "Create GitHub App", url: github.appCreateUrl }]}
 							/>
 						</SettingsSection>
-						<SettingsSection {...stylex.props(sx.p4)}>
+						<SettingsSection className={mergeStylexOverrideClassName("", sx.p4)}>
 							{configuration}
 							{error && <InlineAlert>{error}</InlineAlert>}
 							<div {...stylex.props(sx.mt4, sx.flex, sx.justifyEnd)}>
 								<Button
 									variant="primary"
-									className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneWFull, sx.phoneJustifyCenter)}
+									className={mergeStylexOverrideClassName("", sx.phoneMinH11, sx.phoneWFull, sx.phoneJustifyCenter)}
 									disabled={!dirty || saving}
 									onClick={() => void handleSave()}
 								>

@@ -31,7 +31,7 @@ import {
 } from "../lib/reports-classes";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -322,7 +322,7 @@ setError(e?.message || "Failed to load reports");
 					the full history in one place.
 				</EmptyState>
 				{error && (
-					<InlineAlert {...stylex.props(sx.mt2, sx.maxW420px)}>{error}</InlineAlert>
+					<InlineAlert className={mergeStylexOverrideClassName("", sx.mt2, sx.maxW420px)}>{error}</InlineAlert>
 				)}
 			</div>
 		);
@@ -395,7 +395,7 @@ setError(e?.message || "Failed to load reports");
 									{isPhone && (
 										<IconChevronRight
 											size={16}
-											{...stylex.props(sx.mt05, sx.shrink0, sx.textFaint)}
+											className={mergeStylexOverrideClassName("", sx.mt05, sx.shrink0, sx.textFaint)}
 										/>
 									)}
 								</button>
@@ -410,7 +410,7 @@ setError(e?.message || "Failed to load reports");
 					{isPhone ? (
 						<TopBar
 							as="header"
-							{...stylex.props(sx.block, sx.shrink0, sx.px3, sx.pb3, sx.pt2)}
+							className={mergeStylexOverrideClassName("", sx.block, sx.shrink0, sx.px3, sx.pb3, sx.pt2)}
 						>
 							<button
 								type="button"
@@ -429,7 +429,7 @@ setError(e?.message || "Failed to load reports");
 									<div {...stylex.props(sx.mt25, sx.flex, sx.itemsCenter, sx.gap2, sx.px1)}>
 										<OptionSelect
 											label="Report history"
-											{...stylex.props(sx.minW0, sx.flex1)}
+											className={mergeStylexOverrideClassName("", sx.minW0, sx.flex1)}
 											value={selected.id}
 											options={historyOptions}
 											onChange={(id) => onSelect(selected.automationId, id)}
@@ -438,14 +438,14 @@ setError(e?.message || "Failed to load reports");
 											<Button
 												size="md"
 												variant="primary"
-												{...stylex.props(sx.shrink0)}
+												className={mergeStylexOverrideClassName("", sx.shrink0)}
 												onClick={() => setFanOutId(selected.id)}
 											>
 												Fix each
 											</Button>
 										)}
-										{selected.sessionId && <Button size="md" {...stylex.props(sx.shrink0)} onClick={() => onOpenSession(selected.sessionId!)}>Open run</Button>}
-										<Button size="md" {...stylex.props(sx.shrink0)} icon={<CopyCheck copied={copied} size={20} idle={<IconLink size={20} />} />} aria-label="Share report" onClick={shareSelected} />
+										{selected.sessionId && <Button size="md" className={mergeStylexOverrideClassName("", sx.shrink0)} onClick={() => onOpenSession(selected.sessionId!)}>Open run</Button>}
+										<Button size="md" className={mergeStylexOverrideClassName("", sx.shrink0)} icon={<CopyCheck copied={copied} size={20} idle={<IconLink size={20} />} />} aria-label="Share report" onClick={shareSelected} />
 									</div>
 								</>
 							)}
@@ -477,12 +477,12 @@ setError(e?.message || "Failed to load reports");
 								{/* The report's own proposal, so it sits with the actions
 								    rather than inside the document: a report is read in a
 								    sandboxed frame that cannot start anything itself. */}
-								<TopBarActions {...stylex.props(sx.gap4)}>
+								<TopBarActions className={mergeStylexOverrideClassName("", sx.gap4)}>
 								{!!selected.tasks?.length && (
 									<Button
 										size="md"
 										variant="primary"
-										{...stylex.props(sx.shrink0)}
+										className={mergeStylexOverrideClassName("", sx.shrink0)}
 										onClick={() => setFanOutId(selected.id)}
 									>
 										Fix each
@@ -493,11 +493,11 @@ setError(e?.message || "Failed to load reports");
 								    the buttons kept `size="sm"`'s 26px padding inside a 30px
 								    square, and the icon-only one fought the primitive's own
 								    square. One size for the row, from the scale. */}
-								<Button size="md" {...stylex.props(sx.shrink0)} icon={<CopyCheck copied={copied} size={20} idle={<IconLink size={20} />} />} aria-label="Share report" title="Share report" onClick={shareSelected} />
-								{selected.sessionId && <Button size="md" {...stylex.props(sx.shrink0)} onClick={() => onOpenSession(selected.sessionId!)}>Open run</Button>}
+								<Button size="md" className={mergeStylexOverrideClassName("", sx.shrink0)} icon={<CopyCheck copied={copied} size={20} idle={<IconLink size={20} />} />} aria-label="Share report" title="Share report" onClick={shareSelected} />
+								{selected.sessionId && <Button size="md" className={mergeStylexOverrideClassName("", sx.shrink0)} onClick={() => onOpenSession(selected.sessionId!)}>Open run</Button>}
 								<OptionSelect
 									label="Report history"
-									{...stylex.props(sx.maxW190px, sx.shrink0)}
+									className={mergeStylexOverrideClassName("", sx.maxW190px, sx.shrink0)}
 									value={selected.id}
 									options={historyOptions}
 									onChange={(id) => onSelect(selected.automationId, id)}

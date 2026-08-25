@@ -16,7 +16,7 @@ import { IconCheck, IconPlus, IconX, IconChevronRight } from "./icons";
 import { RepoTile, repoLabel } from "./RepoTile";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -364,7 +364,7 @@ setBusy(null);
             )}
           </span>
         </span>
-        <IconChevronRight size={16} {...stylex.props(sx.shrink0, sx.textFaint)} />
+        <IconChevronRight size={16} className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)} />
       </Menu.Trigger>
     ) : variant === "hero" ? (
       <Menu.Trigger {...mergeStylexProps("data-[popup-open]:bg-hover data-[popup-open]:text-fg", sx.transitionColorBackgroundColorScale, sx.hoverBgHover, sx.hoverTextFg, sx.activeScale096, sx.inlineFlex, sx.minH11, sx.maxWFull, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.roundedMd, sx.border0, sx.bgTransparent, sx.px15, sx.fontMedium, sx.textDim, typography.label)}
@@ -399,7 +399,7 @@ setBusy(null);
     <>
       <Menu.Root open={open} onOpenChange={setOpen}>
         {trigger}
-        <Menu.Popup align="start" sideOffset={6} {...stylex.props(sx.minW230px)}>
+        <Menu.Popup align="start" sideOffset={6} className={mergeStylexOverrideClassName("", sx.minW230px)}>
           {!repos.length ? (
             <div {...stylex.props(sx.px25, sx.py2, sx.textFaint, typography.label)}>Loading…</div>
           ) : (
@@ -411,14 +411,14 @@ setBusy(null);
                   <Menu.Item key={p.id} onClick={() => switchPrimary(p.id)}>
                     <RepoTile name={p.id} />
                     <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>{repoLabel(p.id)}</span>
-                    <Menu.Check on={p.id === primary} size={20} {...stylex.props(sx.textDim)} />
+                    <Menu.Check on={p.id === primary} size={20} className={mergeStylexOverrideClassName("", sx.textDim)} />
                   </Menu.Item>
                 ))
               ) : (
                 <div className={staticRow}>
                   <RepoTile name={primary} />
                   <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>{repoLabel(primary)}</span>
-                  <IconCheck size={20} {...stylex.props(sx.textDim)} />
+                  <IconCheck size={20} className={mergeStylexOverrideClassName("", sx.textDim)} />
                 </div>
               )}
               {attached.length > 0 && (
@@ -456,7 +456,7 @@ setBusy(null);
                     >
                       <RepoTile name={p.id} />
                       <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>{repoLabel(p.id)}</span>
-                      <IconPlus size={18} {...stylex.props(sx.textFaint)} />
+                      <IconPlus size={18} className={mergeStylexOverrideClassName("", sx.textFaint)} />
                     </Menu.Item>
                   ))
                 ) : (
@@ -523,7 +523,7 @@ setBusy(null);
       {/* Breadcrumb separator between the repo and the session title — only in
           the desktop header, not the compact/menu-row phone variants. */}
       {variant === "breadcrumb" && (
-        <IconChevronRight size={18} {...stylex.props(sx.shrink0, sx.textFaint)} />
+        <IconChevronRight size={18} className={mergeStylexOverrideClassName("", sx.shrink0, sx.textFaint)} />
       )}
     </>
   );

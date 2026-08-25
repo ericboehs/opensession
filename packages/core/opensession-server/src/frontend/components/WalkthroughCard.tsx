@@ -9,7 +9,7 @@ import {
 	WALKTHROUGH_LABEL_TONE,
 } from "../lib/walkthrough-label";
 import { walkthroughLede } from "../lib/walkthrough-lede";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { ease } from "../ui/motion";
 import { IconChevronDown, IconPlay, IconPlayRectangle } from "./icons";
 import { MarkdownBody, useMarkdownRepo } from "./MarkdownBody";
@@ -619,7 +619,7 @@ export function WalkthroughCard({
 					    named before it is operated; the chevron trails at the far
 					    edge, where it reads as this card's disclosure rather than
 					    as another indent level in the transcript. */}
-						<IconPlayRectangle size={20} {...stylex.props(sx.flexShrink0, sx.textFaint)} />
+						<IconPlayRectangle size={20} className={mergeStylexOverrideClassName("", sx.flexShrink0, sx.textFaint)} />
 						<span {...stylex.props(sx.flexShrink0, sx.fontSemibold, sx.textFg)}>
 							Walkthrough
 						</span>
@@ -636,13 +636,13 @@ export function WalkthroughCard({
 								!expanded && mergeStylexClassName("", sx.Rotate90),
 							)}
 						>
-							<IconChevronDown size={20} {...stylex.props(sx.block)} />
+							<IconChevronDown size={20} className={mergeStylexOverrideClassName("", sx.block)} />
 						</span>
 					</button>
 				</div>
 			) : (
 				<div {...stylex.props(sx.mb2, sx.flex, sx.itemsCenter, sx.gap15)}>
-					<IconPlayRectangle size={20} {...stylex.props(sx.textFaint)} />
+					<IconPlayRectangle size={20} className={mergeStylexOverrideClassName("", sx.textFaint)} />
 					<span {...stylex.props(sx.textXs, sx.fontSemibold, sx.textDim)}>Walkthrough</span>
 				</div>
 			)}
@@ -716,7 +716,7 @@ export function WalkthroughCard({
 										}
 									/>
 									<span {...stylex.props(sx.absolute, sx.inset0, sx.grid, sx.placeItemsCenter, sx.bgBlack25, sx.textWhite)}>
-										<IconPlay size={18} {...stylex.props(sx.ml05)} />
+										<IconPlay size={18} className={mergeStylexOverrideClassName("", sx.ml05)} />
 									</span>
 									{/* After the scrim, so the pill keeps its own contrast
 									    rather than sitting under a wash of black. */}

@@ -9,6 +9,7 @@ import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { resolveNewSessionModel } from "../lib/default-model-pref";
 import { InlineAlert } from "../ui/state";
 import * as stylex from "@stylexjs/stylex";
+import { mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -188,7 +189,7 @@ export function SupportPreview({
 					onModelChange={setModel}
 					modelTitle="Model for this session"
 				/>
-				{startError && <InlineAlert {...stylex.props(sx.mt25)}>{startError}</InlineAlert>}
+				{startError && <InlineAlert className={mergeStylexOverrideClassName("", sx.mt25)}>{startError}</InlineAlert>}
 			</div>
 		</div>
 	);

@@ -2,7 +2,7 @@ import React from "react";
 import type { UnifiedSession } from "../lib/types";
 import { PRODUCT_NAME } from "../lib/brand";
 import { usePeople, type Person } from "../lib/people";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { Menu } from "../ui/menu";
 import { IconChevronDown } from "./icons";
 import { UserAvatar } from "./UserAvatar";
@@ -359,7 +359,7 @@ function Face({
 			<UserAvatar
 				name={member.person.name}
 				size={size}
-				{...stylex.props(status && state === "away" && sx.away)}
+				className={mergeStylexOverrideClassName("", status && state === "away" && sx.away)}
 				style={{
 					// The ring paints the row's own colour just outside the picture,
 					// so the face in front cuts a clean gap into the one behind it
@@ -548,11 +548,11 @@ export function TeamLensMenu({
 						{/* The Button primitive's `caret` step (ui/button.tsx): this
 						    trigger is a facepile, so it can't be a Button, but the
 						    affordance has to read the same as every other menu. */}
-						<IconChevronDown {...stylex.props(sx.shrink0, sx.opacity55)} size={16} />
+						<IconChevronDown className={mergeStylexOverrideClassName("", sx.shrink0, sx.opacity55)} size={16} />
 					</>
 				)}
 			</Menu.Trigger>
-			<Menu.Popup side={side} align={align} {...stylex.props(sx.minW210px)}>
+			<Menu.Popup side={side} align={align} className={mergeStylexOverrideClassName("", sx.minW210px)}>
 				{/* Says what the menu changes: these are lanes and rows to read, not
 				    people to open. The label has to sit inside a Group — Base UI
 				    wires it to the group it names. */}
@@ -564,7 +564,7 @@ export function TeamLensMenu({
 							key={m.key}
 							value={m.key}
 							closeOnClick
-							{...stylex.props(sx.gap9px, sx.roundedSm, sx.px2, sx.py15)}
+							className={mergeStylexOverrideClassName("", sx.gap9px, sx.roundedSm, sx.px2, sx.py15)}
 						>
 							<Face member={m} size={22} status ring="var(--bg-panel)" />
 							<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
@@ -577,7 +577,7 @@ export function TeamLensMenu({
 					<Menu.RadioItem
 						value="everyone"
 						closeOnClick
-						{...stylex.props(sx.gap9px, sx.roundedSm, sx.px2, sx.py15)}
+						className={mergeStylexOverrideClassName("", sx.gap9px, sx.roundedSm, sx.px2, sx.py15)}
 					>
 						{/* Sized to the faces above so every label shares one edge. */}
 						<span {...stylex.props(sx.size22px, sx.shrink0)} />

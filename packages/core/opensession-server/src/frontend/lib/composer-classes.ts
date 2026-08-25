@@ -2,6 +2,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { mergeStylexClassName } from "../ui/cn";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 const sx = stylex.create({
 	relative: {
@@ -865,7 +866,6 @@ export const composerToolbarScrollDivider =
  *  the composer's own flex row, so the textarea can sit between the "+" and
  *  the mic/send and `order` can sequence them. Combine through `cn()` —
  *  tailwind-merge is what drops the `flex` above. */
-export const composerToolbarMinimized = mergeStylexClassName("", sx.contents);
 /** The one flexible item in the row, and the wrapper it has to be granted to:
  *  the model pill sits inside a Motion layout box, and pinning the shrink on
  *  the pill itself left the WRAPPER rigid — the row stayed wider than the
@@ -913,7 +913,7 @@ export const composerMenuAnchorRight = mergeStylexClassName("", sx.right0);
  *  the composer's outer left edge (not the button's — the toolbar lives inside
  *  the composer's padding, which left the menu inset and off-axis). */
 export const composerMenuAnchorLeft =
-	"left-[calc(-1*var(--composer-inset-left,17px))]";
+	mergeStylexClassName("", sharedClassStyles.leftCalc1VarComposerInsetLeft17px);
 
 /* ── The send disc ────────────────────────────────────────────────
    The one filled control in the toolbar and the one place a circle is right:
@@ -995,8 +995,8 @@ export const composerFlapBorder = mergeStylexClassName(
    composer's own hairline continues it. `border-b-0` leaves the style behind. */
 export const composerQueue =
 	mergeStylexClassName("", sx.relative, sx.Mb35, sx.flex, sx.flexCol, sx.gap2, sx.roundedTVarComposerRadius, sx.borderX, sx.borderT) +
-	composerFlapBorder +
-	mergeStylexClassName("", sx.bgColorMixInSrgbVarBgPanel80VarComposerSurface, sx.px35, sx.pt25, sx.pb26px);
+	" " + composerFlapBorder +
+	" " + mergeStylexClassName("", sx.bgColorMixInSrgbVarBgPanel80VarComposerSurface, sx.px35, sx.pt25, sx.pb26px);
 export const composerQueueTitle = mergeStylexClassName("", typography.meta, sx.fontSemibold, sx.textFaint);
 export const composerQueueList = mergeStylexClassName("", sx.flex, sx.flexCol, sx.gap2);
 /** One queued/steered row. The floor is one line of body text, so a row whose
@@ -1079,7 +1079,7 @@ export const composerQueueBody = mergeStylexClassName("", sx.minW0, sx.flex1, sx
  *  in the stylesheet and github came last. */
 export const composerQueueBodyTone = {
 	default: mergeStylexClassName("", sx.textFg),
-	human: "text-[color-mix(in_srgb,var(--text)_88%,#1f9e8a)]",
+	human: mergeStylexClassName("", sharedClassStyles.textColorMixInSrgbVarText881f9e8a),
 	github: mergeStylexClassName("", sx.textDim),
 	sending: mergeStylexClassName("", sx.textDim),
 } as const;

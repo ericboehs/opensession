@@ -19,7 +19,7 @@ import { IconCheck, IconChevronLeft, IconGlobe, IconRepo } from "./icons";
 import { githubAuthState, type SetupStatus } from "./setup-shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -239,7 +239,8 @@ const sx = stylex.create({
 			margin: "0"
 	},
 	fontTitle: {
-			fontWeight: "var(--title-weight)"
+			fontWeight: "var(--title-weight)",
+		"--settings-leading": "1.1"
 	},
 	leading108: {
 			lineHeight: "1.08"
@@ -617,7 +618,7 @@ function FirstMileSummary({
 								name={githubOrganization}
 								login={githubOrganization}
 								size={24}
-								{...stylex.props(sx.roundedFull)}
+								className={mergeStylexOverrideClassName("", sx.roundedFull)}
 							/>
 							<span {...mergeStylexProps("", sx.ring1, sx.absolute, sx.Right05, sx.Bottom05, sx.flex, sx.size25, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgFg, sx.textBg, sx.ringBg)}>
 								<BrandMark name="github" size={7} />
@@ -683,7 +684,7 @@ function FirstMileSummary({
 			preview: (
 				<div {...mergeStylexProps("-space-x-2", sx.flex)}>
 					{status.team.names.slice(0, 4).map((name) => (
-						<UserAvatar key={name} name={name} size={28} {...stylex.props(sx.border, sx.borderBg)} />
+						<UserAvatar key={name} name={name} size={28} className={mergeStylexOverrideClassName("", sx.border, sx.borderBg)} />
 					))}
 					<PreviewOverflow count={status.team.names.length - 4} transparent />
 				</div>
@@ -821,7 +822,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 					icon={<IconChevronLeft size={18} />}
 					onClick={() => goTo(index - 1)}
 					aria-label="Back"
-					{...stylex.props(sx.phoneBackButton, index === 0 && sx.phoneInvisible)}
+					className={mergeStylexOverrideClassName("", sx.phoneBackButton, index === 0 && sx.phoneInvisible)}
 				/>
 
 				<nav
@@ -906,7 +907,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 											variant="primary"
 											size="lg"
 											onClick={() => goTo(1)}
-											{...stylex.props(sx.minH11, sx.wFull, sx.justifyCenter)}
+											className={mergeStylexOverrideClassName("", sx.minH11, sx.wFull, sx.justifyCenter)}
 										>
 											Create organization
 										</Button>
@@ -914,7 +915,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 											variant="soft"
 											size="lg"
 											onClick={onDone}
-											{...stylex.props(sx.minH11, sx.wFull, sx.justifyCenter)}
+											className={mergeStylexOverrideClassName("", sx.minH11, sx.wFull, sx.justifyCenter)}
 										>
 											Join organization
 										</Button>
@@ -992,7 +993,7 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 						size="lg"
 						icon={<IconChevronLeft size={18} />}
 						onClick={() => goTo(index - 1)}
-						{...stylex.props(sx.desktopBackButton, index === 0 && sx.invisible)}
+						className={mergeStylexOverrideClassName("", sx.desktopBackButton, index === 0 && sx.invisible)}
 					>
 						Back
 					</Button>

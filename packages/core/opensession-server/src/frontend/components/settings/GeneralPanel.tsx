@@ -11,7 +11,7 @@ import { rememberOrganizationIcon } from "../../hooks/useOrganizationIcon";
 import { PRODUCT_NAME } from "../../lib/brand";
 import { pngFromImageFile, pngFromImageUrl } from "../../lib/icon-image";
 import { REPO_TILE_INK, repoColor, repoIconFill } from "../../lib/repo-colors";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 import { OverlayAction } from "../../ui/overlay-action";
 import {
 	SettingCard,
@@ -328,11 +328,11 @@ setBusy(false);
 			) : settings ? (
 				<>
 					<SettingCard>
-						<SettingRow {...stylex.props(sx.itemsCenter)}>
+						<SettingRow className={mergeStylexOverrideClassName("", sx.itemsCenter)}>
 							<SettingRowText>
 								<SettingRowTitle>Upload icon</SettingRowTitle>
 							</SettingRowText>
-							<SettingRowControl {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.justifyEnd, sx.gap2)}>
+							<SettingRowControl className={mergeStylexOverrideClassName("", sx.flex, sx.flexWrap, sx.itemsCenter, sx.justifyEnd, sx.gap2)}>
 								<div {...mergeStylexProps("group/overlay-action", sx.relative, sx.flex, sx.shrink0, sx.flexCol, sx.itemsCenter, sx.gap15)}>
 									<button
 										type="button"
@@ -364,12 +364,12 @@ setBusy(false);
 									</button>
 									{settings.organizationIconUrl && (
 										<OverlayAction
-											icon={<IconTrash {...stylex.props(sx.textRed)} size={20} />}
+											icon={<IconTrash className={mergeStylexOverrideClassName("", sx.textRed)} size={20} />}
 											disabled={busy}
 											onClick={removeIcon}
 											aria-label="Remove organization icon"
 											title="Remove icon"
-											className={mergeStylexClassName("", sx.phonePointerEventsAuto, sx.phoneOpacity100)}
+											className={mergeStylexOverrideClassName("", sx.phonePointerEventsAuto, sx.phoneOpacity100)}
 										/>
 									)}
 								</div>
@@ -449,7 +449,7 @@ setBusy(false);
 export function GeneralPanel() {
 	return (
 		<SettingsPanel>
-			<SettingsHeader title="General" className={mergeStylexClassName("", sx.phoneHidden)} />
+			<SettingsHeader title="General" className={mergeStylexOverrideClassName("", sx.phoneHidden)} />
 			<OrganizationProfileSection />
 		</SettingsPanel>
 	);

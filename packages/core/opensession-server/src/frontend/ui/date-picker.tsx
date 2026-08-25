@@ -22,7 +22,7 @@ import {
 	type RangeSpan,
 } from "../lib/date-grid";
 import { Button } from "./button";
-import { cn, mergeStylexProps, mergeStylexClassName } from "./cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "./cn";
 import { Popover } from "./popover";
 import { Segmented, SegmentedKnob, SegmentedOption } from "./segmented";
 import * as stylex from "@stylexjs/stylex";
@@ -434,7 +434,7 @@ export function DateRangeField({
 						onValueChange={(v) => onRangeChange(...presetRange(Number(v)))}
 						// The group contributes its options only; the well around them
 						// belongs to the whole control.
-						{...stylex.props(sx.roundedNone, sx.bgTransparent, sx.p0)}
+						className={mergeStylexOverrideClassName("", sx.roundedNone, sx.bgTransparent, sx.p0)}
 					>
 						{presets.map((p) => (
 							<SegmentedOption key={p.label} value={String(p.days)}>
@@ -465,7 +465,7 @@ export function DateRangeField({
 						    at the icon scale's own floor the glyph, not the text, would
 						    set it, and the control would stand a step taller than the
 						    presets it shares a track with. */}
-						<IconCalendar size={16} dense {...stylex.props(sx.shrink0, sx.opacity55)} />
+						<IconCalendar size={16} dense className={mergeStylexOverrideClassName("", sx.shrink0, sx.opacity55)} />
 						<span {...stylex.props(sx.TextBoxTrimBothCapAlphabetic)}>{rangeLabel}</span>
 					</span>
 				</Popover.Trigger>
@@ -670,7 +670,7 @@ function RangeCalendar({
 					onValueChange={(v) => onPreset(Number(v))} {...mergeStylexProps("[&>*]:flex-1", sx.mb2, sx.flex, sx.wFull)}
 				>
 					{presets.map((p) => (
-						<SegmentedOption key={p.label} value={String(p.days)} {...stylex.props(sx.justifyCenter)}>
+						<SegmentedOption key={p.label} value={String(p.days)} className={mergeStylexOverrideClassName("", sx.justifyCenter)}>
 							<span {...stylex.props(sx.wFull, sx.textCenter)}>{p.label}</span>
 						</SegmentedOption>
 					))}

@@ -44,7 +44,7 @@ import {
 	SettingsPanel,
 } from "../../ui/settings";
 import { Input } from "../../ui/input";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 import { Badge } from "../../ui/badge";
 import { Segmented, SegmentedOption } from "../../ui/segmented";
 import { EmptyState, InlineAlert, Skeleton, SkeletonBar } from "../../ui/state";
@@ -133,7 +133,8 @@ const sx = stylex.create({
 			margin: "0"
 	},
 	fontTitle: {
-			fontWeight: "var(--title-weight)"
+			fontWeight: "var(--title-weight)",
+		"--settings-leading": "1.1"
 	},
 	tracking001em: {
 			letterSpacing: "-.01em"
@@ -453,16 +454,16 @@ function EntryControl({
  */
 function CatalogSkeleton() {
 	return (
-		<Skeleton label="Loading the library" {...stylex.props(sx.mt11, sx.px5)}>
-			<SkeletonBar {...stylex.props(sx.mb4, sx.h4, sx.w22, sx.borderB, sx.borderDivider, sx.pb3)} />
+		<Skeleton label="Loading the library" className={mergeStylexOverrideClassName("", sx.mt11, sx.px5)}>
+			<SkeletonBar className={mergeStylexOverrideClassName("", sx.mb4, sx.h4, sx.w22, sx.borderB, sx.borderDivider, sx.pb3)} />
 			<div className={mergeStylexClassName("", sx.Container)}>
 				<div {...mergeStylexProps("", sx.u560pxGridCols2, sx.grid, sx.gridCols1, sx.gapX12)}>
 					{CATALOG_GHOST_ROWS.map((row, index) => (
 						<div key={index} {...stylex.props(sx.flex, sx.itemsCenter, sx.gap35, sx.py35)}>
-							<SkeletonBar {...stylex.props(sx.size9, sx.shrink0, sx.roundedControl)} />
+							<SkeletonBar className={mergeStylexOverrideClassName("", sx.size9, sx.shrink0, sx.roundedControl)} />
 							<div {...stylex.props(sx.minW0, sx.flex1)}>
-								<SkeletonBar {...stylex.props(row.name)} />
-								<SkeletonBar {...stylex.props(sx.mt2, sx.h25, row.description)} />
+								<SkeletonBar className={mergeStylexOverrideClassName("", row.name)} />
+								<SkeletonBar className={mergeStylexOverrideClassName("", sx.mt2, sx.h25, row.description)} />
 							</div>
 						</div>
 					))}
@@ -617,7 +618,7 @@ export function LibraryPanel() {
 
 	if (error)
 		return (
-			<SettingsPanel {...stylex.props(sx.maxWNone)}>
+			<SettingsPanel className={mergeStylexOverrideClassName("", sx.maxWNone)}>
 				{header}
 				<InlineAlert>{error}</InlineAlert>
 			</SettingsPanel>
@@ -625,14 +626,14 @@ export function LibraryPanel() {
 
 	if (!entries)
 		return (
-			<SettingsPanel {...stylex.props(sx.maxWNone)}>
+			<SettingsPanel className={mergeStylexOverrideClassName("", sx.maxWNone)}>
 				{header}
 				<CatalogSkeleton />
 			</SettingsPanel>
 		);
 
 	return (
-		<SettingsPanel {...stylex.props(sx.maxWNone)}>
+		<SettingsPanel className={mergeStylexOverrideClassName("", sx.maxWNone)}>
 			{header}
 
 			{installed.length > 0 && (
@@ -655,7 +656,7 @@ export function LibraryPanel() {
 
 			<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap2, sx.px5)}>
 				<Input
-					{...stylex.props(sx.minW180px, sx.flex1)}
+					className={mergeStylexOverrideClassName("", sx.minW180px, sx.flex1)}
 					placeholder="Search the library"
 					value={query}
 					onChange={(e) => setQuery(e.target.value)}
@@ -713,7 +714,7 @@ export function LibraryPanel() {
 							))}
 						</div>
 					</div>
-					<SettingsHint {...stylex.props(sx.mt4, sx.px0)}>
+					<SettingsHint className={mergeStylexOverrideClassName("", sx.mt4, sx.px0)}>
 						{group.type === "tool" ? (
 							<>
 								{TYPE_BLURB.tool} These switches are saved in this browser only,

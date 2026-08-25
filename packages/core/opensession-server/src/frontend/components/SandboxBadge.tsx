@@ -8,7 +8,7 @@ import {
 import { IconBox, IconConnections } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -246,14 +246,14 @@ setError(cause?.message || "Sandbox status unavailable");
           aria-label={`Runner · ${runner.name} · ${label}`}
         >
           <span {...stylex.props(sx.dot, dot)} aria-hidden="true" />
-          <IconConnections size={20} {...stylex.props(sx.textFaint)} />
+          <IconConnections size={20} className={mergeStylexOverrideClassName("", sx.textFaint)} />
           <span>{runner.name}</span>
 			</Popover.Trigger>
         <Popover.Popup
           side="bottom"
           align="start"
           initialFocus
-          {...stylex.props(sx.w300px, sx.p25)}
+          className={mergeStylexOverrideClassName("", sx.w300px, sx.p25)}
         >
           <div {...stylex.props(sx.px2, sx.pb2, sx.pt1)}>
             <div
@@ -358,14 +358,14 @@ setWorking(null);
 				aria-label={`Sandbox · ${lifecycleLabel}`}
 			>
         <span {...stylex.props(sx.dot, dot)} aria-hidden="true" />
-				<IconBox size={20} {...stylex.props(sx.textFaint)} />
+				<IconBox size={20} className={mergeStylexOverrideClassName("", sx.textFaint)} />
 				<span>Sandbox</span>
 			</Popover.Trigger>
 			<Popover.Popup
 				side="bottom"
 				align="start"
 				initialFocus
-				{...stylex.props(sx.w300px, sx.p25)}
+				className={mergeStylexOverrideClassName("", sx.w300px, sx.p25)}
 			>
 				<div {...stylex.props(sx.px2, sx.pb2, sx.pt1)}>
           <div

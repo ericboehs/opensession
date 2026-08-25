@@ -307,11 +307,11 @@ export function UpdatePill({ addHandler, variant = "card" }: Props) {
         // exempts rounded-full from its generic squircle rule.
         className={
           mergeStylexClassName("", sx.inlineFlex, sx.h7, sx.shrink0, sx.itemsCenter, sx.roundedFull, sx.CornerShapeSquircle, sx.px13px) +
-          mergeStylexClassName("", sx.hoverBgColorMixInSrgbVarRed85Black, sx.cursorPointer, sx.borderNone, sx.bgRed, typography.label, sx.fontSemibold, sx.leadingNone, sx.textWhite, sx.transitionBackground, sx.durationVarDurMicro, sx.easeVarEase, sx.disabledCursorWait, sx.disabledOpacity75) +
-          mergeStylexClassName("", sx.animateUpdateToastInVarDurLgVarEase, sx.motionReduceAnimateNone) +
+          " " + mergeStylexClassName("", sx.hoverBgColorMixInSrgbVarRed85Black, sx.cursorPointer, sx.borderNone, sx.bgRed, typography.label, sx.fontSemibold, sx.leadingNone, sx.textWhite, sx.transitionBackground, sx.durationVarDurMicro, sx.easeVarEase, sx.disabledCursorWait, sx.disabledOpacity75) +
+          " " + mergeStylexClassName("", sx.animateUpdateToastInVarDurLgVarEase, sx.motionReduceAnimateNone) +
           // Phone: keep the visible pill compact while a pseudo-element grows
           // its tap target to the full 44px header row.
-          "phone:[.app-brand_&]:relative phone:[.app-brand_&]:order-3 " +
+          " " + "phone:[.app-brand_&]:relative phone:[.app-brand_&]:order-3 " +
           "phone:[.app-brand_&]:h-7 phone:[.app-brand_&]:px-3 phone:[.app-brand_&]:text-supporting " +
           "phone:[.app-brand_&]:after:absolute phone:[.app-brand_&]:after:inset-x-0 " +
           "phone:[.app-brand_&]:after:top-1/2 phone:[.app-brand_&]:after:h-11 " +

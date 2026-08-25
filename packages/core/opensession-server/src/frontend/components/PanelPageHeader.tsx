@@ -7,7 +7,7 @@ import {
 } from "../ui/top-bar";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -92,14 +92,14 @@ export function PanelPageHeader({
 	return (
 		<TopBar
 			as="header"
-			{...stylex.props(sx.sticky, sx.top0, sx.z3, sx.gap1, sx.bgPanelSurface, sx.px2, sx.pt3, sx.pb2)}
+			className={mergeStylexOverrideClassName("", sx.sticky, sx.top0, sx.z3, sx.gap1, sx.bgPanelSurface, sx.px2, sx.pt3, sx.pb2)}
 		>
 			<TopBarBack
 				onClick={onBack}
 				aria-label="Back to workspace"
 				iconSize={18} {...mergeStylexProps("", sx.hoverBgHover, sx.hoverTextFg, sx.shrink0, sx.roundedControl, sx.textDim)}
 			/>
-			<TopBarTitle {...stylex.props(sx.flex1, sx.truncate, sx.fontSemibold, sx.textFg, typography.supporting)}>
+			<TopBarTitle className={mergeStylexOverrideClassName("", sx.flex1, sx.truncate, sx.fontSemibold, sx.textFg, typography.supporting)}>
 				{title}
 			</TopBarTitle>
 			{trailing && <TopBarActions>{trailing}</TopBarActions>}

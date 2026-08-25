@@ -6,7 +6,7 @@ import type {
 	WorkflowRunSnapshot,
 } from "../../server/workflow-types";
 import type { SessionSubagentSnapshot } from "../lib/api";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { Button } from "../ui/button";
 import { CardList } from "../ui/card";
 import { EmptyState } from "../ui/state";
@@ -412,7 +412,7 @@ const ROW_CLASS =
  *  the quieter ink a reading gets. */
 const FOOTER_ROW =
 	mergeStylexClassName("", sx.flex, sx.wFull, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.px2, sx.py15, sx.textLeft, typography.meta) +
-	mergeStylexClassName("", sx.fontMedium, sx.textDim, sx.transitionColors, sx.hoverBgHover, sx.hoverTextFg);
+	" " + mergeStylexClassName("", sx.fontMedium, sx.textDim, sx.transitionColors, sx.hoverBgHover, sx.hoverTextFg);
 
 /** Status mark: glyphs for the terminal states (✓/✕ stay legible at a glance
  *  — a red accent dot and an error dot would read the same), pulsing yellow
@@ -500,7 +500,7 @@ function Chip({
 			title={title}
 			tone={tone === "green" ? "success" : tone === "red" ? "danger" : "neutral"}
 			variant={tone ? "soft" : "outline"}
-			{...stylex.props(sx.maxW120px, sx.truncate)}
+			className={mergeStylexOverrideClassName("", sx.maxW120px, sx.truncate)}
 		>
 			{children}
 		</Badge>
@@ -662,7 +662,7 @@ export function WorkflowPanel({
 						onBack={onBack}
 						trailing={
 							anyRunning && (
-								<Badge tone="warning" dot {...stylex.props(sx.mr1, motionStyles.pulse)}>
+								<Badge tone="warning" dot className={mergeStylexOverrideClassName("", sx.mr1, motionStyles.pulse)}>
 									running
 								</Badge>
 							)
@@ -730,7 +730,7 @@ function SubagentsCard({
 						Sub-agents
 					</span>
 					{runningN > 0 && (
-						<Badge tone="warning" dot {...stylex.props(motionStyles.pulse)}>
+						<Badge tone="warning" dot className={mergeStylexOverrideClassName("", motionStyles.pulse)}>
 							running
 						</Badge>
 					)}
@@ -800,14 +800,14 @@ function WorkflowsEmptyState() {
 			<EmptyState
 				icon={<IconStack size={22} />}
 				title="No agents yet"
-				{...stylex.props(sx.px2, sx.py7)}
+				className={mergeStylexOverrideClassName("", sx.px2, sx.py7)}
 			>
 				Ask this session to <span {...stylex.props(sx.textFg)}>use a workflow</span> and
 				it fans out many small agents at once, then combines what they find.
 			</EmptyState>
 			<div {...stylex.props(sx.grid, sx.gap5px)}>
 				<div className={INFO_LABEL_CLASS}>Try</div>
-				<CardList as="ul" {...stylex.props(sx.roundedLg)}>
+				<CardList as="ul" className={mergeStylexOverrideClassName("", sx.roundedLg)}>
 					{[
 						"Use a workflow to audit every route for missing auth checks.",
 						"Use a workflow to compare 3 approaches and pick a winner.",
@@ -991,7 +991,7 @@ setDetails((prev) => ({ ...prev, [seq]: "missing" }));
 					<Button
 						variant="default"
 						size="sm"
-						{...stylex.props(sx.shrink0)}
+						className={mergeStylexOverrideClassName("", sx.shrink0)}
 						onClick={() => onCancel(run.runId)}
 					>
 						Stop
@@ -1200,7 +1200,7 @@ const AgentRow = function AgentRow({
 							{a.status !== "pending" && (
 								<Button
 									size="sm"
-									{...stylex.props(sx.selfStart)}
+									className={mergeStylexOverrideClassName("", sx.selfStart)}
 									onClick={() => onOpenConversation(a.seq)}
 								>
 									View conversation

@@ -9,7 +9,7 @@ import { useMarkdownRepo } from "./MarkdownBody";
 import { ASK_CARD_SHELL, ASK_CHOICE_ROW } from "../lib/ask-card-classes";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -376,7 +376,7 @@ export function AskCard({ questions, onAnswer }: Props) {
 							)}
 							{q.multiSelect && (
 								<Questionnaire.Description
-									{...stylex.props(sx.textFaint, typography.meta)}
+									className={mergeStylexOverrideClassName("", sx.textFaint, typography.meta)}
 									render={<span />}
 								>
 									Select all that apply
@@ -400,7 +400,7 @@ export function AskCard({ questions, onAnswer }: Props) {
 							/>
 						}
 					/>
-					<Questionnaire.Choices {...stylex.props(sx.flex, sx.flexCol, sx.gap15)}>
+					<Questionnaire.Choices className={mergeStylexOverrideClassName("", sx.flex, sx.flexCol, sx.gap15)}>
 						{q.options?.map((opt) => {
 							const active = (picks[itemName(i)] ?? []).includes(opt.label);
 							return (
@@ -419,7 +419,7 @@ export function AskCard({ questions, onAnswer }: Props) {
 									// hover wash on its neighbours.
 									className={ASK_CHOICE_ROW}
 								>
-									<Questionnaire.ChoiceInput {...stylex.props(sx.srOnly)} />
+									<Questionnaire.ChoiceInput className={mergeStylexOverrideClassName("", sx.srOnly)} />
 									{/* The letter leads the row, the way a lettered list does. It is
 									    how the options are named (in the transcript above, in Slack,
 									    and out loud), so it belongs where a marker goes rather than
@@ -433,8 +433,8 @@ export function AskCard({ questions, onAnswer }: Props) {
 									    letters share an edge with each other and with the text in
 									    the free-text row below. Pulling only its trailing margin
 									    keeps the answer close without tightening the indicator. */}
-									<Questionnaire.ChoiceShortcut {...stylex.props(sx.Mr2, sx.w35, sx.shrink0, sx.leading5, sx.textFaint, typography.label)} />
-									<Questionnaire.ChoiceLabel {...stylex.props(sx.minW0, sx.flex1)}>
+									<Questionnaire.ChoiceShortcut className={mergeStylexOverrideClassName("", sx.Mr2, sx.w35, sx.shrink0, sx.leading5, sx.textFaint, typography.label)} />
+									<Questionnaire.ChoiceLabel className={mergeStylexOverrideClassName("", sx.minW0, sx.flex1)}>
 										<span {...stylex.props(sx.block, sx.fontSemibold, sx.leading5, sx.textFg, typography.controlLabel)}>
 											{opt.label}
 										</span>
@@ -463,7 +463,7 @@ export function AskCard({ questions, onAnswer }: Props) {
 							onChange={(e) => write(i, q, e.target.value)}
 						/>
 					</Questionnaire.Choices>
-					<Questionnaire.Error {...stylex.props(sx.textRed, typography.meta)} />
+					<Questionnaire.Error className={mergeStylexOverrideClassName("", sx.textRed, typography.meta)} />
 				</Questionnaire.Item>
 			))}
 

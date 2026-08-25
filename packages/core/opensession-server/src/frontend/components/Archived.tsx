@@ -1,5 +1,5 @@
 import { repoLabel } from "../lib/repo-label";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { FALLBACK_REPO, sessionRepoOr } from "../lib/session-repo";
 import { sessionSourceLabel } from "../lib/brand";
 import { SOURCE_CHIP, sourceChipTone } from "../lib/source-chip-classes";
@@ -37,6 +37,7 @@ import { RepoTile } from "./RepoTile";
 import { UserAvatar } from "./UserAvatar";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -538,13 +539,13 @@ setBusy(null);
 							variant="ghost"
 							icon={<IconFilter size={18} />}
 							aria-label={`Filters, ${activeFilterCount} active`}
-							{...stylex.props(sx.shrink0, activeFilterCount > 0 && sx.textFg)}
+							className={mergeStylexOverrideClassName("", sx.shrink0, activeFilterCount > 0 && sx.textFg)}
 						>
 							Filters{activeFilterCount > 0 ? ` ${activeFilterCount}` : ""}
 						</Button>
 					}
 				/>
-				<Menu.Popup align="end" {...stylex.props(sx.minW220px)}>
+				<Menu.Popup align="end" className={mergeStylexOverrideClassName("", sx.minW220px)}>
 					<Menu.Group>
 						<Menu.GroupLabel>Owner</Menu.GroupLabel>
 						<Menu.RadioGroup value={owner} onValueChange={(value) => setOwner(String(value))}>
@@ -657,7 +658,7 @@ setBusy(null);
 					rows={8}
 					label="Loading archived sessions"
 					className={ARCHIVED_LIST}
-					rowClassName="px-3"
+					rowClassName={mergeStylexClassName("", sharedClassStyles.px3)}
 				/>
 			) : archived.length === 0 ? (
 				<Card>
@@ -782,7 +783,7 @@ setBusy(null);
 														<span className={ARCHIVED_ROW_TIME}>
 															{relativeTime(s.lastActivity)}
 														</span>
-														<IconChevronRight size={16} {...stylex.props(sx.shrink0)} />
+														<IconChevronRight size={16} className={mergeStylexOverrideClassName("", sx.shrink0)} />
 													</span>
 													<Button
 														size="sm"

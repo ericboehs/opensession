@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Menu } from "../ui/menu";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { isApple } from "../lib/platform";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -203,7 +203,7 @@ export function PaletteSelect({
 			>
 				{children}
 			</Menu.Trigger>
-			<Menu.Popup align={align} sideOffset={6} className={mergeStylexClassName("", sx.maxWMin360pxCalc100vw1rem)}>
+			<Menu.Popup align={align} sideOffset={6} className={mergeStylexOverrideClassName("", sx.maxWMin360pxCalc100vw1rem)}>
 				{options.map((option) => {
 					const selected = picked.has(option.value);
 					return (
@@ -232,7 +232,7 @@ export function PaletteSelect({
 									{option.menuLabel ?? option.label}
 								</span>
 							</span>
-							<Menu.Check on={selected} {...stylex.props(sx.textDim)} />
+							<Menu.Check on={selected} className={mergeStylexOverrideClassName("", sx.textDim)} />
 						</Menu.Item>
 					);
 				})}

@@ -3,6 +3,7 @@ import * as stylex from "@stylexjs/stylex";
 import { mergeStylexClassName } from "../ui/cn";
 import { type as typography } from "../styles/typography.stylex";
 import { motionStyles } from "../styles/animations.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 const sx = stylex.create({
 	SidebarRowPad7px: {
@@ -911,9 +912,9 @@ export const SIDEBAR_NAV_X = mergeStylexClassName("", sx.SidebarNavX6px, sx.desk
  * the prefixed one.
  */
 export const SIDEBAR_RAIL_PAD =
-	"pl-[calc(var(--sidebar-icon-left,16px)-var(--sidebar-nav-x,6px))]";
+	mergeStylexClassName("", sharedClassStyles.plCalcVarSidebarIconLeft16pxVarSidebarNavX6px);
 export const SIDEBAR_RAIL_PAD_DESKTOP =
-	"desktop:pl-[calc(var(--sidebar-icon-left,16px)-var(--sidebar-nav-x,6px))]";
+	mergeStylexClassName("", sharedClassStyles.desktopPlCalcVarSidebarIconLeft16pxVarSidebarNavX6px);
 
 /**
  * The sidebar's leading column. Every row and group header opens with one of
@@ -1002,7 +1003,7 @@ export const SIDEBAR_INDEPENDENT_SCROLL = mergeStylexClassName("", sx.minW0, sx.
  * {@link SIDEBAR_ROW_CHIP}.
  */
 export const SIDEBAR_HOVER_LAYER =
-	"hover:bg-[image:linear-gradient(var(--hover),var(--hover))]";
+	mergeStylexClassName("", sharedClassStyles.hoverBgImageLinearGradientVarHoverVarHover);
 
 /**
  * The pin/archive chip's hover — the deliberate exception to the wash.

@@ -19,6 +19,7 @@ import { InlineAlert } from "../../ui/state";
 import { Switch } from "../../ui/switch";
 import { Select, SettingRow } from "./shared";
 import * as stylex from "@stylexjs/stylex";
+import { mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -81,7 +82,7 @@ function WarmPreviewsPanel() {
 	}
 
 	const label = (
-		<SettingsGroupLabel {...stylex.props(sx.mt0)}>Host dependency cache</SettingsGroupLabel>
+		<SettingsGroupLabel className={mergeStylexOverrideClassName("", sx.mt0)}>Host dependency cache</SettingsGroupLabel>
 	);
 
 	if (!repos)

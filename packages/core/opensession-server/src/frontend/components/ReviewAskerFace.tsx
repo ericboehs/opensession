@@ -3,7 +3,7 @@ import { personNameForGithubLogin } from "../lib/people";
 import { UserAvatar } from "./UserAvatar";
 import { IconEye } from "./icons";
 import * as stylex from "@stylexjs/stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -86,7 +86,7 @@ export function ReviewAskerFace({ asker }: { asker: ReviewAsker }) {
 				name={name}
 				login={asker.login ?? undefined}
 				size={16}
-				{...stylex.props(sx.shrink0)}
+				className={mergeStylexOverrideClassName("", sx.shrink0)}
 			/>
 			{/* Same 12px corner mark the mention badge uses: big enough to read as
 			    deliberate, small enough to leave the face recognisable. */}

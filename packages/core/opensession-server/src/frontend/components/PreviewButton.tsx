@@ -11,7 +11,7 @@ import { BASE_PATH } from "../lib/base";
 import { withPreviewPath } from "../lib/preview-url";
 import { Tooltip } from "../ui/tooltip";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { CopyCheck, useCopy } from "../ui/copy";
 import { Menu, MENU_ICON } from "../ui/menu";
 import { Popover } from "../ui/popover";
@@ -887,7 +887,7 @@ setShotError(e.message);
             <Button
               variant="primary"
               size="sm"
-              {...stylex.props(sx.px14px, sx.py1)}
+              className={mergeStylexOverrideClassName("", sx.px14px, sx.py1)}
               onClick={() => {
                 onAttachImage(shot);
                 setShot(null);
@@ -933,7 +933,7 @@ setShotError(e.message);
       // Holds real controls, so let the keyboard in (the hover cards on this
       // primitive deliberately don't take focus).
       initialFocus
-      {...stylex.props(sx.minW240px, sx.p25)}
+      className={mergeStylexOverrideClassName("", sx.minW240px, sx.p25)}
     >
       <div {...stylex.props(sx.mb2, sx.fontBold, sx.tracking001em, sx.textFaint, typography.meta)}>Dev services</div>
       {status.services.length === 0 ? (
@@ -1227,9 +1227,9 @@ setShotError(e.message);
               }
             }}
           >
-            <IconPlay size={15} {...stylex.props(sx.opacity90)} />
+            <IconPlay size={15} className={mergeStylexOverrideClassName("", sx.opacity90)} />
             Preview
-            <IconArrowUpRight size={15} {...stylex.props(sx.MlPx, sx.opacity80)} />
+            <IconArrowUpRight size={15} className={mergeStylexOverrideClassName("", sx.MlPx, sx.opacity80)} />
           </a>
         ) : isStarting ? (
           <button
@@ -1259,7 +1259,7 @@ setShotError(e.message);
             aria-disabled="true"
             title={`${notBootableHint}.`}
           >
-            <IconPlay size={15} {...stylex.props(sx.textAccent)} />
+            <IconPlay size={15} className={mergeStylexOverrideClassName("", sx.textAccent)} />
             Preview
           </button>
         ) : (
@@ -1272,7 +1272,7 @@ setShotError(e.message);
             onClick={start}
             title="Start the dev server and preview this session"
           >
-            <IconPlay size={15} {...stylex.props(sx.textAccent)} />
+            <IconPlay size={15} className={mergeStylexOverrideClassName("", sx.textAccent)} />
             Preview
           </button>
         )}

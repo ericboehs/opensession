@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import type { PrFile } from "../../lib/types";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -438,7 +438,7 @@ export function PrFileTree({
         ) : mode === "tree" ? (
           <FileTree
             model={model}
-            {...stylex.props(sx.block, sx.hFull, sx.ColorSchemeDark, sx.TreesAccentOverrideVarAccent, sx.TreesBgOverrideTransparent, sx.TreesBorderColorOverrideVarDivider, sx.TreesFgMutedOverrideVarTextFaint, sx.TreesFgOverrideVarTextDim, sx.TreesFocusRingColorOverrideVarAccent, sx.TreesSelectedBgOverrideVarSelected, sx.TreesSelectedFgOverrideVarText)}
+            className={mergeStylexOverrideClassName("", sx.block, sx.hFull, sx.ColorSchemeDark, sx.TreesAccentOverrideVarAccent, sx.TreesBgOverrideTransparent, sx.TreesBorderColorOverrideVarDivider, sx.TreesFgMutedOverrideVarTextFaint, sx.TreesFgOverrideVarTextDim, sx.TreesFocusRingColorOverrideVarAccent, sx.TreesSelectedBgOverrideVarSelected, sx.TreesSelectedFgOverrideVarText)}
           />
         ) : (
           <div {...stylex.props(sx.flex, sx.flexCol, sx.gap05)}>

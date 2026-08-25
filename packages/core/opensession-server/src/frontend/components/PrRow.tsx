@@ -20,7 +20,7 @@ import {
 	IconPullRequest,
 	IconX,
 } from "./icons";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { ContextMenu } from "../ui/menu";
 import { Popover } from "../ui/popover";
 import { Tooltip } from "../ui/tooltip";
@@ -258,7 +258,7 @@ export function PrRow({
 				</Tooltip>
 			</span>
 			</ContextMenu.Trigger>
-			<ContextMenu.Popup {...stylex.props(sx.minW220px)}>
+			<ContextMenu.Popup className={mergeStylexOverrideClassName("", sx.minW220px)}>
 				<ContextMenu.Item onClick={onOpen}>
 					<span {...stylex.props(sx.grow)}>Open review</span>
 				</ContextMenu.Item>

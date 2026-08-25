@@ -7,7 +7,7 @@ import {
 	type SupportSurface,
 } from "../../lib/support-surface";
 import { ContextMenu, Menu, MENU_ICON } from "../../ui/menu";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 import { IconDotsHorizontal, IconSliders } from "../icons";
 import * as stylex from "@stylexjs/stylex";
 
@@ -120,7 +120,7 @@ export type SidebarMenuSource = {
 	shown: boolean;
 };
 
-const check = (on: boolean) => <Menu.Check on={on} size={20} {...stylex.props(sx.textDim)} />;
+const check = (on: boolean) => <Menu.Check on={on} size={20} className={mergeStylexOverrideClassName("", sx.textDim)} />;
 
 /**
  * The tool list itself, shared by the two menus that offer it: this one and

@@ -10,6 +10,8 @@ import type { SlackTransport } from "../lib/slack-setup";
 import { IconCopy } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
+import { mergeStylexClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -117,7 +119,7 @@ export function SlackManifestGuide({ transport }: { transport: SlackTransport })
 				interactivity. Credentials are still yours to paste above.
 			</p>
 
-			<Disclosure title="Manifest JSON" panelClassName="pt-2">
+			<Disclosure title="Manifest JSON" panelClassName={mergeStylexClassName("", sharedClassStyles.pt2)}>
 				<pre {...stylex.props(sx.m0, sx.maxH72, sx.overflowAuto, sx.roundedControl, sx.bgPanel, sx.p25, sx.fontMono, sx.leadingRelaxed, sx.textDim, typography.meta)}>
 					{json}
 				</pre>

@@ -13,7 +13,7 @@ import { Popover } from "../ui/popover";
 import { pointerCanHover } from "../lib/pointer";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -227,7 +227,7 @@ export function RowCardPopup({
 			arrow
 			elevation="lg"
 			anchor={anchor}
-			{...stylex.props(sx.rowCard)}
+			className={mergeStylexOverrideClassName("", sx.rowCard)}
 		>
 			{children}
 		</Popover.Popup>
@@ -310,7 +310,7 @@ export function CardLink({
 			title={title} {...mergeStylexProps("", sx.hoverTextFg, sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap05, typography.label, sx.textDim, sx.noUnderline)}
 		>
 			{children}
-			<IconArrowUpRight size={15} {...stylex.props(sx.opacity70)} />
+			<IconArrowUpRight size={15} className={mergeStylexOverrideClassName("", sx.opacity70)} />
 		</a>
 	);
 }
@@ -346,7 +346,7 @@ export function CardPrChip({
 			{/* Cap band, so the number centres on the chip the way the action
 			    button beside it centres its word. */}
 			<span className={CAP_LABEL}>{number != null ? `#${number}` : "PR"}</span>
-			<IconArrowUpRight size={15} {...stylex.props(sx.opacity70)} />
+			<IconArrowUpRight size={15} className={mergeStylexOverrideClassName("", sx.opacity70)} />
 		</a>
 	);
 }
@@ -508,7 +508,7 @@ export function PrRowCard({ item }: { item: ReviewQueueItem }) {
 				)}
 				<span {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter)}>
 					{item.bucket === "ready" ? (
-						<IconGitMerge {...stylex.props(sx.textGreen)} size={20} />
+						<IconGitMerge className={mergeStylexOverrideClassName("", sx.textGreen)} size={20} />
 					) : (
 						<span
 							{...stylex.props(

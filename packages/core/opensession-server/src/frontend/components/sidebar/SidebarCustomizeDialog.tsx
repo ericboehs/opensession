@@ -9,7 +9,8 @@ import { IconGripVertical, IconX } from "../icons";
 import { RepoTile, repoLabel } from "../RepoTile";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
+import { sharedClassStyles } from "../../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -365,7 +366,7 @@ export function SidebarCustomizeDialog({
 					action: (
 						<Switch
 							size="sm"
-							className={mergeStylexClassName("", sx.phoneAfterAbsolute, sx.phoneAfterInsetX0, sx.phoneAfterInsetY3, sx.phoneAfterContent)}
+							className={mergeStylexOverrideClassName("", sx.phoneAfterAbsolute, sx.phoneAfterInsetX0, sx.phoneAfterInsetY3, sx.phoneAfterContent)}
 							checked={tool.shown}
 							onCheckedChange={tool.onShownChange}
 							aria-label={`${tool.shown ? "Hide" : "Show"} ${tool.label} in sidebar`}
@@ -393,7 +394,7 @@ export function SidebarCustomizeDialog({
 				onClose={() => onOpenChange(false)}
 				phone
 				label="Customize sidebar"
-				sheetClassName="max-h-[88dvh]"
+				sheetClassName={mergeStylexClassName("", sharedClassStyles.maxH88dvh)}
 			>
 				<div {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.gap3, sx.px6, sx.pb4, sx.pt05)}>
 					<h2 {...stylex.props(sx.m0, sx.minW0, sx.flex1, sx.fontSemibold, sx.leadingTight, sx.tracking001em, sx.textFg, typography.dialogTitle)}>
@@ -406,7 +407,7 @@ export function SidebarCustomizeDialog({
 						<IconX />
 					</SheetIconButton>
 				</div>
-				<SheetBody {...stylex.props(sx.flex, sx.flex1, sx.flexCol, sx.gap5, sx.px6, sx.pb6)}>
+				<SheetBody className={mergeStylexOverrideClassName("", sx.flex, sx.flex1, sx.flexCol, sx.gap5, sx.px6, sx.pb6)}>
 					{sections}
 				</SheetBody>
 			</ResponsiveDialog>
@@ -416,8 +417,8 @@ export function SidebarCustomizeDialog({
 	return (
 		<Modal.Root open={open} onOpenChange={onOpenChange}>
 			<Modal.Content
-				widthClassName="max-w-[32rem]"
-				{...stylex.props(sx.maxH80dvh, sx.gap3)}
+				widthClassName={mergeStylexClassName("", sharedClassStyles.maxW32rem)}
+				className={mergeStylexOverrideClassName("", sx.maxH80dvh, sx.gap3)}
 			>
 				<Modal.Header title="Customize sidebar" />
 				{sections}

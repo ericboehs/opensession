@@ -3,7 +3,8 @@ import { Modal } from "./modal";
 import { Button } from "./button";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexClassName } from "./cn";
+import { mergeStylexClassName, mergeStylexOverrideClassName } from "./cn";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -126,17 +127,17 @@ export function ConfirmDialog({
 		<Modal.Root open={open} onOpenChange={onOpenChange}>
 			<Modal.Content
 				role="alertdialog"
-				widthClassName="max-w-[25rem]"
+				widthClassName={mergeStylexClassName("", sharedClassStyles.maxW25rem)}
 				initialFocus={destructive ? cancelRef : confirmRef}
 			>
 				{/* 6px between title and consequence, the same step Modal.Header
 				    holds, so an alert and a full dialog open on one rhythm. */}
 				<div {...stylex.props(sx.flex, sx.flexCol, sx.gap15)}>
-					<Modal.Title {...stylex.props(sx.m0, sx.textBalance, sx.fontSemibold, sx.leadingTight, sx.tracking001em, sx.textFg, typography.dialogTitle)}>
+					<Modal.Title className={mergeStylexOverrideClassName("", sx.m0, sx.textBalance, sx.fontSemibold, sx.leadingTight, sx.tracking001em, sx.textFg, typography.dialogTitle)}>
 						{title}
 					</Modal.Title>
 					{description && (
-						<Modal.Description {...stylex.props(sx.m0, sx.textPretty, sx.fontNormal, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
+						<Modal.Description className={mergeStylexOverrideClassName("", sx.m0, sx.textPretty, sx.fontNormal, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 							{description}
 						</Modal.Description>
 					)}
@@ -147,7 +148,7 @@ export function ConfirmDialog({
 						type="button"
 						size="lg"
 						variant="soft"
-						className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneFlex1)}
+						className={mergeStylexOverrideClassName("", sx.phoneMinH11, sx.phoneFlex1)}
 						onClick={() => onOpenChange(false)}
 					>
 						{cancelLabel}
@@ -157,7 +158,7 @@ export function ConfirmDialog({
 						type="button"
 						size="lg"
 						variant={destructive ? "danger-strong" : "primary"}
-						className={mergeStylexClassName("", sx.phoneMinH11, sx.phoneFlex1)}
+						className={mergeStylexOverrideClassName("", sx.phoneMinH11, sx.phoneFlex1)}
 						onClick={() => {
 							onOpenChange(false);
 							onConfirm();

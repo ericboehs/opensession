@@ -3,6 +3,7 @@ import { openLightbox } from "./MediaLightbox";
 import { IconX } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { motionStyles } from "../styles/animations.stylex";
+import { mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -153,7 +154,7 @@ export function ImageThumbs({ images, onRemove, disabled, pending = 0 }: Props) 
             disabled={disabled}
             title="Remove image"
           >
-            <IconX {...stylex.props(sx.block)} size={12} dense />
+            <IconX className={mergeStylexOverrideClassName("", sx.block)} size={12} dense />
           </button>
         </div>
       ))}

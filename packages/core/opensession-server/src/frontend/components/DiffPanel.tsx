@@ -40,7 +40,7 @@ import {
 import { PrFileTree } from "./pr/PrFileTree";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -688,7 +688,7 @@ if (generation === flowGeneration.current) setFlowLoading(false);
         side="bottom"
         align="end"
         initialFocus
-        {...stylex.props(sx.flex, sx.w340px, sx.maxWCalc100vw24px, sx.flexCol, sx.gap05, sx.p3)}
+        className={mergeStylexOverrideClassName("", sx.flex, sx.w340px, sx.maxWCalc100vw24px, sx.flexCol, sx.gap05, sx.p3)}
       >
         {source && onSourceChange && (
           <>
@@ -741,7 +741,7 @@ if (generation === flowGeneration.current) setFlowLoading(false);
   const emptyState = <DiffEmptyState isRunning={isRunning} />;
 
   if (loading) return <LoadingState>Loading diff…</LoadingState>;
-  if (error) return <InlineAlert {...stylex.props(sx.m4)}>{error}</InlineAlert>;
+  if (error) return <InlineAlert className={mergeStylexOverrideClassName("", sx.m4)}>{error}</InlineAlert>;
   if (!repos || !repos.length) return emptyState;
 
   // Repos that actually have changes; if none, show the empty state.
@@ -786,7 +786,7 @@ if (generation === flowGeneration.current) setFlowLoading(false);
         <Button
           variant="default"
           size="sm"
-          {...stylex.props(sx.ml2, sx.minH0, sx.px2, sx.py05, typography.meta)}
+          className={mergeStylexOverrideClassName("", sx.ml2, sx.minH0, sx.px2, sx.py05, typography.meta)}
           onClick={tellAgentAboutEdits}
           title="Sends a note listing your hand-edits so they get reviewed and committed"
         >
@@ -992,7 +992,7 @@ function DiffEmptyState({ isRunning }: { isRunning: boolean }) {
       </div>
       {isRunning && (
         <div {...stylex.props(sx.mt1, sx.flex, sx.itemsCenter, sx.gap2, sx.textXs, sx.textFaint)}>
-          <Spinner {...stylex.props(sx.textFaint)} />
+          <Spinner className={mergeStylexOverrideClassName("", sx.textFaint)} />
           <span>Pulling latest…</span>
         </div>
       )}

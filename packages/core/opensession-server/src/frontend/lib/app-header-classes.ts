@@ -2,6 +2,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { mergeStylexClassName } from "../ui/cn";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 const sx = stylex.create({
 	hidden: {
@@ -730,10 +731,10 @@ const APP_HEADER_OVERLAY =
 	// translucent against. Full strength survives only across the status-bar
 	// strip, where the clock has to stay legible; from there down the blur is
 	// what does the work, which is how an iOS scroll edge behaves.
-	"phone:before:[background:linear-gradient(to_bottom,var(--bg)_0%,color-mix(in_srgb,var(--bg)_55%,transparent)_52%,color-mix(in_srgb,var(--bg)_18%,transparent)_78%,transparent_100%)] " +
-	mergeStylexClassName("", sx.phoneBeforeBackdropBlur20px, sx.phoneBeforeBackdropSaturate14) + " " +
-	"phone:before:[-webkit-mask-image:linear-gradient(to_bottom,var(--color-black)_0%,var(--color-black)_62%,transparent_100%)] " +
-	"phone:before:[mask-image:linear-gradient(to_bottom,var(--color-black)_0%,var(--color-black)_62%,transparent_100%)]";
+	" " + mergeStylexClassName("", sharedClassStyles.phoneBeforeBackgroundLinearGradientToBottomVarBg0ColorMixInSrgbVarBg55Transparent52ColorMixInSrgbVarBg18Transparent78Transparent100) +
+	" " + mergeStylexClassName("", sx.phoneBeforeBackdropBlur20px, sx.phoneBeforeBackdropSaturate14) + " " +
+	mergeStylexClassName("", sharedClassStyles.phoneBeforeWebkitMaskImageLinearGradientToBottomVarColorBlack0VarColorBlack62Transparent100) +
+	" " + mergeStylexClassName("", sharedClassStyles.phoneBeforeMaskImageLinearGradientToBottomVarColorBlack0VarColorBlack62Transparent100);
 
 /**
  * The bar's three faces, assembled so that only one of them is ever on the
@@ -787,7 +788,7 @@ export const MOBILE_CONTROL_GLASS_EFFECTS =
 
 export const MOBILE_CONTROL_GLASS =
 	mergeStylexClassName("", sx.phoneBgVarMobileHeaderControlSurface) +
-	MOBILE_CONTROL_GLASS_EFFECTS;
+	" " + MOBILE_CONTROL_GLASS_EFFECTS;
 
 /**
  * One circular mobile top-bar control: Back, More and future page actions all
@@ -796,8 +797,8 @@ export const MOBILE_CONTROL_GLASS =
  */
 export const MOBILE_TOP_BAR_CONTROL =
 	mergeStylexClassName("", sx.phoneM0, sx.phoneInlineFlex, sx.phoneSize11, sx.phoneMinH11, sx.phoneItemsCenter, sx.phoneJustifyCenter) +
-	[mergeStylexClassName("", sx.phoneRoundedFull, sx.phoneBorder, sx.phoneBorderColorVarMobileHeaderControlBorder), MOBILE_CONTROL_GLASS, mergeStylexClassName("", sx.phoneP0)].filter(Boolean).join(" ") +
-	mergeStylexClassName("", sx.phoneTextFg, sx.phoneShadowVarMobileHeaderControlShadow) + " " +
+	" " + [mergeStylexClassName("", sx.phoneRoundedFull, sx.phoneBorder, sx.phoneBorderColorVarMobileHeaderControlBorder), MOBILE_CONTROL_GLASS, mergeStylexClassName("", sx.phoneP0)].filter(Boolean).join(" ") +
+	" " + mergeStylexClassName("", sx.phoneTextFg, sx.phoneShadowVarMobileHeaderControlShadow) + " " +
 	mergeStylexClassName("", sx.phoneCursorPointer, sx.phoneTouchManipulation) + " " +
 	mergeStylexClassName("", sx.phoneWebkitTapHighlightColorTransparent) + " " +
 	mergeStylexClassName("", sx.phoneTransitionPropertyOpacity, sx.phoneDurationVarDur) + " " +
@@ -807,7 +808,7 @@ export const MOBILE_TOP_BAR_CONTROL =
 /** Back adds only its PWA hook and the chevron's optical left nudge. */
 export const MOBILE_BACK =
 	[mergeStylexClassName("pwa-header-back"), MOBILE_TOP_BAR_CONTROL].filter(Boolean).join(" ") +
-	"phone:[&_svg]:size-[34px] phone:[&_svg]:-ml-px";
+	" " + "phone:[&_svg]:size-[34px] phone:[&_svg]:-ml-px";
 
 /**
  * Live connection dot on the organization mark in the sidebar selector. It
@@ -836,8 +837,8 @@ export const HEADER_TITLE_PILL =
 	mergeStylexClassName("", sx.phoneFlex, sx.phoneMinH11, sx.phoneFlex01Auto, sx.phoneMinW0, sx.phoneItemsCenter) + " " +
 	mergeStylexClassName("", sx.phoneJustifyStart, sx.phoneGap9px, sx.phoneMl2, sx.phoneMrAuto) + " " +
 	mergeStylexClassName("", sx.phonePy5px, sx.phonePr4, sx.phonePl11px) +
-	[mergeStylexClassName("", sx.phoneRoundedFull, sx.phoneBorder, sx.phoneBorderColorVarMobileHeaderControlBorder), MOBILE_CONTROL_GLASS].filter(Boolean).join(" ") +
-	mergeStylexClassName("", sx.phoneShadowVarMobileHeaderControlShadow, sx.phoneTextFg) + " " +
+	" " + [mergeStylexClassName("", sx.phoneRoundedFull, sx.phoneBorder, sx.phoneBorderColorVarMobileHeaderControlBorder), MOBILE_CONTROL_GLASS].filter(Boolean).join(" ") +
+	" " + mergeStylexClassName("", sx.phoneShadowVarMobileHeaderControlShadow, sx.phoneTextFg) + " " +
 	mergeStylexClassName("", sx.phonePointerEventsAuto);
 
 /** Center a plain page title independently of the leading and trailing controls. */
@@ -856,8 +857,8 @@ export const HEADER_TITLE_PILL_CENTERED =
 export const ARCHIVED_SEARCH_HEADER =
 	"phone:h-[calc(max(env(safe-area-inset-top,0px),16px)+60px)]! " +
 	"phone:pt-[max(env(safe-area-inset-top,0px),16px)]! " +
-	"phone:transition-[height,padding-top,opacity,transform] " +
-	mergeStylexClassName("", sx.phoneDurationVarDur, sx.phoneEaseVarEase) + " " +
+	mergeStylexClassName("", sharedClassStyles.phoneTransitionHeightPaddingTopOpacityTransform) +
+	" " + mergeStylexClassName("", sx.phoneDurationVarDur, sx.phoneEaseVarEase) + " " +
 	"phone:[body.kb-open_&]:h-0! phone:[body.kb-open_&]:pt-0! " +
 	"phone:[body.kb-open_&]:pointer-events-none phone:[body.kb-open_&]:opacity-0 " +
 	mergeStylexClassName("phone:[body.kb-open_&]:[transform:translateY(-8px)]", sx.motionReduceTransitionNone);
@@ -885,7 +886,7 @@ export const HEADER_TITLE_PILL_FADE =
  */
 export const HEADER_TITLE_PILL_TAPPABLE =
 	[HEADER_TITLE_PILL, mergeStylexClassName("group/titlepill")].filter(Boolean).join(" ") +
-	mergeStylexClassName("", sx.phoneCursorPointer, sx.phoneWebkitTapHighlightColorTransparent);
+	" " + mergeStylexClassName("", sx.phoneCursorPointer, sx.phoneWebkitTapHighlightColorTransparent);
 
 /**
  * Leading repo tile — a fixed square spanning both text rows. It is filled by
@@ -1005,8 +1006,8 @@ const HEADER_ACTIONS_BASE =
  */
 export const APP_HEADER_ACTIONS =
 	[HEADER_ACTIONS_BASE, mergeStylexClassName("", sx.phoneMlAuto, sx.phoneGap0, sx.phoneOverflowHidden)].filter(Boolean).join(" ") +
-	[mergeStylexClassName("", sx.phoneRoundedFull, sx.phoneBorder, sx.phoneBorderColorVarMobileHeaderControlBorder), MOBILE_CONTROL_GLASS].filter(Boolean).join(" ") +
-	mergeStylexClassName("", sx.phoneShadowVarMobileHeaderControlShadow);
+	" " + [mergeStylexClassName("", sx.phoneRoundedFull, sx.phoneBorder, sx.phoneBorderColorVarMobileHeaderControlBorder), MOBILE_CONTROL_GLASS].filter(Boolean).join(" ") +
+	" " + mergeStylexClassName("", sx.phoneShadowVarMobileHeaderControlShadow);
 
 /**
  * On a pushed page the title pill already carries `mr-auto` to shove this
@@ -1045,7 +1046,7 @@ const MOBILE_BAR_SEGMENT =
  */
 export const MOBILE_SEARCH_BTN =
 	[MOBILE_BAR_SEGMENT, mergeStylexClassName("", sx.phoneTextFg)].filter(Boolean).join(" ") +
-	mergeStylexClassName("", sx.phoneTransitionPropertyOpacity, sx.phoneDurationVarDur) + " " +
+	" " + mergeStylexClassName("", sx.phoneTransitionPropertyOpacity, sx.phoneDurationVarDur) + " " +
 	mergeStylexClassName("", sx.phoneEaseVarEase);
 
 /**
@@ -1060,7 +1061,7 @@ export const MOBILE_SEARCH_BTN =
  */
 const MOBILE_FILTER_BTN_BASE =
 	[MOBILE_BAR_SEGMENT, mergeStylexClassName("", sx.phoneOrder1)].filter(Boolean).join(" ") +
-	"phone:[transition:opacity_var(--dur)_var(--ease),color_var(--dur-micro)_var(--ease)] ";
+	" " + "phone:[transition:opacity_var(--dur)_var(--ease),color_var(--dur-micro)_var(--ease)] ";
 
 const MOBILE_FILTER_BTN = {
 	muted: [MOBILE_FILTER_BTN_BASE, mergeStylexClassName("", sx.phoneTextDim)].filter(Boolean).join(" "),

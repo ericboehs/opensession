@@ -2,6 +2,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { mergeStylexClassName } from "../ui/cn";
 import { type as typography } from "../styles/typography.stylex";
+import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 const sx = stylex.create({
 	Mx3: {
@@ -272,7 +273,7 @@ export const PR_FEED_ROW =
 	mergeStylexClassName("", sx.afterHPx, sx.afterBgLine, sx.afterTransitionOpacity, sx.afterDurationVarDurMicro) + " " +
 	mergeStylexClassName("last:after:opacity-0", sx.hoverAfterOpacity0) + " " +
 	"[&:has(+button:hover)]:after:opacity-0 " +
-	"phone:grid-cols-[24px_minmax(0,1fr)_44px]";
+	mergeStylexClassName("", sharedClassStyles.phoneGridCols24pxMinmax01fr44px);
 
 export const PR_ROW =
 	mergeStylexClassName("group", sx.gridCols22px24pxMinmax01fr130px44px, sx.focusRing, sx.relative, sx.grid, sx.wFull) + " " +
@@ -282,4 +283,4 @@ export const PR_ROW =
 	mergeStylexClassName("", sx.afterHPx, sx.afterBgLine, sx.afterTransitionOpacity, sx.afterDurationVarDurMicro) + " " +
 	mergeStylexClassName("last:after:opacity-0", sx.hoverAfterOpacity0) + " " +
 	"[&:has(+button:hover)]:after:opacity-0 " +
-	"phone:grid-cols-[22px_24px_minmax(0,1fr)_44px]";
+	mergeStylexClassName("", sharedClassStyles.phoneGridCols22px24pxMinmax01fr44px);

@@ -27,7 +27,7 @@ import { transcriptDisclosureLedger } from "../lib/transcript-disclosures";
 import { turnScrollAnchor } from "../lib/transcript-block-identity";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -489,7 +489,7 @@ export const TurnBlock = function TurnBlock({
         <span
           {...stylex.props(sx.grid, sx.size5, sx.flexShrink0, sx.selfCenter, sx.placeItemsCenter, sx.leadingNone, sx.textFaint, sx.transitionTransform, sx.duration150, !expanded && sx.rotateNeg90)}
         >
-          <IconChevronDown size={20} {...stylex.props(sx.block)} />
+          <IconChevronDown size={20} className={mergeStylexOverrideClassName("", sx.block)} />
         </span>
         <span {...stylex.props(sx.flexShrink0, sx.fontMedium)}>
           {live ? "Working" : "Worked"}
@@ -710,7 +710,7 @@ function ToolRunBlock({
           <span
             {...mergeStylexProps("group-hover:opacity-0 group-focus-visible:opacity-0", sx.absolute, sx.inset0, sx.transitionOpacity, sx.duration150, expanded && sx.opacity0)}
           >
-            <IconStack size={18} {...stylex.props(sx.absolute, sx.left12, sx.top12, sx.TranslateX12, sx.TranslateY12)} />
+            <IconStack size={18} className={mergeStylexOverrideClassName("", sx.absolute, sx.left12, sx.top12, sx.TranslateX12, sx.TranslateY12)} />
           </span>
           <IconChevronDown
             size={20}

@@ -30,7 +30,8 @@ const sx = stylex.create({
 			flexShrink: "0"
 	},
 	fontTitle: {
-			fontWeight: "var(--title-weight)"
+			fontWeight: "var(--title-weight)",
+		"--settings-leading": "1.1"
 	},
 	textFg: {
 			color: "var(--text)"

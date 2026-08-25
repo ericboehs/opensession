@@ -12,7 +12,7 @@ import { currentPlanItem, parsePlanItems, planDoneCount } from "@tellahq/openses
 import { PlanChecklist } from "./PlanChecklist";
 import { resolveEntryImageSrc } from "../lib/osBlob";
 import { BASE_PATH } from "../lib/base";
-import { cn, mergeStylexProps, mergeStylexClassName } from "../ui/cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import {
   TOOL_CODE_WELL,
   TOOL_PRE,
@@ -691,7 +691,7 @@ export const ToolCallBlock = function ToolCallBlock({
           {...stylex.props(sx.flex, sx.minW0, sx.itemsBaseline, sx.gap2, mcp && sx.phoneHidden)}
         >
           <span {...stylex.props(sx.flex, sx.minW0, sx.itemsBaseline, sx.gap15)}>
-            {fileMark && <ExtBadge name={fileMark} {...stylex.props(sx.selfCenter)} />}
+            {fileMark && <ExtBadge name={fileMark} className={mergeStylexOverrideClassName("", sx.selfCenter)} />}
             <span
               {...stylex.props(sx.minW0, typography.label, sx.leading4, sx.textDim, isFileTool ? sx.flex : sx.truncate, isFileTool && sx.overflowHidden)}
             >
@@ -730,7 +730,7 @@ export const ToolCallBlock = function ToolCallBlock({
             title="Open this file"
           >
             Open
-            <IconArrowUpRight {...stylex.props(sx.size4, sx.shrink0, sx.opacity70)} />
+            <IconArrowUpRight className={mergeStylexOverrideClassName("", sx.size4, sx.shrink0, sx.opacity70)} />
           </span>
         )}
 
@@ -747,7 +747,7 @@ export const ToolCallBlock = function ToolCallBlock({
             title="Open this sub-agent's conversation"
           >
             {subagentLive ? "Watch" : "Open"}
-            <IconArrowUpRight {...stylex.props(sx.size4, sx.shrink0, sx.opacity70)} />
+            <IconArrowUpRight className={mergeStylexOverrideClassName("", sx.size4, sx.shrink0, sx.opacity70)} />
           </span>
         )}
 
@@ -924,7 +924,7 @@ function toolInputNode(toolName: string, input: unknown): React.ReactNode | null
   // the status flap above the composer uses).
   if (toolName === "TodoWrite") {
     const items = parsePlanItems(input);
-    if (items.length > 0) return <PlanChecklist items={items} {...stylex.props(sx.px1, sx.py15)} />;
+    if (items.length > 0) return <PlanChecklist items={items} className={mergeStylexOverrideClassName("", sx.px1, sx.py15)} />;
   }
 
   // Read's input is fully covered by the row summary (plus offset/limit when

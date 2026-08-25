@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Dialog as BaseDialog } from "@base-ui/react/dialog";
-import { cn, mergeStylexProps, mergeStylexClassName } from "./cn";
+import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "./cn";
 import { IconX } from "../components/icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -573,7 +573,7 @@ function Header({
 				{/* Base UI renders Title as <h2> and Description as <p>; preflight
 				    isn't imported (base.css owns resets), so zero their UA margins
 				    or the <h2> top margin reads as phantom padding above the head. */}
-				<BaseDialog.Title {...stylex.props(sx.m0, sx.minW0, sx.flex1, sx.textBalance, sx.fontSemibold, sx.leadingTight, sx.tracking001em, sx.textFg, typography.dialogTitle)}>
+				<BaseDialog.Title className={mergeStylexOverrideClassName("", sx.m0, sx.minW0, sx.flex1, sx.textBalance, sx.fontSemibold, sx.leadingTight, sx.tracking001em, sx.textFg, typography.dialogTitle)}>
 					{title}
 				</BaseDialog.Title>
 				<BaseDialog.Close
@@ -590,7 +590,7 @@ function Header({
 			    edge; the old -mt-2.5 moved its first 6px behind that opaque bar and
 			    clipped the tops of every standard modal description. */}
 			{description && (
-				<BaseDialog.Description {...stylex.props(sx.m0, sx.Mt05, sx.textPretty, sx.fontNormal, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
+				<BaseDialog.Description className={mergeStylexOverrideClassName("", sx.m0, sx.Mt05, sx.textPretty, sx.fontNormal, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 					{description}
 				</BaseDialog.Description>
 			)}

@@ -22,7 +22,7 @@ import { IconDotsHorizontal, IconPencil, IconPlus, IconTrash } from "./icons";
 import { setupRequest, type TeamMember } from "./setup-shared";
 import { UserAvatar } from "./UserAvatar";
 import * as stylex from "@stylexjs/stylex";
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -125,7 +125,7 @@ await load();
 	return (
 		<>
 			<SettingsGroupLabel
-				{...stylex.props(!title && sx.mt0)}
+				className={mergeStylexOverrideClassName("", !title && sx.mt0)}
 				actions={
 					<Button
 						size="sm"
@@ -235,7 +235,7 @@ function MemberRow({
 			<SettingRowText>
 				<SettingRowTitle>{member.name}</SettingRowTitle>
 				{!compact && details.length > 0 && (
-					<SettingRowDescription {...stylex.props(sx.truncate)}>
+					<SettingRowDescription className={mergeStylexOverrideClassName("", sx.truncate)}>
 						{details.join(" · ")}
 					</SettingRowDescription>
 				)}
@@ -557,7 +557,7 @@ setError(e.message);
 						</Field>
 						<Field label="Slack member id">
 							<Input
-								{...stylex.props(sx.fontMono)}
+								className={mergeStylexOverrideClassName("", sx.fontMono)}
 								value={slackId}
 								onChange={(e) => setSlackId(e.target.value)}
 								placeholder="U01ABCDEF"
