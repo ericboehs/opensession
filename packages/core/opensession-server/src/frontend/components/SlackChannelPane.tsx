@@ -235,7 +235,7 @@ const sx = stylex.create({
 	textFgPlaceholderFaint: { color: "var(--text)", "::placeholder": { color: "var(--text-faint)" } },
 
 	decorationLine: {
-		"WebkittextDecorationColor": "var(--border)",
+		"WebkitTextDecorationColor": "var(--border)",
 		"textDecorationColor": "var(--border)"
 	},
 	hoverDecorationCurrent: {

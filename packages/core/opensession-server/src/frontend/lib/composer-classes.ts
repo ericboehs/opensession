@@ -558,14 +558,14 @@ const sx = stylex.create({
 		"fontWeight": "var(--font-weight-medium)"
 	},
 	bgClipText: {
-		"WebkitbackgroundClip": "text",
+		"WebkitBackgroundClip": "text",
 		"backgroundClip": "text"
 	},
 	textTransparent: {
 		"color": "transparent"
 	},
 	WebkitBackgroundClipText: {
-		"WebkitbackgroundClip": "text"
+		"WebkitBackgroundClip": "text"
 	},
 	BackgroundSize200100: {
 		"backgroundSize": "200% 100%"

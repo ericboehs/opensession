@@ -239,7 +239,7 @@ const sx = stylex.create({
 	},
 
 	decorationLine: {
-		"WebkittextDecorationColor": "var(--border)",
+		"WebkitTextDecorationColor": "var(--border)",
 		"textDecorationColor": "var(--border)"
 	},
 	hoverTextFg: {

@@ -106,14 +106,14 @@ const sx = stylex.create({
 	reducedMotion: { "@media (prefers-reduced-motion: reduce)": { transitionProperty: "none" } },
 
 	lineClamp2: {
-		"WebkitlineClamp": "2",
-		"WebkitboxOrient": "vertical",
+		"WebkitLineClamp": "2",
+		"WebkitBoxOrient": "vertical",
 		"display": "-webkit-box",
 		"overflow": "hidden"
 	},
 	lineClamp3: {
-		"WebkitlineClamp": "3",
-		"WebkitboxOrient": "vertical",
+		"WebkitLineClamp": "3",
+		"WebkitBoxOrient": "vertical",
 		"display": "-webkit-box",
 		"overflow": "hidden"
 	},

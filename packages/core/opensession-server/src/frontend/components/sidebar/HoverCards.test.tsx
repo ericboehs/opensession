@@ -201,7 +201,7 @@ describe("hover cards drop the repo and the idle timestamp", () => {
 		expect(callout).toContain(
 			'title="The model is unavailable. Send the prompt again.">The model is unavailable.</div>',
 		);
-		expect(callout).toContain("-webkitline-clamp:2");
+		expect(callout).toContain("-webkit-line-clamp:2");
 		expect(callout).not.toContain("Last run failed");
 	});
 });

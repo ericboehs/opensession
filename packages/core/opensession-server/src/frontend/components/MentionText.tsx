@@ -18,17 +18,17 @@ const sx = stylex.create({
 	},
 
 	decorationAccent40: {
-		"WebkittextDecorationColor": "var(--accent)",
+		"WebkitTextDecorationColor": "var(--accent)",
 		"textDecorationColor": "var(--accent)",
 		"@supports (color: color-mix(in lab, red, red))": {
-			"WebkittextDecorationColor": "color-mix(in oklab, var(--accent) 40%, transparent)",
+			"WebkitTextDecorationColor": "color-mix(in oklab, var(--accent) 40%, transparent)",
 			"textDecorationColor": "color-mix(in oklab, var(--accent) 40%, transparent)"
 		}
 	},
 	hoverDecorationAccent: {
 		"@media (hover: hover)": {
 			":hover": {
-				"WebkittextDecorationColor": "var(--accent)",
+				"WebkitTextDecorationColor": "var(--accent)",
 				"textDecorationColor": "var(--accent)"
 			}
 		}

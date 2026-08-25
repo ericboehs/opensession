@@ -101,7 +101,7 @@ const sx = stylex.create({
 		"whiteSpace": "nowrap"
 	},
 	WebkitTouchCalloutDefault: {
-		"WebkittouchCallout": "default"
+		"WebkitTouchCallout": "default"
 	},
 	Mx2: {
 		"marginInline": "-8px"

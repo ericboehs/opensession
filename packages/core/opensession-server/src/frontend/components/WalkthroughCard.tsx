@@ -386,8 +386,8 @@ const sx = stylex.create({
 		}
 	},
 	lineClamp3: {
-		"WebkitlineClamp": "3",
-		"WebkitboxOrient": "vertical",
+		"WebkitLineClamp": "3",
+		"WebkitBoxOrient": "vertical",
 		"display": "-webkit-box",
 		"overflow": "hidden"
 	},

@@ -64,7 +64,7 @@ const sx = stylex.create({
 		}
 	},
 	WebkitAppRegionNoDrag: {
-		"WebkitappRegion": "no-drag"
+		"WebkitAppRegion": "no-drag"
 	},
 });
 

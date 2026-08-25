@@ -569,7 +569,7 @@ const sx = stylex.create({
 		"width": "min(680px, calc(100vw - 24px), var(--available-width))"
 	},
 	decorationLineStrong: {
-		"WebkittextDecorationColor": "var(--border-strong)",
+		"WebkitTextDecorationColor": "var(--border-strong)",
 		"textDecorationColor": "var(--border-strong)"
 	},
 	textYellow: {
@@ -605,8 +605,8 @@ const sx = stylex.create({
 		"paddingBlock": "7px"
 	},
 	lineClamp2: {
-		"WebkitlineClamp": "2",
-		"WebkitboxOrient": "vertical",
+		"WebkitLineClamp": "2",
+		"WebkitBoxOrient": "vertical",
 		"display": "-webkit-box",
 		"overflow": "hidden"
 	},

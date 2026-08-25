@@ -253,8 +253,8 @@ const sx = stylex.create({
 		"paddingBottom": "max(16px, env(safe-area-inset-bottom))"
 	},
 	lineClamp1: {
-		"WebkitlineClamp": "1",
-		"WebkitboxOrient": "vertical",
+		"WebkitLineClamp": "1",
+		"WebkitBoxOrient": "vertical",
 		"display": "-webkit-box",
 		"overflow": "hidden"
 	},

@@ -55,7 +55,7 @@ describe("WalkthroughCard", () => {
 		// media it explains, so the fold is what hides the rest, not the point.
 		expect(html).toContain(">After</span>");
 		expect(html).toContain("The clearer controls");
-		expect(html).toContain("-webkitline-clamp:3");
+		expect(html).toContain("-webkit-line-clamp:3");
 		const source = await Bun.file(new URL("./WalkthroughCard.tsx", import.meta.url)).text();
 		expect(source).toContain('"maxWidth": "var(--session-col)"');
 		expect(html).not.toContain("transition-[max-width]");

@@ -23,7 +23,7 @@ const sx = stylex.create({
 		"backgroundColor": "var(--popup-glass)"
 	},
 	BackdropFilterVarPopupBlur: {
-		"WebkitbackdropFilter": "var(--popup-blur)",
+		"WebkitBackdropFilter": "var(--popup-blur)",
 		"backdropFilter": "var(--popup-blur)"
 	},
 	SmoothRingColorVarPopupRing: {
