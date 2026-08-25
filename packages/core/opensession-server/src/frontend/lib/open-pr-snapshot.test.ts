@@ -14,7 +14,7 @@ function pr(number: number, title = `PR ${number}`): OpenPr {
 		author: "jaap",
 		createdAt: "2026-08-25T00:00:00.000Z",
 		updatedAt: "2026-08-25T00:00:00.000Z",
-	} as OpenPr;
+	} as unknown as OpenPr;
 }
 
 describe("sameOpenPrSnapshot", () => {

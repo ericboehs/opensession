@@ -19,11 +19,7 @@ import { MAX_UPLOAD_BYTES, stageHttpUpload } from "../uploads";
 import { systemStats } from "../system-stats";
 import { BOOT_ID, broadcastToAll } from "../ws-hub";
 import { executorClientHealth, executorClientReady } from "../executor-client";
-import {
-	sessionKernelHealth,
-	sessionKernelReadinessSnapshot,
-	sessionKernelStore,
-} from "../session-kernel";
+import { sessionKernelHealth, sessionKernelStore } from "../session-kernel";
 import { requireWorkspaceAdmin } from "../workspace-auth";
 import { audit } from "../audit";
 import { serviceReadiness } from "../service-readiness";
@@ -34,36 +30,56 @@ import { serviceReadiness } from "../service-readiness";
 // when the actor is already degraded. Serve a short-TTL snapshot with
 // single-flight refresh instead; mutations invalidate it immediately.
 const DEAD_LETTERS_CACHE_TTL_MS = 5_000;
-let deadLettersCache: {
+type DeadLettersEntry = {
 	at: number;
-	refresh: Promise<unknown>;
+	inFlight?: Promise<unknown>;
 	value?: unknown;
-} | undefined;
+};
+const deadLettersCaches = new Map<string, DeadLettersEntry>();
 
-function deadLettersSnapshot(limit: number, offset: number): Promise<unknown> {
+/** Test access to cache timing state without fake timers. */
+export function __deadLettersCachesForTest(): Map<string, DeadLettersEntry> {
+	return deadLettersCaches;
+}
+
+export function deadLettersSnapshot(
+	limit: number,
+	offset: number,
+	load: (limit: number, offset: number) => unknown = () =>
+		sessionKernelStore().deadLetters(limit, offset),
+): Promise<unknown> {
+	// One entry per page: a cached page A must never be served for page B.
+	const key = `${limit}:${offset}`;
 	const now = Date.now();
-	const cached = deadLettersCache;
-	if (cached && now - cached.at < DEAD_LETTERS_CACHE_TTL_MS) return cached.refresh;
-	const priorValue = cached?.value;
-	const refresh = (async () => {
+	const cached = deadLettersCaches.get(key);
+	if (cached && now - cached.at < DEAD_LETTERS_CACHE_TTL_MS) {
+		if (cached.inFlight) return cached.inFlight;
+		if (cached.value !== undefined) return Promise.resolve(cached.value);
+	}
+	// The last settled value is retained across refreshes so a degraded actor
+	// cannot take the reliability view down with it.
+	const entry: DeadLettersEntry = {
+		at: now,
+		...(cached?.value !== undefined ? { value: cached.value } : {}),
+	};
+	const inFlight = (async () => {
 		try {
-			const value = sessionKernelStore().deadLetters(limit, offset);
-			deadLettersCache = { at: Date.now(), refresh: Promise.resolve(value), value };
+			const value = await Promise.resolve(load(limit, offset));
+			entry.value = value;
+			entry.at = Date.now();
 			return value;
 		} catch (error) {
-			// A degraded actor must not take the reliability view down with it:
-			// keep serving the last good snapshot until a refresh succeeds.
-			if (priorValue === undefined) throw error;
-			deadLettersCache = {
-				at: Date.now(),
-				refresh: Promise.resolve(priorValue),
-				value: priorValue,
-			};
-			return priorValue;
+			// Rate-limit retry attempts while the actor keeps failing.
+			entry.at = Date.now();
+			if (entry.value === undefined) throw error;
+			return entry.value;
+		} finally {
+			entry.inFlight = undefined;
 		}
 	})();
-	deadLettersCache = { at: now, refresh };
-	return refresh;
+	entry.inFlight = inFlight;
+	deadLettersCaches.set(key, entry);
+	return inFlight;
 }
 
 export async function handleSystemRoutes(
@@ -133,7 +149,7 @@ export async function handleSystemRoutes(
 				outbox_id: Number.isSafeInteger(body?.id) ? Number(body?.id) : undefined,
 				changed,
 			});
-			if (changed) deadLettersCache = undefined;
+			if (changed) deadLettersCaches.clear();
 			return Response.json(
 				{ changed, action: validQuarantine ? "release" : discard ? "discard" : "retry" },
 				{ status: changed ? 200 : 404 },
@@ -147,7 +163,7 @@ export async function handleSystemRoutes(
 
 	if (path === "/ready" && req.method === "GET") {
 		try {
-			const kernel = sessionKernelReadinessSnapshot();
+			const kernel = await sessionKernelHealth();
 			const executor = executorClientHealth();
 			const executorReadiness = await executorClientReady();
 			const readiness = serviceReadiness();
