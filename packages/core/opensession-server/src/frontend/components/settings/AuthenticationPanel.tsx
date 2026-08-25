@@ -1,5 +1,8 @@
+import { useState } from "react";
 import { useSetupStatus } from "../../hooks/useSetupStatus";
+import { Segmented, SegmentedOption } from "../../ui/segmented";
 import {
+	SettingCard,
 	SettingCardSkeleton,
 	SettingsGroupLabel,
 	SettingsHeader,
@@ -7,12 +10,85 @@ import {
 	SettingsPanel,
 } from "../../ui/settings";
 import { InlineAlert } from "../../ui/state";
-import { GithubAuthCard } from "../SetupIntegrations";
+import { toast } from "../../ui/toast";
+import { setupRequest, type SetupGithub } from "../setup-shared";
 import { SetupRestart } from "../SetupRestart";
 
-// Organization → Authentication: the workspace sign-in method and the GitHub
-// App that backs it. Bot credentials stay App-only whether sign-in is None or
-// GitHub; this page controls only whether teammates authenticate through it.
+function AuthenticationMethod({
+	github,
+	onSaved,
+}: {
+	github: SetupGithub;
+	onSaved: (updated: SetupGithub, restartRequired: boolean) => void;
+}) {
+	const [saving, setSaving] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	async function select(provider: string) {
+		const enabled = provider === "github";
+		if (saving || enabled === github.userPrAuth) return;
+		setSaving(true);
+		setError(null);
+		await setupRequest<{
+			github: SetupGithub;
+			restartRequired: boolean;
+		}>("/api/setup/github", {
+			method: "PUT",
+			json: { userPrAuth: enabled },
+		})
+			.then((body) => {
+				toast(`GitHub sign-in ${enabled ? "enabled" : "disabled"}`);
+				onSaved(body.github, body.restartRequired === true);
+			})
+			.catch((cause) => {
+				const message =
+					cause instanceof Error ? cause.message : "Could not update authentication";
+				setError(message);
+				toast(message, { variant: "error" });
+			});
+		setSaving(false);
+	}
+
+	return (
+		<>
+			<SettingCard>
+				<div className="flex items-center gap-4 px-5 py-4 phone:flex-col phone:items-stretch phone:px-3">
+					<div className="min-w-0 flex-1">
+						<div className="text-item-title font-medium text-fg">Sign-in method</div>
+						<div className="mt-0.5 text-supporting leading-relaxed text-dim">
+							Require GitHub sign-in, or leave this workspace open.
+						</div>
+					</div>
+					<Segmented
+						label="Sign-in method"
+						value={github.userPrAuth ? "github" : "none"}
+						onValueChange={(value) => void select(value)}
+						className="phone:w-full"
+					>
+						<SegmentedOption
+							value="none"
+							disabled={saving}
+							className="phone:min-h-11 phone:flex-1 phone:justify-center"
+						>
+							None
+						</SegmentedOption>
+						<SegmentedOption
+							value="github"
+							disabled={saving}
+							className="phone:min-h-11 phone:flex-1 phone:justify-center"
+						>
+							GitHub
+						</SegmentedOption>
+					</Segmented>
+				</div>
+			</SettingCard>
+			{error && <InlineAlert>{error}</InlineAlert>}
+		</>
+	);
+}
+
+// Organization → Authentication controls only the workspace sign-in gate.
+// Provider credentials belong to Organization → Integrations.
 export function AuthenticationPanel() {
 	const setup = useSetupStatus();
 	const { status, failed } = setup;
@@ -26,15 +102,14 @@ export function AuthenticationPanel() {
 				failed ? (
 					<InlineAlert>Couldn&rsquo;t load authentication settings.</InlineAlert>
 				) : (
-					<SettingCardSkeleton rows={1} icon={40} label="Loading authentication" />
+					<SettingCardSkeleton rows={1} label="Loading authentication" />
 				)
 			) : (
 				<>
-					<SettingsGroupLabel>Sign-in method</SettingsGroupLabel>
-					<GithubAuthCard github={status.github} onSaved={setup.applyGithub} />
+					<SettingsGroupLabel>Workspace access</SettingsGroupLabel>
+					<AuthenticationMethod github={status.github} onSaved={setup.applyGithub} />
 					<SettingsHint>
-						None leaves the workspace open. GitHub requires every teammate to sign in
-						with their configured GitHub account.
+						Configure the GitHub App and its credentials under Integrations.
 					</SettingsHint>
 				</>
 			)}

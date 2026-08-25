@@ -76,6 +76,7 @@ describe("GitHub integration status", () => {
       appSlug: "open-session-test",
       installationOwner: "acme",
       appCredentialConfigured: true,
+      privateKeyConfigured: true,
     });
     const github = body.integrations.find((item: any) => item.id === "github");
     expect(github.missingRequired).toEqual([]);

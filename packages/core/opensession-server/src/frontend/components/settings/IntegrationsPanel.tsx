@@ -34,6 +34,8 @@ export function IntegrationsPanel() {
 				<IntegrationsList
 					integrations={status.integrations}
 					onSaved={setup.applyIntegration}
+					github={status.github}
+					onGithubSaved={setup.applyGithub}
 				/>
 			)}
 			<SetupRestart setup={setup} />

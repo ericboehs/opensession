@@ -40,6 +40,7 @@ export interface SetupGithub {
 	clientSecretConfigured: boolean;
 	mentionHandle: string;
 	appCredentialConfigured: boolean;
+	privateKeyConfigured: boolean;
 	appSlug: string | null;
 	installationOwner: string | null;
 	appOrg?: string | null;

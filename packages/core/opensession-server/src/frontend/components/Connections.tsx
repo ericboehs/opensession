@@ -1558,7 +1558,7 @@ setError(e.message);
               <SettingRowDescription className="leading-snug">
                 {active
                   ? "Interactive sessions of a connected teammate open PRs as their own GitHub account. Trusted GitHub automations use the repository-scoped App credential."
-                  : "Off. Interactive sessions use the workspace credential. Configure the GitHub App and sign-in method in Settings → Authentication."}
+                  : "Off. Interactive sessions use the workspace credential. Configure the GitHub App in Settings → Integrations and the sign-in method in Settings → Authentication."}
               </SettingRowDescription>
             )}
             {personal && active && (

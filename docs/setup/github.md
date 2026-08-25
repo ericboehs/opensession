@@ -14,7 +14,7 @@ Create one organization-owned GitHub App. The same App provides:
 - device-flow user tokens so interactive sessions act as the signed-in person;
 - the bot identity `<app-slug>[bot]` for self-trigger protection and attribution.
 
-Configure it from Settings → Authentication, or under
+Configure it from Settings → Integrations, or under
 `integrations.github` in `~/.opensession/config.json`:
 
 ```jsonc
@@ -32,8 +32,8 @@ Configure it from Settings → Authentication, or under
 }
 ```
 
-The private key is not stored in JSON. Paste the PEM in Settings; Open Session
-writes it atomically with mode 0600 to `~/.opensession/github-app.pem`. Operators
+The private key is not stored in JSON. Paste the PEM in Settings →
+Integrations; Open Session writes it atomically with mode 0600 to `~/.opensession/github-app.pem`. Operators
 may instead set `OPENSESSION_GITHUB_APP_KEY` to an externally managed PEM path.
 The UI will not overwrite or delete an operator-managed key.
 
@@ -45,8 +45,8 @@ numeric installation; normally `installationOwner` selects it by organization.
 
 ### Required permissions
 
-The create-App link in Settings is generated from the same canonical permission
-set used when tokens are minted:
+The create-App link in Settings → Integrations is generated from the same
+canonical permission set used when tokens are minted:
 
 | Scope | Access | Why |
 | --- | --- | --- |

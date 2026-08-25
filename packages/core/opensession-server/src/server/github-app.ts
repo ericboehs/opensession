@@ -239,9 +239,14 @@ export function githubAppCredentialHealth():
   return g.__ghAppLastMintOk ? "operational" : "unavailable";
 }
 
+/** Whether a private key is stored for the GitHub App. */
+export function githubAppPrivateKeyConfigured(): boolean {
+  return existsSync(keyPath());
+}
+
 /** Whether a GitHub App can mint installation tokens (client id + private key). */
 export function githubAppConfigured(): boolean {
-  return !!githubUserAuthSettings().clientId && existsSync(keyPath());
+  return !!githubUserAuthSettings().clientId && githubAppPrivateKeyConfigured();
 }
 
 /** Persist the App's private key (0600) at the key path — the piece the device-flow

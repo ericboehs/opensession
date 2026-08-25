@@ -16,6 +16,7 @@ import {
 	type SlackTransport,
 } from "../lib/slack-setup";
 import { IconTile } from "./BrandTile";
+import { GithubAppFields } from "./GithubAppFields";
 import { SlackManifestGuide } from "./SlackManifestGuide";
 import {
 	Code,
@@ -26,6 +27,7 @@ import {
 	SecretField,
 	SetupSteps,
 	setupRequest,
+	type SetupGithub,
 	type SetupIntegration,
 	type SetupScopeGroup,
 } from "./setup-shared";
@@ -182,13 +184,14 @@ function guideFor(
 			return {
 				description: "Connect the GitHub App that handles PR comments, reviews, clones, and pushes.",
 				steps: [
-					<>Configure the App client id, slug, client secret, installation owner, and private key in Settings → Authentication.</>,
-					<>Install the App only on the organization and repositories Open Session should reach.</>,
+					<>Create an organization-owned GitHub App and turn on <strong>Device Flow</strong>.</>,
+					<>Grant the repository and organization permissions shown below, then install the App only on the repositories Open Session should reach.</>,
+					<>Paste the client id, app slug, installation owner, client secret, and generated private key above.</>,
 					<>
 						Add an organization webhook with content type <strong>application/json</strong> and this payload URL:
 						<Value value={url("/github/webhook")} />
 					</>,
-					<>Create a webhook secret, paste it both into GitHub and above, then add any legacy @handles that should also wake the PR agent.</>,
+					<>Create a webhook secret, paste it both into GitHub and above, then add any additional @handles that should wake the PR agent.</>,
 					<>Enable GitHub, save, restart Open Session, and send a webhook test delivery.</>,
 				],
 				permissions: [
@@ -230,11 +233,15 @@ export function IntegrationSetupDialog({
 	open,
 	onOpenChange,
 	onSaved,
+	github,
+	onGithubSaved,
 }: {
 	integration: SetupIntegration;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	onSaved: (updated: SetupIntegration, restartRequired: boolean) => void;
+	github?: SetupGithub;
+	onGithubSaved?: (updated: SetupGithub, restartRequired: boolean) => void;
 }) {
 	const [enabled, setEnabled] = useState(integration.enabled);
 	const [typed, setTyped] = useState<Record<string, string>>({});
@@ -244,6 +251,15 @@ export function IntegrationSetupDialog({
 	const [transport, setTransport] = useState<SlackTransport>(() =>
 		savedSlackTransport(integration.env),
 	);
+	const [clientId, setClientId] = useState("");
+	const [appSlug, setAppSlug] = useState(github?.appSlug ?? "");
+	const [installationOwner, setInstallationOwner] = useState(
+		github?.installationOwner ?? github?.appOrg ?? "",
+	);
+	const [clientSecret, setClientSecret] = useState("");
+	const [privateKey, setPrivateKey] = useState("");
+	const [clearClientId, setClearClientId] = useState(false);
+	const [clearClientSecret, setClearClientSecret] = useState(false);
 	const guide = guideFor(integration, WEBHOOK_BASE_URL, transport);
 	const httpAvailable = publicWebhookAvailable(WEBHOOK_BASE_URL);
 
@@ -255,7 +271,14 @@ export function IntegrationSetupDialog({
 		setCleared({});
 		setError(null);
 		setTransport(savedSlackTransport(integration.env));
-	}, [open, integration]);
+		setClientId("");
+		setAppSlug(github?.appSlug ?? "");
+		setInstallationOwner(github?.installationOwner ?? github?.appOrg ?? "");
+		setClientSecret("");
+		setPrivateKey("");
+		setClearClientId(false);
+		setClearClientSecret(false);
+	}, [open, integration, github]);
 
 	function pickTransport(next: SlackTransport) {
 		setTransport(next);
@@ -282,43 +305,115 @@ export function IntegrationSetupDialog({
 				envVar.present && cleared[envVar.name] && !(typed[envVar.name] ?? "").trim(),
 		)
 		.map((envVar) => envVar.name);
-	const dirty =
+	const integrationDirty =
 		enabled !== integration.enabled || typedKeys.length > 0 || clearedKeys.length > 0;
+	const clientIdCleared =
+		Boolean(github?.clientIdConfigured) && clearClientId && !clientId.trim();
+	const clientSecretCleared =
+		Boolean(github?.clientSecretConfigured) &&
+		clearClientSecret &&
+		!clientSecret.trim();
+	const githubDirty =
+		Boolean(github) &&
+		(clientId.trim() !== "" ||
+			appSlug.trim() !== (github?.appSlug ?? "") ||
+			installationOwner.trim() !==
+				(github?.installationOwner ?? github?.appOrg ?? "") ||
+			clientSecret.trim() !== "" ||
+			privateKey.trim() !== "" ||
+			clientIdCleared ||
+			clientSecretCleared);
+	const dirty = integrationDirty || githubDirty;
 
 	// Code Storage is configured under Workspace → Connections, so this dialog
 	// documents it rather than switching it on — the same carve-out the
 	// integration card makes.
 	const canToggle = integration.id !== "codestorage";
-	const configured = integration.env.some((envVar) => envVar.present);
+	const configured =
+		integration.env.some((envVar) => envVar.present) ||
+		Boolean(github?.appCredentialConfigured);
+	const setupLinks = github
+		? [{ label: "Create GitHub App", url: github.appCreateUrl }, ...integration.links]
+		: integration.links;
 
 	async function save() {
 		if (!dirty || saving) return;
 		setSaving(true);
 		setError(null);
 		await (async () => {
-const env: Record<string, string> = {};
-			for (const name of typedKeys) env[name] = (typed[name] ?? "").replace(/\s+/g, "");
-			for (const name of clearedKeys) env[name] = "";
-			const body = await setupRequest<{
+			let githubResult: { github: SetupGithub; restartRequired: boolean } | null = null;
+			if (githubDirty && github) {
+				githubResult = await setupRequest<{
+					github: SetupGithub;
+					restartRequired: boolean;
+				}>("/api/setup/github", {
+					method: "PUT",
+					json: {
+						...(clientId.trim()
+							? { oauthClientId: clientId.trim() }
+							: clientIdCleared
+								? { oauthClientId: "" }
+								: {}),
+						...(appSlug.trim() !== (github.appSlug ?? "")
+							? { appSlug: appSlug.trim() }
+							: {}),
+						...(installationOwner.trim() !==
+							(github.installationOwner ?? github.appOrg ?? "")
+							? { installationOwner: installationOwner.trim() }
+							: {}),
+						...(clientSecret.trim()
+							? { oauthClientSecret: clientSecret.replace(/\s+/g, "") }
+							: clientSecretCleared
+								? { oauthClientSecret: "" }
+								: {}),
+						...(privateKey.trim() ? { privateKey: privateKey.trim() } : {}),
+					},
+				});
+			}
+
+			let integrationResult: {
 				integration: SetupIntegration;
 				restartRequired: boolean;
-			}>(`/api/setup/integrations/${encodeURIComponent(integration.id)}`, {
-				method: "PUT",
-				json: {
-					...(enabled !== integration.enabled ? { enabled } : {}),
-					...(Object.keys(env).length > 0 ? { env } : {}),
-				},
-			});
+			} | null = null;
+			if (integrationDirty) {
+				const env: Record<string, string> = {};
+				for (const name of typedKeys)
+					env[name] = (typed[name] ?? "").replace(/\s+/g, "");
+				for (const name of clearedKeys) env[name] = "";
+				integrationResult = await setupRequest<{
+					integration: SetupIntegration;
+					restartRequired: boolean;
+				}>(`/api/setup/integrations/${encodeURIComponent(integration.id)}`, {
+					method: "PUT",
+					json: {
+						...(enabled !== integration.enabled ? { enabled } : {}),
+						...(Object.keys(env).length > 0 ? { env } : {}),
+					},
+				});
+			}
+
 			setTyped({});
 			setCleared({});
+			setClientId("");
+			setClientSecret("");
+			setPrivateKey("");
+			setClearClientId(false);
+			setClearClientSecret(false);
+			if (githubResult)
+				onGithubSaved?.(githubResult.github, githubResult.restartRequired === true);
+			if (integrationResult)
+				onSaved(
+					integrationResult.integration,
+					integrationResult.restartRequired !== false,
+				);
 			toast(`${integration.label} saved`);
-			onSaved(body.integration, body.restartRequired !== false);
 			onOpenChange(false);
-})().catch(async (cause) => {
-setError(cause instanceof Error ? cause.message : `Could not save ${integration.label}`);
-}).finally(async () => {
-setSaving(false);
-});
+		})().catch((cause) => {
+			setError(
+				cause instanceof Error ? cause.message : `Could not save ${integration.label}`,
+			);
+		});
+		setSaving(false);
 	}
 
 	return (
@@ -351,6 +446,46 @@ setSaving(false);
 									onCheckedChange={setEnabled}
 									disabled={saving}
 									aria-label={`Enable ${integration.label}`}
+								/>
+							</div>
+						)}
+						{github && (
+							<div className={canToggle ? "mt-4 border-t border-line pt-4" : undefined}>
+								<div className="mb-4">
+									<div className="text-item-title font-medium text-fg">App credentials</div>
+									<div className="mt-0.5 text-supporting text-dim">
+										Used for bot work and teammate GitHub connections.
+									</div>
+								</div>
+								<GithubAppFields
+									github={github}
+									saving={saving}
+									clientId={clientId}
+									appSlug={appSlug}
+									installationOwner={installationOwner}
+									clientSecret={clientSecret}
+									privateKey={privateKey}
+									clientIdCleared={clientIdCleared}
+									clientSecretCleared={clientSecretCleared}
+									onClientIdChange={(value) => {
+										setClientId(value);
+										if (value.trim()) setClearClientId(false);
+									}}
+									onToggleClientIdClear={() => {
+										setClearClientId((current) => !current);
+										setClientId("");
+									}}
+									onAppSlugChange={setAppSlug}
+									onInstallationOwnerChange={setInstallationOwner}
+									onClientSecretChange={(value) => {
+										setClientSecret(value);
+										if (value.trim()) setClearClientSecret(false);
+									}}
+									onToggleClientSecretClear={() => {
+										setClearClientSecret((current) => !current);
+										setClientSecret("");
+									}}
+									onPrivateKeyChange={setPrivateKey}
 								/>
 							</div>
 						)}
@@ -441,7 +576,7 @@ setSaving(false);
 				<Disclosure
 					title="Setup guide"
 					defaultOpen={!configured}
-					actions={<LinkChips links={integration.links} className="mt-0" />}
+					actions={<LinkChips links={setupLinks} className="mt-0" />}
 				>
 					<div className="flex flex-col gap-4">
 						{guide.intro}

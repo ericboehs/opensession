@@ -141,7 +141,8 @@ async function githubSnapshot() {
     githubAppOrg,
     githubAuthOnConnect,
   } = await import("../github-auth");
-  const { githubAppConfigured } = await import("../github-app");
+  const { githubAppConfigured, githubAppPrivateKeyConfigured } =
+    await import("../github-app");
   const { configuredIntegration, configuredServer, personaName } = await import("../config");
   const github = githubUserAuthSettings();
   const app = githubAppIdentity();
@@ -161,6 +162,7 @@ async function githubSnapshot() {
     clientSecretConfigured: !!github.clientSecret,
     mentionHandle,
     appCredentialConfigured: githubAppConfigured(),
+    privateKeyConfigured: githubAppPrivateKeyConfigured(),
     appSlug: app.slug,
     installationOwner:
       typeof integration.installationOwner === "string"

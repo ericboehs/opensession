@@ -200,6 +200,8 @@ export function SetupPanel({
                   (integration) => integration.id === "github",
                 )}
                 onSaved={setup.applyIntegration}
+                github={status.github}
+                onGithubSaved={setup.applyGithub}
               />
             </SetupPageSection>
 

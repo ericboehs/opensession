@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { Disclosure } from "../ui/disclosure";
@@ -12,7 +11,6 @@ import { toast } from "../ui/toast";
 import {
 	GuideBlock,
 	LinkChips,
-	SecretField,
 	SetupSteps,
 	StateChip,
 	githubAuthState,
@@ -23,6 +21,7 @@ import {
 } from "./setup-shared";
 import { IntegrationSetupDialog } from "./IntegrationSetupDialog";
 import { IconTile } from "./BrandTile";
+import { GithubAppFields } from "./GithubAppFields";
 
 // The configuration forms behind the integration registry: paste the
 // credentials, flip the enable switch, Save, restart. Rendered both as a Setup
@@ -42,14 +41,20 @@ const INTEGRATION_DESCRIPTIONS: Record<string, string> = {
 function IntegrationCard({
 	integration,
 	onSaved,
+	github,
+	onGithubSaved,
 }: {
 	integration: SetupIntegration;
 	onSaved: (updated: SetupIntegration, restartRequired: boolean) => void;
+	github?: SetupGithub;
+	onGithubSaved?: (updated: SetupGithub, restartRequired: boolean) => void;
 }) {
 	const state = integrationState(integration);
 	const [setupOpen, setSetupOpen] = useState(false);
 	const [toggling, setToggling] = useState(false);
-	const hasCredentials = integration.env.some((envVar) => envVar.present);
+	const hasCredentials =
+		integration.env.some((envVar) => envVar.present) ||
+		(integration.id === "github" && Boolean(github?.appCredentialConfigured));
 	const canToggle =
 		integration.id !== "codestorage" &&
 		(integration.enabled || integration.missingRequired.length === 0);
@@ -119,6 +124,8 @@ setToggling(false);
 				open={setupOpen}
 				onOpenChange={setSetupOpen}
 				onSaved={onSaved}
+				github={integration.id === "github" ? github : undefined}
+				onGithubSaved={onGithubSaved}
 			/>
 		</>
 	);
@@ -128,9 +135,13 @@ setToggling(false);
 export function IntegrationsList({
 	integrations,
 	onSaved,
+	github,
+	onGithubSaved,
 }: {
 	integrations: SetupIntegration[];
 	onSaved: (updated: SetupIntegration, restartRequired: boolean) => void;
+	github?: SetupGithub;
+	onGithubSaved?: (updated: SetupGithub, restartRequired: boolean) => void;
 }) {
 	return (
 		<>
@@ -140,6 +151,8 @@ export function IntegrationsList({
 						key={i.id}
 						integration={i}
 						onSaved={onSaved}
+						github={github}
+						onGithubSaved={onGithubSaved}
 					/>
 				))}
 			</div>
@@ -411,76 +424,35 @@ setSaving(false);
 						</Segmented>
 					</div>
 				)}
-				<SecretField
-					name="Client id"
-					type="text"
-					required
-					placeholder="Iv23li…"
-					present={github.clientIdConfigured}
-					cleared={idCleared}
-					value={clientId}
-					disabled={saving}
-					onChange={(value) => {
+				<GithubAppFields
+					github={github}
+					saving={saving}
+					clientId={clientId}
+					appSlug={appSlug}
+					installationOwner={installationOwner}
+					clientSecret={clientSecret}
+					privateKey={privateKey}
+					clientIdCleared={idCleared}
+					clientSecretCleared={secretCleared}
+					onClientIdChange={(value) => {
 						setClientId(value);
 						if (value.trim()) setClearId(false);
 					}}
-					onToggleClear={() => {
+					onToggleClientIdClear={() => {
 						setClearId((current) => !current);
 						setClientId("");
 					}}
-				/>
-				<label className="flex flex-col gap-1">
-					<span className="text-supporting text-fg">App slug</span>
-					<input
-						type="text"
-						className="w-full rounded-md border border-line bg-surface px-2.5 py-1.5 font-mono text-supporting text-fg outline-none focus-ring"
-						value={appSlug}
-						onChange={(event) => setAppSlug(event.target.value)}
-						placeholder="open-session-example"
-						aria-label="GitHub App slug"
-						disabled={saving}
-						autoCapitalize="none"
-						autoComplete="off"
-						spellCheck={false}
-					/>
-					<span className="text-meta leading-snug text-faint">
-						From github.com/apps/&lt;slug&gt;. Identifies App-authored comments
-						and provides the installation link.
-					</span>
-				</label>
-				<label className="flex flex-col gap-1">
-					<span className="text-supporting text-fg">Installation owner</span>
-					<input
-						type="text"
-						className="w-full rounded-md border border-line bg-surface px-2.5 py-1.5 font-mono text-supporting text-fg outline-none focus-ring"
-						value={installationOwner}
-						onChange={(event) => setInstallationOwner(event.target.value)}
-						placeholder="my-organization"
-						aria-label="GitHub App installation owner"
-						disabled={saving}
-						autoCapitalize="none"
-						autoComplete="off"
-						spellCheck={false}
-					/>
-					<span className="text-meta leading-snug text-faint">
-						The organization or account that owns the selected installation.
-					</span>
-				</label>
-				<SecretField
-					name="Client secret"
-					required
-					present={secretConfigured}
-					cleared={secretCleared}
-					value={clientSecret}
-					disabled={saving}
-					onChange={(value) => {
+					onAppSlugChange={setAppSlug}
+					onInstallationOwnerChange={setInstallationOwner}
+					onClientSecretChange={(value) => {
 						setClientSecret(value);
 						if (value.trim()) setClearSecret(false);
 					}}
-					onToggleClear={() => {
+					onToggleClientSecretClear={() => {
 						setClearSecret((current) => !current);
 						setClientSecret("");
 					}}
+					onPrivateKeyChange={setPrivateKey}
 				/>
 				<label className="flex flex-col gap-1">
 					<span className="text-label font-medium text-dim">Mention handle</span>
@@ -502,29 +474,6 @@ setSaving(false);
 							spellCheck={false}
 						/>
 					</div>
-				</label>
-				<label className="flex flex-col gap-1">
-					<span className="flex items-center justify-between gap-2">
-						<span className="text-label font-medium text-dim">Private key (PEM)</span>
-						<Badge tone="warning">Required</Badge>
-					</span>
-					<textarea
-						className="min-h-20 w-full resize-y rounded-md border border-line bg-surface px-2.5 py-1.5 font-mono text-supporting text-fg outline-none focus-ring"
-						value={privateKey}
-						onChange={(e) => setPrivateKey(e.target.value)}
-						placeholder="-----BEGIN RSA PRIVATE KEY-----"
-						aria-label="GitHub App private key (PEM)"
-						required
-						disabled={saving}
-						autoCapitalize="none"
-						autoComplete="off"
-						spellCheck={false}
-					/>
-					<span className="text-meta leading-snug text-faint">
-						In the App&rsquo;s Private keys, Generate a private key and paste the
-						.pem here. Required for bot work and PR checks; leave blank only to keep the
-						key already configured.
-					</span>
 				</label>
 				<p className="m-0 text-supporting text-faint">
 					Credentials stay on this server and are never shown back.
