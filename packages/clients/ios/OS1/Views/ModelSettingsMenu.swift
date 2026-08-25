@@ -13,6 +13,8 @@ import SwiftUI
 /// `SessionView.body` re-evaluates the whole body, transcript included, every
 /// time one of them moves.
 struct ModelSettingsMenu: View {
+    @AppStorage("os1.composer.defaultModel") private var preferredModel = ""
+
     let viewModel: SessionViewModel
     let catalog: ModelCatalog?
     /// Conversation cost, above the choices that drive it. Carried where this
@@ -104,6 +106,14 @@ struct ModelSettingsMenu: View {
             }
         }
         Section {
+            Button(action: setAsDefault) {
+                Label(
+                    "Set as default",
+                    systemImage: isPreferredDefault ? "checkmark" : "pin"
+                )
+            }
+            .disabled(currentModel.isEmpty || isPreferredDefault)
+
             Button(action: reset) {
                 Label("Reset to default", systemImage: "arrow.uturn.backward")
             }
@@ -147,6 +157,10 @@ struct ModelSettingsMenu: View {
         return efforts.contains("high") ? "high" : (efforts.first ?? "")
     }
 
+    private var isPreferredDefault: Bool {
+        !currentModel.isEmpty && preferredModel == currentModel
+    }
+
     /// Nothing to put back: following the default model, no effort picked, and
     /// standard speed. Drives the reset row's disabled state, so it doubles as
     /// the answer to "am I on the defaults?".
@@ -155,6 +169,27 @@ struct ModelSettingsMenu: View {
         let onDefaultModel =
             viewModel.model.isEmpty || defaultModel.isEmpty || viewModel.model == defaultModel
         return onDefaultModel && viewModel.effort.isEmpty && !viewModel.fastMode
+    }
+
+    private func setAsDefault() {
+        let model = currentModel
+        guard !model.isEmpty, model != preferredModel else { return }
+
+        // Match the web preference: update this device immediately, then sync
+        // the same per-user key so new sessions on every client start here.
+        let requestContext = NativePreferences.context()
+        NativePreferences.beginLocalWrite()
+        preferredModel = model
+        Task {
+            defer { NativePreferences.endLocalWrite() }
+            guard let response = try? await SettingsAPI.updateUiPrefs(
+                user: requestContext.user,
+                prefs: ["default-model": model]
+            ) else { return }
+            var confirmed = response
+            if confirmed["default-model"] == nil { confirmed["default-model"] = model }
+            _ = NativePreferences.apply(confirmed, for: requestContext)
+        }
     }
 
     private func reset() {

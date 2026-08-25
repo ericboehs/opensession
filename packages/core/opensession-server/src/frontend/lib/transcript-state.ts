@@ -131,6 +131,18 @@ export function classifyQueuedContent(
 	});
 }
 
+/** Model-routing messages can briefly arrive from an older server during a
+ * rolling deploy. They drive turns but never belong in the composer queue. */
+export function isClientVisibleQueuedContent(
+	content?: string,
+	user?: string,
+): boolean {
+	return (
+		user !== "auto-continue" &&
+		classifyQueuedContent(content, user).notice?.kind !== "workflow"
+	);
+}
+
 /**
  * Who to credit on a queue chip: a teammate who sent into this session, or a
  * notice's label when that label isn't the whole body.

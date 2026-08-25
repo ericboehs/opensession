@@ -82,6 +82,7 @@ final class ReadsStore {
         pendingChanges.removeAll()
         hasHydrated = false
         mutationRevision += 1
+        unreadStateDidChange()
     }
 
     /// Kept internal so the merge contract can be tested without a server.
@@ -95,6 +96,7 @@ final class ReadsStore {
         }
         hasHydrated = true
         if merged != reads { reads = merged }
+        unreadStateDidChange()
         if persist, !pendingChanges.isEmpty { save() }
     }
 
@@ -112,12 +114,18 @@ final class ReadsStore {
     /// fresh copy from the poll, which is what keeps an open session read while
     /// new output lands in it — the web viewer's markRead-on-activity tick.
     func open(_ session: Session) {
-        if openSessionId != session.id { openSessionId = session.id }
+        if openSessionId != session.id {
+            openSessionId = session.id
+            unreadStateDidChange()
+        }
         markRead(session)
     }
 
     func close(_ id: String) {
-        if openSessionId == id { openSessionId = nil }
+        if openSessionId == id {
+            openSessionId = nil
+            unreadStateDidChange()
+        }
     }
 
     /// Record that `session` has been read up to its current `lastActivity`.
@@ -129,6 +137,7 @@ final class ReadsStore {
         reads[session.id] = activity
         record(.set(activity), for: session.id)
         enforceCap()
+        unreadStateDidChange()
         save()
     }
 
@@ -141,6 +150,7 @@ final class ReadsStore {
         reads[session.id] = Self.epoch
         record(.set(Self.epoch), for: session.id)
         enforceCap()
+        unreadStateDidChange()
         save()
     }
 
@@ -181,6 +191,12 @@ final class ReadsStore {
     private func record(_ change: Change, for id: String) {
         pendingChanges[id] = change
         mutationRevision += 1
+    }
+
+    private func unreadStateDidChange() {
+        #if os(iOS)
+        LiveActivityCoordinator.shared.refreshUnreadStatus()
+        #endif
     }
 
     private func save() {

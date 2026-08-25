@@ -82,14 +82,14 @@ export interface WorkspaceDraft {
  * feature flags: removing one removes it, and new combinations use this shape. */
 export const DEFAULT_WORKSPACE_MODEL_SETTINGS: WorkspaceModelSettings = {
   presets: [
-    { id: "dial-ultra", label: "Dial · Ultra", group: "dial", lead: { model: "opencode/anthropic/claude-fable-5", effort: "high" }, supporting: [{ model: "opencode/openai/gpt-5.6-sol", effort: "xhigh", role: "Read-only oracle" }], instructions: "Use the oracle for a second opinion on hard plans, architecture decisions, and significant reviews. Integrate its advice yourself." },
-    { id: "dial-high", label: "Dial · High", group: "dial", lead: { model: "opencode/openai/gpt-5.6-sol", effort: "xhigh" }, supporting: [{ model: "opencode/anthropic/claude-fable-5", effort: "high", role: "Read-only oracle" }], instructions: "Use the oracle for a second opinion on hard plans, architecture decisions, and significant reviews. Integrate its advice yourself." },
-    { id: "dial-medium", label: "Dial · Medium", group: "dial", lead: { model: "opencode/openai/gpt-5.6-sol", effort: "high" }, supporting: [{ model: "opencode/openai/gpt-5.6-sol", effort: "xhigh", role: "Read-only oracle" }], instructions: "Use the oracle for a second opinion when extra scrutiny helps." },
-    { id: "dial-low", label: "Dial · Low", group: "dial", lead: { model: "opencode/openai/gpt-5.6-luna", effort: "high" }, supporting: [{ model: "opencode/openai/gpt-5.6-sol", effort: "xhigh", role: "Read-only oracle" }], instructions: "Use the oracle only when the task needs a second opinion." },
-    { id: "opus-fable", label: "Opus 5 + Fable oracle", group: "custom", lead: { model: "opencode/anthropic/claude-opus-5", effort: "xhigh" }, supporting: [{ model: "opencode/anthropic/claude-fable-5", effort: "high", role: "Read-only oracle" }], instructions: "Use the oracle for a second opinion on hard plans, architecture decisions, and significant reviews. Integrate its advice yourself." },
-    { id: "ultracode", label: "Ultracode", group: "custom", lead: { model: "opencode/anthropic/claude-fable-5", effort: "xhigh" }, instructions: "Plan a workflow for every substantive task instead of working through it turn by turn. Fan the work out with run_workflow, have a separate agent verify each finding, and read the result back with workflow_status. Route the judgement steps (verification, ranking, synthesis) to claude-fable-5 and leave mechanical extraction on the default worker model. Keep quick questions and single edits in the conversation." },
-    { id: "orchestrator-fable", label: "Orchestrator · Fable 5", group: "orchestrator", lead: { model: "opencode/anthropic/claude-fable-5", effort: "high" }, supporting: [{ model: "opencode/anthropic/claude-sonnet-5", effort: "medium", role: "Implementation worker" }, { model: "opencode/anthropic/claude-haiku-4-5", effort: "high", role: "Fast worker" }], instructions: "Plan, review, and integrate. Delegate focused implementation work to supporting workers with self-contained briefs, then verify their results." },
-    { id: "orchestrator-sol", label: "Orchestrator · Sol", group: "orchestrator", lead: { model: "opencode/openai/gpt-5.6-sol", effort: "xhigh" }, supporting: [{ model: "opencode/openai/gpt-5.6-terra", effort: "medium", role: "Implementation worker" }, { model: "opencode/openai/gpt-5.6-luna", effort: "low", role: "Fast worker" }], instructions: "Plan, review, and integrate. Delegate focused implementation work to supporting workers with self-contained briefs, then verify their results." },
+    { id: "dial-ultra", label: "Dial · Ultra", group: "dial", lead: { model: "pi/anthropic/claude-fable-5", effort: "high" }, supporting: [{ model: "pi/openai/gpt-5.6-sol", effort: "xhigh", role: "Read-only oracle" }], instructions: "Use the oracle for a second opinion on hard plans, architecture decisions, and significant reviews. Integrate its advice yourself." },
+    { id: "dial-high", label: "Dial · High", group: "dial", lead: { model: "pi/openai/gpt-5.6-sol", effort: "xhigh" }, supporting: [{ model: "pi/anthropic/claude-fable-5", effort: "high", role: "Read-only oracle" }], instructions: "Use the oracle for a second opinion on hard plans, architecture decisions, and significant reviews. Integrate its advice yourself." },
+    { id: "dial-medium", label: "Dial · Medium", group: "dial", lead: { model: "pi/openai/gpt-5.6-sol", effort: "high" }, supporting: [{ model: "pi/openai/gpt-5.6-sol", effort: "xhigh", role: "Read-only oracle" }], instructions: "Use the oracle for a second opinion when extra scrutiny helps." },
+    { id: "dial-low", label: "Dial · Low", group: "dial", lead: { model: "pi/openai/gpt-5.6-luna", effort: "high" }, supporting: [{ model: "pi/openai/gpt-5.6-sol", effort: "xhigh", role: "Read-only oracle" }], instructions: "Use the oracle only when the task needs a second opinion." },
+    { id: "opus-fable", label: "Opus 5 + Fable oracle", group: "custom", lead: { model: "pi/anthropic/claude-opus-5", effort: "xhigh" }, supporting: [{ model: "pi/anthropic/claude-fable-5", effort: "high", role: "Read-only oracle" }], instructions: "Use the oracle for a second opinion on hard plans, architecture decisions, and significant reviews. Integrate its advice yourself." },
+    { id: "ultracode", label: "Ultracode", group: "custom", lead: { model: "pi/anthropic/claude-fable-5", effort: "xhigh" }, instructions: "Plan a workflow for every substantive task instead of working through it turn by turn. Fan the work out with run_workflow, have a separate agent verify each finding, and read the result back with workflow_status. Route the judgement steps (verification, ranking, synthesis) to claude-fable-5 and leave mechanical extraction on the default worker model. Keep quick questions and single edits in the conversation." },
+    { id: "orchestrator-fable", label: "Orchestrator · Fable 5", group: "orchestrator", lead: { model: "pi/anthropic/claude-fable-5", effort: "high" }, supporting: [{ model: "pi/anthropic/claude-sonnet-5", effort: "medium", role: "Implementation worker" }, { model: "pi/anthropic/claude-haiku-4-5", effort: "high", role: "Fast worker" }], instructions: "Plan, review, and integrate. Delegate focused implementation work to supporting workers with self-contained briefs, then verify their results." },
+    { id: "orchestrator-sol", label: "Orchestrator · Sol", group: "orchestrator", lead: { model: "pi/openai/gpt-5.6-sol", effort: "xhigh" }, supporting: [{ model: "pi/openai/gpt-5.6-terra", effort: "medium", role: "Implementation worker" }, { model: "pi/openai/gpt-5.6-luna", effort: "low", role: "Fast worker" }], instructions: "Plan, review, and integrate. Delegate focused implementation work to supporting workers with self-contained briefs, then verify their results." },
   ],
 };
 
@@ -124,7 +124,7 @@ export interface Workspace {
   prNumber?: number;
   /** For support-ticket workspaces: the Plain thread this workspace is attached to. */
   plainThreadId?: string;
-  /** Generic feed-item linkage (Tella videos, …) — the feeds design. */
+  /** Generic feed-item linkage (videos, …) — the feeds design. */
   externalRefs?: ExternalRef[];
   /**
    * The workspace's default branch. Present when the workspace owns a worktree
@@ -179,13 +179,28 @@ function fromDisk(p: Workspace): Workspace {
   return p;
 }
 
+let workspaceNameGeneration = 0;
+let workspaceListCache: {
+  dir: string;
+  generation: number;
+  workspaces: Workspace[];
+} | null = null;
+
 export function listWorkspaces(): Workspace[] {
-  if (!existsSync(workspacesDir())) return [];
+  const dir = workspacesDir();
+  if (
+    workspaceListCache?.dir === dir &&
+    workspaceListCache.generation === workspaceNameGeneration
+  ) return workspaceListCache.workspaces.slice();
+  if (!existsSync(dir)) {
+    workspaceListCache = { dir, generation: workspaceNameGeneration, workspaces: [] };
+    return [];
+  }
   const out: Workspace[] = [];
-  for (const file of readdirSync(workspacesDir())) {
+  for (const file of readdirSync(dir)) {
     if (!file.endsWith(".json")) continue;
     try {
-      const p = JSON.parse(readFileSync(`${workspacesDir()}/${file}`, "utf8"));
+      const p = JSON.parse(readFileSync(`${dir}/${file}`, "utf8"));
       // No defaults backfill here: stamping the ~3KB default modelSettings on
       // every row multiplied the list payload by the workspace count (13 MB on
       // this instance). Absent modelSettings means "inherit the defaults":
@@ -199,7 +214,13 @@ export function listWorkspaces(): Workspace[] {
       (a.order ?? (Date.parse(a.createdAt) || 0)) -
         (b.order ?? (Date.parse(b.createdAt) || 0)) || a.name.localeCompare(b.name),
   );
-  return out;
+  workspaceListCache = { dir, generation: workspaceNameGeneration, workspaces: out };
+  return out.slice();
+}
+
+/** Stable version for conditional workspace-list responses. */
+export function workspaceListVersion(): string {
+  return `${workspacesDir()}:${workspaceNameGeneration}`;
 }
 
 /**
@@ -219,7 +240,6 @@ let workspaceNameCache: {
   names: Map<string, string>;
 } | null = null;
 let workspaceNameRefresh: Promise<void> | null = null;
-let workspaceNameGeneration = 0;
 
 function workspaceNameMap(): Map<string, string> {
   const dir = workspacesDir();
@@ -437,7 +457,7 @@ export function stampWorkspaceIdentity(
   // The adopted workspace may have been minted by a session in ANOTHER repo:
   // a session working in repo A can open a PR in repo B through an attached
   // repo, and that is how a workspace ended up filed under `opensession` while
-  // its branch and PR belonged to `tella-fusion`. A repo that disagrees with
+  // its branch and PR belonged to another repo. A repo that disagrees with
   // the branch beside it is worse than none: sessionPrBranch refuses to
   // inherit a branch across repos, the sidebar cannot match the PR row to the
   // workspace, and a new session here resolves the branch in the wrong repo.

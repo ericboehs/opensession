@@ -114,18 +114,18 @@ export function Tasks({ addHandler, onOpenSession }: TasksProps) {
 	const [error, setError] = useState<string | null>(null);
 
 	const load = useCallback(async () => {
-		try {
-			const response = await fetch(
+		await (async () => {
+const response = await fetch(
 				`${BASE_PATH}/api/todos?status=all&user=${encodeURIComponent(user)}`,
 			);
 			if (!response.ok) throw new Error(`HTTP ${response.status}`);
 			const data = (await response.json()) as { todos?: TodoItem[] };
 			setTasks(data.todos || []);
 			setError(null);
-		} catch {
-			setTasks((current) => current ?? []);
+})().catch(async () => {
+setTasks((current) => current ?? []);
 			setError("Tasks could not be loaded.");
-		}
+});
 	}, [user]);
 
 	useEffect(() => {
@@ -145,8 +145,8 @@ export function Tasks({ addHandler, onOpenSession }: TasksProps) {
 	);
 
 	async function patchTask(id: string, patch: Record<string, unknown>) {
-		try {
-			const response = await fetch(
+		await (async () => {
+const response = await fetch(
 				`${BASE_PATH}/api/todos/${encodeURIComponent(id)}`,
 				{
 					method: "PATCH",
@@ -156,11 +156,11 @@ export function Tasks({ addHandler, onOpenSession }: TasksProps) {
 			);
 			if (!response.ok) throw new Error(`HTTP ${response.status}`);
 			setError(null);
-		} catch {
-			setError("The task could not be updated.");
-		} finally {
-			void load();
-		}
+})().catch(async () => {
+setError("The task could not be updated.");
+}).finally(async () => {
+void load();
+});
 	}
 
 	function toggle(task: TodoItem) {
@@ -184,8 +184,8 @@ export function Tasks({ addHandler, onOpenSession }: TasksProps) {
 		const text = draft.trim();
 		if (!text || adding) return;
 		setAdding(true);
-		try {
-			const response = await fetch(`${BASE_PATH}/api/todos`, {
+		await (async () => {
+const response = await fetch(`${BASE_PATH}/api/todos`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ text, user }),
@@ -193,12 +193,12 @@ export function Tasks({ addHandler, onOpenSession }: TasksProps) {
 			if (!response.ok) throw new Error(`HTTP ${response.status}`);
 			setDraft("");
 			setError(null);
-		} catch {
-			setError("The task could not be added.");
-		} finally {
-			setAdding(false);
+})().catch(async () => {
+setError("The task could not be added.");
+}).finally(async () => {
+setAdding(false);
 			void load();
-		}
+});
 	}
 
 	const open = (tasks || []).filter((task) => task.status === "open");

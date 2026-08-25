@@ -3,7 +3,9 @@ import { useSetupStatus } from "../../hooks/useSetupStatus";
 import {
 	SettingCard,
 	SettingCardSkeleton,
+	SettingsGroupLabel,
 	SettingsHeader,
+	SettingsHint,
 	SettingsPanel,
 } from "../../ui/settings";
 import { Select, SettingRow } from "./shared";
@@ -12,10 +14,17 @@ import { ReposSection } from "../SetupRepos";
 import {
 	configuredNewSessionRepo,
 	fetchRepos,
+	fetchWorktreeSettings,
 	setNewSessionRepoApi,
+	setSharedCheckoutMode,
 	type RepoInfo,
+	type SharedCheckoutMode,
+	type WorktreeSettings,
 } from "../../lib/api";
 import { AUTO_REPO } from "../../lib/session-repo";
+import { RepoTile } from "../RepoTile";
+import { IconSparkle } from "../icons";
+import { Radio, RadioGroup } from "../../ui/radio";
 
 /**
  * Where a new session starts for everyone who hasn't set their own preference
@@ -25,6 +34,97 @@ import { AUTO_REPO } from "../../lib/session-repo";
  * that one is a fallback that must always name a real checkout, so it can't
  * say Auto.
  */
+function SharedCheckoutSetting() {
+	const [settings, setSettings] = useState<WorktreeSettings | null>(null);
+	const [saving, setSaving] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	useEffect(() => {
+		let alive = true;
+		fetchWorktreeSettings()
+			.then((value) => alive && setSettings(value))
+			.catch((cause) => alive && setError(cause.message));
+		return () => {
+			alive = false;
+		};
+	}, []);
+
+	if (!settings) {
+		return error ? (
+			<InlineAlert className="mt-9">{error}</InlineAlert>
+		) : (
+			<SettingCardSkeleton
+				rows={1}
+				label="Loading worktree settings"
+				className="mt-9"
+			/>
+		);
+	}
+	if (!settings.repos.length) return null;
+
+	const repoNames = settings.repos
+		.map((repo) => `"${repo.label}"`)
+		.join(", ");
+	const groupLabel = "How sessions make changes to shared checkouts";
+	async function setMode(mode: SharedCheckoutMode) {
+		const previous = settings;
+		if (!previous || mode === previous.mode) return;
+		setSettings({ ...previous, mode });
+		setSaving(true);
+		setError(null);
+		await (async () => {
+setSettings(await setSharedCheckoutMode(mode));
+})().catch(async (cause: any) => {
+setSettings(previous);
+			setError(cause?.message || "Couldn’t save where sessions make changes");
+}).finally(async () => {
+setSaving(false);
+});
+	}
+
+	return (
+		<>
+			<SettingsGroupLabel>{groupLabel}</SettingsGroupLabel>
+			{error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
+			<SettingCard>
+				<RadioGroup
+					aria-label={groupLabel}
+					value={settings.mode}
+					disabled={saving}
+					onValueChange={(mode) => void setMode(mode as SharedCheckoutMode)}
+					className="[&>*+*]:relative [&>*+*]:before:pointer-events-none [&>*+*]:before:absolute [&>*+*]:before:inset-x-5 [&>*+*]:before:top-0 [&>*+*]:before:h-px [&>*+*]:before:bg-line [&>*+*]:before:content-['']"
+				>
+					<label className="flex min-h-11 cursor-pointer items-start gap-3 px-5 py-4 transition-[background-color] hover:bg-hover">
+						<Radio value="shared" className="mt-0.5" />
+						<span className="min-w-0">
+							<span className="block text-item-title font-medium text-fg">
+								Local checkout
+							</span>
+							<span className="mt-1 block text-supporting text-dim">
+								Edit shared checkouts directly. Changes appear there right away,
+								and sessions share the same files.
+							</span>
+						</span>
+					</label>
+					<label className="flex min-h-11 cursor-pointer items-start gap-3 px-5 py-4 transition-[background-color] hover:bg-hover">
+						<Radio value="worktree" className="mt-0.5" />
+						<span className="min-w-0">
+							<span className="block text-item-title font-medium text-fg">
+								Separate pull request branch
+							</span>
+							<span className="mt-1 block text-supporting text-dim">
+								Give each session an isolated Git worktree and branch. Changes
+								stay separate from the local checkout, ready for a pull request.
+							</span>
+						</span>
+					</label>
+				</RadioGroup>
+			</SettingCard>
+			<SettingsHint>Only affects new sessions in {repoNames}.</SettingsHint>
+		</>
+	);
+}
+
 function DefaultRepoRow() {
 	const [repos, setRepos] = useState<RepoInfo[]>([]);
 	const [value, setValue] = useState("");
@@ -48,8 +148,16 @@ function DefaultRepoRow() {
 						label="Default repository"
 						value={value}
 						options={[
-							{ value: AUTO_REPO, label: "Auto" },
-							...repos.map((r) => ({ value: r.id, label: r.label || r.id })),
+							{
+								value: AUTO_REPO,
+								label: "Auto",
+								icon: <IconSparkle size={16} />,
+							},
+							...repos.map((r) => ({
+								value: r.id,
+								label: r.label || r.id,
+								icon: <RepoTile name={r.id} size={16} />,
+							})),
 						]}
 						onChange={(next) => {
 							setValue(next);
@@ -68,12 +176,12 @@ function DefaultRepoRow() {
 // registering a repo takes effect immediately.
 
 export function ReposPanel() {
-	const { status, failed, refetch } = useSetupStatus();
+	const { status, failed, refetch, applyRepo } = useSetupStatus();
 	return (
 		<SettingsPanel>
 			<SettingsHeader
 				title="Repositories"
-				description="Each session works in an isolated worktree of the repositories you register here."
+				description="Register repositories and choose where their sessions work."
 			/>
 			{!status ? (
 				// A failure is an alert, not a quiet label under a spinner: it used
@@ -93,7 +201,12 @@ export function ReposPanel() {
 			) : (
 				<>
 					<DefaultRepoRow />
-					<ReposSection repos={status.repos} onChanged={refetch} />
+					<SharedCheckoutSetting />
+					<ReposSection
+						repos={status.repos}
+						onChanged={refetch}
+						onRepoUpdated={applyRepo}
+					/>
 				</>
 			)}
 		</SettingsPanel>

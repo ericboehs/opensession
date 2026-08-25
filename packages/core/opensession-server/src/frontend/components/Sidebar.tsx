@@ -1,4 +1,10 @@
-import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from "react";
+import React, {
+	useState,
+	useEffect,
+	useEffectEvent,
+	useLayoutEffect,
+	useRef,
+} from "react";
 import { createPortal } from "react-dom";
 import type {
 	UnifiedSession,
@@ -78,7 +84,7 @@ import {
 	isScratchWorkspace,
 	spawnedSessionBelongsInSidebar,
 	workspaceMainSession,
-	workspaceRowOwnsSession,
+	workspaceRowOwnsSelection,
 } from "../lib/sidebar-workspaces";
 import type { ReviewQueueItem } from "../lib/review-queue";
 import {
@@ -92,10 +98,19 @@ import {
 	type PrClosedDetail,
 	type OpenPr,
 } from "../lib/api";
-import { useCurrentUser, TEAM } from "./UserPicker";
+import { useCurrentUser } from "./UserPicker";
 import { getLane, getLanes, onLanesChanged } from "../lib/lanes";
 import { getPins, onPinsChanged, togglePin, reorderPins, unpin } from "../lib/pins";
-import { clearSnooze, getSnoozes, onSnoozesChanged, setSnooze } from "../lib/snoozes";
+import {
+	SNOOZE_SOMEDAY,
+	clearSnooze,
+	getSnoozes,
+	onSnoozesChanged,
+	setSnooze,
+	snoozeIsActive,
+} from "../lib/snoozes";
+import { activityBandFor, type ActivityBand } from "../lib/sidebar-activity";
+import { sortInboxByCreation } from "../lib/sidebar-inbox";
 import {
 	clearHides,
 	getHides,
@@ -106,6 +121,7 @@ import {
 import { Reorder } from "motion/react";
 import { getRecents, onRecentsChanged } from "../lib/recents";
 import { getReads, isUnread, markRead, markUnread, onReadsChanged } from "../lib/reads";
+import { pickUnreadWorkspaceSession } from "../lib/sidebar-unread-session";
 import { mentionFor, onMentionsChanged } from "../lib/mentions";
 import { TeamLensMenu, useTeamPresence } from "./TeamPresence";
 import { sessionPath, absoluteLink, copyToClipboard } from "../lib/share-link";
@@ -129,6 +145,7 @@ import { shortTime } from "../lib/time";
 import {
 	IconChevronDown,
 	IconArchive,
+	IconMoon,
 	IconFilter,
 	IconX,
 	IconSliders,
@@ -150,9 +167,11 @@ import {
 	IconListCircles,
 	IconMessages,
 	IconFeed,
+	IconPeople,
 	IconPullRequest,
 } from "./icons";
 import { Button } from "../ui/button";
+import { useConfirm } from "../ui/confirm";
 import { Tooltip } from "../ui/tooltip";
 import { ContextMenu, MENU_ICON, Menu } from "../ui/menu";
 import { Popover } from "../ui/popover";
@@ -162,6 +181,7 @@ import { pointerCanHover } from "../lib/pointer";
 import { RepoTile, repoLabel } from "./RepoTile";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { useShortcutKeys } from "../hooks/useShortcutBindings";
+import { blockingOverlayOpen } from "../lib/blocking-overlay";
 import { matchesShortcut, shortcutLabel } from "../lib/shortcuts";
 import { PrRow } from "./PrRow";
 import {
@@ -170,10 +190,18 @@ import {
 	reviewAskerFor,
 	wsPrRequestsReviewFrom,
 } from "../lib/review-queue";
+import { personNameForKey, usePeople } from "../lib/people";
+import {
+	canonicalNames,
+	ownerKey,
+	ownerKeyOf,
+	sessionOwners,
+} from "../lib/session-owner";
 import {
 	placeSidebarRows,
 	rowAutoCreatedInLens,
 	rowOriginSource,
+	rowWasAgentStarted,
 	rowWasAutoCreated,
 	rowsAtPlacement,
 } from "../lib/sidebar-placement";
@@ -207,6 +235,7 @@ import {
 	FEED_FILTERS_KEY,
 	SUPPORT_PRIORITY_GROUPS,
 	dget,
+	includesEmptyRepoBands,
 	personLensFilter,
 	personLensValue,
 	readExpanded,
@@ -232,9 +261,16 @@ import {
 	pinnedLane,
 	prLaneForSessions,
 	stripPrTitlePrefix,
+	workspaceRunNeedingAttention,
 } from "../lib/sidebar-lanes";
-import { sessionHasPr } from "../lib/session-prs";
+import { sessionCarriesPr, sessionHasPr } from "../lib/session-prs";
 import { sessionHasWorkspace } from "../lib/session-workspace";
+import { workspaceCarriesPr } from "../lib/pr-workspace";
+import {
+	nextRenderedSidebarChat,
+	nextRenderedSidebarItem,
+	nextUnreadRenderedWorkspaceItem,
+} from "../lib/sidebar-next";
 import {
 	LONG_PRESS_MS,
 	LONG_PRESS_SLOP,
@@ -246,17 +282,18 @@ import {
 	editableOwnsCaretChord,
 	editableSwallowsArchiveChord,
 	fullSwipeThreshold,
+	swipeActionForOffset,
 	swipeCommitOffset,
 	type SwipeAction,
 	type SwipeState,
 } from "../lib/sidebar-swipe";
 import {
-	KNOWN_PEOPLE,
 	MINE_STATUS_META,
 	type CtxEntry,
 	type Group,
 	type GroupBand,
 	type MineStatus,
+	type OpenNextSidebarItem,
 	type Props,
 	type SidebarHandle,
 	type WsRow,
@@ -279,6 +316,7 @@ import { DraftRow } from "./sidebar/DraftRow";
 import { SidebarCtxMenu } from "./sidebar/SidebarCtxMenu";
 import { SidebarToolRows, SidebarToolsMenu } from "./sidebar/SidebarToolsMenu";
 import { SidebarCustomizeDialog } from "./sidebar/SidebarCustomizeDialog";
+import { OrganizationSwitcher } from "./OrganizationSwitcher";
 import { EmptyState, ListSkeleton } from "../ui/state";
 import {
 	SIDEBAR_ROW,
@@ -291,9 +329,195 @@ export type { SidebarHandle } from "../lib/sidebar-types";
 
 const AUTOMATION_COLOR = "#d29922";
 
+type WorkspaceMenuTarget = {
+	id: string;
+	x: number;
+	y: number;
+	source: HTMLButtonElement;
+};
+
+function WorkspaceContextMenu({
+	menu,
+	workspace,
+	row,
+	pins,
+	currentUser,
+	activeSnoozeKeys,
+	snoozes,
+	hiddenRowKeys,
+	onPinsChange,
+	onSetStatus,
+	onSnooze,
+	onStartWorkspaceRename,
+	onStartSessionRename,
+	onToast,
+	onOpenReview,
+	onHide,
+	onArchive,
+	onDeleteDraft,
+	onClose,
+}: {
+	menu: WorkspaceMenuTarget;
+	workspace?: Workspace;
+	row?: WsRow;
+	pins: string[];
+	currentUser: string;
+	activeSnoozeKeys: Set<string>;
+	snoozes: Record<string, string>;
+	hiddenRowKeys: Set<string>;
+	onPinsChange: (pins: string[]) => void;
+	onSetStatus: Props["onSetStatus"];
+	onSnooze: (row: WsRow, until: string | null) => void;
+	onStartWorkspaceRename: (workspace: Workspace) => void;
+	onStartSessionRename: (session: UnifiedSession) => void;
+	onToast?: (message: string) => void;
+	onOpenReview: (session: UnifiedSession) => void;
+	onHide: (row: WsRow, hidden: boolean) => void;
+	onArchive: (row: WsRow, source: HTMLButtonElement) => void;
+	onDeleteDraft: (workspace: Workspace) => void;
+	onClose: () => void;
+}) {
+	const sessions = row?.sessions ?? [];
+	const first = sessions[0];
+	const pinKey = workspace ? `workspace:${workspace.id}` : menu.id;
+	const pinnedKeys = [
+		pinKey,
+		...(row
+			? [
+					row.key,
+					...row.sessions.flatMap((session) => [
+						session.id,
+						...(session.aliasIds || []),
+					]),
+				]
+			: []),
+	].filter((key, index, all) => pins.includes(key) && all.indexOf(key) === index);
+	const pinned = pinnedKeys.length > 0;
+	const togglePinNow = () => {
+		if (!pinned) {
+			onPinsChange(togglePin(pinKey));
+			return;
+		}
+		let next = pins;
+		for (const key of pinnedKeys) next = togglePin(key);
+		onPinsChange(next);
+	};
+	const anyManual = sessions.some((session) => pinnedLane(session));
+	const sharedManual =
+		anyManual &&
+		sessions.every((session) => pinnedLane(session) === pinnedLane(sessions[0]))
+			? (pinnedLane(sessions[0]) ?? null)
+			: null;
+	const entries: CtxEntry[] = [];
+	const rowUnread = row?.unread ?? false;
+	if (sessions.length > 0)
+		entries.push({
+			kind: "item",
+			icon: <IconMail size={20} />,
+			label: rowUnread ? "Mark as read" : "Mark as unread",
+			onClick: () =>
+				sessions.forEach((session) =>
+					rowUnread
+						? markRead(session.id, session.lastActivity)
+						: markUnread(session.id),
+				),
+		});
+	const rowClaimed = sessions.some((session) => isClaimed(session));
+	const rowMine = sessions.some((session) => ownedBy(session, currentUser));
+	if (sessions.length > 0 && (!rowMine || rowClaimed))
+		entries.push({
+			kind: "item",
+			icon: <IconInbox size={20} />,
+			label: rowClaimed ? "Remove from my workspaces" : "Add to my workspaces",
+			onClick: () => onSetStatus(sessions, rowClaimed ? null : "mine"),
+		});
+	entries.push({
+		kind: "item",
+		icon: <IconPin size={20} fill={pinned ? "currentColor" : "none"} />,
+		label: pinned ? "Unpin" : "Pin",
+		onClick: togglePinNow,
+	});
+	if (sessions.length > 0)
+		entries.push({
+			kind: "status",
+			current: sharedManual,
+			onPick: (status) => onSetStatus(sessions, status),
+		});
+	if (row && sessions.length > 0)
+		entries.push({
+			kind: "snooze",
+			until: activeSnoozeKeys.has(row.key) ? (snoozes[row.key] ?? null) : null,
+			onPick: (until) => onSnooze(row, until),
+		});
+	if (workspace)
+		entries.push({
+			kind: "item",
+			icon: <IconPencil size={20} />,
+			label: "Rename",
+			onClick: () => onStartWorkspaceRename(workspace),
+		});
+	else if (first)
+		entries.push({
+			kind: "item",
+			icon: <IconPencil size={20} />,
+			label: "Rename",
+			onClick: () => onStartSessionRename(first),
+		});
+	if (first)
+		entries.push({
+			kind: "item",
+			icon: <IconLink size={20} />,
+			label: "Copy link",
+			shortcut: shortcutLabel("session-copy-link") ?? undefined,
+			onClick: () =>
+				copyToClipboard(absoluteLink(sessionPath(first)), () => onToast?.("Link copied")),
+		});
+	if (first && (first.worktreeDir || first.branch))
+		entries.push({
+			kind: "item",
+			icon: <IconEye size={20} />,
+			label: "Open review",
+			onClick: () => onOpenReview(first),
+		});
+	if (row && sessions.length > 0) {
+		entries.push({ kind: "sep" });
+		const hidden = hiddenRowKeys.has(row.key);
+		entries.push({
+			kind: "item",
+			icon: hidden ? <IconEye size={20} /> : <IconEyeOff size={20} />,
+			label: hidden ? "Restore to my sidebar" : "Hide from my sidebar",
+			onClick: () => onHide(row, hidden),
+		});
+		entries.push({
+			kind: "item",
+			icon: <IconArchive size={20} />,
+			label: "Archive",
+			onClick: () => onArchive(row, menu.source),
+		});
+	} else if (workspace) {
+		entries.push({ kind: "sep" });
+		entries.push({
+			kind: "item",
+			icon: <IconTrash size={20} />,
+			danger: true,
+			label: "Delete draft",
+			onClick: () => onDeleteDraft(workspace),
+		});
+	}
+	return (
+		<SidebarCtxMenu
+			x={menu.x}
+			y={menu.y}
+			entries={entries}
+			onClose={onClose}
+		/>
+	);
+}
+
 export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	sessions,
 	registeredRepos,
+	directToMainBranches,
 	sessionsError,
 	sessionsLoading,
 	onRetrySessions,
@@ -304,6 +528,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	onOpenPrs,
 	feedActive,
 	onOpenFeed,
+	connected,
+	onOpenSettings,
 	tasksActive,
 	onOpenTasks,
 	taskCount = 0,
@@ -334,6 +560,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	archivedActive,
 	onOpenCatchUp,
 	catchUpActive,
+	onNextChatAvailableChange,
 	onArchive,
 	onArchiveWorkspace,
 	onRename,
@@ -669,10 +896,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const filter = useSidebarFilter();
 	const [filterOpen, setFilterOpen] = useState(false);
 	const [customizeOpen, setCustomizeOpen] = useState(false);
-	const filterBtnRef = useRef<HTMLButtonElement>(null);
+	const [filterButton, setFilterButton] = useState<HTMLButtonElement | null>(null);
 	// The phone stand-in for the header filter button (portaled into the top
 	// bar next to Search). The popover anchors to whichever button is live.
-	const mobileFilterBtnRef = useRef<HTMLButtonElement>(null);
+	const [mobileFilterButton, setMobileFilterButton] =
+		useState<HTMLButtonElement | null>(null);
 	// The active repo-filter chip prefers to sit inline in the "My sessions"
 	// header (right after the title); it drops to its own row only when the
 	// sidebar is too narrow to fit it there. `repoInline` is decided by measuring
@@ -690,7 +918,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// the server hasn't stamped runStartedAt yet (external CLI runs, or the brief
 	// gap between isRunning flipping via WS and the next sessions poll). Entries
 	// are pruned once a row stops running so a later run starts its clock fresh.
-	const runStartSeen = useRef<Map<string, number>>(new Map());
+	const [runStartSeen, setRunStartSeen] = useState<Map<string, number>>(
+		() => new Map(),
+	);
 	useLayoutEffect(() => {
 		if (filter.repo === "all") return;
 		const measure = () => {
@@ -727,10 +957,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	useEffect(() => onRecentsChanged(() => setRecents(getRecents())), []);
 	useEffect(() => onReadsChanged(() => setReads(getReads())), []);
 	// Sessions where a teammate tagged you. Server-owned, so it re-renders on
-	// the socket push as well as on your own clears. The counter is a memo
-	// dependency, not just a re-render trigger: the rows read mentionFor()
-	// inside useMemo, so a push that changes nothing else would otherwise
-	// leave the badge out until an unrelated change rebuilt them.
+	// the socket push as well as on your own clears. The counter is a render
+	// trigger: the rows read mentionFor() during render, so a push that
+	// changes nothing else must still rebuild them.
 	const [mentionsRev, setMentionsRev] = useState(0);
 	useEffect(() => onMentionsChanged(() => setMentionsRev((n) => n + 1)), []);
 	// Re-render when a composer draft appears/disappears — rows check hasDraft()
@@ -752,6 +981,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		id: string;
 		x: number;
 		y: number;
+		source: HTMLButtonElement;
 	} | null>(null);
 	const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(null);
 	const [workspaceDraft, setWorkspaceDraft] = useState("");
@@ -805,7 +1035,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// Catch-up badge: how many of *my* unread workspaces the deck would walk
 	// through (distinct workspace groups, same grouping the deck uses) — so the
 	// count matches the "N Left" it opens on.
-	const catchUpCount = useMemo(() => {
+	const catchUpCount = (() => {
 		const user = currentUser.toLowerCase();
 		const groups = new Set<string>();
 		for (const s of sessions) {
@@ -815,7 +1045,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			groups.add(s.workspaceId ? `ws:${s.workspaceId}` : `session:${s.id}`);
 		}
 		return groups.size;
-	}, [sessions, currentUser, reads]);
+	})();
 
 	// The repo-wide open-PR list (every open PR, session or not), from the
 	// server's batched cache. Null until the first fetch lands — the rows memo
@@ -880,7 +1110,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return () => window.removeEventListener(PR_CLOSED_EVENT, onClosed);
 	}, []);
 
-	// Generic feed bands (Tella videos, … — the feeds design): descriptors
+	// Generic feed bands (videos, dashboards, … the feeds design): descriptors
 	// once on mount. Hidden feeds remain available to Settings but do not poll.
 	const [feeds, setFeeds] = useState<FeedDescriptor[]>([]);
 	const [feedItems, setFeedItems] = useState<Record<string, FeedItem[]>>({});
@@ -896,24 +1126,21 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			alive = false;
 		};
 	}, []);
-	const visibleFeeds = useMemo(
-		() => feeds.filter((feed) => !hiddenFeeds.has(feed.id)),
-		[feeds, hiddenFeeds],
-	);
+	const visibleFeeds = feeds.filter((feed) => !hiddenFeeds.has(feed.id));
 
 	// The Support queue now arrives through the generic feeds poll: the plain
 	// feed's items carry the full SupportThreadSummary in meta, so all the
 	// bespoke Support UI (SupportRow, filters, Tinder hand-offs) keeps working
 	// off the same derived shape (the feeds design W5).
-	const supportThreads = useMemo<SupportThread[] | null>(() => {
+	const supportThreads = (() => {
 		const items = feedItems["plain"];
 		if (!items) return null;
 		return items.map((i) => i.meta as unknown as SupportThread);
-	}, [feedItems]);
+	})();
 
 	// Newest live session per feed item (keyed `<kind>:<id>`) — a feed row with
 	// one wears that session's status dot.
-	const feedSessionByRef = useMemo(() => {
+	const feedSessionByRef = (() => {
 		const m = new Map<string, UnifiedSession>();
 		for (const s of sessions) {
 			if (s.archived || !s.externalRefs?.length) continue;
@@ -924,16 +1151,14 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			}
 		}
 		return m;
-	}, [sessions]);
+	})();
 
 	// Per-feed filter selections (generic — see FeedFilterMenu). Arg-mode
 	// changes refetch that feed immediately; meta/builtin ones just re-derive.
 	const [feedFilters, setFeedFiltersState] = useState<
 		Record<string, FeedFilterValues>
 	>(readFeedFilters);
-	const feedFiltersRef = useRef(feedFilters);
-	feedFiltersRef.current = feedFilters;
-	const argFiltersFor = (feed: FeedDescriptor, all = feedFiltersRef.current) =>
+	const argFiltersFor = (feed: FeedDescriptor, all: Record<string, FeedFilterValues>) =>
 		Object.fromEntries(
 			(feed.filters || [])
 				.filter((f) => f.mode !== "meta")
@@ -961,30 +1186,36 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	};
 	// Items use the same gentle 60s cadence as Support (the server caches ~60s).
 	// Re-enabling a source loads it immediately; hiding one tears its timer down.
-	useEffect(() => {
-		if (visibleFeeds.length === 0) return;
-		let alive = true;
-		const load = () => {
-			for (const feed of visibleFeeds) {
-				fetchFeedItems(feed.id, argFiltersFor(feed))
+	// Filter changes already fetch their feed in setFeedFilter; interval ticks
+	// read the latest filters without restarting every feed's timer.
+	const refreshEnabledFeeds = useEffectEvent(
+		(enabledFeeds: FeedDescriptor[], isAlive: () => boolean) => {
+			for (const feed of enabledFeeds) {
+				fetchFeedItems(feed.id, argFiltersFor(feed, feedFilters))
 					.then((items) => {
-						if (alive)
+						if (isAlive())
 							setFeedItems((prev) => ({ ...prev, [feed.id]: items }));
 					})
 					.catch(() => {});
 			}
-		};
+		},
+	);
+	useEffect(() => {
+		const enabledFeeds = feeds.filter((feed) => !hiddenFeeds.has(feed.id));
+		if (enabledFeeds.length === 0) return;
+		let alive = true;
+		const load = () => refreshEnabledFeeds(enabledFeeds, () => alive);
 		load();
 		const timer = setInterval(load, 60_000);
 		return () => {
 			alive = false;
 			clearInterval(timer);
 		};
-	}, [visibleFeeds]);
+	}, [feeds, hiddenFeeds]);
 
 	// Newest live session per Plain thread — a Support row with one opens that
 	// session instead of the session-less ticket preview.
-	const supportSessionByThread = useMemo(() => {
+	const supportSessionByThread = (() => {
 		const m = new Map<string, UnifiedSession>();
 		for (const s of sessions) {
 			if (s.archived || !s.plainThreadId) continue;
@@ -993,12 +1224,12 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				m.set(s.plainThreadId, s);
 		}
 		return m;
-	}, [sessions]);
+	})();
 
 	// Distinct repos across the (non-archived) sessions, most-used first, for the
 	// Repo filter dropdown. Built off every session (not the search-filtered set)
 	// so the options don't churn while you type.
-	const discoveredRepos = useMemo(() => {
+	const discoveredRepos = (() => {
 		const counts = new Map<string, number>();
 		for (const repo of registeredRepos) counts.set(repo, 0);
 		for (const s of sessions) {
@@ -1013,12 +1244,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return Array.from(counts.entries())
 			.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
 			.map(([name]) => name);
-	}, [registeredRepos, sessions, openPrs]);
-	const repos = useMemo(
-		() => mergeRepoOrder(repoOrderDraft ?? savedRepoOrder, discoveredRepos),
-		[repoOrderDraft, savedRepoOrder, discoveredRepos],
-	);
-	const completeRepoOrder = useMemo(() => {
+	})();
+	const repos = (mergeRepoOrder(repoOrderDraft ?? savedRepoOrder, discoveredRepos));
+	const completeRepoOrder = (() => {
 		const next = normalizeRepoOrder(savedRepoOrder);
 		const seen = new Set(next);
 		for (const repo of discoveredRepos) {
@@ -1028,7 +1256,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			}
 		}
 		return next;
-	}, [savedRepoOrder, discoveredRepos]);
+	})();
 	useEffect(() => {
 		if (
 			savedRepoOrder.length > 0 &&
@@ -1037,30 +1265,29 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			setRepoOrder(completeRepoOrder);
 	}, [savedRepoOrder, completeRepoOrder]);
 
-	// Distinct people who started sessions, most-active first, for the Person
-	// filter dropdown. Only recognized teammates (see KNOWN_PEOPLE) are offered;
-	// keyed by lowercased name to merge casing, with the first-seen spelling as
-	// the display label. Built off every session so options don't churn on search.
-	const people = useMemo(() => {
-		const entries = new Map<string, { label: string; count: number }>();
-		for (const s of sessions) {
-			if (s.archived || s.automation || !s.startedBy) continue;
-			const key = s.startedBy.toLowerCase();
-			if (!KNOWN_PEOPLE.has(key)) continue;
-			const e = entries.get(key) || { label: s.startedBy, count: 0 };
-			e.count++;
-			entries.set(key, e);
-		}
+	// Workspace members who started sessions, most-active first, for the Person
+	// filter. The team directory decides who is a person and merges one
+	// person's spellings (lib/session-owner): `startedBy` also carries workers,
+	// goal names and integration senders, and the same teammate arrives as a
+	// first name from the web and a full name from chat. Built off every
+	// session so options don't churn on search.
+	const roster = usePeople();
+	const canonical = (canonicalNames(roster));
+	const people = (() => {
+		const entries = sessionOwners(
+			sessions.filter((s) => !s.archived),
+			canonical,
+		);
+		const seen = new Set(entries.map((e) => e.key));
+		// Someone whose only work here is a pull request is still someone whose
+		// lanes you can look at, so they are offered even with no session.
 		for (const pr of openPrs || []) {
-			if (!pr.person || entries.has(pr.person)) continue;
-			const label =
-				TEAM.find((name) => name.toLowerCase() === pr.person) || pr.person;
-			entries.set(pr.person, { label, count: 1 });
+			if (!pr.person || seen.has(pr.person)) continue;
+			seen.add(pr.person);
+			entries.push({ key: pr.person, label: personNameForKey(pr.person) });
 		}
-		return Array.from(entries.entries())
-			.sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label))
-			.map(([key, { label }]) => ({ key, label }));
-	}, [sessions, openPrs]);
+		return entries;
+	})();
 
 	// A borrowed sidebar: someone else's lanes, everyone's, or the unassigned
 	// pile. It looks exactly like your own, so the rail changes shape while you
@@ -1087,7 +1314,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// concluded. Re-read when automation activity moves rather than on a timer:
 	// a report is published by a run, so a run landing in the list is the only
 	// thing that can have produced a new one.
-	const automationActivityKey = useMemo(() => {
+	const automationActivityKey = (() => {
 		let newest = "";
 		let count = 0;
 		for (const s of sessions) {
@@ -1096,39 +1323,33 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			if (s.lastActivity > newest) newest = s.lastActivity;
 		}
 		return `${count}:${newest}`;
-	}, [sessions]);
+	})();
 	const automationOverview = useAutomationOverview(automationActivityKey);
 
 	// The agent is a person in the picker as well as a name on a row: it holds
 	// every automation nobody has taken, and those are still editing the
 	// codebase unattended. Offered only once there is something behind it, and
 	// merged with the agent's own sessions where it has started any.
-	const peopleWithAgent = useMemo(() => {
+	const peopleWithAgent = (() => {
 		const unowned = Array.from(automationOverview.values()).some(
 			(a) => !a.owner,
 		);
 		if (!unowned || people.some((p) => p.key === AGENT_PERSON_KEY))
 			return people;
 		return [...people, { key: AGENT_PERSON_KEY, label: AGENT_NAME }];
-	}, [people, automationOverview]);
+	})();
 
 	// Child sessions are contextual navigation for the workspace that is open,
 	// not another person/status lane. Derive them from the complete live list so
 	// a teammate or search lens cannot cut a running worker out from under its
 	// selected parent row.
-	const activeWorkspaceSubagents = useMemo(
-		() => activeSubagentsForWorkspace(sessions, selectedWorkspaceId),
-		[sessions, selectedWorkspaceId],
-	);
-	const activeWorkspaceSubagentIds = useMemo(
-		() => new Set(activeWorkspaceSubagents.map(({ session }) => session.id)),
-		[activeWorkspaceSubagents],
-	);
+	const activeWorkspaceSubagents = (activeSubagentsForWorkspace(sessions, selectedWorkspaceId));
+	const activeWorkspaceSubagentIds = (new Set(activeWorkspaceSubagents.map(({ session }) => session.id)));
 
 	// Every non-archived session, narrowed by the repo/person filters and search.
 	// Rows are built per-workspace below; a session matching the filter surfaces its
 	// whole workspace row.
-	const filtered = useMemo(() => {
+	const filtered = (() => {
 		let visible = sessions.filter((s) => !s.archived);
 		if (filter.repo !== "all") {
 			// A workspace can span repos, and a session's own repo is just the
@@ -1161,7 +1382,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				// used to empty that band the moment you looked at a colleague.
 				s.automation
 					? true
-					: !!s.startedBy && s.startedBy.toLowerCase() === filter.person,
+					: !!s.startedBy && ownerKeyOf(s, canonical) === filter.person,
 			);
 		if (!search) return visible;
 		const q = search.toLowerCase();
@@ -1172,27 +1393,27 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				(s.startedBy || "").toLowerCase().includes(q) ||
 				(s.automation || "").toLowerCase().includes(q),
 		);
-	}, [sessions, workspaces, search, filter.repo, filter.person]);
+	})();
 
 	// Sort order applied to every group's items: newest activity or newest
 	// creation first. Groups read from this pre-sorted list so ordering is uniform.
-	const sorted = useMemo(() => {
+	const sorted = (() => {
 		const key = filter.sort === "created" ? "createdAt" : "lastActivity";
 		return [...filtered].sort(
 			(a, b) => new Date(b[key]).getTime() - new Date(a[key]).getTime(),
 		);
-	}, [filtered, filter.sort]);
+	})();
 
 	// PRs with an automated Open Session review in flight, keyed `repo\nbranch`
 	// — the same signal the PR rows spell out as "Review running". The review
 	// itself runs in a `bks-ghpr-*` session that lives in the Automations band, so
 	// the workspace lanes below can't see it in their own sessions.
-	const activeReviewPrKeys = useMemo(() => {
+	const activeReviewPrKeys = (() => {
 		const keys = new Set<string>();
 		for (const pr of openPrs || [])
 			if (pr.reviewActive) keys.add(`${pr.repo}\n${pr.branch}`);
 		return keys;
-	}, [openPrs]);
+	})();
 
 	// ── Workspace rows ──────────────────────────────────────────────────────
 	// The row shape itself is WsRow in lib/sidebar-types.
@@ -1211,7 +1432,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		MINE_STATUS_META.map((m) => [m.key, m.dotColor]),
 	) as Record<MineStatus, string>;
 
-	const allWsRows = useMemo(() => {
+	const allWsRows = (() => {
 		const rows: WsRow[] = [];
 		const byWs = new Map<string, UnifiedSession[]>();
 		const solo: UnifiedSession[] = [];
@@ -1315,15 +1536,15 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					(m, c) => (c.lastActivity > m ? c.lastActivity : m),
 					"",
 				),
-				createdAt: sessions[0]?.createdAt || "",
+				// The workspace owns the row's stable position. A later session joining
+				// old work must not make the whole row look newly created.
+				createdAt: workspace?.createdAt || sessions[0]?.createdAt || "",
 				// Workers are left out here for the same reason they are left out of
 				// `status`, plus one of their own: a worker gets no tab in the strip
 				// (App's naturalSessions keeps it behind its parent), so opening the
 				// workspace marks every tab read and never the worker. Counting one
 				// left the row bold with nothing you could open to clear it.
-				unread: statusSources.some(
-					(c) => c.id !== selectedId && isUnread(c.id, c.lastActivity, reads),
-				),
+				unread: !!pickUnreadWorkspaceSession(sessions, selectedId, reads),
 				// A tag on any session in the workspace marks the whole row: the
 				// person who wrote it asked for you, not for a particular tab.
 				mention: sessions
@@ -1331,7 +1552,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					.map((c) => mentionFor(c.id))
 					.find(Boolean)?.by,
 				running: sessions.some((c) => c.isRunning) || reviewRunning,
-				owner: (workspace?.createdBy || sessions[0]?.startedBy || "").toLowerCase(),
+				// Canonical, so the row files under the person the Person filter
+				// names however this workspace spelled them.
+				owner: ownerKey(workspace?.createdBy || sessions[0]?.startedBy, canonical),
 			};
 		};
 		for (const [wsId, sessions] of byWs) {
@@ -1352,8 +1575,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				),
 			);
 		}
-		// A draft workspace (an unsent "Save as draft" prompt, no session yet) is
-		// the one sessionless exception below: it earns a row of its own, since
+		// A draft workspace (an unsent prompt, no session yet) is the one
+		// sessionless exception below: it earns a row of its own, since
 		// it IS a place to start work. The composer is sitting there prefilled,
 		// waiting to be sent. mkRow's activity/creation dates default to a
 		// session that doesn't exist here, so they're patched from the
@@ -1410,9 +1633,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return rows;
 		// `lanes` feeds mineStatus/pinnedLane (read via the lib cache), and
 		// `mentionsRev` the @-mention badge (mentionFor, same cache pattern).
-	}, [filtered, sessions, workspaces, selectedId, reads, search, filter, lanes, activeReviewPrKeys, mentionsRev, activeWorkspaceSubagentIds, selectedWorkspaceId]);
+	})();
 	const rowOwnsSelection = (row: WsRow) =>
-		workspaceRowOwnsSession(row, selectedSession);
+		workspaceRowOwnsSelection(row, selectedSession, selectedWorkspaceId);
 	const selectionBelongsToWorkspaceRow = allWsRows.some(rowOwnsSelection);
 	const automationRowSelected = (session: UnifiedSession) =>
 		session.id === selectedId && !selectionBelongsToWorkspaceRow;
@@ -1441,16 +1664,28 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// Otherwise the viewer offers "Add to sidebar" when you open a hidden
 	// session through a link or ⌘K. There is no Hidden band: hiding is removal
 	// from your sidebar, not a folder to browse.
-	const { hiddenKeys: hiddenRowKeys, resurfaced: resurfacedRows } = useMemo(
-		() => partitionHidden(allWsRows, hides),
-		[allWsRows, hides],
-	);
+	const { hiddenKeys: hiddenRowKeys, resurfaced: resurfacedRows } = (partitionHidden(allWsRows, hides));
 	// Opening a deep link must not undo a personal hide. The viewer owns the
 	// recovery action while the row stays absent.
-	const wsRows = useMemo(
-		() => allWsRows.filter((r) => !hiddenRowKeys.has(r.key)),
-		[allWsRows, hiddenRowKeys],
-	);
+	const wsRows = (allWsRows.filter((r) => !hiddenRowKeys.has(r.key)));
+	useEffect(() => {
+		setRunStartSeen((current) => {
+			const next = new Map(current);
+			let changed = false;
+			for (const row of wsRows) {
+				const hasServerStart = row.sessions.some(
+					(session) => session.isRunning && session.runStartedAt,
+				);
+				if (row.running && !hasServerStart && !next.has(row.key)) {
+					next.set(row.key, Date.now());
+					changed = true;
+				} else if ((!row.running || hasServerStart) && next.delete(row.key)) {
+					changed = true;
+				}
+			}
+			return changed ? next : current;
+		});
+	}, [wsRows]);
 	// Consume the hide of any row that just resurfaced (blocked on a question),
 	// marking its sessions unread so the return reads as fresh activity — the same
 	// shape as the snooze wake above. Idempotent: clearHides ignores keys that
@@ -1466,18 +1701,22 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// The band narrows with the same person and repo lenses the rest of the
 	// sidebar uses, read off the automation rather than off its runs: a run is
 	// started by nobody, so the audience is the automation's own.
-	const groups = useMemo(() => {
+	const groups = (() => {
 		const out: Group[] = [];
 		const byAutomation = new Map<string, UnifiedSession[]>();
 		for (const s of sorted) {
-			if (!s.automation) continue;
+			// Session files predate this field's string contract, and a malformed
+			// legacy/test row must not take down the whole sidebar while sorting.
+			const automation =
+				typeof s.automation === "string" ? s.automation.trim() : "";
+			if (!automation) continue;
 			if (activeWorkspaceSubagentIds.has(s.id)) continue;
 			// A run you claimed (or a legacy global override) lives in the
 			// workspace rows instead — don't render it twice.
 			if (isClaimed(s)) continue;
-			const list = byAutomation.get(s.automation) || [];
+			const list = byAutomation.get(automation) || [];
 			list.push(s);
-			byAutomation.set(s.automation, list);
+			byAutomation.set(automation, list);
 		}
 		// Case-insensitive, or ASCII order files every lowercase name after
 		// every capitalised one: "iOS parity check" and "deepsec daily scan"
@@ -1498,44 +1737,55 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					!automationInRepoLens(overview, filter.repo))
 			)
 				continue;
+			const items = byAutomation.get(name)!;
 			out.push({
 				key: `auto:${name}`,
 				label: name,
 				dotColor: AUTOMATION_COLOR,
 				band: "automations",
-				items: byAutomation.get(name)!,
+				items,
+				totalItems: Math.max(
+					items.length,
+					...items.map((session) => session.automationRunCount || 0),
+				),
 			});
 		}
 		return out;
 		// `lanes` feeds pinnedLane (read via the lib cache).
-	}, [
-		sorted,
-		lanes,
-		automationOverview,
-		activeWorkspaceSubagentIds,
-		filter.person,
-		filter.repo,
-		currentUser,
-	]);
+	})();
 
-	// Sessions in sidebar order (pinned rows first, then each group's items) —
-	// used to hand onArchive the row that should become active when the open
-	// session is archived away.
-	const flatOrder = useMemo(() => {
-		const pinned = pins
-			.map((id) =>
-				sessions.find((s) => s.id === id || s.aliasIds?.includes(id)),
-			)
-			.filter((s): s is UnifiedSession => !!s);
-		return [...pinned, ...groups.flatMap((g) => g.items)];
-	}, [pins, sessions, groups]);
+	// The DOM is the source of truth for visual order. Section mode, project
+	// grouping, collapse state, pins, PRs and feeds can all put rendered rows in
+	// an order that no single data array represents.
+	function openNextSidebarItem(
+		currentKey: string,
+		current: HTMLButtonElement | null = null,
+	): OpenNextSidebarItem {
+		return () => {
+			const root = sidebarScrollRef.current;
+			if (!root) return false;
+			const items = Array.from(
+				root.querySelectorAll<HTMLButtonElement>("button[data-sidebar-row]"),
+			);
+			const next = nextRenderedSidebarItem(
+				items,
+				current?.isConnected ? current : null,
+				currentKey,
+			);
+			if (!next) return false;
+			next.click();
+			return true;
+		};
+	}
 
-	function archiveWithNext(s: UnifiedSession) {
-		const idx = flatOrder.findIndex((x) => x.id === s.id);
-		const rest = flatOrder.filter((x) => x.id !== s.id);
-		const next =
-			idx >= 0 ? (rest[Math.min(idx, rest.length - 1)] ?? null) : (rest[0] ?? null);
-		onArchive(s, next);
+	function archiveWithNext(
+		session: UnifiedSession,
+		current: HTMLButtonElement | null = null,
+	) {
+		onArchive(
+			session,
+			openNextSidebarItem(`session:${session.id}`, current),
+		);
 	}
 	function sessionPinState(s: UnifiedSession) {
 		const keys = [s.id, ...(s.aliasIds || [])].filter(
@@ -1584,20 +1834,20 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// lanes) and parks in the Snoozed section, soonest wake first. The sweep
 	// below prunes lapsed entries — marking the row's sessions unread first, so
 	// the wake surfaces like fresh activity — which re-derives membership.
-	const activeSnoozeKeys = useMemo(() => {
+	const activeSnoozeKeys = (() => {
 		const now = Date.now();
 		return new Set(
 			Object.entries(snoozes)
-				.filter(([, until]) => Date.parse(until) > now)
+				.filter(([, until]) => snoozeIsActive(until, now))
 				.map(([key]) => key),
 		);
-	}, [snoozes]);
+	})();
 	useEffect(() => {
 		if (Object.keys(snoozes).length === 0) return;
 		const sweep = () => {
 			const now = Date.now();
 			for (const [key, until] of Object.entries(snoozes)) {
-				if (Date.parse(until) > now) continue;
+				if (snoozeIsActive(until, now)) continue;
 				const row = wsRows.find((r) => r.key === key);
 				row?.sessions.forEach((c) => markUnread(c.id));
 				clearSnooze(key);
@@ -1613,10 +1863,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const mePersonKey = personKey(currentUser);
 	// Feed workspaces only join status lanes when they demand attention. Idle
 	// rows are already represented by their feed band.
-	const feedRefKinds = useMemo(
-		() => new Set(feeds.map((f) => f.refKind)),
-		[feeds],
-	);
+	const feedRefKinds = (new Set(feeds.map((f) => f.refKind)));
 	const rowIsFeedOnly = (r: WsRow) =>
 		!r.workspace?.repo &&
 		!!r.workspace?.externalRefs?.length &&
@@ -1624,7 +1871,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 
 	// Every row receives exactly one primary placement. Pinned remains an
 	// orthogonal quick-access facet and is derived separately below.
-	const { placedWsRows, autoCreatedRows } = useMemo(() => {
+	const { placedWsRows, autoCreatedRows } = (() => {
 		const focus =
 			filter.person === "me" ? currentUser.toLowerCase() : filter.person;
 		// Whether a row belongs in the lanes at all, asked twice: once as the
@@ -1677,25 +1924,21 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				: entry.placement === "outside" && inScope(entry.row, true)),
 		).length;
 		return { placedWsRows: placed, autoCreatedRows: moved };
-	}, [
-		wsRows,
-		activeSnoozeKeys,
-		filter.person,
-		filter.autoCreated,
-		currentUser,
-		selectedSession,
-		lanes,
-		feedRefKinds,
-	]);
+	})();
 	const needsReviewRows = rowsAtPlacement(placedWsRows, "needs-review");
 	const approvedReviewRows = rowsAtPlacement(placedWsRows, "approved-review");
 	const awaitingReviewRows = rowsAtPlacement(placedWsRows, "awaiting-review");
 	const focusWsRows = rowsAtPlacement(placedWsRows, "status");
 	const snoozedWsRows = rowsAtPlacement(placedWsRows, "snoozed").sort(
-		(a, b) =>
-			Date.parse(snoozes[a.key] || "") - Date.parse(snoozes[b.key] || ""),
+		(a, b) => {
+			const aUntil = snoozes[a.key];
+			const bUntil = snoozes[b.key];
+			if (aUntil === SNOOZE_SOMEDAY && bUntil !== SNOOZE_SOMEDAY) return 1;
+			if (bUntil === SNOOZE_SOMEDAY && aUntil !== SNOOZE_SOMEDAY) return -1;
+			return Date.parse(aUntil || "") - Date.parse(bUntil || "");
+		},
 	);
-	const pinnedWsRows = useMemo(() => {
+	const pinnedWsRows = (() => {
 		const pinSet = new Set(pins);
 		const pinIdx = new Map(pins.map((p, i) => [p, i] as const));
 		// Pinned is quick access, not a status: review rows stay visible here as
@@ -1718,37 +1961,51 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					(pinSet.has(r.key) || r.sessions.some((c) => pinSet.has(c.id))),
 			)
 			.sort((a, b) => rowIdx(a) - rowIdx(b));
-	}, [wsRows, pins, activeSnoozeKeys]);
+	})();
+
+	// ── Inbox rows ──────────────────────────────────────────────────────────
+	// Snoozed rows already left `focusWsRows` through placement. The remaining
+	// inbox stays stable by creation time. Pinned is an orthogonal quick-access
+	// facet, so a pinned row still keeps its primary Active/status placement.
+	const activeFocusWsRows = sortInboxByCreation(focusWsRows);
 	// ── PR rows in the project lanes ────────────────────────────────────────
 	// The retired standalone Pull-requests band dissolved into the project
 	// groups: every open PR classifies into a lane (ready → Ready to merge,
 	// attention → In progress, drafts → Backlog, the rest → In progress).
 	const githubLogin = githubLoginFor(currentUser);
-	const reviewQueueItems = useMemo(
-		() => buildReviewQueue(openPrs || [], sessions, currentUser, githubLogin),
-		[openPrs, sessions, currentUser, githubLogin],
-	);
-	// Session-backed PRs ride their workspace row (which already wears the PR
-	// state); a PR row renders only when no rendered workspace row carries the
-	// same repo+branch. Dedupe is against the rows in view — not all wsRows —
-	// so a teammate's PR outside your person lens can still surface as a PR
-	// row when the PR filter includes it.
-	const prRowItems = useMemo(() => {
-		if (!workspaceDataReady || filter.prs === "none") return [];
-		const q = search.trim().toLowerCase();
-		const covered = new Set<string>();
-		const rowsInView = [
-			...focusWsRows,
+	const reviewQueueItems = (buildReviewQueue(openPrs || [], sessions, currentUser, githubLogin));
+	const workspaceRowsInView = ([
+			...activeFocusWsRows,
 			...pinnedWsRows,
 			...snoozedWsRows,
 			...needsReviewRows,
 			...awaitingReviewRows,
 			...approvedReviewRows,
-		];
-		for (const r of rowsInView)
-			for (const c of r.sessions) for (const k of sessionPrKeys(c)) covered.add(k);
+		]);
+	// A PR already represented by a workspace belongs to that workspace row.
+	// Match both the workspace's own PR identity and every PR carried by its
+	// sessions, including linked and cross-repo PRs. Dedupe is against rows in
+	// view so a teammate's hidden workspace can still surface through the PR
+	// filter.
+	const workspaceCoveredPrUrls = (() => {
+		const covered = new Set<string>();
+		for (const item of reviewQueueItems) {
+			if (
+				workspaceRowsInView.some(
+					(row) =>
+						(!!row.workspace && workspaceCarriesPr(row.workspace, item.pr)) ||
+						row.sessions.some((session) => sessionCarriesPr(session, item.pr)),
+				)
+			)
+				covered.add(item.pr.url);
+		}
+		return covered;
+	})();
+	const prRowItems = (() => {
+		if (!workspaceDataReady || filter.prs === "none") return [];
+		const q = search.trim().toLowerCase();
 		return reviewQueueItems.filter((item) => {
-			if (covered.has(`${item.pr.repo}\n${item.pr.branch}`)) return false;
+			if (workspaceCoveredPrUrls.has(item.pr.url)) return false;
 			if (filter.repo !== "all" && item.pr.repo !== filter.repo)
 				return false;
 			if (
@@ -1767,26 +2024,27 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			if (filter.prs === "all") return true;
 			return item.source === "mine" || item.source === "requested";
 		});
-	}, [
-		reviewQueueItems,
-		workspaceDataReady,
-		focusWsRows,
-		pinnedWsRows,
-		snoozedWsRows,
-		needsReviewRows,
-		awaitingReviewRows,
-		approvedReviewRows,
-		filter.repo,
-		filter.person,
-		filter.prs,
-		search,
-	]);
+	})();
 
 	// Which lane a PR row files under: ready → Ready to merge, everything else
 	// → Backlog. In progress is reserved for live runs — a PR that needs a
 	// hand signals through its red/yellow glyph and hover card instead.
 	function prItemLane(item: ReviewQueueItem): MineStatus {
 		return item.bucket === "ready" ? "review" : "pending";
+	}
+
+	const [confirm, confirmDialog] = useConfirm();
+
+	// Every draft entry point uses the same styled confirmation instead of the
+	// browser's native alert.
+	function confirmDeleteDraft(onConfirm: () => void) {
+		confirm({
+			title: "Delete this draft?",
+			description: "This removes the unsent message.",
+			confirmLabel: "Delete",
+			destructive: true,
+			onConfirm,
+		});
 	}
 
 	// Closing a PR from a row's context menu — optimistic spinner per URL; the
@@ -1798,17 +2056,17 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		if (!window.confirm(`Close PR #${item.pr.number} without merging it?`))
 			return;
 		setClosingPrUrls((current) => new Set(current).add(item.pr.url));
-		try {
-			await closePrPreviewApi(item.pr.repo, item.pr.branch);
-		} catch (error: any) {
-			onToast?.(error.message || `Failed to close PR #${item.pr.number}.`);
-		} finally {
-			setClosingPrUrls((current) => {
+		await (async () => {
+await closePrPreviewApi(item.pr.repo, item.pr.branch);
+})().catch(async (error: any) => {
+onToast?.(error.message || `Failed to close PR #${item.pr.number}.`);
+}).finally(async () => {
+setClosingPrUrls((current) => {
 				const next = new Set(current);
 				next.delete(item.pr.url);
 				return next;
 			});
-		}
+});
 	}
 
 	// A PR row is selected while the open workspace carries its PR.
@@ -1850,13 +2108,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		(item) => item.source !== "requested",
 	);
 
-	// Workspace rows in the sidebar's visual order (Pinned band first, then the
-	// status lanes) — archiveWorkspaceWithNext walks this to pick the row that
-	// should open when the active workspace is archived away.
-	const wsRowOrder = useMemo(
-		() => {
-			// Pinned rows appear in the Pinned band AND their status lane —
-			// dedupe by key so the archive-next walk sees each row once.
+	// Workspace rows in their primary placement order. This supports operations
+	// that need row membership; archive navigation reads the rendered DOM below.
+	const wsRowOrder = (() => {
+			// Review placements can still overlap Pinned; dedupe by key so the
+			// archive-next walk sees each workspace once.
 			const seen = new Set<string>();
 			return [
 				...needsReviewRows,
@@ -1864,23 +2120,14 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				...awaitingReviewRows,
 				...pinnedWsRows,
 				...MINE_STATUS_META.flatMap((meta) =>
-					focusWsRows.filter((r) => r.status === meta.key),
+					activeFocusWsRows.filter((r) => r.status === meta.key),
 				),
 				...snoozedWsRows,
 			].filter((r) => (seen.has(r.key) ? false : (seen.add(r.key), true)));
-		},
-		[
-			needsReviewRows,
-			approvedReviewRows,
-			awaitingReviewRows,
-			pinnedWsRows,
-			focusWsRows,
-			snoozedWsRows,
-		],
-	);
-	// Grouping by project draws the repo bands, and so gives every lane
-	// somewhere to nest.
-	const groupsByRepo = filter.groupBy === "repo";
+		})();
+	// Project bands are independent from the section mode. Inbox, Activity,
+	// and Status can each render globally or inside every project.
+	const groupsByRepo = filter.byProject;
 	const hasWorkspaceFilter =
 		!!search ||
 		filter.repo !== "all" ||
@@ -1894,7 +2141,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		awaitingReviewRows.length === 0 &&
 		approvedReviewRows.length === 0 &&
 		pinnedWsRows.length === 0 &&
-		focusWsRows.length === 0 &&
+		activeFocusWsRows.length === 0 &&
 		snoozedWsRows.length === 0 &&
 		prRowItems.length === 0;
 	const productEmpty = sessions.length === 0 && workspaces.length === 0;
@@ -1911,6 +2158,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return !!row.workspace?.draft && row.sessions.length === 0;
 	}
 
+	const wsSwipeOffset = useRef(0);
+
 	function deleteDraftWsRow(row: WsRow) {
 		const ws = row.workspace;
 		if (!ws) return;
@@ -1922,14 +2171,23 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		});
 	}
 
-	function archiveWorkspaceWithNext(row: WsRow) {
-		// Sessionless rows can't be opened, so they're not "next" candidates.
-		const candidates = wsRowOrder.filter((r) => r.sessions.length > 0);
-		const idx = candidates.findIndex((r) => r.key === row.key);
-		const rest = candidates.filter((r) => r.key !== row.key);
-		const next =
-			idx >= 0 ? (rest[Math.min(idx, rest.length - 1)] ?? null) : (rest[0] ?? null);
-		onArchiveWorkspace(row.sessions, next?.sessions[0] ?? null);
+	function rowIsSnoozed(row: WsRow): boolean {
+		return activeSnoozeKeys.has(row.key);
+	}
+
+	function toggleWorkspaceSnooze(row: WsRow) {
+		if (rowIsSnoozed(row)) clearSnooze(row.key);
+		else setSnooze(row.key, SNOOZE_SOMEDAY);
+	}
+
+	function archiveWorkspaceWithNext(
+		row: WsRow,
+		current: HTMLButtonElement | null = null,
+	) {
+		onArchiveWorkspace(
+			row.sessions,
+			openNextSidebarItem(`workspace:${row.key}`, current),
+		);
 	}
 
 	/**
@@ -1965,48 +2223,128 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		setHide(row.key);
 	}
 
-	// Archive just the open session and pick what becomes active. We resolve the open
-	// session through wsRowOrder (the rendered workspace rows) rather than flatOrder
-	// — flatOrder only carries pinned + automation sessions, so a normal open session
-	// isn't in it. If the session has siblings in its workspace, land on one of them;
-	// otherwise the row empties out, so land on the next workspace's first session.
+	// Archive just the open session and pick what becomes active. A workspace
+	// with another tab stays on that workspace. When its last tab goes away, the
+	// rendered list decides what opens next.
 	function archiveOpenSessionWithNext() {
-		const candidates = wsRowOrder.filter((r) => r.sessions.length > 0);
-		const rowIdx = candidates.findIndex((r) =>
-			r.sessions.some((c) => c.id === selectedId),
+		const row = wsRowOrder.find((candidate) =>
+			candidate.sessions.some((session) => session.id === selectedId),
 		);
-		if (rowIdx < 0) {
+		if (!row) {
 			// The open session can be hidden by the current person/repo/search lens.
 			// Archiving the active session must not depend on it being rendered.
 			const session = sessions.find((s) => s.id === selectedId && !s.archived);
-			if (session) onArchive(session, null);
+			if (session)
+				onArchive(
+					session,
+					openNextSidebarItem(`session:${session.id}`),
+				);
 			return;
 		}
-		const row = candidates[rowIdx];
-		const session = row.sessions.find((c) => c.id === selectedId);
+		const session = row.sessions.find((candidate) => candidate.id === selectedId);
 		if (!session) return;
-		let next: UnifiedSession | null;
-		const siblings = row.sessions.filter((c) => c.id !== selectedId);
+		const siblings = row.sessions.filter((candidate) => candidate.id !== selectedId);
 		if (siblings.length > 0) {
-			const sessionIdx = row.sessions.findIndex((c) => c.id === selectedId);
-			next = siblings[Math.min(sessionIdx, siblings.length - 1)] ?? null;
-		} else {
-			const rest = candidates.filter((r) => r.key !== row.key);
-			next = rest[Math.min(rowIdx, rest.length - 1)]?.sessions[0] ?? null;
+			const sessionIdx = row.sessions.findIndex(
+				(candidate) => candidate.id === selectedId,
+			);
+			const sibling = siblings[Math.min(sessionIdx, siblings.length - 1)] ?? null;
+			onArchive(
+				session,
+				sibling
+					? () => {
+						onSelect(sibling);
+						return true;
+					}
+					: null,
+			);
+			return;
 		}
-		onArchive(session, next);
+		onArchive(
+			session,
+			openNextSidebarItem(`workspace:${row.key}`),
+		);
 	}
 
 	React.useImperativeHandle(ref, () => ({
 		archiveSelected: archiveOpenSessionWithNext,
 	}));
 
+	const reportedNextChatAvailable = useRef<boolean | null>(null);
+	useLayoutEffect(() => {
+		const sidebar = sidebarScrollRef.current?.querySelector("[data-sidebar-list]");
+		const workspaceItems = Array.from(
+			sidebar?.querySelectorAll<HTMLButtonElement>("button[data-ws-row]") ?? [],
+		);
+		const renderedItems = Array.from(
+			sidebar?.querySelectorAll<HTMLButtonElement>("button[data-sidebar-row]") ??
+				[],
+		);
+		const available = !!(
+			nextUnreadRenderedWorkspaceItem(workspaceItems) ??
+			nextRenderedSidebarChat(renderedItems)
+		);
+		if (reportedNextChatAvailable.current === available) return;
+		reportedNextChatAvailable.current = available;
+		onNextChatAvailableChange?.(available);
+	});
+
 	// Advertised keycaps, read through the registry so a rebind in Settings
 	// repaints the hints instead of leaving them describing the old chord.
-	const archiveKeys = useShortcutKeys("session-archive");
 	const newSessionKeys = useShortcutKeys("session-new");
-	const archiveWsKeys = useShortcutKeys("workspace-archive");
 	const pinShortcutKeys = useShortcutKeys("session-pin");
+	const archiveShortcutKeys = useShortcutKeys("session-archive");
+
+	// ── Workspace hover card ────────────────────────────────────────────────
+	// The same card every sidebar row raises, driven by hand: workspace rows
+	// come out of a render function rather than a component, so one card serves
+	// the whole list (only one row can be dwelled on at a time) and the hovered
+	// row is its anchor. The card carries actions (Archive, PR link,
+	// thumbnails), so leaving the row schedules the close with a short grace
+	// period and entering the card cancels it — the pointer can travel the 8px
+	// gap without the card vanishing under it.
+	const wsHoverOpenT = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const wsHoverCloseT = useRef<ReturnType<typeof setTimeout> | null>(null);
+	// The row element itself is the anchor — the popover tracks it, so a
+	// scrolling list repositions the card instead of dropping it.
+	const [wsHover, setWsHover] = useState<{ row: WsRow; el: HTMLElement } | null>(
+		null,
+	);
+	// Mobile long-press sheet (the touch stand-in for the hover card).
+	const [wsSheet, setWsSheet] = useState<{
+		row: WsRow;
+		source: HTMLButtonElement;
+	} | null>(null);
+
+	const cancelWsHoverTimers = () => {
+		if (wsHoverOpenT.current) clearTimeout(wsHoverOpenT.current);
+		if (wsHoverCloseT.current) clearTimeout(wsHoverCloseT.current);
+		wsHoverOpenT.current = null;
+		wsHoverCloseT.current = null;
+	};
+	function wsRowHoverEnter(row: WsRow, el: HTMLElement) {
+		if (rowRenameEditing(row) || !pointerCanHover()) return;
+		cancelWsHoverTimers();
+		if (wsHover) {
+			setWsHover({ row, el });
+			return;
+		}
+		wsHoverOpenT.current = setTimeout(() => {
+			setWsHover({ row, el });
+		}, 380);
+	}
+	function scheduleWsHoverClose() {
+		if (wsHoverOpenT.current) clearTimeout(wsHoverOpenT.current);
+		wsHoverOpenT.current = null;
+		if (wsHoverCloseT.current) clearTimeout(wsHoverCloseT.current);
+		wsHoverCloseT.current = setTimeout(() => setWsHover(null), 140);
+	}
+	function closeWsHover() {
+		cancelWsHoverTimers();
+		setWsHover(null);
+	}
+	useEffect(() => cancelWsHoverTimers, []);
+
 
 	// ⌘E (or the legacy ⌘⇧A) archives the open session and lands on the next entry
 	// in the sidebar, rather than dropping back to Home. This lives here (not in
@@ -2015,47 +2353,44 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// already-archived session — that session isn't in this list, so this
 	// handler no-ops on it and the two never both fire. ⌘⌥⇧A below escalates to
 	// the whole workspace.
+	const handleArchiveSessionKey = useEffectEvent((e: KeyboardEvent) => {
+		if (e.defaultPrevented || !matchesShortcut(e, "session-archive")) return;
+		if (blockingOverlayOpen()) return;
+		if (editableSwallowsArchiveChord(e.target)) return;
+		const canArchive = sessions.some(
+			(s) => s.id === selectedId && !s.archived,
+		);
+		if (!canArchive) return;
+		e.preventDefault();
+		closeWsHover();
+		archiveOpenSessionWithNext();
+	});
 	useEffect(() => {
-		function onKeyDown(e: KeyboardEvent) {
-			if (e.defaultPrevented || !matchesShortcut(e, "session-archive")) return;
-			if (
-				document.querySelector(
-					".palette-backdrop, .composer-schedule-modal-backdrop, .session-delete-overlay",
-				)
-			)
-				return;
-			if (editableSwallowsArchiveChord(e.target)) return;
-			const canArchive = sessions.some(
-				(s) => s.id === selectedId && !s.archived,
-			);
-			if (!canArchive) return;
-			e.preventDefault();
-			closeWsHover();
-			archiveOpenSessionWithNext();
-		}
+		const onKeyDown = (e: KeyboardEvent) => handleArchiveSessionKey(e);
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [wsRowOrder, sessions, selectedId, onArchive]);
+	}, []);
 
 	// ⌘⌥⇧A escalates the session archive (⌘E/⌘⇧A) to the whole active workspace.
 	// The Alt modifier is the only thing that separates the two handlers, so
 	// exactly one fires. Targets the workspace holding the open session.
+	const handleArchiveWorkspaceKey = useEffectEvent((e: KeyboardEvent) => {
+		if (e.defaultPrevented || !matchesShortcut(e, "workspace-archive"))
+			return;
+		if (editableSwallowsArchiveChord(e.target)) return;
+		const row = wsRowOrder.find(
+			(r) => r.sessions.length > 0 && r.sessions.some((c) => c.id === selectedId),
+		);
+		if (!row) return;
+		e.preventDefault();
+		closeWsHover();
+		archiveWorkspaceWithNext(row);
+	});
 	useEffect(() => {
-		function onKeyDown(e: KeyboardEvent) {
-			if (e.defaultPrevented || !matchesShortcut(e, "workspace-archive"))
-				return;
-			if (editableSwallowsArchiveChord(e.target)) return;
-			const row = wsRowOrder.find(
-				(r) => r.sessions.length > 0 && r.sessions.some((c) => c.id === selectedId),
-			);
-			if (!row) return;
-			e.preventDefault();
-			closeWsHover();
-			archiveWorkspaceWithNext(row);
-		}
+		const onKeyDown = (e: KeyboardEvent) => handleArchiveWorkspaceKey(e);
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [wsRowOrder, selectedId, onArchiveWorkspace]);
+	}, []);
 
 	// ⌘P pins the open session's workspace ROW, so the chord and the row's own
 	// pin button move the same pin. They used to move different ones: the button
@@ -2066,27 +2401,23 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// archived one, or one the current lens filters out. Capture phase, so this
 	// runs before the viewer's window listener whatever order they mounted in,
 	// and `preventDefault` is what tells it we took the key.
+	const handlePinWorkspaceKey = useEffectEvent((e: KeyboardEvent) => {
+		if (e.defaultPrevented || !matchesShortcut(e, "session-pin")) return;
+		if (blockingOverlayOpen()) return;
+		// Decline inside a text field rather than swallowing the key: the
+		// viewer's own handler still sees it, so this only ever adds row
+		// semantics, never removes the chord from where it worked before.
+		if (editableSwallowsArchiveChord(e.target)) return;
+		const row = wsRowOrder.find(rowOwnsSelection);
+		if (!row) return;
+		e.preventDefault();
+		workspacePinState(row).toggle();
+	});
 	useEffect(() => {
-		function onKeyDown(e: KeyboardEvent) {
-			if (e.defaultPrevented || !matchesShortcut(e, "session-pin")) return;
-			if (
-				document.querySelector(
-					".palette-backdrop, .composer-schedule-modal-backdrop, .session-delete-overlay",
-				)
-			)
-				return;
-			// Decline inside a text field rather than swallowing the key: the
-			// viewer's own handler still sees it, so this only ever adds row
-			// semantics, never removes the chord from where it worked before.
-			if (editableSwallowsArchiveChord(e.target)) return;
-			const row = wsRowOrder.find(rowOwnsSelection);
-			if (!row) return;
-			e.preventDefault();
-			workspacePinState(row).toggle();
-		}
+		const onKeyDown = (e: KeyboardEvent) => handlePinWorkspaceKey(e);
 		window.addEventListener("keydown", onKeyDown, true);
 		return () => window.removeEventListener("keydown", onKeyDown, true);
-	}, [wsRowOrder, selectedSession, pins]);
+	}, []);
 
 	// ⌘↓/⌘↑ cycle through the sidebar's rendered items in visual order (down =
 	// next row), wrapping at the ends. Reading the DOM here is intentional: each
@@ -2108,12 +2439,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					: 0;
 			if (dir === 0) return;
 			if (editableOwnsCaretChord(e.target)) return;
-			if (
-				document.querySelector(
-					".palette-backdrop, .composer-schedule-modal-backdrop, .session-delete-overlay",
-				)
-			)
-				return;
+			if (blockingOverlayOpen()) return;
 			const candidates = Array.from(
 				document.querySelectorAll<HTMLButtonElement>(
 					"[data-sidebar-list] button[data-sidebar-row]",
@@ -2140,52 +2466,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, []);
 
-	// ── Workspace hover card ────────────────────────────────────────────────
-	// The same card every sidebar row raises, driven by hand: workspace rows
-	// come out of a render function rather than a component, so one card serves
-	// the whole list (only one row can be dwelled on at a time) and the hovered
-	// row is its anchor. The card carries actions (Archive, PR link,
-	// thumbnails), so leaving the row schedules the close with a short grace
-	// period and entering the card cancels it — the pointer can travel the 8px
-	// gap without the card vanishing under it.
-	const wsHoverOpenT = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const wsHoverCloseT = useRef<ReturnType<typeof setTimeout> | null>(null);
-	// The row element itself is the anchor — the popover tracks it, so a
-	// scrolling list repositions the card instead of dropping it.
-	const [wsHover, setWsHover] = useState<{ row: WsRow; el: HTMLElement } | null>(
-		null,
-	);
-	// Mobile long-press sheet (the touch stand-in for the hover card).
-	const [wsSheet, setWsSheet] = useState<WsRow | null>(null);
-
-	function cancelWsHoverTimers() {
-		if (wsHoverOpenT.current) clearTimeout(wsHoverOpenT.current);
-		if (wsHoverCloseT.current) clearTimeout(wsHoverCloseT.current);
-		wsHoverOpenT.current = null;
-		wsHoverCloseT.current = null;
-	}
-	function wsRowHoverEnter(row: WsRow, el: HTMLElement) {
-		if (rowRenameEditing(row) || !pointerCanHover()) return;
-		cancelWsHoverTimers();
-		if (wsHover) {
-			setWsHover({ row, el });
-			return;
-		}
-		wsHoverOpenT.current = setTimeout(() => {
-			setWsHover({ row, el });
-		}, 380);
-	}
-	function scheduleWsHoverClose() {
-		if (wsHoverOpenT.current) clearTimeout(wsHoverOpenT.current);
-		wsHoverOpenT.current = null;
-		if (wsHoverCloseT.current) clearTimeout(wsHoverCloseT.current);
-		wsHoverCloseT.current = setTimeout(() => setWsHover(null), 140);
-	}
-	function closeWsHover() {
-		cancelWsHoverTimers();
-		setWsHover(null);
-	}
-	useEffect(() => cancelWsHoverTimers, []);
 
 	// Mobile: tap-to-open a workspace row fires from `touchend`, not the
 	// synthesized click — same trick as SessionRow. The row has :hover styles
@@ -2204,7 +2484,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		null,
 	);
 	const wsSwiping = useRef(false);
-	const wsSwipeOffset = useRef(0);
 	const [wsSwipe, setWsSwipe] = useState<SwipeState | null>(null);
 	const [wsDraggingKey, setWsDraggingKey] = useState<string | null>(null);
 	// Which action the in-flight drag is revealing. Split from wsSwipe so a
@@ -2247,13 +2526,14 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			y: t.clientY,
 			width: e.currentTarget.clientWidth,
 		};
+		const source = e.currentTarget as HTMLButtonElement;
 		wsPressTimer.current = setTimeout(() => {
 			wsLongPressed.current = true;
 			closeWsHover();
 			navigator.vibrate?.(10);
 			// The touch stand-in for both the hover card AND right-click: a
 			// bottom sheet with the overview block plus every workspace action.
-			setWsSheet(row);
+			setWsSheet({ row, source });
 		}, LONG_PRESS_MS);
 	}
 	function wsRowTouchMove(row: WsRow, e: React.TouchEvent) {
@@ -2277,14 +2557,14 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				// Per-frame position goes straight to the DOM: a setState here
 				// re-rendered the entire sidebar on every touchmove, which
 				// phones can't do at 60fps. React only hears about drag start
-				// and side flips; touchend reconciles the settled state.
+				// and side flips; touchend reconciles the committed state.
 				const btn = e.currentTarget as HTMLElement;
 				btn.style.setProperty("--swipe-x", `${offset}px`);
 				btn.parentElement?.style.setProperty(
 					"--swipe-action-w",
 					`${Math.max(SWIPE_REVEAL_PX, Math.abs(offset))}px`,
 				);
-				setWsDragSide(offset < 0 ? "archive" : offset > 0 ? "star" : null);
+				setWsDragSide(swipeActionForOffset(offset));
 				return;
 			}
 		}
@@ -2298,23 +2578,25 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			clearWsPress();
 		}
 	}
-	// What a row click opens. `review` rows — the ones under the "Needs review"
-	// band — land on the workspace's Review tab, because the whole reason that
-	// band exists is that someone asked you to look at the diff. Every other
-	// place the same workspace appears (status lanes, Pinned, search) still
-	// opens the session.
+	// A bold row points to unread activity, so that tab wins over the row's lane
+	// or remembered tab. Rows with no unread activity keep their normal routing.
 	function openWsRow(row: WsRow, review: boolean) {
 		const mainSession = workspaceMainSession(row);
-		// …as long as there's something to review: a PR (even one opened on a
-		// branch the session doesn't own), or its own branch/worktree to diff.
-		// Anything else falls through to the session rather than landing on an
-		// empty pane.
+		const unreadSession = pickUnreadWorkspaceSession(row.sessions, selectedId, reads);
+		if (unreadSession) {
+			if (row.workspace) onOpenWorkspace(row.workspace.id, unreadSession.id);
+			else onSelect(unreadSession);
+			return;
+		}
+		// Only open Review when there is something to inspect: a PR, or a branch or
+		// worktree that can produce a diff. Otherwise use the normal workspace path.
 		const reviewable =
 			row.workspace?.prNumber !== undefined ||
 			row.sessions.some((s) => sessionHasPr(s) || sessionHasWorkspace(s));
 		if (review && reviewable && mainSession) onOpenReview(mainSession);
-		else if (mainSession) onSelect(mainSession);
 		else if (row.workspace) onOpenWorkspace(row.workspace.id);
+		// Pre-migration grouped rows have no workspace record to restore through.
+		else if (mainSession) onSelect(mainSession);
 	}
 	function wsRowTouchEnd(row: WsRow, e: React.TouchEvent, review = false) {
 		const hadOrigin = wsPressOrigin.current !== null;
@@ -2334,16 +2616,17 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		setWsDragSide(null);
 		// The drag wrote --swipe-x / --swipe-action-w straight onto the DOM;
 		// React never owned them, so a re-render with an undefined style prop
-		// won't remove them. Clear here — the settled wsSwipe state (if any)
+		// won't remove them. Clear here; the committed wsSwipe state (if any)
 		// re-applies them through the style props on this same flush.
-		const rowEl = e.currentTarget as HTMLElement;
+		const rowEl = e.currentTarget as HTMLButtonElement;
 		rowEl.style.removeProperty("--swipe-x");
 		rowEl.parentElement?.style.removeProperty("--swipe-action-w");
 		if (rowRenameEditing(row)) return;
 		if (wasSwiping) {
 			e.preventDefault();
 			if (Math.abs(swipeOffset) >= fullSwipeThreshold(rowWidth)) {
-				const action: SwipeAction = swipeOffset < 0 ? "archive" : "star";
+				const action = swipeActionForOffset(swipeOffset);
+				if (!action) return;
 				setWsSwipe({
 					key: row.key,
 					offset: swipeCommitOffset(action, rowWidth),
@@ -2352,7 +2635,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				window.setTimeout(() => {
 					if (action === "archive") {
 						if (isDraftWsRow(row)) deleteDraftWsRow(row);
-						else archiveWorkspaceWithNext(row);
+						else archiveWorkspaceWithNext(row, rowEl);
 					} else {
 						workspacePinState(row).toggle();
 						setWsSwipe({ key: row.key, offset: 0, action });
@@ -2405,6 +2688,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		key.startsWith("review:") ||
 		key.startsWith("project:") ||
 		key.startsWith("support:") ||
+		key.startsWith("lifecycle:") ||
 		key.startsWith("inbox:")
 			? `collapsed:${key}`
 			: key;
@@ -2427,6 +2711,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			key.startsWith("repo:") ||
 			key.startsWith("review:") ||
 			key.startsWith("support:") ||
+			key.startsWith("lifecycle:") ||
 			key.startsWith("project:") ||
 			key.startsWith("inbox:")
 		)
@@ -2690,9 +2975,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return renderWsRowImpl(row, false, true);
 	}
 
-	// Pinned is an orthogonal shortcut, so the selected workspace can appear
-	// there and in its primary lane. Its children render only at the primary
-	// placement, keeping one visible subagent row per session.
+	// Pinned is the row's visible placement while it is pinned. Its children stay
+	// hidden here, keeping one visible subagent row per session.
 	function renderPinnedWsRow(row: WsRow) {
 		return renderWsRowImpl(row, false, false, false);
 	}
@@ -2713,7 +2997,12 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	) {
 		const active = rowOwnsSelection(row);
 		const editing = rowRenameEditing(row);
-		const waiting = row.status === "needsinput";
+		const hasQuestion = row.sessions.some((session) => session.waitingForInput);
+		const failed =
+			!hasQuestion && !!workspaceRunNeedingAttention(row.sessions);
+		// A manually pinned Needs input lane remains blue, but a failed top-level
+		// run gets its own red marker rather than masquerading as a question.
+		const waiting = !failed && row.status === "needsinput";
 		// A review GitHub is still asking you for. Blocked on you, like an
 		// unanswered question, so it wears the same blue mark — and it wears it in
 		// every band, not only under Needs review, because the whole point is that
@@ -2734,22 +3023,20 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				.filter((c) => c.isRunning && c.runStartedAt)
 				.map((c) => Date.parse(c.runStartedAt!))
 				.filter((n) => !Number.isNaN(n));
-			if (stamps.length) {
-				runStartMs = Math.min(...stamps);
-				runStartSeen.current.set(row.key, runStartMs);
-			} else {
-				runStartMs = runStartSeen.current.get(row.key) ?? Date.now();
-				runStartSeen.current.set(row.key, runStartMs);
-			}
-		} else {
-			runStartSeen.current.delete(row.key);
+			if (stamps.length) runStartMs = Math.min(...stamps);
+			else runStartMs = runStartSeen.get(row.key) ?? null;
 		}
+		// The yellow duration is a live status, not a sort key. Stable creation
+		// ordering makes that distinction honest without taking the useful timer
+		// away from Inbox and Project layouts.
+		const showRunDuration = runStartMs !== null;
+		const snoozed = rowIsSnoozed(row);
 		const swipeOffset = isPhone && wsSwipe?.key === row.key ? wsSwipe.offset : 0;
 		const swipeAction = isPhone && wsSwipe?.key === row.key ? wsSwipe.action : null;
 		const draggingRow = wsDraggingKey === row.key;
 		// Which underlay to show: the in-flight drag reveals its side via
-		// wsDragSide (per-frame offsets live only in the DOM now), a settled
-		// open/committing row falls back to the reconciled wsSwipe state.
+		// wsDragSide (per-frame offsets live only in the DOM now), an open or
+		// committing row falls back to the reconciled wsSwipe state.
 		const swipeSide: SwipeAction | null = draggingRow
 			? wsDragSide
 			: swipeAction === "archive" || swipeOffset < 0
@@ -2802,20 +3089,15 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							setWsSwipe(null);
 							archiveWorkspaceWithNext(row);
 						}}
-						title={
-							row.sessions.length > 1
-								? `Archive workspace (${row.sessions.length} sessions)`
-								: "Archive"
-						}
+						title="Archive workspace"
 					>
 						<IconArchive size={22} />
 						<span>Archive</span>
 					</button>
 				)}
-				{/* A draft row's left swipe deletes instead of archiving: it has no
-				    session to archive, and the confirm-on-delete elsewhere (right-click,
-				    long-press sheet) would defeat the point of a swipe. Same red slot,
-				    same gesture, a trash glyph in place of the archive box. */}
+				{/* A draft row's left swipe deletes instead: it has no session
+				    lifecycle yet, and the confirm-on-delete elsewhere (right-click,
+				    long-press sheet) would defeat the point of a swipe. */}
 				{isPhone && isDraftWsRow(row) && (
 					<button
 						className={cn(
@@ -2863,6 +3145,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						// row carries the slide. The drag writes --swipe-x straight onto
 						// the node, so the transform reads it rather than a React style.
 						SIDEBAR_WS_ROW,
+						// The reserve follows the chips that actually appear: an
+						// unpinned row reveals snooze + archive, not the pin, so it
+						// gives up one chip less of its right end (26px + the 4px gap).
+						!pinned && "hover:pr-[68px]",
 						"z-1 mt-0 touch-pan-y transform-[translateX(var(--swipe-x,0))]",
 						SIDEBAR_HOVER_LAYER,
 						// "Needs you" paints no fill of its own: it is a question
@@ -2879,8 +3165,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					)}
 					data-sidebar-row=""
 					data-ws-row=""
+					data-sidebar-item-key={`workspace:${row.key}`}
 					data-selected={active || undefined}
 					data-waiting={waiting || undefined}
+					data-running={row.running || undefined}
 					data-unread={row.unread || undefined}
 					style={
 						swipeOffset
@@ -2929,32 +3217,32 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						id: row.workspace ? row.workspace.id : row.key,
 						x: e.clientX,
 						y: e.clientY,
+						source: e.currentTarget,
 					});
 					}}
 					// The button's label replaces its content for assistive tech, so
 					// the blocked state — now carried visually by the row's wash —
 					// rides here rather than on a marker element.
 					aria-label={
-						waiting
-							? `${row.name}, needs your attention`
+						failed
+							? `${row.name}, last run failed`
+							: waiting
+								? `${row.name}, needs your attention`
 							: needsMyReview
 								? `${row.name}, needs your review`
 								: row.name
 					}
 				>
-				{/* Blocked-on-you outranks every other mark, in every grouping: a
-				    row waiting on you looks the same wherever the list puts it, and
-				    the blue is the one the lane dot, the collapsed-band count and the
-				    native app already spend on it. A review you were asked for is the
-				    same kind of claim, so it takes the same dot rather than a colour
-				    of its own — the PR's own health keeps its place in the hover card.
-				    Below that, a row with no lane heading over it carries the
-				    workspace status in its own mark, while lanes provide that
-				    context and keep the richer PR lifecycle mark here instead. */}
+				{/* A question or requested review is blue. A stopped run is red, so
+				    the marker states what happened instead of implying a reply exists. */}
 				<span className={SIDEBAR_RAIL}>
 					{waiting || needsMyReview ? (
 						<span
 							className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.waiting}`}
+						/>
+					) : failed ? (
+						<span
+							className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.failed}`}
 						/>
 					) : noSectionHeading ? (
 						<WsStatusMark row={row} size={18} />
@@ -2963,7 +3251,12 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.running}`}
 						/>
 					) : (
-						<WsPrStatusMark sessions={row.sessions} size={18} workspace={row.workspace} />
+						<WsPrStatusMark
+							sessions={row.sessions}
+							size={18}
+							workspace={row.workspace}
+							shipsDirectlyToMain={rowShipsDirectlyToMain(row)}
+						/>
 					)}
 				</span>
 				{/* Inbox rows name their repo with the tile alone, in front of the
@@ -3021,10 +3314,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						{stripPrTitlePrefix(row.name)}
 					</span>
 				)}
-				{/* Auto-created work reads as an ordinary workspace, so it says so
-				    beside its own name. The separated section only holds while the
-				    default lens and grouping do. */}
-				{!editing && rowWasAutoCreated(row) && <AutoCreatedMark />}
+				{/* Keep machine origin beside the row whether it came from the
+				    automation identity, an automation run, or a report's Fix action. */}
+				{!editing && rowWasAgentStarted(row) && <AutoCreatedMark />}
 				{/* Where the work came from, when the whole row came from one place:
 				    a Slack thread, a Linear issue. Same slot and ink as the mark
 				    above (SidebarItem carries the session-row half). */}
@@ -3078,24 +3370,23 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							</span>
 						);
 					})()}
-				{/* A live workspace run always earns its elapsed ticker. Idle timestamps
-				    are reserved for standalone sessions, so an automation review does not
-				    make its PR workspace look recently active. */}
-				{runStartMs !== null && <RunTicker startMs={runStartMs} />}
+				{/* The yellow timer is live status in every layout. It no longer
+				    competes with a moving activity sort because Active is creation-stable. */}
+				{showRunDuration && runStartMs !== null && (
+					<RunTicker startMs={runStartMs} />
+				)}
 				{snoozeIso && !editing && (
 					// A ticker ahead of it has already pushed the cluster right; a
 					// second auto margin would split the free space between them.
 					<SnoozeBadge
 						until={snoozeIso}
-						className={runStartMs !== null ? "ml-1.5" : undefined}
+						className={showRunDuration ? "ml-1.5" : undefined}
 					/>
 				)}
-				{!isPhone &&
-					// Date-banded modes earn a timestamp on every row: the band says
-					// which day, the stamp says when within it. (Inbox bands under a
-					// project band render compact rows, so they ask for the time
-					// here rather than on the row's own second line.)
-					(inbox || groupsByRepo || !row.workspace) &&
+				{/* The optional last-used preference remains useful context, but it is
+				    no longer the Active list's sort key. A running row gives this slot
+				    to its yellow duration instead. */}
+				{(inbox || groupsByRepo || !row.workspace) &&
 					!snoozeIso &&
 					wsTimePref !== "off" &&
 					row.lastActivity && (
@@ -3104,13 +3395,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								SIDEBAR_WS_TIME,
 								wsTimePref === "hover" && SIDEBAR_WS_TIME_HOVER,
 								// The "hover" mode (the default) shows the badge only under
-								// the pointer, and a running row hides the idle badge either
-								// way — its live ticker owns the resting slot. On touch there
-								// is no hover, so the hover-mode badge shows inline like
-								// "always"; a running row still keeps just its ticker.
-								runStartMs !== null && "hidden",
+								// the pointer. On touch there is no hover, so it shows inline
+								// like "always". A running row keeps its duration instead.
+								showRunDuration && "hidden",
 								wsTimePref === "hover" &&
-									runStartMs === null &&
+									!showRunDuration &&
 									"[@media(hover:none)]:inline-flex",
 							)}
 							data-ws-time=""
@@ -3127,7 +3416,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							SIDEBAR_WS_DRAFT,
 							// The pencil pins itself to the row's right edge unless a
 							// ticker or a snooze countdown already did that pushing.
-							runStartMs !== null || snoozeIso ? "ml-1.5" : "ml-auto",
+							showRunDuration || snoozeIso ? "ml-1.5" : "ml-auto",
 							"group-hover:hidden",
 						)}
 						data-ws-draft=""
@@ -3136,7 +3425,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						<IconPencil size={20} />
 					</span>
 				)}
-				{/* Hover actions: pin + archive, side by side. */}
+				{/* Hover actions stay in one predictable order: Pin, Snooze, Archive. */}
 				<span
 					className={cn(
 						SIDEBAR_WS_ACTIONS,
@@ -3147,8 +3436,14 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					)}
 					data-ws-actions=""
 				>
+					{/* Pin is not one of the row's standing actions: an unpinned row
+					    offers snooze and archive, the two moves you make constantly,
+					    and pinning stays in the context menu, the ⌘P chord and the
+					    swipe. Once a row IS pinned the chip comes back, because
+					    unpinning has to be reachable from the thing it marks. */}
+					{pinned && (
 					<Tooltip
-						label={pinned ? "Unpin workspace" : "Pin workspace"}
+						label="Unpin workspace"
 						// Only on the row the chord would actually hit: ⌘P pins the
 						// workspace holding the OPEN session, so advertising it on
 						// every row would promise a key that lands elsewhere.
@@ -3157,13 +3452,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						<span
 							role="button"
 							tabIndex={0}
-							className={cn(
-								SIDEBAR_WS_ACTION,
-								// One colour, picked here rather than stacking two `text-*`
-								// utilities, whose winner would be Tailwind's ordering.
-								pinned ? "text-accent" : "text-faint hover:text-fg",
-							)}
-							aria-label={pinned ? "Unpin workspace" : "Pin workspace"}
+							// One colour, picked here rather than stacking two `text-*`
+							// utilities, whose winner would be Tailwind's ordering: a
+							// pinned action keeps its accent under the pointer.
+							className={cn(SIDEBAR_WS_ACTION, "text-accent")}
+							aria-label="Unpin workspace"
 							onClick={(e) => {
 								e.stopPropagation();
 								toggleRowPin();
@@ -3175,47 +3468,92 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								}
 							}}
 						>
-							<IconPin size={19} fill={pinned ? "currentColor" : "none"} />
+							<IconPin size={19} fill="currentColor" />
 						</span>
 					</Tooltip>
-					{row.sessions.length > 0 && (
-						<Tooltip
-							label={
-								row.sessions.length > 1
-									? `Archive workspace (${row.sessions.length} sessions)`
-									: "Archive workspace"
-							}
-							shortcut={
-								// Single-session workspace: archiving the workspace is archiving
-								// the open session, so advertise its browser-compatible chord. The
-								// ⌘⌥⇧A escalation only matters with more than one session.
-								active
-									? row.sessions.length > 1
-										? (archiveWsKeys ?? undefined)
-										: (archiveKeys ?? undefined)
-									: undefined
-							}
-						>
+					)}
+					{row.sessions.length > 0 ? (
+						<>
+							<Tooltip
+								label={snoozed ? "Unsnooze workspace" : "Snooze workspace until Someday"}
+							>
+								<span
+									role="button"
+									tabIndex={0}
+									className={cn(SIDEBAR_WS_ACTION, "text-faint hover:text-fg")}
+									aria-label={snoozed ? "Unsnooze workspace" : "Snooze workspace"}
+									onClick={(e) => {
+										e.stopPropagation();
+										toggleWorkspaceSnooze(row);
+									}}
+									onKeyDown={(e) => {
+										if (e.key === "Enter" || e.key === " ") {
+											e.stopPropagation();
+											toggleWorkspaceSnooze(row);
+										}
+									}}
+								>
+									<IconMoon size={19} />
+								</span>
+							</Tooltip>
+							<Tooltip
+								label="Archive workspace"
+								shortcut={
+									active ? (archiveShortcutKeys ?? undefined) : undefined
+								}
+							>
+								<span
+									role="button"
+									tabIndex={0}
+									className={cn(SIDEBAR_WS_ACTION, "text-faint hover:text-fg")}
+									aria-label="Archive workspace"
+									onClick={(e) => {
+										e.stopPropagation();
+										archiveWorkspaceWithNext(
+											row,
+											e.currentTarget.closest<HTMLButtonElement>(
+												"button[data-sidebar-row]",
+											),
+										);
+									}}
+									onKeyDown={(e) => {
+										if (e.key === "Enter" || e.key === " ") {
+											e.stopPropagation();
+											archiveWorkspaceWithNext(
+												row,
+												e.currentTarget.closest<HTMLButtonElement>(
+													"button[data-sidebar-row]",
+												),
+											);
+										}
+									}}
+								>
+									<IconArchive size={19} />
+								</span>
+							</Tooltip>
+						</>
+					) : row.workspace?.draft ? (
+						<Tooltip label="Delete draft">
 							<span
 								role="button"
 								tabIndex={0}
-								className={cn(SIDEBAR_WS_ACTION, "text-faint hover:text-fg")}
-								aria-label="Archive workspace"
+								className={cn(SIDEBAR_WS_ACTION, "text-faint hover:text-red")}
+								aria-label="Delete draft"
 								onClick={(e) => {
 									e.stopPropagation();
-									archiveWorkspaceWithNext(row);
+									confirmDeleteDraft(() => deleteDraftWsRow(row));
 								}}
 								onKeyDown={(e) => {
 									if (e.key === "Enter" || e.key === " ") {
 										e.stopPropagation();
-										archiveWorkspaceWithNext(row);
+										confirmDeleteDraft(() => deleteDraftWsRow(row));
 									}
 								}}
 							>
-								<IconArchive size={19} />
+								<IconTrash size={19} />
 							</span>
 						</Tooltip>
-					)}
+					) : null}
 				</span>
 				</button>
 			</div>
@@ -3239,15 +3577,15 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			...prev,
 			plain: (prev.plain || []).filter((x) => x.id !== threadId),
 		}));
-		try {
-			await setPlainThreadStatusApi(threadId, "done", { user: currentUser });
-		} catch {
-			fetchFeedItems("plain")
+		await (async () => {
+await setPlainThreadStatusApi(threadId, "done", { user: currentUser });
+})().catch(async () => {
+fetchFeedItems("plain")
 				.then((items) =>
 					setFeedItems((prev) => ({ ...prev, plain: items })),
 				)
 				.catch(() => {});
-		}
+});
 	}
 
 	// A Support row: one TODO Plain ticket. The dot wears the linked session's
@@ -3289,8 +3627,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 
 	// The repo band a workspace row files under. The workspace's own repo wins:
 	// it's what the work is *about*, while a session's repo is only the checkout it
-	// happens to run from — a PR workspace for shared-infra whose session runs in a
-	// tella-fusion worktree belongs under shared-infra. A workspace spanning
+	// happens to run from: a PR workspace for one repo whose session runs in
+	// another repo's worktree files under the repo it is about. A workspace spanning
 	// repos still files under one band (a row in two bands double-counts and
 	// reads as two pieces of work); the repo *filter* honours every repo it
 	// touches, so it stays findable from the others.
@@ -3301,6 +3639,20 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		row.sessions[0]?.repo ||
 		sessionRepo(row.sessions[0] || ({} as UnifiedSession))
 	);
+	}
+	function shipsDirectlyToMain(
+		repo: string | undefined,
+		branch: string | null | undefined,
+	) {
+		const defaultBranch = repo ? directToMainBranches[repo] : undefined;
+		return !!defaultBranch && (!branch || branch === defaultBranch);
+	}
+	function rowShipsDirectlyToMain(row: WsRow) {
+		const repo = wsRowRepo(row);
+		const branch =
+			row.workspace?.branch ||
+			row.sessions.find((session) => session.repo === repo)?.branch;
+		return shipsDirectlyToMain(repo, branch);
 	}
 	const rowIsScratch = (row: WsRow) => isScratchWorkspace(row.sessions);
 	// Repo-less Ask workspaces get their own band above the projects. Checked
@@ -3517,21 +3869,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return lanes;
 	}
 
-	// ── Inbox mode: the workspace rows as one activity-ranked list ─────────
-	// No repo/status grouping — bands mirror an email inbox instead: Needs
-	// action (blocked on you) → Recent (running or touched today, one
-	// activity-ranked mix) → Yesterday → Earlier → Done (merged). Bands are
-	// exclusive with priority needs-action > done > date, and the ranking follows
-	// lastActivity ("Sort by: Created" deliberately doesn't apply — an inbox
-	// orders by what moved last).
-	//
-	// "Project and inbox" reuses these bands nested under each repo band, so
-	// `ns` (the repo's key prefix) keeps every copy collapsible on its own,
-	// and the flat mode's flush row inset is dropped when nested. That mode
-	// also passes the repo's snoozed rows (one Snoozed group per repo, like
-	// the status lanes do) and its session-less PR rows, banded by the PR's
-	// own updatedAt — under a repo band those rows are part of the project's
-	// inventory, so hiding them the way flat Inbox does would lose work.
+	// Activity sections separate live work from idle work, then keep attention and
+	// draft rows ahead of the date bands. Rows rank by activity inside each band.
 	function renderInboxBands(
 		rows: WsRow[],
 		ns = "",
@@ -3546,56 +3885,37 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		const todayMs = dayStart.getTime();
 		const yesterdayMs = todayMs - 24 * 60 * 60 * 1000;
 		const bands: Array<{
-			key: string;
+			key: ActivityBand;
 			label: string;
 			rows: WsRow[];
 			prs: ReviewQueueItem[];
 		}> = [
+			{ key: "inprogress", label: "In progress", rows: [], prs: [] },
 			{ key: "needsaction", label: "Needs action", rows: [], prs: [] },
+			{ key: "drafts", label: "Drafts", rows: [], prs: [] },
 			{ key: "recent", label: "Recent", rows: [], prs: [] },
 			{ key: "yesterday", label: "Yesterday", rows: [], prs: [] },
 			{ key: "earlier", label: "Earlier", rows: [], prs: [] },
-			// Landed work leaves the day bands entirely and settles at the
-			// bottom, the way the status lanes end on Done. A row that merged an
-			// hour ago is finished, not recent, and the inbox is for what still
-			// wants something from you.
-			{ key: "done", label: "Done", rows: [], prs: [] },
 		];
-		const [needsAction, recent, yesterday, earlier, done] = bands;
-		for (const r of sorted) {
-			// NaN (no lastActivity) compares false on both → Earlier. A running
-			// row counts as Recent whatever its day — live work is recent by
-			// definition — but ranks by lastActivity like its neighbours.
-			const t = Date.parse(r.lastActivity || "");
-			// A teammate tagging you is the same kind of claim as a question the
-			// agent is blocked on: it is waiting on you, so it bands with them
-			// rather than sinking into whatever day it was last touched.
-			if (r.status === "needsinput" || r.mention) needsAction.rows.push(r);
-			else if (r.status === "merged") done.rows.push(r);
-			else if (r.running || t >= todayMs) recent.rows.push(r);
-			else if (t >= yesterdayMs) yesterday.rows.push(r);
-			else earlier.rows.push(r);
+		const bandFor = (key: ActivityBand) =>
+			bands.find((band) => band.key === key)!;
+		for (const row of sorted) {
+			const key = activityBandFor(row, todayMs, isDraftWsRow(row));
+			bandFor(key).rows.push(row);
 		}
-		// A bare PR is never "blocked on you" here (review requests aimed at you
-		// ride the notification band instead), so it only ever bands by date.
 		for (const item of [...prItems].sort((a, b) =>
 			(b.pr.updatedAt || "").localeCompare(a.pr.updatedAt || ""),
 		)) {
-			const t = Date.parse(item.pr.updatedAt || "");
-			if (t >= todayMs) recent.prs.push(item);
-			else if (t >= yesterdayMs) yesterday.prs.push(item);
-			else earlier.prs.push(item);
+			const time = Date.parse(item.pr.updatedAt || "");
+			if (time >= todayMs) bandFor("recent").prs.push(item);
+			else if (time >= yesterdayMs) bandFor("yesterday").prs.push(item);
+			else bandFor("earlier").prs.push(item);
 		}
 		const nodes = bands
-			.filter((b) => b.rows.length > 0 || b.prs.length > 0)
-			.map((b) => {
-				const gkey = `${ns}inbox:${b.key}`;
+			.filter((band) => band.rows.length > 0 || band.prs.length > 0)
+			.map((band) => {
+				const gkey = `${ns}inbox:${band.key}`;
 				const open = isOpen(gkey);
-				// Needs action is the one band that is *blocked on you*, and it
-				// says so by sorting first and by the blue mark on each of its
-				// rows. Its caption stays neutral like every other band's: red is
-				// what a failed run and a closed PR wear, and a question waiting
-				// on you is neither.
 				return (
 					<div className={SIDEBAR_STATUS_GROUP} data-status-group key={gkey}>
 						<button
@@ -3612,10 +3932,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							onClick={() => toggleGroup(gkey)}
 						>
 							<span className={cn(SIDEBAR_GROUP_NAME, SIDEBAR_LANE_NAME)}>
-								{b.label}
+								{band.label}
 							</span>
 							<span className={SIDEBAR_LANE_COUNT}>
-								{b.rows.length + b.prs.length}
+								{band.rows.length + band.prs.length}
 							</span>
 							<IconChevronDown
 								className={cn(
@@ -3626,46 +3946,164 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								style={{ transform: open ? "none" : "rotate(-90deg)" }}
 							/>
 						</button>
-						{b.rows
-							.filter((r) => open || rowOwnsSelection(r))
-							// Nested, the two-line variant's meta line would repeat the
-							// repo tile + name the band header already carries, so the
-							// rows stay compact like every other repo-nested mode's.
-							.map((r) => renderWsRowImpl(r, !ns))}
-						{b.prs.filter((i) => open || prRowSelected(i)).map(renderPrRow)}
+						{band.rows
+							.filter((row) => open || rowOwnsSelection(row))
+							.map((row) => renderWsRowImpl(row, !ns))}
+						{band.prs.filter((item) => open || prRowSelected(item)).map(renderPrRow)}
 					</div>
 				);
 			});
-		if (snoozedRows.length > 0) {
-			// Snoozed sits ahead of Done, the way it does between Backlog and
-			// Done in the status lanes: parked work is still work, and the list
-			// ends on what has shipped.
-			const doneAt = nodes.findIndex((n) => n.key === `${ns}inbox:done`);
-			nodes.splice(
-				doneAt === -1 ? nodes.length : doneAt,
-				0,
-				renderSnoozedGroup(snoozedRows, ns),
-			);
-		}
+		if (snoozedRows.length > 0)
+			nodes.push(renderSnoozedGroup(snoozedRows, ns));
 		return nodes;
 	}
 
-	// "Group by: Project" — one collapsible band per repo, with the inbox's
-	// activity bands (Needs action / Recent / Yesterday / Earlier / Done) nested
-	// inside each. Scratch workspaces stay in one unlabelled group above them:
+	// ── Inbox Active section ───────────────────────────────────────────────
+	// Snoozed uses the shared section below; Active keeps its stable creation
+	// order and the same compact row density.
+	function renderActiveSection(rows: WsRow[], ns = "") {
+		const label = "Active";
+		if (rows.length === 0) return null;
+		const gkey = `${ns}inbox:${label.toLowerCase()}`;
+		const open = isOpen(gkey);
+		return (
+			<div className={SIDEBAR_STATUS_GROUP} data-status-group key={gkey}>
+				<button
+					className={cn(
+						SIDEBAR_GROUP_HEADER,
+						SIDEBAR_GROUP_HEADER_INSET,
+						SIDEBAR_LANE_HEADER,
+						"transition-colors",
+						SIDEBAR_STICKY_LANE,
+						ns && SIDEBAR_STICKY_LANE_NESTED,
+						SIDEBAR_STUCK_BACKING,
+					)}
+					data-sticky-head
+					onClick={() => toggleGroup(gkey)}
+				>
+					<span className={cn(SIDEBAR_GROUP_NAME, SIDEBAR_LANE_NAME)}>
+						{label}
+					</span>
+					<span className={SIDEBAR_LANE_COUNT}>{rows.length}</span>
+					<IconChevronDown
+						className={cn(
+							SIDEBAR_GROUP_CHEVRON,
+							!open && SIDEBAR_GROUP_CHEVRON_COLLAPSED,
+						)}
+						size={12}
+						style={{ transform: open ? "none" : "rotate(-90deg)" }}
+					/>
+				</button>
+				{rows
+					.filter((row) => open || rowOwnsSelection(row))
+					.map((row) => renderWsRowImpl(row, !ns))}
+			</div>
+		);
+	}
+
+	function renderWorkspaceGrouping(
+		rows: WsRow[],
+		ns = "",
+		snoozedRows: WsRow[] = [],
+		laneRepo?: string,
+		prItems: ReviewQueueItem[] = [],
+	) {
+		if (filter.groupBy === "activity")
+			return renderInboxBands(rows, ns, snoozedRows, prItems);
+		if (filter.groupBy === "status")
+			return renderStatusLanes(rows, ns, snoozedRows, laneRepo, prItems);
+		const active = sortInboxByCreation(rows);
+		return [
+			renderActiveSection(active, ns),
+			...prItems.map(renderPrRow),
+			...(snoozedRows.length > 0 ? [renderSnoozedGroup(snoozedRows, ns)] : []),
+		];
+	}
+
+	// Project grouping is independent from the section mode. Each collapsible
+	// repo repeats Inbox, Activity, or Status according to the other control.
+	// Scratch workspaces stay in one unlabelled group above them:
 	// they have no project, even when an older workspace record carries a stale
 	// repo. A collapsed band wears a count of the urgent rows it hides. Repos
+	// Drag handlers stay outside the render helper so refs are reached only from
+	// deferred browser events, never while the helper builds its JSX.
+	function moveDraggedRepo(
+		targetRepo: string,
+		order: string[],
+		fullOrder: string[],
+		event: React.DragEvent<HTMLDivElement>,
+	) {
+		const draggedRepo = repoDragging.current;
+		if (!draggedRepo || targetRepo === ASK_BAND) return;
+		event.preventDefault();
+		if (draggedRepo === targetRepo) return;
+		const visibleOrder = [
+			...(repoVisualOrder.current ?? order.filter((repo) => repo !== ASK_BAND)),
+		];
+		const from = visibleOrder.indexOf(draggedRepo);
+		if (from < 0) return;
+		visibleOrder.splice(from, 1);
+		let target = visibleOrder.indexOf(targetRepo);
+		if (target < 0) return;
+		const header = event.currentTarget.querySelector<HTMLElement>(
+			":scope > [data-sticky-head]",
+		);
+		const rect = (header ?? event.currentTarget).getBoundingClientRect();
+		if (event.clientY > rect.top + rect.height / 2) target++;
+		visibleOrder.splice(target, 0, draggedRepo);
+		if (JSON.stringify(visibleOrder) === JSON.stringify(repoVisualOrder.current)) return;
+		repoVisualOrder.current = visibleOrder;
+		const baseline = repoOrderAtDragStart.current ?? fullOrder;
+		const next = replaceVisibleRepoOrder(baseline, visibleOrder);
+		repoOrderPending.current = next;
+		setRepoOrderDraft(next);
+	}
+	function finishRepoDrag(commit: boolean) {
+		stopRepoAutoScroll();
+		repoJustDragged.current = true;
+		setTimeout(() => {
+			repoJustDragged.current = false;
+		}, 0);
+		repoOrderAtDragStart.current = null;
+		repoVisualOrder.current = null;
+		repoDragging.current = null;
+		setRepoDragKey(null);
+		const pending = repoOrderPending.current;
+		repoOrderPending.current = null;
+		setRepoOrderDraft(null);
+		if (commit && pending) setRepoOrder(pending);
+	}
+	function startRepoDrag(
+		repo: string,
+		fullOrder: string[],
+		order: string[],
+		event: React.DragEvent<HTMLButtonElement>,
+	) {
+		repoDragging.current = repo;
+		setRepoDragKey(repo);
+		repoOrderAtDragStart.current = [...fullOrder];
+		repoOrderPending.current = null;
+		repoVisualOrder.current = order.filter((item) => item !== ASK_BAND);
+		event.dataTransfer.effectAllowed = "move";
+		event.dataTransfer.setData("text/plain", repo);
+	}
+	function swallowRepoDragClick(event: React.MouseEvent) {
+		if (!repoJustDragged.current) return;
+		event.preventDefault();
+		event.stopPropagation();
+	}
+
 	// are ordered by the user's shared preference (`repos`), with newly seen
 	// repositories appended in frequency order; a band is force-open while it
 	// holds the selected row so the open session never hides inside a collapsed repo.
 	function renderRepoGroups() {
 		const byRepo = new Map<string, WsRow[]>();
 		const snoozedByRepo = new Map<string, WsRow[]>();
-		const scratchRows = [
-			...focusWsRows.filter((row) => !rowIsFeedOnly(row) && rowIsScratch(row)),
-			...snoozedWsRows.filter((row) => !rowIsFeedOnly(row) && rowIsScratch(row)),
-		].sort((a, b) =>
-			(b.lastActivity || "").localeCompare(a.lastActivity || ""),
+		const scratchRows = activeFocusWsRows.filter(
+			(row) => !rowIsFeedOnly(row) && rowIsScratch(row),
+		);
+		const scratchSnoozedRows = snoozedWsRows.filter(
+			(row) => !rowIsFeedOnly(row) && rowIsScratch(row),
 		);
 		const bucket = (map: Map<string, WsRow[]>, repo: string) => {
 			let b = map.get(repo);
@@ -3681,7 +4119,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		// file them under the default project, which is the one place they
 		// certainly don't belong.
 		const bandOf = (r: WsRow) => (rowIsAsk(r) ? ASK_BAND : wsRowRepo(r));
-		for (const r of focusWsRows)
+		for (const r of activeFocusWsRows)
 			if (!rowIsFeedOnly(r) && !rowIsScratch(r))
 				bucket(byRepo, bandOf(r)).push(r);
 		// Each repo's snoozed rows stay in that repo's own band, as a Snoozed
@@ -3736,14 +4174,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		// unrelated empty projects, and so does the whole list once "Empty
 		// projects" is set to hidden — except when the list is scoped to one
 		// project, where the band is what was asked for rather than clutter.
-		const emptyBands =
-			filter.repo !== "all" || filter.emptyProjects === "show";
-		if (
-			emptyBands &&
-			!search &&
-			filter.person === "me" &&
-			filter.autoCreated === "show"
-		) {
+		if (includesEmptyRepoBands(filter, search)) {
 			for (const repo of registeredRepos) {
 				if (filter.repo === "all" || filter.repo === repo) present.add(repo);
 			}
@@ -3766,60 +4197,15 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			!isPhone &&
 			filter.repo === "all" &&
 			order.filter((r) => r !== ASK_BAND).length > 1;
-		const moveDraggedRepo = (
-			targetRepo: string,
-			event: React.DragEvent<HTMLDivElement>,
-		) => {
-			const draggedRepo = repoDragging.current;
-			if (!draggedRepo) return;
-			// Ask is pinned: it is neither a drag source nor a drop target, and
-			// letting it into `visibleOrder` would write the sentinel into the
-			// saved repo order via replaceVisibleRepoOrder's append.
-			if (targetRepo === ASK_BAND) return;
-			event.preventDefault();
-			if (draggedRepo === targetRepo) return;
-			const visibleOrder = [
-				...(repoVisualOrder.current ?? order.filter((r) => r !== ASK_BAND)),
-			];
-			const from = visibleOrder.indexOf(draggedRepo);
-			if (from < 0) return;
-			visibleOrder.splice(from, 1);
-			let target = visibleOrder.indexOf(targetRepo);
-			if (target < 0) return;
-			const header = event.currentTarget.querySelector<HTMLElement>(
-				":scope > [data-sticky-head]",
-			);
-			const rect = (header ?? event.currentTarget).getBoundingClientRect();
-			if (event.clientY > rect.top + rect.height / 2) target++;
-			visibleOrder.splice(target, 0, draggedRepo);
-			if (JSON.stringify(visibleOrder) === JSON.stringify(repoVisualOrder.current))
-				return;
-			repoVisualOrder.current = visibleOrder;
-			const baseline = repoOrderAtDragStart.current ?? fullOrder;
-			const next = replaceVisibleRepoOrder(baseline, visibleOrder);
-			repoOrderPending.current = next;
-			setRepoOrderDraft(next);
-		};
-		const finishRepoDrag = (commit: boolean) => {
-			stopRepoAutoScroll();
-			repoJustDragged.current = true;
-			setTimeout(() => {
-				repoJustDragged.current = false;
-			}, 0);
-			repoOrderAtDragStart.current = null;
-			repoVisualOrder.current = null;
-			repoDragging.current = null;
-			setRepoDragKey(null);
-			const pending = repoOrderPending.current;
-			repoOrderPending.current = null;
-			setRepoOrderDraft(null);
-			if (commit && pending) setRepoOrder(pending);
-		};
 		return (
 			<>
-				{scratchRows.length > 0 && (
+				{(scratchRows.length > 0 || scratchSnoozedRows.length > 0) && (
 					<div className="mb-2" data-sidebar-scratch-workspaces>
-						{scratchRows.map((row) => renderWsRowImpl(row, true))}
+						{renderWorkspaceGrouping(
+							scratchRows,
+							"scratch::",
+							scratchSnoozedRows,
+						)}
 					</div>
 				)}
 				{/* Every band after the first opens with whitespace, whatever
@@ -3876,16 +4262,12 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						)}
 						key={gkey}
 						data-repo-id={repo}
-						onDragOver={(event) => moveDraggedRepo(repo, event)}
+						onDragOver={(event) => moveDraggedRepo(repo, order, fullOrder, event)}
 						onDrop={(event) => {
 							event.preventDefault();
 							finishRepoDrag(true);
 						}}
-						onClickCapture={(event: React.MouseEvent) => {
-							if (!repoJustDragged.current) return;
-							event.preventDefault();
-							event.stopPropagation();
-						}}
+						onClickCapture={swallowRepoDragClick}
 					>
 						<button
 							className={cn(
@@ -3903,15 +4285,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									? "Drag to reorder repositories"
 									: undefined
 							}
-							onDragStart={(event) => {
-								repoDragging.current = repo;
-								setRepoDragKey(repo);
-								repoOrderAtDragStart.current = [...fullOrder];
-								repoOrderPending.current = null;
-								repoVisualOrder.current = order.filter((r) => r !== ASK_BAND);
-								event.dataTransfer.effectAllowed = "move";
-								event.dataTransfer.setData("text/plain", repo);
-							}}
+							onDragStart={(event) => startRepoDrag(repo, fullOrder, order, event)}
 							onDragEnd={() => finishRepoDrag(false)}
 							onClick={() => toggleGroup(gkey)}
 						>
@@ -3972,28 +4346,30 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							    (20px, i.e. `inset-1` on a 24px glyph) crowds the plus
 							    against its own wash. `corner-shape` has to be restated
 							    because it does not inherit into a pseudo-element. */}
-							<span
-								role="button"
-								tabIndex={0}
-								className="relative ml-auto inline-flex size-7 shrink-0 items-center justify-center rounded-md text-faint opacity-100 transition-[opacity,color] duration-150 hover:text-fg focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100 before:absolute before:inset-0.5 before:z-0 before:rounded-sm before:[corner-shape:var(--cs)] before:transition-[background] before:content-[''] hover:before:bg-hover [&>*]:relative [&>*]:z-[1]"
-								title={
-									repo === ASK_BAND
-										? "New Ask session, no repo"
-										: `New session in ${repoLabel(repo)}`
-								}
-								onClick={(e) => {
-									e.stopPropagation();
-									onNewSessionInRepo(repo);
-								}}
-								onKeyDown={(e) => {
-									if (e.key === "Enter" || e.key === " ") {
+							{!borrowedLens && (
+								<span
+									role="button"
+									tabIndex={0}
+									className="relative ml-auto inline-flex size-7 shrink-0 items-center justify-center rounded-md text-faint opacity-100 transition-[opacity,color] duration-150 hover:text-fg focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100 before:absolute before:inset-0.5 before:z-0 before:rounded-sm before:[corner-shape:var(--cs)] before:transition-[background] before:content-[''] hover:before:bg-hover [&>*]:relative [&>*]:z-[1]"
+									title={
+										repo === ASK_BAND
+											? "New Ask session, no repo"
+											: `New session in ${repoLabel(repo)}`
+									}
+									onClick={(e) => {
 										e.stopPropagation();
 										onNewSessionInRepo(repo);
-									}
-								}}
-							>
-								<IconPlus size={20} />
-							</span>
+									}}
+									onKeyDown={(e) => {
+										if (e.key === "Enter" || e.key === " ") {
+											e.stopPropagation();
+											onNewSessionInRepo(repo);
+										}
+									}}
+								>
+									<IconPlus size={20} />
+								</span>
+							)}
 						</button>
 						{open ? (
 							<div className="mt-0.5">
@@ -4018,7 +4394,13 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									rows: awaitingRepoRows,
 									ns: `repo:${repo}::`,
 								})}
-								{renderInboxBands(rows, `repo:${repo}::`, snoozedRows, prs)}
+								{renderWorkspaceGrouping(
+									rows,
+									`repo:${repo}::`,
+									snoozedRows,
+									repo,
+									prs,
+								)}
 							</div>
 						) : (
 							(selectedReviewRows.length > 0 ||
@@ -4127,7 +4509,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return !!session && session.id === selectedId;
 	}
 
-	// A generic feed band (Tella videos, …) styled like the Plain project band:
+	// A generic feed band (videos, dashboards, …) styled like the Plain project band:
 	// brand tile + name + count, newest-first rows nested under
 	// (the feeds design). Hidden while a repo filter is active, like Plain.
 	function renderFeedBand(feed: FeedDescriptor, withLanes = false) {
@@ -4294,8 +4676,466 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		);
 	}
 
+	// The sidebar's fixed head: the organization row, the tool rows, and the
+	// Workspaces band heading with its filter and new-session buttons.
+	//
+	// On desktop this whole block is chrome — it holds its place under the window
+	// chrome while only the workspace list below it scrolls, so the top of the
+	// rail never slides away and there is no edge for a hairline to mark. The
+	// strip that used to name whose sidebar this is went with the same move: the
+	// Workspaces band heading says it once.
+	//
+	// The band used to earn its place by pinning (SIDEBAR_STICKY_BAND, still on
+	// it for the phone layout). Out here it does not have to: it is simply above
+	// the scrollport, which is what pinning was imitating. That also means the
+	// tier-2 lane headers inside the list pin at the scroll's own top rather than
+	// one band-slot down — see the `--sidebar-band-slot` override on SIDEBAR_LIST.
+	//
+	// Phones keep the whole sidebar as one page, so there the same markup is the
+	// scroll's first child and scrolls away with the list.
+	const sidebarChrome = (
+	<div
+		// Desktop lifts this strip out of the scrollport, so it sets the rail's
+		// own scales here rather than inheriting them from the scroll root. On
+		// phones it is still the scroll's first child and reads the same values
+		// twice, which costs nothing: they are one string either way.
+		data-density={density}
+		className={cn(
+			"block max-w-full min-w-0 flex-none",
+			SIDEBAR_DENSITY_VARS,
+			SIDEBAR_NAV_X,
+		)}
+		style={{ order: 0 }}
+	>
+	{/* The tools carry no heading. "Tools" named a handful of self-evident
+	    destinations (Home, Reviews, Tasks) sitting at the very top of the
+	    rail, where nothing else can be confused for them, and it cost a
+	    caption plus the gap around it before the first thing you can
+	    click. Phones already listed them bare; desktop matches now.
+
+	    Its two jobs moved rather than went: the collapse is gone (it hid
+	    at most a few rows and a collapsed band left the top of the
+	    sidebar looking empty), and the ••• menu that chose which tools
+	    show is now in the right-click menu on any tool row, beside the
+	    "Remove from toolbar" that already lived there. Take the last
+	    tool off and the organization selector remains; the sidebar's own
+	    right-click menu still lists every tool. */}
+	<nav
+			className={cn(
+				// `--sidebar-nav-x` is the sidebar's own (SIDEBAR_NAV_X); the strip
+				// reads it rather than setting one, so the tools sit on the same
+				// edges as the lists under them.
+				//
+				// One vertical list at every width. Phones used to get a
+				// horizontally-scrolling line of Slack-home style tap cards, which
+				// put the tools in a different language from everything under
+				// them: the sidebar is a column of rows, and the cards were a
+				// sideways shelf that kept its own tail off the right edge. A list
+				// reads the same on both clients, shows every tool at once without
+				// a gesture, and takes a quarter of the height per tool.
+				//
+				// The organization row leads this rail on desktop now that the old
+				// heading is gone. Pull it slightly closer to the fixed top bar there;
+				// phones keep the original spacing because their first row is a tool.
+				"flex flex-col gap-0.5 px-[var(--sidebar-nav-x)] pt-2 pb-1.5 desktop:pt-0.5",
+			)}
+		>
+			<div className="phone:hidden">
+				<OrganizationSwitcher
+					connected={connected}
+					onOpenSettings={onOpenSettings}
+				/>
+			</div>
+			{visibleTools.map((tool) => {
+				const rowClass = cn(
+					// One look at both widths. Only the box changes, and only
+					// because a phone row is pressed rather than read.
+					"group flex items-center text-left transition-colors",
+					// Rows use control-label type, with glyphs matching the
+					// sidebar's standard 22px leading rail.
+					// `--sidebar-tool-pad` is 5px for a 32px box: the tools are a
+					// short utility strip above the work lists, and at the session
+					// rows' 36px the four of them took more of the rail than what
+					// they lead to. The glyph and the label's left rail are
+					// untouched, so they still line up with the rows below; only
+					// the air around them is tighter.
+					// Don't take it below 30. At 28 (`py-[3px]`, the pre-ffd11ffc
+					// value) the 22px glyph has 3px of margin and the hover pill
+					// stops reading as a row; the compact density's 4px stops at
+					// 30, level with the rows under it rather than below them.
+					// Phones override it to the 13px the session rows take
+					// (SIDEBAR_ROW, lib/sidebar-classes.ts) for a 48px box: 32px is
+					// a reading height, not a tap target.
+					`w-full ${SIDEBAR_RAIL_GAP} rounded-row bg-transparent px-[calc(var(--sidebar-icon-left)-var(--sidebar-nav-x))] py-[var(--sidebar-tool-pad)] phone:py-[13px] text-body font-medium text-dim desktop:text-item-title hover:text-fg`,
+					SIDEBAR_HOVER_LAYER,
+					tool.active && "bg-selected text-fg",
+				);
+				const rowBody = (
+					<>
+						<span
+							className={cn(
+								"inline-flex text-faint [&_svg]:size-[22px]",
+								tool.active ? "text-dim" : "group-hover:text-dim",
+							)}
+						>
+							{tool.icon}
+						</span>
+						{tool.label}
+						{!!tool.count && (
+							// `rounded-full`, not `rounded-[999px]`: this pill never
+							// carried a corner-shape, and rounded-full is the one
+							// radius spelling base.css does NOT squircle.
+							<span className="ml-auto rounded-full bg-accent px-[7px] py-px text-meta leading-[1.5] font-semibold text-on-accent">
+								{tool.count}
+							</span>
+						)}
+					</>
+				);
+				// Right-click drops this tool from the strip, the same gesture
+				// the feed headers use to hide themselves, and opens the chooser
+				// that puts any of them back. Desktop only: phones have no
+				// right-click, and the chooser is itself desktop-only, so a
+				// stray long-press there would only be recoverable from
+				// Settings.
+				const row = isPhone ? (
+					<button
+						key={tool.id}
+						className={rowClass}
+						onClick={() => tool.onClick()}
+						title={tool.title}
+					>
+						{rowBody}
+					</button>
+				) : (
+					<ContextMenu.Root key={tool.id}>
+						<ContextMenu.Trigger
+							render={
+								<button
+									className={rowClass}
+									onClick={() => tool.onClick()}
+									title={tool.title}
+								/>
+							}
+						>
+							{rowBody}
+						</ContextMenu.Trigger>
+						{/* This menu is now the only place that chooses which tools
+						    show, since the band heading that held the ••• is gone.
+						    "Remove from toolbar" leads, about the row you opened the
+						    menu on: the list under it can do the same thing by
+						    unticking that row, but the command names the tool you
+						    already aimed at, which is the common case and the one
+						    worth a click rather than a read. "Hide tools from
+						    sidebar" used to close the menu, and it went: it was the
+						    same decision as unticking every row, a step further than
+						    anyone reaches for by accident. */}
+						<ContextMenu.Popup>
+							<ContextMenu.Item
+								onClick={() => setToolVisible(tool.id, false)}
+							>
+								<IconEyeOff size={20} className={MENU_ICON} />
+								<span className="min-w-0 flex-1 truncate">
+									Remove from toolbar
+								</span>
+							</ContextMenu.Item>
+							<ContextMenu.Separator />
+							<ContextMenu.Group>
+								<ContextMenu.GroupLabel>
+									Show in toolbar
+								</ContextMenu.GroupLabel>
+								{/* The same rows the sidebar's own right-click menu lists
+								    (SidebarToolRows), so the two menus cannot drift: each
+								    wears the mark it wears in the sidebar, the tick sits
+								    at the trailing edge, and Support stays a submenu of
+								    surfaces rather than a tick. */}
+								<SidebarToolRows
+									tools={sidebarMenuTools}
+									onToggleTool={setToolVisible}
+									onSetSupport={setSupportSurface}
+								/>
+							</ContextMenu.Group>
+						</ContextMenu.Popup>
+					</ContextMenu.Root>
+				);
+				// Feed carries the team at its right edge, with every face shown
+				// neutrally, and lets you pick up someone's sidebar without
+				// leaving the row you're on. The pile opens the same lens menu
+				// the Feed page's own chips write, so the row is both a way in
+				// and the shortcut past it. It has to be a sibling of the row,
+				// not a child: a button can't nest one. Phones carry it too,
+				// now that the tools are rows there rather than cards: the row
+				// has the width for a pile at its right edge, and the pile is
+				// its own target laid over it rather than a hover reveal, so a
+				// tap on a face opens the lens and a tap anywhere else opens
+				// Feed.
+				if (tool.id !== "feed" || team.length === 0) return row;
+				return (
+					<div key={tool.id} className="group/team-lens relative">
+						{row}
+						<TeamLensMenu
+							members={team}
+							size={20}
+							max={4}
+							// The ring is opaque so the face behind cannot bleed into
+							// the gap. Match whichever sidebar surface the trigger is
+							// currently painted on.
+							ring="var(--team-face-ring)"
+							compact
+							side="right"
+							align="start"
+							value={personLensValue(filter.person, currentUser)}
+							label={personLensName}
+							onPick={(next) =>
+								setFilter({ person: personLensFilter(next, currentUser) })
+							}
+							// Phones pad the trigger out to the row's own height so
+							// the faces are a thumb-sized target rather than a 24px
+							// one. It stays a pill either way, so the padding is only
+							// reach: nothing about it reads larger at rest.
+							className="absolute right-2 top-1/2 -translate-y-1/2 phone:py-2.5 [--team-face-ring:var(--sidebar-bg)] group-hover/team-lens:[--team-face-ring:var(--row-chip)] data-[popup-open]:[--team-face-ring:var(--row-chip)]"
+						/>
+					</div>
+				);
+			})}
+		</nav>
+
+	<div
+		className={cn(
+			// SIDEBAR_STICKY_BAND_ROW folds this into one fixed slot, but it is
+			// desktop-gated, so on phones the raw `mt-1 pt-3` stands. With the
+			// caption hidden and the chevron invisible-but-in-layout, that was a
+			// near-empty band between the tool cards and the first project, which
+			// read as the strip being bottom-heavy. Nothing to set off there.
+			"mt-1 pb-0.5 pt-3 phone:mt-0 phone:pt-0",
+			// A borrowed lens hides the tools strip, so this bar becomes the
+			// first thing in the phone scroll. Give it enough air to clear the
+			// floating top bar's fade instead of letting its top edge wash out.
+			borrowedLens && "phone:pt-4",
+			// A caption starts on the rail's 16px text column; the borrowed
+			// lens's strip is a filled bar, so it takes the rows' own 8px
+			// inset instead and lines up with the workspace pills under it.
+			borrowedLens ? "px-2" : "px-[16px] pr-[7px]",
+			SIDEBAR_STICKY_BAND,
+			SIDEBAR_STICKY_BAND_ROW,
+			SIDEBAR_STUCK_BACKING,
+		)}
+		data-sticky-head
+	>
+		<div
+			className={cn(
+				"group/wshead flex min-w-0 items-center gap-1.5 desktop:w-full",
+				// In someone else's sidebar this row IS the strip: one bar that
+				// names whose lanes these are, takes you back out, and carries
+				// the header's own actions. The name was being said twice —
+				// once by a strip above the tools, once by this heading — and
+				// each said it with its own ✕.
+				borrowedLens &&
+					"min-h-10 w-full rounded-row bg-blue-soft pl-3 pr-1 phone:min-h-12 phone:pl-3.5 desktop:h-full desktop:min-h-0",
+			)}
+			ref={headRef}
+		>
+			{borrowedLens ? (
+				<>
+					{/* The bar reports the active lens. Closing it is a separate
+					    action at the far edge, so the label stays visually stable and
+					    the close control gets a full touch target. */}
+					<div
+						className="flex min-w-0 flex-1 items-center gap-2 text-sm text-fg phone:text-base"
+						ref={titleRef as React.RefObject<HTMLDivElement | null>}
+					>
+						{filter.person === "everyone" ? (
+							<IconPeople
+								size={20}
+								className="shrink-0 translate-y-[0.5px] text-dim phone:-translate-y-px"
+							/>
+						) : (
+							filter.person !== "unassigned" && (
+								<UserAvatar
+									name={personLensName}
+									size={20}
+									className="shrink-0"
+								/>
+							)
+						)}
+						<span className="min-w-0 truncate font-semibold">
+							{filter.person === "everyone"
+								? "Everyone"
+								: filter.person === "unassigned"
+									? "Unassigned"
+									: personLensName}
+						</span>
+					</div>
+					<Tooltip label="Back to your workspaces">
+						<button
+							className="relative flex size-10 shrink-0 items-center justify-center rounded-md border-0 bg-transparent text-dim transition-[color,scale] before:absolute before:inset-2 before:rounded-md before:transition-colors before:content-[''] hover:text-fg hover:before:bg-hover active:scale-[0.96] phone:size-11 motion-reduce:transform-none [&>*]:relative [&>*]:z-[1]"
+							onClick={() => setFilter({ person: "me" })}
+							aria-label="Back to your workspaces"
+						>
+							<IconX size={18} aria-hidden="true" />
+						</button>
+					</Tooltip>
+				</>
+			) : (
+			<button
+				className={cn(
+					"group/wstoggle flex min-w-0 items-center gap-[5px] [font:inherit]",
+					// On phones the caption is hidden and the chevron only paints on
+					// hover, so while the band is open this button is a 22px row of
+					// nothing between the tool cards and the first project. That row
+					// is most of what made the strip read bottom-heavy, and an
+					// invisible tap target is not an affordance worth its space.
+					// Collapsed it stays: the chevron IS visible then
+					// (SIDEBAR_BAND_CHEVRON_COLLAPSED), and it is the only way to
+					// open the band back up.
+					isPhone && workspacesOpen && "hidden",
+				)}
+				onClick={() => toggleBand("workspaces")}
+				aria-expanded={workspacesOpen}
+				title={workspacesOpen ? "Collapse workspaces" : "Expand workspaces"}
+			>
+				{/* The heading takes the same inset every other glyphless label
+				    does, so it starts on the column its repo tiles and lane
+				    captions do (see
+				    the band toggle). The sidebar header already reads as
+				    "Workspaces" on phones, so the in-header title is redundant
+				    there. */}
+				<span
+					className={cn(
+						// The band caption, same as SIDEBAR_BAND_LABEL wears one
+						// section down: this heading is written inline rather than
+						// composed from it only because of the strip above.
+						"shrink-0 text-label font-semibold text-dim group-hover/wshead:text-fg",
+						isPhone && "hidden",
+					)}
+					ref={titleRef as React.RefObject<HTMLSpanElement | null>}
+				>
+					Workspaces
+				</span>
+				<IconChevronDown
+					className={cn(
+						SIDEBAR_BAND_CHEVRON,
+						"group-hover/wstoggle:visible",
+						!workspacesOpen && SIDEBAR_BAND_CHEVRON_COLLAPSED,
+					)}
+					size={18}
+					style={{
+						transform: workspacesOpen ? "none" : "rotate(-90deg)",
+					}}
+				/>
+			</button>
+			)}
+			{/* Repo filter chip, inline behind the title when it fits. */}
+			{filter.repo !== "all" && repoInline && (
+				<RepoFilterChip
+					repo={filter.repo}
+					repos={repos}
+					onClear={() => setFilter({ repo: "all" })}
+					onSelect={(v) => setFilter({ repo: v })}
+					variant="inline"
+				/>
+			)}
+			{/* The active lens label already grows to push its close control to
+			    this edge. Your own sidebar still needs the flexible spacer. */}
+			{!borrowedLens && <div className="min-w-0 flex-1" />}
+			{/* Grouped so the pair's combined width can be measured when deciding
+			    whether the repo chip fits inline. Gone on phones, where filter
+			    moves to the top bar and the red FAB covers new-session. Gone in a
+			    borrowed lens too: both act on YOUR sidebar, so grouping or
+			    starting a session from inside someone else's bar is either a
+			    no-op you can't see or work filed somewhere you didn't mean. The
+			    bar keeps the one action that belongs to it, which is leaving. */}
+			<div
+				className={cn(
+					"shrink-0 items-center gap-1.5",
+					isPhone || borrowedLens ? "hidden" : "flex",
+				)}
+				ref={actionsRef}
+			>
+				<Tooltip label="Group, filter & sort">
+				<button
+					ref={setFilterButton}
+					className={cn(
+						SIDEBAR_HEADER_BTN,
+						isPhone
+							? cn(SIDEBAR_HEADER_BTN_PHONE, "min-h-[38px] min-w-[38px]")
+							: SIDEBAR_HEADER_BTN_DESKTOP,
+						"inline-flex items-center justify-center",
+						// The open state paints the stronger wash and the hover now
+						// layers OVER it (SIDEBAR_HOVER_LAYER), so the button no
+						// longer has to withhold its hover to keep from washing
+						// itself back out while open.
+						SIDEBAR_HOVER_LAYER,
+						filterOpen && "border-line-strong bg-pressed",
+						// A set filter is already spelled out in the header (the repo
+						// chip) and in the popover itself, so the button stays a plain
+						// glyph: full contrast under the pointer or while open.
+						filterOpen ? "text-fg" : "text-dim hover:text-fg",
+					)}
+					// A Base UI tooltip is a DESCRIPTION, not a name, so an
+					// icon-only trigger still needs one of its own. The phone twin
+					// below always carried this; the desktop button did not.
+					aria-label="Group, filter & sort"
+					onClick={() => setFilterOpen((o) => !o)}
+				>
+					{/* 22, the scale's standalone step: these are section-header
+					    actions, not the primary buttons or window chrome that take
+					    24. At 24 the plus drew a 16px span against the 15.5 of the
+					    search glyph in the titlebar row right above, and the filter
+					    is filled bars, so the pair read a step larger than the row
+					    they sit under. */}
+					<IconFilter size={22} />
+				</button>
+				</Tooltip>
+				{/* ⌘S, not the ⌘⌥N this used to advertise: that chord opens a
+				    sibling session inside the workspace you have open, while
+				    this button (onNewSession → the palette) starts one in a new
+				    workspace. */}
+				<Tooltip
+					label="New session"
+					shortcut={newSessionKeys ?? undefined}
+				>
+				<button
+					className={cn(
+						SIDEBAR_HEADER_BTN,
+						isPhone
+							? SIDEBAR_HEADER_BTN_PHONE
+							: SIDEBAR_HEADER_BTN_DESKTOP,
+						"inline-flex items-center justify-center text-dim hover:bg-hover hover:text-fg",
+					)}
+					onClick={onNewSession}
+				>
+					<IconPlus size={22} />
+				</button>
+				</Tooltip>
+			</div>
+			{/* Off-layout probe: measures the chip's natural width so the effect
+			    above can decide whether it fits inline (never rendered visibly). */}
+			{filter.repo !== "all" && (
+				<RepoFilterChip repo={filter.repo} variant="probe" ref={probeRef} />
+			)}
+		</div>
+	</div>
+	</div>
+	);
+
+	const workspaceMenuWorkspace = workspaceMenu
+		? workspaces.find((workspace) => workspace.id === workspaceMenu.id)
+		: undefined;
+	const workspaceMenuRow = workspaceMenu
+		? wsRows.find((row) =>
+				workspaceMenuWorkspace
+					? row.workspace?.id === workspaceMenuWorkspace.id
+					: row.key === workspaceMenu.id,
+			)
+		: undefined;
+
 	return (
 		<>
+		{/* Desktop: fixed chrome above the scrollport. It is a sibling of the
+		    scroll rather than its first child, so the organization row, the tools
+		    and the Workspaces heading hold their place while the list runs under
+		    them. */}
+		{!isPhone && sidebarChrome}
 		{/* The scrollport is the right-click target for the sidebar's own menu.
 		    Only the background reaches it, since every row stops the event on its
 		    way up to open its own menu. Phones are left alone because row sheets
@@ -4308,21 +5148,17 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			// attribute the compact values key off, so density is a property the
 			// rows inherit rather than a flag every family has to be handed.
 			data-density={density}
-			// The chrome strip above this list is App's, not the sidebar's, and it
-			// draws a hairline while the list runs under it — this is what its
-			// hook (useScrollEdge) finds the scrollport by.
-			data-sidebar-scroll
 			className={cn(
 				"flex w-full min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
 				SIDEBAR_DENSITY_VARS,
 				SIDEBAR_NAV_X,
-				// The whole sidebar scrolls as one on phones, so the tool cards (and
-				// the Workspaces header) scroll away with the list instead of staying
+				// The whole sidebar scrolls as one on phones, so the tools (and the
+				// Workspaces header) scroll away with the list instead of staying
 				// pinned above a separately-scrolling list. The top bar floats over
-				// it (.app-header-overlay), so pad the scroll's top by the bar height
-				// — the cards clear the pills at rest and the list scrolls under
-				// them — fade the list into the bar with a mask, and keep the last
-				// section clear of the home indicator.
+				// it (.app-header-overlay), so pad the scroll's top by the bar height.
+				// The tools clear the pills at rest and the list scrolls under them.
+				// Fade the list into the bar with a mask, and keep the last section
+				// clear of the home indicator.
 				isPhone &&
 					"pt-[var(--header-h)] pb-[max(24px,env(safe-area-inset-bottom,0px))] [-webkit-mask-image:linear-gradient(to_bottom,transparent_0,#000_var(--header-h))] [mask-image:linear-gradient(to_bottom,transparent_0,#000_var(--header-h))]",
 			)}
@@ -4335,432 +5171,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		/>
 			}
 		>
-			{/* The strip that says whose sidebar this is used to sit here, above
-			    the tools, with the workspaces heading repeating the name a row
-			    lower. It is the heading now — see the Workspaces band below. */}
-			<div
-				className="block max-w-full min-w-0 flex-none"
-				style={{ order: 0 }}
-			>
-			{/* The tools carry no heading. "Tools" named a handful of self-evident
-			    destinations (Home, Reviews, Tasks) sitting at the very top of the
-			    rail, where nothing else can be confused for them, and it cost a
-			    caption plus the gap around it before the first thing you can
-			    click. Phones already listed them bare; desktop matches now.
-
-			    Its two jobs moved rather than went: the collapse is gone (it hid
-			    at most a few rows and a collapsed band left the top of the
-			    sidebar looking empty), and the ••• menu that chose which tools
-			    show is now in the right-click menu on any tool row, beside the
-			    "Remove from toolbar" that already lived there. Take the last
-			    tool off and the strip unmounts, which is recoverable exactly as
-			    it was before: the sidebar's own right-click menu lists every
-			    tool, Settings behind it. The band header rendered only while at
-			    least one tool was visible, so it was never the escape hatch
-			    either. */}
-			{visibleTools.length > 0 && (
-				<nav
-					className={cn(
-						// `--sidebar-nav-x` is the sidebar's own (SIDEBAR_NAV_X); the strip
-						// reads it rather than setting one, so the tools sit on the same
-						// edges as the lists under them.
-						"flex",
-						isPhone
-							? // One horizontally-scrollable line of tap cards (Slack-home
-								// style) rather than a wrapping grid, so all the tools sit on
-								// a single row and the rest peek in from the right edge to
-								// signal the scroll. flex-none so the sidebar's column layout
-								// can't shrink this container down to its padding and clip
-								// the cards; the left edge lines up with the Workspaces
-								// header and the list at 16px. No
-								// `-webkit-overflow-scrolling: touch`: on iOS it promotes the
-								// strip to its own composited layer, which then paints ABOVE
-								// the sidebar's vertical overlay scrollbar — the scrollbar
-								// vanishes "under" the cards as it passes over them. Momentum
-								// scroll is on by default on modern iOS anyway.
-								"flex-none flex-row flex-nowrap gap-2 overflow-x-auto overflow-y-hidden pt-3 pr-3 pb-2.5 pl-4 [overscroll-behavior-x:contain] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-							: // The tools are the first thing in the rail now that their
-								// heading is gone, so the top pad is theirs rather than a
-								// correction against a heading's box: it sets the tools off
-								// from the window chrome above them the way the caption used
-								// to. Bottom pad stays the gap to the Workspaces heading.
-								"flex-col gap-0.5 px-[var(--sidebar-nav-x)] pt-2 pb-1.5",
-					)}
-				>
-					{visibleTools.map((tool) => {
-						const rowClass = cn(
-							// Two complete looks, not one look with tweaks — so each
-							// viewport carries its whole set and neither has to out-rank
-							// the other. Phones get a Slack-home style 132px tap card;
-							// desktop gets a compact full-width row.
-							"group flex text-left transition-colors",
-							isPhone &&
-								"relative w-[132px] min-h-[84px] flex-[0_0_auto] flex-col items-start justify-between gap-2.5 rounded-xl bg-panel p-3 text-label leading-[1.25] font-semibold text-fg",
-							// The card owns a real surface (--bg-panel), so its states
-							// ride ON that as layers rather than replacing it — the same
-							// translucent ink the rows use, just stacked over a fill
-							// instead of over the sidebar.
-							isPhone && !tool.active && SIDEBAR_HOVER_LAYER,
-							isPhone &&
-								tool.active &&
-								"border-line-strong bg-[image:linear-gradient(var(--hover-strong),var(--hover-strong))]",
-							!isPhone && "items-center",
-							!isPhone &&
-								// Compact rows use control-label type, with glyphs matching
-								// the sidebar's standard 22px leading rail.
-								// `--sidebar-tool-pad` is 5px for a 32px box: the tools are a
-								// short utility strip above the work lists, and at the session
-								// rows' 36px the four of them took more of the rail than what
-								// they lead to. The glyph and the label's left rail are
-								// untouched, so they still line up with the rows below; only
-								// the air around them is tighter.
-								// Don't take it below 30. At 28 (`py-[3px]`, the pre-ffd11ffc
-								// value) the 22px glyph has 3px of margin and the hover pill
-								// stops reading as a row; the compact density's 4px stops at
-								// 30, level with the rows under it rather than below them.
-								`w-full ${SIDEBAR_RAIL_GAP} rounded-row bg-transparent px-[calc(var(--sidebar-icon-left)-var(--sidebar-nav-x))] py-[var(--sidebar-tool-pad)] text-body font-medium text-dim desktop:text-item-title hover:text-fg`,
-							!isPhone && SIDEBAR_HOVER_LAYER,
-							!isPhone && tool.active && "bg-selected text-fg",
-						);
-						const rowBody = (
-							<>
-								<span
-									className={cn(
-										"inline-flex [&_svg]:size-[22px]",
-										isPhone && (tool.active ? "text-fg" : "text-dim"),
-										!isPhone && "text-faint",
-										!isPhone && tool.active && "text-dim",
-										!isPhone && !tool.active && "group-hover:text-dim",
-									)}
-								>
-									{tool.icon}
-								</span>
-								{tool.label}
-								{!!tool.count && (
-									// `rounded-full`, not `rounded-[999px]`: this pill never
-									// carried a corner-shape, and rounded-full is the one
-									// radius spelling base.css does NOT squircle. On phones
-									// the count sits as a corner badge on the card rather
-									// than inline.
-									<span
-										className={cn(
-											"rounded-full bg-accent px-[7px] py-px text-meta leading-[1.5] font-semibold text-on-accent",
-											isPhone
-												? "absolute top-2.5 right-2.5 ml-0"
-												: "ml-auto",
-										)}
-									>
-										{tool.count}
-									</span>
-								)}
-							</>
-						);
-						// Right-click drops this tool from the strip, the same gesture
-						// the feed headers use to hide themselves, and opens the chooser
-						// that puts any of them back. Desktop only: phones have no
-						// right-click, and the chooser is itself desktop-only, so a
-						// stray long-press there would only be recoverable from
-						// Settings.
-						const row = isPhone ? (
-							<button
-								key={tool.id}
-								className={rowClass}
-								onClick={() => tool.onClick()}
-								title={tool.title}
-							>
-								{rowBody}
-							</button>
-						) : (
-							<ContextMenu.Root key={tool.id}>
-								<ContextMenu.Trigger
-									render={
-										<button
-											className={rowClass}
-											onClick={() => tool.onClick()}
-											title={tool.title}
-										/>
-									}
-								>
-									{rowBody}
-								</ContextMenu.Trigger>
-								{/* This menu is now the only place that chooses which tools
-								    show, since the band heading that held the ••• is gone.
-								    "Remove from toolbar" leads, about the row you opened the
-								    menu on: the list under it can do the same thing by
-								    unticking that row, but the command names the tool you
-								    already aimed at, which is the common case and the one
-								    worth a click rather than a read. "Hide tools from
-								    sidebar" used to close the menu, and it went: it was the
-								    same decision as unticking every row, a step further than
-								    anyone reaches for by accident. */}
-								<ContextMenu.Popup>
-									<ContextMenu.Item
-										onClick={() => setToolVisible(tool.id, false)}
-									>
-										<IconEyeOff size={20} className={MENU_ICON} />
-										<span className="min-w-0 flex-1 truncate">
-											Remove from toolbar
-										</span>
-									</ContextMenu.Item>
-									<ContextMenu.Separator />
-									<ContextMenu.Group>
-										<ContextMenu.GroupLabel>
-											Show in toolbar
-										</ContextMenu.GroupLabel>
-										{/* The same rows the sidebar's own right-click menu lists
-										    (SidebarToolRows), so the two menus cannot drift: each
-										    wears the mark it wears in the sidebar, the tick sits
-										    at the trailing edge, and Support stays a submenu of
-										    surfaces rather than a tick. */}
-										<SidebarToolRows
-											tools={sidebarMenuTools}
-											onToggleTool={setToolVisible}
-											onSetSupport={setSupportSurface}
-										/>
-									</ContextMenu.Group>
-								</ContextMenu.Popup>
-							</ContextMenu.Root>
-						);
-						// Feed carries the team at its right edge, with every face shown
-						// neutrally, and lets you pick up someone's sidebar without
-						// leaving the row you're on. The pile opens the same lens menu
-						// the Feed page's own chips write, so the row is both a way in
-						// and the shortcut past it. It has to be a sibling of the row,
-						// not a child: a button can't nest one. Phones render the tools
-						// as a card strip, where there's no room.
-						if (tool.id !== "feed" || isPhone || team.length === 0) return row;
-						return (
-							<div key={tool.id} className="group/team-lens relative">
-								{row}
-								<TeamLensMenu
-									members={team}
-									size={20}
-									max={4}
-									// The ring is opaque so the face behind cannot bleed into
-									// the gap. Match whichever sidebar surface the trigger is
-									// currently painted on.
-									ring="var(--team-face-ring)"
-									compact
-									side="right"
-									align="start"
-									value={personLensValue(filter.person, currentUser)}
-									label={personLensName}
-									onPick={(next) =>
-										setFilter({ person: personLensFilter(next, currentUser) })
-									}
-									className="absolute right-2 top-1/2 -translate-y-1/2 [--team-face-ring:var(--sidebar-bg)] group-hover/team-lens:[--team-face-ring:var(--row-chip)] data-[popup-open]:[--team-face-ring:var(--row-chip)]"
-								/>
-							</div>
-						);
-					})}
-				</nav>
-			)}
-			</div>
+			{isPhone && sidebarChrome}
 
 			<div className="block max-w-full min-w-0 flex-none">
-			<div
-				className={cn(
-					"mt-1 pb-0.5 pt-3",
-					// A caption starts on the rail's 16px text column; the borrowed
-					// lens's strip is a filled bar, so it takes the rows' own 8px
-					// inset instead and lines up with the workspace pills under it.
-					borrowedLens ? "px-2" : "px-[16px] pr-[7px]",
-					SIDEBAR_STICKY_BAND,
-					SIDEBAR_STICKY_BAND_ROW,
-					SIDEBAR_STUCK_BACKING,
-				)}
-				data-sticky-head
-			>
-				<div
-					className={cn(
-						"group/wshead flex min-w-0 items-center gap-1.5 desktop:w-full",
-						// In someone else's sidebar this row IS the strip: one bar that
-						// names whose lanes these are, takes you back out, and carries
-						// the header's own actions. The name was being said twice —
-						// once by a strip above the tools, once by this heading — and
-						// each said it with its own ✕.
-						borrowedLens &&
-							"w-full rounded-md bg-blue-soft py-1 pl-2 pr-[3px] desktop:h-full desktop:py-0",
-					)}
-					ref={headRef}
-				>
-					{borrowedLens ? (
-						/* Whose lanes these are, and the way out of them. Someone
-						   else's lens is easy to forget you're in — the rail looks
-						   exactly like yours, just with unfamiliar work in it — so it
-						   says so on the one row that stays pinned while the list
-						   scrolls under it. The face and the colour carry it when the
-						   sidebar is too narrow for the name. */
-						<Tooltip label="Back to your workspaces">
-							<button
-								className="group/lens flex min-w-0 items-center gap-2 border-0 bg-transparent p-0 text-left text-label text-fg [font:inherit]"
-								onClick={() => setFilter({ person: "me" })}
-								// The visible label is a name; the button is the way out
-								// of that person's lens, so say both here.
-								aria-label={
-									filter.person === "everyone"
-										? "Everyone's sidebar. Back to your workspaces"
-										: filter.person === "unassigned"
-											? "Unassigned work. Back to your workspaces"
-											: `${personLensName}'s sidebar. Back to your workspaces`
-								}
-								ref={(node) => {
-									titleRef.current = node;
-								}}
-							>
-								{filter.person !== "everyone" &&
-									filter.person !== "unassigned" && (
-										<UserAvatar
-											name={personLensName}
-											size={18}
-											className="shrink-0"
-										/>
-									)}
-								{/* The name alone, not "…'s sidebar": this row is the
-								    sidebar's own heading now, and the sentence version
-								    truncated at the rail's default width for anything
-								    longer than a short first name. The face, the wash and
-								    the ✕ say the rest — it reads as the person filter it
-								    is, the way the repo chip beside it reads. */}
-								<span className="min-w-0 truncate font-semibold">
-									{filter.person === "everyone"
-										? "Everyone"
-										: filter.person === "unassigned"
-											? "Unassigned"
-											: personLensName}
-								</span>
-								<IconX
-									size={15}
-									className="shrink-0 text-dim group-hover/lens:text-fg"
-									aria-hidden="true"
-								/>
-							</button>
-						</Tooltip>
-					) : (
-					<button
-						className="group/wstoggle flex min-w-0 items-center gap-[5px] [font:inherit]"
-						onClick={() => toggleBand("workspaces")}
-						aria-expanded={workspacesOpen}
-						title={workspacesOpen ? "Collapse workspaces" : "Expand workspaces"}
-					>
-						{/* The heading takes the same inset every other glyphless label
-						    does, so it starts on the column its repo tiles and lane
-						    captions do (see
-						    the band toggle). The sidebar header already reads as
-						    "Workspaces" on phones, so the in-header title is redundant
-						    there. */}
-						<span
-							className={cn(
-								// The band caption, same as SIDEBAR_BAND_LABEL wears one
-								// section down: this heading is written inline rather than
-								// composed from it only because of the strip above.
-								"shrink-0 text-label font-semibold text-dim group-hover/wshead:text-fg",
-								isPhone && "hidden",
-							)}
-							ref={(node) => {
-								titleRef.current = node;
-							}}
-						>
-							Workspaces
-						</span>
-						<IconChevronDown
-							className={cn(
-								SIDEBAR_BAND_CHEVRON,
-								"group-hover/wstoggle:visible",
-								!workspacesOpen && SIDEBAR_BAND_CHEVRON_COLLAPSED,
-							)}
-							size={18}
-							style={{
-								transform: workspacesOpen ? "none" : "rotate(-90deg)",
-							}}
-						/>
-					</button>
-					)}
-					{/* Repo filter chip, inline behind the title when it fits. */}
-					{filter.repo !== "all" && repoInline && (
-						<RepoFilterChip
-							repo={filter.repo}
-							repos={repos}
-							onClear={() => setFilter({ repo: "all" })}
-							onSelect={(v) => setFilter({ repo: v })}
-							variant="inline"
-						/>
-					)}
-					<div className="min-w-0 flex-1" />
-					{/* Grouped so the pair's combined width can be measured when deciding
-					    whether the repo chip fits inline. Gone on phones, where filter
-					    moves to the top bar and the red FAB covers new-session. */}
-					<div
-						className={cn(
-							"shrink-0 items-center gap-1.5",
-							isPhone ? "hidden" : "flex",
-						)}
-						ref={actionsRef}
-					>
-						<Tooltip label="Group, filter & sort">
-						<button
-							ref={filterBtnRef}
-							className={cn(
-								SIDEBAR_HEADER_BTN,
-								isPhone
-									? cn(SIDEBAR_HEADER_BTN_PHONE, "min-h-[38px] min-w-[38px]")
-									: SIDEBAR_HEADER_BTN_DESKTOP,
-								"inline-flex items-center justify-center",
-								// The open state paints the stronger wash and the hover now
-								// layers OVER it (SIDEBAR_HOVER_LAYER), so the button no
-								// longer has to withhold its hover to keep from washing
-								// itself back out while open.
-								SIDEBAR_HOVER_LAYER,
-								filterOpen && "border-line-strong bg-pressed",
-								// A set filter is already spelled out in the header (the repo
-								// chip) and in the popover itself, so the button stays a plain
-								// glyph: full contrast under the pointer or while open.
-								filterOpen ? "text-fg" : "text-dim hover:text-fg",
-							)}
-							// A Base UI tooltip is a DESCRIPTION, not a name, so an
-							// icon-only trigger still needs one of its own. The phone twin
-							// below always carried this; the desktop button did not.
-							aria-label="Group, filter & sort"
-							onClick={() => setFilterOpen((o) => !o)}
-						>
-							{/* 22, the scale's standalone step: these are section-header
-							    actions, not the primary buttons or window chrome that take
-							    24. At 24 the plus drew a 16px span against the 15.5 of the
-							    search glyph in the titlebar row right above, and the filter
-							    is filled bars, so the pair read a step larger than the row
-							    they sit under. */}
-							<IconFilter size={22} />
-						</button>
-						</Tooltip>
-						{/* ⌘S, not the ⌘⌥N this used to advertise: that chord opens a
-						    sibling session inside the workspace you have open, while
-						    this button (onNewSession → the palette) starts one in a new
-						    workspace. */}
-						<Tooltip
-							label="New session"
-							shortcut={newSessionKeys ?? undefined}
-						>
-						<button
-							className={cn(
-								SIDEBAR_HEADER_BTN,
-								isPhone
-									? SIDEBAR_HEADER_BTN_PHONE
-									: SIDEBAR_HEADER_BTN_DESKTOP,
-								"inline-flex items-center justify-center text-dim hover:bg-hover hover:text-fg",
-							)}
-							onClick={onNewSession}
-						>
-							<IconPlus size={22} />
-						</button>
-						</Tooltip>
-					</div>
-					{/* Off-layout probe: measures the chip's natural width so the effect
-					    above can decide whether it fits inline (never rendered visibly). */}
-					{filter.repo !== "all" && (
-						<RepoFilterChip repo={filter.repo} variant="probe" ref={probeRef} />
-					)}
-				</div>
-			</div>
 
 				{/* Fallback row: only when the chip doesn't fit inline. */}
 				{filter.repo !== "all" && !repoInline && (
@@ -4778,11 +5191,12 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			{/* On phones the filter button lives in the top bar (next to Search);
 			    its popover anchors there. Desktop keeps it in the header. */}
 			{isPhone &&
+				!borrowedLens &&
 				headerActionsEl &&
 				createPortal(
 					<>
 						<button
-							ref={mobileFilterBtnRef}
+							ref={setMobileFilterButton}
 							className={mobileFilterBtn(filterOpen)}
 							onClick={() => setFilterOpen((o) => !o)}
 							aria-label="Group, filter & sort"
@@ -4795,11 +5209,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 
 			{filterOpen && (
 				<FilterPopover
-					anchor={
-						isPhone
-							? mobileFilterBtnRef.current
-							: filterBtnRef.current
-					}
+					anchor={isPhone ? mobileFilterButton : filterButton}
 					filter={filter}
 					repos={repos}
 					people={peopleWithAgent}
@@ -4813,199 +5223,52 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				/>
 			)}
 
-			{workspaceMenu &&
-				(() => {
-					// The menu id is a real workspace id, or a row key for a
-					// workspace-less row (solo session / shared-worktree group).
-					const ws = workspaces.find((p) => p.id === workspaceMenu.id);
-					const menuRow = wsRows.find((r) =>
-						ws ? r.workspace?.id === ws.id : r.key === workspaceMenu.id,
-					);
-					const sessions = menuRow?.sessions ?? [];
-					const first = sessions[0];
-					const pinKey = ws ? `workspace:${ws.id}` : workspaceMenu.id;
-					// A row can be pinned via its own key or a legacy pin on any member
-					// session (incl. alias ids) — unpin clears all of them.
-					const pinnedKeys = [
-						pinKey,
-						...(menuRow
-							? [
-									menuRow.key,
-									...menuRow.sessions.flatMap((c) => [
-										c.id,
-										...(c.aliasIds || []),
-									]),
-								]
-							: []),
-					].filter((k, i, a) => pins.includes(k) && a.indexOf(k) === i);
-					const pinned = pinnedKeys.length > 0;
-					const togglePinNow = () => {
-						if (pinned) {
-							let next = pins;
-							for (const k of pinnedKeys) next = togglePin(k);
-							setPins(next);
-						} else {
-							setPins(togglePin(pinKey));
-						}
-					};
-					const anyManual = sessions.some((c) => pinnedLane(c));
-					const sharedManual =
-						anyManual &&
-						sessions.every((c) => pinnedLane(c) === pinnedLane(sessions[0]))
-							? (pinnedLane(sessions[0]) ?? null)
-							: null;
-
-					const entries: CtxEntry[] = [];
-					// Offer the move you can actually make: a row with unread
-					// activity reads, an already-read one goes back to unread.
-					const rowUnread = menuRow?.unread ?? false;
-					if (sessions.length > 0)
-						entries.push({
-							kind: "item",
-							icon: <IconMail size={20} />,
-							label: rowUnread ? "Mark as read" : "Mark as unread",
-							onClick: () =>
-								sessions.forEach((c) =>
-									rowUnread
-										? markRead(c.id, c.lastActivity)
-										: markUnread(c.id),
-								),
-						});
-					// Claim someone else's work — an automation run, a teammate's
-					// workspace — into your own lanes, where it then behaves like
-					// your sessions do (In progress while running, Backlog when
-					// idle). Rows you started are already there, so they don't
-					// offer it; the full lane picker stays in the flyout below.
-					const rowClaimed = sessions.some((c) => isClaimed(c));
-					const rowMine = sessions.some((c) => ownedBy(c, currentUser));
-					if (sessions.length > 0 && (!rowMine || rowClaimed))
-						entries.push({
-							kind: "item",
-							icon: <IconInbox size={20} />,
-							label: rowClaimed
-								? "Remove from my workspaces"
-								: "Add to my workspaces",
-							onClick: () =>
-								onSetStatus(sessions, rowClaimed ? null : "mine"),
-						});
-					entries.push({
-						kind: "item",
-						icon: (
-							<IconPin size={20} fill={pinned ? "currentColor" : "none"} />
-						),
-						label: pinned ? "Unpin" : "Pin",
-						onClick: togglePinNow,
-					});
-					if (sessions.length > 0)
-						entries.push({
-							kind: "status",
-							current: sharedManual,
-							// Applies the pin to every session so the aggregated row lands
-							// in the chosen lane; "Auto" clears it back to the derived one.
-							onPick: (s) => onSetStatus(sessions, s),
-						});
-					if (menuRow && sessions.length > 0)
-						entries.push({
-							kind: "snooze",
-							until: activeSnoozeKeys.has(menuRow.key)
-								? (snoozes[menuRow.key] ?? null)
-								: null,
-							// Parks the row in the Snoozed section until the chosen time;
-							// null unsnoozes it back to its derived lane.
-							onPick: (until) =>
-								until
-									? setSnooze(menuRow.key, until)
-									: clearSnooze(menuRow.key),
-						});
-					if (ws)
-						entries.push({
-							kind: "item",
-							icon: <IconPencil size={20} />,
-							label: "Rename",
-							onClick: () => {
-								setWorkspaceDraft(ws.name);
-								setEditingWorkspaceId(ws.id);
-							},
-						});
-					else if (first)
-						entries.push({
-							kind: "item",
-							icon: <IconPencil size={20} />,
-							label: "Rename",
-							onClick: () => startSessionRename(first),
-						});
-					if (first)
-						entries.push({
-							kind: "item",
-							icon: <IconLink size={20} />,
-							label: "Copy link",
-							shortcut: shortcutLabel("session-copy-link") ?? undefined,
-							onClick: () =>
-								copyToClipboard(absoluteLink(sessionPath(first)), () =>
-									onToast?.("Link copied"),
-								),
-						});
-					// A session that owns a worktree/branch (and thus a PR/diff) can open
-					// its Review tab here — it's off by default in the viewer.
-					if (first && (first.worktreeDir || first.branch))
-						entries.push({
-							kind: "item",
-							icon: <IconEye size={20} />,
-							label: "Open review",
-							onClick: () => onOpenReview(first),
-						});
-					// Archive is the removal action here (a session/workspace is finished
-					// by archiving, never inferred-deleted). A sessionless workspace has
-					// nothing to archive, so it keeps Delete as its only removal.
-					if (menuRow && sessions.length > 0) {
-						entries.push({ kind: "sep" });
-						// Hide sits above Archive as the gentler removal: Archive is
-						// global (it ends the work for the whole team), Hide only
-						// clears it off your own sidebar while a teammate keeps
-						// working in it. On an already-hidden row — which you can
-						// only be looking at because you searched for it — the same
-						// slot offers the way back, since there's no Hidden band.
-						const rowHidden = hiddenRowKeys.has(menuRow.key);
-						entries.push({
-							kind: "item",
-							icon: rowHidden ? <IconEye size={20} /> : <IconEyeOff size={20} />,
-							label: rowHidden
-								? "Restore to my sidebar"
-								: "Hide from my sidebar",
-							onClick: () =>
-								rowHidden ? clearHides([menuRow.key]) : hideRow(menuRow),
-						});
-						entries.push({
-							kind: "item",
-							icon: <IconArchive size={20} />,
-							label: "Archive",
-							onClick: () => archiveWorkspaceWithNext(menuRow),
-						});
-					} else if (ws) {
-						entries.push({ kind: "sep" });
-						entries.push({
-							kind: "item",
-							icon: <IconTrash size={20} />,
-							danger: true,
-							label: "Delete draft",
-							onClick: () => {
-								if (window.confirm(`Delete this draft?`))
-									onDeleteWorkspace(ws.id);
-							},
-						});
+			{workspaceMenu && (
+				<WorkspaceContextMenu
+					menu={workspaceMenu}
+					workspace={workspaceMenuWorkspace}
+					row={workspaceMenuRow}
+					pins={pins}
+					currentUser={currentUser}
+					activeSnoozeKeys={activeSnoozeKeys}
+					snoozes={snoozes}
+					hiddenRowKeys={hiddenRowKeys}
+					onPinsChange={setPins}
+					onSetStatus={onSetStatus}
+					onSnooze={(row, until) =>
+						until ? setSnooze(row.key, until) : clearSnooze(row.key)
 					}
-
-					return (
-						<SidebarCtxMenu
-							x={workspaceMenu.x}
-							y={workspaceMenu.y}
-							entries={entries}
-							onClose={() => setWorkspaceMenu(null)}
-						/>
-					);
-				})()}
+					onStartWorkspaceRename={(workspace) => {
+						setWorkspaceDraft(workspace.name);
+						setEditingWorkspaceId(workspace.id);
+					}}
+					onStartSessionRename={startSessionRename}
+					onToast={onToast}
+					onOpenReview={onOpenReview}
+					onHide={(row, hidden) =>
+						hidden ? clearHides([row.key]) : hideRow(row)
+					}
+					onArchive={archiveWorkspaceWithNext}
+					onDeleteDraft={(workspace) =>
+						confirmDeleteDraft(() => onDeleteWorkspace(workspace.id))
+					}
+					onClose={() => setWorkspaceMenu(null)}
+				/>
+			)}
 			{workspacesOpen && (
-				<div className={SIDEBAR_LIST} data-sidebar-list>
+				<div
+					className={cn(
+						SIDEBAR_LIST,
+						// The band heading these lanes sit under is fixed chrome above the
+						// scrollport on desktop, not a pinned row inside it, so there is no
+						// band slot for them to clear: a lane pins at the scroll's own top.
+						// Scoped here rather than on the scroll root because the bands BELOW
+						// this list (Automations, People) still pin inside it and their lanes
+						// still have to clear them.
+						"desktop:[--sidebar-band-slot:0px]",
+					)}
+					data-sidebar-list
+				>
 				{sessionsLoading && sessions.length === 0 && (
 					<ListSkeleton
 						variant="bare"
@@ -5036,7 +5299,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						<span className="text-red">Couldn't load sessions</span>
 					</EmptyState>
 				)}
-				{workspaceListEmpty && !sessionsLoading && !sessionsError && hasWorkspaceFilter && (
+				{workspaceListEmpty &&
+					!sessionsLoading &&
+					!sessionsError &&
+					hasWorkspaceFilter && (
 					<div className="mx-4 my-7 text-center text-label leading-[1.4] text-faint">
 						No matching workspaces
 					</div>
@@ -5165,7 +5431,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							(supportThreads || []).find((t) => t.id === e.slice(8)),
 						)
 						.filter((t): t is SupportThread => !!t);
-					// Pinned feed items (Tella videos, PostHog dashboards) —
+					// Pinned feed items (videos, dashboards):
 					// resolved against the live feed items like tickets are.
 					const pinnedFeedItems = pins
 						.filter((e) => e.startsWith("feed:"))
@@ -5186,7 +5452,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						.map((e) =>
 							reviewQueueItems.find((i) => i.pr.url === e.slice(3)),
 						)
-						.filter((i): i is ReviewQueueItem => !!i);
+						.filter((i): i is ReviewQueueItem => !!i)
+						// Once a workspace carries this PR, the workspace row is the
+						// single place for it, even if an older standalone PR pin remains.
+						.filter((item) => !workspaceCoveredPrUrls.has(item.pr.url));
 					if (
 						!pinnedRows.length &&
 						!pinnedLoose.length &&
@@ -5257,9 +5526,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 										s.startedBy.toLowerCase() === currentUser.toLowerCase()
 									}
 									onClick={() => onSelect(s)}
-									onArchive={() => archiveWithNext(s)}
+									onArchive={(current) => archiveWithNext(s, current)}
 									pinned={pin.pinned}
 									onTogglePin={pin.toggle}
+									shipsDirectlyToMain={shipsDirectlyToMain(s.repo, s.branch)}
 									onRename={(title) => onRename(s, title)}
 									onSetStatus={(st) => onSetStatus([s], st)}
 								/>
@@ -5469,17 +5739,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				    header above (which carries the filter, new-workspace and
 				    new-session actions) — no second in-list heading. ── */}
 				<div className={SIDEBAR_GROUP}>
-					{/* The focus person's workspaces, laid out by the grouping. The
-					    Person filter decides whose: it defaults to you, picking a
-					    teammate shows all their groups, "Unassigned" shows every
-					    Backlog, and "Everyone" shows all workspaces.
-
-					    The list is an inbox in all three: its rows band by what they
-					    want from you and when they last moved. "Project" gives one
-					    band per repo and nests those bands inside each, "Status"
-					    swaps them for the status lanes down the whole list, and
-					    "Nothing" is the bands on their own. Empty bands and lanes are
-					    hidden — only groups with sessions render. */}
+					{/* Inbox, Activity, and Status choose the row sections. Project
+					    independently decides whether those sections repeat per repo. */}
 					{/* Snoozed rows sit out of focusWsRows, so each layout places
 					    them itself: under a project band every band gets its own
 					    Snoozed group (renderRepoGroups), the ungrouped inbox renders
@@ -5489,38 +5750,30 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					    beside the repos with priority lanes nested under it — or,
 					    under ungrouped status lanes, its priority lanes appended
 					    after them so everything reads as one list. */}
-					{/* Ungrouped Inbox is one activity-ranked list. Session-less PR
-					    rows sit it out — it ranks sessions by activity, which a bare
-					    PR doesn't have. Plain and the other feeds keep their banded
-					    shape whenever there are lanes: their items aren't the
-					    sessions those lanes order, so they stay grouped apart. */}
+					{/* Session-less PR and feed rows keep their project-shaped sections;
+					    Active/Snoozed applies to workspace rows with resumable sessions. */}
 					{groupsByRepo ? (
 						<>
 							{renderRepoGroups()}
 							{visibleFeeds.map((d) => renderFeedBand(d, true))}
 						</>
-					) : filter.groupBy === "status" ? (
+					) : (
 						[
-							...renderStatusLanes(
-								focusWsRows,
+							...renderWorkspaceGrouping(
+								activeFocusWsRows,
 								"",
 								snoozedWsRows,
 								undefined,
-								lanePrItems,
+								filter.groupBy === "status" ? lanePrItems : [],
 							),
-							// Plain's priority lanes stay inlined after the status
-							// lanes (one continuous list); other feeds render as
-							// bands below.
-							...renderSupportLanes(plainThreadsInView),
-							...visibleFeeds
-								.filter((d) => d.id !== "plain")
-								.map((d) => renderFeedBand(d, false)),
-						]
-					) : (
-						[
-							...renderInboxBands(focusWsRows),
-							...renderStatusLanes([], "", snoozedWsRows),
-							...visibleFeeds.map((d) => renderFeedBand(d, true)),
+							...(filter.groupBy === "status"
+								? [
+										...renderSupportLanes(plainThreadsInView),
+										...visibleFeeds
+											.filter((d) => d.id !== "plain")
+											.map((d) => renderFeedBand(d, false)),
+									]
+								: visibleFeeds.map((d) => renderFeedBand(d, true))),
 						]
 					)}
 				</div>
@@ -5592,7 +5845,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								    far right; any future action can still be pushed there
 								    with ml-auto. */}
 								<span className={SIDEBAR_GROUP_COUNT}>
-									{groups.reduce((n, g) => n + g.items.length, 0)}
+									{groups.reduce((n, g) => n + (g.totalItems || g.items.length), 0)}
 								</span>
 								<IconChevronDown
 									className={cn(
@@ -5637,7 +5890,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 											    as a column of its own, and it had to disappear on
 											    hover to hand the slot to the settings glyph. */}
 											<span className={cn(SIDEBAR_GROUP_COUNT, "shrink-0")}>
-												{group.items.length}
+												{group.totalItems || group.items.length}
 											</span>
 											{/* Collapsed, the chevron shows at rest, as it does
 											    on every other heading in the sidebar: a closed
@@ -5700,6 +5953,12 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 												}}
 											/>
 										)}
+										{open &&
+											(group.totalItems || group.items.length) > group.items.length && (
+												<div className="px-4 pb-1 pt-0.5 text-meta tabular-nums text-faint">
+													Latest {group.items.length} of {group.totalItems} runs
+												</div>
+											)}
 										{group.items
 											.filter(() => open)
 											.map((s) => {
@@ -5725,9 +5984,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 																currentUser.toLowerCase()
 														}
 														onClick={() => onSelect(s)}
-														onArchive={() => archiveWithNext(s)}
+														onArchive={(current) => archiveWithNext(s, current)}
 														pinned={pin.pinned}
 														onTogglePin={pin.toggle}
+														shipsDirectlyToMain={shipsDirectlyToMain(s.repo, s.branch)}
 														onRename={(title) => onRename(s, title)}
 														onSetStatus={(st) => onSetStatus([s], st)}
 													/>
@@ -5774,9 +6034,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						>
 							<WsCardBody
 								row={wsHover.row}
-								onArchive={() => {
+								snoozed={rowIsSnoozed(wsHover.row)}
+								onToggleSnooze={() => {
 									closeWsHover();
-									archiveWorkspaceWithNext(wsHover.row);
+									toggleWorkspaceSnooze(wsHover.row);
 								}}
 								onOpen={(session) => {
 									closeWsHover();
@@ -5789,7 +6050,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			</Popover.Root>
 			{wsSheet &&
 				(() => {
-					const row = wsSheet;
+					const { row, source } = wsSheet;
 					const ws = row.workspace;
 					// Same pin resolution as the row's star and the right-click menu: a
 					// row can be pinned via its own key or a legacy pin on any member
@@ -5815,7 +6076,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								}
 							}}
 							onClose={() => setWsSheet(null)}
-							onArchive={() => archiveWorkspaceWithNext(row)}
+							onArchive={() => archiveWorkspaceWithNext(row, source)}
 							onSetStatus={(status) => onSetStatus(row.sessions, status)}
 							snoozeUntil={
 								activeSnoozeKeys.has(row.key)
@@ -5867,10 +6128,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							onDelete={
 								ws
 									? () => {
-											const message =
-												row.sessions.length === 0
-													? `Delete this draft?`
-													: `Delete workspace "${ws.name}"? Its sessions become standalone.`;
+											if (row.sessions.length === 0) {
+												confirmDeleteDraft(() => onDeleteWorkspace(ws.id));
+												return;
+											}
+											const message = `Delete workspace "${ws.name}"? Its sessions become standalone.`;
 											if (window.confirm(message)) onDeleteWorkspace(ws.id);
 										}
 									: null
@@ -5909,6 +6171,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			}
 			onRepositoryOrderChange={setRepoOrder}
 		/>
+		{confirmDialog}
 		</>
 	);
 });

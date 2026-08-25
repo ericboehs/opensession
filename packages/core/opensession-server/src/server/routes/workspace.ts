@@ -25,28 +25,32 @@ import { isRemoteSandboxProvider, resolveRequestedSandbox } from "../sandbox/con
 import { resolveInteractiveSandbox } from "../sandbox/defaults";
 import {
 	SESSIONS_DIR,
-	findSession,
+	findSessionAsync,
+	getCachedSessionsAsync,
 	invalidateSessionsCache,
 	peekCachedSessions,
 	touchNativeSession,
+	updateSessionFile,
 } from "../session-cache";
 import { attachRepo, switchPrimaryRepo, workspaceOwningWorktree } from "../session-repos";
-import { getAllSessions, getTranscriptPath } from "../sessions";
-import { writeJsonAtomic } from "../shared/atomic-write";
+import { getAllSessions, getOpenPrs, getTranscriptPath } from "../sessions";
 import { configuredIdentity, configuredRepos, defaultRepo, newSessionRepoDefault } from "../config";
 import { persistRawConfig, rawConfig, withConfigMutationLock } from "../config-mutation";
 import { AUTO_REPO } from "../worktree";
 import { searchSkills } from "../skills";
 import { handleSlashCommand } from "../slash-commands";
-import { suggestBranchName } from "../suggest-branch";
+import { sanitizeBranchSlug } from "../suggest-branch";
 import { type NativeSessionFile, type StackedOn } from "../types";
-import { DEFAULT_WORKSPACE_MODEL_SETTINGS, type Workspace, type WorkspaceDraft, type WorkspaceModelSettings, createWorkspace, deleteWorkspace, getWorkspace, listWorkspaces, updateWorkspace } from "../workspaces";
-import { resolveExternalWorkspace, resolvePlainWorkspace, resolvePrWorkspace } from "../workspace-resolve";
+import { DEFAULT_WORKSPACE_MODEL_SETTINGS, type Workspace, type WorkspaceDraft, type WorkspaceModelSettings, createWorkspace, deleteWorkspace, getWorkspace, listWorkspaces, updateWorkspace, workspaceListVersion } from "../workspaces";
+import { resolveExternalWorkspace, resolvePlainWorkspace, resolvePrWorkspace, workspaceBacksOpenPr } from "../workspace-resolve";
 import { resolveModel } from "../models";
-import { REPOS, createWorktree, createWorktreeForExistingBranch, ensureScratchDir, getRepo, isSharedCheckoutDir, listWorktrees, repoForPath, sessionRepoId, worktreeHasWork, worktreeHeadBranch } from "../worktree";
-import { randomUUIDv7 } from "bun";
+import { REPOS, createWorktree, createWorktreeForExistingBranch, ensureScratchDir, getRepo, isSharedCheckoutDir, listWorktrees, repoForPath, resolveUniqueBranch, sessionRepoId, worktreeHasWork, worktreeHeadBranch } from "../worktree";
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from "fs";
-import { isNativeSessionId } from "../paths";
+import { isClientSessionId, isNativeSessionId, newSessionId } from "../paths";
+import { isReusableEmptySession } from "../empty-session";
+import { githubMutationCredential } from "./github-credential";
+import { conditionalJsonResponse } from "../http-json";
+import { indexedActiveWorkspaceIds } from "../session-list-store";
 
 /**
  * Validate a `draft` field from a workspace create/patch body. `null` (clear)
@@ -118,7 +122,7 @@ export async function handleWorkspaceRoutes(
 		// directly instead of refreshing the entire cross-source session catalog.
 		const session =
 			findNativeSessionForFileMentions(sessionId) ??
-			(sessionId ? findSession(sessionId) : undefined);
+			(sessionId ? await findSessionAsync(sessionId) : undefined);
 		// Volume-mode sandbox workspaces have no host dir — the primary
 		// repo's `git ls-files` runs through the sandbox exec below.
 		if (
@@ -254,7 +258,7 @@ export async function handleWorkspaceRoutes(
 	if (path === "/api/skills" && req.method === "GET") {
 		const q = url.searchParams.get("q") || "";
 		const sessionId = url.searchParams.get("session");
-		const session = sessionId ? findSession(sessionId) : undefined;
+		const session = sessionId ? await findSessionAsync(sessionId) : undefined;
 		let dir: string | undefined =
 			session?.worktreeDir && existsSync(session.worktreeDir)
 				? session.worktreeDir
@@ -423,9 +427,33 @@ export async function handleWorkspaceRoutes(
 		// The defaults ride once at the top level; a workspace row carries
 		// modelSettings only when someone saved their own copy. Stamping the
 		// defaults on every row multiplied the payload by the workspace count.
-		return Response.json({
-			workspaces: listWorkspaces(),
+		let workspaces = listWorkspaces();
+		const activeOnly = url.searchParams.get("active") === "1";
+		if (activeOnly) {
+			const indexedIds = indexedActiveWorkspaceIds();
+			const activeWorkspaceIds = new Set(indexedIds ??
+				(await getCachedSessionsAsync("exclude"))
+					.map((session) => session.workspaceId)
+					.filter((id): id is string => typeof id === "string" && !!id));
+			const openPrs = getOpenPrs();
+			workspaces = workspaces.filter(
+				(workspace) =>
+					activeWorkspaceIds.has(workspace.id) ||
+					!!workspace.draft ||
+					workspaceBacksOpenPr(workspace, openPrs, defaultRepo().id),
+			);
+		}
+		return conditionalJsonResponse(req, {
+			workspaces,
 			defaultModelSettings: DEFAULT_WORKSPACE_MODEL_SETTINGS,
+		}, {
+			cache: {
+				key: activeOnly ? "workspaces-list-active" : "workspaces-list-all",
+				// Active membership can change without workspace metadata changing.
+				version: activeOnly
+					? `${workspaceListVersion()}:${workspaces.map((workspace) => workspace.id).join(",")}`
+					: workspaceListVersion(),
+			},
 		});
 	}
 
@@ -570,12 +598,14 @@ export async function handleWorkspaceRoutes(
 	);
 	if (newSessionMatch && req.method === "POST") {
 		const sourceId = decodeURIComponent(newSessionMatch[1]);
-		const src = findSession(sourceId);
+		const src = await findSessionAsync(sourceId);
 		if (!src)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const body = (await req.json().catch(() => ({}))) as {
 			user?: string;
 			mode?: "share" | "stack" | "ask";
+			/** Client-minted id lets the tab render before this request finishes. */
+			clientSessionId?: unknown;
 			/** Sandbox opt-in: true = config default provider, or an explicit
 			 *  provider id (including "modal" / "lambda-microvm" — must be configured).
 			 *  Recorded on the session file; the first prompt launches it. */
@@ -600,7 +630,28 @@ export async function handleWorkspaceRoutes(
 				},
 				{ status: 400 },
 			);
-		const bksId = `bks-${randomUUIDv7()}`;
+		const requestedId = body.clientSessionId;
+		if (requestedId !== undefined && !isClientSessionId(requestedId))
+			return Response.json(
+				{ error: "Invalid session create id" },
+				{ status: 400 },
+			);
+		const bksId = requestedId || newSessionId();
+		const existing = await findSessionAsync(bksId);
+		if (existing) return Response.json({ id: bksId, session: existing });
+		// One reusable empty tab per workspace. This server-side check closes the
+		// multi-window race that hiding the + in one browser cannot prevent.
+		const reusable = src.workspaceId
+			? (await getCachedSessionsAsync("exclude")).find(
+					(session) =>
+						session.workspaceId === src.workspaceId &&
+						isReusableEmptySession(session),
+				)
+			: isReusableEmptySession(src)
+				? src
+				: undefined;
+		if (reusable)
+			return Response.json({ id: reusable.id, session: reusable });
 		let branch = src.branch || "";
 		let worktreeDir = src.worktreeDir || "";
 		let mode: "ask" | "code" | "scratch" = src.mode || "code";
@@ -648,6 +699,7 @@ export async function handleWorkspaceRoutes(
 				branch = `${src.branch}-stack-${bksId.slice(4, 10)}`;
 				worktreeDir = await createWorktree(branch, repo.id, {
 					base: src.branch,
+					gitEnv: githubMutationCredential(ctx)?.env,
 				});
 				mode = "code";
 				// Remember the layer underneath so this session's PR bases on it and
@@ -675,7 +727,11 @@ export async function handleWorkspaceRoutes(
 				// create_session's fromPr path), and stamp it as the workspace's
 				// owned worktree for later siblings.
 				branch = ws.branch;
-				worktreeDir = await createWorktreeForExistingBranch(ws.branch, ws.repo);
+				worktreeDir = await createWorktreeForExistingBranch(
+					ws.branch,
+					ws.repo,
+					githubMutationCredential(ctx)?.env,
+				);
 				mode = "code";
 				repoId = getRepo(ws.repo).id;
 				updateWorkspace(ws.id, { worktreeDir });
@@ -748,7 +804,7 @@ export async function handleWorkspaceRoutes(
 			...(plainThreadId ? { plainThreadId } : {}),
 			...(siblingRefs?.length ? { externalRefs: siblingRefs } : {}),
 			// Siblings keep the source session's MCP scoping (least privilege —
-			// a sibling of a tella-scoped session must not regain every server).
+			// a sibling of a scoped session must not regain every server).
 			...(src.mcpServers?.length ? { mcpServers: src.mcpServers } : {}),
 			createdBy: requestUser(ctx, body.user) || "Anonymous",
 			createdAt: new Date().toISOString(),
@@ -771,12 +827,11 @@ export async function handleWorkspaceRoutes(
 					}
 				: {}),
 		};
-		writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, data);
-		invalidateSessionsCache();
+		await updateSessionFile(bksId, () => data);
 		// Also return the full unified session so the client can drop it into
 		// its session list and render the new session instantly, instead of
 		// flashing a loading screen until the next sessions poll lands.
-		return Response.json({ id: bksId, session: findSession(bksId) ?? null });
+		return Response.json({ id: bksId, session: await findSessionAsync(bksId) ?? null });
 	}
 
 	// Promote an ask session to code. Three shapes, because "ask" says nothing
@@ -794,7 +849,7 @@ export async function handleWorkspaceRoutes(
 	);
 	if (promoteMatch && req.method === "POST") {
 		const sessionId = decodeURIComponent(promoteMatch[1]);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		if (session.source !== "opensession")
@@ -828,13 +883,19 @@ export async function handleWorkspaceRoutes(
 			branch = "";
 			worktreeDir = repo.repo;
 		} else {
-			branch = (
-				body.branch ||
-				(await suggestBranchName(session.title || "session")) ||
-				`session-${sessionId.slice(4, 10)}`
-			).trim();
+			// Promotion already has a generated session title. Reusing it avoids a
+			// second model turn just to name the branch, which used to hold this
+			// request for seconds when the naming model's account pool was busy.
+			const generated =
+				sanitizeBranchSlug(session.title || "") ||
+				`session-${sessionId.slice(4, 10)}`;
+			branch = body.branch
+				? body.branch.trim()
+				: await resolveUniqueBranch(generated, repo.id);
 			const oldCwd = current || repo.repo;
-			worktreeDir = await createWorktree(branch, repo.id);
+			worktreeDir = await createWorktree(branch, repo.id, {
+				gitEnv: githubMutationCredential(ctx)?.env,
+			});
 			// Best-effort: copy the ask rollout into the new worktree's hash dir
 			// so SDK resume (keyed by cwd) finds the prior conversation.
 			try {
@@ -850,11 +911,12 @@ export async function handleWorkspaceRoutes(
 				console.warn(`[promote] transcript copy failed for ${sessionId}:`, e);
 			}
 		}
-		touchNativeSession(sessionId, {
+		await touchNativeSession(sessionId, {
 			mode: "code",
 			branch,
 			worktreeDir,
 			repo: repo.id,
+			repoLess: false,
 		});
 		// Materialize the workspace's worktree if it doesn't own one yet. A
 		// shared checkout is owned by nobody, so it never becomes a
@@ -874,7 +936,7 @@ export async function handleWorkspaceRoutes(
 	);
 	if (setWorkspaceMatch && req.method === "POST") {
 		const sessionId = decodeURIComponent(setWorkspaceMatch[1]);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const body = (await req.json().catch(() => ({}))) as {
@@ -905,6 +967,7 @@ export async function handleWorkspaceRoutes(
 				sessionId,
 				body.repo,
 				body.branch,
+				githubMutationCredential(ctx)?.env,
 			);
 			return Response.json({ ok: true, attached, attachedRepos: all });
 		} catch (e: any) {
@@ -922,7 +985,7 @@ export async function handleWorkspaceRoutes(
 	);
 	if (switchableMatch && req.method === "GET") {
 		const sessionId = decodeURIComponent(switchableMatch[1]);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		// `switchable`: this session type can switch its primary repo at all
@@ -962,6 +1025,7 @@ export async function handleWorkspaceRoutes(
 				sessionId,
 				body.repo,
 				!!body.force,
+				githubMutationCredential(ctx)?.env,
 			);
 			return Response.json({ ok: true, ...result });
 		} catch (e: any) {
@@ -983,7 +1047,7 @@ export async function handleWorkspaceRoutes(
 		const body = (await req.json().catch(() => ({}))) as {
 			repo?: string;
 		};
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const all = (session.attachedRepos || []).filter(

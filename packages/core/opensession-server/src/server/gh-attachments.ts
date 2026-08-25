@@ -10,7 +10,7 @@
  *   github.com/user-attachments/assets/<uuid> URL that GitHub renders inline
  *   (an <img> for images, a native player for a bare video URL). Used by the
  *   walkthrough PR mirror (walkthrough.ts). Verified 2026-08-15 against
- *   tellahq/opensession#96.
+ *   an internal pull request.
  *
  * - resolveUserAttachment: turn such a URL back into a short-lived signed
  *   private-user-images URL (plus whether it is an image or a video). The
@@ -94,7 +94,7 @@ export async function uploadUserAttachment(
   const cacheKey = [ghRepo, filePath, stat.size, stat.mtimeMs].join("\u0000");
   const cached = uploadCache.get(cacheKey);
   if (cached) return cached;
-  const token = await botGhToken();
+  const token = await botGhToken({ write: true });
   if (!token) return null;
   const repoId = await repoDbId(ghRepo, token);
   if (repoId === null) return null;

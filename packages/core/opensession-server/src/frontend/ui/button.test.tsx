@@ -49,6 +49,19 @@ describe("Button", () => {
 		expect(html.indexOf("Review")).toBeLessThan(html.indexOf("<svg"));
 	});
 
+	test("overlay actions keep standard button behavior on a dark scrim", () => {
+		const html = renderToStaticMarkup(
+			<Button variant="overlay" icon={<svg />}>
+				Download
+			</Button>,
+		);
+		expect(html).toContain("bg-transparent");
+		expect(html).toContain("text-white/60");
+		expect(html).toContain("hover:bg-white/15");
+		expect(html).toContain("focus-ring");
+		expect(html).toMatch(TRIMMED);
+	});
+
 	test("a caller's fill replaces the variant's, resting and on hover", () => {
 		const html = renderToStaticMarkup(
 			<Button variant="primary" className="bg-purple hover:bg-purple/90">

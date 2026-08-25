@@ -28,6 +28,7 @@
  */
 
 import type { InProcessMcpServer } from "./inprocess-mcp";
+import { INTERNAL_MCP_CAPABILITIES } from "./mcp-capabilities";
 import { createAdminMcpServer } from "../agents/slack/admin-tools";
 import { createAskUserMcpServer } from "../agents/slack/ask-tools";
 import { createAssetsMcpServer } from "../agents/slack/assets-tools";
@@ -48,6 +49,7 @@ import { createTodosMcpServer } from "../agents/slack/todos-tools";
 import { createTurnMcpServer } from "../agents/slack/turn-tools";
 import { createWalkthroughMcpServer } from "../agents/slack/walkthrough-tools";
 import { createWorkflowsMcpServer } from "../agents/slack/workflow-tools";
+import { createHealthMcpServer } from "./health-mcp";
 import { createRunnersMcpServer } from "./runners-mcp";
 import { createPortalsMcpServer } from "./portals-mcp";
 import { createSelfDeployMcpServer } from "./self-deploy";
@@ -116,7 +118,7 @@ function unused(what: string): never {
 export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   {
     name: "opensession-sessions",
-    summary: "See and steer other sessions, and spawn worker sessions.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-sessions"].summary,
     source: "packages/core/opensession-server/src/agents/slack/sessions-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts", "packages/core/opensession-server/src/agents/slack/handlers.ts", "packages/core/opensession-server/src/server/automations.ts"],
     runClasses: ["interactive", "slack", "automation"],
@@ -141,7 +143,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-admin",
-    summary: "Manage automations, MCP connections and channel memory.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-admin"].summary,
     source: "packages/core/opensession-server/src/agents/slack/admin-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts", "packages/core/opensession-server/src/agents/slack/handlers.ts"],
     runClasses: ["interactive", "slack"],
@@ -158,7 +160,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-runners",
-    summary: "Run bounded commands on trusted persistent machines (Runners).",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-runners"].summary,
     source: "packages/core/opensession-server/src/server/runners-mcp.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts"],
     runClasses: ["interactive"],
@@ -166,7 +168,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-goals",
-    summary: "Create and steer long-running, self-pacing goals.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-goals"].summary,
     source: "packages/core/opensession-server/src/agents/slack/goal-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts"],
     runClasses: ["interactive"],
@@ -175,7 +177,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-search",
-    summary: "Search and read the distilled record of past sessions.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-search"].summary,
     source: "packages/core/opensession-server/src/agents/slack/search-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts"],
     runClasses: ["interactive"],
@@ -183,7 +185,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-self-deploy",
-    summary: "Deploy this instance to a sha and restart the live server.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-self-deploy"].summary,
     source: "packages/core/opensession-server/src/server/self-deploy.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts"],
     runClasses: ["interactive"],
@@ -192,7 +194,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-humans",
-    summary: "Ask a teammate and fold their answer back into this session.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-humans"].summary,
     source: "packages/core/opensession-server/src/agents/slack/humans-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts", "packages/core/opensession-server/src/agents/slack/handlers.ts", "packages/core/opensession-server/src/server/goal-runner.ts"],
     runClasses: ["interactive", "slack", "goal"],
@@ -201,7 +203,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-keychain",
-    summary: "Borrow a teammate's credential for a stated purpose, with their approval.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-keychain"].summary,
     source: "packages/core/opensession-server/src/agents/slack/keychain-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts"],
     runClasses: ["interactive"],
@@ -210,7 +212,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-publish",
-    summary: "Publish a directory as a durable internal web app.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-publish"].summary,
     source: "packages/core/opensession-server/src/agents/slack/publish-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts"],
     runClasses: ["interactive"],
@@ -224,7 +226,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-repos",
-    summary: "Attach or switch repos, and link a PR to this session.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-repos"].summary,
     source: "packages/core/opensession-server/src/agents/slack/repos-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts"],
     runClasses: ["interactive"],
@@ -241,7 +243,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-memory",
-    summary: "Durable repo / user / team memory, shared with Slack channel memory.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-memory"].summary,
     source: "packages/core/opensession-server/src/agents/slack/memory-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts"],
     runClasses: ["interactive"],
@@ -251,7 +253,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-web",
-    summary: "Read a URL as text, search what was fetched, clone a GitHub repo. No web search.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-web"].summary,
     source: "packages/core/opensession-server/src/server/web-mcp.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts"],
     runClasses: ["interactive"],
@@ -260,7 +262,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-portals",
-    summary: "Supervised HTTP/WebSocket services for this session's workspace.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-portals"].summary,
     source: "packages/core/opensession-server/src/server/portals-mcp.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts"],
     runClasses: ["interactive"],
@@ -277,7 +279,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-walkthrough",
-    summary: "Publish a walkthrough (video, before/after, writeup) onto the Review tab and the PR.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-walkthrough"].summary,
     source: "packages/core/opensession-server/src/agents/slack/walkthrough-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts"],
     runClasses: ["interactive"],
@@ -286,7 +288,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-slack",
-    summary: "Open an editable Slack composer — the human still presses Send.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-slack"].summary,
     source: "packages/core/opensession-server/src/agents/slack/slack-compose-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts"],
     runClasses: ["interactive"],
@@ -295,7 +297,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-ask",
-    summary: "Ask the human a blocking question (for engines with no native ask tool).",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-ask"].summary,
     source: "packages/core/opensession-server/src/agents/slack/ask-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts", "packages/core/opensession-server/src/agents/slack/handlers.ts"],
     runClasses: ["interactive", "slack"],
@@ -304,7 +306,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-workflows",
-    summary: "Deterministic agent fan-out from a model-authored script.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-workflows"].summary,
     source: "packages/core/opensession-server/src/agents/slack/workflow-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts", "packages/core/opensession-server/src/server/automations.ts"],
     runClasses: ["interactive", "automation"],
@@ -319,7 +321,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-assets",
-    summary: "Per-session scratch assets, previewed in the Assets tab.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-assets"].summary,
     source: "packages/core/opensession-server/src/agents/slack/assets-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts"],
     runClasses: ["interactive"],
@@ -328,7 +330,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-todos",
-    summary: "The user's Desk todo list.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-todos"].summary,
     source: "packages/core/opensession-server/src/agents/slack/todos-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts"],
     runClasses: ["interactive"],
@@ -338,7 +340,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-papercuts",
-    summary: "Append-only friction log.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-papercuts"].summary,
     source: "packages/core/opensession-server/src/agents/slack/papercuts-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts", "packages/core/opensession-server/src/server/automations.ts"],
     runClasses: ["interactive", "automation"],
@@ -354,7 +356,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-report",
-    summary: "Publish this run's durable HTML report into the Reports view.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-report"].summary,
     source: "packages/core/opensession-server/src/agents/slack/report-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/automations.ts"],
     runClasses: ["automation"],
@@ -367,7 +369,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-turn",
-    summary: "Say \"looked, nothing to report\" instead of ending on silence.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-turn"].summary,
     source: "packages/core/opensession-server/src/agents/slack/turn-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/automations.ts"],
     runClasses: ["automation"],
@@ -375,8 +377,17 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
     build: () => createTurnMcpServer({ turnKey: SESSION_ID }),
   },
   {
+    name: "opensession-health",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-health"].summary,
+    source: "packages/core/opensession-server/src/server/health-mcp.ts",
+    wiring: ["packages/core/opensession-server/src/server/automations.ts"],
+    runClasses: ["automation"],
+    note: "The only way a monitor can see its own host: loopback fetches are refused and unattended ask runs have no shell. One argument-less read, no writes.",
+    build: () => createHealthMcpServer(),
+  },
+  {
     name: "opensession-self",
-    summary: "A self-improving automation reading and rewriting its OWN prompt.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-self"].summary,
     source: "packages/core/opensession-server/src/agents/slack/self-improve-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/automations.ts"],
     runClasses: ["automation"],
@@ -390,7 +401,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-github",
-    summary: "Trigger the PR behaviours (review / auto-fix / simplify / adversarial).",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-github"].summary,
     source: "packages/core/opensession-server/src/agents/slack/github-tools.ts",
     wiring: ["packages/core/opensession-server/src/agents/slack/handlers.ts"],
     runClasses: ["slack"],
@@ -399,7 +410,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
   },
   {
     name: "opensession-goal-self",
-    summary: "A running goal's own cadence controls and fact ledger.",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-goal-self"].summary,
     source: "packages/core/opensession-server/src/agents/slack/goal-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/goal-runner.ts", "packages/core/opensession-server/src/server/interactive-mcp.ts"],
     runClasses: ["goal"],

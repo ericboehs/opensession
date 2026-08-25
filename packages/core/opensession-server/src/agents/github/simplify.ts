@@ -1,5 +1,5 @@
 /**
- * Behavior 3: the `os-simplify` label (legacy `michael-simplify`). One `/simplify` pass on the PR's changes in a
+ * Behavior 3: the `os-simplify` label. One `/simplify` pass on the PR's changes in a
  * PR-branch worktree, push, post a summary, then re-run the review on the result.
  * Removes the label when done.
  */

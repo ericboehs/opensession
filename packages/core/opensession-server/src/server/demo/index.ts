@@ -19,14 +19,14 @@ import { generateDemoData } from "./generate";
 import { startDemoReplayer } from "./replay";
 import { offerAskCard, type AskQuestionInput } from "../asks";
 import {
-  appendOpencodeTranscript,
-  recordBksSessionFor,
+  appendTranscriptEntries,
+  recordEngineSessionOwner,
   transcriptLineAssistantText,
   transcriptLineUser,
-} from "../opencode-transcript";
+} from "../transcript-persistence";
 import { touchNativeSession } from "../session-cache";
 import {
-  DEMO_ASK_OC_SESSION_ID,
+  DEMO_ASK_ENGINE_SESSION_ID,
   DEMO_ASK_SESSION_ID,
   demoAskQuestions,
 } from "./fixtures";
@@ -45,7 +45,7 @@ const g = globalThis as { __osDemoState?: DemoState };
 function offerDemoAsk(state: DemoState): void {
   const sessionId = DEMO_ASK_SESSION_ID;
   const questions = demoAskQuestions() as AskQuestionInput[];
-  recordBksSessionFor(DEMO_ASK_OC_SESSION_ID, sessionId);
+  recordEngineSessionOwner(DEMO_ASK_ENGINE_SESSION_ID, sessionId);
   offerAskCard(sessionId, questions, (answers) => {
     try {
       if (answers) {
@@ -53,7 +53,7 @@ function offerDemoAsk(state: DemoState): void {
         // path (import-first gate pulls the seeded jsonl history in), so the
         // Answer flow visibly completes end-to-end.
         const picked = Object.values(answers).join("; ");
-        appendOpencodeTranscript(DEMO_ASK_OC_SESSION_ID, [
+        appendTranscriptEntries(DEMO_ASK_ENGINE_SESSION_ID, [
           transcriptLineUser(`[Demo viewer] ${picked}`),
           transcriptLineAssistantText(
             `Noted — going with **${picked}**. I'll draft the rollout plan on that basis. (Demo session: the card re-arms in a moment.)`,
@@ -83,7 +83,7 @@ function offerDemoAsk(state: DemoState): void {
 export async function startDemo(): Promise<void> {
   // Isolation precondition — refuse, don't trust the caller. Demo writes fan
   // out beyond the sessions dir (PR caches, automations, audit, goals via
-  // stateDir(); opencode maps/transcripts via their own resolvers), so the
+  // stateDir(); pi maps/transcripts via their own resolvers), so the
   // strict OPENSESSION_STATE_DIR master knob is required — a sessions-dir-only
   // redirect would leak the stateDir() stores into the operator's live state.
   // The engine-transcripts dir must ALSO resolve inside the state root (it has
@@ -95,15 +95,6 @@ export async function startDemo(): Promise<void> {
     console.error(
       "[demo] refusing to start: OPENSESSION_DEMO=1 requires OPENSESSION_STATE_DIR " +
         "(demo data must never seed live state; boot via .agents/start.sh or set it explicitly)",
-    );
-    return;
-  }
-  const { OPENCODE_TRANSCRIPTS_DIR } = await import("../opencode-transcript");
-  if (!`${OPENCODE_TRANSCRIPTS_DIR}/`.startsWith(`${stateRoot.replace(/\/$/, "")}/`)) {
-    console.error(
-      `[demo] refusing to start: engine transcripts dir (${OPENCODE_TRANSCRIPTS_DIR}) resolves ` +
-        "outside OPENSESSION_STATE_DIR — set OPENSESSION_OPENCODE_TRANSCRIPTS_DIR under the state dir " +
-        "(as .agents/start.sh does) so demo transcripts can't land next to real ones",
     );
     return;
   }

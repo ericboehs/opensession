@@ -233,6 +233,33 @@ enum OS1API {
         try await get("/api/sessions/\(sessionId)/transcript")
     }
 
+    struct TranscriptSearchMatch: Decodable, Equatable, Sendable {
+        let id: String
+        let snippet: String
+    }
+
+    private struct TranscriptSearchResponse: Decodable, Sendable {
+        let matches: [TranscriptSearchMatch]
+    }
+
+    /// Search visible transcript text across sessions. The server ignores
+    /// one-character queries too, but keeping them local avoids a round trip
+    /// while someone is still starting to type.
+    static func searchTranscripts(_ query: String) async throws -> [TranscriptSearchMatch] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else { return [] }
+        let response: TranscriptSearchResponse = try await get(
+            transcriptSearchPath(query: trimmed)
+        )
+        return response.matches
+    }
+
+    nonisolated static func transcriptSearchPath(query: String) -> String {
+        var components = URLComponents()
+        components.queryItems = [URLQueryItem(name: "q", value: query)]
+        return "/api/sessions/search?\(components.percentEncodedQuery ?? "")"
+    }
+
     /// One sub-agent's transcript. `agentId` comes off the spawning Task
     /// call — its result's `agentId`, or the `ses_…` the result announces.
     static func subagent(
@@ -322,6 +349,65 @@ enum OS1API {
             withAllowedCharacters: .urlPathAllowed
         ) ?? reportId
         return URL(string: "\(base.absoluteString)/api/reports/\(group)/\(report)/raw")
+    }
+
+    // ── Tasks: the shared list agents write to ──────────────────────────────
+
+    /// Every task on this person's list, open ones first.
+    ///
+    /// Asks for all statuses rather than just the open ones, because the
+    /// screen offers to show what is done and a second round trip to reveal
+    /// it would be slower than the list is long.
+    static func todos() async throws -> [TodoItem] {
+        var components = URLComponents()
+        components.queryItems = [
+            URLQueryItem(name: "status", value: "all"),
+            URLQueryItem(name: "user", value: ServerConfig.shared.userName),
+        ]
+        let response: TodoListResponse = try await get(
+            "/api/todos?\(components.percentEncodedQuery ?? "")"
+        )
+        return response.todos
+    }
+
+    /// Add one task, owned by the signed-in person.
+    @discardableResult
+    static func addTodo(text: String) async throws -> TodoItem {
+        let response: TodoResponse = try await post(
+            "/api/todos",
+            body: ["text": text, "user": ServerConfig.shared.userName]
+        )
+        return response.todo
+    }
+
+    /// Move one task between open, done and dropped.
+    @discardableResult
+    static func setTodoStatus(id: String, status: TodoStatus) async throws -> TodoItem {
+        let encoded = id.addingPercentEncoding(
+            withAllowedCharacters: .urlPathAllowed
+        ) ?? id
+        let response: TodoResponse = try await patch(
+            "/api/todos/\(encoded)",
+            body: ["status": status.rawValue, "user": ServerConfig.shared.userName]
+        )
+        return response.todo
+    }
+
+    // ── Feed ────────────────────────────────────────────────────────────────
+
+    /// Recent pull requests across every repo, including ones merged outside
+    /// Open Session.
+    static func recentPrs() async throws -> [RecentPr] {
+        let response: RecentPrsResponse = try await get("/api/recent-prs")
+        return response.prs
+    }
+
+    /// Recent commits for repos that ship without pull requests, from the last
+    /// `days`. The server clamps the window to what it read and says whether
+    /// anything older is left, so the feed can stop offering to widen a window
+    /// that has already reached the end of the history.
+    static func recentCommits(days: Int) async throws -> RecentCommitPage {
+        try await get("/api/recent-commits?days=\(days)")
     }
 
     /// `@`-mention targets matching a query, for the composer's "Reference a
@@ -515,11 +601,21 @@ enum OS1API {
         return try await responseData(for: request)
     }
 
-    /// PR details for the session's branch, or nil when it has no PR — the
-    /// route answers a bare JSON `null` in that case (a real answer, not an
-    /// error), so probe the raw body before decoding.
-    static func pr(sessionId: String) async throws -> PrDetails? {
-        let data = try await getData("/api/sessions/\(sessionId)/pr")
+    /// PR details for the primary branch or an explicit repo and branch target.
+    /// The route answers a bare JSON `null` when that target has no PR, so
+    /// probe the raw body before decoding.
+    static func pr(
+        sessionId: String,
+        repo: String? = nil,
+        branch: String? = nil
+    ) async throws -> PrDetails? {
+        var components = URLComponents()
+        components.path = "/api/sessions/\(sessionId)/pr"
+        components.queryItems = [
+            repo.map { URLQueryItem(name: "repo", value: $0) },
+            branch.map { URLQueryItem(name: "branch", value: $0) },
+        ].compactMap { $0 }
+        let data = try await getData(components.string ?? components.path)
         let body = String(decoding: data, as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if body.isEmpty || body == "null" { return nil }
@@ -912,8 +1008,25 @@ enum OS1API {
         )
     }
 
+    /// Build the parked-draft value sent to the workspace API. Blank text is
+    /// absence, so an existing draft is patched with JSON null instead.
+    static func workspaceDraftPayload(
+        text: String,
+        autoName: Bool? = nil
+    ) -> [String: Any]? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        var draft: [String: Any] = [
+            "text": trimmed,
+            "updatedAt": ISO8601DateFormatter.draftStamp.string(from: Date()),
+            "by": ServerConfig.shared.userName,
+        ]
+        if let autoName { draft["autoName"] = autoName }
+        return draft
+    }
+
     /// Park an unsent New Session prompt on a workspace. A fresh draft gets a
-    /// fresh sessionless workspace; resuming one updates that same row.
+    /// fresh sessionless workspace; clearing a resumed draft removes its row.
     static func saveWorkspaceDraft(
         text: String,
         repo: String,
@@ -921,13 +1034,7 @@ enum OS1API {
         autoName: Bool? = nil
     ) async throws -> WorkspaceSummary {
         struct WorkspaceResponse: Decodable { let workspace: WorkspaceSummary }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        var draft: [String: Any] = [
-            "text": trimmed,
-            "updatedAt": ISO8601DateFormatter.draftStamp.string(from: Date()),
-            "by": ServerConfig.shared.userName,
-        ]
-        if let autoName { draft["autoName"] = autoName }
+        let draft = workspaceDraftPayload(text: text, autoName: autoName)
 
         let response: WorkspaceResponse
         if let workspaceId, !workspaceId.isEmpty {
@@ -935,13 +1042,13 @@ enum OS1API {
                 withAllowedCharacters: .urlPathAllowed
             ) ?? workspaceId
             response = try await patch(
-                "/api/workspaces/\(encoded)", body: ["draft": draft]
+                "/api/workspaces/\(encoded)", body: ["draft": draft ?? NSNull()]
             )
         } else {
-            var newDraft = draft
+            guard var newDraft = draft else { throw APIError.server("A draft needs text.") }
             newDraft["autoName"] = true
             var body: [String: Any] = [
-                "name": WorkspaceDraft.workspaceName(for: trimmed),
+                "name": WorkspaceDraft.workspaceName(for: text),
                 "draft": newDraft,
                 "user": ServerConfig.shared.userName,
             ]
@@ -1507,11 +1614,13 @@ enum OS1API {
         effort: String? = nil,
         fastMode: Bool = false,
         images: [String] = [],
+        files: [AttachedFile] = [],
         workspaceId: String? = nil,
-        sandbox: String? = nil
+        sandbox: String? = nil,
+        requestId: String? = nil
     ) async throws -> String {
         struct CreateResponse: Decodable { let id: String }
-        let body = createSessionBody(
+        var body = createSessionBody(
             prompt: prompt,
             repo: repo,
             mode: mode,
@@ -1519,11 +1628,21 @@ enum OS1API {
             effort: effort,
             fastMode: fastMode,
             images: images,
+            files: files,
             workspaceId: workspaceId,
             sandbox: sandbox,
-            user: ServerConfig.shared.userName
+            user: ServerConfig.shared.userName,
+            requestId: requestId
         )
+        let config = ServerConfig.shared
+        let scope = config.githubLogin.isEmpty ? config.userName : config.githubLogin
+        let intents = SessionCreateIntent(
+            key: "dev.tella.os1.create-intent.v1:\(config.baseURLString):\(scope)"
+        )
+        let stableRequestId = requestId ?? intents.requestId(for: body)
+        body["requestId"] = stableRequestId
         let response: CreateResponse = try await post("/api/sessions", body: body)
+        intents.complete(requestId: stableRequestId)
         return response.id
     }
 
@@ -1538,11 +1657,14 @@ enum OS1API {
         effort: String? = nil,
         fastMode: Bool = false,
         images: [String] = [],
+        files: [AttachedFile] = [],
         workspaceId: String? = nil,
         sandbox: String? = nil,
-        user: String
+        user: String,
+        requestId: String? = nil
     ) -> [String: Any] {
         var body: [String: Any] = ["prompt": prompt, "mode": mode]
+        if let requestId, !requestId.isEmpty { body["requestId"] = requestId }
         // Sent only when the composer actually offered the choice. Omitting it
         // lets the instance's own sandbox default decide, which is the right
         // behaviour when there was nothing to pick from — and the wrong one
@@ -1557,8 +1679,34 @@ enum OS1API {
         if let effort, !effort.isEmpty { body["effort"] = effort }
         if fastMode { body["fastMode"] = true }
         if !images.isEmpty { body["images"] = images }
+        let stagedFiles = files.compactMap(\.wireValue)
+        if !stagedFiles.isEmpty { body["files"] = stagedFiles }
         if !user.isEmpty { body["user"] = user }
         return body
+    }
+
+    /// Upload one composer file before it rides a prompt or session create.
+    /// The route returns a server-confined path, so the JSON request carries no
+    /// file bytes and can use the same path as the web composer.
+    static func uploadComposerFile(_ file: AttachedFile) async throws -> AttachedFile {
+        struct UploadResponse: Decodable, Sendable {
+            let name: String
+            let path: String
+        }
+        guard let data = file.data else {
+            if file.isStaged { return file }
+            throw APIError.server("The attachment is no longer available")
+        }
+        let encodedName = file.name.addingPercentEncoding(
+            withAllowedCharacters: .alphanumerics
+        ) ?? "file"
+        let response: UploadResponse = try await upload(
+            "/api/upload",
+            data: data,
+            contentType: file.mediaType,
+            headers: ["x-file-name": encodedName]
+        )
+        return file.staged(name: response.name, path: response.path)
     }
 
     /// What the server did with a message — or why it couldn't.
@@ -1608,10 +1756,14 @@ enum OS1API {
             return .rejected(APIError.badURL.localizedDescription)
         }
 
+        let normalizedImages = images.compactMap(AttachedImage.serverDataURL)
+        guard normalizedImages.count == images.count else {
+            return .rejected("An attached image could not be prepared. Attach it again.")
+        }
         var body: [String: Any] = ["content": content, "clientId": clientId]
         if busyMode == "queue" || busyMode == "steer" { body["busy"] = busyMode }
         if !user.isEmpty { body["user"] = user }
-        if !images.isEmpty { body["images"] = images }
+        if !normalizedImages.isEmpty { body["images"] = normalizedImages }
         if let effort, !effort.isEmpty { body["effort"] = effort }
         if let fastMode { body["fastMode"] = fastMode }
 

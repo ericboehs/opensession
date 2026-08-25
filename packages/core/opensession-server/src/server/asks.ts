@@ -6,7 +6,7 @@
  * whole time, so whoever answers first (web or Slack) wins.
  */
 
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, rmSync } from "fs";
 import { personaName, productName } from "./config";
 import {
 	awaitBlockingAnswer,
@@ -16,8 +16,14 @@ import {
 } from "./human-asks";
 import {
 	AWS_HUMAN_AUTH_DENIAL,
-	isAwsHumanAuthRequest,
+	isAwsHumanAuthRequest
 } from "./aws-creds";
+import { askRecordContent } from "@tellahq/opensession-protocol/notices";
+import type { AnsweredAskData } from "@tellahq/opensession-protocol/notices";
+import {
+	storeAppendUserLineEarly,
+	transcriptLineAskRecord,
+} from "./transcript-persistence";
 import { resolveTeammate } from "./shared/user-mappings";
 import { transitionRunState } from "./run-state";
 import { findSession } from "./session-cache";
@@ -25,8 +31,16 @@ import { sessionsDir } from "./paths";
 import { tryGetSessionControl } from "./session-control";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { broadcastToSession } from "./ws-hub";
-
-const g = globalThis as any;
+import {
+	AskOwnedMap,
+	EphemeralSessionMap,
+	fireStoredSessionTimer,
+	registerSessionTimerHandler,
+	sessionAsk,
+	sessionKernel,
+	sessionKernelStore,
+} from "./session-kernel";
+import { wrapContext } from "./prompt-context";
 
 const ASK_UI_TIMEOUT_MS = 4 * 60 * 1000;
 
@@ -47,12 +61,35 @@ export interface PendingAsk {
 	escalationWaitStarted?: boolean;
 	answerReceived?: boolean;
 	earlyAnswer?: Record<string, string> | null;
+	/** Durable answer receipt recorded by the actor before the gateway
+	 * resolver ran. Preserved through restore so retry identity and the
+	 * committed payload survive a restart. */
+	answer?: { requestId: string; answers: Record<string, string> | null };
 	restored?: boolean;
 	/** Test/isolated-instance seam; live asks use pendingAskStorePath(). */
 	storePath?: string;
 }
-export const pendingAsks: Map<string, PendingAsk> = (g.__pendingAsks ??=
-	new Map());
+export const pendingAsks: Map<string, PendingAsk> = new AskOwnedMap();
+
+/** The durable map may retain a restored ask after its answer arrives, until
+ * the detached run host reconnects and adopts that answer. That recovery
+ * record is not still actionable and must never be projected back as a card. */
+export function pendingAskAwaitingAnswer(
+	sessionId: string,
+): PendingAsk | undefined {
+	const pending = pendingAsks.get(sessionId);
+	return pending?.answerReceived ? undefined : pending;
+}
+
+/** One actor snapshot for list rendering, instead of one RPC per session. */
+export function pendingAskIdsAwaitingAnswer(): Set<string> {
+	const ids = new Set<string>();
+	for (const [sessionId, value] of sessionAsk({ op: "entries" })) {
+		const pending = value as { answerReceived?: boolean } | undefined;
+		if (!pending?.answerReceived) ids.add(sessionId);
+	}
+	return ids;
+}
 
 type PersistedPendingAsk = {
 	sessionId: string;
@@ -63,6 +100,7 @@ type PersistedPendingAsk = {
 	escalatedPersonName?: string;
 	answerReceived?: boolean;
 	earlyAnswer?: Record<string, string> | null;
+	answer?: { requestId: string; answers: Record<string, string> | null };
 };
 
 type PendingAskTimer = {
@@ -71,14 +109,29 @@ type PendingAskTimer = {
 };
 
 export const pendingAskTimers: Map<string, PendingAskTimer> =
-	(g.__pendingAskTimers ??= new Map());
+	new EphemeralSessionMap();
 
 export function pendingAskStorePath(): string {
 	return `${sessionsDir()}/pending-asks.json`;
 }
 
+function removeLegacyAskStore(storePath = pendingAskStorePath()): void {
+	try {
+		rmSync(storePath, { force: true });
+	} catch (error) {
+		console.error(`[ask] Failed to remove migrated ask store ${storePath}:`, error);
+	}
+}
+
 export function persistPendingAsks(storePath = pendingAskStorePath()): void {
 	try {
+		// Custom paths remain useful migration/test fixtures. Production JSON is
+		// retired after the actor records its one-time import receipt.
+		if (
+			storePath === pendingAskStorePath() &&
+			sessionKernelStore().askMigrationComplete()
+		)
+			return;
 		const asks: PersistedPendingAsk[] = [];
 		for (const [sessionId, ask] of pendingAsks) {
 			if (!ask.durable || !ask.askedAt) continue;
@@ -94,6 +147,7 @@ export function persistPendingAsks(storePath = pendingAskStorePath()): void {
 				...(ask.answerReceived
 					? { answerReceived: true, earlyAnswer: ask.earlyAnswer ?? null }
 					: {}),
+				...(ask.answer ? { answer: ask.answer } : {}),
 			});
 		}
 		writeJsonAtomic(storePath, { asks }, false, 0o600);
@@ -106,6 +160,7 @@ function clearAskTimer(sessionId: string): void {
 	const timer = pendingAskTimers.get(sessionId);
 	if (timer) clearTimeout(timer.handle);
 	pendingAskTimers.delete(sessionId);
+	sessionKernel(sessionId).cancelTimer("ask_escalation");
 }
 
 function retirePendingAsk(sessionId: string, questionId: string): void {
@@ -125,15 +180,18 @@ function sameQuestions(a: unknown[], b: AskQuestionInput[]): boolean {
 	}
 }
 
-function fallbackAnswerText(
+function fallbackAnswerContext(
 	questions: AskQuestionInput[],
 	answers: Record<string, string>,
 ): string {
 	const lines = questions.map((question) => {
 		const answer = answers[question.question] ?? "";
-		return `**${question.question}**\n\n${answer}`;
+		return `Question: ${question.question}\nAnswer: ${answer}`;
 	});
-	return `💬 Answered after the server restarted:\n\n${lines.join("\n\n")}`;
+	return wrapContext(
+		`A blocking question was answered before restart recovery finished. Treat this as the person's answer and continue:\n\n${lines.join("\n\n")}`,
+		"restart-recovery",
+	);
 }
 
 /** A restored card initially has no in-process tool promise to resolve. If the
@@ -151,6 +209,7 @@ function resolveRestoredAsk(
 	clearAskTimer(sessionId);
 	ask.answerReceived = true;
 	ask.earlyAnswer = answers;
+	pendingAsks.set(sessionId, ask);
 	if (ask.escalatedAskId) cancelAsk(ask.escalatedAskId);
 	persistPendingAsks(ask.storePath);
 	broadcastToSession(sessionId, {
@@ -165,33 +224,179 @@ function resolveRestoredAsk(
 
 export function settleRestoredAskAfterRecovery(sessionId: string): boolean {
 	const ask = pendingAsks.get(sessionId);
-	if (!ask?.restored) return false;
-	const answers = ask.answerReceived ? ask.earlyAnswer ?? null : null;
-	retirePendingAsk(sessionId, ask.questionId);
-	if (ask.escalatedAskId) cancelAsk(ask.escalatedAskId);
-	broadcastToSession(sessionId, {
-		type: "ask_resolved",
-		sessionId,
-		questionId: ask.questionId,
-	});
-	if (!answers) return false;
+	if (!ask) return false;
+	if (!ask.restored) {
+		if (ask.answerReceived) retirePendingAsk(sessionId, ask.questionId);
+		return false;
+	}
+	const answers = ask.answerReceived ? (ask.earlyAnswer ?? null) : null;
+	if (!answers) {
+		retirePendingAsk(sessionId, ask.questionId);
+		if (ask.escalatedAskId) cancelAsk(ask.escalatedAskId);
+		broadcastToSession(sessionId, {
+			type: "ask_resolved",
+			sessionId,
+			questionId: ask.questionId,
+		});
+		return false;
+	}
 	const control = tryGetSessionControl();
 	if (!control) {
 		console.error(`[ask] No session control to deliver restored answer for ${sessionId}`);
 		return false;
 	}
+	const questions = ask.questions as AskQuestionInput[];
 	const session = findSession(sessionId);
 	void control
 		.deliverToSession(
 			sessionId,
-			fallbackAnswerText(ask.questions as AskQuestionInput[], answers),
+			fallbackAnswerContext(questions, answers),
 			session?.startedBy || undefined,
-			{ busy: "queue" },
+			{
+				busy: "queue",
+				deliveryId: `restored-ask-answer:${ask.questionId}`,
+			},
 		)
-		.catch((e) =>
-			console.error(`[ask] Failed to deliver restored answer for ${sessionId}:`, e),
+		.then((result) => {
+			if (result.status === "error") return;
+			// The continuation is now durably admitted under its stable id. Only
+			// now may the answered card and recovery intent be retired.
+			recordAskAnswer(sessionId, questions, answers);
+			retirePendingAsk(sessionId, ask.questionId);
+			if (ask.escalatedAskId) cancelAsk(ask.escalatedAskId);
+			broadcastToSession(sessionId, {
+				type: "ask_resolved",
+				sessionId,
+				questionId: ask.questionId,
+			});
+		})
+		.catch((error) =>
+			console.error(`[ask] Failed to admit restored answer for ${sessionId}:`, error),
 		);
 	return true;
+}
+
+// ── The durable record of an answered card ───────────────────────────────────
+//
+// The question card is transient: it is removed the moment it resolves, and it
+// never was a transcript entry, so a session that stopped to ask something
+// showed no sign of it afterwards. What was on offer, and which of those the
+// human picked, is often the reason the run went the way it did.
+//
+// So on resolution we write one system entry: a title carrying the pick, and a
+// collapsed body carrying the question and the options it was picked from.
+// Deliberately a record rather than a re-render of the card, because it is
+// read later by someone scanning what happened, not answered.
+
+const ASK_TITLE_MAX = 72;
+const OPTION_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+/** The wire format joins a multi-select answer with ", " (see AskCard). */
+function answerLabels(answer: string): string[] {
+	return answer
+		.split(",")
+		.map((s) => s.trim())
+		.filter(Boolean);
+}
+
+/** One line for the title row: a question or a typed answer can be prose. */
+function oneLine(text: string, max: number): string {
+	const flat = text.replace(/\s+/g, " ").trim();
+	return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+function askRecordTitle(
+	questions: AskQuestionInput[],
+	answers: Record<string, string>,
+): string {
+	if (questions.length !== 1) return `Answered ${questions.length} questions`;
+	const answer = (answers[questions[0].question] ?? "").trim();
+	return answer ? `Answered: ${oneLine(answer, ASK_TITLE_MAX)}` : "Answered";
+}
+
+function askRecordBody(
+	questions: AskQuestionInput[],
+	answers: Record<string, string>,
+): string {
+	return questions
+		.map((q) => {
+			const answer = (answers[q.question] ?? "").trim();
+			const picked = new Set(answerLabels(answer));
+			const options = q.options ?? [];
+			const lines: string[] = [];
+			lines.push(`**${q.header ? `${q.header}: ` : ""}${q.question}**`, "");
+			options.forEach((o, i) => {
+				const letter = `${OPTION_LETTERS[i] ?? "-"}.`;
+				// The pick is bold against its neighbours: the options are here for
+				// context, the choice is the thing being reported.
+				lines.push(
+					picked.has(o.label)
+						? `- **${letter} ${o.label}**`
+						: `- ${letter} ${o.label}`,
+				);
+			});
+			// Anything answered that wasn't on offer was typed into the card's own
+			// free-text field, so it has no letter to wear.
+			const typed = answerLabels(answer).filter(
+				(l) => !options.some((o) => o.label === l),
+			);
+			if (typed.length) lines.push(`- **${typed.join(", ")}** (typed)`);
+			if (!answer) lines.push("- No answer.");
+			return lines.join("\n");
+		})
+		.join("\n\n");
+}
+
+/** The record's `content`: title line plus markdown body. Exported for tests,
+ *  which is where the compatibility wording is pinned. */
+export function askRecordEntryContent(
+	questions: AskQuestionInput[],
+	answers: Record<string, string>,
+): string {
+	return askRecordContent(
+		askRecordTitle(questions, answers),
+		askRecordBody(questions, answers),
+	);
+}
+
+/** Exact read-only card data. It rides beside the compatibility text in the
+ *  JSONL line, preserving option descriptions and multi-select semantics that
+ *  cannot be recovered reliably from rendered markdown. */
+export function answeredAskData(
+	questions: AskQuestionInput[],
+	answers: Record<string, string>,
+): AnsweredAskData {
+	return {
+		version: 1,
+		questions: questions.map((q) => ({
+			question: q.question,
+			answer: answers[q.question] ?? "",
+			...(q.header ? { header: q.header } : {}),
+			...(q.options ? { options: q.options } : {}),
+			...(q.multiSelect ? { multiSelect: true } : {}),
+		})),
+	};
+}
+
+/** Persist the answered card. Best-effort: a transcript write must never take
+ *  down the run that was waiting on the answer. */
+export function recordAskAnswer(
+	sessionId: string,
+	questions: AskQuestionInput[],
+	answers: Record<string, string> | null,
+): void {
+	if (!answers || !questions.length) return;
+	try {
+		storeAppendUserLineEarly(
+			sessionId,
+			transcriptLineAskRecord(
+				askRecordEntryContent(questions, answers),
+				answeredAskData(questions, answers),
+			),
+		);
+	} catch (e) {
+		console.error(`[ask] Failed to record answer for ${sessionId}:`, e);
+	}
 }
 
 // Flatten an AskUserQuestion payload into a single Slack-friendly prompt. Option
@@ -259,11 +464,65 @@ function waitForEscalatedAnswer(
 	});
 }
 
+async function escalatePendingAsk(
+	sessionId: string,
+	questionId: string,
+): Promise<void> {
+	const current = pendingAsks.get(sessionId);
+	if (!current || current.questionId !== questionId || current.answerReceived)
+		return;
+	if (current.escalatedAskId) {
+		if (!current.escalationWaitStarted) {
+			current.escalationWaitStarted = true;
+			pendingAsks.set(sessionId, current);
+			waitForEscalatedAnswer(
+				sessionId,
+				questionId,
+				current.questions as AskQuestionInput[],
+				current.escalatedAskId,
+				current.escalatedPersonName || "Your teammate",
+			);
+		}
+		return;
+	}
+	const escalated = await escalateAskToSlack(
+		sessionId,
+		current.questionId,
+		current.questions as AskQuestionInput[],
+	);
+	const latest = pendingAsks.get(sessionId);
+	if (!latest || latest.questionId !== questionId || latest.answerReceived) {
+		if (escalated) cancelAsk(escalated.askId);
+		return;
+	}
+	if (!escalated) {
+		latest.resolve(null);
+		return;
+	}
+	latest.escalatedAskId = escalated.askId;
+	latest.escalatedPersonName = escalated.personName;
+	latest.escalationWaitStarted = true;
+	pendingAsks.set(sessionId, latest);
+	persistPendingAsks(latest.storePath);
+	waitForEscalatedAnswer(
+		sessionId,
+		questionId,
+		latest.questions as AskQuestionInput[],
+		escalated.askId,
+		escalated.personName,
+	);
+}
+
+registerSessionTimerHandler("ask_escalation", async (timer) => {
+	const payload = timer.payload as { questionId?: unknown } | undefined;
+	if (typeof payload?.questionId !== "string") return;
+	await escalatePendingAsk(timer.sessionId, payload.questionId);
+});
+
 function armAskEscalation(
 	sessionId: string,
 	ask: PendingAsk,
 	questions: AskQuestionInput[],
-	finish: (answers: Record<string, string> | null) => void,
 	now = Date.now(),
 ): void {
 	clearAskTimer(sessionId);
@@ -282,53 +541,80 @@ function armAskEscalation(
 		return;
 	}
 	const dueAt = ask.askedAt + ASK_UI_TIMEOUT_MS;
+	sessionKernel(sessionId).scheduleTimer({
+		timerId: "ask_escalation",
+		kind: "ask_escalation",
+		dueAt,
+		payload: { questionId: ask.questionId },
+	});
 	const handle = setTimeout(() => {
 		pendingAskTimers.delete(sessionId);
-		if (pendingAsks.get(sessionId)?.questionId !== ask.questionId) return;
-		void escalateAskToSlack(sessionId, questions).then((escalated) => {
-			const current = pendingAsks.get(sessionId);
-			if (!current || current.questionId !== ask.questionId) {
-				if (escalated) cancelAsk(escalated.askId);
-				return;
-			}
-			if (!escalated) {
-				finish(null);
-				return;
-			}
-			current.escalatedAskId = escalated.askId;
-			current.escalatedPersonName = escalated.personName;
-			current.escalationWaitStarted = true;
-			persistPendingAsks(current.storePath);
-			waitForEscalatedAnswer(
-				sessionId,
-				ask.questionId,
-				questions,
-				escalated.askId,
-				escalated.personName,
-			);
-		});
-	}, Math.max(0, dueAt - now));
+		void fireStoredSessionTimer(sessionId, "ask_escalation").catch((error) =>
+			console.error(`[ask] Escalation timer failed for ${sessionId}:`, error),
+		);
+	}, Math.max(0, dueAt - now),);
 	pendingAskTimers.set(sessionId, { handle, dueAt });
 }
 
 /** Restore run-blocking cards after a real process restart. The durable entry
  * stays display state only until the adopted engine re-emits the ask and
  * makeAskHandler adopts its original question id and askedAt. */
-export function restorePendingAsks(options: {
+export function restorePendingAsks(
+  options: {
 	storePath?: string;
 	now?: number;
 	sessionExists?: (sessionId: string) => boolean;
-} = {}): number {
+  } = {},
+): number {
 	const storePath = options.storePath ?? pendingAskStorePath();
-	if (!existsSync(storePath)) return 0;
+  const kernelStore = sessionKernelStore();
+  const actorAuthority =
+    storePath === pendingAskStorePath() && kernelStore.askMigrationComplete();
 	let stored: { asks?: PersistedPendingAsk[] };
+  if (actorAuthority) {
+    removeLegacyAskStore(storePath);
+    stored = {
+      asks: [...pendingAsks].map(([sessionId, ask]) => ({
+        sessionId,
+        questionId: ask.questionId,
+        questions: ask.questions as AskQuestionInput[],
+        askedAt: ask.askedAt || Date.now(),
+        ...(ask.escalatedAskId ? { escalatedAskId: ask.escalatedAskId } : {}),
+        ...(ask.escalatedPersonName
+          ? { escalatedPersonName: ask.escalatedPersonName }
+          : {}),
+        ...(ask.answerReceived || ask.answer
+          ? {
+              answerReceived: true,
+              earlyAnswer:
+                ask.earlyAnswer ?? ask.answer?.answers ?? null,
+            }
+          : {}),
+        ...(ask.answer ? { answer: ask.answer } : {}),
+        // A crash between the actor's durable answer commit and the gateway
+        // resolver leaves answerReceived unset; project the committed answer
+        // so recovery consumes it instead of re-asking. The answer rides the
+        // restored record so its retry identity survives the rewrite.
+        ...(ask.answer ? { answer: ask.answer } : {}),
+      })),
+    };
+  } else {
+    if (!existsSync(storePath)) {
+      if (storePath === pendingAskStorePath()) {
+        kernelStore.markAskMigrationComplete();
+        removeLegacyAskStore(storePath);
+      }
+      return 0;
+    }
 	try {
 		stored = JSON.parse(readFileSync(storePath, "utf8"));
 	} catch (e) {
 		console.error("[ask] Failed to restore pending asks:", e);
 		return 0;
 	}
-	const sessionExists = options.sessionExists ?? ((sessionId) => !!findSession(sessionId));
+  }
+  const sessionExists =
+    options.sessionExists ?? ((sessionId) => !!findSession(sessionId));
 	let restored = 0;
 	for (const saved of stored.asks || []) {
 		if (
@@ -337,7 +623,7 @@ export function restorePendingAsks(options: {
 			!Array.isArray(saved.questions) ||
 			!Number.isFinite(saved.askedAt) ||
 			!sessionExists(saved.sessionId) ||
-			pendingAsks.has(saved.sessionId)
+      (!actorAuthority && pendingAsks.has(saved.sessionId))
 		) {
 			continue;
 		}
@@ -346,18 +632,20 @@ export function restorePendingAsks(options: {
 			questions: saved.questions,
 			durable: true,
 			askedAt: saved.askedAt,
-			...(saved.escalatedAskId
-				? { escalatedAskId: saved.escalatedAskId }
-				: {}),
+      ...(saved.escalatedAskId ? { escalatedAskId: saved.escalatedAskId } : {}),
 			...(saved.escalatedPersonName
 				? { escalatedPersonName: saved.escalatedPersonName }
 				: {}),
-			...(saved.answerReceived
+			...(saved.answerReceived || saved.answer
 				? {
 						answerReceived: true,
-						earlyAnswer: saved.earlyAnswer ?? null,
+						earlyAnswer:
+							saved.earlyAnswer ??
+							saved.answer?.answers ??
+							null,
 					}
 				: {}),
+			...(saved.answer ? { answer: saved.answer } : {}),
 			restored: true,
 			storePath,
 			resolve: (answers) =>
@@ -370,13 +658,7 @@ export function restorePendingAsks(options: {
 		};
 		pendingAsks.set(saved.sessionId, ask);
 		if (!ask.answerReceived) {
-			armAskEscalation(
-				saved.sessionId,
-				ask,
-				saved.questions,
-				ask.resolve,
-				options.now,
-			);
+      armAskEscalation(saved.sessionId, ask, saved.questions, options.now);
 			broadcastToSession(saved.sessionId, {
 				type: "ask_question",
 				sessionId: saved.sessionId,
@@ -388,9 +670,15 @@ export function restorePendingAsks(options: {
 	}
 	// Drop invalid or deleted-session records immediately. A card removed before
 	// the crash is absent because its answer path persists the delete first.
+  if (storePath === pendingAskStorePath()) {
+    kernelStore.markAskMigrationComplete();
+    removeLegacyAskStore(storePath);
+  }
 	persistPendingAsks(storePath);
 	if (restored > 0) {
-		console.log(`[ask] Restored ${restored} pending question(s) from before restart`);
+    console.log(
+      `[ask] Restored ${restored} pending question(s) from before restart`,
+    );
 	}
 	return restored;
 }
@@ -428,6 +716,7 @@ export function offerAskCard(
 			if (settled) return;
 			settled = true;
 			retract();
+			recordAskAnswer(sessionId, questions, a);
 			onAnswer(a);
 		},
 	});
@@ -459,7 +748,7 @@ export function makeAskHandler(sessionId: string) {
 		}
 		if (
 			questions.some((q) =>
-				isAwsHumanAuthRequest(q.header, q.question),
+				isAwsHumanAuthRequest(q.header, q.question)
 			)
 		) {
 			return {
@@ -491,7 +780,16 @@ export function makeAskHandler(sessionId: string) {
 				const finish = (a: Record<string, string> | null) => {
 					if (settled) return;
 					settled = true;
-					retirePendingAsk(sessionId, questionId);
+					clearAskTimer(sessionId);
+					const durableAnswer = pendingAsks.get(sessionId);
+					if (durableAnswer?.questionId === questionId) {
+						durableAnswer.answerReceived = true;
+						durableAnswer.earlyAnswer = a;
+						pendingAsks.set(sessionId, durableAnswer);
+						persistPendingAsks(durableAnswer.storePath);
+					}
+					// Before the card goes: the transcript's only trace of it.
+					recordAskAnswer(sessionId, questions, a);
 					transitionRunState(sessionId, "ask_resolved", {
 						answered: a !== null,
 					});
@@ -521,6 +819,9 @@ export function makeAskHandler(sessionId: string) {
 								earlyAnswer: existing!.earlyAnswer ?? null,
 							}
 						: {}),
+					// Preserve the durable answer receipt across adoption so retry
+					// identity and the committed payload survive the rewrite.
+					...(adopted && existing!.answer ? { answer: existing!.answer } : {}),
 					...(adopted && existing!.storePath
 						? { storePath: existing!.storePath }
 						: {}),
@@ -532,10 +833,7 @@ export function makeAskHandler(sessionId: string) {
 				if (ask.answerReceived) {
 					queueMicrotask(() => ask.resolve(ask.earlyAnswer ?? null));
 				} else {
-					armAskEscalation(sessionId, ask, questions, (a) => {
-						escalatedAskId = pendingAsks.get(sessionId)?.escalatedAskId || null;
-						finish(a);
-					});
+					armAskEscalation(sessionId, ask, questions);
 					broadcastToSession(sessionId, {
 						type: "ask_question",
 						sessionId,
@@ -562,7 +860,7 @@ export function makeAskHandler(sessionId: string) {
 							s.startedBy,
 							{
 								title: `${personaName()} needs input`,
-								body: `${s.title || sessionId} — ${questions[0]?.question || "a question is waiting"}`.slice(0, 180),
+								body: `${s.title || sessionId} — ${questions[0]?.question || "a question is waiting"}`.slice(0, 180,),
 								url: `/session/${encodeURIComponent(sessionId)}`,
 								tag: `ask-${sessionId}`,
 							},
@@ -595,6 +893,7 @@ export function makeAskHandler(sessionId: string) {
 // null when we can't resolve a teammate. Best-effort: never throws into the handler.
 async function escalateAskToSlack(
 	sessionId: string,
+	questionId: string,
 	questions: AskQuestionInput[],
 ): Promise<{ askId: string; personName: string } | null> {
 	try {
@@ -604,11 +903,11 @@ async function escalateAskToSlack(
 
 		const { question, options } = askToSlackPrompt(questions);
 		const ask = registerAsk({
+			id: `ask-${questionId}`,
 			sessionId,
 			createdBy: session?.startedBy || personaName(),
 			person,
 			question,
-			context: `_Nobody picked this up in ${productName()} within 4 minutes, so I'm bringing it to you._`,
 			options,
 			mode: "block",
 			deliver: "now",

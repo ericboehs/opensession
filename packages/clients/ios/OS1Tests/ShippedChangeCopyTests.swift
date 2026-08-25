@@ -6,21 +6,19 @@ final class ShippedChangeCopyTests: XCTestCase {
         XCTAssertEqual(
             ShippedChangeCopy.suggestion(
                 title: "Polish the composer",
-                repo: "opensession",
                 summary: "The Slack composer now keeps selected images while reconnecting.\n\nVerified on iOS."
             ),
             "The Slack composer now keeps selected images while reconnecting."
         )
     }
 
-    func testFallsBackToRepositoryAwareTitle() {
+    func testFallsBackToAnOutcomeFromTheTitle() {
         XCTAssertEqual(
             ShippedChangeCopy.suggestion(
                 title: "Polish the Slack composer",
-                repo: "tella-fusion",
                 summary: nil
             ),
-            "The Slack composer is now improved in Tella."
+            "The Slack composer is now improved."
         )
     }
 

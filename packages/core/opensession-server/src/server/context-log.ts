@@ -20,13 +20,13 @@
  * ## The choke point
  *
  * `runOnModel` (agent-runner.ts) is where every engine dispatch happens —
- * opencode, pi, and the test fake — for every
+ * pi, pi, and the test fake — for every
  * model of a fallback walk. One call there covers all of them, including the
  * handoff the walk itself prepends on a cross-provider hop, because it runs
  * once per hop with that hop's exact prompt.
  *
- * Its one blind spot is an injection added BELOW it: the opencode runner
- * prepends a same-engine-restart handoff per attempt (opencode-runner.ts), so
+ * Its one blind spot is an injection added BELOW it: the pi runner
+ * prepends a same-engine-restart handoff per attempt (pi-runner.ts), so
  * that site calls in too. Both calls are safe to overlap — an entry's id is
  * derived from its content, so re-logging a payload upserts its own row
  * instead of duplicating it, and the in-process dedupe below usually skips the
@@ -54,7 +54,7 @@
  * The MCP tool SCHEMAS themselves — every mounted tool's name, description and
  * JSON schema, the largest single input at roughly 104k tokens a run — are not
  * recordable from here, and this is a limit of the engine rather than an
- * omission. OpenCode fetches them from each MCP server at startup and neither
+ * omission. Pi fetches them from each MCP server at startup and neither
  * persists nor exposes them: `/experimental/tool` returns only its own
  * built-ins (12 tools, 23KB) and `/mcp` returns a connection status per server
  * (verified against a live server, 2026-08-16). Obtaining them would mean
@@ -75,7 +75,7 @@ import {
 	storeAppendUserLineEarly,
 	transcriptLineContextInjection,
 	transcriptLineStandingContext,
-} from "./opencode-transcript";
+} from "./transcript-persistence";
 import {
 	parseContextBlocks,
 	type ContextSource,
@@ -99,7 +99,7 @@ export interface InjectedContextInput {
 /**
  * Entry ids already written this process run. An entry id is a content hash,
  * so this only ever skips a byte-identical re-append (a retry, a second call
- * from the opencode runner) — the store would upsert those onto the same row
+ * from the pi runner) — the store would upsert those onto the same row
  * anyway; skipping saves the write and the bus wake. Bounded because a
  * long-lived server would otherwise accumulate one string per injection
  * forever; a drop past the bound costs one harmless upsert.
@@ -199,11 +199,16 @@ export type StandingContextSource =
 	 *  strips applied to them — the resolution of the scoping above, known
 	 *  only inside the runner. */
 	| "mcp-servers"
-	/** The standing instruction text the engine was given (opencode's
+	/** The standing instruction text the engine was given (pi's
 	 *  instructions file or the shared server's per-prompt `system`), which
 	 *  already folds in AGENTS.local.md / CLAUDE.local.md. Written wherever
 	 *  that text is final. */
-	| "instructions";
+	| "instructions"
+	/** The first run's complete effective provider input: Pi's final system
+	 *  prompt after AGENTS.md, skills and tool guidance have been applied, plus
+	 *  the schemas of the active tools. This is the source the session viewer
+	 *  exposes as its collapsed, lazy-loaded "Session context" row. */
+	| "session-start";
 
 export interface StandingContextInput {
 	/** Unified session id. No session ⇒ nothing to log against. */
@@ -213,6 +218,33 @@ export interface StandingContextInput {
 	source: StandingContextSource;
 	/** The full content, recorded verbatim. */
 	content?: string | null;
+}
+
+export interface SessionStartTool {
+	name: string;
+	description: string;
+	parameters: unknown;
+}
+
+/** Build the exact, human-readable snapshot shown at the start of a session.
+ * Kept here beside the writer so the audit record and the UI can never drift
+ * into two reconstructions of what the provider received. */
+export function sessionStartContext(
+	systemPrompt: string,
+	tools: SessionStartTool[],
+): string {
+	return [
+		"# System prompt",
+		systemPrompt,
+		"# Tools",
+		canonicalJson(
+			tools.map((tool) => ({
+				name: tool.name,
+				description: tool.description,
+				parameters: tool.parameters,
+			})),
+		),
+	].join("\n\n");
 }
 
 /**

@@ -31,9 +31,9 @@ export function PageLayout({
 }: PageLayoutProps) {
 	return (
 		<div
-			// The scroller the app's top bar watches, so it can close itself off
-			// with a hairline once this page has travelled under it. Read by
-			// App.tsx through hooks/useScrollEdge.ts; it styles nothing.
+			// The scroller the app's top bar watches, so it can reveal the compact
+			// title once this page has travelled under it. Read by App.tsx through
+			// hooks/useScrollEdge.ts; it styles nothing.
 			data-page-scroll
 			className={cn(
 				"min-h-0 w-full flex-1 overflow-y-auto",
@@ -55,9 +55,7 @@ export function PageLayout({
 						)}
 					</div>
 					{actions !== undefined && (
-						<div className="relative phone:w-full after:pointer-events-none after:absolute after:inset-x-1 after:top-full after:h-1.5 after:bg-[linear-gradient(to_bottom,var(--border),transparent)] after:opacity-50 after:content-['']">
-							{actions}
-						</div>
+						<div className="phone:w-full">{actions}</div>
 					)}
 				</PageHeader>
 				{filters !== undefined && (

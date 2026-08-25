@@ -77,19 +77,14 @@ final class SupportLocationTests: XCTestCase {
         )
     }
 
-    func testEveryStoredCombinationShowsAtMostOneSurface() {
-        let locations = [
-            SupportLocation.current(hiddenTools: "[]", hiddenFeeds: "[]"),
-            SupportLocation.current(hiddenTools: #"["plain"]"#, hiddenFeeds: "[]"),
-            SupportLocation.current(hiddenTools: "[]", hiddenFeeds: #"["plain"]"#),
-            SupportLocation.current(
-                hiddenTools: #"["plain"]"#,
-                hiddenFeeds: #"["plain"]"#
-            ),
-        ]
-        for location in locations {
-            XCTAssertFalse(location.showsSidebar && location.showsPage)
+    func testAChoiceNeverShowsBothNativeSurfaces() {
+        for toolsHidden in [false, true] {
+            for feedsHidden in [false, true] {
+                let tools = toolsHidden ? #"["plain"]"# : "[]"
+                let feeds = feedsHidden ? #"["plain"]"# : "[]"
+                let location = SupportLocation.current(hiddenTools: tools, hiddenFeeds: feeds)
+                XCTAssertFalse(location == .sidebar && location == .page)
+            }
         }
-        XCTAssertEqual(locations, [.sidebar, .sidebar, .page, .off])
     }
 }

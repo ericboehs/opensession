@@ -25,6 +25,10 @@ struct WorktreeInfoView: View {
     @State private var overview: OS1API.WorkspaceOverview?
     @State private var conversationImage: WorkspaceImageSelection?
     @State private var conversationVideo: OS1API.WorkspaceOverview.Media?
+    #if DEBUG
+    /// Lets the native capture tool reach this tap-only viewer on a simulator.
+    @State private var didOpenImageForCapture = false
+    #endif
     @State private var sandboxStatus: SessionSandboxStatus?
     @State private var sandboxLoading = false
     @State private var sandboxAction: SessionSandboxAction?
@@ -97,7 +101,13 @@ struct WorktreeInfoView: View {
                 SessionPanelView(panel: panel, viewModel: viewModel)
             }
             .fullScreenCover(item: $conversationImage) { selection in
-                FullScreenImagePreview(items: conversationImageGallery, index: selection.index)
+                // Opened from the workspace sheet, so the viewer keeps saying
+                // which workspace the picture belongs to.
+                FullScreenImagePreview(
+                    items: conversationImageGallery,
+                    index: selection.index,
+                    title: workspaceTitle
+                )
             }
             .fullScreenCover(item: $conversationVideo) { media in
                 WorkspaceVideoPreview(media: media)
@@ -698,21 +708,44 @@ struct WorktreeInfoView: View {
 
     @ViewBuilder
     private var pullRequestSection: some View {
-        if let number = viewModel.prDetails?.number ?? currentSession.prNumber {
+        let rows = SessionPrSeries.rows(for: currentSession)
+        let primaryNumber = viewModel.prDetails?.number ?? currentSession.prNumber
+        if !rows.isEmpty || primaryNumber != nil {
             InfoSection(
-                title: "Pull request",
-                trailing: viewModel.prDetails.map { AnyView(prNumberLabel(number, summary: $0.summary)) }
+                title: rows.count == 1 ? "Pull request" : "Pull requests",
+                trailing: primaryNumber.flatMap { number in
+                    viewModel.prDetails.map { AnyView(prNumberLabel(number, summary: $0.summary)) }
+                }
             ) {
-                Button {
-                    panel = .review(sessionId: currentSession.id)
-                } label: {
-                    if let pr = viewModel.prDetails {
-                        prSummary(pr)
+                if let number = primaryNumber {
+                    Button {
+                        panel = .review(sessionId: currentSession.id)
+                    } label: {
+                        if let pr = viewModel.prDetails {
+                            prSummary(pr)
+                        } else {
+                            prLoadingSummary(number)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    if rows.contains(where: { !$0.isPrimary }) { Divider() }
+                }
+                SessionPrSeriesRows(
+                    session: currentSession,
+                    includePrimary: primaryNumber == nil
+                ) { row in
+                    if row.isPrimary {
+                        panel = .review(sessionId: currentSession.id)
                     } else {
-                        prLoadingSummary(number)
+                        Task {
+                            guard let url = await SessionPrSeries.destination(
+                                for: row,
+                                sessionId: currentSession.id
+                            ) else { return }
+                            openURL(url)
+                        }
                     }
                 }
-                .buttonStyle(.plain)
             }
         }
     }
@@ -874,8 +907,10 @@ struct WorktreeInfoView: View {
     private var conversationSection: some View {
         let media = conversationMedia
         if !media.isEmpty {
+            // The strip carries recordings too, but screenshots are what people
+            // call the set. Same word the web card and panel head it with.
             InfoSection(
-                title: "Conversation",
+                title: "Screenshots",
                 trailing: AnyView(
                     Text(verbatim: "\(media.count)")
                         .font(.caption.weight(.semibold).monospacedDigit())
@@ -911,6 +946,16 @@ struct WorktreeInfoView: View {
                 label: mediaLabel(media)
             )
         }
+    }
+
+    /// Use the same name as the workspace header and sidebar. The selected
+    /// session can have a different title when this workspace has several tabs.
+    private var workspaceTitle: String {
+        SessionsListViewModel.worktreeTitle(
+            for: currentSession,
+            in: sessions,
+            workspaceNames: [:]
+        )
     }
 
     private func openConversationMedia(_ item: WorkspaceMediaItem) {
@@ -1192,7 +1237,21 @@ struct WorktreeInfoView: View {
         sandboxLoading = false
         loadFailed = gitStatus == nil && diff == nil && overview == nil
         loading = false
+        #if DEBUG
+        openImageForCaptureIfRequested()
+        #endif
     }
+
+    #if DEBUG
+    private func openImageForCaptureIfRequested() {
+        guard !didOpenImageForCapture,
+              ProcessInfo.processInfo.environment["OS1_OPEN_WORKSPACE_IMAGE"] == "1",
+              !conversationImageGallery.isEmpty
+        else { return }
+        didOpenImageForCapture = true
+        conversationImage = WorkspaceImageSelection(index: 0)
+    }
+    #endif
 
     private func loadSandboxResult() async -> Result<SessionSandboxStatus?, Error> {
         guard remoteSandbox != nil else { return .success(nil) }
@@ -1357,7 +1416,6 @@ struct WorktreeInfoView: View {
 /// Opens workspace details directly from a list-row context menu while still
 /// giving its model controls the live session socket they use in SessionView.
 struct WorktreeInfoSheet: View {
-    @Environment(\.scenePhase) private var scenePhase
     @State private var viewModel: SessionViewModel
     @State private var catalog: ModelCatalog?
     @Bindable private var listViewModel: SessionsListViewModel
@@ -1380,19 +1438,26 @@ struct WorktreeInfoSheet: View {
         WorktreeInfoView(viewModel: viewModel, sessions: workspace.sessions, catalog: catalog)
             .task {
                 viewModel.start()
-                if scenePhase != .active { viewModel.appDidEnterBackground() }
+                if !AppLifecycle.isActive { viewModel.appDidEnterBackground() }
                 catalog = try? await OS1API.models(
                     workspaceId: viewModel.session.workspaceId
                 )
             }
-            .onDisappear { viewModel.stop() }
-            .onChange(of: scenePhase) { _, phase in
-                switch phase {
-                case .active: viewModel.appDidBecomeActive()
-                case .inactive, .background: viewModel.appDidEnterBackground()
-                @unknown default: viewModel.appDidEnterBackground()
+            .task {
+                for await _ in NotificationCenter.default.notifications(
+                    named: AppLifecycle.didBecomeActiveNotification
+                ) {
+                    viewModel.appDidBecomeActive()
                 }
             }
+            .task {
+                for await _ in NotificationCenter.default.notifications(
+                    named: AppLifecycle.willResignActiveNotification
+                ) {
+                    viewModel.appDidEnterBackground()
+                }
+            }
+            .onDisappear { viewModel.stop() }
     }
 }
 

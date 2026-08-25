@@ -378,7 +378,7 @@ describe("run-ws upgrade auth", () => {
 
 describe("rpc-ws upgrade auth (WS-transport opt-in only)", () => {
   test("a normal run's rpcToken is rejected — only ws-transport tokens open rpc-ws", async () => {
-    // Every proxied run (systemd hosts, codex, opencode) registers one of
+    // Every proxied run (systemd hosts, codex, pi) registers one of
     // these; it must NOT be a network credential.
     const rpcToken = crypto.randomUUID();
     registerRunToken(rpcToken, { sessionId: "bks-zz-rpcws" });
@@ -425,7 +425,7 @@ describe("rpc-ws upgrade auth (WS-transport opt-in only)", () => {
     await until(() => open);
 
     // Valid frame token → dispatch runs. tools/list for a server this run
-    // doesn't carry answers 200 with an empty tool list (shared opencode
+    // doesn't carry answers 200 with an empty tool list (shared pi
     // servers list the union of in-process servers in their config; the
     // proxy must stay healthy) — tools/CALL on it still 404s.
     sock.send(JSON.stringify({ id: "f1", path: "/mcp/list", token: rpcToken, server: "nope" }));

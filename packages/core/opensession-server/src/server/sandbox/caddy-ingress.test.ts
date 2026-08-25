@@ -2,49 +2,29 @@ import { describe, expect, test } from "bun:test";
 import {
   caddyIngressSnippet,
   upsertCaddyIngress,
-  webhookHostsFromCaddy,
+  ingressHostsFromCaddy,
 } from "./caddy-ingress";
 
-describe("sandbox Caddy ingress", () => {
-	test("generates sandbox transport and workload-identity routes with a webhook fallback", () => {
+describe("public Caddy ingress", () => {
+  test("routes the whole fail-closed gateway through one local port", () => {
     const snippet = caddyIngressSnippet("https://hooks.example.com");
     expect(snippet).toContain("hooks.example.com {");
-    expect(snippet).toContain("handle /run-ws/*");
-    expect(snippet).toContain("handle /rpc-ws");
-    expect(snippet).toContain("handle /ingress-health");
-		expect(snippet).toContain("handle /workload-identity/*");
-		expect(snippet.match(/127\.0\.0\.1:3860/g)?.length).toBe(4);
-    expect(snippet).toContain("reverse_proxy 127.0.0.1:3848");
+    expect(snippet).toContain("reverse_proxy 127.0.0.1:3860");
+    expect(snippet).not.toContain("3848");
     expect(snippet).not.toContain("3850");
   });
 
-  test("discovers a single webhook host in adapted Caddy JSON", () => {
+  test("discovers a host already routing to the unified gateway", () => {
     expect(
-      webhookHostsFromCaddy({
+      ingressHostsFromCaddy({
         apps: {
           http: {
             servers: {
-              main: {
-                routes: [
-                  {
-                    match: [{ host: ["hooks.example.com"] }],
-                    handle: [
-                      {
-                        handler: "subroute",
-                        routes: [
-                          {
-                            handle: [
-                              {
-                                handler: "reverse_proxy",
-                                upstreams: [{ dial: "127.0.0.1:3848" }],
-                              },
-                            ],
-                          },
-                        ],
-                      },
-                    ],
-                  },
-                ],
+              ingress: {
+                routes: [{
+                  match: [{ host: ["hooks.example.com"] }],
+                  handle: [{ handler: "reverse_proxy", upstreams: [{ dial: "127.0.0.1:3860" }] }],
+                }],
               },
             },
           },
@@ -53,45 +33,36 @@ describe("sandbox Caddy ingress", () => {
     ).toEqual(["hooks.example.com"]);
   });
 
-  test("injects managed routes into an existing webhook host", () => {
+  test("replaces the retired webhook fallback and old path routes", () => {
     const source = `hooks.example.com {
-    handle {
-        reverse_proxy localhost:3848
-    }
-}
-`;
-    const installed = upsertCaddyIngress(source, "https://hooks.example.com");
-    expect(installed).toContain("# BEGIN OPENSESSION SANDBOX INGRESS");
-    expect(installed).toContain("handle /run-ws/*");
-    expect(installed.match(/hooks\.example\.com \{/g)).toHaveLength(1);
-    expect(installed).toContain("reverse_proxy localhost:3848");
-    expect(upsertCaddyIngress(installed, "https://hooks.example.com")).toBe(installed);
-  });
-
-  test("replaces old prefixed routes instead of preserving aliases", () => {
-    const source = `hooks.example.com {
-    handle /opensession/run-ws/* {
-        reverse_proxy localhost:3860
-    }
-    handle /backstage/rpc-ws {
-        reverse_proxy localhost:3860
-    }
+    handle /run-ws/* { reverse_proxy localhost:3860 }
+    handle /rpc-ws { reverse_proxy localhost:3860 }
     handle { reverse_proxy localhost:3848 }
 }
 `;
     const installed = upsertCaddyIngress(source, "https://hooks.example.com");
-    expect(installed).toContain("handle /run-ws/*");
-    expect(installed).toContain("handle /rpc-ws");
-    expect(installed).not.toContain("/opensession/run-ws");
-    expect(installed).not.toContain("/backstage/rpc-ws");
+    expect(installed).toContain("# BEGIN OPENSESSION SANDBOX INGRESS");
+    expect(installed.match(/127\.0\.0\.1:3860/g)).toHaveLength(1);
+    expect(installed).not.toContain("3848");
+    expect(upsertCaddyIngress(installed, "https://hooks.example.com")).toBe(installed);
   });
 
-  test("creates a complete webhook host when one is absent", () => {
+  test("creates a dedicated host without exposing the private app", () => {
     const installed = upsertCaddyIngress(
       "admin.example.com { reverse_proxy 127.0.0.1:3850 }\n",
       "https://hooks.example.com",
     );
     expect(installed).toContain("hooks.example.com {");
-    expect(installed).toContain("reverse_proxy 127.0.0.1:3848");
+    expect(installed).toContain("reverse_proxy 127.0.0.1:3860");
+    expect(installed.match(/3850/g)).toHaveLength(1);
+  });
+
+  test("refuses duplicate target site blocks", () => {
+    expect(() =>
+      upsertCaddyIngress(
+        "hooks.example.com { respond ok }\nhooks.example.com { respond ok }\n",
+        "https://hooks.example.com",
+      ),
+    ).toThrow("more than once");
   });
 });

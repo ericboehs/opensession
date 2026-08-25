@@ -20,6 +20,7 @@ final class LiveActivityCoordinator {
     private var activityRegistrationTasks: [String: Task<Void, Never>] = [:]
     private var reconcileTask: Task<Void, Never>?
     private var reconcileDirty = false
+    private var latestSessions: [Session] = []
     private var latestSnapshot: ActiveSessionsSnapshot?
     private var connection: OS1API.LiveActivityConnection?
     private var reconfigureTask: Task<Void, Never>?
@@ -114,11 +115,26 @@ final class LiveActivityCoordinator {
     }
 
     func sync(_ sessions: [Session]) {
+        latestSessions = sessions
+        syncCurrentSnapshot()
+    }
+
+    /// Read marks can change without the sessions poll changing. Rebuild from
+    /// the last authoritative list so the Island and app icon clear as soon as
+    /// someone opens or marks a session read.
+    func refreshUnreadStatus() {
+        syncCurrentSnapshot()
+    }
+
+    private func syncCurrentSnapshot() {
+        let reads = ReadsStore.shared
         let snapshot = ActiveSessionsSnapshot.make(
-            from: sessions,
+            from: latestSessions,
             userName: ServerConfig.shared.userName,
-            githubLogin: ServerConfig.shared.githubLogin
+            githubLogin: ServerConfig.shared.githubLogin,
+            isUnread: { reads.isUnread($0) }
         )
+        NativeNotifications.syncBadgeCount(snapshot.unreadCount)
         guard enabled else {
             latestSnapshot = snapshot
             return
@@ -207,7 +223,7 @@ final class LiveActivityCoordinator {
         guard generation == expectedGeneration, self.connection == connection else { return }
         var activities = allActivities.filter { $0.attributes.deviceId == currentDeviceId }
 
-        if latestSnapshot.totalCount == 0 {
+        if latestSnapshot.totalCount == 0, latestSnapshot.unreadCount == 0 {
             let final = ActivityContent(state: latestSnapshot, staleDate: nil)
             for activity in activities {
                 await activity.end(final, dismissalPolicy: .after(Date().addingTimeInterval(30)))

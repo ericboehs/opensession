@@ -8,8 +8,6 @@ import {
 	activeDetachedAgentRunCount,
 	resumeInterruptedRuns,
 } from "./src/server/agent-runner";
-import { enableOpencodeServerDetach } from "./src/server/opencode-detach";
-import { adoptDetachedOpencodeServers } from "./src/server/opencode-runner";
 import { startAccountHealthMonitor } from "./src/server/account-health";
 import { startAnalyticsPrewarm } from "./src/server/analytics";
 import { startDiskGc } from "./src/server/disk-gc";
@@ -22,22 +20,24 @@ import { startLiveActivitySync } from "./src/server/live-activities";
 import { kickTranscriptBackfillOnce } from "./src/server/transcript-backfill";
 import { kickOrphanTranscriptSweep } from "./src/server/transcript-orphan-sweep";
 import { makeAskHandler, restorePendingAsks } from "./src/server/asks";
-import { automationResumeMcpForSession, ensureConfiguredAutomations, getWebhookRoutes, setEventSessionCallback, settleResumedAutomationRun, startScheduler } from "./src/server/automations";
+import { activeAutomationPreparationCount, automationResumeMcpForSession, ensureConfiguredAutomations, getWebhookRoutes, resumePendingAutomationRuns, setEventSessionCallback, settleResumedAutomationRun, startScheduler } from "./src/server/automations";
 import { startUsagePoller } from "./src/server/claude-accounts";
 import { startCodexUsagePoller } from "./src/server/codex-accounts";
-import { FRONTEND_SRC, IS_DEV, SPA_HEADERS, ensureFrontendBuilt, frontend, scheduleFrontendRebuild, sharedCheckoutEditors, spaEntry } from "./src/server/frontend-build";
+import { FRONTEND_SRC, IS_DEV, SPA_HEADERS, ensureFrontendBuilt, frontend, isPrebuiltFrontend, scheduleFrontendRebuild, sharedCheckoutEditors, spaEntry } from "./src/server/frontend-build";
 import { configuredIntegration } from "./src/server/config";
 import { initHumanAsks } from "./src/server/human-asks";
 import {
 	interactiveMcpServers,
 	personalMcpScopeForSession,
 } from "./src/server/interactive-mcp";
-import { homeDir, OPENSESSION_SESSIONS_DIR } from "./src/server/paths";
+import { homeDir, OPENSESSION_SESSIONS_DIR, stateDir } from "./src/server/paths";
+import { shouldRedirectLegacyPublicPath } from "./src/server/legacy-public-prefix";
 import { startPlainArchiveSweep } from "./src/server/plain-archive";
 import { devInstanceBootError, isDevInstance } from "./src/server/dev-mode";
 import { startPrReviewNotificationTicker } from "./src/server/pr-review-notifications";
 import { startPublicIngress } from "./src/server/public-ingress";
-import { readActiveShutdownSnapshot, recoverableLocalHostSnapshotRecords, recordRecoveredRunEvent, restorePromptQueues, resumeDrainedSessions, snapshotActiveSessions, startLoopTicker } from "./src/server/run-session";
+import { ensureCloudflareTunnel } from "./src/server/ingress-settings";
+import { creationOwnsPrompt, readActiveShutdownSnapshot, recoverableLocalHostSnapshotRecords, recordRecoveredRunEvent, restorePromptQueues, resumeDrainedSessions, settleRecoveredCreationOpening, snapshotActiveSessions, startLoopTicker } from "./src/server/run-session";
 import { startMcpHttpServer, startRunRpcServer } from "./src/server/run-rpc";
 import { handleSandboxWsUpgrade, startTimerPoisonHeartbeat, timerPoisonRequestCheck } from "./src/server/run-ws";
 import {
@@ -46,7 +46,6 @@ import {
 } from "./src/server/github-auth";
 import { startGoalTicker } from "./src/server/goal-runner";
 import { startSessionIndexSweeper } from "./src/server/session-index";
-import { ensurePreviewPoolScheduler } from "./src/server/preview-pool";
 import { ensureWarmTemplateScheduler } from "./src/server/warm-template";
 import { handleRunnerWsUpgrade } from "./src/server/runner-ws";
 import { handleSandboxPortalRelayUpgrade } from "./src/server/sandbox-portal-relay";
@@ -70,7 +69,7 @@ import {
 	type WebIdentity,
 	webAuthRequired,
 } from "./src/server/web-auth";
-import { startWebhookServer } from "./src/server/webhook-server";
+import { configureWebhookRoutes } from "./src/server/webhook-server";
 import { prImagePublicRoutes } from "./src/server/pr-images";
 import {
 	sessionHtmlWithSocialMeta,
@@ -83,7 +82,6 @@ import {
 	broadcastToAll,
 } from "./src/server/ws-hub";
 import { mkdirSync, watch, writeFileSync } from "fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 // Side-effect modules: these must be loaded even when the entry references
@@ -94,7 +92,18 @@ import { join } from "node:path";
 // from a script or a test never touches live resources.
 import "./src/server/interactive-mcp"; // registerInteractiveMcpBuilder
 import { hydratePersistedQueueState } from "./src/server/queue-state";
+import { hydrateScheduledPromptTimers } from "./src/server/scheduled-prompts";
 import { beginShutdown } from "./src/server/shutdown-state";
+import { setServiceReadiness } from "./src/server/service-readiness";
+import {
+	reconcileSessionKernelOwnership,
+	reconcileCompatibleCreationBranchEffects,
+  sessionKernel,
+	startSessionKernelActor,
+	startSessionKernelRuntime,
+	stopSessionKernelRuntime,
+} from "./src/server/session-kernel";
+import { activeRunRecords } from "./src/server/run-journal";
 import "./src/server/session-control-wiring"; // opensession-sessions MCP + Slack-link bridge
 import "./src/server/keychain"; // registers the keychain human-ask domain handler
 import { websocketHandlers } from "./src/server/ws-handlers";
@@ -156,6 +165,9 @@ mkdirSync(SESSIONS_DIR, { recursive: true });
 // each branch once, exactly as before.
 const g = globalThis as any;
 
+// The actor owns the writable kernel store before any gateway projection hydrates.
+if (!g.__opensessionBooted) await startSessionKernelActor();
+
 // Loaded agents (Plain/Linear/Slack/Stripe/…). Module-scoped because request
 // handlers (health routes) read it, and globalThis-backed so the set survives a
 // hot reload (loadAgents runs only on a real boot, inside the guard below).
@@ -214,6 +226,9 @@ const sessionSpaEntry = (() => {
 			return new Response("Frontend is still building", { status: 503 });
 		const pathname = new URL(req.url).pathname;
 		const id = socialSessionIdFromPath(pathname);
+		// findSessionAsync reads a native session directly and otherwise scans
+		// cooperatively, so a deep link opens without blocking the event loop
+		// while a large sidebar cache warms.
 		const session = id ? await findSessionAsync(id) : undefined;
 		return new Response(
 			session
@@ -246,6 +261,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 				"/index.html",
 				// Client-side routes must serve the SPA shell, not the raw file
 				"/new",
+				"/welcome",
 				"/session/*",
 				"/workspace/*",
 				"/pr/*",
@@ -302,9 +318,11 @@ const server: import("bun").Server<WSClientData> = hotServe({
 			if (publicPrefix) {
 				path = path.slice(publicPrefix.length) || "/";
 				if (
-					(req.method === "GET" || req.method === "HEAD") &&
-					!req.headers.get("upgrade") &&
-					!path.startsWith("/api/")
+					shouldRedirectLegacyPublicPath(
+						req.method,
+						req.headers.get("upgrade"),
+						path,
+					)
 				) {
 					return Response.redirect(path + url.search, 301);
 				}
@@ -369,7 +387,8 @@ const server: import("bun").Server<WSClientData> = hotServe({
 				// deploy.sh's post-restart poll, monitors, and the client's
 				// bootId-change detection — all pre-auth by nature.
 				const openHealth =
-					path === "/api/health" && req.method === "GET";
+					req.method === "GET" &&
+					(path === "/api/health" || path === "/live" || path === "/ready");
 				const keypadBearer =
 					path === "/api/keypad" &&
 					req.method === "GET" &&
@@ -380,7 +399,10 @@ const server: import("bun").Server<WSClientData> = hotServe({
 				// these safe to leave open, like /api/health.
 				const openOs1Update =
 					(path.startsWith("/api/packages/clients/mac/") ||
-						path.startsWith("/api/packages/clients/chrome/")) &&
+						path.startsWith("/api/packages/clients/chrome/") ||
+						// v0.4.0 and earlier point Squirrel at this legacy prefix.
+						path.startsWith("/api/os1-mac/") ||
+						path.startsWith("/api/os1-chrome/")) &&
 					req.method === "GET";
 				// A Runner dialling in has no browser session: it registers with a
 				// one-time pairing code and then heartbeats with its own bearer
@@ -554,38 +576,51 @@ async function loadAgents(): Promise<AgentModule[]> {
 // any of it — the already-running agents/timers keep going untouched (only a
 // real restart reloads their code, and that restart is now graceful, below).
 if (!g.__opensessionBooted) {
+	// Pi runs Claude Max through the installed `claude` CLI (the Anthropic
+	// bridge hands the Agent SDK pathToClaudeCodeExecutable); nothing bundled
+	// stands in for it. Warn at boot, loudly, if it is not a usable executable,
+	// but keep serving: the operator fixes it by installing the CLI, not by
+	// restarting a dead server.
+	{
+		const { configuredPaths } = await import("./src/server/config");
+		const { existsSync } = await import("fs");
+		const configured = configuredPaths().claudeBin;
+		const claudeBin =
+			configured && configured !== "claude" ? configured : Bun.which("claude");
+		if (!claudeBin || !existsSync(claudeBin)) {
+			console.error(
+				"[engine] the `claude` CLI is not installed — Anthropic turns cannot run.\n" +
+					"[engine] install it: curl -fsSL https://claude.ai/install.sh | bash",
+			);
+		} else {
+			console.log(`[engine] claude CLI ${claudeBin}`);
+		}
+	}
 	// Dev instances (src/server/dev-mode.ts) skip background work here:
 	// no agents, no webhook intake, no schedulers/sweeps, no detached-server
 	// adoption — a second instance next to production must never double-send
 	// or steal live runs. State writes are additionally isolated (the
 	// devInstanceBootError guard at the top of this file enforces it).
 	const devInstance = isDevInstance();
-	let detachedAdoption: Promise<number> | undefined;
 	if (!devInstance) {
 	startLiveActivitySync();
-	// Detached engine servers (src/server/opencode-detach.ts): opt this — and
-	// only this — process into spawning `opencode serve` in transient systemd
-	// user scopes, so in-flight turns survive a `systemctl restart`. Runner-host
-	// and sandbox contexts never enable it. Kill switch: OPENSESSION_OC_DETACH=0.
-	enableOpencodeServerDetach();
-	// Begin adoption before agents, schedulers, or webhook intake can start a
-	// run. ensureOpencodeServer waits for this promise, preventing a fresh spawn
-	// from racing an older detached server with the same pool key.
-	detachedAdoption = adoptDetachedOpencodeServers();
 
-	// Public dial-back ingress for remote sandboxes (src/server/public-ingress.ts):
-	// a second, isolated listener serving ONLY the run-ws/rpc-ws upgrades +
-	// /ingress-health. No-op unless ~/.opensession-sandbox.json enables
-	// publicIngress; starting/stopping it or changing its port needs a real
-	// restart (the config's other values stay read-fresh-per-run).
-	try {
-		startPublicIngress();
-	} catch (e) {
-		console.error("[public-ingress] failed to start:", e);
-	}
+	// Restore completed sandbox prewarms and maintain any explicit keep-ready
+	// targets. This is a boot hook rather than a module-scope side effect.
+	void import("./src/server/sandbox/prewarm")
+		.then(async ({ startPrewarmPool }) => {
+			// Restoration happens synchronously before the first sweep await. Do not
+			// make snapshot maintenance wait behind slow provider orphan cleanup.
+			const poolStartup = startPrewarmPool();
+			const { startSandboxEnvironmentMaintenance } = await import("./src/server/sandbox/environments");
+			startSandboxEnvironmentMaintenance();
+			await poolStartup;
+		})
+		.catch((e) => console.error("[sandbox-prewarm] startup failed:", e));
 
-	// Start webhook server with enabled agents + automation webhook triggers
-	// + the public PR-image capability URLs (comment_on_pr_with_images).
+	// Build the exact public route allowlist before binding the one isolated
+	// ingress gateway. Webhooks, sandbox callbacks and workload identity share
+	// :3860; the private app on :3850 is never part of this listener.
 	agents = await loadAgents();
 	g.__agents = agents;
 	const webhookRoutes = getWebhookRoutes(() => {
@@ -597,8 +632,13 @@ if (!g.__opensessionBooted) {
 	for (const [key, handler] of sessionSocialCardPublicRoutes()) {
 		webhookRoutes.set(key, handler);
 	}
-	const webhookServer = startWebhookServer(agents, webhookRoutes);
-	void webhookServer;
+	configureWebhookRoutes(agents, webhookRoutes);
+	try {
+		startPublicIngress();
+		ensureCloudflareTunnel();
+	} catch (e) {
+		console.error("[public-ingress] failed to start:", e);
+	}
 
 	// Optional instance seed pack. Generic installations start empty; existing
 	// records and anything created through the UI are unaffected.
@@ -621,43 +661,25 @@ if (!g.__opensessionBooted) {
 	}
 
 	// Cron-scheduled automations + internal event bus (agents → automations)
-	startScheduler(() => {
-		invalidateSessionsCache();
-	});
-	setEventSessionCallback(() => {
-		invalidateSessionsCache();
-	});
+	const onAutomationSession = () => invalidateSessionsCache();
+	setEventSessionCallback(onAutomationSession);
+	const resumedAutomationIntents = resumePendingAutomationRuns(onAutomationSession);
+	if (resumedAutomationIntents)
+		console.log(`[automations] Resumed ${resumedAutomationIntents} pre-launch intent(s)`);
+	startScheduler(onAutomationSession);
 	startPrReviewNotificationTicker();
 
-	// Scheduled prompts ("send this to this session at 5pm") — deliver due ones
-	// through the SessionControl registry, exactly like a typed message.
-	setInterval(() => {
-		void (async () => {
-			const { takeDuePrompts } = await import(
-				"./src/server/scheduled-prompts"
-			);
-			for (const p of takeDuePrompts()) {
-				try {
-					const result = await getSessionControl().deliverToSession(
-						p.sessionId,
-						p.prompt,
-						p.user,
-					);
-					console.log(
-						`[scheduled-prompts] ${p.id} → ${p.sessionId}: ${result.status}`,
-					);
-				} catch (e) {
-					console.error(`[scheduled-prompts] ${p.id} delivery failed:`, e);
-				}
-			}
-		})();
-	}, 30_000);
+	// Scheduled prompts are durable SessionKernel timers. The runtime starts
+	// after run recovery below; hydrate their rows before that gate opens.
+	hydrateScheduledPromptTimers();
 
 	// Archive triage sessions when their Plain ticket is done.
 	startPlainArchiveSweep(() => {
 		invalidateSessionsCache();
 	});
 
+	// Unattended installs stage a Claude token in the env or a file; import it
+	// into the pool before anything can ask for an account.
 	// Poll per-account Claude usage (drives account picking + the Connections UI)
 	startUsagePoller();
 	// Poll supported ChatGPT/Codex rate-limit windows per registered CODEX_HOME.
@@ -692,7 +714,6 @@ if (!g.__opensessionBooted) {
 
 	// Warm dev-server pool + warm git templates: docker-level sweeps, so only
 	// the server that owns the daemon runs them.
-	ensurePreviewPoolScheduler();
 	ensureWarmTemplateScheduler();
 
 	// Fire due /loop self-prompts and wake due goals — both start real engine
@@ -746,26 +767,29 @@ if (!g.__opensessionBooted) {
 	// to resume, and resumeInterruptedRuns/restorePromptQueues re-prompt and
 	// re-deliver — the classic double-send if any state were shared.
 	if (!devInstance) {
+		setServiceReadiness("recovering");
 		setTimeout(() => {
 		void (async () => {
-		// Adopt detached `opencode serve` scopes that survived the restart FIRST —
-		// resumeInterruptedRuns reattaches journaled runs to these adopted pool
-		// entries (tryReattachOpencodeRun) instead of re-prompting their sessions.
 		try {
-			const adopted = await (detachedAdoption ?? adoptDetachedOpencodeServers());
-			if (adopted > 0) {
-				console.log(`[runner] Adopted ${adopted} detached opencode server(s) from before restart`);
-			}
-		} catch (e) {
-			console.error("[runner] Detached-server adoption failed:", e);
-		}
 		const shutdownRecords = readActiveShutdownSnapshot();
 		const resumedIds = resumeInterruptedRuns(
-			(bksSessionId, terminalEvent) => {
+			(bksSessionId, terminalEvent, recoveredRun) => {
 				if (bksSessionId && terminalEvent) {
 					const failed =
 						terminalEvent.type === "error" ||
 						!!terminalEvent.usageLimitExhausted;
+					if (recoveredRun?.promptEntryId) {
+						settleRecoveredCreationOpening(
+							bksSessionId,
+							recoveredRun.promptEntryId,
+							failed
+								? terminalEvent.content ||
+									terminalEvent.result ||
+									"Recovered opening run failed"
+								: undefined,
+							recoveredRun.runKey,
+						);
+					}
 					recordRunOutcome(
 						bksSessionId,
 						failed
@@ -778,6 +802,13 @@ if (!g.__opensessionBooted) {
 						// persists that id — so name it here, or the failure chip is
 						// written into the transcript the conversation left behind.
 						{
+              ...(recoveredRun?.runKey
+                ? {
+                    runId: recoveredRun.runKey,
+                    runGeneration: sessionKernel(bksSessionId).runState().generation,
+                    projectionId: `outcome:${recoveredRun.runKey}`,
+                  }
+                : {}),
 							engineSessionId: terminalEvent.sessionId,
 							noticeLabel: terminalEvent.usageLimitExhausted
 								? "Run stopped"
@@ -817,19 +848,24 @@ if (!g.__opensessionBooted) {
 					// never the interactive admin/sessions surface). Required for pi
 					// resumes: in-process engines hold no surviving stdio proxies, so
 					// without this the re-prompted run is tool-less. Harmless for
-					// opencode — its rebuilt proxies resolve through run-rpc's
+					// pi — its rebuilt proxies resolve through run-rpc's
 					// fail-closed automation fallback either way.
 					if (session.automation)
 						return automationResumeMcpForSession(session, bksSessionId);
-					// A resume rebuilds from the session file, so the scope comes
-					// from the same derivation the run-rpc fallback builder uses.
-					const scope = personalMcpScopeForSession(session);
 					const servers: Record<string, unknown> = session.goalId
 						? {
-								...interactiveMcpServers(user, bksSessionId, scope),
+								...interactiveMcpServers(
+									user,
+									bksSessionId,
+									personalMcpScopeForSession(session),
+								),
 								"opensession-goal-self": createGoalSelfMcpServer(session.goalId),
 							}
-						: interactiveMcpServers(user, bksSessionId, scope);
+						: interactiveMcpServers(
+							user,
+							bksSessionId,
+							personalMcpScopeForSession(session),
+						);
 					return servers;
 				} catch (e) {
 					console.error(
@@ -847,6 +883,11 @@ if (!g.__opensessionBooted) {
 			},
 			recordRecoveredRunEvent,
 			recoverableLocalHostSnapshotRecords(shutdownRecords),
+			(run) =>
+				!!run.osSessionId &&
+				!!run.promptEntryId &&
+				!!(run.runnerId || run.sandboxId) &&
+				creationOwnsPrompt(run.osSessionId, run.promptEntryId),
 		);
 		if (resumedIds.length > 0) {
 			console.log(
@@ -857,11 +898,44 @@ if (!g.__opensessionBooted) {
 		resumeDrainedSessions(new Set(resumedIds), shutdownRecords);
 		// Re-deliver messages that were queued/steered when the process went down.
 		restorePromptQueues(new Set(resumedIds));
-		})();
+		const ownedSessionIds = new Set(
+			activeRunRecords()
+				.map((run) => run.osSessionId)
+				.filter((id): id is string => !!id),
+		);
+		for (const id of resumedIds) ownedSessionIds.add(id);
+		const staleKernelOwners = reconcileSessionKernelOwnership(ownedSessionIds);
+		if (staleKernelOwners.length)
+			console.warn(
+				`[session-kernel] Settled ${staleKernelOwners.length} session(s) without a recoverable run owner`,
+			);
+		} catch (error) {
+			throw error;
+		}
+		// Re-admit only historical branch effects rejected before execution by
+		// retired compatibility checks. Do this behind the recovery gate so the
+		// runtime cannot race the dead-letter transition.
+		const reconciledBranchEffects =
+			await reconcileCompatibleCreationBranchEffects();
+		if (reconciledBranchEffects.length)
+			console.warn(
+				`[session-kernel] Reconciled ${reconciledBranchEffects.length} compatible branch effect(s)`,
+			);
+		// Only now may durable timers and effects wake actors: every recovery
+		// stage above completed and ownership is established.
+		startSessionKernelRuntime();
+		setServiceReadiness("ready");
+		})().catch((error) => {
+			setServiceReadiness("failed", error);
+			console.error("[session-kernel] recovery gate failed; restarting fail-closed:", error);
+			setTimeout(() => process.exit(1), 1_000).unref?.();
+		});
 		// 1.5s: enough for boot-time state (agents, watchers, session-control
 		// registry) to settle before we start resuming, without adding dead air to
 		// every restart. Paired with the shorter drain above for faster recovery.
 		}, 1500);
+	} else {
+		setServiceReadiness("ready");
 	}
 
 	// Ongoing hygiene (every 6h): remove worktrees of sessions that were manually
@@ -925,10 +999,12 @@ if (!g.__opensessionBooted) {
 	const gracefulShutdown = async (signal: string) => {
 		if (shuttingDown) return;
 		shuttingDown = true;
+		setServiceReadiness("draining");
 		// Cross-module flag: run-session's queue drain parks new prompts from
 		// here on (the next boot delivers them) instead of starting turns that
 		// race the drain deadline.
 		beginShutdown();
+		stopSessionKernelRuntime();
 		// With poisoned timers (see run-ws.ts tripwire)
 		// every `await sleep` and Promise.race timeout below would wedge forever
 		// and systemd would SIGKILL us at TimeoutStopSec (observed: an 80s
@@ -954,11 +1030,10 @@ if (!g.__opensessionBooted) {
 		// post-restart toast; the `by` here feeds the pre-restart overlay.
 		const restartBy = sharedCheckoutEditors();
 		try {
-			// homedir-shared state (does not follow OPENSESSION_STATE_DIR) — a
-			// dev instance must not overwrite the production restart marker.
+			// A dev instance must not overwrite the production restart marker.
 			if (!devInstance) {
 				writeFileSync(
-					join(homedir(), ".opensession-last-restart.json"),
+					stateDir("last-restart.json"),
 					JSON.stringify({ by: restartBy || "", at: new Date().toISOString(), signal }),
 				);
 			}
@@ -988,18 +1063,17 @@ if (!g.__opensessionBooted) {
 				console.error(`[shutdown] ${agent.name} shutdown error:`, e);
 			}
 		}
-		// Stop accepting new HTTP/WS connections; existing ones can finish.
-		try {
-			server.stop();
-		} catch {}
 		// Wait for runner-driven runs (web UI / automations / loops) to settle —
 		// but ONLY the ones a restart would actually kill. Runs on DETACHED
-		// engine servers (opencode-detach.ts) survive the restart: their
-		// `opencode serve` scopes live outside this unit's cgroup and keep
+		// engine servers (pi-detach.ts) survive the restart: their
+		// detached run-host units live outside this unit's cgroup and keep
 		// executing, and the next boot adopts the servers + reattaches the runs
 		// from the journal. Waiting on those would just delay the restart.
 		const undrainable = () =>
-			Math.max(0, activeAgentRunCount() - activeDetachedAgentRunCount());
+			Math.max(
+				activeAutomationPreparationCount(),
+				Math.max(0, activeAgentRunCount() - activeDetachedAgentRunCount()),
+			);
 		const deadline = timersDead ? 0 : Date.now() + DRAIN_TIMEOUT_MS;
 		let n = undrainable();
 		while (n > 0 && Date.now() < deadline) {
@@ -1020,6 +1094,12 @@ if (!g.__opensessionBooted) {
 				`[shutdown] ${surviving} run(s) continue on detached engine servers — reattaching on next boot`,
 			);
 		}
+		// Keep HTTP available while runs drain. Stopping the listener before the
+		// bounded wait made Caddy return 502 for the full drain window on every
+		// deploy. Shutdown-aware intake above already parks new agent work.
+		try {
+			server.stop();
+		} catch {}
 		process.exit(0);
 	};
 	process.on("SIGTERM", () => void gracefulShutdown("SIGTERM"));
@@ -1036,7 +1116,11 @@ if (!g.__opensessionBooted) {
 	// for restart in a deploy script). Guarded by __opensessionBooted so a hot
 	// reload doesn't stack watchers/handlers. recursive watch needs Linux ≥ 6.x
 	// (we're on 6.17) — fine here.
-	if (!IS_DEV && frontend) {
+	// A prebuilt bundle (compiled binary's embedded assets, or a release
+	// tarball's .frontend-dist) has no src/frontend tree to watch.
+	if (!IS_DEV && frontend && isPrebuiltFrontend()) {
+		console.log("[frontend] Prebuilt bundle: source watch and SIGUSR2 rebuilds are off");
+	} else if (!IS_DEV && frontend) {
 		try {
 			const watcher = watch(FRONTEND_SRC, { recursive: true }, (_evt, file) => {
 				if (file && /\.(tsx?|css|html)$/.test(file.toString())) {

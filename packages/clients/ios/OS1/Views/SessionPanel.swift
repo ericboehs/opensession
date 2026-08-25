@@ -124,8 +124,8 @@ struct SessionPanelView: View {
             PortalsListView(sessionId: sessionId)
         case .terminal(let sessionId):
             TerminalView(sessionId: sessionId)
-        case .agents(let sessionId):
-            WorkflowRunsView(sessionId: sessionId)
+        case .agents:
+            WorkflowRunsView(viewModel: viewModel)
         }
     }
 }

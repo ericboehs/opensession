@@ -179,7 +179,7 @@ export function PreviewButton({
     `${BASE_PATH}/preview-wait/${encodeURIComponent(session.id)}` +
     (session.previewPath ? `?path=${encodeURIComponent(session.previewPath)}` : "");
 
-  async function start() {
+  const start = async () => {
     // In-app tab flow: opening the tab both starts the preview (the pane
     // kicks the claim) and shows its progress — no popup, no interstitial.
     if (onOpenTab) {
@@ -206,39 +206,40 @@ export function PreviewButton({
     // 2026-07-23: several sessions all presented preview-wait/<other-id>).
     const wait = window.open(waitUrl, `preview-${session.id}`);
     setStarting(true);
-    try {
-      const s = await startPreviewApi(session.id);
+    await (async () => {
+const s = await startPreviewApi(session.id);
       setStatus(s);
       // Nothing actually started (repo not bootable, sandbox gate off) — don't
       // leave the interstitial spinning toward a boot that will never come.
       if (!s.running && !s.starting) wait?.close();
-    } catch {
-      setStarting(false);
+})().catch(async () => {
+setStarting(false);
       wait?.close();
-    }
-  }
+});
+  };
 
-  async function stop() {
+  const stop = async () => {
     setStopping(true);
-    try {
-      setStatus(await stopPreviewApi(session.id));
+    await (async () => {
+setStatus(await stopPreviewApi(session.id));
       setStarting(false);
-    } catch {
-    } finally {
-      setStopping(false);
-    }
-  }
+})().catch(async () => {
+
+}).finally(async () => {
+setStopping(false);
+});
+  };
 
   async function snap() {
     if (snapping) return;
     setSnapping(true);
     setShotError(null);
-    try {
-      setShot(await capturePreviewShot(session.id));
-    } catch (e: any) {
-      setShotError(e.message);
+    await (async () => {
+setShot(await capturePreviewShot(session.id));
+})().catch(async (e: any) => {
+setShotError(e.message);
       setShot(null);
-    }
+});
     setSnapping(false);
     // Hand over to the snapshot modal. The popup keeps its "Capturing…" label
     // until the result lands, then steps aside — it is portalled at the popover

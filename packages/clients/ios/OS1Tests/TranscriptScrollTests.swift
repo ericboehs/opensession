@@ -46,6 +46,110 @@ final class TranscriptScrollTests: XCTestCase {
         XCTAssertFalse(TranscriptScroll.isNearBottom(scrolledUp, tolerance: tolerance))
     }
 
+    func testSmallUpwardGestureReleasesPinInsideTolerance() {
+        var moved = atRest
+        moved.visibleMaxY -= 20
+        let nearBottom = TranscriptScroll.isNearBottom(moved, tolerance: 76)
+        XCTAssertTrue(nearBottom)
+        let state = TranscriptScroll.followState(
+            previousOffset: 1_000,
+            offset: 980,
+            previousContentHeight: atRest.contentHeight,
+            contentHeight: atRest.contentHeight,
+            previousDistanceFromBottom: 49,
+            isNearBottom: nearBottom,
+            readerGestureActive: true,
+            layoutChanged: false,
+            readerMovedTowardHistory: false
+        )
+        XCTAssertFalse(state.pinned)
+        XCTAssertTrue(state.readerMovedTowardHistory)
+    }
+
+    func testLayoutUpdateCannotUndoUpwardReaderIntent() {
+        let state = TranscriptScroll.followState(
+            previousOffset: 980,
+            offset: 1_010,
+            previousContentHeight: atRest.contentHeight,
+            contentHeight: atRest.contentHeight + 30,
+            previousDistanceFromBottom: 69,
+            isNearBottom: true,
+            readerGestureActive: true,
+            layoutChanged: false,
+            readerMovedTowardHistory: true
+        )
+        XCTAssertFalse(state.pinned)
+        XCTAssertTrue(state.readerMovedTowardHistory)
+    }
+
+    func testMovingBackToLatestRearmsFollowing() {
+        let state = TranscriptScroll.followState(
+            previousOffset: 980,
+            offset: 1_000,
+            previousContentHeight: atRest.contentHeight,
+            contentHeight: atRest.contentHeight,
+            previousDistanceFromBottom: 69,
+            isNearBottom: true,
+            readerGestureActive: true,
+            layoutChanged: false,
+            readerMovedTowardHistory: true
+        )
+        XCTAssertTrue(state.pinned)
+        XCTAssertFalse(state.readerMovedTowardHistory)
+    }
+
+    func testRubberBandSnapBackDoesNotReleaseThePin() {
+        let state = TranscriptScroll.followState(
+            previousOffset: 1_020,
+            offset: 1_000,
+            previousContentHeight: atRest.contentHeight,
+            contentHeight: atRest.contentHeight,
+            previousDistanceFromBottom: -20,
+            isNearBottom: true,
+            readerGestureActive: true,
+            layoutChanged: false,
+            readerMovedTowardHistory: true
+        )
+        XCTAssertFalse(state.pinned)
+        XCTAssertTrue(state.readerMovedTowardHistory)
+        XCTAssertTrue(
+            TranscriptScroll.isNearBottom(atRest, tolerance: 56),
+            "the idle phase must recognize the real resting bottom and rearm"
+        )
+    }
+
+    func testLayoutMovementWithoutAGestureCannotRearmFollowing() {
+        let state = TranscriptScroll.followState(
+            previousOffset: 980,
+            offset: 1_000,
+            previousContentHeight: atRest.contentHeight,
+            contentHeight: atRest.contentHeight,
+            previousDistanceFromBottom: 69,
+            isNearBottom: true,
+            readerGestureActive: false,
+            layoutChanged: false,
+            readerMovedTowardHistory: true
+        )
+        XCTAssertFalse(state.pinned)
+        XCTAssertTrue(state.readerMovedTowardHistory)
+    }
+
+    func testInsetLayoutCannotRearmFollowingDuringAGesture() {
+        let state = TranscriptScroll.followState(
+            previousOffset: 980,
+            offset: 1_020,
+            previousContentHeight: atRest.contentHeight,
+            contentHeight: atRest.contentHeight,
+            previousDistanceFromBottom: 69,
+            isNearBottom: true,
+            readerGestureActive: true,
+            layoutChanged: true,
+            readerMovedTowardHistory: true
+        )
+        XCTAssertFalse(state.pinned)
+        XCTAssertTrue(state.readerMovedTowardHistory)
+    }
+
     func testDraggingPastTheEndStaysPinned() {
         // Rubber-banding puts the visible edge beyond the content; a negative
         // distance is still "at the bottom", not a wrap-around.
@@ -207,7 +311,11 @@ final class FoldStateTests: XCTestCase {
             toolCount: tools,
             failureCount: 0,
             touchedFiles: [],
-            lineStats: ToolLineStats()
+            lineStats: ToolLineStats(),
+            hasMedia: false,
+            featuredMedia: TranscriptMedia(),
+            livePreview: nil,
+            hasNarration: false
         )
     }
 
@@ -217,7 +325,9 @@ final class FoldStateTests: XCTestCase {
         state.toggle()
         XCTAssertTrue(state.expanded)
         // The display pass rebuilds blocks constantly (every 1s append).
-        XCTAssertTrue(store.fold(for: turn("t1"), preference: TurnActivity(work: .folded)).expanded)
+        XCTAssertTrue(
+            store.fold(for: turn("t1"), preference: TurnActivity(work: .folded)).expanded
+        )
     }
 
     func testASettledFoldNeverReopensItself() {
@@ -232,7 +342,10 @@ final class FoldStateTests: XCTestCase {
 
     func testTheLiveTurnFollowsThePreferenceUntilYouTouchIt() {
         let store = FoldStateStore()
-        let live = store.fold(for: turn("t1", live: true), preference: TurnActivity(work: .folded))
+        let live = store.fold(
+            for: turn("t1", live: true),
+            preference: TurnActivity(work: .folded)
+        )
         XCTAssertFalse(live.expanded)
         _ = store.fold(for: turn("t1", live: true), preference: TurnActivity(work: .open))
         XCTAssertTrue(live.expanded, "a live fold may still adopt a new default")
@@ -257,14 +370,22 @@ final class FoldStateTests: XCTestCase {
         XCTAssertFalse(state.expanded, "a manual nested toggle still wins")
     }
 
-    func testFoldDefaultFollowsOnlyThePreference() {
-        var settled = turn("t1", tools: 4)
-        settled.failureCount = 1
-        settled.featuredMedia = TranscriptMedia(videos: ["/media?path=demo.mp4"])
+    func testFoldedPreferenceKeepsSettledTurnsClosed() {
+        var toolOnly = turn("t1", tools: 4)
+        toolOnly.failureCount = 1
+        XCTAssertFalse(
+            toolOnly.defaultExpanded(preference: TurnActivity(work: .folded)),
+            "the one tool-only summary should stay closed until opened"
+        )
 
-        XCTAssertFalse(settled.defaultExpanded(preference: TurnActivity(work: .folded)))
-        XCTAssertFalse(settled.defaultExpanded(preference: TurnActivity(work: .running)))
-        XCTAssertTrue(settled.defaultExpanded(preference: TurnActivity(work: .open)))
-        XCTAssertTrue(turn("t2", live: true).defaultExpanded(preference: TurnActivity(work: .running)))
+        var narrated = turn("t2", tools: 4)
+        narrated.items = [
+            .message(TranscriptEntry(id: "note", type: "assistant", content: "Checking.")),
+        ]
+        narrated.hasNarration = true
+        narrated.failureCount = 1
+        XCTAssertFalse(narrated.defaultExpanded(preference: TurnActivity(work: .folded)))
+
+        XCTAssertTrue(narrated.defaultExpanded(preference: TurnActivity(work: .open)))
     }
 }

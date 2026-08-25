@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { docTitle } from "../lib/brand";
 import { fetchReportGroups, fetchReports } from "../lib/api";
 import type { ReportGroup, ReportMeta } from "../lib/types";
@@ -12,6 +12,7 @@ import { Button } from "../ui/button";
 import { CopyCheck, useCopy } from "../ui/copy";
 import { IconChevronLeft, IconChevronRight, IconFile, IconLink } from "./icons";
 import { OptionSelect } from "../ui/select";
+import { TopBar, TopBarActions } from "../ui/top-bar";
 import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
 import { SIDEBAR_RAIL } from "../lib/sidebar-classes";
 import { reportUrgencyDot, reportUrgencyLabel } from "../lib/report-urgency";
@@ -70,38 +71,44 @@ export function Reports({
 	// loadGroups is also invoked from the mount-scoped ws handler, where props
 	// from that first render would be stale — read the live values via refs.
 	const selectionRef = useRef(selectedAutomationId);
-	selectionRef.current = selectedAutomationId;
 	const isPhoneRef = useRef(isPhone);
-	isPhoneRef.current = isPhone;
+	useLayoutEffect(() => {
+		selectionRef.current = selectedAutomationId;
+		isPhoneRef.current = isPhone;
+	});
 
 	async function loadGroups() {
-		try {
-			const next = await fetchReportGroups();
+		await (async () => {
+const next = await fetchReportGroups();
 			setGroups(next);
 			setError("");
 			// On phones the bare /reports route IS the list page, so don't
 			// auto-select — that would skip straight past it into the detail.
 			if (!selectionRef.current && !isPhoneRef.current && next[0])
 				onSelect(next[0].automationId);
-		} catch (e: any) {
-			setError(e?.message || "Failed to load reports");
+})().catch(async (e: any) => {
+setError(e?.message || "Failed to load reports");
 			setGroups([]);
-		}
+});
 	}
+
+	// Effect-event wrapper: effects can call it with a stable trigger set
+	// while always reaching the latest props.
+	const loadGroupsEvent = useEffectEvent(() => loadGroups());
 
 	useEffect(() => {
 		document.title = docTitle("Reports");
-		loadGroups();
+		loadGroupsEvent();
 		return addHandler((message) => {
 			if (message.type !== "reports_changed") return;
-			loadGroups();
+			loadGroupsEvent();
 			const selectedId = selectionRef.current;
 			if (selectedId && message.automationId === selectedId)
 				fetchReports(selectedId).then(setHistory).catch(() => {});
 		});
 	}, [addHandler]);
 
-	useEffect(() => {
+	const syncHistory = useEffectEvent(() => {
 		if (!selectedAutomationId) {
 			setHistory([]);
 			return;
@@ -118,6 +125,9 @@ export function Reports({
 		return () => {
 			alive = false;
 		};
+	});
+	useEffect(() => {
+		syncHistory();
 	}, [selectedAutomationId]);
 
 	const selected = history.find((report) => report.id === selectedReportId) || history[0];
@@ -174,14 +184,16 @@ export function Reports({
 					{/* The bar sits above the scroller, not in it, so it holds its
 					    place edge to edge while the rows travel out of sight
 					    beneath it. */}
-					<div className={REPORTS_COLUMN_HEADER}>
+					<TopBar as="header" className={REPORTS_COLUMN_HEADER}>
 						<h1 className={REPORTS_COLUMN_TITLE}>Reports</h1>
 						{/* The right of the bar is the column's action slot. Today it
 						    holds the one thing the column can say about itself: how
 						    many automations are reporting. A control that acts on the
 						    whole list belongs beside it. */}
-						<span className={REPORTS_COLUMN_COUNT}>{groups.length}</span>
-					</div>
+						<TopBarActions>
+							<span className={REPORTS_COLUMN_COUNT}>{groups.length}</span>
+						</TopBarActions>
+					</TopBar>
 					<div className={REPORTS_LIST}>
 						{groups.map((group) => {
 							const urgency = reportUrgencyLabel(group.latest.urgency);
@@ -241,7 +253,10 @@ export function Reports({
 			{showDetail && (
 				<section className="flex min-w-0 flex-1 flex-col bg-bg">
 					{isPhone ? (
-						<header className="shrink-0 border-b border-divider px-3 pb-3 pt-2">
+						<TopBar
+							as="header"
+							className="block shrink-0 px-3 pb-3 pt-2"
+						>
 							<button
 								type="button"
 								className="-ml-1 flex items-center gap-0.5 rounded-control border-0 bg-transparent py-1.5 pl-1 pr-2.5 text-sm font-medium text-accent cursor-pointer"
@@ -279,10 +294,13 @@ export function Reports({
 									</div>
 								</>
 							)}
-						</header>
+						</TopBar>
 					) : (
 						selected && (
-							<header className="wco-chrome flex h-[var(--desktop-header-h)] shrink-0 items-center gap-4 border-b border-divider px-5">
+							<TopBar
+								as="header"
+								className="wco-chrome h-[var(--desktop-header-h)] shrink-0 gap-4 border-b border-divider px-5"
+							>
 								{/* The name, and nothing else. Quiet on purpose: the report
 								    below opens with these same words as its own first
 								    heading, so a bold black copy of them an inch above was
@@ -305,6 +323,7 @@ export function Reports({
 								{/* The report's own proposal, so it sits with the actions
 								    rather than inside the document: a report is read in a
 								    sandboxed frame that cannot start anything itself. */}
+								<TopBarActions className="gap-4">
 								{!!selected.tasks?.length && (
 									<Button
 										size="md"
@@ -329,7 +348,8 @@ export function Reports({
 									options={historyOptions}
 									onChange={(id) => onSelect(selected.automationId, id)}
 								/>
-							</header>
+								</TopBarActions>
+							</TopBar>
 						)
 					)}
 					{selected && (

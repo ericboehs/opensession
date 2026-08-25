@@ -10,8 +10,8 @@
  * Ids are `bks-demo-*`: the `bks-` prefix keeps the two prefix-sensitive
  * readers happy (analytics.ts / workspace-resolve.ts filter on it) while the
  * `demo-` marker makes every artifact greppably synthetic. Engine ids are
- * `ses_demo*` so resolveTranscriptPath picks the opencode-engine jsonl
- * (sessions.ts isOpencodeSessionId matches /^ses_/).
+ * `ses_demo*` so resolveTranscriptPath picks the pi-engine jsonl
+ * (sessions.ts isPiSessionId matches /^ses_/).
  */
 
 import {
@@ -21,7 +21,7 @@ import {
   transcriptLineToolResult,
   transcriptLineToolUse,
   transcriptLineUser,
-} from "../opencode-transcript";
+} from "../transcript-persistence";
 import type { NativeSessionFile } from "../types";
 
 type JsonlLine = Record<string, unknown>;
@@ -37,19 +37,19 @@ export const DEMO_REPO_ID = "acme-todo";
 export const DEMO_REPO_WT_PREFIX = "acme";
 export const DEMO_GH_REPO = "acme/acme-todo";
 export const DEMO_LIVE_SESSION_ID = "bks-demo-live";
-export const DEMO_LIVE_OC_SESSION_ID = "ses_demolive";
+export const DEMO_LIVE_ENGINE_SESSION_ID = "ses_demolive";
 export const DEMO_ASK_SESSION_ID = "bks-demo-ask";
-export const DEMO_ASK_OC_SESSION_ID = "ses_demoask";
+export const DEMO_ASK_ENGINE_SESSION_ID = "ses_demoask";
 export const DEMO_PR_NUMBER = 128;
 
-const MODEL_FABLE = "opencode/anthropic/claude-fable-5";
-const MODEL_SONNET = "opencode/anthropic/claude-sonnet-5";
-const MODEL_CODEX = "opencode/openai/gpt-5.5-codex";
+const MODEL_FABLE = "pi/anthropic/claude-fable-5";
+const MODEL_SONNET = "pi/anthropic/claude-sonnet-5";
+const MODEL_CODEX = "pi/openai/gpt-5.5-codex";
 
 export interface DemoSessionFixture {
   id: string;
   /** Engine session id; also the transcript jsonl basename. Empty = no jsonl. */
-  ocSessionId: string;
+  engineSessionId: string;
   file: NativeSessionFile;
   lines: JsonlLine[];
 }
@@ -223,7 +223,7 @@ export function demoSessions(opts: {
     const t0 = now - 170 * min;
     sessions.push({
       id: "bks-demo-pr",
-      ocSessionId: "ses_demo01",
+      engineSessionId: "ses_demo01",
       file: base("bks-demo-pr", "ses_demo01", 170, 150, {
         title: "Fix flaky upload retry test",
         branch: DEMO_BRANCH,
@@ -299,7 +299,7 @@ export function demoSessions(opts: {
     const t0 = now - 300 * min;
     sessions.push({
       id: "bks-demo-failed",
-      ocSessionId: "ses_demo02",
+      engineSessionId: "ses_demo02",
       file: base("bks-demo-failed", "ses_demo02", 300, 290, {
         title: "Investigate memory spike in export worker",
         createdBy: "Sam",
@@ -348,7 +348,7 @@ export function demoSessions(opts: {
     const t0 = now - 1_500 * min;
     sessions.push({
       id: "bks-demo-cancelled",
-      ocSessionId: "ses_demo03",
+      engineSessionId: "ses_demo03",
       file: base("bks-demo-cancelled", "ses_demo03", 1_500, 1_495, {
         title: "Refactor date helpers into shared/",
         model: MODEL_CODEX,
@@ -466,7 +466,7 @@ export function demoSessions(opts: {
     );
     sessions.push({
       id: "bks-demo-long",
-      ocSessionId: "ses_demo04",
+      engineSessionId: "ses_demo04",
       file: base("bks-demo-long", "ses_demo04", 2_900, 2_840, {
         title: "Migrate settings storage to SQLite",
         worktreeDir: repoDir,
@@ -486,7 +486,7 @@ export function demoSessions(opts: {
     const t0 = now - 700 * min;
     sessions.push({
       id: "bks-demo-steered",
-      ocSessionId: "ses_demo05",
+      engineSessionId: "ses_demo05",
       file: base("bks-demo-steered", "ses_demo05", 700, 680, {
         title: "Tighten retry backoff defaults",
         createdBy: "Sam",
@@ -532,8 +532,8 @@ export function demoSessions(opts: {
     const t0 = now - 25 * min;
     sessions.push({
       id: DEMO_ASK_SESSION_ID,
-      ocSessionId: DEMO_ASK_OC_SESSION_ID,
-      file: base(DEMO_ASK_SESSION_ID, DEMO_ASK_OC_SESSION_ID, 25, 5, {
+      engineSessionId: DEMO_ASK_ENGINE_SESSION_ID,
+      file: base(DEMO_ASK_SESSION_ID, DEMO_ASK_ENGINE_SESSION_ID, 25, 5, {
         title: "Choose an auth provider for acme-todo",
         mode: "ask",
         worktreeDir: repoDir,
@@ -567,8 +567,8 @@ export function demoSessions(opts: {
   //    transcript through the store/bus so watchers see it happen.
   sessions.push({
     id: DEMO_LIVE_SESSION_ID,
-    ocSessionId: "",
-    file: base(DEMO_LIVE_SESSION_ID, DEMO_LIVE_OC_SESSION_ID, 8, 0, {
+    engineSessionId: "",
+    file: base(DEMO_LIVE_SESSION_ID, DEMO_LIVE_ENGINE_SESSION_ID, 8, 0, {
       title: "Instrument request tracing in api-gateway",
       worktreeDir: repoDir,
       usage: usage(0.12, 4_200, 800, 1, iso(now)),
@@ -581,7 +581,7 @@ export function demoSessions(opts: {
     const t0 = now - 900 * min;
     sessions.push({
       id: "bks-demo-automation-run",
-      ocSessionId: "ses_demo07",
+      engineSessionId: "ses_demo07",
       file: base("bks-demo-automation-run", "ses_demo07", 900, 880, {
         title: "Nightly dependency audit — 2 advisories",
         createdBy: "Nightly dependency audit (automation)",
@@ -620,7 +620,7 @@ export function demoSessions(opts: {
     const t0 = now - 60 * min;
     sessions.push({
       id: "bks-demo-scratch",
-      ocSessionId: "ses_demo08",
+      engineSessionId: "ses_demo08",
       file: base("bks-demo-scratch", "ses_demo08", 60, 55, {
         title: "Why does the smoke test skip on CI?",
         mode: "ask",
@@ -904,7 +904,7 @@ export function demoAuditLines(now: number): Array<Record<string, unknown>> {
     time: at(agoMin),
     service: "opensession",
     msg: "claude_turn_event",
-    provider: "opencode",
+    provider: "pi",
     turn_id: "demo-turn-1",
     run_key: "ses_demo01",
     session_id: "bks-demo-pr",

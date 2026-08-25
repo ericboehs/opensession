@@ -1,5 +1,5 @@
 import { $ } from "bun";
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, unlinkSync } from "fs";
 import { resolve as resolvePath } from "path";
 import type { UnifiedSession } from "./types";
 import { stopPreview } from "./preview";
@@ -47,8 +47,7 @@ export function getRepo(id?: string): Repo {
 
 /** Canonicalize a checkout path for identity COMPARISONS only: resolves
  *  symlinks so session files persisted before a checkout rename (old path
- *  kept behind as a symlink, e.g. projects/tella-backstage → opensession)
- *  still match the registered repo. Never rewrite a stored worktreeDir with
+ *  kept behind as a symlink) still match the registered repo. Never rewrite a stored worktreeDir with
  *  this — transcript locations hash the recorded string, so canonicalizing
  *  persisted data would orphan old transcripts. */
 export function canonicalPath(p: string): string {
@@ -229,6 +228,52 @@ export function withGitLock<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
+const STALE_REVIEW_INDEX_LOCK_MS = 5 * 60_000;
+
+/**
+ * A killed Git command can leave an index.lock in a review worktree forever.
+ * Review worktrees are disposable and only OS owns them, but never remove a
+ * recent lock or one lsof reports as still held: that would race a real Git
+ * operation. If lsof itself cannot positively report an unheld lock, leave it
+ * alone and let Git surface its normal error.
+ */
+async function clearStaleReviewIndexLock(wtPath: string): Promise<boolean> {
+  let lockPath: string;
+  try {
+    const gitdir = readFileSync(`${wtPath}/.git`, "utf8").match(/^gitdir:\s*(.+)$/m)?.[1]?.trim();
+    if (!gitdir) return false;
+    lockPath = resolvePath(wtPath, gitdir, "index.lock");
+  } catch {
+    return false;
+  }
+
+  if (!existsSync(lockPath)) return true;
+
+  let age: number;
+  try {
+    age = Date.now() - statSync(lockPath).mtimeMs;
+  } catch {
+    return false;
+  }
+  if (age < STALE_REVIEW_INDEX_LOCK_MS) return false;
+
+  const holders = await $`lsof -t -- ${lockPath}`.quiet().nothrow();
+  // lsof exits 1 with no output when no process has the path open. Any other
+  // result, including a missing/broken lsof, is deliberately fail-closed.
+  if (holders.exitCode !== 1 || holders.stderr.toString().trim()) return false;
+
+  try {
+    unlinkSync(lockPath);
+    console.warn(`[worktree] removed stale review index lock: ${lockPath}`);
+    return true;
+  } catch (error) {
+    // Another process may have recreated the lock between lsof and unlink.
+    // The following Git command remains the authority, so do not hide errors.
+    console.warn(`[worktree] could not remove stale review index lock ${lockPath}:`, error);
+    return false;
+  }
+}
+
 export interface WorktreeInfo {
   branch: string;
   path: string;
@@ -239,7 +284,7 @@ export interface WorktreeInfo {
  * `bun install` themselves. A repo-owned `.agents/setup` hook is preferred;
  * `worktreeSetup` is the instance-level fallback. `depsInstall` then overrides the generic root package install.
  *
- * Interactive create paths fire this WITHOUT awaiting (a tella-fusion webapp
+ * Interactive create paths fire this WITHOUT awaiting (a large webapp
  * `bun install` is ~20-25s — it was the bulk of the "Waiting for workspace"
  * spinner) so the opening turn starts as soon as the git worktree exists; the
  * agent-facing autofix/followup paths still await it because those runs build
@@ -317,9 +362,25 @@ export async function listWorktrees(repoId?: string): Promise<WorktreeInfo[]> {
   }
 }
 
+/** True only when git registers this exact path for this repo and branch. */
+export async function isRegisteredWorktree(
+  path: string,
+  repoId: string,
+  branch: string,
+): Promise<boolean> {
+  const repo = getRepo(repoId);
+  const registered = (await listWorktrees(repo.id)).find(
+    (worktree) =>
+      canonicalPath(worktree.path) === canonicalPath(path) &&
+      worktree.branch === branch,
+  );
+  if (!registered) return false;
+  return repoFromGitPointer(path)?.repo.id === repo.id;
+}
+
 /**
  * Repo-less scratch directory for "scratch" sessions (feed-item workspaces —
- * the feeds design): media/MCP work like downloading a Tella video and
+ * the feeds design): media/MCP work like downloading a linked video and
  * running ffmpeg, with full write access but no repo, branch, or PR flow.
  * Keyed by workspace id so a workspace's sibling sessions share downloads
  * (falls back to the session id for workspace-less creates). Never a git
@@ -337,7 +398,7 @@ export function ensureScratchDir(key: string): string {
  *
  * Ask sessions used to run in the repo's live main checkout, but that tree's
  * branch is whatever the last flow left checked out — a resumed ask session
- * that had lost its history found tella-fusion parked on a teammate's PR
+ * that had lost its history found the checkout parked on a teammate's PR
  * branch and adopted that PR's review as its own task (2026-07-24). Every
  * non-shared-checkout repo instead gets one `<wtPrefix>-ask-checkout`
  * worktree, detached at origin/<defaultBranch>, that all its ask sessions
@@ -355,25 +416,92 @@ export function ensureScratchDir(key: string): string {
  * hiccup degrades to the old behavior instead of failing the session.
  */
 const askCheckoutRefreshedAt = new Map<string, number>();
+const askCheckoutInvalidationVersion = new Map<string, number>();
+const askCheckoutAppliedVersion = new Map<string, number>();
+const askCheckoutRefreshes = new Map<
+  string,
+  { version: number; promise: Promise<void> }
+>();
 const ASK_REFRESH_MS = 5 * 60_000;
+
+/** Force the next Ask session to wait until this repo's read-only checkout is
+ * pinned to the newly configured default branch. */
+export function invalidateAskCheckoutRefresh(repoId: string): void {
+  askCheckoutInvalidationVersion.set(
+    repoId,
+    (askCheckoutInvalidationVersion.get(repoId) || 0) + 1,
+  );
+  askCheckoutRefreshedAt.delete(repoId);
+}
+
+async function refreshAskCheckoutLocked(repo: Repo, dir: string): Promise<void> {
+  const fetch =
+    await $`git -C ${dir} fetch origin ${repo.defaultBranch} --quiet`.quiet().nothrow();
+  if (fetch.exitCode !== 0) {
+    throw new Error(
+      `Could not fetch ${repo.id}'s default branch ${repo.defaultBranch}: ${fetch.stderr.toString().trim()}`,
+    );
+  }
+  const reset =
+    await $`git -C ${dir} reset --hard origin/${repo.defaultBranch}`.quiet().nothrow();
+  if (reset.exitCode !== 0) {
+    throw new Error(
+      `Could not pin ${repo.id}'s Ask checkout to ${repo.defaultBranch}: ${reset.stderr.toString().trim()}`,
+    );
+  }
+}
+
+function refreshAskCheckout(
+  repo: Repo,
+  dir: string,
+  version: number,
+): Promise<void> {
+  const existing = askCheckoutRefreshes.get(repo.id);
+  if (existing && existing.version >= version) return existing.promise;
+
+  const promise = withGitLock(() => refreshAskCheckoutLocked(repo, dir)).finally(() => {
+    if (askCheckoutRefreshes.get(repo.id)?.promise === promise) {
+      askCheckoutRefreshes.delete(repo.id);
+    }
+  });
+  askCheckoutRefreshes.set(repo.id, { version, promise });
+  return promise;
+}
+
 export async function ensureAskCheckout(repoId?: string): Promise<string> {
   const repo = getRepo(repoId);
   if (sharedCheckoutForNewSessions(repo)) return repo.repo;
   const dir = `${worktreesDir()}/${repo.wtPrefix}-ask-checkout`;
+  const requiredVersion = askCheckoutInvalidationVersion.get(repo.id) || 0;
   if (existsSync(dir)) {
     const last = askCheckoutRefreshedAt.get(repo.id) || 0;
-    if (Date.now() - last > ASK_REFRESH_MS) {
+    const force = requiredVersion > (askCheckoutAppliedVersion.get(repo.id) || 0);
+    if (force || Date.now() - last > ASK_REFRESH_MS) {
       askCheckoutRefreshedAt.set(repo.id, Date.now());
-      void withGitLock(async () => {
-        await $`git -C ${dir} fetch origin ${repo.defaultBranch} --quiet`.quiet().nothrow();
-        // Detached tree with no writers: hard-pin to the fresh default tip.
-        await $`git -C ${dir} reset --hard origin/${repo.defaultBranch}`.quiet().nothrow();
-      });
+      const refresh = refreshAskCheckout(repo, dir, requiredVersion);
+      if (force) {
+        await refresh;
+        askCheckoutAppliedVersion.set(repo.id, requiredVersion);
+      } else {
+        void refresh.catch((error) => {
+          console.warn(`[worktree] Ask checkout refresh failed for ${repo.id}:`, error);
+        });
+      }
     }
     return dir;
   }
   return withGitLock(async () => {
-    if (existsSync(dir)) return dir; // lost the create race to a sibling call
+    if (existsSync(dir)) {
+      // A sibling may have created the checkout from the previous default
+      // while this call was waiting for the Git lock. Apply the generation
+      // captured by this call before returning instead of bypassing it.
+      if (requiredVersion > (askCheckoutAppliedVersion.get(repo.id) || 0)) {
+        await refreshAskCheckoutLocked(repo, dir);
+        askCheckoutRefreshedAt.set(repo.id, Date.now());
+        askCheckoutAppliedVersion.set(repo.id, requiredVersion);
+      }
+      return dir;
+    }
     await $`git -C ${repo.repo} fetch origin ${repo.defaultBranch} --quiet`.nothrow();
     await $`git -C ${repo.repo} worktree prune`.quiet().nothrow();
     const add =
@@ -387,6 +515,7 @@ export async function ensureAskCheckout(repoId?: string): Promise<string> {
       return repo.repo;
     }
     askCheckoutRefreshedAt.set(repo.id, Date.now());
+    askCheckoutAppliedVersion.set(repo.id, requiredVersion);
     void installWorktreeDeps(repo, dir, "ask-checkout");
     return dir;
   });
@@ -535,23 +664,6 @@ export async function reviveWorktree(branch: string, repoId?: string): Promise<s
 }
 
 /**
- * Remove a leftover legacy-suffix worktree from the michael-* → os-* rename
- * (path + its checkout branch, best-effort). Callers hold the git lock; the
- * PR-agent per-PR locks guarantee nothing is running inside the legacy tree
- * when its os-* replacement is being set up.
- */
-async function removeLegacySuffixWorktree(
-  repo: Repo,
-  wtPath: string,
-  branch: string,
-): Promise<void> {
-  if (!existsSync(wtPath)) return;
-  await $`git -C ${repo.repo} worktree remove --force ${wtPath}`.quiet().nothrow();
-  await $`git -C ${repo.repo} branch -D ${branch}`.quiet().nothrow();
-  console.log(`[worktree] removed legacy-suffix worktree ${wtPath}`);
-}
-
-/**
  * Fetch branches, guaranteeing their `origin/<branch>` refs exist afterwards.
  *
  * `git fetch origin <branch>` writes `refs/remotes/origin/<branch>` only when the
@@ -562,18 +674,26 @@ async function removeLegacySuffixWorktree(
  * below hand to `worktree add` never appears, so the add dies with
  * "fatal: invalid reference: origin/<branch>" and EVERY PR review in that repo
  * fails identically (not transiently — retrying on the next push hits it again).
- * Explicit refspecs bypass the remote config. Found on tella-windows, cloned
+ * Explicit refspecs bypass the remote config. Found on a repo cloned
  * single-branch during node provisioning; `--unshallow` fixes depth, not this.
  */
+async function githubServiceGitEnv(ghRepo: string | undefined) {
+  const { githubServiceCredentialEnv } = await import("./github-app");
+  return { ...process.env, ...(await githubServiceCredentialEnv(ghRepo)) };
+}
+
 async function fetchBranchesWithTracking(
   gitDir: string,
+  ghRepo: string | undefined,
   ...branches: (string | undefined)[]
 ): Promise<void> {
   const specs = [...new Set(branches.filter((b): b is string => !!b))].map(
     (b) => `+refs/heads/${b}:refs/remotes/origin/${b}`,
   );
   if (specs.length === 0) return;
-  await $`git -C ${gitDir} fetch origin ${specs} --quiet`;
+  await $`git -C ${gitDir} fetch origin ${specs} --quiet`.env(
+    await githubServiceGitEnv(ghRepo),
+  );
 }
 
 /**
@@ -589,14 +709,11 @@ export async function createWorktreeForPrBranch(headRef: string, repoId?: string
   const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${headRef}-os`;
 
   const reused = await withGitLock(async () => {
-    await removeLegacySuffixWorktree(
-      repo,
-      `${worktreesDir()}/${repo.wtPrefix}-${headRef}-michael`,
-      `${headRef}-michael`,
-    );
-    await fetchBranchesWithTracking(repo.repo, headRef);
+    await fetchBranchesWithTracking(repo.repo, repo.ghRepo, headRef);
     if (existsSync(wtPath)) {
-      await $`git -C ${wtPath} fetch origin ${headRef} --quiet`.nothrow();
+      await $`git -C ${wtPath} fetch origin ${headRef} --quiet`
+        .env(await githubServiceGitEnv(repo.ghRepo))
+        .nothrow();
       await $`git -C ${wtPath} reset --hard origin/${headRef}`.quiet().nothrow();
       return true;
     }
@@ -630,20 +747,28 @@ export async function createReviewWorktreeForPrHead(
   const repo = getRepo(repoId);
   const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${headRef}-os-review`;
   return withGitLock(async () => {
-    await removeLegacySuffixWorktree(
-      repo,
-      `${worktreesDir()}/${repo.wtPrefix}-${headRef}-michael-review`,
-      `${headRef}-michael-review`,
-    );
-    await fetchBranchesWithTracking(repo.repo, headRef, baseRef || repo.defaultBranch);
+    await fetchBranchesWithTracking(repo.repo, repo.ghRepo, headRef, baseRef || repo.defaultBranch);
     if (existsSync(wtPath)) {
       // A code session recovering from a deleted worktree may have borrowed this
       // path and switched it onto the source branch. Restore review ownership.
-      await $`git -C ${wtPath} switch -C ${headRef}-os-review origin/${headRef}`.quiet();
-      await $`git -C ${wtPath} reset --hard origin/${headRef}`.quiet();
-      return wtPath;
+      const repairAllowed = await clearStaleReviewIndexLock(wtPath);
+      try {
+        await $`git -C ${wtPath} switch -C ${headRef}-os-review origin/${headRef}`.quiet();
+        await $`git -C ${wtPath} reset --hard origin/${headRef}`.quiet();
+        return wtPath;
+      } catch (error) {
+        // A restart can kill `git worktree add` after it creates the directory
+        // but before it finishes the index. That checkout is disposable. Once
+        // no active index lock can be present, replace it instead of retrying
+        // the same permanently half-initialized directory on every PR push.
+        if (!repairAllowed || !(await clearStaleReviewIndexLock(wtPath))) throw error;
+        console.warn(`[worktree] recreating unusable review worktree: ${wtPath}`);
+        await $`git -C ${repo.repo} worktree remove --force --force ${wtPath}`.quiet();
+        await $`git -C ${repo.repo} worktree prune`.quiet();
+      }
+    } else {
+      await $`git -C ${repo.repo} worktree prune`.quiet();
     }
-    await $`git -C ${repo.repo} worktree prune`.quiet();
     await $`git -C ${repo.repo} worktree add ${wtPath} -B ${headRef}-os-review origin/${headRef}`;
     return wtPath;
   });
@@ -700,8 +825,10 @@ export async function createWorktreeForFollowup(
 export async function createWorktreeForExistingBranch(
   branch: string,
   repoId?: string,
+  gitEnv?: Record<string, string>,
 ): Promise<string> {
   const repo = getRepo(repoId);
+  const shell = gitEnv ? $.env({ ...process.env, ...gitEnv }) : $;
   const existing = (await listWorktrees(repo.id)).find((w) => w.branch === branch);
   if (existing) return existing.path;
 
@@ -709,7 +836,7 @@ export async function createWorktreeForExistingBranch(
   await withGitLock(async () => {
     await $`git -C ${repo.repo} worktree prune`.quiet();
     if (existsSync(wtPath)) return; // pruned stale registration; dir already usable
-    await $`git -C ${repo.repo} fetch origin ${branch} --quiet`.nothrow();
+    await shell`git -C ${repo.repo} fetch origin ${branch} --quiet`.nothrow();
     const hasLocal =
       (await $`git -C ${repo.repo} show-ref --verify --quiet refs/heads/${branch}`.nothrow())
         .exitCode === 0;
@@ -746,9 +873,17 @@ async function resolveStartPoint(
   return `origin/${defaultBranch}`;
 }
 
+/**
+ * Where a new branch starts: `origin/<defaultBranch>` when the repo has that
+ * remote ref, else the local `<defaultBranch>`. A repo with no remote (the
+ * scratch repo a release install starts with, or any local-only checkout)
+ * still gets worktrees instead of "invalid reference: origin/main".
+ */
 async function defaultStartPoint(repo: Repo): Promise<string> {
   const remote = `origin/${repo.defaultBranch}`;
-  return remote;
+  const hasRemote =
+    (await $`git -C ${repo.repo} show-ref --verify --quiet refs/remotes/${remote}`.nothrow()).exitCode === 0;
+  return hasRemote ? remote : repo.defaultBranch;
 }
 
 /**
@@ -831,9 +966,10 @@ export async function resolveUniqueBranch(
 export async function createWorktree(
   branch: string,
   repoId?: string,
-  opts?: { base?: string; isolated?: boolean },
+  opts?: { base?: string; isolated?: boolean; gitEnv?: Record<string, string> },
 ): Promise<string> {
   const repo = getRepo(repoId);
+  const shell = opts?.gitEnv ? $.env({ ...process.env, ...opts.gitEnv }) : $;
 
   // Shared-checkout repos (opensession) don't get a per-session worktree: the
   // session works in the live main checkout on the default branch so its edits
@@ -850,11 +986,11 @@ export async function createWorktree(
   const base = opts?.base;
 
   await withGitLock(async () => {
-    await $`git -C ${repo.repo} fetch origin ${repo.defaultBranch} --quiet`.nothrow();
+    await shell`git -C ${repo.repo} fetch origin ${repo.defaultBranch} --quiet`.nothrow();
     let startPoint = await defaultStartPoint(repo);
     if (base) {
       // Stacked worktree: fetch the base (it may be remote-only), then branch off it.
-      await $`git -C ${repo.repo} fetch origin ${base} --quiet`.nothrow();
+      await shell`git -C ${repo.repo} fetch origin ${base} --quiet`.nothrow();
       startPoint = await resolveStartPoint(repo.repo, base, repo.defaultBranch);
     }
     const add =
@@ -913,13 +1049,16 @@ export async function createWorktree(
  */
 export async function prepareAttachedWorktree(
   repoId: string,
-  branch: string
+  branch: string,
+  gitEnv?: Record<string, string>,
 ): Promise<{ repo: string; branch: string; dir: string }> {
   const repo = getRepo(repoId);
   if (sharedCheckoutForNewSessions(repo)) {
     throw new Error(`${repo.id} is a shared-checkout repo and can't be attached as an isolated worktree`);
   }
   const existing = (await listWorktrees(repo.id)).find((w) => w.branch === branch);
-  const dir = existing?.path || (await createWorktree(branch, repo.id));
+  const dir =
+    existing?.path ||
+    (await createWorktree(branch, repo.id, gitEnv ? { gitEnv } : undefined));
   return { repo: repo.id, branch, dir };
 }

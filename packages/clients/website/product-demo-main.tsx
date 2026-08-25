@@ -1,7 +1,10 @@
 import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import type { TranscriptEntry, UnifiedSession } from "../../core/opensession-server/src/frontend/lib/types";
-import openSessionMark from "../mac/build/icon-512.png";
+import openSessionMarkAsset from "../mac/build/icon-512.png";
+import { assetUrl } from "./asset-url";
+
+const openSessionMark = assetUrl(openSessionMarkAsset);
 
 /**
  * Fixture clocks are relative to page load, not fixed dates: a hard-coded
@@ -459,14 +462,14 @@ const responseFor = (url: URL, method: string): Response => {
 			models: [
 				{
 					id: "anthropic/claude-fable-5",
-					provider: "opencode",
+					provider: "pi",
 					label: "Claude Fable 5",
 					aliases: [],
 					efforts: ["medium", "high"],
 				},
 				{
 					id: "anthropic/claude-opus-5",
-					provider: "opencode",
+					provider: "pi",
 					label: "Claude Opus 5",
 					aliases: [],
 					efforts: ["high"],
@@ -522,7 +525,7 @@ const responseFor = (url: URL, method: string): Response => {
 							endedAt: Date.parse(minutesAgo(35)),
 							model: "anthropic/claude-sonnet-5",
 							tokensOut: 1840,
-							source: "opencode",
+							source: "pi",
 						},
 						{
 							id: "agent-demo-review",
@@ -531,7 +534,7 @@ const responseFor = (url: URL, method: string): Response => {
 							status: "running",
 							startedAt: Date.parse(minutesAgo(35)),
 							model: "anthropic/claude-fable-5",
-							source: "opencode",
+							source: "pi",
 						},
 					]
 				: [],
@@ -679,6 +682,10 @@ localStorage.setItem("opensession-last-session", activeSessionId);
 // instead of the session it was written to show.
 localStorage.setItem("opensession-last-session-user", "Alex");
 localStorage.setItem("opensession-panel-open", "false");
+// The workspace summary card is open by default in the product, and it paints
+// over the transcript for the frames before the header is measured. That flash
+// is what a screenshot catches, so the demo starts with the card put away.
+localStorage.setItem("opensession-workspace-summary-open", "false");
 localStorage.setItem("opensession-panel-tab", "workflows");
 localStorage.setItem("opensession-sidebar-collapsed", "0");
 localStorage.setItem("opensession-sidebar-w", "300");
@@ -714,9 +721,14 @@ localStorage.setItem(
 // Two marks the app asks the server for and this page has to answer itself:
 // the repo icon, and the phone top bar's app icon, which was rendering as a
 // broken-image tile for every visitor narrow enough to get the phone layout.
+//
+// Matched on `*=` rather than `$=`: the app cache-busts that icon
+// (`/mac-app-icon.png?v=7` in useOrganizationIcon.ts), and a suffix match
+// cannot see past a query string, so the tile silently came back broken the
+// day the `?v=` was added. Anything ending in the file name still matches.
 const repoMarkObserver = new MutationObserver(() => {
 	for (const image of document.querySelectorAll<HTMLImageElement>(
-		'img[src*="/repo-icon/opensession.png"], img[src$="/mac-app-icon.png"]',
+		'img[src*="/repo-icon/opensession.png"], img[src*="/mac-app-icon.png"]',
 	)) {
 		if (image.src !== new URL(openSessionMark, location.href).href) {
 			image.src = openSessionMark;

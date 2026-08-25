@@ -20,6 +20,7 @@ struct CommandPaletteItem: Identifiable {
 /// next time an unrelated update repainted the palette. An observable object
 /// publishes from wherever it is mutated.
 @Observable
+@MainActor
 final class CommandPaletteModel {
     var query = ""
     /// Whatever the arrows last landed on. `nil` means "the first result",
@@ -28,9 +29,54 @@ final class CommandPaletteModel {
     /// The rows as of the host's last update, so a row created since the
     /// palette opened is still the row Return runs.
     var items: [CommandPaletteItem] = []
+    var transcriptSnippets: [String: String] = [:]
+    var searchingTranscripts = false
+    private var transcriptSearchRevision = 0
 
     var results: [CommandPaletteEntry] {
-        CommandPaletteRanking.results(items.map(\.entry), query: query)
+        let contentMatches = Set(transcriptSnippets.keys.map { "session:\($0)" })
+        let ranked = CommandPaletteRanking.results(
+            items.map(\.entry),
+            query: query,
+            contentMatches: contentMatches
+        )
+        return ranked.map { entry in
+            guard entry.kind == .session, entry.id.hasPrefix("session:"),
+                  let snippet = transcriptSnippets[String(entry.id.dropFirst(8))],
+                  CommandPaletteRanking.results([entry], query: query).isEmpty
+            else { return entry }
+            var contentMatch = entry
+            contentMatch.subtitle = snippet
+            return contentMatch
+        }
+    }
+
+    func updateTranscriptSearch() async {
+        transcriptSearchRevision += 1
+        let revision = transcriptSearchRevision
+        let searched = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        transcriptSnippets = [:]
+        guard searched.count >= 2 else {
+            searchingTranscripts = false
+            return
+        }
+        searchingTranscripts = true
+        do {
+            try await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            let matches = try await OS1API.searchTranscripts(searched)
+            guard !Task.isCancelled, revision == transcriptSearchRevision,
+                  searched == query.trimmingCharacters(in: .whitespacesAndNewlines)
+            else { return }
+            var next: [String: String] = [:]
+            for match in matches where next[match.id] == nil {
+                next[match.id] = match.snippet
+            }
+            transcriptSnippets = next
+        } catch {
+            // Local command and session metadata search remains available.
+        }
+        if revision == transcriptSearchRevision { searchingTranscripts = false }
     }
 
     /// The highlighted row: a query that drops the selected row must not leave
@@ -100,6 +146,7 @@ struct CommandPaletteView: View {
         .onChange(of: items.map(\.id), initial: true) { model.items = items }
         .onAppear { installKeyMonitor() }
         .onDisappear { removeKeyMonitor() }
+        .task(id: model.query) { await model.updateTranscriptSearch() }
         .task {
             // The field is created in the same frame the sheet is, and focus
             // asked for in `onAppear` lands before it exists.
@@ -170,6 +217,11 @@ struct CommandPaletteView: View {
             hint("↩", "Open")
             hint("esc", "Close")
             Spacer()
+            if model.searchingTranscripts {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel("Searching conversations")
+            }
         }
         .padding(.horizontal, 14)
         .frame(height: 30)

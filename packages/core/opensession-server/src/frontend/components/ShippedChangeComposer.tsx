@@ -3,12 +3,13 @@ import { fetchShippedChangeChannels } from "../lib/api/shipped-changes";
 import { imageFilesFromPaste, uploadFile } from "../lib/images";
 import { noAutofill } from "../lib/composer-autofill";
 import { Button } from "../ui/button";
+import { OverlayAction } from "../ui/overlay-action";
 import { OptionSelect } from "../ui/select";
 import { toast } from "../ui/toast";
 import { Tooltip } from "../ui/tooltip";
 import { BrandMark } from "./BrandMark";
 import { openLightbox } from "./MediaLightbox";
-import { IconPlus, IconX } from "./icons";
+import { IconPlus, IconUndo, IconX } from "./icons";
 import { Spinner } from "../ui/spinner";
 
 const MAX_SLACK_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -17,13 +18,18 @@ export interface SlackSent {
 	channelName: string;
 	permalink?: string;
 	receiptKey?: string;
+	/** Where the message landed, so the sender can take it back out again. */
+	channelId?: string;
+	ts?: string;
 }
 
 export function SlackSentNotice({
 	channelName,
 	permalink,
 	onSendAnother,
-}: SlackSent & { onSendAnother: () => void }) {
+	onUndo,
+}: SlackSent & { onSendAnother: () => void; onUndo?: () => void | Promise<void> }) {
+	const [undoing, setUndoing] = useState(false);
 	return (
 		<div className="mx-auto mt-2 mb-6 flex w-full max-w-[var(--session-col)] items-center gap-1.5 px-1 text-label leading-5 text-dim">
 			<BrandMark name="slack" size={12} />
@@ -43,9 +49,31 @@ export function SlackSentNotice({
 					</a>
 				</>
 			)}
-			<Button variant="ghost" size="sm" className="ml-auto phone:min-h-10" onClick={onSendAnother}>
-				Send another
-			</Button>
+			<div className="ml-auto flex items-center gap-0.5">
+				{onUndo && (
+					<Tooltip label="Undo" side="bottom">
+						<Button
+							variant="ghost"
+							size="sm"
+							className="phone:size-10"
+							icon={undoing ? <Spinner size="sm" /> : <IconUndo size={16} />}
+							aria-label="Undo"
+							disabled={undoing}
+							onClick={async () => {
+								setUndoing(true);
+								await (async () => {
+await onUndo();
+})().finally(async () => {
+setUndoing(false);
+});
+							}}
+						/>
+					</Tooltip>
+				)}
+				<Button variant="ghost" size="sm" className="phone:min-h-10" onClick={onSendAnother}>
+					Send another
+				</Button>
+			</div>
 		</div>
 	);
 }
@@ -68,6 +96,8 @@ export interface ShippedChangeComposerProps {
 	defaultChannel?: string;
 	nextMessage?: string;
 	sent?: SlackSent;
+	/** Offered on the receipt while the message is still deletable in Slack. */
+	onUndo?: () => void | Promise<void>;
 }
 
 export function ShippedChangeComposer({
@@ -84,6 +114,7 @@ export function ShippedChangeComposer({
 	defaultChannel,
 	nextMessage,
 	sent,
+	onUndo,
 }: ShippedChangeComposerProps) {
 	const [message, setMessage] = useState(defaultMessage);
 	const [channels, setChannels] = useState<Array<{ id: string; name: string }>>([]);
@@ -155,19 +186,19 @@ export function ShippedChangeComposer({
 			.slice(0, 10 - screenshots.length);
 		if (!images.length) return;
 		setUploading(true);
-		try {
-			const uploaded = await Promise.all(images.map((file) => uploadFile(file)));
+		await (async () => {
+const uploaded = await Promise.all(images.map((file) => uploadFile(file)));
 			setScreenshots((current) => [...new Set([
 				...current,
 				...uploaded.map((file) => file.path),
 			])].slice(0, 10));
-		} catch (error) {
-			toast(error instanceof Error ? error.message : "Couldn't add that image", {
+})().catch(async (error) => {
+toast(error instanceof Error ? error.message : "Couldn't add that image", {
 				variant: "error",
 			});
-		} finally {
-			setUploading(false);
-		}
+}).finally(async () => {
+setUploading(false);
+});
 	};
 	const mediaUrl = (path: string) => path.startsWith("/media?")
 		? path
@@ -175,8 +206,8 @@ export function ShippedChangeComposer({
 	const reconnect = async () => {
 		if (!onReconnectSlack) return;
 		setAwaitingSlack(true);
-		try {
-			await onReconnectSlack();
+		await (async () => {
+await onReconnectSlack();
 			for (let attempt = 0; attempt < 24; attempt += 1) {
 				await new Promise((resolve) => setTimeout(resolve, 5_000));
 				const result = await (loadChannels ? loadChannels() : fetchShippedChangeChannels(sessionId));
@@ -185,17 +216,18 @@ export function ShippedChangeComposer({
 				if (result.canUploadImages !== false) return;
 			}
 			toast("Slack access is still waiting for approval", { variant: "error" });
-		} catch (error) {
-			toast(error instanceof Error ? error.message : "Couldn't reconnect Slack", { variant: "error" });
-		} finally {
-			setAwaitingSlack(false);
-		}
+})().catch(async (error) => {
+toast(error instanceof Error ? error.message : "Couldn't reconnect Slack", { variant: "error" });
+}).finally(async () => {
+setAwaitingSlack(false);
+});
 	};
 
 	if (sent && !composingAfterSent) {
 		return (
 			<SlackSentNotice
 				{...sent}
+				onUndo={onUndo}
 				onSendAnother={() => {
 					setMessage(nextMessage?.trim().slice(0, 500) || "");
 					setScreenshots([]);
@@ -224,8 +256,9 @@ export function ShippedChangeComposer({
 					</Tooltip>
 				)}
 			</div>
+			{/* `pwa-composer-edge` keeps this card aligned with the shared composer. */}
 			<div
-				className="rounded-[var(--composer-radius)] border border-[color:var(--composer-border)] bg-[var(--composer-surface)] px-3.5 pt-3.5 pb-2.5 shadow-[var(--composer-shadow)] transition-[border-color,box-shadow] focus-within:border-accent desktop:border-transparent desktop:[--smooth-ring-color:var(--composer-border)] desktop:smooth-shadow-ring-soft phone:px-3 phone:pt-3 phone:pb-2"
+				className="pwa-composer-edge rounded-[var(--composer-radius)] border border-[color:var(--composer-border)] bg-[var(--composer-surface)] px-3.5 pt-3.5 pb-2.5 shadow-[var(--composer-shadow)] transition-[border-color,box-shadow] focus-within:border-accent desktop:border-transparent desktop:[--smooth-ring-color:var(--composer-border)] desktop:smooth-shadow-ring-soft phone:px-3 phone:pt-3 phone:pb-2"
 				onDragOver={(event) => event.preventDefault()}
 				onDrop={(event) => {
 					event.preventDefault();
@@ -251,13 +284,18 @@ export function ShippedChangeComposer({
 				{screenshots.length > 0 && (
 					<div className="mt-0.5 flex gap-2 overflow-x-auto pt-2 pr-2 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
 						{screenshots.map((path, index) => (
-							<div key={path} className="group/image relative shrink-0">
+							<div key={path} className="group/overlay-action relative shrink-0">
 								<button type="button" aria-label="Open screenshot preview" className="focus-ring block overflow-hidden rounded-md" onClick={(event) => openLightbox(screenshots.map((item) => ({ kind: "image", src: mediaUrl(item) })), index, event.currentTarget)}>
 									<img className="h-16 w-24 rounded-md border border-line-strong object-cover object-top" src={mediaUrl(path)} alt="" />
 								</button>
-								<button type="button" aria-label="Remove screenshot" disabled={status !== "idle"} className="focus-ring absolute -top-2 -right-2 flex size-6 items-center justify-center rounded-full border-2 border-[color:var(--composer-surface)] bg-fg p-0 text-panel shadow-sm transition-[opacity,scale] active:scale-[0.96] disabled:opacity-50 [@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/image:pointer-events-auto [@media(hover:hover)]:group-hover/image:opacity-100 [@media(hover:hover)]:focus-visible:pointer-events-auto [@media(hover:hover)]:focus-visible:opacity-100" onClick={() => setScreenshots((current) => current.filter((_, i) => i !== index))}>
-									<IconX className="block" size={14} />
-								</button>
+								<OverlayAction
+									aria-label="Remove screenshot"
+									disabled={status !== "idle"}
+									icon={<IconX className="text-red" size={16} />}
+									onClick={() =>
+										setScreenshots((current) => current.filter((_, i) => i !== index))
+									}
+								/>
 							</div>
 						))}
 					</div>

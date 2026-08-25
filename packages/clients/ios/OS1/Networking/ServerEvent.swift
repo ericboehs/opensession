@@ -9,7 +9,9 @@ enum ServerEvent: Sendable {
     case pong
     case transcriptInit(sessionId: String, entries: [TranscriptEntry], cursor: HistoryCursor)
     case transcriptHistory(sessionId: String, entries: [TranscriptEntry], cursor: HistoryCursor)
-    case transcriptAppend(sessionId: String, entries: [TranscriptEntry])
+    case transcriptAppend(
+        sessionId: String, entries: [TranscriptEntry], cursor: HistoryCursor = .empty
+    )
     case sessionNote(sessionId: String, note: SessionNote)
     case sessionNoteDeleted(sessionId: String, noteId: String)
     case streamStart(sessionId: String)
@@ -20,9 +22,18 @@ enum ServerEvent: Sendable {
     case streamEntry(sessionId: String, entry: TranscriptEntry)
     case streamDone(sessionId: String)
     case sessionStatus(sessionId: String, isRunning: Bool)
+    /// The create run is still preparing this session's worktree (git fetch,
+    /// worktree add, dep install). While not ready the viewer says so instead
+    /// of looking like an ordinary idle session with a missing transcript.
+    case workspaceStatus(sessionId: String, ready: Bool)
+    /// The session's model changed mid-run (a fallback, or a teammate's
+    /// switch): apply it now instead of waiting for the next sessions poll.
+    case modelChanged(sessionId: String, model: String, by: String?)
     /// Everyone with this session open right now, by display name. One entry
     /// per socket, so the same person can appear twice (two devices).
     case presence(sessionId: String, viewers: [String])
+    /// People actively composing in this session, once per person.
+    case typing(sessionId: String, users: [String])
     /// Who is looking at what, app-wide — one entry per PERSON (the server
     /// resolves a two-device teammate to their most recent session). Broadcast
     /// to every client on change, and once at the handshake.
@@ -39,6 +50,14 @@ enum ServerEvent: Sendable {
     case replySuggestions(sessionId: String, suggestions: [ReplySuggestion])
     case slackComposer(sessionId: String, request: SlackComposeRequest?)
     case slackComposerResolved(sessionId: String, receipt: SlackComposeReceipt)
+    /// A dynamic workflow snapshot changed. The session view model owns the
+    /// run list so an update is not lost when the Agents panel is closed.
+    case workflowUpdate(sessionId: String, run: WorkflowRun)
+    /// This session published local commits. Its PR surfaces should re-read now.
+    case gitPushed(sessionId: String, repo: String?)
+    /// A git-host webhook changed PR, review, or check state for this branch.
+    /// This frame is app-wide and therefore has no session id.
+    case prUpdated(repo: String, branch: String)
     case notice(String)
     case serverError(String)
     // Shell output, for the session's terminal panel. Each frame carries the
@@ -71,7 +90,9 @@ enum ServerEvent: Sendable {
             )
         case "transcript_append":
             guard let id = frame.sessionId else { return .ignored }
-            return .transcriptAppend(sessionId: id, entries: frame.entries ?? [])
+            return .transcriptAppend(
+                sessionId: id, entries: frame.entries ?? [], cursor: frame.cursor
+            )
         case "session_note":
             guard let id = frame.sessionId, let note = frame.note else { return .ignored }
             return .sessionNote(sessionId: id, note: note)
@@ -93,9 +114,18 @@ enum ServerEvent: Sendable {
         case "session_status":
             guard let id = frame.sessionId else { return .ignored }
             return .sessionStatus(sessionId: id, isRunning: frame.isRunning ?? false)
+        case "workspace_status":
+            guard let id = frame.sessionId else { return .ignored }
+            return .workspaceStatus(sessionId: id, ready: frame.ready ?? true)
+        case "model_changed":
+            guard let id = frame.sessionId, let model = frame.model else { return .ignored }
+            return .modelChanged(sessionId: id, model: model, by: frame.by)
         case "presence":
             guard let id = frame.sessionId else { return .ignored }
             return .presence(sessionId: id, viewers: frame.viewers ?? [])
+        case "typing":
+            guard let id = frame.sessionId else { return .ignored }
+            return .typing(sessionId: id, users: frame.users ?? [])
         case "global_presence":
             return .globalPresence(viewing: (frame.viewing ?? []).compactMap {
                 guard let user = $0.user, let sessionId = $0.sessionId else { return nil }
@@ -165,9 +195,19 @@ enum ServerEvent: Sendable {
                     requestId: requestId,
                     status: status,
                     channel: channel,
-                    permalink: frame.permalink
+                    permalink: frame.permalink,
+                    ts: frame.ts
                 )
             )
+        case "workflow_update":
+            guard let id = frame.sessionId, let run = frame.run else { return .ignored }
+            return .workflowUpdate(sessionId: id, run: run)
+        case "git_pushed":
+            guard let id = frame.sessionId else { return .ignored }
+            return .gitPushed(sessionId: id, repo: frame.repo)
+        case "pr_updated":
+            guard let repo = frame.repo, let branch = frame.branch else { return .ignored }
+            return .prUpdated(repo: repo, branch: branch)
         case "notice":
             return .notice(frame.message ?? "")
         case "error":
@@ -222,6 +262,22 @@ struct SlackComposeReceipt: Equatable, Sendable, Identifiable {
     let status: Status
     let channel: Channel?
     let permalink: String?
+    /// Slack's message timestamp. Older servers omit it, so Undo stays unavailable.
+    let ts: String?
+
+    init(
+        requestId: String,
+        status: Status,
+        channel: Channel?,
+        permalink: String?,
+        ts: String? = nil
+    ) {
+        self.requestId = requestId
+        self.status = status
+        self.channel = channel
+        self.permalink = permalink
+        self.ts = ts
+    }
 
     var id: String { requestId }
 }
@@ -242,11 +298,43 @@ struct HistoryCursor: Equatable, Sendable {
     var startOffset: Int?
     var rev: String?
     var firstSeq: Int?
+    /// Reconnect resume metadata. Seq-mode uses the two sequence watermarks;
+    /// legacy mode uses the end byte plus `rev`.
+    var endOffset: Int?
+    var lastSeq: Int?
+    var lastChangeSeq: Int?
+    var v2: Bool
 
-    /// No paging metadata (short transcripts, tests).
-    static let empty = HistoryCursor(
-        truncated: false, startOffset: nil, rev: nil, firstSeq: nil
-    )
+    init(
+        truncated: Bool,
+        startOffset: Int? = nil,
+        rev: String? = nil,
+        firstSeq: Int? = nil,
+        endOffset: Int? = nil,
+        lastSeq: Int? = nil,
+        lastChangeSeq: Int? = nil,
+        v2: Bool = false
+    ) {
+        self.truncated = truncated
+        self.startOffset = startOffset
+        self.rev = rev
+        self.firstSeq = firstSeq
+        self.endOffset = endOffset
+        self.lastSeq = lastSeq
+        self.lastChangeSeq = lastChangeSeq
+        self.v2 = v2
+    }
+
+    /// No paging or resume metadata (short transcripts, tests).
+    static let empty = HistoryCursor(truncated: false)
+}
+
+/// The latest durable transcript position, sent back on a re-watch so the
+/// server replays only the disconnected gap instead of replacing the loaded
+/// conversation with a fresh tail snapshot.
+enum TranscriptResumeCursor: Equatable, Sendable {
+    case seq(lastSeq: Int, lastChangeSeq: Int)
+    case offset(endOffset: Int, rev: String)
 }
 
 /// One message waiting on a busy run — either queued (held until the run
@@ -263,6 +351,11 @@ struct QueueItem: Identifiable, Equatable, Sendable {
     let hasFiles: Bool
     let editable: Bool
     let hasContextSessions: Bool
+    /// When the engine accepted this message as a steer (receipts only,
+    /// epoch-ms on the wire). Acceptance is not delivery: the run reads its
+    /// steering queue when the current step's tool calls finish, so the
+    /// steering row counts the wait from here.
+    let steeredAt: Date?
 
     /// Chips minted locally (the optimistic echo of a busy send) carry an id
     /// the server has never seen, so the actions that address a queue entry
@@ -277,6 +370,7 @@ struct QueueItem: Identifiable, Equatable, Sendable {
         hasFiles = !(wire.files ?? []).isEmpty
         editable = wire.editable ?? false
         hasContextSessions = !(wire.contextSessions ?? []).isEmpty
+        steeredAt = wire.steeredAt.map { Date(timeIntervalSince1970: $0 / 1000) }
     }
 
     /// Local optimistic construction — the composer's echo of a send made
@@ -289,7 +383,8 @@ struct QueueItem: Identifiable, Equatable, Sendable {
         images: [String] = [],
         hasFiles: Bool = false,
         editable: Bool = true,
-        hasContextSessions: Bool = false
+        hasContextSessions: Bool = false,
+        steeredAt: Date? = nil
     ) {
         self.id = id
         self.content = content
@@ -298,6 +393,7 @@ struct QueueItem: Identifiable, Equatable, Sendable {
         self.hasFiles = hasFiles
         self.editable = editable
         self.hasContextSessions = hasContextSessions
+        self.steeredAt = steeredAt
     }
 
     /// The same entry with new text — and, when the edit touched them, new
@@ -312,7 +408,8 @@ struct QueueItem: Identifiable, Equatable, Sendable {
             images: images ?? self.images,
             hasFiles: hasFiles,
             editable: editable,
-            hasContextSessions: hasContextSessions
+            hasContextSessions: hasContextSessions,
+            steeredAt: steeredAt
         )
     }
 }
@@ -334,6 +431,7 @@ private struct RawFrame: Decodable {
         let files: [OpaqueFile]?
         let editable: Bool?
         let contextSessions: [String]?
+        let steeredAt: Double?
     }
 
     struct WireSlackChannel: Decodable {
@@ -356,7 +454,11 @@ private struct RawFrame: Decodable {
     }
 
     let isRunning: Bool?
+    let ready: Bool?
+    let model: String?
+    let by: String?
     let viewers: [String]?
+    let users: [String]?
     let viewing: [WireViewing]?
     let queued: [WireQueueItem]?
     let steered: [WireQueueItem]?
@@ -372,12 +474,20 @@ private struct RawFrame: Decodable {
     let status: String?
     let channel: WireSlackChannel?
     let permalink: String?
+    let ts: String?
+    let run: WorkflowRun?
+    let repo: String?
+    let branch: String?
     let message: String?
     let queueId: String?
     let truncated: Bool?
     let startOffset: Int?
+    let endOffset: Int?
     let rev: String?
     let firstSeq: Int?
+    let lastSeq: Int?
+    let lastChangeSeq: Int?
+    let v2: Bool?
     // term_* frames.
     let termId: String?
     let target: String?
@@ -390,7 +500,11 @@ private struct RawFrame: Decodable {
             truncated: truncated ?? false,
             startOffset: startOffset,
             rev: rev,
-            firstSeq: firstSeq
+            firstSeq: firstSeq,
+            endOffset: endOffset,
+            lastSeq: lastSeq,
+            lastChangeSeq: lastChangeSeq,
+            v2: v2 ?? false
         )
     }
 }

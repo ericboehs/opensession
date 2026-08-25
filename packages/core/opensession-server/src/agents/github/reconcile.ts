@@ -19,7 +19,8 @@
  *  - skips anything with a live lock, active run/loop, or pending debounce.
  * Kill switch: OPENSESSION_REVIEW_RECONCILE=0.
  */
-import { configuredRepos } from "../../server/config";
+import { configuredRepos, isGithubBotLogin } from "../../server/config";
+import { isTrustedGithubLogin } from "../../server/shared/user-mappings";
 import { audit } from "../../server/audit";
 import { ghRateLimited } from "../../server/github-limit";
 import { listOpenPrs, type OpenPrSummary } from "./github-rest";
@@ -45,7 +46,7 @@ export function reconcileEnabled(): boolean {
 
 /** One sweep pass over every configured repo. Exported for tests/manual runs. */
 export async function reconcileOpenPrs(): Promise<void> {
-  if (!reconcileEnabled() || ghRateLimited()) return;
+  if (!reconcileEnabled() || ghRateLimited("rest")) return;
   const { resolveReviewConfig, fireReview, fireAutoFix, hasPendingDebouncedReview } = await import(
     "./webhook"
   );
@@ -90,9 +91,13 @@ export async function reconcileOpenPrs(): Promise<void> {
       };
 
       // ── Auto-fix reconcile: label still on, no loop running ──
-      // Covers a `labeled` event missed while down, and transient-failure exits
-      // that kept the label (autofix.ts) so the fix would be retried.
+      // Covers a transient failure only when the persisted requester still
+      // resolves to this instance's team. A label with no trusted receipt is
+      // not enough: on a public repo it may have been applied outside Open
+      // Session's trust roster while this process was down.
       if (pr.labels.some((l) => labelMatches(l, LABEL_AUTOFIX))) {
+        const requestedBy = state?.pendingAutoFix?.requestedBy || state?.autoFix?.requestedBy || "";
+        if (!isTrustedGithubLogin(requestedBy)) continue;
         const attempts = state?.reconcile?.autofixSha === pr.headSha ? state.reconcile.autofixAttempts || 0 : 0;
         if (attempts >= MAX_ATTEMPTS_PER_SHA) continue;
         updatePrState(pr.number, pr.headRef, (s) => {
@@ -110,11 +115,15 @@ export async function reconcileOpenPrs(): Promise<void> {
         console.log(
           `[github] reconcile: re-firing auto-fix for PR #${pr.number} @ ${pr.headSha.slice(0, 7)} (attempt ${attempts + 1}/${MAX_ATTEMPTS_PER_SHA})`,
         );
-        void fireAutoFix(ref, state?.autoFix?.requestedBy || "");
+        void fireAutoFix(ref, requestedBy);
         continue;
       }
 
       // ── Review reconcile: opted in, head SHA never successfully reviewed ──
+      // Opening or pushing a public PR is attacker-controlled. Only recover an
+      // automatic review for a rostered teammate or the configured bot. An
+      // explicit trusted label still runs through the live webhook path.
+      if (!isGithubBotLogin(pr.authorLogin) && !isTrustedGithubLogin(pr.authorLogin)) continue;
       const optedIn = autoEnabled || pr.labels.some((l) => labelMatches(l, LABEL_REVIEW));
       if (!optedIn || !pr.headSha) continue;
       if (state?.reviewedShas?.includes(pr.headSha)) continue;

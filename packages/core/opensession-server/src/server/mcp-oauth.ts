@@ -1,8 +1,8 @@
 /**
- * Browser-based OAuth for HTTP MCP servers (the feeds design — "easy to
+ * Browser-based OAuth for MCP connections (the feeds design — "easy to
  * connect any MCP, per user as well").
  *
- * Replaces the unusable headless flow (opencode's CLI OAuth listens on the
+ * Replaces the unusable headless flow (pi's CLI OAuth listens on the
  * VPS's 127.0.0.1, unreachable from the user's browser): Open Session runs the
  * OAuth 2.1 + PKCE flow itself with a redirect to
  * `<publicBaseUrl>/api/connections/mcp-oauth/callback`, so a
@@ -12,16 +12,17 @@
  * one optional `shared` grant (workspace-wide identity, like the Linear/Plain
  * servers today) and per-user grants keyed by canonical team name (same
  * identity table as commit attribution — the github-auth.ts pattern). At run
- * time server-side MCP proxies resolve the run user's own grant when they have
- * one, else the shared grant. Provider tokens never enter an engine config or
- * environment; rotation happens here (lazy kick + 2-min ticker parked on
+ * time server-side MCP proxies resolve HTTP grants for the prompter. Provider
+ * tokens never enter an engine config or environment. Preset stdio grants may
+ * power coordinator-owned UI actions, but are not handed to the local MCP
+ * executable. Rotation happens here (lazy kick + 2-min ticker parked on
  * globalThis, refresh-on-first-use).
  *
  * Discovery follows the MCP auth spec: RFC 9728 protected-resource metadata
  * on the server origin → authorization server → RFC 8414 AS metadata →
  * dynamic client registration (RFC 7591, token_endpoint_auth_method "none").
  */
-import { readFileSync, writeFileSync, existsSync, rmSync, openSync, closeSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, openSync, closeSync } from "fs";
 import { randomBytes, createHash, createCipheriv, createDecipheriv } from "crypto";
 import { configuredPaths, configuredServer, productName } from "./config";
 import { statePath } from "./paths";
@@ -52,14 +53,10 @@ function storePath(): string {
  *     in the filesystem the way the key file below is.
  *  2. A 0600 key file beside the store, minted on first use.
  *
- *  (2) is what a rootless install gets, and it is deliberately not sold as
- *  more than it is: it means the STORE is ciphertext at rest, which is what
- *  keeps tokens out of backups, snapshots, syncs and a stray copy of the file,
- *  and it is the substrate a per-use broker would sit on later. It is NOT a
- *  boundary against a process already running as this user, which can read the
- *  key exactly as the server does. Closing that needs a second uid, which
- *  needs root, which most installs deliberately do not have. See
- *  docs/security-model.md. */
+ *  (2) is what a rootless install gets. It protects a stray copy of the store
+ *  file, but not a whole-state backup that also contains the key, and it is not
+ *  a boundary against another process running as this user. Closing that needs
+ *  a broker under a separate identity. See docs/security-model.md. */
 function encryptionKey(): Buffer {
   const credentialDir = process.env.CREDENTIALS_DIRECTORY;
   if (credentialDir) {
@@ -103,7 +100,13 @@ function encryptionKey(): Buffer {
     return key;
   } catch (error) {
     if ((error as NodeJS.ErrnoException)?.code === "EEXIST") {
-      return readFileSync(path);
+      const winner = readFileSync(path);
+      if (winner.length !== 32) {
+        throw new Error(
+          `The personal MCP encryption key at ${path} has an invalid length.`,
+        );
+      }
+      return winner;
     }
     throw error;
   }
@@ -194,74 +197,29 @@ interface ServerAuth {
 
 type Store = Record<string, ServerAuth>;
 
-type ServerBinding =
-  | { kind: "http"; url: string }
-  | {
-      kind: "stdio";
-      command: string;
-      /** The command RESOLVED to an absolute path when the grant was issued.
-       *  The configured name is usually bare ("bunx"), and the transport would
-       *  otherwise resolve it through PATH at launch, which on a normal install
-       *  runs through directories this user can write (~/.bun/bin, a checkout's
-       *  node_modules/.bin). Shadowing the name there captures the token
-       *  without touching mcp-config.json, so the pin has to be the path, and
-       *  the launch has to use it rather than resolve again. */
-      commandPath: string;
-      args: string[];
-      /** Canonicalized env. The transport runs the command THROUGH this env,
-       *  so pinning only command+args leaves the execution hijackable: keep
-       *  `command: "bun"` and point PATH at a workspace directory holding a
-       *  replacement `bun`, and the replacement receives the decrypted token. */
-      env: string;
-    };
+type ServerBinding = { kind: "http"; url: string };
 
-/** Stable string for an stdio server's env: sorted, so key order in the config
- *  file cannot change the binding, and every variable counts because any of
- *  them (PATH, NODE_OPTIONS, LD_PRELOAD, ...) can redirect the executable. */
-function canonicalEnv(env: unknown): string {
-  if (!env || typeof env !== "object" || Array.isArray(env)) return "";
-  return JSON.stringify(
-    Object.entries(env as Record<string, unknown>)
-      .map(([k, v]) => [k, String(v)] as const)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
-  );
-}
-
-/** Absolute path for a configured stdio command, or undefined when it cannot
- *  be resolved. Absolute configured commands are taken as-is; a bare name is
- *  resolved once, here, so the answer is recorded rather than recomputed from
- *  whatever PATH the launch happens to inherit. */
-function resolveCommandPath(command: string): string | undefined {
-  if (command.startsWith("/")) return existsSync(command) ? command : undefined;
-  // Pass PATH explicitly: Bun.which() otherwise reads the PATH captured at
-  // process start, which would make the pin ignore the environment the server
-  // is actually running with.
-  return Bun.which(command, { PATH: process.env.PATH ?? "" }) ?? undefined;
-}
-
-function configuredBinding(name: string): ServerBinding | undefined {
+function configuredMcpServer(
+  name: string,
+): Record<string, unknown> | undefined {
   try {
     const parsed = JSON.parse(
       readFileSync(configuredPaths().mcpConfig, "utf8"),
     ) as { mcpServers?: Record<string, Record<string, unknown>> };
-    const cfg = parsed.mcpServers?.[name];
-    if (!cfg) return undefined;
-    if (typeof cfg.url === "string") {
-      return { kind: "http", url: new URL(cfg.url).toString() };
-    }
-    if (typeof cfg.command === "string") {
-      const resolved = resolveCommandPath(cfg.command);
-      if (!resolved) return undefined;
-      return {
-        kind: "stdio",
-        command: cfg.command,
-        commandPath: resolved,
-        args: Array.isArray(cfg.args) ? cfg.args.map(String) : [],
-        env: canonicalEnv(cfg.env),
-      };
-    }
-  } catch {}
-  return undefined;
+    return parsed.mcpServers?.[name];
+  } catch {
+    return undefined;
+  }
+}
+
+function configuredBinding(name: string): ServerBinding | undefined {
+  const cfg = configuredMcpServer(name);
+  if (typeof cfg?.url !== "string") return undefined;
+  try {
+    return { kind: "http", url: new URL(cfg.url).toString() };
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -304,7 +262,6 @@ function readStore(): Store {
   if (process.env.OPENSESSION_PERSONAL_MCP === "0") {
     throw new Error("Personal MCP connections are disabled by the operator.");
   }
-  purgeLegacyRelayStore();
   const path = storePath();
   if (!existsSync(path)) return {};
   let parsed: unknown;
@@ -355,59 +312,16 @@ function tryReadStore(): Store {
   }
 }
 
-/** The absolute executable a granted stdio server is pinned to. The proxy
- *  launches THIS rather than the configured name, so PATH cannot decide which
- *  binary receives the token. */
-export function mcpOauthStdioCommand(name: string): string | undefined {
-  const stored = tryReadStore()[name]?.binding;
-  return stored?.kind === "stdio" ? stored.commandPath : undefined;
-}
-
 export function mcpOauthBindingMatches(
   name: string,
   cfg: Record<string, unknown>,
 ): boolean {
   const stored = tryReadStore()[name]?.binding;
-  if (!stored) return false;
-  if (stored.kind === "http") {
-    if (typeof cfg.url !== "string") return false;
-    try {
-      return new URL(cfg.url).toString() === stored.url;
-    } catch {
-      return false;
-    }
-  }
-  return (
-    cfg.command === stored.command &&
-    JSON.stringify(Array.isArray(cfg.args) ? cfg.args.map(String) : []) ===
-      JSON.stringify(stored.args) &&
-    // A binding written before env was pinned compares as an EMPTY env, so a
-    // server that has since grown one fails closed and asks for a reconnect.
-    // Accepting "unpinned means anything" would leave exactly the PATH-swap
-    // this field exists to stop.
-    canonicalEnv(cfg.env) === (stored.env ?? "") &&
-    // A binding from before the path was pinned fails closed and asks for a
-    // reconnect, rather than being trusted against a name PATH still resolves.
-    !!stored.commandPath &&
-    resolveCommandPath(String(cfg.command)) === stored.commandPath
-  );
-}
-
-function purgeLegacyRelayStore(): void {
-  const g = globalThis as any;
-  const path = statePath(".opensession-mcp-relay.json");
-  const purged: Set<string> = (g.__osMcpRelayPurged ??= new Set<string>());
-  if (purged.has(path)) return;
-  if (!existsSync(path)) {
-    purged.add(path);
-    return;
-  }
+  if (!stored || typeof cfg.url !== "string") return false;
   try {
-    rmSync(path);
-    purged.add(path);
-    audit({ kind: "mcp_oauth_legacy_relays_revoked" });
+    return new URL(cfg.url).toString() === stored.url;
   } catch {
-    throw new Error("Legacy MCP relay capabilities could not be revoked.");
+    return false;
   }
 }
 
@@ -565,6 +479,17 @@ async function ensureServerAuth(
         "Figma does not currently allow Open Session to connect. Its remote MCP server accepts only clients listed in the Figma MCP Catalog.",
       );
     }
+    if (
+      registrationResponse.status === 400 &&
+      registrationText.includes("invalid_redirect_uri") &&
+      registrationUrl.hostname === "vercel.com"
+    ) {
+      // Vercel MCP is a closed program: only clients Vercel has reviewed get
+      // their redirect URI approved (docs/agent-resources/vercel-mcp).
+      throw new Error(
+        "Vercel MCP only connects to AI clients Vercel has approved (Claude Code, ChatGPT, Cursor, …), so it rejects Open Session's callback URL.",
+      );
+    }
     const detail = registrationText.trim().slice(0, 200);
     throw new Error(
       `${name}: client registration failed (HTTP ${registrationResponse.status})${detail ? `: ${detail}` : ""}`,
@@ -601,7 +526,8 @@ interface PendingFlow {
   name: string;
   verifier: string;
   teamName?: string; // absent = shared grant
-  initiatedBy: string;
+  /** Verified operator identity. Absent only when web sign-in is disabled. */
+  initiatedBy?: string;
   createdAt: number;
 }
 const pending: Map<string, PendingFlow> = ((globalThis as any).__osMcpOauth ??=
@@ -631,8 +557,9 @@ export async function startMcpOauthFlow(
   forUser?: string,
   initiatedBy?: string,
 ): Promise<{ url: string }> {
-  if (!initiatedBy) throw new Error("Sign in before connecting a personal tool.");
-  const canonicalInitiator = resolveTeammate(initiatedBy)?.name || initiatedBy;
+  const canonicalInitiator = initiatedBy
+    ? resolveTeammate(initiatedBy)?.name || initiatedBy
+    : undefined;
   const teamName = forUser ? resolveTeammate(forUser)?.name : undefined;
   if (forUser && !teamName)
     throw new Error(`"${forUser}" doesn't resolve to a configured teammate`);
@@ -643,7 +570,7 @@ export async function startMcpOauthFlow(
       name,
       verifier: "",
       teamName,
-      initiatedBy: canonicalInitiator,
+      ...(canonicalInitiator ? { initiatedBy: canonicalInitiator } : {}),
       createdAt: Date.now(),
     });
     const url = new URL(preset.authorize);
@@ -674,7 +601,7 @@ export async function startMcpOauthFlow(
     name,
     verifier,
     teamName,
-    initiatedBy: canonicalInitiator,
+    ...(canonicalInitiator ? { initiatedBy: canonicalInitiator } : {}),
     createdAt: Date.now(),
   });
   const url = new URL(auth.endpoints.authorize);
@@ -704,15 +631,17 @@ export async function completeMcpOauthFlow(
   const flow = pending.get(state);
   if (!flow || Date.now() - flow.createdAt > PENDING_TTL_MS)
     throw new Error("This connect link expired. Start again from Connections.");
-  const canonicalCompleter = completedBy
-    ? resolveTeammate(completedBy)?.name || completedBy
-    : undefined;
-  if (
-    !canonicalCompleter ||
-    flow.initiatedBy.toLowerCase() !== canonicalCompleter.toLowerCase()
-  ) {
-    pending.delete(state);
-    throw new Error("This connect link belongs to a different signed-in account.");
+  if (flow.initiatedBy) {
+    const canonicalCompleter = completedBy
+      ? resolveTeammate(completedBy)?.name || completedBy
+      : undefined;
+    if (
+      !canonicalCompleter ||
+      flow.initiatedBy.toLowerCase() !== canonicalCompleter.toLowerCase()
+    ) {
+      pending.delete(state);
+      throw new Error("This connect link belongs to a different signed-in account.");
+    }
   }
   pending.delete(state);
   const preset = oauthPresetFor(flow.name);
@@ -1164,6 +1093,19 @@ export function hasMcpOauthGrantForUsers(
   return !!auth.shared;
 }
 
+/** Whether this grant can be mounted through the coordinator's HTTP proxy.
+ * Personal grants for stdio tools may still power coordinator-owned UI actions,
+ * but are never handed to the mutable local executable or an agent runtime. */
+export function hasMcpOauthProxyGrantForUsers(
+  name: string,
+  users: Array<string | undefined>,
+): boolean {
+  return (
+    tryReadStore()[name]?.binding?.kind === "http" &&
+    hasMcpOauthGrantForUsers(name, users)
+  );
+}
+
 /** Drop a grant (Disconnect in the UI). */
 export function removeMcpOauthGrant(name: string, forUser?: string): boolean {
   const store = readStore();
@@ -1194,4 +1136,64 @@ export function removeAllMcpOauthGrants(name: string): boolean {
   writeStore(store);
   audit({ kind: "mcp_oauth_server_grants_revoked", server: name });
   return true;
+}
+
+// ── Manual token connect ──────────────────────────────────────────────────
+// Some providers gate OAuth client registration (Vercel approves only its
+// own list of AI clients), but every user can mint a personal API token.
+// A validated pasted token is stored as a grant, so it rides the exact same
+// per-run injection path as an OAuth grant — no separate plumbing.
+
+const TOKEN_VALIDATORS: Record<
+  string,
+  (token: string) => Promise<{ ok: true } | { ok: false; error: string }>
+> = {
+  vercel: async (token) => {
+    const res = await fetch("https://api.vercel.com/v2/user", {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (res.status === 401 || res.status === 403)
+      return { ok: false, error: "Vercel rejected that token. Create a new one at vercel.com/account/settings/tokens and paste it again." };
+    if (!res.ok)
+      return { ok: false, error: `Could not check the token with Vercel (HTTP ${res.status})` };
+    return { ok: true };
+  },
+};
+
+/** Can this server be connected by pasting a personal API token? */
+export function supportsManualToken(name: string): boolean {
+  return !!TOKEN_VALIDATORS[name];
+}
+
+/** Validate a pasted API token live, then store it as a grant. */
+export async function saveManualMcpGrant(
+  name: string,
+  serverUrl: string,
+  token: string,
+  opts: { connectedBy?: string; forUser?: string } = {},
+): Promise<void> {
+  const validate = TOKEN_VALIDATORS[name];
+  if (!validate) throw new Error(`${name} has no token connect flow`);
+  const checked = await validate(token);
+  if (!checked.ok) throw new Error(checked.error);
+  const teamName = opts.forUser
+    ? resolveTeammate(opts.forUser)?.name
+    : undefined;
+  if (opts.forUser && !teamName)
+    throw new Error(`"${opts.forUser}" doesn't resolve to a configured teammate`);
+  const store = readStore();
+  const entry = store[name] ?? {
+    serverUrl,
+    endpoints: { authorize: "", token: "" },
+    clientInfo: { clientId: "manual-token" },
+  };
+  entry.serverUrl = serverUrl;
+  store[name] = entry;
+  writeGrant(entry, slotFor(teamName), {
+    tokens: { accessToken: token },
+    updatedAt: new Date().toISOString(),
+    ...(opts.connectedBy ? { connectedBy: opts.connectedBy } : {}),
+  });
+  writeStore(store);
 }

@@ -91,6 +91,17 @@ export function clampSplitRatio(ratio: number): number {
 	return Math.min(0.8, Math.max(0.2, ratio));
 }
 
+/** A lone tab is already named by the pane header, so only a real choice or a
+ *  two-column split earns a tab strip. Workers render below their parent and
+ *  never own workspace tabs. */
+export function shouldShowTabStrip(
+	tabCount: number,
+	inSplit = false,
+	viewingWorker = false,
+): boolean {
+	return !viewingWorker && (inSplit || tabCount > 1);
+}
+
 export function getTabSplit(workspaceId: string): TabSplit | null {
 	const split = read()[workspaceId];
 	return split ? { ...split, ratio: clampSplitRatio(split.ratio) } : null;

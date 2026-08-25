@@ -1,6 +1,6 @@
 /**
- * public-ingress tests: the isolated public listener serves ONLY the sandbox
- * dial-back surface (run-ws/rpc-ws upgrades + /ingress-health), 404s all
+ * public-ingress tests: the isolated public listener serves the registered
+ * webhook routes, sandbox dial-back surface and /ingress-health, 404s all
  * other paths bodylessly, shares run-ws.ts's token auth, and rate-limits
  * upgrade attempts per client IP (X-Forwarded-For-aware behind a local
  * reverse proxy). No model runs, no sandboxes.
@@ -18,6 +18,8 @@ import { join } from "path";
 // OPENSESSION_SESSIONS_DIR/HOME at module load (see zz-run-ws.test.ts).
 let ingress: typeof import("./public-ingress");
 let runWs: typeof import("./run-ws");
+let portalRelay: typeof import("./sandbox-portal-relay");
+let webhooks: typeof import("./webhook-server");
 
 let scratch = "";
 let configPath = "";
@@ -37,6 +39,16 @@ beforeAll(async () => {
   writeConfig({ provider: "local", publicIngress: { enabled: true } });
   ingress = await import("./public-ingress");
   runWs = await import("./run-ws");
+  portalRelay = await import("./sandbox-portal-relay");
+  webhooks = await import("./webhook-server");
+  webhooks.configureWebhookRoutes([
+    {
+      name: "test-webhook",
+      getRoutes: () => new Map([
+        ["POST /github/webhook", async () => new Response("accepted")],
+      ]),
+    } as any,
+  ]);
   handle = ingress.startPublicIngress({ port: 0, host: "127.0.0.1" });
   if (!handle) throw new Error("ingress did not start");
   BASE = `127.0.0.1:${handle.port}`;
@@ -54,6 +66,13 @@ describe("public ingress surface", () => {
     const res = await fetch(`http://${BASE}/ingress-health`);
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok");
+  });
+
+  test("dispatches a registered webhook without exposing the app", async () => {
+    const accepted = await fetch(`http://${BASE}/github/webhook`, { method: "POST" });
+    expect(accepted.status).toBe(200);
+    expect(await accepted.text()).toBe("accepted");
+    expect((await fetch(`http://${BASE}/github/webhook`)).status).toBe(404);
   });
 
   test("every other path is a bodyless 404 (no app surface)", async () => {
@@ -156,6 +175,31 @@ describe("rate limiting", () => {
     expect(over.headers.get("retry-after")).toBe("60");
     const health = await fetch(`http://${BASE}/ingress-health`);
     expect(health.status).toBe(200);
+    ingress.resetPublicIngressRateLimit();
+  });
+
+  test("a valid Portal grant bypasses stale sidecars that exhausted the IP bucket", async () => {
+    ingress.resetPublicIngressRateLimit();
+    for (let i = 0; i < 31; i++) {
+      await fetch(`http://${BASE}/sandbox-portal-ws?session=os-stale&sandbox=stale&port=4300`, {
+        headers: { upgrade: "websocket", authorization: "Bearer expired" },
+      });
+    }
+    const grant = portalRelay.mintSandboxPortalGrant({
+      sessionId: "os-current", sandboxId: "sandbox-current", port: 4300,
+    });
+    const ws = new WebSocket(
+      `ws://${BASE}/sandbox-portal-ws?session=os-current&sandbox=sandbox-current&port=4300`,
+      { headers: { authorization: `Bearer ${grant.token}` } } as any,
+    );
+    const opened = await new Promise<boolean>((resolve) => {
+      ws.onopen = () => resolve(true);
+      ws.onerror = () => resolve(false);
+      setTimeout(() => resolve(false), 5_000);
+    });
+    expect(opened).toBe(true);
+    ws.close();
+    portalRelay.revokeSandboxPortalGrants("sandbox-current");
     ingress.resetPublicIngressRateLimit();
   });
 

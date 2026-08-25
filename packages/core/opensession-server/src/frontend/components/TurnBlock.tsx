@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import type { TranscriptEntry } from "../lib/types";
 import {
   assetToolPath,
@@ -24,6 +24,8 @@ import {
   LineStats,
   TurnLineStatsCard,
 } from "./TurnFooter";
+import { transcriptDisclosureLedger } from "../lib/transcript-disclosures";
+import { turnScrollAnchor } from "../lib/transcript-block-identity";
 
 interface Props {
   /** The folded part of one assistant turn: tool_use + intermediate assistant
@@ -41,12 +43,12 @@ interface Props {
  * One assistant turn's work, folded into a single calm line — "Worked · 12m 4s
  * · 51 steps" — closed by default so the session reads as question → answer.
  * Expanding shows the full flat run: intermediate assistant notes interleaved
- * with the tool calls, followed by failures and a compact change summary.
+ * with the tool calls and a compact change summary.
  *
  * The collapsed line carries what a folded turn can't otherwise say: duration,
- * step count, and — when the turn wrote files — the ±lines it moved, in the
- * same green/red the diff surfaces use. Which files, and every failure, stay
- * one click away. The counts sit after the meta run and never shrink; the
+ * step count, and the ±lines it moved when the turn wrote files. Line changes
+ * keep the diff surfaces' colors, while routine failures stay quiet and one
+ * click away. The counts sit after the meta run and never shrink; the
  * duration/steps run truncates first, so a phone drops characters off the
  * middle instead of the numbers.
  *
@@ -60,7 +62,7 @@ interface Props {
 // reuses objects), so compare element-wise — and only the results this block's
 // items actually read — letting untouched history blocks skip re-rendering on
 // each stream event.
-export const TurnBlock = React.memo(function TurnBlock({
+export const TurnBlock = function TurnBlock({
   items,
   toolResults,
   live,
@@ -70,25 +72,33 @@ export const TurnBlock = React.memo(function TurnBlock({
   const pathRoots = useToolPathRoots();
   const tools = items.filter((it) => it.type === "tool_use");
   const messages = items.filter((it) => it.type === "assistant");
+  const hasNarration = messages.length > 0;
 
-  // Default fold state follows the two preferences (Settings → Preferences)
-  // and nothing else. `work` answers whether this turn's working is on screen
-  // at all: the default opens it while the turn is working and folds it again
-  // the moment the turn settles. A failed step or a screenshot inside the turn
-  // used to pin it open forever, which is the one thing "Always folded" and
-  // "Expand while running" promise never happens. Failures are one click away
-  // inside the disclosure, and media the agent explicitly surfaced outlives
-  // the fold on its own (featuredTurnMedia) rather than holding every step
-  // open with it. Folded work stays folded even during a live turn, where the
-  // work line's tail reports the running tool instead.
+  // Default fold state follows the two preferences (Settings → Preferences),
+  // except that routine tool-only work stays one calm summary row. Opening a
+  // tool-only turn by default produced the same count twice: "Working 57
+  // steps" followed by "57 steps". Once the agent writes a real update there
+  // are distinct rows worth showing, so "Expand while running" opens them as
+  // before. "Always open" and a person's manual choice still win in either
+  // state. Failures stay one click away, and explicitly surfaced media
+  // outlives the fold on its own (featuredTurnMedia).
   const [pref, setPref] = useState(getTurnActivityPrefs);
   useEffect(
     () => onTurnActivityChanged(() => setPref(getTurnActivityPrefs())),
     []
   );
   const defaultExpanded =
-    pref.work === "open" || (pref.work === "running" && live);
-  const [expanded, setExpanded] = useState(defaultExpanded);
+    pref.work === "open" || (pref.work === "running" && live && hasNarration);
+  const [rememberedExpanded] = useState(() =>
+    transcriptDisclosureLedger.read(
+      "turn",
+      sessionId,
+      items.map((item) => item.id)
+    )
+  );
+  const [expanded, setExpanded] = useState(
+    rememberedExpanded ?? defaultExpanded
+  );
   // `tools` owns the nested grouped-call disclosures. Open renders each call
   // in place; folded keeps routine runs behind their compact step rows.
   // ToolCallBlock owns its own detail disclosure either way, so this never
@@ -97,26 +107,39 @@ export const TurnBlock = React.memo(function TurnBlock({
   // Once the user has toggled the fold by hand, their choice wins — the
   // auto-sync below must not reopen/collapse it on a later default change
   // (the turn settling, or the preference itself changing).
-  const userToggledRef = useRef(false);
+  const userToggledRef = useRef(rememberedExpanded !== undefined);
   useEffect(() => {
     if (userToggledRef.current) return;
     setExpanded(defaultExpanded);
   }, [defaultExpanded]);
+  function rememberExpansion(next: boolean) {
+    userToggledRef.current = true;
+    transcriptDisclosureLedger.write(
+      "turn",
+      sessionId,
+      items.map((item) => item.id),
+      next
+    );
+    setExpanded(next);
+  }
 
   const duration = blockDuration(items, toolResults);
-  const failures = tools.filter(
-    (it) => it.toolUseId && toolResults.get(it.toolUseId)?.isError
-  ).length;
   const lastTool = tools[tools.length - 1];
 
   // Memoized against the house rule: a live turn re-renders on every stream
   // event, and this walks every step it has taken so far (collectTouchedFiles
   // skips non-tool entries itself, so `items` and `tools` give the same set).
-  const editedFiles = useMemo(() => collectTouchedFiles(items), [items]);
-  // Change detail stays behind this disclosure. The Changes tab remains the
-  // place for per-file diffs; this is only a compact turn-level summary.
-  const additions = editedFiles.reduce((n, f) => n + f.additions, 0);
-  const deletions = editedFiles.reduce((n, f) => n + f.deletions, 0);
+  const editedFiles = (collectTouchedFiles(items));
+  // Presentation stats cover code-writing tools that do not expose their input
+  // as a plain Edit or Write call. Keep the parsed files for the hover card,
+  // but let the server-derived aggregate own the summary's total.
+  const toolAggregate =
+    tools.length > 0 ? toolRunAggregate(tools, toolResults, live) : null;
+  const additions = toolAggregate?.additions ?? 0;
+  const deletions = toolAggregate?.deletions ?? 0;
+  // A tool-only turn has no inner summary row anymore, so keep the small bits
+  // of aggregate status that do add information on the one remaining row.
+  const toolOnlyAggregate = !hasNarration ? toolAggregate : null;
 
   const countsLabel =
     tools.length > 0
@@ -143,7 +166,6 @@ export const TurnBlock = React.memo(function TurnBlock({
       sections.push({ kind: "msg", entry: it });
     }
   }
-  const lastItem = items[items.length - 1];
   // Survives the fold: a marked screenshot is the answer to "show me", so
   // closing the turn takes the steps and leaves the picture. Only while the
   // steps are hidden — expanded, the media renders in the row that produced
@@ -157,15 +179,17 @@ export const TurnBlock = React.memo(function TurnBlock({
       className="mx-auto mb-3 w-full max-w-[var(--session-col)]"
       // Anchor identity for the history scroll hold: the LAST item survives a
       // history page merging older items into this turn (the first doesn't).
-      data-eid={lastItem ? `${lastItem.id}#turn` : undefined}
+      data-eid={turnScrollAnchor(items)}
     >
       <button
         type="button"
         aria-expanded={expanded}
-        onClick={() => {
-          userToggledRef.current = true;
-          setExpanded(!expanded);
-        }}
+        aria-label={
+          toolOnlyAggregate?.statusLabel
+            ? `${live ? "Working" : "Worked"}. ${countsLabel}. ${toolOnlyAggregate.statusLabel}`
+            : undefined
+        }
+        onClick={() => rememberExpansion(!expanded)}
         // Baseline, not centre: this row mixes its 14px title with 13px meta
         // runs, and centring aligns boxes rather than text. The chevron carries
         // no baseline of its own, so it keeps centring individually.
@@ -193,8 +217,19 @@ export const TurnBlock = React.memo(function TurnBlock({
         )}
         {/* Hovering the counts opens what they count: the lines this turn
             wrote, per file, without unfolding it. */}
-        {additions + deletions > 0 && <TurnLineStatsCard files={editedFiles} />}
-        {live && !expanded && lastTool && (
+        {additions + deletions > 0 && (
+          <TurnLineStatsCard
+            files={editedFiles}
+            additions={additions}
+            deletions={deletions}
+          />
+        )}
+        {toolOnlyAggregate?.mediaLabel && (
+          <span className="flex-shrink-0 text-meta text-faint">
+            {toolOnlyAggregate.mediaLabel}
+          </span>
+        )}
+        {live && !expanded && hasNarration && lastTool && (
           <span className="min-w-0 truncate text-label leading-4 text-faint">
             {toolDisplayName(lastTool.toolName)}:{" "}
             {toolSummary(
@@ -225,10 +260,7 @@ export const TurnBlock = React.memo(function TurnBlock({
           <button
             type="button"
             aria-label={`Collapse ${live ? "Working" : "Worked"}`}
-            onClick={() => {
-              userToggledRef.current = true;
-              setExpanded(false);
-            }}
+            onClick={() => rememberExpansion(false)}
             className="absolute inset-y-0 -left-2 w-4 cursor-pointer border-0 bg-transparent p-0 after:absolute after:inset-y-0 after:left-1/2 after:border-l after:border-transparent after:transition-colors hover:after:border-line-strong focus-visible:after:border-line-strong"
           />
           {sections.map((sec) =>
@@ -246,27 +278,19 @@ export const TurnBlock = React.memo(function TurnBlock({
                 className="-ml-px desktop:ml-0"
                 data-eid={`${sec.items[sec.items.length - 1].id}#sec`}
               >
+                {/* The outer Working row is already the tool-only run's
+                    summary. If someone opens it, reveal the calls directly
+                    instead of inserting a second, identical disclosure. */}
                 <ToolSection
                   items={sec.items}
                   toolResults={toolResults}
                   live={live}
-                  expandAll={pref.tools === "open"}
+                  expandAll={!hasNarration || pref.tools === "open"}
                   sessionId={sessionId}
                   onOpenSubagent={onOpenSubagent}
                 />
               </div>
             )
-          )}
-          {/* Failures only. The files this turn wrote were repeated here as
-              chips back when a step row named a path and nothing else. Every
-              file step now wears its own language mark, so an open fold
-              already says which files it touched, and the answer's footer
-              still carries them for the folded turn. */}
-          {failures > 0 && (
-            // The row starts where every other row in the fold does.
-            <div className="mt-1 flex flex-wrap items-center gap-x-0.5 gap-y-1 px-1 text-label leading-4 text-red/80">
-              {failures} failed {failures === 1 ? "step" : "steps"}
-            </div>
           )}
         </div>
       )}
@@ -280,13 +304,20 @@ export const TurnBlock = React.memo(function TurnBlock({
       )}
     </div>
   );
-}, turnBlockPropsEqual);
+};
 
 const COMPACT_TOOL_FAMILIES = new Set([
   "run",
   "file",
   "find",
   "web",
+  // Loading a skill or updating a plan is routine setup inside the same run.
+  // Keeping either direct splits the surrounding work without adding an action.
+  "skill",
+  "checklist",
+  // MCP calls are routine work too. Keeping them direct split otherwise
+  // uninterrupted runs into a noisy sequence of verbose call rows.
+  "mcp",
   // Edits fold with everything else: four passes over a file are as mechanical
   // as the Bash calls around them, and splitting a run at each one left the
   // turn as a ladder of alternating rows. What an edit adds to the folded row
@@ -362,13 +393,29 @@ function ToolRunBlock({
   onOpenSubagent,
   sessionId,
 }: ToolSectionProps) {
-  // Always starts closed: the one preference that would open it renders the
-  // run flat instead, so there is no group row to be open.
-  const [expanded, setExpanded] = useState(false);
+  // Start closed unless this overlapping set of steps was toggled before. A
+  // live run grows one entry at a time, and its parent can be replaced as that
+  // happens, so component-local state alone loses the person's choice.
+  const [expanded, setExpanded] = useState(
+    () =>
+      transcriptDisclosureLedger.read(
+        "tool-run",
+        sessionId,
+        items.map((item) => item.id)
+      ) ?? false
+  );
+  function rememberExpansion(next: boolean) {
+    transcriptDisclosureLedger.write(
+      "tool-run",
+      sessionId,
+      items.map((item) => item.id),
+      next
+    );
+    setExpanded(next);
+  }
 
   const {
     label,
-    failures,
     pending,
     additions,
     deletions,
@@ -383,7 +430,7 @@ function ToolRunBlock({
         aria-expanded={expanded}
         aria-label={`${expanded ? "Hide" : "Show"} ${items.length} grouped steps: ${label}${statusLabel ? `. ${statusLabel}` : ""}`}
         title={`${items.length} grouped steps`}
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => rememberExpansion(!expanded)}
         className="group flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-control border-0 bg-transparent px-1 py-[3px] text-left font-sans transition-colors hover:bg-hover/40 phone:min-h-10"
       >
         {/* Open, the row is a heading for the steps under it, so it keeps the
@@ -421,11 +468,6 @@ function ToolRunBlock({
         <span className="min-w-0 flex-1" />
         {mediaLabel && (
           <span className="flex-shrink-0 text-meta text-faint">{mediaLabel}</span>
-        )}
-        {failures > 0 && (
-          <span className="flex-shrink-0 text-meta text-red/80">
-            {failures} failed
-          </span>
         )}
         {pending > 0 && (
           <span className="size-[11px] flex-shrink-0 animate-spin rounded-full border border-b-line-strong border-l-line-strong border-r-line-strong border-t-dim" />
@@ -491,7 +533,6 @@ function groupedToolLabel(items: TranscriptEntry[]): string {
 /** Everything the folded run's row says, derived once per run. */
 interface ToolRunAggregate {
   label: string;
-  failures: number;
   pending: number;
   additions: number;
   deletions: number;
@@ -501,12 +542,12 @@ interface ToolRunAggregate {
 
 // Keyed on the run's LAST entry, the way turnTouchedFiles is, because the
 // caller has no stable array to key on: ToolSection rebuilds its runs in its
-// render body, so a useMemo inside the block could never hit. Entries are
+// render body, so a hook there could never hold. Entries are
 // replaced rather than mutated when they change (mergeTranscriptEntries), so
 // identity is a sound key. But a call earlier in the run can be replaced while
 // the last one stands, and so can the RESULT a call is waiting on, which is
-// what decides pending, failures and the media counts. Both are compared on a
-// hit, and `live` with them.
+// what decides pending and the media counts. Both are compared on a hit, and
+// `live` with them.
 //
 // Worth caching because the work is repeated rather than one-off: a live turn
 // re-renders on every stream event and this walks every step it has taken so
@@ -535,7 +576,6 @@ function toolRunAggregate(
   const results = items.map((entry) =>
     entry.toolUseId ? toolResults.get(entry.toolUseId) : undefined
   );
-  let failures = 0;
   let pending = 0;
   let images = 0;
   let videos = 0;
@@ -544,25 +584,24 @@ function toolRunAggregate(
   for (let i = 0; i < items.length; i++) {
     const entry = items[i];
     const result = results[i];
-    if (result?.isError) failures++;
     if (live && entry.toolUseId && !result) pending++;
     images += result?.images?.length ?? 0;
     videos += result?.videos?.length ?? 0;
     // Summed from what the rows themselves show, so opening the fold adds up
     // to the number that was on it.
-    const stats = toolLineStats(entry.toolName || "Tool", entry.toolInput);
+    const stats =
+      entry.presentation?.lineStats ??
+      toolLineStats(entry.toolName || "Tool", entry.toolInput);
     additions += stats?.additions ?? 0;
     deletions += stats?.deletions ?? 0;
   }
   const mediaCount = images + videos;
   const value: ToolRunAggregate = {
     label: groupedToolLabel(items),
-    failures,
     pending,
     additions,
     deletions,
     statusLabel: [
-      failures > 0 ? `${failures} failed` : "",
       mediaCount > 0 ? `${mediaCount} media` : "",
       pending > 0 ? "running" : "",
     ].filter(Boolean).join(", "),

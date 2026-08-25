@@ -77,13 +77,11 @@ export async function triggerPrAction(
   let done: Promise<unknown>;
   switch (kind) {
     case "review":
-      // force=true: an explicit request reviews even an already-reviewed SHA.
-      // Same handoff tail as webhook.ts's fireReview — this branch also serves
-      // the startup recovery of restart-interrupted reviews, and without it an
-      // unsatisfied recovered review reached nobody: the verdict posted but the
-      // owning session never got its fix round (PR #5055, 2026-07-19). SHA
-      // dedup + the round cap inside maybeHandoffFindings keep this safe if a
-      // webhook-fired review races the same SHA.
+      // force=true lets a fresh explicit request review an already-reviewed SHA.
+      // runReview recognizes a persisted activeRun as restart recovery and keeps
+      // SHA/comment dedup enabled there. This branch also serves that recovery,
+      // and needs the same handoff tail as webhook.ts's fireReview: without it an
+      // unsatisfied recovered review reached nobody (PR #5055, 2026-07-19).
       done = runReview(ref, resolveReviewConfig().config, resolveSessionCreated, true, steer)
         .then((result) => maybeHandoffFindings(ref, result))
         .catch(fail);

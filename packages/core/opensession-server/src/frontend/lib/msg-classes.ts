@@ -98,8 +98,11 @@ const msgSystemBase =
 export const msgSystemText = `${msgSystemBase} rounded-row bg-panel px-3.5`;
 
 /** A catch-up line, meaning a recap, reads as an aside in the transcript
- *  rather than as a card: the muted type, with no surface under it. */
-export const msgSystemInline = msgSystemBase;
+ *  rather than as a card: the muted type, with no surface under it. It takes
+ *  the full reading column rather than the pill's narrower cap, so a recap
+ *  wraps on the same measure as the turns around it, inside the same row. */
+export const msgSystemInline =
+	"msg-system-text block w-full py-1.5 text-meta leading-[1.45] text-faint";
 
 /**
  * A toned notice reads as a sentence, not a banner: everything the server and

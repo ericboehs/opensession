@@ -8,8 +8,8 @@
 // `manualStatus` (status-overrides registry, applied server-side) remains as
 // a fallback for entries set before lanes went per-user; the sidebar reads
 // the personal lane first. The public API stays synchronous (an in-memory
-// cache): the store is a lib/user-map instance, which owns the hydration and
-// the optimistic whole-map PUT.
+// cache): the store is a lib/user-map instance, which owns hydration and
+// ordered per-key delta writes.
 import { fetchLanes, saveLanesApi } from "./api";
 import { makeUserMap } from "./user-map";
 
@@ -28,7 +28,7 @@ const CHANGE_EVENT = "opensession-lanes-changed";
 const store = makeUserMap<Lane>({
 	changeEvent: CHANGE_EVENT,
 	fetchMap: (user) => fetchLanes(user) as Promise<Record<string, Lane>>,
-	saveMap: saveLanesApi,
+	saveDelta: (user, delta) => saveLanesApi(user, delta),
 });
 
 export function getLanes(): Record<string, Lane> {

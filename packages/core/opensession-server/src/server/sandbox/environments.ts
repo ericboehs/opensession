@@ -11,7 +11,9 @@ import {
 import {
   invalidateRemoteRepoTemplate,
   readRemoteRepoTemplate,
+  remoteRepoTemplateNeedsRefresh,
 } from "./remote-repo-template";
+import { isTransientSandboxStartError } from "./reliability";
 import {
   invalidatePrewarm,
   prewarmStatus,
@@ -22,6 +24,7 @@ import { listSandboxOperations, startSandboxOperation } from "./operations";
 
 const invalidationTimers: Map<string, ReturnType<typeof setTimeout>> =
   ((globalThis as any).__sandboxEnvironmentInvalidationTimers ??= new Map());
+const PROVIDER_QUOTA_RETRY_MS = 60 * 60_000;
 
 export interface SandboxEnvironment {
   repo: string;
@@ -32,6 +35,8 @@ export interface SandboxEnvironment {
   expiresAt?: string;
   failureCode?: string;
   failureSummary?: string;
+  /** Persisted backoff for recoverable provider/setup failures. */
+  retryAt?: string;
   mode?: "template" | "per_session";
   settings?: SandboxMachineSettings;
 }
@@ -202,7 +207,6 @@ async function derivedEnvironment(
         mode: "template",
         updatedAt: template.createdAt,
         preparedAt: template.createdAt,
-        expiresAt: template.expiresAt,
         ...(stored?.settings ? { settings: stored.settings } : {}),
       };
     }
@@ -293,19 +297,34 @@ export async function invalidateSandboxEnvironmentsForRepo(repo: string): Promis
   for (const provider of ["daytona", "box", "modal", "microvm"] as const) {
     const stored = storedEnvironment(repo, provider);
     if (!stored) continue;
+    // Remote repo templates contain a credential-free warm clone. Adoption
+    // fetches the current default branch before creating the session branch,
+    // so deleting a multi-gigabyte provider snapshot on every push creates a
+    // minutes-long cold-start gap without improving source freshness.
+    if (provider === "daytona" || provider === "box" || provider === "modal") {
+      const current = await derivedEnvironment(repo, provider);
+      writeEnvironment(current.state === "ready" ? current : {
+        repo,
+        provider,
+        state: "stale",
+        mode: "template",
+        updatedAt: new Date().toISOString(),
+        ...(stored.settings ? { settings: stored.settings } : {}),
+      });
+      continue;
+    }
     await invalidatePrewarm(provider, repo).catch((error) => {
       console.warn(`[sandbox:${provider}] failed to release prewarm for ${repo}:`, error);
     });
     await removeTemplate(repo, provider).catch((error) => {
       console.warn(`[sandbox:${provider}] failed to delete stale template for ${repo}:`, error);
     });
-    const now = new Date().toISOString();
     writeEnvironment({
       repo,
       provider,
       state: "stale",
       mode: "template",
-      updatedAt: now,
+      updatedAt: new Date().toISOString(),
       ...(stored.settings ? { settings: stored.settings } : {}),
     });
   }
@@ -330,6 +349,7 @@ export async function prepareSandboxEnvironment(
   provider: WorkspaceSandboxProvider,
   options: {
     rebuild?: boolean;
+    refresh?: boolean;
     user?: string;
     settings?: SandboxMachineSettings;
     onProgress?: (stage: string, progress: number, detail?: string) => void;
@@ -364,6 +384,7 @@ export async function prepareSandboxEnvironment(
     repo,
     provider,
     state: "preparing",
+    mode: "template",
     updatedAt: now,
     ...(settings ? { settings } : {}),
   });
@@ -371,17 +392,29 @@ export async function prepareSandboxEnvironment(
   try {
     const deadline = Date.now() + 20 * 60_000;
     while (Date.now() < deadline) {
-      const requested = await requestPrewarm(provider, repo, options.user || "workspace-setup");
+      const requested = await requestPrewarm(
+        provider,
+        repo,
+        options.user || "workspace-setup",
+        {
+          refreshTemplate: options.refresh,
+          // Daytona and Box can retain a stopped disk with zero compute. It
+          // removes slow snapshot materialization from the first-turn path;
+          // Modal has no park() and therefore keeps image-only behavior.
+          standby: true,
+        },
+      );
       const entry = prewarmStatus(provider, repo);
       if (entry?.stage) options.onProgress?.(entry.stage, entry.progress || 10);
       else if (requested.state === "at-capacity") {
         options.onProgress?.("Waiting for provider capacity", 5);
       }
       if (requested.state === "ready" || entry?.state === "ready") {
-        // Publishing is complete before the pool flips Ready. Release this
-        // build sandbox so preparing many repos stays within the paid cap;
-        // the retained provider artifact is what sessions restore.
-        await invalidatePrewarm(provider, repo);
+        // Providers with a real stopped state retain one zero-compute standby
+        // beside the durable artifact. Others release the build sandbox.
+        if (!(entry?.standby && entry.parked)) {
+          await invalidatePrewarm(provider, repo);
+        }
         options.onProgress?.("Verifying template", 98);
         const derived = await derivedEnvironment(repo, provider);
         if (derived.state !== "ready") {
@@ -412,18 +445,29 @@ export async function prepareSandboxEnvironment(
       typeof (error as { code?: unknown })?.code === "string"
         ? String((error as { code: string }).code)
         : "ENVIRONMENT_SETUP_FAILED";
+    const failureSummary =
+      code === "ENVIRONMENT_TIMEOUT"
+        ? "Project setup took too long. Try rebuilding it."
+        : error instanceof Error
+          ? error.message.slice(0, 500)
+          : "Project setup failed. Rebuild it to try again.";
+    const quotaLimited = /(?:rate.?limit|quota|plan allows|per day)/i.test(failureSummary);
+    const retryDelayMs = quotaLimited
+      ? PROVIDER_QUOTA_RETRY_MS
+      : isTransientSandboxStartError(error)
+        ? 15 * 60_000
+        : 0;
     const failure: SandboxEnvironment = {
       repo,
       provider,
       state: "failed",
+      mode: "template",
       updatedAt: new Date().toISOString(),
       failureCode: code,
-      failureSummary:
-        code === "ENVIRONMENT_TIMEOUT"
-          ? "Project setup took too long. Try rebuilding it."
-          : error instanceof Error
-            ? error.message.slice(0, 500)
-            : "Project setup failed. Rebuild it to try again.",
+      failureSummary,
+      ...(retryDelayMs
+        ? { retryAt: new Date(Date.now() + retryDelayMs).toISOString() }
+        : {}),
       ...(settings ? { settings } : {}),
     };
     writeEnvironment(failure);
@@ -432,11 +476,90 @@ export async function prepareSandboxEnvironment(
 }
 
 const providerQueues: Map<string, Promise<void>> = ((globalThis as any).__sandboxEnvironmentQueues ??= new Map());
+let maintenanceTimer: ReturnType<typeof setInterval> | undefined = (globalThis as any).__sandboxEnvironmentMaintenanceTimer;
+
+/** Resume explicitly prepared template environments whose preparation inputs
+ * changed or whose provider artifact disappeared. A stored record means a
+ * human opted this repo/provider pair into transient preparation; this never
+ * enables a new provider or keeps idle compute alive. */
+function maintainSandboxEnvironments(): void {
+  for (const environment of readStored()) {
+    if (
+      !["daytona", "box", "modal"].includes(environment.provider) ||
+      (environment.mode !== "template" && environment.state !== "preparing") ||
+      !sandboxConnectionReady(environment.provider)
+    ) continue;
+    if (environment.state === "failed") {
+      const retryAt = environment.retryAt
+        ? Date.parse(environment.retryAt)
+        : /(?:rate.?limit|quota|plan allows|per day)/i.test(environment.failureSummary || "")
+          ? Date.parse(environment.updatedAt) + PROVIDER_QUOTA_RETRY_MS
+          : Number.NaN;
+      if (!Number.isFinite(retryAt) || retryAt > Date.now()) continue;
+    }
+    const template = readRemoteRepoTemplate(
+      environment.provider as "daytona" | "box" | "modal",
+      environment.repo,
+    );
+    if (template && !remoteRepoTemplateNeedsRefresh(template)) {
+      // Publication is the durable completion boundary. A coordinator may
+      // restart while the disposable validation sandbox is still parking;
+      // promote the recovered artifact instead of deleting it.
+      void derivedEnvironment(environment.repo, environment.provider).then(writeEnvironment);
+      if (environment.provider === "daytona" || environment.provider === "box") {
+        const standby = prewarmStatus(environment.provider, environment.repo);
+        if (!(standby?.standby && standby.parked)) {
+          void requestPrewarm(
+            environment.provider,
+            environment.repo,
+            "environment-standby",
+            { standby: true },
+          );
+        }
+      }
+      continue;
+    }
+    if (template) {
+      const standby = prewarmStatus(environment.provider, environment.repo);
+      if (
+        (environment.provider === "daytona" || environment.provider === "box") &&
+        standby?.standby &&
+        standby.parked
+      ) {
+        // A stopped standby fetches the current branch when claimed. Replacing
+        // it on a source-only timer creates an avoidable availability gap,
+        // especially while Daytona seals or restores a large snapshot. Setup
+        // input changes invalidate both the template and standby immediately.
+        void derivedEnvironment(environment.repo, environment.provider).then(writeEnvironment);
+        continue;
+      }
+      scheduleSandboxEnvironment(environment.repo, environment.provider, {
+        refresh: true,
+        user: "image-registry-refresh",
+        settings: environment.settings,
+      });
+      continue;
+    }
+    scheduleSandboxEnvironment(environment.repo, environment.provider, {
+      rebuild: true,
+      user: "template-maintenance",
+      settings: environment.settings,
+    });
+  }
+}
+
+export function startSandboxEnvironmentMaintenance(): void {
+  if (maintenanceTimer) return;
+  maintainSandboxEnvironments();
+  maintenanceTimer = setInterval(maintainSandboxEnvironments, 60_000);
+  maintenanceTimer.unref?.();
+  (globalThis as any).__sandboxEnvironmentMaintenanceTimer = maintenanceTimer;
+}
 
 export function scheduleSandboxEnvironment(
   repo: string,
   provider: WorkspaceSandboxProvider,
-  options: { rebuild?: boolean; user?: string; settings?: SandboxMachineSettings } = {},
+  options: { rebuild?: boolean; refresh?: boolean; user?: string; settings?: SandboxMachineSettings } = {},
 ) {
   const existing = listSandboxOperations().find(
     (operation) =>

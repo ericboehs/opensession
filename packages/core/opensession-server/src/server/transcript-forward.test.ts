@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { storeAppendUserLineEarly, transcriptLineUser } from "./opencode-transcript";
+import { storeAppendUserLineEarly, transcriptLineUser } from "./transcript-persistence";
 import { setTranscriptForwarder } from "./transcript-forward";
 
 afterEach(() => setTranscriptForwarder(undefined));

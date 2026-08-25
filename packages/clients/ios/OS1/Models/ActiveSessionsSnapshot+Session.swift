@@ -5,6 +5,7 @@ extension ActiveSessionsSnapshot {
         from sessions: [Session],
         userName: String,
         githubLogin: String,
+        isUnread: (Session) -> Bool = { _ in false },
         now: Date = Date()
     ) -> ActiveSessionsSnapshot {
         var identities = Set<String>()
@@ -48,6 +49,14 @@ extension ActiveSessionsSnapshot {
                 )
             },
             totalCount: active.count,
+            unreadCount: sessions.count {
+                CatchUpQueue.qualifies(
+                    $0,
+                    viewerName: userName,
+                    viewerLogin: githubLogin,
+                    isUnread: isUnread
+                )
+            },
             updatedAt: now.timeIntervalSince1970
         )
     }

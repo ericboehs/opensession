@@ -378,11 +378,11 @@ export const SIDEBAR_LANE_HEADER =
 export const SIDEBAR_GROUP_NAME = "min-w-0 truncate text-left";
 
 /**
- * Phone lane captions keep a small inset for arm's-length reading. Desktop
- * captions sit directly on the header's content rail, while the hover pill
- * still runs the sidebar's full width.
+ * Phone lane captions keep a slight 2px inset for arm's-length reading.
+ * Desktop captions sit directly on the header's content rail, while the hover
+ * pill still runs the sidebar's full width.
  */
-export const SIDEBAR_LANE_NAME = "pl-1 desktop:pl-0";
+export const SIDEBAR_LANE_NAME = "pl-0.5 desktop:pl-0";
 
 /**
  * The collapse chevron. Revealed by the header's hover, and rotated to mark the
@@ -741,15 +741,15 @@ export const SIDEBAR_ATTN_COUNT =
  * group variant only matches a group's DESCENDANTS. Either way it is
  * hover-device-only, so touch layouts never pay for it.
  *
- * 68px is the cluster (7px right edge + two chips + the 4px between them) plus
- * a little air, and it is the number the session rows reserve for the same
- * pair — so a title truncates at one place in the rail rather than 12px
+ * 98px is the cluster (7px right edge + three chips + the gaps) plus a little
+ * air, and it is the number the session rows reserve for the same trio, so a
+ * title truncates at one place in the rail rather than 12px
  * earlier on the families that share this row.
  */
-export const SIDEBAR_WS_ROW = `flex items-center ${SIDEBAR_RAIL_GAP} hover:pr-[68px]`;
+export const SIDEBAR_WS_ROW = `flex items-center ${SIDEBAR_RAIL_GAP} hover:pr-[98px]`;
 
 /**
- * Pin + archive, floated over the row's right edge so revealing them can never
+ * Pin + snooze + archive, floated over the row's right edge so revealing them can never
  * change the row's height. The cluster used to wear an opaque plate, because a
  * long title runs under it; it doesn't need one — the row itself now reserves
  * that space on hover (see {@link SIDEBAR_WS_ROW}), so the title has
@@ -914,6 +914,9 @@ export const SIDEBAR_SWIPE_ACTION_TRANSITION =
 /** Destructive, and on the trailing edge because the swipe travels left. */
 export const SIDEBAR_SWIPE_ACTION_ARCHIVE = "right-0 bg-red text-white";
 
+/** Reversible snooze filing on the trailing edge. Quieter than Archive. */
+export const SIDEBAR_SWIPE_ACTION_SNOOZE = "right-0 bg-active text-fg";
+
 /** Pin, on the leading edge. Dark ink: the yellow is too light for white. */
 export const SIDEBAR_SWIPE_ACTION_STAR = "left-0 bg-yellow text-[#17130a]";
 
@@ -925,6 +928,8 @@ export const SIDEBAR_STATUS_DOT = {
 	/** Yellow to match the "In progress" lane — green means "In review". */
 	running:
 		"bg-yellow animate-[pulse_1.4s_ease-in-out_infinite] motion-reduce:[animation-duration:1.4s]! motion-reduce:[animation-iteration-count:infinite]!",
+	/** A stopped run is actionable, but it is not a question for the person. */
+	failed: "bg-red shadow-[0_0_6px_var(--red)]",
 	waiting:
 		"bg-blue shadow-[0_0_6px_var(--blue)] animate-[pulse_1.2s_ease-in-out_infinite] motion-reduce:[animation-duration:1.2s]! motion-reduce:[animation-iteration-count:infinite]!",
 	idle: "bg-faint",

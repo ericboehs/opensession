@@ -30,15 +30,25 @@ small team.
 
 ### 1. Install it on the box
 
-**The Open Session installer already did this** unless you passed
-`--no-tailscale`. Check with `tailscale ip -4`; if it prints a `100.x` address
-you are already on a tailnet and can skip to step 3.
+For a fresh Open Session install on Linux, pass `--tailscale` to the downloaded
+script after `bash -s --`:
 
-To install it by hand:
+```sh
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale
+```
+
+The Open Session installer only installs Tailscale automatically when
+passwordless `sudo` is available. If it reports that `sudo` is needed, or if
+Open Session is already installed, add Tailscale directly. You do not need to
+reinstall Open Session:
 
 ```sh
 curl -fsSL https://tailscale.com/install.sh | sh
 ```
+
+On macOS, use the [Tailscale download page](https://tailscale.com/download/mac).
+Check with `tailscale ip -4`; if it prints a `100.x` address, you are already on
+a tailnet and can skip to step 3.
 
 ### 2. Join your network
 
@@ -49,18 +59,36 @@ sudo tailscale up
 It prints a URL — open it and authenticate. On a headless box, use
 `sudo tailscale up --ssh` if you also want Tailscale SSH.
 
-This is the step the installer cannot do for you, because it needs your
-account. It *can* if you give it an
-[auth key](https://tailscale.com/kb/1085/auth-keys) as `TS_AUTHKEY` — see
-[install.md](install.md#why-tailscale-is-installed-by-default).
+This is the step the installer cannot do without your account. For an
+unattended fresh install, it can join with a Tailscale [auth
+key](https://tailscale.com/kb/1085/auth-keys):
 
-### 3. Find the tailnet address
+```sh
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | TS_AUTHKEY=tskey-auth-... bash -s -- --tailscale
+```
+
+The environment variable belongs before `bash`, not before `curl`, so the
+installer receives it. See [Install with Tailscale](install.md#install-with-tailscale).
+
+### 3. Disable key expiry for the server
+
+Tailscale node keys expire by default, which can disconnect an unattended
+server until someone signs in again. In the [Tailscale admin
+console](https://login.tailscale.com/admin/machines), open **Machines**, find
+the Open Session server, open its **…** menu, and choose **Disable key
+expiry**.
+
+Do this for the trusted server, not automatically for every device. Disabling
+expiry means a stolen server identity remains valid until you revoke it. See
+[Tailscale's key expiry documentation](https://tailscale.com/kb/1028/key-expiry).
+
+### 4. Find the tailnet address
 
 ```sh
 tailscale ip -4        # e.g. 100.64.12.34
 ```
 
-### 4. Bind Open Session to it
+### 5. Bind Open Session to it
 
 If you joined the tailnet *before* onboarding, this is already done — the
 wizard offers the tailnet address as the bind default. Otherwise:
@@ -82,7 +110,7 @@ If you manage the files by hand instead, change `HOST` in
 `OPENSESSION_UI_BASE` to match — or links posted into Slack, Linear and notes
 will point somewhere unreachable — and restart.
 
-### 5. Install Tailscale on the devices you want to use
+### 6. Install Tailscale on the devices you want to use
 
 Phone, laptop, whatever. They must be on the same tailnet. That is the whole
 access-control story — adding a device to the tailnet grants access, removing
@@ -106,14 +134,15 @@ binds to, so bind the proxy to the tailnet address too.
 
 ```sh
 # What is Open Session listening on? Should be 127.0.0.1 or a 100.x tailnet IP.
-ss -tlnp | grep -E '3850|3848'
+ss -tlnp | grep -E '3850|3860'
 
 # From somewhere off the tailnet (your phone on cellular, a cloud shell):
 curl -m 5 http://<public-ip>:3850/    # must fail
 ```
 
 On a cloud box, also check the firewall — the security group or firewall rules
-should not open 3850 or 3848 at all. See [ec2.md](ec2.md#networking).
+should not open 3850 or 3860 directly. Funnel, Cloudflare Tunnel, or Caddy
+terminates TLS in front of loopback 3860. See [ec2.md](ec2.md#networking).
 
 ## A custom domain (os.company.dev)
 
@@ -229,56 +258,78 @@ logins listed in `identity.team` can sign in. See
 Even then, prefer keeping the network boundary. Sign-in protects the UI and
 API; it is not a reason to put an agent runner on the public internet.
 
-## The webhook server is separate
+## Public ingress is separate
 
-The webhook server (default port **3848**) is a second HTTP listener for
-inbound GitHub, Linear, Plain and Stripe events. If you use those integrations,
-*that* port needs to be reachable by the provider — which means it cannot live
-on the tailnet alone.
+Open Session binds one fail-closed public gateway on `127.0.0.1:3860`. It
+serves exact registered webhook and OAuth routes, remote Sandbox WebSockets,
+and workload identity. Unknown methods and paths return 404. The private app
+on 3850 is not part of this listener and must not be routed through the public
+origin.
 
-Expose 3848 only, never 3850, and only through something that terminates TLS.
-Every webhook route verifies a signature (`GITHUB_WEBHOOK_SECRET`,
-`LINEAR_WEBHOOK_SECRET`, `PLAIN_WEBHOOK_SECRET`, `STRIPE_WEBHOOK_SECRET`), so
-set those — an unsigned webhook endpoint is an open door into your automations.
+Every webhook route still verifies its provider signature
+(`GITHUB_WEBHOOK_SECRET`, `LINEAR_WEBHOOK_SECRET`, `PLAIN_WEBHOOK_SECRET`,
+`STRIPE_WEBHOOK_SECRET`). The network boundary and signature checks are both
+required.
 
-If you do not use inbound webhooks, leave 3848 on `127.0.0.1` and forget it
-exists.
+Configure the canonical origin in Settings → Public ingress or directly:
 
-### Remote-sandbox ingress
+```json
+{
+  "server": {
+    "publicBaseUrl": "https://sessions.tailnet.example.com"
+  },
+  "ingress": {
+    "publicBaseUrl": "https://ingress.example.com",
+    "exposure": "custom"
+  }
+}
+```
 
-Daytona and Modal also need the isolated sandbox callback and workload-identity
-routes on the webhook
-hostname. They terminate on the isolated listener at `127.0.0.1:3860`; they
-must never expose the main UI on 3850:
+`OPENSESSION_INGRESS_BASE` overrides the configured ingress URL. Setup guides,
+webhook URLs, remote Sandbox callbacks, and the workload-identity issuer all
+use this origin. Session links and authenticated app callbacks continue to use
+the independent private app origin.
+
+### Tailscale Funnel
+
+Choose Tailscale Funnel in Settings for automatic HTTPS without DNS records or
+inbound firewall ports. Open Session routes the machine's `*.ts.net` Funnel
+hostname to `127.0.0.1:3860`. Funnel cannot serve a custom hostname.
+
+### Cloudflare Tunnel
+
+Create a named tunnel, then enter its UUID, connector token and public URL in
+Settings. Open Session stores the token write-only, runs `cloudflared` with the
+token file, and restarts the connector if it exits. Point the public hostname
+at the tunnel and set its only service to:
+
+```text
+http://127.0.0.1:3860
+```
+
+The required DNS record is:
+
+```text
+CNAME ingress.example.com <tunnel-id>.cfargotunnel.com
+```
+
+Only the ingress gateway belongs in the tunnel. Never add port 3850 unless you
+have separately decided to make the authenticated app public.
+
+### Custom domain with Caddy
+
+Point the hostname's A/AAAA records at the server, then choose Custom domain in
+Settings. Open Session writes its marked Caddy section, validates the complete
+Caddyfile, reloads Caddy, verifies the public health route, and restores the
+prior file on failure. The resulting site is intentionally simple because the
+application owns the exact public route allowlist:
 
 ```caddy
 ingress.example.com {
-    handle /run-ws/* {
-        reverse_proxy 127.0.0.1:3860
-    }
-    handle /rpc-ws {
-        reverse_proxy 127.0.0.1:3860
-    }
-    handle /ingress-health {
-        reverse_proxy 127.0.0.1:3860
-    }
-    handle /workload-identity/* {
-        reverse_proxy 127.0.0.1:3860
-    }
     handle {
-        reverse_proxy 127.0.0.1:3848
+        reverse_proxy 127.0.0.1:3860
     }
 }
 ```
 
-Workspace → Sandboxes generates this block for the selected origin. The
-repository CLI finds the matching host in `/etc/caddy/Caddyfile`, owns a marked
-route section inside it (or creates the host), backs up the file, validates,
-reloads and publicly verifies it:
-
-```sh
-opensession sandbox ingress install https://ingress.example.com
-```
-
-On any failure it restores and reloads the complete prior Caddyfile. The same
-maintained example lives at `deploy/caddy/sandbox-ingress.caddy.example`.
+The maintained example lives at `deploy/caddy/sandbox-ingress.caddy.example`.

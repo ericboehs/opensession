@@ -1,13 +1,9 @@
 /**
  * Browser-based "Sign in with Claude" for usage tracking.
  *
- * Runs authenticate with long-lived `claude setup-token` tokens, but those
- * lack the user:profile scope, so usage polling needs full OAuth login
- * credentials. Until now that meant pointing an account's credentialsPath at
- * a `claude-plan` snapshot under ~/.claude/accounts — a file the Claude CLI,
- * the claude-plan refresh cron AND this server all rotate. Anthropic rotates
- * the refresh token on every use, so multiple writers race each other out of
- * the token family and usage visibility is "sometimes lost".
+ * Model runs authenticate with a long-lived `claude setup-token`. This OAuth
+ * grant is deliberately separate and only reads usage, so its shorter refresh
+ * lifetime can never stop model runs.
  *
  * This flow mints a token family Open Session owns exclusively: an
  * authorization-code + PKCE login against Anthropic's public Claude Code
@@ -75,7 +71,7 @@ export function claudeOauthCredentialsPath(accountId: string): string {
   return `${stateDir("claude-oauth")}/${accountId}.json`;
 }
 
-/** Begin a PKCE sign-in that will attach usage credentials to `accountId`. */
+/** Begin a PKCE sign-in that attaches usage tracking to an account. */
 export async function startClaudeLogin(
   accountId: string
 ): Promise<ClaudeLoginStart | { error: string }> {
@@ -88,7 +84,7 @@ export async function startClaudeLogin(
   );
   const login: PendingLogin = {
     id: crypto.randomUUID(),
-    accountId,
+    accountId: account.id,
     verifier,
     createdAt: Date.now(),
   };
@@ -155,7 +151,7 @@ export async function completeClaudeLogin(
     return { error: "The account this sign-in was for no longer exists." };
   }
   const email: string | undefined = body.account?.email_address || undefined;
-  // Usage data from the wrong subscription is actively misleading — refuse a
+  // Usage data from the wrong subscription is actively misleading. Refuse a
   // mismatched sign-in instead of silently attaching it.
   if (account.email && email && account.email.toLowerCase() !== email.toLowerCase()) {
     pending.delete(id);
@@ -166,6 +162,7 @@ export async function completeClaudeLogin(
 
   mkdirSync(stateDir("claude-oauth"), { recursive: true, mode: 0o700 });
   const path = claudeOauthCredentialsPath(login.accountId);
+  const now = Date.now();
   writeFileAtomic(
     path,
     JSON.stringify(
@@ -173,7 +170,10 @@ export async function completeClaudeLogin(
         claudeAiOauth: {
           accessToken: body.access_token,
           refreshToken: body.refresh_token,
-          expiresAt: Date.now() + (Number(body.expires_in) || 28_800) * 1000,
+          expiresAt: now + (Number(body.expires_in) || 28_800) * 1000,
+          refreshTokenExpiresAt: Number(body.refresh_token_expires_in)
+            ? now + Number(body.refresh_token_expires_in) * 1000
+            : undefined,
           scopes: typeof body.scope === "string" ? body.scope.split(" ") : undefined,
         },
       },
@@ -186,9 +186,7 @@ export async function completeClaudeLogin(
 
   const updated = setAccountUsageCredentials(login.accountId, path, email);
   if (!updated) return { error: "The account this sign-in was for no longer exists." };
-  console.log(
-    `[claude-oauth-login] ${updated.name} connected usage credentials${email ? ` (${email})` : ""}`
-  );
+  console.log(`[claude-oauth-login] ${updated.name} reconnected${email ? ` (${email})` : ""}`);
   return { account: updated };
 }
 

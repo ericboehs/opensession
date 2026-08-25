@@ -2,7 +2,7 @@
 
 import { BASE_PATH } from "./base";
 
-export function readFileAsDataUrl(file: File): Promise<string> {
+export function readFileAsDataUrl(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(String(r.result));
@@ -53,6 +53,7 @@ const STAGEABLE_IMAGE_TYPES: Record<string, string> = {
   "image/gif": ".gif",
   "image/webp": ".webp",
 };
+const MAX_NORMALIZED_IMAGE_EDGE = 4096;
 // An image small enough to keep inline when staging isn't available. Pasting
 // while the server is unreachable still works below this; above it the send
 // would only fail again at delivery, so it is reported at attach time instead.
@@ -64,6 +65,66 @@ const MAX_INLINE_IMAGE_BYTES = 512 * 1024;
 function imageUploadName(file: File): string {
   if (/\.[a-z0-9]{1,5}$/i.test(file.name)) return file.name;
   return `pasted-${Date.now()}${STAGEABLE_IMAGE_TYPES[file.type] ?? ".png"}`;
+}
+
+async function convertImageToJpeg(source: Blob): Promise<Blob> {
+  const bitmap = await createImageBitmap(source);
+  try {
+    const scale = Math.min(
+      1,
+      MAX_NORMALIZED_IMAGE_EDGE / Math.max(bitmap.width, bitmap.height),
+    );
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Image canvas is unavailable");
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => blob ? resolve(blob) : reject(new Error("Image conversion failed")),
+        "image/jpeg",
+        0.88,
+      );
+    });
+  } finally {
+    bitmap.close();
+  }
+}
+
+function convertedImageName(name: string): string {
+  const stem = name.replace(/\.[a-z0-9]{1,8}$/i, "") || "image";
+  return `${stem}.jpg`;
+}
+
+/** Make every image reference acceptable to the server before a durable retry.
+ * Supported refs remain byte-for-byte stable. Older HEIC/other inline messages
+ * are converted when the browser can decode them; otherwise they fail once as
+ * an editable item instead of retrying forever and blocking later follow-ups. */
+export async function preparePromptImages(
+  images?: string[],
+): Promise<string[] | undefined> {
+  if (!images?.length) return undefined;
+  return Promise.all(images.map(async (image) => {
+    if (image.startsWith("/media?")) return image;
+    const match = image.match(/^data:([^;]+);base64,([\s\S]+)$/);
+    if (match && STAGEABLE_IMAGE_TYPES[match[1]]) return image;
+    if (!match?.[1].startsWith("image/")) throw unsupportedPromptImage();
+    try {
+      const response = await fetch(image);
+      const jpeg = await convertImageToJpeg(await response.blob());
+      return await readFileAsDataUrl(jpeg);
+    } catch {
+      throw unsupportedPromptImage();
+    }
+  }));
+}
+
+function unsupportedPromptImage(): Error & { status: number } {
+  return Object.assign(
+    new Error("This image format isn't supported. Attach a PNG, JPEG, GIF, or WebP image."),
+    { status: 400 },
+  );
 }
 
 /**
@@ -81,15 +142,26 @@ function imageUploadName(file: File): string {
  * discarded.
  */
 async function stageImage(file: File, rejected: string[]): Promise<string | null> {
-  const inline = () => readFileAsDataUrl(file);
-  if (!STAGEABLE_IMAGE_TYPES[file.type]) return inline();
   if (file.size > MAX_UPLOAD_BYTES) {
     rejected.push(`${file.name || "image"} (too large, max ${Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024))} MB)`);
     return null;
   }
+  let stageable = file;
+  if (!STAGEABLE_IMAGE_TYPES[file.type]) {
+    try {
+      const jpeg = await convertImageToJpeg(file);
+      stageable = new File([jpeg], convertedImageName(file.name), {
+        type: "image/jpeg",
+      });
+    } catch {
+      rejected.push(`${file.name || "image"} (use PNG, JPEG, GIF, or WebP)`);
+      return null;
+    }
+  }
+  const inline = () => readFileAsDataUrl(stageable);
   try {
     const { path } = await uploadFile(
-      new File([file], imageUploadName(file), { type: file.type }),
+      new File([stageable], imageUploadName(stageable), { type: stageable.type }),
     );
     return `/media?path=${encodeURIComponent(path)}`;
   } catch (e) {

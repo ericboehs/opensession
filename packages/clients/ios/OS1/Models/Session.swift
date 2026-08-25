@@ -5,6 +5,9 @@ import Foundation
 /// fields are ignored, so server-side additions never break the client.
 struct Session: Identifiable, Decodable, Equatable, Hashable {
     let id: String
+    /// Other stable ids that resolve to this same session. Transcript links can
+    /// carry one of these after a session source is unified under a new id.
+    var aliasIds: [String]?
     /// This session has an engine conversation behind it — it ran at least one
     /// turn. The list carries this instead of the engine session ids
     /// themselves (`sessionRan` in src/server/routes/sessions.ts): nothing here
@@ -35,6 +38,15 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
     /// Journaled start of the current run — only present while running.
     var runStartedAt: String?
     var waitingForInput: Bool?
+    /// The last run died on a terminal failure (usage limits exhausted,
+    /// credit or API errors). A human must act, so while idle the session
+    /// reads as Needs input rather than sinking into Backlog. Cleared by the
+    /// next run that ends cleanly.
+    var lastRunError: RunError?
+    /// The create run is still preparing this session's worktree (git fetch,
+    /// worktree add, dep install). The viewer says so and messages queue
+    /// until it flips off.
+    var workspacePreparing: Bool?
     var queuedCount: Int?
     var archived: Bool?
     /// Why the session was archived. Missing means a manual archive from a
@@ -87,6 +99,10 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
     var startedBy: String?
     var createdBy: String?
     var createdByLogin: String?
+    /// Parent/orchestrator when this is a visible worker session.
+    var parentSessionId: String?
+    /// The opening turn came from a server-side action, not a person's composer.
+    var agentStarted: Bool?
     /// The session id of the run that started this one from inside itself
     /// (`create_session` in an agent's own turn). Set only for those: work the
     /// Desk delegates on a person's behalf is deliberately unmarked
@@ -94,6 +110,10 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
     var spawnedBy: String?
     var automation: AutomationFlag?
     var attachedRepos: [AttachedRepo]?
+    /// Every pull-request branch associated with this session, including
+    /// attached, linked, and discovered branches. The native workspace and PR
+    /// surfaces use the enriched refs to show the complete series.
+    var prs: [SessionPrRef]?
     /// The requested sandbox provider and materialized sandbox id. This is a
     /// reference only; Workspace details resolves its live state on demand.
     var sandbox: SessionSandbox?
@@ -115,6 +135,20 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
     /// the bulk of server noise a person's list should hide by default.
     var isAutomation: Bool {
         automation?.isAutomation ?? (startedBy?.hasSuffix("(automation)") ?? false)
+    }
+
+    /// The opening turn came from an agent action rather than a composer.
+    /// The branch/id fallbacks preserve this mark on older PR and report runs.
+    var wasAgentStarted: Bool {
+        agentStarted == true
+            || isAutomation
+            || parentSessionId?.isEmpty == false
+            || spawnedBy?.isEmpty == false
+            || id.hasPrefix("bks-ghpr-")
+            || (branch?.hasPrefix("report-") ?? false)
+            || [createdBy, startedBy].contains { name in
+                name?.trimmingCharacters(in: .whitespaces).lowercased() == "automation"
+            }
     }
 
     /// The ordinary user entries belong to this person when they carry no
@@ -192,8 +226,20 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
         case idle
     }
 
+    struct RunError: Decodable, Equatable, Hashable, Sendable {
+        var message: String?
+        var at: String?
+    }
+
+    /// A run that died on a terminal failure needs a human to act, exactly
+    /// like a blocked question. A live run means a retry is underway, so the
+    /// stale flag never overrides running states. Mirrors the web's
+    /// runNeedsAttention (frontend/lib/sidebar-lanes.tsx).
+    var runNeedsAttention: Bool { lastRunError != nil && isRunning != true }
+
     var status: Status {
         if waitingForInput == true { return .needsInput }
+        if runNeedsAttention { return .needsInput }
         if isRunning == true { return .running }
         return .idle
     }
@@ -216,6 +262,7 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
 
     var lane: Lane {
         if waitingForInput == true { return .needsInput }
+        if runNeedsAttention { return .needsInput }
         if isRunning == true { return .inProgress }
         if prState == "OPEN" { return .inReview }
         if prState == "MERGED" { return .done }
@@ -235,10 +282,40 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
         formatter.formatOptions = [.withInternetDateTime]
         return formatter
     }()
+    private static let isoCache = ISODateCache()
 
+    /// Date parsing used to run from computed properties inside SwiftUI view
+    /// bodies. A scene update could ask hundreds of transcript rows for the
+    /// same timestamps again and spend the watchdog's whole allowance in ICU.
+    /// Cache by the immutable wire value so every timestamp pays that cost at
+    /// most once for the process.
     static func parseISO(_ string: String?) -> Date? {
         guard let string else { return nil }
-        return isoFractional.date(from: string) ?? isoPlain.date(from: string)
+        if let cached = isoCache.value(for: string) { return cached }
+        guard let parsed = isoFractional.date(from: string) ?? isoPlain.date(from: string) else {
+            return nil
+        }
+        isoCache.insert(parsed, for: string)
+        return parsed
+    }
+
+    private final class ISODateCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [String: Date] = [:]
+        private let limit = 20_000
+
+        func value(for key: String) -> Date? {
+            lock.lock()
+            defer { lock.unlock() }
+            return values[key]
+        }
+
+        func insert(_ value: Date, for key: String) {
+            lock.lock()
+            defer { lock.unlock() }
+            if values.count >= limit { values.removeAll(keepingCapacity: true) }
+            values[key] = value
+        }
     }
 }
 
@@ -316,6 +393,23 @@ struct AttachedRepo: Decodable, Equatable, Hashable, Identifiable {
     let dir: String
 
     var id: String { repo }
+}
+
+/// One pull request associated with a session. Every enriched field remains
+/// optional so older servers and unresolved branches still decode safely.
+struct SessionPrRef: Decodable, Equatable, Hashable {
+    let repo: String
+    let branch: String
+    var source: String? = nil
+    var url: String? = nil
+    var state: String? = nil
+    var number: Int? = nil
+    var title: String? = nil
+    var isDraft: Bool? = nil
+    var reviewDecision: String? = nil
+    var additions: Int? = nil
+    var deletions: Int? = nil
+    var checks: PrChecksSummary? = nil
 }
 
 extension Session {

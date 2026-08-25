@@ -224,7 +224,7 @@ function isCargoTarget(dir: string): boolean {
 
 /**
  * Cargo target dirs under every worktree. Searches a few levels deep because
- * tella-fusion has a nested one at packages/core/webapp/wasm-bindings/target
+ * a repo can have a nested one, e.g. packages/core/webapp/wasm-bindings/target
  * alongside the workspace root's.
  */
 export function findTargetCaches(root: string, maxDepth = 5): TargetCache[] {
@@ -386,7 +386,7 @@ export async function sweepDiskGc(opts: { dryRun?: boolean } = {}): Promise<Disk
     if (pct >= PRESSURE_PCT) {
       console.warn(
         `[disk-gc] still at ${pct.toFixed(1)}% after GC — look beyond worktrees ` +
-          `(docker build cache, ~/.opensession-opencode, /opt/firecracker)`,
+          `(docker build cache, ~/.opensession-pi, /opt/firecracker)`,
       );
     }
   }

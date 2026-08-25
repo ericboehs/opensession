@@ -1,11 +1,12 @@
 /**
  * Slack link unfurling for Open Session session links.
  *
- * When someone pastes an `os.tella.dev/session/<id>` link into Slack, Slack
+ * When someone pastes a `<instance-host>/session/<id>` link into Slack, Slack
  * fires a `link_shared` event (the app must have `links:read`/`links:write` and
  * register the domain as an unfurl domain). We can't rely on Open Graph tags
- * because os.tella.dev is tailnet-only — Slack's crawler can't reach it — so
- * instead we look the session up in-process and post a rich preview back with
+ * because an instance host is often private (tailnet-only, behind a VPN), so
+ * Slack's crawler cannot reach it. Instead we look the session up in-process
+ * and post a rich preview back with
  * `chat.unfurl`.
  */
 
@@ -14,6 +15,7 @@ import { findSessionAsync } from "../../server/session-cache";
 import type { UnifiedSession } from "../../server/types";
 import { configuredServer } from "../../server/config";
 import {
+  hasUsableSessionShot,
   sessionCardTitle,
   sessionSocialCardData,
   sessionSocialCardUrl,
@@ -64,15 +66,6 @@ function esc(t: string): string {
   return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function statusChip(s: UnifiedSession): string {
-  if (s.isRunning) return "🟢 In progress";
-  if (s.lastRunError) return "🔴 Needs input";
-  if (s.prState === "MERGED") return "🟣 Merged";
-  if (s.prState === "CLOSED") return "⚪ Closed";
-  if (s.prState === "OPEN" || s.prUrl) return "🔵 In review";
-  return "⚪ Idle";
-}
-
 /** Bare relative duration: "5m" / "2h" / "3d" — no "ago" suffix, callers add it. */
 function relTime(iso?: string): string {
   if (!iso) return "";
@@ -85,24 +78,6 @@ function relTime(iso?: string): string {
   const hours = Math.round(mins / 60);
   if (hours < 24) return `${hours}h`;
   return `${Math.round(hours / 24)}d`;
-}
-
-/**
- * A one-line "what's this about" blurb: the walkthrough summary if the agent
- * published one, else the goal/mission text. Stripped of markdown and capped so
- * the card stays compact.
- */
-function summaryLine(s: UnifiedSession): string {
-  const raw = (s.walkthrough?.summary || s.goal || "").trim();
-  if (!raw) return "";
-  // First paragraph, markdown stripped to plain-ish text.
-  let text = raw.split(/\n\s*\n/)[0].replace(/\s+/g, " ").trim();
-  text = text
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1") // links/images → their text
-    .replace(/[*_`#>]/g, "") // md emphasis / headings / code / quote
-    .trim();
-  if (text.length > 220) text = text.slice(0, 217).trimEnd() + "…";
-  return text;
 }
 
 /** "+123 −45" diff stat from the PR fields, or "" when unknown. */
@@ -129,43 +104,43 @@ export function cardTitle(s: UnifiedSession): { title: string } {
 }
 
 /** Build the Block Kit unfurl body for one session. */
-export function unfurlForSession(s: UnifiedSession, url: string): { blocks: any[] } {
-  const card = sessionSocialCardData(s);
+export async function unfurlForSession(
+  s: UnifiedSession,
+  url: string,
+): Promise<{ blocks: any[] }> {
+  const card = sessionSocialCardData(s, { includeShot: true });
   const { title } = card;
 
-  const bits: string[] = [statusChip(s)];
-  if (s.repo) bits.push(s.branch ? `${s.repo} · \`${s.branch}\`` : s.repo);
-  if (card.model) bits.push(card.model);
-  if (s.mode) bits.push(s.mode);
-  if (s.linearIssue?.identifier) bits.push(s.linearIssue.identifier);
-  if (s.createdBy || s.startedBy) bits.push(`by ${card.owner}`);
-  if (s.isRunning && s.runStartedAt) bits.push(`running ${relTime(s.runStartedAt)}`);
-  else if (s.lastActivity) bits.push(`updated ${relTime(s.lastActivity)} ago`);
-
+  // The linked title always leads. The card below it is the session's own
+  // screenshots and nothing else, so it only appears when there is one to
+  // show: an empty rectangle says less than no image at all.
   const blocks: any[] = [
     {
       type: "section",
       text: { type: "mrkdwn", text: `*<${url}|${esc(title)}>*` },
     },
-    {
+  ];
+  if (await hasUsableSessionShot(card)) {
+    blocks.push({
       type: "image",
       image_url: sessionSocialCardUrl(s.id),
-      alt_text: `${title}, an Open Session by ${card.owner}`,
-    },
-  ];
-
-  const summary = summaryLine(s);
-  if (summary) {
-    blocks.push({
-      type: "section",
-      text: { type: "mrkdwn", text: esc(summary) },
+      alt_text: `${title}, Open Session preview`,
     });
   }
 
-  blocks.push({
-    type: "context",
-    elements: [{ type: "mrkdwn", text: bits.join("  ·  ") }],
-  });
+  // A missing creator stays missing rather than becoming "Open Session".
+  const bits: string[] = [];
+  if (s.createdBy || s.startedBy) bits.push(card.owner);
+  if (s.repo) bits.push(s.repo);
+  const updated = relTime(s.lastActivity);
+  if (updated) bits.push(`updated ${updated} ago`);
+
+  if (bits.length) {
+    blocks.push({
+      type: "context",
+      elements: [{ type: "mrkdwn", text: bits.join("  ·  ") }],
+    });
+  }
 
   if (s.prUrl) {
     const num = s.prNumber ? `#${s.prNumber}` : "PR";
@@ -219,7 +194,7 @@ export async function handleLinkShared(
     if (!id) continue;
     const session = await deps.findSession(id);
     if (!session) continue;
-    unfurls[link.url] = unfurlForSession(session, link.url);
+    unfurls[link.url] = await unfurlForSession(session, link.url);
   }
 
   if (Object.keys(unfurls).length === 0) return;

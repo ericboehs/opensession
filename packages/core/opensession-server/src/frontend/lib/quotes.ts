@@ -5,13 +5,15 @@
  * exactly what was being talked about.
  */
 
+import { randomUUID } from "./random-uuid";
+
 export interface Quote {
 	id: string;
 	text: string;
 }
 
 export function newQuote(text: string): Quote {
-	return { id: crypto.randomUUID(), text: text.trim() };
+	return { id: randomUUID(), text: text.trim() };
 }
 
 /** A compact, single-line preview for the composer's selected-text tooltip. */

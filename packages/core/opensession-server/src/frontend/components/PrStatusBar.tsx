@@ -1,29 +1,32 @@
 import { repoLabel } from "../lib/repo-label";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import type { GitStatusInfo, PrDetails } from "../lib/types";
+import React, { useCallback, useEffect, useState } from "react";
+import type { PrDetails } from "../lib/types";
+import {
+	deriveHeadline,
+	summarizeChecks,
+	type PrHeadline,
+} from "../lib/pr-headline";
 import {
 	refChipText,
 	refLabel,
 	refTone,
 	summarizePrSeries,
+	worstPrRef,
 	type SessionPrRef,
 } from "../lib/pr-refs";
 import {
 	archiveSessionApi,
-	fetchGitStatus,
-	fetchPr,
 	gitPullApi,
 	gitPushApi,
 	mergePrApi,
 	mergePrStackApi,
 } from "../lib/api";
 import { stackLayersTopFirst, stackMergePlan } from "../lib/pr-stack";
-import {
-	pollWhileVisible,
-	PR_WEBHOOK_FALLBACK_POLL_MS,
-} from "../lib/poll";
+import { PR_WEBHOOK_FALLBACK_POLL_MS } from "../lib/poll";
+import { useSessionGitResource, useSessionPrResource } from "../hooks/useApiResources";
 import { getCurrentUser } from "./UserPicker";
 import { providerFromUrl } from "../lib/provider";
+import { isApple } from "../lib/platform";
 import { sessionPrPresentation } from "../lib/session-prs";
 import {
 	prChipClass,
@@ -43,24 +46,33 @@ import {
 	PR_SIB_DOT_BG,
 	PR_BAR_STATE_TEXT,
 	PR_STATE_TEXT,
+	PR_SUMMARY_BAND_BG,
 } from "../lib/pr-tone-classes";
 // The summary variant renders into the workspace summary card, so it borrows
 // that card's row grammar rather than inventing a third one. The strip owns
 // the PR state machine; the card owns how a row in it looks.
 import {
-	WS_SUMMARY_COUNT,
+	WS_SUMMARY_BAND,
+	WS_SUMMARY_BAND_PAD,
 	WS_SUMMARY_LABEL,
-	WS_SUMMARY_RAIL,
-	WS_SUMMARY_ROW,
 	WS_SUMMARY_STATUS_ROW,
 } from "../lib/workspace-summary-classes";
 import { Tooltip } from "../ui/tooltip";
-import { ContextMenu, Menu } from "../ui/menu";
+import { ContextMenu, Menu, MENU_ICON } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
+import { Skeleton, SkeletonBar } from "../ui/state";
 import { cn } from "../ui/cn";
 import { useShortcutLabel } from "../hooks/useShortcutBindings";
+import { useDeferredMergePhase } from "../hooks/useDeferredMerge";
+import {
+	cancelDeferredMergeByKey,
+	deferredMergeKey,
+	scheduleDeferredMerge,
+} from "../lib/deferred-merge";
+import { BrandMark } from "./BrandTile";
 import { PrChecksPopover } from "./PrChecksPopover";
 import { PrSeriesRows } from "./PrSeriesRows";
+import { MergeUndoControl } from "./pr/MergeUndoControl";
 import { PrStackChip } from "./pr/StackPopover";
 import {
 	IconArrowDown,
@@ -71,10 +83,8 @@ import {
 	IconCopy,
 	IconHash,
 	IconCheck,
-	IconClock,
 	IconPlus,
 	IconArchive,
-	IconX,
 } from "./icons";
 
 /**
@@ -89,167 +99,10 @@ import {
  * instead of minting a bare PR from the header.
  */
 
-interface PrHeadline {
-	key:
-		| "merged"
-		| "closed"
-		| "conflicts"
-		| "failing"
-		| "running"
-		| "draft"
-		| "changes-requested"
-		| "stack-blocked" // a lower layer of this PR's stack is still open
-		| "ready"
-		| "ahead"
-		| "behind" // behind the branch's own upstream → Pull
-		| "behind-base" // clean tree, no PR, behind origin/<base> → Pull
-		| "no-pr"
-		| "clean";
-	label: string;
-	tone: "green" | "purple" | "red" | "yellow" | "muted";
-}
-
-/** Roll PR + local git state up into the one line the header shows. */
-function deriveHeadline(
-	pr: PrDetails | null,
-	git: GitStatusInfo | null,
-): PrHeadline {
-	const ahead = git?.ahead ?? 0;
-	const behind = git?.behind ?? 0;
-	if (pr) {
-		if (pr.state === "MERGED") return { key: "merged", label: "Merged", tone: "purple" };
-		if (pr.state === "CLOSED") return { key: "closed", label: "Closed", tone: "muted" };
-		if (ahead > 0)
-			return {
-				key: "ahead",
-				label: `Ahead by ${ahead} commit${ahead === 1 ? "" : "s"}`,
-				tone: "yellow",
-			};
-		// Local checkout is stale vs the PR branch (someone else pushed) — the
-		// PR data below would describe commits this worktree doesn't have yet.
-		if (behind > 0)
-			return {
-				key: "behind",
-				label: `Behind by ${behind} commit${behind === 1 ? "" : "s"}`,
-				tone: "yellow",
-			};
-		if (pr.mergeable === "CONFLICTING")
-			return { key: "conflicts", label: "Merge conflicts", tone: "red" };
-		const checks = summarizeChecks(pr);
-		if (checks.failed > 0) return { key: "failing", label: "Checks failed", tone: "red" };
-		if (checks.pending > 0)
-			return {
-				key: "running",
-				label: `${checks.pending} check${checks.pending === 1 ? "" : "s"} pending…`,
-				tone: "yellow",
-			};
-		if (pr.isDraft) return { key: "draft", label: "Draft", tone: "muted" };
-		if (pr.reviewDecision === "CHANGES_REQUESTED")
-			return { key: "changes-requested", label: "Changes requested", tone: "red" };
-		// A stack layer never lands alone while the layers under it are open — it
-		// lands as a stack merge, which takes them along, so it is genuinely
-		// ready. The one refusal we can see from here is a draft in that set:
-		// GitHub's stack merge won't take one, and the whole merge is atomic.
-		const draftBelow = stackMergePlan(pr)?.blockedBy;
-		if (draftBelow)
-			return {
-				key: "stack-blocked",
-				label: `Draft #${draftBelow.number} below it`,
-				tone: "yellow",
-			};
-		return { key: "ready", label: "Ready to merge", tone: "green" };
-	}
-	if (behind > 0)
-		return {
-			key: "behind",
-			label: `Behind by ${behind} commit${behind === 1 ? "" : "s"}`,
-			tone: "yellow",
-		};
-	// A shared-checkout repo (Open Session's own) lands work as a commit on its
-	// default branch and never opens a PR, so unpushed commits are the whole
-	// story there — "No PR open · Create PR" would be the wrong move.
-	if (git?.sharedCheckout && ahead > 0)
-		return {
-			key: "ahead",
-			label: `Ahead by ${ahead} commit${ahead === 1 ? "" : "s"}`,
-			tone: "yellow",
-		};
-	if (ahead > 0 || (git?.uncommittedFiles ?? 0) > 0)
-		return { key: "no-pr", label: "No PR open", tone: "muted" };
-	if ((git?.behindBase ?? 0) > 0)
-		return {
-			key: "behind-base",
-			label: `${git!.behindBase} commit${git!.behindBase === 1 ? "" : "s"} behind ${git!.baseBranch}`,
-			tone: "muted",
-		};
-	return { key: "clean", label: "Up to date", tone: "muted" };
-}
-
-/** The PR row's glyph tone in the summary card: where the pull request itself
- *  stands, which is a different question from the headline under it. A merged
- *  PR with an old approval on it must not read as open. */
-function prGlyphTone(pr: PrDetails): string {
-	if (pr.state === "MERGED") return "text-purple";
-	if (pr.state === "CLOSED") return "text-dim";
-	if (pr.isDraft) return "text-faint";
-	return "text-green";
-}
-
-/** The summary card's headline glyph, one per state the strip can report. The
- *  card is a list of rows and every other row opens with a mark, so the
- *  headline needs one too rather than starting on bare text. */
-function headlineGlyph(key: PrHeadline["key"]): React.ReactNode {
-	switch (key) {
-		case "merged":
-		case "conflicts":
-			return <IconGitMerge size={20} />;
-		case "closed":
-		case "failing":
-		case "changes-requested":
-			return <IconX size={20} />;
-		case "running":
-			return <IconClock size={20} />;
-		case "ahead":
-			return <IconArrowUp size={20} />;
-		case "behind":
-		case "behind-base":
-			return <IconArrowDown size={20} />;
-		case "no-pr":
-		case "draft":
-		case "stack-blocked":
-			return <IconPullRequest size={20} />;
-		default:
-			return <IconCheck size={20} />;
-	}
-}
-
 export type { SessionPrRef } from "../lib/pr-refs";
 // Re-exported so the strip stays the one import site for PR-ref presentation.
 export { refTone } from "../lib/pr-refs";
-
-export function summarizeChecks(pr: PrDetails | null): {
-	passed: number;
-	failed: number;
-	pending: number;
-	total: number;
-} {
-	let passed = 0,
-		failed = 0,
-		pending = 0;
-	for (const c of pr?.checks || []) {
-		// StatusContexts (Vercel deploys) report a state, not a status — PENDING
-		// there means running, and must not read as done.
-		if (
-			(c.status !== "COMPLETED" && c.status !== "") ||
-			c.conclusion === "PENDING" ||
-			c.conclusion === "EXPECTED"
-		)
-			pending++;
-		else if (c.conclusion === "SUCCESS") passed++;
-		else if (["FAILURE", "TIMED_OUT", "ERROR"].includes(c.conclusion)) failed++;
-	}
-	return { passed, failed, pending, total: (pr?.checks || []).length };
-}
+export { summarizeChecks } from "../lib/pr-headline";
 
 interface Props {
 	sessionId: string;
@@ -269,6 +122,8 @@ interface Props {
 	send?: (msg: any) => void;
 	/** Clicking the headline jumps to the PR tab; a chip jumps to that PR. */
 	onOpenPrTab?: (ref?: { repo: string; branch: string }) => void;
+	/** Open a GitHub stack layer that is not one of this session's PR targets. */
+	onOpenStackPr?: (repo: string, branch: string) => void;
 	/** Open the primary PR directly on its Checks tab. */
 	onOpenChecksTab?: () => void;
 	/** Archive via the owning viewer so it can select the neighboring sidebar row. */
@@ -283,19 +138,29 @@ interface Props {
 	 * - "bar" is the panel's own strip.
 	 * - "header" renders just the PR chip + primary action while the panel is
 	 *   closed.
-	 * - "summary" renders the same two facts as rows for the workspace summary
-	 *   card: which PR, and where it stands with its one action. It is a
-	 *   variant rather than a copy because everything behind that action —
-	 *   headline derivation, the stack merge plan, confirm-then-merge, the
-	 *   prompt-the-session paths, busy state — is this component's, and a
-	 *   second implementation of it is a second thing that can be wrong about
-	 *   whether a merge is in flight.
+	 * - "summary" renders the primary PR and its action in the workspace
+	 *   summary card, followed by the other PRs in its stack. It is a variant
+	 *   rather than a copy because everything behind that action belongs to this
+	 *   component: headline derivation, the stack merge plan, deferred merge,
+	 *   the prompt-the-session paths, and busy state. A second implementation is
+	 *   a second thing that can be wrong about whether a merge is in flight.
 	 */
 	variant?: "bar" | "header" | "summary";
 	/** Optional element rendered inside the strip, left of the PR chip (bar
 	    variant only) so it shares the strip's tone background — e.g. the globe
 	    staging-deploy icon in the Workspace panel. */
 	leading?: React.ReactNode;
+	/**
+	 * Summary variant only: marks that belong to this PR but are not the strip's
+	 * to derive, rendered at the head of the status row before the state glyph.
+	 * Today that is the preview environment the PR deployed. It shares the row
+	 * because it shares the subject: one line for the state of the work and the
+	 * place to try it, not a tinted row with a loose link under it.
+	 *
+	 * The row is the band's only line, so anything passed here has to be a mark
+	 * rather than a labelled row. There is nowhere for a second label to go.
+	 */
+	children?: React.ReactNode;
 	/** Live run state — when it falls from running→idle the header refetches, so
 	    it reflects the just-finished turn (and any auto-push) immediately. */
 	running?: boolean;
@@ -314,13 +179,11 @@ interface PrBarButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement>
 		| "purple-dashed"
 		| "solid";
 	icon?: React.ReactNode;
-	confirm?: boolean;
 }
 
 function PrBarButton({
 	tone,
 	icon,
-	confirm,
 	className = "",
 	children,
 	...props
@@ -359,7 +222,6 @@ function PrBarButton({
 				// two things. Icon-only callers override px themselves, so this
 				// never lands on a lone glyph.
 				icon && "gap-1 pl-[6.5px]",
-				confirm && "outline-2 outline-[color-mix(in_srgb,var(--green)_45%,transparent)] outline-offset-1",
 				className,
 			)}
 			{...props}
@@ -392,6 +254,60 @@ function PrBarButton({
 // advertises whatever it is bound to.
 
 /**
+ * The rows every right-click menu about a pull request offers: open it where it
+ * lives, and take its link or its number away with you. Written once because
+ * two surfaces carry the same menu: the strip's `#1234` chip and the summary
+ * card's PR band. A copy action that says "Copied" in one place and
+ * nothing in the other is two implementations of one gesture.
+ *
+ * The rows keep the popup open after a copy (`closeOnClick={false}`) so the
+ * checkmark is visible where it was clicked, which is the whole confirmation.
+ */
+function PrCopyItems({ pr }: { pr: PrDetails }) {
+	const [copied, setCopied] = useState<"link" | "number" | null>(null);
+	const provider = providerFromUrl(pr.url);
+
+	const copy = (kind: "link" | "number", text: string) => {
+		navigator.clipboard?.writeText(text).then(() => {
+			setCopied(kind);
+			setTimeout(() => setCopied(null), 1500);
+		});
+	};
+
+	return (
+		<>
+			<ContextMenu.Item
+				render={
+					<a href={pr.url} target="_blank" rel="noopener" className="no-underline" />
+				}
+			>
+				<IconArrowUpRight size={20} className={MENU_ICON} />
+				<span className="grow">Open on {provider.name}</span>
+			</ContextMenu.Item>
+			<ContextMenu.Item closeOnClick={false} onClick={() => copy("link", pr.url)}>
+				{copied === "link" ? (
+					<IconCheck size={20} className="text-green" />
+				) : (
+					<IconCopy size={20} className={MENU_ICON} />
+				)}
+				<span className="grow">{copied === "link" ? "Copied" : "Copy link"}</span>
+			</ContextMenu.Item>
+			<ContextMenu.Item
+				closeOnClick={false}
+				onClick={() => copy("number", `#${pr.number}`)}
+			>
+				{copied === "number" ? (
+					<IconCheck size={20} className="text-green" />
+				) : (
+					<IconHash size={20} className={MENU_ICON} />
+				)}
+				<span className="grow">{copied === "number" ? "Copied" : "Copy number"}</span>
+			</ContextMenu.Item>
+		</>
+	);
+}
+
+/**
  * The PR chip links to Open Session's review by default. GitHub remains a
  * separate outbound action, while the context menu holds copy actions.
  */
@@ -407,16 +323,8 @@ function PrNumberChip({
 	size: "bar" | "head";
 	onOpenPrTab?: () => void;
 }) {
-	const [copied, setCopied] = useState<"link" | "number" | null>(null);
 	const provider = providerFromUrl(pr.url);
 	const prChord = useShortcutLabel("open-pr");
-
-	const copy = useCallback((kind: "link" | "number", text: string) => {
-		navigator.clipboard?.writeText(text).then(() => {
-			setCopied(kind);
-			setTimeout(() => setCopied(null), 1500);
-		});
-	}, []);
 
 	return (
 		<div className="inline-flex items-center">
@@ -438,45 +346,7 @@ function PrNumberChip({
 					</span>
 				</ContextMenu.Trigger>
 				<ContextMenu.Popup>
-					<ContextMenu.Item
-						render={
-							<a
-								href={pr.url}
-								target="_blank"
-								rel="noopener"
-								className="no-underline"
-							/>
-						}
-					>
-						<IconArrowUpRight size={20} />
-						<span className="grow">Open on {provider.name}</span>
-					</ContextMenu.Item>
-					<ContextMenu.Item
-						closeOnClick={false}
-						onClick={() => copy("link", pr.url)}
-					>
-						{copied === "link" ? (
-							<IconCheck size={20} />
-						) : (
-							<IconCopy size={20} />
-						)}
-						<span className="grow">
-							{copied === "link" ? "Copied" : "Copy link"}
-						</span>
-					</ContextMenu.Item>
-					<ContextMenu.Item
-						closeOnClick={false}
-						onClick={() => copy("number", `#${pr.number}`)}
-					>
-						{copied === "number" ? (
-							<IconCheck size={20} />
-						) : (
-							<IconHash size={20} />
-						)}
-						<span className="grow">
-							{copied === "number" ? "Copied" : "Copy number"}
-						</span>
-					</ContextMenu.Item>
+					<PrCopyItems pr={pr} />
 				</ContextMenu.Popup>
 			</ContextMenu.Root>
 			<Tooltip
@@ -579,15 +449,6 @@ function PrRefChips({
 	);
 }
 
-/** Last-known state per session+repo, so a remount (tab switch, panel toggle)
- * paints the previous status instantly and revalidates behind it instead of
- * blanking for a fresh round-trip. Module-level: survives unmounts, dies with
- * the page (a reload starts honest). */
-const lastKnown = new Map<
-	string,
-	{ pr: PrDetails | null; git: GitStatusInfo | null }
->();
-
 export function PrStatusBar({
 	sessionId,
 	repo,
@@ -595,55 +456,60 @@ export function PrStatusBar({
 	prs,
 	send,
 	onOpenPrTab,
+	onOpenStackPr,
 	onOpenChecksTab,
 	onArchive,
 	onNewSession,
 	variant = "bar",
 	leading,
+	children,
 	running,
 	refreshTick,
 }: Props) {
-	const presentation = useMemo(() => sessionPrPresentation(prs), [prs]);
+	const presentation = (sessionPrPresentation(prs));
+	// A tab with no PR of its own can receive several workspace PRs from sibling
+	// sessions. Pick one of those explicitly rather than falling through to this
+	// tab's unrelated branch, which made the workspace summary say “Create PR”.
+	const presented =
+		presentation.primary ?? worstPrRef(presentation.additional);
 	const promoted =
-		presentation.primary?.source !== "primary" ? presentation.primary : undefined;
+		presented?.source !== "primary" ? presented : undefined;
 	const targetRepo = promoted?.repo || repo;
 	const targetBranch = promoted?.branch;
-	const cacheId = `${sessionId}\0${targetRepo || ""}\0${targetBranch || ""}`;
-	const seed = lastKnown.get(cacheId);
-	const [pr, setPr] = useState<PrDetails | null>(seed?.pr ?? null);
-	const [git, setGit] = useState<GitStatusInfo | null>(seed?.git ?? null);
-	const [loaded, setLoaded] = useState(!!seed);
+	const prResource = useSessionPrResource(
+		sessionId,
+		targetRepo,
+		targetBranch,
+		{ refreshInterval: PR_WEBHOOK_FALLBACK_POLL_MS },
+	);
+	const gitResource = useSessionGitResource(sessionId, repo, {
+		enabled: !promoted,
+		refreshInterval: PR_WEBHOOK_FALLBACK_POLL_MS,
+	});
+	const pr = prResource.data ?? null;
+	const git = gitResource.data ?? null;
+	const { mutate: reloadPr } = prResource;
+	const { mutate: reloadGit } = gitResource;
+	const mergeKey = deferredMergeKey(pr?.url);
+	const mergePhase = useDeferredMergePhase(mergeKey);
+	const loaded =
+		!prResource.isLoading && (Boolean(promoted) || !gitResource.isLoading);
 	const [busy, setBusy] = useState<string | null>(null);
-	const [confirmMerge, setConfirmMerge] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [isArchived, setIsArchived] = useState(!!archived);
 	const [prompted, setPrompted] = useState<string | null>(null);
 
 	useEffect(() => setIsArchived(!!archived), [archived]);
 
+	// SWR's mutate is stable, so the refetch effects below can list `load`
+	// without re-arming on every render.
+	const hasPromoted = promoted != null;
 	const load = useCallback(async () => {
-		const [prData, gitData] = await Promise.all([
-			fetchPr(sessionId, targetRepo, targetBranch).catch(() => null),
-			promoted
-				? Promise.resolve(null)
-				: fetchGitStatus(sessionId, repo).catch(() => null),
+		await Promise.all([
+			reloadPr(),
+			hasPromoted ? Promise.resolve() : reloadGit(),
 		]);
-		setPr(prData);
-		setGit(gitData);
-		setLoaded(true);
-		lastKnown.set(cacheId, { pr: prData, git: gitData });
-	}, [sessionId, targetRepo, targetBranch, promoted, repo, cacheId]);
-
-	useEffect(() => {
-		// Session/repo switch on a mounted component: fall back to that target's
-		// last-known state (or the checking placeholder) while the fetch runs.
-		const cached = lastKnown.get(cacheId);
-		setPr(cached?.pr ?? null);
-		setGit(cached?.git ?? null);
-		setLoaded(!!cached);
-		load();
-		return pollWhileVisible(load, PR_WEBHOOK_FALLBACK_POLL_MS);
-	}, [load]);
+	}, [reloadPr, reloadGit, hasPromoted]);
 
 	// Refetch the instant a turn ends (running→idle) or an auto-push lands
 	// (refreshTick bump), so "Ahead by N commits" clears without waiting on a
@@ -660,7 +526,7 @@ export function PrStatusBar({
 		if (refreshTick) load();
 	}, [refreshTick, load]);
 
-	const headline = useMemo(() => deriveHeadline(pr, git), [pr, git]);
+	const headline = (deriveHeadline(pr, git));
 
 	// Everything except the primary branch's PR (which the headline covers):
 	// attached repos, manual links, and PRs discovered through their body
@@ -691,6 +557,19 @@ export function PrStatusBar({
 					)
 			: [];
 	const stackNumbers = new Set(stackRows.map((ref) => ref.number));
+	const stackTargets = new Set(
+		stackRows.map((ref) => `${ref.repo}\0${ref.branch}`),
+	);
+	const openStatusRow = (ref: { repo: string; branch: string }) => {
+		if (
+			onOpenStackPr &&
+			stackTargets.has(`${ref.repo}\0${ref.branch}`)
+		) {
+			onOpenStackPr(ref.repo, ref.branch);
+			return;
+		}
+		onOpenPrTab?.(ref);
+	};
 	const statusRows = [
 		...stackRows,
 		...siblings.filter(
@@ -723,24 +602,38 @@ export function PrStatusBar({
 				? series.label
 				: headline.label;
 
-	// When checks are the reason for the headline, the headline IS the checks
-	// control: hovering it shows them, clicking it opens Review's Checks tab —
-	// so the strip needs no View checks button beside it.
-	const checksPr =
-		pr && (headline.key === "running" || headline.key === "failing") ? pr : null;
+	// An OPEN PR with checks keeps the headline as the checks control. The
+	// headline still reports the most important state, while hover previews every
+	// check and click opens Review's Checks tab.
+	//
+	// Once the PR has landed or been closed, its checks are history: they cannot
+	// change, nobody is waiting on them, and "4 checks" in green beside Merged
+	// reads as live state that still needs watching. So a settled PR drops the
+	// count and goes back to opening its own tab.
+	const checksSummary = summarizeChecks(pr);
+	const prSettled = pr?.state === "MERGED" || pr?.state === "CLOSED";
+	const checksPr = pr && !prSettled && checksSummary.total > 0 ? pr : null;
+	const checksTone = checksSummary.failed > 0
+		? "text-red"
+		: checksSummary.pending > 0
+			? "text-yellow"
+			: checksSummary.passed > 0
+				? "text-green"
+				: "text-faint";
+	const checksLabel = `${checksSummary.total} check${checksSummary.total === 1 ? "" : "s"}`;
 
 	async function run(name: string, fn: () => Promise<unknown>) {
 		if (busy) return;
 		setBusy(name);
 		setError(null);
-		try {
-			await fn();
+		await (async () => {
+await fn();
 			await load();
-		} catch (e: any) {
-			setError(e.message || `${name} failed`);
-		} finally {
-			setBusy(null);
-		}
+})().catch(async (e: any) => {
+setError(e.message || `${name} failed`);
+}).finally(async () => {
+setBusy(null);
+});
 	}
 
 	// Merging a stack layer means merging everything under it — GitHub takes the
@@ -755,17 +648,19 @@ export function PrStatusBar({
 			: null;
 
 	function handleMerge() {
-		if (!confirmMerge) {
-			setConfirmMerge(true);
-			setTimeout(() => setConfirmMerge(false), 4000);
+		if (!mergeKey || busy) return;
+		if (mergePhase === "scheduled") {
+			cancelDeferredMergeByKey(mergeKey);
 			return;
 		}
-		setConfirmMerge(false);
-		run("merge", () =>
-			stackMerge
-				? mergePrStackApi(sessionId, "squash", targetRepo, targetBranch)
-				: mergePrApi(sessionId, "squash", targetRepo, targetBranch),
-		);
+		if (mergePhase !== "idle") return;
+		scheduleDeferredMerge(mergeKey, async () => {
+			await run("merge", () =>
+				stackMerge
+					? mergePrStackApi(sessionId, "squash", targetRepo, targetBranch)
+					: mergePrApi(sessionId, "squash", targetRepo, targetBranch),
+			);
+		});
 	}
 
 	// Session-driven actions: ask the agent instead of doing bare git plumbing —
@@ -784,10 +679,8 @@ export function PrStatusBar({
 	//
 	//  - Clean: level with the upstream, the base and the working tree. One
 	//    muted "Up to date" over a link to an empty PR tab.
-	//  - Nothing but a dirty tree on a shared-checkout repo (Open Session's
-	//    own), where work lands as a commit on the default branch and no PR is
-	//    ever opened. "Create PR" is the wrong move there, and uncommitted work
-	//    is the Git status section's subject, not this strip's.
+	// Shared-checkout sessions stay on main by default. Their optional branch
+	// move lives in the session's overflow menu rather than this status card.
 	const noPr = !pr && statusRows.length === 0;
 	const empty =
 		noPr &&
@@ -801,11 +694,22 @@ export function PrStatusBar({
 	// session that turns out to have nothing is the same blink, pointed the
 	// other way.
 	if (!loaded) {
+		if (variant === "summary")
+			// No tone to paint yet, so the band holds its shape without a fill
+			// rather than guessing a colour it may have to take back.
+			return (
+				<div className={WS_SUMMARY_BAND}>
+					<Skeleton label="Loading PR status">
+						<div className={WS_SUMMARY_STATUS_ROW}>
+							<SkeletonBar className="size-4 shrink-0 rounded-full" />
+							<SkeletonBar className="w-[58%]" />
+						</div>
+					</Skeleton>
+					{children}
+				</div>
+			);
 		if (
 			variant === "header" ||
-			// The card fills in row by row as its own fetches land, so a
-			// placeholder row here would be the one thing in it that flashes.
-			variant === "summary" ||
 			!(prs || []).some((ref) => ref.number)
 		)
 			return null;
@@ -852,10 +756,10 @@ export function PrStatusBar({
 			case "merged": {
 				// Landed work is a fork in the road: file the session away, or keep
 				// going in a fresh one. Don't offer to archive a session that still
-				// has open PRs in its series just because the primary one landed —
-				// the new session stands either way, since the branch is behind it.
+				// has open PRs in its series just because the primary one landed.
+				// The new session stands either way, since the branch is behind it.
 				const canArchive = !isArchived && openSiblings === 0;
-				if (!onNewSession && !canArchive) return null;
+				if (!onNewSession && !canArchive && !isArchived) return null;
 				return (
 					<div className="flex items-center gap-2">
 						{onNewSession && (
@@ -874,7 +778,26 @@ export function PrStatusBar({
 								<span className="@max-[440px]:hidden">Continue</span>
 							</PrBarButton>
 						)}
-						{canArchive && (
+						{isArchived ? (
+							<Tooltip label="Unarchive session" side="bottom">
+								<PrBarButton
+									className={actionBtn}
+									tone="secondary"
+									icon={<IconArchive size={18} />}
+									aria-label="Unarchive session"
+									disabled={!!busy}
+									onClick={() =>
+										run("unarchive", async () => {
+											if (onArchive) onArchive();
+											else await archiveSessionApi(sessionId, false);
+											setIsArchived(false);
+										})
+									}
+								>
+									{busy === "unarchive" ? "Unarchiving…" : "Archived"}
+								</PrBarButton>
+							</Tooltip>
+						) : canArchive ? (
 							<PrBarButton
 								className={actionBtn}
 								// The merged strip's own purple, filled: archiving is what
@@ -893,7 +816,7 @@ export function PrStatusBar({
 							>
 								{busy === "archive" ? "Archiving…" : "Archive"}
 							</PrBarButton>
-						)}
+						) : null}
 					</div>
 				);
 			}
@@ -997,14 +920,22 @@ export function PrStatusBar({
 						Create PR
 					</PrBarButton>
 				) : null;
-			case "ready":
+			case "ready": {
+				const mergeScheduled = mergePhase === "scheduled";
+				const merging = mergePhase === "running" || busy === "merge";
+				if (mergeScheduled)
+					return (
+						<MergeUndoControl
+							className={variant === "header" ? "min-h-[32px]" : undefined}
+							onUndo={handleMerge}
+						/>
+					);
 				return (
 					<PrBarButton
 						className={actionBtn}
 						tone="green"
-						confirm={confirmMerge}
-						icon={!busy && !confirmMerge ? <IconGitMerge size={18} /> : undefined}
-						disabled={!!busy}
+						icon={!merging ? <IconGitMerge size={18} /> : undefined}
+						disabled={!!busy || merging}
 						onClick={handleMerge}
 						title={
 							stackMerge
@@ -1014,95 +945,220 @@ export function PrStatusBar({
 								: "Squash and merge this PR into its base branch"
 						}
 					>
-						{busy === "merge"
+						{merging
 							? stackMerge
 								? "Merging stack…"
 								: "Merging…"
-							: confirmMerge
-								? "Confirm merge"
-								: stackMerge
-									? "Merge stack"
-									: "Merge"}
-						{stackMerge && busy !== "merge" && (
+							: stackMerge
+								? "Merge stack"
+								: "Merge"}
+						{stackMerge && !merging && (
 							<span className="ml-1.5 rounded-full bg-white/20 px-1.5 tabular-nums">
 								{stackMerge.layers.length}
 							</span>
 						)}
 					</PrBarButton>
 				);
+			}
 			default:
 				return null;
 		}
 	}
 
-	// The summary card: which PR, then where it stands with its one action.
+	// The summary card: one row for the PR, the way a sidebar row carries its
+	// own subtext. One row for all of it, including the preview deploy, which
+	// sits beside the primary action instead of taking a line of its own to say a
+	// name the globe already says. Where the work stands is the line that matters,
+	// so the headline leads and the PR number sits under it as secondary. The PR
+	// title is gone: it restates the session title the card already hangs from,
+	// and it cost the card a whole row to do it.
 	//
-	// The headline row is a div holding two targets rather than one row-wide
-	// button, which is the card's only departure from "the whole row is the
-	// target". It has to be: the label opens the PR (or its checks) and the
-	// button beside it merges, pushes or pulls, and a button inside a button is
-	// not a thing.
+	// The row is a div holding two targets rather than one row-wide button,
+	// which is the card's only departure from "the whole row is the target". It
+	// has to be: the label opens the PR (or its checks) and the button beside it
+	// merges, pushes or pulls, and a button inside a button is not a thing.
 	if (variant === "summary") {
 		// The label is the button, rather than a button wrapping it: it has to
 		// carry the row's truncation and its flex share, and a `display:contents`
 		// wrapper would drop the focus ring with the box.
 		const labelClass = cn(
 			WS_SUMMARY_LABEL,
-			"cursor-pointer rounded-sm border-none bg-transparent p-0 text-left text-item-title text-fg hover:text-accent focus-ring",
+			"group/prsum cursor-pointer rounded-sm border-none bg-transparent p-0 text-left focus-ring phone:flex phone:flex-col phone:justify-center",
 		);
-		return (
+		const provider = pr ? providerFromUrl(pr.url) : null;
+		const externalHint = provider
+			? `${isApple ? "⌘" : "Ctrl"}-click opens in ${provider.name}`
+			: undefined;
+		// Two lines inside the one target: the state, then which PR it is about.
+		// The provider mark makes the modified-click destination visible without
+		// competing with the state or the primary action.
+		const labelBody = (
 			<>
-				{pr && (
-					<button
-						className={WS_SUMMARY_ROW}
-						onClick={() => onOpenPrTab?.()}
-						title={`#${pr.number} · ${pr.title}`}
-					>
-						<span className={cn(WS_SUMMARY_RAIL, prGlyphTone(pr))}>
-							<IconPullRequest size={20} />
-						</span>
-						<span className={WS_SUMMARY_LABEL}>{pr.title}</span>
-						<span className={cn(WS_SUMMARY_COUNT, "text-faint")}>
-							#{pr.number}
-						</span>
-					</button>
-				)}
-				<div className={WS_SUMMARY_STATUS_ROW}>
-					<span className={cn(WS_SUMMARY_RAIL, PR_STATE_TEXT[headlineTone])}>
-						{headlineGlyph(headline.key)}
-					</span>
-					{/* When checks are the reason for the headline, the headline IS the
-					    checks control, exactly as on the strip: hovering lists them,
-					    clicking opens Review's Checks tab. */}
-					{checksPr ? (
-						<PrChecksPopover
-							checks={checksPr.checks}
-							trigger={
-								<button
-									type="button"
-									className={labelClass}
-									onClick={onOpenChecksTab}
-								>
-									{headlineLabel}
-								</button>
-							}
+				<span className="block truncate text-item-title text-fg">
+					{headlineLabel}
+				</span>
+				{pr && provider && (
+					<span className="flex items-center gap-1 truncate text-meta text-faint group-hover/prsum:text-dim">
+						<BrandMark name={provider.key} size={12} className="shrink-0" />
+						<span className="shrink-0">#{pr.number}</span>
+						{checksPr && (
+							<>
+								<span aria-hidden="true">·</span>
+								<span className={cn("truncate", checksTone)}>{checksLabel}</span>
+							</>
+						)}
+						<IconArrowUpRight
+							dense
+							size={12}
+							className="shrink-0 opacity-0 transition-opacity duration-150 group-hover/prsum:opacity-100 group-focus-visible/prsum:opacity-100"
 						/>
-					) : (
+					</span>
+				)}
+			</>
+		);
+		function openInReview(
+			event: React.MouseEvent<HTMLAnchorElement>,
+			open?: () => void,
+		) {
+			// Keep the anchor's native destination for modified and middle clicks.
+			// A plain click stays in context in Open Session's Review tab.
+			if (
+				!open ||
+				event.metaKey ||
+				event.ctrlKey ||
+				event.shiftKey ||
+				event.altKey
+			)
+				return;
+			event.preventDefault();
+			open();
+		}
+		// The row's contents, held apart from the element that carries them: with
+		// a PR the row is a right-click target and so has to be a ContextMenu
+		// trigger, and without one it is a plain div. Same children either way.
+		const rowBody = (
+			<>
+				{/* When checks exist, the headline is their control: hovering lists
+				    them and clicking opens Review's Checks tab. The PR's own title
+				    stays as the native fallback. */}
+				{checksPr ? (
+					<PrChecksPopover
+						// This checks preview belongs above the standing summary popup.
+						// Keep its parent open while the pointer moves into the preview.
+						nested
+						checks={checksPr.checks}
+						trigger={
+							<a
+								className={cn(labelClass, "no-underline")}
+								href={checksPr.url}
+								target="_blank"
+								rel="noopener"
+								title={`#${checksPr.number} · ${checksPr.title}. ${externalHint}`}
+								onClick={(event) => openInReview(event, onOpenChecksTab)}
+							>
+								{labelBody}
+							</a>
+						}
+					/>
+				) : pr ? (
+					<Tooltip
+						label={
+							<span className="flex flex-col gap-0.5">
+								<span>Open review</span>
+								{externalHint && (
+									<span className="font-normal text-tooltip-fg/60">
+										{externalHint}
+									</span>
+								)}
+							</span>
+						}
+						side="bottom"
+						align="start"
+						multiline
+					>
+						<a
+							className={cn(labelClass, "no-underline")}
+							href={pr.url}
+							target="_blank"
+							rel="noopener"
+							onClick={(event) =>
+								openInReview(
+									event,
+									onOpenPrTab ? () => onOpenPrTab() : undefined,
+								)
+							}
+						>
+							{labelBody}
+						</a>
+					</Tooltip>
+				) : (
+					<Tooltip label="Open the Review tab" side="bottom" align="start">
 						<button
 							type="button"
 							className={labelClass}
 							onClick={() => onOpenPrTab?.()}
 						>
-							{headlineLabel}
+							{labelBody}
 						</button>
-					)}
-					{error && (
-						<span className={PR_HEAD_ERROR} title={error}>
-							{error}
-						</span>
-					)}
-					{renderAction()}
-				</div>
+					</Tooltip>
+				)}
+				{/* Keep the preview environment with the action it informs. It sits
+				    immediately left of Merge, Push or Pull, and renders nothing when
+				    this PR has no preview. */}
+				{children}
+				{renderAction()}
+			</>
+		);
+		// Without a preview mark, give the headline a small step from the band's
+		// left edge without letting the padding crowd the status and action.
+		const summaryRowClass = cn(
+			WS_SUMMARY_STATUS_ROW,
+			"[&&:not(:has([data-summary-preview]))]:pl-3",
+		);
+		const primarySummary = (
+			<div
+				className={cn(
+					WS_SUMMARY_BAND,
+					PR_SUMMARY_BAND_BG[headlineTone],
+					// Only a band with a fill needs room inside it.
+					headlineTone !== "muted" && WS_SUMMARY_BAND_PAD,
+				)}
+			>
+				{pr ? (
+					// Right-click anywhere on the band, not only on the two words that
+					// happen to be a link: the whole row is about one pull request, so
+					// that is the target for taking its link away. Same menu as the
+					// strip's `#1234` chip.
+					<ContextMenu.Root>
+						<ContextMenu.Trigger
+							render={<div className={summaryRowClass} />}
+						>
+							{rowBody}
+						</ContextMenu.Trigger>
+						<ContextMenu.Popup>
+							<PrCopyItems pr={pr} />
+						</ContextMenu.Popup>
+					</ContextMenu.Root>
+				) : (
+					<div className={summaryRowClass}>{rowBody}</div>
+				)}
+				{error && (
+					<p role="alert" className="mx-5 mb-2 mt-1 text-meta leading-snug text-red">
+						{error}
+					</p>
+				)}
+			</div>
+		);
+		if (statusRows.length === 0) return primarySummary;
+		return (
+			<>
+				{primarySummary}
+				<PrSeriesRows
+					refs={statusRows}
+					primaryRepo={primaryRepoId}
+					onOpen={openStatusRow}
+					variant="summary"
+				/>
 			</>
 		);
 	}

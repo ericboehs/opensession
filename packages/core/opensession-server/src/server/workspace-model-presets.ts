@@ -2,7 +2,6 @@ import {
 	DIAL_ORACLE_AGENTS,
 	DIAL_PRESETS,
 	resolveModel,
-	toOpencodeModel,
 	toPiModel,
 } from "./models";
 import { getWorkspace, workspaceModelSettings } from "./workspaces";
@@ -18,6 +17,27 @@ export interface ResolvedWorkspaceModelPreset {
 	enginePresetId?: string;
 }
 
+/** A detached sandbox cannot read the server's workspace store. Convert a
+ * resolved workspace preset into a self-contained runtime selection before
+ * the RunHostSpec crosses that boundary, while retaining the picker id for
+ * attribution and fallback bookkeeping. */
+export function portableWorkspacePresetRun(preset: ResolvedWorkspaceModelPreset): {
+	model: string;
+	selectedModel: string;
+	effort?: string;
+} {
+	const enginePresetId = preset.enginePresetId?.trim();
+	return {
+		model: enginePresetId
+			? enginePresetId.startsWith("pi/")
+				? enginePresetId
+				: `pi/${enginePresetId}`
+			: preset.model,
+		selectedModel: preset.id,
+		...(preset.effort ? { effort: preset.effort } : {}),
+	};
+}
+
 /** Return the Dial preset with the exact same lead and oracle configuration. */
 function matchingDialPreset(preset: {
 	lead: { model: string; effort?: string };
@@ -26,10 +46,10 @@ function matchingDialPreset(preset: {
 	return DIAL_PRESETS.find((candidate) => {
 		const oracle = DIAL_ORACLE_AGENTS[candidate.oracleAgent];
 		return (
-			toOpencodeModel(preset.lead.model) === toOpencodeModel(candidate.model) &&
+			toPiModel(preset.lead.model) === toPiModel(candidate.model) &&
 			preset.lead.effort === candidate.effort &&
 			preset.supporting?.length === 1 &&
-			toOpencodeModel(preset.supporting[0].model) === toOpencodeModel(oracle.model) &&
+			toPiModel(preset.supporting[0].model) === toPiModel(oracle.model) &&
 			preset.supporting[0].effort === oracle.variant
 		);
 	})?.id;
@@ -55,8 +75,8 @@ export function resolveWorkspaceModelPreset(
 	const lead = preset.lead.model.trim();
 	const routed =
 		pi && !lead.startsWith("pi/")
-			? lead.startsWith("opencode/")
-				? `pi/${lead.slice("opencode/".length)}`
+			? lead.startsWith("pi/")
+				? `pi/${lead.slice("pi/".length)}`
 				: `pi/${lead}`
 			: lead;
 	const model = resolveModel(routed)?.id;
@@ -64,7 +84,7 @@ export function resolveWorkspaceModelPreset(
 	// The default Opus + Fable combination is also a real Dial preset. Keep
 	// the editable workspace id on the session, but activate its actual oracle
 	// wiring when the full configuration still matches — on every engine: the
-	// opencode runner, the direct SDKs, and pi (its dial oracle tool) all
+	// pi runner, the direct SDKs, and pi (its dial oracle tool) all
 	// follow enginePresetId.
 	const enginePresetId = matchingDialPreset(preset);
 	const supporting = (preset.supporting || [])

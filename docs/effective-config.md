@@ -50,7 +50,7 @@ model fallback graph can still move a run.
 | Section | Answers |
 | --- | --- |
 | `execution` | Host, sandbox or Runner. Working directory, branch, mode, and what the mode costs you. |
-| `gate` | Whether the engine will run this kind of turn at all (`opencodeGateReason`, deny by default). |
+| `gate` | Whether the engine will run this kind of turn at all (`piGateReason`, deny by default). |
 | `model` | Requested id → engine → dispatch id, which config chose the engine, the preset behind a `dial/…` id, effort, fallback. |
 | `account` | Bridge mode, pinned/sticky/predicted account and why, every model the pick has to satisfy, and the pool-dry circuit. |
 | `mcp` | The allowlist and where it came from, then every configured server with `included` and the gate that decided it. Plus the in-process `opensession-*` set. |
@@ -77,7 +77,7 @@ rule that keeps a resume from handing an automation session every MCP server.
 
 The endpoint composes the real resolvers rather than restating them:
 `routeModel` for the engine, `filterMcpServers` for MCP visibility,
-`opencodeRunPolicy` for tool stripping, `sharedOpencodeEligible` for placement,
+`runToolPolicy` for tool stripping, the detached-host resolver for placement,
 `sessionMemoryScopes` for memory, `pickMeridianAccount` for the account.
 
 The one decision that used to live inline in `run-session.ts` — the
@@ -89,7 +89,7 @@ cannot drift from the turn.
 The two things this file computes itself are attributions, not decisions:
 `explainMcpServers` is handed `filterMcpServers`' output and only says why each
 server is in or out, and `describeStrippedTools` is handed
-`opencodeRunPolicy`'s disable list and only says which catalog each entry came
+`runToolPolicy`'s disable list and only says which catalog each entry came
 from. Both are pure and tested (`packages/core/opensession-server/src/server/effective-config.test.ts`).
 
 ## Calling it from a script

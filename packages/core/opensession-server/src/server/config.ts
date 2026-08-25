@@ -9,8 +9,9 @@
  *
  * Precedence per key: existing env var → config.json → built-in default.
  *
- * Sections `server`, `paths`, `repos`, `identity`, `organization`, `persona`,
- * `branding`, `policy`, and integration-specific settings are consumed by their owning
+ * The top-level `onboardingCompleted` gate and sections `server`, `paths`,
+ * `storage`, `repos`, `identity`, `organization`, `persona`, `branding`,
+ * `policy`, and integration-specific settings are consumed by their owning
  * modules. See config.example.json at the repo root for the full schema.
  */
 
@@ -19,6 +20,7 @@ import { existsSync, readFileSync, statSync } from "fs";
 import { resolve as resolvePath } from "path";
 import { statePath } from "./paths";
 import { writeFileAtomic } from "./shared/atomic-write";
+import { shellSafeDefaultBranch } from "./repo-branch";
 
 const HOME = homeDir();
 const OPENSESSION_ROOT = resolvePath(import.meta.dir, "../../../../..");
@@ -37,7 +39,6 @@ export function configPath(): string {
 export interface ServerSection {
   host?: string;
   port?: number;
-  webhookPort?: number;
   /** Public web-UI base, e.g. "https://opensession.example.com". */
   publicBaseUrl?: string;
   /** Host previews are served from (Caddy-fronted). */
@@ -48,9 +49,36 @@ export interface ServerSection {
 
 export interface PathsSection {
   claudeBin?: string;
-  opencodeBin?: string;
   worktreesDir?: string;
   mcpConfig?: string;
+}
+
+/** Optional S3-compatible storage for session assets. Local disk stays the
+ * default when this section is absent. */
+export interface AssetStorageSection {
+  provider?: "local" | "s3";
+  bucket?: string;
+  region?: string;
+  endpoint?: string;
+  prefix?: string;
+  accessKeyId?: string;
+  secretAccessKey?: string;
+  forcePathStyle?: boolean;
+}
+
+export interface StorageSection {
+  assets?: AssetStorageSection;
+}
+
+export type IngressExposure = "tailscale" | "cloudflare" | "custom";
+
+/** The separately exposed public origin. The private app origin remains an
+ * independent server setting and is never implied by this section. */
+export interface IngressSection {
+  publicBaseUrl?: string;
+  exposure?: IngressExposure;
+  /** Cloudflare named-tunnel id, used only to render its required CNAME. */
+  cloudflareTunnelId?: string;
 }
 
 /** How NEW sessions on a `sharedCheckout` repo get their working dir — see
@@ -198,8 +226,12 @@ export interface BrandingSection {
 }
 
 export interface OpenSessionConfig {
+  /** The instance-wide first-run walkthrough has been explicitly finished. */
+  onboardingCompleted?: boolean;
   server?: ServerSection;
+  ingress?: IngressSection;
   paths?: PathsSection;
+  storage?: StorageSection;
   /** Working-dir policy for `sharedCheckout` repos' new sessions. */
   selfDev?: SelfDevMode;
   repos?: Record<string, RepoSection>;
@@ -272,15 +304,20 @@ export interface Repo {
 export interface ResolvedServer {
   host: string;
   port: number;
-  webhookPort: number;
   publicBaseUrl: string;
+  webhookBaseUrl: string;
   previewHost: string;
   caddyAdmin: string;
 }
 
+export interface ResolvedIngress {
+  publicBaseUrl: string;
+  exposure: IngressExposure | null;
+  cloudflareTunnelId: string;
+}
+
 export interface ResolvedPaths {
   claudeBin: string;
-  opencodeBin: string | null;
   worktreesDir: string;
   mcpConfig: string;
 }
@@ -353,7 +390,7 @@ function parseRepoSection(v: unknown): RepoSection | undefined {
     description: str(o.description),
     repo: str(o.repo),
     wtPrefix: str(o.wtPrefix),
-    defaultBranch: str(o.defaultBranch),
+    defaultBranch: shellSafeDefaultBranch(o.defaultBranch),
     ghRepo: str(o.ghRepo),
     host,
     csRepo: str(o.csRepo),
@@ -418,10 +455,23 @@ function parseConfig(text: string): OpenSessionConfig {
       cfg.server = defined({
         host: str(server.host),
         port: num(server.port),
-        webhookPort: num(server.webhookPort),
         publicBaseUrl: str(server.publicBaseUrl),
         previewHost: str(server.previewHost),
         caddyAdmin: str(server.caddyAdmin),
+      });
+    }
+
+    const ingress = obj(raw.ingress);
+    if (ingress) {
+      const rawExposure = str(ingress.exposure);
+      const exposure: IngressExposure | undefined =
+        rawExposure === "tailscale" || rawExposure === "cloudflare" || rawExposure === "custom"
+          ? rawExposure
+          : undefined;
+      cfg.ingress = defined({
+        publicBaseUrl: str(ingress.publicBaseUrl),
+        exposure,
+        cloudflareTunnelId: str(ingress.cloudflareTunnelId),
       });
     }
 
@@ -429,7 +479,6 @@ function parseConfig(text: string): OpenSessionConfig {
     if (paths) {
       cfg.paths = defined({
         claudeBin: str(paths.claudeBin),
-        opencodeBin: str(paths.opencodeBin),
         worktreesDir: str(paths.worktreesDir),
         mcpConfig: str(paths.mcpConfig),
       });
@@ -481,6 +530,27 @@ function parseConfig(text: string): OpenSessionConfig {
         ) as Record<string, string>;
       }
       cfg.identity = section;
+    }
+
+    const storage = obj(raw.storage);
+    const assets = obj(storage?.assets);
+    if (assets) {
+      const provider = str(assets.provider);
+      cfg.storage = {
+        assets: defined({
+          provider:
+            provider === "s3" || provider === "local"
+              ? (provider as AssetStorageSection["provider"])
+              : undefined,
+          bucket: str(assets.bucket),
+          region: str(assets.region),
+          endpoint: str(assets.endpoint),
+          prefix: str(assets.prefix),
+          accessKeyId: str(assets.accessKeyId),
+          secretAccessKey: str(assets.secretAccessKey),
+          forcePathStyle: bool(assets.forcePathStyle),
+        }),
+      };
     }
 
     const integrations = obj(raw.integrations);
@@ -551,12 +621,15 @@ export function getConfig(): OpenSessionConfig {
 export function configuredServer(): ResolvedServer {
   const s = getConfig().server || {};
   const envPort = parseInt(process.env.PORT || "");
-  const envWebhookPort = parseInt(process.env.WEBHOOK_PORT || "");
   const port = Number.isFinite(envPort) ? envPort : s.port ?? 3850;
   const publicBaseUrl =
     process.env.OPENSESSION_UI_BASE ||
     s.publicBaseUrl ||
     `http://127.0.0.1:${port}`;
+  const webhookBaseUrl =
+    process.env.OPENSESSION_INGRESS_BASE ||
+    getConfig().ingress?.publicBaseUrl ||
+    publicBaseUrl;
   let publicHost = "127.0.0.1";
   try {
     publicHost = new URL(publicBaseUrl).hostname || publicHost;
@@ -564,13 +637,22 @@ export function configuredServer(): ResolvedServer {
   return {
     host: process.env.HOST || s.host || "127.0.0.1",
     port,
-    webhookPort: Number.isFinite(envWebhookPort) ? envWebhookPort : s.webhookPort ?? 3848,
     publicBaseUrl,
+    webhookBaseUrl,
     // Portals authenticate with the OpenSession browser cookie. Defaulting to
     // the UI hostname keeps that cookie same-site across preview ports; an
     // unrelated machine/tailnet hostname would make every browser portal 401.
     previewHost: process.env.PREVIEW_HOST || s.previewHost || publicHost,
     caddyAdmin: s.caddyAdmin || "http://localhost:2019",
+  };
+}
+
+export function configuredIngress(): ResolvedIngress {
+  const ingress = getConfig().ingress || {};
+  return {
+    publicBaseUrl: (process.env.OPENSESSION_INGRESS_BASE || ingress.publicBaseUrl || "").replace(/\/+$/, ""),
+    exposure: ingress.exposure || null,
+    cloudflareTunnelId: ingress.cloudflareTunnelId || "",
   };
 }
 
@@ -582,7 +664,6 @@ export function configuredPaths(): ResolvedPaths {
       p.claudeBin ||
       Bun.which("claude") ||
       "claude",
-    opencodeBin: process.env.OPENSESSION_OPENCODE_BIN || p.opencodeBin || null,
     worktreesDir:
       process.env.OPENSESSION_WORKTREES_DIR ||
       p.worktreesDir ||
@@ -593,6 +674,48 @@ export function configuredPaths(): ResolvedPaths {
       process.env.OPENSESSION_MCP_CONFIG ||
       p.mcpConfig ||
       `${OPENSESSION_ROOT}/mcp-config.json`,
+  };
+}
+
+export type ResolvedAssetStorage =
+  | { provider: "local" }
+  | {
+      provider: "s3";
+      bucket: string;
+      region: string;
+      endpoint?: string;
+      prefix: string;
+      accessKeyId: string;
+      secretAccessKey: string;
+      forcePathStyle: boolean;
+    };
+
+/** Session assets stay local unless an explicit, complete S3-compatible
+ * backend is configured. An incomplete enabled backend fails loudly so assets
+ * never spill back onto the disk the administrator meant to stop using. */
+export function configuredAssetStorage(): ResolvedAssetStorage {
+  const assets = getConfig().storage?.assets;
+  if (!assets || assets.provider !== "s3") return { provider: "local" };
+  const required = {
+    bucket: assets.bucket?.trim(),
+    accessKeyId: assets.accessKeyId?.trim(),
+    secretAccessKey: assets.secretAccessKey?.trim(),
+  };
+  const missing = Object.entries(required)
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+  if (missing.length) {
+    throw new Error(`S3 asset storage is missing ${missing.join(", ")}`);
+  }
+  return {
+    provider: "s3",
+    bucket: required.bucket!,
+    region: assets.region?.trim() || "us-east-1",
+    ...(assets.endpoint?.trim() ? { endpoint: assets.endpoint.trim() } : {}),
+    prefix: assets.prefix?.trim().replace(/^\/+|\/+$/g, "") || "opensession-assets",
+    accessKeyId: required.accessKeyId!,
+    secretAccessKey: required.secretAccessKey!,
+    forcePathStyle: assets.forcePathStyle === true,
   };
 }
 
@@ -827,15 +950,34 @@ export function githubWriteOwners(): string[] {
 }
 
 export function githubBotLogins(): string[] {
-  const env = process.env.GITHUB_BOT_LOGIN?.trim();
+  // Resolve the App slug env-over-config, mirroring githubAppIdentity() — an App
+  // set entirely through OPENSESSION_GITHUB_APP_SLUG (no appSlug in the file)
+  // must still contribute its bot identity.
+  const configSlug = configuredIntegration("github").appSlug;
+  const appSlug =
+    process.env.OPENSESSION_GITHUB_APP_SLUG?.trim() ||
+    (typeof configSlug === "string" ? configSlug.trim() : "");
   return [
     ...new Set(
       [
         ...(getConfig().policy?.githubBotLogins || []),
-        ...(env ? [env] : []),
+        // The App authors comments as "<app-slug>[bot]". Recognise it as ours
+        // so the agent never treats its own App-posted comments as human
+        // replies to answer.
+        ...(appSlug ? [`${appSlug}[bot]`] : []),
       ].map((login) => login.toLowerCase()),
     ),
   ];
+}
+
+/** Is `login` one of our bot identities? Membership over the whole
+ *  githubBotLogins() set, not equality with the primary — the App bot and any
+ *  policy aliases can all be "ours", so identity checks (own
+ *  threads, replies, review authorship, webhook senders) must match any of
+ *  them, not just the first. Case-insensitive. */
+export function isGithubBotLogin(login: string | null | undefined): boolean {
+  if (!login) return false;
+  return githubBotLogins().includes(login.toLowerCase());
 }
 
 /** Tolerant access for integration-specific modules. Integration schemas can

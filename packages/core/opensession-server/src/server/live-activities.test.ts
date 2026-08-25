@@ -58,6 +58,32 @@ describe("liveActivitySnapshot", () => {
     expect(snapshot.updatedAt).toBe(123);
   });
 
+  test("counts only owned unread sessions", () => {
+    const rows = [
+      session("finished", "Michiel", false, "2026-08-11T10:05:00Z"),
+      session("still-running", "Michiel", true, "2026-08-11T10:04:00Z"),
+      session("read", "Michiel", false, "2026-08-11T10:03:00Z"),
+      session("worker", "Michiel", false, "2026-08-11T10:02:00Z", {
+        spawnedBy: "finished",
+      }),
+      session("other", "Kent", false, "2026-08-11T10:06:00Z"),
+    ];
+    const snapshot = liveActivitySnapshot(
+      { user: "Michiel", login: "happylinks" },
+      rows,
+      123_000,
+      {
+        finished: "2026-08-11T10:00:00Z",
+        "still-running": "2026-08-11T10:00:00Z",
+        read: "2026-08-11T10:03:00Z",
+        worker: "2026-08-11T10:00:00Z",
+        other: "2026-08-11T10:00:00Z",
+      },
+    );
+
+    expect(snapshot.unreadCount).toBe(2);
+  });
+
   test("verified creator login wins over an ambiguous display name", () => {
     const snapshot = liveActivitySnapshot({ user: "Alex", login: "alex-one" }, [
       session("mine", "Alex", true, "2026-08-11T10:00:00Z", {
@@ -74,7 +100,12 @@ describe("liveActivitySnapshot", () => {
 
 describe("activityPushPayload", () => {
   test("start payload names the attributes type and carries a stale date", () => {
-    const snapshot = { sessions: [], totalCount: 1, updatedAt: 100 };
+    const snapshot = {
+      sessions: [],
+      totalCount: 1,
+      unreadCount: 0,
+      updatedAt: 100,
+    };
     expect(activityPushPayload("start", snapshot, "device-1", 100_000)).toEqual(
       {
         aps: {
@@ -93,7 +124,7 @@ describe("activityPushPayload", () => {
   test("end payload asks the system to dismiss after thirty seconds", () => {
     const payload = activityPushPayload(
       "end",
-      { sessions: [], totalCount: 0, updatedAt: 100 },
+      { sessions: [], totalCount: 0, unreadCount: 0, updatedAt: 100 },
       undefined,
       100_000,
     ) as { aps: Record<string, unknown> };

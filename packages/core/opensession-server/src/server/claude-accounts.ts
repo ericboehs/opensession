@@ -1,11 +1,10 @@
 /**
  * Claude account pool for opensession runs.
  *
- * Each account is a long-lived OAuth token from `claude setup-token` (valid
- * ~1 year, tied to a Max subscription). Runs get the token injected as
- * CLAUDE_CODE_OAUTH_TOKEN in the child env, so switching accounts never
- * touches ~/.claude/.credentials.json — interactive CLI sessions on the VPS
- * keep whatever account they logged in with.
+ * Each account uses a long-lived token from `claude setup-token` for model
+ * runs. A separate, optional Claude OAuth login reads usage and reset times.
+ * Runs get only the setup token as CLAUDE_CODE_OAUTH_TOKEN, so usage OAuth
+ * expiry never interrupts model work or touches the host Claude CLI login.
  *
  * Tokens live in ~/.opensession-claude-accounts.json (mode 0600). Usage per
  * account is polled from the OAuth usage endpoint every POLL_INTERVAL_MS and
@@ -61,6 +60,8 @@ export interface ClaudeAccount {
   id: string;
   name: string;
   token: string;
+  /** Compatibility for OAuth-only records created by an earlier build. */
+  authKind?: "oauth";
   email?: string;
   plan?: string;
   createdAt: string;
@@ -77,12 +78,10 @@ export interface ClaudeAccount {
   // we never poll such accounts again, across restarts.
   usageScope?: "missing";
   // Optional path to a full OAuth credentials file (same shape as
-  // ~/.claude/.credentials.json — the snapshots `claude-plan` keeps under
-  // ~/.claude/accounts/<name>/credentials.json). Login credentials carry the
-  // user:profile scope that setup-tokens lack, so when set, usage is polled
-  // with this file's access token instead of `token`, refreshing it via the
-  // OAuth refresh flow and writing rotated tokens back to the file. Runs
-  // still use `token`; this only restores usage visibility.
+  // ~/.claude/.credentials.json). Login credentials carry the user:profile
+  // scope that setup-tokens lack. For normal setup-token accounts this only
+  // restores usage visibility. Legacy OAuth-only records still mirror each
+  // refreshed access token into `token` until they are replaced.
   credentialsPath?: string;
 }
 
@@ -113,6 +112,7 @@ export interface ClaudeAccountPublic {
   id: string;
   name: string;
   tokenMasked: string;
+  authKind: "setup-token" | "oauth";
   email?: string;
   plan?: string;
   createdAt: string;
@@ -353,9 +353,9 @@ async function fetchUsage(
 
 // ── Meridian-observed usage (accounts blind to the OAuth endpoint) ──────────
 //
-// Registered by opencode-runner at module load (injection — that module
+// Registered by pi-runner at module load (injection — that module
 // imports this one, so the dependency can't point back). Every live
-// meridian-mode opencode server exposes its proxy's GET /v1/usage/quota,
+// bridge-mode Pi run exposes its proxy's GET /v1/usage/quota,
 // whose SDK-observed half populates from rate-limit events on live requests
 // — so it works even for `claude setup-token` accounts whose token 403s on
 // USAGE_URL (usageScope "missing"). Those accounts get their usage picture
@@ -464,6 +464,7 @@ interface OauthCreds {
   accessToken: string;
   refreshToken: string;
   expiresAt: number;
+  refreshTokenExpiresAt?: number;
 }
 
 function readCredsFile(path: string): OauthCreds | null {
@@ -474,6 +475,7 @@ function readCredsFile(path: string): OauthCreds | null {
       accessToken: o.accessToken,
       refreshToken: o.refreshToken,
       expiresAt: Number(o.expiresAt) || 0,
+      refreshTokenExpiresAt: Number(o.refreshTokenExpiresAt) || undefined,
     };
   } catch (e) {
     console.warn(`[claude-accounts] Failed to read credentials file ${path}:`, e);
@@ -534,15 +536,20 @@ async function doRefreshCredsFile(path: string, staleCreds: OauthCreds): Promise
     }
     const body: any = await res.json();
     if (!body?.access_token) return null;
+    const now = Date.now();
     const next: OauthCreds = {
       accessToken: body.access_token,
       refreshToken: body.refresh_token || creds.refreshToken,
-      expiresAt: Date.now() + (Number(body.expires_in) || 28_800) * 1000,
+      expiresAt: now + (Number(body.expires_in) || 28_800) * 1000,
+      refreshTokenExpiresAt: Number(body.refresh_token_expires_in)
+        ? now + Number(body.refresh_token_expires_in) * 1000
+        : creds.refreshTokenExpiresAt,
     };
     const raw = JSON.parse(readFileSync(path, "utf-8"));
     raw.claudeAiOauth = { ...raw.claudeAiOauth, ...next };
     writeFileAtomic(path, JSON.stringify(raw, null, 2) + "\n");
     chmodSync(path, 0o600);
+    syncOauthRunToken(path, next.accessToken);
     credentialsRefreshBlockedUntil.delete(path);
     return next;
   } catch (e) {
@@ -550,6 +557,24 @@ async function doRefreshCredsFile(path: string, staleCreds: OauthCreds): Promise
     console.warn(`[claude-accounts] Token refresh for ${path} failed:`, e);
     return null;
   }
+}
+
+/** Keep the account-pool token current after rotating an OAuth credential file. */
+function syncOauthRunToken(path: string, accessToken: string): void {
+  const accounts = readStore();
+  let changed = false;
+  for (let i = 0; i < accounts.length; i++) {
+    const account = accounts[i];
+    if (
+      account.authKind === "oauth" &&
+      account.credentialsPath === path &&
+      account.token !== accessToken
+    ) {
+      accounts[i] = { ...account, token: accessToken };
+      changed = true;
+    }
+  }
+  if (changed) writeStore(accounts);
 }
 
 /**
@@ -593,7 +618,7 @@ async function usageToken(
       }
       return {
         error:
-          "OAuth credentials expired and refresh failed. Reconnect usage from Settings → Usage (account menu → Sign in with Claude), or re-login on the VPS and update the credentials path.",
+          "OAuth credentials expired and refresh failed. Reconnect usage from Settings → Providers (account menu → Sign in with Claude), or re-login on the VPS and update the credentials path.",
       };
     }
     return { error: `Couldn't read OAuth credentials at ${account.credentialsPath}` };
@@ -778,6 +803,13 @@ function isAccountUsableFor(
   allowExtraUsage?: boolean
 ): boolean {
   if (isExhausted(a.id)) return false;
+  // OAuth access tokens are short-lived. The startup/usage poll refreshes an
+  // expired token, but the picker must not hand out its stale mirror in the
+  // small window before that refresh finishes.
+  if (a.authKind === "oauth") {
+    const creds = a.credentialsPath ? readCredsFile(a.credentialsPath) : null;
+    if (!creds || creds.expiresAt <= Date.now() || creds.accessToken !== a.token) return false;
+  }
   const models = requiredModels(model);
   if (models.some((required) => isModelExhausted(a.id, required))) return false;
   const usage = usageCache.get(a.id);
@@ -819,6 +851,7 @@ function toPublic(a: ClaudeAccount): ClaudeAccountPublic {
     id: a.id,
     name: a.name,
     tokenMasked: maskToken(a.token),
+    authKind: a.authKind === "oauth" ? "oauth" : "setup-token",
     email: a.email,
     plan: a.plan,
     createdAt: a.createdAt,
@@ -970,6 +1003,8 @@ export function setAccountUsageCredentials(
   const idx = accounts.findIndex((a) => a.id === id);
   if (idx === -1) return null;
   const next: ClaudeAccount = { ...accounts[idx], credentialsPath: path };
+  const creds = readCredsFile(path);
+  if (next.authKind === "oauth" && creds) next.token = creds.accessToken;
   delete next.usageScope;
   if (email && !next.email) next.email = email;
   accounts[idx] = next;
@@ -1103,7 +1138,7 @@ export interface AccountRequest {
    *  (pin, sticky, designated, pool). An in-turn account walk needs this on
    *  top of the sideline, because some refusals deliberately do not sideline:
    *  the pi provider's rolling hourly cap is local admission control that
-   *  frees within the hour, and its sideline map is shared with opencode, so
+   *  frees within the hour, and its sideline map is shared with pi, so
    *  it must never bench a healthy account cross-engine. Without an explicit
    *  exclusion the re-pick hands back the account that just refused. */
   excludeIds?: readonly string[];

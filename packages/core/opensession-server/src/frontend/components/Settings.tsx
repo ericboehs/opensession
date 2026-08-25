@@ -30,7 +30,8 @@ import {
 	type ToolSectionKey,
 } from "../lib/settings-sections";
 import { Input } from "../ui/input";
-import { BottomSheet } from "../ui/sheet";
+import { PhonePage, SheetIconButton } from "../ui/sheet";
+import { PhoneTopBar, PhoneTopBarTitle } from "../ui/top-bar";
 import { Connections } from "./Connections";
 import {
 	IconChevronLeft,
@@ -39,16 +40,16 @@ import {
 	IconX,
 } from "./icons";
 import { MyAccountsPanel } from "./MyAccounts";
-import { AppearancePanel } from "./settings/AppearancePanel";
 import { AuditPanel } from "./settings/AuditPanel";
+import { AuthenticationPanel } from "./settings/AuthenticationPanel";
 import { DeploysPanel } from "./settings/DeploysPanel";
 import { GeneralPanel } from "./settings/GeneralPanel";
 import { IntegrationsPanel } from "./settings/IntegrationsPanel";
+import { IngressPanel } from "./settings/IngressPanel";
 import { LibraryPanel } from "./settings/LibraryPanel";
 import { MembersPanel } from "./settings/MembersPanel";
 import { MemoryPanel } from "./settings/MemoryPanel";
-import { ModelsPanel } from "./settings/ModelsPanel";
-import { UsagePanel } from "./settings/UsagePanel";
+import { ProvidersPanel } from "./settings/ProvidersPanel";
 import { NotificationsPanel } from "./settings/NotificationsPanel";
 import { PapercutsPanel } from "./settings/PapercutsPanel";
 import { PreferencesPanel } from "./settings/PreferencesPanel";
@@ -56,6 +57,7 @@ import { ShortcutsPanel } from "./settings/ShortcutsPanel";
 import { PrewarmingPanel } from "./settings/PrewarmingPanel";
 import { ReposPanel } from "./settings/ReposPanel";
 import { SandboxesPanel } from "./settings/SandboxesPanel";
+import { StoragePanel } from "./settings/StoragePanel";
 import { RunnersPanel } from "./settings/RunnersPanel";
 import { SettingsAccountCard, SettingsAccountFooter } from "./SettingsAccount";
 import { SetupPanel } from "./Setup";
@@ -69,10 +71,10 @@ import type { Workspace } from "../lib/types";
 // section is controlled by the router, not local state.
 //
 // Groups run from what one person owns to what the whole instance does:
-// "Personal" is yours alone — the per-user half first (who sessions act as,
-// your standing prompt, how you write) and the per-device half last
-// (notifications, theme); "Workspace" is shared config every session runs
-// under; "Automation" is the standing work the instance does on its own —
+// "Personal" is yours alone: who sessions act as, how the app looks and
+// behaves for you, and what it notifies you about. "Organization" is shared
+// config every session runs under. "Automation" is the standing work the
+// instance does on its own:
 // those are the tool surfaces, grouped by what they are rather than sold as
 // the headline; "Infrastructure" is the machinery prepared ahead of a run; and
 // "Activity" is the read-only record agents leave behind.
@@ -85,6 +87,18 @@ export type { SettingsSectionKey, ToolSectionKey };
 /** Sections that are browsed rather than read down, and take the wider
  *  column for it (see SETTINGS_PANEL_FRAME_GALLERY). */
 const GALLERY_SECTIONS = new Set<SettingsSectionKey>(["library", "setup"]);
+
+// Settings is a dense mix of headings, row titles, labels, descriptions,
+// fields, and tool panels. Body roles share 150% leading; heading and title
+// roles stay compact at 110%. The descendant rules deliberately beat local
+// one-off leading utilities so every section follows the page-level rhythm.
+const SETTINGS_LEADING =
+	"leading-normal [&_*]:!leading-normal " +
+	"[&_h1]:!leading-[1.1] [&_h2]:!leading-[1.1] [&_h3]:!leading-[1.1] " +
+	"[&_h4]:!leading-[1.1] [&_h5]:!leading-[1.1] [&_h6]:!leading-[1.1] " +
+	"[&_.font-title]:!leading-[1.1] [&_.text-item-title]:!leading-[1.1] " +
+	"[&_.text-dialog-title]:!leading-[1.1] [&_.text-section-title]:!leading-[1.1] " +
+	"[&_.text-page-title]:!leading-[1.1] [&_.text-stat]:!leading-[1.1]";
 
 type Section = (typeof SECTIONS)[number];
 type SectionGroup = { group: string; items: Section[] };
@@ -201,14 +215,13 @@ function NavSearch({
  * sheet's detail page. Tool panels come in via children (App owns them). */
 function SectionPanel({
 	section,
-	onBack,
 	workspace,
+	onOpenOnboarding,
 	children,
 }: {
 	section: SettingsSectionKey;
-	/** Leaving settings — the Setup wizard's last step offers it as "Done". */
-	onBack?: () => void;
 	workspace?: Workspace;
+	onOpenOnboarding: () => void;
 	children?: React.ReactNode;
 }) {
 	return (
@@ -216,22 +229,25 @@ function SectionPanel({
 			{TOOL_SECTIONS.has(section) && children}
 			{section === "notifications" && <NotificationsPanel />}
 			{section === "preferences" && <PreferencesPanel />}
-			{section === "appearance" && <AppearancePanel />}
 			{section === "shortcuts" && <ShortcutsPanel />}
 			{section === "general" && <GeneralPanel />}
-			{section === "setup" && <SetupPanel onDone={onBack} />}
+			{section === "setup" && (
+				<SetupPanel onOpenOnboarding={onOpenOnboarding} />
+			)}
 			{section === "repos" && <ReposPanel />}
 			{section === "members" && <MembersPanel />}
+			{section === "authentication" && <AuthenticationPanel />}
 			{section === "library" && <LibraryPanel />}
 			{section === "integrations" && <IntegrationsPanel />}
 			{section === "audit" && <AuditPanel />}
-			{section === "models" && <ModelsPanel workspace={workspace} />}
-			{section === "usage" && <UsagePanel />}
+			{section === "providers" && <ProvidersPanel workspace={workspace} />}
 			{section === "sandboxes" && <SandboxesPanel />}
 			{section === "runners" && <RunnersPanel />}
 			{section === "connections" && <Connections />}
 			{section === "myAccounts" && <MyAccountsPanel />}
 			{section === "memory" && <MemoryPanel />}
+			{section === "ingress" && <IngressPanel />}
+			{section === "storage" && <StoragePanel />}
 			{section === "prewarming" && <PrewarmingPanel />}
 			{section === "papercuts" && <PapercutsPanel />}
 			{section === "deploys" && <DeploysPanel />}
@@ -245,18 +261,20 @@ export function Settings({
 	onSelect,
 	onShowRoot,
 	workspace,
+	onOpenOnboarding,
 	children,
 }: {
 	onBack: () => void;
 	/** Active section, derived from the route (tools have their own URLs).
-	 * Undefined = no explicit section: desktop defaults to Notifications, the
-	 * phone sheet shows its root list of sections. */
+	 * Undefined = no explicit section: desktop defaults to Account, while the
+	 * phone sheet stays on its root list of sections. */
 	section?: SettingsSectionKey;
 	/** Navigate to a section — App maps tool keys to their own routes. */
 	onSelect: (key: SettingsSectionKey) => void;
 	/** Phone sheet's back-to-root (navigate to sectionless /settings). */
 	onShowRoot?: () => void;
 	workspace?: Workspace;
+	onOpenOnboarding: () => void;
 	/** The active tool's panel (App owns the tool components and their props). */
 	children?: React.ReactNode;
 }) {
@@ -295,20 +313,20 @@ export function Settings({
 				onShowRoot={onShowRoot}
 				onBack={onBack}
 				workspace={workspace}
+				onOpenOnboarding={onOpenOnboarding}
 			>
 				{children}
 			</MobileSettings>
 		);
 
-	// Default landing = the first non-tool row in the nav. Tool sections can't be
-	// the default: their panel arrives as `children`, which App only passes on a
-	// tool route, so a bare /settings would render an empty pane.
+	// A bare /settings lands on Account, the first personal section, on desktop.
+	// Keep the section out of the URL so phones can stay at the nav root.
 	const active = visibleSection ?? "myAccounts";
 	const shown = filterGroups(groups, query);
 	const firstHit = shown[0]?.hits[0]?.item;
 
 	return (
-		<div className={SETTINGS_PAGE}>
+		<div className={cn(SETTINGS_PAGE, SETTINGS_LEADING)}>
 			{/* Back and search stay put; only the section list scrolls, so neither
 			    they nor the account footer are lost once the list outgrows the nav. */}
 			<aside className={SETTINGS_NAV}>
@@ -370,7 +388,13 @@ export function Settings({
 				)}
 			>
 				{TOOL_SECTIONS.has(active) ? (
-					<SectionPanel section={active} workspace={workspace}>{children}</SectionPanel>
+					<SectionPanel
+						section={active}
+						workspace={workspace}
+						onOpenOnboarding={onOpenOnboarding}
+					>
+						{children}
+					</SectionPanel>
 				) : (
 					<div
 						className={
@@ -379,7 +403,11 @@ export function Settings({
 								: SETTINGS_PANEL_FRAME
 						}
 					>
-						<SectionPanel section={active} onBack={onBack} workspace={workspace}>
+						<SectionPanel
+							section={active}
+							workspace={workspace}
+							onOpenOnboarding={onOpenOnboarding}
+						>
 							{children}
 						</SectionPanel>
 					</div>
@@ -402,6 +430,7 @@ function MobileSettings({
 	onShowRoot,
 	onBack,
 	workspace,
+	onOpenOnboarding,
 	children,
 }: {
 	groups: SectionGroup[];
@@ -410,6 +439,7 @@ function MobileSettings({
 	onShowRoot?: () => void;
 	onBack: () => void;
 	workspace?: Workspace;
+	onOpenOnboarding: () => void;
 	children?: React.ReactNode;
 }) {
 	const [query, setQuery] = useState("");
@@ -430,34 +460,38 @@ function MobileSettings({
 	const pageEase = "transition-transform duration-[var(--dur-lg)] ease-[var(--ease)]";
 
 	return (
-		<BottomSheet onClose={onBack} label="Settings" className="settings-sheet h-[93dvh]">
+		<PhonePage
+			onClose={onBack}
+			label="Settings"
+			className={cn("settings-sheet", SETTINGS_LEADING)}
+		>
 			{(dismiss) => (
 				<>
-					<div className="relative flex h-11 shrink-0 items-center justify-center px-3">
+					<PhoneTopBar>
 						{detail && (
-							<button
-								className="absolute left-1 flex items-center gap-0.5 rounded-control border-none bg-transparent px-2 py-2 text-control-label font-medium text-accent"
+							<SheetIconButton
+								className="absolute left-3"
 								onClick={() => onShowRoot?.()}
+								aria-label="Back to settings"
 							>
-								<IconChevronLeft size={22} />
-								Settings
-							</button>
+								<IconChevronLeft size={24} />
+							</SheetIconButton>
 						)}
 						{/* The sheet's own title, and the only one on phones: the panel
 						    h1 hides in here (`[.settings-sheet_&]:hidden` in ui/settings).
-						    It carries the same weight that h1 does, so the title reads the
-						    same on a phone as it does on the desktop page. */}
-						<span className="text-section-title font-title text-fg">
+						    This compact navigation chrome uses the 17px body step instead of
+						    the larger desktop page-heading scale. */}
+						<PhoneTopBarTitle>
 							{detail ? shownLabel : "Settings"}
-						</span>
-						<button
-							className="absolute right-3 flex h-8 w-8 items-center justify-center rounded-full border-none bg-active text-dim"
+						</PhoneTopBarTitle>
+						<SheetIconButton
+							className="absolute right-3"
 							onClick={dismiss}
 							aria-label="Close settings"
 						>
-							<IconX size={22} />
-						</button>
-					</div>
+							<IconX size={24} />
+						</SheetIconButton>
+					</PhoneTopBar>
 
 					<div className="relative min-h-0 flex-1 overflow-hidden">
 						{/* Root page: grouped section list over a bottom search bar.
@@ -472,14 +506,14 @@ function MobileSettings({
 										<div className="mb-2 mt-5 px-1 text-control-label font-semibold text-faint">
 											{g.group}
 										</div>
-										<div className="overflow-hidden rounded-2xl border border-divider bg-settings-plate">
+										<div className="overflow-hidden rounded-2xl border border-divider-soft bg-settings-plate">
 											{g.hits.map(({ item: s, hint }) => (
 												<button
 													key={s.key}
-													className="flex w-full items-center gap-3 border-x-0 border-b border-t-0 border-solid border-line bg-transparent px-3.5 py-3 text-left last:border-b-0 active:bg-hover"
+													className="relative flex w-full items-center gap-3 border-0 bg-transparent px-3.5 py-3 text-left after:absolute after:bottom-0 after:left-[54px] after:right-0 after:h-px after:bg-divider-soft last:after:hidden active:bg-hover"
 													onClick={() => onSelect(s.key)}
 												>
-													<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-active text-dim">
+													<span className="flex h-7 w-7 shrink-0 items-center justify-center text-dim">
 														{s.icon}
 													</span>
 												<span className="min-w-0 flex-1 text-item-title font-medium text-fg">
@@ -529,10 +563,20 @@ function MobileSettings({
 							{shownSection && (
 								<div data-settings-scroll className={SETTINGS_CONTENT_SHEET}>
 									{TOOL_SECTIONS.has(shownSection) ? (
-										<SectionPanel section={shownSection} workspace={workspace}>{children}</SectionPanel>
+										<SectionPanel
+											section={shownSection}
+											workspace={workspace}
+											onOpenOnboarding={onOpenOnboarding}
+										>
+											{children}
+										</SectionPanel>
 									) : (
 										<div className={SETTINGS_PANEL_FRAME_SHEET}>
-											<SectionPanel section={shownSection} onBack={onBack} workspace={workspace}>
+											<SectionPanel
+												section={shownSection}
+												workspace={workspace}
+												onOpenOnboarding={onOpenOnboarding}
+											>
 												{children}
 											</SectionPanel>
 										</div>
@@ -543,6 +587,6 @@ function MobileSettings({
 					</div>
 				</>
 			)}
-		</BottomSheet>
+		</PhonePage>
 	);
 }

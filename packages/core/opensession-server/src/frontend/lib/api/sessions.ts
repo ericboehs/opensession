@@ -3,6 +3,8 @@ import type {
 	SessionNote,
 	UnifiedSession,
 } from "../types";
+import { resolveAnonymousUserPath } from "../auth-ready";
+import { preparePromptImages } from "../images";
 
 /**
  * One slice of the session list.
@@ -20,7 +22,8 @@ export async function fetchSessionsSnapshot(
 	etag: string | null;
 	notModified: boolean;
 }> {
-	const res = await fetch(`${BASE}/sessions${opts.query || ""}`, {
+	const path = await resolveAnonymousUserPath(`/sessions${opts.query || ""}`);
+	const res = await fetch(`${BASE}${path}`, {
 		signal: opts.signal,
 		headers: opts.etag ? { "If-None-Match": opts.etag } : undefined,
 	});
@@ -38,6 +41,18 @@ export async function fetchSessionsSnapshot(
 		etag: res.headers.get("ETag"),
 		notModified: false,
 	};
+}
+
+/** Fetch the slim archived history for one workspace, newest activity first. */
+export async function fetchWorkspaceArchivedSessions(
+	workspaceId: string,
+	signal?: AbortSignal,
+): Promise<UnifiedSession[]> {
+	const snapshot = await fetchSessionsSnapshot({
+		signal,
+		query: `?archived=only&slim=1&workspace=${encodeURIComponent(workspaceId)}`,
+	});
+	return snapshot.text ? (JSON.parse(snapshot.text) as UnifiedSession[]) : [];
 }
 
 /**
@@ -84,9 +99,10 @@ export async function deliverSessionPrompt(
 		clientId: string;
 	},
 ): Promise<PromptDelivery> {
+	const images = await preparePromptImages(body.images);
 	return request<PromptDelivery>(`/sessions/${encodeURIComponent(sessionId)}/prompt`, {
 		method: "POST",
-		body,
+		body: { ...body, ...(images ? { images } : {}) },
 		label: "Failed to deliver prompt",
 	});
 }
@@ -196,9 +212,9 @@ export async function fetchSubagent(
 	);
 }
 
-/** One sub-agent a session spawned directly (opencode task-tool child or
+/** One sub-agent a session spawned directly (pi task-tool child or
  *  Claude-SDK Task agent) — mirrors the server's SessionSubagentSnapshot
- *  (opencode-subagents.ts). Feeds the Agents tab's sub-agents card. */
+ *  (pi-subagents.ts). Feeds the Agents tab's sub-agents card. */
 export interface SessionSubagentSnapshot {
 	/** Drill-in key for fetchSubagent; absent while a spawn is still pending. */
 	id?: string;
@@ -213,7 +229,7 @@ export interface SessionSubagentSnapshot {
 	endedAt?: number;
 	model?: string;
 	tokensOut?: number;
-	source: "opencode" | "sdk";
+	source: "pi" | "sdk";
 }
 
 export async function fetchSessionSubagents(sessionId: string): Promise<{
@@ -228,14 +244,14 @@ export async function fetchSessionSubagents(sessionId: string): Promise<{
 
 /** A single "@"-mention suggestion. `insert` is what lands in the textarea. */
 export interface FileMention {
-	/** Repo-relative path (files) or session title (sessions), for display. */
+	/** Repo-relative path or the display name of a referenced object. */
 	display: string;
-	/** Text inserted after the "@": path, `repo:path`, or `session:<id>`. */
+	/** Text inserted after the "@": path, `repo:path`, or a typed stable id. */
 	insert: string;
 	/** Repo label, set only when more than one repo is searched (cross-repo). */
 	repo?: string;
 	/** Entry type; absent means a file. */
-	kind?: "session" | "skill" | "dir" | "person" | "tool";
+	kind?: "workspace" | "session" | "skill" | "dir" | "person" | "tool";
 	/** Subtitle for non-file entries (e.g. a session's branch, a skill's description). */
 	sub?: string;
 }
@@ -334,15 +350,33 @@ export async function promoteSessionApi(
 	);
 }
 
+/** Move a shared-checkout session into its own isolated branch. */
+export async function moveSessionToBranchApi(
+	sessionId: string,
+): Promise<{ branch: string; worktreeDir: string; copiedFiles: number }> {
+	return request<{ branch: string; worktreeDir: string; copiedFiles: number }>(
+		`/sessions/${encodeURIComponent(sessionId)}/move-to-branch`,
+		{ method: "POST" },
+	);
+}
+
 /** Create an idle sibling tab. The first prompt starts its engine run. */
 export async function newSessionApi(
 	sourceId: string,
 	user: string,
 	mode?: "share" | "stack" | "ask",
+	clientSessionId?: string,
 ): Promise<{ id: string; session: UnifiedSession | null }> {
 	const body = await request<{ id: string; session?: UnifiedSession }>(
 		`/sessions/${encodeURIComponent(sourceId)}/new-session`,
-		{ method: "POST", body: { user, ...(mode ? { mode } : {}) } },
+		{
+			method: "POST",
+			body: {
+				user,
+				...(mode ? { mode } : {}),
+				...(clientSessionId ? { clientSessionId } : {}),
+			},
+		},
 	);
 	return { id: body.id, session: body.session || null };
 }

@@ -1,6 +1,6 @@
 import { repoLabel } from "../lib/repo-label";
 import { BASE_PATH } from "../lib/base";
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   fetchGoals,
   fetchGoal,
@@ -12,6 +12,7 @@ import {
   pauseGoalApi,
   fetchModels,
   fetchRepos,
+  cachedRepos,
   relativeTime,
   type ModelOption,
   type RepoInfo,
@@ -107,11 +108,15 @@ export function Goals({ onOpenSession, selectedId, onSelect }: Props) {
       .catch(() => {});
   }, []);
 
+  // Stable identity: only setters and module functions are captured, so the
+  // polling effect can list `load` without ever refiring from re-renders.
   const load = useCallback(async () => {
-    try {
-      setGoals(await fetchGoals());
+    await (async () => {
+setGoals(await fetchGoals());
       setLoading(false);
-    } catch {}
+})().catch(async () => {
+
+});
   }, []);
 
   useEffect(() => {
@@ -125,20 +130,17 @@ export function Goals({ onOpenSession, selectedId, onSelect }: Props) {
   }, [load]);
 
   // The routed selection — matched by id, or by name for deep-links.
-  const sel = useMemo(
-    () =>
-      selectedId
+  const sel = (selectedId
         ? goals.find((g) => g.id === selectedId || g.name === selectedId) || null
-        : null,
-    [goals, selectedId],
-  );
+        : null);
 
   // Leaving the selection also leaves edit mode.
   useEffect(() => setEditMode(false), [sel?.id]);
 
   // Escape backs out one layer: inline edit → read view → closed.
+  const hasSelection = !!sel;
   useEffect(() => {
-    if (!sel) return;
+    if (!hasSelection) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       const t = e.target as HTMLElement | null;
@@ -148,15 +150,15 @@ export function Goals({ onOpenSession, selectedId, onSelect }: Props) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [!!sel, editMode, onSelect]);
+  }, [hasSelection, editMode, onSelect]);
 
   async function act(fn: () => Promise<unknown>, refreshDelay = 400) {
-    try {
-      await fn();
+    await (async () => {
+await fn();
       setTimeout(load, refreshDelay);
-    } catch (e: any) {
-      setError(e.message);
-    }
+})().catch(async (e: any) => {
+setError(e.message);
+});
   }
 
   async function handleDelete(g: Goal) {
@@ -542,7 +544,7 @@ function formatNext(iso: string): string {
 }
 
 /** " (Claude)" / " (OpenAI Codex)" by the model's ACCOUNT POOL — the engine
- *  provider ("opencode"/"pi") says nothing about whose subscription pays, and
+ *  provider ("pi"/"pi") says nothing about whose subscription pays, and
  *  keying off it labeled every engine entry "(Claude)". Pool-less models get
  *  no suffix. */
 function accountPoolSuffix(m: ModelOption): string {
@@ -567,7 +569,9 @@ function GoalForm({
   const [mission, setMission] = useState(initial?.mission || "");
   const [mode, setMode] = useState<"ask" | "code">(initial?.mode || "ask");
   const [repo, setRepo] = useState(initial?.repo || "");
-  const [repos, setRepos] = useState<RepoInfo[]>([]);
+  // Seeded from the repos this browser saw last (lib/repo-cache), so the repo
+  // picker opens on the real list rather than empty; the fetch below corrects it.
+  const [repos, setRepos] = useState<RepoInfo[]>(cachedRepos);
   const [model, setModel] = useState(initial?.model || "");
   const [fallbackModel, setFallbackModel] = useState(initial?.fallbackModel || "");
   const [mcpServers, setMcpServers] = useState((initial?.mcpServers || []).join(", "));
@@ -583,7 +587,7 @@ function GoalForm({
       .then(([m, repoItems]) => {
         setModels(m.models);
         setDefaultModel(m.default);
-        setRepos(repoItems);
+        if (repoItems.length) setRepos(repoItems);
         setRepo((current) =>
           current ||
           repoItems.find((item) => item.default)?.id ||
@@ -612,17 +616,17 @@ function GoalForm({
       minWakeMinutes: Number(minWakeMinutes) || undefined,
       maxWakes: maxWakes.trim() ? Number(maxWakes) : undefined,
     };
-    try {
-      if (initial) {
+    await (async () => {
+if (initial) {
         await updateGoalApi(initial.id, payload);
       } else {
         await createGoalApi({ ...payload, createdBy: getCurrentUser() });
       }
       onSaved();
-    } catch (e: any) {
-      setError(e.message);
+})().catch(async (e: any) => {
+setError(e.message);
       setSaving(false);
-    }
+});
   }
 
   const fields = (

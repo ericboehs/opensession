@@ -2,11 +2,11 @@
  * Streaming assistant text as the model writes it, and the bookkeeping that
  * makes partial delivery safe.
  *
- * The opencode engine publishes a text part over SSE exactly twice, empty at
+ * The pi engine publishes a text part over SSE exactly twice, empty at
  * creation and complete at the end, so mirroring part snapshots can only ever
  * deliver a finished reply in one frame. Partial text exists in exactly one
  * place: the `message.part.delta` feed. Forwarding that is what makes a reply
- * type out, and it is what opencode's own client consumes.
+ * type out, and it is what pi's own client consumes.
  *
  * What goes out is not the raw delta feed, though. A model writes markdown,
  * and markdown mid-write does not render as itself: a paragraph stops
@@ -19,7 +19,7 @@
  *
  * Delivery from the server is unconditional, which is what makes the engines
  * agree: the codex-direct adapter has always streamed its
- * `item/agentMessage/delta` feed, and this puts opencode on the same footing.
+ * `item/agentMessage/delta` feed, and this puts pi on the same footing.
  * Whether a reply actually types out is a VIEWER's choice (the "Live typing"
  * preference, default off) — several people can watch one run, the frames cost
  * nothing to drop, and deciding it client-side covers every engine rather than
@@ -32,7 +32,7 @@ import { safeFlushLength } from "@tellahq/opensession-protocol/stream-cuts";
 export { safeFlushLength };
 
 /**
- * Whether the opencode runner forwards partial assistant text. On unless the
+ * Whether the pi runner forwards partial assistant text. On unless the
  * kill switch is set. Read per call, never pinned at module load, so flipping
  * it needs only a restart rather than an edit.
  */

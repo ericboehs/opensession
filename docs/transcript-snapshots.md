@@ -7,7 +7,7 @@ things as JSON:
 
 - **what the run wrote**: the unified transcript entries in the owned store;
 - **what the run sent**: the prompt bodies and config the engine received, plus
-  the MCP servers and tool strips the opencode adapter's own policy resolves
+  the MCP servers and tool strips the pi adapter's own policy resolves
   from them.
 
 No API key, no network, no engine subprocess. The point is that the highest
@@ -111,22 +111,22 @@ Everything up to the engine seam is production code: the prompt assembly, the
 context fences, the session note, the queue and run-state machinery, and the
 transcript writes.
 
-Two deliberate exceptions, both because the opencode adapter spawns
-`opencode serve` and cannot run hermetically:
+Two deliberate exceptions, both because the pi adapter spawns
+the Pi runtime and cannot run hermetically:
 
 1. **The MCP mount and tool strip are projected, not observed.**
    `enginePolicyView` (`testing/snapshot-views.ts`) calls the adapter's own
-   policy functions from `opencode-policy.ts` (`opencodeGateReason`,
-   `sharedOpencodeEligible`, `buildOpencodeMcpConfig`, `opencodeRunPolicy`) on
-   the recorded options, with the same arguments `runOpencode` passes them. The
+   policy functions from `run-policy.ts` (`piGateReason`,
+   `runGateReason`, `filterMcpServers`, and `runToolPolicy`) on
+   the recorded options, with the same arguments Pi dispatch passes them. The
    decision is real production code; only the caller is the harness. If that
-   call site in `opencode-runner.ts` changes, change this one with it.
+   call site in `pi-runner.ts` changes, change this one with it.
 
 2. **The fake engine persists its own turn.** Writing assistant text and tool
    calls into the store is the engine adapter's job, not `run-session`'s, which
    only broadcasts those events. So the fake engine does it too, through the
-   same `appendOpencodeTranscript` path and the same `transcriptLine*` builders
-   the opencode adapter uses. The adapter's streaming bookkeeping (rewrites of
+   same `appendTranscriptEntries` path and the same `transcriptLine*` builders
+   the pi adapter uses. The adapter's streaming bookkeeping (rewrites of
    a part mid-stream, compaction, blob splitting of oversized entries) is
    outside the harness.
 

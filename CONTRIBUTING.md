@@ -43,8 +43,7 @@ bun run packages/core/opensession-server/opensession.ts # or: opensession start 
 ```
 
 You need [Bun](https://bun.sh) and `git`. Everything else is optional until you
-touch the feature that needs it — `gh` for pull-request work, the
-[OpenCode](https://opencode.ai) binary to actually execute agent turns, Docker
+touch the feature that needs it — `gh` for pull-request work, the bundled Pi runtime for agent turns, and Docker
 only if you are working on sandboxes.
 
 The UI comes up at `http://127.0.0.1:3850`. There is no login by default; see

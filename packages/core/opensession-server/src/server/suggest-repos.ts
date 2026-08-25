@@ -19,8 +19,8 @@
  * the worst thing in the prompt. Over five cases run twice, no history scored
  * 9/10 and titles 6/10, because a title is a lexical hook and some of them are
  * wrong: a session titled "Add auto repository picker mode" happens to be
- * filed under tella-fusion, and every routing of a repository-picker task then
- * went to tella-fusion — 0/4 — citing that title as the reason. Wrong, and
+ * filed under one repo, and every routing of a repository-picker task then
+ * went to that repo (0/4), citing that title as the reason. Wrong, and
  * confidently wrong. Per-repo VOLUME instead of titles (8/10) fixed the
  * citing but not the pull. The tie-break it was kept for — which of three
  * infra repos receives "add a logs bucket" — did not reproduce.

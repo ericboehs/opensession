@@ -13,6 +13,9 @@ struct AttachImagesButton: View {
     @Binding var images: [AttachedImage]
     var maxCount: Int = 6
     var systemImage = "paperclip"
+    /// Toolbar items keep the system style so iOS can fold them into the
+    /// surrounding Liquid Glass group. Composer buttons stay visually bare.
+    var usesSystemButtonStyle = false
 
     #if os(iOS)
     @State private var pickerItems: [PhotosPickerItem] = []
@@ -22,31 +25,16 @@ struct AttachImagesButton: View {
 
     private var remaining: Int { max(0, maxCount - images.count) }
 
+    @ViewBuilder
     var body: some View {
         #if os(iOS)
-        PhotosPicker(
-            selection: $pickerItems,
-            maxSelectionCount: remaining,
-            matching: .images
-        ) {
-            icon
-        }
-        // Plain, like the macOS branch: the default picker button style
-        // tints the paperclip blue instead of leaving it secondary gray.
-        .buttonStyle(.plain)
-        .disabled(remaining == 0)
-        .onChange(of: pickerItems) {
-            guard !pickerItems.isEmpty else { return }
-            let picked = pickerItems
-            pickerItems = []
-            Task {
-                for item in picked {
-                    guard let data = try? await item.loadTransferable(type: Data.self),
-                          let image = AttachedImage(rawData: data)
-                    else { continue }
-                    if images.count < maxCount { images.append(image) }
-                }
-            }
+        if usesSystemButtonStyle {
+            imagePicker
+        } else {
+            // Plain, like the macOS branch: outside a toolbar the default
+            // picker style tints the paperclip blue instead of leaving it
+            // secondary gray.
+            imagePicker.buttonStyle(.plain)
         }
         #else
         Button {
@@ -74,6 +62,32 @@ struct AttachImagesButton: View {
         #endif
     }
 
+    #if os(iOS)
+    private var imagePicker: some View {
+        PhotosPicker(
+            selection: $pickerItems,
+            maxSelectionCount: remaining,
+            matching: .images
+        ) {
+            icon
+        }
+        .disabled(remaining == 0)
+        .onChange(of: pickerItems) {
+            guard !pickerItems.isEmpty else { return }
+            let picked = pickerItems
+            pickerItems = []
+            Task {
+                for item in picked {
+                    guard let data = try? await item.loadTransferable(type: Data.self),
+                          let image = AttachedImage(rawData: data)
+                    else { continue }
+                    if images.count < maxCount { images.append(image) }
+                }
+            }
+        }
+    }
+    #endif
+
     private var icon: some View {
         Image(systemName: systemImage)
             .font(.system(size: 17, weight: .medium))
@@ -84,6 +98,7 @@ struct AttachImagesButton: View {
             .frame(width: 27, height: 27)
             #endif
             .contentShape(Circle())
+            .accessibilityLabel("Attach images")
     }
 }
 
@@ -156,7 +171,7 @@ struct AttachedImagesRow: View {
     #endif
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        ScrollView(.horizontal) {
             HStack(spacing: 8) {
                 ForEach(images) { image in
                     ZStack(alignment: .topTrailing) {
@@ -170,12 +185,14 @@ struct AttachedImagesRow: View {
                                 .foregroundStyle(.white, .black.opacity(0.6))
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Remove attached image")
                         .padding(2)
                     }
                 }
             }
             .padding(.vertical, 2)
         }
+        .scrollIndicators(.hidden)
         // `item:` rather than a bool, on both: the presentation renders the
         // image it was opened with even if the strip changes underneath it.
         #if os(iOS)
@@ -594,14 +611,36 @@ struct MacImagePreview: View {
 /// keeps them to pan the photo.
 struct FullScreenImagePreview: View {
     let items: [PreviewImage]
+    /// Where the picture came from, shown in the top bar the way Photos shows
+    /// the day it was taken: opening an image from a workspace should not lose
+    /// which workspace you were in. Absent for viewers whose context is
+    /// already obvious (a diagram, an attachment you just picked).
+    private let title: String?
     private let topLeading: AnyView?
 
     @Environment(\.dismiss) private var dismiss
     @State private var index: Int
     @State private var dragOffset: CGSize = .zero
+    /// Photos' immersive toggle: a tap on the picture hides the chrome without
+    /// moving or resizing the image, and another brings it back.
+    @State private var chromeVisible = true
+    /// Every page hands back the bytes it decoded, so sharing and copying act
+    /// on the picture in front of you without fetching it again.
+    @State private var loaded: [String: UIImage] = [:]
+    @State private var copied = false
 
-    init(items: [PreviewImage], index: Int, topLeading: AnyView? = nil) {
+    /// The close-button row, below the top safe area.
+    private static let topBarHeight: CGFloat = 68
+    private static let backdropOpacity = 0.85
+
+    init(
+        items: [PreviewImage],
+        index: Int,
+        title: String? = nil,
+        topLeading: AnyView? = nil
+    ) {
         self.items = items
+        self.title = title?.isEmpty == true ? nil : title
         self.topLeading = topLeading
         _index = State(initialValue: min(max(index, 0), max(items.count - 1, 0)))
     }
@@ -621,114 +660,383 @@ struct FullScreenImagePreview: View {
         return items[index].walkthroughLabel
     }
 
-    var body: some View {
-        ZStack(alignment: .top) {
-            Color.black
-                .opacity(1 - dismissalProgress * 0.55)
-                .ignoresSafeArea()
-
-            TabView(selection: $index) {
-                ForEach(Array(items.enumerated()), id: \.offset) { position, item in
-                    PreviewPage(
-                        item: item,
-                        onDragChanged: { dragOffset = $0 },
-                        onDragEnded: { translation, projected in
-                            if abs(translation.height) > 100 || abs(projected.height) > 220 {
-                                dismiss()
-                            } else {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                    dragOffset = .zero
-                                }
-                            }
-                        },
-                        onEscape: { dismiss() }
-                    )
-                    .tag(position)
-                }
-            }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .offset(x: dragOffset.width * 0.08, y: dragOffset.height)
-            .scaleEffect(1 - dismissalProgress * 0.08)
-            .ignoresSafeArea()
-
-            HStack {
-                if let topLeading { topLeading }
-                Spacer()
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 36, height: 36)
-                        .background(.black.opacity(0.55), in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Close image")
-            }
-            .padding(16)
-        }
-        .overlay(alignment: .bottom) { caption }
-        .statusBarHidden()
+    private var currentImage: UIImage? {
+        guard items.indices.contains(index) else { return nil }
+        return loaded[items[index].id]
     }
 
-    /// What you are looking at, at the bottom of the picture: the caption first,
-    /// the position in the group under it. Over a scrim, because a screenshot
-    /// is as likely to be white there as black. It fades out with the
-    /// dismissal drag so the photo leaves alone.
-    @ViewBuilder private var caption: some View {
-        if walkthroughLabel != nil || label != nil || items.count > 1 {
-            VStack(spacing: 3) {
-                if walkthroughLabel != nil || label != nil {
-                    HStack(spacing: 8) {
-                        if let label {
-                            Text(label)
-                                .font(.subheadline.weight(.medium))
-                                .foregroundStyle(.white)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(2)
+    var body: some View {
+        let safeArea = keyWindowSafeArea
+        ZStack(alignment: .top) {
+            Color.black
+                .opacity(Self.backdropOpacity * (1 - Double(dismissalProgress)))
+                .ignoresSafeArea()
+
+            pager
+
+            topBar(safeTop: safeArea.top)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .bottom) { bottomBar(safeBottom: safeArea.bottom) }
+        .ignoresSafeArea()
+        .presentationBackground(.clear)
+        .preferredColorScheme(.dark)
+        .statusBarHidden(!chromeVisible)
+        .persistentSystemOverlays(chromeVisible ? .automatic : .hidden)
+    }
+
+    /// A full-screen cover deliberately ignores SwiftUI's safe area, which
+    /// makes `GeometryProxy.safeAreaInsets` read as zero. The window still
+    /// owns the physical insets around the Dynamic Island and home indicator.
+    private var keyWindowSafeArea: UIEdgeInsets {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)?
+            .safeAreaInsets ?? .zero
+    }
+
+    private var pager: some View {
+        TabView(selection: $index) {
+            ForEach(Array(items.enumerated()), id: \.offset) { position, item in
+                PreviewPage(
+                    item: item,
+                    onDragChanged: { dragOffset = $0 },
+                    onDragEnded: { translation, projected in
+                        if abs(translation.height) > 100 || abs(projected.height) > 220 {
+                            dismiss()
+                        } else {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                dragOffset = .zero
+                            }
                         }
-                        if let walkthroughLabel {
-                            Text(walkthroughLabel.rawValue)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(walkthroughLabel.color)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(walkthroughLabel.color.opacity(0.18), in: Capsule())
-                                .overlay { Capsule().stroke(.white.opacity(0.18), lineWidth: 0.5) }
-                        }
+                    },
+                    onEscape: { dismiss() },
+                    onTap: { setChrome(!chromeVisible) },
+                    // Zooming in is a decision to look at the picture, so the
+                    // chrome leaves on its own, the way it does in Photos. It
+                    // stays away until you tap, zoomed back out or not.
+                    onZoomEnded: { isZoomedOut in
+                        if !isZoomedOut { setChrome(false) }
+                    },
+                    onLoad: { image in loaded[item.id] = image }
+                )
+                .tag(position)
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .offset(x: dragOffset.width * 0.08, y: dragOffset.height)
+        .scaleEffect(1 - dismissalProgress * 0.08)
+        .ignoresSafeArea()
+    }
+
+    private func setChrome(_ visible: Bool) {
+        guard visible != chromeVisible else { return }
+        withAnimation(.easeInOut(duration: 0.25)) { chromeVisible = visible }
+    }
+
+    private func topBar(safeTop: CGFloat) -> some View {
+        ZStack(alignment: .top) {
+            LinearGradient(
+                colors: [.black.opacity(0.58), .black.opacity(0)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .top)
+
+            ZStack {
+                HStack {
+                    if let topLeading { topLeading }
+                    Spacer()
+                    Button("Close image", systemImage: "xmark") {
+                        dismiss()
                     }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
+                    .controlSize(.large)
                 }
-                if items.count > 1 {
-                    Text("\(index + 1) of \(items.count)")
-                        .font(.caption)
-                        .monospacedDigit()
-                        .foregroundStyle(.white.opacity(0.65))
+
+                if let title {
+                    // Center the context independently of the edge actions, like
+                    // Photos centers its date above the image.
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.horizontal, 12)
+                        .frame(height: 36)
+                        .background(.black.opacity(0.55), in: Capsule())
+                        .padding(.horizontal, 52)
+                }
+            }
+            .frame(height: 44)
+            .padding(.horizontal, 16)
+            .padding(.top, safeTop + 12)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: safeTop + Self.topBarHeight, alignment: .top)
+        .opacity(chromeVisible ? 1 - dismissalProgress : 0)
+        .allowsHitTesting(chromeVisible)
+    }
+
+    /// What you are looking at and what you can do with it: the caption, the
+    /// rest of the group as a strip you can scrub, and the actions. Over a
+    /// scrim, because a screenshot is as likely to be white there as black, and
+    /// gone entirely once the viewer goes immersive.
+    private func bottomBar(safeBottom: CGFloat) -> some View {
+        VStack(spacing: 14) {
+            caption
+            if items.count > 1 { filmstrip }
+            actions
+        }
+        .padding(.top, 18)
+        .padding(.bottom, max(safeBottom, 14))
+        .frame(maxWidth: .infinity)
+        .background(scrim)
+        .opacity(chromeVisible ? 1 - dismissalProgress : 0)
+        .allowsHitTesting(chromeVisible)
+    }
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    @ViewBuilder private var caption: some View {
+        if walkthroughLabel != nil || label != nil {
+            HStack(spacing: 8) {
+                if let label {
+                    Text(label)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                }
+                if let walkthroughLabel {
+                    Text(walkthroughLabel.rawValue)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(walkthroughLabel.color)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(walkthroughLabel.color.opacity(0.18), in: Capsule())
+                        .overlay { Capsule().stroke(.white.opacity(0.18), lineWidth: 0.5) }
                 }
             }
             .padding(.horizontal, 24)
-            .padding(.top, 44)
-            .padding(.bottom, 12)
-            .frame(maxWidth: .infinity)
-            // The scrim has to be dark under the text and gone above it: most
-            // of what this viewer shows is a screenshot of a light UI, and a
-            // gradient that only reaches half strength at the baseline leaves
-            // white type on near-white pixels.
-            .background(
-                LinearGradient(
-                    stops: [
-                        .init(color: .black.opacity(0), location: 0),
-                        .init(color: .black.opacity(0.5), location: 0.25),
-                        .init(color: .black.opacity(0.82), location: 0.5),
-                        .init(color: .black.opacity(0.9), location: 1),
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-            .opacity(1 - dismissalProgress)
-            .allowsHitTesting(false)
             .accessibilityElement(children: .combine)
+        }
+    }
+
+    /// Every picture in the group, thumbnailed. The one on screen is widened
+    /// and outlined; tapping another pages to it, and swiping the photo scrolls
+    /// the strip in step, so the two never tell you different things.
+    private var filmstrip: some View {
+        ScrollViewReader { strip in
+            ScrollView(.horizontal) {
+                HStack(spacing: 4) {
+                    ForEach(Array(items.enumerated()), id: \.offset) { position, item in
+                        Button {
+                            select(position)
+                        } label: {
+                            PreviewThumbnail(item: item, isSelected: position == index)
+                        }
+                        .buttonStyle(.plain)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .id(position)
+                        .accessibilityLabel("Image \(position + 1) of \(items.count)")
+                        .accessibilityAddTraits(position == index ? [.isSelected] : [])
+                    }
+                }
+                .padding(.horizontal, 24)
+            }
+            .scrollIndicators(.hidden)
+            .frame(height: 46)
+            .onAppear { strip.scrollTo(index, anchor: .center) }
+            .onChange(of: index) { _, position in
+                if reduceMotion {
+                    strip.scrollTo(position, anchor: .center)
+                } else {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        strip.scrollTo(position, anchor: .center)
+                    }
+                }
+            }
+        }
+    }
+
+    private func select(_ position: Int) {
+        if reduceMotion {
+            index = position
+        } else {
+            withAnimation(.easeInOut(duration: 0.22)) { index = position }
+        }
+    }
+
+    private var actions: some View {
+        HStack(spacing: 0) {
+            shareButton
+                .frame(maxWidth: .infinity)
+            copyButton
+                .frame(maxWidth: .infinity)
+        }
+        .padding(4)
+        .frame(width: 152)
+        .background(.black.opacity(0.55), in: Capsule())
+        .overlay {
+            Capsule().stroke(.white.opacity(0.1), lineWidth: 0.5)
+        }
+    }
+
+    @ViewBuilder private var shareButton: some View {
+        if let image = currentImage {
+            ShareLink(
+                item: Image(uiImage: image),
+                preview: SharePreview(label ?? "Image", image: Image(uiImage: image))
+            ) {
+                actionIcon("square.and.arrow.up")
+            }
+            .accessibilityLabel("Share image")
+        } else {
+            actionIcon("square.and.arrow.up").opacity(0.35)
+        }
+    }
+
+    private var copyButton: some View {
+        Button {
+            guard let image = currentImage else { return }
+            UIPasteboard.general.image = image
+            withAnimation(.easeOut(duration: 0.15)) { copied = true }
+            Task {
+                try? await Task.sleep(for: .seconds(1.4))
+                withAnimation(.easeOut(duration: 0.2)) { copied = false }
+            }
+        } label: {
+            actionIcon(copied ? "checkmark" : "document.on.document")
+        }
+        .buttonStyle(.plain)
+        .disabled(currentImage == nil)
+        .opacity(currentImage == nil ? 0.35 : 1)
+        .accessibilityLabel("Copy image")
+    }
+
+    private func actionIcon(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 17, weight: .medium))
+            .foregroundStyle(.white.opacity(0.62))
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+    }
+
+    /// Dark under the bar and gone above it: a gradient that only reaches half
+    /// strength at the baseline leaves white type on near-white pixels.
+    private var scrim: some View {
+        LinearGradient(
+            stops: [
+                .init(color: .black.opacity(0), location: 0),
+                .init(color: .black.opacity(0.5), location: 0.25),
+                .init(color: .black.opacity(0.82), location: 0.5),
+                .init(color: .black.opacity(0.9), location: 1),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .allowsHitTesting(false)
+    }
+}
+
+/// One frame of the bottom strip, at thumbnail resolution: a group of thirty
+/// screenshots costs thirty thumbnails rather than thirty full-size images.
+private struct PreviewThumbnail: View {
+    let item: PreviewImage
+    let isSelected: Bool
+
+    @State private var image: UIImage?
+
+    var body: some View {
+        ZStack {
+            Color.white.opacity(0.12)
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            }
+        }
+        .frame(width: isSelected ? 46 : 34, height: 46)
+        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .stroke(
+                    .white.opacity(isSelected ? 0.95 : 0.15),
+                    lineWidth: isSelected ? 2 : 0.5
+                )
+        }
+        .animation(.easeInOut(duration: 0.2), value: isSelected)
+        .contentShape(Rectangle())
+        .task(id: item.id) {
+            guard image == nil else { return }
+            image = await PreviewImageLoader.thumbnail(for: item)
+        }
+    }
+}
+
+/// Fetching and caching for the viewer. The page and the strip both ask here,
+/// so the strip does not refetch what the pager just downloaded, and paging
+/// back to a picture you have already seen is instant.
+///
+/// Keyed by where the bytes come from rather than by `PreviewImage.id`: ids are
+/// only unique inside one gallery ("0", "1", …), so caching by them would serve
+/// one message's screenshot for another's.
+enum PreviewImageLoader {
+    private static let cache = NSCache<NSString, UIImage>()
+
+    static func full(for item: PreviewImage) async -> UIImage? {
+        let key = cacheKey(for: item.source)
+        if let key, let hit = cache.object(forKey: key as NSString) { return hit }
+
+        let data: Data?
+        switch item.source {
+        case .data(let bytes):
+            data = bytes
+        case .conversation(let source, let sessionId):
+            data = try? await OS1API.conversationImage(source: source, sessionId: sessionId)
+        case .media(let path):
+            data = try? await OS1API.media(path: path)
+        case .asset(let sessionId, let path):
+            data = try? await OS1API.assetData(sessionId: sessionId, path: path)
+        case .support(let id):
+            data = try? await OS1API.supportAttachment(id: id)
+        }
+        guard let data, let image = UIImage(data: data) else { return nil }
+        if let key { cache.setObject(image, forKey: key as NSString) }
+        return image
+    }
+
+    static func thumbnail(for item: PreviewImage) async -> UIImage? {
+        let key = cacheKey(for: item.source).map { "thumbnail:\($0)" }
+        if let key, let hit = cache.object(forKey: key as NSString) { return hit }
+        guard let image = await full(for: item), image.size.width > 0, image.size.height > 0
+        else { return nil }
+
+        // Aspect-fill a 46pt cell at 3x, so a wide screenshot keeps its shape
+        // instead of being squeezed into a square.
+        let side: CGFloat = 46 * 3
+        let scale = min(1, max(side / image.size.width, side / image.size.height))
+        let target = CGSize(
+            width: image.size.width * scale, height: image.size.height * scale
+        )
+        let thumbnail = image.preparingThumbnail(of: target) ?? image
+        if let key { cache.setObject(thumbnail, forKey: key as NSString) }
+        return thumbnail
+    }
+
+    /// Bytes already in hand need no cache entry; everything else is named by
+    /// the request that would otherwise fetch it again.
+    private static func cacheKey(for source: PreviewImage.Source) -> String? {
+        switch source {
+        case .data: nil
+        case .conversation(let source, let sessionId): "conversation:\(sessionId):\(source)"
+        case .media(let path): "media:\(path)"
+        case .asset(let sessionId, let path): "asset:\(sessionId):\(path)"
+        case .support(let id): "support:\(id)"
         }
     }
 }
@@ -749,6 +1057,9 @@ private struct PreviewPage: View {
     let onDragChanged: (CGSize) -> Void
     let onDragEnded: (_ translation: CGSize, _ projected: CGSize) -> Void
     let onEscape: () -> Void
+    let onTap: () -> Void
+    let onZoomEnded: (_ isZoomedOut: Bool) -> Void
+    let onLoad: (UIImage) -> Void
 
     @State private var image: UIImage?
     @State private var failed = false
@@ -760,7 +1071,9 @@ private struct PreviewPage: View {
                     image: image,
                     onDragChanged: onDragChanged,
                     onDragEnded: onDragEnded,
-                    onEscape: onEscape
+                    onEscape: onEscape,
+                    onTap: onTap,
+                    onZoomEnded: onZoomEnded
                 )
             } else if failed {
                 Image(systemName: "exclamationmark.triangle")
@@ -776,27 +1089,10 @@ private struct PreviewPage: View {
         .ignoresSafeArea()
         .task(id: item.id) {
             guard image == nil else { return }
-            switch item.source {
-            case .data(let data):
-                image = UIImage(data: data)
-            case .conversation(let source, let sessionId):
-                let loaded = try? await OS1API.conversationImage(
-                    source: source, sessionId: sessionId
-                )
-                image = loaded.flatMap(UIImage.init(data:))
-            case .media(let path):
-                let loaded = try? await OS1API.media(path: path)
-                image = loaded.flatMap(UIImage.init(data:))
-            case .asset(let sessionId, let path):
-                let loaded = try? await OS1API.assetData(
-                    sessionId: sessionId, path: path
-                )
-                image = loaded.flatMap(UIImage.init(data:))
-            case .support(let id):
-                let loaded = try? await OS1API.supportAttachment(id: id)
-                image = loaded.flatMap(UIImage.init(data:))
-            }
-            failed = image == nil
+            let loaded = await PreviewImageLoader.full(for: item)
+            image = loaded
+            failed = loaded == nil
+            if let loaded { onLoad(loaded) }
         }
     }
 }
@@ -822,6 +1118,8 @@ private struct ZoomableImage: UIViewRepresentable {
     let onDragChanged: (CGSize) -> Void
     let onDragEnded: (_ translation: CGSize, _ projected: CGSize) -> Void
     let onEscape: () -> Void
+    let onTap: () -> Void
+    let onZoomEnded: (_ isZoomedOut: Bool) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -842,6 +1140,16 @@ private struct ZoomableImage: UIViewRepresentable {
         doubleTap.numberOfTapsRequired = 2
         scrollView.addGestureRecognizer(doubleTap)
 
+        // The immersive toggle. It waits for the double tap to fail, so a
+        // zoom never also flips the chrome on its way in.
+        let singleTap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleSingleTap)
+        )
+        singleTap.numberOfTapsRequired = 1
+        singleTap.require(toFail: doubleTap)
+        scrollView.addGestureRecognizer(singleTap)
+
         let dismissPan = UIPanGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleDismissPan(_:))
@@ -858,6 +1166,8 @@ private struct ZoomableImage: UIViewRepresentable {
     func updateUIView(_ scrollView: ZoomScrollView, context: Context) {
         context.coordinator.onDragChanged = onDragChanged
         context.coordinator.onDragEnded = onDragEnded
+        context.coordinator.onTap = onTap
+        context.coordinator.onZoomEnded = onZoomEnded
         scrollView.onEscape = onEscape
         if scrollView.imageView.image !== image {
             scrollView.imageView.image = image
@@ -869,6 +1179,8 @@ private struct ZoomableImage: UIViewRepresentable {
         weak var scrollView: ZoomScrollView?
         var onDragChanged: ((CGSize) -> Void)?
         var onDragEnded: ((CGSize, CGSize) -> Void)?
+        var onTap: (() -> Void)?
+        var onZoomEnded: ((Bool) -> Void)?
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? {
             (scrollView as? ZoomScrollView)?.imageView
@@ -877,6 +1189,18 @@ private struct ZoomableImage: UIViewRepresentable {
         func scrollViewDidZoom(_ scrollView: UIScrollView) {
             (scrollView as? ZoomScrollView)?.zoomDidChange()
         }
+
+        /// Reported at the end of the gesture rather than during it: the chrome
+        /// leaving refits the picture, and refitting mid-pinch would fight the
+        /// fingers still on the screen.
+        func scrollViewDidEndZooming(
+            _ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat
+        ) {
+            guard let zoomView = scrollView as? ZoomScrollView else { return }
+            onZoomEnded?(zoomView.isZoomedOut)
+        }
+
+        @objc func handleSingleTap() { onTap?() }
 
         @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
             guard let scrollView else { return }
@@ -989,10 +1313,24 @@ final class ZoomScrollView: UIScrollView {
     }
 
     private func configureZoom(for size: CGSize) {
+        // The frame and content size below describe the *unzoomed* image, so
+        // they can only be written at scale 1: rewriting the frame of a view
+        // the scroll view is holding a zoom transform on desynchronizes the
+        // two, and every scale derived afterwards (the fit a double tap zooms
+        // back out to) is computed from geometry that no longer matches what
+        // is on screen.
+        let box = bounds.size
+        let wasZoomedOut = isZoomedOut
+        let previousScale = zoomScale
+        if zoomScale != 1 {
+            maximumZoomScale = 1
+            minimumZoomScale = 1
+            zoomScale = 1
+        }
         imageView.frame = CGRect(origin: .zero, size: size)
         contentSize = size
 
-        let fit = min(bounds.width / size.width, bounds.height / size.height)
+        let fit = min(box.width / size.width, box.height / size.height)
         // Zooming to one image pixel per device pixel is what makes the dense
         // UI screenshots this viewer mostly shows readable; the 4x floor keeps
         // small images zoomable at all.
@@ -1001,7 +1339,9 @@ final class ZoomScrollView: UIScrollView {
         minimumZoomScale = fit
         maximumZoomScale = max(fit * 4, pixelPerfect)
         doubleTapZoomScale = min(maximumZoomScale, max(fit * 2, pixelPerfect))
-        zoomScale = fit
+        zoomScale = wasZoomedOut || previousScale < fit
+            ? fit
+            : min(previousScale, maximumZoomScale)
         zoomDidChange()
     }
 
@@ -1051,9 +1391,14 @@ final class ZoomScrollView: UIScrollView {
     }
 
     private func centerContent() {
-        let insetX = max(0, (bounds.width - imageView.frame.width) / 2)
-        let insetY = max(0, (bounds.height - imageView.frame.height) / 2)
-        contentInset = UIEdgeInsets(top: insetY, left: insetX, bottom: insetY, right: insetX)
+        let slackX = max(0, (bounds.width - imageView.frame.width) / 2)
+        let slackY = max(0, (bounds.height - imageView.frame.height) / 2)
+        contentInset = UIEdgeInsets(
+            top: slackY,
+            left: slackX,
+            bottom: slackY,
+            right: slackX
+        )
     }
 
     /// VoiceOver's two-finger scrub, which users expect to close a full-screen

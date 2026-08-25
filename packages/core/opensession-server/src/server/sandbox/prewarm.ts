@@ -14,18 +14,14 @@
  * Paid-compute discipline (this pool creates real remote sandboxes):
  *  - keyed by `provider:repoId`; a live prewarm per key is reused, never
  *    doubled (repeat POSTs while typing just extend the TTL)
- *  - caps: at most ONE bootstrap in flight and `maxLive` (default 2) live
- *    prewarms total — excess requests answer "at-capacity" and stay cold
+ *  - `maxLive` (default 2) caps concurrent and ready prewarms together;
+ *    excess requests answer "at-capacity" and stay cold
  *  - TTL (default 10 min) from the last touch; the sweep destroys expired
- *    prewarms PROVIDER-side (adapter.destroy), never just locally
- *  - provider-side backstop: prewarms are created with autoStop/autoDelete
- *    intervals so even a crashed opensession can't leak one forever, and the
- *    sweep periodically audits the provider BY LABEL for orphans this
- *    process doesn't know about
- *  - state lives on globalThis (hot-reload safe) plus one JSON file per
- *    entry under <sessions>/sandbox-prewarm/ so a restarted process can reap
- *    (a restart can't resume the bootstrap promise, so on-disk entries that
- *    aren't in memory are destroyed, not adopted)
+ *    prewarms provider-side, except explicit `keepReady` targets
+ *  - provider-side backstops ensure a crashed Open Session cannot leak paid
+ *    compute, and the sweep audits the provider by label for unknown entries
+ *  - ready state survives a coordinator restart and is safe to adopt after
+ *    its signature and TTL are revalidated; interrupted bootstraps are reaped
  *
  * Claiming is atomic: the in-process Map flip is synchronous (single-threaded
  * — no await between check and set) and the state file is renameSync'd to
@@ -66,10 +62,18 @@ import {
   isWorkspaceSandboxProvider,
   sandboxConnectionReady,
 } from "./connections";
+import { projectPreparationSignature } from "./remote-repo-template";
 import {
   assertDialbackReachable,
   bootstrapRemoteSandbox,
   bootstrapSignature,
+  listRemoteStates,
+  remoteCloneUrl,
+  remoteWarmWorkspaceDir,
+  resetRemoteSetupLifecycleStamp,
+  runRemoteLifecycleHook,
+  scrubRemoteWarmWorkspaceAuthority,
+  shellQuoteWord,
   type RemoteDriver,
 } from "./adapters/bootstrap";
 
@@ -112,6 +116,15 @@ export interface PrewarmEntry {
   lastTouchedAt: string;
   claimedAt?: string;
   claimedBy?: string;
+  /** Refresh an existing project image in place before publishing replacement. */
+  refreshTemplate?: boolean;
+  /** Prepared compute was stopped while its reusable disk remains available. */
+  parked?: boolean;
+  /** Zero-compute standby retained beside the image for providers whose
+   * snapshot restore is too slow for an interactive first turn. */
+  standby?: boolean;
+  /** Setup/dependency input signature captured by a retained standby. */
+  projectSignature?: string;
 }
 
 /** What the adapters implement so the pool stays provider-agnostic (e2b
@@ -151,13 +164,22 @@ export interface PrewarmAdapter {
     sandboxId: string,
     repo: (typeof REPOS)[string],
     label: string,
+    options?: { replace?: boolean },
   ): Promise<void>;
   /** Release compute after preparation while retaining the prepared disk.
    * Providers without a durable stopped state simply omit this. */
   park?(sandboxId: string): Promise<void>;
+  /** Refresh provider-side stop/delete backstops for an explicit keep-ready target. */
+  keepAlive?(
+    sandboxId: string,
+    opts: { autoStopMinutes: number; autoDeleteMinutes: number },
+  ): Promise<void>;
 }
 
 const SWEEP_INTERVAL_MS = 60_000;
+const KEEP_READY_KEEPALIVE_MS = 5 * 60_000;
+const STANDBY_KEEPALIVE_MS = 6 * 60 * 60_000;
+const STANDBY_DELETE_MIN = 30 * 24 * 60;
 /** Don't hammer a broken provider while the user keeps typing. */
 const FAILED_RETRY_MS = 90_000;
 /** How long a claimed tombstone protects the adopted sandbox from the orphan
@@ -175,8 +197,16 @@ interface PrewarmRecord {
   entry: PrewarmEntry;
   /** Runtime-only completion owned by the same record as the lifecycle state. */
   bootstrapDone?: Promise<void>;
+  /** Sessions waiting to adopt this exact bootstrap. Preparation hands the
+   * sandbox to them before an optional multi-minute template seal. */
+  waiters?: number;
+  /** A provider template publication has begun and cannot be interrupted. A
+   * new session should cold-create immediately instead of waiting first. */
+  sealing?: boolean;
   /** Runtime-only provider cleanup, shared by every overlapping cleanup path. */
   destroyDone?: Promise<void>;
+  /** Last provider-side lifecycle refresh for an explicit keep-ready target. */
+  keptAliveAt?: number;
 }
 
 function pool(): Map<string, PrewarmRecord> {
@@ -240,6 +270,26 @@ function prewarmSignature(provider: string, resources?: SandboxMachineSettings):
   return `${bootstrapSignature()}|${shape}|${JSON.stringify(resources || {})}`;
 }
 
+// 429 is intentionally excluded: a blind 0.5–1s retry cannot clear provider
+// start quotas and can consume more of them. Environment maintenance owns the
+// persisted, provider-aware backoff instead.
+const TRANSIENT_PREWARM_ERROR = /HTTP 5\d\d|timed? ?out|timeout|temporar|connection|socket|transport|ECONNRESET|EPIPE/i;
+
+async function retryTransientPrewarmStep<T>(label: string, run: () => Promise<T>): Promise<T> {
+  let last: unknown;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await run();
+    } catch (error) {
+      last = error;
+      if (!TRANSIENT_PREWARM_ERROR.test(error instanceof Error ? error.message : String(error)) || attempt === 3) throw error;
+      console.warn(`[sandbox-prewarm] ${label} transient failure; retrying (${attempt}/3):`, error);
+      await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+    }
+  }
+  throw last;
+}
+
 function setPrewarmStage(
   entry: PrewarmEntry,
   stage: string,
@@ -249,6 +299,26 @@ function setPrewarmStage(
   entry.progress = progress;
   entry.lastTouchedAt = new Date().toISOString();
   persist(entry);
+}
+
+function keepReadyTargets(): Array<{ provider: string; repoId: string }> {
+  const seen = new Set<string>();
+  return sandboxPrewarmConfig().keepReady.filter(({ provider, repoId }) => {
+    const key = `${provider}:${repoId}`;
+    if (
+      seen.has(key) ||
+      !isRemoteSandboxProvider(provider) ||
+      !(repoId in REPOS)
+    ) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function isKeepReady(provider: string, repoId: string): boolean {
+  return keepReadyTargets().some(
+    (target) => target.provider === provider && target.repoId === repoId,
+  );
 }
 
 // ── Adapters (lazy; test-injectable) ────────────────────────────────────────
@@ -335,6 +405,7 @@ export async function requestPrewarm(
   provider: string,
   repoId: string,
   user?: string,
+  options: { refreshTemplate?: boolean; standby?: boolean } = {},
 ): Promise<{ state: PrewarmRequestState; sandboxId?: string }> {
   if (!isRemoteSandboxProvider(provider) || !(repoId in REPOS)) {
     return { state: "unsupported" };
@@ -363,14 +434,24 @@ export async function requestPrewarm(
   const p = pool();
   let record = p.get(key);
   let entry = record?.entry;
-  if (entry && entry.signature !== prewarmSignature(provider, resources)) {
+  if (
+    entry &&
+    (entry.signature !== prewarmSignature(provider, resources) ||
+      (entry.standby && entry.projectSignature !== projectPreparationSignature(repoId)))
+  ) {
     await invalidatePrewarm(provider, repoId);
     record = undefined;
     entry = undefined;
   }
   if (entry && (entry.state === "bootstrapping" || entry.state === "ready")) {
-    touchPrewarm(provider, repoId);
-    return { state: entry.state, sandboxId: entry.sandboxId };
+    if (options.refreshTemplate && !entry.refreshTemplate) {
+      await invalidatePrewarm(provider, repoId);
+      record = undefined;
+      entry = undefined;
+    } else {
+      touchPrewarm(provider, repoId);
+      return { state: entry.state, sandboxId: entry.sandboxId };
+    }
   }
   if (entry?.state === "failed") {
     if (Date.now() - Date.parse(entry.lastTouchedAt) < FAILED_RETRY_MS) {
@@ -382,17 +463,16 @@ export async function requestPrewarm(
 
   // Caps — this is paid compute.
   const live = [...p.values()].filter(
-    ({ entry: e }) => e.state === "bootstrapping" || e.state === "ready",
+    ({ entry: e }) =>
+      e.state === "bootstrapping" || (e.state === "ready" && !e.parked),
   );
   if (live.length >= cfg.maxLive) return { state: "at-capacity" };
-  if (live.some(({ entry: e }) => e.state === "bootstrapping")) {
-    return { state: "at-capacity" };
-  }
 
   const adapter = await adapterFor(provider);
   if (!adapter) return { state: "unsupported" };
 
   const now = new Date().toISOString();
+  const standby = Boolean(options.standby && adapter.park);
   const fresh: PrewarmEntry = {
     key,
     provider,
@@ -400,6 +480,10 @@ export async function requestPrewarm(
     state: "bootstrapping",
     signature: prewarmSignature(provider, resources),
     user,
+    ...(options.refreshTemplate ? { refreshTemplate: true } : {}),
+    ...(standby
+      ? { standby: true, projectSignature: projectPreparationSignature(repoId) }
+      : {}),
     ...(resources ? { resources } : {}),
     stage: "Creating sandbox",
     progress: 10,
@@ -455,7 +539,7 @@ async function runPrewarmBootstrap(record: PrewarmRecord, adapter: PrewarmAdapte
       { [PREWARM_LABEL]: "1", [PREWARM_KEY_LABEL]: entry.key, "opensession.sandbox": "1" },
       {
         autoStopMinutes: ttl + BACKSTOP_STOP_EXTRA_MIN,
-        autoDeleteMinutes: BACKSTOP_DELETE_MIN,
+        autoDeleteMinutes: entry.standby ? STANDBY_DELETE_MIN : BACKSTOP_DELETE_MIN,
         resources: entry.resources,
       },
     );
@@ -470,21 +554,63 @@ async function runPrewarmBootstrap(record: PrewarmRecord, adapter: PrewarmAdapte
     if (!repo) throw new Error(`unknown prewarm repo ${entry.repoId}`);
     if (restoredFromTemplate && adapter.publishTemplate) {
       setPrewarmStage(entry, "Validating existing template", 65);
-      await assertDialbackReachable(driver, `${entry.provider}-prewarm`);
-      await bootstrapRemoteSandbox(driver, `${entry.provider}-prewarm`);
+      await retryTransientPrewarmStep(`${entry.key} bootstrap`, async () => {
+        await assertDialbackReachable(driver, `${entry.provider}-prewarm`);
+        await bootstrapRemoteSandbox(driver, `${entry.provider}-prewarm`);
+      });
       const { validateRemoteRepoTemplate } = await import("./remote-repo-template");
       await validateRemoteRepoTemplate(
         driver,
         entry.provider as "daytona" | "box" | "modal",
         repo,
       );
+      if (entry.refreshTemplate) {
+        setPrewarmStage(entry, "Syncing the latest project image", 72);
+        const warmDir = remoteWarmWorkspaceDir(repo.id);
+        const cloneUrl = await remoteCloneUrl(repo);
+        await retryTransientPrewarmStep(`${entry.key} image refresh`, async () => {
+          // A refresh that timed out mid-git (or a snapshot published while
+          // one ran) leaves stale .git lock files that fail every later
+          // refresh with "index.lock: File exists". This prewarm sandbox is
+          // the clone's only writer, so clearing dead locks before syncing
+          // is safe.
+          try {
+            const refreshed = await driver.exec(
+              `find .git -name "*.lock" -type f -delete 2>/dev/null; ` +
+                `git remote set-url origin ${shellQuoteWord(cloneUrl)} && ` +
+                `git fetch origin ${shellQuoteWord(repo.defaultBranch)} --quiet && ` +
+                `git reset --hard ${shellQuoteWord(`origin/${repo.defaultBranch}`)}`,
+              { cwd: warmDir, timeoutMs: 10 * 60_000 },
+            );
+            if (refreshed.exitCode !== 0) {
+              throw new Error(`could not refresh ${repo.id} project image: ${(refreshed.stderr || refreshed.stdout).trim().slice(0, 300)}`);
+            }
+          } finally {
+            // A retained checkout must be safe both before repository setup
+            // runs and between transient refresh retries.
+            await scrubRemoteWarmWorkspaceAuthority(driver, repo, warmDir);
+          }
+        });
+        // Updating source without rerunning setup republishes stale generated
+        // output. For tella-fusion that turns the user's first Portal start
+        // into an 80–100s ReScript rebuild, defeating the prepared image.
+        setPrewarmStage(entry, "Rebuilding prepared project image", 76);
+        await resetRemoteSetupLifecycleStamp(driver, repo.id);
+        await runRemoteLifecycleHook(driver, warmDir, "setup", "fresh", repo.id, {
+          sandboxId: entry.sandboxId || `prewarm:${entry.key}`,
+          provider: entry.provider,
+          repoId: repo.id,
+        });
+      }
     } else if (adapter.prepare) {
       setPrewarmStage(entry, "Preparing project workspace", 40);
       await adapter.prepare(driver, repo, `${entry.provider}-prewarm`);
     } else {
       setPrewarmStage(entry, "Installing runner tools", 25);
-      await assertDialbackReachable(driver, `${entry.provider}-prewarm`);
-      await bootstrapRemoteSandbox(driver, `${entry.provider}-prewarm`);
+      await retryTransientPrewarmStep(`${entry.key} bootstrap`, async () => {
+        await assertDialbackReachable(driver, `${entry.provider}-prewarm`);
+        await bootstrapRemoteSandbox(driver, `${entry.provider}-prewarm`);
+      });
       if (!current()) {
         void destroyRecord(record, "superseded mid-bootstrap");
         return;
@@ -499,7 +625,11 @@ async function runPrewarmBootstrap(record: PrewarmRecord, adapter: PrewarmAdapte
           setPrewarmStage(entry, "Cloning project and running setup", 55);
           const { warmRemoteWorkspace } = await import("./adapters/bootstrap");
           const prepared = await warmRemoteWorkspace(driver, repo, `${entry.provider}-prewarm`, {
-            installDeps: warm,
+            // A repository setup hook owns the exact dependency/build recipe
+            // for reusable templates. Running a second generic root install
+            // can rewrite bun.lock after setup and makes the sealed workspace
+            // dirty. Legacy non-template prewarms keep their old behavior.
+            installDeps: adapter.publishTemplate ? false : warm,
             runSetup: true,
             identity: {
               sandboxId: entry.sandboxId || `prewarm:${entry.key}`,
@@ -520,13 +650,34 @@ async function runPrewarmBootstrap(record: PrewarmRecord, adapter: PrewarmAdapte
       void destroyRecord(record, "superseded mid-warm");
       return;
     }
-    if (adapter.publishTemplate && !restoredFromTemplate) {
+    // A waiting session or keep-ready target needs the prepared sandbox now.
+    // Hand it over before optional publication or parking work. Repository
+    // templates can take minutes to seal, while adoption is immediate.
+    const releaseToWaiter = () => (record.waiters || 0) > 0;
+    if (
+      adapter.publishTemplate &&
+      (!restoredFromTemplate || entry.refreshTemplate) &&
+      !releaseToWaiter() &&
+      !isKeepReady(entry.provider, entry.repoId)
+    ) {
+      record.sealing = true;
       setPrewarmStage(entry, "Sealing reusable template", 82);
-      await adapter.publishTemplate(sandboxId, repo, `${entry.provider}-prewarm`);
+      try {
+        await adapter.publishTemplate(
+          sandboxId,
+          repo,
+          `${entry.provider}-prewarm`,
+          { replace: entry.refreshTemplate },
+        );
+      } finally {
+        record.sealing = false;
+      }
     }
-    if (adapter.park) {
+    if (!releaseToWaiter() && adapter.park) {
       setPrewarmStage(entry, "Finalizing", 95);
       await adapter.park(sandboxId);
+      entry.parked = true;
+      persist(entry);
     }
     if (!current()) {
       void destroyRecord(record, "superseded mid-park");
@@ -537,7 +688,11 @@ async function runPrewarmBootstrap(record: PrewarmRecord, adapter: PrewarmAdapte
     entry.progress = 100;
     entry.lastTouchedAt = new Date().toISOString();
     persist(entry);
-    console.log(`[sandbox-prewarm] ${entry.key} ready (${sandboxId})`);
+    console.log(
+      releaseToWaiter()
+        ? `[sandbox-prewarm] ${entry.key} ready for waiting session (${sandboxId})`
+        : `[sandbox-prewarm] ${entry.key} ready (${sandboxId})`,
+    );
   } catch (e) {
     console.warn(`[sandbox-prewarm] ${entry.key} bootstrap failed:`, e);
     void destroyRecord(record, "bootstrap failed");
@@ -571,10 +726,13 @@ export function claimPrewarm(
   const p = pool();
   const record = p.get(key);
   const entry = record?.entry;
-  if (!entry || entry.state !== "ready" || !entry.sandboxId) return null;
-  if (entry.signature !== prewarmSignature(provider, entry.resources)) {
-    // Runner pin or provider create-shape changed since this was warmed —
-    // never adopt (stale payload / wrong-sized sandbox).
+  if (!entry || entry.refreshTemplate || entry.state !== "ready" || !entry.sandboxId) return null;
+  if (
+    entry.signature !== prewarmSignature(provider, entry.resources) ||
+    (entry.standby && entry.projectSignature !== projectPreparationSignature(repoId))
+  ) {
+    // Runner pin, provider create-shape, or project setup input changed since
+    // this was warmed — never adopt stale payload or a wrong-sized sandbox.
     p.delete(key);
     removeFile(entry);
     void destroyRecord(record, "stale bootstrap signature");
@@ -595,6 +753,13 @@ export function claimPrewarm(
   // the adopted sandbox from the orphan audit until the grace passes.
   p.delete(key);
   p.set(`${key}#${entry.sandboxId}`, record);
+  if (isKeepReady(provider, repoId) || entry.standby) {
+    void requestPrewarm(provider, repoId, entry.user, {
+      standby: entry.standby,
+    }).catch((error) => {
+      console.warn(`[sandbox-prewarm] could not replenish ${key}:`, error);
+    });
+  }
   return { sandboxId: entry.sandboxId };
 }
 
@@ -607,10 +772,11 @@ export function claimPrewarm(
  * bks-019f4729, 2026-07-09). Waiting the remaining ~15-40s is both faster
  * than a fresh cold create and halves the sandbox count.
  *
- *  - Only waits for entries younger than `maxAgeMs` (default 60s): an older
- *    bootstrapping entry means a pathological cold bun-install — don't hold
- *    the user's prompt hostage on it, cold-create in parallel as before.
- *  - The wait itself is bounded by `maxWaitMs` (default 120s) as a backstop;
+ *  - Demand/typing entries older than `maxAgeMs` (default 60s) are skipped: an
+ *    old bootstrap is probably a pathological cold install. Project standbys
+ *    are zero-compute prepared capacity and remain worth the bounded wait; a
+ *    maintenance refill often finishes seconds after a session asks for it.
+ *  - The wait itself is bounded by `maxWaitMs` (default 180s) as a backstop;
  *    a finished-but-failed bootstrap resolves immediately and claims null.
  *  - Two concurrent ensures can both wait; claimPrewarm's atomic arbitration
  *    still lets exactly one adopt — the loser cold-creates.
@@ -626,21 +792,51 @@ export async function claimPrewarmOrWait(
   const key = `${provider}:${repoId}`;
   const record = pool().get(key);
   const entry = record?.entry;
-  if (!entry || entry.state !== "bootstrapping") return null;
+  if (!entry || entry.refreshTemplate || entry.state !== "bootstrapping") return null;
+  // Provider snapshot creation cannot be interrupted. Starting the user's
+  // cold fallback now is faster than waiting two minutes and then doing the
+  // same cold create, which was the five-minute startup failure this guards.
+  if (record.sealing) {
+    console.log(
+      `[sandbox-prewarm] ensure(${sessionId.slice(0, 20)}…) skipping ${key} wait; template seal already started`,
+    );
+    return null;
+  }
   const age = Date.now() - Date.parse(entry.createdAt);
-  if (!Number.isFinite(age) || age > (opts?.maxAgeMs ?? 60_000)) return null;
+  if (!Number.isFinite(age) || (!entry.standby && age > (opts?.maxAgeMs ?? 60_000))) {
+    console.log(
+      `[sandbox-prewarm] ensure(${sessionId.slice(0, 20)}…) skipping old ${key} prewarm (${Math.round(age / 1000)}s old)`,
+    );
+    return null;
+  }
   const done = record.bootstrapDone;
   if (!done) return null; // not ours to await (restarted process)
   console.log(
     `[sandbox-prewarm] ensure(${sessionId.slice(0, 20)}…) waiting for in-flight ${key} prewarm (${Math.round(age / 1000)}s old)…`,
   );
-  await Promise.race([
-    done,
-    new Promise<void>((r) => {
-      const t = setTimeout(r, opts?.maxWaitMs ?? 120_000);
-      (t as { unref?: () => void }).unref?.();
-    }),
-  ]);
+  record.waiters = (record.waiters || 0) + 1;
+  let timedOut = false;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      done,
+      new Promise<void>((r) => {
+        timeout = setTimeout(() => {
+          timedOut = true;
+          r();
+        }, opts?.maxWaitMs ?? 180_000);
+        (timeout as { unref?: () => void }).unref?.();
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    record.waiters = Math.max(0, (record.waiters || 1) - 1);
+  }
+  if (timedOut) {
+    console.log(
+      `[sandbox-prewarm] ensure(${sessionId.slice(0, 20)}…) timed out waiting for ${key}`,
+    );
+  }
   return claimPrewarm(provider, repoId, sessionId);
 }
 
@@ -677,13 +873,66 @@ export function discardClaimedPrewarm(provider: string, sandboxId: string): void
   destroyUntrackedLater(provider, sandboxId, "claimed but unusable");
 }
 
-// ── Sweep (TTL + restart reaping + provider-side orphan audit) ──────────────
+// ── Sweep (TTL + restart recovery + provider-side orphan audit) ─────────────
+
+/** Restore only completed, current prewarms. An interrupted bootstrap still
+ * lacks a resumable promise and is reaped by the sweep below. */
+export function restoreReadyPrewarms(now = Date.now()): number {
+  const dir = prewarmDir();
+  if (!existsSync(dir)) return 0;
+  const ttlMs = sandboxPrewarmConfig().ttlMinutes * 60_000;
+  const p = pool();
+  let restored = 0;
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith(".json")) continue;
+    try {
+      const entry = JSON.parse(readFileSync(`${dir}/${name}`, "utf-8")) as PrewarmEntry;
+      if (
+        entry.state !== "ready" ||
+        !entry.sandboxId ||
+        entry.key !== `${entry.provider}:${entry.repoId}` ||
+        !(entry.repoId in REPOS) ||
+        fileFor(entry) !== `${dir}/${name}` ||
+        entry.signature !== prewarmSignature(entry.provider, entry.resources) ||
+        (entry.standby &&
+          entry.projectSignature !== projectPreparationSignature(entry.repoId)) ||
+        (!isKeepReady(entry.provider, entry.repoId) &&
+          !(entry.standby && entry.parked) &&
+          now - Date.parse(entry.lastTouchedAt) > ttlMs) ||
+        p.has(entry.key)
+      ) continue;
+      p.set(entry.key, { entry });
+      restored++;
+      console.log(
+        `[sandbox-prewarm] restored ready ${entry.key} prewarm (${entry.sandboxId})`,
+      );
+    } catch {}
+  }
+  return restored;
+}
+
+export function sessionOwnedSandboxIds(
+  states: Array<Pick<ReturnType<typeof listRemoteStates>[number], "sessionId" | "sandboxId">>,
+): Set<string> {
+  return new Set(
+    states
+      .filter((state) => !state.sessionId.startsWith("__prewarm__:") && state.sandboxId)
+      .map((state) => state.sandboxId),
+  );
+}
 
 function knownSandboxIds(provider: string): Set<string> {
   const known = new Set<string>();
   for (const { entry: e } of pool().values()) {
     if (e.provider === provider && e.sandboxId) known.add(e.sandboxId);
   }
+  // Provider labels are not an authority boundary. Daytona has returned an
+  // adopted session Sandbox from its prewarm-label query after setLabels(),
+  // and the orphan audit subsequently deleted live session compute once the
+  // claim tombstone expired. A durable session mapping is stronger evidence:
+  // never reap an id that an ordinary remote-session state file still owns.
+  for (const sandboxId of sessionOwnedSandboxIds(listRemoteStates(provider)))
+    known.add(sandboxId);
   try {
     const dir = prewarmDir();
     if (existsSync(dir)) {
@@ -705,6 +954,7 @@ function knownSandboxIds(provider: string): Set<string> {
  *  entries a restart orphaned, and — throttled — provider-side sandboxes
  *  still labeled as prewarms that nothing tracks. */
 export async function sweepPrewarms(now = Date.now()): Promise<void> {
+  restoreReadyPrewarms(now);
   const cfg = sandboxPrewarmConfig();
   const ttlMs = cfg.ttlMinutes * 60_000;
   const p = pool();
@@ -712,7 +962,32 @@ export async function sweepPrewarms(now = Date.now()): Promise<void> {
   for (const [key, record] of [...p.entries()]) {
     const { entry } = record;
     if (entry.state === "bootstrapping" || entry.state === "ready") {
-      if (now - Date.parse(entry.lastTouchedAt) > ttlMs) {
+      if (isKeepReady(entry.provider, entry.repoId) || (entry.standby && entry.parked)) {
+        entry.lastTouchedAt = new Date(now).toISOString();
+        persist(entry);
+        if (entry.state === "ready" && entry.sandboxId) {
+          try {
+            const adapter = await adapterFor(entry.provider);
+            if (!entry.parked && adapter?.park) {
+              await adapter.park(entry.sandboxId);
+              entry.parked = true;
+              persist(entry);
+            }
+            const keepAliveMs = entry.standby
+              ? STANDBY_KEEPALIVE_MS
+              : KEEP_READY_KEEPALIVE_MS;
+            if (now - (record.keptAliveAt || 0) >= keepAliveMs) {
+              record.keptAliveAt = now;
+              await adapter?.keepAlive?.(entry.sandboxId, {
+                autoStopMinutes: cfg.ttlMinutes + BACKSTOP_STOP_EXTRA_MIN,
+                autoDeleteMinutes: entry.standby ? STANDBY_DELETE_MIN : BACKSTOP_DELETE_MIN,
+              });
+            }
+          } catch (error) {
+            console.warn(`[sandbox-prewarm] parked keep-alive failed for ${entry.key}:`, error);
+          }
+        }
+      } else if (now - Date.parse(entry.lastTouchedAt) > ttlMs) {
         p.delete(key);
         removeFile(entry);
         if (entry.sandboxId) void destroyRecord(record, "ttl expired");
@@ -734,9 +1009,9 @@ export async function sweepPrewarms(now = Date.now()): Promise<void> {
     }
   }
 
-  // Restart reaping: on-disk entries with no in-memory owner. A restarted
-  // process can't resume the bootstrap promise or trust the TTL bookkeeping,
-  // so these are destroyed, not adopted.
+  // Restart reaping: ready entries were restored above. A restarted process
+  // cannot resume an interrupted bootstrap, so every other unowned entry is
+  // destroyed rather than adopted.
   try {
     const dir = prewarmDir();
     if (existsSync(dir)) {
@@ -793,6 +1068,13 @@ export async function sweepPrewarms(now = Date.now()): Promise<void> {
     }
   } catch {}
 
+  for (const { provider, repoId } of keepReadyTargets()) {
+    if (p.has(`${provider}:${repoId}`)) continue;
+    void requestPrewarm(provider, repoId).catch((error) => {
+      console.warn(`[sandbox-prewarm] could not maintain ${provider}:${repoId}:`, error);
+    });
+  }
+
   await auditProviderOrphans(now);
 }
 
@@ -846,8 +1128,8 @@ async function auditProviderOrphans(now: number): Promise<void> {
 }
 
 /** Arm the sweep once per process (globalThis-parked like the other
- *  schedulers, so --hot reloads don't stack timers). Unref'd — it must
- *  never keep a test/CLI process alive on its own. */
+ *  schedulers, so --hot reloads don't stack timers). Unref'd, so it never
+ *  keeps a test or CLI process alive on its own. */
 export function ensurePrewarmSweep(): void {
   // Dev instances: the sweep destroys sandboxes via live providers shared
   // with production, so it never arms there.
@@ -909,10 +1191,11 @@ export function _stopPrewarmSweepForTest(): void {
   }
 }
 
-// A previous process may have left prewarms behind (state files survive a
-// restart) — arm the sweep at load so they're reaped even if nobody types.
-try {
-  if (existsSync(prewarmDir()) && readdirSync(prewarmDir()).length > 0) {
-    ensurePrewarmSweep();
-  }
-} catch {}
+/** Coordinator boot hook. Resource acquisition stays out of module scope so
+ * importing a sandbox helper from a test or script cannot start a live sweep. */
+export async function startPrewarmPool(): Promise<void> {
+  if (isDevInstance()) return;
+  restoreReadyPrewarms();
+  ensurePrewarmSweep();
+  await sweepPrewarms();
+}

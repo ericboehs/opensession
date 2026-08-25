@@ -17,7 +17,7 @@ import {
 import { getGitStatus, gitPull, gitPush } from "../git-status";
 import { imageContentType, imageHeaders } from "../image-mime";
 import { workspaceExecFor } from "../sandbox";
-import { findSession } from "../session-cache";
+import { findSessionAsync } from "../session-cache";
 import { resolveWorktreeTarget } from "../session-repos";
 import { sessionTouchedPaths } from "../session-touched";
 import { getRepo, isSharedCheckoutDir, sessionRepoId } from "../worktree";
@@ -25,6 +25,7 @@ import { defaultRepo } from "../config";
 import { $ } from "bun";
 import { existsSync } from "fs";
 import { resolve } from "path";
+import { githubMutationCredential } from "./github-credential";
 
 function isDiffGroupFile(file: unknown): file is DiffGroupFile {
 	if (typeof file !== "object" || file === null) return false;
@@ -50,7 +51,7 @@ export async function handleSessionGitRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)\/diff$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 
@@ -125,7 +126,7 @@ export async function handleSessionGitRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)\/code-flow$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		try {
@@ -152,7 +153,7 @@ export async function handleSessionGitRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)\/diff-groups$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const body = (await req.json().catch(() => ({}))) as {
@@ -185,7 +186,7 @@ export async function handleSessionGitRoutes(
 	);
 	if (discardMatch && req.method === "POST") {
 		const sessionId = decodeURIComponent(discardMatch[1]);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const body = (await req.json().catch(() => ({}))) as {
@@ -234,7 +235,7 @@ export async function handleSessionGitRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)\/git-status$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		// Primary volume-mode workspaces have no host dir — status runs
@@ -269,7 +270,7 @@ export async function handleSessionGitRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)\/worktree-image$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session) return new Response("Session not found", { status: 404 });
 		const filePath = url.searchParams.get("path") || "";
 		const contentType = imageContentType(filePath);
@@ -326,7 +327,7 @@ export async function handleSessionGitRoutes(
 	);
 	if (worktreeFileMatch && (req.method === "GET" || req.method === "POST")) {
 		const sessionId = decodeURIComponent(worktreeFileMatch[1]);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const body =
@@ -408,7 +409,7 @@ export async function handleSessionGitRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)\/git-push$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const body = await req.json().catch(() => ({}));
@@ -423,6 +424,7 @@ export async function handleSessionGitRoutes(
 			target.dir,
 			session.branch || "HEAD",
 			target.primary ? await workspaceExecFor(session, target.dir) : undefined,
+			githubMutationCredential(ctx)?.env,
 		);
 		if ("error" in result) return Response.json(result, { status: 502 });
 		return Response.json(result);
@@ -438,7 +440,7 @@ export async function handleSessionGitRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)\/git-pull$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const body = await req.json().catch(() => ({}));
@@ -449,10 +451,19 @@ export async function handleSessionGitRoutes(
 				{ error: "Session has no worktree" },
 				{ status: 400 },
 			);
+		// Nobody owns a shared checkout's HEAD. Pulling it from one session can
+		// rewrite the live tree under every other session, so fail closed even for
+		// an old client that still offers the action.
+		if (isSharedCheckoutDir(target.dir))
+			return Response.json(
+				{ error: "Pull isn't available because this checkout is shared with other sessions." },
+				{ status: 409 },
+			);
 		const result = await gitPull(
 			target.dir,
 			body?.base ? target.defaultBranch : undefined,
 			target.primary ? await workspaceExecFor(session, target.dir) : undefined,
+			githubMutationCredential(ctx)?.env,
 		);
 		if ("error" in result) return Response.json(result, { status: 502 });
 		return Response.json(result);

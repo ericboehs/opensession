@@ -100,6 +100,9 @@ function makeLocalSandbox(cwd: string): Sandbox {
           osSessionId: spec.osSessionId,
           kind: spec.journalKind || "prompt",
         },
+        // spec.hostId is the admitted run token (see maybeLaunchSandboxedRun);
+        // carrying it keeps exact-token Stop latching working in-process.
+        startToken: spec.hostId,
         onAskUser: cb?.onAskUser,
       });
       // In-process runs register their own control handles keyed by session
@@ -109,8 +112,9 @@ function makeLocalSandbox(cwd: string): Sandbox {
       return {
         events: () => gen,
         steerable: modelSupportsSteer(spec.model),
-        steer: (text) => steerAgentRun(ids, text),
-        interruptSteer: (text) => interruptAndSteerAgentRun(ids, text),
+        steer: (text, images) => steerAgentRun(ids, text, images),
+        interruptSteer: (text, images) =>
+          interruptAndSteerAgentRun(ids, text, images),
         cancel: () => cancelAgentRun(...ids),
       };
     },

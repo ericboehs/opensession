@@ -1,11 +1,4 @@
-import {
-	createContext,
-	createElement,
-	type ReactNode,
-	useContext,
-	useMemo,
-	useRef,
-} from "react";
+import { createContext, createElement, useContext, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
 	assetToolPath,
 	parseMcpTool,
@@ -27,9 +20,13 @@ const OpenAssetContext = createContext<((path: string) => void) | null>(null);
 export const OpenAssetProvider = OpenAssetContext.Provider;
 
 const EMPTY_ASSET_PATHS: readonly string[] = [];
-type OpenAssetPathsValue = { paths: { current: readonly string[] } };
+type OpenAssetPathsValue = {
+	getPaths: () => readonly string[];
+	empty: boolean;
+};
 const OpenAssetPathsContext = createContext<OpenAssetPathsValue>({
-	paths: { current: EMPTY_ASSET_PATHS },
+	getPaths: () => EMPTY_ASSET_PATHS,
+	empty: true,
 });
 
 /**
@@ -47,9 +44,19 @@ export function OpenAssetPathsProvider({
 	children: ReactNode;
 }) {
 	const paths = useRef(value);
-	paths.current = value;
+	useLayoutEffect(() => {
+		paths.current = value;
+	});
 	const empty = value.length === 0;
-	const context = useMemo(() => ({ paths }), [empty]);
+	const [context, setContext] = useState<OpenAssetPathsValue>(() => ({
+		getPaths: () => paths.current,
+		empty,
+	}));
+	useLayoutEffect(() => {
+		setContext((current) =>
+			current.empty === empty ? current : { ...current, empty },
+		);
+	}, [empty]);
 	return createElement(OpenAssetPathsContext.Provider, { value: context }, children);
 }
 
@@ -74,7 +81,7 @@ export function useOpenAsset(): {
 /** Current files in this session's scratch folder. Markdown uses this exact
  * set to link names in prose without guessing that file-looking text exists. */
 export function useOpenAssetPaths(): readonly string[] {
-	return useContext(OpenAssetPathsContext).paths.current;
+	return useContext(OpenAssetPathsContext).getPaths();
 }
 
 /**

@@ -40,7 +40,7 @@ export function SelectionToSession({ sessionId, label, send, children }: Props) 
     setSent(false);
   }, []);
 
-  const onMouseUp = useCallback(() => {
+  const onMouseUp = () => {
     if (!send) return;
     // Defer so the browser has finalised the selection after mouseup.
     setTimeout(() => {
@@ -57,7 +57,7 @@ export function SelectionToSession({ sessionId, label, send, children }: Props) 
       setMessage("");
       setSent(false);
     }, 0);
-  }, [send]);
+  };
 
   // Dismiss on outside click / Escape.
   useEffect(() => {
@@ -77,7 +77,7 @@ export function SelectionToSession({ sessionId, label, send, children }: Props) 
     };
   }, [sel, dismiss]);
 
-  const doSend = useCallback(() => {
+  const doSend = () => {
     if (!send || !sel) return;
     const user = getCurrentUser();
     const quoted = sel.text
@@ -92,7 +92,7 @@ export function SelectionToSession({ sessionId, label, send, children }: Props) 
     send({ type: "prompt", sessionId, user, content });
     setSent(true);
     setTimeout(dismiss, 1400);
-  }, [send, sel, message, label, sessionId, dismiss]);
+  };
 
   return (
     // display:contents so wrapping a region doesn't disturb its layout.
@@ -111,7 +111,7 @@ export function SelectionToSession({ sessionId, label, send, children }: Props) 
             </div>
           ) : composing ? (
             <div className="flex flex-col gap-2 p-2.5">
-              <div className="max-h-16 overflow-y-auto border-l-2 border-line-strong pl-2 text-meta break-words whitespace-pre-wrap text-faint">
+              <div className="max-h-16 overflow-y-auto border-l-2 border-line-strong pl-2 text-supporting break-words whitespace-pre-wrap text-faint">
                 {sel.text}
               </div>
               <textarea

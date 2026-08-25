@@ -5,6 +5,7 @@ import {
 	isScratchWorkspace,
 	spawnedSessionBelongsInSidebar,
 	workspaceMainSession,
+	workspaceRowOwnsSelection,
 	workspaceRowOwnsSession,
 } from "./sidebar-workspaces";
 import type { UnifiedSession } from "./types";
@@ -186,6 +187,18 @@ describe("workspaceMainSession", () => {
 		const second = session("second", { workspaceId: "ws-1" });
 		expect(workspaceMainSession({ sessions: [first, second] })?.id).toBe("first");
 		expect(workspaceMainSession({ sessions: [] })).toBeNull();
+	});
+});
+
+describe("workspaceRowOwnsSelection", () => {
+	test("selects a parked workspace draft without a session", () => {
+		const draft = {
+			key: "workspace:ws-draft",
+			workspace: { id: "ws-draft" },
+			sessions: [],
+		};
+		expect(workspaceRowOwnsSelection(draft, null, "ws-draft")).toBe(true);
+		expect(workspaceRowOwnsSelection(draft, null, "ws-other")).toBe(false);
 	});
 });
 

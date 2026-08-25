@@ -1,8 +1,10 @@
 import type {
   SeqEntry,
+  TailWindowOpts,
   TranscriptBusEvent,
   TranscriptPage,
 } from "./transcript-store";
+import { v2SnapshotEntryWeight } from "./transcript-wire";
 
 export interface TranscriptWatchStore {
   getLastChangeSeq(sessionId: string): number;
@@ -13,6 +15,8 @@ export interface TranscriptWatchStore {
     limit?: number
   ): TranscriptPage;
   readTail(sessionId: string, limit?: number): TranscriptPage;
+  /** Optional: a store without it falls back to the flat entry tail. */
+  readTailWindow?(sessionId: string, opts: TailWindowOpts): TranscriptPage;
 }
 
 export interface TranscriptWatchSocket {
@@ -44,6 +48,8 @@ export interface StartTranscriptWatchOptions {
     frame: Record<string, unknown>,
     event?: TranscriptBusEvent
   ) => Record<string, unknown>;
+  /** An authoritative reset sent a replacement snapshot. */
+  afterResetSnapshot?: () => void;
 }
 
 export interface TranscriptWatchHandle {
@@ -53,7 +59,25 @@ export interface TranscriptWatchHandle {
 }
 
 const RESUME_LIMIT = 500;
+
+// The opening window. SNAPSHOT_TAIL_ENTRIES is the floor it has always had;
+// the rest let it reach further back when those entries hold no conversation.
+//
+// A turn's tool calls and its intermediate notes collapse into ONE fold in the
+// UI, so an entry count says nothing about how much a reader will see: the
+// tail of a thousand-step turn renders as a single collapsed line, which is
+// what "why is this the only transcript I see in this session?" looks like
+// from the other side. The window therefore keeps reading back until it holds
+// enough user/assistant entries to give the turn context, including at least
+// one user-message boundary. The boundary is load-bearing: intermediate
+// assistant notes are folded into the work row too, so counting those alone
+// can still stop inside the same giant turn. Past either ceiling the snapshot
+// stays truncated and the reader pages with "Load all", exactly as before.
 const SNAPSHOT_TAIL_ENTRIES = 132;
+const SNAPSHOT_MIN_MESSAGES = 4;
+const SNAPSHOT_MIN_USER_MESSAGES_WITH_TOOL_WORK = 1;
+const SNAPSHOT_MAX_ENTRIES = 1400;
+const SNAPSHOT_MAX_ESTIMATED_BYTES = 850_000;
 
 /**
  * Start a race-free v2 watch. Subscription happens before the durable read,
@@ -88,7 +112,17 @@ export function startTranscriptWatch(
     // Capture the mutation baseline before the tail. A write racing the tail
     // read may overlap the snapshot, but the following flush replays it by id.
     cursor = store.getLastChangeSeq(sessionId);
-    const tail = store.readTail(sessionId, SNAPSHOT_TAIL_ENTRIES);
+    const tail = store.readTailWindow
+      ? store.readTailWindow(sessionId, {
+          minEntries: SNAPSHOT_TAIL_ENTRIES,
+          minMessages: SNAPSHOT_MIN_MESSAGES,
+          minUserMessagesWithToolWork:
+            SNAPSHOT_MIN_USER_MESSAGES_WITH_TOOL_WORK,
+          maxEntries: SNAPSHOT_MAX_ENTRIES,
+          maxEstimatedBytes: SNAPSHOT_MAX_ESTIMATED_BYTES,
+          weigh: v2SnapshotEntryWeight,
+        })
+      : store.readTail(sessionId, SNAPSHOT_TAIL_ENTRIES);
     send({
       type: "transcript_init",
       sessionId,
@@ -101,6 +135,7 @@ export function startTranscriptWatch(
       lastChangeSeq: cursor,
       v2: true,
     });
+    if (initialized) options.afterResetSnapshot?.();
   }
 
   const flush = (event?: TranscriptBusEvent) => {

@@ -19,6 +19,12 @@ describe("internalUrlTarget", () => {
 	test("another host is not us", () => {
 		expect(internalUrlTarget(`https://github.com/session/${ID}`)).toBeNull();
 	});
+
+	test("another port on our host is an external preview", () => {
+		expect(
+			internalUrlTarget(`http://127.0.0.1:25779/session/${ID}`),
+		).toBeNull();
+	});
 });
 
 describe("pastedSessionId", () => {

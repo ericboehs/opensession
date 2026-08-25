@@ -1,18 +1,20 @@
 /**
- * Slack Agent Module — handles Slack DMs, @mentions, GitHub PR reviews,
- * worktree channel management, and Block Kit interactions.
+ * Slack Agent Module — handles Slack DMs, @mentions, worktree channel
+ * management, and Block Kit interactions.
  *
  * Implements the AgentModule interface for the opensession webhook server.
  */
 
-import { defaultRepo } from "../../server/config";
+import { configuredIntegration, defaultRepo, personaName } from "../../server/config";
+import {
+  githubConfiguredCredential,
+} from "../../server/github-app";
 import { mkdirSync, existsSync, unlinkSync } from "fs";
 import { timingSafeEqual } from "crypto";
 import type { AgentModule } from "../types";
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 import {
   verifySlackSignature,
-  verifyGitHubSignature,
 } from "../../server/shared/signature";
 import {
   MAX_WEBHOOK_BODY_BYTES,
@@ -26,10 +28,12 @@ import {
   shouldHandleDirectMessage,
 } from "./event-routing";
 import { handleLinkShared } from "./unfurl";
+import { inviteRelevantUsersToChannel } from "./github-reviews";
 import {
-  handlePullRequestReview,
-  inviteRelevantUsersToChannel,
-} from "./github-reviews";
+  githubWebhookCompatibilityFallbackEnabled,
+  handleGithubWebhook,
+} from "../github/webhook-intake";
+import { githubWebhookCount } from "../github/webhook-deliveries";
 import {
   worktreeChannels,
   branchToChannel,
@@ -50,7 +54,7 @@ import {
 import { cancelSession } from "./cancel";
 import { cancelAgentRun } from "../../server/agent-runner";
 import { worktreePathFor } from "../../server/worktree";
-import { personaName } from "../../server/config";
+import { handleReportFixAction } from "./report-actions";
 import {
   slackApiCall,
   sendSlackMessage,
@@ -76,22 +80,16 @@ import {
   isEventProcessed,
   markEventProcessed,
   loadProcessedEvents,
-  isGithubDeliveryProcessed,
-  markGithubDeliveryProcessed,
-  loadGithubDeliveries,
   pendingAnswers,
   slackTeamId,
   slackBotUserId,
-  githubWebhooksReceived,
   setSlackTeamId,
   setSlackBotUserId,
-  incrementGithubWebhooks,
   loadActiveSessionsOnStartup,
 } from "./state";
 
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET || "";
-const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET || "";
 
 async function readWebhookBody(req: Request, maxBytes = MAX_WEBHOOK_BODY_BYTES): Promise<string | Response> {
   try {
@@ -124,14 +122,430 @@ function verifyWorktreeSecret(req: Request): boolean {
   }
 }
 
+/**
+ * Dispatch a parsed Slack Events API callback. The HTTP `/slack/events`
+ * route and Socket Mode (`events_api` envelopes) both feed the same
+ * `event_callback` JSON here, so the routing lives in one place and only the
+ * transport differs.
+ */
+export async function dispatchSlackEvent(payload: any): Promise<void> {
+  if (payload.type !== "event_callback") return;
+  const event = payload.event;
+
+  if (event.type === "link_shared") {
+    console.log(
+      `[slack] link_shared links=${JSON.stringify((event.links || []).map((l: any) => l.url))}`,
+    );
+  }
+
+  if (event.bot_id || event.subtype === "bot_message") {
+    return;
+  }
+
+  // Handle message.im events (DMs)
+  if (shouldHandleDirectMessage(event)) {
+    const eventId = `${event.channel}-${event.ts}`;
+    if (isEventProcessed(eventId)) {
+      console.log(`[slack] Duplicate event: ${eventId}`);
+      return;
+    }
+
+    // Mark processed only AFTER the handler has enqueued the message —
+    // marking first meant a handler throw made Slack's retry look like a
+    // duplicate and the message was silently dropped.
+    handleMessageEvent(event)
+      .then(() => markEventProcessed(eventId))
+      .catch((e) => {
+        console.error("[slack] Error handling message:", e);
+      });
+  }
+
+  // Channel-watch automations: one run per top-level message in a
+  // watched channel (thread replies and @-mentions don't
+  // re-trigger — mentions go through the interactive path below).
+  if (
+    event.type === "message" &&
+    event.channel_type !== "im" &&
+    !event.subtype &&
+    !event.thread_ts &&
+    !(event.text || "").includes(`<@${slackBotUserId}>`) &&
+    isChannelWatched(event.channel)
+  ) {
+    const watchId = `watch-${event.channel}-${event.ts}`;
+    if (!isEventProcessed(watchId)) {
+      markEventProcessed(watchId);
+      const u = event.user
+        ? await resolveSlackUser(event.user)
+        : { name: "Unknown", avatarUrl: undefined };
+      fireAutomationsForSlackChannel(
+        event.channel,
+        JSON.stringify(
+          {
+            channel: event.channel,
+            ts: event.ts,
+            userId: event.user || null,
+            userName: u.name,
+            text: event.text || "",
+            permalink: `thread ts ${event.ts} — reply in-thread via the slack MCP if your instructions say to respond`,
+          },
+          null,
+          2,
+        ),
+      );
+    }
+  }
+
+  // Handle app_mention events
+  if (shouldHandleAppMention(event)) {
+    const eventId = `${event.channel}-${event.ts}`;
+    if (isEventProcessed(eventId)) {
+      console.log(`[slack] Duplicate mention event: ${eventId}`);
+      return;
+    }
+
+    // Same as DMs above: only mark processed once the handler succeeded,
+    // so a throw leaves the retry eligible instead of dropping the event.
+    handleMentionEvent(event)
+      .then(() => markEventProcessed(eventId))
+      .catch((e) => {
+        console.error("[slack] Error handling mention:", e);
+      });
+  }
+
+  // Unfurl this instance's session links. A private host (tailnet-only,
+  // VPN) is unreachable for Slack's OG-tag fetch, so we look the session
+  // up in-process and post a preview via chat.unfurl. Deduped on the
+  // shared message ts.
+  if (event.type === "link_shared") {
+    const eventId = `unfurl-${event.channel}-${event.message_ts}`;
+    if (!isEventProcessed(eventId)) {
+      handleLinkShared(event)
+        .then(() => markEventProcessed(eventId))
+        .catch((e) => {
+          console.error("[slack] Error unfurling link:", e);
+        });
+    }
+  }
+
+  // Handle assistant_thread_started events (DM thread opened)
+  if (event.type === "assistant_thread_started") {
+    const thread = event.assistant_thread;
+    if (thread?.channel_id && thread?.thread_ts) {
+      slackApiCall("assistant.threads.setSuggestedPrompts", {
+        channel_id: thread.channel_id,
+        thread_ts: thread.thread_ts,
+        prompts: [
+          {
+            title: "Check worktrees",
+            message: "What worktrees are currently active?",
+          },
+          {
+            title: "Health check",
+            message: "Run a health check on all services",
+          },
+        ],
+      }).catch((e: any) => {
+        console.warn("[slack] Error setting suggested prompts:", e);
+      });
+    }
+  }
+}
+
+/**
+ * Dispatch a parsed Slack interactive payload (Block Kit buttons, modal
+ * submits). Shared by the HTTP `/slack/actions` route and Socket Mode
+ * (`interactive` envelopes).
+ */
+export async function dispatchSlackInteractive(payload: any): Promise<void> {
+  // Handle block_actions (button clicks)
+  if (payload.type === "block_actions") {
+    const action = payload.actions?.[0];
+    if (!action) {
+      return;
+    }
+
+    const actionId: string = action.action_id;
+
+    // Check if this is an "Other..." button — must open modal BEFORE returning
+    if (actionId.endsWith("-other")) {
+      // Human-in-the-loop ask "Other…" — open the free-text modal.
+      const haOther = actionId.match(/^humanask-(.+)-other$/);
+      if (haOther?.[1]) {
+        const askId = haOther[1];
+        const ask = getHumanAsk(askId);
+        if (ask && isHumanAskAwaiting(askId) && payload.trigger_id) {
+          const r = await openHumanAskModal(payload.trigger_id, askId, ask.question);
+          if (!r?.ok) console.error("[slack] human-ask modal open failed:", r);
+        }
+        return;
+      }
+      // Extract questionId: "askq-{questionId}-other"
+      const match = actionId.match(/^askq-(.+)-other$/);
+      if (match?.[1]) {
+        const questionId = match[1];
+        const pending = pendingAnswers.get(questionId);
+        if (pending) {
+          const triggerId = payload.trigger_id;
+          if (triggerId) {
+            const modalResult = await openSlackModal(
+              triggerId,
+              questionId,
+              pending.questionText
+            );
+            if (!modalResult?.ok) {
+              console.error("[slack] Failed to open modal:", modalResult);
+            }
+          }
+        }
+      }
+      return;
+    }
+
+    // Regular option button — handle in background
+    const optMatch = actionId.match(/^askq-(.+)-opt-(\d+)$/);
+    if (optMatch?.[1]) {
+      const questionId = optMatch[1];
+      const selectedLabel = action.value;
+
+      // Respond immediately, resolve in background
+      setImmediate(() => {
+        const pending = pendingAnswers.get(questionId);
+        if (pending) {
+          clearTimeout(pending.timeoutId);
+          pendingAnswers.delete(questionId);
+          pending.resolve(selectedLabel);
+        }
+      });
+      return;
+    }
+
+    // Human-in-the-loop ask: resolve it, then let the ask registry replace
+    // the original card with its read-only answered state.
+    const haOpt = actionId.match(/^humanask-(.+)-opt-(\d+)$/);
+    if (haOpt?.[1]) {
+      const askId = haOpt[1];
+      const label = action.value;
+      setImmediate(() => resolveHumanAsk(askId, label));
+      return;
+    }
+
+    // A report notification can start every proposed fix without leaving Slack.
+    if (actionId === "report-fix-all") {
+      await handleReportFixAction(payload, action.value);
+      return;
+    }
+
+    // Stop button on a Grafana-poller investigation card — cancel the
+    // automation-run session by its opensession id (registered in activeRuns
+    // under the bks id, so cancelAgentRun reaches it). `investigate-stop:`
+    // is the current prefix; `export-stop:`/`upload-stop:` are kept for any
+    // cards posted before the generic poller landed.
+    const stopPrefix = ["investigate-stop:", "export-stop:", "upload-stop:", "pr-stop:"].find((p) =>
+      actionId.startsWith(p)
+    );
+    if (stopPrefix) {
+      const bksId = actionId.slice(stopPrefix.length);
+      const didCancel = cancelAgentRun(bksId);
+
+      const msgChannel = payload.channel?.id;
+      const msgTs = payload.message?.ts;
+      if (msgTs && msgChannel) {
+        const label = didCancel ? "Stopped" : "Nothing to stop";
+        const keptBlocks = (payload.message?.blocks || []).filter(
+          (b: any) => b.type !== "actions"
+        );
+        keptBlocks.push({
+          type: "context",
+          elements: [{ type: "mrkdwn", text: `_${label}_` }],
+        });
+        await updateSlackBlocks(msgChannel, msgTs, label, keptBlocks);
+      }
+      return;
+    }
+
+    // Stop button — cancel the running session
+    if (actionId.startsWith("stop:")) {
+      const sessionKey = actionId.slice("stop:".length);
+      const didCancel = cancelSession(sessionKey);
+
+      const msgChannel = payload.channel?.id;
+      const msgTs = payload.message?.ts;
+      if (msgTs && msgChannel) {
+        const label = didCancel ? "Cancelled" : "Nothing to cancel";
+        await updateSlackBlocks(msgChannel, msgTs, label, [
+          {
+            type: "context",
+            elements: [{ type: "mrkdwn", text: `_${label}_` }],
+          },
+        ]);
+      }
+      return;
+    }
+
+    // GitHub PR review — "Address this feedback" button
+    if (actionId.startsWith("gh-review-address-")) {
+      const reviewData = JSON.parse(action.value);
+      const {
+        branch,
+        channelId: reviewChannelId,
+        prNumber,
+        prUrl,
+        reviewerName,
+        reviewState,
+        reviewBody,
+        inlineCommentCount,
+      } = reviewData;
+
+      // Update message to remove buttons and show status
+      const msgChannel = payload.channel?.id || reviewChannelId;
+      const msgTs = payload.message?.ts;
+      if (msgTs) {
+        const updatedBlocks = (payload.message?.blocks || []).filter(
+          (b: any) => b.type !== "actions"
+        );
+        updatedBlocks.push({
+          type: "context",
+          elements: [
+            {
+              type: "mrkdwn",
+              text: "\u23f3 _Addressing this feedback..._",
+            },
+          ],
+        });
+        await updateSlackBlocks(
+          msgChannel,
+          msgTs,
+          "Addressing PR review feedback...",
+          updatedBlocks
+        );
+      }
+
+      // Enqueue prompt to the worktree's Claude session
+      const sessionKey = reviewChannelId;
+      const worktreeDir = getWorktreeDirForChannel(reviewChannelId);
+      const worktreeBranch = worktreeChannels.get(reviewChannelId);
+
+      const prompt = `A PR review was submitted on PR #${prNumber} (${prUrl}) by ${reviewerName}.
+
+Review type: ${reviewState}
+${reviewBody ? `Review comment: "${reviewBody}"` : "No overall review comment."}
+${inlineCommentCount > 0 ? `There are ${inlineCommentCount} inline comments on specific files.` : ""}
+
+Please address this feedback:
+1. Read the PR review comments by running: gh api repos/${defaultRepo().ghRepo}/pulls/${prNumber}/reviews --jq '.[-1]' and gh api repos/${defaultRepo().ghRepo}/pulls/${prNumber}/comments
+2. Understand each piece of feedback
+3. Make the necessary code changes to address the review
+4. Commit and push the changes (ALWAYS push \u2014 never leave changes unpushed)
+5. Respond to each individual review comment on the PR by posting replies via: gh api repos/${defaultRepo().ghRepo}/pulls/${prNumber}/comments/{comment_id}/replies -f body="<your response>"
+6. Summarize what you changed in response to the review`;
+
+      enqueueMessage(sessionKey, {
+        prompt,
+        channel: reviewChannelId,
+        threadTs: msgTs || "",
+        messageTs: msgTs || "",
+        userName: "GitHub PR Review",
+        userId: slackBotUserId,
+        isNewSession: false,
+        worktreeDir: worktreeDir || undefined,
+        branch: worktreeBranch || undefined,
+      });
+
+      return;
+    }
+
+    // GitHub PR review — "Dismiss" button
+    if (actionId.startsWith("gh-review-dismiss-")) {
+      const msgChannel = payload.channel?.id;
+      const msgTs = payload.message?.ts;
+      if (msgTs && msgChannel) {
+        const updatedBlocks = (payload.message?.blocks || []).filter(
+          (b: any) => b.type !== "actions"
+        );
+        updatedBlocks.push({
+          type: "context",
+          elements: [
+            {
+              type: "mrkdwn",
+              text: "\ud83d\udeab _Dismissed_",
+            },
+          ],
+        });
+        await updateSlackBlocks(
+          msgChannel,
+          msgTs,
+          "PR review feedback dismissed",
+          updatedBlocks
+        );
+      }
+      return;
+    }
+
+    return;
+  }
+
+  // Handle view_submission (modal submit for "Other...")
+  if (payload.type === "view_submission") {
+    const callbackId: string = payload.view?.callback_id || "";
+
+    // Human-in-the-loop ask — free-text "Other…" answer.
+    const haModal = callbackId.match(/^humanask-modal-(.+)$/);
+    if (haModal?.[1]) {
+      const askId = haModal[1];
+      const answer: string =
+        payload.view?.state?.values?.answer_block?.answer_input?.value || "";
+      if (answer.trim()) setImmediate(() => resolveHumanAsk(askId, answer.trim()));
+      return;
+    }
+
+    const match = callbackId.match(/^askq-modal-(.+)$/);
+
+    if (match?.[1]) {
+      const questionId = match[1];
+      const values = payload.view?.state?.values;
+      const answerValue: string =
+        values?.answer_block?.answer_input?.value || "";
+
+      setImmediate(() => {
+        const pending = pendingAnswers.get(questionId);
+        if (pending) {
+          clearTimeout(pending.timeoutId);
+          pendingAnswers.delete(questionId);
+          pending.resolve(answerValue);
+        }
+      });
+    }
+
+    // Must return 200 with empty body to close the modal
+    return;
+  }
+}
+
+
+/** Slack owns GitHub intake only when the independently gated GitHub agent
+ * is off. Route registration and the outbound forwarder lifecycle must use the
+ * same decision or a loopback-only Slack install exposes a route nobody feeds. */
+export function slackOwnsGithubWebhookIntake(): boolean {
+  const flag = process.env.ENABLE_GITHUB_AGENT;
+  const enabled = flag == null
+    ? configuredIntegration("github").enabled === true
+    : flag === "true";
+  return !enabled;
+}
+
 export class SlackAgent implements AgentModule {
   name = "slack";
-
   getRoutes(): Map<string, (req: Request, url: URL) => Promise<Response>> {
     const routes = new Map<
       string,
       (req: Request, url: URL) => Promise<Response>
     >();
+
+    // GithubAgent owns this route when enabled. Retain the historical Slack-only
+    // configuration by registering the same handler only when GitHub is disabled.
+    if (githubWebhookCompatibilityFallbackEnabled()) {
+      routes.set("POST /github/webhook", handleGithubWebhook);
+    }
 
     // ----- POST /slack/events -----
     routes.set("POST /slack/events", async (req) => {
@@ -169,127 +583,7 @@ export class SlackAgent implements AgentModule {
         return Response.json({ challenge: payload.challenge });
       }
 
-      // Event callback
-      if (payload.type === "event_callback") {
-        const event = payload.event;
-
-        if (event.type === "link_shared") {
-          console.log(
-            `[slack] link_shared links=${JSON.stringify((event.links || []).map((l: any) => l.url))}`,
-          );
-        }
-
-        if (event.bot_id || event.subtype === "bot_message") {
-          return Response.json({ ok: true });
-        }
-
-        // Handle message.im events (DMs)
-        if (shouldHandleDirectMessage(event)) {
-          const eventId = `${event.channel}-${event.ts}`;
-          if (isEventProcessed(eventId)) {
-            console.log(`[slack] Duplicate event: ${eventId}`);
-            return Response.json({ ok: true });
-          }
-
-          // Mark processed only AFTER the handler has enqueued the message —
-          // marking first meant a handler throw made Slack's retry look like a
-          // duplicate and the message was silently dropped.
-          handleMessageEvent(event)
-            .then(() => markEventProcessed(eventId))
-            .catch((e) => {
-              console.error("[slack] Error handling message:", e);
-            });
-        }
-
-        // Channel-watch automations: one run per top-level message in a
-        // watched channel (thread replies and @-mentions don't
-        // re-trigger — mentions go through the interactive path below).
-        if (
-          event.type === "message" &&
-          event.channel_type !== "im" &&
-          !event.subtype &&
-          !event.thread_ts &&
-          !(event.text || "").includes(`<@${slackBotUserId}>`) &&
-          isChannelWatched(event.channel)
-        ) {
-          const watchId = `watch-${event.channel}-${event.ts}`;
-          if (!isEventProcessed(watchId)) {
-            markEventProcessed(watchId);
-            const u = event.user
-              ? await resolveSlackUser(event.user)
-              : { name: "Unknown", avatarUrl: undefined };
-            fireAutomationsForSlackChannel(
-              event.channel,
-              JSON.stringify(
-                {
-                  channel: event.channel,
-                  ts: event.ts,
-                  userId: event.user || null,
-                  userName: u.name,
-                  text: event.text || "",
-                  permalink: `thread ts ${event.ts} — reply in-thread via the slack MCP if your instructions say to respond`,
-                },
-                null,
-                2,
-              ),
-            );
-          }
-        }
-
-        // Handle app_mention events
-        if (shouldHandleAppMention(event)) {
-          const eventId = `${event.channel}-${event.ts}`;
-          if (isEventProcessed(eventId)) {
-            console.log(`[slack] Duplicate mention event: ${eventId}`);
-            return Response.json({ ok: true });
-          }
-
-          // Same as DMs above: only mark processed once the handler succeeded,
-          // so a throw leaves the retry eligible instead of dropping the event.
-          handleMentionEvent(event)
-            .then(() => markEventProcessed(eventId))
-            .catch((e) => {
-              console.error("[slack] Error handling mention:", e);
-            });
-        }
-
-        // Unfurl os.tella.dev session links (Slack can't reach the tailnet-only
-        // host to read OG tags, so we look the session up in-process and post a
-        // preview via chat.unfurl). Deduped on the shared message ts.
-        if (event.type === "link_shared") {
-          const eventId = `unfurl-${event.channel}-${event.message_ts}`;
-          if (!isEventProcessed(eventId)) {
-            handleLinkShared(event)
-              .then(() => markEventProcessed(eventId))
-              .catch((e) => {
-                console.error("[slack] Error unfurling link:", e);
-              });
-          }
-        }
-
-        // Handle assistant_thread_started events (DM thread opened)
-        if (event.type === "assistant_thread_started") {
-          const thread = event.assistant_thread;
-          if (thread?.channel_id && thread?.thread_ts) {
-            slackApiCall("assistant.threads.setSuggestedPrompts", {
-              channel_id: thread.channel_id,
-              thread_ts: thread.thread_ts,
-              prompts: [
-                {
-                  title: "Check worktrees",
-                  message: "What worktrees are currently active?",
-                },
-                {
-                  title: "Health check",
-                  message: "Run a health check on all services",
-                },
-              ],
-            }).catch((e: any) => {
-              console.warn("[slack] Error setting suggested prompts:", e);
-            });
-          }
-        }
-      }
+      await dispatchSlackEvent(payload);
 
       return Response.json({ ok: true });
     });
@@ -317,334 +611,9 @@ export class SlackAgent implements AgentModule {
 
       const payload = JSON.parse(payloadStr);
 
-      // Handle block_actions (button clicks)
-      if (payload.type === "block_actions") {
-        const action = payload.actions?.[0];
-        if (!action) {
-          return new Response("", { status: 200 });
-        }
-
-        const actionId: string = action.action_id;
-
-        // Check if this is an "Other..." button — must open modal BEFORE returning
-        if (actionId.endsWith("-other")) {
-          // Human-in-the-loop ask "Other…" — open the free-text modal.
-          const haOther = actionId.match(/^humanask-(.+)-other$/);
-          if (haOther?.[1]) {
-            const askId = haOther[1];
-            const ask = getHumanAsk(askId);
-            if (ask && isHumanAskAwaiting(askId) && payload.trigger_id) {
-              const r = await openHumanAskModal(payload.trigger_id, askId, ask.question);
-              if (!r?.ok) console.error("[slack] human-ask modal open failed:", r);
-            }
-            return new Response("", { status: 200 });
-          }
-          // Extract questionId: "askq-{questionId}-other"
-          const match = actionId.match(/^askq-(.+)-other$/);
-          if (match?.[1]) {
-            const questionId = match[1];
-            const pending = pendingAnswers.get(questionId);
-            if (pending) {
-              const triggerId = payload.trigger_id;
-              if (triggerId) {
-                const modalResult = await openSlackModal(
-                  triggerId,
-                  questionId,
-                  pending.questionText
-                );
-                if (!modalResult?.ok) {
-                  console.error("[slack] Failed to open modal:", modalResult);
-                }
-              }
-            }
-          }
-          return new Response("", { status: 200 });
-        }
-
-        // Regular option button — handle in background
-        const optMatch = actionId.match(/^askq-(.+)-opt-(\d+)$/);
-        if (optMatch?.[1]) {
-          const questionId = optMatch[1];
-          const selectedLabel = action.value;
-
-          // Respond immediately, resolve in background
-          setImmediate(() => {
-            const pending = pendingAnswers.get(questionId);
-            if (pending) {
-              clearTimeout(pending.timeoutId);
-              pendingAnswers.delete(questionId);
-              pending.resolve(selectedLabel);
-            }
-          });
-          return new Response("", { status: 200 });
-        }
-
-        // Human-in-the-loop ask — option button picked.
-        const haOpt = actionId.match(/^humanask-(.+)-opt-(\d+)$/);
-        if (haOpt?.[1]) {
-          const askId = haOpt[1];
-          const label = action.value;
-          setImmediate(() => resolveHumanAsk(askId, label));
-          const msgChannel = payload.channel?.id;
-          const msgTs = payload.message?.ts;
-          if (msgChannel && msgTs) {
-            const kept = (payload.message?.blocks || []).filter((b: any) => b.type !== "actions");
-            kept.push({
-              type: "context",
-              elements: [{ type: "mrkdwn", text: `:white_check_mark: _You answered: ${label}_` }],
-            });
-            await updateSlackBlocks(msgChannel, msgTs, `Answered: ${label}`, kept);
-          }
-          return new Response("", { status: 200 });
-        }
-
-        // Stop button on a Grafana-poller investigation card — cancel the
-        // automation-run session by its opensession id (registered in activeRuns
-        // under the bks id, so cancelAgentRun reaches it). `investigate-stop:`
-        // is the current prefix; `export-stop:`/`upload-stop:` are kept for any
-        // cards posted before the generic poller landed.
-        const stopPrefix = ["investigate-stop:", "export-stop:", "upload-stop:", "pr-stop:"].find((p) =>
-          actionId.startsWith(p)
-        );
-        if (stopPrefix) {
-          const bksId = actionId.slice(stopPrefix.length);
-          const didCancel = cancelAgentRun(bksId);
-
-          const msgChannel = payload.channel?.id;
-          const msgTs = payload.message?.ts;
-          if (msgTs && msgChannel) {
-            const label = didCancel ? "Stopped" : "Nothing to stop";
-            const keptBlocks = (payload.message?.blocks || []).filter(
-              (b: any) => b.type !== "actions"
-            );
-            keptBlocks.push({
-              type: "context",
-              elements: [{ type: "mrkdwn", text: `_${label}_` }],
-            });
-            await updateSlackBlocks(msgChannel, msgTs, label, keptBlocks);
-          }
-          return new Response("", { status: 200 });
-        }
-
-        // Stop button — cancel the running session
-        if (actionId.startsWith("stop:")) {
-          const sessionKey = actionId.slice("stop:".length);
-          const didCancel = cancelSession(sessionKey);
-
-          const msgChannel = payload.channel?.id;
-          const msgTs = payload.message?.ts;
-          if (msgTs && msgChannel) {
-            const label = didCancel ? "Cancelled" : "Nothing to cancel";
-            await updateSlackBlocks(msgChannel, msgTs, label, [
-              {
-                type: "context",
-                elements: [{ type: "mrkdwn", text: `_${label}_` }],
-              },
-            ]);
-          }
-          return new Response("", { status: 200 });
-        }
-
-        // GitHub PR review — "Address this feedback" button
-        if (actionId.startsWith("gh-review-address-")) {
-          const reviewData = JSON.parse(action.value);
-          const {
-            branch,
-            channelId: reviewChannelId,
-            prNumber,
-            prUrl,
-            reviewerName,
-            reviewState,
-            reviewBody,
-            inlineCommentCount,
-          } = reviewData;
-
-          // Update message to remove buttons and show status
-          const msgChannel = payload.channel?.id || reviewChannelId;
-          const msgTs = payload.message?.ts;
-          if (msgTs) {
-            const updatedBlocks = (payload.message?.blocks || []).filter(
-              (b: any) => b.type !== "actions"
-            );
-            updatedBlocks.push({
-              type: "context",
-              elements: [
-                {
-                  type: "mrkdwn",
-                  text: "\u23f3 _Addressing this feedback..._",
-                },
-              ],
-            });
-            await updateSlackBlocks(
-              msgChannel,
-              msgTs,
-              "Addressing PR review feedback...",
-              updatedBlocks
-            );
-          }
-
-          // Enqueue prompt to the worktree's Claude session
-          const sessionKey = reviewChannelId;
-          const worktreeDir = getWorktreeDirForChannel(reviewChannelId);
-          const worktreeBranch = worktreeChannels.get(reviewChannelId);
-
-          const prompt = `A PR review was submitted on PR #${prNumber} (${prUrl}) by ${reviewerName}.
-
-Review type: ${reviewState}
-${reviewBody ? `Review comment: "${reviewBody}"` : "No overall review comment."}
-${inlineCommentCount > 0 ? `There are ${inlineCommentCount} inline comments on specific files.` : ""}
-
-Please address this feedback:
-1. Read the PR review comments by running: gh api repos/${defaultRepo().ghRepo}/pulls/${prNumber}/reviews --jq '.[-1]' and gh api repos/${defaultRepo().ghRepo}/pulls/${prNumber}/comments
-2. Understand each piece of feedback
-3. Make the necessary code changes to address the review
-4. Commit and push the changes (ALWAYS push \u2014 never leave changes unpushed)
-5. Respond to each individual review comment on the PR by posting replies via: gh api repos/${defaultRepo().ghRepo}/pulls/${prNumber}/comments/{comment_id}/replies -f body="<your response>"
-6. Summarize what you changed in response to the review`;
-
-          enqueueMessage(sessionKey, {
-            prompt,
-            channel: reviewChannelId,
-            threadTs: msgTs || "",
-            messageTs: msgTs || "",
-            userName: "GitHub PR Review",
-            userId: slackBotUserId,
-            isNewSession: false,
-            worktreeDir: worktreeDir || undefined,
-            branch: worktreeBranch || undefined,
-          });
-
-          return new Response("", { status: 200 });
-        }
-
-        // GitHub PR review — "Dismiss" button
-        if (actionId.startsWith("gh-review-dismiss-")) {
-          const msgChannel = payload.channel?.id;
-          const msgTs = payload.message?.ts;
-          if (msgTs && msgChannel) {
-            const updatedBlocks = (payload.message?.blocks || []).filter(
-              (b: any) => b.type !== "actions"
-            );
-            updatedBlocks.push({
-              type: "context",
-              elements: [
-                {
-                  type: "mrkdwn",
-                  text: "\ud83d\udeab _Dismissed_",
-                },
-              ],
-            });
-            await updateSlackBlocks(
-              msgChannel,
-              msgTs,
-              "PR review feedback dismissed",
-              updatedBlocks
-            );
-          }
-          return new Response("", { status: 200 });
-        }
-
-        return new Response("", { status: 200 });
-      }
-
-      // Handle view_submission (modal submit for "Other...")
-      if (payload.type === "view_submission") {
-        const callbackId: string = payload.view?.callback_id || "";
-
-        // Human-in-the-loop ask — free-text "Other…" answer.
-        const haModal = callbackId.match(/^humanask-modal-(.+)$/);
-        if (haModal?.[1]) {
-          const askId = haModal[1];
-          const answer: string =
-            payload.view?.state?.values?.answer_block?.answer_input?.value || "";
-          if (answer.trim()) setImmediate(() => resolveHumanAsk(askId, answer.trim()));
-          return new Response("", { status: 200 });
-        }
-
-        const match = callbackId.match(/^askq-modal-(.+)$/);
-
-        if (match?.[1]) {
-          const questionId = match[1];
-          const values = payload.view?.state?.values;
-          const answerValue: string =
-            values?.answer_block?.answer_input?.value || "";
-
-          setImmediate(() => {
-            const pending = pendingAnswers.get(questionId);
-            if (pending) {
-              clearTimeout(pending.timeoutId);
-              pendingAnswers.delete(questionId);
-              pending.resolve(answerValue);
-            }
-          });
-        }
-
-        // Must return 200 with empty body to close the modal
-        return new Response("", { status: 200 });
-      }
+      await dispatchSlackInteractive(payload);
 
       return new Response("", { status: 200 });
-    });
-
-    // ----- POST /github/webhook -----
-    routes.set("POST /github/webhook", async (req) => {
-      const body = await readWebhookBody(req);
-      if (body instanceof Response) return body;
-      const signature = req.headers.get("x-hub-signature-256") || "";
-
-      if (!verifyGitHubSignature(body, signature, GITHUB_WEBHOOK_SECRET)) {
-        console.error("[slack] Invalid GitHub webhook signature");
-        return Response.json({ error: "Invalid signature" }, { status: 401 });
-      }
-
-      // Reject replayed/redelivered webhooks by delivery id.
-      const deliveryId = req.headers.get("x-github-delivery");
-      if (deliveryId) {
-        if (isGithubDeliveryProcessed(deliveryId)) {
-          console.log(`[slack] Duplicate GitHub delivery ${deliveryId} — skipping`);
-          return Response.json({ ok: true, duplicate: true });
-        }
-        markGithubDeliveryProcessed(deliveryId);
-      }
-
-      incrementGithubWebhooks();
-      const event = req.headers.get("x-github-event") || "";
-      const payload = JSON.parse(body);
-
-      console.log(
-        `[slack] GitHub webhook: event=${event}, action=${payload.action}`
-      );
-
-      if (event === "pull_request_review") {
-        // Handle async — GitHub has a 10s timeout
-        handlePullRequestReview(payload, branchToChannel).catch((e) => {
-          console.error("[slack] Error handling PR review webhook:", e);
-        });
-      }
-
-      // Sync the server's PR caches + nudge open tabs (server/pr-webhook.ts)
-      // on every delivery — it filters to PR-carrying events itself, including
-      // ones the github agent doesn't consume (reviews, checks, statuses).
-      import("../../server/pr-webhook")
-        .then((m) => m.handlePrWebhookEvent(event, payload))
-        .catch((e) => console.error("[slack] pr-webhook dispatch failed:", e));
-
-      // Forward PR events to the github agent (review / auto-fix / simplify,
-      // @mention replies on PR comments, and merge/deploy notifications into
-      // linked sessions). Fire-and-forget so a github-module error never breaks
-      // the Slack path.
-      if (
-        event === "pull_request" ||
-        event === "issue_comment" ||
-        event === "pull_request_review_comment" ||
-        event === "workflow_run"
-      ) {
-        import("../github/webhook")
-          .then((m) => m.handleGithubPrEvent(event, payload))
-          .catch((e) => console.error("[slack] github agent dispatch failed:", e));
-      }
-
-      return Response.json({ ok: true });
     });
 
     // ----- POST /worktree/create-channel -----
@@ -819,7 +788,6 @@ Please address this feedback:
     await loadWorktreeChannels();
     await loadQueueFromDisk();
     loadProcessedEvents();
-    loadGithubDeliveries();
 
     // Fetch team ID and bot user ID for streaming APIs
     try {
@@ -863,15 +831,23 @@ Please address this feedback:
       };
     }
 
+    const githubWebhookHealth = githubWebhookCompatibilityFallbackEnabled()
+      ? {
+          githubWebhookConfigured: !!process.env.GITHUB_WEBHOOK_SECRET,
+          githubCredentialConfigured: githubConfiguredCredential(),
+          githubCredentialMode: "app",
+          githubWebhooksReceived: githubWebhookCount(),
+        }
+      : {};
+
     return {
       status: "operational",
       agent: `${personaName()} (Slack)`,
+      transport: "http",
       activeSessions: activeSessions.size,
       activeQueues: sessionQueues.size,
       pendingQuestions: pendingAnswers.size,
-      githubWebhookConfigured: !!process.env.GITHUB_WEBHOOK_SECRET,
-      githubApiTokenConfigured: !!process.env.GITHUB_API_TOKEN,
-      githubWebhooksReceived,
+      ...githubWebhookHealth,
       queueDetails,
     };
   }

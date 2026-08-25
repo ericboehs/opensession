@@ -130,16 +130,17 @@ function MessageRow({
 		setExpanded(true);
 		if (replies !== null || loadingReplies) return;
 		setLoadingReplies(true);
-		try {
-			const res = await fetch(
+		await (async () => {
+const res = await fetch(
 				`${BASE_PATH}/api/slack/channels/${encodeURIComponent(channelId)}/messages?thread_ts=${encodeURIComponent(m.ts)}&limit=50`,
 			);
 			const body = await res.json();
 			if (res.ok) setReplies(body.messages || []);
-		} catch {
-		} finally {
-			setLoadingReplies(false);
-		}
+})().catch(async () => {
+
+}).finally(async () => {
+setLoadingReplies(false);
+});
 	}
 
 	const timeOf = (ts: string) => {
@@ -239,9 +240,10 @@ export function SlackChannelPane({
 		};
 	}, []);
 
+	// Depends on channelId: the poll effect refires when the channel changes.
 	const loadNewest = useCallback(async () => {
-		try {
-			const res = await fetch(
+		await (async () => {
+const res = await fetch(
 				`${BASE_PATH}/api/slack/channels/${encodeURIComponent(channelId)}/messages`,
 			);
 			const body = await res.json();
@@ -273,11 +275,11 @@ export function SlackChannelPane({
 					},
 				).catch(() => {});
 			}
-		} catch (e: any) {
-			if (aliveRef.current) setError(e.message);
-		} finally {
-			if (aliveRef.current) setLoading(false);
-		}
+})().catch(async (e: any) => {
+if (aliveRef.current) setError(e.message);
+}).finally(async () => {
+if (aliveRef.current) setLoading(false);
+});
 	}, [channelId]);
 
 	useEffect(() => {
@@ -296,8 +298,8 @@ export function SlackChannelPane({
 	async function loadOlder() {
 		if (!messages.length || loadingOlder) return;
 		setLoadingOlder(true);
-		try {
-			const res = await fetch(
+		await (async () => {
+const res = await fetch(
 				`${BASE_PATH}/api/slack/channels/${encodeURIComponent(channelId)}/messages?before=${encodeURIComponent(messages[0].ts)}`,
 			);
 			const body = await res.json();
@@ -310,11 +312,11 @@ export function SlackChannelPane({
 			requestAnimationFrame(() => {
 				if (el) el.scrollTop = el.scrollHeight - prevHeight;
 			});
-		} catch (e: any) {
-			setError(e.message);
-		} finally {
-			setLoadingOlder(false);
-		}
+})().catch(async (e: any) => {
+setError(e.message);
+}).finally(async () => {
+setLoadingOlder(false);
+});
 	}
 
 	async function send() {
@@ -322,8 +324,8 @@ export function SlackChannelPane({
 		if (!text || sending) return;
 		setSending(true);
 		setError(null);
-		try {
-			const res = await fetch(
+		await (async () => {
+const res = await fetch(
 				`${BASE_PATH}/api/slack/channels/${encodeURIComponent(channelId)}/messages`,
 				{
 					method: "POST",
@@ -336,11 +338,11 @@ export function SlackChannelPane({
 			setDraft("");
 			stickBottomRef.current = true;
 			void loadNewest();
-		} catch (e: any) {
-			setError(e.message);
-		} finally {
-			setSending(false);
-		}
+})().catch(async (e: any) => {
+setError(e.message);
+}).finally(async () => {
+setSending(false);
+});
 	}
 
 	return (

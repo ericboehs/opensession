@@ -19,6 +19,34 @@ targets:
   OS1:
     type: application
     platform: iOS
+    info:
+      # XcodeGen writes this plist on every generation. The document type is
+      # what puts OS in Files' Open in menu; public.data accepts ordinary files
+      # without claiming folders the upload route cannot read.
+      path: OS1-Info.plist
+      properties:
+        CFBundleDisplayName: OS
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        OS1DefaultServerURL: http://127.0.0.1:3850
+        UIApplicationSupportsIndirectInputEvents: true
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSCameraUsageDescription: Attach a photo you take to a message.
+        NSMicrophoneUsageDescription: Dictate messages, and talk to your Desk on a live voice call.
+        NSSpeechRecognitionUsageDescription: Turn what you say into text in the message box.
+        NSSupportsLiveActivities: true
+        LSSupportsOpeningDocumentsInPlace: true
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: File
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.data
     entitlements:
       path: OS1.entitlements
       properties:
@@ -42,34 +70,8 @@ targets:
       - target: OS1Widgets
     settings:
       base:
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
-        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
-        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
-        # The app's LABEL, as the system shows it: Home Screen, Siri, Spotlight
-        # and the Shortcuts picker. Two letters on purpose. The FULL name stays
-        # Open Session and lives in AppBrand.productName, for prose the app
-        # writes; the App Store record keeps it too. PRODUCT_NAME deliberately
-        # stays OS1: it names the bundle, the archive and the .ipa that CI
-        # refers to, and nothing on iOS shows it. (CFBundleName cannot be set
-        # this way. The generated Info.plist always takes it from PRODUCT_NAME,
-        # and an INFOPLIST_KEY_CFBundleName is silently dropped, which is why
-        # the Mac target below renames PRODUCT_NAME instead of adding a key
-        # here.)
-        INFOPLIST_KEY_CFBundleDisplayName: OS
-        INFOPLIST_KEY_OS1DefaultServerURL: http://127.0.0.1:3850
-        # "Take a photo" in the composer's + menu. The photo library needs no
-        # string: PhotosPicker runs out of process.
-        INFOPLIST_KEY_NSCameraUsageDescription: Attach a photo you take to a message.
-        # Mic capture for two features: composer dictation and the Desk's
-        # Realtime voice call.
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: Dictate messages, and talk to your Desk on a live voice call.
-        # Composer dictation. Transcription runs on device where the hardware
-        # supports it, but the permission is required either way.
-        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: Turn what you say into text in the message box.
-        INFOPLIST_KEY_NSSupportsLiveActivities: YES
+        # PRODUCT_NAME deliberately stays OS1: it names the bundle, archive and
+        # .ipa that CI refers to. The Home Screen label lives in `info` above.
         PRODUCT_BUNDLE_IDENTIFIER: dev.tella.os1
         DEVELOPMENT_TEAM: 6GUXT43C8B
         CODE_SIGN_STYLE: Automatic

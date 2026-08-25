@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { TranscriptEntry } from "../lib/types";
 import { CodeHighlight } from "./LazyCode";
 import { langForFile, langForGrep } from "../lib/lang";
@@ -20,8 +26,7 @@ import {
   canonicalToolName,
   formatToolDetail,
   isHiddenToolInputKey,
-  mcpServerDisplayName,
-  mcpToolDisplayName,
+  mcpLabelParts,
   parseMcpTool,
   toolCommand as commandOf,
   toolDetail,
@@ -29,12 +34,14 @@ import {
   toolFilePath as filePathOf,
   toolInputString as pickStr,
   toolLineStats,
+  unwrapMcpDispatcher,
 } from "@tellahq/opensession-protocol/tool-presentation";
 import { formatDuration } from "../lib/time";
 import { ExtBadge, fileExt } from "./lang-marks";
 import { openGalleryFrom } from "./MediaLightbox";
 import { useOpenAsset, useOpenAssetPaths } from "../lib/open-asset";
 import { assetPathForMediaSrc } from "../lib/asset-preview";
+import { transcriptDisclosureLedger } from "../lib/transcript-disclosures";
 // Re-exported so the session view keeps one import for the transcript's
 // context providers; the context itself lives with the rest of the
 // open-an-asset behaviour, which the turn footer shares.
@@ -99,11 +106,11 @@ function useHydratedTranscriptEntry(
         const detail = (await res.json()) as FullEntryDetail;
         let toolInput = detail.toolInput;
         if (legacyVoiceInput && toolInput === undefined && detail.content) {
-          try {
-            toolInput = JSON.parse(detail.content);
-          } catch {
-            toolInput = detail.content;
-          }
+          await (async () => {
+toolInput = JSON.parse(detail.content);
+})().catch(async () => {
+toolInput = detail.content;
+});
         }
         setHydrated({
           sessionId,
@@ -136,12 +143,14 @@ export type { PathRoot };
 export {
   assetToolPath,
   canonicalToolName,
+  mcpLabelParts,
   mcpServerDisplayName,
   mcpToolDisplayName,
   parseMcpTool,
   toolDisplayName,
   toolFamily,
   toolLineStats,
+  unwrapMcpDispatcher,
 } from "@tellahq/opensession-protocol/tool-presentation";
 export const ToolPathRootsProvider = PathRootsContext.Provider;
 export function useToolPathRoots(): readonly PathRoot[] {
@@ -171,11 +180,14 @@ export const LiveSubagentsProvider = LiveSubagentsContext.Provider;
  * worktrees this client knows about.
  */
 export function toolSummary(
-  toolName: string,
-  input: unknown,
+  rawName: string,
+  rawInput: unknown,
   fallback: string,
   roots: readonly PathRoot[] = []
 ): string {
+  // Pi routes every bridged MCP call through its `mcp_call` dispatcher, so the
+  // envelope is what a transcript stores. Summarize the call inside it.
+  const { toolName, input } = unwrapMcpDispatcher(rawName, rawInput);
   const detail = formatToolDetail(toolDetail(toolName, input), (p) => tidyPath(p, roots));
   if (detail) return detail;
   if (parseMcpTool(toolName) && fallback.trim() === `Using ${toolName}`) return "";
@@ -221,15 +233,26 @@ export function ToolGlyph({ toolName, size = 20 }: { toolName: string; size?: nu
   }
 }
 
-/** Path summary with the directory dimmed and the basename readable. */
+/** Split a path so its directory can stay quiet while the row truncates as one line. */
+export function pathSummaryParts(path: string) {
+  const slash = path.lastIndexOf("/");
+  if (slash < 0) return { directory: "", separator: "", filename: path };
+  return {
+    directory: path.slice(0, slash),
+    separator: "/",
+    filename: path.slice(slash + 1),
+  };
+}
+
 export function PathSummary({ path }: { path: string }) {
-  const idx = path.lastIndexOf("/");
-  if (idx < 0) return <>{path}</>;
+  const { directory, separator, filename } = pathSummaryParts(path);
+  if (!separator) return <>{filename}</>;
   return (
-    <>
-      <span className="opacity-55">{path.slice(0, idx + 1)}</span>
-      {path.slice(idx + 1)}
-    </>
+    <span className="block min-w-0 truncate" title={path}>
+      {directory && <span className="opacity-55">{directory}</span>}
+      <span className="opacity-55">{separator}</span>
+      <span>{filename}</span>
+    </span>
   );
 }
 
@@ -278,7 +301,7 @@ function RunningToolDuration({ entry }: { entry: TranscriptEntry }) {
 // themselves are (mergeTranscriptEntries replaces rather than mutates), and
 // TurnBlock's only caller passes a memoized onOpenSubagent. So a shallow
 // compare bails out for every row the event did not touch.
-export const ToolCallBlock = React.memo(function ToolCallBlock({
+export const ToolCallBlock = function ToolCallBlock({
   entry,
   result,
   pending,
@@ -287,12 +310,23 @@ export const ToolCallBlock = React.memo(function ToolCallBlock({
 }: Props) {
   const entryNeedsHydration = entry.contentClamped || isBoundedToolInput(entry.toolInput);
   const resultNeedsHydration = Boolean(result?.contentClamped);
-  // Default closed, and open only for media the agent asked to SHOW — an
-  // OPENSESSION_IMAGE/_VIDEO marker (server-side: featuredMedia). Media it
-  // merely touched — a Read of a PNG, a path that turned up in output — still
-  // attaches and is one click away, but opening every one of those turns a
-  // forty-screenshot verification loop into forty full-size images.
-  const [expanded, setExpanded] = useState(Boolean(result?.featuredMedia?.length));
+  // Default closed, and open only for media the agent asked to SHOW. Keep an
+  // explicit choice on the transcript entry rather than this component: the
+  // history virtualizer unmounts off-screen rows, and a live turn remounts its
+  // children whenever its last-entry key changes. Component-local state made
+  // either path forget that a person had opened or closed this detail.
+  const [rememberedExpanded] = useState(() =>
+    transcriptDisclosureLedger.read("tool-call", sessionId, [entry.id])
+  );
+  const [expanded, setExpanded] = useState(
+    rememberedExpanded ?? Boolean(result?.featuredMedia?.length)
+  );
+  const userToggledRef = useRef(rememberedExpanded !== undefined);
+  function rememberExpansion(next: boolean) {
+    userToggledRef.current = true;
+    transcriptDisclosureLedger.write("tool-call", sessionId, [entry.id], next);
+    setExpanded(next);
+  }
   const fullEntry = useHydratedTranscriptEntry(
     entry,
     expanded && Boolean(entryNeedsHydration),
@@ -316,20 +350,27 @@ export const ToolCallBlock = React.memo(function ToolCallBlock({
       : imageCount === 0
         ? `${videoCount} video${videoCount === 1 ? "" : "s"}`
         : `${imageCount + videoCount} media`;
-  // Featured media streaming in later still opens the row; incidental media no
-  // longer does — which also means a row you collapsed by hand stays collapsed
-  // when the next screenshot arrives.
+  // Featured media streaming in later opens an untouched row. Once a person
+  // has chosen either state, that choice wins across later results and remounts.
   const hasFeaturedMedia = Boolean(shownResult?.featuredMedia?.length);
   useEffect(() => {
-    if (hasFeaturedMedia) setExpanded(true);
+    if (hasFeaturedMedia && !userToggledRef.current) setExpanded(true);
   }, [hasFeaturedMedia]);
-  const toolName = entry.toolName || "Tool";
+  // The transcript stores pi's dispatcher envelope for every bridged MCP call,
+  // so the row resolves the call inside it once and derives everything from
+  // that: the label, the glyph, the summary, the expanded input.
+  const { toolName, input: callInput } = unwrapMcpDispatcher(
+    entry.toolName || "Tool",
+    shownInput
+  );
   const canonical = canonicalToolName(toolName);
   const roots = useToolPathRoots();
   const mcp = parseMcpTool(toolName);
-  const summary = toolSummary(toolName, shownInput, entry.content, roots);
+  const mcpParts = mcp ? mcpLabelParts(mcp.server, mcp.tool) : [];
+  const scopedOpenSession = mcpParts[0] === "Open Session" && mcpParts.length > 2;
+  const summary = toolSummary(toolName, callInput, entry.content, roots);
   const isFileTool = canonical === "Read" || canonical === "Edit" || canonical === "Write";
-  const lineStats = toolLineStats(toolName, shownInput);
+  const lineStats = toolLineStats(toolName, callInput);
   const duration = stepDuration(entry, result);
   const failed = Boolean(shownResult?.isError);
   // The language mark a file row wears in front of its path, the same one the
@@ -338,17 +379,17 @@ export const ToolCallBlock = React.memo(function ToolCallBlock({
   // scanned by language rather than by reading every path to its last word.
   // A name with no extension has no mark, and keeps the path it always had.
   const baseName = isFileTool
-    ? (filePathOf((shownInput || {}) as Record<string, unknown>).split("/").pop() ?? "")
+    ? (filePathOf((callInput || {}) as Record<string, unknown>).split("/").pop() ?? "")
     : "";
   const fileMark = fileExt(baseName) ? baseName : "";
-  const inputNode = expanded ? toolInputNode(canonical, shownInput) : null;
+  const inputNode = expanded ? toolInputNode(canonical, callInput) : null;
   const resultContent = visibleResultContent(shownResult?.content, hasMedia, failed);
   const inputNeedsPanel = canonical === "TodoWrite";
 
   // A scratch file this call named: openable straight from the row, because
   // assets live outside every worktree and nothing else in the transcript can
   // say what the path means. A delete names one too, with nothing left to open.
-  const assetPath = assetToolPath(toolName, shownInput);
+  const assetPath = assetToolPath(toolName, callInput);
   const asset = useOpenAsset();
   const assetPaths = useOpenAssetPaths();
   const canOpenAsset =
@@ -358,7 +399,7 @@ export const ToolCallBlock = React.memo(function ToolCallBlock({
   }
 
   // A Task/Agent call whose sub-agent transcript we can open in the sidebar.
-  // Claude-SDK results carry a structured agentId; opencode's task tool only
+  // Claude-SDK results carry a structured agentId; pi's task tool only
   // embeds the child session id in the result text (<task id="ses_…">) — the
   // subagent route accepts either. Before the result exists, the live
   // subagents map (fed by SessionViewer's poll) supplies the child id so a
@@ -383,7 +424,7 @@ export const ToolCallBlock = React.memo(function ToolCallBlock({
       <button
         type="button"
         aria-expanded={expanded}
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => rememberExpansion(!expanded)}
         className={cn(
           // Baseline, not centre: the 14px tool name, the 13px mono path and
           // the 11px trailing meta all ride this row, and centring aligns
@@ -393,12 +434,7 @@ export const ToolCallBlock = React.memo(function ToolCallBlock({
           "hover:bg-hover/40"
         )}
       >
-        <span
-          className={cn(
-            "relative z-[1] flex size-[22px] flex-shrink-0 self-center items-center justify-center",
-            failed ? "text-red/70" : "text-faint"
-          )}
-        >
+        <span className="relative z-[1] flex size-[22px] flex-shrink-0 self-center items-center justify-center text-faint">
           <span className="transition-opacity duration-150 group-hover:opacity-0">
             <ToolGlyph toolName={toolName} size={20} />
           </span>
@@ -412,10 +448,41 @@ export const ToolCallBlock = React.memo(function ToolCallBlock({
         </span>
 
         {mcp ? (
-          <span className="flex min-w-0 flex-shrink-0 items-baseline gap-1 text-item-title leading-5 font-medium text-dim transition-colors group-hover:text-fg">
-            <span>{mcpServerDisplayName(mcp.server)}</span>
-            <span className="text-faint">·</span>
-            <span>{mcpToolDisplayName(mcp.tool)}</span>
+          // Most general part first, leaf last, and only the leaf at full
+          // strength: down a fold of Open Session calls the product name is the
+          // same on every row, so it should read as the path to the part that
+          // differs rather than compete with it.
+          <span
+            className="flex min-w-0 items-baseline gap-1 overflow-hidden text-item-title leading-5 font-medium text-dim transition-colors group-hover:text-fg phone:flex-shrink-0"
+            title={mcpParts.join(" · ")}
+          >
+            {mcpParts.map((part, i) => {
+              const context = i < mcpParts.length - 1;
+              return (
+                <React.Fragment key={i}>
+                  {i > 0 && (
+                    <span
+                      className={cn(
+                        "flex-shrink-0 text-faint",
+                        scopedOpenSession && i === 1 && "phone:hidden"
+                      )}
+                    >
+                      ·
+                    </span>
+                  )}
+                  <span
+                    className={cn(
+                      context
+                        ? "flex-shrink-0 font-normal opacity-70"
+                        : "truncate phone:flex-shrink-0",
+                      scopedOpenSession && i === 0 && "phone:hidden"
+                    )}
+                  >
+                    {part}
+                  </span>
+                </React.Fragment>
+              );
+            })}
           </span>
         ) : (
           <span className="flex-shrink-0 text-item-title leading-5 font-medium text-dim transition-colors group-hover:text-fg">{toolName}</span>
@@ -424,14 +491,21 @@ export const ToolCallBlock = React.memo(function ToolCallBlock({
         {/* Baseline, not centre: the path is mono and the ± counts are sans, so
             at one size their line boxes still centre to different baselines.
             The mark opts back out: it has no text baseline of its own, so
-            aligning it to one hangs the drawn logo below the path it labels. */}
-        <span className="flex min-w-0 flex-1 items-baseline gap-2">
+            aligning it to one hangs the drawn logo below the path it labels.
+            Nothing grows into spare room here: changes and duration should
+            follow the tool summary instead of lining up against the right edge. */}
+        <span
+          className={cn(
+            "flex min-w-0 items-baseline gap-2",
+            mcp && "phone:hidden"
+          )}
+        >
           <span className="flex min-w-0 items-baseline gap-1.5">
             {fileMark && <ExtBadge name={fileMark} className="self-center" />}
             <span
               className={cn(
-                "min-w-0 truncate text-label leading-4",
-                failed ? "text-red/80" : "text-dim"
+                "min-w-0 text-label leading-4 text-dim",
+                isFileTool ? "flex overflow-hidden" : "truncate"
               )}
             >
               {isFileTool ? <PathSummary path={summary} /> : summary}
@@ -514,8 +588,8 @@ export const ToolCallBlock = React.memo(function ToolCallBlock({
           // `border-top-color` is a two-utilities-one-property race.
           <span className="size-[11px] flex-shrink-0 self-center animate-spin rounded-full border border-b-line-strong border-l-line-strong border-r-line-strong border-t-dim" />
         ) : failed ? (
-          <span className="flex-shrink-0 self-center text-red">
-            <IconX size={20} />
+          <span className="flex-shrink-0 self-center text-faint opacity-70">
+            <IconX size={18} />
           </span>
         ) : !result ? (
           <span className="flex-shrink-0 text-meta text-faint">–</span>
@@ -538,20 +612,10 @@ export const ToolCallBlock = React.memo(function ToolCallBlock({
             <>
               {resultContent && (
                 <div className="space-y-1">
-                  <div
-                    className={cn(
-                      "px-1 text-meta font-medium leading-4",
-                      failed ? "text-red" : "text-faint"
-                    )}
-                  >
+                  <div className="px-1 text-meta font-medium leading-4 text-faint">
                     {failed ? "Error" : "Output"}
                   </div>
-                  <div
-                    className={cn(
-                      TOOL_CODE_WELL,
-                      failed && "border-red/25"
-                    )}
-                  >
+                  <div className={TOOL_CODE_WELL}>
                     {renderResultContent(canonical, shownInput, resultContent)}
                   </div>
                 </div>
@@ -611,7 +675,7 @@ export const ToolCallBlock = React.memo(function ToolCallBlock({
       )}
     </div>
   );
-});
+};
 
 /** Drop engine acknowledgements when the media itself is the useful result. */
 export function visibleResultContent(

@@ -21,8 +21,8 @@ import { resolveTeammate } from "./shared/user-mappings";
 /** Keep the injected block bounded — this rides in every run's system note. */
 const MAX_PROMPT_LEN = 8000;
 
-/** Identity-resolved store key (matches session-memory's userScope keys). */
-function keyFor(user: string | undefined | null): string | null {
+/** Identity-resolved store key shared by personal run preferences. */
+export function personalIdentityKey(user: string | undefined | null): string | null {
 	const trimmed = user?.trim();
 	if (!trimmed) return null;
 	const teammate = resolveTeammate(trimmed);
@@ -36,7 +36,7 @@ const store = userStore<string>({
 	field: "prompt",
 	clean: (raw) =>
 		typeof raw === "string" ? raw.trim().slice(0, MAX_PROMPT_LEN) : "",
-	identity: keyFor,
+	identity: personalIdentityKey,
 	extra: () => ({ updatedAt: new Date().toISOString() }),
 });
 

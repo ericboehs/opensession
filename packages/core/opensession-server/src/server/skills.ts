@@ -1,49 +1,35 @@
 // Skill/command index for "/"-skill autocomplete in the composer.
 //
-// Mirrors what a run actually loads: OpenCode's global skills and user-level
-// ~/.claude/commands, plus the checkout's .claude/ and .agents/ skills and
-// commands. Skills are matched the
-// way the engine globs them — `skills/**\/SKILL.md`, so nested ones count —
-// plus the skills the engine embeds in its binary (SYSTEM_SKILLS), which no
-// directory scan can see. Cached briefly per directory so keystrokes only
-// re-filter in memory.
+// Mirrors what a run actually loads, and does it by reading the same list the
+// runner passes to pi (skill-paths.ts): the skills Open Session ships plus the
+// session checkout's own `.claude/skills` and `.agents/skills`. Skills are
+// matched the way the engine globs them (`skills/**\/SKILL.md`), so nested
+// ones count. Cached briefly per directory so keystrokes only re-filter in
+// memory.
+//
+// Nothing else belongs here. A pi run loads no prompt templates and no
+// engine-embedded skills (noPromptTemplates, noSkills), so listing
+// `~/.claude/commands` or pi's own bundled set would offer people commands
+// that silently do nothing when they press enter.
 
 import { readdirSync, readFileSync, existsSync, statSync } from "fs";
-import { join } from "path";
-import { homedir } from "os";
+import { join, resolve } from "path";
+import { SHIPPED_SKILLS_DIR, skillSearchPaths } from "./skill-paths";
 
 export interface SkillEntry {
   /** Slash-command name, without the leading "/". */
   name: string;
   /** One-line description from frontmatter (or first content line). */
   description: string;
-  /** Where it came from: the engine itself, user config, the session's checkout, or opensession. */
-  source: "system" | "user" | "project" | "builtin";
+  /** Where it came from: opensession's own set, the session's checkout, or a builtin command. */
+  source: "user" | "project" | "builtin";
 }
-
-/**
- * Skills the engine embeds in its own binary — real, invocable skills that no
- * directory scan can find. opencode ships exactly one today; Claude Code's
- * bundled set (/simplify, /code-review, …) is compiled into *its* binary and is
- * NOT reachable from an opencode run, so it deliberately isn't listed here —
- * Open Session installs its tracked ports into ~/.config/opencode/skills.
- * Keep in sync when the engine's embedded set changes (`GET /skill` on a
- * running opencode server lists them with `source.type === "embedded"`).
- */
-const SYSTEM_SKILLS: SkillEntry[] = [
-  {
-    name: "customize-opencode",
-    description:
-      "Editing or creating opencode's own configuration — opencode.json(c), .opencode/, agents, skills, plugins, MCP servers, permission rules",
-    source: "system",
-  },
-];
 
 /**
  * Open Session's own slash commands (handled by handleSlashCommand in opensession.ts
  * before anything reaches the runner). Listed here so they show up in the
- * composer's "/" autocomplete alongside file-based skills/commands — keep in
- * sync with the handler and its /help text.
+ * composer's "/" autocomplete alongside file-based skills. Keep in sync with
+ * the handler and its /help text.
  */
 const BUILTIN_COMMANDS: SkillEntry[] = [
   {
@@ -144,45 +130,22 @@ function readSkillsDir(
   return out;
 }
 
-function readCommandsDir(dir: string, source: SkillEntry["source"]): SkillEntry[] {
-  const out: SkillEntry[] = [];
-  try {
-    for (const file of readdirSync(dir)) {
-      if (!file.endsWith(".md")) continue;
-      try {
-        const text = readFileSync(join(dir, file), "utf8");
-        out.push({
-          name: file.slice(0, -3),
-          description: frontmatterField(text, "description") || firstContentLine(text),
-          source,
-        });
-      } catch {}
-    }
-  } catch {}
-  return out;
-}
-
-/** All skills + commands a run in `worktreeDir` would see (deduped by name; project wins). */
+/** All skills a run in `worktreeDir` would see (deduped by name; the directory the run would load it from wins). */
 function loadSkills(worktreeDir?: string, includeBuiltins = false): SkillEntry[] {
   const key = `${includeBuiltins ? "b|" : ""}${worktreeDir || ""}`;
   const hit = cache.get(key);
   if (hit && performance.now() - hit.at < CACHE_TTL_MS) return hit.entries;
 
-  const user = join(homedir(), ".claude");
-  const opencode = join(homedir(), ".config", "opencode");
+  const shipped = resolve(SHIPPED_SKILLS_DIR);
   const byName = new Map<string, SkillEntry>();
+  // skillSearchPaths is precedence order, most specific first, and pi keeps
+  // the first skill it sees for a name. Later entries win the dedupe below,
+  // so walk it backwards: the menu then describes the file that would run.
   const all = [
-    // First so a same-named file skill (which shadows it in the engine too)
-    // wins dedupe and the menu describes what would actually run.
-    ...SYSTEM_SKILLS,
-    ...readSkillsDir(join(opencode, "skills"), "user"),
-    ...readCommandsDir(join(user, "commands"), "user"),
-    ...(worktreeDir ? readSkillsDir(join(worktreeDir, ".claude", "skills"), "project") : []),
-    ...(worktreeDir ? readCommandsDir(join(worktreeDir, ".claude", "commands"), "project") : []),
-    // .agents is the engine's other project root — the same dir as .claude in
-    // repos that symlink the two, a distinct one in repos that don't.
-    ...(worktreeDir ? readSkillsDir(join(worktreeDir, ".agents", "skills"), "project") : []),
-    ...(worktreeDir ? readCommandsDir(join(worktreeDir, ".agents", "commands"), "project") : []),
+    ...skillSearchPaths(worktreeDir)
+      .slice()
+      .reverse()
+      .flatMap((dir) => readSkillsDir(dir, resolve(dir) === shipped ? "user" : "project")),
     // Last so they win dedupe: opensession intercepts these names before any
     // same-named file skill could run, so the menu should describe the builtin.
     // Only for existing-session composers (includeBuiltins) — an opening prompt

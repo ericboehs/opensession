@@ -5,6 +5,7 @@ import {
 	getTabSplit,
 	resolveSplit,
 	saveTabSplit,
+	shouldShowTabStrip,
 } from "./split-tabs";
 
 class StorageStub {
@@ -39,6 +40,13 @@ beforeEach(() => {
 });
 
 describe("split tabs", () => {
+	test("hides any lone unsplit tab, including Review", () => {
+		expect(shouldShowTabStrip(1)).toBe(false);
+		expect(shouldShowTabStrip(2)).toBe(true);
+		expect(shouldShowTabStrip(1, true)).toBe(true);
+		expect(shouldShowTabStrip(2, false, true)).toBe(false);
+	});
+
 	test("persists a clamped split per workspace", () => {
 		saveTabSplit("workspace", { right: ["b"], ratio: 0.95 });
 		expect(getTabSplit("workspace")).toEqual({ right: ["b"], ratio: 0.8 });

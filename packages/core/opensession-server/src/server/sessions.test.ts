@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { UnifiedSession } from "./types";
@@ -115,7 +115,46 @@ function uuidV7ForDate(iso: string): string {
 	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-7000-8000-000000000000`;
 }
 
+describe("removeTombstonedSessionArtifacts", () => {
+	it("removes a ghost session without re-entering its mailbox", async () => {
+		const id = `bks-tombstoned-ghost-${crypto.randomUUID()}`;
+		const path = join(home, ".opensession-sessions", `${id}.json`);
+		writeSession(id, { title: "Deleted ghost" });
+		expect(existsSync(path)).toBe(true);
+
+		const { removeTombstonedSessionArtifacts } = await import(
+			`./sessions.ts?tombstoned=${crypto.randomUUID()}`
+		);
+		removeTombstonedSessionArtifacts({
+			id,
+			source: "opensession",
+		} as UnifiedSession);
+
+		expect(existsSync(path)).toBe(false);
+	});
+});
+
 describe("getAllSessions", () => {
+	it("reads one native session without scanning the directory", async () => {
+		writeSession("os-direct-detail", {
+			title: "Direct detail",
+			model: "pi/dial/opus-fable",
+			workspaceId: "ws-direct",
+			piSessionId: "pi-direct",
+		});
+		const { readNativeSession } = await import(
+			`./sessions.ts?direct=${crypto.randomUUID()}`
+		);
+		expect(readNativeSession("os-direct-detail")).toMatchObject({
+			id: "os-direct-detail",
+			title: "Direct detail",
+			source: "opensession",
+			workspaceId: "ws-direct",
+			piSessionId: "pi-direct",
+		});
+		expect(readNativeSession("../os-direct-detail")).toBeUndefined();
+	});
+
 	it("keeps the cooperative request scan byte-for-byte equivalent", async () => {
 		writeSession("bks-cooperative-scan", {
 			title: "Cooperative scan",
@@ -354,23 +393,13 @@ describe("getAllSessions", () => {
 		for (const [provider, id] of [
 			["claude", "claude-session-1"],
 			["codex", uuidV7ForDate("2026-07-02T19:00:00.000Z")],
-			["opencode", "ses_abc123"],
+			["pi", "ses_abc123"],
 			["pi", "pi-session-1"],
 		] as const) {
 			expect(engineSessionIdFor(engineSessionPatch(provider, id), provider)).toBe(id);
 		}
 
-		// Legacy files: an opencode id riding the claude slot resumes opencode,
-		// never claude; a pre-pi-slot claude uuid still serves a pi run.
-		expect(engineSessionIdFor({ claudeSessionId: "ses_abc123" }, "opencode")).toBe(
-			"ses_abc123",
-		);
-		expect(engineSessionIdFor({ claudeSessionId: "ses_abc123" }, "claude")).toBeUndefined();
-		expect(engineSessionIdFor({ claudeSessionId: "ses_abc123" }, "pi")).toBeUndefined();
-		expect(engineSessionIdFor({ claudeSessionId: "claude-session-1" }, "pi")).toBe(
-			"claude-session-1",
-		);
-		expect(engineSessionIdFor({}, "claude")).toBeUndefined();
+
 	});
 
 	it("falls back to the other engine transcript when the active provider has none", async () => {

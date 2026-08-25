@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { sessionPrBranch } from "./session-pr-target";
+import { sessionPrBranch, shareWorkspacePrRefs } from "./session-pr-target";
 import type { UnifiedSession } from "./types";
 import type { Workspace } from "./workspaces";
 
@@ -17,6 +17,140 @@ const workspace = {
 	prNumber: 5286,
 	branch: "add-lottie-primitive",
 } as Workspace;
+
+describe("shareWorkspacePrRefs", () => {
+	const pr = {
+		repo: "opensession",
+		branch: "fix-workspace-prs",
+		source: "primary" as const,
+		number: 123,
+		url: "https://github.com/tellahq/opensession/pull/123",
+		state: "OPEN" as const,
+	};
+
+	test("shares a PR with every tab in its workspace", () => {
+		const owner = {
+			id: "os-owner",
+			workspaceId: "ws-one",
+			prs: [pr],
+		} as UnifiedSession;
+		const sibling = {
+			id: "os-sibling",
+			workspaceId: "ws-one",
+		} as UnifiedSession;
+
+		shareWorkspacePrRefs([owner, sibling]);
+
+		expect(owner.prs).toEqual([pr]);
+		expect(sibling.prs).toEqual([{ ...pr, source: "discovered" }]);
+	});
+
+	test("projects legacy flat PR fields from indexed rows", () => {
+		const owner = {
+			id: "os-owner",
+			workspaceId: "ws-one",
+			repo: pr.repo,
+			branch: pr.branch,
+			prUrl: pr.url,
+			prNumber: pr.number,
+			prState: pr.state,
+		} as UnifiedSession;
+		const sibling = {
+			id: "os-sibling",
+			workspaceId: "ws-one",
+		} as UnifiedSession;
+
+		shareWorkspacePrRefs([owner, sibling]);
+
+		expect(owner.prs).toEqual([pr]);
+		expect(sibling.prs).toEqual([{ ...pr, source: "discovered" }]);
+	});
+
+	test("shares every PR while preserving each tab's own primary", () => {
+		const secondPr = {
+			...pr,
+			branch: "fix-workspace-prs-ios",
+			number: 124,
+			url: "https://github.com/tellahq/opensession/pull/124",
+		};
+		const first = {
+			id: "os-first",
+			workspaceId: "ws-many",
+			prs: [pr],
+		} as UnifiedSession;
+		const second = {
+			id: "os-second",
+			workspaceId: "ws-many",
+			prs: [secondPr],
+		} as UnifiedSession;
+
+		shareWorkspacePrRefs([first, second]);
+
+		expect(first.prs).toEqual([pr, { ...secondPr, source: "discovered" }]);
+		expect(second.prs).toEqual([secondPr, { ...pr, source: "discovered" }]);
+	});
+
+	test("does not leak PRs across workspaces", () => {
+		const owner = {
+			id: "os-owner",
+			workspaceId: "ws-one",
+			prs: [pr],
+		} as UnifiedSession;
+		const other = {
+			id: "os-other",
+			workspaceId: "ws-two",
+		} as UnifiedSession;
+
+		shareWorkspacePrRefs([owner, other]);
+
+		expect(other.prs).toBeUndefined();
+	});
+
+	test("does not turn a bare attached branch into a PR", () => {
+		const owner = {
+			id: "os-owner",
+			workspaceId: "ws-one",
+			prs: [
+				{
+					repo: "infra",
+					branch: "infra-feature",
+					source: "attached" as const,
+				},
+			],
+		} as UnifiedSession;
+		const sibling = {
+			id: "os-sibling",
+			workspaceId: "ws-one",
+		} as UnifiedSession;
+
+		shareWorkspacePrRefs([owner, sibling]);
+
+		expect(sibling.prs).toBeUndefined();
+	});
+
+	test("fills sparse refs without changing how a tab owns the PR", () => {
+		const owner = {
+			id: "os-owner",
+			workspaceId: "ws-one",
+			prs: [pr],
+		} as UnifiedSession;
+		const sibling = {
+			id: "os-sibling",
+			workspaceId: "ws-one",
+			prs: [
+				{
+					repo: pr.repo,
+					branch: pr.branch,
+					source: "linked" as const,
+				},
+			],
+		} as UnifiedSession;
+
+		shareWorkspacePrRefs([owner, sibling]);
+
+		expect(sibling.prs).toEqual([{ ...pr, source: "linked" }]);
+	});
+});
 
 describe("sessionPrBranch", () => {
 	test("uses the PR workspace branch for a GitHub review checkout", () => {

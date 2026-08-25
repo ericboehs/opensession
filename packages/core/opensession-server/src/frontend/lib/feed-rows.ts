@@ -84,10 +84,9 @@ export function feedOwner(
 /**
  * Merged PRs and commits in one list, newest first.
  *
- * A merge arrives already carrying its session; a commit carries only an id,
- * because the server named it by reading transcripts (commit-sessions.ts)
- * rather than by knowing the session. Both keep just the id from here, and
- * neither is looked up: a lookup can only lose one.
+ * A merge and commit both arrive carrying a session id when the server can
+ * attribute them. Neither is looked up in the live session list here: that
+ * lookup can only lose archived sessions.
  */
 export function buildFeedRows(
 	prRows: WorktreeRow[],
@@ -107,7 +106,7 @@ export function buildFeedRows(
 			additions: row.additions,
 			deletions: row.deletions,
 			shippedAt: row.updatedAt,
-			sessionId: row.session?.id,
+			sessionId: row.sessionId,
 		})),
 		...commits.map((commit) => ({
 			key: `${commit.repo}:${commit.sha}`,

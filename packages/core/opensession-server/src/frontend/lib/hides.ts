@@ -19,20 +19,20 @@
 // is blocked on a question, and the entry is consumed when that happens — so a
 // hide can never swallow work that needs you. The public API stays synchronous
 // (an in-memory cache) mirroring snoozes.ts: the store is a lib/user-map
-// instance, which owns the hydration and the optimistic whole-map PUT.
+// instance, which owns hydration and ordered per-key delta writes.
 import { fetchHides, saveHidesApi } from "./api";
 import { makeUserMap } from "./user-map";
 
 const CHANGE_EVENT = "opensession-hides-changed";
 
-// The lifecycle (hydration, the pre-hydration write intents, never PUTting an
-// empty map over the stored one) lives in makeUserMap; it also keeps the module
+// The lifecycle (hydration, pending write intents, and stale-response guards)
+// lives in makeUserMap; it also keeps the module
 // importable outside a browser, which `partitionHidden` below is unit-tested
 // through.
 const store = makeUserMap<string>({
 	changeEvent: CHANGE_EVENT,
 	fetchMap: fetchHides,
-	saveMap: saveHidesApi,
+	saveDelta: saveHidesApi,
 });
 
 export function getHides(): Record<string, string> {

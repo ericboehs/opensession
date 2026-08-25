@@ -8,7 +8,7 @@
  * any device; when the CLI exits with an auth.json in place, the directory is
  * registered as a "home"-kind pool account via addCodexAccount — after which
  * refresh stays CLI-managed exactly like a VPS-side login (see
- * opencode-openai-auth.ts for why the CLI must own the refresh-token family).
+ * pi-openai-auth.ts for why the CLI must own the refresh-token family).
  *
  * Live login attempts are parked on globalThis so hot reloads don't orphan
  * the child process or lose the URL/code mid-flow.
@@ -105,12 +105,15 @@ function prune(): void {
  * flow completes. One in-flight attempt per account name.
  */
 export function startDeviceLogin(
-  name: string,
+  name = "",
   owner?: string
 ): DeviceLoginPublic | { error: string } {
   prune();
-  const trimmed = name.trim();
-  if (!trimmed) return { error: "Name is required" };
+  const loginId = crypto.randomUUID();
+  // A subscription needs no user-authored label. The temporary value only
+  // names its login directory; addCodexAccount replaces it with the email from
+  // auth.json once sign-in completes. Keep accepting a name for older clients.
+  const trimmed = name.trim() || `chatgpt-${loginId.slice(0, 8)}`;
   const slug = trimmed.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
   if (!slug) return { error: "Name must contain letters or digits" };
   if (listCodexAccounts().some((a) => a.name === trimmed)) {
@@ -134,7 +137,7 @@ export function startDeviceLogin(
   }
 
   const l: DeviceLogin = {
-    id: crypto.randomUUID(),
+    id: loginId,
     name: trimmed,
     ...(owner?.trim() ? { owner: owner.trim() } : {}),
     dir,
@@ -146,10 +149,27 @@ export function startDeviceLogin(
   };
   logins.set(l.id, l);
 
+  // The installer leaves codex off the critical path (it is only needed for
+  // this flow), so a missing binary is the expected first failure here. Say
+  // what to run rather than surfacing ENOENT from spawn.
+  if (!Bun.which("codex")) {
+    finish(
+      l,
+      "error",
+      "The codex CLI is not installed. Run `curl -fsSL https://chatgpt.com/codex/install.sh | sh` on the server, then try again.",
+    );
+    return toPublic(l);
+  }
+
   let proc: ChildProcess;
   try {
     proc = spawn("codex", ["login", "--device-auth"], {
-      env: { HOME, PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin", CODEX_HOME: dir },
+      env: {
+        HOME,
+        PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
+        CODEX_HOME: dir,
+        NODE_ENV: process.env.NODE_ENV || "production",
+      },
       stdio: ["ignore", "pipe", "pipe"],
     });
   } catch (e: any) {

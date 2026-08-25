@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SessionCardBody, WsCardBody } from "./HoverCards";
+import {
+	CardOverview,
+	SessionCardBody,
+	WsCardBody,
+	WsPrStatusMark,
+	WsStatusMark,
+} from "./HoverCards";
+import type { WorkspaceOverview } from "../../lib/api";
 import type { WsCardRow } from "../../lib/sidebar-hover";
 import type { UnifiedSession } from "../../lib/types";
 
@@ -52,7 +59,12 @@ describe("hover cards drop the repo and the idle timestamp", () => {
 
 	test("the workspace card leads with neither the repo nor a timestamp", () => {
 		const html = renderToStaticMarkup(
-			<WsCardBody row={row([session()])} onArchive={() => {}} onOpen={() => {}} />,
+			<WsCardBody
+				row={row([session()])}
+				snoozed={false}
+				onToggleSnooze={() => {}}
+				onOpen={() => {}}
+			/>,
 		);
 		expect(html).toContain("Modernize UI design");
 		expect(html).not.toContain("opensession");
@@ -64,22 +76,54 @@ describe("hover cards drop the repo and the idle timestamp", () => {
 		expect(html).not.toContain("mt-3.5");
 	});
 
-	// A word with no descenders ("Archive", "#5675") leaves the line box's
-	// reserved descender space empty, so centring the box puts the ink most of
-	// a pixel high on the plate. The label carries CAP_LABEL to centre the ink
-	// itself; it has to be a span, because the trim is a no-op on the control's
-	// own flex box.
-	test("the archive action centres its word on the cap band", () => {
-		const html = renderToStaticMarkup(
+	test("only running cards show a dot, beside their title", () => {
+		const sessionIdle = renderToStaticMarkup(
+			<SessionCardBody session={session()} />,
+		);
+		const sessionRunning = renderToStaticMarkup(
+			<SessionCardBody session={session({ isRunning: true })} />,
+		);
+		const workspaceIdle = renderToStaticMarkup(
 			<WsCardBody
-				row={{ ...row([session()]), status: "merged" }}
-				onArchive={() => {}}
+				row={row([session()])}
+				snoozed={false}
+				onToggleSnooze={() => {}}
 				onOpen={() => {}}
 			/>,
 		);
-		expect(html).toMatch(
-			new RegExp(`<span class="[^"]*text-box[^"]*">Archive</span>`),
+		const workspaceRunning = renderToStaticMarkup(
+			<WsCardBody
+				row={{ ...row([session({ isRunning: true })]), running: true }}
+				snoozed={false}
+				onToggleSnooze={() => {}}
+				onOpen={() => {}}
+			/>,
 		);
+		const dot = "size-2 shrink-0 rounded-full";
+
+		for (const idle of [sessionIdle, workspaceIdle]) {
+			expect(idle).not.toContain(dot);
+		}
+		for (const running of [sessionRunning, workspaceRunning]) {
+			expect(running).toContain(dot);
+			expect(running.indexOf(dot)).toBeLessThan(
+				running.indexOf("Modernize UI design"),
+			);
+		}
+	});
+
+	// Snoozed work always offers the immediate way back from the card.
+	test("a snoozed workspace gets Unsnooze", () => {
+		const html = renderToStaticMarkup(
+			<WsCardBody
+				row={{ ...row([session()]), status: "merged" }}
+				snoozed
+				onToggleSnooze={() => {}}
+				onOpen={() => {}}
+			/>,
+		);
+		expect(html).toContain(">Unsnooze<");
+		expect(html).not.toContain(">Settle<");
 	});
 
 	test("the PR chip centres its number the same way", () => {
@@ -110,7 +154,12 @@ describe("hover cards drop the repo and the idle timestamp", () => {
 		for (const html of [
 			renderToStaticMarkup(<SessionCardBody session={withPr} />),
 			renderToStaticMarkup(
-				<WsCardBody row={row([withPr])} onArchive={() => {}} onOpen={() => {}} />,
+				<WsCardBody
+					row={row([withPr])}
+					snoozed={false}
+					onToggleSnooze={() => {}}
+					onOpen={() => {}}
+				/>,
 			),
 		]) {
 			expect(html).toContain("+25");
@@ -118,12 +167,124 @@ describe("hover cards drop the repo and the idle timestamp", () => {
 			expect(html).not.toContain("opensession");
 		}
 	});
+
+	test("message previews and callouts use the compact metadata size", () => {
+		const preview = renderToStaticMarkup(
+			<CardOverview
+				ov={
+					{
+						lastMessage: { content: "A compact latest message" },
+					} as WorkspaceOverview
+				}
+			/>,
+		);
+		const callout = renderToStaticMarkup(
+			<SessionCardBody
+				session={session({
+					lastRunError: {
+						message: "The model is unavailable. Send the prompt again.",
+						at: AGO,
+					},
+				})}
+			/>,
+		);
+		for (const html of [preview, callout]) {
+			expect(html).toContain("text-meta");
+			expect(html).not.toContain("text-supporting");
+			expect(html).not.toContain("text-xs");
+		}
+		expect(callout).toContain(
+			'title="The model is unavailable. Send the prompt again.">The model is unavailable.</div>',
+		);
+		expect(callout).toContain("line-clamp-2");
+		expect(callout).not.toContain("Last run failed");
+	});
 });
 
 // The PR is the one place a card leads, so it takes the chip every other PR
 // surface draws rather than a dim text link: the number says which PR, the
 // colour says how it stands. Both come off the derivation the header uses
 // (lib/pr-refs), so the two surfaces cannot disagree about one PR.
+describe("workspace PR status marks", () => {
+	test("shows merged for a discovered PR without legacy flat PR fields", () => {
+		const html = renderToStaticMarkup(
+			<WsPrStatusMark
+				sessions={[
+					session({
+						prs: [
+							{
+								repo: "tella-fusion",
+								branch: "retry-workflow-support-mcp",
+								source: "discovered",
+								state: "MERGED",
+								number: 5883,
+							},
+						],
+					}),
+				]}
+				size={18}
+			/>,
+		);
+		expect(html).toContain('title="PR merged"');
+		expect(html).toContain("text-purple");
+		expect(html).not.toContain("text-faint");
+	});
+
+	test("uses an idle dot when the repo ships directly to main", () => {
+		const html = renderToStaticMarkup(
+			<WsPrStatusMark
+				sessions={[session({ branch: "main" })]}
+				size={18}
+				shipsDirectlyToMain
+			/>,
+		);
+		expect(html).toContain("bg-faint");
+		expect(html).not.toContain("No pull request");
+	});
+});
+
+describe("workspace run status marks", () => {
+	test("a failed subagent does not override its running parent", () => {
+		const html = renderToStaticMarkup(
+			<WsStatusMark
+				row={{
+					...row([
+						session({ isRunning: true }),
+						session({
+							id: "os-child",
+							parentSessionId: "os-test",
+							lastRunError: { message: "Worker failed", at: AGO },
+						}),
+					]),
+					status: "inprogress",
+					running: true,
+				}}
+				size={18}
+			/>,
+		);
+		expect(html).toContain("bg-yellow");
+		expect(html).not.toContain("bg-red");
+	});
+
+	test("a failed top-level session stays red", () => {
+		const html = renderToStaticMarkup(
+			<WsStatusMark
+				row={{
+					...row([
+						session({
+							lastRunError: { message: "Run failed", at: AGO },
+						}),
+					]),
+					status: "needsinput",
+				}}
+				size={18}
+			/>,
+		);
+		expect(html).toContain("bg-red");
+		expect(html).not.toContain("bg-blue");
+	});
+});
+
 describe("the card's PR is the chip the rest of the app draws", () => {
 	// The anchor's own tag, so a colour on the status line above it cannot be
 	// mistaken for a colour on the chip.

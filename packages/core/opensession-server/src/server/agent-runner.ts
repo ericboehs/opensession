@@ -1,19 +1,8 @@
 /**
- * Agent runner dispatcher: one entry point for "run a prompt in a session".
- * Almost everything executes on the opencode engine — native model ids
- * (claude-*, gpt-*) are mapped onto their opencode/<provider>/<model> form at
- * dispatch; explicit pi/<provider>/<model> ids dispatch to the in-process pi
- * runner instead (config-gated, see pi-runner.ts), and claude/… / codex/… ids
- * to the direct-SDK adapters in src/server/engine/ (config-gated, see
- * engine/engines-config.ts). All of them emit the shared StreamEvent shape, so
- * everything downstream of runOnModel is engine-blind. routeModel (models.ts)
- * owns which engine an id lands on; runOnModel just dispatches its answer.
- *
- * Note on session ids: `sessionId` is the engine session id (an opencode
- * session id, or a pi session uuid for pi runs; the field names
- * claudeSessionId/codexThreadId survive in session state for on-disk compat
- * with pre-single-engine sessions — pi runs journal their engine id in the
- * claudeSessionId slot like every other engine).
+ * Agent runner dispatcher: one entry point for every model turn.
+ * All production turns run on Pi. The dispatcher owns the fallback walk,
+ * transcript handoffs, cancellation and restart recovery around Pi's shared
+ * StreamEvent contract.
  */
 
 import {
@@ -29,28 +18,16 @@ import {
   type QuarantinedRun,
 } from "./run-journal";
 import {
+  decideRunStateTransition,
   getRunState,
   isRunStateUnsettled,
   transitionRunState,
 } from "./run-state";
 import type { StreamEvent, ImageInput } from "./run-events";
+import { isShuttingDown } from "./shutdown-state";
+import { sessionTurn } from "./session-kernel/kernel";
 // Type-only, so the direct engines stay lazily loaded (see the dispatch table
 // below): this pulls in the contract's signatures, never the SDKs.
-import {
-  runOpencode,
-  isOpencodeSessionBusy,
-  cancelOpencodeRun,
-  activeOpencodeRunCount,
-  activeDetachedOpencodeRunCount,
-  tryReattachOpencodeRun,
-  steerOpencodeRun,
-  EMPTY_COMPLETION_RESULT,
-  claudePoolDryReason,
-  restoreJournaledRunRpcContext,
-  releaseJournaledRunRpcContext,
-  abortDetachedOpencodeTurn,
-  registerPendingRecoveryProbe,
-} from "./opencode-runner";
 // Static import is deliberate: the pi-runner module itself is cheap (the
 // heavy @earendil-works SDK import stays dynamic inside it, prewarmed only
 // when the engine is enabled), and the dispatchers below need its registry
@@ -59,6 +36,7 @@ import {
   runPi,
   isPiSessionBusy,
   steerPiRun,
+  retractPiSteer,
   cancelPiRun,
   activePiRunCount,
 } from "./pi-runner";
@@ -66,16 +44,14 @@ import {
   providerFor,
   nextFallbackModel,
   modelLabel,
-  explicitEngineFor,
   routeModel,
   BEST_AVAILABLE_CODEX_MODEL,
   getDefaultModel,
   resolveConcreteModel,
   resolveModel,
-  toOpencodeModel,
   toPiModel,
 } from "./models";
-import { INTERACTIVE_KINDS, baseJournalKind } from "./opencode-policy";
+import { INTERACTIVE_KINDS, baseJournalKind } from "./run-policy";
 import { resolveWorkspaceModelPreset } from "./workspace-model-presets";
 import {
   isProviderOverloadError,
@@ -86,6 +62,7 @@ import {
 import {
   hostRunBusy,
   hostSteer,
+  hostRetractSteer,
   hostInterruptSteer,
   hostCancel,
   hostRunCount,
@@ -98,8 +75,7 @@ import {
   beginTurn,
   endTurn,
   isCheckedKind,
-  isReachTool,
-  recordEffect,
+  observeToolCall,
   turnKeyFor,
 } from "./turn-outcome";
 import { readEngineTranscriptAsync } from "./sessions";
@@ -110,12 +86,17 @@ import { audit } from "./audit";
 
 export type { StreamEvent };
 
+export const EMPTY_COMPLETION_RESULT = "Done! (no text output)";
+
 export interface RunAgentOpts {
   prompt: string;
   /** Engine session id to resume (claude session id or codex thread id). */
   sessionId?: string;
   cwd: string;
   mode?: "ask" | "code" | "scratch";
+  /** Ephemeral GitHub capability for a narrowly scoped trusted GitHub code run.
+   * Never persist this value in a host spec, journal, or session file. */
+  githubEnv?: Record<string, string>;
   /** Session-scoped scratch dir (session-scratch.ts). runAgent ensures it for
    *  any run with an osSessionId; engines export it (pi sets TMPDIR +
    *  OPENSESSION_SCRATCH in the bash env) and the run instructions name it,
@@ -133,7 +114,7 @@ export interface RunAgentOpts {
   selectedModel?: string;
   /** Internal recovery marker: the effective model is only a per-turn fallback. */
   transientFallback?: boolean;
-  /** OpenCode reasoning variant for this run; unset = the model default. */
+  /** Pi reasoning variant for this run; unset = the model default. */
   effort?: string;
   /** Use OpenAI's priority service tier when this is a ChatGPT OAuth Codex run. */
   fastMode?: boolean;
@@ -152,7 +133,7 @@ export interface RunAgentOpts {
    */
   inProcessMcp?: Record<string, unknown>;
   /**
-   * The model loop is running outside its coding sandbox. Strip OpenCode's
+   * The model loop is running outside its coding sandbox. Strip Pi's
    * built-in local bash/read/write/edit/search tools so the run can only touch
    * the workspace through the session-scoped remote-workspace MCP server.
    */
@@ -175,14 +156,14 @@ export interface RunAgentOpts {
   images?: ImageInput[];
   /**
    * Stable uuid for the prompt's user transcript line. Callers that persist
-   * the user line at intake (run-session) — and boot re-runs of journaled
-   * runs — pass it so the runner's own transcript write upserts the same
-   * entry instead of duplicating the bubble.
+   * the user line at intake pass it so the runner's own transcript write
+   * upserts the same entry. When omitted, runAgent derives it from the stable
+   * run token so every model attempt still writes one user bubble.
    */
   promptEntryId?: string;
   /**
    * Prior-engine transcript entries accompanying a cross-engine handoff (the
-   * same entries the handoff note was built from). The opencode runner seeds a
+   * same entries the handoff note was built from). The pi runner seeds a
    * freshly-created session's persisted transcript file with them, so the UI
    * transcript stays continuous across the engine switch. Other runners ignore
    * this (their engines own their transcript files).
@@ -201,7 +182,7 @@ export interface RunAgentOpts {
    * subprocess — runs on Open Session's account pool instead of the host
    * CLI's own login (which scans must never depend on; it logged out
    * 2026-08-08 and every scan silently analyzed zero batches). Set by
-   * security scans and pool-cli-flagged automations only; opencode engine,
+   * security scans and pool-cli-flagged automations only; pi engine,
    * per-session servers only (a meridian-backed run already carries the
    * same-class token and wins).
    */
@@ -267,7 +248,7 @@ export interface RunAgentOpts {
   shouldCancel?: () => boolean;
   /**
    * Unified session id (e.g. `linear-<branch>`) for the transcript-v2 oc→
-   * unified map ONLY (opencode-transcript.ts recordBksSessionFor) — lets loop
+   * unified map ONLY (pi-transcript.ts recordEngineSessionOwner) — lets loop
    * runs whose journal is deliberately kind-only (no crash journal; the loop
    * re-drives its own turns) still key their store appends on their unified
    * session. Never journaled, never used for resume/run-state/MCP identity —
@@ -289,7 +270,7 @@ export type EngineRunner = (
   model: string
 ) => AsyncGenerator<StreamEvent>;
 
-// Test seam: lets a deterministic fake engine stand in for runOpencode so the
+// Test seam: lets a deterministic fake engine stand in for Pi so the
 // consumer stack (runAgent's fallback walk, runSessionPrompt's event loop,
 // queue drain, run-state transitions) is testable without spending model
 // tokens or touching a live engine. Never set outside tests — parked on a
@@ -299,58 +280,15 @@ export function __setEngineForTest(fn: EngineRunner | null): void {
   engineForTest = fn;
 }
 
-/** Test seam for the reattach half of restart recovery — the only part of a
- *  recovery that needs a surviving detached `opencode serve` to exercise. */
-let reattachForTest: typeof tryReattachOpencodeRun | null = null;
-export function __setReattachForTest(fn: typeof tryReattachOpencodeRun | null): void {
-  reattachForTest = fn;
-}
-
 type LocalHostResume = (
   run: ActiveRunRecord,
   callbacks: { onAskUser?: RunAgentOpts["onAskUser"] },
-) => Promise<AsyncGenerator<StreamEvent> | null>;
+) => Promise<AsyncGenerator<StreamEvent> | "uncertain" | null>;
 
 /** Test seam for the local detached-host half of restart recovery. */
 let localHostResumeForTest: LocalHostResume | null = null;
 export function __setLocalHostResumeForTest(fn: LocalHostResume | null): void {
   localHostResumeForTest = fn;
-}
-
-/** Test seam for abandonment paths that must reach a detached engine turn. */
-let abortDetachedForTest: typeof abortDetachedOpencodeTurn | null = null;
-export let DETACHED_ABORT_WAIT_MS = 7_000;
-export function __setAbortDetachedForTest(
-  fn: typeof abortDetachedOpencodeTurn | null,
-): void {
-  abortDetachedForTest = fn;
-}
-
-export function __setDetachedAbortWaitMsForTest(ms: number): number {
-  const previous = DETACHED_ABORT_WAIT_MS;
-  DETACHED_ABORT_WAIT_MS = ms;
-  return previous;
-}
-
-function abortInterruptedDetachedTurn(run: ActiveRunRecord): Promise<boolean> {
-  const controller = new AbortController();
-  const abort = (abortDetachedForTest ?? abortDetachedOpencodeTurn)(run, controller.signal);
-  return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      controller.abort();
-      resolve(false);
-    }, DETACHED_ABORT_WAIT_MS);
-    void abort.then(
-      (result) => {
-        clearTimeout(timeout);
-        resolve(result);
-      },
-      () => {
-        clearTimeout(timeout);
-        resolve(false);
-      },
-    );
-  });
 }
 
 type ModelAvailabilityProbe = (opts: RunAgentOpts, model: string) => string | null;
@@ -360,12 +298,8 @@ export function __setModelAvailabilityForTest(fn: ModelAvailabilityProbe | null)
 }
 
 function modelUnavailableReason(opts: RunAgentOpts, model: string): string | null {
-  const mapped = toOpencodeModel(model) || model;
-  if (modelAvailabilityForTest) return modelAvailabilityForTest(opts, mapped);
-  // A fake engine owns its scripted availability unless a test explicitly
-  // installs the separate probe above.
-  if (engineForTest) return null;
-  return claudePoolDryReason(opts, mapped);
+  const mapped = toPiModel(model) || model;
+  return modelAvailabilityForTest ? modelAvailabilityForTest(opts, mapped) : null;
 }
 
 function recordPoolDryShortCircuit(opts: RunAgentOpts, model: string, reason: string): void {
@@ -380,18 +314,10 @@ function recordPoolDryShortCircuit(opts: RunAgentOpts, model: string, reason: st
 
 
 function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncIterable<StreamEvent> {
-  // Engine dispatch. routeModel (models.ts) owns the resolution order —
-  // explicit engine prefix > per-model default engine (interactive runs only)
-  // > opencode — and hands back the id to dispatch with: pi/<provider>/<model>
-  // runs on the in-process pi runner, everything else on opencode (native ids
-  // get their opencode form, explicit opencode ids pass through, and the
-  // removed direct engines' legacy claude/… and codex/… ids normalize onto
-  // opencode). Anything that still doesn't parse as
-  // an engine id gets the runner's clear error (e.g. anthropic bridge
-  // disabled). The test seam stays FIRST, before the engine branch, so a fake
-  // engine intercepts every engine's turns (fake-engine.test.ts).
+  // All production turns route to Pi. The fake seam stays before dispatch so
+  // consumer tests exercise the same context logging and fallback walk.
   const requested = model || getDefaultModel();
-  const mapped = toOpencodeModel(requested) || requested;
+  const mapped = toPiModel(requested) || requested;
   // Model-visible means logged (context-log.ts). This is the single dispatch
   // point for every engine and every hop of the fallback walk, so recording
   // the injected context here covers all of them with the prompt each one
@@ -434,18 +360,12 @@ function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncIterabl
   });
   if (engineForTest) return engineForTest(opts, mapped);
   const route = routeModel(requested, { interactive: isInteractiveRun(opts) });
-  if (route.engine === "pi") return runPi(opts, route.model);
-  return runOpencode(opts, route.model);
+  return runPi(opts, route.model);
 }
 
-/** Which engine's transcript store owns a routed model's session ids — the
- *  read side of the same routing prefix runOnModel dispatches on. Anything
- *  without an engine prefix (native ids, `<vendor>/<model>` paths) is served
- *  by opencode. */
-export function transcriptProviderFor(
-  engineModel: string
-): "opencode" | "pi" {
-  return explicitEngineFor(engineModel) === "pi" ? "pi" : "opencode";
+/** Pi owns every live engine session transcript. */
+export function transcriptProviderFor(_engineModel: string): "pi" {
+  return "pi";
 }
 
 /** Whether the per-model default engine applies to this run. Automations and
@@ -483,9 +403,19 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
         }
       : undefined,
     startToken: runToken,
+    // A create-path prompt has no early transcript row to name. Give it the
+    // logical run's stable id here, before the fallback walk forks opts, so a
+    // model switch upserts the opening message instead of appending it again.
+    promptEntryId: opts.promptEntryId || runToken,
     shouldCancel: () =>
       cancelledRunTokens.has(runToken) || opts.shouldCancel?.() === true,
   };
+  if (
+    osSessionId &&
+    ["idle", "stopped", "failed", "starting"].includes(
+      getRunState(osSessionId),
+    )
+  ) transitionRunState(osSessionId, "prompt", { run_key: runToken });
   for (const alias of runAliases) {
     let tokens = activeSessionRunTokens.get(alias);
     if (!tokens) activeSessionRunTokens.set(alias, (tokens = new Set()));
@@ -516,8 +446,14 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
     try {
       for await (const event of runAgentInner(effectiveOpts)) {
         observe(event);
-        if (event.type === "tool_use" && isReachTool(event.toolName)) {
-          recordEffect(key, event.toolName!);
+        // Pi reports every bridged MCP call as the `mcp_call` dispatcher with
+        // the real tool inside its input, so the ledger is fed the unwrapped
+        // call rather than the envelope (observeToolCall, turn-outcome.ts).
+        // It also picks up a declared silence here, because on a hosted run
+        // the opensession-turn tool body executes in the SERVER process and
+        // cannot reach this host's ledger.
+        if (event.type === "tool_use") {
+          observeToolCall(key, event);
         }
         yield event;
       }
@@ -538,6 +474,7 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
       const failed =
         terminalEvent.type === "error" || !!terminalEvent.usageLimitExhausted;
       transitionRunState(osSessionId, failed ? "run_failed" : "turn_end", {
+        run_key: runToken,
         source: "runner_terminal",
       });
     }
@@ -563,10 +500,6 @@ async function* runAgentInner(opts: RunAgentOpts): AsyncGenerator<StreamEvent> {
   const requestedModel = resolveModel(workspacePreset?.model || opts.model || getDefaultModel());
   const wantsBestCodex = requestedModel?.id === BEST_AVAILABLE_CODEX_MODEL;
   const primaryModel = workspacePreset?.model || resolveConcreteModel(opts.model);
-  const preservePiEngine = explicitEngineFor(primaryModel) === "pi";
-  // Direct-SDK engines are explicit engine selections. Never cross that
-  // boundary into an OpenCode fallback. Pi can use the same model graph while
-  // preserving its own engine prefix on every hop.
   const preferredFallback = /^(?:claude|codex)\//.test(primaryModel)
     ? "none"
     : wantsBestCodex
@@ -593,6 +526,10 @@ async function* runAgentInner(opts: RunAgentOpts): AsyncGenerator<StreamEvent> {
 
   let currentOpts = {
     ...opts,
+    // One human turn keeps one transcript identity across every fallback hop.
+    // Callers such as Slack do not early-persist their own id, so mint it here
+    // before the walk rather than inside each provider attempt.
+    promptEntryId: opts.promptEntryId ?? crypto.randomUUID(),
     selectedModel: opts.selectedModel ?? opts.model,
   };
   let currentModel = primaryModel;
@@ -630,7 +567,7 @@ async function* runAgentInner(opts: RunAgentOpts): AsyncGenerator<StreamEvent> {
             break;
           }
           // A non-usage error that looks like infra (server death, wedge, 5xx,
-          // network, SQLite contention): the opencode runner already spent its own
+          // network, SQLite contention): the pi runner already spent its own
           // in-attempt retry, so escalate to the next model rather than failing.
           if (isTransientRunError(event.content)) {
             failure = { transient: true, content: event.content };
@@ -682,9 +619,7 @@ async function* runAgentInner(opts: RunAgentOpts): AsyncGenerator<StreamEvent> {
       consecutiveTransient = 0;
     }
 
-    const currentGraphModel = preservePiEngine
-      ? toOpencodeModel(currentModel.replace(/^pi\//, "")) || currentModel
-      : toOpencodeModel(currentModel) || currentModel;
+    const currentGraphModel = toPiModel(currentModel) || currentModel;
     exhaustedModels.add(currentGraphModel);
     const hop = nextFallbackModel(currentGraphModel, exhaustedModels, preferredFallback);
     if (!hop) {
@@ -701,7 +636,7 @@ async function* runAgentInner(opts: RunAgentOpts): AsyncGenerator<StreamEvent> {
       };
       return;
     }
-    const nextModel = preservePiEngine ? toPiModel(hop.id) : hop.id;
+    const nextModel = toPiModel(hop.id);
     if (!nextModel) {
       yield {
         type: "error",
@@ -744,11 +679,11 @@ async function* runAgentInner(opts: RunAgentOpts): AsyncGenerator<StreamEvent> {
     }
     if (wasCancelled()) return;
 
-    // Everything runs on the opencode engine, so `providerFor` reports
-    // "opencode" for both sides and can't tell a same-family switch from a
+    // Everything runs on the pi engine, so `providerFor` reports
+    // "pi" for both sides and can't tell a same-family switch from a
     // cross-family one. The decision that matters — resume the partial session
     // vs. start fresh with a handoff — turns on the UNDERLYING provider
-    // (anthropic ↔ openai): same family resumes the opencode session; a family
+    // (anthropic ↔ openai): same family resumes the pi session; a family
     // switch needs a fresh session seeded with the prior transcript.
     const fromFamily = engineFamily(currentModel);
     const toFamily = engineFamily(nextModel);
@@ -771,11 +706,11 @@ async function* runAgentInner(opts: RunAgentOpts): AsyncGenerator<StreamEvent> {
     let prompt = currentOpts.prompt;
     let handoffEntries: TranscriptEntry[] = [];
     if (crossProvider) {
-      // Read the prior turn from the CURRENT engine's store: an opencode
-      // session id reads from OpenCode's store regardless of which model
+      // Read the prior turn from the CURRENT engine's store: an pi
+      // session id reads from Pi's store regardless of which model
       // family produced it; a pi run's history is served from the owned
       // transcript store via the "pi" branch (the id is a pi session uuid —
-      // the old hardcoded "opencode" arg would return nothing for it).
+      // the old hardcoded "pi" arg would return nothing for it).
       // Gate on currentEngineId (present when resuming an existing session),
       // NOT on sawInit: an account pool that is dry *at pick time* throws
       // usageLimitExhausted BEFORE any init event, so sawInit stays false — yet
@@ -791,17 +726,25 @@ async function* runAgentInner(opts: RunAgentOpts): AsyncGenerator<StreamEvent> {
         : [];
       handoffEntries = entries;
       if (entries.length) {
-        prompt =
-          `${wrapContext(
-            buildEngineSwitchHandoffNote({
-              fromModel: currentModel,
-              fromProvider: familyLabel(fromFamily),
-              toProvider: familyLabel(toFamily),
-              targetResuming: false,
-              entries,
-            }),
-            "handoff"
-          )}\n\n${prompt}`;
+        const handoff = buildEngineSwitchHandoffNote({
+          fromModel: currentModel,
+          fromProvider: familyLabel(fromFamily),
+          toProvider: familyLabel(toFamily),
+          targetResuming: false,
+          entries,
+        });
+        // The handoff already contains the person's request and the partial
+        // response. Sending the original prompt below it creates a second user
+        // turn and tells the fallback model to start over. A context-only turn
+        // instead asks the fresh provider to continue while rendering no new
+        // user bubble. Image turns retain the original prompt because the new
+        // provider still needs the image-bearing user message; the stable
+        // promptEntryId above makes that an upsert rather than a duplicate.
+        prompt = fallbackContinuationPrompt(
+          handoff,
+          prompt,
+          !!currentOpts.images?.length,
+        );
       } else {
         prompt +=
           "\n\n[Note: a previous attempt on another model was cut short and may have " +
@@ -820,7 +763,7 @@ async function* runAgentInner(opts: RunAgentOpts): AsyncGenerator<StreamEvent> {
       ...(crossProvider ? { accountId: undefined, accountStrict: undefined } : {}),
       // Same family can resume the partial session; a family switch starts fresh
       sessionId: crossProvider ? undefined : currentEngineId,
-      // The fresh opencode session is seeded with the history the handoff covers.
+      // The fresh pi session is seeded with the history the handoff covers.
       seedTranscriptEntries:
         crossProvider && handoffEntries.length ? handoffEntries : undefined,
       journal: opts.journal
@@ -831,26 +774,15 @@ async function* runAgentInner(opts: RunAgentOpts): AsyncGenerator<StreamEvent> {
   }
 }
 
-/** Underlying engine provider family of a model id ("anthropic" / "openai"),
- *  read from its opencode mapping. Drives resume-vs-fresh on a fallback hop.
- *  Families are ENGINE-scoped: a pi engine session can never be resumed by
- *  opencode (or vice versa) even when both sides run the same upstream
- *  provider, so pi/<provider>/… reports "pi-<provider>" — a pi↔opencode hop
- *  is always cross-family (fresh session + transcript handoff) while pi→pi
- *  stays same-family and resumes its own session. */
+/** Provider family inside Pi. A provider change starts a fresh Pi session and
+ * bridges the previous transcript; a same-provider fallback can resume. */
 export function engineFamily(model: string): string {
-  const piFamily = model.match(/^pi\/([^/]+)\//)?.[1];
-  if (piFamily) return `pi-${piFamily}`;
-  const oc = toOpencodeModel(model) || model;
-  return oc.match(/^opencode\/([^/]+)\//)?.[1] || providerFor(model);
+  const routed = toPiModel(model) || model;
+  return `pi-${routed.match(/^pi\/([^/]+)\//)?.[1] || providerFor(routed)}`;
 }
 
-/** Map an engine family to the handoff note's provider label. */
-function familyLabel(family: string): "claude" | "codex" | "opencode" | "pi" {
-  if (family.startsWith("pi-")) return "pi";
-  if (family === "anthropic") return "claude";
-  if (family === "openai") return "codex";
-  return "opencode";
+function familyLabel(_family: string): "pi" {
+  return "pi";
 }
 
 /**
@@ -918,22 +850,6 @@ const activeRecoveryRuns: Map<string, ActiveRunRecord> = ((globalThis as any)
   .__activeRecoveryRuns ??= new Map());
 const activeRecoveryWorkerRunKeys: Set<string> = ((globalThis as any)
   .__activeRecoveryWorkerRunKeys ??= new Set());
-// Recoveries that reached a LIVE engine turn (reattach succeeded). Two
-// consequences: their queue slot is released (the turn runs on a detached
-// server and costs this process nothing), and an abandonment must not abort
-// their engine session — an attached run owns an AbortController, and after
-// journalClear the same engine session id belongs to the continuation.
-const attachedRecoveryRunKeys: Set<string> = ((globalThis as any)
-  .__attachedRecoveryRunKeys ??= new Set());
-
-// Boot adoption reserves each detached survivor until its recovery reaches
-// it. What "until" means lives here, not on a clock: a recovery is still
-// coming while it is tracked, whether it is queued behind the bounded boot
-// queue, promoted out of it, or mid-probe. Registering in memory at module
-// scope keeps the dependency one-way (agent-runner → opencode-runner) and
-// arms nothing; same shape as run-journal's registerActiveRunProbe.
-registerPendingRecoveryProbe((ocSessionId) => activeRecoveryRuns.has(ocSessionId));
-
 // Hot reloads can leave the pre-token Set globals alive in old module
 // closures. Keep observing them until those preparations unwind; using a new
 // key for the token map avoids ever casting that Set to a Map and crashing.
@@ -949,40 +865,42 @@ function legacyCancelledSessions(): Set<string> {
 }
 
 function trackRecovery(run: ActiveRunRecord): void {
-  for (const id of [run.osSessionId, run.claudeSessionId]) {
+  for (const id of [run.runKey, run.osSessionId, run.claudeSessionId]) {
     if (id) activeRecoveryRuns.set(id, run);
   }
-  // The run's detached engine is executing RIGHT NOW, whatever the recovery
-  // queue is doing — give its in-process MCP calls their token back here
-  // rather than in the reattach body, which may be minutes away (2026-08-16).
-  restoreJournaledRunRpcContext(run);
 }
 
 function untrackRecovery(run: ActiveRunRecord): void {
-  for (const id of [run.osSessionId, run.claudeSessionId]) {
+  for (const id of [run.runKey, run.osSessionId, run.claudeSessionId]) {
     if (id && activeRecoveryRuns.get(id)?.runKey === run.runKey)
       activeRecoveryRuns.delete(id);
   }
-  attachedRecoveryRunKeys.delete(run.runKey);
-  releaseJournaledRunRpcContext(run);
 }
 
 /** Mark a session as starting a run (call synchronously, before any await). */
-export function markSessionStarting(id: string): string {
-  const token = crypto.randomUUID();
+export function markSessionStarting(
+  id: string,
+  token = `rh-${crypto.randomUUID()}`,
+): string {
+  if (
+    sessionRunOwners.get(id) === token ||
+    pendingStarts.get(id)?.has(token)
+  ) {
+    const rejected = `rh-${crypto.randomUUID()}`;
+    cancelledRunTokens.add(rejected);
+    return rejected;
+  }
+  const decision = decideRunStateTransition(id, "prompt", { run_key: token });
+  if (!decision.accepted) {
+    // Return a distinct rejected token so the caller can requeue without
+    // sharing/unmarking the actor winner's process reservation.
+    cancelledRunTokens.add(token);
+    return token;
+  }
   let tokens = pendingStarts.get(id);
   if (!tokens) pendingStarts.set(id, (tokens = new Set()));
   tokens.add(token);
-  const state = getRunState(id);
-  if (
-    !sessionRunOwners.has(id) ||
-    state === "idle" ||
-    state === "stopped" ||
-    state === "failed"
-  ) {
-    sessionRunOwners.set(id, token);
-  }
-  transitionRunState(id, "prompt");
+  sessionRunOwners.set(id, token);
   return token;
 }
 
@@ -1013,7 +931,6 @@ export function isAgentLiveEngineBusy(...ids: Array<string | null | undefined>):
       pendingStarts.has(id) ||
       legacyPendingStarts()?.has(id) ||
       activeSessionRunTokens.has(id) ||
-      isOpencodeSessionBusy(id) ||
       isPiSessionBusy(id) ||
       hostRunBusy(id)
     )
@@ -1031,11 +948,7 @@ export function isAgentEngineBusy(...ids: Array<string | null | undefined>): boo
 /** Busy check (pass any engine/backstage session id). */
 export function isAgentSessionBusy(...ids: Array<string | null | undefined>): boolean {
   if (hasActiveRunFor(...ids) || isAgentEngineBusy(...ids)) return true;
-  return ids.some((id) => {
-    if (!id) return false;
-    const state = getRunState(id);
-    return state === "interrupted" || state === "reattaching";
-  });
+  return ids.some((id) => !!id && isRunStateUnsettled(getRunState(id)));
 }
 
 /**
@@ -1044,7 +957,7 @@ export function isAgentSessionBusy(...ids: Array<string | null | undefined>): bo
  * not count external CLI/tmux runs — we can't drain those.)
  */
 export function activeAgentRunCount(): number {
-  return activeOpencodeRunCount() + activePiRunCount() + hostRunCount();
+  return activePiRunCount() + hostRunCount();
 }
 
 /** Of those, how many execute on a DETACHED engine server that survives a
@@ -1052,12 +965,12 @@ export function activeAgentRunCount(): number {
  *  reattaches them via the journal instead). In-process Pi contributes 0;
  *  Pi inside a local run host contributes through hostRunCount(). */
 export function activeDetachedAgentRunCount(): number {
-  return activeDetachedOpencodeRunCount() + hostRunCount();
+  return hostRunCount();
 }
 
 /**
- * Steer a message into an in-flight run. Opencode runs steer in-band since
- * 2026-07-12 (steerOpencodeRun: a noReply history append the running turn
+ * Steer a message into an in-flight run. Pi runs steer in-band since
+ * 2026-07-12 (steerPiRun: a noReply history append the running turn
  * picks up at its next step boundary — Claude-SDK-steer semantics); pi runs
  * steer natively (session.steer folds the message in at the next step);
  * host-forwarded runs steer over RPC. False = nothing steerable — caller
@@ -1066,39 +979,56 @@ export function activeDetachedAgentRunCount(): number {
 export function steerAgentRun(
   ids: Array<string | null | undefined>,
   text: string,
-  images?: ImageInput[]
+  images?: ImageInput[],
+
+  steerId?: string
 ): boolean {
   for (const id of ids) {
     if (!id) continue;
-    if (steerOpencodeRun(id, text, images)) return true;
-    if (steerPiRun(id, text, images)) return true;
-    // Host-forward RPC is text-only: a send with images falls through
-    // (caller queues it — the queue drain delivers images).
-    if (!images?.length && hostSteer(id, text)) return true;
+    if (steerPiRun(id, text, images, steerId)) return true;
+
+    // Images ride the host frame too (protocol ClientToHostMsg.steer). This
+    // used to bail on any attachment, which read as "pi can't steer images"
+    // — it can; only the RPC frame was text-only. Once every local run moved
+    // into a detached host that guard covered every case, so no message with
+    // a screenshot could be steered at all.
+
+    if (hostSteer(id, text, images, steerId)) return true;
+
   }
   return false;
 }
 
-/**
- * Bare interrupt: no engine supports it anymore (it released a Claude run's
- * held steers at a turn boundary). Kept for caller compat — always false, so
- * callers fall back to the queue flap's other paths.
- */
-export function interruptAgentRun(
-  _ids: Array<string | null | undefined>
-): boolean {
-  return false;
+/** Retract one accepted steer only while it remains behind the engine's next
+ * step boundary. Exact ids distinguish duplicate messages. */
+export async function retractAgentSteer(
+  ids: Array<string | null | undefined>,
+  steerId: string
+): Promise<boolean> {
+  for (const id of ids) {
+    if (id && retractPiSteer(id, steerId)) return true;
+  }
+  return hostRetractSteer(ids, steerId);
 }
 
 /**
- * Esc-style stop: the opencode engine has no graceful stop-turn — callers
- * fall back to the hard cancel (cancelAgentRun aborts the turn server-side).
+ * NOTE for anyone reaching for a "graceful stop" here: there isn't one, and
+ * two stubs that returned a constant false used to pretend otherwise
+ * (`stopAgentRunTurn`, `interruptAgentRun`, removed 2026-08-19). Every call
+ * site guarded on them, so the graceful branch had never executed once and
+ * every audited stop recorded `graceful: false` as a constant rather than an
+ * observation.
+ *
+ * cancelAgentRun below is not a lesser fallback, it is the real stop: the
+ * abort is wired through to the engine on all three paths (pi-runner
+ * installs `client.session.abort()` on the signal, pi-runner calls
+ * `liveSession.abort()`, and a run host forwards a `cancel` frame to its own
+ * cancelAgentRun). What it cannot promise is that the turn ends THIS instant:
+ * an abort is observed at the next await, so a tool call in flight finishes
+ * first (pi's bash tool does kill its process group immediately). If a real
+ * cooperative stop is ever wanted, build it on pi's steer primitives and give
+ * it a call site that can observe it, rather than restoring a constant.
  */
-export function stopAgentRunTurn(
-  _ids: Array<string | null | undefined>
-): boolean {
-  return false;
-}
 
 /**
  * Esc-style redirect: abort the current turn but keep the run alive,
@@ -1112,9 +1042,101 @@ export function interruptAndSteerAgentRun(
 ): boolean {
   for (const id of ids) {
     if (!id) continue;
-    if (!images?.length && hostInterruptSteer(id, text)) return true;
+    if (hostInterruptSteer(id, text, images)) return true;
   }
   return false;
+}
+
+/** Immutable dispatch identity for the run currently admitted under an alias.
+ * Unlike engine/session ids, this token is never reused by a successor. */
+export function currentAgentRunToken(id: string): string | undefined {
+  const owner = sessionRunOwners.get(id);
+  if (owner) return owner;
+  const pending = pendingStarts.get(id);
+  return pending?.size === 1 ? pending.values().next().value : undefined;
+}
+
+/** Cancel one exact physical dispatch without crossing onto a successor that
+ * reused its session or engine aliases. */
+function agentRunTokenPending(runToken: string): boolean {
+  return [...pendingStarts.values()].some((tokens) => tokens.has(runToken));
+}
+
+function agentRunTokenLatched(runToken: string): boolean {
+  return [...activeSessionRunTokens.values()].some((tokens) =>
+    tokens.has(runToken),
+  );
+}
+
+function agentRunTokenControlled(runToken: string): boolean {
+  return (
+    agentRunTokenLatched(runToken) ||
+    isPiSessionBusy(runToken) ||
+    hostRunBusy(runToken)
+  );
+}
+
+function durableDetachedRunToken(runToken: string): boolean {
+  return activeRunRecords().some(
+    (run) =>
+      run.runKey === runToken &&
+      !!(run.hostId || run.runnerId || run.sandboxId),
+  );
+}
+
+export function isAgentRunTokenAdmitted(runToken: string): boolean {
+  return (
+    agentRunTokenPending(runToken) ||
+    agentRunTokenControlled(runToken) ||
+    activeRecoveryRuns.has(runToken) ||
+    durableDetachedRunToken(runToken)
+  );
+}
+
+export function cancelAgentRunToken(runToken: string): boolean {
+  const admitted = isAgentRunTokenAdmitted(runToken);
+  cancelledRunTokens.add(runToken);
+  const cancelled = cancelAgentRun(runToken);
+  if (!cancelled && !admitted) cancelledRunTokens.delete(runToken);
+  return cancelled || admitted;
+}
+
+/** Cancel one immutable dispatch and wait until a physical control accepts
+ * the request, a prepared launch observes its latch, or recovery proves the
+ * owner absent. This confirmation precedes actor settlement; source completion
+ * remains responsible for retiring its journal afterwards. */
+export async function cancelAgentRunTokenAndWait(
+  runToken: string,
+  timeoutMs = 120_000,
+): Promise<boolean> {
+  if (!cancelAgentRunToken(runToken)) return false;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    // A running source owns a token-aware cancellation latch even before its
+    // engine handle appears; a host control can receive the exact frame now.
+    if (agentRunTokenLatched(runToken)) {
+      // runAgent's immutable shouldCancel closure now owns the latch.
+      cancelAgentRun(runToken);
+      return true;
+    }
+    if (
+      (isPiSessionBusy(runToken) || hostRunBusy(runToken)) &&
+      cancelAgentRun(runToken)
+    ) return true;
+    // No pending launch and no recovery owner means setup observed the latch
+    // and unwound, or recovery positively settled absence.
+    if (
+      !agentRunTokenPending(runToken) &&
+      !activeRecoveryRuns.has(runToken) &&
+      !durableDetachedRunToken(runToken)
+    ) return true;
+    if (Date.now() >= deadline)
+      throw new Error(`Timed out reconciling cancelled dispatch ${runToken}`);
+    // Boot recovery may attach after this effect starts. Re-issue against the
+    // immutable token so the newly registered control is cancelled immediately.
+    cancelAgentRun(runToken);
+    await Bun.sleep(50);
+  }
 }
 
 /** Cancel a run; returns true if anything was cancelled. */
@@ -1122,7 +1144,6 @@ export function cancelAgentRun(...ids: Array<string | null | undefined>): boolea
   let cancelled = false;
   for (const id of ids) {
     if (!id) continue;
-    if (cancelOpencodeRun(id)) cancelled = true;
     if (cancelPiRun(id)) cancelled = true;
     if (hostCancel(id)) cancelled = true;
   }
@@ -1159,19 +1180,11 @@ export function cancelAgentRun(...ids: Array<string | null | undefined>): boolea
   for (const run of records.values()) {
     if (recoveryRunKeys.has(run.runKey)) {
       cancelledRecoveries.add(run);
-      // Stop has to reach the ENGINE even when the recovery never started: a
-      // detached turn that was never reattached has no in-process
-      // AbortController for cancelOpencodeRun to find, so without this it
-      // keeps working in the session's worktree after the session goes idle.
-      if (!attachedRecoveryRunKeys.has(run.runKey))
-        void abortInterruptedDetachedTurn(run).catch(() => {});
     }
-    journalClear(run.runKey);
-    // A queued recovery has not crossed an async boundary yet, so its marker
-    // is enough to make it exit when scheduled. An active worker keeps its
-    // reservation until its probe/stream actually unwinds; otherwise a new
-    // prompt can overlap work that Stop has not finished cancelling.
-    if (!activeRecoveryWorkerRunKeys.has(run.runKey)) untrackRecovery(run);
+    // Every physical owner keeps its journal until its source reports terminal
+    // completion or recovery proves it absent. Actor Stop settlement happens
+    // after this cancellation request; retiring ownership here would create a
+    // window where a successor could start while the predecessor still works.
     if (run.osSessionId && isRunStateUnsettled(getRunState(run.osSessionId)))
       transitionRunState(run.osSessionId, "cancel", {
         run_key: run.runKey,
@@ -1180,6 +1193,20 @@ export function cancelAgentRun(...ids: Array<string | null | undefined>): boolea
     cancelled = true;
   }
   return cancelled;
+}
+
+/** Cancel and wait until every known engine/host releases ownership. */
+export async function cancelAgentRunAndWait(
+  ids: Array<string | null | undefined>,
+  timeoutMs = 10_000,
+): Promise<boolean> {
+  cancelAgentRun(...ids);
+  const deadline = Date.now() + timeoutMs;
+  while (ids.some((id) => !!id && isAgentSessionBusy(id!))) {
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return true;
 }
 
 /** Per-session AskUserQuestion handler, mirroring RunAgentOpts.onAskUser. */
@@ -1198,16 +1225,65 @@ type AskHandler = NonNullable<RunAgentOpts["onAskUser"]>;
  * `inProcessMcpFor` and `reposNoteFor` rebuild trusted interactive context
  * that is deliberately not serialized into the restart journal.
  */
+function durableCancelRecoveryOwnership(
+  run: ActiveRunRecord,
+): "owned" | "none" | "unknown" {
+  if (!run.osSessionId) return "none";
+  try {
+    return sessionTurn({
+      op: "snapshot",
+      sessionId: run.osSessionId,
+    }).cancel?.runId === run.runKey
+      ? "owned"
+      : "none";
+  } catch {
+    return "unknown";
+  }
+}
+
+export function durableCancelOwnsRecovery(run: ActiveRunRecord): boolean {
+  return durableCancelRecoveryOwnership(run) === "owned";
+}
+
+export function reissueDurableRecoveryCancel(run: ActiveRunRecord): boolean {
+  if (!durableCancelOwnsRecovery(run)) return false;
+  // Keep the immutable latch live even when the original outbox already
+  // settled before a gateway crash. Once recovery attaches a control under
+  // this run key, repeated calls deliver cancellation to that exact owner.
+  cancelledRunTokens.add(run.runKey);
+  return cancelAgentRun(run.runKey);
+}
+
+function settleDurableCancelForAbsentOwner(run: ActiveRunRecord): boolean {
+  if (!run.osSessionId) return false;
+  const cancel = sessionTurn({
+    op: "snapshot",
+    sessionId: run.osSessionId,
+  }).cancel;
+  if (cancel?.runId !== run.runKey) return false;
+  if (cancel.phase !== "settled")
+    sessionTurn({
+      op: "settle_cancel",
+      sessionId: run.osSessionId,
+      cancelId: cancel.cancelId,
+      outcome: "confirmed",
+    });
+  journalClearIfLineage(run);
+  return true;
+}
+
 export function resumeInterruptedRuns(
   onResumed?: (
     osSessionId?: string,
     terminalEvent?: StreamEvent,
+    run?: ActiveRunRecord,
   ) => void,
   askHandlerFor?: (osSessionId: string) => AskHandler | undefined,
   inProcessMcpFor?: (osSessionId: string, user?: string) => Record<string, unknown> | undefined,
   reposNoteFor?: (osSessionId: string) => string | undefined,
   onEvent?: (osSessionId: string, event: StreamEvent) => void,
   snapshotLocalHostRuns: ActiveRunRecord[] = [],
+  deferRecovery?: (run: ActiveRunRecord) => boolean,
 ): string[] {
   const resumed: string[] = [];
   const settledRunKeys = new Set<string>();
@@ -1230,11 +1306,24 @@ export function resumeInterruptedRuns(
     try {
       emitRecoveryEvent(run, event);
       try {
-        onResumed?.(run.osSessionId, event);
+        onResumed?.(run.osSessionId, event, run);
       } catch (e) {
         console.error(`[runner] Recovery settlement callback failed for ${run.runKey}:`, e);
       }
     } finally {
+      if (run.osSessionId) {
+        const cancel = sessionTurn({
+          op: "snapshot",
+          sessionId: run.osSessionId,
+        }).cancel;
+        if (cancel?.runId === run.runKey && cancel.phase !== "settled")
+          sessionTurn({
+            op: "settle_cancel",
+            sessionId: run.osSessionId,
+            cancelId: cancel.cancelId,
+            outcome: "confirmed",
+          });
+      }
       if (run.osSessionId && isRunStateUnsettled(getRunState(run.osSessionId))) {
         const failed = event.type === "error" || !!event.usageLimitExhausted;
         transitionRunState(run.osSessionId, failed ? "run_failed" : "turn_end", {
@@ -1254,15 +1343,57 @@ export function resumeInterruptedRuns(
       model: run.model,
     });
   };
-  const abandonStoppedRecovery = (run: ActiveRunRecord): boolean => {
+  const recoveryStillOwnsJournal = (run: ActiveRunRecord): boolean => {
+    const expectedLineage = run.firstJournaledAt || run.startedAt;
+    return activeRunRecords().some((current) =>
+      current.runKey === run.runKey &&
+      current.osSessionId === run.osSessionId &&
+      (current.firstJournaledAt || current.startedAt) === expectedLineage
+    );
+  };
+  const abandonStoppedRecovery = (
+    run: ActiveRunRecord,
+    cancelOwnership: "owned" | "none" | "unknown",
+  ): boolean => {
+    const stopped =
+      !!run.osSessionId && getRunState(run.osSessionId) === "stopped";
+    // The durable effect owns this exact physical dispatch. Keep recovery
+    // attached and its journal intact until cancellation and natural source
+    // completion retire it.
+    if (cancelOwnership === "unknown") {
+      // Actor uncertainty is neither proof of absence nor authority to cancel.
+      // Park every recovery shape with its lineage intact until ownership can
+      // be read; never attach or create replacement execution while ambiguous.
+      return true;
+    }
+    if (cancelOwnership === "owned") {
+      // Detached physical owners must be attached and repeatedly cancelled,
+      // including after a crash that followed actor settlement but preceded
+      // source completion. A pre-engine in-process journal has no surviving
+      // process after this boot and must never be re-run.
+      const detached = !!(run.hostId || run.runnerId || run.sandboxId);
+      if (detached) reissueDurableRecoveryCancel(run);
+      return !detached;
+    }
     const cancelled = cancelledRecoveries.delete(run);
-    if (
-      !cancelled &&
-      (!run.osSessionId || getRunState(run.osSessionId) !== "stopped")
-    )
-      return false;
+    if (!cancelled && !stopped) return false;
     journalClearIfLineage(run);
     return true;
+  };
+  const checkpointStoppedRecovery = async (
+    run: ActiveRunRecord,
+  ): Promise<boolean> => {
+    let ownershipBackoffMs = 100;
+    let ownership = durableCancelRecoveryOwnership(run);
+    while (ownership === "unknown") {
+      // Keep the bounded worker, attached source, and lineage alive. Every
+      // checkpoint retries actor ownership instead of one-shot abandoning.
+      if (isShuttingDown()) return true;
+      await Bun.sleep(ownershipBackoffMs);
+      ownershipBackoffMs = Math.min(5_000, ownershipBackoffMs * 2);
+      ownership = durableCancelRecoveryOwnership(run);
+    }
+    return abandonStoppedRecovery(run, ownership);
   };
   const recoveryTask = (
     run: ActiveRunRecord,
@@ -1278,7 +1409,7 @@ export function resumeInterruptedRuns(
     let started = false;
     let queuedTooLong: ReturnType<typeof setTimeout> | undefined;
     const start = async () => {
-      if (started) return;
+      if (started || isShuttingDown()) return;
       started = true;
       clearTimeout(queuedTooLong);
       if (settledRunKeys.has(run.runKey)) {
@@ -1340,7 +1471,6 @@ export function resumeInterruptedRuns(
   const cancelRecoveredEngine = (run: ActiveRunRecord): void => {
     for (const id of [run.claudeSessionId, run.osSessionId, run.runKey]) {
       if (!id) continue;
-      cancelOpencodeRun(id);
       cancelPiRun(id);
       hostCancel(id);
     }
@@ -1348,7 +1478,9 @@ export function resumeInterruptedRuns(
   const snapshotSeeds = snapshotLocalHostRuns.filter(
     (run) => !!run.hostId && !run.sandboxId && !run.runnerId,
   );
-  const taken = takeInterruptedRuns(snapshotSeeds);
+  const taken = takeInterruptedRuns(snapshotSeeds).filter(
+    (run) => !deferRecovery?.(run),
+  );
   // A graceful shutdown snapshot is intentionally broader than the shared
   // run journal: it also covers turns that finish during the drain. A local
   // detached host can still be alive even when its shared record disappeared
@@ -1357,36 +1489,28 @@ export function resumeInterruptedRuns(
   // drained-session wake cannot start a second host for the same turn.
   const { interrupted, quarantined } = sanitizeInterruptedRuns(taken);
   journalQuarantine(quarantined);
-  const recoveringEngineSessions = new Set(
-    interrupted.flatMap((run) => (run.claudeSessionId ? [run.claudeSessionId] : [])),
-  );
-  const quarantineAborts: Promise<boolean>[] = [];
   for (const entry of quarantined) {
-    // A quarantined record can still have a live detached engine turn behind
-    // it, including a duplicate that deliberately carries notify:false. Abort
-    // a discarded engine session unless the kept recovery owns the same one;
-    // abortDetachedOpencodeTurn separately guards live in-process ownership.
-    const shouldAbortDetached =
-      !!entry.run.serverKey &&
-      !!entry.run.claudeSessionId &&
-      !recoveringEngineSessions.has(entry.run.claudeSessionId);
-    const abort = shouldAbortDetached
-      ? abortInterruptedDetachedTurn(entry.run).catch(() => false)
-      : undefined;
-    if (abort) quarantineAborts.push(abort);
-    if (!entry.notify || !entry.run.osSessionId) {
-      void abort;
-      continue;
-    }
-    const message = recoveryQuarantineMessage(entry);
-    if (abort) void abort.finally(() => reportRecoveryFailure(entry.run, message));
-    else reportRecoveryFailure(entry.run, message);
+    if (!entry.notify || !entry.run.osSessionId) continue;
+    reportRecoveryFailure(entry.run, recoveryQuarantineMessage(entry));
   }
   const recoveryTasks: Array<() => Promise<void>> = [];
 
   for (const run of interrupted) {
-    // The github agent owns its own recovery (review/simplify re-trigger on the
-    // next PR event; auto-fix loops are resumed by the github agent's startup
+    if (run.terminalFailure) {
+      reportRecoveryFailure(run, run.terminalFailure.content);
+      continue;
+    }
+    // Detached review turns are consumed by the GitHub agent's persisted
+    // activeRun workflow. Leave their journal record intact so runReview can
+    // reattach the same host and continue through parsing and GitHub posting.
+    // Counting the session as handled prevents the generic drained-session wake
+    // from starting a second turn while that owner is recovering it.
+    if (run.hostId && run.kind?.startsWith("github-review")) {
+      rememberHandledSession(run);
+      continue;
+    }
+    // Other GitHub behaviors still own their recovery (simplify re-trigger on
+    // the next PR event; auto-fix loops are resumed by the GitHub startup
     // sweep). Resuming them generically would double-drive an auto-fix loop.
     if (run.kind?.startsWith("github-")) {
       rememberHandledSession(run);
@@ -1420,15 +1544,15 @@ export function resumeInterruptedRuns(
     if (run.runnerId) {
       rememberHandledSession(run);
       trackRecovery(run);
-      recoveryTasks.push(recoveryTask(run, async () => {
+      recoveryTasks.push(recoveryTask(run, async (releaseQueueSlot) => {
         let terminalSeen = false;
         try {
-          if (abandonStoppedRecovery(run)) return;
+          if (await checkpointStoppedRecovery(run)) return;
           Object.assign(run, journalStartRecovery(run));
           const events = await (await import("./runner-session")).resumeRunnerRun(run, {
             onAskUser: run.osSessionId ? askHandlerFor?.(run.osSessionId) : undefined,
           });
-          if (abandonStoppedRecovery(run)) return;
+          if (await checkpointStoppedRecovery(run)) return;
           if (!events) {
             reportRecoveryFailure(
               run,
@@ -1436,13 +1560,17 @@ export function resumeInterruptedRuns(
             );
             return;
           }
+          // The runner is attached and will keep streaming independently of
+          // boot recovery. Do not make later recoveries wait for its turn.
+          releaseQueueSlot();
           for await (const event of events) {
-            if (abandonStoppedRecovery(run)) return;
+            if (await checkpointStoppedRecovery(run)) return;
+            markRecoveryProgress(run, event);
             if (event.type === "done" || event.type === "error") {
               terminalSeen = settleRecovery(run, event) || terminalSeen;
             } else emitRecoveryEvent(run, event);
           }
-          if (abandonStoppedRecovery(run)) return;
+          if (await checkpointStoppedRecovery(run)) return;
           if (!terminalSeen) {
             reportRecoveryFailure(
               run,
@@ -1451,7 +1579,7 @@ export function resumeInterruptedRuns(
           }
         } catch (error) {
           console.error(`[runner] Runner resume failed for ${run.runKey}:`, error);
-          if (abandonStoppedRecovery(run)) return;
+          if (await checkpointStoppedRecovery(run)) return;
           if (!terminalSeen) {
             reportRecoveryFailure(
               run,
@@ -1480,7 +1608,7 @@ export function resumeInterruptedRuns(
       const isDocker = run.sandboxProvider === "docker";
       rememberHandledSession(run);
       trackRecovery(run);
-      recoveryTasks.push(recoveryTask(run, async () => {
+      recoveryTasks.push(recoveryTask(run, async (releaseQueueSlot) => {
         const recoveryStartedAt = Date.now();
         let recoveryRecorded = false;
         let terminalSeen = false;
@@ -1498,16 +1626,16 @@ export function resumeInterruptedRuns(
           });
         };
         try {
-          if (abandonStoppedRecovery(run)) return;
+          if (await checkpointStoppedRecovery(run)) return;
           Object.assign(run, journalStartRecovery(run));
           const resume = isDocker
             ? (await import("./sandbox/docker")).resumeDockerSandboxRun
             : (await import("./sandbox/adapters/bootstrap")).resumeRemoteSandboxRun;
-          if (abandonStoppedRecovery(run)) return;
+          if (await checkpointStoppedRecovery(run)) return;
           const events = await resume(run, {
             onAskUser: run.osSessionId ? askHandlerFor?.(run.osSessionId) : undefined,
           });
-          if (abandonStoppedRecovery(run)) {
+          if (await checkpointStoppedRecovery(run)) {
             cancelRecoveredEngine(run);
             return;
           }
@@ -1522,14 +1650,18 @@ export function resumeInterruptedRuns(
             recordRecovery("failed", "sandbox_unavailable");
             return;
           }
+          // The sandbox host is attached. Its model turn can continue while
+          // the boot queue starts the next interrupted session.
+          releaseQueueSlot();
           for await (const event of events) {
-            if (abandonStoppedRecovery(run)) return;
+            if (await checkpointStoppedRecovery(run)) return;
+            markRecoveryProgress(run, event);
             if (event.type === "done" || event.type === "error") {
               terminalSeen = settleRecovery(run, event) || terminalSeen;
               recordRecovery(event.type === "done" ? "ok" : "failed", event.type);
             } else emitRecoveryEvent(run, event);
           }
-          if (abandonStoppedRecovery(run)) return;
+          if (await checkpointStoppedRecovery(run)) return;
           if (!terminalSeen) {
             reportRecoveryFailure(
               run,
@@ -1540,7 +1672,7 @@ export function resumeInterruptedRuns(
         } catch (e) {
           recordRecovery("failed", "recovery_error");
           console.error(`[runner] Sandbox resume failed for ${run.runKey}:`, e);
-          if (abandonStoppedRecovery(run)) return;
+          if (await checkpointStoppedRecovery(run)) return;
           if (!terminalSeen)
             reportRecoveryFailure(
               run,
@@ -1560,12 +1692,12 @@ export function resumeInterruptedRuns(
     if (run.hostId && !run.sandboxId && !run.runnerId) {
       rememberHandledSession(run);
       trackRecovery(run);
-      recoveryTasks.push(recoveryTask(run, async () => {
+      recoveryTasks.push(recoveryTask(run, async (releaseQueueSlot) => {
         let terminalSeen = false;
         try {
-          if (abandonStoppedRecovery(run)) return;
+          if (await checkpointStoppedRecovery(run)) return;
           Object.assign(run, journalStartRecovery(run));
-          if (run.osSessionId)
+          if (run.osSessionId && !durableCancelOwnsRecovery(run))
             transitionRunState(run.osSessionId, "reattach_start", { run_key: run.runKey });
           const resumeLocalHost =
             localHostResumeForTest ??
@@ -1575,13 +1707,19 @@ export function resumeInterruptedRuns(
             })
             .catch((e) => {
               console.warn(`[runner] Local host reattach failed for ${run.runKey}:`, e);
-              return null;
+              return "uncertain" as const;
             });
-          if (abandonStoppedRecovery(run)) {
+          if (await checkpointStoppedRecovery(run)) {
             cancelRecoveredEngine(run);
             return;
           }
-          if (run.osSessionId)
+          if (reattached === "uncertain") {
+            console.warn(
+              `[runner] Local run host ${run.hostId} is not connectable but is not proven dead; preserving recovery state`,
+            );
+            return;
+          }
+          if (run.osSessionId && !durableCancelOwnsRecovery(run))
             transitionRunState(
               run.osSessionId,
               reattached ? "reattach_ok" : "reattach_fail",
@@ -1592,6 +1730,10 @@ export function resumeInterruptedRuns(
           }
           let events = reattached;
           if (!events) {
+            // The launcher positively proved this cancelled host absent. Settle
+            // actor ownership before retiring its journal and never resurrect
+            // the stopped turn as a fresh engine run.
+            if (settleDurableCancelForAbsentOwner(run)) return;
             if (!run.prompt && !run.claudeSessionId) {
               reportRecoveryFailure(
                 run,
@@ -1601,7 +1743,8 @@ export function resumeInterruptedRuns(
             }
             if (run.osSessionId)
               transitionRunState(run.osSessionId, "resume_reprompt", { run_key: run.runKey });
-            // The re-run journals under its own runKey. Drop the host record.
+            // The replacement reuses this proven-absent lineage key so terminal
+            // projection remains fenced to the actor owner. Drop the host record.
             journalClear(run.runKey);
             console.log(
               `[runner] Local run host ${run.hostId} is gone; resuming ${run.osSessionId || run.runKey} in-process`,
@@ -1611,6 +1754,7 @@ export function resumeInterruptedRuns(
                 ? resumeContinuationPrompt(run.prompt || "")
                 : run.prompt!,
               promptEntryId: run.claudeSessionId ? undefined : run.promptEntryId,
+              startToken: run.runKey,
               sessionId: run.claudeSessionId || undefined,
               cwd: run.cwd,
               mode: run.mode,
@@ -1643,13 +1787,17 @@ export function resumeInterruptedRuns(
             });
           }
           for await (const event of events) {
-            if (abandonStoppedRecovery(run)) return;
+            // A fallback re-prompt is lazy. Its first event proves that the
+            // engine has started; a live host was already attached above.
+            releaseQueueSlot();
+            if (await checkpointStoppedRecovery(run)) return;
+            markRecoveryProgress(run, event);
             if (event.type === "done" || event.type === "error") {
               terminalSeen = settleRecovery(run, event) || terminalSeen;
             } else emitRecoveryEvent(run, event);
           }
-          if (abandonStoppedRecovery(run)) return;
-          if (!terminalSeen) {
+          if (await checkpointStoppedRecovery(run)) return;
+          if (!terminalSeen && recoveryStillOwnsJournal(run)) {
             reportRecoveryFailure(
               run,
               "Restart recovery ended before the detached run host returned a final result. Send the prompt again to continue.",
@@ -1657,8 +1805,8 @@ export function resumeInterruptedRuns(
           }
         } catch (e) {
           console.error(`[runner] Local host resume failed for ${run.runKey}:`, e);
-          if (abandonStoppedRecovery(run)) return;
-          if (!terminalSeen)
+          if (await checkpointStoppedRecovery(run)) return;
+          if (!terminalSeen && recoveryStillOwnsJournal(run))
             reportRecoveryFailure(
               run,
               "Restart recovery failed while reconnecting to the detached run host. Send the prompt again to continue.",
@@ -1687,23 +1835,24 @@ export function resumeInterruptedRuns(
       console.log(
         `[runner] Re-running interrupted ${run.kind || "run"} ${run.osSessionId || run.runKey} from scratch (never got an engine session)`
       );
-      recoveryTasks.push(recoveryTask(run, async () => {
+      recoveryTasks.push(recoveryTask(run, async (releaseQueueSlot) => {
         let terminalSeen = false;
         try {
-          if (abandonStoppedRecovery(run)) return;
+          if (await checkpointStoppedRecovery(run)) return;
           Object.assign(run, journalStartRecovery(run));
           if (run.osSessionId)
             transitionRunState(run.osSessionId, "resume_reprompt", {
               run_key: run.runKey,
             });
-          // The re-run journals under its own runKey — drop the claimed
-          // record now (runAgent's intake journalSet is the very next step,
+          // The replacement reuses this proven-absent lineage key. Drop the
+          // claimed record now (runAgent's intake journalSet is the very next step,
           // so the unprotected window is one generator start, not the whole
           // adoption+probe phase the old wipe-on-take left open).
           journalClear(run.runKey);
           for await (const event of runAgent({
             prompt: run.prompt!,
             promptEntryId: run.promptEntryId,
+            startToken: run.runKey,
             cwd: run.cwd,
             mode: run.mode,
             model: run.model,
@@ -1736,12 +1885,16 @@ export function resumeInterruptedRuns(
             },
             onAskUser: run.osSessionId ? askHandlerFor?.(run.osSessionId) : undefined,
           })) {
-            if (abandonStoppedRecovery(run)) return;
+            // `runAgent` is lazy. Free the bounded boot slot only after its
+            // first event confirms the replacement engine is running.
+            releaseQueueSlot();
+            if (await checkpointStoppedRecovery(run)) return;
+            markRecoveryProgress(run, event);
             if (event.type === "done" || event.type === "error") {
               terminalSeen = settleRecovery(run, event) || terminalSeen;
             } else emitRecoveryEvent(run, event);
           }
-          if (abandonStoppedRecovery(run)) return;
+          if (await checkpointStoppedRecovery(run)) return;
           if (!terminalSeen)
             reportRecoveryFailure(
               run,
@@ -1749,7 +1902,7 @@ export function resumeInterruptedRuns(
             );
         } catch (e) {
           console.error(`[runner] Re-run failed for ${run.runKey}:`, e);
-          if (abandonStoppedRecovery(run)) return;
+          if (await checkpointStoppedRecovery(run)) return;
           if (!terminalSeen)
             reportRecoveryFailure(
               run,
@@ -1764,75 +1917,9 @@ export function resumeInterruptedRuns(
     recoveryTasks.push(recoveryTask(run, async (releaseQueueSlot) => {
       let recoverySettled = false;
       try {
-        if (abandonStoppedRecovery(run)) return;
+        if (await checkpointStoppedRecovery(run)) return;
         Object.assign(run, journalStartRecovery(run));
         let repairingRecoveredResult = false;
-        // First choice: REATTACH — the run's detached `opencode serve`
-        // survived the restart and the turn may still be executing. The
-        // adopted-pool lookup + session probe live in tryReattachOpencodeRun;
-        // null means the server is gone (or was a direct child) and we fall
-        // back to the classic continuation re-prompt below.
-        if (run.serverKey) {
-          if (run.osSessionId)
-            transitionRunState(run.osSessionId, "reattach_start", { run_key: run.runKey });
-          const reattached = await (reattachForTest ?? tryReattachOpencodeRun)(run, {
-            onAskUser: run.osSessionId ? askHandlerFor?.(run.osSessionId) : undefined,
-          }).catch((e) => {
-            console.warn(`[runner] Reattach probe failed for ${run.runKey}:`, e);
-            return null;
-          });
-          if (abandonStoppedRecovery(run)) {
-            await reattached?.cancelDetachedTurn();
-            cancelRecoveredEngine(run);
-            return;
-          }
-          if (run.osSessionId)
-            transitionRunState(
-              run.osSessionId,
-              reattached ? "reattach_ok" : "reattach_fail",
-              { run_key: run.runKey },
-            );
-          if (reattached) {
-            Object.assign(run, journalMarkRecoveryAttached(run) || {});
-            attachedRecoveryRunKeys.add(run.runKey);
-            // This turn executes on a detached server: following it costs
-            // this process nothing, so it must not hold a bounded recovery
-            // slot. Holding one is what starved every interrupted run past
-            // the fourth until the queue-wait timer fired (2026-08-16).
-            releaseQueueSlot();
-            console.log(
-              `[runner] Reattached ${run.kind || "run"} ${run.osSessionId || run.runKey} to its live engine turn (server ${run.serverKey})`
-            );
-            for await (const event of reattached) {
-              if (abandonStoppedRecovery(run)) return;
-              if (recoveredResultNeedsContinuation(event)) {
-                repairingRecoveredResult = true;
-                console.warn(
-                  `[runner] Reattached turn ${run.runKey} ended without a usable final answer — continuing once`
-                );
-                continue;
-              }
-              if (event.type === "error" && isTransientRunError(event.content)) {
-                repairingRecoveredResult = true;
-                console.warn(
-                  `[runner] Reattached turn ${run.runKey} hit a transient engine failure — continuing through the normal retry/fallback path`
-                );
-                continue;
-              }
-              if (event.type === "done" || event.type === "error") {
-                recoverySettled = settleRecovery(run, event) || recoverySettled;
-              } else emitRecoveryEvent(run, event);
-            }
-            if (abandonStoppedRecovery(run)) return;
-            if (!repairingRecoveredResult && recoverySettled) return;
-            if (!repairingRecoveredResult) {
-              repairingRecoveredResult = true;
-              console.warn(
-                `[runner] Reattached turn ${run.runKey} ended without a terminal event — continuing once`
-              );
-            }
-          }
-        }
         console.log(
           repairingRecoveredResult
             ? `[runner] Repairing recovered result for ${run.osSessionId || run.runKey}`
@@ -1840,15 +1927,19 @@ export function resumeInterruptedRuns(
         );
         if (run.osSessionId && !repairingRecoveredResult)
           transitionRunState(run.osSessionId, "resume_reprompt", { run_key: run.runKey });
-        if (abandonStoppedRecovery(run)) return;
-        // The continuation run journals under its own runKey — drop the
+        if (await checkpointStoppedRecovery(run)) return;
+        // The continuation reuses this proven-absent lineage key. Drop the
         // claimed record only now, AFTER the reattach probe settled: dying
         // mid-probe used to lose the run to the wipe-on-take (2026-07-27).
         journalClear(run.runKey);
         for await (const event of runAgent({
           prompt: repairingRecoveredResult
-            ? recoveredResultContinuationPrompt(run.prompt)
-            : resumeContinuationPrompt(run.prompt),
+            ? wrapContext(
+                recoveredResultContinuationPrompt(run.prompt),
+                "restart-recovery",
+              )
+            : restartContinuationPrompt(run.prompt),
+          startToken: run.runKey,
           sessionId: run.claudeSessionId,
           cwd: run.cwd,
           mode: run.mode,
@@ -1882,12 +1973,16 @@ export function resumeInterruptedRuns(
           },
           onAskUser: run.osSessionId ? askHandlerFor?.(run.osSessionId) : undefined,
         })) {
-          if (abandonStoppedRecovery(run)) return;
+          // A recovery slot guards startup, not the whole agent turn. Once
+          // the engine emits, later interrupted sessions may begin recovery.
+          releaseQueueSlot();
+          if (await checkpointStoppedRecovery(run)) return;
+          markRecoveryProgress(run, event);
           if (event.type === "done" || event.type === "error") {
             recoverySettled = settleRecovery(run, event) || recoverySettled;
           } else emitRecoveryEvent(run, event);
         }
-        if (abandonStoppedRecovery(run)) return;
+        if (await checkpointStoppedRecovery(run)) return;
         if (!recoverySettled)
           reportRecoveryFailure(
             run,
@@ -1895,7 +1990,7 @@ export function resumeInterruptedRuns(
           );
       } catch (e) {
         console.error(`[runner] Resume failed for ${run.runKey}:`, e);
-        if (abandonStoppedRecovery(run)) return;
+        if (await checkpointStoppedRecovery(run)) return;
         if (!recoverySettled)
           reportRecoveryFailure(
             run,
@@ -1905,15 +2000,11 @@ export function resumeInterruptedRuns(
     }));
   }
 
-  // A discarded duplicate can still be modifying the same worktree. Finish
-  // every best-effort detached abort before any kept recovery reattaches or
-  // starts a continuation, so this boot never drives both at once.
-  void Promise.all(quarantineAborts).then(() => runRecoveryQueue(recoveryTasks));
+  runRecoveryQueue(recoveryTasks);
 
   return resumed;
 }
 
-export const MAX_BOOT_RECOVERIES = 32;
 export const BOOT_RECOVERY_CONCURRENCY = 4;
 // How long a recovery may wait for a queue slot before it is started anyway,
 // outside the queue. Long enough that a busy restart drains its legitimate
@@ -1932,16 +2023,42 @@ export function __setRecoveryQueueWaitMsForTest(ms: number): number {
 export const MAX_BOOT_RESUME_ATTEMPTS = 2;
 export const MAX_RECOVERY_AGE_MS = 24 * 60 * 60 * 1000;
 
-/** Collapse recovery suffixes so a crash during recovery never grows
- * `prompt-resume-resume` (or recursively wraps the same continuation forever). */
+/** Collapse the complete operational suffix chain so recovery after a model
+ * fallback never grows `prompt-resume-fallback-resume`. Keep one fallback
+ * marker for audit/policy consumers, regardless of how many hops preceded the
+ * restart. */
 export function recoveryKind(kind: string | undefined, suffix: "resume" | "rerun"): string {
-  const base = (kind || "run").replace(/(?:(?:-resume|-rerun))+$/g, "");
-  return `${base}-${suffix}`;
+  const current = kind || "run";
+  const chain = current.match(/(?:(?:-resume|-rerun|-fallback))+$/)?.[0] || "";
+  const base = chain ? current.slice(0, -chain.length) : current;
+  return `${base}-${suffix}${chain.includes("-fallback") ? "-fallback" : ""}`;
+}
+
+/** A recovery attempt becomes healthy once the resumed model produces
+ * user-visible work. Reset the consecutive-failure fuse at that point so a
+ * later service restart recovers the live turn rather than mistaking it for a
+ * repeatedly failing boot loop. Transport init and notices do not count. */
+export function markRecoveryProgress(run: ActiveRunRecord, event: StreamEvent): boolean {
+  if (
+    (run.resumeAttempts ?? 0) <= 0 ||
+    (event.type !== "text_chunk" &&
+      event.type !== "tool_use" &&
+      event.type !== "tool_result")
+  ) {
+    return false;
+  }
+  const progressed = journalMarkRecoveryAttached(run);
+  if (!progressed) return false;
+  Object.assign(run, progressed);
+  return true;
 }
 
 /** One boot recovery per owning session, newest journal record wins. Records
- * without a session id remain independently recoverable by run key. A hard
- * fuse prevents a malformed journal from monopolizing boot and starving HTTP. */
+ * without a session id remain independently recoverable by run key. Once
+ * deduplicated, recover every valid run, oldest first: a restart during a busy
+ * boot must not keep inserting newer work ahead of a session that has already
+ * waited through one or more recovery sweeps. Startup load stays bounded by
+ * the recovery queue rather than by discarding work. */
 export function sanitizeInterruptedRuns(runs: ActiveRunRecord[], now = Date.now()): {
   interrupted: ActiveRunRecord[];
   quarantined: QuarantinedRun[];
@@ -1950,7 +2067,10 @@ export function sanitizeInterruptedRuns(runs: ActiveRunRecord[], now = Date.now(
   const quarantined: QuarantinedRun[] = [];
   for (const run of runs) {
     const recoverySuffixes = run.kind?.match(/-(?:resume|rerun)/g)?.length ?? 0;
-    if (recoverySuffixes > 1) {
+    // Older builds could interleave fallback and recovery markers even when
+    // durable resumeAttempts proved the lineage was bounded. Reject only
+    // legacy recursive records that have no trustworthy attempt counter.
+    if (recoverySuffixes > 1 && run.resumeAttempts === undefined) {
       quarantined.push({ run, reason: "recursive_recovery_kind", notify: true });
       continue;
     }
@@ -1980,16 +2100,9 @@ export function sanitizeInterruptedRuns(runs: ActiveRunRecord[], now = Date.now(
     }
   }
   const ordered = [...newest.values()].sort(
-    (a, b) => (Date.parse(b.startedAt || "") || 0) - (Date.parse(a.startedAt || "") || 0),
+    (a, b) => (Date.parse(a.startedAt || "") || 0) - (Date.parse(b.startedAt || "") || 0),
   );
-  const interrupted = ordered.slice(0, MAX_BOOT_RECOVERIES);
-  quarantined.push(
-    ...ordered.slice(MAX_BOOT_RECOVERIES).map((run) => ({
-      run,
-      reason: "boot_recovery_limit" as const,
-      notify: true,
-    })),
-  );
+  const interrupted = ordered;
   // A rejected stale record must not settle a session whose valid record will
   // still recover. When no valid record remains, notify once for the newest
   // rejected record instead of writing multiple terminal outcomes.
@@ -2016,22 +2129,22 @@ export function sanitizeInterruptedRuns(runs: ActiveRunRecord[], now = Date.now(
   }
   if (quarantined.length) {
     console.warn(
-      `[runner] Restart recovery kept ${interrupted.length} unique run(s), quarantined ${quarantined.length} duplicate/unsafe/excess record(s)`,
+      `[runner] Restart recovery kept ${interrupted.length} unique run(s), quarantined ${quarantined.length} duplicate/unsafe record(s)`,
     );
   }
   return { interrupted, quarantined };
 }
 
 function recoveryQuarantineMessage(entry: QuarantinedRun): string {
-  const reason =
-    entry.reason === "resume_attempts_exhausted"
-      ? `it already used ${entry.run.resumeAttempts ?? MAX_BOOT_RESUME_ATTEMPTS} restart recovery attempts`
-      : entry.reason === "recovery_expired"
-        ? "its durable journal lineage is older than 24 hours"
-        : entry.reason === "boot_recovery_limit"
-          ? `the boot recovery safety limit is ${MAX_BOOT_RECOVERIES} runs`
-          : "its recovery lineage was recursively re-journaled";
-  return `Restart recovery was stopped safely because ${reason}. The record was moved to the run-journal quarantine for inspection; send the prompt again to continue.`;
+  if (entry.reason === "resume_attempts_exhausted") {
+    const attempts = entry.run.resumeAttempts ?? MAX_BOOT_RESUME_ATTEMPTS;
+    const count = attempts === 2 ? "twice" : `${attempts} times`;
+    return `Restart recovery failed ${count}. Send the prompt again to continue.`;
+  }
+  if (entry.reason === "recovery_expired") {
+    return "Restart recovery expired. Send the prompt again to continue.";
+  }
+  return "Restart recovery could not continue safely. Send the prompt again to continue.";
 }
 
 export async function runRecoveryQueue(tasks: Array<() => Promise<void>>): Promise<void> {
@@ -2100,6 +2213,29 @@ export function resumeContinuationPrompt(originalPrompt?: string | null): string
     "If you no longer see the earlier conversation, treat that prompt as the task " +
     "definition — do not infer the task from repository or checkout state."
   );
+}
+
+const RESTART_RECOVERY_OPEN = '<opensession:context source="restart-recovery">';
+
+/** A restart continuation is harness input, not something the person said.
+ * The engine receives it as a user-role turn, while transcript parsing strips
+ * the fenced block and therefore keeps the conversation at one user message. */
+export function restartContinuationPrompt(originalPrompt?: string | null): string {
+  const p = (originalPrompt || "").trim();
+  if (p.startsWith(RESTART_RECOVERY_OPEN)) return p;
+  return wrapContext(resumeContinuationPrompt(originalPrompt), "restart-recovery");
+}
+
+/** Build the next provider's turn without replaying the person's request.
+ * Image turns are the exception: the fresh provider needs the image-bearing
+ * message, and promptEntryId keeps its transcript row stable. */
+export function fallbackContinuationPrompt(
+  handoff: string,
+  originalPrompt: string,
+  hasImages: boolean,
+): string {
+  const context = wrapContext(handoff, "handoff");
+  return hasImages ? `${context}\n\n${originalPrompt}` : context;
 }
 
 function recoveredResultContinuationPrompt(originalPrompt?: string | null): string {

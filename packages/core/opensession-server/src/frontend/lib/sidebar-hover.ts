@@ -4,11 +4,9 @@ import { runNeedsAttention } from "./sidebar-lanes";
 import type { MineStatus } from "./sidebar-types";
 import type { UnifiedSession, Workspace } from "./types";
 import {
-	loadOverview,
-	loadSessionOverview,
-	overviewCache,
-} from "./workspace-overview";
-import { useEffect, useState } from "react";
+	useSessionOverviewResource,
+	useWorkspaceOverviewResource,
+} from "../hooks/useApiResources";
 
 // The single prominent status line + its dot/tone. Ordering mirrors how a person
 // triages: a blocked question first, then live activity, then PR/lifecycle.
@@ -30,9 +28,9 @@ export function hoverState(s: UnifiedSession): {
 		};
 	if (runNeedsAttention(s))
 		return {
-			label: "Last run failed. Needs attention.",
+			label: "Last run failed. Send a prompt to retry.",
 			tone: "accent",
-			dotClass: SIDEBAR_STATUS_DOT.waiting,
+			dotClass: SIDEBAR_STATUS_DOT.failed,
 		};
 	if (s.isRunning)
 		return {
@@ -90,6 +88,14 @@ export function compactNum(n: number): string {
 	return String(n);
 }
 
+/** Keep the card on the failure reason. The status above it already says the
+ * run failed and what to do next, so later recovery instructions only repeat
+ * that message. The full error remains available through the callout title. */
+export function cardRunErrorDetail(message: string): string {
+	const detail = message.trim().replace(/^pi:\s*/i, "");
+	return detail.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim() || detail;
+}
+
 // ── Workspace hover card ────────────────────────────────────────────────────
 // Structural subset of WsRow (declared inside Sidebar) that the card reads.
 export interface WsCardRow {
@@ -116,42 +122,21 @@ export function useWsOverview(row: WsCardRow): WorkspaceOverview | null {
 	const cacheKey =
 		row.workspace?.id || `sessions:${row.sessions.map((c) => c.id).join(",")}`;
 	const activityKey = row.lastActivity || row.sessions.map((c) => c.lastActivity).join(",");
-	const [ov, setOv] = useState<WorkspaceOverview | null>(
-		() => overviewCache.get(cacheKey)?.data ?? null,
+	const { data } = useWorkspaceOverviewResource(
+		cacheKey,
+		row.workspace?.id ?? null,
+		row.sessions.map((session) => ({
+			id: session.id,
+			title: session.title,
+			createdAt: session.createdAt,
+			lastActivity: session.lastActivity,
+		})),
+		{
+			enabled: row.sessions.length > 0,
+			revision: activityKey,
+		},
 	);
-	useEffect(() => {
-		let alive = true;
-		const cached = overviewCache.get(cacheKey);
-		setOv(cached?.data ?? null);
-		if (row.sessions.length === 0) return;
-		const activityAt = activityKey ? new Date(activityKey).getTime() : 0;
-		if (
-			cached &&
-			Date.now() - cached.at < 30_000 &&
-			(!activityAt || cached.at >= activityAt)
-		)
-			return;
-		loadOverview(
-			cacheKey,
-			row.workspace?.id ?? null,
-			row.sessions.map((c) => ({
-				id: c.id,
-				title: c.title,
-				createdAt: c.createdAt,
-				lastActivity: c.lastActivity,
-			})),
-		)
-			.then((d) => {
-				if (alive) setOv(d);
-			})
-			.catch(() => {
-				// The view just stays without a description/thumbnails.
-			});
-		return () => {
-			alive = false;
-		};
-	}, [cacheKey, activityKey]);
-	return ov;
+	return data ?? null;
 }
 
 /**
@@ -162,39 +147,17 @@ export function useWsOverview(row: WsCardRow): WorkspaceOverview | null {
 export function useSessionOverview(
 	session: UnifiedSession,
 ): WorkspaceOverview | null {
-	const cacheKey = `sessions:${session.id}`;
 	const activityKey = session.lastActivity || "";
-	const [ov, setOv] = useState<WorkspaceOverview | null>(
-		() => overviewCache.get(cacheKey)?.data ?? null,
-	);
-	useEffect(() => {
-		let alive = true;
-		const cached = overviewCache.get(cacheKey);
-		setOv(cached?.data ?? null);
-		const activityAt = activityKey ? new Date(activityKey).getTime() : 0;
-		if (
-			cached &&
-			Date.now() - cached.at < 30_000 &&
-			(!activityAt || cached.at >= activityAt)
-		)
-			return;
-		loadSessionOverview({
+	const { data } = useSessionOverviewResource(
+		{
 			id: session.id,
 			title: session.title,
 			createdAt: session.createdAt,
 			lastActivity: session.lastActivity,
-		})
-			.then((d) => {
-				if (alive) setOv(d);
-			})
-			.catch(() => {
-				// The card just stays without a description or thumbnails.
-			});
-		return () => {
-			alive = false;
-		};
-	}, [cacheKey, activityKey]);
-	return ov;
+		},
+		{ revision: activityKey },
+	);
+	return data ?? null;
 }
 
 // The PR that fronts the workspace (the newest session that has one) and how to

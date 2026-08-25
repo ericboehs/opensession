@@ -1,23 +1,39 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import type { TranscriptEntry } from "../lib/types";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { getCurrentUser } from "./UserPicker";
-import { renderMarkdown } from "../lib/markdown";
-import { fetchFileMentions, fetchMentionSuggestions } from "../lib/api";
-import { TranscriptBlocks } from "./TranscriptBlocks";
-import { useFileMentions } from "./useFileMentions";
-import { IconArrowUp } from "./icons";
+import {
+	fetchFileMentions,
+	fetchMentionSuggestions,
+	fetchModels,
+	type ModelOption,
+} from "../lib/api";
+import { splitAttachments, type FileAttachment } from "../lib/images";
+import { Composer } from "./Composer";
 import { mergeTranscriptEntries } from "../lib/transcript-state";
 import { CONTINUE_AFTER_FAILURE_PROMPT } from "../lib/continue-run";
-import { noAutofill } from "../lib/composer-autofill";
+import { LiveTurnStore } from "../lib/live-turn-store";
+import { getLiveTypingPref } from "../lib/live-typing-pref";
+import { randomUUID } from "../lib/random-uuid";
+import { isTimelineOnlyRunnerNotice } from "../lib/runner-events";
+import { otherTypingUsers } from "../lib/typing";
 import { cn } from "../ui/cn";
+import { msgBubbleUser, msgOwnTurn, msgRow } from "../lib/msg-classes";
+import { SessionTranscript } from "./SessionTranscript";
+import { TypingIndicator } from "./TypingIndicator";
+import { duration, ease } from "../ui/motion";
 import {
-	msgBodyStreaming,
-	msgBubbleUser,
-	msgOwnTurn,
-	msgRow,
-	msgStreamingRow,
-} from "../lib/msg-classes";
+	addStaging,
+	countStaging,
+	NOTHING_STAGING,
+	subtractStaging,
+} from "../lib/attachments";
+import {
+	foregroundFileComposerOwns,
+	hasDraggedFiles,
+} from "../lib/file-drag";
+import { FullPageFileDropOverlay } from "./FullPageFileDropOverlay";
 
 interface DeskConversationProps {
 	sessionId: string;
@@ -25,9 +41,10 @@ interface DeskConversationProps {
 	presenceActive?: boolean;
 	/** Focus the composer when this conversation first mounts. */
 	autoFocus?: boolean;
-	/** Controls rendered inside the composer, immediately before submit. */
-	trailingActions?: React.ReactNode;
 	placeholder?: string;
+	/** The Desk session's stored model and reasoning effort (from
+	 *  /api/desk/ensure). Both are switchable from the composer's model pill. */
+	model?: string;
 	effort?: string;
 	hideBefore?: string;
 	/** While a voice call is live, typed messages go into it instead of
@@ -36,10 +53,6 @@ interface DeskConversationProps {
 	/** Drill into a session a tool call spawned (the Desk delegates constantly).
 	 *  The overlay has no side pane, so this opens it in the full viewer. */
 	onOpenSubagent?: (sessionId: string) => void;
-	/** Treat a conversation older than this as finished, so the Desk opens on
-	 *  its board rather than on a days-old chat. Display only — one click
-	 *  brings it back, and the full transcript is always in the session view. */
-	staleAfterMs?: number;
 	/** Starter prompts, shown as a scrolling pill row above the composer while
 	 *  there's no conversation. Picking one fills the composer rather than
 	 *  sending: some of them name actions with side effects, and all of them
@@ -55,23 +68,59 @@ export function DeskConversation({
 	sessionId,
 	presenceActive = true,
 	autoFocus = false,
-	trailingActions,
 	placeholder,
-	effort,
+	model: sessionModel,
+	effort: sessionEffort,
 	hideBefore,
 	voiceSend,
 	onOpenSubagent,
-	staleAfterMs,
 	suggestions,
 }: DeskConversationProps) {
-	const { connected, send, addHandler } = useWebSocket(presenceActive);
+	const { connected, send, setTyping, addHandler } = useWebSocket(presenceActive);
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
-	const [streamText, setStreamText] = useState("");
+	const [typingUsers, setTypingUsers] = useState<string[]>([]);
 	const [isRunning, setIsRunning] = useState(false);
-	const [draft, setDraft] = useState("");
 	const [pending, setPending] = useState<string | null>(null);
+	const [hasLiveText, setHasLiveText] = useState(false);
+	const [dictationHidesSuggestions, setDictationHidesSuggestions] = useState(false);
+	// Attachments staged for the next send. The Composer stages files to disk
+	// itself (no `onAddAttachments`), the same way the catch-up deck's reply box
+	// does; both ride along on the prompt.
+	const [images, setImages] = useState<string[]>([]);
+	const [files, setFiles] = useState<FileAttachment[]>([]);
+	const [dropStaging, setDropStaging] = useState(NOTHING_STAGING);
+	const [fileDragActive, setFileDragActive] = useState(false);
+	const fileDragWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	// The model pill's catalog. Empty until it loads — the pill falls back to
+	// naming the id it was given, so nothing waits on this.
+	const [models, setModels] = useState<ModelOption[]>([]);
+	const [defaultModel, setDefaultModel] = useState("");
+	const [model, setModel] = useState(sessionModel || "");
+	// The Desk is pinned to a fast model on low effort server-side (desk.ts);
+	// both are the session's own settings from here on.
+	const [effort, setEffort] = useState(sessionEffort || "low");
+	// Picking a starter pill fills the composer rather than sending, so it goes
+	// in as a one-shot prefill (the draft lives inside the Composer).
+	const [prefill, setPrefill] = useState<{
+		seq: number;
+		text: string;
+		replace: boolean;
+	} | null>(null);
 	const bodyRef = useRef<HTMLDivElement | null>(null);
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+	const globalFileComposerRef = useRef<HTMLDivElement | null>(null);
+	// Stick to the live edge only while the reader is already there, so a
+	// streaming reply doesn't yank them up from scrollback.
+	const followRef = useRef(true);
+	// One store per session, stable across renders: it sits in effect deps
+	// below, and a fresh instance every render would loop those effects forever
+	// (the compiler bails on this component, so it gets no automatic help).
+	const liveTurnStore = useMemo(() => {
+		// Read (and discard) the session id so the linter sees the reset key:
+		// a new session must get a fresh store, nothing else may re-create it.
+		void sessionId;
+		return new LiveTurnStore();
+	}, [sessionId]);
 
 	useEffect(() => {
 		if (!autoFocus) return;
@@ -81,47 +130,124 @@ export function DeskConversation({
 		);
 		return () => window.clearTimeout(timer);
 	}, [autoFocus]);
-	// Stick to the live edge only while the reader is already there, so a
-	// streaming reply doesn't yank them up from scrollback.
-	const followRef = useRef(true);
-	const streamSeqRef = useRef(0);
-	const [showEarlier, setShowEarlier] = useState(false);
+
+	function handleDictationActive(active: boolean) {
+		// The row exits during the Composer morph, not after it. Sharing the same
+		// start makes the two pieces read as one compacting surface.
+		setDictationHidesSuggestions(active);
+	}
+
+	async function addDeskAttachments(picked: FileList | File[]) {
+		const selected = Array.from(picked);
+		const batch = countStaging(selected);
+		setDropStaging((current) => addStaging(current, batch));
+		await (async () => {
+const { images: addedImages, files: addedFiles, rejected } =
+				await splitAttachments(selected);
+			if (addedImages.length)
+				setImages((current) => [...current, ...addedImages]);
+			if (addedFiles.length)
+				setFiles((current) => [...current, ...addedFiles]);
+			if (rejected.length) alert(`Couldn't attach:\n${rejected.join("\n")}`);
+})().finally(async () => {
+setDropStaging((current) => subtractStaging(current, batch));
+});
+	}
+
+	function resetFileDrag() {
+		if (fileDragWatchdogRef.current) clearTimeout(fileDragWatchdogRef.current);
+		fileDragWatchdogRef.current = null;
+		setFileDragActive(false);
+	}
+
+	function armFileDragWatchdog() {
+		if (fileDragWatchdogRef.current) clearTimeout(fileDragWatchdogRef.current);
+		fileDragWatchdogRef.current = setTimeout(resetFileDrag, 500);
+	}
+
+	useEffect(() => {
+		if (!presenceActive || !connected) return;
+		function ownsFileDrag() {
+			return foregroundFileComposerOwns(globalFileComposerRef.current);
+		}
+		function handleDragEnter(event: DragEvent) {
+			if (!hasDraggedFiles(event.dataTransfer)) return;
+			if (!ownsFileDrag()) {
+				resetFileDrag();
+				return;
+			}
+			event.preventDefault();
+			armFileDragWatchdog();
+			setFileDragActive(true);
+		}
+		function handleDragLeave(event: DragEvent) {
+			if (!hasDraggedFiles(event.dataTransfer)) return;
+			if (!ownsFileDrag()) {
+				resetFileDrag();
+				return;
+			}
+			const next = event.relatedTarget;
+			if (next instanceof Node && document.documentElement.contains(next)) return;
+			resetFileDrag();
+		}
+		function handleDragOver(event: DragEvent) {
+			if (!hasDraggedFiles(event.dataTransfer)) return;
+			if (!ownsFileDrag()) {
+				resetFileDrag();
+				return;
+			}
+			event.preventDefault();
+			armFileDragWatchdog();
+			setFileDragActive(true);
+			if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+		}
+		function handleDrop(event: DragEvent) {
+			if (!hasDraggedFiles(event.dataTransfer)) return;
+			if (!ownsFileDrag()) {
+				resetFileDrag();
+				return;
+			}
+			event.preventDefault();
+			event.stopPropagation();
+			const dropped = event.dataTransfer?.files;
+			resetFileDrag();
+			if (dropped?.length) void addDeskAttachments(dropped);
+		}
+		window.addEventListener("dragenter", handleDragEnter, true);
+		window.addEventListener("dragleave", handleDragLeave, true);
+		window.addEventListener("dragover", handleDragOver, true);
+		window.addEventListener("drop", handleDrop, true);
+		return () => {
+			window.removeEventListener("dragenter", handleDragEnter, true);
+			window.removeEventListener("dragleave", handleDragLeave, true);
+			window.removeEventListener("dragover", handleDragOver, true);
+			window.removeEventListener("drop", handleDrop, true);
+			resetFileDrag();
+		};
+	}, [presenceActive, connected, sessionId]);
 
 	// The Desk's "Clear" marker: everything at/before it stays out of this view
 	// (locally-minted system lines have fresh timestamps and survive).
-	const cleared = hideBefore
+	const visibleEntries = hideBefore
 		? entries.filter((e) => !e.timestamp || e.timestamp > hideBefore)
 		: entries;
+	const hasContent =
+		visibleEntries.length > 0 || hasLiveText || isRunning || !!pending;
 
-	// A conversation you left days ago isn't one you're in: past staleAfterMs
-	// the Desk opens on its board instead. The cutoff is frozen at mount, so
-	// anything said in this sitting stays put no matter how long it stays open.
-	const staleCutoff = useRef(
-		staleAfterMs ? new Date(Date.now() - staleAfterMs).toISOString() : null,
-	).current;
-	const visibleEntries =
-		staleCutoff && !showEarlier
-			? cleared.filter((e) => !e.timestamp || e.timestamp > staleCutoff)
-			: cleared;
-	const earlierCount = cleared.length - visibleEntries.length;
-	const hasContent = visibleEntries.length > 0 || !!streamText || !!pending;
-
-	// "@"-mentions: files (this session's repo), other sessions, teammates —
-	// same suggestions endpoint as the main composer.
-	const mentions = useFileMentions({
-		value: draft,
-		onChange: setDraft,
-		textareaRef,
-		mentionFetch: (q) => fetchFileMentions(q, sessionId),
-		paletteFetch: (q) =>
-			fetchMentionSuggestions(q, sessionId, getCurrentUser()),
-	});
+	useEffect(() => {
+		fetchModels()
+			.then((m) => {
+				setModels(m.models);
+				setDefaultModel(m.default);
+			})
+			.catch(() => {});
+	}, []);
 
 	// Watch the Desk only and tear the socket down on unmount / id change.
 	useEffect(() => {
 		if (!connected) return;
 		setEntries([]);
-		setStreamText("");
+		liveTurnStore.clear();
 		setPending(null);
 		followRef.current = true;
 		// supportsSeq: transcript v2 capability (docs/transcripts.md).
@@ -156,45 +282,47 @@ export function DeskConversation({
 					const landed = msg.entries.filter(
 						(e) => e.type === "assistant" && e.content,
 					);
-					if (landed.length) {
-						setStreamText((prev) => {
-							let next = prev;
-							for (const e of landed) next = next.replace(e.content, "");
-							return next.trim() ? next : "";
-						});
-					}
+					if (landed.length)
+						liveTurnStore.land(
+							landed.map((entry) => ({
+								id: entry.id,
+								content: entry.content,
+							})),
+						);
 					break;
 				}
 				case "session_status":
 					setIsRunning(msg.isRunning);
 					break;
+				case "typing":
+					setTypingUsers(otherTypingUsers(msg.users, getCurrentUser()));
+					break;
 				case "stream_start":
-					streamSeqRef.current++;
 					setIsRunning(true);
-					setStreamText("");
+					liveTurnStore.start(msg.by);
 					setPending(null);
 					break;
 				case "stream_text":
-					setStreamText((prev) => prev + msg.text);
+					// Live typing is per viewer (Settings > Preferences), default off;
+					// with it off the reply appears as each block's durable entry lands.
+					if (!isTimelineOnlyRunnerNotice(msg.text) && getLiveTypingPref())
+						liveTurnStore.append(msg.text, msg.blockId);
 					break;
 				case "stream_tool_use":
 				case "stream_tool_result":
 					setEntries((prev) => mergeTranscriptEntries(prev, [msg.entry]));
 					break;
-				case "stream_done": {
-					const seq = streamSeqRef.current;
-					window.setTimeout(() => {
-						if (streamSeqRef.current === seq) setStreamText("");
-					}, 5000);
+				case "stream_done":
+					setIsRunning(false);
+					liveTurnStore.finish();
 					break;
-				}
 				// A slash-command reply / server heads-up. Weave it in as a system
 				// line so it reads inline with the conversation (mirrors SessionViewer).
 				case "notice":
 					setEntries((prev) => [
 						...prev,
 						{
-							id: crypto.randomUUID(),
+							id: randomUUID(),
 							type: "system",
 							content: msg.message,
 							timestamp: new Date().toISOString(),
@@ -205,15 +333,14 @@ export function DeskConversation({
 				// surface the error where the reply would have been and clear any
 				// streaming/sending state so nothing sticks (mirrors SessionViewer).
 				case "error":
-					streamSeqRef.current++;
 					setIsRunning(false);
-					setStreamText("");
+					liveTurnStore.clear();
 					setPending(null);
 					if (msg.message) {
 						setEntries((prev) => [
 							...prev,
 							{
-								id: crypto.randomUUID(),
+								id: randomUUID(),
 								type: "system",
 								content: `⚠ Run failed: ${msg.message}`,
 								timestamp: new Date().toISOString(),
@@ -227,8 +354,23 @@ export function DeskConversation({
 		return () => {
 			unsubscribe();
 			send({ type: "unwatch", sessionId });
+			liveTurnStore.clear();
 		};
-	}, [connected, sessionId, send, addHandler]);
+	}, [connected, sessionId, send, addHandler, liveTurnStore]);
+
+	// The live tail updates through an external store so the whole Desk does not
+	// re-render for every frame. Only mirror its empty boundary for the board and
+	// keep a following reader pinned after React paints each new frame.
+	useEffect(() => {
+		const unsubscribe = liveTurnStore.subscribe(() => {
+			setHasLiveText(liveTurnStore.hasText());
+		});
+		return unsubscribe;
+	}, [liveTurnStore]);
+	const relayoutLive = () => {
+		const el = bodyRef.current;
+		if (el && followRef.current) el.scrollTop = el.scrollHeight;
+	};
 
 	// Keep a following reader pinned to the live edge as content lands. With no
 	// conversation the pane holds the board instead, which is read top-down —
@@ -237,7 +379,7 @@ export function DeskConversation({
 		if (!hasContent) return;
 		const el = bodyRef.current;
 		if (el && followRef.current) el.scrollTop = el.scrollHeight;
-	}, [entries, streamText, pending, hasContent]);
+	}, [entries, pending, hasContent]);
 
 	function onScroll() {
 		const el = bodyRef.current;
@@ -245,11 +387,15 @@ export function DeskConversation({
 		followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
 	}
 
-	function handleSend() {
-		const content = draft.trim();
-		if (!content || !connected) return;
+	// Returns true when the message was consumed, so the (uncontrolled) Composer
+	// clears its draft; false keeps it for a retry — same contract as the
+	// session view.
+	function handleSend(raw: string, opts?: { steer?: boolean }): boolean {
+		const content = raw.trim();
+		if (!connected) return false;
+		if (!content && images.length === 0 && files.length === 0) return false;
 		// Slash commands (/model, /loop, /goal, …) are handled by the main
-		// session's command system, which this compact composer deliberately
+		// session's command system, which this compact surface deliberately
 		// doesn't wire up. Sent as a plain prompt they produce no turn, so the
 		// optimistic "sending…" bubble below would never reconcile and stick
 		// forever. Surface an inline hint instead — the input isn't silently
@@ -258,33 +404,61 @@ export function DeskConversation({
 			setEntries((prev) => [
 				...prev,
 				{
-					id: crypto.randomUUID(),
+					id: randomUUID(),
 					type: "system",
 					content:
 						"Slash commands aren't supported in the Desk. Run them from a session.",
 					timestamp: new Date().toISOString(),
 				},
 			]);
-			setDraft("");
-			return;
+			return true;
 		}
 		// Live voice call: inject the typed message into it (the call mirrors its
 		// transcript back, so no optimistic bubble — the entry lands via append).
-		if (voiceSend?.(content)) {
-			setDraft("");
+		if (content && voiceSend?.(content)) {
 			followRef.current = true;
-			return;
+			return true;
 		}
+		// Prefer the staged disk path (HTTP upload); fall back to inline dataUrl.
+		const filePayload = files.map((f) =>
+			f.path
+				? { name: f.name, path: f.path }
+				: { name: f.name, dataUrl: f.dataUrl },
+		);
 		send({
 			type: "prompt",
 			sessionId,
 			content,
 			user: getCurrentUser(),
-			effort: effort || "high",
+			effort: effort || "low",
+			// Busy sends follow the same two behaviours as a session: plain send
+			// queues until the run finishes, ⌘/Ctrl+Enter steers into it.
+			...(isRunning
+				? { busyMode: opts?.steer ? ("steer" as const) : ("queue" as const) }
+				: {}),
+			...(images.length ? { images } : {}),
+			...(files.length ? { files: filePayload } : {}),
 		});
 		setPending(content);
-		setDraft("");
+		setImages([]);
+		setFiles([]);
 		followRef.current = true;
+		return true;
+	}
+
+	// Model and effort are settings of the Desk session, so the switch routes
+	// through the /model command (persisted + broadcast server-side), exactly
+	// as SessionViewer and the catch-up deck do.
+	function handleModelChange(next: string) {
+		const target = next || defaultModel;
+		if (!target || target === (model || defaultModel)) return;
+		setModel(next);
+		send({
+			type: "prompt",
+			sessionId,
+			content: `/model ${target}`,
+			user: getCurrentUser(),
+		});
 	}
 
 	// "Continue" under a failed run's notice. An ordinary prompt, like anything
@@ -296,32 +470,33 @@ export function DeskConversation({
 			sessionId,
 			content: CONTINUE_AFTER_FAILURE_PROMPT,
 			user: getCurrentUser(),
-			effort: effort || "high",
+			effort: effort || "low",
 		});
 		followRef.current = true;
 	}
-
-
 	return (
-		<div className="relative flex h-full min-h-0 flex-col">
+		// `--desk-under` is what the composer takes back off the conversation: the
+		// input box rides up over the last rows in normal flow, so they scroll
+		// under it instead of stopping above it. The session view does the same
+		// (VIEWER_INPUT), fading the overlap into its own opaque fill — the Desk
+		// sits on the palette's glass, so the rows dissolve into a mask instead.
+		<div className="relative flex h-full min-h-0 flex-col [--desk-under:18px]">
+			{/* The shared transcript virtualizer and lazy markdown/code renderers
+			    resolve their scroll root through this marker, as in SessionViewer. */}
 			<div
-				className="min-h-0 flex-1 overflow-y-auto px-3 pb-16 pt-2"
+				className={cn(
+					"viewer-messages min-h-0 flex-1 overflow-y-auto px-3 pt-2",
+					"pb-[calc(var(--desk-under)_+_12px)]",
+					"[-webkit-mask-image:linear-gradient(to_bottom,#000_calc(100%_-_var(--desk-under)),transparent_100%)]",
+					"[mask-image:linear-gradient(to_bottom,#000_calc(100%_-_var(--desk-under)),transparent_100%)]",
+				)}
 				ref={bodyRef}
 				onScroll={onScroll}
 			>
 				{!hasContent ? (
 					<>
-						{earlierCount > 0 && (
-							<button
-								type="button"
-								className="mx-auto mb-1 block rounded-control px-2 py-1 text-label font-medium text-faint hover:bg-hover hover:text-dim"
-								onClick={() => setShowEarlier(true)}
-							>
-								Show earlier conversation
-							</button>
-						)}
 						{/* Nothing else. A Desk with no conversation is its composer
-						    and the starter pills above it — a list of your open work
+						    and the starter pills above it. A list of your open work
 						    here was a second inbox to read past on the way to typing,
 						    and the sessions list already owns that job. */}
 					</>
@@ -334,10 +509,12 @@ export function DeskConversation({
 						    large result is truncated with a "Show full message"
 						    button that can't fetch, and any screenshot a tool
 						    returned renders as a broken image. */}
-						<TranscriptBlocks
+						<SessionTranscript
 							entries={visibleEntries}
 							live={isRunning}
 							sessionId={sessionId}
+							liveTurnStore={liveTurnStore}
+							onLiveLayout={relayoutLive}
 							onOpenSubagent={onOpenSubagent}
 							// The Desk shows the same failure pill as a session, so it
 							// offers the same one press out of it. Gated like handleSend.
@@ -345,14 +522,6 @@ export function DeskConversation({
 								connected && !isRunning ? continueAfterFailure : undefined
 							}
 						/>
-						{streamText && (
-							<div className={cn(msgRow, msgStreamingRow)}>
-								<div
-									className={cn(msgBodyStreaming, "markdown")}
-									dangerouslySetInnerHTML={{ __html: renderMarkdown(streamText) }}
-								/>
-							</div>
-						)}
 						{/* Optimistic echo of the just-sent message — rendered as a normal
 						    sent bubble (not the dimmed "sending" look) so it reads as
 						    delivered the instant Enter lands; reconciles away when the
@@ -366,65 +535,89 @@ export function DeskConversation({
 				)}
 			</div>
 
-			<div className="absolute inset-x-2 bottom-2 z-10">
+			<div className="relative z-[1] mt-[calc(-1*var(--desk-under))] shrink-0 px-2 pb-2">
 				{/* Starter pills stay attached to the composer and disappear once the
-				    conversation starts. */}
-				{!hasContent && !!suggestions?.length && (
-					<div className="flex gap-1.5 overflow-x-auto px-1 pb-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-						{suggestions.map((s) => (
-							<button
-								type="button"
-								key={s}
-								className="shrink-0 whitespace-nowrap rounded-full bg-hover px-3 py-1.5 text-label font-medium text-dim hover:bg-active hover:text-fg"
-								onClick={() => {
-									setDraft(s);
-									textareaRef.current?.focus();
-								}}
-							>
-								{s}
-							</button>
-						))}
-					</div>
-				)}
+				    conversation starts. Picking one fills the draft rather than
+				    sending: some name actions with side effects, and all of them are
+				    openings you'd want to finish in your own words. */}
+				<div className="overflow-hidden">
+					<AnimatePresence initial={false}>
+						{!hasContent &&
+							!!suggestions?.length &&
+							!dictationHidesSuggestions && (
+								<motion.div
+									key="desk-suggestions"
+									initial={{ y: 40 }}
+									animate={{ y: 0 }}
+									exit={{ y: 40 }}
+									transition={{ type: "tween", duration: duration.base, ease }}
+									className="flex gap-1.5 overflow-x-auto px-1 pb-3 pr-8 [-webkit-mask-image:linear-gradient(to_right,#000_0,#000_calc(100%_-_32px),transparent_100%)] [mask-image:linear-gradient(to_right,#000_0,#000_calc(100%_-_32px),transparent_100%)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+								>
+									{suggestions.map((s) => (
+										<button
+											type="button"
+											key={s}
+											className="shrink-0 whitespace-nowrap rounded-full bg-hover px-3 py-1.5 text-label font-medium text-dim hover:bg-active hover:text-fg"
+											onClick={() => {
+												setPrefill((current) => ({
+													seq: (current?.seq ?? 0) + 1,
+													text: s,
+													replace: true,
+												}));
+												textareaRef.current?.focus();
+											}}
+										>
+											{s}
+										</button>
+									))}
+								</motion.div>
+							)}
+					</AnimatePresence>
+				</div>
 
+				<TypingIndicator users={typingUsers} className="mb-1 px-5" />
+				{/* The open Desk owns the app-wide drop over the session underneath. */}
 				<div
-					className="flex items-center gap-1 rounded-popup border border-line bg-surface p-1 smooth-shadow-ring-sm transition-colors focus-within:border-accent"
-					ref={mentions.inputWrapRef}
+					ref={globalFileComposerRef}
+					className="relative"
+					data-global-file-composer={presenceActive && connected ? "" : undefined}
 				>
-					{mentions.popup}
-					<textarea
-						ref={textareaRef}
-						{...mentions.inputProps}
-						className="h-9 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-xs font-medium leading-[18px] text-fg outline-none placeholder:text-dim disabled:cursor-default disabled:opacity-40"
-						rows={1}
-						autoFocus={autoFocus}
-						{...noAutofill}
-						value={draft}
+					<Composer
+						draftKey={`desk:${sessionId}`}
+						onSend={handleSend}
+						onTyping={(active) => setTyping(sessionId, active)}
+						onDictationActive={handleDictationActive}
+						attachmentShortcutActive={presenceActive}
 						placeholder={
 							connected ? placeholder || "Ask your Desk…" : "Not connected"
 						}
 						disabled={!connected}
-						onChange={(e) => setDraft(e.target.value)}
-						onKeyUp={mentions.sync}
-						onClick={mentions.sync}
-						onBlur={() => setTimeout(mentions.close, 120)}
-						onKeyDown={(e) => {
-							if (mentions.handleKeyDown(e)) return;
-							if (e.key === "Enter" && !e.shiftKey) {
-								e.preventDefault();
-								handleSend();
-							}
-						}}
+						sendDisabled={(text) =>
+							!text.trim() && images.length === 0 && files.length === 0
+						}
+						busy={isRunning}
+						images={images}
+						onImagesChange={setImages}
+						files={files}
+						onFilesChange={setFiles}
+						staging={dropStaging}
+						onAddAttachments={addDeskAttachments}
+						prefill={prefill}
+						models={models}
+						defaultModel={defaultModel}
+						model={model}
+						onModelChange={handleModelChange}
+						modelTitle="Model and reasoning effort for your Desk"
+						effort={effort}
+						onEffortChange={setEffort}
+						mentionFetch={(q) => fetchFileMentions(q, sessionId)}
+						paletteFetch={(q) =>
+							fetchMentionSuggestions(q, sessionId, getCurrentUser())
+						}
+						autoFocus={autoFocus}
+						textareaRef={textareaRef}
 					/>
-					{trailingActions}
-					<button
-						className="flex size-9 shrink-0 items-center justify-center rounded-control bg-fg text-panel disabled:opacity-40"
-						onClick={handleSend}
-						disabled={!connected || !draft.trim()}
-						aria-label="Send"
-					>
-						<IconArrowUp size={20} />
-					</button>
+					<FullPageFileDropOverlay active={fileDragActive} />
 				</div>
 			</div>
 		</div>

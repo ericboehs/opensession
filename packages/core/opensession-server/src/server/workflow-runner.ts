@@ -25,6 +25,7 @@
  */
 
 import { randomUUIDv7 } from "bun";
+import { workerEntry } from "../runner-host/exe";
 import {
 	appendWorkflowJournal,
 	cancelLiveWorkflow,
@@ -62,7 +63,7 @@ import type { WorkflowMcpHost } from "./workflow-mcp";
  * until a human types "continue". Steered (the deliverToSession default), not
  * queued: this is an agent-to-agent handoff ("continue the task"), so it must
  * reach the model without a human in the loop. A mid-turn session folds it into
- * the running turn (opencode steer is a non-disruptive noReply fold-in, not an
+ * the running turn (pi steer is a non-disruptive noReply fold-in, not an
  * interrupt — a session polling workflow_status just sees the result land); an
  * idle one starts a turn; a steer that can't land falls through to the queue +
  * drain-watcher. Best-effort — a delivery failure must never affect the run's
@@ -100,7 +101,9 @@ function wakeOwningSession(snap: WorkflowRunSnapshot): void {
 			`Read its result with workflow_status ${snap.runId} and continue the task.` +
 			(snap.error ? `\nError: ${snap.error}` : "");
 		void ctrl
-			.deliverToSession(snap.sessionId, msg, snap.user)
+			.deliverToSession(snap.sessionId, msg, snap.user, {
+				deliveryId: `workflow:${snap.runId}:${snap.status}`,
+			})
 			.catch((e) =>
 				console.warn(`[workflow] ${snap.runId} wake delivery failed:`, e),
 			);
@@ -387,6 +390,10 @@ export interface StartWorkflowOpts {
 	mcpAllowlist?: string[];
 	/** Per-call tool denials (automation runs). */
 	deniedTools?: Record<string, string>;
+	/** Builds the in-process opensession-* servers the authoring run carries.
+	 *  Interactive sessions only; workflow-mcp.ts intersects it with its own
+	 *  allowlist. Must return FRESH instances (one transport per McpServer). */
+	inProcessMcp?: () => Record<string, unknown>;
 	/** Injected by tests; defaults to the real MCP host. */
 	mcpHost?: WorkflowMcpHost;
 }
@@ -503,6 +510,7 @@ function runWorkflow(
 							allowlist: opts.mcpAllowlist,
 							user: opts.user,
 							deniedTools: opts.deniedTools,
+							inProcessMcp: opts.inProcessMcp,
 						}),
 					);
 		}
@@ -1210,7 +1218,7 @@ function runWorkflow(
 		// Minimal env (belt) on top of the worker-side scrub (braces) — a Bun
 		// Worker is a same-process thread and would otherwise inherit the
 		// server's full secret-bearing process.env.
-		worker = new Worker(new URL("./workflow-worker.ts", import.meta.url).href, {
+		worker = new Worker(workerEntry("workflow-worker.js", new URL("./workflow-worker.ts", import.meta.url).href), {
 			env: { WORKFLOW_WORKER: "1" },
 		} as WorkerOptions);
 		worker.addEventListener("message", (event) => {

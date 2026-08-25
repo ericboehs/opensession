@@ -5,10 +5,10 @@
  * host worktrees, remote sandboxes, GitHub and code.storage stay consistent.
  */
 import { createHash, randomUUID } from "node:crypto";
-import { constants, existsSync } from "node:fs";
+import { workerEntry } from "../runner-host/exe";
+import { constants } from "node:fs";
 import { open, readlink, realpath, stat as fileStat } from "node:fs/promises";
 import { resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { UnifiedSession } from "./types";
 import type { Repo } from "./config";
 import { getSessionDiff, parsePatchFiles, type DiffFile } from "./git-diff";
@@ -98,11 +98,8 @@ function resetAnalysisWorker() {
 	analysisWorker = null;
 }
 
-function analysisWorkerUrl(): string {
-	const bundled = new URL("./code-flow-worker.js", import.meta.url);
-	return existsSync(fileURLToPath(bundled))
-		? bundled.href
-		: new URL("./code-flow-worker.ts", import.meta.url).href;
+function analysisWorkerUrl(): string | URL {
+	return workerEntry("code-flow-worker.js", new URL("./code-flow-worker.ts", import.meta.url).href);
 }
 
 function analyzeInWorker(input: CodeFlowAnalysisInput): Promise<CodeFlowResult> {

@@ -32,17 +32,18 @@ struct PresenceFacepile: View {
     /// to the backdrop at all. `.seam` is that.
     var separation: Separation = .ring
 
-    /// Beyond three the pile stops being readable in a navigation bar and the
-    /// rest collapse into a count.
-    private let maxFaces = 3
+    /// Beyond this limit the pile stops being readable and the rest collapse
+    /// into a count. Navigation bars keep the three-face default; the wider
+    /// Feed row raises it to four to match the desktop sidebar.
+    var maxFaces = 3
 
     /// A third of a face, the web's `-ml-1.5` against its 24px faces — enough
     /// overlap to read as a pile, short of hiding a face behind its neighbour.
     private var overlap: CGFloat { stacked ? size / 3 : -2 }
 
-    /// The seam's width. Two points, like the web's 2px box-shadow: one hair
-    /// is invisible against a photograph, three starts to read as a border.
-    private let seamWidth: CGFloat = 2
+    /// A one-point cutout keeps overlapping photos distinct without making
+    /// the separator heavier than the row it belongs to.
+    private let seamWidth: CGFloat = 1
 
     var body: some View {
         if viewers.isEmpty {
@@ -60,7 +61,7 @@ struct PresenceFacepile: View {
                             .font(.system(size: size * 0.38, weight: .semibold, design: .rounded))
                             .foregroundStyle(OS1VisualStyle.textDim)
                             .frame(width: size, height: size)
-                            .background(Circle().fill(OS1VisualStyle.hover))
+                            .background(SquircleCapsule().fill(OS1VisualStyle.hover))
                     }
                 }
             }
@@ -93,15 +94,24 @@ struct PresenceFacepile: View {
         content()
             .background {
                 if separated, separation == .seam {
-                    Circle()
-                        .fill(OS1VisualStyle.raised)
+                    SquircleCapsule()
+                        // This is the row showing through, not a frame around
+                        // the picture. Using its exact canvas avoids a grey
+                        // halo on the white sidebar.
+                        .fill(OS1VisualStyle.background)
                         .frame(width: size, height: size)
                         .offset(x: -seamWidth)
                 }
             }
             .overlay {
                 if stacked, separation == .ring {
-                    Circle().strokeBorder(OS1VisualStyle.background, lineWidth: 1.5)
+                    // Stroked and clipped rather than `strokeBorder`, which is
+                    // an `InsettableShape` method this hand-drawn superellipse
+                    // does not have: a centred stroke at twice the width leaves
+                    // exactly the inside half once the outside is clipped away.
+                    SquircleCapsule()
+                        .stroke(OS1VisualStyle.background, lineWidth: 3)
+                        .clipShape(SquircleCapsule())
                 }
             }
     }

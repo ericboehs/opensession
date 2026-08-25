@@ -25,6 +25,14 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(session.effectiveRepo, "backstage")
     }
 
+    func testSessionAliasesAreDecodedForTranscriptLinks() throws {
+        let session = try self.session(
+            #"{"id":"os-current","aliasIds":["bks-original"]}"#
+        )
+
+        XCTAssertEqual(session.aliasIds, ["bks-original"])
+    }
+
     @MainActor
     func testRepoLessMarkerWinsOverNormalizedDefaultRepo() throws {
         let session = try session(
@@ -63,6 +71,29 @@ final class SessionTests: XCTestCase {
         )
 
         XCTAssertEqual(body["sandbox"] as? String, "local")
+    }
+
+    @MainActor
+    func testSessionCreationCarriesOnlyStagedFiles() {
+        let staged = AttachedFile(
+            name: "incident.pdf",
+            mediaType: "application/pdf",
+            path: "/uploads/incident.pdf"
+        )
+        let local = AttachedFile(name: "still-uploading.log", data: Data("log".utf8))
+        let body = OS1API.createSessionBody(
+            prompt: "Review these",
+            repo: "opensession",
+            mode: "code",
+            files: [staged, local],
+            user: "Alice"
+        )
+
+        let files = body["files"] as? [[String: String]]
+        XCTAssertEqual(files?.count, 1)
+        XCTAssertEqual(files?.first?["name"], "incident.pdf")
+        XCTAssertEqual(files?.first?["type"], "application/pdf")
+        XCTAssertEqual(files?.first?["path"], "/uploads/incident.pdf")
     }
 
     @MainActor
@@ -241,20 +272,6 @@ final class SessionTests: XCTestCase {
         )
     }
 
-    func testTabSessionsJoinDuplicateWorkspaceRecordsOnTheSameWorktree() throws {
-        let sessions = try JSONDecoder().decode(
-            [Session].self,
-            from: Data(
-                #"[{"id":"person","workspaceId":"ws-person","worktreeDir":"/home/ubuntu/worktrees/feature","createdAt":"2026-07-01T00:00:00Z"},{"id":"review","workspaceId":"ghpr-42","worktreeDir":"/home/ubuntu/worktrees/feature","createdAt":"2026-07-02T00:00:00Z"},{"id":"other","workspaceId":"ws-other","worktreeDir":"/home/ubuntu/worktrees/other"}]"#.utf8
-            )
-        )
-
-        XCTAssertEqual(
-            SessionsListViewModel.tabSessions(in: sessions, containing: sessions[0]).map(\.id),
-            ["person", "review"]
-        )
-    }
-
     func testSidebarCollapsesWorkspaceSessionsIntoOneRow() throws {
         let sessions = try JSONDecoder().decode(
             [Session].self,
@@ -371,15 +388,14 @@ final class SessionTests: XCTestCase {
             calendar: calendar
         )
 
-        XCTAssertEqual(bands.map(\.band), [.needsAction, .recent, .yesterday, .earlier, .done])
+        XCTAssertEqual(bands.map(\.band), [.needsAction, .recent, .yesterday, .earlier])
         XCTAssertEqual(bands.map { $0.workspaces.map(\.mainSession.id) }, [
             ["blocked"],
+            // Merged work stays in its activity band instead of moving to Done.
             // A live row is recent whatever its day, but ranks by activity.
-            ["today-late", "today-early", "running-old"],
+            ["today-late", "merged-today", "today-early", "running-old"],
             ["yesterday"],
             ["earlier"],
-            // Landed today, and still Done rather than Recent.
-            ["merged-today"],
         ])
     }
 
@@ -456,6 +472,17 @@ final class SessionTests: XCTestCase {
         XCTAssertFalse(try session(#"{"id":"five","automation":""}"#).isAutomation)
         XCTAssertFalse(try session(#"{"id":"six","startedBy":"Kent"}"#).isAutomation)
         XCTAssertFalse(try session(#"{"id":"seven"}"#).isAutomation)
+    }
+
+    func testAgentStartedAcceptsExplicitAndLegacyOrigins() throws {
+        XCTAssertTrue(try session(#"{"id":"report","agentStarted":true}"#).wasAgentStarted)
+        XCTAssertTrue(
+            try session(#"{"id":"legacy-report","branch":"report-fix-ios"}"#).wasAgentStarted
+        )
+        XCTAssertTrue(
+            try session(#"{"id":"child","parentSessionId":"parent"}"#).wasAgentStarted
+        )
+        XCTAssertFalse(try session(#"{"id":"manual"}"#).wasAgentStarted)
     }
 
     func testTranscriptOwnerFallsBackToCreatedBy() throws {

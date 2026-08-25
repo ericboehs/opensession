@@ -10,17 +10,31 @@ import { requestUser, type RouteContext } from "./context";
 import { frontend } from "../frontend-build";
 import { getPins as getUserPins, setPins as setUserPins } from "../pins";
 import { getReads as getUserReads, setReads as setUserReads } from "../reads";
+import { scheduleLiveActivitySync } from "../live-activities";
 import { getDrafts, MAX_DRAFT_LENGTH, upsertDraft } from "../drafts";
 import { addSessionMemory, describeScope, forgetSessionMemory, listAllMemory, updateMemoryEntry } from "../session-memory";
 import { getLanes as getUserLanes, setLanes as setUserLanes } from "../lanes";
 import { getSnoozes as getUserSnoozes, setSnoozes as setUserSnoozes } from "../snoozes";
 import { getHides as getUserHides, setHides as setUserHides } from "../hides";
+import {
+	mergeMapDelta,
+	requestedMapDelta,
+} from "../shared/map-delta";
+import {
+	getSettlements as getUserSettlements,
+	setSettlements as setUserSettlements,
+} from "../settlements";
 import { getTabColors as getUserTabColors, setTabColors as setUserTabColors } from "../tab-colors";
 import { getUiPrefs, patchUiPrefs } from "../ui-prefs";
 import { getPersonalPrompt, setPersonalPrompt } from "../personal-prompts";
+import {
+	getPersonalOutputStyle,
+	setPersonalOutputStyle,
+} from "../personal-output-style";
 import { refreshWarmTemplate, setWarmTemplateConfig, warmTemplateStatus } from "../warm-template";
 import { previewPoolStatus, refreshGoldenImage, setPreviewPoolConfig } from "../preview-pool";
 import { REPOS } from "../worktree";
+import { conditionalJsonResponse } from "../http-json";
 
 export async function handlePrefsRoutes(
 	ctx: RouteContext,
@@ -185,8 +199,8 @@ export async function handlePrefsRoutes(
 		}
 	}
 
-	// ── The per-user stores below (pins, personal prompt, read marks, drafts,
-	// UI prefs, lanes, snoozes, hides, tab colors) all resolve WHO through
+	// ── The per-user stores below (pins, output style, personal prompt, read marks, drafts,
+	// UI prefs, lanes, snoozes, hides, settlements, tab colors) all resolve WHO through
 	// requestUser: the verified sign-in identity when web sign-in is active,
 	// the client-claimed name otherwise. They used to read the raw `user`
 	// param, which let a signed-in teammate read and overwrite another
@@ -197,7 +211,7 @@ export async function handlePrefsRoutes(
 	// the full list on every toggle and on first-load localStorage migration).
 	if (path === "/api/pins" && req.method === "GET") {
 		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";
-		return Response.json({ pins: getUserPins(user) });
+		return conditionalJsonResponse(req, { pins: getUserPins(user) });
 	}
 
 	if (path === "/api/pins" && req.method === "PUT") {
@@ -214,6 +228,33 @@ export async function handlePrefsRoutes(
 		}
 		const user = requestUser(ctx, body.user) || "Anonymous";
 		return Response.json({ pins: setUserPins(user, body.pins) });
+	}
+
+	// ── Per-user output style ──
+	// Concise changes how interactive runs report their work, not how much work
+	// they do. It shares the personal prompt's identity key so the choice follows
+	// a teammate between the web, native app, Slack, and GitHub.
+	if (path === "/api/personal-output-style" && req.method === "GET") {
+		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";
+		return Response.json({ outputStyle: getPersonalOutputStyle(user) });
+	}
+
+	if (path === "/api/personal-output-style" && req.method === "PUT") {
+		const body = await req.json().catch(() => null);
+		if (
+			!body ||
+			typeof body.user !== "string" ||
+			(body.outputStyle !== "default" && body.outputStyle !== "concise")
+		) {
+			return Response.json(
+				{ error: 'user (string) and outputStyle ("default" or "concise") are required' },
+				{ status: 400 },
+			);
+		}
+		const user = requestUser(ctx, body.user) || "Anonymous";
+		return Response.json({
+			outputStyle: setPersonalOutputStyle(user, body.outputStyle),
+		});
 	}
 
 	// ── Per-user personal system prompt ──
@@ -252,7 +293,7 @@ export async function handlePrefsRoutes(
 	// (the frontend pushes its full map on every mark change), same shape as pins.
 	if (path === "/api/reads" && req.method === "GET") {
 		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";
-		return Response.json({ reads: getUserReads(user) });
+		return conditionalJsonResponse(req, { reads: getUserReads(user) });
 	}
 
 	if (path === "/api/reads" && req.method === "PUT") {
@@ -269,7 +310,9 @@ export async function handlePrefsRoutes(
 			);
 		}
 		const user = requestUser(ctx, body.user) || "Anonymous";
-		return Response.json({ reads: setUserReads(user, body.reads) });
+		const reads = setUserReads(user, body.reads);
+		scheduleLiveActivitySync();
+		return Response.json({ reads });
 	}
 
 	// ── Per-user unsent composer drafts ──
@@ -282,7 +325,7 @@ export async function handlePrefsRoutes(
 	// drafts.
 	if (path === "/api/drafts" && req.method === "GET") {
 		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";
-		return Response.json({ drafts: getDrafts(user) });
+		return conditionalJsonResponse(req, { drafts: getDrafts(user) });
 	}
 
 	if (path === "/api/drafts" && req.method === "PUT") {
@@ -325,7 +368,7 @@ export async function handlePrefsRoutes(
 	// merge, not replace, so one device can't clobber keys set on another.
 	if (path === "/api/ui-prefs" && req.method === "GET") {
 		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";
-		return Response.json({ prefs: getUiPrefs(user) });
+		return conditionalJsonResponse(req, { prefs: getUiPrefs(user) });
 	}
 
 	if (path === "/api/ui-prefs" && req.method === "PUT") {
@@ -348,108 +391,125 @@ export async function handlePrefsRoutes(
 	}
 
 	// ── Per-user sidebar lanes ──
-	// Same per-user model as pins: GET reads a user's lane map; PUT replaces
-	// it wholesale (the frontend sends the full map on every lane change).
+	// Same per-user model as pins. A write is a DELTA (`set` / `remove`) so two
+	// clients editing different keys stop erasing each other; see
+	// shared/map-delta.ts. Older whole-map clients are accepted merge-only.
 	if (path === "/api/lanes" && req.method === "GET") {
 		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";
-		return Response.json({ lanes: getUserLanes(user) });
+		return conditionalJsonResponse(req, { lanes: getUserLanes(user) });
 	}
 
 	if (path === "/api/lanes" && req.method === "PUT") {
 		const body = await req.json().catch(() => null);
-		if (
-			!body ||
-			typeof body.user !== "string" ||
-			typeof body.lanes !== "object" ||
-			body.lanes === null
-		) {
+		const delta = requestedMapDelta(body, "lanes");
+		if (!body || typeof body.user !== "string" || !delta) {
 			return Response.json(
-				{ error: "user (string) and lanes (object) are required" },
+				{ error: "user (string) and a valid set/remove delta are required" },
 				{ status: 400 },
 			);
 		}
 		const user = requestUser(ctx, body.user) || "Anonymous";
-		return Response.json({ lanes: setUserLanes(user, body.lanes) });
+		const next = mergeMapDelta(getUserLanes(user), delta);
+		return Response.json({ lanes: setUserLanes(user, next) });
 	}
 
 	// ── Per-user workspace snoozes ──
-	// Same per-user model as pins: GET reads a user's snooze map; PUT replaces
-	// it wholesale (the frontend sends the full map on every snooze change).
+	// GET reads a user's snooze map; a write is a delta, for the reason in
+	// shared/map-delta.ts: a whole-map PUT from a client that loaded before the
+	// other device's snooze deleted it, which read as a Someday snooze waking
+	// up on its own.
 	if (path === "/api/snoozes" && req.method === "GET") {
 		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";
-		return Response.json({ snoozes: getUserSnoozes(user) });
+		return conditionalJsonResponse(req, { snoozes: getUserSnoozes(user) });
 	}
 
 	if (path === "/api/snoozes" && req.method === "PUT") {
 		const body = await req.json().catch(() => null);
-		if (
-			!body ||
-			typeof body.user !== "string" ||
-			typeof body.snoozes !== "object" ||
-			body.snoozes === null
-		) {
+		const delta = requestedMapDelta(body, "snoozes");
+		if (!body || typeof body.user !== "string" || !delta) {
 			return Response.json(
-				{ error: "user (string) and snoozes (object) are required" },
+				{ error: "user (string) and a valid set/remove delta are required" },
 				{ status: 400 },
 			);
 		}
 		const user = requestUser(ctx, body.user) || "Anonymous";
+		const next = mergeMapDelta(getUserSnoozes(user), delta);
 		return Response.json({
-			snoozes: setUserSnoozes(user, body.snoozes),
+			snoozes: setUserSnoozes(user, next),
 		});
 	}
 
 	// ── Per-user sidebar hides ──
 	// The personal counterpart to archiving (which is global, see archive.ts):
 	// hiding a row drops it from THIS user's sidebar while the session keeps
-	// running for everyone else. Same per-user model as pins: GET reads a
-	// user's hide map; PUT replaces it wholesale.
+	// running for everyone else. Same per-user model as pins, same delta write.
 	if (path === "/api/hides" && req.method === "GET") {
 		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";
-		return Response.json({ hides: getUserHides(user) });
+		return conditionalJsonResponse(req, { hides: getUserHides(user) });
 	}
 
 	if (path === "/api/hides" && req.method === "PUT") {
 		const body = await req.json().catch(() => null);
-		if (
-			!body ||
-			typeof body.user !== "string" ||
-			typeof body.hides !== "object" ||
-			body.hides === null
-		) {
+		const delta = requestedMapDelta(body, "hides");
+		if (!body || typeof body.user !== "string" || !delta) {
 			return Response.json(
-				{ error: "user (string) and hides (object) are required" },
+				{ error: "user (string) and a valid set/remove delta are required" },
 				{ status: 400 },
 			);
 		}
 		const user = requestUser(ctx, body.user) || "Anonymous";
-		return Response.json({ hides: setUserHides(user, body.hides) });
+		const next = mergeMapDelta(getUserHides(user), delta);
+		return Response.json({ hides: setUserHides(user, next) });
 	}
 
-	// ── Per-user session tab colors ──
-	// Same per-user model as pins: GET reads a user's tab colors; PUT replaces
-	// the whole map (the frontend sends the full map on every color change).
-	if (path === "/api/tab-colors" && req.method === "GET") {
+	// ── Per-user workspace settlements ──
+	// Settlement is personal sidebar triage, unlike global Archive. The map is
+	// keyed by workspace-row identity and carries explicit Settle/Unsettle acts.
+	if (path === "/api/settlements" && req.method === "GET") {
 		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";
-		return Response.json({ colors: getUserTabColors(user) });
+		return conditionalJsonResponse(req, { settlements: getUserSettlements(user) });
 	}
 
-	if (path === "/api/tab-colors" && req.method === "PUT") {
+	if (path === "/api/settlements" && req.method === "PUT") {
 		const body = await req.json().catch(() => null);
 		if (
 			!body ||
 			typeof body.user !== "string" ||
-			typeof body.colors !== "object" ||
-			body.colors === null
+			typeof body.settlements !== "object" ||
+			body.settlements === null
 		) {
 			return Response.json(
-				{ error: "user (string) and colors (object) are required" },
+				{ error: "user (string) and settlements (object) are required" },
 				{ status: 400 },
 			);
 		}
 		const user = requestUser(ctx, body.user) || "Anonymous";
 		return Response.json({
-			colors: setUserTabColors(user, body.colors),
+			settlements: setUserSettlements(user, body.settlements),
+		});
+	}
+
+	// ── Per-user session tab colors ──
+	// Same per-user model as pins: GET reads a user's tab colors; a write is a
+	// delta, same as the maps above.
+	if (path === "/api/tab-colors" && req.method === "GET") {
+		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";
+		return conditionalJsonResponse(req, { colors: getUserTabColors(user) });
+	}
+
+	if (path === "/api/tab-colors" && req.method === "PUT") {
+		const body = await req.json().catch(() => null);
+		const delta = requestedMapDelta(body, "colors");
+		if (!body || typeof body.user !== "string" || !delta) {
+			return Response.json(
+				{ error: "user (string) and a valid set/remove delta are required" },
+				{ status: 400 },
+			);
+		}
+		const user = requestUser(ctx, body.user) || "Anonymous";
+		const next = mergeMapDelta(getUserTabColors(user), delta);
+		return Response.json({
+			colors: setUserTabColors(user, next),
 		});
 	}
 

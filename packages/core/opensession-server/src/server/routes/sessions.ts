@@ -6,11 +6,19 @@
  * next handler (see routes/index.ts for the dispatch order).
  */
 
+import { executeSessionProjection } from "../session-projection-executor";
 import { requestUser, type RouteContext } from "./context";
-import { cancelAgentRun, isAgentSessionBusy, stopAgentRunTurn } from "../agent-runner";
-import { archiveOlderThan, setArchived, unpinArchivedSessions } from "../archive";
+import {
+	cancelAgentRunAndWait,
+  currentAgentRunToken,
+	isAgentSessionBusy,
+} from "../agent-runner";
+import { archiveOlderThan, isArchivedId, setArchived, unpinArchivedSessions, } from "../archive";
 import { audit } from "../audit";
-import { pendingAsks } from "../asks";
+import {
+	pendingAskAwaitingAnswer,
+	pendingAskIdsAwaitingAnswer,
+} from "../asks";
 import { transcriptMatchSnippet } from "../jsonl-parser";
 import {
 	classifyEntries,
@@ -30,31 +38,43 @@ import {
 	prMetaForBranch,
 	prReviewerSpecs,
 } from "../pr-info";
-import { promptQueues, requeueSteerReceipts, stoppedSessions } from "../queue-state";
-import { markPrReviewNotified } from "../pr-review-notifications";
-import { getReviewRequest, setReviewAccepted, setReviewRequest } from "../review-requests";
-import { getSessionControl, type SandboxRequest } from "../session-control";
-import { suggestBranchName } from "../suggest-branch";
-import { transitionRunState } from "../run-state";
+
 import {
-	findSession,
+	clientVisibleQueuedCount,
+	clientVisibleQueuedCounts,
+} from "../queue-state";
+
+import { markPrReviewNotified } from "../pr-review-notifications";
+import { getPrsByRepo } from "../pr-cache";
+import { getReviewRequest, setReviewAccepted, setReviewRequest, } from "../review-requests";
+import { getSessionControl, type SandboxRequest } from "../session-control";
+import { requestTurnCancel } from "../run-session";
+import {
+	enrichSessionRuntime,
 	findSessionAsync,
-	getCachedSessions,
 	getCachedSessionsAsync,
 	invalidateSessionsCache,
 	maybePersistEffort,
 	maybePersistFastMode,
 	runErrors,
+	sessionRuntimeSnapshot,
+	type SessionRuntimeSnapshot,
 } from "../session-cache";
 import { asDataUrlList, countImageRefs, parseImageDataUrls } from "../uploads";
 import { notifyMentions } from "../mentions";
 import { reviewTeamFor } from "../people";
 import { sendPushToUser } from "../push";
 import {
-	promptReceipt,
-	promptReceiptKey,
-	rememberPromptReceipt,
-} from "../prompt-receipts";
+  sessionGatewayCommand,
+	sessionKernel,
+	sessionKernelStore,
+	tombstoneSessionKernel,
+} from "../session-kernel";
+import { withSessionMutationLock } from "../session-mutation-lock";
+import {
+	sessionIdForRequest,
+} from "../session-request-id";
+import { suggestBranchName } from "../suggest-branch";
 import { searchIndex } from "../session-index";
 import { resolvePrTarget } from "../session-repos";
 import { destroySessionSandbox } from "../session-sandbox";
@@ -63,31 +83,50 @@ import { dropRunnerPortalRoutes } from "../runner-portals";
 import { cleanupRunnerWorkspace } from "../runner-ws";
 import {
 	deleteSession,
-	engineUserTexts,
 	getAllSessions,
 	markCachedPrReviewRequestsCleared,
 	mergedSessionTranscriptAsync,
+	removeTombstonedSessionArtifacts,
 } from "../sessions";
 import { githubLoginFor } from "../shared/user-mappings";
-import {
-	getOpencodeSubagentTranscript,
-	listSessionSubagents,
-} from "../opencode-subagents";
-import { isManualStatus, setStatusOverride } from "../status-overrides";
-import { getSubagentTranscript } from "../subagents";
-import { setTitleOverride } from "../title-overrides";
-import { buildWorkspaceOverview, resolveTranscriptImage } from "../workspace-overview";
-import { type Workspace, deleteWorkspace, getWorkspace, workspaceName } from "../workspaces";
+import { getStatusOverride, isManualStatus, setStatusOverride } from "../status-overrides";
+import { getSubagentTranscript, listSubagents } from "../subagents";
+import { getTitleOverride, setTitleOverride } from "../title-overrides";
+import { getGeneratedTitle } from "../generated-titles";
+import { buildWorkspaceOverview, resolveTranscriptImage, } from "../workspace-overview";
+import { type Workspace, deleteWorkspace, getWorkspace, workspaceName, } from "../workspaces";
 import { prHostFor } from "../pr-host";
 import { getRepo, NO_REPO, removeWorktree, repoForPath } from "../worktree";
 import { preparingWorkspaces } from "../ws-hub";
-import { existsSync } from "fs";
+import {
+	existsSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "fs";
+import { statePath } from "../paths";
+import { writeFileAtomic } from "../shared/atomic-write";
 import {
 	githubCredentialRequiredResponse,
 	githubMutationCredential,
 } from "./github-credential";
 import { defaultRepo } from "../config";
 import type { UnifiedSession } from "../types";
+import { shareWorkspacePrRefs } from "../session-pr-target";
+import {
+	indexedSessions,
+	indexedSidebarSessions,
+	indexedWorkspaceSessions,
+} from "../session-list-store";
+import {
+	loadSidebarSessionScopeContext,
+	parseSidebarSessionScope,
+	scopeSessionsForSidebar,
+	sidebarSessionScopeKey,
+	type SidebarSessionScope,
+} from "../sidebar-session-scope";
 
 const SESSIONS_RESPONSE_TTL_MS = 5_000;
 interface SessionsResponseSnapshot {
@@ -141,17 +180,14 @@ export type SessionListRow = Omit<
  */
 export function sessionRan(
 	s: Pick<
-		UnifiedSession,
-		| "claudeSessionId"
+		UnifiedSession, "claudeSessionId"
 		| "codexThreadId"
-		| "opencodeSessionId"
 		| "piSessionId"
 	>,
 ): boolean {
 	return !!(
 		s.claudeSessionId ||
 		s.codexThreadId ||
-		s.opencodeSessionId ||
 		s.piSessionId
 	);
 }
@@ -195,10 +231,92 @@ export function archivedScope(
 // session-cache uses to reach promptQueues). Without that, archiving a session
 // stayed visible for up to SESSIONS_RESPONSE_TTL_MS after the underlying cache
 // had already been invalidated — the response snapshot outlived its source.
-const sessionsResponseSnapshots: Map<
-	SessionsVariant,
-	SessionsResponseSnapshot
-> = ((globalThis as any).__osSessionsResponseSnapshots ??= new Map());
+const sessionsResponseSnapshots: Map<string, SessionsResponseSnapshot> =
+	((globalThis as any).__osSessionsResponseSnapshots ??= new Map());
+const sessionsResponseRefreshes: Map<
+	string,
+	Promise<SessionsResponseSnapshot>
+> = ((globalThis as any).__osSessionsResponseRefreshes ??= new Map());
+
+// The live list is expensive to rebuild from thousands of source files after a
+// process restart. Keep its last complete response as the one cold-start
+// fallback, then refresh in the background. The version in the filename is the
+// schema boundary: bump it whenever sessionListRow stops being backward
+// compatible with the current web client.
+const LIVE_LIST_DISK_VERSION = 3;
+const LIVE_LIST_DISK_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
+const LIVE_LIST_DISK_SERVE_MS = 2 * 60_000;
+const LIVE_LIST_DISK_PATH = statePath(
+	`.opensession-session-list-v${LIVE_LIST_DISK_VERSION}.json`,
+);
+const LIVE_LIST_DISK_GZIP_PATH = `${LIVE_LIST_DISK_PATH}.gz`;
+let triedDiskLiveList = false;
+
+function readDiskLiveList(): SessionsResponseSnapshot | null {
+	if (triedDiskLiveList) return null;
+	triedDiskLiveList = true;
+	try {
+		if (!existsSync(LIVE_LIST_DISK_PATH)) return null;
+		const sourceMtime = statSync(LIVE_LIST_DISK_PATH).mtimeMs;
+		if (Date.now() - sourceMtime > LIVE_LIST_DISK_MAX_AGE_MS) return null;
+		let text = readFileSync(LIVE_LIST_DISK_PATH, "utf8");
+		if (!text.startsWith("[")) return null;
+		// The snapshot can predate an archive whose refresh never ran — e.g. the
+		// archive landed in the previous process's shutdown window, or between
+		// its last persist and SIGKILL. Installing it as-is would put
+		// just-archived sessions back in the live sidebar until the cold scan
+		// finishes (up to LIVE_LIST_DISK_SERVE_MS plus refresh delay), which
+		// reads to the person as "I archived this and it came back". The
+		// registry is the durable truth, so drop archived rows before serving.
+		let rewrote = false;
+		try {
+			const rows = JSON.parse(text) as Array<{ id?: string }>;
+			const live = rows.filter((row) => !row.id || !isArchivedId(row.id));
+			if (live.length !== rows.length) {
+				text = JSON.stringify(live);
+				rewrote = true;
+			}
+		} catch {}
+		const haveMatchingGzip =
+			!rewrote &&
+			existsSync(LIVE_LIST_DISK_GZIP_PATH) &&
+			statSync(LIVE_LIST_DISK_GZIP_PATH).mtimeMs >= sourceMtime;
+		return {
+			text,
+			hash: Bun.hash(text).toString(16),
+			expiresAt: Date.now() + LIVE_LIST_DISK_SERVE_MS,
+			...(haveMatchingGzip
+				? { gzip: Promise.resolve(Bun.file(LIVE_LIST_DISK_GZIP_PATH)) }
+				: {}),
+		};
+	} catch {
+		return null;
+	}
+}
+
+function persistDiskLiveList(text: string): void {
+	try {
+		writeFileAtomic(LIVE_LIST_DISK_PATH, text, 0o600);
+		// CompressionStream competes with the cold scan on the server thread. Do
+		// this once when the fresh snapshot lands, not on the next process's first
+		// response, so a warm boot can send ready bytes straight from disk.
+		const tmp = `${LIVE_LIST_DISK_GZIP_PATH}.tmp.${process.pid}`;
+		try {
+			writeFileSync(tmp, Bun.gzipSync(Buffer.from(text)), { mode: 0o600 });
+			renameSync(tmp, LIVE_LIST_DISK_GZIP_PATH);
+		} catch (error) {
+			try {
+				rmSync(tmp);
+			} catch {}
+			try {
+				rmSync(LIVE_LIST_DISK_GZIP_PATH);
+			} catch {}
+			throw error;
+		}
+	} catch (error) {
+		console.warn("[sessions] failed to persist the live-list startup cache:", error,);
+	}
+}
 
 async function sessionsListResponse(
 	req: Request,
@@ -234,9 +352,67 @@ async function sessionsListResponse(
  * Shared by the list and by the single-session route, so a session hydrated on
  * open carries exactly what the list would have handed the client.
  */
-function enrichSession(s: UnifiedSession) {
+type SessionListRuntimeSignals = {
+	waitingForInput: Set<string>;
+	queuedCounts: Map<string, number>;
+	runtime: SessionRuntimeSnapshot;
+};
+
+function sessionListRuntimeSignals(): SessionListRuntimeSignals {
+	return {
+		waitingForInput: pendingAskIdsAwaitingAnswer(),
+		queuedCounts: clientVisibleQueuedCounts(),
+		runtime: sessionRuntimeSnapshot(),
+	};
+}
+
+function enrichSession(
+	s: UnifiedSession,
+	signals?: SessionListRuntimeSignals,
+) {
+	// The materialized row may still say a completed run is active. Reconcile
+	// both edges from live runtime state before serializing any list or detail.
+	enrichSessionRuntime([s], signals?.runtime);
+	const generatedTitle =
+		getGeneratedTitle(s.id) ??
+		s.aliasIds?.map((id) => getGeneratedTitle(id)).find(Boolean);
+	const titleOverride =
+		getTitleOverride(s.id) ??
+		s.aliasIds?.map((id) => getTitleOverride(id)).find(Boolean);
+	const manualStatus =
+		getStatusOverride(s.id) ??
+		s.aliasIds?.map((id) => getStatusOverride(id)).find(Boolean);
+	const reviewRequest =
+		getReviewRequest(s.id) ??
+		s.aliasIds?.map((id) => getReviewRequest(id)).find(Boolean);
+	const currentPr = s.branch
+		? getPrsByRepo().get(s.repo || defaultRepo().id)?.get(s.branch)
+		: undefined;
 	return {
 		...s,
+		...(generatedTitle ? { title: generatedTitle } : {}),
+		...(titleOverride ? { title: titleOverride, titleOverridden: true } : {}),
+		...(manualStatus ? { manualStatus } : {}),
+		...(reviewRequest ? { reviewRequest } : {}),
+		...(currentPr
+			? {
+					prUrl: currentPr.url,
+					prState: currentPr.state,
+					prMergeable: currentPr.mergeable,
+					prNumber: currentPr.number,
+					prTitle: currentPr.title,
+					prIsDraft: currentPr.isDraft,
+					prAdditions: currentPr.additions,
+					prDeletions: currentPr.deletions,
+					prChangedFiles: currentPr.changedFiles,
+					prReviewDecision: currentPr.reviewDecision,
+					prReviewRequested: currentPr.reviewRequested,
+					prReviewedBy: currentPr.reviewedBy,
+					prAuthor: currentPr.author,
+					prUpdatedAt: currentPr.updatedAt,
+					prChecks: currentPr.checks,
+				}
+			: {}),
 		repo: s.repo || defaultRepo().id,
 		// The name of the workspace this session is filed under. A sidebar row
 		// names a workspace, never one of its tabs, and the workspace list is
@@ -246,8 +422,12 @@ function enrichSession(s: UnifiedSession) {
 		...(s.workspaceId
 			? { workspaceName: workspaceName(s.workspaceId) ?? undefined }
 			: {}),
-		waitingForInput: pendingAsks.has(s.id),
-		queuedCount: promptQueues.get(s.id)?.length || 0,
+		waitingForInput: signals
+			? signals.waitingForInput.has(s.id)
+			: !!pendingAskAwaitingAnswer(s.id),
+		queuedCount: signals
+			? signals.queuedCounts.get(s.id) || 0
+			: clientVisibleQueuedCount(s.id),
 		// Present on the list AND on the detail response, so one rule reads the
 		// same either side of a hydrate. `undefined` rather than `false`: it is
 		// dropped by JSON.stringify, and a session object a client builds
@@ -295,7 +475,6 @@ export function sessionListRow(
 		// GET /api/sessions/:id, which the open session hydrates from.
 		claudeSessionId: _claudeSessionId,
 		codexThreadId: _codexThreadId,
-		opencodeSessionId: _opencodeSessionId,
 		piSessionId: _piSessionId,
 		modelHistory: _modelHistory,
 		transcriptPath: _transcriptPath,
@@ -325,6 +504,11 @@ export function sessionListRow(
 	if (!row.repoLess) delete row.repoLess;
 	if (!row.titleOverridden) delete row.titleOverridden;
 	if (!row.workspacePreparing) delete row.workspacePreparing;
+	// Older hand-written/test session files can violate the current wire type.
+	// Do not let one malformed automation id crash clients sorting the list.
+	if (typeof row.automation !== "string" || !row.automation.trim())
+		delete row.automation;
+	else row.automation = row.automation.trim();
 	delete row.rev;
 
 	return row as SessionListRow;
@@ -340,6 +524,52 @@ export function sessionListRow(
  * real session (GET /api/sessions/:id), so nothing downstream has to make do
  * with the subset.
  */
+const SIDEBAR_AUTOMATION_RUNS = 5;
+
+/**
+ * Bound automation history in the live list the web app polls.
+ *
+ * Automation runs are 4,304 of this instance's 4,707 live sessions, but a
+ * collapsed automation heading renders none of them. Keep enough recent runs
+ * to make an expanded heading useful, plus any older run that is still live or
+ * waiting on a person. Direct links hydrate their session independently.
+ * Every retained run carries the complete count so the heading still says how
+ * much history exists rather than pretending this bounded window is all of it.
+ */
+export function sidebarLiveSessions<T extends UnifiedSession & SessionListSignals,>(
+	sessions: T[]
+): Array<T & { automationRunCount?: number }> {
+	const byAutomation = new Map<string, T[]>();
+	for (const session of sessions) {
+		if (!session.automation) continue;
+		const rows = byAutomation.get(session.automation) || [];
+		rows.push(session);
+		byAutomation.set(session.automation, rows);
+	}
+
+	const keep = new Set<T>();
+	for (const rows of byAutomation.values()) {
+		const recent = [...rows]
+			.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity))
+			.slice(0, SIDEBAR_AUTOMATION_RUNS);
+		for (const row of recent) keep.add(row);
+		for (const row of rows) {
+			if (row.isRunning || row.waitingForInput || row.manualStatus) keep.add(row);
+		}
+	}
+
+	return sessions.flatMap((session) => {
+		if (!session.automation) return [session];
+		if (!keep.has(session)) return [];
+		return [
+			{
+				...session,
+				automationRunCount: byAutomation.get(session.automation)!.length,
+			},
+		];
+	});
+}
+
 export function archivedIndexRow(
 	s: UnifiedSession & SessionListSignals,
 ): SessionListRow {
@@ -376,6 +606,9 @@ export function archivedIndexRow(
 		...(s.archivedReason ? { archivedReason: s.archivedReason } : {}),
 		...(s.mode ? { mode: s.mode } : {}),
 		...(s.automation ? { automation: s.automation } : {}),
+		// Says the row came from an agent action rather than a person's composer.
+		// History and sidebar rows keep that origin visible after archival too.
+		...(s.agentStarted ? { agentStarted: true } : {}),
 		// Says the row is a worker rather than someone's own conversation.
 		// The history menu marks those, so a workspace whose archive is mostly
 		// review and worker runs still reads as a list of what PEOPLE closed.
@@ -405,9 +638,74 @@ export function archivedIndexRow(
  * when nothing matches, which we treat as "no hits", not an error. Chunked so a
  * very long file list can't overflow the argv limit.
  */
+interface StoredTranscriptSearchResult {
+	matches: Array<{ id: string; snippet: string }>;
+	searchedSessions: number;
+}
+
+/**
+ * Search transcript v2 on a read-only child process. Bun's SQLite API is
+ * synchronous, so doing this in the coordinator would pause sockets and every
+ * other request for the duration of a rare-query scan.
+ */
+async function searchStoredTranscripts(
+	query: string,
+	sessionIds: string[],
+	signal?: AbortSignal,
+): Promise<StoredTranscriptSearchResult> {
+	if (!sessionIds.length || !existsSync(transcriptDbPath()))
+		return { matches: [], searchedSessions: 0 };
+	const proc = Bun.spawn(
+		[process.execPath, `${import.meta.dir}/../transcript-search-worker.ts`],
+		{
+			stdin: "pipe",
+			stdout: "pipe",
+			stderr: "pipe",
+			timeout: 10_000,
+		},
+	);
+	const abort = () => proc.kill();
+	if (signal?.aborted) {
+		abort();
+		await proc.exited;
+		return { matches: [], searchedSessions: 0 };
+	}
+	signal?.addEventListener("abort", abort, { once: true });
+	proc.stdin.write(
+		JSON.stringify({ dbPath: transcriptDbPath(), query, sessionIds, maxMatches: 50, }),
+	);
+	proc.stdin.end();
+	let output = "";
+	let error = "";
+	let code = -1;
+	try {
+		[output, error, code] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+			proc.exited,
+		]);
+	} finally {
+		signal?.removeEventListener("abort", abort);
+	}
+	if (code !== 0) {
+		if (!signal?.aborted)
+			console.warn(`[transcript-search] store worker failed: ${error.trim().slice(0, 300)}`,);
+		return { matches: [], searchedSessions: 0 };
+	}
+	try {
+		const parsed = JSON.parse(output) as StoredTranscriptSearchResult;
+		return {
+			matches: Array.isArray(parsed.matches) ? parsed.matches : [],
+			searchedSessions: Number(parsed.searchedSessions) || 0,
+		};
+	} catch {
+		return { matches: [], searchedSessions: 0 };
+	}
+}
+
 async function ripgrepFiles(
 	query: string,
-	files: string[],
+	files: string[]
 ): Promise<string[]> {
 	const hits = new Set<string>();
 	const CHUNK = 1000;
@@ -425,6 +723,83 @@ async function ripgrepFiles(
 		}
 	}
 	return [...hits];
+}
+
+function refreshSidebarSessionsResponse(
+	scope: SidebarSessionScope,
+): Promise<SessionsResponseSnapshot> {
+	const key = sidebarSessionScopeKey(scope);
+	const current = sessionsResponseRefreshes.get(key);
+	if (current) return current;
+	const refresh = (async () => {
+		const signals = sessionListRuntimeSignals();
+		const indexed = indexedSidebarSessions(scope.selectedSessionId);
+		const sliced = (
+			indexed ?? (await getCachedSessionsAsync("exclude"))
+		).map((session) => enrichSession(session, signals));
+		shareWorkspacePrRefs(sliced);
+		const bounded = indexed ? sliced : sidebarLiveSessions(sliced);
+		const scoped = scopeSessionsForSidebar(
+			bounded,
+			scope,
+			loadSidebarSessionScopeContext(scope, bounded),
+		);
+		const text = JSON.stringify(scoped.map(sessionListRow));
+		const snapshot: SessionsResponseSnapshot = {
+			text,
+			hash: Bun.hash(text).toString(16),
+			expiresAt: Date.now() + SESSIONS_RESPONSE_TTL_MS,
+		};
+		sessionsResponseSnapshots.set(key, snapshot);
+		return snapshot;
+	})().finally(() => {
+		sessionsResponseRefreshes.delete(key);
+	});
+	sessionsResponseRefreshes.set(key, refresh);
+	return refresh;
+}
+
+function refreshSessionsResponse(
+	variant: SessionsVariant,
+): Promise<SessionsResponseSnapshot> {
+	const current = sessionsResponseRefreshes.get(variant);
+	if (current) return current;
+	const refresh = (async () => {
+		const signals = sessionListRuntimeSignals();
+		const slice =
+			variant === "exclude"
+				? "exclude"
+				: variant === "include"
+					? "include"
+					: "only";
+		const indexed =
+			variant === "exclude"
+				? indexedSidebarSessions()
+				: indexedSessions(slice);
+		const sliced = (indexed ?? (await getCachedSessionsAsync(slice))).map(
+			(session) => enrichSession(session, signals),
+		);
+		shareWorkspacePrRefs(sliced);
+		const listed =
+			variant === "exclude" && !indexed ? sidebarLiveSessions(sliced) : sliced;
+		const text = JSON.stringify(
+			variant === "only-slim"
+				? listed.map(archivedIndexRow)
+				: listed.map(sessionListRow),
+		);
+		const snapshot: SessionsResponseSnapshot = {
+			text,
+			hash: Bun.hash(text).toString(16),
+			expiresAt: Date.now() + SESSIONS_RESPONSE_TTL_MS,
+		};
+		sessionsResponseSnapshots.set(variant, snapshot);
+		if (variant === "exclude") persistDiskLiveList(text);
+		return snapshot;
+	})().finally(() => {
+		sessionsResponseRefreshes.delete(variant);
+	});
+	sessionsResponseRefreshes.set(variant, refresh);
+	return refresh;
 }
 
 export async function handleSessionsRoutes(
@@ -445,14 +820,21 @@ export async function handleSessionsRoutes(
 			effort?: unknown;
 			fastMode?: unknown;
 			images?: unknown;
+			files?: unknown;
 			branch?: unknown;
 			user?: unknown;
 			workspaceId?: unknown;
 			sandbox?: unknown;
+			requestId?: unknown;
+			clientId?: unknown;
 		} | null;
 		const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
-		if (!prompt) {
-			return Response.json({ error: "prompt required" }, { status: 400 });
+		const files = Array.isArray(body?.files) ? body.files : undefined;
+		const imageUrls = Array.isArray(body?.images)
+			? body.images.filter((value): value is string => typeof value === "string")
+			: [];
+		if (!prompt && !files?.length && !imageUrls.length) {
+			return Response.json({ error: "prompt or attachment required" }, { status: 400 });
 		}
 		// Join an existing workspace as a sibling session — the native apps' "new
 		// session in this workspace", equivalent to the web tab strip's "+".
@@ -467,17 +849,33 @@ export async function handleSessionsRoutes(
 					? ("scratch" as const)
 					: ("ask" as const);
 		let branch = typeof body?.branch === "string" ? body.branch.trim() : "";
-		// A code session joining a workspace that already owns a worktree works on
-		// that worktree's branch, so skip the (LLM) branch suggestion — it would
-		// only be discarded. A workspace with no worktree yet still needs one.
 		const joinsWorktree = !!(workspaceId && getWorkspace(workspaceId)?.worktreeDir);
 		if (mode === "code" && !branch && !joinsWorktree) {
+			const attachmentName =
+				typeof (files?.[0] as { name?: unknown } | undefined)?.name === "string"
+					? String((files?.[0] as { name: string }).name)
+					: imageUrls.length ? "image" : "session";
 			branch =
-				(await suggestBranchName(prompt).catch(() => null)) ||
+				(await suggestBranchName(prompt || `Review ${attachmentName}`).catch(() => null)) ||
 				`session-${Date.now().toString(36)}`;
 		}
+
 		try {
-			const { id } = await getSessionControl().createSession({
+			const actor = requestUser(ctx, body?.user);
+			const suppliedRequestId =
+				typeof body?.requestId === "string" && body.requestId.trim()
+					? body.requestId.trim().slice(0, 200)
+					: typeof body?.clientId === "string" && body.clientId.trim()
+						? body.clientId.trim().slice(0, 200)
+						: undefined;
+			const requestId = suppliedRequestId || crypto.randomUUID();
+			const actorScope = ctx.authUser?.login || actor || "anonymous";
+			const targetId = sessionIdForRequest(actorScope, requestId);
+			const duplicate = !!sessionKernel(targetId).creationState();
+			const created = await getSessionControl().createSession({
+						id: targetId,
+						requestId,
+						requestScope: actorScope,
 				prompt,
 				mode,
 				...(mode === "code" && branch ? { branch } : {}),
@@ -500,18 +898,13 @@ export async function handleSessionsRoutes(
 				...(typeof body?.sandbox === "string" && body.sandbox
 					? { sandbox: body.sandbox as SandboxRequest }
 					: {}),
-				// Image attachments as data URLs (the native apps' create path;
-				// validated/parsed by the wiring's parseImageDataUrls).
-				...(Array.isArray(body?.images) && body.images.length
-					? {
-							images: body.images.filter(
-								(u): u is string => typeof u === "string",
-							),
-						}
-					: {}),
-				user: requestUser(ctx, body?.user),
+				// Image and file attachments from the native create path.
+				...(imageUrls.length ? { images: imageUrls } : {}),
+				...(files?.length ? { files } : {}),
+				user: actor,
 			});
-			return Response.json({ id });
+			return Response.json({ id: created.id,
+				...(duplicate ? { duplicate: true } : {}), });
 		} catch (e) {
 			return Response.json(
 				{ error: e instanceof Error ? e.message : String(e) },
@@ -531,6 +924,20 @@ export async function handleSessionsRoutes(
 	// they learn to fetch the index and hydrate what they open.
 	if (path === "/api/sessions" && req.method === "GET") {
 		const variant = sessionsVariant(url.searchParams);
+		const sidebarScope = parseSidebarSessionScope(
+			url.searchParams,
+			requestUser(ctx, url.searchParams.get("user")),
+		);
+		if (variant === "exclude" && sidebarScope) {
+			const key = sidebarSessionScopeKey(sidebarScope);
+			const cached = sessionsResponseSnapshots.get(key);
+			return await sessionsListResponse(
+				req,
+				cached && cached.expiresAt > Date.now()
+					? cached
+					: await refreshSidebarSessionsResponse(sidebarScope),
+			);
+		}
 		// `?workspace=<id>` narrows an archived slice to one workspace's group,
 		// which is what the tab strip's history menu needs: a few rows instead
 		// of the whole index (1,984 KB and growing on this instance), fetched
@@ -541,9 +948,17 @@ export async function handleSessionsRoutes(
 		// workspace would grow an entry per workspace forever.
 		const scope = archivedScope(url.searchParams, variant);
 		if (scope) {
-			const rows = (await getCachedSessionsAsync("only"))
-				.filter((s) => inWorkspaceGroup(s, scope))
-				.map(enrichSession);
+			const indexed = scope.workspaceId
+				? indexedWorkspaceSessions(scope.workspaceId, scope.worktreeDir)
+				: null;
+			const selected =
+				indexed ??
+				(await getCachedSessionsAsync("only")).filter((session) =>
+					inWorkspaceGroup(session, scope),
+				);
+			const signals = sessionListRuntimeSignals();
+			const rows = selected.map((session) => enrichSession(session, signals));
+			shareWorkspacePrRefs(rows);
 			const text = JSON.stringify(
 				variant === "only-slim"
 					? rows.map(archivedIndexRow)
@@ -559,25 +974,47 @@ export async function handleSessionsRoutes(
 		const cached = sessionsResponseSnapshots.get(variant);
 		if (cached && cached.expiresAt > Date.now())
 			return await sessionsListResponse(req, cached);
-		const slice =
-			variant === "exclude"
-				? "exclude"
-				: variant === "include"
-					? "include"
-					: "only";
-		const sliced = (await getCachedSessionsAsync(slice)).map(enrichSession);
-		const text = JSON.stringify(
-			variant === "only-slim"
-				? sliced.map(archivedIndexRow)
-				: sliced.map(sessionListRow),
+		if (cached && variant === "exclude") {
+			// Polling should never make the sidebar wait for a fresh scan of every
+			// source file. Keep handing out the last complete, bounded list while
+			// one shared refresh catches up. Cache invalidation marks this snapshot
+			// stale rather than deleting it for the same reason.
+			cached.expiresAt = Date.now() + SESSIONS_RESPONSE_TTL_MS;
+			if (!sessionsResponseRefreshes.has(variant)) {
+				setTimeout(() => {
+					void refreshSessionsResponse(variant).catch((error) =>
+						console.warn("[sessions] live-list background refresh failed:", error,),
+					);
+				}, 250).unref?.();
+			}
+			return await sessionsListResponse(req, cached);
+		}
+
+		// A process restart loses the in-memory list but not the last complete
+		// response. Serve that once so the sidebar can paint, while the ordinary
+		// cache refresh catches up in the background. In-process invalidations do
+		// not reuse disk because readDiskLiveList is intentionally one-shot.
+		if (variant === "exclude" && !cached) {
+			const disk = readDiskLiveList();
+			if (disk) {
+				sessionsResponseSnapshots.set(variant, disk);
+				// Starting the cooperative scan still does some synchronous index
+				// setup before its first yield. Keep boot quiet long enough for the
+				// session, sidebar and workspace shell to finish their own requests;
+				// the persisted response keeps the list useful in the meantime.
+				setTimeout(() => {
+					void refreshSessionsResponse(variant).catch((error) =>
+						console.warn("[sessions] live-list background refresh failed:", error,),
+					);
+				}, 30_000).unref?.();
+				return await sessionsListResponse(req, disk);
+			}
+		}
+
+		return await sessionsListResponse(
+			req,
+			await refreshSessionsResponse(variant),
 		);
-		const snapshot: SessionsResponseSnapshot = {
-			text,
-			hash: Bun.hash(text).toString(16),
-			expiresAt: Date.now() + SESSIONS_RESPONSE_TTL_MS,
-		};
-		sessionsResponseSnapshots.set(variant, snapshot);
-		return await sessionsListResponse(req, snapshot);
 	}
 
 	// Deliver a follow-up prompt to an existing session. REST shape for the
@@ -630,7 +1067,7 @@ export async function handleSessionsRoutes(
 			// failed with Edit and Retry rather than looping.
 			if ((images?.length ?? 0) < countImageRefs(body?.images)) {
 				return Response.json(
-					{ error: "An attached image is no longer available. Attach it again." },
+					{ error: "An attached image is no longer available. Attach it again.", },
 					{ status: 400 },
 				);
 			}
@@ -638,31 +1075,9 @@ export async function handleSessionsRoutes(
 				typeof body?.clientId === "string" && body.clientId.trim()
 					? body.clientId.trim().slice(0, 200)
 					: undefined;
-			const receiptKey = clientId
-				? promptReceiptKey(sessionId, clientId)
-				: undefined;
-			if (receiptKey) {
-				const seen = promptReceipt(receiptKey);
-				// Already delivered under this id — replay the answer instead of
-				// posting the message a second time.
-				if (seen) return Response.json({ ...seen.body, duplicate: true });
-			}
-			// No findSession GATE: the 2s session cache can lag a just-created
-			// session, and deliverToSession resolves the id (and reports unknown
-			// ids) itself. The lookup here only drives the best-effort extras.
-			const session = findSession(sessionId);
-			if (session) {
-				// The composer's effort/fast pills ride every send; persist a
-				// change so this and future runs honor it, as the WS path does.
-				maybePersistEffort(
-					session,
-					typeof body?.effort === "string" ? body.effort : undefined,
-				);
-				maybePersistFastMode(
-					session,
-					typeof body?.fastMode === "boolean" ? body.fastMode : undefined,
-				);
-			}
+			// No synchronous cache gate: a just-created session may not be visible
+			// in the projection yet. Delivery resolves the authoritative target.
+			const session = await findSessionAsync(sessionId);
 			const user = requestUser(ctx, body?.user);
 			const busyMode =
 				body?.busyMode === "queue" || body?.busy === "queue"
@@ -673,30 +1088,37 @@ export async function handleSessionsRoutes(
 			const contextSessions = Array.isArray(body?.contextSessions)
 				? body.contextSessions.filter((id): id is string => typeof id === "string")
 				: undefined;
-			const res = await getSessionControl().deliverToSession(
+			if (session) {
+				maybePersistEffort(
+					session,
+					typeof body?.effort === "string" ? body.effort : undefined,
+				);
+				maybePersistFastMode(
+					session,
+					typeof body?.fastMode === "boolean" ? body.fastMode : undefined,
+				);
+			}
+			const result = await getSessionControl().deliverToSession(
 				sessionId,
 				content,
 				user,
 				{
 					busy: busyMode,
-					// Queue-by-choice holds until the agent fully completes,
-					// matching what the composers mean by "queue".
 					hold: busyMode === "queue",
 					images,
 					imageUrls,
 					files,
 					contextSessions,
+					...(clientId ? { deliveryId: clientId } : {}),
 				},
 			);
-			if (res.status === "error") {
+			if (result.status === "error") {
 				return Response.json(
-					{ ...res, error: res.message },
-					{ status: /no session/i.test(res.message) ? 404 : 400 },
+					{ ...result, error: result.message },
+					{ status: /no session/i.test(result.message) ? 404 : 400 },
 				);
 			}
-			// @People-mentions ping the tagged teammates on every delivery path,
-			// exactly like the WS prompt (same matcher, never the sender).
-			if (session)
+			if (session && !result.duplicate) {
 				await notifyMentions(
 					content,
 					String(user || ""),
@@ -704,9 +1126,35 @@ export async function handleSessionsRoutes(
 					"prompt",
 					session.title || "a session",
 				);
-			const payload = { ...res, ...(clientId ? { clientId } : {}) };
-			if (receiptKey) rememberPromptReceipt(receiptKey, payload);
+			}
+			const payload = {
+				...result,
+				...(clientId ? { clientId } : {}),
+			};
 			return Response.json(payload);
+		}
+	}
+
+	// Durable lifecycle and metadata changes for a thin gateway or diagnostic
+	// client. Transcript bodies keep using the transcript changeSeq endpoint;
+	// this stream names ownership decisions, queue changes, asks and metadata.
+	{
+		const m = path.match(/^\/api\/sessions\/([^/]+)\/state-changes$/);
+		if (m && req.method === "GET") {
+			const sessionId = decodeURIComponent(m[1]);
+			if (!(await findSessionAsync(sessionId)))
+				return Response.json({ error: "Session not found" }, { status: 404 });
+			const after = Math.max(0, Number(url.searchParams.get("after") || 0) || 0,);
+			const limit = Math.min(
+				500,
+				Math.max(1, Number(url.searchParams.get("limit") || 200) || 200),
+			);
+			const store = sessionKernelStore();
+			return Response.json({
+				sessionId,
+				changeSeq: store.runState(sessionId).changeSeq,
+				changes: store.changesSince(sessionId, after, limit),
+			});
 		}
 	}
 
@@ -722,7 +1170,7 @@ export async function handleSessionsRoutes(
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		// Engine-spanning read: the transcript file plus, for sessions with
-		// opencode history, the opencode store (covers legacy opencode
+		// pi history, the pi store (covers legacy pi
 		// sessions from before transcript persistence, and migrated
 		// sessions whose history spans engines). Classified on the way out,
 		// like every other send site — this is what the native clients read.
@@ -739,10 +1187,10 @@ export async function handleSessionsRoutes(
 	// thing here.
 	{
 		const m = path.match(
-			/^\/api\/sessions\/(.+)\/entry\/([^/]+)$/,
+			/^\/api\/sessions\/(.+)\/entry\/([^/]+)$/
 		);
 		if (m && req.method === "GET") {
-			const session = findSession(decodeURIComponent(m[1]));
+			const session = await findSessionAsync(decodeURIComponent(m[1]));
 			if (!session)
 				return Response.json({ error: "Session not found" }, { status: 404 });
 			const entryId = decodeURIComponent(m[2]);
@@ -797,11 +1245,11 @@ export async function handleSessionsRoutes(
 	// transcript-image refs (below), not inline base64.
 	{
 		const m = path.match(
-			/^\/api\/workspaces\/([^/]+)\/overview$/,
+			/^\/api\/workspaces\/([^/]+)\/overview$/
 		);
 		if (m && req.method === "GET") {
 			const wsId = decodeURIComponent(m[1]);
-			const members = getCachedSessions().filter(
+			const members = (await getCachedSessionsAsync()).filter(
 				(s) => s.workspaceId === wsId,
 			);
 			return Response.json(await buildWorkspaceOverview(members));
@@ -815,7 +1263,7 @@ export async function handleSessionsRoutes(
 	{
 		const m = path.match(/^\/api\/sessions\/(.+)\/overview$/);
 		if (m && req.method === "GET") {
-			const session = findSession(decodeURIComponent(m[1]));
+			const session = await findSessionAsync(decodeURIComponent(m[1]));
 			if (!session)
 				return Response.json({ error: "session not found" }, { status: 404 });
 			return Response.json(await buildWorkspaceOverview([session]));
@@ -830,7 +1278,7 @@ export async function handleSessionsRoutes(
 			/^\/api\/sessions\/(.+)\/transcript-image\/([^/]+)\/(\d+)$/,
 		);
 		if (m && req.method === "GET") {
-			const session = findSession(decodeURIComponent(m[1]));
+			const session = await findSessionAsync(decodeURIComponent(m[1]));
 			if (!session)
 				return Response.json({ error: "Session not found" }, { status: 404 });
 			const entryId = decodeURIComponent(m[2]);
@@ -885,76 +1333,96 @@ export async function handleSessionsRoutes(
 	}
 
 	// Full-text search across session transcripts (the ⌘K palette's
-	// "search in conversations"). Two-stage: a cheap ripgrep pass narrows
-	// hundreds of transcripts to the few that contain the query, then we
-	// parse only those (cached) to pull a clean snippet — which also drops
-	// matches that only occur in transcript metadata (base64, JSON keys).
+	// "search in conversations"). Owned sessions live in transcript v2 and no
+	// longer have mirror files, so their bounded rows are searched in a
+	// read-only child process. The most recent 1,000 sessions cover interactive
+	// recall without turning each keystroke into a scan of the 6+ GB database;
+	// `truncated` keeps that ceiling explicit for a future FTS cutover. Legacy
+	// transcripts retain the ripgrep pre-pass and clean-snippet validation.
 	if (path === "/api/sessions/search" && req.method === "GET") {
 		const q = (url.searchParams.get("q") || "").trim();
 		if (q.length < 2) return Response.json({ matches: [] });
-		const byPath = new Map<string, string>(); // transcriptPath → sessionId
-		for (const s of getCachedSessions()) {
-			if (
-				s.transcriptPath &&
-				!byPath.has(s.transcriptPath) &&
-				existsSync(s.transcriptPath)
+		const sessions = await getCachedSessionsAsync();
+		const recentIds = sessions
+			.slice()
+			.sort(
+				(a, b) =>
+					(Date.parse(b.lastActivity || "") || 0) -
+					(Date.parse(a.lastActivity || "") || 0),
 			)
-				byPath.set(s.transcriptPath, s.id);
+			.slice(0, 1_000)
+			.map((session) => session.id);
+		const stored = await searchStoredTranscripts(q, recentIds, req.signal);
+		const matches = stored.matches.slice(0, 50);
+		const matchedIds = new Set(matches.map((match) => match.id));
+
+		const byPath = new Map<string, string>(); // transcriptPath → sessionId
+		for (const session of sessions) {
+			if (
+				session.transcriptPath &&
+				!byPath.has(session.transcriptPath) &&
+				existsSync(session.transcriptPath)
+			)
+				byPath.set(session.transcriptPath, session.id);
 		}
-		const files = [...byPath.keys()];
-		if (!files.length) return Response.json({ matches: [] });
-		const matches: Array<{ id: string; snippet: string }> = [];
-		for (const f of await ripgrepFiles(q, files)) {
-			const id = byPath.get(f);
-			if (!id) continue;
-			const snippet = transcriptMatchSnippet(f, q);
-			if (snippet) matches.push({ id, snippet });
-			if (matches.length >= 50) break;
+		if (matches.length < 50) {
+			for (const file of await ripgrepFiles(q, [...byPath.keys()])) {
+				const id = byPath.get(file);
+				if (!id || matchedIds.has(id)) continue;
+				const snippet = transcriptMatchSnippet(file, q);
+				if (snippet) {
+					matches.push({ id, snippet });
+					matchedIds.add(id);
+				}
+				if (matches.length >= 50) break;
+			}
 		}
-		return Response.json({ matches });
+		return Response.json({
+			matches,
+			truncated: sessions.length > recentIds.length && matches.length < 50,
+		});
 	}
 
-	// Every sub-agent this session spawned (opencode task-tool children +
+	// Every sub-agent this session spawned (pi task-tool children +
 	// Claude-SDK subagent layout) — feeds the Agents tab's sub-agents card.
 	{
 		const m = path.match(/^\/api\/sessions\/(.+)\/subagents$/);
 		if (m && req.method === "GET") {
-			const session = findSession(decodeURIComponent(m[1]));
+			const session = await findSessionAsync(decodeURIComponent(m[1]));
 			if (!session)
 				return Response.json(
 					{ error: "Session not found" },
-					{ status: 404 },
+					{ status: 404 }
 				);
 			return Response.json({
-				subagents: listSessionSubagents(session),
+				subagents: session.transcriptPath ? listSubagents(session.transcriptPath) : [],
 				sessionRunning: session.isRunning,
 			});
 		}
 	}
 
 	// Sub-agent (Task/Agent) conversation for a session. The agentId is either
-	// a Task tool_result's `agentId` (Claude SDK layout) or an opencode child
+	// a Task tool_result's `agentId` (Claude SDK layout) or an pi child
 	// session id (ses_…) from the task tool / the subagents list above.
 	{
 		const m = path.match(
-			/^\/api\/sessions\/(.+)\/subagent\/([^/]+)$/,
+			/^\/api\/sessions\/(.+)\/subagent\/([^/]+)$/
 		);
 		if (m && req.method === "GET") {
-			const session = findSession(decodeURIComponent(m[1]));
+			const session = await findSessionAsync(decodeURIComponent(m[1]));
 			if (!session)
 				return Response.json(
 					{ error: "Session not found" },
-					{ status: 404 },
+					{ status: 404 }
 				);
 			const agentId = decodeURIComponent(m[2]);
-			const sub =
-				(session.transcriptPath
-					? await getSubagentTranscript(session.transcriptPath, agentId)
-					: null) ?? getOpencodeSubagentTranscript(session, agentId);
+			const sub = session.transcriptPath
+				? await getSubagentTranscript(session.transcriptPath, agentId)
+				: null;
 			if (!sub)
 				return Response.json(
 					{ error: "Sub-agent not found" },
-					{ status: 404 },
+					{ status: 404 }
 				);
 			return Response.json({ ...sub, sessionRunning: session.isRunning });
 		}
@@ -974,11 +1442,11 @@ export async function handleSessionsRoutes(
 
 	// Archive / unarchive a single session
 	const archiveMatch = path.match(
-		/^\/api\/sessions\/(.+)\/archive$/,
+		/^\/api\/sessions\/(.+)\/archive$/
 	);
 	if (archiveMatch && req.method === "POST") {
 		const sessionId = decodeURIComponent(archiveMatch[1]);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const body = await req.json().catch(() => ({}));
@@ -990,41 +1458,46 @@ export async function handleSessionsRoutes(
 		// here. Graceful Esc-style stop (fall back to hard cancel for runs
 		// with no interrupt support) keeps the transcript clean and resumable
 		// on unarchive.
-		let stoppedRun = false;
-		if (
-			archived &&
-			isAgentSessionBusy(
-				session.claudeSessionId,
-				session.codexThreadId,
-				session.id,
-			)
-		) {
-			// Park the queue so the drain doesn't feed requeued steers into a
-			// fresh run as the stopped one winds down.
-			stoppedSessions.add(session.id);
-			const stopped = stopAgentRunTurn([
-				session.claudeSessionId,
-				session.codexThreadId,
-				session.id,
-			]);
-			if (!stopped) {
-				cancelAgentRun(
-					session.claudeSessionId,
-					session.codexThreadId,
-					session.id,
-				);
-			}
-			audit({
-				msg: "run_cancelled",
-				session_id: session.id,
-				source: "archive",
-				graceful: stopped,
-			});
-			transitionRunState(session.id, "cancel", { source: "archive" });
-			requeueSteerReceipts(session.id, engineUserTexts(session));
-			stoppedRun = true;
-		}
-		setArchived(sessionId, archived);
+    let stoppedRun = false;
+    if (
+      archived &&
+      isAgentSessionBusy(
+        session.claudeSessionId,
+        session.codexThreadId,
+        session.id,
+      )
+    ) {
+      const target = sessionKernel(session.id).runState();
+      const targetRunId =
+        target.currentRunId ||
+        (target.state === "starting" || target.state === "preparing"
+          ? currentAgentRunToken(session.id)
+          : undefined);
+      if (targetRunId) {
+        try {
+          requestTurnCancel(session.id, session, {
+            cancelId: `archive-stop:${session.id}:${targetRunId}:${target.generation}`,
+            expectedRunId: targetRunId,
+            expectedGeneration: target.generation,
+            source: "archive",
+          });
+          audit({
+            msg: "run_cancelled",
+            session_id: session.id,
+            source: "archive",
+          });
+          stoppedRun = true;
+        } catch {
+          // The actor fences cancels by run id + generation; losing the race
+          // (the run settled between our busy check and prepare) throws out
+          // of requestTurnCancel. That must not fail the archive — the usual
+          // case is the run having finished anyway.
+        }
+      }
+    }
+		executeSessionProjection(sessionId, "archive_override", () =>
+			setArchived(sessionId, archived),
+		);
 		// Plain done-tickets are archived via a file-level flag, not the
 		// registry; clearing only the registry would leave them archived. On
 		// unarchive, also clear the file flag so the session returns to "My
@@ -1043,17 +1516,19 @@ export async function handleSessionsRoutes(
 	// Rename a session (manual display title; empty/blank clears it back to
 	// the derived title). Works for any source via the override registry.
 	const titleMatch = path.match(
-		/^\/api\/sessions\/(.+)\/title$/,
+		/^\/api\/sessions\/(.+)\/title$/
 	);
 	if (titleMatch && req.method === "PUT") {
 		const sessionId = decodeURIComponent(titleMatch[1]);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const body = await req.json().catch(() => ({}));
 		const title =
 			typeof body?.title === "string" ? body.title.trim().slice(0, 80) : "";
-		setTitleOverride(sessionId, title || null);
+		executeSessionProjection(sessionId, "title_override", () =>
+			setTitleOverride(sessionId, title || null),
+		);
 		invalidateSessionsCache();
 		return Response.json({ ok: true });
 	}
@@ -1062,16 +1537,18 @@ export async function handleSessionsRoutes(
 	// lane keys (needsinput/inprogress/review/merged/pending); null/invalid
 	// clears the override back to the derived lane.
 	const statusMatch = path.match(
-		/^\/api\/sessions\/(.+)\/status$/,
+		/^\/api\/sessions\/(.+)\/status$/
 	);
 	if (statusMatch && req.method === "PUT") {
 		const sessionId = decodeURIComponent(statusMatch[1]);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const body = await req.json().catch(() => ({}));
 		const status = isManualStatus(body?.status) ? body.status : null;
-		setStatusOverride(sessionId, status);
+		executeSessionProjection(sessionId, "status_override", () =>
+			setStatusOverride(sessionId, status),
+		);
 		invalidateSessionsCache();
 		return Response.json({ ok: true });
 	}
@@ -1082,11 +1559,11 @@ export async function handleSessionsRoutes(
 	// request. Setting one pushes a "needs your review" notification to the
 	// reviewer's registered devices (mirrors the needs-input ask push).
 	const reviewMatch = path.match(
-		/^\/api\/sessions\/(.+)\/review$/,
+		/^\/api\/sessions\/(.+)\/review$/
 	);
 	if (reviewMatch && req.method === "PUT") {
 		const sessionId = decodeURIComponent(reviewMatch[1]);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const body = await req.json().catch(() => ({}));
@@ -1119,7 +1596,7 @@ export async function handleSessionsRoutes(
 						const { sendPushToUser } = await import("../../server/push");
 						await sendPushToUser(existing.by, {
 							title: "Review complete",
-							body: `${by || "Someone"} reviewed ${session.title || sessionId}`.slice(0, 180),
+							body: `${by || "Someone"} reviewed ${session.title || sessionId}`.slice(0, 180,),
 							url: `/session/${encodeURIComponent(sessionId)}`,
 							tag: `review-${sessionId}`,
 						});
@@ -1206,16 +1683,18 @@ export async function handleSessionsRoutes(
 				} else mirroredToGithub = true;
 			}
 		}
-		setReviewRequest(
-			sessionId,
-			reviewer
-				? {
-						to: reviewTeam?.github || reviewer,
-						...(reviewTeam ? { recipients: reviewTeam.members } : {}),
-						by: by || "someone",
-						at: new Date().toISOString(),
-					}
-				: null,
+		executeSessionProjection(sessionId, "review_request", () =>
+			setReviewRequest(
+				sessionId,
+				reviewer
+					? {
+							to: reviewTeam?.github || reviewer,
+							...(reviewTeam ? { recipients: reviewTeam.members } : {}),
+							by: by || "someone",
+							at: new Date().toISOString(),
+						}
+					: null,
+			),
 		);
 		// The chip's GitHub fallback reads the bulk PR cache, which the throttled
 		// sweep only refills every 10-30 minutes. Without a write-through, a clear
@@ -1238,7 +1717,7 @@ export async function handleSessionsRoutes(
 						(reviewTeam?.members || [reviewer]).map((recipient) =>
 							sendPushToUser(recipient, {
 								title: "Needs your review",
-								body: `${by || "Someone"} asked you to review ${session.title || sessionId}`.slice(0, 180),
+								body: `${by || "Someone"} asked you to review ${session.title || sessionId}`.slice(0, 180,),
 								url: `/session/${encodeURIComponent(sessionId)}`,
 								tag: `review-${sessionId}`,
 							}),
@@ -1265,9 +1744,7 @@ export async function handleSessionsRoutes(
 		const m = path.match(/^\/api\/sessions\/([^/]+)$/);
 		if (m && req.method === "GET") {
 			const sessionId = decodeURIComponent(m[1]);
-			const session = (await getCachedSessionsAsync()).find(
-				(s) => s.id === sessionId || s.aliasIds?.includes(sessionId),
-			);
+			const session = await findSessionAsync(sessionId);
 			if (!session)
 				return Response.json({ error: "Session not found" }, { status: 404 });
 			return Response.json(enrichSession(session), {
@@ -1284,7 +1761,7 @@ export async function handleSessionsRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 
@@ -1302,31 +1779,24 @@ export async function handleSessionsRoutes(
 				searchIndex().remove(`session:${id}`);
 			} catch {}
 		};
-		try {
-			// Local Portals are their own detached process groups. Stop them before
-			// deleting session metadata or optionally removing the worktree.
-			if (session.runner)
-				await dropRunnerPortalRoutes(session.id, session.runner.id, session.startedBy || undefined);
-			else if (session.worktreeDir && !session.sandbox?.sandboxId)
-				await stopAllPortalServices({ sessionId: session.id, worktreeDir: session.worktreeDir });
-			deleteSession(session);
+		const finishDeletion = async () => {
 			// Runner workspace deletion is opt-in on the Runner. It remains
 			// best-effort so an offline machine never blocks deleting a session.
 			if (session.runner && session.repo && session.worktreeDir) {
-				void cleanupRunnerWorkspace({ runnerId: session.runner.id, sessionId: session.id, repo: session.repo, workspacePath: session.worktreeDir, user: session.createdBy || undefined }).catch((error) =>
-					console.warn(`[runners] Workspace retained after deleting ${session.id}:`, error),
+				void cleanupRunnerWorkspace({ runnerId: session.runner.id, sessionId: session.id, repo: session.repo, workspacePath: session.worktreeDir, user: session.createdBy || undefined, }).catch((error) =>
+					console.warn(`[runners] Workspace retained after deleting ${session.id}:`, error,),
 				);
 			}
 			purgeTranscriptRows(session.id);
 			invalidateSessionsCache();
-			// Tear down the session's sandbox (container + engine-state volumes —
+			// Tear down the session's sandbox (container + engine-state volumes,
 			// and in volume-workspace mode the workspace volume itself; that data
 			// loss is the mode's documented contract). Best-effort and detached:
 			// a docker hiccup must never block the delete.
 			destroySessionSandbox(session, "delete");
-			// If that was the workspace's last session, delete the workspace too —
-			// otherwise auto-wrapped 1:1 workspaces linger as undeletable empty
-			// sidebar rows. PR-backed workspaces (`key`) stay: they regroup new
+			// If that was the workspace's last session, delete the workspace too.
+			// Otherwise auto-wrapped 1:1 workspaces linger as undeletable empty
+			// sidebar rows. PR-backed workspaces (`key`) stay because they regroup new
 			// sessions for the same PR.
 			if (session.workspaceId) {
 				const ws = getWorkspace(session.workspaceId);
@@ -1342,15 +1812,109 @@ export async function handleSessionsRoutes(
 					repoForPath(session.worktreeDir).id,
 				);
 				// A session can span repos, and each one it spans has a checkout
-				// of its own — cleaning up only the first would leave the rest on
+				// of its own. Cleaning up only the first would leave the rest on
 				// disk for the reaper to find days later.
 				for (const attached of session.attachedRepos || [])
 					if (attached.branch)
 						await removeWorktree(attached.branch, attached.repo);
 			}
-			return Response.json({ ok: true });
+		};
+
+		// An older delete path could write the permanent tombstone before removing
+		// the session file. That leaves a visible ghost which the mailbox correctly
+		// refuses to mutate. Finish that already-authorized deletion without trying
+		// to re-enter its permanently closed mailbox.
+		const recoverTombstonedDeletion = async () => {
+			try {
+				removeTombstonedSessionArtifacts(session);
+				await finishDeletion();
+				return Response.json({ ok: true });
+			} catch (e: any) {
+				return Response.json({ error: e.message }, { status: 500 });
+			}
+		};
+		if (sessionKernelStore().isTombstoned(session.id))
+			return recoverTombstonedDeletion();
+
+    const deleteRequestId = `delete:${session.id}`;
+    let deleteExecuting = false;
+    let deletePhysicalFinished = false;
+		try {
+      const plan = sessionGatewayCommand({
+        op: "request",
+        sessionId: session.id,
+        requestId: deleteRequestId,
+        operation: "delete_session",
+        identity: { cleanWorktree },
+      });
+      if (plan.status === "in_progress")
+        throw Object.assign(new Error("Session deletion is already in progress"), {
+          retryable: true,
+        });
+      if (plan.status === "completed") {
+        const replay = plan.result as { status: number; body: unknown };
+        return Response.json(replay.body, { status: replay.status });
+      }
+      deleteExecuting = true;
+			const result = await withSessionMutationLock(session.id, async () => {
+		try {
+			const runIds = [
+				session.claudeSessionId,
+				session.codexThreadId,
+				session.id,
+			];
+			if (
+				runIds.some((id) => !!id && isAgentSessionBusy(id!)) &&
+				!(await cancelAgentRunAndWait(runIds))
+			) {
+				return {
+					status: 409,
+					body: { error: "The session is still stopping. Retry deletion shortly." },
+				};
+			}
+			// Local Portals are their own detached process groups. Stop them before
+			// deleting session metadata or optionally removing the worktree.
+			if (session.runner)
+				await dropRunnerPortalRoutes(session.id, session.runner.id, session.startedBy || undefined,);
+			else if (session.worktreeDir && !session.sandbox?.sandboxId)
+				await stopAllPortalServices({ sessionId: session.id, worktreeDir: session.worktreeDir, });
+			// The serialized delete must remove the file before its permanent tombstone.
+			// Tombstoning first drops this active kernel from the map, so deleteSession's
+			// nested compatibility write re-enters through a fresh kernel and is fenced
+			// as a late writer, leaving a visible but immutable ghost session behind.
+			deleteSession(session);
+			tombstoneSessionKernel(session.id);
+			await finishDeletion();
+			return { status: 200, body: { ok: true } };
 		} catch (e: any) {
-			return Response.json({ error: e.message }, { status: 500 });
+			return { status: 500, body: { error: e.message } };
+		}
+			});
+      deletePhysicalFinished = true;
+      sessionGatewayCommand({
+        op: "complete",
+        sessionId: session.id,
+        requestId: deleteRequestId,
+        operation: "delete_session",
+        result,
+      });
+			return Response.json(result.body, { status: result.status });
+		} catch (error) {
+      if (deleteExecuting && !deletePhysicalFinished)
+        sessionGatewayCommand({
+          op: "fail",
+          sessionId: session.id,
+          requestId: deleteRequestId,
+          operation: "delete_session",
+          error: error instanceof Error ? error.message : String(error),
+          retryable: true,
+        });
+			// A concurrent delete can write the tombstone after the check above but
+			// before this request reaches the mailbox. Treat that race as the same
+			// idempotent recovery instead of surfacing a false failure.
+			if (sessionKernelStore().isTombstoned(session.id))
+				return recoverTombstonedDeletion();
+			throw error;
 		}
 	}
 

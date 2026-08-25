@@ -108,6 +108,24 @@ describe("workspace sandbox connections", () => {
     ).toBe("ready");
   });
 
+  test("a runner pin change does not invalidate provider qualification", () => {
+    connectSandboxProvider("daytona", { secret: "daytona-secret" });
+    setSandboxConnectionQualification("daytona", {
+      status: "ready",
+      checkedAt: "2026-08-11T00:00:00.000Z",
+    });
+    const path = process.env.OPENSESSION_SANDBOX_CONFIG!;
+    const raw = JSON.parse(readFileSync(path, "utf-8"));
+    raw.connections[0].qualification.adapterSignature =
+      "daytona:connection-v1:old-runner-pin+node@24.18.1+workspace-runtime-v7";
+    writeFileSync(path, JSON.stringify(raw));
+
+    expect(sandboxConnectionReady("daytona")).toBe(true);
+    expect(
+      safeSandboxConnections().find((value) => value.provider === "daytona")?.state,
+    ).toBe("ready");
+  });
+
   test("an adapter signature change makes a previous qualification stale", () => {
     connectSandboxProvider("docker", {});
     setSandboxConnectionQualification("docker", {

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type {
 	SandboxConnectionInfo,
-	SandboxIngressInfo,
 	SandboxOperationInfo,
 } from "../../lib/api";
 import type { SandboxConnectionsResponse } from "../../lib/api/sandboxes";
@@ -142,6 +141,7 @@ const MACHINE_PROFILES: Record<"daytona" | "box" | "modal" | "microvm", MachineP
 		{ id: "efficient", label: "Efficient", detail: "0.5 physical CPU · 2 GB", settings: { cpu: 0.5, memoryMb: 2048 } },
 		{ id: "balanced", label: "Balanced", detail: "1 physical CPU · 4 GB", settings: { cpu: 1, memoryMb: 4096 } },
 		{ id: "performance", label: "Performance", detail: "2 physical CPUs · 8 GB", settings: { cpu: 2, memoryMb: 8192 } },
+		{ id: "power", label: "Power", detail: "8 physical CPUs · 16 GB", settings: { cpu: 8, memoryMb: 16_384 } },
 	],
 	microvm: [
 		{ id: "compact", label: "Compact", detail: "2 vCPU · 4 GB · 25 GB disk", settings: { cpu: 2, memoryMb: 4096, diskGb: 25 } },
@@ -185,21 +185,16 @@ function ConnectDialog({
 	open,
 	onOpenChange,
 	onChanged,
-	ingress,
 }: {
 	connection: SandboxConnectionInfo;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	onChanged: (response: SandboxConnectionsResponse) => void;
-	ingress: SandboxIngressInfo;
 }) {
 	const provider = PROVIDERS.find((candidate) => candidate.id === connection.provider)!;
 	const [apiKey, setApiKey] = useState("");
 	const [tokenId, setTokenId] = useState("");
 	const [tokenSecret, setTokenSecret] = useState("");
-	const [publicBaseUrl, setPublicBaseUrl] = useState(
-		ingress.configuredUrl || ingress.proposedUrl || "",
-	);
 	const [region, setRegion] = useState(String(connection.settings.region || ""));
 	const [snapshot, setSnapshot] = useState(String(connection.settings.snapshot || ""));
 	const [app, setApp] = useState(String(connection.settings.app || ""));
@@ -216,12 +211,11 @@ function ConnectDialog({
 
 	async function connect() {
 		setSaving(true);
-		try {
-			const response = await connectSandbox(connection.provider, {
+		await (async () => {
+const response = await connectSandbox(connection.provider, {
 				...(apiKey ? { apiKey } : {}),
 				...(tokenId ? { tokenId } : {}),
 				...(tokenSecret ? { tokenSecret } : {}),
-				...(remote && publicBaseUrl ? { publicBaseUrl } : {}),
 				settings: {
 					...(region ? { region } : {}),
 					...(snapshot ? { snapshot } : {}),
@@ -234,29 +228,29 @@ function ConnectDialog({
 			onChanged(response);
 			onOpenChange(false);
 			toast(`${provider.label} connection check started`, { variant: "success" });
-		} catch (error) {
-			toast(error instanceof Error ? error.message : `Failed to connect ${provider.label}`, {
+})().catch(async (error) => {
+toast(error instanceof Error ? error.message : `Failed to connect ${provider.label}`, {
 				variant: "error",
 			});
-		} finally {
-			setSaving(false);
-		}
+}).finally(async () => {
+setSaving(false);
+});
 	}
 
 	async function disconnect() {
 		setSaving(true);
-		try {
-			const response = await disconnectSandbox(connection.provider);
+		await (async () => {
+const response = await disconnectSandbox(connection.provider);
 			onChanged(response);
 			onOpenChange(false);
 			toast(`${provider.label} disconnected`, { variant: "success" });
-		} catch (error) {
-			toast(error instanceof Error ? error.message : `Failed to disconnect ${provider.label}`, {
+})().catch(async (error) => {
+toast(error instanceof Error ? error.message : `Failed to disconnect ${provider.label}`, {
 				variant: "error",
 			});
-		} finally {
-			setSaving(false);
-		}
+}).finally(async () => {
+setSaving(false);
+});
 	}
 
 	const exists = connection.state !== "not_configured";
@@ -329,26 +323,9 @@ function ConnectDialog({
 
 				{remote && (
 					<>
-						<Field label="Public callback URL">
-							<Input
-								type="url"
-								placeholder="https://ingress.example.com"
-								value={publicBaseUrl}
-								onChange={(event) => setPublicBaseUrl(event.target.value)}
-							/>
-						</Field>
-						{ingress.note && <p className="m-0 text-supporting text-dim">{ingress.note}</p>}
-						{ingress.health !== "ready" && (
-							<details className="rounded-lg bg-surface p-3 text-meta text-dim">
-								<summary className="cursor-pointer font-medium text-fg">Generated Caddy routes</summary>
-								{ingress.proposedUrl && (
-									<code className="mt-2 block select-all overflow-x-auto rounded-md bg-panel p-2 text-xs text-fg">
-										opensession sandbox ingress install {ingress.proposedUrl}
-									</code>
-								)}
-								<pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs text-dim">{ingress.generatedSnippet}</pre>
-							</details>
-						)}
+						<p className="m-0 text-supporting text-dim">
+							Remote providers use the workspace’s Public ingress setting for callbacks and workload identity.
+						</p>
 						{connection.provider !== "box" && (
 							<details className="rounded-lg bg-surface p-3 text-supporting text-dim">
 								<summary className="cursor-pointer font-medium text-fg">Provider settings</summary>
@@ -413,13 +390,11 @@ function ConnectionCard({
 	connection,
 	operations,
 	onChanged,
-	ingress,
 	canManage,
 }: {
 	connection: SandboxConnectionInfo;
 	operations: SandboxOperationInfo[];
 	onChanged: (response: SandboxConnectionsResponse) => void;
-	ingress: SandboxIngressInfo;
 	canManage: boolean;
 }) {
 	const provider = PROVIDERS.find((candidate) => candidate.id === connection.provider)!;
@@ -429,28 +404,28 @@ function ConnectionCard({
 
 	async function testAgain() {
 		setBusy(true);
-		try {
-			onChanged(await testSandboxConnection(connection.provider));
-		} catch (error) {
-			toast(error instanceof Error ? error.message : `Failed to test ${provider.label}`, {
+		await (async () => {
+onChanged(await testSandboxConnection(connection.provider));
+})().catch(async (error) => {
+toast(error instanceof Error ? error.message : `Failed to test ${provider.label}`, {
 				variant: "error",
 			});
-		} finally {
-			setBusy(false);
-		}
+}).finally(async () => {
+setBusy(false);
+});
 	}
 
 	async function toggle(enabled: boolean) {
 		setBusy(true);
-		try {
-			onChanged(await updateSandboxConnection(connection.provider, { enabled }));
-		} catch (error) {
-			toast(error instanceof Error ? error.message : `Failed to update ${provider.label}`, {
+		await (async () => {
+onChanged(await updateSandboxConnection(connection.provider, { enabled }));
+})().catch(async (error) => {
+toast(error instanceof Error ? error.message : `Failed to update ${provider.label}`, {
 				variant: "error",
 			});
-		} finally {
-			setBusy(false);
-		}
+}).finally(async () => {
+setBusy(false);
+});
 	}
 
 	const checking = connection.state === "checking" || operation?.status === "running";
@@ -461,35 +436,30 @@ function ConnectionCard({
 	return (
 		<>
 			<SettingCard>
-				<div className="flex flex-wrap items-start gap-3 px-5 py-4">
-					<SandboxProviderLogo provider={connection.provider} />
-					<div className="min-w-[14rem] flex-1">
-						<div className="flex flex-wrap items-center gap-2">
-							<div className="text-item-title font-semibold text-fg">{provider.label}</div>
-							<span className={cn("rounded-full px-2 py-0.5 text-meta font-medium", statusClasses(checking ? "checking" : connection.state))}>
-								{checking ? "Checking" : STATE_LABEL[connection.state]}
-							</span>
+				<div className="grid grid-cols-[minmax(0,1fr)_5.75rem] gap-x-4 gap-y-3 px-5 py-4 desktop:grid-cols-[minmax(0,1fr)_13rem]">
+					<div className="col-start-1 row-start-1 flex min-w-0 items-start gap-3">
+						<SandboxProviderLogo provider={connection.provider} />
+						<div className="min-w-0 flex-1">
+							<div className="flex flex-wrap items-center gap-2">
+								<div className="text-item-title font-semibold text-fg">{provider.label}</div>
+								<span className={cn("rounded-full px-2 py-0.5 text-meta font-medium", statusClasses(checking ? "checking" : connection.state))}>
+									{checking ? "Checking" : STATE_LABEL[connection.state]}
+								</span>
+							</div>
+							<p className="m-0 mt-1 text-supporting leading-relaxed text-dim">{provider.description}</p>
+							{summary && (
+								<p className={cn("m-0 mt-2 text-supporting", connection.state === "needs_attention" ? "text-red" : "text-dim")}>
+									{summary}
+								</p>
+							)}
 						</div>
-						<p className="m-0 mt-1 text-supporting leading-relaxed text-dim">{provider.description}</p>
-						{summary && (
-							<p className={cn("m-0 mt-2 text-supporting", connection.state === "needs_attention" ? "text-red" : "text-dim")}>
-								{summary}
-							</p>
-						)}
-						{connection.qualification && (
-							<details className="mt-2 text-meta text-faint">
-								<summary className="w-fit cursor-pointer select-none hover:text-fg">Diagnostics</summary>
-								<div className="mt-1 grid gap-0.5 pl-2">
-									<span>Connection {connection.id}</span>
-									<span>Adapter {connection.qualification.adapterSignature}</span>
-									{connection.qualification.checkedAt && <span>Checked {new Date(connection.qualification.checkedAt).toLocaleString()}</span>}
-									{connection.qualification.failureCode && <span>Code {connection.qualification.failureCode}</span>}
-								</div>
-							</details>
-						)}
 					</div>
-					<div className="ml-auto flex min-h-10 shrink-0 items-center gap-2">
-						{connection.state !== "not_configured" && (
+					<div className="col-start-2 row-start-1 flex justify-end self-start">
+						{connection.state === "not_configured" ? (
+							<Button size="sm" variant="primary" onClick={() => setDialogOpen(true)} disabled={!canManage || checking}>
+								{connection.provider === "docker" || connection.provider === "microvm" ? "Enable" : "Connect"}
+							</Button>
+						) : (
 							<Switch
 								aria-label={`${connection.enabled ? "Disable" : "Enable"} ${provider.label}`}
 								checked={connection.enabled}
@@ -497,15 +467,34 @@ function ConnectionCard({
 								onCheckedChange={(checked) => void toggle(checked)}
 							/>
 						)}
-						{connection.state === "ready" && !checking && (
-							<Button size="sm" icon={<IconCheck size={17} />} onClick={() => void testAgain()} disabled={!canManage || busy}>
-								Test again
-							</Button>
-						)}
-						<Button size="sm" variant={connection.state === "not_configured" ? "primary" : "default"} onClick={() => setDialogOpen(true)} disabled={!canManage || checking}>
-							{connection.state === "not_configured" ? (connection.provider === "docker" || connection.provider === "microvm" ? "Enable" : "Connect") : "Configure"}
-						</Button>
 					</div>
+					{(connection.qualification || connection.state !== "not_configured") && (
+						<div className="col-span-2 row-start-2 flex items-baseline justify-between gap-4">
+							{connection.qualification && (
+								<details className="ml-10 min-w-0 text-meta text-faint">
+									<summary className="h-[26px] w-fit cursor-pointer select-none leading-[26px] hover:text-fg">Diagnostics</summary>
+									<div className="mt-1 grid gap-0.5 pl-3">
+										<span>Connection {connection.id}</span>
+										<span>Adapter {connection.qualification.adapterSignature}</span>
+										{connection.qualification.checkedAt && <span>Checked {new Date(connection.qualification.checkedAt).toLocaleString()}</span>}
+										{connection.qualification.failureCode && <span>Code {connection.qualification.failureCode}</span>}
+									</div>
+								</details>
+							)}
+							{connection.state !== "not_configured" && (
+								<div className="ml-auto flex shrink-0 items-center gap-2">
+									{connection.state === "ready" && !checking && (
+										<Button size="sm" icon={<IconCheck size={17} />} onClick={() => void testAgain()} disabled={!canManage || busy}>
+											Test again
+										</Button>
+									)}
+									<Button size="sm" onClick={() => setDialogOpen(true)} disabled={!canManage || checking}>
+										Configure
+									</Button>
+								</div>
+							)}
+						</div>
+					)}
 				</div>
 			</SettingCard>
 			<ConnectDialog
@@ -513,7 +502,6 @@ function ConnectionCard({
 				open={dialogOpen}
 				onOpenChange={setDialogOpen}
 				onChanged={onChanged}
-				ingress={ingress}
 			/>
 		</>
 	);
@@ -574,20 +562,20 @@ function ProjectEnvironmentDialog({
 		if (!selected) return;
 		const settings = machineProfiles(provider).find((candidate) => candidate.id === profile)?.settings;
 		setSaving(true);
-		try {
-			const response = await rebuildSandboxEnvironment(selected.repo, provider, settings);
+		await (async () => {
+const response = await rebuildSandboxEnvironment(selected.repo, provider, settings);
 			onStarted(response.operation, selected, settings);
 			onOpenChange(false);
 			toast(`${providerLabel(provider)} snapshot build started for ${selected.repo}`, {
 				variant: "success",
 			});
-		} catch (error) {
-			toast(error instanceof Error ? error.message : "Failed to build project snapshot", {
+})().catch(async (error) => {
+toast(error instanceof Error ? error.message : "Failed to build project snapshot", {
 				variant: "error",
 			});
-		} finally {
-			setSaving(false);
-		}
+}).finally(async () => {
+setSaving(false);
+});
 	}
 
 	return (
@@ -671,12 +659,6 @@ function ProjectEnvironmentDialog({
 export function SandboxesPanel() {
 	const [connections, setConnections] = useState<SandboxConnectionInfo[]>([]);
 	const [operations, setOperations] = useState<SandboxOperationInfo[]>([]);
-	const [ingress, setIngress] = useState<SandboxIngressInfo>({
-		source: "none",
-		health: "not_configured",
-		caddyAdminReachable: false,
-		generatedSnippet: "",
-	});
 	const [environments, setEnvironments] = useState<SandboxEnvironmentInfo[]>([]);
 	const [canManage, setCanManage] = useState(false);
 	const [loading, setLoading] = useState(true);
@@ -686,10 +668,12 @@ export function SandboxesPanel() {
 	function apply(response: SandboxConnectionsResponse) {
 		setConnections(response.connections);
 		setOperations(response.operations);
-		setIngress(response.ingress);
 		setCanManage(response.canManage);
 	}
 
+	const hasRunningValue = operations.some(
+		(operation) => operation.status === "running",
+	);
 	useEffect(() => {
 		let active = true;
 		const load = () => {
@@ -707,13 +691,13 @@ export function SandboxesPanel() {
 		};
 		void load();
 		const interval = setInterval(() => {
-			if (operations.some((operation) => operation.status === "running")) void load();
+			if (hasRunningValue) void load();
 		}, 2_000);
 		return () => {
 			active = false;
 			clearInterval(interval);
 		};
-	}, [operations.some((operation) => operation.status === "running")]);
+	}, [hasRunningValue]);
 
 	function environmentStarted(
 		operation: SandboxOperationInfo,
@@ -763,7 +747,7 @@ export function SandboxesPanel() {
 					You can use Ready connections, but only a workspace administrator can configure them.
 				</SettingsHint>
 			)}
-			<div className="grid gap-3 px-4">
+			<div className="grid gap-3">
 				{loading && (
 					<SettingCardSkeleton rows={3} icon={40} label="Loading sandbox connections" />
 				)}
@@ -773,7 +757,6 @@ export function SandboxesPanel() {
 						connection={connection}
 						operations={operations}
 						onChanged={apply}
-						ingress={ingress}
 						canManage={canManage}
 					/>
 				))}
@@ -802,7 +785,7 @@ export function SandboxesPanel() {
 					>
 						Project snapshots
 					</SettingsGroupLabel>
-					<div className="grid gap-3 px-4">
+					<div className="grid gap-3">
 						{configuredEnvironments.length === 0 && (
 							<SettingCard>
 								<div className="px-5 py-5 text-center">
@@ -832,58 +815,63 @@ export function SandboxesPanel() {
 											: "Snapshot is stale";
 								return (
 									<SettingCard key={`${environment.repo}:${environment.provider}`}>
-										<div className="flex flex-wrap items-start gap-3 px-5 py-3.5">
-											<SandboxProviderLogo provider={environment.provider} />
-											<div className="min-w-0 flex-1">
-												<div className="text-item-title font-medium text-fg">{environment.repo}</div>
-												<div
-													className={cn(
-														"mt-0.5 text-supporting",
-														environment.state === "failed" && !running ? "text-red" : "text-dim",
-													)}
-												>
-													{provider.label} · {status}
-												</div>
-												<div className="mt-1 text-meta text-faint">{machineSummary(environment)}</div>
-												{running && (
-													<div className="mt-2 max-w-[24rem]">
-														<div className="h-1 overflow-hidden rounded-full bg-hover">
-															<div
-																className="h-full rounded-full bg-accent transition-[width] duration-[var(--dur)]"
-																style={{ width: `${operation.progress || 2}%` }}
-															/>
-														</div>
-														{operation.detail && (
-															<div className="mt-1 text-meta text-faint">{operation.detail}</div>
+										<div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-3 px-5 py-3.5">
+											<div className="col-span-2 row-start-1 flex min-w-0 items-start gap-3">
+												<SandboxProviderLogo provider={environment.provider} />
+												<div className="min-w-0 flex-1">
+													<div className="text-item-title font-medium text-fg">{environment.repo}</div>
+													<div
+														className={cn(
+															"mt-0.5 text-supporting",
+															environment.state === "failed" && !running ? "text-red" : "text-dim",
 														)}
+													>
+														{provider.label} · {status}
 													</div>
-												)}
+													<div className="mt-1 text-meta text-faint">{machineSummary(environment)}</div>
+													{running && (
+														<div className="mt-2 max-w-[24rem]">
+															<div className="h-1 overflow-hidden rounded-full bg-hover">
+																<div
+																	className="h-full rounded-full bg-accent transition-[width] duration-[var(--dur)]"
+																	style={{ width: `${operation.progress || 2}%` }}
+																/>
+															</div>
+															{operation.detail && (
+																<div className="mt-1 text-meta text-faint">{operation.detail}</div>
+															)}
+														</div>
+													)}
+												</div>
+											</div>
+											<div className="col-span-2 row-start-2 flex items-baseline justify-between gap-4">
 												{(operation || environment.failureCode) && (
-													<details className="mt-2 text-meta text-faint">
-														<summary className="w-fit cursor-pointer select-none hover:text-fg">Details</summary>
-														<div className="mt-1 grid gap-0.5 pl-2">
+													<details className="ml-10 min-w-0 text-meta text-faint">
+														<summary className="h-[26px] w-fit cursor-pointer select-none leading-[26px] hover:text-fg">Details</summary>
+														<div className="mt-1 grid gap-0.5 pl-3">
 															{operation && <span>{operation.stage} · updated {new Date(operation.updatedAt).toLocaleString()}</span>}
 															{(environment.failureCode || operation?.failureCode) && <span>Code {environment.failureCode || operation?.failureCode}</span>}
 														</div>
 													</details>
 												)}
+												<Button
+													className="ml-auto shrink-0"
+													size="sm"
+													disabled={!canManage || running}
+													onClick={() => {
+														setEnvironmentTarget(environment);
+														setEnvironmentDialogOpen(true);
+													}}
+												>
+													{running
+														? "Preparing…"
+														: environment.state === "failed"
+															? "Retry"
+															: environment.state === "stale"
+																? "Refresh"
+																: "Configure"}
+												</Button>
 											</div>
-											<Button
-												size="sm"
-												disabled={!canManage || running}
-												onClick={() => {
-													setEnvironmentTarget(environment);
-													setEnvironmentDialogOpen(true);
-												}}
-											>
-												{running
-													? "Preparing…"
-													: environment.state === "failed"
-														? "Retry"
-														: environment.state === "stale"
-															? "Refresh"
-															: "Configure"}
-											</Button>
 										</div>
 									</SettingCard>
 								);

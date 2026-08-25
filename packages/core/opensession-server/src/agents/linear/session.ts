@@ -10,7 +10,7 @@ import {
   personaName,
   productName,
 } from "../../server/config";
-import { getDefaultModel, toOpencodeModel } from "../../server/models";
+import { getDefaultModel, toPiModel } from "../../server/models";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import {
   createWorktree as createRepoWorktree,
@@ -75,10 +75,8 @@ export interface ActiveSession extends StoredSession {
   issueDescription: string;
   teamId: string;
   abortController?: AbortController;
-  /** `"michael"` is the pre-rename spelling of `"agent"`. Stored session
-   *  files may carry it, so it stays accepted on READ; nothing writes it. */
   planningConversation: Array<{
-    role: "agent" | "michael" | "user";
+    role: "agent" | "user";
     content: string;
     timestamp: string;
   }>;
@@ -99,15 +97,13 @@ export function extractPrUrl(result: string): string | null {
 
 export function formatConversationHistory(
   conversation: Array<{
-    role: "agent" | "michael" | "user";
+    role: "agent" | "user";
     content: string;
     timestamp: string;
   }>
 ): string {
   if (conversation.length === 0) return "";
   return conversation
-    // Anything that is not the person is the agent, so a legacy `"michael"`
-    // role renders under the current persona name rather than as the user.
     .map((msg) => `**${msg.role === "user" ? "User" : personaName()}:** ${msg.content}`)
     .join("\n\n");
 }
@@ -367,7 +363,7 @@ function makeActionStreamer(accessToken: string, linearSessionId: string) {
   };
 }
 
-// --- Headless agent runner (opencode engine) ---
+// --- Headless agent runner (pi engine) ---
 
 export async function runAgentHeadless(
   worktreeDir: string,
@@ -414,14 +410,14 @@ export async function runAgentHeadless(
       sessionId: claudeSessionId || undefined,
       cwd: worktreeDir,
       mode: "code",
-      model: toOpencodeModel(session?.model || getDefaultModel()),
+      model: toPiModel(session?.model || getDefaultModel()),
       user: actorEmail,
       author: commitAuthor,
       // Teammate-driven runs keep AWS read access — also keeps the shared
-      // opencode server env identical across interactive kinds (a mixed
+      // run environment identical across interactive kinds (a mixed
       // aws/non-aws env would drain-respawn the server on every alternation).
       aws: true,
-      // Kind-only journal: gate marker for the opencode engine, no crash
+      // Kind-only journal: gate marker for the pi engine, no crash
       // journal — this loop tracks its own engine session ids per Linear
       // session and re-drives turns from Linear events.
       journal: { kind: "linear" },

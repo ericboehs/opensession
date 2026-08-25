@@ -38,7 +38,12 @@ export interface SetupGithub {
 	userPrAuth: boolean;
 	clientIdConfigured: boolean;
 	clientSecretConfigured: boolean;
-	botTokenPresent: boolean;
+	mentionHandle: string;
+	appCredentialConfigured: boolean;
+	privateKeyConfigured: boolean;
+	appSlug: string | null;
+	installationOwner: string | null;
+	appOrg?: string | null;
 	appCreateUrl: string;
 }
 
@@ -57,15 +62,16 @@ export interface SetupRepo {
 	id: string;
 	label: string;
 	path: string;
+	defaultBranch: string;
+	/** Where new code sessions run. Existing sessions keep their current checkout. */
+	isolatedWorktrees: boolean;
 	lifecycle: SetupRepoLifecycle;
 }
 
 /** Whether the instance can actually run an agent turn — the one thing the
  *  Getting-started checklist used to omit. Server-side: engine-status.ts. */
 export interface SetupEngine {
-	opencodeBin: string | null;
 	claudeBin: string | null;
-	bridgeEnabled: boolean;
 	claudeAccounts: number;
 	codexAccounts: number;
 	defaultModel: string;
@@ -77,8 +83,17 @@ export interface SetupEngine {
 	fixableInApp: boolean;
 }
 
-export interface SetupStatus {
+export interface SetupAccess {
 	publicBaseUrl: string;
+	port: number;
+	tailnetIp: string | null;
+	caddyInstalled: boolean;
+}
+
+export interface SetupStatus {
+	/** Kept at the top level for tolerant native clients on the shared snapshot. */
+	publicBaseUrl: string;
+	access: SetupAccess;
 	repos: SetupRepo[];
 	engine: SetupEngine;
 	team: { count: number; names: string[] };
@@ -123,9 +138,11 @@ export async function setupRequest<T = unknown>(
 			: {}),
 	});
 	let body: any = null;
-	try {
-		body = await res.json();
-	} catch {}
+	await (async () => {
+body = await res.json();
+})().catch(async () => {
+
+});
 	if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`);
 	return body as T;
 }
@@ -148,12 +165,11 @@ export function chipDotColor(tone: ChipTone): string {
  *  the checklist can offer a "jump to that step" without importing the wizard
  *  it is rendered by. */
 export type SetupStepId =
-	| "engine"
-	| "identity"
-	| "repos"
-	| "team"
-	| "integrations"
 	| "github"
+	| "organization"
+	| "models"
+	| "repos"
+	| "members"
 	| "review";
 
 export function integrationState(i: SetupIntegration): {
@@ -167,9 +183,12 @@ export function integrationState(i: SetupIntegration): {
 }
 
 export function githubAuthState(g: SetupGithub): { tone: ChipTone; label: string } {
-	if (g.userPrAuth && g.clientIdConfigured) return { tone: "on", label: "Active" };
-	if (g.userPrAuth) return { tone: "warn", label: "Missing client id" };
-	return { tone: "off", label: "Off" };
+	if (!g.appCredentialConfigured)
+		return { tone: "warn", label: "Missing App credential" };
+	if (!g.appSlug) return { tone: "warn", label: "Missing App slug" };
+	if (g.userPrAuth && !g.clientSecretConfigured)
+		return { tone: "warn", label: "Missing client secret" };
+	return { tone: "on", label: g.userPrAuth ? "GitHub" : "None" };
 }
 
 /** Does this repo carry what a session needs to provision and boot it on its
@@ -177,40 +196,20 @@ export function githubAuthState(g: SetupGithub): { tone: ChipTone; label: string
  *  load-bearing half — without it the Preview button has nothing to run and an
  *  agent can't see its own UI change. `.agents/setup` alone still helps:
  *  worktrees provision, but nothing boots. Explained in
- *  docs/repo-lifecycle.md. */
+ *  docs/repo-lifecycle.md.
+ *
+ *  The chip label is the whole answer a row gives. A sentence under every
+ *  repo restated the same mechanism once per row, so the footer says it once
+ *  and the label carries the state. */
 export function repoLifecycleState(repo: SetupRepo): {
 	tone: ChipTone;
 	label: string;
-	/** Sentence for the repo row — what works, or what to add. */
-	description: string;
 } {
-	const { dir, setup, start, previewCommand } = repo.lifecycle;
-	const where = dir ?? ".agents";
-	if (start)
-		return {
-			tone: "on",
-			label: setup ? "Ready" : "Boots",
-			description: setup
-				? `${where}/ provisions each worktree and boots the dev server.`
-				: `${where}/start.sh boots the dev server. Add ${where}/setup to provision worktrees.`,
-		};
-	if (previewCommand)
-		return {
-			tone: "on",
-			label: "Instance command",
-			description: `Boots through this instance's previewCommand. Commit ${where}/start.sh to keep the recipe with the code.`,
-		};
-	if (setup)
-		return {
-			tone: "warn",
-			label: "Setup only",
-			description: `${where}/setup provisions worktrees. Add start.sh to enable previews.`,
-		};
-	return {
-		tone: "off",
-		label: "None",
-		description: `No ${where}/ scripts. Previews stay disabled.`,
-	};
+	const { setup, start, previewCommand } = repo.lifecycle;
+	if (start) return { tone: "on", label: setup ? "Ready" : "Boots previews" };
+	if (previewCommand) return { tone: "on", label: "Instance preview" };
+	if (setup) return { tone: "warn", label: "Setup only" };
+	return { tone: "off", label: "No previews" };
 }
 
 export function StateChip({ tone, label }: { tone: ChipTone; label: string }) {
@@ -438,7 +437,7 @@ export function SecretField({
 					</button>
 				)}
 			</div>
-			{description && <div className="text-meta text-faint">{description}</div>}
+			{description && <div className="text-supporting text-faint">{description}</div>}
 			<input
 				type={type}
 				// Mono for the value you paste, but not for the placeholder: every
@@ -456,6 +455,7 @@ export function SecretField({
 							: (placeholder ?? "Not set")
 				}
 				aria-label={name}
+				required={required}
 				autoComplete="new-password"
 				autoCapitalize="none"
 				spellCheck={false}

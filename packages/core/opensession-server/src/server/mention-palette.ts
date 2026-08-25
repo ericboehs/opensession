@@ -8,16 +8,25 @@ export interface MentionPaletteSession {
 	archived?: boolean;
 }
 
+export interface MentionPaletteWorkspace {
+	id: string;
+	name: string;
+	repo?: string | null;
+	branch?: string | null;
+	createdAt?: string | null;
+}
+
 export interface MentionPaletteItem {
 	display: string;
 	insert: string;
-	kind: "tool" | "session";
+	kind: "tool" | "workspace" | "session";
 	sub?: string;
 }
 
 interface Options {
 	query: string;
 	toolNames: string[];
+	workspaces: MentionPaletteWorkspace[];
 	sessions: MentionPaletteSession[];
 	currentSessionId?: string | null;
 }
@@ -32,11 +41,12 @@ function includesQuery(
 
 /** Non-file rows for the @ palette. Tools are intentionally uncapped: the
  * connected catalog is small and the request is to make every available tool
- * discoverable. Sessions are recent context rather than a second session
- * search screen, so that section stays bounded. */
+ * discoverable. Workspaces and sessions are recent context rather than second
+ * search screens, so those sections stay bounded. */
 export function mentionPaletteItems({
 	query,
 	toolNames,
+	workspaces,
 	sessions,
 	currentSessionId,
 }: Options): MentionPaletteItem[] {
@@ -48,6 +58,23 @@ export function mentionPaletteItems({
 			display: name,
 			insert: name,
 			kind: "tool" as const,
+		}));
+	const workspaceRows = workspaces
+		.filter((workspace) =>
+			includesQuery(
+				q,
+				workspace.name,
+				workspace.repo,
+				workspace.branch,
+				workspace.id,
+			),
+		)
+		.slice(0, 6)
+		.map((workspace) => ({
+			display: workspace.name,
+			insert: `workspace:${workspace.id}`,
+			kind: "workspace" as const,
+			sub: workspace.branch || workspace.repo || undefined,
 		}));
 	const matchingSessions = sessions
 		.filter((session) => !session.archived && session.id !== currentSessionId)
@@ -81,5 +108,5 @@ export function mentionPaletteItems({
 			kind: "session" as const,
 			sub: session.branch || session.repo || session.source || undefined,
 		}));
-	return [...tools, ...sessionRows];
+	return [...tools, ...workspaceRows, ...sessionRows];
 }

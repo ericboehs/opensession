@@ -113,18 +113,23 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, unl
 import { dirname, resolve as resolvePath } from "path";
 import { homeDir, OPENSESSION_SESSIONS_DIR } from "../paths";
 import { stateDir, } from "../paths";
-import { journalSet, journalClear, type ActiveRunRecord } from "../run-journal";
+import { journalSet, journalClear, journalClearIfLineage, journalRecordAbnormalCompletion, type ActiveRunRecord } from "../run-journal";
 import { shouldPersistModelSwitch, type StreamEvent } from "../run-events";
-import { recoveryKind, RESUME_CONTINUATION_PROMPT } from "../agent-runner";
+import { recoveryKind, restartContinuationPrompt } from "../agent-runner";
 import { modelSupportsSteer, providerFor } from "../models";
 import { hostRunBusy, hostSteer, hostInterruptSteer, hostCancel } from "../host-registry";
 import { registerRunToken, unregisterRunToken } from "../run-rpc";
 import { writeJsonAtomic } from "../shared/atomic-write";
-import { HostHandle, type HandleCallbacks, type HostLauncher } from "../host-client";
+import {
+  HostHandle,
+  HostLaunchNotDispatchedError,
+  reconcileUncertainHostEvents,
+  type HandleCallbacks,
+  type HostLauncher,
+} from "../host-client";
 import { registerRunWsHost, unregisterRunWsHost, runWsConnector } from "../run-ws";
 import { getTranscriptPath } from "../sessions";
 import { listCodexAccounts } from "../codex-accounts";
-import { OPENCODE_TRANSCRIPTS_DIR } from "../opencode-transcript";
 import { dropSandboxPreviewRoutes, externalPreviewCommandDirs } from "../preview";
 import { configuredPaths } from "../config";
 import { codeStorageConfig } from "../config";
@@ -142,9 +147,11 @@ import {
   sandboxCallbackBaseUrl,
   type SandboxTransport,
 } from "./config";
+import { decideSandboxHostRecovery } from "./recovery";
 import {
   HOST_SPEC_NAME,
   HOST_META_NAME,
+  HOST_JOURNAL_NAME,
   HOST_LOG_NAME,
   HOST_ENTRY,
   rpcSocketPath,
@@ -500,24 +507,24 @@ async function repoOriginUrl(repoDir: string): Promise<string> {
 /**
  * Host-side engine config files projected read-only into a container, as
  * [hostSrc, containerDest] pairs. Sources honor the host-side env seams
- * (OPENSESSION_OPENCODE_CONFIG / OPENSESSION_PI_CONFIG; test/verify suites
+ * (OPENSESSION_MODEL_PROVIDERS_CONFIG / OPENSESSION_PI_CONFIG; test/verify suites
  * point them at temp files); destinations stay the legacy default paths the
  * in-container process (which has no such env) dual-reads.
- *  - OpenCode bridge config: bridge mode, accounts restriction, turn timeout.
- *    without it every opencode/anthropic/* run in a sandbox fails with
+ *  - Pi bridge config: bridge mode, accounts restriction, turn timeout.
+ *    without it every pi/anthropic/* run in a sandbox fails with
  *    "bridge disabled".
  *  - Pi engine config: the enabled gate + Anthropic transport policy. Without
  *    it every pi/* run in a sandbox refuses with "pi engine is not enabled"
  *    (pi credentials are the claude/codex account mounts above, shared with
- *    the opencode engine).
+ *    the pi engine).
  * A missing source is simply omitted: the engine then reports its own clear
  * config error in-container. Exported for the sandbox engine-config tests.
  */
 export function engineConfigMounts(home = HOME): Array<[src: string, dest: string]> {
   const out: Array<[string, string]> = [];
-  const opencodeSrc =
-    process.env.OPENSESSION_OPENCODE_CONFIG || stateDir("opencode.json");
-  if (existsSync(opencodeSrc)) out.push([opencodeSrc, `${home}/.opensession-opencode.json`]);
+  const providerSrc =
+    process.env.OPENSESSION_MODEL_PROVIDERS_CONFIG || stateDir("model-providers.json");
+  if (existsSync(providerSrc)) out.push([providerSrc, `${home}/.opensession-model-providers.json`]);
   const piSrc = process.env.OPENSESSION_PI_CONFIG || stateDir("pi.json");
   if (existsSync(piSrc)) out.push([piSrc, `${home}/.opensession-pi.json`]);
   return out;
@@ -600,7 +607,6 @@ async function createContainer(
   // mounting them host-side keeps the session viewer's tail working.
   const transcriptDir = dirname(getTranscriptPath(cwd, "x"));
   mkdirSync(transcriptDir, { recursive: true });
-  mkdirSync(OPENCODE_TRANSCRIPTS_DIR, { recursive: true });
 
   const mounts: string[] = [
     // Named volumes ONLY at ~/.claude and ~/.codex — never at /home/ubuntu
@@ -610,13 +616,6 @@ async function createContainer(
     ...workspaceMounts,
     // Host-visible engine transcripts for this cwd (over the .claude volume).
     ...vol(transcriptDir, transcriptDir),
-    // OpenCode engine transcripts: the opencode runner persists claude-shape
-    // JSONL per session under ~/.claude/projects/-opencode-engine (see
-    // opencode-transcript.ts) — same trick as the per-cwd dir above, bound rw
-    // over the ~/.claude volume so the host session viewer can tail
-    // in-container opencode runs. (OpenCode's own SQLite store stays inside
-    // the container; the persisted JSONL is the durable host-visible copy.)
-    ...vol(OPENCODE_TRANSCRIPTS_DIR, OPENCODE_TRANSCRIPTS_DIR),
     // Per-session run dirs: spec/meta/journal/host.sock/log for every run.
     ...vol(runsDir, runsDir),
     // Audit log parity (append-only jsonl stream). Deliberately rw where the
@@ -662,14 +661,14 @@ async function createContainer(
       stateDir("claude-accounts.json"),
     "claude account pool",
   );
-  // Codex/ChatGPT account material, for opencode/openai/* dispatch
+  // Codex/ChatGPT account material, for pi/openai/* dispatch
   // IN-CONTAINER (pickOpenaiAccount reads the pool store; bindOpenaiAccount
   // reads each home-account's CODEX_HOME/auth.json and seeds an access-token-
-  // only opencode auth.json under the container-local
-  // ~/.opensession-opencode/openai-data — never these mounts). Without them an
-  // openai model in a sandbox died as opencode's bare "model not found".
+  // only pi auth.json under the container-local
+  // ~/.opensession-pi/openai-data — never these mounts). Without them an
+  // openai model in a sandbox died as pi's bare "model not found".
   // Mounted per-FILE and ro on purpose: the auth.json files carry the
-  // rotation-sensitive refresh-token family (opencode-openai-auth.ts header)
+  // rotation-sensitive refresh-token family (pi-openai-auth.ts header)
   // — sandboxed code must never be able to rotate/corrupt them, and native
   // codex runs in-container keep their own per-sandbox ~/.codex volume
   // (an in-container refresh attempt against a ro auth.json fails loudly
@@ -678,7 +677,7 @@ async function createContainer(
   for (const acct of listCodexAccounts()) {
     if (acct.kind === "home") roIfExists(`${acct.value}/auth.json`, `codex auth (${acct.name})`);
   }
-  // Engine config files (see engineConfigMounts): the opencode bridge config
+  // Engine config files (see engineConfigMounts): the pi bridge config
   // and the pi engine gate, ro at their legacy in-container names.
   for (const [src, dest] of engineConfigMounts()) mounts.push(...vol(src, dest, true));
   // External preview commands at identical paths, read-only. Repo-owned
@@ -825,8 +824,8 @@ async function setupCsGitAuth(name: string, repos: Repo[]): Promise<void> {
  * targets. The session store is the canonical case: the per-session run dir is
  * mounted at `<sessions>/sandbox-runs/<id>`, and when the image doesn't
  * pre-seed `<sessions>`, docker creates `<sessions>` +
- * `<sessions>/sandbox-runs` as root and the in-container opencode runner then
- * EACCESes on `mkdir <sessions>/opencode`
+ * `<sessions>/sandbox-runs` as root and the in-container pi runner then
+ * EACCESes on `mkdir <sessions>/pi`
  * (regressed 2026-07-09, bks-019f4742-e65c). Exported for the regression test.
  */
 export function containerStateDirFixups(): string[] {
@@ -941,7 +940,7 @@ function makeDockerLauncher(container: string, sessionId: string): HostLauncher 
     // undefined = HostHandle's default unix connector.
     connector: (_dir, spec) =>
       spec.wsToken ? runWsConnector(spec.hostId) : undefined,
-    async launch(hostId, dir) {
+    async launch(hostId, dir, onDispatching) {
       await ensureStarted(container);
       const specPath = assertSafePath(`${dir}/${HOST_SPEC_NAME}`);
       const logPath = assertSafePath(`${dir}/${HOST_LOG_NAME}`);
@@ -994,11 +993,43 @@ function makeDockerLauncher(container: string, sessionId: string): HostLauncher 
         "sh", "-c",
         `exec bun run ${assertSafePath(HOST_ENTRY)} ${specPath} >> ${logPath} 2>&1`,
       ];
+      onDispatching?.();
       const r = await docker(args);
       if (r.exitCode !== 0) {
         if (spec?.wsToken) unregisterRunWsHost(hostId);
-        throw new Error(`docker exec (run host) failed: ${r.stderr.trim().slice(0, 400)}`);
+        throw new HostLaunchNotDispatchedError(
+          `docker exec (run host) failed: ${r.stderr.trim().slice(0, 400)}`,
+        );
       }
+    },
+    evidence(dir) {
+      const meta = readJsonSafe<RunHostMeta>(`${dir}/${HOST_META_NAME}`);
+      const journal = readJsonSafe<Record<string, ActiveRunRecord>>(
+        `${dir}/${HOST_JOURNAL_NAME}`,
+      );
+      return {
+        started: !!meta?.pid || !!journal,
+        ...(meta?.engineSessionId ? { engineSessionId: meta.engineSessionId } : {}),
+        ...(meta?.done ? { done: meta.done } : {}),
+      };
+    },
+    async stop(hostId, dir) {
+      await Bun.write(`${dir}/cancelled`, "cancelled\n");
+      const meta = readJsonSafe<RunHostMeta>(`${dir}/${HOST_META_NAME}`);
+      const startup = readJsonSafe<{ pid?: number }>(`${dir}/startup.json`);
+      const pid = meta?.pid || startup?.pid || 0;
+      if (pid) {
+        const specPath = assertSafePath(`${dir}/${HOST_SPEC_NAME}`);
+        const script =
+          `is_host() { [ -r /proc/${pid}/cmdline ] && ` +
+          `tr '\\0' '\\n' < /proc/${pid}/cmdline | grep -Fqx -- '${specPath}'; }; ` +
+          `is_host && kill -TERM ${pid} 2>/dev/null || true; sleep 1; ` +
+          `is_host && kill -KILL ${pid} 2>/dev/null || true; sleep 0.2; ! is_host`;
+        const result = await docker(["exec", container, "sh", "-c", script]);
+        if (result.exitCode !== 0)
+          throw new Error(`Could not prove sandbox host ${hostId} absent`);
+      }
+      unregisterRunWsHost(hostId);
     },
   };
 }
@@ -1011,6 +1042,7 @@ function recordForSpec(spec: RunHostSpec, sandboxId: string): ActiveRunRecord {
     osSessionId: spec.osSessionId,
     claudeSessionId: spec.engineSessionId,
     prompt: spec.prompt,
+    promptEntryId: spec.promptEntryId,
     cwd: spec.cwd,
     mode: spec.mode,
     mcpServers: spec.mcpServers,
@@ -1029,6 +1061,7 @@ function recordForSpec(spec: RunHostSpec, sandboxId: string): ActiveRunRecord {
     fallbackModel: spec.fallbackModel,
     sandboxId,
     sandboxProvider: "docker",
+    launchPhase: "prepared",
     trustProfile: spec.trustProfile,
     kind: spec.journalKind || "prompt",
     firstJournaledAt: spec.firstJournaledAt,
@@ -1050,6 +1083,8 @@ async function* withRunJournal(
   journalSet(record);
   touchStateActivity(record.sandboxId!);
   let sawDone = false;
+  let sawTerminal = false;
+  let sourceCompleted = false;
   try {
     for await (const ev of events) {
       if (ev.type === "init" && ev.sessionId && ev.sessionId !== record.claudeSessionId) {
@@ -1063,10 +1098,13 @@ async function* withRunJournal(
         journalSet(record);
       }
       if (ev.type === "done") sawDone = true;
+      if (ev.type === "done" || ev.type === "error") sawTerminal = true;
       yield ev;
     }
+    sourceCompleted = true;
   } finally {
-    journalClear(record.runKey);
+    if (sourceCompleted && sawTerminal) journalClear(record.runKey);
+    else if (sourceCompleted) journalRecordAbnormalCompletion(record);
     touchStateActivity(record.sandboxId!);
     if (sawDone) schedulePostRunSnapshot(record.sandboxId!);
   }
@@ -1147,41 +1185,73 @@ function makeDockerSandbox(
       const record = recordForSpec(spec, sandboxId);
       mkdirSync(dir, { recursive: true });
       writeJsonAtomic(`${dir}/${HOST_SPEC_NAME}`, spec);
+      // The complete recovery spec must exist before the journal listener can
+      // acknowledge the create dispatch, but ownership must precede launch.
+      journalSet(record);
       let handle: HostHandle | undefined;
+      let uncertainLaunch = false;
       // Per-step marks: a stalled await in this chain is otherwise silent
       // (2026-07-09: launches ran in-sandbox while opensession never attached).
       const t0 = Date.now();
       const mark = (step: string) =>
         console.log(`[sandbox] launch ${spec.hostId.slice(0, 11)}: ${step} (+${Date.now() - t0}ms)`);
       try {
-        await launcher.launch(spec.hostId, dir);
-        mark("host exec dispatched");
+        // Construct (and register) the control BEFORE dispatch so exact-token
+        // Stop reaches the launching host: cancelAgentRunTokenAndWait sees
+        // hostRunBusy(token) during the launch await, and cancelHost's stop
+        // backstop plus the cancelled startup marker fence the dispatch race.
         handle = new HostHandle(dir, spec, callbacks, launcher);
+        await launcher.launch(spec.hostId, dir, () => {
+          record.launchPhase = "launching";
+          journalSet(record);
+        });
+        record.launchPhase = "started";
+        journalSet(record);
+        mark("host exec dispatched");
+        if (handle.cancelled)
+          throw new HostLaunchNotDispatchedError(
+            `${spec.hostId} was cancelled while launching`,
+          );
         await handle.connectWithWait(30_000);
         mark("host attached");
-      } catch (e) {
-        // The HostHandle ctor registered its control in the host-registry —
-        // drop it (and the caller-registered run token) on any launch failure,
-        // or hostRunBusy(osSessionId) stays true forever: every future prompt
-        // reads busy and the idle-stop sweep skips the container.
-        handle?.abandon();
-        unregisterRunToken(spec.rpcToken);
-        // abandon() disposes the handle's connector (which unregisters the ws
-        // token); cover the pre-handle failure path too. Idempotent.
-        if (spec.wsToken) unregisterRunWsHost(spec.hostId);
-        try {
-          rmSync(dir, { recursive: true, force: true });
-        } catch {}
-        throw e;
+      } catch (error) {
+        const definitelyNotDispatched =
+          record.launchPhase === "prepared" ||
+          error instanceof HostLaunchNotDispatchedError ||
+          // A stop backstop that proved absence during the launch/connect
+          // await already finished this handle: retire it like a
+          // never-dispatched launch instead of reconciling an ended owner.
+          handle?.ended === true;
+        if (definitelyNotDispatched) {
+          journalClearIfLineage(record);
+          handle?.abandon();
+          unregisterRunToken(spec.rpcToken);
+          if (spec.wsToken) unregisterRunWsHost(spec.hostId);
+          try { rmSync(dir, { recursive: true, force: true }); } catch {}
+          throw error;
+        }
+        // The launch call may have reached Docker. Keep spec, token, route,
+        // handle and journal, and transfer them to a live reconciliation owner.
+        uncertainLaunch = true;
+        handle ??= new HostHandle(dir, spec, callbacks, launcher);
+        console.warn(
+          `[sandbox] ${spec.hostId}: launch outcome uncertain; waiting for host attachment`,
+          error,
+        );
       }
-      const gen = withRunJournal(handle.events(), record);
+      const ownedHandle = handle!;
+      const rawEvents = uncertainLaunch
+        ? reconcileUncertainHostEvents(ownedHandle, "Sandbox host")
+        : ownedHandle.events();
+      const gen = withRunJournal(rawEvents, record);
       return {
         events: () => gen,
         steerable: modelSupportsSteer(spec.model),
         // HostHandle registers its control in host-registry keyed by the bks
         // session id — route through the same helpers the WS handlers use.
-        steer: (text) => hostSteer(spec.osSessionId, text),
-        interruptSteer: (text) => hostInterruptSteer(spec.osSessionId, text),
+        steer: (text, images) => hostSteer(spec.osSessionId, text, images),
+        interruptSteer: (text, images) =>
+          hostInterruptSteer(spec.osSessionId, text, images),
         cancel: () => hostCancel(spec.osSessionId),
       };
     },
@@ -1207,8 +1277,9 @@ function makeDockerSandbox(
       return {
         events: () => gen,
         steerable: modelSupportsSteer(spec.model),
-        steer: (text) => hostSteer(spec.osSessionId, text),
-        interruptSteer: (text) => hostInterruptSteer(spec.osSessionId, text),
+        steer: (text, images) => hostSteer(spec.osSessionId, text, images),
+        interruptSteer: (text, images) =>
+          hostInterruptSteer(spec.osSessionId, text, images),
         cancel: () => hostCancel(spec.osSessionId),
       };
     },
@@ -1628,8 +1699,12 @@ export async function resumeDockerSandboxRun(
   const launcher = makeDockerLauncher(run.sandboxId, run.osSessionId);
   const oldDir = launcher.newRunDir(run.runKey);
   const oldSpec = readJsonSafe<RunHostSpec>(`${oldDir}/${HOST_SPEC_NAME}`);
+  const meta = readJsonSafe<RunHostMeta>(`${oldDir}/${HOST_META_NAME}`);
+  const privateJournal = readJsonSafe<Record<string, ActiveRunRecord>>(
+    `${oldDir}/${HOST_JOURNAL_NAME}`,
+  );
+  const privateRun = privateJournal ? Object.values(privateJournal)[0] : undefined;
   if (oldSpec) {
-    const meta = readJsonSafe<RunHostMeta>(`${oldDir}/${HOST_META_NAME}`);
     if (meta?.done) {
       // Ended while opensession was down: hand the terminal event to the normal
       // consumption bookkeeping, then clean up.
@@ -1661,7 +1736,7 @@ export async function resumeDockerSandboxRun(
       // restart dropped the route).
       if (oldSpec.wsToken) registerRunWsHost(oldSpec.hostId, oldSpec.wsToken);
       console.log(`[sandbox] reattaching to live run ${run.runKey} in ${run.sandboxId}`);
-      const handle = new HostHandle(oldDir, oldSpec, cb, launcher);
+      const handle = new HostHandle(oldDir, oldSpec, cb, launcher, run.runKey);
       try {
         await handle.connectWithWait(15_000);
       } catch (e) {
@@ -1678,15 +1753,42 @@ export async function resumeDockerSandboxRun(
 
   // Host process died with (or before) the restart — relaunch a continuation
   // in the same sandbox so the engine session's in-container state is reused.
-  const prompt = run.claudeSessionId ? RESUME_CONTINUATION_PROMPT : run.prompt;
+  const recovery = decideSandboxHostRecovery({
+    run,
+    meta: meta,
+    privateRun,
+    hasCompleteSpec: !!oldSpec,
+  });
+  if (recovery.kind === "uncertain")
+    throw new Error(
+      `Sandbox run ${run.runKey} has execution evidence but no resumable engine session`,
+    );
+  const effectiveEngineSessionId =
+    recovery.kind === "resume" ? recovery.engineSessionId : undefined;
+  const prompt = effectiveEngineSessionId
+    ? restartContinuationPrompt(run.prompt)
+    : run.prompt;
   if (!prompt) return null;
   const rpcToken = oldSpec?.proxyMcpServers?.length ? crypto.randomUUID() : undefined;
   if (rpcToken) registerRunToken(rpcToken, { sessionId: run.osSessionId, user: run.user });
-  const spec: RunHostSpec = {
-    hostId: `rh-${Bun.randomUUIDv7()}`,
+  const hostId = `rh-${Bun.randomUUIDv7()}`;
+  const spec: RunHostSpec = recovery.kind === "replay"
+    ? {
+        ...(oldSpec as RunHostSpec),
+        hostId,
+        rpcToken,
+        ...((oldSpec as RunHostSpec).wsToken ? { wsToken: crypto.randomUUID() } : {}),
+        journalKind: recoveryKind(run.kind, "resume"),
+        firstJournaledAt: run.firstJournaledAt,
+        resumeAttempts: run.resumeAttempts,
+        lastResumeAt: run.lastResumeAt,
+      }
+    : {
+    hostId,
     osSessionId: run.osSessionId,
     prompt,
-    engineSessionId: run.claudeSessionId,
+    promptEntryId: effectiveEngineSessionId ? undefined : run.promptEntryId,
+    engineSessionId: effectiveEngineSessionId,
     cwd: run.cwd,
     mode: run.mode,
     model: run.model,
@@ -1713,9 +1815,12 @@ export async function resumeDockerSandboxRun(
     resumeAttempts: run.resumeAttempts,
     lastResumeAt: run.lastResumeAt,
   };
+  console.log(`[sandbox] relaunching interrupted run ${run.runKey} in ${run.sandboxId} as ${spec.hostId}`);
+  const replacement = sandbox.launchRunEager
+    ? await sandbox.launchRunEager(spec, { onAskUser: cb.onAskUser })
+    : sandbox.launchRun(spec, { onAskUser: cb.onAskUser });
   try {
     if (oldDir && existsSync(oldDir)) rmSync(oldDir, { recursive: true, force: true });
   } catch {}
-  console.log(`[sandbox] relaunching interrupted run ${run.runKey} in ${run.sandboxId} as ${spec.hostId}`);
-  return sandbox.launchRun(spec, { onAskUser: cb.onAskUser }).events();
+  return replacement.events();
 }

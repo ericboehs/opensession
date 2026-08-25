@@ -32,15 +32,6 @@
     (function () {
       try {
         var p = localStorage.getItem("opensession-theme");
-        if (p === null) {
-          // Migrate the pre-rename key once: adopt it, then drop it.
-          var legacy = localStorage.getItem("michael-theme");
-          if (legacy !== null) {
-            p = legacy;
-            localStorage.setItem("opensession-theme", legacy);
-            localStorage.removeItem("michael-theme");
-          }
-        }
         var eff = (p === "light" || p === "dark") ? p
           : (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
         var h = document.documentElement;
@@ -68,7 +59,7 @@
     // Injected at runtime so the bundler doesn't try to resolve these as build
     // assets — they're served by the Open Session server, not bundled. The
     // prefix follows the URL this page was served under (/opensession/ primary,
-    // /backstage/ legacy alias, or "" at a bare domain root like os.tella.dev)
+    // /backstage/ legacy alias, or "" at a bare domain root)
     // so each install's PWA identity — manifest, start_url, icons — stays
     // self-consistent per prefix. Mirrors lib/base.ts detectBasePath().
     (function () {
@@ -110,11 +101,33 @@
         && (matchMedia("(display-mode: standalone)").matches
           || navigator.standalone === true);
       if (iphoneStandalone) {
+        // The correction only works if WebKit answers it by re-laying the
+        // standalone window out. When it keeps the short window, the roots
+        // stand taller than what you can see, and everything anchored to the
+        // bottom of the app (the composer) falls below the fold with no way
+        // to scroll it back. Measure the result and hand the height back when
+        // that happens: a letterboxed strip is better than a cut-off composer.
+        var standaloneFillTaken = true;
+        var setRootHeight = function (value) {
+          document.documentElement.style.height = value;
+          if (document.body) document.body.style.height = value;
+        };
+        var keyboardOpen = function () {
+          return !!document.body && document.body.classList.contains("kb-open");
+        };
+        var verifyStandaloneScreen = function (height) {
+          // An open keyboard shrinks the window on purpose, so it can neither
+          // confirm nor disprove the correction.
+          if (!standaloneFillTaken || keyboardOpen()) return;
+          if (window.innerHeight >= height - 1) return;
+          standaloneFillTaken = false;
+          setRootHeight("");
+        };
         var fillStandaloneScreen = function () {
           var height = window.screen.height;
-          if (!height) return;
-          document.documentElement.style.height = height + "px";
-          if (document.body) document.body.style.height = height + "px";
+          if (!height || !standaloneFillTaken || keyboardOpen()) return;
+          setRootHeight(height + "px");
+          setTimeout(function () { verifyStandaloneScreen(height); }, 300);
         };
         var resyncStandaloneScreen = function () {
           fillStandaloneScreen();
@@ -126,6 +139,13 @@
         window.addEventListener("resize", fillStandaloneScreen);
         window.addEventListener("orientationchange", resyncStandaloneScreen);
       }
+
+      // The Electron shell owns a hidden native titlebar even when Chromium
+      // temporarily stops reporting Window Controls Overlay geometry. Keep a
+      // separate capability class so its drag regions do not depend on that
+      // transient browser API.
+      if (window.os1 && window.os1.desktop === true)
+        document.documentElement.classList.add("desktop-shell");
 
       // Only updated desktop-shell builds provide a native visual-effect
       // backdrop. The capability check keeps the remotely served UI opaque in
@@ -250,7 +270,7 @@
 </head>
 <body>
   <div id="splash">
-    <span class="splash-logo"><img src="/mac-app-icon.png" alt="" /></span>
+    <span class="splash-logo"><img src="/mac-app-icon.png?v=7" alt="" /></span>
     <span class="splash-bars"><span></span><span></span><span></span><span></span><span></span></span>
   </div>
   <div id="root"></div>

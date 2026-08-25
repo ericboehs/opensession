@@ -281,7 +281,7 @@ describe("context-log: injection records are not conversation", () => {
 			...over,
 		});
 		const note = buildEngineSwitchHandoffNote({
-			fromProvider: "opencode",
+			fromProvider: "pi",
 			toProvider: "claude",
 			sameEngineRestart: true,
 			entries: [
@@ -477,7 +477,7 @@ describe("context-log: standing context is recorded on change, not per turn", ()
 		const sessionId = "os-std-direct-instructions";
 		const text = "## Run policy\nnever push to main\n";
 		// What claude-direct and codex-direct call once their system prompt is
-		// final: they assemble their own and never reach the opencode runner,
+		// final: they assemble their own and never reach the pi runner,
 		// so the adapter is the call site. Same helper, so the same
 		// content-addressing — a second turn, and a restart that clears the
 		// in-process map, both land on the one row.

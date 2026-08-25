@@ -42,14 +42,17 @@
         "mcp__workos__update_user"
       ],
       "images": 0,
-      "inProcessMcp": [],
+      "inProcessMcp": [
+        "opensession-papercuts",
+        "opensession-report"
+      ],
       "journalKind": "prompt",
       "mcpScope": [
         "snapshot-alpha",
         "snapshot-restricted"
       ],
       "mode": "scratch",
-      "model": "opencode/anthropic/claude-sonnet-5",
+      "model": "pi/anthropic/claude-sonnet-5",
       "prompt": {
         "injectedContext": [],
         "visible": "list what you can reach"
@@ -64,13 +67,10 @@
       "gateReason": null,
       "mcpConfig": {
         "snapshot-alpha": {
-          "command": [
-            "/bin/true",
+          "args": [
             "--alpha"
           ],
-          "enabled": true,
-          "timeout": 30000,
-          "type": "local"
+          "command": "/bin/true"
         }
       },
       "mountedMcpServers": [
@@ -174,31 +174,31 @@
           ]
         },
         {
-          "message": "\"Create a refund\" requires per-call human approval, and this run is unattended. This tool is not available; post the exact action you want taken (tool name and full parameters, including amounts and IDs) in your internal note and ask a human to review and execute it.",
+          "message": "\"Create a refund\" requires per-call human approval, and this run is unattended. This tool is not available; post the exact action you want taken, including the tool name and full parameters, in your internal note for human review.",
           "tools": [
             "mcp__stripe__create_refund"
           ]
         },
         {
-          "message": "\"Cancel a subscription\" requires per-call human approval, and this run is unattended. This tool is not available; post the exact action you want taken (tool name and full parameters, including amounts and IDs) in your internal note and ask a human to review and execute it.",
+          "message": "\"Cancel a subscription\" requires per-call human approval, and this run is unattended. This tool is not available; post the exact action you want taken, including the tool name and full parameters, in your internal note for human review.",
           "tools": [
             "mcp__stripe__cancel_subscription"
           ]
         },
         {
-          "message": "\"Update a subscription\" requires per-call human approval, and this run is unattended. This tool is not available; post the exact action you want taken (tool name and full parameters, including amounts and IDs) in your internal note and ask a human to review and execute it.",
+          "message": "\"Update a subscription\" requires per-call human approval, and this run is unattended. This tool is not available; post the exact action you want taken, including the tool name and full parameters, in your internal note for human review.",
           "tools": [
             "mcp__stripe__update_subscription"
           ]
         },
         {
-          "message": "\"Execute a raw Stripe API call\" requires per-call human approval, and this run is unattended. This tool is not available; post the exact action you want taken (tool name and full parameters, including amounts and IDs) in your internal note and ask a human to review and execute it.",
+          "message": "\"Execute a raw Stripe API call\" requires per-call human approval, and this run is unattended. This tool is not available; post the exact action you want taken, including the tool name and full parameters, in your internal note for human review.",
           "tools": [
             "mcp__stripe__stripe_api_execute"
           ]
         },
         {
-          "message": "\"Execute a mutating Stripe API call\" requires per-call human approval, and this run is unattended. This tool is not available; post the exact action you want taken (tool name and full parameters, including amounts and IDs) in your internal note and ask a human to review and execute it.",
+          "message": "\"Execute a mutating Stripe API call\" requires per-call human approval, and this run is unattended. This tool is not available; post the exact action you want taken, including the tool name and full parameters, in your internal note for human review.",
           "tools": [
             "mcp__stripe__stripe_api_write"
           ]
@@ -214,7 +214,7 @@
       "type": "user"
     },
     {
-      "content": "{\n  \"confirmTools\": [\n    \"mcp__stripe__cancel_subscription\",\n    \"mcp__stripe__create_refund\",\n    \"mcp__stripe__stripe_api_execute\",\n    \"mcp__stripe__stripe_api_write\",\n    \"mcp__stripe__update_subscription\"\n  ],\n  \"deniedTools\": [\n    \"mcp__incident__alert_attach\",\n    \"mcp__incident__alert_detach\",\n    \"mcp__incident__escalation_respond\",\n    \"mcp__incident__extension_plugin_create\",\n    \"mcp__incident__extension_plugin_sync\",\n    \"mcp__incident__extension_plugin_update\",\n    \"mcp__incident__extension_skill_feedback_update\",\n    \"mcp__incident__follow_up_create\",\n    \"mcp__incident__follow_up_update\",\n    \"mcp__incident__incident_update\",\n    \"mcp__incident__investigation_steer\",\n    \"mcp__incident__investigation_sync\",\n    \"mcp__plain__mark_thread_done\",\n    \"mcp__plain__mark_thread_todo\",\n    \"mcp__plain__reply_to_thread\",\n    \"mcp__plain__snooze_thread\",\n    \"mcp__workos__create_organization\",\n    \"mcp__workos__create_organization_membership\",\n    \"mcp__workos__create_user\",\n    \"mcp__workos__delete_organization\",\n    \"mcp__workos__delete_organization_membership\",\n    \"mcp__workos__delete_user\",\n    \"mcp__workos__get_impersonation_url\",\n    \"mcp__workos__revoke_invitation\",\n    \"mcp__workos__revoke_session\",\n    \"mcp__workos__send_invitation\",\n    \"mcp__workos__send_password_reset_email\",\n    \"mcp__workos__send_verification_email\",\n    \"mcp__workos__update_organization\",\n    \"mcp__workos__update_organization_membership\",\n    \"mcp__workos__update_user\"\n  ],\n  \"inProcess\": [],\n  \"localWorkspaceToolsDisabled\": false,\n  \"mcpScope\": [\n    \"snapshot-alpha\",\n    \"snapshot-restricted\"\n  ],\n  \"mode\": \"scratch\"\n}",
+      "content": "{\n  \"confirmTools\": [\n    \"mcp__stripe__cancel_subscription\",\n    \"mcp__stripe__create_refund\",\n    \"mcp__stripe__stripe_api_execute\",\n    \"mcp__stripe__stripe_api_write\",\n    \"mcp__stripe__update_subscription\"\n  ],\n  \"deniedTools\": [\n    \"mcp__incident__alert_attach\",\n    \"mcp__incident__alert_detach\",\n    \"mcp__incident__escalation_respond\",\n    \"mcp__incident__extension_plugin_create\",\n    \"mcp__incident__extension_plugin_sync\",\n    \"mcp__incident__extension_plugin_update\",\n    \"mcp__incident__extension_skill_feedback_update\",\n    \"mcp__incident__follow_up_create\",\n    \"mcp__incident__follow_up_update\",\n    \"mcp__incident__incident_update\",\n    \"mcp__incident__investigation_steer\",\n    \"mcp__incident__investigation_sync\",\n    \"mcp__plain__mark_thread_done\",\n    \"mcp__plain__mark_thread_todo\",\n    \"mcp__plain__reply_to_thread\",\n    \"mcp__plain__snooze_thread\",\n    \"mcp__workos__create_organization\",\n    \"mcp__workos__create_organization_membership\",\n    \"mcp__workos__create_user\",\n    \"mcp__workos__delete_organization\",\n    \"mcp__workos__delete_organization_membership\",\n    \"mcp__workos__delete_user\",\n    \"mcp__workos__get_impersonation_url\",\n    \"mcp__workos__revoke_invitation\",\n    \"mcp__workos__revoke_session\",\n    \"mcp__workos__send_invitation\",\n    \"mcp__workos__send_password_reset_email\",\n    \"mcp__workos__send_verification_email\",\n    \"mcp__workos__update_organization\",\n    \"mcp__workos__update_organization_membership\",\n    \"mcp__workos__update_user\"\n  ],\n  \"inProcess\": [\n    \"opensession-papercuts\",\n    \"opensession-report\"\n  ],\n  \"localWorkspaceToolsDisabled\": false,\n  \"mcpScope\": [\n    \"snapshot-alpha\",\n    \"snapshot-restricted\"\n  ],\n  \"mode\": \"scratch\"\n}",
       "contextSource": "tools",
       "noticeKind": "standing-context",
       "seq": 2,
@@ -222,7 +222,7 @@
     },
     {
       "content": "Only alpha.",
-      "model": "opencode/anthropic/claude-sonnet-5",
+      "model": "pi/anthropic/claude-sonnet-5",
       "seq": 3,
       "type": "assistant"
     }

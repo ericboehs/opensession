@@ -1,6 +1,6 @@
 import { statSync } from "fs";
 import { entriesForWire, parseTranscriptFrom } from "./jsonl-parser";
-import { markTranscriptStoreDegraded } from "./opencode-transcript";
+import { markTranscriptStoreDegraded } from "./transcript-persistence";
 import { transcriptStore } from "./transcript-store";
 import type { TranscriptEntry } from "./types";
 

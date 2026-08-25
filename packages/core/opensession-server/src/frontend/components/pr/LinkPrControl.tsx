@@ -1,14 +1,15 @@
 import { useState } from "react";
+import { IconLink } from "../icons";
 import { linkPrApi } from "../../lib/api";
 import { Button } from "../../ui/button";
-import { Input } from "../../ui/input";
+import { Field, Input } from "../../ui/input";
+import { Popover } from "../../ui/popover";
 import { toast } from "../../ui/toast";
 import type { LinkedPrEntry } from "../PrPanel";
 
 /**
- * The "Link PR" affordance: a "+" chip in the tab bar (or a quiet button in
- * the actions row when there's no bar yet) that expands into a paste-a-URL
- * input. Linking accepts any PR in a registered repo.
+ * Opens the link flow in an anchored modal instead of replacing the action row.
+ * Linking accepts any PR in a registered repo.
  */
 export function LinkPrControl({
   sessionId,
@@ -27,64 +28,101 @@ export function LinkPrControl({
     const url = val.trim();
     if (!url || busy) return;
     setBusy(true);
-    try {
-      const res = await linkPrApi(sessionId, url);
+    await (async () => {
+const res = await linkPrApi(sessionId, url);
       onLinked(res.all, res.linked);
       toast(
         `Linked ${res.linked.repo}${res.linked.number ? ` #${res.linked.number}` : ""}`,
       );
       setVal("");
       setOpen(false);
-    } catch (e: any) {
-      toast(e.message || "Couldn't link that PR");
-    } finally {
-      setBusy(false);
-    }
+})().catch(async (e: any) => {
+toast(e.message || "Couldn't link that PR");
+}).finally(async () => {
+setBusy(false);
+});
   }
 
-  if (!open)
-    return (
-      <Button
-        size="sm"
-        className={
-          variant === "tab"
-            ? "rounded-sm border-dashed bg-transparent px-2.5 py-1 text-xs text-faint shadow-none"
-            : "rounded-sm bg-panel px-3 py-2 text-xs shadow-none hover:bg-hover"
-        }
-        onClick={() => setOpen(true)}
-        title="Link another PR to this session"
-      >
-        {variant === "tab" ? "+" : "Link PR…"}
-      </Button>
-    );
+  const tab = variant === "tab";
 
   return (
-    <form
-      className="flex w-full max-w-[420px] items-center gap-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void submit();
-      }}
+    <Popover.Root
+      open={open}
+      onOpenChange={setOpen}
+      modal="trap-focus"
+      exclusive={false}
     >
-      <Input
-        autoFocus
-        size="sm"
-        className="min-w-0 flex-1"
-        placeholder="Paste a GitHub PR URL…"
-        value={val}
-        onChange={(e) => setVal(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") setOpen(false);
-        }}
+      <Popover.Trigger
+        render={
+          <Button
+            variant={tab ? "ghost" : "soft"}
+            size="sm"
+            className={
+              tab
+                ? "px-2.5 text-xs text-faint phone:min-h-11"
+                : "phone:min-h-11"
+            }
+            icon={tab ? undefined : <IconLink size={20} />}
+            title="Link another PR to this session"
+          >
+            {tab ? "+" : "Link PR…"}
+          </Button>
+        }
       />
-      <Button
-        type="submit"
-        variant="primary"
-        size="sm"
-        disabled={busy || !val.trim()}
+      <Popover.Popup
+        side="bottom"
+        align="start"
+        initialFocus
+        className="w-[min(380px,calc(100vw-16px))] p-4"
       >
-        {busy ? "Linking…" : "Link"}
-      </Button>
-    </form>
+        <form
+          className="flex flex-col gap-4"
+          aria-label="Link pull request"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
+          <div>
+            <div className="text-label font-semibold text-fg">
+              Link pull request
+            </div>
+            <div className="mt-1 text-meta text-dim">
+              Paste a GitHub pull request URL.
+            </div>
+          </div>
+          <Field label="Pull request URL">
+            <Input
+              autoFocus
+              className="phone:min-h-11 phone:text-input-phone"
+              placeholder="https://github.com/org/repo/pull/123"
+              value={val}
+              onChange={(event) => setVal(event.target.value)}
+            />
+          </Field>
+          <div className="flex justify-end gap-2.5">
+            <Popover.Close
+              render={
+                <Button
+                  variant="soft"
+                  className="phone:min-h-11"
+                  disabled={busy}
+                >
+                  Cancel
+                </Button>
+              }
+            />
+            <Button
+              type="submit"
+              variant="primary"
+              className="phone:min-h-11"
+              disabled={busy || !val.trim()}
+            >
+              {busy ? "Linking…" : "Link PR"}
+            </Button>
+          </div>
+        </form>
+      </Popover.Popup>
+    </Popover.Root>
   );
 }

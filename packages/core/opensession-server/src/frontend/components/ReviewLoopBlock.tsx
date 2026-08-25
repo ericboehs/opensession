@@ -15,6 +15,7 @@ export function ReviewLoopBlock({
 	result,
 	children,
 	defaultOpen = false,
+	onOpenChange,
 }: {
 	prNumber: number | null;
 	rounds: number;
@@ -23,6 +24,7 @@ export function ReviewLoopBlock({
 	children: React.ReactNode;
 	/** Preview/test hook; the transcript never passes it, so sessions stay folded. */
 	defaultOpen?: boolean;
+	onOpenChange?: (open: boolean) => void;
 }) {
 	const [open, setOpen] = useState(defaultOpen);
 	const status = live ? "pending" : result?.status;
@@ -40,7 +42,13 @@ export function ReviewLoopBlock({
 				type="button"
 				aria-expanded={open}
 				aria-label={label}
-				onClick={() => setOpen((value) => !value)}
+				onClick={() =>
+					setOpen((value) => {
+						const next = !value;
+						onOpenChange?.(next);
+						return next;
+					})
+				}
 				className="-mx-2 flex w-[calc(100%+16px)] min-w-0 cursor-pointer items-baseline gap-2 rounded-control border-0 bg-transparent px-3 py-1 text-left font-sans text-item-title leading-5 text-dim transition-colors hover:bg-hover/40 hover:text-fg phone:min-h-10"
 			>
 				<span

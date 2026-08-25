@@ -1,9 +1,14 @@
 import { repoLabel } from "../lib/repo-label";
-import React, { useEffect, useState, useCallback, startTransition, useRef } from "react";
-import type { CodeFlowResult, DiffFileGroup, RepoDiff } from "../lib/types";
+import React, { useCallback, useEffect, useEffectEvent, useState, useRef } from "react";
+import { createPortal } from "react-dom";
+import type {
+  CodeFlowResult,
+  DiffFileGroup,
+  RepoDiff,
+} from "../lib/types";
+import { useSessionDiffResource } from "../hooks/useApiResources";
 import {
   API_BASE,
-  fetchDiff,
   fetchDiffGroups,
   fetchCodeFlow,
   discardDiffFile,
@@ -13,6 +18,7 @@ import {
 import { CommentableDiff, type CommentTarget } from "./CommentableDiff";
 import { getCurrentUser } from "./UserPicker";
 import { Segmented, SegmentedOption } from "../ui/segmented";
+import { SettingRow } from "../ui/setting-row";
 import { Tooltip } from "../ui/tooltip";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
@@ -20,6 +26,18 @@ import { AGENT_NAME } from "../lib/brand";
 import { InlineAlert, LoadingState } from "../ui/state";
 import { CodeFlow } from "./CodeFlow";
 import { revealDiffFile } from "../lib/diff-navigation";
+import { IconRestore, IconSliders } from "./icons";
+import { Popover } from "../ui/popover";
+import {
+  CodeDisplaySettings,
+  CodeOrganizationSettings,
+  DiffSourceSetting,
+} from "./CodeDisplaySettings";
+import {
+  useCodeDisplaySettings,
+  useCodeOrganizationSettings,
+} from "../hooks/useCodeDisplaySettings";
+import { PrFileTree } from "./pr/PrFileTree";
 
 /* The +/− counts. Kept as constants because CommentableDiff carries the same
    pair on its file rows and group headers, and the two must read alike. */
@@ -34,6 +52,15 @@ interface Props {
   /** Shared diff state (lifted so the Changes tab badge and this panel poll
    *  once, not twice). When omitted, the panel fetches on its own. */
   diff?: SessionDiffState;
+  /** Start on this repository when Review switches from its PR diff. */
+  repo?: string;
+  /** Move the diff summary and view controls into a parent review toolbar. */
+  toolbarTarget?: HTMLDivElement | null;
+  /** The full review canvas has room for file navigation; side panels do not. */
+  showFileList?: boolean;
+  /** Shown when Review can switch between its PR and live worktree diffs. */
+  source?: "pull-request" | "worktree";
+  onSourceChange?: (source: "pull-request" | "worktree") => void;
 }
 
 export interface SessionDiffState {
@@ -72,70 +99,62 @@ export function useSessionDiff(
   opts: { enabled?: boolean; isRunning: boolean },
 ): SessionDiffState {
   const { enabled = true, isRunning } = opts;
-  const [repos, setRepos] = useState<RepoDiff[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  // What the last committed poll held, and whether that poll succeeded. The
-  // poll re-fetches the same patch every 8s while a run is going, and an
-  // identical answer must not reach state: committing one re-renders every
-  // mounted file of the diff for nothing. Cleared on failure so the next
-  // success always commits, error or not.
-  const committed = useRef<{ repos: RepoDiff[] } | null>(null);
+  const { data, error: requestError, isLoading, mutate } = useSessionDiffResource(
+    sessionId,
+    {
+      enabled,
+      refreshInterval: enabled ? (isRunning ? 8000 : 30000) : 0,
+      // The same patch comes back on most polls. Suppress that update before it
+      // reaches React, because rendering a large diff parses every file again.
+      compare: (previous, next) => {
+        if (previous === next) return true;
+        if (!previous || !next) return false;
+        return sameRepoDiffs(previous.repos || [], next.repos || []);
+      },
+    },
+  );
+  const repos = data?.repos ?? null;
+  const loading = isLoading && !data;
+  // A failed background revalidation must not replace a usable stale patch.
+  const error = data
+    ? null
+    : requestError instanceof Error
+      ? requestError.message
+      : requestError
+        ? "Failed to load diff."
+        : null;
+  const reload = async () => {
+    await mutate();
+  };
 
-	const load = useCallback(async (urgent = false) => {
-    try {
-      const data = await fetchDiff(sessionId);
-      if (data.error) throw new Error(data.error);
-      const next = data.repos || [];
-      if (committed.current && sameRepoDiffs(committed.current.repos, next)) return;
-      // @pierre/diffs renders on the main thread (disableWorkerPool) and
-      // parsePatchFiles runs during render, so committing a large diff is a long,
-      // uninterruptible task. Commit it as a transition so an urgent interaction —
-      // e.g. clicking the panel toggle to close — preempts it instead of waiting
-      // for the whole diff to parse and paint. If the user closes the panel before
-      // this render commits, React discards it and the panel closes instantly.
-		const commit = () => {
-			committed.current = { repos: next };
-			setRepos(next);
-			setError(null);
-			setLoading(false);
-		};
-		if (urgent) commit();
-		else startTransition(commit);
-    } catch (e: any) {
-      committed.current = null;
-      setError(e.message);
-      setLoading(false);
-    }
-  }, [sessionId]);
-
-  // Switching sessions: drop the previous session's diff so a stale count/patch
-  // doesn't flash before the new fetch lands.
-  useEffect(() => {
-    committed.current = null;
-    setRepos(null);
-    setError(null);
-    setLoading(true);
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (!enabled) return;
-    load();
-    // Keep the diff fresh while the agent is working
-    const interval = setInterval(load, isRunning ? 8000 : 30000);
-    return () => clearInterval(interval);
-  }, [load, isRunning, enabled]);
-
-	const reload = useCallback(async () => {
-		await load(true);
-	}, [load]);
-
-	return { repos, loading, error, reload };
+  return { repos, loading, error, reload };
 }
 
-export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) {
+export function DiffPanel({
+  sessionId,
+  isRunning,
+  canSend,
+  send,
+  diff,
+  repo,
+  toolbarTarget,
+  showFileList = true,
+  source,
+  onSourceChange,
+}: Props) {
   const [active, setActive] = useState(0);
   const [view, setView] = useState<"files" | "flow">("files");
+  // Sidebar Changes is another code viewer, not a reduced diff. It reads and
+  // writes the same rendering preferences as Review, with a narrow-safe
+  // unified fallback until the person picks a layout.
+  const codeDisplaySettings = useCodeDisplaySettings("unified");
+  const organizationSettings = useCodeOrganizationSettings();
+  const {
+    grouping,
+    fileListMode,
+    fileOrder,
+    sortDirection,
+  } = organizationSettings;
   const [groups, setGroups] = useState<{
     repo: string;
     patch: string;
@@ -150,24 +169,42 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
   const changed = (repos || []).filter(
     (repo) => repo.diff.rawPatch?.trim() || repo.diff.files.length > 0,
   );
+  // Content key: re-run only when the repo list's ordering changes, while the
+  // sync reads the live `changed` through an effect event.
+  const changedReposKey = (changed || [])
+    .map((candidate) => candidate.repo)
+    .join("\0");
+  const syncActiveRepo = useEffectEvent(() => {
+    if (!repo) return;
+    const index = changed.findIndex((candidate) => candidate.repo === repo);
+    if (index >= 0) setActive((current) => (current === index ? current : index));
+  });
+  useEffect(() => {
+    syncActiveRepo();
+  }, [repo, changedReposKey]);
   const cur = changed[Math.min(active, changed.length - 1)] || changed[0] || null;
   const groupPatch = cur?.diff.rawPatch || "";
   const groupFileCount = cur?.diff.files.length || 0;
   const patchVersion = cur?.diff.diffVersion || "";
-  const flowKey = cur ? `${sessionId}\0${cur.repo}\0${patchVersion}` : "";
+  const flowRepo = cur?.repo;
+  const flowKey = cur ? `${sessionId}\0${flowRepo}\0${patchVersion}` : "";
   const [flow, setFlow] = useState<{ key: string; data: CodeFlowResult } | null>(null);
   const [flowLoading, setFlowLoading] = useState(false);
   const [flowError, setFlowError] = useState<string | null>(null);
   const flowGeneration = useRef(0);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const [diffControlsTarget, setDiffControlsTarget] =
+    useState<HTMLDivElement | null>(null);
 
+	// Keyed on the semantic inputs (session/repo/diff version), not the
+	// per-poll `cur` object, so the flow effect doesn't re-arm every poll.
 	const loadFlow = useCallback(async () => {
-    if (!cur || !flowKey) return;
+    if (!flowRepo || !flowKey) return;
     const generation = ++flowGeneration.current;
     setFlowLoading(true);
     setFlowError(null);
-    try {
-      const data = await fetchCodeFlow(sessionId, cur.repo);
+    await (async () => {
+const data = await fetchCodeFlow(sessionId, flowRepo);
       if (!data) throw new Error("Code flow isn't available for these changes.");
       if (data.diffVersion !== patchVersion) {
         if (generation === flowGeneration.current) {
@@ -176,22 +213,22 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
         return;
       }
       if (generation === flowGeneration.current) setFlow({ key: flowKey, data });
-    } catch (error: any) {
-      if (generation === flowGeneration.current)
+})().catch(async (error: any) => {
+if (generation === flowGeneration.current)
         setFlowError(error?.message || "Couldn't load code flow.");
-    } finally {
-      if (generation === flowGeneration.current) setFlowLoading(false);
-    }
-	}, [sessionId, cur?.repo, flowKey, patchVersion]);
+}).finally(async () => {
+if (generation === flowGeneration.current) setFlowLoading(false);
+});
+	}, [sessionId, flowRepo, flowKey, patchVersion]);
 
-	const refreshFlow = useCallback(async () => {
+	const refreshFlow = async () => {
 		flowGeneration.current += 1;
 		setFlow(null);
 		setFlowError(null);
 		setFlowLoading(true);
 		await reload();
 		setFlowLoading(false);
-	}, [reload]);
+	};
 
   useEffect(() => {
     if (view !== "flow" || flowLoading || flowError) return;
@@ -216,8 +253,8 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
     requestAnimationFrame(() => requestAnimationFrame(() => revealDiffFile(panelRef.current, path)));
   }
 
-  useEffect(() => {
-    if (!cur || !groupPatch || groupFileCount < 3) {
+  const loadGroups = useEffectEvent(() => {
+    if (grouping !== "ai" || !cur || !groupPatch || groupFileCount < 3) {
       setGroups(null);
       setGroupsLoading(false);
       return;
@@ -247,7 +284,10 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
       live = false;
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [sessionId, cur?.repo, groupPatch, groupFileCount, groupsRetry]);
+  });
+  useEffect(() => {
+    loadGroups();
+  }, [sessionId, cur?.repo, groupPatch, groupFileCount, groupsRetry, grouping]);
 
   async function handleDiscard(repo: string, path: string, oldPath?: string) {
     await discardDiffFile(sessionId, path, repo, oldPath);
@@ -301,23 +341,177 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
     });
   }
 
+  const codeSettings = (
+    <Popover.Root>
+      <Tooltip label="Code view settings">
+        <Popover.Trigger
+          render={
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Code view settings"
+              icon={<IconSliders size={18} />}
+            />
+          }
+        />
+      </Tooltip>
+      <Popover.Popup
+        side="bottom"
+        align="end"
+        initialFocus
+        className="flex w-[340px] max-w-[calc(100vw-24px)] flex-col gap-0.5 p-3"
+      >
+        {source && onSourceChange && (
+          <>
+            <DiffSourceSetting value={source} onValueChange={onSourceChange} />
+            <div aria-hidden className="mx-2 my-1.5 h-px bg-line" />
+          </>
+        )}
+        <SettingRow label="Code view">
+          <Segmented
+            size="sm"
+            label="Code view"
+            value={view}
+            onValueChange={(next) => {
+              if (next === "flow") {
+                if (view !== "flow" && flowError) {
+                  setFlow(null);
+                  setFlowError(null);
+                }
+                setView("flow");
+                return;
+              }
+              setView("files");
+            }}
+          >
+            <SegmentedOption value="files">Changes</SegmentedOption>
+            <SegmentedOption value="guide" disabled>
+              Guide
+            </SegmentedOption>
+            <SegmentedOption value="flow" disabled={!patchVersion}>
+              Flow
+            </SegmentedOption>
+          </Segmented>
+        </SettingRow>
+
+        <div aria-hidden className="mx-2 my-1.5 h-px bg-line" />
+
+        <CodeOrganizationSettings
+          settings={organizationSettings}
+          reviewedFilesAvailable={false}
+          defaultOrderLabel="Worktree"
+          showFileListSetting={showFileList}
+        />
+
+        <div aria-hidden className="mx-2 my-1.5 h-px bg-line" />
+
+        <CodeDisplaySettings {...codeDisplaySettings} />
+      </Popover.Popup>
+    </Popover.Root>
+  );
+  const emptyState = <DiffEmptyState isRunning={isRunning} />;
+
   if (loading) return <LoadingState>Loading diff…</LoadingState>;
   if (error) return <InlineAlert className="m-4">{error}</InlineAlert>;
-  if (!repos || !repos.length) return <DiffEmptyState isRunning={isRunning} />;
+  if (!repos || !repos.length) return emptyState;
 
   // Repos that actually have changes; if none, show the empty state.
-  if (!changed.length) return <DiffEmptyState isRunning={isRunning} />;
+  if (!changed.length) return emptyState;
 
   const multi = changed.length > 1;
-  if (!cur) return <DiffEmptyState isRunning={isRunning} />;
+  if (!cur) return emptyState;
   const d = cur.diff;
+  const orderedFiles = [...d.files];
+  if (fileOrder === "pull-request") {
+    if (sortDirection === "desc") orderedFiles.reverse();
+  } else {
+    const direction = sortDirection === "asc" ? 1 : -1;
+    orderedFiles.sort((left, right) => {
+      const result =
+        fileOrder === "changes"
+          ? left.additions + left.deletions - right.additions - right.deletions
+          : left.path.localeCompare(right.path);
+      return (result || left.path.localeCompare(right.path)) * direction;
+    });
+  }
+  const visibleFileOrder = orderedFiles.map((file) => file.path);
+
+  const toolbarContents = (
+    <>
+      <span className="text-dim">
+        {d.files.length} file{d.files.length === 1 ? "" : "s"}
+        {groupsLoading && (
+          <span role="status" aria-label="Organizing files">
+            {" "}(organizing…)
+          </span>
+        )}
+      </span>
+      <span className={DIFF_ADD}>+{d.totalAdditions}</span>
+      <span className={DIFF_DEL}>−{d.totalDeletions}</span>
+      {d.truncated && (
+        <span className="rounded-sm bg-yellow/15 px-[7px] py-px text-meta font-bold text-yellow">
+          truncated
+        </span>
+      )}
+      {handEdited.length > 0 && canSend && (
+        <Button
+          variant="default"
+          size="sm"
+          className="ml-2 min-h-0 px-2 py-0.5 text-meta"
+          onClick={tellAgentAboutEdits}
+          title="Sends a note listing your hand-edits so they get reviewed and committed"
+        >
+          Tell {AGENT_NAME} about {handEdited.length} edit
+          {handEdited.length === 1 ? "" : "s"}
+        </Button>
+      )}
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div
+          ref={setDiffControlsTarget}
+          className="flex shrink-0 items-center gap-2"
+        />
+        {codeSettings}
+        <Tooltip label="Refresh diff">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<IconRestore size={18} />}
+            onClick={() => {
+              if (view === "flow") {
+                void refreshFlow();
+                return;
+              }
+              void reload();
+            }}
+            aria-label="Refresh diff"
+          />
+        </Tooltip>
+      </div>
+    </>
+  );
+  const toolbar =
+    toolbarTarget === undefined ? (
+      // Paint through the section's 10px top gutter. The gutter still belongs
+      // to the diff below, but code cannot scroll through its empty space.
+      <div
+        className={`sticky ${multi ? "top-[calc(var(--diff-panel-top,0px)+37px)] phone:top-[calc(var(--diff-panel-top,0px)+47px)]" : "top-[var(--diff-panel-top,0px)]"} z-1 bg-panel-surface after:absolute after:inset-x-0 after:top-full after:h-2.5 after:bg-panel-surface after:content-['']`}
+      >
+        <div className="flex h-10 items-center gap-2.5 overflow-x-auto border-b border-divider px-3.5 text-label whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {toolbarContents}
+        </div>
+      </div>
+    ) : toolbarTarget ? (
+      createPortal(toolbarContents, toolbarTarget)
+    ) : null;
 
   return (
-    <div className="flex min-h-0 flex-col" ref={panelRef}>
+    <div
+      className={`@container flex min-h-0 flex-col ${multi ? "[--review-file-header-top:calc(var(--diff-panel-top,0px)+87px)] phone:[--review-file-header-top:calc(var(--diff-panel-top,0px)+97px)]" : "[--review-file-header-top:calc(var(--diff-panel-top,0px)+50px)]"}`}
+      ref={panelRef}
+    >
       {multi && (
-        <div className="sticky top-0 z-2 flex gap-1 overflow-x-auto border-b border-divider bg-panel-surface px-2.5 py-1.5">
+        <div className="sticky top-[var(--diff-panel-top,0px)] z-2 flex gap-1 overflow-x-auto border-b border-divider bg-panel-surface px-2.5 py-1.5">
           {changed.map((r, i) => {
-            const n = r.diff.totalAdditions + r.diff.totalDeletions;
             return (
               <button
                 key={r.repo}
@@ -342,70 +536,18 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
         </div>
       )}
 
-      <div className="sticky top-0 z-1 flex items-center gap-2.5 overflow-x-auto border-b border-divider bg-panel-surface px-3.5 py-2.5 text-label whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <span className="text-dim">
-          {d.files.length} file{d.files.length === 1 ? "" : "s"} changed
-        </span>
-        <span className={DIFF_ADD}>+{d.totalAdditions}</span>
-        <span className={DIFF_DEL}>−{d.totalDeletions}</span>
-        {d.truncated && (
-          <span className="rounded-sm bg-yellow/15 px-[7px] py-px text-meta font-bold text-yellow">
-            truncated
-          </span>
-        )}
-        {handEdited.length > 0 && canSend && (
-          <Button
-            variant="default"
-            size="sm"
-            className="ml-2 min-h-0 px-2 py-0.5 text-meta"
-            onClick={tellAgentAboutEdits}
-            title="Sends a note listing your hand-edits so they get reviewed and committed"
-          >
-            Tell {AGENT_NAME} about {handEdited.length} edit
-            {handEdited.length === 1 ? "" : "s"}
-          </Button>
-        )}
-        <Segmented
-          className="ml-auto"
-          size="sm"
-          label="Diff view"
-          value={view}
-          onValueChange={(next) => {
-            if (next === "flow") {
-              if (view !== "flow" && flowError) {
-                setFlow(null);
-                setFlowError(null);
-              }
-              setView("flow");
-              return;
-            }
-            setView("files");
-          }}
-        >
-          <SegmentedOption value="files">Files</SegmentedOption>
-          <SegmentedOption value="flow" disabled={!patchVersion}>
-            Code flow
-          </SegmentedOption>
-        </Segmented>
-        <Tooltip label="Refresh diff">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="min-h-0 px-1.5 py-0.5 text-sm text-faint hover:text-fg"
-				onClick={() => {
-					if (view === "flow") {
-						void refreshFlow();
-                return;
-              }
-              void reload();
-            }}
-            aria-label="Refresh diff"
-          >
-            ↻
-          </Button>
-        </Tooltip>
-      </div>
+      {toolbar}
 
+      <div className="flex min-h-0 min-w-0 flex-1">
+        {showFileList && fileListMode !== "hidden" && orderedFiles.length > 0 && (
+          <PrFileTree
+            files={orderedFiles}
+            mode={fileListMode}
+            showFileStats={codeDisplaySettings.showFileStats}
+            onOpenFile={openFlowLocation}
+          />
+        )}
+        <div className="min-w-0 flex-1">
       {view === "flow" ? (
         <CodeFlow
           data={flow?.key === flowKey ? flow.data : null}
@@ -416,18 +558,35 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
         />
       ) : (
       /* @pierre/diffs sizes its own generated markup, which no utility on our
-         side can reach — hold it inside the panel from here. */
-      <div className="px-2.5 pt-2.5 pb-7 [&_[class*=pierre]]:max-w-full">
+         side can reach — hold it inside the panel from here. A parent toolbar
+         supplies the review canvas's shared 8px inset; standalone Changes
+         keeps this panel's own inset. */
+      <div
+        className={`${toolbarTarget === undefined ? "px-2.5 pt-2.5" : "px-0 pt-0"} min-w-0 max-w-full overflow-clip pb-7 [&_[class*=pierre]]:max-w-full`}
+      >
         <CommentableDiff
           key={cur.repo}
           patch={d.rawPatch || ""}
           defaultExpandedFiles={10}
+          controlsTarget={diffControlsTarget}
+          diffStyle={codeDisplaySettings.diffStyle}
+          wrapLines={codeDisplaySettings.wrapLines}
+          structuralHighlighting={codeDisplaySettings.structuralHighlighting}
+          showFileStats={codeDisplaySettings.showFileStats}
+          codeTheme={codeDisplaySettings.codeTheme}
+          visibleFileOrder={visibleFileOrder}
+          // The sidebar owns this scrollport. Keep each file's title below its
+          // standing toolbar until the following file pushes it away.
+          stickyFileHeaders={toolbarTarget === undefined}
           groups={
-            groups?.repo === cur.repo && groups.patch === d.rawPatch
+            grouping === "ai" &&
+            groups?.repo === cur.repo &&
+            groups.patch === d.rawPatch
               ? groups.groups || undefined
               : undefined
           }
-          groupsLoading={groupsLoading}
+          groupsLoading={grouping === "ai" && groupsLoading}
+          showGroupsStatus={false}
           submitLabel={`Send to ${AGENT_NAME}`}
           placeholder={`Leave feedback on these lines. ${AGENT_NAME} picks it up in this session…`}
           disabled={!canSend}
@@ -470,6 +629,8 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
         />
       </div>
       )}
+        </div>
+      </div>
     </div>
   );
 }

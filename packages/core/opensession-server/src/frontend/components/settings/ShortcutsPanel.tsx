@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { useShortcutsVersion } from "../../hooks/useShortcutBindings";
 import { isApple } from "../../lib/platform";
 import {
@@ -128,7 +128,7 @@ export function ShortcutsPanel() {
 	// registry's recording flag is the backstop for any listener that reads the
 	// event another way; between them, a keystroke aimed at the recorder can
 	// never also run the command it is about to be bound to.
-	useEffect(() => {
+	const recordKeys = useEffectEvent(() => {
 		if (!recording) return;
 		setShortcutRecording(true);
 		const { id, index } = recording;
@@ -192,7 +192,13 @@ export function ShortcutsPanel() {
 			window.removeEventListener("keyup", onKeyUp, true);
 			setShortcutRecording(false);
 		};
-	}, [recording?.id, recording?.index]);
+	});
+	const recordingKey = recording ? `${recording.id}:${recording.index}` : "";
+	useEffect(() => {
+		if (!recordingKey) return;
+		const cleanup = recordKeys();
+		return cleanup;
+	}, [recordingKey]);
 
 	function replaceConflicted() {
 		if (!conflict) return;
@@ -212,7 +218,7 @@ export function ShortcutsPanel() {
 	).length;
 
 	const q = query.trim().toLowerCase();
-	const matches = useMemo(() => {
+	const matches = (() => {
 		if (!q) return SHORTCUT_COMMANDS;
 		return SHORTCUT_COMMANDS.filter((command) => {
 			const chords = shortcutBindings(command.id)
@@ -223,7 +229,7 @@ export function ShortcutsPanel() {
 				.includes(q);
 		});
 		// Bindings feed the haystack, so a rebind re-filters an open search.
-	}, [q, version]);
+	})();
 
 	const referenceMatches = q
 		? SHORTCUT_REFERENCE.filter((r) =>

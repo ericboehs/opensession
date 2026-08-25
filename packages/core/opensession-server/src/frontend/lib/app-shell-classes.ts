@@ -166,13 +166,13 @@ export const SCROLL_EDGE_DIVIDER =
  *  session routes, other views render a plain title. `empty:hidden` collapses
  *  it where there is neither (Home), so it costs no vertical space.
  *
- *  A tab strip below the bar already draws the one rule the active tab's
- *  underline rests on, so the scroll hairline stands down rather than putting
- *  a second line across the same top block. Written against the pane rather
- *  than as `:has(+ .session-tabs)`: a split gives each column its own strip,
- *  nested a level down from this row. */
+ *  The desktop tab strip overlaps the bottom of this bar. Its active pill and
+ *  short separators occupy that edge, so the scroll hairline stands down
+ *  instead of cutting behind them. Written against the pane rather than as
+ *  `:has(+ .session-tabs)`: a split gives each column its own strip, nested a
+ *  level down from this row. */
 export const DETAIL_TOPBAR =
-	`detail-topbar flex min-w-0 shrink-0 flex-col empty:hidden ${SCROLL_EDGE_DIVIDER} ` +
+	`detail-topbar flex min-w-0 shrink-0 flex-col items-stretch empty:hidden ${SCROLL_EDGE_DIVIDER} ` +
 	"[.detail-pane:has(.session-tabs)_&]:after:content-none";
 
 /**

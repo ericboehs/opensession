@@ -1,20 +1,34 @@
 import type { WorkspaceOverview } from "../../lib/api";
 import { providerFromUrl } from "../../lib/provider";
 import { sessionPrMerged } from "../../lib/session-prs";
-import { MAX_HOVERCARD_MEDIA, TONE_TEXT, compactNum, hoverState, prTone, prettyReview, useSessionOverview, useWsOverview, wsPrInfo, type WsCardRow } from "../../lib/sidebar-hover";
+import { MAX_HOVERCARD_MEDIA, TONE_TEXT, cardRunErrorDetail, compactNum, hoverState, prTone, prettyReview, useSessionOverview, useWsOverview, wsPrInfo, type WsCardRow } from "../../lib/sidebar-hover";
 import { SIDEBAR_STATUS_DOT, SIDEBAR_WS_SNOOZE, SIDEBAR_WS_TICKER } from "../../lib/sidebar-classes";
-import { frontingPrSession, mineStatus, pinnedLane, runNeedsAttention } from "../../lib/sidebar-lanes";
-import { MINE_STATUS_META, type LaneChoice, type MineStatus } from "../../lib/sidebar-types";
-import { formatRemaining, snoozePresets } from "../../lib/snoozes";
+import {
+	frontingPrSession,
+	mineStatus,
+	pinnedLane,
+	runNeedsAttention,
+	workspaceRunNeedingAttention,
+} from "../../lib/sidebar-lanes";
+import { type LaneChoice, type MineStatus } from "../../lib/sidebar-types";
+import { SNOOZE_SOMEDAY, formatRemaining, snoozePresets } from "../../lib/snoozes";
 import { elapsedSince, fullTime } from "../../lib/time";
 import type { UnifiedSession } from "../../lib/types";
 import { Button } from "../../ui/button";
 import { cn } from "../../ui/cn";
 import { BottomSheet, SheetBody, SheetItem, SheetSeparator } from "../../ui/sheet";
+import {
+	LanePickerPage,
+	LaneStatusMark,
+	SheetDrillInItem,
+	SheetPageHeader,
+	lanePickerLabel,
+	type LanePickerValue,
+} from "./MobileSheetPages";
 import { openLightbox } from "../MediaLightbox";
 import { sessionPrTone } from "../../lib/pr-refs";
 import { CardFooter, CardPrChip, checksLabel, osReviewLabel } from "../SidebarRowCards";
-import { IconArchive, IconArrowUpRight, IconGitMerge, IconInbox, IconLink, IconMail, IconMoon, IconPencil, IconPin, IconPullRequest } from "../icons";
+import { IconArrowUpRight, IconClock, IconGitMerge, IconInbox, IconLink, IconMail, IconMoon, IconPencil, IconPin, IconPullRequest } from "../icons";
 import React, { useEffect, useState } from "react";
 
 // The session card, in the shape the workspace card already proved: what the
@@ -28,6 +42,8 @@ export function SessionCardBody({ session: s }: { session: UnifiedSession }) {
 	const state = hoverState(s);
 	const ov = useSessionOverview(s);
 	const rows: Array<[string, React.ReactNode]> = [];
+	const hasHead =
+		(s.prAdditions != null && s.prDeletions != null) || !!s.prOsReview;
 
 	const owner = s.automation || s.startedBy;
 	if (owner) rows.push([s.automation ? "Automation" : "Started by", owner]);
@@ -56,44 +72,60 @@ export function SessionCardBody({ session: s }: { session: UnifiedSession }) {
 			    changed on. The repo used to stand in when there was no diff to
 			    show, which spent the card's first line naming the band the row
 			    was already filed under. */}
-			<div className="flex min-w-0 items-center gap-[7px]">
-				<span className={`size-2 shrink-0 rounded-full ${state.dotClass}`} />
-				<span className="min-w-0 flex-1 truncate text-meta">
-					{s.prAdditions != null && s.prDeletions != null && (
-						<>
-							<span className="text-green">+{compactNum(s.prAdditions)}</span>{" "}
-							<span className="text-red">-{compactNum(s.prDeletions)}</span>
-						</>
-					)}
-				</span>
-				{/* What the automated review made of this session's PR, in the same
-				    place the workspace card puts it. */}
-				{s.prOsReview && (
-					<span className="min-w-0 shrink truncate text-right text-meta">
-						<span className="text-faint">OS review </span>
-						{osReviewLabel(s.prOsReview)}
+			{hasHead && (
+				<div className="flex min-w-0 items-center gap-[7px]">
+					<span className="min-w-0 flex-1 truncate text-meta">
+						{s.prAdditions != null && s.prDeletions != null && (
+							<>
+								<span className="text-green">+{compactNum(s.prAdditions)}</span>{" "}
+								<span className="text-red">-{compactNum(s.prDeletions)}</span>
+							</>
+						)}
 					</span>
+					{/* What the automated review made of this session's PR, in the same
+					    place the workspace card puts it. */}
+					{s.prOsReview && (
+						<span className="min-w-0 shrink truncate text-right text-meta">
+							<span className="text-faint">OS review </span>
+							{osReviewLabel(s.prOsReview)}
+						</span>
+					)}
+				</div>
+			)}
+
+			<div
+				className={cn(
+					"flex min-w-0 items-center gap-[7px] text-label font-semibold leading-[1.3]",
+					hasHead && "mt-[5px]",
 				)}
+			>
+				{s.isRunning && (
+					<span className={`size-2 shrink-0 rounded-full ${state.dotClass}`} />
+				)}
+				<span className="min-w-0 truncate">{s.title}</span>
 			</div>
 
-			<div className="mt-[5px] text-label font-semibold leading-[1.3]">{s.title}</div>
-
-			<div className={`mt-[3px] text-meta font-medium ${TONE_TEXT[state.tone]}`}>
-				{state.label}
-			</div>
+			{!runNeedsAttention(s) && (
+				<div className={`mt-[3px] text-meta font-medium ${TONE_TEXT[state.tone]}`}>
+					{state.label}
+				</div>
+			)}
 
 			{s.waitingForInput && (
-				<div className="mt-[7px] rounded-md bg-accent-soft px-2 py-[5px] text-meta text-dim">
+				<div className="mt-[7px] rounded-md bg-accent-soft px-2 py-[5px] text-meta leading-snug text-dim">
 					Blocked on a question. Open the session to answer.
 				</div>
 			)}
 			{!s.waitingForInput && runNeedsAttention(s) && (
-				<div className="mt-[7px] rounded-md bg-accent-soft px-2 py-[5px] text-meta text-dim">
-					Run failed: {s.lastRunError!.message.slice(0, 200)}
+				<div
+					className="mt-[7px] rounded-md bg-accent-soft px-2 py-[5px] text-meta leading-snug text-dim line-clamp-2"
+					title={s.lastRunError!.message}
+				>
+					{cardRunErrorDetail(s.lastRunError!.message)}
 				</div>
 			)}
 			{!s.waitingForInput && (s.queuedCount ?? 0) > 0 && (
-				<div className="mt-[7px] rounded-md bg-accent-soft px-2 py-[5px] text-meta text-dim">
+				<div className="mt-[7px] rounded-md bg-accent-soft px-2 py-[5px] text-meta leading-snug text-dim">
 					{s.queuedCount} prompt{s.queuedCount === 1 ? "" : "s"} queued.
 				</div>
 			)}
@@ -169,7 +201,7 @@ export function SnoozeBadge({
 	return (
 		<span
 			className={cn(SIDEBAR_WS_SNOOZE, className)}
-			title={`Snoozed until ${new Date(until).toLocaleString()}`}
+			title={until === SNOOZE_SOMEDAY ? "Snoozed: Someday" : `Snoozed until ${new Date(until).toLocaleString()}`}
 		>
 			<IconMoon size={20} />
 			{formatRemaining(until, now)}
@@ -181,6 +213,7 @@ export function WsPrStatusMark({
 	sessions,
 	size,
 	workspace,
+	shipsDirectlyToMain = false,
 }: {
 	sessions: UnifiedSession[];
 	size: number;
@@ -189,7 +222,19 @@ export function WsPrStatusMark({
 		prNumber?: number;
 		draft?: { text: string } | null;
 	} | null;
+	/** This work lands on the default branch, so an absent PR is not missing work. */
+	shipsDirectlyToMain?: boolean;
 }) {
+	// Read the authoritative multi-PR projection before the legacy flat fields.
+	// A Slack session can own a discovered PR through `prs[]` while `prUrl` and
+	// `prState` stay empty, and that landed work still needs the merged mark.
+	if (sessions.some(sessionPrMerged)) {
+		return (
+			<span className="flex items-center" title="PR merged">
+				<IconPullRequest size={size} className="text-purple" />
+			</span>
+		);
+	}
 	const session = frontingPrSession(sessions);
 	if (!session) {
 		// Rows that can never have a PR — feed/scratch workspaces (repo-less
@@ -214,16 +259,21 @@ export function WsPrStatusMark({
 				/>
 			);
 		}
+		// A shared checkout ships on the default branch. The grey PR glyph used to
+		// imply that this row was missing a PR it should create; here no PR is the
+		// intended path, so keep the lane's quiet idle dot instead.
+		if (shipsDirectlyToMain)
+			return (
+				<span
+					className="flex shrink-0 items-center justify-center"
+					style={{ width: size, height: size }}
+				>
+					<span className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.idle}`} />
+				</span>
+			);
 		return (
 			<span className="flex items-center" title="No pull request">
 				<IconPullRequest size={size} className="text-faint" />
-			</span>
-		);
-	}
-	if (session.prState === "MERGED") {
-		return (
-			<span className="flex items-center" title="PR merged">
-				<IconPullRequest size={size} className="text-purple" />
 			</span>
 		);
 	}
@@ -286,6 +336,10 @@ export function WsStatusMark({
 	);
 	const dot = (cls: string) =>
 		slot(<span className={`size-2 shrink-0 rounded-full ${cls}`} />);
+	if (row.sessions.some((session) => session.waitingForInput))
+		return dot(SIDEBAR_STATUS_DOT.waiting);
+	if (workspaceRunNeedingAttention(row.sessions))
+		return dot(SIDEBAR_STATUS_DOT.failed);
 	if (row.status === "needsinput") return dot(SIDEBAR_STATUS_DOT.waiting);
 	if (row.running) return dot(SIDEBAR_STATUS_DOT.running);
 	// A draft workspace has no session and so no PR to show. The flat-repo
@@ -333,7 +387,7 @@ export function CardOverview({ ov }: { ov: WorkspaceOverview | null }) {
 	return (
 		<>
 			{desc && (
-				<div className="selectable mt-1 text-xs leading-snug text-dim line-clamp-2">
+				<div className="selectable mt-1 text-meta leading-snug text-dim line-clamp-2">
 					{desc}
 				</div>
 			)}
@@ -402,7 +456,10 @@ function WsOverviewInfo({
 	ov: WorkspaceOverview | null;
 }) {
 	const { prSession } = wsPrInfo(row);
-	const meta = MINE_STATUS_META.find((m) => m.key === row.status);
+	const hasHead =
+		(prSession?.prAdditions != null && prSession?.prDeletions != null) ||
+		!!prSession?.prOsReview;
+	const failedSession = workspaceRunNeedingAttention(row.sessions);
 	return (
 		<>
 			{/* The PR facts, on one strip above the title: what changed, what the
@@ -412,48 +469,60 @@ function WsOverviewInfo({
 			    repo, which only ever named the band the row is filed under. The
 			    verdict reads better here than under the title, where it sat between
 			    the name and the description and pushed them apart. */}
-			<div className="flex min-w-0 items-center gap-[7px]">
-				{/* The diff is two short numbers and never truncates; the verdict is
-				    the variable-length half, so it takes the slack and gives it back. */}
-				<span className="shrink-0 text-meta">
-					{prSession?.prAdditions != null && prSession?.prDeletions != null && (
-						<>
-							<span className="text-green">
-								+{compactNum(prSession.prAdditions)}
-							</span>{" "}
-							<span className="text-red">
-								-{compactNum(prSession.prDeletions)}
-							</span>
-						</>
-					)}
-				</span>
-				{/* What os-review made of this PR — the question a Ready-to-merge row
-				    raises, answered without opening GitHub. */}
-				{prSession?.prOsReview && (
-					<span className="min-w-0 flex-1 truncate text-right text-meta">
-						<span className="text-faint">OS review </span>
-						{osReviewLabel(prSession.prOsReview)}
+			{hasHead && (
+				<div className="flex min-w-0 items-center gap-[7px]">
+					{/* The diff is two short numbers and never truncates; the verdict is
+					    the variable-length half, so it takes the slack and gives it back. */}
+					<span className="shrink-0 text-meta">
+						{prSession?.prAdditions != null && prSession?.prDeletions != null && (
+							<>
+								<span className="text-green">
+									+{compactNum(prSession.prAdditions)}
+								</span>{" "}
+								<span className="text-red">
+									-{compactNum(prSession.prDeletions)}
+								</span>
+							</>
+						)}
 					</span>
-				)}
-				{/* `ml-auto` only bites when there is no verdict to take the slack. */}
-				<span className="ml-auto flex shrink-0 items-center" title={meta?.label}>
-					<WsStatusMark row={row} size={22} />
-				</span>
-			</div>
+					{/* What os-review made of this PR: the question a Ready-to-merge row
+					    raises, answered without opening GitHub. */}
+					{prSession?.prOsReview && (
+						<span className="min-w-0 flex-1 truncate text-right text-meta">
+							<span className="text-faint">OS review </span>
+							{osReviewLabel(prSession.prOsReview)}
+						</span>
+					)}
+				</div>
+			)}
 
-			<div className="mt-[5px] text-label font-semibold leading-[1.3]">{row.name}</div>
+			<div
+				className={cn(
+					"flex min-w-0 items-center gap-[7px] text-label font-semibold leading-[1.3]",
+					hasHead && "mt-[5px]",
+				)}
+			>
+				{row.running && (
+					<span
+						className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.running}`}
+					/>
+				)}
+				<span className="min-w-0 truncate">{row.name}</span>
+			</div>
 
 			{row.status === "needsinput" &&
 				(row.sessions.some((c) => c.waitingForInput) ? (
-					<div className="mt-[7px] rounded-md bg-accent-soft px-2 py-[5px] text-meta text-dim">
+					<div className="mt-[7px] rounded-md bg-accent-soft px-2 py-[5px] text-meta leading-snug text-dim">
 						Blocked on a question. Open to answer.
 					</div>
 				) : (
-					<div className="mt-[7px] rounded-md bg-accent-soft px-2 py-[5px] text-meta text-dim">
-						Run failed:{" "}
-						{row.sessions
-							.find((c) => runNeedsAttention(c))
-							?.lastRunError?.message.slice(0, 200) || "needs attention"}
+					<div
+						className="mt-[7px] rounded-md bg-accent-soft px-2 py-[5px] text-meta leading-snug text-dim line-clamp-2"
+						title={failedSession?.lastRunError?.message}
+					>
+						{cardRunErrorDetail(
+							failedSession?.lastRunError?.message || "Needs attention.",
+						)}
 					</div>
 				))}
 
@@ -465,15 +534,16 @@ function WsOverviewInfo({
 // The workspace counterpart of SessionCardBody: diff stats + status
 // at a glance, the latest assistant message as a "where things stand" line,
 // screenshot thumbnails from the workspace's sessions, and quick actions
-// (Archive, PR link) — the only card body that carries controls, which is why
-// its shell is the one the pointer can travel into.
+// (Snooze, PR link), which is why its shell is the one the pointer can travel into.
 export function WsCardBody({
 	row,
-	onArchive,
+	snoozed,
+	onToggleSnooze,
 	onOpen,
 }: {
 	row: WsCardRow;
-	onArchive: () => void;
+	snoozed: boolean;
+	onToggleSnooze: () => void;
 	/** Open a session (the "Answer" action jumps to the blocked one). */
 	onOpen: (session: UnifiedSession) => void;
 }) {
@@ -485,37 +555,30 @@ export function WsCardBody({
 			<WsOverviewInfo row={row} ov={ov} />
 
 			<CardFooter>
-				{/* The single main action, colored by what the workspace needs next:
-				    answer the blocked question (accent), merge the ready PR (green),
-				    review the not-ready PR (neutral), or archive merged work (purple). */}
-				{row.status === "needsinput" && row.sessions.length > 0 ? (
+				{/* The single main action follows what the workspace needs next.
+				    Unsnooze is always immediate; Snooze stays on the row and menu. */}
+				{snoozed ? (
+					<Button
+						size="sm"
+						variant="soft"
+						icon={<IconMoon size={20} />}
+						onClick={onToggleSnooze}
+					>
+						Unsnooze
+					</Button>
+				) : row.status === "needsinput" && row.sessions.length > 0 ? (
 					<Button
 						size="sm"
 						variant="primary"
 						onClick={() =>
 							onOpen(
 								row.sessions.find((c) => c.waitingForInput) ||
-									row.sessions.find((c) => runNeedsAttention(c)) ||
+									workspaceRunNeedingAttention(row.sessions) ||
 									row.sessions[0],
 							)
 						}
 					>
 						{row.sessions.some((c) => c.waitingForInput) ? "Answer" : "Open"}
-					</Button>
-				) : row.status === "merged" ? (
-					// Purple is the merged tone across every PR surface, and this is
-					// the action that closes merged work, so it takes the solid
-					// plate's shape with that fill. It is a className rather than a
-					// variant because the variants are semantic (danger, success)
-					// and "merged" is a fact about a PR, not about a button.
-					<Button
-						size="sm"
-						variant="primary"
-						className="bg-purple text-white hover:bg-purple/90"
-						icon={<IconArchive size={20} />}
-						onClick={onArchive}
-					>
-						Archive
 					</Button>
 				) : row.status === "review" && prSession?.prUrl ? (
 					<Button
@@ -599,6 +662,15 @@ export function WsMobileSheet({
 }) {
 	const ov = useWsOverview(row);
 	const { prSession, prReady, prStatusBits } = wsPrInfo(row);
+	const [page, setPage] = useState<"actions" | "status" | "snooze">("actions");
+	const anyManual = row.sessions.some((session) => pinnedLane(session));
+	const firstLane = pinnedLane(row.sessions[0]) ?? null;
+	const currentLane: LanePickerValue = !anyManual
+		? null
+		: row.sessions.every((session) => pinnedLane(session) === firstLane)
+			? firstLane
+			: "mixed";
+	const displayedLane = currentLane ?? row.status;
 	// Lock the page behind the sheet so a scroll drags the list, not the page.
 	useEffect(() => {
 		const prev = document.body.style.overflow;
@@ -628,6 +700,42 @@ export function WsMobileSheet({
 					fn();
 					dismiss();
 				};
+				if (page === "status") {
+					return (
+						<LanePickerPage
+							current={currentLane}
+							onBack={() => setPage("actions")}
+							onSelect={(status) => {
+								onSetStatus(status);
+								dismiss();
+							}}
+						/>
+					);
+				}
+				if (page === "snooze") {
+					return (
+						<>
+							<SheetPageHeader title="Snooze" onBack={() => setPage("actions")} />
+							<SheetBody>
+								{snoozePresets().map((preset) => (
+									<SheetItem
+										key={preset.label}
+										onClick={closing(() => onSnooze(preset.until))}
+									>
+										<IconClock size={22} />
+										{preset.label}
+									</SheetItem>
+								))}
+								{snoozeUntil && (
+									<SheetItem onClick={closing(() => onSnooze(null))}>
+										<IconMoon size={22} />
+										Unsnooze
+									</SheetItem>
+								)}
+							</SheetBody>
+						</>
+					);
+				}
 				return (
 				<SheetBody>
 				<div className="px-2 pb-2.5 pt-1">
@@ -648,14 +756,14 @@ export function WsMobileSheet({
 					)}
 				</div>
 				<SheetSeparator />
-				{/* Main action, colored by what the workspace needs next. */}
+				{/* The most urgent contextual action stays first. */}
 				{row.status === "needsinput" && row.sessions.length > 0 && (
 					<SheetItem
 						tone="accent"
 						onClick={closing(() =>
 							onOpen(
 								row.sessions.find((c) => c.waitingForInput) ||
-									row.sessions.find((c) => runNeedsAttention(c)) ||
+									workspaceRunNeedingAttention(row.sessions) ||
 									row.sessions[0],
 							),
 						)}
@@ -676,12 +784,6 @@ export function WsMobileSheet({
 						<IconPullRequest size={22} />
 						{prReady ? `Merge on ${providerFromUrl(prSession.prUrl).name}` : "Review PR"}
 						{prSession.prNumber != null && ` #${prSession.prNumber}`}
-					</SheetItem>
-				)}
-				{row.status === "merged" && row.sessions.length > 0 && (
-					<SheetItem tone="purple" onClick={closing(onArchive)}>
-						{archiveGlyph}
-						Archive workspace
 					</SheetItem>
 				)}
 				{prSession?.prUrl && row.status !== "review" && (
@@ -714,6 +816,12 @@ export function WsMobileSheet({
 					<IconPin size={22} fill={pinned ? "currentColor" : "none"} />
 					{pinned ? "Unpin" : "Pin"}
 				</SheetItem>
+				{snoozeUntil && (
+					<SheetItem onClick={closing(() => onSnooze(null))}>
+						<IconMoon size={22} />
+						Unsnooze
+					</SheetItem>
+				)}
 				<SheetItem onClick={closing(onRename)}>
 					<svg
 						width="20"
@@ -733,127 +841,26 @@ export function WsMobileSheet({
 						Copy link
 					</SheetItem>
 				)}
-				{/* Pin the workspace into a lane manually — tap a chip to move it there
-				    (tap the active one, or Auto, to release it back to the derived lane). */}
-				{row.sessions.length > 0 &&
-					(() => {
-						const anyManual = row.sessions.some((c) => pinnedLane(c));
-						const sharedManual =
-							anyManual &&
-							row.sessions.every(
-								(c) => pinnedLane(c) === pinnedLane(row.sessions[0]),
-							)
-								? (pinnedLane(row.sessions[0]) ?? null)
-								: null;
-						return (
-							<div className="px-4 py-2">
-								<div className="mb-1.5 text-meta font-semibold text-faint">
-									Move to lane
-								</div>
-								<div className="flex flex-wrap gap-1.5">
-									{MINE_STATUS_META.map((m) => {
-										const on = sharedManual === m.key;
-										return (
-											<Button
-										variant="ghost"
-										size="sm"
-												key={m.key}
-												type="button"
-												className="gap-1.5 whitespace-normal px-2 text-control-label leading-normal"
-												style={{
-													borderColor: on ? m.dotColor : "var(--border)",
-													color: on ? "var(--text)" : "var(--text-dim)",
-													background: on
-														? "color-mix(in srgb, var(--bg-panel), transparent)"
-														: "transparent",
-												}}
-												onClick={closing(() =>
-													onSetStatus(on ? null : m.key),
-												)}
-											>
-												<span
-													style={{
-														width: 8,
-														height: 8,
-														borderRadius: "50%",
-														background: m.dotColor,
-														flexShrink: 0,
-													}}
-												/>
-												{m.label}
-											</Button>
-										);
-									})}
-									<Button
-										variant="ghost"
-										size="sm"
-										type="button"
-										className="whitespace-normal px-2 text-control-label leading-normal"
-										style={{
-											borderColor: !anyManual
-												? "var(--text-dim)"
-												: "var(--border)",
-											color: !anyManual ? "var(--text)" : "var(--text-dim)",
-										}}
-										onClick={closing(() => onSetStatus(null))}
-									>
-										Auto
-									</Button>
-								</div>
-							</div>
-						);
-					})()}
-				{/* Snooze chips — the mobile stand-in for the right-click Snooze
-				    flyout. Tapping a preset parks the row in the Snoozed section
-				    until the resolved time. */}
 				{row.sessions.length > 0 && (
-					<div className="px-4 py-2">
-						<div className="mb-1.5 text-meta font-semibold text-faint">
-							{snoozeUntil
-								? `Snoozed · wakes in ${formatRemaining(snoozeUntil)}`
-								: "Snooze"}
-						</div>
-						<div className="flex flex-wrap gap-1.5">
-							{snoozePresets().map((p) => (
-								<Button
-										variant="ghost"
-										size="sm"
-									key={p.label}
-									type="button"
-									className="whitespace-normal px-2 text-control-label leading-normal"
-									style={{
-										borderColor: "var(--border)",
-										color: "var(--text-dim)",
-									}}
-									onClick={closing(() => onSnooze(p.until.toISOString()))}
-								>
-									{p.label}
-								</Button>
-							))}
-							{snoozeUntil && (
-								<Button
-										variant="ghost"
-										size="sm"
-									type="button"
-									className="whitespace-normal px-2 text-control-label leading-normal"
-									style={{
-										borderColor: "var(--text-dim)",
-										color: "var(--text)",
-									}}
-									onClick={closing(() => onSnooze(null))}
-								>
-									Unsnooze
-								</Button>
-							)}
-						</div>
-					</div>
+					<>
+						<SheetDrillInItem
+							icon={<LaneStatusMark value={displayedLane} />}
+							label="Status"
+							value={lanePickerLabel(displayedLane)}
+							onClick={() => setPage("status")}
+						/>
+						{!snoozeUntil && (
+							<SheetDrillInItem
+								icon={<IconMoon size={22} />}
+								label="Snooze"
+								onClick={() => setPage("snooze")}
+							/>
+						)}
+					</>
 				)}
-				{((row.status !== "merged" && row.sessions.length > 0) || onDelete) && (
-					<SheetSeparator />
-				)}
-				{/* Archiving stays reachable pre-merge from the explicit menu — the
-				    status coloring only governs which action gets top billing. */}
-				{row.status !== "merged" && row.sessions.length > 0 && (
+				{(row.sessions.length > 0 || onDelete) && <SheetSeparator />}
+				{/* Archive stays explicit and destructive after Pin and Snooze. */}
+				{row.sessions.length > 0 && (
 					<SheetItem tone="danger" onClick={closing(onArchive)}>
 						{archiveGlyph}
 						Archive

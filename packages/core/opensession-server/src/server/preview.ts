@@ -34,7 +34,7 @@ import {
 } from "fs";
 import { basename, dirname, join, resolve } from "path";
 import { getAgentAwsEnv } from "./aws-creds";
-import { createWorkloadIdentityEnv } from "./workload-identity";
+import { createWorkloadIdentityEnv, type WorkloadIdentityContext } from "./workload-identity";
 import { audit } from "./audit";
 import { ensureRemoteSandboxPortalAgent, forgetRemoteSandboxPortalAgents, listPortalServices, listSandboxPortalServices } from "./portal-supervisor";
 import { revokeSandboxPortalGrants, revokeSandboxPortalRelay } from "./sandbox-portal-relay";
@@ -88,14 +88,22 @@ export interface PreviewService {
 }
 
 export interface PreviewPortalRecipe {
+  /** Stable, URL-safe identifier used by the direct start endpoint. */
+  id: string;
   /** Human-facing service name shown in the Portals panel. */
   name: string;
   /** Optional one-line explanation supplied by the repository. */
   description?: string;
-  /** User-invocable skill the session agent should use to start it. */
-  skill: string;
-  /** .ports.conf key expected to become live after the skill runs. */
+  /** Direct command supervised by Open Session in the session workspace. */
+  command?: string;
+  /** Legacy agent-assisted starter. New recipes should declare command. */
+  skill?: string;
+  /** Environment/.ports.conf key assigned to the supervised port. */
   serviceKey?: string;
+  /** Optional fixed port for projects whose tooling requires a known range. */
+  port?: number;
+  /** How long this service may take to bind its port. */
+  readyTimeoutSeconds?: number;
 }
 
 export interface PreviewStatus {
@@ -117,6 +125,26 @@ export interface PreviewStatus {
   portalRecipes: PreviewPortalRecipe[];
 }
 
+export function recipeCommand(recipe: PreviewPortalRecipe): string {
+  if (!recipe.command) throw new Error("This Portal still needs an agent-assisted starter.");
+  const exports = [
+    recipe.serviceKey ? `export ${recipe.serviceKey}="$PORT"` : "",
+    recipe.serviceKey === "WEBAPP_PORT" ? 'export WEBAPP_PORT="$PORT" PREVIEW_URL="$PORTAL_URL"' : "",
+  ].filter(Boolean).join("; ");
+  return `bash -c ${shellQuoteWord(`${exports ? `${exports}; ` : ""}exec ${recipe.command}`)}`;
+}
+
+export function recipeStartOptions(recipe: PreviewPortalRecipe) {
+  return {
+    name: recipe.id,
+    command: recipeCommand(recipe),
+    ...(recipe.port ? { port: recipe.port } : {}),
+    ...(recipe.serviceKey ? { key: recipe.serviceKey } : {}),
+    ...(recipe.description ? { description: recipe.description } : {}),
+    ...(recipe.readyTimeoutSeconds ? { readyTimeoutMs: recipe.readyTimeoutSeconds * 1_000 } : {}),
+  };
+}
+
 /** Parse the safe, declarative contents of .agents/portals.json. */
 export function parsePreviewPortalRecipes(raw: string | null): PreviewPortalRecipe[] {
   if (!raw) return [];
@@ -127,8 +155,16 @@ export function parsePreviewPortalRecipes(raw: string | null): PreviewPortalReci
       if (!value || typeof value !== "object" || Array.isArray(value)) return [];
       const item = value as Record<string, unknown>;
       const name = typeof item.name === "string" ? item.name.trim() : "";
-      const skill = typeof item.skill === "string" ? item.skill.trim() : "";
-      if (!name || name.length > 80 || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(skill)) return [];
+      const skill = typeof item.skill === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(item.skill.trim())
+        ? item.skill.trim()
+        : undefined;
+      const idValue = typeof item.id === "string" ? item.id.trim() : skill;
+      const id = idValue && /^[a-z][a-z0-9-]{0,62}$/.test(idValue) ? idValue : undefined;
+      const command =
+        typeof item.command === "string" && item.command.trim().length <= 2_000
+          ? item.command.trim()
+          : undefined;
+      if (!name || name.length > 80 || !id || (!command && !skill)) return [];
       const description =
         typeof item.description === "string" && item.description.trim().length <= 240
           ? item.description.trim()
@@ -137,7 +173,23 @@ export function parsePreviewPortalRecipes(raw: string | null): PreviewPortalReci
         typeof item.serviceKey === "string" && /^[A-Z][A-Z0-9_]*_PORT$/.test(item.serviceKey)
           ? item.serviceKey
           : undefined;
-      return [{ name, skill, ...(description ? { description } : {}), ...(serviceKey ? { serviceKey } : {}) }];
+      const port = Number.isInteger(item.port) && Number(item.port) >= 1_024 && Number(item.port) <= 19_000
+        ? Number(item.port)
+        : undefined;
+      const readyTimeoutSeconds =
+        Number.isInteger(item.readyTimeoutSeconds) && Number(item.readyTimeoutSeconds) >= 5 && Number(item.readyTimeoutSeconds) <= 300
+          ? Number(item.readyTimeoutSeconds)
+          : undefined;
+      return [{
+        id,
+        name,
+        ...(description ? { description } : {}),
+        ...(command ? { command } : {}),
+        ...(skill ? { skill } : {}),
+        ...(serviceKey ? { serviceKey } : {}),
+        ...(port ? { port } : {}),
+        ...(readyTimeoutSeconds ? { readyTimeoutSeconds } : {}),
+      }];
     });
   } catch {
     return [];
@@ -416,21 +468,60 @@ function readPorts(worktreeDir: string): { key: string; port: number }[] {
 }
 
 /**
- * PIDs with a LISTEN socket on a TCP port (empty if nothing is listening).
- * Uses `ss` rather than `lsof` — on this host lsof can't read the socket→pid
- * mapping without root, but `ss -p` can.
+ * One process-wide socket snapshot for every open session's Preview poll.
+ * `ss -p` walks the host process table, so spawning it once per service made
+ * PreviewButton polling consume a core and delayed unrelated session traffic.
+ * A short stale window is harmless for a control that polls every 3 to 8s.
  */
+const LISTENER_SNAPSHOT_TTL_MS = 2_000;
+let listenerSnapshot: { raw: string; at: number } | null = null;
+let listenerSnapshotRefresh: Promise<string> | null = null;
+
+async function listenerSnapshotRaw(): Promise<string> {
+  if (
+    listenerSnapshot &&
+    Date.now() - listenerSnapshot.at < LISTENER_SNAPSHOT_TTL_MS
+  ) {
+    return listenerSnapshot.raw;
+  }
+  if (!listenerSnapshotRefresh) {
+    listenerSnapshotRefresh = $`ss -tlnpH`
+      .quiet()
+      .nothrow()
+      .text()
+      .then((raw) => {
+        listenerSnapshot = { raw, at: Date.now() };
+        return raw;
+      })
+      .finally(() => {
+        listenerSnapshotRefresh = null;
+      });
+  }
+  return await listenerSnapshotRefresh;
+}
+
+/** Select socket rows by the local-address column, not by a loose substring
+ * that could match the peer address or a PID. Exported for the parser test. */
+export function listenerLinesForPort(raw: string, port: number): string[] {
+  return raw.split("\n").filter((line) => {
+    const localAddress = line.trim().split(/\s+/)[3];
+    return localAddress?.endsWith(`:${port}`) ?? false;
+  });
+}
+
+/** PIDs with a LISTEN socket on a TCP port (empty if none are visible). */
 async function listenersOnPort(port: number): Promise<number[]> {
-  const raw = await $`ss -tlnpH sport = :${port}`.quiet().nothrow().text();
+  const lines = listenerLinesForPort(await listenerSnapshotRaw(), port);
   const pids = new Set<number>();
-  for (const m of raw.matchAll(/pid=(\d+)/g)) pids.add(parseInt(m[1], 10));
+  for (const line of lines)
+    for (const match of line.matchAll(/pid=(\d+)/g))
+      pids.add(parseInt(match[1], 10));
   return [...pids];
 }
 
-/** Is anything listening on the port (regardless of pid visibility)? */
+/** Is anything listening on the port, regardless of pid visibility? */
 async function portListening(port: number): Promise<boolean> {
-  const raw = await $`ss -tlnH sport = :${port}`.quiet().nothrow().text();
-  return raw.trim().length > 0;
+  return listenerLinesForPort(await listenerSnapshotRaw(), port).length > 0;
 }
 
 async function pgidOf(pid: number): Promise<number | null> {
@@ -445,6 +536,10 @@ async function pgidOf(pid: number): Promise<number | null> {
 // deterministic high port, so each session gets its own secure origin.
 
 const caddyAdmin = () => configuredServer().caddyAdmin.replace(/\/+$/, "");
+const caddyFetch = (url: string, init: RequestInit = {}) => fetch(url, {
+  ...init,
+  signal: init.signal ?? AbortSignal.timeout(10_000),
+});
 const g = globalThis as unknown as {
   __previewRoutes?: Map<number, string>;
   __previewHost?: string;
@@ -552,11 +647,19 @@ async function ensurePreviewRoute(
   requestHeaders: Record<string, string> = {},
 ): Promise<boolean> {
   const signature = JSON.stringify([upstream, requestHeaders]);
-  if (previewRoutes.get(httpsPort) === signature) return true;
-  const server = previewServerConfig(httpsPort, upstream, host);
   const path = `${caddyAdmin()}/config/apps/http/servers/preview_${httpsPort}`;
+  if (previewRoutes.get(httpsPort) === signature) {
+    // A Caddyfile reload replaces dynamic admin-API routes without notifying
+    // this process. Verify the cached route still exists before trusting it,
+    // otherwise status can report a URL whose listener was silently removed.
+    try {
+      if ((await caddyFetch(path)).ok) return true;
+    } catch {}
+    previewRoutes.delete(httpsPort);
+  }
+  const server = previewServerConfig(httpsPort, upstream, host);
   const put = () =>
-    fetch(path, {
+    caddyFetch(path, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(server),
@@ -567,7 +670,7 @@ async function ensurePreviewRoute(
     // recreate so the route always ends up pointing at the current webapp port.
     let res = await put();
     if (res.status === 409) {
-      await fetch(path, { method: "DELETE" }).catch(() => {});
+      await caddyFetch(path, { method: "DELETE" }).catch(() => {});
       res = await put();
     }
     if (!res.ok) return false;
@@ -581,7 +684,7 @@ async function ensurePreviewRoute(
 async function removePreviewRoute(httpsPort: number): Promise<void> {
   if (!previewRoutes.has(httpsPort)) return;
   try {
-    await fetch(`${caddyAdmin()}/config/apps/http/servers/preview_${httpsPort}`, { method: "DELETE" });
+    await caddyFetch(`${caddyAdmin()}/config/apps/http/servers/preview_${httpsPort}`, { method: "DELETE" });
   } catch {}
   previewRoutes.delete(httpsPort);
 }
@@ -630,6 +733,7 @@ export async function getPreviewStatus(worktreeDir: string): Promise<PreviewStat
     };
   }
   const ports = readPorts(worktreeDir);
+  const portalRecipes = hostPreviewPortalRecipes(worktreeDir);
 	const portalRecords = await listPortalServices(worktreeDir);
 	const portalByKey = new Map(portalRecords.map((record) => [record.key, record]));
   const observedServices: PreviewService[] = await Promise.all(
@@ -640,7 +744,7 @@ export async function getPreviewStatus(worktreeDir: string): Promise<PreviewStat
 		// whose port had been taken over report itself as running.
 		if (portal) {
 			return {
-				name: portal.name, key, port,
+				name: portalRecipes.find((recipe) => recipe.serviceKey === key)?.name ?? portal.name, key, port,
 				running: portal.state === "awake",
 				pids: portal.pid ? [portal.pid] : [],
 				...(portal.description ? { description: portal.description } : {}),
@@ -708,7 +812,7 @@ export async function getPreviewStatus(worktreeDir: string): Promise<PreviewStat
       !!webapp?.running ||
       (repo != null && (await resolvePreviewBoot(worktreeDir, repo, hostExists)) != null),
     services,
-    portalRecipes: hostPreviewPortalRecipes(worktreeDir),
+    portalRecipes,
   };
 }
 
@@ -775,7 +879,7 @@ export async function capturePreviewScreenshot(
   }
 }
 
-/** Fresh `.ports.conf` body in tella-fusion dev-services.sh format (harmless
+/** Fresh `.ports.conf` body in dev-services.sh format (harmless
  *  for repos that ignore it — a lifecycle start.sh just reads $WEBAPP_PORT). */
 function freshPortsConfText(webappPort: number, comment: string): string {
   const rand = (min: number, max: number) => min + Math.floor(Math.random() * (max - min + 1));
@@ -799,10 +903,10 @@ function freshPortsConfText(webappPort: number, comment: string): string {
  *
  *  A warm-template refresh deliberately excludes `.env*` from what it seeds
  *  into a worktree, and nothing else puts them back — the comment there still
- *  points at a `seedWebappEnv` that no longer exists. tella-fusion's
- *  `.agents/start.sh` exits 2 on a missing `.env.local`, so the Preview button
+ *  points at a `seedWebappEnv` that no longer exists. A repo's
+ *  `.agents/start.sh` can exit on a missing `.env.local`, so the Preview button
  *  fails outright for any worktree where an agent never happened to run the
- *  tella-local setup.
+ *  repo's own local setup.
  *
  *  Only fills gaps: a worktree copy may carry deliberate per-session edits
  *  (the dev-auth bypass among them), so an existing file is never overwritten. */
@@ -869,19 +973,19 @@ function setupStampPath(worktreeDir: string): string {
 /**
  * Bring the session's dev server up if it isn't already, using the shared
  * resolution chain (repo `.agents/start.sh` → config `previewCommand` →
- * tella-local). Bring-ups can take minutes (first build) — so we spawn the
+ * a built-in fallback). Bring-ups can take minutes (first build) — so we spawn the
  * command in the background and return immediately with `starting: true`;
  * callers poll `getPreviewStatus` to see it flip to `running`.
  *
  * Environment contract (same as sandbox boots): `OPENSESSION_BOOT_MODE=fresh`
  * always; repo-script boots additionally get `WEBAPP_PORT` (allocated here and
  * seeded into .ports.conf so status can see it) and `PREVIEW_URL`. The legacy
- * rungs (previewCommand/tella-local) own their .ports.conf themselves.
+ * rungs (previewCommand/fallback) own their .ports.conf themselves.
  *
  * AWS: the opensession service cgroup denies IMDS (IPAddressDeny in
  * opensession.service), so children spawned here can never mint instance-role
- * creds on their own — that's what silently broke the tella-fusion bring-up
- * (its `aws` preflight and prebuilt-WASM S3 install both need creds). Inject
+ * creds on their own, which is what silently broke a repo bring-up whose
+ * `aws` preflight and prebuilt-WASM S3 install both needed creds. Inject
  * the same short-lived credentials agent runs get (aws-creds.ts).
  */
 export async function startPreview(worktreeDir: string): Promise<PreviewStatus> {
@@ -1262,7 +1366,7 @@ export async function getSandboxPreviewStatus(
     }
     // PIDs are container-internal — meaningless to the host UI; leave empty.
     services.push({
-		name: portal?.name ?? friendly(key),
+		name: portalRecipes.find((recipe) => recipe.serviceKey === key)?.name ?? portal?.name ?? friendly(key),
       key,
       port,
       running,
@@ -1333,14 +1437,14 @@ function sandboxExists(sandbox: Sandbox): (p: string) => Promise<boolean> {
 /**
  * Seed `<worktree>/.ports.conf` so the in-container dev flow adopts the
  * chosen (pre-published) webapp port instead of allocating a random one that
- * isn't published. tella-fusion's dev-services.sh SOURCES an existing
+ * isn't published. A repo's dev-services.sh may SOURCE an existing
  * .ports.conf and keeps any port that's free — inside the container's fresh
  * netns ours always is. When the file already exists we rewrite only the
  * WEBAPP_PORT line; when it's absent we write the full six-key file in
  * dev-services.sh's format (harmless for repos that ignore it — a lifecycle
  * start.sh just reads $WEBAPP_PORT from its env).
  */
-async function seedSandboxPortsConf(
+export async function seedSandboxPortsConf(
   sandbox: Sandbox,
   worktreeDir: string,
   webappPort: number,
@@ -1349,7 +1453,9 @@ async function seedSandboxPortsConf(
   const fresh = freshPortsConfText(webappPort, "sandbox preview").replace(/\n/g, "\\n");
   await sandbox.exec([
     "sh", "-c",
-    `if [ -f ${conf} ]; then sed -i 's/^WEBAPP_PORT=.*/WEBAPP_PORT=${webappPort}/' ${conf}; ` +
+    `if [ -f ${conf} ]; then ` +
+      `if grep -q '^WEBAPP_PORT=' ${conf}; then sed -i 's/^WEBAPP_PORT=.*/WEBAPP_PORT=${webappPort}/' ${conf}; ` +
+      `else printf '\\nWEBAPP_PORT=${webappPort}\\n' >> ${conf}; fi; ` +
       `else printf '${fresh}' > ${conf}; fi`,
   ]);
 }
@@ -1387,7 +1493,7 @@ async function writeSandboxTunnelsEnv(
     `printf '%s\\n' ${shellQuoteWord(body)} > ${shellQuoteWord(file)}`,
   ]);
   // Keep it out of the session diff: one idempotent line in the repo's shared
-  // info/exclude (tella-fusion doesn't gitignore .tunnels.env yet).
+  // info/exclude (a repo may not gitignore .tunnels.env).
   await sandbox.exec([
     "sh", "-c",
     `ex="$(git rev-parse --git-path info/exclude 2>/dev/null)" && [ -n "$ex" ] && ` +
@@ -1414,10 +1520,25 @@ async function writeSandboxTunnelsEnv(
  *     convention): `<worktree>/.agents/start.sh` when present, else the
  *     repo's configured `previewCommand`.
  */
+export function sandboxPreviewIdentityContext(
+  sandbox: Pick<Sandbox, "id" | "provider">,
+  repoId: string,
+  trustProfile: "interactive" | "automation",
+): WorkloadIdentityContext {
+  return {
+    sandboxId: sandbox.id,
+    provider: sandbox.provider,
+    lifecycle: "preview",
+    repoId,
+    trustProfile,
+  };
+}
+
 export async function startSandboxPreview(
   sandbox: Sandbox,
   worktreeDir: string,
 	sessionId?: string,
+  trustProfile: "interactive" | "automation" = "interactive",
 ): Promise<PreviewStatus> {
 	if (usesOutboundSandboxPortalRelay(sandbox.provider) && !sessionId) throw new Error("A remote Sandbox Portal requires its session identity.");
 	const status = await getSandboxPreviewStatus(sandbox, worktreeDir, sessionId);
@@ -1506,12 +1627,13 @@ export async function startSandboxPreview(
   // A matching workload-identity grant is the sandbox credential boundary.
   // Retain the legacy instance credential path only for repositories that do
   // not have a grant yet, so migrations do not turn existing previews off.
-  const workloadIdentityEnv = createWorkloadIdentityEnv({
-    sandboxId: sandbox.id,
-    provider: sandbox.provider,
-    lifecycle: "preview",
-    repoId: repoForPath(worktreeDir).id,
-  });
+  const workloadIdentityEnv = createWorkloadIdentityEnv(
+    sandboxPreviewIdentityContext(
+      sandbox,
+      repoForPath(worktreeDir).id,
+      trustProfile,
+    ),
+  );
   const awsEnv = Object.keys(workloadIdentityEnv).length
     ? {}
     : await sandboxPreviewAwsEnv(sandbox, worktreeDir, true);
@@ -1579,7 +1701,7 @@ export async function dropSandboxPreviewRoutes(sandboxId: string, options: { pre
     // right after a restart may miss the cache, so delete unconditionally.
     previewRoutes.delete(httpsPort);
     try {
-      await fetch(`${caddyAdmin()}/config/apps/http/servers/preview_${httpsPort}`, {
+      await caddyFetch(`${caddyAdmin()}/config/apps/http/servers/preview_${httpsPort}`, {
         method: "DELETE",
       });
     } catch {}

@@ -1,7 +1,8 @@
 import Foundation
 
 /// Per-user visibility for the TOOLS: the destinations that are not sessions.
-/// The web sidebar owns the ids; this app draws Catch up, Reports, and Support.
+/// The web sidebar owns the ids; this app draws Feed, Tasks, Catch up, Reports
+/// and Support.
 ///
 /// This is the same account-level preference the web's Tools band writes
 /// (`sidebar-hidden-tools`, see `src/frontend/lib/sidebar-tools.ts`), so a tool
@@ -16,20 +17,23 @@ import Foundation
 enum SidebarTools {
     /// The tools this app has a destination for. They are named here
     /// because the surfaces are built in Swift; the ids are the web's.
+    static let feed = "feed"
+    static let prs = "prs"
+    static let tasks = "tasks"
     static let plain = "plain"
     static let catchUp = "catchup"
     static let reports = "reports"
 
-    /// What an account shows when nobody has chosen. Feed and Pull requests
-    /// have no phone surface here, so only Catch up matters to this client,
-    /// but the whole list is mirrored because it is the agreement with the
-    /// web: absent means exactly this, on both clients. Keep it in step with
-    /// DEFAULT_VISIBLE_TOOLS in src/frontend/lib/sidebar-tools.ts.
+    /// What an account shows when nobody has chosen. Support Tinder and
+    /// Analytics have no phone surface here, but the whole list is mirrored
+    /// because it is the agreement with the web: absent means exactly this, on
+    /// both clients. Keep it in step with DEFAULT_VISIBLE_TOOLS in
+    /// packages/core/opensession-server/src/frontend/lib/sidebar-tools.ts.
     static let allIds = [
-        "feed", "prs", "tasks", plain, "catchup", "supporttinder", "reports",
+        feed, prs, tasks, plain, catchUp, "supporttinder", reports,
         "analytics",
     ]
-    static let defaultVisible = ["feed", "prs", "catchup"]
+    static let defaultVisible = [feed, prs, catchUp]
     static var defaultHidden: [String] { allIds.filter { !defaultVisible.contains($0) } }
     static var defaultHiddenJSON: String { encode(defaultHidden) }
 
@@ -41,6 +45,8 @@ enum SidebarTools {
     }
 
     static let surfaced: [Tool] = [
+        Tool(id: feed, title: "Feed"),
+        Tool(id: tasks, title: "Tasks"),
         Tool(id: catchUp, title: "Catch up"),
         Tool(id: reports, title: "Reports"),
     ]

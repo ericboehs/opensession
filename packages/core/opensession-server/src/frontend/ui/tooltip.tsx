@@ -2,6 +2,7 @@ import * as React from "react";
 import { Tooltip as BaseTooltip } from "@base-ui/react/tooltip";
 import { cn } from "./cn";
 import { ExclusivePopupProvider } from "./exclusive-popups";
+import { FLOATING_OVERLAY_LAYER } from "./popup-classes";
 
 /**
  * Tooltip on Base UI (Tooltip.Root/Trigger/Positioner/Popup), styled with
@@ -64,13 +65,18 @@ export function Tooltip({
 	return (
 		<BaseTooltip.Root>
 			<BaseTooltip.Trigger render={children} />
-			<BaseTooltip.Portal>
+			<BaseTooltip.Portal
+				// Base UI otherwise inherits a containing popup's portal target. Mount
+				// tooltips at the page root so their floating layer can sit above that
+				// popup instead of being trapped inside its stacking context.
+				container={typeof document !== "undefined" ? document.body : undefined}
+			>
 				<BaseTooltip.Positioner
 					side={side}
 					align={align}
 					sideOffset={offset}
 					collisionPadding={6}
-					className="z-[10001]"
+					className={FLOATING_OVERLAY_LAYER}
 				>
 					<BaseTooltip.Popup
 						className={cn(
@@ -78,8 +84,7 @@ export function Tooltip({
 							"origin-[var(--transform-origin)] transition-[transform,opacity] duration-[120ms] ease-out",
 							"data-[starting-style]:scale-[0.96] data-[starting-style]:opacity-0",
 							"data-[ending-style]:opacity-0 data-[instant]:transition-none",
-							// Sized after tella-fusion's UI__Tooltip3: 13px medium text
-							// (Tella overrides text-xs to 13px) on a near-black chip with
+							// 13px medium text on a near-black chip with
 							// its soft `shadow-popup` + our theme ring.
 							"rounded-panel bg-tooltip px-2 py-1 text-label leading-snug font-medium text-tooltip-fg",
 							"shadow-[0px_10px_38px_-10px_rgba(14,18,22,0.35),0px_10px_20px_-15px_rgba(14,18,22,0.2),0_0_0_1px_var(--tooltip-ring)]",

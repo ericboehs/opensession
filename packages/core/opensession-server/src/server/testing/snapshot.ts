@@ -218,7 +218,7 @@ const VOLATILE_PATTERNS: Array<[RegExp, string]> = [
     /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
     "<uuid>",
   ],
-  // opencode engine session ids.
+  // pi engine session ids.
   [/\bses_[A-Za-z0-9_-]+/g, "<engine-session>"],
   // Unified session ids that a fixture didn't mint itself.
   [/\b(?:bks|os|slack|linear)-[0-9a-f][0-9a-f-]{7,}/g, "<session-id>"],

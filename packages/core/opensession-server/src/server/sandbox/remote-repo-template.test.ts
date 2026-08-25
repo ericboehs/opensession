@@ -30,17 +30,26 @@ afterEach(() => {
 });
 
 describe("remote repo template index", () => {
-  test("round-trips only while signature and ttl match", async () => {
+  test("keeps credential-free stopped artifacts until an input changes", async () => {
     const mod = await import(`./remote-repo-template?roundtrip=${Math.random()}`);
     mod.writeRemoteRepoTemplate("modal", "app", "im-1", 1_000);
     expect(mod.readRemoteRepoTemplate("modal", "app", 2_000)?.artifactId).toBe("im-1");
-    expect(
-      mod.readRemoteRepoTemplate(
-        "modal",
-        "app",
-        1_000 + mod.REMOTE_REPO_TEMPLATE_TTL_MS + 1,
-      ),
-    ).toBeNull();
+    expect(mod.readRemoteRepoTemplate("modal", "app", 365 * 24 * 60 * 60_000)?.artifactId).toBe("im-1");
+  });
+
+  test("refreshes source images every 30 minutes without expiring the old mapping", async () => {
+    const mod = await import(`./remote-repo-template?refresh=${Math.random()}`);
+    const { current } = mod.writeRemoteRepoTemplate("modal", "app", "im-1", 1_000);
+    expect(mod.remoteRepoTemplateNeedsRefresh(current, 1_000 + 29 * 60_000)).toBe(false);
+    expect(mod.remoteRepoTemplateNeedsRefresh(current, 1_000 + 30 * 60_000)).toBe(true);
+    expect(mod.readRemoteRepoTemplate("modal", "app", 1_000 + 30 * 60_000)?.artifactId).toBe("im-1");
+  });
+
+  test("preserves Box's daily start quota with a six-hour source refresh", async () => {
+    const mod = await import(`./remote-repo-template?box-refresh=${Math.random()}`);
+    const { current } = mod.writeRemoteRepoTemplate("box", "app", "snapshot-1", 1_000);
+    expect(mod.remoteRepoTemplateNeedsRefresh(current, 1_000 + 30 * 60_000)).toBe(false);
+    expect(mod.remoteRepoTemplateNeedsRefresh(current, 1_000 + 6 * 60 * 60_000)).toBe(true);
   });
 
   test("create-shape changes invalidate the local artifact mapping", async () => {

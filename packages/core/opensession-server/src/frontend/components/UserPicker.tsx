@@ -4,13 +4,14 @@ import { UserAvatar } from "./UserAvatar";
 import { IconArrowUpRight } from "./icons";
 import { BASE_PATH } from "../lib/base";
 import { PRODUCT_NAME } from "../lib/brand";
-import { usePeople } from "../lib/people";
+import { ensurePeople, getPeople, usePeople } from "../lib/people";
 import { effectiveTheme, onThemeChanged } from "../lib/theme";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { DeviceCode } from "../ui/device-code";
 import { InlineAlert } from "../ui/state";
 import { PulseDot } from "../ui/status";
+import { AUTH_STATUS_EVENT, authGatesOut } from "../lib/auth-ready";
 
 /**
  * Mutable compatibility view for older consumers. `usePeople()` owns the
@@ -24,8 +25,11 @@ const LEGACY_KEY = "backstage-user";
 const CHANGE_EVENT = "opensession-user-changed";
 
 function setStoredUser(val: string) {
+  const changed = getCurrentUser() !== val;
   localStorage.setItem(KEY, val);
-  window.dispatchEvent(new Event(CHANGE_EVENT));
+  // Auth verification commonly confirms the identity already restored from
+  // localStorage. Do not make every per-user store hydrate again in that case.
+  if (changed) window.dispatchEvent(new Event(CHANGE_EVENT));
 }
 
 export function getCurrentUser(): string {
@@ -76,12 +80,19 @@ export interface AuthStatus {
 // Shared auth state: UserGate fetches /api/auth/status once on load; other
 // components (Settings' account footer) read it reactively from here
 // instead of re-fetching.
-const AUTH_STATUS_EVENT = "opensession-auth-status-changed";
 let authStatusCache: AuthStatus | null = null;
 
 function setAuthStatusCache(status: AuthStatus) {
   authStatusCache = status;
   window.dispatchEvent(new Event(AUTH_STATUS_EVENT));
+}
+
+/** Publish an auth status discovered outside UserGate — the WebSocket layer
+ *  learns the gate turned on (or that a fresh load landed on a gated instance)
+ *  from a refused upgrade, and drives UserGate to the sign-in card through
+ *  this, without a reload that would loop on the card's own refused socket. */
+export function publishAuthStatus(status: AuthStatus): void {
+  setAuthStatusCache(status);
 }
 
 /** Reactive sign-in state; null until /api/auth/status answers (or when the
@@ -98,9 +109,11 @@ export function useAuthStatus(): AuthStatus | null {
 
 /** Sign out of the GitHub web session and return to the sign-in screen. */
 export async function signOut(): Promise<void> {
-  try {
-    await fetch(`${BASE_PATH}/api/auth/logout`, { method: "POST" });
-  } catch {}
+  await (async () => {
+await fetch(`${BASE_PATH}/api/auth/logout`, { method: "POST" });
+})().catch(async () => {
+
+});
   window.location.reload();
 }
 
@@ -186,14 +199,14 @@ function AuthCard({
 }) {
 	return (
 		// Before sign-in there is no sidebar or header, so the desktop shell has
-		// none of the rows it normally makes draggable (base.css, `html.wco`) and
-		// the window cannot be moved at all. The backdrop is the handle here; the
-		// card opts back out so its controls stay clickable.
-		<div className="relative flex h-screen items-center justify-center overflow-hidden p-6 [html.wco_&]:[-webkit-app-region:drag] [html.wco_&]:[app-region:drag]">
+		// none of the rows it normally makes draggable. The backdrop is the handle
+		// here; the card opts back out so its controls stay clickable. The durable
+		// shell capability keeps this working if WCO geometry disappears.
+		<div className="relative flex h-screen items-center justify-center overflow-hidden p-6 [html.wco_&]:[-webkit-app-region:drag] [html.wco_&]:[app-region:drag] [html.desktop-shell_&]:[-webkit-app-region:drag] [html.desktop-shell_&]:[app-region:drag]">
 			<AuthBackdrop />
-			<div className="relative w-[400px] max-w-full rounded-2xl bg-surface p-8 text-center shadow-(--auth-card-edge) phone:p-6 [html.wco_&]:[-webkit-app-region:no-drag] [html.wco_&]:[app-region:no-drag]">
+			<div className="relative w-[400px] max-w-full rounded-2xl bg-surface p-8 text-center shadow-(--auth-card-edge) phone:p-6 [html.wco_&]:[-webkit-app-region:no-drag] [html.wco_&]:[app-region:no-drag] [html.desktop-shell_&]:[-webkit-app-region:no-drag] [html.desktop-shell_&]:[app-region:no-drag]">
 				<img
-					src={`${BASE_PATH}/mac-app-icon.png`}
+					src={`${BASE_PATH}/mac-app-icon.png?v=7`}
 					alt=""
 					width={56}
 					height={56}
@@ -232,25 +245,32 @@ export function UserGate({ children }: { children: React.ReactNode }) {
   const user = useCurrentUser();
   const roster = usePeople();
   TEAM.splice(0, TEAM.length, ...roster.map(({ name }) => name));
-  const [auth, setAuth] = useState<AuthStatus | null>(null);
+	const [auth, setAuth] = useState<AuthStatus | null>(null);
 	const [authFailed, setAuthFailed] = useState(false);
-	const [showAuthWait, setShowAuthWait] = useState(false);
 	const loadAuth = () => {
 		setAuthFailed(false);
-		setShowAuthWait(false);
 		fetch(`${BASE_PATH}/api/auth/status`)
 			.then((r) => {
 				if (!r.ok) throw new Error(`Authentication status failed: ${r.status}`);
 				return r.json();
 			})
-			.then((body: AuthStatus | null) => {
+			.then(async (body: AuthStatus | null) => {
 				if (!body) throw new Error("Authentication status was empty");
-				setAuth(body);
-				setAuthStatusCache(body);
 				if (body.required && body.authenticated && body.name) {
 					const user = body.name.split(" ")[0];
 					setStoredUser(user);
+				} else if (!body.required && getCurrentUser() === "Anonymous") {
+					// A fresh local instance has nobody to choose between. Wait for the
+					// roster so a configured team still gets its picker, then enter an
+					// empty or single-person instance directly into first-mile setup.
+					await ensurePeople();
+					const people = getPeople();
+					if (people.length <= 1) setStoredUser(people[0]?.name ?? "Local User");
 				}
+				setAuth(body);
+				// Publish readiness after localStorage carries the verified or local
+				// name so deferred per-user stores hydrate the right account.
+				setAuthStatusCache(body);
 			})
 			.catch(() => setAuthFailed(true));
 	};
@@ -259,11 +279,24 @@ export function UserGate({ children }: { children: React.ReactNode }) {
 		loadAuth();
   }, []);
 
-	useEffect(() => {
-		if (auth || authFailed) return;
-		const timer = window.setTimeout(() => setShowAuthWait(true), 300);
-		return () => window.clearTimeout(timer);
-	}, [auth, authFailed]);
+	// A refused WebSocket upgrade can reveal the gate is up before this
+	// component's own status resolves (the optimistic paint below) or after it
+	// resolved to no-gate (the gate was enabled under an open tab). Honor that
+	// signal so the sign-in card, not a "reconnecting" overlay, stands in for a
+	// browser the server will no longer accept.
+	const liveAuth = useAuthStatus();
+	if (authGatesOut(liveAuth) && !(auth?.required && auth.authenticated)) {
+		return (
+			<GithubSignIn
+				reconnect={liveAuth!.reconnectRequired === true}
+				login={liveAuth!.login}
+				onSignedIn={(status) => {
+					setAuth(status);
+					setAuthStatusCache(status);
+				}}
+			/>
+		);
+	}
 
 	// Returning visitors already have a local identity. Let the app paint while
 	// the server verifies its HttpOnly session, as it did before this check grew
@@ -281,18 +314,9 @@ export function UserGate({ children }: { children: React.ReactNode }) {
 				</AuthCard>
 			);
 		}
-		// The same backdrop, so the wait and the card it resolves into are one
-		// screen rather than a white flash and then a picture.
-		return (
-			<div className="relative flex h-screen items-center justify-center overflow-hidden [html.wco_&]:[-webkit-app-region:drag] [html.wco_&]:[app-region:drag]">
-				<AuthBackdrop />
-				{showAuthWait ? (
-					<div role="status" aria-live="polite" className="relative text-supporting text-dim">
-						Checking sign-in
-					</div>
-				) : null}
-			</div>
-		);
+		// The static launch splash stays visible while this returns nothing. Only
+		// mount the sign-in scene once the server says it is actually needed.
+		return null;
 	}
 
   // GitHub sign-in is configured: it is the only way in, and the name picker
@@ -315,10 +339,8 @@ export function UserGate({ children }: { children: React.ReactNode }) {
 
   if (user !== "Anonymous") return <>{children}</>;
 
-  // No sign-in configured, which is the default for a fresh instance: the
-  // server cannot verify anyone, so this name is a label rather than an
-  // identity. It is also the bootstrap path, since an admin has to get in
-  // here before there is a GitHub app to sign in with.
+  // No sign-in configured with more than one rostered person. Fresh and
+  // single-person instances are assigned above and skip this choice entirely.
   return (
     <AuthCard title="Who are you?">
       <AuthCopy>
@@ -390,8 +412,8 @@ function GithubSignIn({
     let intervalMs = Math.max(flow.interval, 5) * 1000;
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
-      try {
-        const res = await fetch(`${BASE_PATH}/api/auth/device/poll`, {
+      await (async () => {
+const res = await fetch(`${BASE_PATH}/api/auth/device/poll`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ deviceCode: flow.deviceCode }),
@@ -409,7 +431,9 @@ function GithubSignIn({
           setFlow(null);
           return;
         }
-      } catch {}
+})().catch(async () => {
+
+});
       if (!cancelled) timer = setTimeout(tick, intervalMs);
     };
     timer = setTimeout(tick, intervalMs);
@@ -422,14 +446,14 @@ function GithubSignIn({
   async function start() {
     setError(null);
     setStarting(true);
-    try {
-      const res = await fetch(`${BASE_PATH}/api/auth/device`, { method: "POST" });
+    await (async () => {
+const res = await fetch(`${BASE_PATH}/api/auth/device`, { method: "POST" });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
       setFlow(body);
-    } catch (e: any) {
-      setError(e.message);
-    }
+})().catch(async (e: any) => {
+setError(e.message);
+});
     setStarting(false);
   }
 

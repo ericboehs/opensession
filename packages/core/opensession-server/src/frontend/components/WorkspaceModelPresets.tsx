@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import type { Workspace } from "../lib/types";
-import { defaultWorkspaceModelSettings, fetchModels, updateWorkspaceApi, invalidateModelsCache, type ModelOption } from "../lib/api";
+import { randomUUID } from "../lib/random-uuid";
+import { defaultWorkspaceModelSettings, fetchModels, updateWorkspaceApi, type ModelOption } from "../lib/api";
 import { Button } from "../ui/button";
 import { CardList } from "../ui/card";
 import { cn } from "../ui/cn";
@@ -28,7 +29,7 @@ type Preset = NonNullable<Settings["presets"]>[number];
 type Supporting = NonNullable<Preset["supporting"]>[number];
 
 const blankPreset = (): Preset => ({
-	id: crypto.randomUUID().slice(0, 8),
+	id: randomUUID().slice(0, 8),
 	label: "New preset",
 	instructions: "",
 	lead: { model: "", effort: "high" },
@@ -289,8 +290,8 @@ export function WorkspaceModelPresets({
 	const save = async () => {
 		setSaving(true);
 		setError(null);
-		try {
-			const clean = {
+		await (async () => {
+const clean = {
 				...settings,
 				presets: presets
 					.map((preset) => ({
@@ -304,14 +305,13 @@ export function WorkspaceModelPresets({
 					.filter((preset) => preset.id && preset.label && preset.lead.model),
 			};
 			await updateWorkspaceApi(workspace.id, { modelSettings: clean });
-			invalidateModelsCache(workspace.id);
 			onSaved();
 			onOpenChange(false);
-		} catch (e) {
-			setError(e instanceof Error ? e.message : "Could not save model presets.");
-		} finally {
-			setSaving(false);
-		}
+})().catch(async (e) => {
+setError(e instanceof Error ? e.message : "Could not save model presets.");
+}).finally(async () => {
+setSaving(false);
+});
 	};
 	return (
 		<Modal.Root open={open} onOpenChange={onOpenChange}>
@@ -361,7 +361,7 @@ export function WorkspaceModelPresets({
 	);
 }
 
-/** Workspace-specific entry inside Settings → Models. */
+/** Workspace-specific entry inside Settings → Providers. */
 export function WorkspaceModelPresetSettings({ workspace }: { workspace?: Workspace }) {
 	const [open, setOpen] = useState(false);
 	return (

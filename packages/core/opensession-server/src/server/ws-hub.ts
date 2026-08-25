@@ -67,6 +67,9 @@ export interface WSClientData {
 	presenceClient?: string;
 	/** Automated and hosted-loopback clients never appear in presence. */
 	presenceSuppressed?: boolean;
+	/** Typing is a short lease refreshed by composer input. The deadline makes
+	 * stale indicators self-clear when a client disappears without stopping. */
+	typingUntil?: number;
 }
 
 interface WebSocketClient {
@@ -104,8 +107,10 @@ export function joinSession(ws: WebSocketClient, sessionId: string) {
 	// snapshot even when this session has already been empty for a while. Without
 	// one it can keep rendering the face from the session it just left.
 	const viewers = broadcastPresence(sessionId, ws);
+	const typing = broadcastTyping(sessionId, ws);
 	try {
 		ws.send(JSON.stringify({ type: "presence", sessionId, viewers }));
+		ws.send(JSON.stringify({ type: "typing", sessionId, users: typing }));
 	} catch {}
 }
 
@@ -115,11 +120,16 @@ export function leaveSession(ws: WebSocketClient) {
 	const set = sessionWatchers.get(sessionId);
 	if (set) {
 		set.delete(ws);
+		ws.data.typingUntil = undefined;
 		if (set.size === 0) {
 			sessionWatchers.delete(sessionId);
 			lastPresence.delete(sessionId);
+			lastTyping.delete(sessionId);
 			broadcastGlobalPresence();
-		} else broadcastPresence(sessionId);
+		} else {
+			broadcastPresence(sessionId);
+			broadcastTyping(sessionId);
+		}
 	}
 	ws.data.watchingSessionId = null;
 }
@@ -199,18 +209,23 @@ export function markClientSeen(ws: WebSocketClient, active = false) {
 export function setClientAway(ws: WebSocketClient, away: boolean) {
 	if (!ws?.data) return;
 	const was = isPresent(ws);
+	const wasTyping = isTyping(ws);
 	ws.data.away = away;
 	ws.data.lastSeenAt = Date.now();
 	if (!away) ws.data.activeAt = Date.now();
-	if (isPresent(ws) === was) return;
+	if (away) ws.data.typingUntil = undefined;
 	const sessionId = ws.data.watchingSessionId;
-	if (sessionId) broadcastPresence(sessionId);
-	else broadcastGlobalPresence();
+	if (isPresent(ws) !== was) {
+		if (sessionId) broadcastPresence(sessionId);
+		else broadcastGlobalPresence();
+	}
+	if (wasTyping && sessionId) broadcastTyping(sessionId);
 }
 
 /** Last frame sent per session / app-wide, so a sweep that changes nothing
  *  stays silent instead of waking every client every 15s. */
 const lastPresence: Map<string, string> = (g.__lastPresence ??= new Map());
+const lastTyping: Map<string, string> = (g.__lastTyping ??= new Map());
 
 function presenceViewers(sessionId: string): string[] {
 	const set = sessionWatchers.get(sessionId);
@@ -234,6 +249,77 @@ function broadcastPresence(
 	if (!sessionWatchers.has(sessionId)) lastPresence.delete(sessionId);
 	broadcastGlobalPresence();
 	return viewers;
+}
+
+const TYPING_TTL_MS = 4_000;
+const TYPING_SWEEP_MS = 1_000;
+
+function isTyping(ws: Pick<WebSocketClient, "data">, now = Date.now()): boolean {
+	return (
+		isPresent(ws, now) &&
+		ws.data.presenceSuppressed !== true &&
+		(ws.data.typingUntil || 0) > now
+	);
+}
+
+/** One entry per person even when they are composing on two devices. */
+export function computeTypingUsers(
+	watchers: ReadonlySet<Pick<WebSocketClient, "data">> | undefined,
+	now = Date.now(),
+): string[] {
+	const users = new Set<string>();
+	for (const ws of watchers || []) {
+		if (!isTyping(ws, now)) continue;
+		const user = ws.data.user;
+		if (user && user !== "Anonymous") users.add(user);
+	}
+	return [...users];
+}
+
+function broadcastTyping(
+	sessionId: string,
+	except?: WebSocketClient,
+): string[] {
+	const users = computeTypingUsers(sessionWatchers.get(sessionId));
+	const key = users.join("\u0000");
+	if (lastTyping.get(sessionId) !== key) {
+		lastTyping.set(sessionId, key);
+		broadcastToSession(sessionId, { type: "typing", sessionId, users }, except);
+	}
+	if (!sessionWatchers.has(sessionId)) lastTyping.delete(sessionId);
+	return users;
+}
+
+/** Refresh or retire the short typing lease for this socket. */
+export function setClientTyping(
+	ws: WebSocketClient,
+	sessionId: string,
+	typing: boolean,
+) {
+	if (
+		!ws?.data ||
+		ws.data.watchingSessionId !== sessionId ||
+		ws.data.presenceSuppressed === true
+	) return;
+	ws.data.typingUntil = typing ? Date.now() + TYPING_TTL_MS : undefined;
+	broadcastTyping(sessionId, ws);
+	if (typing) ensureTypingSweep();
+}
+
+function ensureTypingSweep() {
+	if (g.__typingSweep) return;
+	g.__typingSweep = setInterval(() => {
+		let active = false;
+		for (const sessionId of sessionWatchers.keys()) {
+			const users = broadcastTyping(sessionId);
+			if (users.length > 0) active = true;
+		}
+		if (!active) {
+			clearInterval(g.__typingSweep);
+			g.__typingSweep = null;
+		}
+	}, TYPING_SWEEP_MS);
+	g.__typingSweep?.unref?.();
 }
 
 /** Expire only dead transports. Change-gated broadcasts keep the sweep quiet. */

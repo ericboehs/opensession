@@ -26,7 +26,7 @@ import { UserAvatar } from "./UserAvatar";
 import { personLensFilter, setFilter } from "../lib/sidebar-filter";
 import { presenceState, StatusDot, useTeamPresence } from "./TeamPresence";
 import { PageDescription, PageHeader, PageTitle } from "../ui/page-header";
-import { EmptyState } from "../ui/state";
+import { EmptyState, ListSkeleton } from "../ui/state";
 import { Button } from "../ui/button";
 import { Menu } from "../ui/menu";
 import { cn } from "../ui/cn";
@@ -142,8 +142,17 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 	// them: working, then online, then whoever moved most recently.
 	const chips = [...team].sort((a, b) => Number(b.isYou) - Number(a.isYou));
 
-	// Picking a person is also the sidebar you turn to.
+	const [recentPrs, setRecentPrs] = useState<RecentPr[]>([]);
+	const [recentPrsLoading, setRecentPrsLoading] = useState(true);
+	const [personPrs, setPersonPrs] = useState<RecentPr[]>([]);
+	const [personPrsLoading, setPersonPrsLoading] = useState(false);
+
+	// Picking a person is also the sidebar you turn to. Mark their request in
+	// flight before changing scope, rather than waiting for the next effect, so
+	// the first filtered paint cannot make the same false empty-state claim.
 	const pick = (next: Scope) => {
+		setPersonPrs([]);
+		setPersonPrsLoading(next.kind === "person");
 		setScope(next);
 		setFilter({
 			person: personLensFilter(
@@ -152,9 +161,6 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 			),
 		});
 	};
-
-	const [recentPrs, setRecentPrs] = useState<RecentPr[]>([]);
-	const [personPrs, setPersonPrs] = useState<RecentPr[]>([]);
 	// Repos that ship without pull requests — Open Session's own — say what
 	// they shipped in commits instead, and land in the same list.
 	const [commits, setCommits] = useState<RecentCommit[]>([]);
@@ -163,16 +169,20 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 	// that hits the end of the readable history stops offering another one.
 	const [days, setDays] = useState(DAY_STEPS[0]);
 	const [hasOlder, setHasOlder] = useState(true);
-	const [widening, setWidening] = useState(false);
+	// Start in flight. Effects run after the first paint, so initializing this
+	// false briefly made a full feed claim it was empty before either request
+	// had even started.
+	const [widening, setWidening] = useState(true);
 	useEffect(() => {
 		let active = true;
-		fetchRecentPrs()
+		fetchRecentPrs(undefined, { days })
 			.then((prs) => active && setRecentPrs(prs))
-			.catch(() => {});
+			.catch(() => {})
+			.finally(() => active && setRecentPrsLoading(false));
 		return () => {
 			active = false;
 		};
-	}, []);
+	}, [days]);
 	useEffect(() => {
 		let active = true;
 		setWidening(true);
@@ -195,12 +205,16 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 	useEffect(() => {
 		if (!scopedPerson) {
 			setPersonPrs([]);
+			setPersonPrsLoading(false);
 			return;
 		}
 		let active = true;
+		setPersonPrs([]);
+		setPersonPrsLoading(true);
 		fetchRecentPrs(scopedPerson)
 			.then((prs) => active && setPersonPrs(prs))
-			.catch(() => {});
+			.catch(() => {})
+			.finally(() => active && setPersonPrsLoading(false));
 		return () => {
 			active = false;
 		};
@@ -249,12 +263,18 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 	const canWiden = !!nextStep && (hasOlder || scoped.length > shipped.length);
 
 	const scopeName = scope.kind === "person" ? personLabel(scope.key) : null;
+	const feedLoading =
+		recentPrs.length === 0 &&
+		commits.length === 0 &&
+		(recentPrsLoading || widening);
+	const filteredFeedLoading =
+		dayGroups.length === 0 && (widening || personPrsLoading);
 
 	return (
 		// The page frame every other list page in the app uses: one centred
 		// column at the shared width and padding, a PageHeader on top.
 		<div data-page-scroll className="min-h-0 w-full flex-1 overflow-y-auto bg-surface">
-			<div className="mx-auto w-full max-w-[920px] px-6 pb-15 pt-7 max-[560px]:px-4 max-[560px]:pb-12 max-[560px]:pt-[18px]">
+			<div className="mx-auto w-full max-w-[920px] px-6 pb-15 pt-7 phone:pt-[calc(var(--header-h)+18px)] max-[560px]:px-4 max-[560px]:pb-12">
 				<PageHeader>
 					<div className="min-w-0">
 						<PageTitle>Feed</PageTitle>
@@ -310,7 +330,20 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 					</div>
 				)}
 
-				{recentPrs.length === 0 && commits.length === 0 ? (
+				{feedLoading ? (
+					<>
+						<div className="mb-2 flex min-h-[30px] items-center">
+							<h3 className={cn(PEOPLE_SECTION_LABEL, "mb-0")}>Shipped</h3>
+						</div>
+						<ListSkeleton
+							variant="bare"
+							rows={6}
+							label="Loading feed"
+							className={PR_LIST}
+							rowClassName="py-[18px]"
+						/>
+					</>
+				) : recentPrs.length === 0 && commits.length === 0 ? (
 					<EmptyState icon={<IconFeed size={22} />} title="Nothing yet">
 						Work shows up here as the team ships it.
 					</EmptyState>
@@ -362,7 +395,15 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 								</Menu.Root>
 							)}
 						</div>
-						{dayGroups.length === 0 && !widening && (
+						{filteredFeedLoading ? (
+							<ListSkeleton
+								variant="bare"
+								rows={6}
+								label="Loading feed"
+								className={PR_LIST}
+								rowClassName="py-[18px]"
+							/>
+						) : dayGroups.length === 0 ? (
 							// A picked teammate or repo with nothing shipped is an answer,
 							// so the header stays and the sentence names the filter that
 							// emptied it. Both are on screen, so a sentence that names
@@ -377,7 +418,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 											? `Nothing has shipped in ${repoLabel(repo)} recently.`
 											: "Merged pull requests and commits show up here."}
 							</EmptyState>
-						)}
+						) : null}
 						<div className={PR_LIST}>
 							{dayGroups.map(([label, rows]) => (
 								<div key={label} className="mb-5">

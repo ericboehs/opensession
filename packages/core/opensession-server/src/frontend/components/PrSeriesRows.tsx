@@ -18,7 +18,15 @@ import {
 	PR_ROW_TITLE,
 	PR_STATE_TEXT,
 } from "../lib/pr-tone-classes";
-import { IconArrowUpRight } from "./icons";
+import {
+	WS_SUMMARY_ICON,
+	WS_SUMMARY_LABEL,
+	WS_SUMMARY_RAIL,
+	WS_SUMMARY_ROW,
+	WS_SUMMARY_STATE,
+} from "../lib/workspace-summary-classes";
+import { cn } from "../ui/cn";
+import { IconArrowUpRight, IconPullRequest } from "./icons";
 
 /**
  * The PRs a session owns beyond the one its own branch carries, stacked under
@@ -42,22 +50,83 @@ export function PrSeriesRow({
 	prRef,
 	primaryRepo,
 	onOpen,
+	variant = "bar",
 }: {
 	prRef: SessionPrRef;
-	/** The session's own repo — a PR inside it needs no repo hint on its chip. */
+	/** The session's own repo. A PR inside it needs no repo hint on its chip. */
 	primaryRepo?: string;
 	onOpen?: (r: { repo: string; branch: string }) => void;
+	variant?: "bar" | "summary";
 }) {
 	const tone = refTone(prRef);
 	const provider = providerFromUrl(prRef.url || "");
+	const target = { repo: prRef.repo, branch: prRef.branch };
+	const ariaLabel = `Review ${repoLabel(prRef.repo)} pull request #${prRef.number}`;
+	if (variant === "summary") {
+		const body = (
+			<>
+				<span className={WS_SUMMARY_RAIL}>
+					<IconPullRequest size={20} className={WS_SUMMARY_ICON} />
+				</span>
+				<span className={WS_SUMMARY_LABEL}>
+					{refChipText(prRef, primaryRepo)}
+					{prRef.title && <span className="text-dim"> · {prRef.title}</span>}
+				</span>
+				<span className={cn(WS_SUMMARY_STATE, PR_STATE_TEXT[tone])}>
+					{refState(prRef)}
+				</span>
+			</>
+		);
+		const className = cn(WS_SUMMARY_ROW, "gap-2 no-underline");
+		const title = refLabel(prRef);
+		if (prRef.url) {
+			return (
+				<a
+					className={className}
+					href={prRef.url}
+					target="_blank"
+					rel="noopener"
+					data-tone={tone}
+					title={title}
+					aria-label={ariaLabel}
+					onClick={(event) => {
+						if (
+							!onOpen ||
+							event.metaKey ||
+							event.ctrlKey ||
+							event.shiftKey ||
+							event.altKey
+						)
+							return;
+						event.preventDefault();
+						onOpen(target);
+					}}
+				>
+					{body}
+				</a>
+			);
+		}
+		return (
+			<button
+				type="button"
+				className={className}
+				data-tone={tone}
+				title={title}
+				aria-label={ariaLabel}
+				onClick={() => onOpen?.(target)}
+			>
+				{body}
+			</button>
+		);
+	}
 	return (
 		<div className={`${PR_ROW} ${PR_ROW_BG[tone]}`} data-tone={tone}>
 			<button
 				type="button"
 				className={PR_ROW_MAIN}
-				onClick={() => onOpen?.({ repo: prRef.repo, branch: prRef.branch })}
+				onClick={() => onOpen?.(target)}
 				title={`${refLabel(prRef)} · open in the PR tab`}
-				aria-label={`Review ${repoLabel(prRef.repo)} pull request #${prRef.number}`}
+				aria-label={ariaLabel}
 			>
 				<span className={prChipClass(tone, "row")}>
 					{refChipText(prRef, primaryRepo)}
@@ -88,10 +157,12 @@ export function PrSeriesRows({
 	refs,
 	primaryRepo,
 	onOpen,
+	variant = "bar",
 }: {
 	refs: SessionPrRef[];
 	primaryRepo?: string;
 	onOpen?: (r: { repo: string; branch: string }) => void;
+	variant?: "bar" | "summary";
 }) {
 	if (refs.length === 0) return null;
 	return (
@@ -102,6 +173,7 @@ export function PrSeriesRows({
 					prRef={ref}
 					primaryRepo={primaryRepo}
 					onOpen={onOpen}
+					variant={variant}
 				/>
 			))}
 		</>

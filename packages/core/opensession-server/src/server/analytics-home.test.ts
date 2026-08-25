@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { EngineUsageDay } from "./engine-usage";
+type UsageDay = { input: number; output: number; cacheRead: number; cacheWrite: number };
 
 const root = mkdtempSync(join(tmpdir(), "analytics-home-"));
 const previousStateDir = process.env.OPENSESSION_STATE_DIR;
@@ -16,21 +16,8 @@ function event(fields: Record<string, unknown>): string {
 	return JSON.stringify({ time: "2026-08-16T10:00:00Z", service: "opensession", ...fields });
 }
 
-function usage(date: string, input: number, output: number): EngineUsageDay {
-	return {
-		date,
-		byModel: [],
-		requests: 1,
-		input,
-		output,
-		cacheRead: input * 10,
-		cacheWrite: output * 10,
-		totalTokens: input + output + input * 10 + output * 10,
-		costUsd: 0,
-		unpricedRequests: 0,
-		coverage: { opencode: "measured" },
-		unmeasured: false,
-	};
+function usage(_date: string, input: number, output: number): UsageDay {
+	return { input, output, cacheRead: input * 10, cacheWrite: output * 10 };
 }
 
 beforeAll(() => {
@@ -41,7 +28,7 @@ beforeAll(() => {
 		[
 			event({ kind: "result", session_id: "session-a", input_tokens: 1, output_tokens: 2 }),
 			event({ kind: "error", session_id: "session-a", error: "failed" }),
-			event({ msg: "opencode_meridian_run", phase: "end", duration_ms: 300 }),
+			event({ msg: "pi_turn", direction: "out", duration_ms: 300 }),
 		].join("\n") + "\n",
 	);
 	writeFileSync(

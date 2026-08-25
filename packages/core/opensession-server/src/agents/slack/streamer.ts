@@ -51,12 +51,22 @@ function shortPath(filePath: string): string {
   return parts[parts.length - 1] || filePath;
 }
 
+/** The path an edit or write names. Engines disagree on the spelling, and a
+ *  status that misses it degrades to a bare "Editing file". */
+function inputPath(input: any): string {
+  for (const key of ["file_path", "filePath", "path", "notebook_path", "notebookPath"]) {
+    const value = input?.[key];
+    if (typeof value === "string" && value) return value;
+  }
+  return "";
+}
+
 /** Build a short status string for a tool call */
 export function buildToolStatus(toolName: string, input: any): string {
-  if (toolName === "Edit") return `Editing ${shortPath(input?.file_path)}`;
-  if (toolName === "Write") return `Writing ${shortPath(input?.file_path)}`;
+  if (toolName === "Edit") return `Editing ${shortPath(inputPath(input))}`;
+  if (toolName === "Write") return `Writing ${shortPath(inputPath(input))}`;
   if (toolName === "NotebookEdit")
-    return `Editing ${shortPath(input?.notebook_path)}`;
+    return `Editing ${shortPath(inputPath(input))}`;
   if (toolName === "Bash") {
     const desc = input?.description;
     if (desc) return desc;

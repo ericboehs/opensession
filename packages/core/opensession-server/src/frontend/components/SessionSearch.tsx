@@ -1,6 +1,6 @@
 import { repoLabel } from "../lib/repo-label";
 import { FALLBACK_REPO, sessionRepoOr } from "../lib/session-repo";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { UnifiedSession } from "../lib/types";
 import {
 	fetchOpenPrs,
@@ -8,14 +8,29 @@ import {
 	searchTranscripts,
 	type OpenPr,
 } from "../lib/api";
-import { IconPullRequest, IconSearch } from "./icons";
+import {
+	IconPeople,
+	IconPullRequest,
+	IconRepo,
+	IconSearch,
+	IconStatusRing,
+} from "./icons";
 import { Modal, useEnterOnMount } from "../ui/modal";
-import { cn } from "../ui/cn";
+import { Button } from "../ui/button";
+import { Menu } from "../ui/menu";
+import { RepoTile } from "./RepoTile";
+import { UserAvatar } from "./UserAvatar";
 import {
 	collapsePrLinkSessions,
 	prLinksMatch,
 	sessionUsesPrLink,
 } from "../lib/session-prs";
+import { usePeople } from "../lib/people";
+import {
+	canonicalNames,
+	sessionHasOwner,
+	sessionOwners,
+} from "../lib/session-owner";
 
 export interface CommandPaletteAction {
 	id: string;
@@ -45,7 +60,7 @@ function sessionRepo(s: UnifiedSession): string {
 
 // The status buckets a session can fall into, mirroring the sidebar's triage
 // order: a blocked question first, then live activity, then PR lifecycle.
-type Status = "needsinput" | "running" | "review" | "merged" | "pending";
+type Status = "needsinput" | "failed" | "running" | "review" | "merged" | "pending";
 
 /** A keycap. Hidden below 720px, where the palette is driven by touch and the
  *  keyboard hints are noise. Filled with the translucent `--hover` ink rather
@@ -53,7 +68,7 @@ type Status = "needsinput" | "running" | "review" | "merged" | "pending";
  *  surface reads as an opaque chip cut out of it (and in dark it sat *below*
  *  the popup fill, so a "keycap" rendered sunken). */
 const KBD =
-	"mx-px inline-flex min-w-4 items-center justify-center rounded-md border border-line-strong bg-hover px-1.5 py-px font-sans text-meta text-dim phone:hidden";
+	"mx-px inline-flex min-w-4 items-center justify-center rounded-md bg-hover px-1.5 py-px font-sans text-meta text-dim phone:hidden";
 
 /** A result row. The selected wash rides on `aria-selected`, which the button
  *  already carries for the listbox — so the icon and keycap tones that used to
@@ -65,6 +80,7 @@ const ITEM =
 
 const STATUS_META: Record<Status, { label: string; dotClass: string }> = {
 	needsinput: { label: "Needs input", dotClass: "bg-accent" },
+	failed: { label: "Run failed", dotClass: "bg-red" },
 	running: { label: "Running", dotClass: "bg-yellow" },
 	review: { label: "In review", dotClass: "bg-yellow" },
 	merged: { label: "Merged", dotClass: "bg-purple" },
@@ -73,6 +89,7 @@ const STATUS_META: Record<Status, { label: string; dotClass: string }> = {
 
 const STATUS_ORDER: Status[] = [
 	"needsinput",
+	"failed",
 	"running",
 	"review",
 	"merged",
@@ -80,10 +97,8 @@ const STATUS_ORDER: Status[] = [
 ];
 
 function sessionStatus(s: UnifiedSession): Status {
-	// A blocked question — or a run that died on a terminal error (credits/
-	// usage limits, API failures) — needs a human before anything else.
-	if (s.waitingForInput || (s.lastRunError && !s.isRunning))
-		return "needsinput";
+	if (s.waitingForInput) return "needsinput";
+	if (s.lastRunError && !s.isRunning) return "failed";
 	if (s.isRunning) return "running";
 	if (s.prState === "OPEN") return "review";
 	if (s.prState === "MERGED") return "merged";
@@ -181,48 +196,62 @@ function resultKey(result: PaletteResult): string {
 	return `session:${result.session.id}`;
 }
 
-function FilterPill({
+function FilterMenu({
 	label,
 	value,
 	options,
 	onChange,
+	icon,
 }: {
 	label: string;
 	value: string;
-	options: Array<{ value: string; label: string }>;
+	options: Array<{ value: string; label: string; icon?: React.ReactNode }>;
 	onChange: (value: string) => void;
+	icon: React.ReactNode;
 }) {
-	const active = value !== "all";
 	const current = options.find((option) => option.value === value);
+	const hasIcons = options.some((option) => option.icon != null);
 	return (
-		<div
-			className={cn(
-				// `bg-hover`, not the `--bg-raised` surface, for the same reason the
-				// keycaps use it: the shell behind the pill is glass.
-				"relative inline-flex cursor-pointer items-center gap-[5px] rounded-full border bg-hover px-2.5 py-1 text-label",
-				"transition-[border-color,color] duration-[var(--dur-micro)] ease-[var(--ease)]",
-				// Hover outranked `.ss-pill-active` on specificity, so an active
-				// pill has always dimmed to the plain hover tone. Kept.
-				"hover:border-faint hover:text-fg",
-				active ? "border-accent text-fg" : "border-line-strong text-dim",
-			)}
-		>
-			<span className={cn("font-medium", active ? "text-accent" : "text-faint")}>{label}</span>
-			<span className="font-medium">{current?.label ?? value}</span>
-			<span className="text-[8px] text-faint">▾</span>
-			<select
-				className="absolute inset-0 size-full cursor-pointer appearance-none border-none opacity-0"
-				value={value}
-				onChange={(event) => onChange(event.target.value)}
-				aria-label={label}
-			>
-				{options.map((option) => (
-					<option key={option.value} value={option.value}>
-						{option.label}
-					</option>
-				))}
-			</select>
-		</div>
+		<Menu.Root>
+			<Menu.Trigger
+				render={
+					<Button
+						type="button"
+						variant="ghost"
+						size="sm"
+						className="phone:min-h-11"
+						icon={icon}
+						caret
+						data-session-filter
+						aria-label={`${label}: ${current?.label ?? value}`}
+					>
+						{current?.label ?? value}
+					</Button>
+				}
+			/>
+			<Menu.Popup align="start" sideOffset={6} className="max-w-[min(320px,calc(100vw-1rem))]">
+				<Menu.RadioGroup value={value} onValueChange={(next) => onChange(String(next))}>
+					{options.map((option) => (
+						<Menu.RadioItem
+							key={option.value}
+							value={option.value}
+							closeOnClick
+							className="justify-between gap-3"
+						>
+							<span className="flex min-w-0 flex-1 items-center gap-2.5">
+								{hasIcons && (
+									<span className="flex size-[18px] shrink-0 items-center justify-center text-dim">
+										{option.icon}
+									</span>
+								)}
+								<span className="min-w-0 truncate">{option.label}</span>
+							</span>
+							<Menu.Check on={option.value === value} />
+						</Menu.RadioItem>
+					))}
+				</Menu.RadioGroup>
+			</Menu.Popup>
+		</Menu.Root>
 	);
 }
 
@@ -279,14 +308,14 @@ export function SessionSearch({
 		setSearching(true);
 		const ctrl = new AbortController();
 		const t = setTimeout(async () => {
-			try {
-				const matches = await searchTranscripts(q, ctrl.signal);
+			await (async () => {
+const matches = await searchTranscripts(q, ctrl.signal);
 				setSnippets(new Map(matches.map((m) => [m.id, m.snippet])));
-			} catch (e) {
-				if (!ctrl.signal.aborted) setSnippets(new Map());
-			} finally {
-				if (!ctrl.signal.aborted) setSearching(false);
-			}
+})().catch(async (e) => {
+if (!ctrl.signal.aborted) setSnippets(new Map());
+}).finally(async () => {
+if (!ctrl.signal.aborted) setSearching(false);
+});
 		}, 250);
 		return () => {
 			clearTimeout(t);
@@ -295,54 +324,61 @@ export function SessionSearch({
 	}, [query]);
 
 	// Only live sessions are searchable.
-	const pool = useMemo(
-		() => sessions.filter((s) => !s.archived),
-		[sessions],
-	);
+	const pool = (sessions.filter((s) => !s.archived));
 
-	const searchIndex = useMemo(() => sessionSearchIndex(pool), [pool]);
+	const searchIndex = (sessionSearchIndex(pool));
 
-	const personOptions = useMemo(() => {
-		const seen = new Map<string, string>();
-		for (const session of pool) {
-			if (session.automation || !session.startedBy) continue;
-			const key = session.startedBy.toLowerCase();
-			if (!seen.has(key)) seen.set(key, session.startedBy);
-		}
-		return [
-			{ value: "all", label: "Anyone" },
-			...Array.from(seen.entries())
-				.sort((a, b) => a[1].localeCompare(b[1]))
-				.map(([value, label]) => ({ value, label })),
-		];
-	}, [pool]);
+	// Workspace members only. `startedBy` is a free-text name that also carries
+	// workers, goals, integration senders and unmapped Slack ids, so the team
+	// directory decides who is a person here, and merges the spellings one
+	// person has: "Michiel Westerbeek", "Michiel" and "Kent (loop)" are not
+	// three more teammates (lib/session-owner).
+	const roster = usePeople();
+	const canonical = (canonicalNames(roster));
+	const personOptions = ([
+			{ value: "all", label: "Anyone", icon: <IconPeople size={18} /> },
+			...sessionOwners(pool, canonical).map(({ key, label }) => ({
+				value: key,
+				label,
+				icon: <UserAvatar name={label} size={18} edge={false} />,
+			})),
+		]);
 
-	const repoOptions = useMemo(() => {
+	const repoOptions = (() => {
 		const counts = new Map<string, number>();
 		for (const session of pool) {
 			const project = sessionRepo(session);
 			counts.set(project, (counts.get(project) || 0) + 1);
 		}
 		return [
-			{ value: "all", label: "Any repo" },
+			{ value: "all", label: "Any repo", icon: <IconRepo size={18} /> },
 			...Array.from(counts.entries())
 				.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-				.map(([value]) => ({ value, label: value })),
+				.map(([value]) => ({
+					value,
+					label: repoLabel(value),
+					icon: <RepoTile name={value} size={18} />,
+				})),
 		];
-	}, [pool]);
+	})();
 
-	const statusOptions = useMemo(
-		() => [
-			{ value: "all", label: "Any status" },
-			...STATUS_ORDER.map((value) => ({ value, label: STATUS_META[value].label })),
-		],
-		[],
-	);
+	const statusOptions = ([
+			{ value: "all", label: "Any status", icon: <IconStatusRing size={18} /> },
+			...STATUS_ORDER.map((value) => ({
+				value,
+				label: STATUS_META[value].label,
+				icon: (
+					<span
+						className={`size-2 rounded-full ${STATUS_META[value].dotClass}`}
+					/>
+				),
+			})),
+		]);
 	const hasSessionFilter = person !== "all" || repo !== "all" || status !== "all";
 
 	// Commands, PRs, and sessions share one flat result list so arrow-key navigation
-	// crosses group boundaries just like Tella's command menu.
-	const results = useMemo<PaletteResult[]>(() => {
+	// crosses group boundaries the way a command menu should.
+	const results = (() => {
 		const q = query.trim().toLowerCase();
 		const terms = q.split(/\s+/).filter(Boolean);
 		const matches = (values: Array<string | undefined>) => {
@@ -380,8 +416,7 @@ export function SessionSearch({
 		// a pool and an index that are momentarily out of step still search.
 		const hayOf = (s: UnifiedSession) => searchIndex.hay.get(s) ?? haystack(s);
 		let sessionResults = pool.filter((s) => {
-			if (person !== "all" && (s.startedBy || "").toLowerCase() !== person)
-				return false;
+			if (person !== "all" && !sessionHasOwner(s, person, canonical)) return false;
 			if (repo !== "all" && sessionRepo(s) !== repo) return false;
 			if (status !== "all" && sessionStatus(s) !== status) return false;
 			if (terms.length === 0) return true;
@@ -413,18 +448,7 @@ export function SessionSearch({
 			};
 		});
 		return [...actionResults, ...prResults, ...sessionRows];
-	}, [
-		actions,
-		hasSessionFilter,
-		openPrs,
-		person,
-		pool,
-		query,
-		repo,
-		searchIndex,
-		snippets,
-		status,
-	]);
+	})();
 	const keyedActive = results.findIndex((result) => resultKey(result) === activeKey);
 	const active = keyedActive >= 0 ? keyedActive : 0;
 
@@ -438,9 +462,13 @@ export function SessionSearch({
 
 	// Result navigation only. Tab cycling, Escape and backdrop dismissal are the
 	// dialog's job now (Modal → Base UI), so this handler no longer duplicates
-	// them. A focused native <select> keeps its own arrow/Enter behavior.
+	// them. Filter and clear buttons keep their own arrow/Enter behavior.
 	function onKeyDown(e: React.KeyboardEvent) {
-		if (e.target instanceof HTMLSelectElement) return;
+		if (
+			e.target instanceof HTMLElement &&
+			e.target.closest("[data-session-filter], [data-session-filter-clear]")
+		)
+			return;
 		if (e.key === "ArrowDown") {
 			e.preventDefault();
 			const next = Math.min(active + 1, results.length - 1);
@@ -522,27 +550,34 @@ export function SessionSearch({
 					className="flex flex-wrap items-center gap-2 border-b border-divider px-4 py-2.5"
 					aria-label="Session filters"
 				>
-					<FilterPill
+					<FilterMenu
 						label="Person"
 						value={person}
 						options={personOptions}
 						onChange={setPerson}
+						icon={<IconPeople size={18} />}
 					/>
-					<FilterPill
+					<FilterMenu
 						label="Repo"
 						value={repo}
 						options={repoOptions}
 						onChange={setRepo}
+						icon={<IconRepo size={18} />}
 					/>
-					<FilterPill
+					<FilterMenu
 						label="Status"
 						value={status}
 						options={statusOptions}
 						onChange={(value) => setStatus(value as Status | "all")}
+						icon={<IconStatusRing size={18} />}
 					/>
 					{hasSessionFilter && (
-						<button
-							className="ml-auto rounded-md border-none bg-transparent px-1.5 py-1 text-label text-faint hover:bg-hover hover:text-fg"
+						<Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							className="ml-auto text-faint"
+							data-session-filter-clear
 							onClick={() => {
 								setPerson("all");
 								setRepo("all");
@@ -550,7 +585,7 @@ export function SessionSearch({
 							}}
 						>
 							Clear
-						</button>
+						</Button>
 					)}
 				</div>
 
@@ -592,12 +627,12 @@ export function SessionSearch({
 										<span className="flex min-w-0 flex-1 flex-col gap-0.5">
 											<span className="truncate text-label font-medium">{result.action.label}</span>
 											{result.action.description && (
-												<span className="max-w-full truncate text-meta leading-[1.35] text-dim">{result.action.description}</span>
+												<span className="max-w-full truncate text-supporting leading-[1.35] text-dim">{result.action.description}</span>
 											)}
 										</span>
 										{result.action.shortcut && (
 											<span className="inline-flex shrink-0 items-center gap-[3px] max-[560px]:hidden">
-												{result.action.shortcut.map((key) => <kbd key={key} className={`${KBD} group-aria-selected:border-faint`}>{key}</kbd>)}
+												{result.action.shortcut.map((key) => <kbd key={key} className={KBD}>{key}</kbd>)}
 											</span>
 										)}
 									</button>
@@ -663,7 +698,7 @@ export function SessionSearch({
 									<span className="flex min-w-0 flex-1 flex-col gap-0.5">
 										<span className="truncate text-label font-medium">{s.title}</span>
 										{result.snippet && (
-											<span className="max-w-full truncate text-meta leading-[1.35] text-dim">{result.snippet}</span>
+											<span className="max-w-full truncate text-supporting leading-[1.35] text-dim">{result.snippet}</span>
 										)}
 										<span className="flex items-center gap-2 overflow-hidden whitespace-nowrap text-meta text-faint">
 											{s.automation ? (

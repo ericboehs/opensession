@@ -5,6 +5,7 @@ import { AttachmentType, PlainClient } from "@team-plain/typescript-sdk";
 import { loadTokens, getValidToken } from "../linear/oauth";
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 import { configuredIntegration } from "../../server/config";
+import { splitNoteText } from "./notes";
 
 const PLAIN_API_KEY = process.env.PLAIN_API_KEY || "";
 const LINEAR_API_KEY = process.env.LINEAR_API_KEY || "";
@@ -604,7 +605,14 @@ export async function listTodoThreads(limit: number = 50): Promise<SupportThread
   });
 }
 
-/** Post an internal note to a thread */
+/**
+ * Post an internal note to a thread.
+ *
+ * Plain caps a note at 10,000 characters and rejects the whole mutation past
+ * that, so a long body (an agent's investigation write-up, a pasted log) is
+ * split into numbered parts posted in order rather than dropped. Attachments
+ * ride the first part.
+ */
 export async function postNote(
   threadId: string,
   customerId: string,
@@ -612,21 +620,34 @@ export async function postNote(
   markdown?: string,
   attachmentIds: string[] = [],
 ): Promise<boolean> {
-  try {
-    const result = await plain.createNote({
-      threadId,
-      customerId,
-      text,
-      markdown: markdown || text,
-      ...(attachmentIds.length ? { attachmentIds } : {}),
-    });
+  const textParts = splitNoteText(text);
+  const markdownParts =
+    markdown && markdown !== text ? splitNoteText(markdown) : textParts;
+  const total = Math.max(textParts.length, markdownParts.length);
 
-    if (result.error) {
-      console.error("Error creating note:", result.error);
-      return false;
+  try {
+    for (let i = 0; i < total; i++) {
+      const partText = textParts[i] ?? markdownParts[i] ?? "";
+      const result = await plain.createNote({
+        threadId,
+        customerId,
+        text: partText,
+        markdown: markdownParts[i] ?? partText,
+        ...(i === 0 && attachmentIds.length ? { attachmentIds } : {}),
+      });
+
+      if (result.error) {
+        console.error(
+          `Error creating note (part ${i + 1}/${total}):`,
+          result.error,
+        );
+        return false;
+      }
     }
 
-    console.log(`[plain] Posted note to thread ${threadId}`);
+    console.log(
+      `[plain] Posted note to thread ${threadId}${total > 1 ? ` in ${total} parts` : ""}`,
+    );
     return true;
   } catch (e) {
     console.error("Error posting note:", e);
@@ -1043,7 +1064,7 @@ async function linearAuthHeader(): Promise<string | null> {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const teamIdCache = new Map<string, string>();
 
-/** Resolve a team key (e.g. "TELLA") to its UUID — issueCreate only accepts UUIDs. */
+/** Resolve a team key (e.g. "ENG") to its UUID — issueCreate only accepts UUIDs. */
 async function resolveLinearTeamId(auth: string, team: string): Promise<string | null> {
   if (UUID_RE.test(team)) return team;
   const cached = teamIdCache.get(team);

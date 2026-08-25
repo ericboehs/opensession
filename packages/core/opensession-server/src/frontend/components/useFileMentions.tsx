@@ -1,12 +1,20 @@
 import { repoLabel } from "../lib/repo-label";
-import React, { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import React, {
+	useEffect,
+	useEffectEvent,
+	useId,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import { createPortal } from "react-dom";
 import type { FileMention } from "../lib/api";
 import { UserAvatar } from "./UserAvatar";
 import { cn } from "../ui/cn";
+import { FLOATING_OVERLAY_LAYER } from "../ui/popup-classes";
 import { IconTile } from "./BrandTile";
 import { displayName as brandDisplayName } from "../brand-logos";
-import { IconBolt, IconFile, IconFolder, IconMessage, IconPlug } from "./icons";
+import { IconBolt, IconFile, IconFolder, IconMessage, IconPlug, IconStack } from "./icons";
 import { peopleMentionMatches, usePeople } from "../lib/people";
 import { useCurrentUser } from "./UserPicker";
 import {
@@ -16,6 +24,9 @@ import {
   type MentionAction,
   type MentionSuggestion,
 } from "../lib/mention-palette";
+import { emojiContextAt, emojiMentionSuggestions } from "../lib/emoji";
+import { caretPoint } from "../lib/caret-coords";
+import { PHONE_QUERY } from "../lib/breakpoints";
 
 /**
  * Find the active "@"-mention being typed at the caret. Returns the index of
@@ -26,7 +37,7 @@ import {
 interface TriggerContext {
   start: number;
   query: string;
-  kind: "file" | "skill";
+  kind: "file" | "skill" | "emoji";
 }
 
 function mentionContextAt(value: string, caret: number): { start: number; query: string } | null {
@@ -95,6 +106,8 @@ interface Options {
 interface FileMentions {
   /** Ref for the wrapper the popup is measured against. */
   inputWrapRef: React.RefObject<HTMLDivElement | null>;
+  /** Compiler-safe callback ref for hosts that also own the wrapper node. */
+  setInputWrap: (node: HTMLDivElement | null) => void;
   /** The suggestion popup (portaled to <body>), or null when closed. */
   popup: React.ReactNode;
   /** True while the popup is open (suggestions visible). */
@@ -146,14 +159,19 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
   // them directly would re-run the fetch effect on every render — which loops
   // (fetch → setSuggestions → render → new closure → fetch) while open.
   const mentionFetchRef = useRef(mentionFetch);
-  mentionFetchRef.current = mentionFetch;
   const paletteFetchRef = useRef(paletteFetch);
-  paletteFetchRef.current = paletteFetch;
   const skillsFetchRef = useRef(skillsFetch);
-  skillsFetchRef.current = skillsFetch;
   const actionsRef = useRef(actions);
-  actionsRef.current = actions;
+  useLayoutEffect(() => {
+    mentionFetchRef.current = mentionFetch;
+    paletteFetchRef.current = paletteFetch;
+    skillsFetchRef.current = skillsFetch;
+    actionsRef.current = actions;
+  });
   const inputWrapRef = useRef<HTMLDivElement>(null);
+  const setInputWrap = (node: HTMLDivElement | null) => {
+    inputWrapRef.current = node;
+  };
   const popupRef = useRef<HTMLDivElement>(null);
   // Fixed viewport coordinates for the portaled popup, measured from the
   // wrapper. Null until the first measure after opening.
@@ -169,7 +187,7 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
       el.focus();
       el.setSelectionRange(pos, pos);
     }
-  }, [value]);
+  }, [value, textareaRef]);
 
   // Every state write here keeps the previous value when nothing moved. sync()
   // runs several times per keystroke by design (the value effect below, plus
@@ -181,17 +199,22 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
   }
 
   function sync() {
-    if (!mentionFetch && !skillsFetch) return;
     const el = textareaRef.current;
     if (!el) return;
     const caret = el.selectionStart ?? el.value.length;
     const slash = skillsFetch ? slashContextAt(el.value, caret) : null;
     const at = !slash && mentionFetch ? mentionContextAt(el.value, caret) : null;
+    // ":cr" opens the emoji picker. It needs no fetcher, so it stays available
+    // in every host the hook is wired into, including ones with no repository
+    // search behind them.
+    const colon = !slash && !at ? emojiContextAt(el.value, caret) : null;
     const ctx: TriggerContext | null = slash
       ? { ...slash, kind: "skill" }
       : at
         ? { ...at, kind: "file" }
-        : null;
+        : colon
+          ? { ...colon, kind: "emoji" }
+          : null;
     // Escape dismissed this exact token, and the caret has not left it since.
     // sync() runs on keyup, so without this the picker reopened between the
     // keydown that closed it and the release of the same key — Escape looked
@@ -210,19 +233,25 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
   // Controlled textarea updates are not guaranteed to commit before a caller's
   // queued microtask. Re-sync from the committed value so soft keyboards,
   // dictation and the toolbar's programmatic "@" insertion all open reliably.
+  const runSync = useEffectEvent(() => sync());
   useEffect(() => {
-    sync();
+    runSync();
   }, [value]);
 
   // People are already in the page-level directory cache, so paint them before
   // the file/tool/session request resolves. A bare "@" should feel like opening
   // a palette, not like waiting for a repository search.
-  useEffect(() => {
+  const loadSuggestions = useEffectEvent(() => {
     if (!mention) {
       clearSuggestions();
       return;
     }
     const seq = ++fetchSeq.current;
+    if (mention.kind === "emoji") {
+      setSuggestions(emojiMentionSuggestions(mention.query));
+      setActiveIdx(0);
+      return;
+    }
     const local = mention.kind === "file"
       ? mergeMentionSuggestions(
           peopleMentionMatches(mention.query, people, currentUser),
@@ -265,14 +294,18 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
         })
         .catch(() => {});
     }
+  });
+  useEffect(() => {
+    loadSuggestions();
   }, [mention?.query, mention?.start, mention?.kind, people, currentUser]);
 
   const open = !!mention && suggestions.length > 0;
 
-  // Position the popup against the wrapper. It renders in a portal with fixed
-  // viewport coordinates so an overflow:hidden ancestor (e.g. the new-session
-  // palette card) can't clip it. Opens upward by default, flips downward when
-  // there isn't room above.
+  // The popup renders in a portal with fixed viewport coordinates so an
+  // overflow:hidden ancestor cannot clip it. Inline triggers anchor to the
+  // character that opened them: the command palette belongs beside the `@`,
+  // and emoji suggestions belong beside their shortcode. Slash commands still
+  // align to the field because `/` only opens at its first character.
   useLayoutEffect(() => {
     if (!open) {
       setPos(null);
@@ -283,6 +316,38 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
       if (!el) return;
       const rect = el.getBoundingClientRect();
       const POPUP_MAX = 420;
+      const caret =
+        mention?.kind === "emoji" || mention?.kind === "file"
+          ? caretPoint(textareaRef.current, mention.start)
+          : null;
+      if (caret) {
+        const GUTTER = window.matchMedia(PHONE_QUERY).matches ? 16 : 8;
+        const width =
+          mention?.kind === "emoji"
+            ? 240
+            : Math.min(520, rect.width, window.innerWidth - GUTTER * 2);
+        const left = Math.max(
+          GUTTER,
+          Math.min(caret.left - 8, window.innerWidth - width - GUTTER),
+        );
+        const spaceAbove = caret.top;
+        const spaceBelow = window.innerHeight - caret.bottom;
+        const down = spaceAbove < POPUP_MAX && spaceBelow > spaceAbove;
+        setPos({
+          left,
+          width,
+          ...(down
+            ? {
+                top: caret.bottom + 6,
+                maxHeight: Math.min(POPUP_MAX, spaceBelow - 12),
+              }
+            : {
+                bottom: window.innerHeight - caret.top + 6,
+                maxHeight: Math.min(POPUP_MAX, spaceAbove - 12),
+              }),
+        });
+        return;
+      }
       const spaceAbove = rect.top;
       const spaceBelow = window.innerHeight - rect.bottom;
       const down = spaceAbove < POPUP_MAX && spaceBelow > spaceAbove;
@@ -307,7 +372,7 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
       window.removeEventListener("resize", measure);
       window.removeEventListener("scroll", measure, true);
     };
-  }, [open, suggestions.length]);
+  }, [open, suggestions.length, mention?.kind, mention?.start, value, textareaRef]);
 
   useEffect(() => {
     if (!open) return;
@@ -329,7 +394,12 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
       queueMicrotask(item.action);
       return;
     }
-    const insert = `${mention.kind === "skill" ? "/" : "@"}${item.insert} `;
+    // An emoji row replaces the whole ":shortcode" with the character, so the
+    // sent text carries the emoji itself rather than a code the reader has to
+    // decode. No trailing space: emoji usually end a sentence.
+    const insert = mention.kind === "emoji"
+      ? item.insert
+      : `${mention.kind === "skill" ? "/" : "@"}${item.insert} `;
     const next = before + insert + after;
     const nextCaret = before.length + insert.length;
     setMention(null);
@@ -385,7 +455,10 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
   const popup = open && pos ? createPortal(
     <div
       ref={popupRef}
-      className="fixed z-[10500] overflow-y-auto rounded-xl bg-popup-glass [backdrop-filter:var(--popup-blur)] [--smooth-ring-color:var(--popup-ring)] p-1 smooth-shadow-ring-md"
+      className={cn(
+        "fixed overflow-y-auto rounded-xl bg-popup-glass [backdrop-filter:var(--popup-blur)] [--smooth-ring-color:var(--popup-ring)] p-1 smooth-shadow-ring-md",
+        FLOATING_OVERLAY_LAYER,
+      )}
       id={popupId}
       role="listbox"
       style={pos}
@@ -399,14 +472,16 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
             {group.category}
           </div>
           {group.items.map(({ item, index: i }) => {
+            const isWorkspace = item.kind === "workspace";
             const isSession = item.kind === "session";
             const isSkill = item.kind === "skill";
             const isDir = item.kind === "dir";
             const isPerson = item.kind === "person";
             const isTool = item.kind === "tool";
             const isAction = item.kind === "action";
+            const isEmoji = item.kind === "emoji";
             const path = item.display;
-            const slash = isSession || isSkill || isPerson || isTool || isAction
+            const slash = isWorkspace || isSession || isSkill || isPerson || isTool || isAction || isEmoji
               ? -1
               : path.lastIndexOf("/");
             const dir = slash >= 0 ? path.slice(0, slash + 1) : "";
@@ -435,10 +510,18 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
                 }}
                 onMouseEnter={() => setActiveIdx(i)}
               >
-                {isPerson ? (
+                {isEmoji ? (
+                  <span className="flex size-5 shrink-0 items-center justify-center text-[17px] leading-none">
+                    {item.display}
+                  </span>
+                ) : isPerson ? (
                   <UserAvatar name={item.display} size={20} />
                 ) : isTool ? (
                   <IconTile name={item.insert} size={20} />
+                ) : isWorkspace ? (
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-active text-dim">
+                    <IconStack size={14} />
+                  </span>
                 ) : isSession ? (
                   <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-active text-dim">
                     <IconMessage size={14} />
@@ -456,12 +539,16 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
                     {isSkill ? <IconBolt size={16} /> : isDir ? <IconFolder size={16} /> : <IconFile size={16} />}
                   </span>
                 )}
-                <span className="shrink-0 font-medium text-fg">{label}</span>
-                {isTool ? (
+                {!isEmoji && <span className="shrink-0 font-medium text-fg">{label}</span>}
+                {isEmoji ? (
+                  <span className="overflow-hidden text-ellipsis font-medium text-fg">
+                    {item.sub}
+                  </span>
+                ) : isTool ? (
                   <span className="overflow-hidden text-ellipsis text-meta text-faint">
                     @{item.insert}
                   </span>
-                ) : isSession || isSkill || isPerson || isAction ? (
+                ) : isWorkspace || isSession || isSkill || isPerson || isAction ? (
                   item.sub && (
                     <span className="overflow-hidden text-ellipsis text-meta text-faint">
                       {item.sub}
@@ -494,5 +581,14 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
       : {}),
   };
 
-  return { inputWrapRef, popup, open, inputProps, sync, handleKeyDown, close };
+  return {
+    inputWrapRef,
+    setInputWrap,
+    popup,
+    open,
+    inputProps,
+    sync,
+    handleKeyDown,
+    close,
+  };
 }

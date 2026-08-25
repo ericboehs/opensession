@@ -8,6 +8,7 @@
 <body>
   <header>
     <img src="icons/icon.png" alt="" class="logo" />
+    <select id="account-picker" title="Organization" aria-label="Organization"></select>
     <nav>
       <button id="tab-new" class="tab active">New</button>
       <button id="tab-sessions" class="tab">Sessions</button>
@@ -60,6 +61,13 @@
   <!-- Settings -->
   <section id="view-settings" class="view" hidden>
     <h2>Settings</h2>
+    <label>Organization
+      <input id="in-account-label" type="text" placeholder="Organization name" />
+    </label>
+    <div class="account-actions">
+      <button id="btn-add-account" class="cap-btn">Add organization</button>
+      <button id="btn-remove-account" class="cap-btn danger">Remove</button>
+    </div>
     <label>Server
       <input id="in-server" type="text" placeholder="https://sessions.example.com" />
     </label>

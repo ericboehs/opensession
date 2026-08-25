@@ -1,6 +1,6 @@
 /**
- * The guard that keeps module-scope side effects out of src/server, plus the
- * control that proves the guard can still see one.
+ * The guard that keeps module-scope side effects out of the server and executor,
+ * plus the control that proves the guard can still see one.
  *
  * The control matters more than it looks: this check reports "nothing was
  * created at import time", and a probe that quietly stopped instrumenting
@@ -16,7 +16,7 @@ const scratch = mkdtempSync(`${tmpdir()}/side-effect-guard-`);
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 describe("module-scope side effects", () => {
-	test("no module under src/server binds, ticks or spawns at import time", async () => {
+	test("no server or executor module binds, ticks or spawns at import time", async () => {
 		const scan = await scanModuleSideEffects();
 		// A module that cannot be imported in a bare process is unmeasured, not
 		// clean — surface it rather than counting it as a pass.
@@ -43,6 +43,7 @@ describe("module-scope side effects", () => {
 		expect(modules.length).toBeGreaterThan(200);
 		expect(modules).toContain("packages/core/opensession-server/src/server/interactive-mcp.ts");
 		expect(modules).toContain("packages/core/opensession-server/src/server/session-index.ts");
+		expect(modules).toContain("packages/core/opensession-server/src/executor/main.ts");
 		expect(modules.filter((m) => m.endsWith(".test.ts"))).toEqual([]);
 	});
 });

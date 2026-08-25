@@ -26,7 +26,7 @@ import { CardFooter, RowCardPopup, SupportRowCard, useRowHoverCard } from "../Si
 import { IconCheck, IconFilter, IconPin } from "../icons";
 import { SidebarCtxMenu } from "../sidebar/SidebarCtxMenu";
 import { SIDEBAR_ROW, SIDEBAR_ROW_TITLE } from "../sidebar/SidebarItem";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useEffectEvent, useState } from "react";
 
 // A Support row: one TODO Plain ticket, single-line in the workspace rows'
 // exact shape. The rail dot wears the linked session's status (the ticket's
@@ -184,7 +184,7 @@ export function SupportRow({
 	);
 }
 
-// A feed row: one external object (e.g. a Tella video) in the workspace rows'
+// A feed row: one external object (e.g. a linked video) in the workspace rows'
 // exact shape — the generic sibling of SupportRow (the feeds design). The
 // rail dot wears the linked session's status (the feed lane's color, else
 // faint, when no session exists yet); the hover card carries the preview.
@@ -350,8 +350,7 @@ export function FeedFilterMenu({
 	const [opened, setOpened] = useState(false);
 	const argSpecs = (feed.filters || []).filter((f) => f.mode !== "meta");
 	const metaSpecs = (feed.filters || []).filter((f) => f.mode === "meta");
-	useEffect(() => {
-		if (!opened) return;
+	const loadArgOptions = useEffectEvent(() => {
 		for (const spec of argSpecs) {
 			if (argOptions[spec.key]) continue;
 			fetchFeedFilterOptions(feed.id, spec.key)
@@ -360,7 +359,10 @@ export function FeedFilterMenu({
 				)
 				.catch(() => {});
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
+	});
+	useEffect(() => {
+		if (!opened) return;
+		loadArgOptions();
 	}, [opened, feed.id]);
 
 	const active = Object.entries(values).some(

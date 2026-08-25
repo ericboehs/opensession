@@ -15,7 +15,9 @@ surface, not a full Open Session client. Never distributed via the Web Store.
     text, aria/testid, a cropped screenshot of it, and — via a MAIN-world React
     fiber walk — the React component stack (with `file:line` sources on dev
     builds that carry `_debugSource`) plus the nearest component's props.
-  - Repository (loaded from the connected server), ask/code mode, model picker.
+  - Organization picker with independent server/token accounts. On GitHub PR
+    pages, the repository owner selects the matching account and repository.
+  - Repository (loaded from the active server), ask/code mode, model picker.
 - **Sessions**: recent sessions with live state (running / needs input /
   queued), click through to a transcript view.
 - **Session detail**: transcript tail (polled), follow-up prompts (steer/queue
@@ -74,8 +76,9 @@ can't reach a private GitHub repo.
 
 ## How it talks to the server
 
-Bearer token (from the device flow's `native: true` poll, same as os1-ios)
-against the REST surface:
+Per-organization bearer tokens (from the device flow's `native: true` poll,
+same as os1-ios) against the REST surface. Existing single-server `cfg` storage
+migrates into the account list on first load:
 
 - `POST /api/sessions` — create with `{ prompt, repo, mode, model, images }`
 - `POST /api/sessions/:id/prompt` — follow-up via `deliverToSession`

@@ -100,6 +100,9 @@
 	   pane header. Softer than `line`, which stays for the edge of a control.
 	   See base.css for why the chrome takes a wash and not a full hairline. */
 	--color-divider: var(--divider);
+	/* Lighter still: the outline of a block that already has its own fill (the
+	   settings plate). See base.css. */
+	--color-divider-soft: var(--divider-soft);
 
 	/* Text */
 	--color-fg: var(--text);
@@ -246,23 +249,34 @@
 	   sites and a tenth would have had no way of knowing it was a shape the
 	   product repeats rather than a number somebody picked. */
 	--radius-avatar: calc(32% * var(--rp));
-	--text-xs: 13px;
-	--text-sm: 13px;
+	--text-xs: var(--type-label);
+	--text-sm: var(--type-label);
 	/* Tailwind's stock body alias, kept level with --text-body on purpose: it is
 	   the size `lg` controls and a few headings ask for, and if it lags a step
-	   behind it becomes a second, smaller body that nobody chose. */
-	--text-base: 15px;
+	   behind it becomes a second, smaller body that nobody chose. The real type
+	   properties live in base.css so phone width can promote the whole scale. */
+	--text-base: var(--type-body);
 
-	/* THE SCALE. Seven steps, and text is set from one of them:
+	/* THE SCALE. Eight steps, and text is set from one of them. Each role
+	   resolves through a `--type-*` property in base.css, which is where the
+	   values live and where a phone promotes every one of them a rung:
 
-	     11 -> text-meta          timestamps, counts, status, badges
-	     13 -> text-label / text-supporting / text-control-label / xs / sm
-	     14 -> text-item-title    the title of a row you scan
-	     15 -> text-body / base   prose you read
-	     17 -> text-dialog-title  a modal heading
-	     19 -> text-section-title a heading inside a page
-	     24 -> text-page-title    the page's own name, at the top of it
-	     28 -> text-stat          the figure on a metric tile
+	                            desktop  phone
+	     text-meta                  11     13   timestamps, counts, badges
+	     text-label / supporting /  13     14   xs, sm, control-label
+	     text-item-title            14     15   the title of a row you scan
+	     text-body / base           15     17   prose you read
+	     text-dialog-title          17     19   a modal heading
+	     text-section-title         19     24   a heading inside a page
+	     text-page-title            24     28   the page's own name
+	     text-stat                  28     34   the figure on a metric tile
+
+	   The phone column is the whole scale shifted one step up, so a role never
+	   changes its RELATION to the roles around it. It exists because the same
+	   bundle serves a 390px phone, where a desktop-compact 15px body reads as a
+	   shrunken desktop UI beside the native app's 17pt prose. Write the role and
+	   both widths follow; a `phone:text-*` override at a call site is what the
+	   promotion is there to make unnecessary.
 
 	   Pick by purpose, not by nearest number. Never write an arbitrary
 	   text-[Npx] for type: if none of the seven fits, the answer is one of the
@@ -271,17 +285,17 @@
 	   It ran 8 / 10 / 11 / 12 / 13 / 14 / 15 / 16 / 17 / 19 / 22 / 28 until
 	   2026-08. Half those steps were within a pixel or two of a neighbour, so
 	   they drew no distinction a reader could see while giving each new surface
-	   a different answer to the same question. The seven that survive are spaced
+	   a different answer to the same question. The eight that survive are spaced
 	   1.18x / 1.15x / 1.13x / 1.12x / 1.26x / 1.17x, which is the smallest gap
 	   that still reads as a step.
 
 	   The page title came back as its own step in 2026-08: it and the section
-	   title had both been 19px, so a page's own name carried no more weight
+	   title had both been one size, so a page's own name carried no more weight
 	   than a heading inside it, and the only way to tell them apart was the
 	   bold the page title wore. Size is the better signal, and it let the title
 	   take the same weight as the rest of the app's headings.
 
-	   It landed at 22 and went to 24 a week later, because one step of size is
+	   It landed a step below and moved up a week later, because one step of size is
 	   all that separates the two now that they share a weight, and at 22 that
 	   step was doing the work of both. 24 is still under the display step: a
 	   figure on a metric tile is read before anything around it, a page's name
@@ -297,31 +311,33 @@
 	   Chips inside running text (inline code, a session link, a commit ref)
 	   take a RATIO of their sentence in base.css, not a step, so they ride the
 	   prose they interrupt. */
-	--text-meta: 11px;
+	--text-meta: var(--type-meta);
 	--text-meta--font-weight: var(--font-weight-normal);
-	--text-label: 13px;
-	--text-supporting: 13px;
+	--text-label: var(--type-label);
+	--text-supporting: var(--type-label);
 	--text-supporting--font-weight: var(--font-weight-normal);
-	--text-control-label: 13px;
-	--text-body: 15px;
-	--text-item-title: 14px;
-	--text-dialog-title: 17px;
-	--text-section-title: 19px;
-	--text-page-title: 24px;
+	--text-control-label: var(--type-label);
+	--text-body: var(--type-body);
+	--text-item-title: var(--type-item-title);
+	--text-dialog-title: var(--type-dialog-title);
+	--text-section-title: var(--type-section-title);
+	--text-page-title: var(--type-page-title);
 	/* Not a step: iOS Safari zooms the page in when a focused input is under
 	   16px, so every text input a phone can reach has to be at least this. It
 	   is a size the platform picks, so it is spelled once here rather than as
-	   an arbitrary value at each field. */
-	--text-input-phone: 16px;
+	   an arbitrary value at each field. On a phone it rides the promoted body
+	   (17px), which clears the threshold and puts a field at the size of the
+	   prose around it. */
+	--text-input-phone: var(--type-input-phone);
 
 	/* The display step, above every heading: the number on a stat tile, whose
 	   whole job is to be read before the label above it. A heading token is the
-	   wrong size for it, since 19px is an item title rather than a figure, and
+	   wrong size for it, since a section title is a heading rather than a figure, and
 	   without a step of its own each dashboard invents an arbitrary one. Its
 	   tracking is part of the role: large numerals read too loose at the
 	   tracking a heading wants. */
-	--text-stat: 28px;
-	--text-stat--line-height: 32px;
+	--text-stat: var(--type-stat);
+	--text-stat--line-height: var(--type-stat-line);
 	--text-stat--letter-spacing: -0.025em;
 
 	/* Interaction geometry: `hit-target` uses 40px for pointer layouts and

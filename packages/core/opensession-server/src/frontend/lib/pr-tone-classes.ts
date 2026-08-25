@@ -183,6 +183,21 @@ export const PR_BAR_BG: Record<PrTone, string> = {
 	muted: "bg-panel [.session-info-status_&]:bg-transparent",
 };
 
+/** The same band in the workspace summary card, where it plates the PR rows
+ *  rather than spanning a pane. Two departures from the strip's map above.
+ *  `muted` carries no fill: the card is quiet text on one surface, and a state
+ *  with nothing to report has no colour to lend, so it gets no plate. Green and
+ *  red drop to a lighter mix than `--*-soft` because the card sits on the
+ *  popup's own raised surface, where the strip's weight reads as a highlight
+ *  band instead of a tint. */
+export const PR_SUMMARY_BAND_BG: Record<PrTone, string> = {
+	green: "bg-[color-mix(in_srgb,var(--green)_11%,transparent)]",
+	purple: "bg-[color-mix(in_srgb,var(--purple)_10%,transparent)]",
+	red: "bg-[color-mix(in_srgb,var(--red)_11%,transparent)]",
+	yellow: "bg-[color-mix(in_srgb,var(--yellow)_10%,transparent)]",
+	muted: "",
+};
+
 /** A session that shipped one feature as several PRs: the primary strip plus a
  *  row per sibling, as one continuous block of status. */
 export const PR_BAR_STACK = `flex min-w-0 flex-col ${PR_BAR_IN_CARD}`;
@@ -305,6 +320,18 @@ export function prChipClass(tone: PrTone, size: ChipSize): string {
 	return `${CHIP_BASE} ${CHIP_SIZE[size]} ${flat ? CHIP_TONE_FLAT[tone] : CHIP_TONE[tone]}${shadow ? " smooth-shadow-sm" : ""}${hover}`;
 }
 
+/** The phone top bar's PR chip.
+ *
+ *  Phones get no workspace panel and no status strip, so this is the only
+ *  place a session's PR state is shown: the number in the PR's own colour,
+ *  in the bar's right slot. Same toned pill as a sibling chip in the header,
+ *  resized to the 44px touch height and given the same shadow as every other
+ *  control in that bar. Both ends are its own because it is one target rather
+ *  than half of a split button. */
+export function prPhoneChipClass(tone: PrTone): string {
+	return `${CHIP_BASE} ${CHIP_TONE[tone]} min-h-11 shrink-0 cursor-pointer rounded-full px-2.5 text-label shadow-[var(--mobile-header-control-shadow)]`;
+}
+
 /** The outbound half of the split button: same tone, square inner corner, and
  *  it presses rather than washes. */
 export function prChipExternalClass(tone: PrTone, size: "bar" | "head"): string {
@@ -374,6 +401,11 @@ export const PR_ROW_STATE =
  */
 export const PR_REPO_TABS =
 	"flex gap-1 overflow-x-auto border-b border-divider px-3 py-2";
+/* The row inside ReviewToolbar when a branch has no pull request yet. Desktop
+ * gets its edge from the shared floating toolbar; phone keeps the divider used
+ * by its edge-to-edge review chrome. */
+export const PR_NO_PR_BAR =
+	"flex shrink-0 items-center gap-2 overflow-x-auto px-3 py-2 whitespace-nowrap [scrollbar-width:none] phone:border-b phone:border-divider [&>*]:shrink-0 [&::-webkit-scrollbar]:hidden";
 const PR_REPO_TAB =
 	"inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-[3px] text-label phone:px-3 phone:py-2";
 export const prRepoTabClass = (selected: boolean) =>

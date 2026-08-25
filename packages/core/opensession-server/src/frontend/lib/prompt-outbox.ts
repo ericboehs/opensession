@@ -3,6 +3,7 @@ import {
 	type PromptDelivery,
 } from "./api/sessions";
 import { BASE } from "./api/request";
+import { randomUUID } from "./random-uuid";
 
 export type PromptOutboxState = "pending" | "sending" | "failed";
 
@@ -126,7 +127,7 @@ export class PromptOutbox {
 		const now = this.now();
 		const item: PromptOutboxItem = {
 			...input,
-			clientId: crypto.randomUUID(),
+			clientId: randomUUID(),
 			state: "pending",
 			attempts: 0,
 			createdAt: now,

@@ -20,6 +20,8 @@ export interface OpenPr {
 	createdAt: string;
 	updatedAt: string;
 	checks: { total: number; passed: number; failed: number; pending: number };
+	/** MERGEABLE | CONFLICTING | UNKNOWN — the provider's conflict probe. */
+	mergeable?: string;
 	/** Person keys of teammates with a pending review request on this PR. */
 	reviewRequested?: string[];
 	/** An automated Open Session review is still running for this PR. */
@@ -42,15 +44,36 @@ export interface RecentPr extends OpenPr {
 	state: "OPEN" | "MERGED" | "CLOSED";
 	additions: number;
 	deletions: number;
+	/** The Open Session session that created this PR, when attributed. */
+	sessionId?: string;
 }
 
 /** Recent PRs across repos, including PRs merged outside Open Session. */
-export async function fetchRecentPrs(person?: string): Promise<RecentPr[]> {
-	const suffix = person ? `?person=${encodeURIComponent(person)}` : "";
+export async function fetchRecentPrs(
+	person?: string,
+	options: { days?: number; limit?: number } = {},
+): Promise<RecentPr[]> {
+	const query = new URLSearchParams();
+	if (person) query.set("person", person);
+	if (options.days) query.set("days", String(options.days));
+	if (options.limit) query.set("limit", String(options.limit));
+	const suffix = query.size ? `?${query}` : "";
 	const data = await request<{ prs: RecentPr[] }>(`/recent-prs${suffix}`, {
 		label: "Failed to fetch recent PRs",
 	});
 	return data?.prs || [];
+}
+
+/** One PR from the same open + archived history that powers the PRs page. */
+export async function fetchRecentPr(
+	repo: string,
+	number: number,
+): Promise<RecentPr | null> {
+	const query = new URLSearchParams({ repo, number: String(number) });
+	const data = await request<{ prs: RecentPr[] }>(`/recent-prs?${query}`, {
+		label: "Failed to fetch PR",
+	});
+	return data?.prs?.[0] || null;
 }
 
 /** One commit on the default branch of a repo that ships without PRs. */
@@ -189,6 +212,37 @@ export async function discardDiffFile(
 		body: { path, ...(repo ? { repo } : {}), ...(oldPath ? { oldPath } : {}) },
 		label: "Failed to discard file",
 	});
+}
+
+/** One comment inside a provider-native code review thread. */
+export interface PrReviewThreadComment {
+  login: string;
+  body: string;
+}
+
+/** A resolved inline review conversation, rendered collapsed below its file. */
+export interface PrReviewThread {
+  id: string;
+  isResolved: boolean;
+  isOutdated: boolean;
+  path: string | null;
+  line: number | null;
+  rootAuthor: string;
+  comments: PrReviewThreadComment[];
+}
+
+/** Resolved code-review threads for one pull request. */
+export async function fetchPrReviewThreads(
+  repo: string | undefined,
+  number: number,
+): Promise<PrReviewThread[]> {
+  const qs = new URLSearchParams({ number: String(number) });
+  if (repo) qs.set("repo", repo);
+  const data = await request<{ threads: PrReviewThread[] }>(
+    `/pr-review-threads?${qs}`,
+    { label: "Failed to load resolved comments" },
+  );
+  return data?.threads || [];
 }
 
 /** The viewer's GitHub "Viewed" file state on a PR (review canvas checkboxes). */
@@ -545,7 +599,7 @@ function notifyPrClosed(detail: PrClosedDetail) {
 }
 
 /** GitHub PR agent behaviors (the opensession-* PR labels) fired straight from the
-    info panel: review / auto-fix / simplify / adversarial. tella-fusion only. */
+    info panel: review / auto-fix / simplify / adversarial. */
 export type PrAgentAction = "review" | "autofix" | "simplify" | "adversarial";
 
 export async function triggerPrActionApi(
@@ -570,4 +624,19 @@ export async function triggerPrActionApi(
 		method: "POST",
 		body: { kind, user, ...(repo ? { repo } : {}) },
 	});
+}
+
+export async function cancelPrReviewApi(
+	sessionId: string,
+	user: string,
+	repo?: string,
+): Promise<{ ok: boolean; cancelled: boolean }> {
+	return request<{ ok: boolean; cancelled: boolean }>(
+		`/sessions/${encodeURIComponent(sessionId)}/pr-action`,
+		{
+			method: "POST",
+			body: { kind: "cancel-review", user, ...(repo ? { repo } : {}) },
+			label: "Couldn't cancel the review",
+		},
+	);
 }

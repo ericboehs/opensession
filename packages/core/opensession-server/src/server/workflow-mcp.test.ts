@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { createWorkflowMcpHost, workflowMcpServers } from "./workflow-mcp";
+import {
+	WORKFLOW_INPROCESS_ALLOWED,
+	WORKFLOW_INPROCESS_EXCLUDED,
+	WORKFLOW_INPROCESS_TOOL_DENIALS,
+	createWorkflowMcpHost,
+	workflowInProcessServers,
+	workflowMcpServers,
+} from "./workflow-mcp";
 import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
 
 // Policy only — no transport is opened: every assertion here is refused
@@ -76,5 +83,112 @@ describe("workflow MCP host policy", () => {
 		const h = host();
 		await h.close();
 		await expect(h.call("grafana", "anything", {})).rejects.toThrow(/closed/i);
+	});
+});
+
+describe("in-process opensession-* surface", () => {
+	// A stand-in for an McpServer: only the shape the host branches on matters
+	// (type "sdk" + an instance), and nothing here is ever connected because
+	// every assertion is refused before a transport is opened.
+	const sdk = (name: string) => ({ type: "sdk", instance: { name } });
+
+	test("keeps only allowlisted servers from what the run carries", () => {
+		expect(
+			Object.keys(
+				workflowInProcessServers({
+					"opensession-assets": sdk("assets"),
+					"opensession-web": sdk("web"),
+					"opensession-admin": sdk("admin"),
+					"opensession-sessions": sdk("sessions"),
+				}),
+			).sort(),
+		).toEqual(["opensession-assets", "opensession-web"]);
+	});
+
+	test("an allowlisted server the run does not carry stays absent", () => {
+		// Intersection, never a source: the allowlist can only ever narrow.
+		expect(workflowInProcessServers({})).toEqual({});
+	});
+
+	test("skips a proxy config — only the sdk shape can be mounted in-memory", () => {
+		expect(
+			workflowInProcessServers({
+				"opensession-assets": { command: "mcp-proxy", args: ["--rpc"] },
+			}),
+		).toEqual({});
+	});
+
+	test("every excluded name is genuinely outside the allowlist", () => {
+		// The excluded map only exists for the error message; a name landing in
+		// both would mean a server documented as refused is actually reachable.
+		for (const name of Object.keys(WORKFLOW_INPROCESS_EXCLUDED)) {
+			expect(WORKFLOW_INPROCESS_ALLOWED.has(name)).toBe(false);
+		}
+	});
+
+	const inProcessHost = () =>
+		createWorkflowMcpHost({
+			configuredForTest: { grafana: { command: "mcp-grafana" } },
+			inProcessMcp: () => ({
+				"opensession-assets": sdk("assets"),
+				"opensession-memory": sdk("memory"),
+				"opensession-admin": sdk("admin"),
+			}),
+		});
+
+	test("servers() includes the allowlisted in-process servers", () => {
+		expect(inProcessHost().servers()).toEqual([
+			"grafana",
+			"opensession-assets",
+			"opensession-memory",
+		]);
+	});
+
+	test("an excluded in-process server is refused with its policy reason", async () => {
+		const promise = inProcessHost().call("opensession-admin", "list_automations", {});
+		await expect(promise).rejects.toThrow(/opensession-admin/);
+		await expect(promise).rejects.toThrow(/reconfigures automations/);
+	});
+
+	test("an unknown opensession-* server says why, not just what's left", async () => {
+		await expect(
+			inProcessHost().call("opensession-invented", "x", {}),
+		).rejects.toThrow(/in-process opensession-\* servers are not available/);
+	});
+
+	test("memory writes are denied even though the server is mounted", async () => {
+		for (const tool of [
+			"store_memory",
+			"update_memory",
+			"archive_memory",
+			"restore_memory",
+			"confirm_memory",
+			"forget_memory",
+		]) {
+			await expect(
+				inProcessHost().call("opensession-memory", tool, {}),
+			).rejects.toThrow(/(?:cannot (?:write|update|archive|restore|confirm|delete) memory|can only read memory)/);
+		}
+	});
+
+	test("memory reads are not denied by the built-in denials", () => {
+		expect(
+			WORKFLOW_INPROCESS_TOOL_DENIALS["mcp__opensession-memory__search_memory"],
+		).toBeUndefined();
+	});
+
+	test("future memory mutations fail closed", async () => {
+		await expect(
+			inProcessHost().call("opensession-memory", "future_mutation", {}),
+		).rejects.toThrow(/can only read memory/);
+	});
+
+	test("without an inProcessMcp builder the surface stays external-only", () => {
+		// Automation runs supply no builder: their scripts must not gain the
+		// session-scoped servers an interactive run carries.
+		const host = createWorkflowMcpHost({
+			configuredForTest: { grafana: { command: "mcp-grafana" } },
+		});
+		expect(host.servers()).toEqual(["grafana"]);
 	});
 });

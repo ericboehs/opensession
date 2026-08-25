@@ -11,13 +11,20 @@
 
 /**
  * A hook name, not styling. Three places ask "is a popup open?" through it:
- * `base.css` hands the Electron title-bar drag region back to the page
- * (`html.wco:has(.app-menu-popup)`) so an outside press can dismiss, and
+ * `base.css` hands the Electron title-bar drag region back to the page while
+ * a visible popup carries this hook, so an outside press can dismiss, and
  * `ui/sheet.tsx` plus `components/AssetView.tsx` step out of the way of
  * Escape and the arrow keys while a popup owns them. Any popup that owns
  * those keys wears it.
  */
 export const POPUP_HOOK = "app-menu-popup";
+
+/** The app's top interaction layer. The pinned workspace summary deliberately
+ * sits one step below this, so any menu, select, tooltip, or hover preview a
+ * person opens paints above the card regardless of where its trigger lives.
+ * Keep this on the portaled positioner rather than the popup surface: Base UI
+ * owns positioning and creates the stacking box there. */
+export const FLOATING_OVERLAY_LAYER = "z-[2147483647]";
 
 /** The floating surface itself. `overflow-hidden` keeps the inner scrollbar's
  *  ends clipped to the rounded corner instead of poking past it; the

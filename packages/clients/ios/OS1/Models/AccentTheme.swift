@@ -48,11 +48,9 @@ enum AccentTheme: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// Each fill runs at 92% of the chroma its hue can physically reach in sRGB
-    /// at its lightness, which is as saturated as the colour gets before it
-    /// leaves the gamut. The share is flat across the wheel; the results are
-    /// not. Sky tops out near chroma 0.13 where Indigo and Coral reach 0.22,
-    /// so the cool end reads calmer than the warm one no matter what is asked
-    /// of it.
+    /// at its lightness, which keeps the palette vivid without clipping. The
+    /// share is flat across the wheel; the results are not. Sky tops out below
+    /// Indigo and Coral, so the cool end reads calmer than the warm one.
     ///
     /// Honey keeps one value in both appearances: yellow only exists at high
     /// lightness, so a value deep enough to separate from a white page still
@@ -61,7 +59,7 @@ enum AccentTheme: String, CaseIterable, Identifiable, Sendable {
     var fills: (light: UInt32, dark: UInt32) {
         switch self {
         case .sky: (0x1D_82_BC, 0x24_95_D6)
-        case .indigo: (0x63_61_F5, 0x76_7B_F6)
+        case .indigo: (0x36_6E_F5, 0x53_86_F6)
         case .coral: (0xDD_23_3A, 0xF7_36_48)
         case .orange: (0xD3_57_1C, 0xEB_62_21)
         case .lime: (0xEE_C7_5C, 0xEE_C7_5C)

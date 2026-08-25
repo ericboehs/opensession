@@ -59,6 +59,15 @@ final class SessionViewModel {
     private(set) var queuedItems: [QueueItem] = []
     /// Steer receipts: delivering into the run at its next turn boundary.
     private(set) var steeredItems: [QueueItem] = []
+
+    /// The create run is still preparing this session's worktree. Seeded
+    /// from the sessions row and overridden by the live workspace_status
+    /// frame, so the state flips the moment the worktree is ready instead
+    /// of on the next poll.
+    private var workspaceReadyOverride: Bool?
+    var workspacePreparing: Bool {
+        workspaceReadyOverride.map { !$0 } ?? (session.workspacePreparing == true)
+    }
     /// Chips the server's queue no longer lists but whose message hasn't
     /// landed in the transcript yet. The queue drain broadcasts the emptied
     /// queue BEFORE the delivered prompt reaches the transcript (the ~1s
@@ -74,12 +83,18 @@ final class SessionViewModel {
     /// already know is there), and a person watching from two devices appears
     /// once, since presence carries one name per socket.
     private(set) var otherViewers: [String] = []
+    private(set) var otherTypingUsers: [String] = []
     private(set) var pendingQuestion: AskQuestion?
+    /// The answer this device just sent, shown until its transcript record arrives.
+    private(set) var sentAskAnswer: SentAskAnswer?
     /// Quick replies for the last settled turn. A pick fills the draft; it
     /// never sends, because the server's suggestion is still only a guess.
     private(set) var replySuggestions: [ReplySuggestion] = []
     private(set) var pendingSlackComposer: SlackComposeRequest?
     private(set) var slackComposeReceipt: SlackComposeReceipt?
+    /// The request id currently being removed from Slack. Keeping the receipt
+    /// visible while this is set makes a failed Undo recoverable.
+    private(set) var undoingSlackComposeReceiptId: String?
     private(set) var connectionState: ConnectionState = .connecting
     private(set) var isLoadingConversation = true
     /// A watch that never receives transcript_init is not a loading state
@@ -118,6 +133,34 @@ final class SessionViewModel {
         slackComposeReceipt = receipt
     }
 
+    /// Delete the sent message with the same person's Slack grant. The receipt
+    /// disappears only after success, so a rejected request can be retried.
+    func undoSlackComposeReceipt() async {
+        guard let receipt = slackComposeReceipt,
+              receipt.status == .sent,
+              let channelId = receipt.channel?.id,
+              let ts = receipt.ts,
+              undoingSlackComposeReceiptId == nil
+        else { return }
+
+        undoingSlackComposeReceiptId = receipt.requestId
+        defer {
+            if undoingSlackComposeReceiptId == receipt.requestId {
+                undoingSlackComposeReceiptId = nil
+            }
+        }
+        do {
+            try await slackComposerUndoer(session.id, channelId, ts)
+            if slackComposeReceipt?.requestId == receipt.requestId {
+                slackComposeReceipt = nil
+            }
+            notice = "Removed from Slack"
+        } catch {
+            notice = (error as? LocalizedError)?.errorDescription
+                ?? error.localizedDescription
+        }
+    }
+
     // ── Pull request ──
     /// PR details for the session's branch (toolbar chip + PR panel).
     /// nil until the first fetch lands — the chip falls back to the sessions
@@ -127,7 +170,20 @@ final class SessionViewModel {
     /// of an endless spinner.
     private(set) var prLoadFailed = false
     private var prTask: Task<Void, Never>?
+    private var prLoadGeneration = 0
+    private let prLoader: @MainActor (String) async throws -> PrDetails?
+    private let slackComposerUndoer: @MainActor (String, String, String) async throws -> Void
     private var notesTask: Task<Void, Never>?
+
+    // ── Workflow runs ──
+    /// Authoritative snapshots for the Agents panel. The socket upserts live
+    /// changes here even while the panel is closed, so opening it cannot miss
+    /// the transition a local view-level listener never saw.
+    private(set) var workflowRuns: [WorkflowRun] = []
+    private(set) var workflowRunsLoaded = false
+    private(set) var workflowLoadFailed = false
+    private var workflowEventRevision = 0
+    private let workflowLoader: @MainActor (String) async throws -> [WorkflowRun]
 
     // ── Session goal ──
     /// Goal set from this app (`/goal`), used to label the composer menu's
@@ -154,6 +210,10 @@ final class SessionViewModel {
     private var historyStartOffset: Int?
     private var historyRev: String?
     private var historyFirstSeq: Int?
+    /// Latest durable position received from the server. Re-watches send it
+    /// back so a reconnect appends only the missed gap and keeps any earlier
+    /// pages the reader already loaded.
+    private var transcriptResume: TranscriptResumeCursor?
     /// Walking the whole backlog to the first message, a page at a time.
     /// Separate from `loadingEarlier` (which stays true across the gaps) so
     /// the view can say which of the two is running.
@@ -374,12 +434,24 @@ final class SessionViewModel {
         composerDraft: ComposerDraft? = nil,
         socketFactory: @escaping @MainActor () -> any SessionSocket = { OS1Socket() },
         outbox: Outbox = .shared,
-        conversationLoadTimeout: TimeInterval = 15
+        conversationLoadTimeout: TimeInterval = 15,
+        prLoader: @escaping @MainActor (String) async throws -> PrDetails? = {
+            try await OS1API.pr(sessionId: $0)
+        },
+        slackComposerUndoer: @escaping @MainActor (String, String, String) async throws -> Void = {
+            try await SlackAPI.undoComposer(sessionId: $0, channelId: $1, ts: $2)
+        },
+        workflowLoader: @escaping @MainActor (String) async throws -> [WorkflowRun] = {
+            try await OS1API.workflowRuns(sessionId: $0)
+        }
     ) {
         self.session = session
         self.socketFactory = socketFactory
         self.outbox = outbox
         self.conversationLoadTimeout = conversationLoadTimeout
+        self.prLoader = prLoader
+        self.slackComposerUndoer = slackComposerUndoer
+        self.workflowLoader = workflowLoader
         self.isRunning = session.isRunning ?? false
         self.usage = session.usage
         self.model = session.model ?? ""
@@ -412,8 +484,14 @@ final class SessionViewModel {
                 timestamp: ISO8601DateFormatter().string(from: .now),
                 images: seed.images.isEmpty ? nil : seed.images
             )]
-            rebuildDisplayItems()
         }
+        // A composer send lives in the outbox until the server accepts it. Put
+        // that durable local copy back in the conversation after a relaunch so
+        // a failed or offline send never leaves an unexplained blank chat.
+        for item in outbox.items(for: session.id) where item.purpose == nil {
+            appendOutboxEcho(item)
+        }
+        if !entries.isEmpty { rebuildDisplayItems() }
     }
 
     /// A cached conversation may be reopened from an older list-row snapshot.
@@ -500,6 +578,7 @@ final class SessionViewModel {
     }
 
     private func stopConnection() {
+        stopTyping()
         stopped = true
         replySuggestions = []
         outbox.stopObserving(sessionId: session.id)
@@ -508,33 +587,93 @@ final class SessionViewModel {
         resyncProbeTask?.cancel()
         creationRetryTask?.cancel()
         deliveringPruneTask?.cancel()
+        prLoadGeneration += 1
         prTask?.cancel()
         notesTask?.cancel()
         socket?.disconnect()
         socket = nil
     }
 
-    /// Fire-and-forget PR refresh (open, foreground, run end).
+    /// Fire-and-forget PR refresh (open, foreground, run end, live event).
+    /// A generation guard keeps a cancelled request that finishes late from
+    /// replacing a newer webhook-triggered answer.
     func loadPr() {
+        prLoadGeneration += 1
+        let generation = prLoadGeneration
         prTask?.cancel()
         prTask = Task { [weak self] in
-            await self?.refreshPr()
+            await self?.performPrRefresh(generation: generation)
         }
     }
 
     /// Awaitable PR refresh for the panel's pull-to-refresh / retry. A failure
-    /// keeps whatever we already have — stale beats blank; only a failure with
+    /// keeps whatever we already have: stale beats blank; only a failure with
     /// nothing loaded surfaces as prLoadFailed.
     func refreshPr() async {
+        prLoadGeneration += 1
+        let generation = prLoadGeneration
+        prTask?.cancel()
+        prTask = nil
+        await performPrRefresh(generation: generation)
+    }
+
+    private func performPrRefresh(generation: Int) async {
         do {
-            let details = try await OS1API.pr(sessionId: session.id)
-            guard !Task.isCancelled else { return }
+            let details = try await prLoader(session.id)
+            guard !Task.isCancelled, generation == prLoadGeneration else { return }
             prDetails = details
             prLoadFailed = false
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, generation == prLoadGeneration else { return }
             prLoadFailed = prDetails == nil
         }
+    }
+
+    /// A global PR event belongs to this session when it names any branch the
+    /// server associates with it, including linked and discovered PRs whose
+    /// branch differs from the checked-out worktree.
+    func matchesPrUpdate(repo: String, branch: String) -> Bool {
+        if session.effectiveRepo == repo, session.branch == branch { return true }
+        if session.attachedRepos?.contains(where: {
+            $0.repo == repo && $0.branch == branch
+        }) == true { return true }
+        return session.prs?.contains(where: {
+            $0.repo == repo && $0.branch == branch
+        }) == true
+    }
+
+    /// Seed or revalidate the Agents panel. A workflow event that lands while
+    /// this request is in flight wins for any run id both carry; the older REST
+    /// snapshot may only fill runs the event-backed list does not know yet.
+    func refreshWorkflowRuns() async {
+        let eventRevision = workflowEventRevision
+        do {
+            let next = try await workflowLoader(session.id)
+            guard !Task.isCancelled else { return }
+            if eventRevision == workflowEventRevision {
+                workflowRuns = next
+            } else {
+                let known = Set(workflowRuns.map(\.runId))
+                workflowRuns.append(contentsOf: next.filter { !known.contains($0.runId) })
+            }
+            workflowRunsLoaded = true
+            workflowLoadFailed = false
+        } catch {
+            guard !Task.isCancelled else { return }
+            workflowRunsLoaded = true
+            workflowLoadFailed = workflowRuns.isEmpty
+        }
+    }
+
+    private func upsertWorkflowRun(_ run: WorkflowRun) {
+        workflowEventRevision += 1
+        if let index = workflowRuns.firstIndex(where: { $0.runId == run.runId }) {
+            workflowRuns[index] = run
+        } else {
+            workflowRuns.insert(run, at: 0)
+        }
+        workflowRunsLoaded = true
+        workflowLoadFailed = false
     }
 
     func loadSessionNotes() {
@@ -645,6 +784,14 @@ final class SessionViewModel {
         }
     }
 
+    static func typingLabel(_ users: [String]) -> String? {
+        switch users.count {
+        case 0: nil
+        case 1: "\(users[0]) is typing…"
+        default: "Several people are typing…"
+        }
+    }
+
     private static func firstName(_ name: String) -> String {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
             .split(separator: " ")
@@ -657,11 +804,47 @@ final class SessionViewModel {
     private var lastPresenceRefresh = Date.distantPast
     /// Rare enough to cost nothing on a session someone reads for an hour.
     private static let presenceRefreshInterval: TimeInterval = 45
+    private static let typingRefreshInterval: TimeInterval = 2
+    private static let typingIdleInterval: TimeInterval = 3
+    private var typingActive = false
+    private var lastTypingSent = Date.distantPast
+    private var typingStopTask: Task<Void, Never>?
+
+    /// Composer input refreshes a short typing lease. A pause clears it even
+    /// while the unsent draft remains in the field.
+    func userIsTyping(_ active: Bool) {
+        guard active else {
+            stopTyping()
+            return
+        }
+        guard !stopped, let socket, connectionState == .connected else { return }
+        let now = Date()
+        if !typingActive || now.timeIntervalSince(lastTypingSent) >= Self.typingRefreshInterval {
+            socket.setTyping(sessionId: session.id, typing: true)
+            lastTypingSent = now
+        }
+        typingActive = true
+        typingStopTask?.cancel()
+        typingStopTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.typingIdleInterval))
+            guard !Task.isCancelled else { return }
+            self?.stopTyping()
+        }
+    }
+
+    private func stopTyping() {
+        typingStopTask?.cancel()
+        typingStopTask = nil
+        if typingActive { socket?.setTyping(sessionId: session.id, typing: false) }
+        typingActive = false
+        lastTypingSent = .distantPast
+    }
 
     /// The app is no longer active. The watch stays so the transcript keeps
     /// streaming, but our face comes off the selected session.
     func appDidEnterBackground() {
         guard !stopped else { return }
+        stopTyping()
         isAway = true
         // Coming back has to re-claim the face immediately, not wait out the
         // refresh interval below.
@@ -697,7 +880,7 @@ final class SessionViewModel {
             return
         }
         let probeStarted = Date()
-        socket.watch(sessionId: session.id)
+        socket.watch(sessionId: session.id, resume: transcriptResume)
         // Back on screen: show our face again. (A reconnect starts present, so
         // only a socket that survived the background needs telling.)
         lastPresenceRefresh = Date()
@@ -780,7 +963,7 @@ final class SessionViewModel {
         let busyMode = busyModeOverride
             ?? UserDefaults.standard.string(forKey: "os1.composer.busySend")
             ?? "queue"
-        guard outbox.enqueue(
+        guard let item = outbox.enqueue(
             sessionId: session.id,
             content: text,
             images: images,
@@ -788,11 +971,16 @@ final class SessionViewModel {
             fastMode: fastMode ? true : nil,
             busyMode: busyMode,
             user: ServerConfig.shared.userName
-        ) != nil else {
+        ) else {
             // Full: keep the draft where it is rather than swallowing it.
             notice = "Too many unsent messages — send or delete some first."
             return
         }
+        // The outbox is already durable, so the conversation can own the
+        // optimistic copy immediately. Its status remains attached to this
+        // bubble until the server accepts, rejects, or queues the message.
+        appendOutboxEcho(item, images: images)
+        rebuildDisplayItems()
         // You can't be done with a session you're actively working in: prompting
         // clears any sidebar hide covering it (opening it deliberately doesn't).
         HideStore.shared.unhide(for: session)
@@ -801,6 +989,26 @@ final class SessionViewModel {
         attachedImages = []
         quoteSelection.clear()
         sendSeq += 1
+    }
+
+    private func appendOutboxEcho(_ item: Outbox.Item, images: [String]? = nil) {
+        let localId = "local-\(item.id)"
+        guard !entries.contains(where: { $0.id == localId }) else { return }
+        localEchoIds.insert(localId)
+        let sources = images ?? outbox.images(for: item)
+        entries.append(TranscriptEntry(
+            id: localId,
+            type: "user",
+            content: item.content,
+            timestamp: ISO8601DateFormatter().string(from: item.createdAt),
+            images: sources.isEmpty ? nil : sources
+        ))
+    }
+
+    private func removeOutboxEcho(_ item: Outbox.Item) {
+        let localId = "local-\(item.id)"
+        localEchoIds.remove(localId)
+        entries.removeAll { $0.id == localId }
     }
 
     /// The server took a message: put it where the server says it went. This
@@ -813,6 +1021,8 @@ final class SessionViewModel {
         }
         switch delivery.status {
         case "queued", "steered":
+            removeOutboxEcho(item)
+            rebuildDisplayItems()
             // Held server-side; it enters the transcript when the queue
             // delivers it. Show the chip the queue_update will replace —
             // unless that update has already arrived. The socket routinely
@@ -839,8 +1049,15 @@ final class SessionViewModel {
         case "handled":
             // A slash command (/model, /goal …) — the server's answer is the
             // whole result; nothing enters the transcript.
+            removeOutboxEcho(item)
+            rebuildDisplayItems()
             if !delivery.message.isEmpty { notice = delivery.message }
         default:
+            // The bubble was minted when the composer accepted the message.
+            // Delivery only removes its outbox status; there is no second
+            // optimistic copy to append.
+            let localId = "local-\(item.id)"
+            if entries.contains(where: { $0.id == localId }) { return }
             // The server's own copy of this message may already be on screen:
             // its transcript entry is broadcast at intake, before this reply
             // was even written, so on a slow link the entry wins the race —
@@ -856,7 +1073,6 @@ final class SessionViewModel {
                 landedUserEntries.remove(at: landed)
                 return
             }
-            let localId = "local-\(item.id)"
             localEchoIds.insert(localId)
             entries.append(TranscriptEntry(
                 id: localId,
@@ -942,7 +1158,7 @@ final class SessionViewModel {
             timestamp: ISO8601DateFormatter().string(from: .now),
             notice: EntryNotice(
                 kind: "system", title: title, tone: tone.rawValue, body: nil, link: nil,
-                icon: nil
+                ask: nil, icon: nil
             )
         ))
         rebuildDisplayItems()
@@ -991,6 +1207,28 @@ final class SessionViewModel {
     func answer(question: AskQuestion, answers: [String: String]?) {
         socket?.answer(sessionId: session.id, questionId: question.id, answers: answers)
         pendingQuestion = nil
+        sentAskAnswer = answers.map {
+            SentAskAnswer(
+                id: question.id,
+                ask: AnsweredAsk(question: question, answers: $0),
+                existingRecordIDs: Set(entries.lazy.filter {
+                    $0.notice?.ask != nil || $0.ask != nil
+                }.map(\.id))
+            )
+        }
+    }
+
+    private func retireSentAskAnswer(against incoming: [TranscriptEntry]) {
+        guard let sent = sentAskAnswer else { return }
+        let landed = incoming.contains { entry in
+            guard !sent.existingRecordIDs.contains(entry.id),
+                  let record = entry.notice?.ask ?? entry.ask,
+                  record.questions.count == sent.ask.questions.count else { return false }
+            return zip(record.questions, sent.ask.questions).allSatisfy { pair in
+                pair.0.question == pair.1.question && pair.0.answer == pair.1.answer
+            }
+        }
+        if landed { sentAskAnswer = nil }
     }
 
     func cancelRun() {
@@ -1076,6 +1314,49 @@ final class SessionViewModel {
         historyFirstSeq = cursor.firstSeq
     }
 
+    /// An init is authoritative for protocol mode and resume position. A frame
+    /// without resume metadata comes from an older server, so the next watch
+    /// must request another snapshot rather than reuse a stale cursor.
+    private func applyTranscriptSnapshotCursor(_ cursor: HistoryCursor) {
+        if cursor.v2, let lastSeq = cursor.lastSeq {
+            transcriptResume = .seq(
+                lastSeq: lastSeq,
+                lastChangeSeq: cursor.lastChangeSeq ?? lastSeq
+            )
+        } else if let endOffset = cursor.endOffset, let rev = cursor.rev {
+            transcriptResume = .offset(endOffset: endOffset, rev: rev)
+        } else {
+            transcriptResume = nil
+        }
+    }
+
+    /// Append watermarks only move forward. Store upserts can republish an old
+    /// entry seq, while `lastChangeSeq` still identifies the newer commit.
+    private func applyTranscriptAppendCursor(_ cursor: HistoryCursor) {
+        switch transcriptResume {
+        case .seq(let currentSeq, let currentChange) where cursor.v2:
+            transcriptResume = .seq(
+                lastSeq: max(currentSeq, cursor.lastSeq ?? 0),
+                lastChangeSeq: max(currentChange, cursor.lastChangeSeq ?? 0)
+            )
+        case .offset where !cursor.v2:
+            if let endOffset = cursor.endOffset, let rev = cursor.rev {
+                transcriptResume = .offset(endOffset: endOffset, rev: rev)
+            }
+        default:
+            // An append normally follows an init, but accepting its complete
+            // cursor also makes recovery tolerant of reordered test fixtures.
+            if cursor.v2, let lastSeq = cursor.lastSeq {
+                transcriptResume = .seq(
+                    lastSeq: lastSeq,
+                    lastChangeSeq: cursor.lastChangeSeq ?? lastSeq
+                )
+            } else if let endOffset = cursor.endOffset, let rev = cursor.rev {
+                transcriptResume = .offset(endOffset: endOffset, rev: rev)
+            }
+        }
+    }
+
     /// Deliberately NOT optimistic: a steer can be refused (nothing steerable
     /// right now, files attached) and the message legitimately stays queued —
     /// the server answers with a notice and the queue_update that follows is
@@ -1095,6 +1376,15 @@ final class SessionViewModel {
     func dismissSteered(_ item: QueueItem) {
         socket?.deleteQueued(sessionId: session.id, queueId: item.id)
         removeChip(item)
+    }
+
+    /// Deliver a steering receipt now. The server ends the run's current
+    /// step so the message lands immediately instead of waiting out a long
+    /// tool call, then the run resumes with it in hand. Not optimistic: the
+    /// chip stays until the server's queue_update moves it, because the
+    /// forced delivery is observable in the transcript within a second.
+    func deliverSteeredNow(_ item: QueueItem) {
+        socket?.interruptQueued(sessionId: session.id, queueId: item.id)
     }
 
     /// Removals have to be optimistic in BOTH lists: a chip that leaves the
@@ -1131,6 +1421,26 @@ final class SessionViewModel {
         socket?.takeQueued(sessionId: session.id, queueId: item.id)
     }
 
+    /// Pull back a steer only while it is still waiting behind the engine's
+    /// next step boundary. The server replies through queuedPromptTaken after
+    /// the engine confirms the exact receipt id was retracted.
+    func editSteeredInComposer(_ item: QueueItem) {
+        guard !item.isLocalEcho, !item.hasFiles, !item.hasContextSessions, item.editable,
+              MessageAttribution.isViewer(
+                item.user ?? "",
+                viewerName: ServerConfig.shared.userName,
+                viewerLogin: ServerConfig.shared.githubLogin
+              ) else {
+            return
+        }
+        guard draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              attachedImages.isEmpty else {
+            notice = "Send or clear your draft before editing a message."
+            return
+        }
+        socket?.takeSteered(sessionId: session.id, queueId: item.id)
+    }
+
     /// Move a queued message one place towards (-1) or away from (+1) the
     /// front of the queue. The server takes the full id order and leaves
     /// entries it doesn't recognise where they are, so local echoes ride
@@ -1161,7 +1471,13 @@ final class SessionViewModel {
         }
         draft = draft.isEmpty ? item.content : draft + "\n\n" + item.content
         attachedImages.append(contentsOf: images)
+        discardUnsent(item)
+    }
+
+    func discardUnsent(_ item: Outbox.Item) {
+        removeOutboxEcho(item)
         outbox.delete(id: item.id)
+        rebuildDisplayItems()
     }
 
     /// Put one of the viewer's sent turns back into the ordinary composer.
@@ -1186,6 +1502,7 @@ final class SessionViewModel {
         let socket = socketFactory()
         socket.onEvent = { [weak self] event in self?.handle(event) }
         socket.onClose = { [weak self] reason in self?.scheduleReconnect(reason) }
+        socket.setMutationRejectedHandler { [weak self] message in self?.notice = message }
         self.socket = socket
         socket.connect()
     }
@@ -1193,15 +1510,16 @@ final class SessionViewModel {
     private func scheduleReconnect(_ reason: String?) {
         guard !stopped else { return }
         if conversationLoadError == nil { connectionState = .reconnecting(reason) }
-        replySuggestions = []
         // A history page died with the socket; the watch's fresh
         // transcript_init is what unblocks paging again, so don't leave the
         // control spinning on a request nobody will answer.
         loadingEarlier = false
         endJump(landed: false)
         // Presence is only true while the socket that reported it is up; the
-        // rejoin brings a fresh frame.
+        // rejoin brings fresh frames.
         otherViewers = []
+        otherTypingUsers = []
+        stopTyping()
         reconnectTask?.cancel()
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(2))
@@ -1247,7 +1565,7 @@ final class SessionViewModel {
             // flashes (or remains) as an active viewer.
             if isAway { socket?.setAway(true) }
             // Watch after the handshake frame so the send cannot race the upgrade.
-            socket?.watch(sessionId: session.id)
+            socket?.watch(sessionId: session.id, resume: transcriptResume)
             // A completed handshake is proof the server is reachable — better
             // evidence than any network path status, so anything waiting out a
             // backoff goes now.
@@ -1265,6 +1583,7 @@ final class SessionViewModel {
                 awaitingCreation = false
                 isLoadingConversation = false
                 applyHistoryCursor(cursor)
+                applyTranscriptSnapshotCursor(cursor)
                 loadingEarlier = false
                 endJump()
                 break
@@ -1308,12 +1627,14 @@ final class SessionViewModel {
             isLoadingConversation = false
             liveEntries.removeAll()
             localEchoIds = Set(pendingEchoes.map(\.id))
+            retireSentAskAnswer(against: newEntries)
             // A resync snapshot is authoritative for landed messages — no
             // upsert runs on it, so retire delivered chips here.
             if !deliveringItems.isEmpty {
                 updateDelivering(deliveringItems.filter { !messageLanded($0) })
             }
             applyHistoryCursor(cursor)
+            applyTranscriptSnapshotCursor(cursor)
             // A rev-mismatch reply to load_history comes back as a fresh init.
             loadingEarlier = false
             // Also how a legacy jump lands (the whole transcript at once), and
@@ -1335,8 +1656,10 @@ final class SessionViewModel {
             rebuildDisplayItems()
             continueJump(added: added.count)
 
-        case .transcriptAppend(let id, let appended) where id == session.id:
+        case .transcriptAppend(let id, let appended, let cursor) where id == session.id:
             upsert(appended)
+            applyTranscriptAppendCursor(cursor)
+            retireSentAskAnswer(against: appended)
             // Landed durably — drop the ephemeral copies (match by id, or by
             // toolUseId in case the two channels mint different entry ids).
             liveEntries.removeAll { live in
@@ -1442,6 +1765,9 @@ final class SessionViewModel {
         case .presence(let id, let viewers) where id == session.id:
             otherViewers = Self.otherViewers(viewers, me: ServerConfig.shared.userName)
 
+        case .typing(let id, let users) where id == session.id:
+            otherTypingUsers = Self.otherViewers(users, me: ServerConfig.shared.userName)
+
         // The create flow's frame carries no session id — that socket is
         // already scoped to this conversation — so an unaddressed one is ours.
         case .usageUpdate(let id, let latest) where id == nil || id == session.id:
@@ -1477,6 +1803,12 @@ final class SessionViewModel {
                 // the chip/panel (served from the server's PR cache, so cheap).
                 loadPr()
             }
+
+        case .workspaceStatus(let id, let ready) where id == session.id:
+            workspaceReadyOverride = ready
+
+        case .modelChanged(let id, let model, _) where id == session.id:
+            session.model = model
 
         case .queueUpdate(let id, let queued, let steered) where id == session.id:
             hasDetailedQueue = true
@@ -1545,6 +1877,7 @@ final class SessionViewModel {
         case .askQuestion(let id, let question) where id == session.id:
             let isNewQuestion = pendingQuestion?.id != question.id
             pendingQuestion = question
+            if sentAskAnswer?.id != question.id { sentAskAnswer = nil }
             if isNewQuestion {
                 NativeNotifications.post(
                     event: "needsInput",
@@ -1567,6 +1900,17 @@ final class SessionViewModel {
         case .slackComposerResolved(let id, let receipt) where id == session.id:
             resolveSlackComposer(receipt)
 
+        case .workflowUpdate(let id, let run) where id == session.id:
+            upsertWorkflowRun(run)
+
+        case .gitPushed(let id, _) where id == session.id:
+            loadPr()
+
+        case .prUpdated(let repo, let branch) where matchesPrUpdate(
+            repo: repo, branch: branch
+        ):
+            loadPr()
+
         case .serverError(let message)
         where awaitingCreation && message == "Session not found":
             // Freshly created session the server hasn't persisted yet — re-send
@@ -1582,7 +1926,9 @@ final class SessionViewModel {
             creationRetryTask = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(1.5))
                 guard let self, !Task.isCancelled, !self.stopped else { return }
-                self.socket?.watch(sessionId: self.session.id)
+                self.socket?.watch(
+                    sessionId: self.session.id, resume: self.transcriptResume
+                )
             }
 
         case .notice(let message), .serverError(let message):

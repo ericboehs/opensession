@@ -37,14 +37,14 @@ function PushRow() {
 		if (busy) return;
 		setBusy(true);
 		setError(null);
-		try {
-			if (v) await enablePush(getCurrentUser());
+		await (async () => {
+if (v) await enablePush(getCurrentUser());
 			else await disablePush();
 			setState(await getPushState());
-		} catch (e: any) {
-			setError(e.message);
+})().catch(async (e: any) => {
+setError(e.message);
 			setState(await getPushState());
-		}
+});
 		setBusy(false);
 	}
 

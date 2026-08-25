@@ -66,6 +66,7 @@ describe("transition table shape", () => {
 			"run_registered",
 			"start_failed",
 			"start_aborted",
+			"stop_lifted",
 			"ask_posed",
 			"ask_resolved",
 			"steer",
@@ -110,9 +111,11 @@ describe("lifecycle paths", () => {
 		expect(walk("ask_blocked", ["prompt", "steer"])).toBe("ask_blocked");
 	});
 
-	test("user Stop parks the session until the next explicit prompt", () => {
+	test("user Stop parks the session until intake releases it for a new run", () => {
 		expect(walk("running", ["cancel"])).toBe("stopped");
-		expect(walk("stopped", ["prompt", "run_registered"])).toBe("running");
+		expect(
+			walk("stopped", ["stop_lifted", "prompt", "run_registered"]),
+		).toBe("running");
 	});
 
 	test("stopped absorbs the cancelled run's own teardown", () => {
@@ -270,6 +273,40 @@ describe("transitionRunState (stateful wrapper)", () => {
 				event: "turn_end",
 			});
 		} finally {
+			clearRunState(id);
+		}
+	});
+
+	test("parked prompts during recovery reject silently; other rejections warn", () => {
+		const id = sid();
+		const events: Record<string, unknown>[] = [];
+		const warnings: string[] = [];
+		const original = console.warn;
+		console.warn = (...args: unknown[]) => {
+			warnings.push(args.join(" "));
+		};
+		try {
+			transitionRunState(id, "boot_journal_found", undefined, (e) =>
+				events.push(e),
+			);
+			expect(getRunState(id)).toBe("interrupted");
+			// The designed park: rejected, audited, but not warned.
+			transitionRunState(id, "prompt", undefined, (e) => events.push(e));
+			expect(getRunState(id)).toBe("interrupted");
+			expect(events.at(-1)).toMatchObject({
+				msg: "run_state_rejected",
+				state: "interrupted",
+				event: "prompt",
+			});
+			expect(warnings).toHaveLength(0);
+			// Unexpected rejections still warn.
+			transitionRunState(id, "ask_resolved", undefined, (e) =>
+				events.push(e),
+			);
+			expect(warnings).toHaveLength(1);
+			expect(warnings[0]).toContain("ask_resolved while interrupted");
+		} finally {
+			console.warn = original;
 			clearRunState(id);
 		}
 	});

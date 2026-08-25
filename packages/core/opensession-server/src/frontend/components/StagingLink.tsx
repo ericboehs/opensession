@@ -1,15 +1,16 @@
-import { useEffect, useState } from "react";
-import { fetchPr } from "../lib/api";
-import {
-	pollWhileVisible,
-	PR_WEBHOOK_FALLBACK_POLL_MS,
-} from "../lib/poll";
+import { PR_WEBHOOK_FALLBACK_POLL_MS } from "../lib/poll";
+import { useSessionPrResource } from "../hooks/useApiResources";
 import type { PrCheck, UnifiedSession } from "../lib/types";
+import { worstPrRef } from "../lib/pr-refs";
+import { sessionPrPresentation } from "../lib/session-prs";
 import { withPreviewPath } from "../lib/preview-url";
+import { WS_SUMMARY_ICON } from "../lib/workspace-summary-classes";
+import { cn } from "../ui/cn";
 import { Tooltip } from "../ui/tooltip";
 import { toast } from "../ui/toast";
 import { CopyCheck, useCopy } from "../ui/copy";
-import { IconArrowUpRight, IconGlobe } from "./icons";
+import { ContextMenu, MENU_ICON } from "../ui/menu";
+import { IconArrowUpRight, IconCheck, IconCopy, IconGlobe } from "./icons";
 import { checkClass, isDeployment } from "./PrPanel";
 import { useShortcutLabel } from "../hooks/useShortcutBindings";
 
@@ -17,16 +18,22 @@ import { useShortcutLabel } from "../hooks/useShortcutBindings";
 // mounts once per layout variant, so a listener here would register several
 // times. All that happens here is advertising whatever it is bound to.
 
-/* The amber pill in the workspace panel. Sized to the Merge button it sits
-   beside (13px/600, 5px 11px, 7px corner) so the two read as one row. The base
-   carries geometry only — each state below brings its own border and ink, so
-   nothing has two competing colour utilities on it. */
+/* The pill in the workspace panel. Sized to the Merge button it sits beside
+   (13px/600, 5px 11px, 7px corner) so the two read as one row. The base carries
+   geometry only — each state below brings its own border and ink, so nothing
+   has two competing colour utilities on it.
+
+   Same three-state colouring as the header globe, because it reports the same
+   thing: green once the deploy is up and the link actually works, amber while
+   one is in flight. */
 const LINK_BASE =
 	"inline-flex items-center gap-[5px] whitespace-nowrap rounded-md border px-[11px] py-[5px] text-label font-semibold no-underline";
-const LINK_READY = "border-yellow/45 text-yellow hover:bg-yellow/12";
-/* Deploy still building — not testable yet, so a plain click is swallowed (see
-   onClick) and the pill reads as not-ready with a spinning globe. */
-const LINK_BUILDING = `${LINK_READY} cursor-default opacity-55`;
+const LINK_READY = "border-green/45 text-green hover:bg-green-soft";
+/* A deploy is in flight. A rebuild still opens the previous deploy, so it stays
+   a live link; a first build is not testable yet, so LINK_BUILDING below
+   swallows the click (see onClick) on top of this. */
+const LINK_DEPLOYING = "border-yellow/45 text-yellow hover:bg-yellow/12";
+const LINK_BUILDING = `${LINK_DEPLOYING} cursor-default opacity-55`;
 /* Nothing to link to yet: quiet, and no hover wash to imply it opens. */
 const LINK_PENDING = "border-line text-dim cursor-default";
 
@@ -43,6 +50,31 @@ const ICON_BUILDING =
 const ICON_REBUILDING =
 	"cursor-pointer text-yellow opacity-72 hover:bg-yellow/13 hover:opacity-100";
 const ICON_PENDING = "cursor-default text-dim";
+
+/* The summary card's preview mark. It rides immediately before the PR band's
+   primary action, so the place to test the work stays with Merge, Push or Pull
+   instead of floating at the far edge of the status row.
+
+   A 28px square rather than the card's 20px rail, which every other leading
+   mark takes. Those marks are decoration on a row whose whole width is the
+   target; this one IS the target, and 20px is too little to aim at.
+
+   The mark stays bare at rest so it belongs to the tinted status band rather
+   than reading as a disabled grey control. Its own ink supplies the hover and
+   press washes, which makes the band darken under the pointer. */
+const SUMMARY_MARK =
+	"grid size-7 shrink-0 place-items-center rounded-md no-underline focus-ring " +
+	"transition-[background-color,scale] duration-150 ease-out";
+/** Pointer and press. The press step also takes a hair of scale, which is what
+ *  makes a 28px target feel like it answered. */
+const SUMMARY_MARK_HOVER =
+	"hover:bg-[color-mix(in_srgb,currentColor_26%,transparent)] " +
+	"active:scale-[0.96] active:bg-[color-mix(in_srgb,currentColor_34%,transparent)]";
+/* The mark's 20px glyph sits inside a 28px target, so its visible edge already
+   sits 4px inside the box. Push the box 2px off the following action to land a
+   12px gap between the globe and Merge: the two are a pair, not one control,
+   and at the row's bare 6px they read as a split button. */
+const SUMMARY_MARK_PAIR = "mr-0.5";
 
 /* Spinning ring around the globe while the preview environment builds.
    border-t-current picks up the amber/green icon tone; the ring sits just
@@ -61,12 +93,11 @@ const RING_LG = "size-[22px] -mt-[11px] -ml-[11px]";
 const RING_SM = "size-4 -mt-2 -ml-2";
 
 /**
- * Header link to the PR's preview environment (the Vercel preview at
- * https://tella-git-<branch>.tella.dev) so a change can be tested on real
- * infra in one click. The URL comes from the PR details endpoint, which parses
- * tella-butler's preview-table comment — so the link only appears when a
- * webapp deploy actually exists for the PR (fusion PRs that don't touch the
- * webapp never get one). While the deploy is still building the link renders
+ * Header link to the PR's preview environment (a per-branch deploy, e.g. a
+ * Vercel preview) so a change can be tested on real infra in one click. The
+ * URL comes from the PR details endpoint, which parses the deploy bot's
+ * preview-table comment, so the link only appears when a deploy actually
+ * exists for the PR (PRs that never deploy never get one). While the deploy is still building the link renders
  * dimmed; it flips live on the next poll.
  *
  * Before butler posts the comment at all there's still a window where we KNOW a
@@ -84,17 +115,12 @@ export function StagingLink({
 }: {
 	session: UnifiedSession;
 	/** "bar" = the labelled Preview environment link; "header" = a compact
-	 *  state-colored icon; "action" = a cell in the mobile workspace grid. */
-	variant?: "bar" | "header" | "action";
+	 *  state-colored icon; "action" = a cell in the mobile workspace grid;
+	 *  "summary" = a row in the header's workspace summary card. */
+	variant?: "bar" | "header" | "action" | "summary";
 	/** Bumped when GitHub reports PR/check/deployment activity for this session. */
 	refreshTick?: number;
 }) {
-	const [staging, setStaging] = useState<{ url: string; status: string } | null>(
-		null,
-	);
-	// A Vercel preview deploy is queued/running but butler hasn't posted the URL
-	// comment yet — enough to show a loading placeholder, not enough to link.
-	const [deployPending, setDeployPending] = useState(false);
 	const { copied, copy } = useCopy();
 	// Read up here with the other hooks, not beside the tooltip it feeds. Every
 	// state below this line returns early, so a call further down runs on some
@@ -102,41 +128,34 @@ export function StagingLink({
 	// previous render didn't have, and React tears the whole tree down over it.
 	const openChord = useShortcutLabel("open-preview");
 
-	// A merged/closed PR's alias no longer points at this change — the link is a
+	// A merged/closed PR's alias no longer points at this change. The link is a
 	// pre-merge testing affordance. Repos without deployment metadata simply
-	// return no staging URL.
-	const relevant = !!session.prUrl && session.prState === "OPEN";
-
-	useEffect(() => {
-		if (!relevant) {
-			setStaging(null);
-			setDeployPending(false);
-			return;
-		}
-		let alive = true;
-		const load = () =>
-			fetchPr(session.id)
-				.then((pr) => {
-					if (!alive) return;
-					setStaging(pr?.staging ?? null);
-					setDeployPending(
-						!!pr?.checks?.some(
-							(c: PrCheck) =>
-								isDeployment(c) &&
-								checkClass(c.status, c.conclusion) === "check-pending",
-						),
-					);
-				})
-				.catch(() => {});
-		load();
-		// Webhooks normally flip Building to Ready; this is only a missed-event
-		// fallback, and hidden tabs skip it entirely.
-		const stop = pollWhileVisible(load, PR_WEBHOOK_FALLBACK_POLL_MS);
-		return () => {
-			alive = false;
-			stop();
-		};
-	}, [session.id, relevant, refreshTick]);
+	// return no staging URL. PR refs are shared across a workspace, so a tab
+	// without a PR of its own deliberately targets one of the workspace's refs.
+	const presentation = sessionPrPresentation(session.prs);
+	const target = presentation.primary ?? worstPrRef(presentation.additional);
+	const relevant = target
+		? (target.state ??
+				(target.source === "primary" ? session.prState : undefined)) === "OPEN"
+		: !!session.prUrl && session.prState === "OPEN";
+	const prResource = useSessionPrResource(
+		session.id,
+		target?.repo || session.repo || undefined,
+		target?.branch,
+		{
+			enabled: relevant,
+			refreshInterval: PR_WEBHOOK_FALLBACK_POLL_MS,
+			revision: refreshTick,
+		},
+	);
+	const staging = prResource.data?.staging ?? null;
+	// A Vercel preview deploy is queued/running but butler hasn't posted the URL
+	// comment yet. That is enough to show a loading placeholder, not enough to link.
+	const deployPending = !!prResource.data?.checks?.some(
+		(c: PrCheck) =>
+			isDeployment(c) &&
+			checkClass(c.status, c.conclusion) === "check-pending",
+	);
 
 	if (!relevant) return null;
 
@@ -184,6 +203,32 @@ export function StagingLink({
 				</span>
 			);
 		}
+		if (variant === "summary") {
+			return (
+				<Tooltip
+					label="Preview environment starting… the link appears once it's up"
+					side="bottom"
+					multiline
+				>
+					<span
+						// PrStatusBar uses this marker to add breathing room only when
+						// the preview mark is absent.
+						data-summary-preview
+						// Nothing to open yet, so the mark drops its pointer and its
+						// plate rather than offering a target that does nothing.
+						className={cn(
+							SUMMARY_MARK,
+							SUMMARY_MARK_PAIR,
+							WS_SUMMARY_ICON,
+							"cursor-default",
+						)}
+						aria-label="Preview environment starting"
+					>
+						{shimmerGlobe(20)}
+					</span>
+				</Tooltip>
+			);
+		}
 		return (
 			<span
 				className={`${LINK_BASE} ${LINK_PENDING}`}
@@ -209,14 +254,11 @@ export function StagingLink({
 	// opens the feature under test, not the app root.
 	const href = withPreviewPath(staging.url, session.previewPath);
 
-	// ⌘/Ctrl-click copies the link instead of opening it (mirrors the browser's
-	// own modifier semantics elsewhere) — hold Cmd on macOS, Ctrl on Windows.
+	// A click opens the preview, including ⌘-click, which keeps the browser's own
+	// open-in-a-new-tab meaning. Copying moved to the right-click menu below: a
+	// modifier that quietly replaces a link's normal behaviour can only be
+	// discovered by reading a tooltip, and it cost the control its click.
 	const onClick = (e: React.MouseEvent) => {
-		if (e.metaKey || e.ctrlKey) {
-			e.preventDefault();
-			copy(href, { toast: "Link copied" });
-			return;
-		}
 		// Before the first deploy goes Ready the alias 404s, so swallow a plain
 		// click — but never silently (an unexplained dead link reads as a bug).
 		if (building) {
@@ -229,12 +271,18 @@ export function StagingLink({
 
 	// The globe carries a spinning ring while any deploy is in flight — first
 	// build (link dead until it lands) and rebuild (link opens the previous
-	// deploy) alike. While a ⌘-copy is fresh the globe morphs into a drawing
-	// checkmark; otherwise it's the (optionally spinning) globe.
+	// deploy) alike. After a copy from the right-click menu the globe morphs into
+	// a drawing checkmark for a beat and then settles back.
+	//
+	// The glyph shows the deploy's state and nothing else. It used to repaint into
+	// a chain link whenever ⌘ was held, which hid both the globe and its spinner
+	// behind a transient keypress — and a macOS screenshot chord holds ⌘, so no
+	// capture ever showed the real state.
 	const spinning = building || rebuilding;
+	const restingIcon = (size: number) => <IconGlobe size={size} />;
 	const globe = (size: number, ring: string) =>
 		copied ? (
-			<CopyCheck copied size={size} idle={<IconGlobe size={size} />} />
+			<CopyCheck copied size={size} idle={restingIcon(size)} />
 		) : (
 			<span className="relative inline-flex items-center justify-center">
 				{spinning && (
@@ -243,7 +291,7 @@ export function StagingLink({
 						aria-hidden="true"
 					/>
 				)}
-				<IconGlobe size={size} />
+				{restingIcon(size)}
 			</span>
 		);
 
@@ -252,19 +300,69 @@ export function StagingLink({
 		: rebuilding
 			? ICON_REBUILDING
 			: ICON_READY;
-	const chordHint = openChord ? `${openChord}; ` : "";
-	const tooltip = (copyHint: string) =>
-		copied
-			? "Link copied"
-			: building
-				? `Preview environment ${staging.status.toLowerCase()}… ${copyHint}`
-				: rebuilding
-					? `Redeploying for the latest push. Opens the previous deploy until it lands (${chordHint}${copyHint})`
-					: `Open the preview environment to test this PR on real infra (${chordHint}${copyHint})`;
+	/* The parenthetical is built from whatever hints this surface actually has:
+	   the phone grid cell has no right-click, so it passes none and must not end
+	   up with a dangling "( )". */
+	const tooltip = (copyHint: string) => {
+		const hints = [openChord, copyHint].filter(Boolean).join("; ");
+		const aside = hints ? ` (${hints})` : "";
+		if (copied) return "Link copied";
+		if (building)
+			return `Preview environment ${staging.status.toLowerCase()}…${copyHint ? ` ${copyHint}` : ""}`;
+		if (rebuilding)
+			return `Redeploying for the latest push. Opens the previous deploy until it lands${aside}`;
+		return `Open the preview environment to test this PR${aside}`;
+	};
+
+	/**
+	 * A left click opens the preview — that is the whole point of the control, so
+	 * nothing else competes for the click. Taking the link away is a right-click
+	 * menu, the same gesture the PR chip beside it already answers to, instead of
+	 * a modifier that only the tooltip could ever have told you about.
+	 */
+	const withCopyMenu = (trigger: React.ReactNode) => (
+		<ContextMenu.Root>
+			{/* An inline-flex box, not `contents`: the popup positions from the
+			    cursor but Base UI still measures the trigger, and a box-less element
+			    measures as a zero rect at the origin. */}
+			<ContextMenu.Trigger render={<span className="inline-flex shrink-0" />}>
+				{trigger}
+			</ContextMenu.Trigger>
+			<ContextMenu.Popup>
+				<ContextMenu.Item
+					render={
+						<a
+							href={href}
+							target="_blank"
+							rel="noopener"
+							className="no-underline"
+						/>
+					}
+				>
+					<IconArrowUpRight size={20} className={MENU_ICON} />
+					<span className="grow">Open preview</span>
+				</ContextMenu.Item>
+				{/* Keeps the popup open so the checkmark lands where it was clicked,
+				    matching the PR menu's copy rows. */}
+				<ContextMenu.Item closeOnClick={false} onClick={() => copy(href)}>
+					{copied ? (
+						<IconCheck size={20} className="text-green" />
+					) : (
+						<IconCopy size={20} className={MENU_ICON} />
+					)}
+					<span className="grow">{copied ? "Copied" : "Copy link"}</span>
+				</ContextMenu.Item>
+			</ContextMenu.Popup>
+		</ContextMenu.Root>
+	);
 
 	if (variant === "header") {
-		return (
-			<Tooltip label={tooltip("⌘-click to copy the link")} side="bottom" multiline>
+		return withCopyMenu(
+			<Tooltip
+				label={tooltip("right-click to copy the link")}
+				side="bottom"
+				multiline
+			>
 				<a
 					href={href}
 					target="_blank"
@@ -280,7 +378,7 @@ export function StagingLink({
 					    icons to read at the same weight in the top bar. */}
 					{globe(25, RING_LG)}
 				</a>
-			</Tooltip>
+			</Tooltip>,
 		);
 	}
 	if (variant === "action") {
@@ -292,7 +390,8 @@ export function StagingLink({
 				onClick={onClick}
 				aria-disabled={building || undefined}
 				className={`flex min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-supporting font-semibold no-underline outline-none transition-colors hover:bg-hover focus-visible:bg-hover ${building ? "cursor-default text-faint" : "text-fg"}`}
-				title={`${tooltip("⌘-click to copy the link")} · ${href}`}
+				/* A phone grid cell: no right-click, so no copy to advertise. */
+				title={`${tooltip("")} · ${href}`}
 			>
 				<span className="inline-flex size-5 shrink-0 items-center justify-center text-faint">
 					{globe(17, RING_LG)}
@@ -301,20 +400,57 @@ export function StagingLink({
 			</a>
 		);
 	}
+	if (variant === "summary") {
+		return withCopyMenu(
+			// The band is at the top of a floating card, so the tip hangs below it
+			// rather than over the header the card came from.
+			<Tooltip
+				label={tooltip("right-click to copy the link")}
+				side="bottom"
+				multiline
+			>
+				<a
+					href={href}
+					target="_blank"
+					rel="noopener"
+					onClick={onClick}
+					aria-disabled={building || undefined}
+					data-summary-preview
+					// The label the mark used to carry is now the tooltip's first line,
+					// and the deploy's own state rides in there with it: an icon cannot
+					// say "Redeploying" and the band has no room for a word that is only
+					// true for a minute at a time.
+					aria-label="Preview environment"
+					className={cn(
+						SUMMARY_MARK,
+						SUMMARY_MARK_PAIR,
+						// Same three-state colouring as the header globe, because it is
+						// the same control moved into the card: green once the preview is
+						// up and testable, amber while a deploy is in flight. "Up" is the
+						// state you act on here, so it is not the state that goes quiet.
+						spinning ? "text-yellow" : "text-green",
+						building ? "cursor-default" : SUMMARY_MARK_HOVER,
+					)}
+				>
+					{globe(20, RING_LG)}
+				</a>
+			</Tooltip>,
+		);
+	}
 
-	return (
+	return withCopyMenu(
 		<a
 			href={href}
 			target="_blank"
 			rel="noopener"
 			onClick={onClick}
 			aria-disabled={building || undefined}
-			className={`${LINK_BASE} ${building ? LINK_BUILDING : LINK_READY}`}
-			title={`${tooltip("⌘-click to copy the link")} · ${href}`}
+			className={`${LINK_BASE} ${building ? LINK_BUILDING : rebuilding ? LINK_DEPLOYING : LINK_READY}`}
+			title={`${tooltip("right-click to copy the link")} · ${href}`}
 		>
 			{globe(15, RING_SM)}
 			Preview environment
 			<IconArrowUpRight size={15} className="-ml-px opacity-80" />
-		</a>
+		</a>,
 	);
 }

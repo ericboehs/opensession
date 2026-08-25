@@ -27,6 +27,7 @@ export interface RecentCommit {
 	/** Web user-picker key ("kent"), or null when the author isn't a teammate. */
 	person: string | null;
 	committedAt: string;
+	filesChanged: number;
 	additions: number;
 	deletions: number;
 	/** The session that wrote it, when one can be named (commit-sessions.ts). */
@@ -74,6 +75,7 @@ export function parseCommitLog(
 			author: author || "",
 			person: personKeyForGitAuthor(author, email),
 			committedAt: date,
+			filesChanged: Number(stat.match(/(\d+) files? changed/)?.[1] || 0),
 			additions: Number(stat.match(/(\d+) insertions?\(\+\)/)?.[1] || 0),
 			deletions: Number(stat.match(/(\d+) deletions?\(-\)/)?.[1] || 0),
 		});
@@ -150,6 +152,21 @@ export async function getRecentCommits(days = DEFAULT_DAYS): Promise<RecentCommi
 	const cutoff = Date.now() - window * 86_400_000;
 	const commits = all.filter((commit) => new Date(commit.committedAt).getTime() >= cutoff);
 	return { commits, days: window, hasMore: commits.length < all.length };
+}
+
+/** Newest commits attributed to any of these sessions. This is the provenance
+ * query for workspace summaries: unlike a branch diff, it keeps answering
+ * after a shared-checkout commit has been pushed onto the default branch. */
+export async function getRecentCommitsForSessions(
+	sessionIds: ReadonlySet<string>,
+	limit = 20,
+): Promise<RecentCommit[]> {
+	if (sessionIds.size === 0 || limit <= 0) return [];
+	const { data: all, ts: readAt } = await readAllCommits();
+	await linkSessions(all, readAt);
+	return all
+		.filter((commit) => Boolean(commit.sessionId && sessionIds.has(commit.sessionId)))
+		.slice(0, limit);
 }
 
 async function linkSessions(commits: RecentCommit[], readAt: number): Promise<void> {

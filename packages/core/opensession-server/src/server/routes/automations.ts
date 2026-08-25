@@ -13,6 +13,7 @@ import { draftAutomation } from "../draft-automation";
 import { listReportGroups } from "../reports";
 import { invalidateSessionsCache } from "../session-cache";
 import { getWorkspace } from "../workspaces";
+import { conditionalJsonResponse } from "../http-json";
 
 export async function handleAutomationsRoutes(
 	ctx: RouteContext,
@@ -56,7 +57,7 @@ export async function handleAutomationsRoutes(
 		const latestByAutomation = new Map(
 			listReportGroups().map((g) => [g.automationId, g.latest]),
 		);
-		return Response.json({
+		return conditionalJsonResponse(req, {
 			automations: listAutomations().map((a) => {
 				const report = latestByAutomation.get(a.id);
 				const workspace = a.workspaceId ? getWorkspace(a.workspaceId) : null;

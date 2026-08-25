@@ -24,6 +24,11 @@ enum TranscriptScroll {
         var containerHeight: CGFloat = 0
     }
 
+    struct FollowState: Equatable {
+        var pinned: Bool
+        var readerMovedTowardHistory: Bool
+    }
+
     /// How far the visible bottom edge is from as far down as the view goes.
     /// Zero at a dragged-to-the-end bottom; positive above it.
     static func distanceFromBottom(_ geometry: Geometry) -> CGFloat {
@@ -84,6 +89,41 @@ enum TranscriptScroll {
         if geometry.contentHeight <= geometry.containerHeight { return true }
         return distanceFromBottom(geometry) <= tolerance
     }
+
+    /// Keep an upward reader gesture authoritative even when it remains inside
+    /// the near-bottom tolerance. Layout-driven scroll updates must not re-arm
+    /// following until the reader moves back toward the latest message.
+    static func followState(
+        previousOffset: CGFloat,
+        offset: CGFloat,
+        previousContentHeight: CGFloat,
+        contentHeight: CGFloat,
+        previousDistanceFromBottom: CGFloat,
+        isNearBottom: Bool,
+        readerGestureActive: Bool,
+        layoutChanged: Bool,
+        readerMovedTowardHistory: Bool
+    ) -> FollowState {
+        var movedTowardHistory = readerMovedTowardHistory
+        if readerGestureActive, !layoutChanged {
+            let offsetDelta = offset - previousOffset
+            let contentDelta = contentHeight - previousContentHeight
+            // Tail growth may move the offset down by the same amount; tail
+            // shrinkage may clamp it up. Remove those automatic components
+            // before interpreting movement as the reader's.
+            let towardHistory = offsetDelta - min(contentDelta, 0)
+            let towardLatest = offsetDelta - max(contentDelta, 0)
+            if towardHistory < -0.5, previousDistanceFromBottom >= 0 {
+                movedTowardHistory = true
+            } else if towardLatest > 0.5, isNearBottom {
+                movedTowardHistory = false
+            }
+        }
+        return FollowState(
+            pinned: isNearBottom && !movedTowardHistory,
+            readerMovedTowardHistory: movedTowardHistory
+        )
+    }
 }
 
 /// The two numbers the prepend restore works from, as one `Equatable` value so
@@ -94,4 +134,7 @@ struct TranscriptGeometry: Equatable {
     var contentHeight: CGFloat
     /// The top inset the navigation bar takes, for `restoredScrollY`.
     var insetTop: CGFloat
+    var visibleMaxY: CGFloat
+    var insetBottom: CGFloat
+    var containerHeight: CGFloat
 }

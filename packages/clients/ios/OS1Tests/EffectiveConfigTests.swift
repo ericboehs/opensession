@@ -16,10 +16,10 @@ final class EffectiveConfigDecodingTests: XCTestCase {
         )
 
         XCTAssertEqual(config.session?.id, "os-1")
-        XCTAssertEqual(config.model?["dispatchModel"]?.value, .string("opencode/anthropic/claude-opus-5"))
+        XCTAssertEqual(config.model?["dispatchModel"]?.value, .string("pi/anthropic/claude-opus-5"))
         XCTAssertEqual(config.account?["predicted"]?.stability, "load-dependent")
         XCTAssertEqual(config.mcp?.servers?.map(\.name), ["grafana", "stripe"])
-        XCTAssertEqual(config.instructions?["sources"]?.source, "opencode-runner.ts instructions composition")
+        XCTAssertEqual(config.instructions?["sources"]?.source, "pi-runner.ts instructions composition")
     }
 
     func testStrippedToolDecodesFromDynamicRowValue() throws {
@@ -43,13 +43,13 @@ final class EffectiveConfigDecodingTests: XCTestCase {
       "resolvedAt":"2026-08-17T10:00:00.000Z",
       "caveat":"Forecast only.",
       "execution":{"mode":{"value":"code","source":"session file mode"}},
-      "gate":{"allowed":{"value":true,"source":"opencode-policy.ts opencodeGateReason"}},
+      "gate":{"allowed":{"value":true,"source":"run-policy.ts runGateReason"}},
       "model":{
         "requested":{"value":"dial/medium","source":"session file model"},
-        "dispatchModel":{"value":"opencode/anthropic/claude-opus-5","source":"models.ts routeModel"},
-        "engine":{"value":"opencode","source":"models.ts routeModel"}
+        "dispatchModel":{"value":"pi/anthropic/claude-opus-5","source":"models.ts routeModel"},
+        "engine":{"value":"pi","source":"models.ts routeModel"}
       },
-      "account":{"predicted":{"value":{"id":"acct-1","name":"Primary","reason":"most allowance"},"source":"opencode-runner.ts pickMeridianAccount","stability":"load-dependent"}},
+      "account":{"predicted":{"value":{"id":"acct-1","name":"Primary","reason":"most allowance"},"source":"pi-runner.ts pickMeridianAccount","stability":"load-dependent"}},
       "mcp":{
         "scope":{"value":["grafana"],"source":"session-run-inputs.ts"},
         "servers":[
@@ -60,12 +60,12 @@ final class EffectiveConfigDecodingTests: XCTestCase {
       },
       "tools":{
         "bashPolicy":{"value":"unrestricted","source":"runner-shared.ts"},
-        "stripped":{"value":[{"tool":"stripe_create_refund","ids":["stripe_create_refund"],"source":"runner-shared.ts STRIPE_CONFIRM_TOOLS","reason":"requires approval"}],"source":"opencode-policy.ts opencodeRunPolicy.disables"}
+        "stripped":{"value":[{"tool":"stripe_create_refund","ids":["stripe_create_refund"],"source":"runner-shared.ts STRIPE_CONFIRM_TOOLS","reason":"requires approval"}],"source":"run-policy.ts runToolPolicy.disables"}
       },
       "agents":{},"memory":{},"placement":{},"identity":{},
       "instructions":{
-        "channel":{"value":"per-prompt system parameter","source":"opencode-runner.ts"},
-        "sources":{"value":["run-instructions.ts buildRunInstructions","session-repos.ts buildSessionNote"],"source":"opencode-runner.ts instructions composition"}
+        "channel":{"value":"per-prompt system parameter","source":"pi-runner.ts"},
+        "sources":{"value":["run-instructions.ts buildRunInstructions","session-repos.ts buildSessionNote"],"source":"pi-runner.ts instructions composition"}
       },
       "futureSection":{"anything":true}
     }
@@ -88,7 +88,7 @@ final class EffectiveConfigViewModelTests: XCTestCase {
 
         XCTAssertFalse(model.isLoading)
         XCTAssertNil(model.error)
-        XCTAssertEqual(model.modelRows.first?.values, ["opencode/anthropic/claude-opus-5"])
+        XCTAssertEqual(model.modelRows.first?.values, ["pi/anthropic/claude-opus-5"])
         XCTAssertEqual(model.modelRows.first?.source, "models.ts routeModel")
         XCTAssertEqual(model.modelRows.last?.forecast, true)
         XCTAssertEqual(model.mcpRows.first?.source, "session-run-inputs.ts")

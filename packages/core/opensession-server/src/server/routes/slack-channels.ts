@@ -29,7 +29,8 @@ export function configuredSlackChannels(): SlackChannelOption[] {
 export function defaultSlackChannel(
 	channels: SlackChannelOption[],
 ): string | undefined {
-	return channels.find((channel) => channel.name.toLowerCase() === "engineering")?.id
+	return channels.find((channel) => channel.name.toLowerCase() === "os")?.id
+		|| channels.find((channel) => channel.name.toLowerCase() === "engineering")?.id
 		|| channels[0]?.id;
 }
 

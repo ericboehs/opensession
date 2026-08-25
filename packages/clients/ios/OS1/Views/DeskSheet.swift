@@ -17,7 +17,6 @@ struct DeskSheet: View {
     private static let staleAfter: TimeInterval = 2 * 60 * 60
 
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("os1.desk.voice") private var deskVoice = "off"
 
     @State private var loadState: LoadState = .loading
@@ -26,8 +25,16 @@ struct DeskSheet: View {
     var body: some View {
         @Bindable var engine = engine
         return VStack(spacing: 0) {
-            header
-            Divider()
+            VStack(spacing: 0) {
+                header
+                Divider()
+            }
+            .background(OS1VisualStyle.chatCanvas)
+            // SessionView's top transcript wash deliberately overhangs its
+            // bounds to dissolve rows under navigation chrome. The Desk owns
+            // its header outside SessionView, so keep that opaque header above
+            // the wash instead of letting the later sibling fade its controls.
+            .zIndex(1)
             content
         }
         .task {
@@ -46,12 +53,15 @@ struct DeskSheet: View {
             // presented. Only a sheet that is really going away stops it.
             if !engine.callPresented { engine.stop() }
         }
-        .onChange(of: scenePhase) { _, phase in
-            // A backgrounded app must never hold the mic open. `.inactive` is
-            // not backgrounded — it's the app switcher, a notification banner,
-            // Control Center — and killing a live call for those is how a
-            // glance at the notification shade silently ends a conversation.
-            if phase == .background { engine.stop() }
+        .task {
+            for await _ in NotificationCenter.default.notifications(
+                named: AppLifecycle.didEnterBackgroundNotification
+            ) {
+                // A backgrounded app must never hold the mic open. Inactive is
+                // not backgrounded: a notification banner or Control Center
+                // must not silently end a conversation.
+                engine.stop()
+            }
         }
         .fullScreenCoverCompat(isPresented: $engine.callPresented) {
             DeskVoiceCallView(engine: engine)

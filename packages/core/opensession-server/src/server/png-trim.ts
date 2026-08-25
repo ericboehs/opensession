@@ -1,7 +1,7 @@
 /**
  * Trim the empty margin around a tile icon.
  *
- * Icons arrive drawn to whatever proportions their author chose: the tellahq
+ * Icons arrive drawn to whatever proportions their author chose: the org
  * avatar puts its mark on 62% of its canvas, an Apple-style app icon on 80%.
  * A letter tile fills its square completely, so those icons sit in a row of
  * tiles reading visibly smaller than the ones beside them — the thing this

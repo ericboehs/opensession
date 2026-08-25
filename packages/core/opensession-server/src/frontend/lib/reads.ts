@@ -10,6 +10,7 @@
 
 import { fetchReads, saveReadsApi } from "./api";
 import { getCurrentUser } from "../components/UserPicker";
+import { whenCurrentUserReady } from "./auth-ready";
 
 const KEY_PREFIX = "opensession-reads:";
 const LEGACY_KEY = "opensession-reads";
@@ -195,7 +196,7 @@ if (
   typeof window !== "undefined" &&
   typeof window.addEventListener === "function"
 ) {
-  void hydrate(getCurrentUser());
+  whenCurrentUserReady((user) => void hydrate(user));
   window.addEventListener(USER_CHANGE_EVENT, () => {
     clearTimeout(hydrationRetry);
     hydratedFor = null;

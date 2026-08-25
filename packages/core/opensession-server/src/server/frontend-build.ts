@@ -6,7 +6,9 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync } from "node:fs";
-import { dirname, join, resolve } from "path";
+import { dirname, join, relative, resolve, sep } from "path";
+import type { BunFile, BunPlugin } from "bun";
+import { EMBEDDED_FRONTEND } from "./embedded-frontend";
 import { activeRunRecords } from "./run-journal";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { gitIdentityFor } from "./shared/user-mappings";
@@ -26,6 +28,37 @@ export type FrontendBundle = {
 	gzip: Map<string, Blob>;
 	version: string;
 };
+
+/** True when the SPA is served from assets baked into the compiled binary
+ *  rather than a `.frontend-dist` checkout (no in-process build is possible). */
+/**
+ * A built SPA asset by its served name (e.g. `App-abc123.js`, `ghostty-vt.wasm`)
+ * — from the embedded set in the compiled binary, or `.frontend-dist` on disk.
+ * Null when the compiled binary has no such asset (source mode returns a
+ * BunFile whose `.exists()` the caller still checks).
+ */
+export function frontendDistFile(name: string): BunFile | null {
+	if (EMBEDDED_FRONTEND) {
+		const path = EMBEDDED_FRONTEND.assets[name];
+		return path ? Bun.file(path) : null;
+	}
+	return Bun.file(join(FRONTEND_DIST, name));
+}
+
+/**
+ * A stable asset served directly from src/frontend in source installs, or from
+ * the compiled binary's embedded static set in one-command installs.
+ */
+export function frontendStaticFile(
+	name: string,
+	sourcePath = join(FRONTEND_SRC, name),
+): BunFile | null {
+	if (EMBEDDED_FRONTEND) {
+		const path = EMBEDDED_FRONTEND.staticAssets[name];
+		return path ? Bun.file(path) : null;
+	}
+	return Bun.file(sourcePath);
+}
 
 /**
  * Name of the newest Tailwind sheet that compiled successfully, so a failed
@@ -96,16 +129,128 @@ export async function devTailwindCss(): Promise<string | null> {
 	}
 }
 
-// Build (or rebuild) the prod SPA bundle in-process. The result object on
-// globalThis is MUTATED in place (never reassigned) so the long-lived `frontend`
-// reference + route closures pick up a rebuild without a process restart —
-// which is the whole point: a CSS/frontend change no longer needs a `systemctl
-// restart` that would interrupt every in-flight Claude run. `version` changes
-// whenever the entry or CSS hash changes, so clients know to refresh.
-export async function buildFrontend(): Promise<string> {
+// ── Prebuilt mode ────────────────────────────────────────────────────────────
+// A release artefact (scripts/build-release.ts) ships .frontend-dist compiled
+// on the build host and installs dependencies with --production, so the box
+// has no Tailwind compiler and never bundles. It is detected by the
+// release.json the artefact writes at the repo root, or forced with
+// OPENSESSION_PREBUILT_FRONTEND=1 (=0 forces source mode). In this mode boot
+// only rehydrates the shipped bundle and renders index.html; every rebuild
+// trigger is a no-op.
+
+const RELEASE_MANIFEST = join(REPO_ROOT, "release.json");
+
+/** True when the frontend is served from a fixed prebuilt bundle rather than
+ *  built in-process: the compiled binary's embedded assets, or a release
+ *  tarball's shipped .frontend-dist. Either way there is no source rebuild. */
+export function isPrebuiltFrontend(): boolean {
+	if (EMBEDDED_FRONTEND) return true;
+	if (process.env.OPENSESSION_PREBUILT_FRONTEND === "1") return true;
+	if (process.env.OPENSESSION_PREBUILT_FRONTEND === "0") return false;
+	return existsSync(RELEASE_MANIFEST);
+}
+
+/**
+ * What compileAssets() leaves behind in .frontend-dist/.bundle-meta.json:
+ * the hashed asset names index.html links to and the portable inputs hash
+ * that says which sources they were compiled from. Everything else the
+ * served bundle needs (index.html, version) is derived from it at boot.
+ */
+export type BundleMeta = {
+	inputsHash: string;
+	entryName: string;
+	cssName: string;
+	twName: string | null;
+	/** Every servable file compileAssets wrote (entry, chunks, sheets). */
+	assets: string[];
+	bunVersion?: string;
+	builtAt?: string;
+};
+
+const BUNDLE_META = join(FRONTEND_DIST, ".bundle-meta.json");
+
+function frontendStore(): FrontendBundle {
+	return (g.__opensessionFrontend ??= {
+		indexHtml: "",
+		gzip: new Map<string, Blob>(),
+		version: "",
+	}) as FrontendBundle;
+}
+
+/** The meta the served bundle was rendered from (globalThis-parked so a hot
+ *  reload and the identity-settings re-render see the same one). */
+function currentMeta(): BundleMeta | null {
+	return (g.__opensessionFrontendMeta as BundleMeta | undefined) ?? null;
+}
+
+// ── React Compiler ──────────────────────────────────────────────────────────
+// The oxc Rust port of the React Compiler runs over every file in
+// src/frontend before bundling, auto-memoizing components and hooks. This is
+// why the frontend convention is "no useMemo/useCallback unless measured":
+// the compiler supplies the memoization. A compiler diagnostic fails the build
+// rather than silently shipping a function whose identities are unstable.
+// Dev mode serves through Bun's HMR server, which has no plugin hook, so the
+// compiler only runs here (prod bundle + release artefact).
+type TransformSync = typeof import("oxc-transform-react").transformSync;
+
+function reactCompilerPlugin(count: { n: number }, transformSync: TransformSync): BunPlugin {
+	return {
+		name: "oxc-react-compiler",
+		setup(build) {
+			build.onLoad({ filter: /\.[jt]sx?$/ }, (args) => {
+				// Only our own sources: vendored deps ship pre-built and must keep
+				// their exact published output.
+				if (!args.path.startsWith(FRONTEND_SRC)) return undefined;
+				const sourceText = readFileSync(args.path, "utf8");
+				const lang = args.path.endsWith(".tsx") ? "tsx" : args.path.endsWith(".ts") ? "ts" : args.path.endsWith(".jsx") ? "jsx" : "js";
+				const result = transformSync(args.path, sourceText, {
+					lang,
+					// Lower TS + JSX here so the bundled loader can be plain js.
+					jsx: { development: false },
+					reactCompiler: { target: "19", panicThreshold: "none" },
+				});
+				if (result.fatal || !result.code || result.errors.length > 0) {
+					const details =
+						result.errors
+							.map(
+								(error) =>
+									`${error.severity}: ${error.message}${error.codeframe ? `\n${error.codeframe}` : ""}`,
+							)
+							.join("\n") || "unknown compiler failure";
+					throw new Error(
+						`React Compiler failed on ${relative(FRONTEND_SRC, args.path)}:\n${details}`,
+					);
+				}
+				count.n++;
+				return { contents: result.code, loader: "js" };
+			});
+		},
+	};
+}
+
+// Lowered + compiler-memoized file counter, shared with the plugin below so
+// compileAssets can report one summary line per build.
+const compilerCount = { n: 0 };
+
+/**
+ * Compile the SPA assets into .frontend-dist: the split JS bundle, the
+ * hand-concatenated global stylesheet, the Tailwind sheet and the ghostty
+ * wasm. Writes .bundle-meta.json and returns it. Touches no served state;
+ * buildFrontend() and the release build both sit on top of this.
+ *
+ * Nothing here depends on the instance (name, mark, persona, URLs): those
+ * are stitched into index.html by renderIndexHtml at boot, which is what
+ * makes a dist compiled on one machine reusable on any other.
+ */
+export async function compileAssets(): Promise<BundleMeta> {
+	// The compiler is a build-only native dependency. Loading it at module scope
+	// makes a compiled release try to resolve its unshipped .node binding during
+	// server boot, even though embedded releases never rebuild the frontend.
+	const { transformSync } = await import("oxc-transform-react");
 	// Stamped before the build so edits landing mid-build hash as "changed" on
 	// the next boot rather than being masked by a post-build stamp.
 	const inputsHash = frontendInputsHash();
+	compilerCount.n = 0;
 	const result = await Bun.build({
 		entrypoints: [`${FRONTEND_SRC}/App.tsx`],
 		outdir: FRONTEND_DIST,
@@ -113,7 +258,7 @@ export async function buildFrontend(): Promise<string> {
 		splitting: true,
 		sourcemap: "none",
 		// Root-relative assets: the app is served at the bare domain root
-		// (os.tella.dev); old /opensession + /backstage page URLs 301 there, and
+		// (the instance host); old /opensession + /backstage page URLs 301 there, and
 		// prefixed asset requests still normalize in the fetch preamble.
 		publicPath: "/",
 		naming: {
@@ -121,10 +266,12 @@ export async function buildFrontend(): Promise<string> {
 			chunk: "[name]-[hash].[ext]",
 			asset: "[name]-[hash].[ext]",
 		},
+		plugins: [reactCompilerPlugin(compilerCount, transformSync)],
 	});
 	if (!result.success) {
 		throw new AggregateError(result.logs, "frontend build failed");
 	}
+	console.log(`React Compiler memoized ${compilerCount.n} frontend files`);
 	// Bun's HTML-entry splitting mis-points the bootstrap <script> at a leaf
 	// chunk, so we build the JS entry and stitch index.html ourselves: keep the
 	// source shell (icons, splash, manifest links) and point it at the hashed
@@ -132,6 +279,7 @@ export async function buildFrontend(): Promise<string> {
 	const entry = result.outputs.find((o) => o.kind === "entry-point");
 	if (!entry) throw new Error("frontend build produced no entry point");
 	const entryName = entry.path.split("/").pop()!;
+	const outputNames = result.outputs.map((o) => o.path.split("/").pop()!);
 
 	// Bun 1.3.14's CSS minifier strips the space after var(...) and breaks the
 	// .panel-overlay / .sidebar-overlay inset (and a few color-mix percentages),
@@ -215,16 +363,59 @@ export async function buildFrontend(): Promise<string> {
 		}
 	}
 
-	let indexHtml = await Bun.file(`${FRONTEND_SRC}/index.html`).text();
-	const instance = JSON.stringify({
+	const meta: BundleMeta = {
+		inputsHash,
+		entryName,
+		cssName,
+		twName,
+		assets: [...outputNames, cssName, ...(twName ? [twName] : [])],
+		bunVersion: Bun.version,
+		builtAt: new Date().toISOString(),
+	};
+	writeFileAtomic(BUNDLE_META, JSON.stringify(meta));
+	console.log(
+		`Frontend compiled: ${result.outputs.length} files → ${FRONTEND_DIST} (v=${bundleVersion(meta)})`,
+	);
+	pruneFrontendDist(meta.assets);
+	return meta;
+}
+
+/** Changes whenever the entry or a stylesheet hash changes, so clients know to refresh. */
+export function bundleVersion(meta: BundleMeta): string {
+	return `${meta.entryName}|${meta.cssName}|${meta.twName ?? "no-tw"}`;
+}
+
+/**
+ * The served index.html: the source shell from src/frontend/index.html with
+ * the instance blob (name, mark, persona, URLs) and the <title> stitched in,
+ * pointed at the compiled assets. Pure over (meta, source shell, config);
+ * runs at boot and again when identity settings change, without recompiling.
+ */
+/** The per-instance blob stitched into index.html: identity, URLs, and the ids
+ *  the SPA needs before its first fetch. Kept as one helper so the boot render
+ *  and any inputs it feeds never drift on which fields the instance carries. */
+function frontendInstance() {
+	return {
 		productName: productName(),
 		productMark: productMark(),
 		personaName: personaName(),
 		publicBaseUrl: configuredServer().publicBaseUrl,
+		webhookBaseUrl: configuredServer().webhookBaseUrl,
 		githubBotLogins: githubBotLogins(),
 		defaultRepoId: defaultRepo().id,
 		plainWorkspaceId: plainWorkspaceId() || undefined,
-	}).replace(/</g, "\\u003c");
+		agentationEnabled: process.env.OPENSESSION_AGENTATION === "1" || undefined,
+	};
+}
+
+export function renderIndexHtml(meta: BundleMeta): string {
+	// A compiled binary has no src tree, so the neutral index.html shell is
+	// embedded and parked here at boot; otherwise read it from src/frontend.
+	// Either way the instance blob below is stitched from the LIVE config, so
+	// the served page reflects THIS install, not the machine that built it.
+	const embeddedShell = g.__opensessionFrontendShell as string | undefined;
+	let indexHtml = embeddedShell ?? readFileSync(`${FRONTEND_SRC}/index.html`, "utf8");
+	const instance = JSON.stringify(frontendInstance()).replace(/</g, "\\u003c");
 	const htmlProductName = productName()
 		.replaceAll("&", "&amp;")
 		.replaceAll('"', "&quot;")
@@ -243,40 +434,60 @@ export async function buildFrontend(): Promise<string> {
 		.replaceAll('content="Open Session"', `content="${htmlProductName}"`);
 	indexHtml = indexHtml.replace(
 		'<script type="module" src="./App.tsx"></script>',
-		`<script type="module" crossorigin src="/${entryName}"></script>`,
+		`<script type="module" crossorigin src="/${meta.entryName}"></script>`,
 	);
-	const twLink = twName
-		? `\n  <link rel="stylesheet" href="/${twName}">`
+	const twLink = meta.twName
+		? `\n  <link rel="stylesheet" href="/${meta.twName}">`
 		: "";
 	// Inject before the LAST head close: the first "</head>" in the source can
 	// legitimately appear inside inline-script comment text (2026-08-05: a
 	// comment literal ate the stylesheet links and broke the boot script).
 	const headClose = indexHtml.lastIndexOf("</head>");
-	indexHtml =
+	return (
 		indexHtml.slice(0, headClose) +
-		`  <link rel="stylesheet" href="/${cssName}">${twLink}\n` +
-		indexHtml.slice(headClose);
-	const version = `${entryName}|${cssName}|${twName ?? "no-tw"}`;
-
-	const store: FrontendBundle = (g.__opensessionFrontend ??= {
-		indexHtml: "",
-		gzip: new Map<string, Blob>(),
-		version: "",
-	});
-	store.indexHtml = indexHtml;
-	store.gzip.clear(); // stale gzipped blobs were keyed by the old hashed names
-	store.version = version;
-	try {
-		writeFileAtomic(
-			BUNDLE_META,
-			JSON.stringify({ inputsHash, version, indexHtml, assets: [entryName, cssName, twName].filter(Boolean) }),
-		);
-	} catch {}
-	console.log(
-		`Frontend built: ${result.outputs.length} files → ${FRONTEND_DIST} (v=${version})`,
+		`  <link rel="stylesheet" href="/${meta.cssName}">${twLink}\n` +
+		indexHtml.slice(headClose)
 	);
-	pruneFrontendDist([entryName, cssName, twName ?? ""]);
-	return version;
+}
+
+/** Point the served bundle at `meta`: render index.html and swap the store
+ *  contents in place (never reassigned; routes hold the one reference). */
+function applyBundle(meta: BundleMeta): string {
+	const store = frontendStore();
+	store.indexHtml = renderIndexHtml(meta);
+	store.gzip.clear(); // stale gzipped blobs were keyed by the old hashed names
+	store.version = bundleVersion(meta);
+	g.__opensessionFrontendMeta = meta;
+	return store.version;
+}
+
+// Build (or rebuild) the prod SPA bundle in-process. The result object on
+// globalThis is MUTATED in place (never reassigned) so the long-lived `frontend`
+// reference + route closures pick up a rebuild without a process restart,
+// which is the whole point: a CSS/frontend change no longer needs a `systemctl
+// restart` that would interrupt every in-flight Claude run. `version` changes
+// whenever the entry or CSS hash changes, so clients know to refresh.
+export async function buildFrontend(): Promise<string> {
+	if (isPrebuiltFrontend()) {
+		throw new Error(
+			"frontend is prebuilt (release.json / OPENSESSION_PREBUILT_FRONTEND): rebuilding is not available",
+		);
+	}
+	return applyBundle(await compileAssets());
+}
+
+/**
+ * Re-stitch index.html from the current bundle after an identity change
+ * (product name, mark, persona). Nothing compiled depends on those values,
+ * so no rebuild: the served shell is swapped in place. No-op in dev (Bun's
+ * HMR server serves the source shell) and before the first build.
+ */
+export function refreshIndexHtml(reason: string): void {
+	if (!frontend) return;
+	const meta = currentMeta();
+	if (!meta) return;
+	applyBundle(meta);
+	console.log(`[frontend] index.html re-rendered (${reason})`);
 }
 
 // Hashed bundles accumulate forever without this (the dist hit 8.6 GB /
@@ -308,59 +519,84 @@ function pruneFrontendDist(keep: string[]): void {
 // none of that changed since the last build, boot reuses .frontend-dist
 // instead of paying the ~3.5s rebuild; every restart used to eat it even with
 // zero frontend changes. The in-process watcher still rebuilds on any edit.
+//
+// The hash is portable: paths relative to src/frontend, content hashes rather
+// than mtimes, and nothing about the instance. The same sources produce the
+// same hash on any machine, which is what lets a release artefact ship the
+// dist compiled elsewhere (compileAssets) and have boot accept it as current.
 
-const BUNDLE_META = join(FRONTEND_DIST, ".bundle-meta.json");
-
-function frontendInputsHash(): string {
-	const parts: string[] = [
-		`bun:${Bun.version}`,
-		`instance:${productName()}:${productMark()}:${personaName()}:${configuredServer().publicBaseUrl}:${githubBotLogins().join(",")}:${defaultRepo().id}`,
-	];
+export function frontendInputsHash(): string {
+	const parts: string[] = [`bun:${Bun.version}`];
 	try {
-		const lock = statSync(join(REPO_ROOT, "bun.lock"));
-		parts.push(`lock:${lock.mtimeMs}:${lock.size}`);
+		parts.push(`lock:${Bun.hash(readFileSync(join(REPO_ROOT, "bun.lock"))).toString(36)}`);
 	} catch {}
 	const entries = readdirSync(FRONTEND_SRC, { recursive: true, withFileTypes: true });
 	for (const e of entries) {
 		if (!e.isFile()) continue;
-		const p = join((e as { parentPath?: string }).parentPath ?? String((e as { path?: string }).path ?? FRONTEND_SRC), e.name);
+		const dir = (e as { parentPath?: string }).parentPath ?? String((e as { path?: string }).path ?? FRONTEND_SRC);
+		const p = join(dir, e.name);
 		try {
-			const s = statSync(p);
-			parts.push(`${p}:${s.mtimeMs}:${s.size}`);
+			const rel = relative(FRONTEND_SRC, p).split(sep).join("/");
+			parts.push(`${rel}:${Bun.hash(readFileSync(p)).toString(36)}`);
 		} catch {}
 	}
 	parts.sort();
 	return Bun.hash(parts.join("\n")).toString(36);
 }
 
+function readBundleMeta(): BundleMeta | null {
+	try {
+		const meta = JSON.parse(readFileSync(BUNDLE_META, "utf8")) as Partial<BundleMeta>;
+		if (!meta.inputsHash || !meta.entryName || !meta.cssName || !Array.isArray(meta.assets)) return null;
+		return { ...meta, twName: meta.twName ?? null } as BundleMeta;
+	} catch {
+		return null;
+	}
+}
+
 /** Rehydrate the served bundle from an unchanged .frontend-dist. False on any
  *  doubt (missing meta, hash drift, missing asset file) → caller rebuilds. */
 function tryReuseFrontendDist(): boolean {
-	try {
-		const meta = JSON.parse(readFileSync(BUNDLE_META, "utf8")) as {
-			inputsHash?: string;
-			version?: string;
-			indexHtml?: string;
-			assets?: string[];
-		};
-		if (!meta.inputsHash || !meta.version || !meta.indexHtml) return false;
-		if (meta.inputsHash !== frontendInputsHash()) return false;
-		for (const a of meta.assets ?? []) {
-			if (!existsSync(join(FRONTEND_DIST, a))) return false;
-		}
-		const store: FrontendBundle = (g.__opensessionFrontend ??= {
-			indexHtml: "",
-			gzip: new Map<string, Blob>(),
-			version: "",
-		});
-		store.indexHtml = meta.indexHtml;
-		store.gzip.clear();
-		store.version = meta.version;
-		console.log(`Frontend bundle unchanged — reusing ${FRONTEND_DIST} (v=${meta.version})`);
-		return true;
-	} catch {
-		return false;
+	const meta = readBundleMeta();
+	if (!meta) return false;
+	if (meta.inputsHash !== frontendInputsHash()) return false;
+	for (const a of meta.assets) {
+		if (!existsSync(join(FRONTEND_DIST, a))) return false;
 	}
+	const version = applyBundle(meta);
+	console.log(`Frontend bundle unchanged, reusing ${FRONTEND_DIST} (v=${version})`);
+	return true;
+}
+
+/**
+ * Prebuilt mode's only boot path: serve the shipped dist as is. The hash is
+ * checked but only warned about (someone edited src/frontend on the box);
+ * missing meta or assets fail boot with a pointer at the fix, since nothing
+ * here can rebuild.
+ */
+function loadPrebuiltFrontendDist(): void {
+	const meta = readBundleMeta();
+	if (!meta) {
+		throw new Error(
+			`Prebuilt frontend expected but ${BUNDLE_META} is missing or invalid. ` +
+				"The release artefact ships .frontend-dist compiled by scripts/build-release.ts; " +
+				"reinstall the release, or unset OPENSESSION_PREBUILT_FRONTEND / remove release.json to build from source.",
+		);
+	}
+	const missing = meta.assets.filter((a) => !existsSync(join(FRONTEND_DIST, a)));
+	if (missing.length) {
+		throw new Error(
+			`Prebuilt frontend is incomplete: ${missing.length} asset(s) listed in ${BUNDLE_META} are missing ` +
+				`(first: ${missing[0]}). Reinstall the release.`,
+		);
+	}
+	if (meta.inputsHash !== frontendInputsHash()) {
+		console.warn(
+			"[frontend] Prebuilt bundle does not match src/frontend on this box (sources edited after the release was built); serving the shipped bundle anyway",
+		);
+	}
+	const version = applyBundle(meta);
+	console.log(`Frontend prebuilt: serving ${FRONTEND_DIST} as shipped (v=${version})`);
 }
 
 /**
@@ -376,13 +612,7 @@ function tryReuseFrontendDist(): boolean {
  * the life of the process and read `indexHtml` fresh per request, which is
  * exactly what lets a rebuild land without a restart.
  */
-export const frontend: FrontendBundle | null = IS_DEV
-	? null
-	: ((g.__opensessionFrontend ??= {
-			indexHtml: "",
-			gzip: new Map<string, Blob>(),
-			version: "",
-		}) as FrontendBundle);
+export const frontend: FrontendBundle | null = IS_DEV ? null : frontendStore();
 
 /**
  * Fill the bundle: rehydrate an unchanged .frontend-dist, or build it.
@@ -392,11 +622,31 @@ export const frontend: FrontendBundle | null = IS_DEV
  * this module and finds the globalThis store already filled — and concurrent
  * callers share one build. It throws when the build fails with no reusable
  * dist, which fails the boot loudly rather than serving an app with no JS.
+ * In prebuilt mode it never builds: the shipped dist is served or boot fails.
  */
 export function ensureFrontendBuilt(): Promise<void> {
 	if (!frontend || frontend.version) return Promise.resolve();
 	if (!g.__opensessionFrontendBuild) {
 		g.__opensessionFrontendBuild = (async () => {
+			// Compiled binary: the bundle is baked in, no source tree or Tailwind
+			// CLI to build from — fill from the embedded assets.
+			if (EMBEDDED_FRONTEND) {
+				// The embedded index.html is the instance-NEUTRAL shell; park it so
+				// renderIndexHtml stitches THIS install's config (product name,
+				// public URL, default repo, bot logins…) at boot instead of the
+				// build machine's, exactly as the on-disk prebuilt path does.
+				g.__opensessionFrontendShell = EMBEDDED_FRONTEND.shell;
+				applyBundle(EMBEDDED_FRONTEND.meta);
+				console.log(
+					`Frontend served from embedded assets (v=${EMBEDDED_FRONTEND.version}); instance stitched at boot`,
+				);
+				return;
+			}
+			// Release tarball: the prebuilt .frontend-dist is on disk.
+			if (isPrebuiltFrontend()) {
+				loadPrebuiltFrontendDist();
+				return;
+			}
 			if (tryReuseFrontendDist()) return;
 			console.log("Building frontend (split + minified)…");
 			await buildFrontend();
@@ -409,6 +659,10 @@ export function ensureFrontendBuilt(): Promise<void> {
 
 export const SPA_HEADERS = {
 	"Content-Type": "text/html; charset=utf-8",
+	// The service worker owns the offline shell. The browser's separate HTTP
+	// cache must never pin an older content-hashed bundle name, especially in an
+	// installed iOS PWA where reloads still pass through the worker.
+	"Cache-Control": "no-store",
 	"Content-Security-Policy": "frame-ancestors 'none'",
 	"X-Frame-Options": "DENY",
 };
@@ -545,6 +799,16 @@ export function scheduleFrontendRebuild(reason: string, debounceMs = 300): void 
 		return;
 	}
 	if (!frontend) return;
+	if (isPrebuiltFrontend()) {
+		// A shipped dist has no compiler behind it; say so once and move on.
+		if (!g.__opensessionPrebuiltRebuildNoted) {
+			g.__opensessionPrebuiltRebuildNoted = true;
+			console.log(
+				`[frontend] Rebuild requested (${reason}) but the frontend is prebuilt; ignoring this and later requests`,
+			);
+		}
+		return;
+	}
 	if (rebuildTimer) clearTimeout(rebuildTimer);
 	rebuildTimer = setTimeout(async () => {
 		rebuildTimer = null;

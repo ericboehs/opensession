@@ -252,12 +252,9 @@ function RangeCalendar({
 	const pendingFocus = React.useRef<IsoDay | null>(null);
 	const gridRef = React.useRef<HTMLDivElement | null>(null);
 
-	const weekStart = React.useMemo(() => weekStartFor(), []);
-	const headings = React.useMemo(() => weekdayHeadings(weekStart), [weekStart]);
-	const months = React.useMemo(
-		() => Array.from({ length: monthCount }, (_, i) => startOfMonth(addMonths(anchor, i))),
-		[anchor, monthCount],
-	);
+	const weekStart = (weekStartFor());
+	const headings = (weekdayHeadings(weekStart));
+	const months = (Array.from({ length: monthCount }, (_, i) => startOfMonth(addMonths(anchor, i))));
 
 	function focusDay(day: IsoDay) {
 		// One button per day across the grids: a day from a neighbouring month is
@@ -279,9 +276,10 @@ function RangeCalendar({
 	// where the eye does. Base UI's own initialFocus can't reach a cell that
 	// only exists once this component has rendered. Once per open: the popup
 	// unmounts on close, so there is no later state for this to disagree with.
+	const focusEndOnce = React.useEffectEvent(() => focusDay(end));
 	React.useEffect(() => {
-		focusDay(end);
-		// eslint-disable-next-line react-hooks/exhaustive-deps
+		focusEndOnce();
+		// Once per open: the popup unmounts on close.
 	}, []);
 
 	// A viewport that crosses the phone breakpoint while the popup is open can

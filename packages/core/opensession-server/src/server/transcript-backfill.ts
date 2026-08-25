@@ -17,7 +17,7 @@
  *
  * Import-graph rule (invariant 6): nothing imported at module scope here may
  * reach run-rpc.ts. sessions.ts DOES reach it (sessions.ts → generated-titles
- * → one-shot → opencode-runner → run-rpc), so it is dynamic-imported
+ * → one-shot → pi-runner → run-rpc), so it is dynamic-imported
  * at call time — by then the live process has long since loaded it, and tests
  * importing this module never bind the live rpc socket.
  *
@@ -60,35 +60,14 @@ function sleep(ms: number): Promise<void> {
  * and the read path treats any mirror growth as drift.
  */
 function mirrorFileSize(
-	session: Pick<
-		UnifiedSession,
-		"transcriptPath" | "opencodeSessionId" | "claudeSessionId"
-	>,
-	existingOpencodeTranscriptPath: (ocId: string) => string | null,
-	isOpencodeSessionId: (id: string | null | undefined) => boolean
+  session: Pick<UnifiedSession, "transcriptPath">,
 ): number | null {
-	const candidates: string[] = [];
-	if (session.transcriptPath) candidates.push(session.transcriptPath);
-	const ocId =
-		session.opencodeSessionId ||
-		(isOpencodeSessionId(session.claudeSessionId)
-			? session.claudeSessionId
-			: null);
-	if (ocId) {
-		const ocPath = existingOpencodeTranscriptPath(ocId);
-		if (ocPath && !candidates.includes(ocPath)) candidates.push(ocPath);
-	}
-	let total = 0;
-	let found = false;
-	for (const path of candidates) {
-		try {
-			total += statSync(path).size;
-			found = true;
-		} catch {
-			// missing candidate file — not an error, just no watermark from it
-		}
-	}
-	return found ? total : null;
+  if (!session.transcriptPath) return null;
+  try {
+    return statSync(session.transcriptPath).size;
+  } catch {
+    return null;
+  }
 }
 
 export interface TranscriptBackfillSummary {
@@ -120,9 +99,6 @@ export async function runTranscriptBackfill(
 	// modules instantly.
 	const { getAllSessions, mergedSessionTranscriptAsync } = await import(
 		"./sessions"
-	);
-	const { existingOpencodeTranscriptPath, isOpencodeSessionId } = await import(
-		"./opencode-transcript"
 	);
 	const store = transcriptStore();
 
@@ -160,11 +136,7 @@ export async function runTranscriptBackfill(
 				continue;
 			}
 			if (!opts.dryRun) {
-				const watermark = mirrorFileSize(
-					session,
-					existingOpencodeTranscriptPath,
-					isOpencodeSessionId
-				);
+				const watermark = mirrorFileSize(session);
 				// WP-A touchpoint: chunked import (≤500 rows/tx, design §1);
 				// importLegacyTranscript marks the session imported with the
 				// src + mirror watermark internally.

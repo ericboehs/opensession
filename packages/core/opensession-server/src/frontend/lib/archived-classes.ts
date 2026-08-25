@@ -4,12 +4,37 @@
  */
 export const ARCHIVED_LIST = "-mx-3";
 
+/**
+ * Phone Search lives at the thumb edge instead of spending permanent room
+ * under the navigation bar. The fade keeps rows legible as they pass behind
+ * the floating field without drawing a hard toolbar divider.
+ */
+export const ARCHIVED_PHONE_SEARCH_DOCK =
+	"pointer-events-none fixed inset-x-0 bottom-0 z-30 hidden px-3.5 pt-6 " +
+	"pb-[max(12px,env(safe-area-inset-bottom,0px))] phone:block " +
+	"phone:[body.kb-open_&]:pb-3 " +
+	"before:pointer-events-none before:absolute before:inset-0 before:-z-[1] " +
+	"before:bg-[linear-gradient(to_bottom,transparent_0%,var(--bg)_48%)] " +
+	"[&>input]:pointer-events-auto";
+
 /** Section labels and row contents share the page's content edge. The list
  * itself extends 12px beyond it so the hover wash has room to breathe. */
 export const ARCHIVED_SECTION_LABEL =
 	"m-0 px-3 pb-1.5 text-meta font-semibold text-faint";
 
 export const ARCHIVED_SECTION_ROWS = "m-0 list-none p-0";
+
+/** Mobile swipe frame. The Restore action sits behind the opaque row surface. */
+export const ARCHIVED_SWIPE_ROW =
+	"relative overflow-hidden rounded-control [--swipe-action-w:0px] " +
+	"last:[&>.archived-row]:after:opacity-0 " +
+	"[&:has(+li:hover)>.archived-row]:after:opacity-0 " +
+	"[&:has(+li:focus-within)>.archived-row]:after:opacity-0";
+
+export const ARCHIVED_SWIPE_ACTION =
+	"absolute inset-y-0 right-0 hidden w-[var(--swipe-action-w)] items-center justify-center gap-1.5 " +
+	"border-none bg-accent px-3 text-label font-semibold text-on-accent opacity-0 " +
+	"data-[open]:opacity-100 phone:flex phone:min-h-11 phone:touch-manipulation phone:[&_svg]:shrink-0";
 
 /**
  * A row. `relative` positions three things: the separator below it, the
@@ -28,13 +53,14 @@ export const ARCHIVED_SECTION_ROWS = "m-0 list-none p-0";
  * — the same tidying an iOS list does around a highlighted cell.
  */
 export const ARCHIVED_ROW =
-	"group relative flex items-start gap-3 rounded-control px-3 py-2.5 transition-colors " +
-	"duration-[var(--dur-micro)] ease-[var(--ease)] hover:bg-hover focus-within:bg-hover " +
+	"archived-row group relative flex items-start gap-3 rounded-control px-3 py-2.5 " +
+	"transition-[color,background-color,transform] duration-[var(--dur-micro)] ease-[var(--ease)] " +
+	"hover:bg-hover focus-within:bg-hover " +
 	"after:pointer-events-none after:absolute after:right-3 after:bottom-0 after:left-[42px] " +
 	"after:h-px after:bg-line after:transition-opacity after:duration-[var(--dur-micro)] " +
-	"last:after:opacity-0 hover:after:opacity-0 focus-within:after:opacity-0 " +
-	"[&:has(+li:hover)]:after:opacity-0 [&:has(+li:focus-within)]:after:opacity-0 " +
-	"phone:gap-2.5 phone:py-3 phone:pr-[54px] phone:after:left-[40px]";
+	"hover:after:opacity-0 focus-within:after:opacity-0 " +
+	"phone:z-[1] phone:gap-2.5 phone:touch-pan-y phone:bg-surface phone:px-[18px] phone:py-4 " +
+	"phone:transform-[translateX(var(--swipe-x,0))] phone:after:left-[46px]";
 
 /**
  * The open action, stretched over the whole row by its own `::after` so a click
@@ -65,22 +91,10 @@ export const ARCHIVED_ROW_TIME =
 	"w-[62px] text-right text-meta leading-none tabular-nums";
 
 /**
- * Restore: absolutely placed over the timestamp it replaces, so a row
- * costs no width for an action that is usually not wanted. Revealed by hover,
- * by focus, and unconditionally where hover can't reveal it — a control that
- * only exists on `:hover` does not exist on a phone.
- *
- * Both the width query and the pointer query, and deliberately: `phone:` is
- * the one a narrow window can be checked against (a hover-capable browser
- * never matches `hover: none`, so a rig that emulates a phone by size alone
- * would show the row reserving space for a button it never draws), and the
- * pointer query is what catches a touch device that isn't phone-width.
- *
- * The label collapses to its glyph on phones — spelled out it costs a quarter
- * of a 390px row, and the row is mostly title.
+ * Desktop Restore replaces the timestamp on hover or keyboard focus. Phones
+ * reveal the labelled swipe action instead, so every row stays visually quiet.
  */
 export const ARCHIVED_ROW_ACTION =
 	"absolute right-3 top-1.5 z-[1] opacity-0 transition-opacity " +
 	"duration-[var(--dur-micro)] ease-[var(--ease)] group-hover:opacity-100 " +
-	"focus-visible:opacity-100 phone:top-0 phone:min-h-11 phone:w-11 phone:gap-0 phone:px-0 phone:opacity-100 " +
-	"[@media(hover:none)]:opacity-100";
+	"focus-visible:opacity-100 phone:hidden";

@@ -17,10 +17,35 @@ import SwiftUI
 struct ComposerDictationButton: View {
     let dictation: Dictation
     @Binding var draft: String
+    /// Toolbar items keep the system style so iOS can fold them into the
+    /// surrounding Liquid Glass group. Composer buttons stay visually bare.
+    var usesSystemButtonStyle = false
 
     @ScaledMetric(relativeTo: .body) private var glyph: CGFloat = 18
 
     var body: some View {
+        Group {
+            if usesSystemButtonStyle {
+                dictationButton
+            } else {
+                dictationButton.buttonStyle(.plain)
+            }
+        }
+        .accessibilityLabel(dictation.active ? "Stop dictating" : "Dictate a message")
+        .alert(
+            "Can't dictate",
+            isPresented: Binding(
+                get: { dictationProblem != nil },
+                set: { if !$0 { dictation.clearError() } }
+            )
+        ) {
+            Button("OK", role: .cancel) { dictation.clearError() }
+        } message: {
+            Text(dictationProblem ?? "")
+        }
+    }
+
+    private var dictationButton: some View {
         Button {
             // The mic is the one control here you keep talking to after you
             // let go of it, so it says when it opened and when it closed —
@@ -50,19 +75,6 @@ struct ComposerDictationButton: View {
                 .frame(width: 27, height: 27)
                 #endif
                 .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(dictation.active ? "Stop dictating" : "Dictate a message")
-        .alert(
-            "Can't dictate",
-            isPresented: Binding(
-                get: { dictationProblem != nil },
-                set: { if !$0 { dictation.clearError() } }
-            )
-        ) {
-            Button("OK", role: .cancel) { dictation.clearError() }
-        } message: {
-            Text(dictationProblem ?? "")
         }
     }
 

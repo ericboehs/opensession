@@ -1,6 +1,6 @@
 import { repoLabel } from "../lib/repo-label";
 import { BASE_PATH } from "../lib/base";
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   fetchSecurity,
   startScanApi,
@@ -103,22 +103,28 @@ export function Security({ onOpenSession }: Props) {
   const [editProfile, setEditProfile] = useState<ScanProfile | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Stable identity: only setters and module functions are captured, so the
+  // polling effect can list `load` without ever refiring from re-renders.
   const load = useCallback(async () => {
-    try {
-      const data = await fetchSecurity();
+    await (async () => {
+const data = await fetchSecurity();
       setScans(data.scans);
       setProfiles(data.profiles);
       setRepos(data.repos);
       setLoading(false);
-    } catch {}
-    try {
-      const autos = await fetchAutomations();
+})().catch(async () => {
+
+});
+    await (async () => {
+const autos = await fetchAutomations();
       setRecurring(
         (autos as RecurringScan[]).filter((a) =>
           /deepsec|security scan/i.test(a.name),
         ),
       );
-    } catch {}
+})().catch(async () => {
+
+});
   }, []);
 
   useEffect(() => {
@@ -133,22 +139,22 @@ export function Security({ onOpenSession }: Props) {
 
   async function handleDeleteScan(s: SecurityScan) {
     if (!confirm("Remove this scan record? Its sessions are left as-is.")) return;
-    try {
-      await deleteScanApi(s.id);
+    await (async () => {
+await deleteScanApi(s.id);
       load();
-    } catch (e: any) {
-      setError(e.message);
-    }
+})().catch(async (e: any) => {
+setError(e.message);
+});
   }
 
   async function handleDeleteProfile(p: ScanProfile) {
     if (!confirm(`Delete profile "${p.name}"?`)) return;
-    try {
-      await deleteScanProfileApi(p.id);
+    await (async () => {
+await deleteScanProfileApi(p.id);
       load();
-    } catch (e: any) {
-      setError(e.message);
-    }
+})().catch(async (e: any) => {
+setError(e.message);
+});
   }
 
   return (
@@ -436,24 +442,25 @@ function NewScanModal({
   const canRecur = singleRepo && !interactive;
   const canInteractive = singleRepo && recurrence === "none";
 
+  const firstRepo = repos[0] || "";
   // The dialog stays mounted, so each opening starts from a clean draft.
   useEffect(() => {
     if (!open) return;
     setScope("single");
-    setRepo(repos[0] || "");
+    setRepo(firstRepo);
     setProfileId("");
     setInstructions("");
     setRecurrence("none");
     setInteractive(false);
     setStarting(false);
     setError(null);
-  }, [open, repos[0]]);
+  }, [open, firstRepo]);
 
   async function handleStart() {
     setStarting(true);
     setError(null);
-    try {
-      const res = await startScanApi({
+    await (async () => {
+const res = await startScanApi({
         repos: scope === "all" ? "all" : [repo],
         profileId: profileId || undefined,
         instructions: instructions.trim() || undefined,
@@ -462,10 +469,10 @@ function NewScanModal({
         createdBy: getCurrentUser(),
       });
       onStarted(res.sessionId);
-    } catch (e: any) {
-      setError(e.message);
+})().catch(async (e: any) => {
+setError(e.message);
       setStarting(false);
-    }
+});
   }
 
   return (
@@ -530,7 +537,7 @@ function NewScanModal({
               onChange={setProfileId}
             />
             {profiles.length === 0 && (
-              <span className="text-meta font-normal text-faint">
+              <span className="text-supporting text-faint">
                 No profiles yet. A profile tells a scan how to read your code.
               </span>
             )}
@@ -558,7 +565,7 @@ function NewScanModal({
               disabled={!canRecur}
             />
             {!singleRepo && (
-              <span className="text-meta font-normal text-faint">
+              <span className="text-supporting text-faint">
                 Recurring and interactive scans take one repository at a time.
               </span>
             )}
@@ -641,14 +648,14 @@ function ProfileModal({
   async function handleSave() {
     setSaving(true);
     setError(null);
-    try {
-      if (initial) await updateScanProfileApi(initial.id, { name, prompt });
+    await (async () => {
+if (initial) await updateScanProfileApi(initial.id, { name, prompt });
       else await createScanProfileApi({ name, prompt, createdBy: getCurrentUser() });
       onSaved();
-    } catch (e: any) {
-      setError(e.message);
+})().catch(async (e: any) => {
+setError(e.message);
       setSaving(false);
-    }
+});
   }
 
   return (

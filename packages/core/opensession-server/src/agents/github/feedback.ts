@@ -17,10 +17,10 @@ import { stateDir } from "../../server/paths";
 import { audit } from "../../server/audit";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { existsSync, readFileSync } from "fs";
-import { defaultRepo } from "../../server/config";
+import { defaultRepo, isGithubBotLogin } from "../../server/config";
 import { oneShot } from "../../server/one-shot";
 import { repoForFullName } from "./constants";
-import { BOT_LOGIN, FIXED_REPLY_MARKER, type ReviewThread } from "./github-rest";
+import { FIXED_REPLY_MARKER, type ReviewThread } from "./github-rest";
 import {
   suppressDecision,
   isNegativeSignal,
@@ -113,7 +113,7 @@ export function harvestThreadOutcomes(
   let ignored = 0;
   let dirty = false;
   for (const t of threads) {
-    if (t.rootAuthor !== BOT_LOGIN) continue;
+    if (!isGithubBotLogin(t.rootAuthor)) continue;
     const rec = matchRecord(records, prNumber, t);
     if (!rec) continue;
     const root = t.comments[0];
@@ -164,12 +164,12 @@ export async function harvestReplySignals(
   const records = readFeedback(ghRepo);
   const pending: Array<{ path: string; title: string; replies: string[]; replyCount: number }> = [];
   for (const t of threads) {
-    if (t.rootAuthor !== BOT_LOGIN) continue;
+    if (!isGithubBotLogin(t.rootAuthor)) continue;
     const replies = t.comments
       .slice(1)
       .filter(
         (c) =>
-          c.login && c.login !== BOT_LOGIN && !c.body.includes(FIXED_REPLY_MARKER) && c.body.trim(),
+          c.login && !isGithubBotLogin(c.login) && !c.body.includes(FIXED_REPLY_MARKER) && c.body.trim(),
       )
       .map((c) => c.body.replace(/\s+/g, " ").trim().slice(0, 500));
     if (!replies.length) continue;

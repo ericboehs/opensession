@@ -6,6 +6,7 @@ import XCTest
 final class ComposerSessionProjectionTests: XCTestCase {
     private let id = "os-01a006d8-eddd-7000-bca2-b010caf2d8e7"
     private let title = "Clean pasted session links"
+    private var serverOrigin: String { ServerConfig.shared.baseURL!.absoluteString }
 
     override func setUp() async throws {
         SessionLinks.register(titles: [id: title])
@@ -20,7 +21,7 @@ final class ComposerSessionProjectionTests: XCTestCase {
     }
 
     func testPastedSessionURLProjectsTitleButRetainsCanonicalURL() {
-        let url = "https://os.tella.dev/workspace/ws-example/session/\(id)"
+        let url = "\(serverOrigin)/workspace/ws-example/session/\(id)"
         let canonical = "Use \(url) for context"
         let projection = ComposerSessionProjection(canonical)
 
@@ -65,13 +66,13 @@ final class ComposerSessionProjectionTests: XCTestCase {
     }
 
     func testMalformedInternalSessionPathStaysRaw() {
-        let canonical = "https://os.tella.dev/other/session/\(id)"
+        let canonical = "\(serverOrigin)/other/session/\(id)"
 
         XCTAssertEqual(ComposerSessionProjection(canonical).displayText, canonical)
     }
 
     func testDoubledSlashSessionPathStaysRaw() {
-        let canonical = "https://os.tella.dev//session/\(id)"
+        let canonical = "\(serverOrigin)//session/\(id)"
 
         XCTAssertEqual(ComposerSessionProjection(canonical).displayText, canonical)
     }
@@ -79,7 +80,7 @@ final class ComposerSessionProjectionTests: XCTestCase {
     func testSessionMentionInsideURLQueryDoesNotOverlapURLProjection() {
         let other = "os-01a00733-0547-7000-9abb-cc2b8fc3502f"
         SessionLinks.register(titles: [id: title, other: "Other session"])
-        let canonical = "https://os.tella.dev/session/\(id)?ref=@session:\(other)"
+        let canonical = "\(serverOrigin)/session/\(id)?ref=@session:\(other)"
 
         XCTAssertEqual(
             ComposerSessionProjection(canonical).displayText,

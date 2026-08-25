@@ -237,7 +237,7 @@ struct GeneralSettingsView: View {
     private func apply(_ next: OrganizationSettings) {
         settings = next
         if !nameFocused { name = next.organizationName ?? "" }
-        SettingsCache.save("organization-settings", next)
+        OrganizationBrand.shared.apply(next)
     }
 
     private func loadIdentity() async {

@@ -203,7 +203,7 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
             .string()
             .optional()
             .describe(
-              "Optional model id — a tier ('claude-opus-5', 'gpt-5.5') or an engine-prefixed id ('pi/anthropic/claude-opus-5')."
+              "Optional model id — a tier ('claude-opus-5', 'gpt-5.6-sol') or an engine-prefixed id ('pi/anthropic/claude-opus-5')."
             ),
           accountId: z
             .string()
@@ -305,7 +305,7 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
             .string()
             .optional()
             .describe(
-              "Model id — a tier ('claude-opus-5', 'gpt-5.5') or an engine-prefixed id ('pi/anthropic/claude-opus-5'); '' resets to the default."
+              "Model id — a tier ('claude-opus-5', 'gpt-5.6-sol') or an engine-prefixed id ('pi/anthropic/claude-opus-5'); '' resets to the default."
             ),
           accountId: z
             .string()
@@ -443,9 +443,9 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
           let mcpServers = args.mcpServers;
           if (replyInThread) {
             prompt +=
-              `\n\nDeliver this by posting to Slack channel \`${ctx.channel}\` in thread \`${ctx.threadTs}\` ` +
-              "via the Slack MCP `conversations_add_message` (content_type text/markdown). Open with \"⏰ \", " +
-              `say it's you, ${personaName()}, and keep it concise.`;
+              `\n\nDeliver this with the Slack MCP \`slack_reply_to_thread\`: pass \`channel_id\` ` +
+              `\`${ctx.channel}\`, \`thread_ts\` \`${ctx.threadTs}\`, and the reminder as \`text\`. ` +
+              `Open with "⏰ ", say it's you, ${personaName()}, and keep it concise.`;
             // Make sure the run can reach Slack even if the caller restricted servers.
             if (mcpServers) mcpServers = Array.from(new Set([...mcpServers, "slack"]));
           }

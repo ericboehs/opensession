@@ -99,7 +99,7 @@ export const SETTINGS_NAV_LIST =
 export const SETTINGS_NAV_GROUP = `flex flex-col ${SIDEBAR_GROUP}`;
 
 /**
- * A group's caption: Personal, Workspace. The app's band headings in every
+ * A group's caption: Personal, Organization. The app's band headings in every
  * respect that shows: the caption height, 13px semibold, and dim ink rather
  * than faint. It was 11px bold with letterspacing, which is a different
  * typographic idea (a small-caps label) from the one the sidebar uses.
@@ -205,9 +205,9 @@ export const SETTINGS_NAV_ROW =
 
 /**
  * The row's glyph well: the sidebar's 22px rail, not an 18px box. The glyphs
- * themselves are still 18px. The rail is what puts every settings label on
- * the same left edge as every sidebar title, and it centres a mark of any size
- * on that column.
+ * themselves use the Iconic set's standard 22px step. The rail is what puts
+ * every settings label on the same left edge as every sidebar title, and it
+ * centres each mark on that column.
  */
 export const SETTINGS_NAV_ICON =
 	`${SIDEBAR_RAIL} text-faint group-hover:text-fg group-data-active:text-fg`;

@@ -4,10 +4,12 @@ import { ApiError, BASE, request } from "./request";
 
 export interface ModelOption {
 	id: string;
-	provider: "claude" | "codex" | "opencode" | "pi";
+	provider: "claude" | "codex" | "pi";
 	label: string;
 	aliases: string[];
 	efforts: string[];
+	/** Presets fix the lead model's effort instead of offering a ladder. */
+	fixedEffort?: string;
 	/** Provider account pool available to this model, if any. */
 	accountProvider?: "claude" | "codex";
 	/** Picker section override ("dial" = The Dial presets). */
@@ -19,38 +21,6 @@ export interface ModelOption {
 }
 
 type ModelCatalog = { models: ModelOption[]; default: string };
-const MODEL_CACHE_MS = 60_000;
-const modelCatalogCache = new Map<string, { value: ModelCatalog; fetchedAt: number; pending?: Promise<ModelCatalog> }>();
-
-function modelCatalogKey(workspaceId?: string): string {
-	return workspaceId || "global";
-}
-
-async function refreshModelCatalog(workspaceId?: string): Promise<ModelCatalog> {
-	const key = modelCatalogKey(workspaceId);
-	const current = modelCatalogCache.get(key);
-	if (current?.pending) return current.pending;
-	const params = new URLSearchParams();
-	if (workspaceId) params.set("workspace", workspaceId);
-	const pending = request<ModelCatalog>(`/models${params.size ? `?${params}` : ""}`, {
-		label: "Failed to fetch models",
-	}).then((value) => {
-		modelCatalogCache.set(key, { value, fetchedAt: Date.now() });
-		return value;
-	}).finally(() => {
-		const entry = modelCatalogCache.get(key);
-		if (entry?.pending) delete entry.pending;
-	});
-	modelCatalogCache.set(key, { value: current?.value || { models: [], default: "" }, fetchedAt: current?.fetchedAt || 0, pending });
-	return pending;
-}
-
-/** Clear one workspace's picker catalog after its preset settings change. */
-export function invalidateModelsCache(workspaceId?: string): void {
-	for (const key of modelCatalogCache.keys()) {
-		if (!workspaceId || key.endsWith(`:${workspaceId}`)) modelCatalogCache.delete(key);
-	}
-}
 
 /**
  * Ask the backend (a quick Haiku call) to suggest a branch name for a task
@@ -129,23 +99,19 @@ export async function transcribeClip(audio: Blob): Promise<string> {
 	return typeof data?.text === "string" ? data.text : "";
 }
 
-export async function fetchModels(workspaceId?: string): Promise<{
-	models: ModelOption[];
-	default: string;
-}> {
-	const cached = modelCatalogCache.get(modelCatalogKey(workspaceId));
-	if (cached?.value.models.length) {
-		if (Date.now() - cached.fetchedAt > MODEL_CACHE_MS)
-			void refreshModelCatalog(workspaceId).catch(() => {});
-		return cached.value;
-	}
-	return refreshModelCatalog(workspaceId);
+export async function fetchModels(workspaceId?: string): Promise<ModelCatalog> {
+	const params = new URLSearchParams();
+	if (workspaceId) params.set("workspace", workspaceId);
+	return request<ModelCatalog>(`/models${params.size ? `?${params}` : ""}`, {
+		label: "Failed to fetch models",
+	});
 }
 
 /** Trimmed provider account shape for the per-session account picker. */
 export interface ProviderAccountOption {
 	id: string;
 	name: string;
+	email?: string;
 	provider: "claude" | "codex";
 	/** Personal-sub owner, if any (else it's a shared-pool account). */
 	owner?: string;
@@ -162,6 +128,7 @@ export async function fetchProviderAccounts(): Promise<ProviderAccountOption[]> 
 			return (data?.accounts ?? []).map((a) => ({
 				id: a.id,
 				name: a.name,
+				email: typeof a.email === "string" ? a.email : undefined,
 				provider,
 				owner: a.owner || undefined,
 				usable: a.usable !== false,
@@ -275,7 +242,7 @@ export async function fetchConnections(): Promise<{
 export interface SandboxModelFamilyInfo {
 	id: string;
 	label: string;
-	match: { provider: "claude" | "codex" | "opencode" | "pi" };
+	match: { provider: "claude" | "codex" | "pi" };
 	sandboxable: boolean;
 	hint?: string;
 }
@@ -349,7 +316,7 @@ export interface SandboxOperationInfo {
 export interface SandboxIngressInfo {
 	configuredUrl?: string;
 	proposedUrl?: string;
-	source: "sandbox_config" | "caddy_webhook" | "public_ui" | "none";
+	source: "config" | "caddy" | "none";
 	health: "ready" | "unreachable" | "not_configured";
 	caddyAdminReachable: boolean;
 	generatedSnippet: string;

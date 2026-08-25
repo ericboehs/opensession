@@ -10,9 +10,9 @@ export function MembersPanel() {
 		<SettingsPanel>
 			<SettingsHeader
 				title="Members"
-				description="Add everyone who uses this instance so sessions, commits, and access grants name the right person."
+				description="Members from your GitHub organization are added automatically."
 			/>
-			<TeamSection onChanged={() => {}} />
+			<TeamSection onChanged={() => {}} githubOnly />
 		</SettingsPanel>
 	);
 }

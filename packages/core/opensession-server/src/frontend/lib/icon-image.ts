@@ -51,6 +51,30 @@ export async function pngFromImageFile(
 	}
 }
 
+/**
+ * The same square PNG, from a URL rather than a picked file.
+ *
+ * Used for the GitHub organization avatar during onboarding. It goes through
+ * `fetch` rather than straight into an `<img>` so a cross-origin host that
+ * refuses CORS fails here, cleanly and silently, instead of tainting a canvas
+ * and throwing on `toBlob`. Returns null on any failure: an icon we could not
+ * fetch is one the operator can still upload by hand.
+ */
+export async function pngFromImageUrl(url: string): Promise<Blob | null> {
+	if (!url) return null;
+	try {
+		const response = await fetch(url, { mode: "cors", credentials: "omit" });
+		if (!response.ok) return null;
+		const blob = await response.blob();
+		if (!blob.size) return null;
+		return await pngFromImageFile(
+			new File([blob], "icon", { type: blob.type || "image/png" }),
+		);
+	} catch {
+		return null;
+	}
+}
+
 function loadImage(src: string): Promise<HTMLImageElement> {
 	return new Promise((resolve, reject) => {
 		const image = new Image();

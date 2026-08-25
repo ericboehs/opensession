@@ -147,8 +147,8 @@ Not supported, because the concepts don't exist upstream (no PR model):
 ## Webhooks
 
 Point a code.storage webhook subscription (push + repo.sync events) at
-`POST /codestorage/webhook` on the webhook server (port 3848 behind your TLS
-proxy — same placement as `/github/webhook`). The HMAC secret
+`POST /codestorage/webhook` on Public ingress (port 3860 behind Funnel,
+Cloudflare Tunnel, or Caddy, alongside `/github/webhook`). The HMAC secret
 (`integrations.codestorage.webhookSecret`) is generated automatically on the
 first connect/status call and shown (with copy/reveal) on the Connections
 card — paste it into the Pierre dashboard → Webhooks. Deliveries are

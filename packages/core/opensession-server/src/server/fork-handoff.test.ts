@@ -140,8 +140,8 @@ describe("buildEngineSwitchHandoffNote", () => {
 
 	it("includes tool activity when a fresh session replaces the same engine", () => {
 		const note = buildEngineSwitchHandoffNote({
-			fromProvider: "opencode",
-			toProvider: "opencode",
+			fromProvider: "pi",
+			toProvider: "pi",
 			sameEngineRestart: true,
 			entries: [
 				entry("u1", "user", "Inspect the failing build."),

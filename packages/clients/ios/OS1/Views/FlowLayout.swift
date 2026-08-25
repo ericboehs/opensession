@@ -9,9 +9,41 @@ import SwiftUI
 /// tappable.
 ///
 /// Subviews are laid out at their ideal size, so anything placed here must be
-/// intrinsically sized (a chip, a tag) rather than flexible.
+/// intrinsically sized (a chip, a tag) rather than flexible. Rows are
+/// top-aligned by default; mixed text styles can opt into first-baseline
+/// alignment.
 struct FlowLayout: Layout {
     let spacing: CGFloat
+    var alignment: VerticalAlignment = .top
+
+    private struct Measurement {
+        let size: CGSize
+        let guide: CGFloat
+    }
+
+    private struct Item {
+        let index: Int
+        let measurement: Measurement
+    }
+
+    private struct Row {
+        var items: [Item] = []
+        var width: CGFloat = 0
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+
+        var height: CGFloat { ascent + descent }
+
+        mutating func append(_ item: Item, spacing: CGFloat) {
+            width += (items.isEmpty ? 0 : spacing) + item.measurement.size.width
+            ascent = max(ascent, item.measurement.guide)
+            descent = max(
+                descent,
+                item.measurement.size.height - item.measurement.guide
+            )
+            items.append(item)
+        }
+    }
 
     func sizeThatFits(
         proposal: ProposedViewSize,
@@ -19,20 +51,12 @@ struct FlowLayout: Layout {
         cache: inout ()
     ) -> CGSize {
         let width = proposal.width ?? 0
-        var rowWidth: CGFloat = 0
-        var rowHeight: CGFloat = 0
+        let rows = rows(for: subviews, limit: width)
         var height: CGFloat = 0
-        for view in subviews {
-            let size = measure(view, limit: width)
-            if rowWidth > 0, rowWidth + spacing + size.width > width {
-                height += rowHeight + spacing
-                rowWidth = 0
-                rowHeight = 0
-            }
-            rowWidth += (rowWidth == 0 ? 0 : spacing) + size.width
-            rowHeight = max(rowHeight, size.height)
+        for (index, row) in rows.enumerated() {
+            height += (index == 0 ? 0 : spacing) + row.height
         }
-        return CGSize(width: width, height: height + rowHeight)
+        return CGSize(width: width, height: height)
     }
 
     func placeSubviews(
@@ -41,19 +65,41 @@ struct FlowLayout: Layout {
         subviews: Subviews,
         cache: inout ()
     ) {
-        var point = bounds.origin
-        var rowHeight: CGFloat = 0
-        for view in subviews {
-            let size = measure(view, limit: bounds.width)
-            if point.x > bounds.minX, point.x + size.width > bounds.maxX {
-                point.x = bounds.minX
-                point.y += rowHeight + spacing
-                rowHeight = 0
+        var y = bounds.minY
+        for row in rows(for: subviews, limit: bounds.width) {
+            var x = bounds.minX
+            for item in row.items {
+                let measurement = item.measurement
+                subviews[item.index].place(
+                    at: CGPoint(
+                        x: x,
+                        y: y + row.ascent - measurement.guide
+                    ),
+                    proposal: ProposedViewSize(measurement.size)
+                )
+                x += measurement.size.width + spacing
             }
-            view.place(at: point, proposal: ProposedViewSize(size))
-            point.x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
+            y += row.height + spacing
         }
+    }
+
+    private func rows(for subviews: Subviews, limit: CGFloat) -> [Row] {
+        var rows: [Row] = []
+        var row = Row()
+        for (index, view) in subviews.enumerated() {
+            let measurement = measure(view, limit: limit)
+            if !row.items.isEmpty,
+               row.width + spacing + measurement.size.width > limit {
+                rows.append(row)
+                row = Row()
+            }
+            row.append(
+                Item(index: index, measurement: measurement),
+                spacing: spacing
+            )
+        }
+        if !row.items.isEmpty { rows.append(row) }
+        return rows
     }
 
     /// One subview's size, never wider than the room there is.
@@ -64,9 +110,17 @@ struct FlowLayout: Layout {
     /// placed at a width nothing can honour is simply drawn through the
     /// trailing edge. Re-measuring at the width that does exist lets the
     /// subview wrap or truncate inside the layout instead of outside it.
-    private func measure(_ view: LayoutSubviews.Element, limit: CGFloat) -> CGSize {
+    private func measure(_ view: LayoutSubviews.Element, limit: CGFloat) -> Measurement {
         let ideal = view.sizeThatFits(.unspecified)
-        guard limit > 0, ideal.width > limit else { return ideal }
-        return view.sizeThatFits(ProposedViewSize(width: limit, height: nil))
+        let proposal = if limit > 0, ideal.width > limit {
+            ProposedViewSize(width: limit, height: nil)
+        } else {
+            ProposedViewSize(ideal)
+        }
+        let dimensions = view.dimensions(in: proposal)
+        return Measurement(
+            size: CGSize(width: dimensions.width, height: dimensions.height),
+            guide: dimensions[alignment]
+        )
     }
 }

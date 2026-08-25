@@ -32,14 +32,13 @@ import { randomBytes, timingSafeEqual } from "crypto";
 import { audit } from "./audit";
 import { configuredIdentity } from "./config";
 import { githubUserAuthActive } from "./github-auth";
-import { homeDir, isNativeSessionId, OPENSESSION_SESSIONS_DIR } from "./paths";
+import { isNativeSessionId, OPENSESSION_SESSIONS_DIR, stateDir } from "./paths";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { githubLoginFor } from "./shared/user-mappings";
 
-const HOME = homeDir();
 /** Env override is for tests; read once at first use (the map loads lazily). */
 function sessionsPath(): string {
-  return process.env.OPENSESSION_WEB_SESSIONS_STORE || `${HOME}/.opensession-web-sessions.json`;
+  return process.env.OPENSESSION_WEB_SESSIONS_STORE || stateDir("web-sessions.json");
 }
 const COOKIE_NAME = "opensession_auth";
 const TTL_MS = 90 * 24 * 60 * 60 * 1000; // sliding
@@ -288,7 +287,7 @@ export function webAuthToken(req: Request): string | null {
  *  - Sec-Fetch-Site: "cross-site" → reject; "same-origin"/"none" → allow.
  *  - Otherwise, if an Origin header is present its host must equal the
  *    request's Host (scheme-insensitive: Caddy terminates TLS, so the origin
- *    is https://os.tella.dev while we see plain HTTP with that Host).
+ *    is the public HTTPS origin while we see plain HTTP with that Host).
  */
 export function crossSiteViolation(req: Request): string | null {
   // Explicit-Authorization requests cannot be CSRF — a browser never attaches
@@ -311,7 +310,7 @@ export function crossSiteViolation(req: Request): string | null {
   // us at all when it holds host permissions for this host, and the auth
   // endpoints those calls hit don't act on the cookie — the residual risk
   // (a cookie-riding mutation from a rogue extension the user installed with
-  // os.tella.dev host access) is inside the trust boundary of this
+  // access to the instance host) is inside the trust boundary of this
   // tailnet-only deployment.
   if (origin.startsWith("chrome-extension://")) return null;
   let originHost: string;

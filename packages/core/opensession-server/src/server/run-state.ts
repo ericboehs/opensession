@@ -1,201 +1,27 @@
 /**
- * Explicit per-session run-state machine: one answer to "what state is this
- * session's run in?", with every transition (and every REJECTED transition)
- * audited.
+ * Authoritative per-session run-state machine.
  *
- * Why: today that answer is derived from ~18 scattered markers in three
- * storage tiers, and there are four independent "is it running?" derivations —
- * `isAgentSessionBusy` (OR of pendingStarts + activeOpencodeRuns + hostRuns),
- * the run journal (`ActiveRunRecord`), the recomputed `isRunning`/
- * `runStartedAt` on UnifiedSession, and `getRunningPids()` for external CLI
- * runs. They key on different ids and nothing ties them together, so they can
- * disagree — and each disagreement is a known incident class: zombie busy
- * (busy-map entry, no journal record), inverse zombie (journal record, no
- * driver), steer receipts with no run to fold into, drains firing against
- * externally-owned runs. This module doesn't replace those stores (yet); it
- * runs alongside them as the explicit source of truth, so an illegal
- * combination becomes a loud `run_state_rejected` audit event instead of a
- * silent wedge diagnosed from memory recipes.
- *
- * How the implicit markers map onto states:
- *   preparing    preparingWorkspaces (ws-hub.ts)
- *   starting     pendingStarts (agent-runner.ts markSessionStarting)
- *   running      activeOpencodeRuns / detachedRunKeys / hostRuns
- *   ask_blocked  running + pendingAsks (asks.ts)
- *   stopped      stoppedSessions latch (queue-state.ts)
- *   failed       runErrors / lastRunError (session-cache.ts recordRunOutcome)
- *   interrupted  journal ActiveRunRecord with no live driver (run-journal.ts)
- *   reattaching  tryReattachOpencodeRun in flight (opencode-runner.ts)
- *   idle         none of the above
- * Orthogonal context, deliberately NOT states: queued prompts / steer receipts
- * (delivery obligations), manualStatus (human display pin), detached-vs-child
- * (a `running` attribute that only matters at shutdown).
- *
- * Wiring (transitions are additive observation; the busy gate also treats
- * unsettled states as session ownership). Everything keys on the bks session id:
- *   prompt                   agent-runner.ts markSessionStarting (called by
- *                            every run path before its first await)
- *   run_registered           run-journal.ts journalSet (run start + fallback
- *                            re-journal; self-edge while running)
- *   turn_end / run_failed    session-cache.ts recordRunOutcome (the one
- *                            terminal-outcome choke point for owned runs)
- *   ask_posed / ask_resolved asks.ts makeAskHandler (offerAskCard is exempt —
- *                            its card doesn't park the run)
- *   cancel                   ws-handlers.ts "cancel" (the UI Stop button) +
- *                            routes/sessions.ts archive-stop
- *   boot_journal_found       run-journal.ts takeInterruptedRuns
- *   reattach_start/ok/fail, resume_reprompt
- *                            agent-runner.ts resumeInterruptedRuns
- * Not wired yet: engine_died / shutdown_orphaned (opencode-runner.ts /
- * run-session.ts), workspace_prepare/ready (ws-hub.ts), mid-run steer. The
- * leniency edges below keep those gaps silent instead of noisy.
- * Runner-internal wiring needs a real restart; so do WS-handler edits
- * (they keep serving old code under --hot despite what the docs suggest).
- *
- * State lives in-memory on globalThis (hot-reload safe, restart-fresh — a
- * restart re-derives reality through the boot events, so persisting this map
- * would only let it go stale).
+ * The transition table remains pure and exhaustively tested. Runtime state is
+ * committed by SessionKernel, which gives prompt admission, recovery, asks,
+ * cancellation and executor events one durable answer to whether the session
+ * is owned. Detached run hosts keep only a private ephemeral view: they report
+ * events to the server and never write the session kernel database.
  */
 
 import { audit } from "./audit";
+import { clearSessionKernel, sessionKernel, sessionKernelStore } from "./session-kernel";
 
-export type RunState =
-	| "idle"
-	| "preparing"
-	| "starting"
-	| "running"
-	| "ask_blocked"
-	| "stopped"
-	| "failed"
-	| "interrupted"
-	| "reattaching";
-
-export type RunEvent =
-	| "prompt"
-	| "workspace_prepare"
-	| "workspace_ready"
-	| "workspace_failed"
-	| "run_registered"
-	| "start_failed"
-	| "start_aborted"
-	| "ask_posed"
-	| "ask_resolved"
-	| "steer"
-	| "turn_end"
-	| "run_failed"
-	| "cancel"
-	| "engine_died"
-	| "shutdown_orphaned"
-	| "boot_journal_found"
-	| "reattach_start"
-	| "reattach_ok"
-	| "reattach_fail"
-	| "resume_reprompt";
-
-/**
- * The full transition table. Absence of an edge is load-bearing: an event
- * arriving in a state with no edge for it is exactly the illegal combination
- * this module exists to surface (e.g. `turn_end` while `idle` = a double
- * teardown; `ask_resolved` while `running` = an answer for an ask nobody's
- * waiting on).
- *
- * Deliberate leniency edges, so half-wired paths degrade to logging instead of
- * false alarms: `run_registered` straight from idle/stopped/failed/interrupted/
- * reattaching (a run path whose reserve/recovery marker isn't instrumented —
- * e.g. the Slack/Linear loops, or a domain-specific boot recovery); self-edges
- * for queue-while-busy (`prompt`), mid-run `steer`, rotation re-registration
- * (`run_registered` while running), and ask-overwrite (`ask_posed` while
- * ask_blocked); and `stopped` absorbing the cancelled run's own teardown
- * (`turn_end`/`run_failed` land after the Stop that caused them).
- */
-export const RUN_STATE_TRANSITIONS: Record<
-	RunState,
-	Partial<Record<RunEvent, RunState>>
-> = {
-	idle: {
-		prompt: "starting",
-		workspace_prepare: "preparing",
-		boot_journal_found: "interrupted",
-		run_registered: "running",
-	},
-	preparing: {
-		workspace_ready: "idle",
-		workspace_failed: "failed",
-		cancel: "idle",
-	},
-	starting: {
-		run_registered: "running",
-		start_failed: "failed",
-		start_aborted: "idle",
-		run_failed: "failed",
-		cancel: "stopped",
-		prompt: "starting",
-	},
-	running: {
-		ask_posed: "ask_blocked",
-		turn_end: "idle",
-		run_failed: "failed",
-		cancel: "stopped",
-		engine_died: "interrupted",
-		shutdown_orphaned: "interrupted",
-		prompt: "running",
-		steer: "running",
-		run_registered: "running",
-	},
-	ask_blocked: {
-		ask_resolved: "running",
-		turn_end: "idle",
-		run_failed: "failed",
-		cancel: "stopped",
-		engine_died: "interrupted",
-		shutdown_orphaned: "interrupted",
-		prompt: "ask_blocked",
-		steer: "ask_blocked",
-		ask_posed: "ask_blocked",
-	},
-	stopped: {
-		prompt: "starting",
-		run_registered: "running",
-		turn_end: "stopped",
-		run_failed: "stopped",
-		cancel: "stopped",
-	},
-	failed: {
-		prompt: "starting",
-		run_registered: "running",
-	},
-	interrupted: {
-		reattach_start: "reattaching",
-		resume_reprompt: "starting",
-		cancel: "stopped",
-		engine_died: "interrupted",
-		boot_journal_found: "interrupted",
-		run_registered: "running",
-		// An engine death mid-run fires engine_died → interrupted at the
-		// watcher, then the run's own terminal outcome (recordRunOutcome)
-		// lands moments later. A dead-server turn is lost, not resumable —
-		// the follow-up outcome settles it as failed/idle rather than
-		// rejecting.
-		run_failed: "failed",
-		turn_end: "idle",
-	},
-	reattaching: {
-		reattach_ok: "running",
-		reattach_fail: "interrupted",
-		run_failed: "failed",
-		cancel: "stopped",
-		engine_died: "interrupted",
-		run_registered: "running",
-	},
-};
-
-/** Pure lookup: the next state, or undefined when no edge exists. */
-export function nextRunState(
-	state: RunState,
-	event: RunEvent,
-): RunState | undefined {
-	return RUN_STATE_TRANSITIONS[state]?.[event];
-}
+export {
+	RUN_STATE_TRANSITIONS,
+	nextRunState,
+	type RunEvent,
+	type RunState,
+} from "./session-kernel/run-state-machine";
+import {
+	nextRunState,
+	type RunEvent,
+	type RunState,
+} from "./session-kernel/run-state-machine";
 
 export type RunStateEntry = {
 	state: RunState;
@@ -215,22 +41,115 @@ export function isRunStateUnsettled(state: RunState): boolean {
 	);
 }
 
-const g = globalThis as any;
-export const runStates: Map<string, RunStateEntry> = (g.__runStates ??=
-	new Map());
+const detachedHostStates = new Map<string, RunStateEntry>();
+const detachedRunHost = () => !!process.env.OPENSESSION_RUN_JOURNAL;
+
+export const runStates = {
+	get(sessionId: string): RunStateEntry | undefined {
+		if (detachedRunHost()) return detachedHostStates.get(sessionId);
+		const current = sessionKernelStore().runState(sessionId);
+		if (current.changeSeq === 0) return undefined;
+		return {
+			state: current.state as RunState,
+			since: current.since,
+			lastEvent: current.lastEvent as RunEvent | undefined,
+		};
+	},
+};
 
 export function getRunState(sessionId: string): RunState {
-	return runStates.get(sessionId)?.state ?? "idle";
+	if (detachedRunHost()) return detachedHostStates.get(sessionId)?.state ?? "idle";
+	return sessionKernelStore().runState(sessionId).state as RunState;
 }
 
 type AuditEmit = (event: Record<string, unknown>) => void;
 
+export type RunStateTransitionDecision = {
+	accepted: boolean;
+	from: RunState;
+	to: RunState;
+	reason?: "invalid_transition" | "stale_run";
+	currentRunId?: string;
+	rejectedRunId?: string;
+};
+
+/** Apply one run event and retain the actor's admission decision. */
+export function decideRunStateTransition(
+	sessionId: string,
+	event: RunEvent,
+	detail?: Record<string, unknown>,
+	emit: AuditEmit = audit,
+): RunStateTransitionDecision {
+	if (detachedRunHost()) {
+		const from = getRunState(sessionId);
+		const next = nextRunState(from, event);
+		if (!next) {
+			console.warn(`[run-state] rejected: ${event} while ${from} (session ${sessionId})`);
+			emit({ msg: "run_state_rejected", session_id: sessionId, state: from, event, ...detail });
+			return { accepted: false, from, to: from, reason: "invalid_transition" };
+		}
+		detachedHostStates.set(sessionId, {
+			state: next,
+			since: new Date().toISOString(),
+			lastEvent: event,
+		});
+		emit({ msg: "run_state_transition", session_id: sessionId, from, to: next, event, ...detail });
+		return { accepted: true, from, to: next };
+	}
+
+	const runKey = typeof detail?.run_key === "string" ? detail.run_key : undefined;
+	const decision = sessionKernel(sessionId).applyRunEvent({
+		event,
+		detail,
+		runKey,
+	});
+	if (!decision.accepted) {
+		if (decision.reason === "stale_run") {
+			emit({
+				msg: "stale_run_registration_rejected",
+				session_id: sessionId,
+				current_run_id: decision.currentRunId,
+				rejected_run_id: decision.rejectedRunId,
+				state: decision.from,
+			});
+		} else {
+			// Boot-drained prompts park here while restart recovery still owns
+			// the session (interrupted/reattaching). That is the designed
+			// fail-closed fence, not a defect — one warning per parked prompt
+			// per boot is noise, so only unexpected rejections warn.
+			const parkedPrompt =
+				event === "prompt" &&
+				(decision.from === "interrupted" ||
+					decision.from === "reattaching");
+			if (!parkedPrompt)
+				console.warn(
+					`[run-state] rejected: ${event} while ${decision.from} (session ${sessionId})`,
+				);
+			emit({
+				msg: "run_state_rejected",
+				session_id: sessionId,
+				state: decision.from,
+				event,
+				...detail,
+			});
+		}
+		return decision;
+	}
+	emit({
+		msg: "run_state_transition",
+		session_id: sessionId,
+		from: decision.from,
+		to: decision.to,
+		event,
+		...detail,
+	});
+	return decision;
+}
+
 /**
- * Apply an event to a session's run state. A defined edge moves the state and
- * emits `run_state_transition`; an undefined one leaves the state untouched
- * and emits `run_state_rejected` + a console.warn — rejected transitions are
- * the whole point, never swallow them. Returns the (possibly unchanged)
- * resulting state.
+ * Apply an event through the owning SessionKernel. A defined edge moves the
+ * durable state and emits `run_state_transition`; an undefined one leaves the
+ * state untouched and emits `run_state_rejected`.
  */
 export function transitionRunState(
 	sessionId: string,
@@ -238,38 +157,12 @@ export function transitionRunState(
 	detail?: Record<string, unknown>,
 	emit: AuditEmit = audit,
 ): RunState {
-	const from = getRunState(sessionId);
-	const to = nextRunState(from, event);
-	if (to === undefined) {
-		console.warn(
-			`[run-state] rejected: ${event} while ${from} (session ${sessionId})`,
-		);
-		emit({
-			msg: "run_state_rejected",
-			session_id: sessionId,
-			state: from,
-			event,
-			...detail,
-		});
-		return from;
-	}
-	runStates.set(sessionId, {
-		state: to,
-		since: new Date().toISOString(),
-		lastEvent: event,
-	});
-	emit({
-		msg: "run_state_transition",
-		session_id: sessionId,
-		from,
-		to,
-		event,
-		...detail,
-	});
-	return to;
+	const decision = decideRunStateTransition(sessionId, event, detail, emit);
+	return decision.accepted ? decision.to : decision.from;
 }
 
 /** Drop tracking for a deleted session. */
 export function clearRunState(sessionId: string): void {
-	runStates.delete(sessionId);
+	if (detachedRunHost()) detachedHostStates.delete(sessionId);
+	else clearSessionKernel(sessionId);
 }

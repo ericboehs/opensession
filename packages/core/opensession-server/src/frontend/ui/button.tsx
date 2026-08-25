@@ -7,7 +7,7 @@ import { cn } from "./cn";
  * buttons. New buttons go through this; legacy `.btn-*` classes in legacy.css
  * migrate here opportunistically when touched (strangler pattern).
  *
- * The icon/spacing rules are ported from tella-fusion's button system
+ * The icon/spacing rules are ported from a mature button system
  * (webapp Button.res + ButtonWithIcon.res — the product these iconic-pro
  * glyphs come from):
  *
@@ -16,12 +16,12 @@ import { cn } from "./cn";
  *  - when an icon LEADS a label, pull the icon-side padding in, so the pair
  *    reads optically balanced against a text-only button — the glyph's
  *    built-in whitespace otherwise makes the icon side look padded out;
- *  - dim the leading icon relative to the label (Tella: opacity-50 on
+ *  - dim the leading icon relative to the label (opacity-50 on
  *    neutral weights, a lighter tint on the primary) — the label stays the
  *    dominant read, the icon is support;
  *  - icon-only buttons go square with symmetric padding and the icon
  *    dead-centered, UNdimmed — there the icon *is* the label;
- *  - press feedback is a whole-button scale tick (Tella: active:scale-97).
+ *  - press feedback is a whole-button scale tick (active:scale-97).
  *
  * `caret` is the mirror of `icon` for menu triggers: one trailing chevron,
  * sized off the LABEL rather than the 20px glyph step, with the same padding
@@ -47,6 +47,7 @@ type Variant =
 	| "primary"
 	| "soft"
 	| "ghost"
+	| "overlay"
 	| "success"
 	| "danger"
 	| "warning"
@@ -143,6 +144,7 @@ const INK =
  *   one draws a box about a label nobody is being asked to read.
  * - `ghost` — a control that is mostly reporting state (a filter, an icon in
  *   a row). Quiet until you reach for it.
+ * - `overlay` — an inverse ghost floating over a dark media scrim.
  * - the tones — `danger`, `success` and `warning` are tinted plates that
  *   propose; `danger-strong` and `success-strong` are solid ones that commit.
  *   Two weights, no outline, so a Delete beside a Cancel is a red plate in a
@@ -180,6 +182,12 @@ const variants: Record<Variant, string> = {
 	// the thing you just clicked disappears out from under the popup.
 	ghost:
 		"border-transparent text-dim hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg",
+	// Media previews float directly on a dark scrim rather than an app surface.
+	// Keep their safe action clusters as quiet inverse ghosts until hover; the
+	// shared variant lets lightboxes use Button's spacing, focus, and anchor
+	// rendering instead of rebuilding those fundamentals around raw controls.
+	overlay:
+		"border-transparent bg-transparent text-white/60 hover:bg-white/15 hover:text-white",
 	// The tones come in two weights and no third: a tinted plate that PROPOSES
 	// the action, and a solid one that COMMITS it. Both are fills, like every
 	// variant above — a tone used to be an outline, which put a red box around
@@ -216,6 +224,7 @@ const iconDim: Record<Variant, string> = {
 	primary: "opacity-80",
 	soft: "opacity-60",
 	ghost: "opacity-60",
+	overlay: "opacity-60",
 	success: "opacity-80",
 	danger: "opacity-80",
 	warning: "opacity-80",

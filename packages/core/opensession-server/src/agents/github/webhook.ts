@@ -1,14 +1,14 @@
 /**
- * Dispatch target for GitHub PR webhooks. The single GitHub webhook is owned by
- * the Slack agent (`POST /github/webhook`), which forwards `pull_request` events
- * here. This routes them to the review / auto-fix / simplify behaviors.
+ * Dispatch target for GitHub PR webhooks. GithubAgent owns
+ * `POST /github/webhook` and forwards PR events here for review, auto-fix, and
+ * simplify behaviors.
  *
- * Defensive: never throws into the Slack handler; all behaviors are fired
+ * Defensive: never throws into the webhook handler; all behaviors are fired
  * fire-and-forget (GitHub's 10s webhook timeout).
  */
 import { listAutomations, fireAutomationsForEvent } from "../../server/automations";
-import { BOT_LOGIN } from "./github-rest";
-import { defaultRepo } from "../../server/config";
+import { defaultRepo, isGithubBotLogin } from "../../server/config";
+import { isTrustedGithubLogin } from "../../server/shared/user-mappings";
 import {
   PR_EVENT_KEY,
   PR_MERGED_EVENT_KEY,
@@ -33,6 +33,18 @@ export function setGithubSessionInvalidate(cb: () => void): void {
   onSessionInvalidate = cb;
 }
 
+// The shared GitHub webhook route fires pull_request_review payloads at a
+// handler the Slack agent registers while building its routes. Unset otherwise.
+let onPullRequestReview: ((payload: any) => void) | undefined;
+export function setGithubPullRequestReviewHandler(
+  cb: ((payload: any) => void) | undefined,
+): void {
+  onPullRequestReview = cb;
+}
+export function firePullRequestReview(payload: any): void {
+  onPullRequestReview?.(payload);
+}
+
 const REVIEW_ACTIONS = new Set(["opened", "reopened", "synchronize", "ready_for_review"]);
 
 interface PrPayload {
@@ -46,6 +58,7 @@ interface PrPayload {
   labels?: Array<{ name: string }>;
   merged?: boolean;
   merged_at?: string;
+  merged_by?: { login?: string };
 }
 
 function prRef(pr: PrPayload, ghRepo?: string): PrRef | null {
@@ -86,7 +99,9 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
     // push (auto-fix/simplify/mention commits land as a `synchronize`). We must not
     // react to those self-triggers — but we DO want to review PRs the bot *opens*
     // (e.g. automated security fixes). So apply the guard per-event below, not blanket.
-    const senderIsBot = !!payload?.sender?.login && payload.sender.login === BOT_LOGIN;
+    const senderLogin: string = payload?.sender?.login || "";
+    const senderIsBot = !!senderLogin && isGithubBotLogin(senderLogin);
+    const senderIsTrusted = isTrustedGithubLogin(senderLogin);
 
     // @mention replies on PR comments (inline + conversation). Never react to our own
     // comments/reviews (mention.ts also re-checks the author + our hidden markers).
@@ -105,6 +120,11 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
 
     // Deploy workflow completions → notify sessions waiting on a merged PR's deploy.
     if (event === "workflow_run") {
+      const actorLogin: string = payload?.workflow_run?.actor?.login || senderLogin;
+      if (!isGithubBotLogin(actorLogin) && !isTrustedGithubLogin(actorLogin)) {
+        console.warn(`[github] Ignoring workflow run from untrusted @${actorLogin || "unknown"}`);
+        return;
+      }
       const { handleDeployWorkflowRun } = await import("./session-notify");
       void handleDeployWorkflowRun(payload).catch((e) =>
         console.error("[github] handleDeployWorkflowRun failed:", e),
@@ -122,6 +142,12 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
     // ── Label actions ── (ignore labels we applied to ourselves)
     if (action === "labeled") {
       if (senderIsBot) return;
+      if (!senderIsTrusted) {
+        console.warn(
+          `[github] Ignoring label command on PR #${pr.number} from untrusted @${senderLogin || "unknown"}`,
+        );
+        return;
+      }
       const label: string = payload.label?.name || "";
       const requestedBy: string = payload.sender?.login || "";
       if (labelMatches(label, LABEL_REVIEW)) {
@@ -131,6 +157,10 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
         // per-SHA retry budget so it can babysit this new attempt too.
         updatePrState(pr.number, ref.headRef, (s) => {
           if (s.reconcile) { s.reconcile.autofixAttempts = 0; s.reconcile.autofixSha = undefined; }
+          // Dispatch below is intentionally async. Persist the actor first so a
+          // shutdown after this webhook is acknowledged cannot make reconcile
+          // restart the run under the checkout's fallback git identity.
+          s.pendingAutoFix = { requestedBy, receivedAt: new Date().toISOString() };
         }, ghRepo);
         void fireAutoFix(ref, requestedBy);
       } else if (labelMatches(label, LABEL_SIMPLIFY)) {
@@ -150,6 +180,13 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
 
     // ── Merge → notify linked sessions + fire configured docs-sync ──
     if (action === "closed" && pr.merged) {
+      const mergedBy: string = pr.merged_by?.login || senderLogin;
+      if (!isGithubBotLogin(mergedBy) && !isTrustedGithubLogin(mergedBy)) {
+        console.warn(
+          `[github] Ignoring merge automation for PR #${pr.number} by untrusted @${mergedBy || "unknown"}`,
+        );
+        return;
+      }
       // Feedback learning on every configured repo: final outcome sweep for our
       // review comments (open+current at merge = the author ignored them), and
       // — for PRs that look like bug fixes — blame the fixed lines to find
@@ -196,6 +233,15 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
 
     // ── Open / update actions → review when opted in and non-draft ──
     if (REVIEW_ACTIONS.has(action)) {
+      // A public-repo contributor controls opened/synchronize events for their
+      // own PR. Do not let that become an agent command or a spend/push surface.
+      // The explicitly configured machine account remains trusted separately.
+      if (!senderIsBot && !senderIsTrusted) {
+        console.warn(
+          `[github] Ignoring ${action} on PR #${pr.number} from untrusted @${senderLogin || "unknown"}`,
+        );
+        return;
+      }
       if (pr.draft) return; // skip drafts until ready_for_review
       // Opt-out keyword in the title (per-repo .os-review.json; read from the
       // repo's main checkout — no PR worktree exists yet). Label-forced and

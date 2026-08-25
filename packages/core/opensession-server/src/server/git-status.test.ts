@@ -3,7 +3,8 @@ import { $ } from "bun";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gitPull, porcelainPaths } from "./git-status";
+import { gitFailureMessage, gitPull, gitPush, porcelainPaths } from "./git-status";
+import type { WorkspaceExec } from "./sandbox/workspace-exec";
 
 const roots: string[] = [];
 
@@ -95,6 +96,24 @@ describe("gitPull from base", () => {
   });
 });
 
+describe("gitFailureMessage", () => {
+  test("shows Git's final diagnostic instead of fetch progress", () => {
+    expect(
+      gitFailureMessage(
+        "From github.com:tellahq/opensession\n   abc..def  main -> origin/main\nfatal: Not possible to fast-forward, aborting.\n",
+        "Git pull failed",
+      ),
+    ).toBe("Not possible to fast-forward, aborting.");
+  });
+
+  test("keeps a useful final line and falls back for empty output", () => {
+    expect(gitFailureMessage("remote: Permission denied\n", "Git push failed")).toBe(
+      "remote: Permission denied",
+    );
+    expect(gitFailureMessage("", "Git push failed")).toBe("Git push failed");
+  });
+});
+
 describe("porcelainPaths", () => {
   test("reads the path past both status columns, staged or not", () => {
     expect(porcelainPaths("M  src/a.ts\n?? src/b.ts\n M src/c.ts")).toEqual([
@@ -114,5 +133,65 @@ describe("porcelainPaths", () => {
 
   test("ignores blank and truncated lines", () => {
     expect(porcelainPaths("\n\nM  src/a.ts\nM\n")).toEqual(["src/a.ts"]);
+  });
+});
+
+
+describe("scoped Git credentials", () => {
+  test("passes a credential only to the explicit server-owned operation", async () => {
+    const envs: Array<Record<string, string> | undefined> = [];
+    const exec = Object.assign(
+      async (_cmd: string[], opts?: { env?: Record<string, string> }) => {
+        envs.push(opts?.env);
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+      { sandboxed: false, remote: false },
+    ) as WorkspaceExec;
+
+    expect(await gitPush("/repo", "feature", exec, { GH_TOKEN: "scoped" })).toEqual({ ok: true });
+    expect(envs).toEqual([{ GH_TOKEN: "scoped" }]);
+  });
+
+  test("does not send host credentials to a Runner executor", async () => {
+    const envs: Array<Record<string, string> | undefined> = [];
+    const exec = Object.assign(
+      async (_cmd: string[], opts?: { env?: Record<string, string> }) => {
+        envs.push(opts?.env);
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+      { sandboxed: false, remote: true },
+    ) as WorkspaceExec;
+
+    expect(await gitPush("/runner/repo", "feature", exec, { GH_TOKEN: "host-only" })).toEqual({ ok: true });
+    expect(envs).toEqual([undefined]);
+  });
+
+  test("uses the in-container helper for local Docker pull and push", async () => {
+    const envs: Array<Record<string, string> | undefined> = [];
+    const exec = Object.assign(
+      async (_cmd: string[], opts?: { env?: Record<string, string> }) => {
+        envs.push(opts?.env);
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+      { sandboxed: true, remote: false },
+    ) as WorkspaceExec;
+    const hostEnv = {
+      GH_TOKEN: "scoped",
+      GITHUB_TOKEN: "scoped",
+      GIT_CONFIG_VALUE_1: "!/home/user/.opensession/bin/opensession github-credential",
+    };
+
+    expect(await gitPull("/repo", undefined, exec, hostEnv)).toEqual({ ok: true });
+    expect(await gitPush("/repo", "feature", exec, hostEnv)).toEqual({ ok: true });
+    expect(envs).toHaveLength(2);
+    for (const env of envs) {
+      expect(env).toMatchObject({
+        GH_TOKEN: "scoped",
+        GITHUB_TOKEN: "scoped",
+        GIT_CONFIG_VALUE_0: "",
+        GIT_CONFIG_VALUE_1: "!gh auth git-credential",
+      });
+      expect(JSON.stringify(env)).not.toContain("/home/user");
+    }
   });
 });

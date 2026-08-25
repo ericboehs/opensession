@@ -3,7 +3,7 @@
  *
  * The Claude subscription pool and the codex (OpenAI) pool both authenticate
  * runs with credentials a human must occasionally renew, and until now they
- * rotted silently: the codex `tella-dev` auth.json sat expired for 10+ days
+ * rotted silently: a codex account's auth.json sat expired for 10+ days
  * (2026-07-12) and only surfaced when the model-fallback chain dead-ended on
  * it mid-outage. This module sweeps both pools hourly and DMs the person who
  * can fix each problem:
@@ -103,18 +103,21 @@ function claudeIssues(): Issue[] {
   const issues: Issue[] = [];
   for (const a of listAccountsPublic()) {
     const who = a.owner || FALLBACK_TEAMMATE;
-    const label = a.owner ? `your personal Claude sub "${a.name}"` : `pool Claude account "${a.name}"`;
+    const identity = a.email?.trim() || a.name;
+    const label = a.owner ? `your personal Claude sub "${identity}"` : `pool Claude account "${identity}"`;
     const err = a.usage?.error || "";
     const relogin = a.credentialsPath?.includes(".opensession-claude-oauth")
-      ? `Reconnect it in Settings → Usage → account menu → "Sign in with Claude".`
+      ? `Reconnect usage in Settings → Providers → account menu → "Connect usage".`
       : a.credentialsPath
-        ? `Re-login on the VPS: \`CLAUDE_CONFIG_DIR=${a.credentialsPath.replace(/\/credentials\.json$/, "")} claude login\` — or switch it to the web flow: Settings → Usage → account menu → "Sign in with Claude".`
-        : "Generate a fresh token with `claude setup-token` and update it in Settings → Usage.";
+        ? `Re-login on the VPS: \`CLAUDE_CONFIG_DIR=${a.credentialsPath.replace(/\/credentials\.json$/, "")} claude login\`, or switch to the web flow in Settings → Providers → account menu → "Connect usage".`
+        : "Generate a fresh token with `claude setup-token` and update it in Settings → Providers.";
 
     if (a.usage?.errorStatus === 401) {
       issues.push({
-        key: `claude:${a.id}:revoked`,
-        message: `It's ${personaName()} — ${label} has a revoked/invalid token (401 from Anthropic). Runs on it will fail. ${relogin}`,
+        key: `claude:${a.id}:${a.credentialsPath ? "usage-revoked" : "revoked"}`,
+        message: a.credentialsPath
+          ? `It's ${personaName()}. Usage tracking for ${label} needs a new Claude sign-in. Model runs keep using its setup token. ${relogin}`
+          : `It's ${personaName()}. ${label} has a revoked or invalid setup token (401 from Anthropic), so model runs on it will fail. ${relogin}`,
         notify: who,
       });
       continue;
@@ -168,13 +171,14 @@ function codexIssues(): Issue[] {
   const issues: Issue[] = [];
   for (const a of listCodexAccountsPublic()) {
     if (a.kind !== "home") continue; // API keys don't expire on a clock.
+    const identity = a.email?.trim() || a.name;
     const home = a.valueMasked; // for kind=home this is the CODEX_HOME path
     const fix = `Fix on the VPS: \`CODEX_HOME=${home} codex login\` (or copy a fresh ~/.codex/auth.json into ${home}/).`;
     const authPath = `${home}/auth.json`;
     if (!existsSync(authPath)) {
       issues.push({
         key: `codex:${a.id}:auth-missing`,
-        message: `It's ${personaName()} — codex account "${a.name}" has no auth.json at ${authPath}; OpenAI-model runs on it will fail. ${fix}`,
+        message: `It's ${personaName()} — codex account "${identity}" has no auth.json at ${authPath}; OpenAI-model runs on it will fail. ${fix}`,
         notify: FALLBACK_TEAMMATE,
       });
       continue;
@@ -185,7 +189,7 @@ function codexIssues(): Issue[] {
     } catch {
       issues.push({
         key: `codex:${a.id}:auth-unreadable`,
-        message: `It's ${personaName()} — codex account "${a.name}": ${authPath} isn't valid JSON; OpenAI-model runs on it will fail. ${fix}`,
+        message: `It's ${personaName()} — codex account "${identity}": ${authPath} isn't valid JSON; OpenAI-model runs on it will fail. ${fix}`,
         notify: FALLBACK_TEAMMATE,
       });
       continue;
@@ -197,13 +201,13 @@ function codexIssues(): Issue[] {
     if (left <= 0) {
       issues.push({
         key: `codex:${a.id}:access-expired`,
-        message: `It's ${personaName()} — codex account "${a.name}"'s ChatGPT access token is expired, so OpenAI-model runs (and the Fable→Sol fallback) fail on it. ${fix}`,
+        message: `It's ${personaName()} — codex account "${identity}"'s ChatGPT access token is expired, so OpenAI-model runs (and the Fable→Sol fallback) fail on it. ${fix}`,
         notify: FALLBACK_TEAMMATE,
       });
     } else if (left < CODEX_ACCESS_WARN_MS) {
       issues.push({
         key: `codex:${a.id}:access-expiring`,
-        message: `It's ${personaName()} — heads-up: codex account "${a.name}"'s ChatGPT access token expires in ${days(left)} and only refreshes when a codex turn runs. ${fix}`,
+        message: `It's ${personaName()} — heads-up: codex account "${identity}"'s ChatGPT access token expires in ${days(left)} and only refreshes when a codex turn runs. ${fix}`,
         notify: FALLBACK_TEAMMATE,
       });
     }
@@ -225,61 +229,33 @@ export function detectAccountIssues(): Issue[] {
   return [...claudeIssues(), ...codexIssues()];
 }
 
-// The bot's GitHub fine-grained PAT is the credential every gh/PR flow rides;
-// renewal needs a human
-// AND an org approval round-trip, so warn well ahead. Expiry comes from the
-// `github-authentication-token-expiration` header GitHub sets on any
-// authenticated call; a 401 means it's already dead.
-const GITHUB_PAT_WARN_MS = 21 * 24 * 60 * 60 * 1000;
-
-async function githubPatIssues(): Promise<Issue[]> {
-  const token = process.env.GITHUB_API_TOKEN;
-  if (!token) return [];
-  let res: globalThis.Response;
-  try {
-    res = await fetch("https://api.github.com/user", {
-      headers: { Authorization: `Bearer ${token}`, "User-Agent": "opensession" },
-    });
-  } catch {
-    return []; // transient network — never alert
-  }
-  if (res.status === 401) {
-    const agent = personaName();
-    const bot = githubBotLogins()[0] || "configured bot";
-    const owner = githubWriteOwners()[0] || "configured repository owner";
-    return [
-      {
-        key: "github:pat:dead",
-        message:
-          `${agent} here — the ${bot} GitHub PAT (GITHUB_API_TOKEN) is revoked or ` +
-          "expired: every bot gh/PR flow is down. Mint a new fine-grained PAT (resource " +
-          `owner ${owner}, with access to the required repositories) and get it approved if needed.`,
-        notify: FALLBACK_TEAMMATE,
-      },
-    ];
-  }
-  const raw = res.headers.get("github-authentication-token-expiration");
-  if (!raw) return [];
-  // Header format: "2027-07-27 19:19:35 UTC".
-  const expiresAt = Date.parse(raw.replace(" UTC", "Z").replace(" ", "T"));
-  if (!Number.isFinite(expiresAt)) return [];
-  const left = expiresAt - Date.now();
-  if (left > GITHUB_PAT_WARN_MS) return [];
-  const days = Math.max(0, Math.floor(left / 86_400_000));
+/**
+ * The GitHub App is the credential the bot now rides on most installs. If it is
+ * configured (client id + key) but cannot mint an installation token — a revoked
+ * key, an uninstalled App, a wrong installation owner — every bot gh/PR flow is
+ * down. Warn on that. Skipped when no App identity has been configured yet.
+ */
+async function githubAppIssues(): Promise<Issue[]> {
+  const { githubAppConfigured, githubToken } = await import("./github-app");
+  if (!githubAppConfigured()) return [];
+  if (await githubToken()) return [];
   const agent = personaName();
-  const bot = githubBotLogins()[0] || "configured bot";
-  const owner = githubWriteOwners()[0] || "configured repository owner";
+  const owner = githubWriteOwners()[0] || "the configured owner";
   return [
     {
-      key: "github:pat:expiring",
+      key: "github:app:dead",
       message:
-        `${agent} here — the ${bot} GitHub PAT expires in ${days} day(s) ` +
-        `(${new Date(expiresAt).toISOString().slice(0, 10)}). Regenerate it at ` +
-        `github.com/settings/personal-access-tokens (resource owner ${owner}), approve it ` +
-        `if asked, then tell ${agent} to swap it into the configured credential stores.`,
+        `${agent} here — the GitHub App is configured but cannot mint an ` +
+        `installation token: every bot gh/PR flow is down. Check the App is still ` +
+        `installed on ${owner}'s repositories and that its private key is valid.`,
       notify: FALLBACK_TEAMMATE,
     },
   ];
+}
+
+/** Check the App installation token used for all service traffic. */
+export async function selectedGithubCredentialIssues(): Promise<Issue[]> {
+  return githubAppIssues();
 }
 
 /** One sweep: detect, dedupe against state, DM, persist. Exported for tests/manual runs. */
@@ -289,7 +265,10 @@ export async function sweepAccountHealth(): Promise<Issue[]> {
   await refreshIdleCodexTokens().catch((e) =>
     console.warn("[account-health] codex token refresh failed:", e)
   );
-  const issues = [...detectAccountIssues(), ...(await githubPatIssues())];
+  const issues = [
+    ...detectAccountIssues(),
+    ...(await selectedGithubCredentialIssues()),
+  ];
   const state = readState();
   const now = Date.now();
   const live = new Set(issues.map((i) => i.key));

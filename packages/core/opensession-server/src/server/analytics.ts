@@ -21,10 +21,9 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync,
 import { $ } from "bun";
 import { isNativeSessionId, OPENSESSION_SESSIONS_DIR, stateDir, statePath } from "./paths";
 import { configuredRepos, defaultRepo, githubBotLogins } from "./config";
-import { ghRateLimited, isGhRateLimitMsg, noteGhRateLimited } from "./github-limit";
+import { noteGithubGraphqlCall } from "./github-budget";
 import { readFeedback } from "../agents/github/feedback";
 import type { FeedbackRecord } from "../agents/github/feedback-gates";
-import { engineUsageForDates } from "./engine-usage";
 import { gitIdentityFor } from "./shared/user-mappings";
 import { delegatedActorParent, isMachineActor, machineActorLabel } from "./session-actors";
 
@@ -53,9 +52,6 @@ interface SessionAgg {
 	kind: string;
 	turns: number;
 	output: number;
-	/** Output from engines other than OpenCode. OpenCode's aggregate is
-	 *  replaced from its request store at compose time without overlap. */
-	nonOpencodeOutput: number;
 	/** input + output + cache read + cache write. */
 	tokens: number;
 	costUsd: number;
@@ -119,9 +115,9 @@ interface DayRollup {
 	review: ReviewDayAgg;
 }
 
-/** "opencode/anthropic/claude-sonnet-4-6" → "claude-sonnet-4-6". */
+/** Strip an engine and upstream-provider prefix for aggregation. */
 function shortModel(model: string): string {
-	return model.replace(/^opencode\/[^/]+\//, "") || "unknown";
+	return model.replace(/^(?:pi|claude|codex)\/[^/]+\//, "") || "unknown";
 }
 
 function emptyTokens(): TokenTotals {
@@ -167,7 +163,6 @@ function rollupAuditDay(date: string): DayRollup {
 			kind: String(e.run_kind || "?").replace(/-reattach$/, ""),
 			turns: 0,
 			output: 0,
-			nonOpencodeOutput: 0,
 			tokens: 0,
 			costUsd: 0,
 			errors: 0,
@@ -182,12 +177,11 @@ function rollupAuditDay(date: string): DayRollup {
 		const isPrompt = line.includes('"kind":"user_prompt"');
 		const isError = line.includes('"kind":"error"');
 		const isCancelled = line.includes('"kind":"cancelled"');
-		const isOneshot = line.includes('"msg":"opencode_oneshot"');
+		const isOneshot = line.includes('"msg":"pi_oneshot"');
 		// Engine-run end events carry the turn's wall-clock duration (the
-		// per-turn "result" events don't on the opencode engine).
+		// per-turn "result" events don't on Pi).
 		const isRunEnd =
-			line.includes('"phase":"end"') &&
-			(line.includes('"msg":"opencode_meridian_run"') || line.includes('"msg":"opencode_openai_run"'));
+			line.includes('"direction":"out"') && line.includes('"msg":"pi_turn"');
 		const isReviewEvt = line.includes('"msg":"review_');
 		if (!isResult && !isPrompt && !isError && !isCancelled && !isOneshot && !isRunEnd && !isReviewEvt) continue;
 		let e: Record<string, unknown>;
@@ -225,11 +219,11 @@ function rollupAuditDay(date: string): DayRollup {
 			}
 			continue;
 		}
-		if (e.msg === "opencode_oneshot") {
+		if (e.msg === "pi_oneshot") {
 			rollup.oneshots++;
 			continue;
 		}
-		if (e.msg === "opencode_meridian_run" || e.msg === "opencode_openai_run") {
+		if (e.msg === "pi_turn" && e.direction === "out") {
 			rollup.durationMs += Number(e.duration_ms) || 0;
 			continue;
 		}
@@ -272,9 +266,6 @@ function rollupAuditDay(date: string): DayRollup {
 				if (s) {
 					s.turns++;
 					s.output += output;
-					if (e.provider !== "opencode" && !String(e.model || "").startsWith("opencode/")) {
-						s.nonOpencodeOutput += output;
-					}
 					s.tokens += input + output + cacheRead + cacheWrite;
 					s.costUsd += cost;
 				}
@@ -389,13 +380,6 @@ export function analyticsRepo(
 	return null;
 }
 
-export function attributedSessionOutput(
-	auditOutput: number,
-	nonOpencodeOutput: number,
-	engineOutput: number | undefined,
-): number {
-	return engineOutput === undefined ? auditOutput : engineOutput + nonOpencodeOutput;
-}
 
 let sessionMetaCache: { at: number; map: Map<string, SessionMeta> } | null = null;
 
@@ -437,6 +421,8 @@ function loadSessionMeta(): Map<string, SessionMeta> {
 // loadSessionMeta and used to land in an anonymous "Slack" row. They do record
 // who wrote the message: read that (read-only, per AGENTS.md) and credit them.
 const SLACK_SESSIONS_DIR = statePath(".slack-sessions");
+// GitHub delivery replay state remains in this legacy directory so upgrades
+// preserve accepted delivery IDs after webhook ownership moved to GithubAgent.
 const SLACK_STORE_SKIP = new Set(["processed-events.json", "github-deliveries.json"]);
 let slackOwnerCache: { at: number; map: Map<string, string> } | null = null;
 
@@ -495,19 +481,26 @@ async function fetchRepoPrs(repoId: string, ghRepo: string, fromDate: string): P
 		if (disk) prCache.set(key, (cached = { at: disk.at, prs: disk.data }));
 	}
 	if (cached && Date.now() - cached.at < PR_CACHE_TTL_MS) return cached.prs;
-	if (ghRateLimited() && cached) return cached.prs; // serve stale during a backoff window
 
 	const fields = "number,title,url,state,createdAt,mergedAt,headRefName";
 	const seen = new Map<number, AnalyticsPr>();
 	let failed = false;
 	// Two searches: PRs created in range (any state) + PRs merged in range
 	// (which may have been created before it). Capped at 1000 (the GitHub
-	// search ceiling) — tella-fusion alone opens 400+ PRs in a 30-day window.
+	// search ceiling): a busy repo alone can open 400+ PRs in a 30-day window.
 	for (const search of [`created:>=${fromDate}`, `merged:>=${fromDate}`]) {
 		try {
-			const raw = await $`gh pr list --repo ${ghRepo} --state all --limit 1000 --search ${search} --json ${fields}`
-				.quiet()
-				.text();
+			const queryStarted = Date.now();
+			let raw: string;
+			try {
+				raw = await $`gh pr list --repo ${ghRepo} --state all --limit 1000 --search ${search} --json ${fields}`
+					.quiet()
+					.text();
+				noteGithubGraphqlCall("analytics:pr-list", Date.now() - queryStarted, true, { ambient: true });
+			} catch (error) {
+				noteGithubGraphqlCall("analytics:pr-list", Date.now() - queryStarted, false, { ambient: true });
+				throw error;
+			}
 			for (const pr of JSON.parse(raw)) {
 				seen.set(pr.number, {
 					repo: repoId,
@@ -524,7 +517,6 @@ async function fetchRepoPrs(repoId: string, ghRepo: string, fromDate: string): P
 		} catch (e) {
 			failed = true;
 			console.error(`[analytics] gh pr list failed for ${ghRepo}:`, e);
-			if (isGhRateLimitMsg(String((e as any)?.stderr || e))) noteGhRateLimited("analytics");
 		}
 	}
 	// A failed search means `seen` is partial — serve it (or the stale cache)
@@ -606,7 +598,6 @@ async function fetchRepoFactoryPrs(repoId: string, ghRepo: string, fromDate: str
 		if (disk) factoryCache.set(key, (cached = { at: disk.at, prs: disk.data }));
 	}
 	if (cached && Date.now() - cached.at < FACTORY_CACHE_TTL_MS) return cached.prs;
-	if (ghRateLimited() && cached) return cached.prs;
 
 	const prs: FactoryPr[] = [];
 	const q = `repo:${ghRepo} is:pr is:merged merged:>=${fromDate}`;
@@ -615,7 +606,15 @@ async function fetchRepoFactoryPrs(repoId: string, ghRepo: string, fromDate: str
 		while (prs.length < FACTORY_PR_CAP) {
 			const args = ["api", "graphql", "-f", `query=${FACTORY_QUERY}`, "-f", `q=${q}`];
 			if (cursor) args.push("-f", `cursor=${cursor}`);
-			const raw = await $`gh ${args}`.quiet().text();
+			const queryStarted = Date.now();
+			let raw: string;
+			try {
+				raw = await $`gh ${args}`.quiet().text();
+				noteGithubGraphqlCall("analytics:factory", Date.now() - queryStarted, true, { ambient: true });
+			} catch (error) {
+				noteGithubGraphqlCall("analytics:factory", Date.now() - queryStarted, false, { ambient: true });
+				throw error;
+			}
 			const search = JSON.parse(raw)?.data?.search;
 			for (const pr of search?.nodes || []) {
 				if (!pr?.number) continue;
@@ -648,7 +647,6 @@ async function fetchRepoFactoryPrs(repoId: string, ghRepo: string, fromDate: str
 		}
 	} catch (e) {
 		console.error(`[analytics] factory pr fetch failed for ${ghRepo}:`, e);
-		if (isGhRateLimitMsg(String((e as any)?.stderr || e))) noteGhRateLimited("analytics");
 		return cached?.prs ?? [];
 	}
 	factoryCache.set(key, { at: Date.now(), prs });
@@ -1097,11 +1095,36 @@ export async function buildAnalytics(from: string, to: string): Promise<Analytic
 		aggForOwner(resolveOwnerRef(meta, s)).sessionsCreated++;
 	}
 
-	// Tokens and cost come from the engines' own message stores, not the audit
-	// log: one row per model request, so sub-sessions and multi-step turns are
-	// counted. See engine-usage.ts for why the audit log cannot do this.
-	const engineDays = await engineUsageForDates(dates);
 	const engineModels = new Map<string, { requests: number; costUsd: number } & TokenTotals>();
+	// Pi reports every request through the audit rollup, including tool rounds.
+	const engineDays = new Map(dates.map((date) => {
+		const rollup = cachedRollup(date);
+		const byModel = Object.entries(rollup.byModel).map(([model, usage]) => ({
+			model,
+			requests: usage.turns,
+			input: usage.input,
+			output: usage.output,
+			cacheRead: usage.cacheRead,
+			cacheWrite: usage.cacheWrite,
+			costUsd: usage.costUsd,
+		}));
+		const costUsd = byModel.reduce((sum, usage) => sum + usage.costUsd, 0);
+		return [date, {
+			byModel,
+			bySession: Object.fromEntries(Object.entries(rollup.bySession).map(([id, usage]) => [id, { requests: usage.turns, output: usage.output }])),
+			sessionAttribution: "measured" as const,
+			coverage: { pi: "measured" as const },
+			input: rollup.tokens.input,
+			output: rollup.tokens.output,
+			cacheRead: rollup.tokens.cacheRead,
+			cacheWrite: rollup.tokens.cacheWrite,
+			totalTokens: rollup.tokens.input + rollup.tokens.output + rollup.tokens.cacheRead + rollup.tokens.cacheWrite,
+			costUsd,
+			requests: byModel.reduce((sum, usage) => sum + usage.requests, 0),
+			unpricedRequests: 0,
+			unmeasured: false,
+		}] as const;
+	}));
 
 	const reviewByDate = new Map<string, ReviewDayAgg>();
 	for (const date of dates) {
@@ -1119,18 +1142,17 @@ export async function buildAnalytics(from: string, to: string): Promise<Analytic
 				kind: "prompt",
 				turns: 0,
 				output: 0,
-				nonOpencodeOutput: 0,
-				tokens: 0,
+					tokens: 0,
 				costUsd: 0,
 				errors: 0,
 			};
-			// Historical audit rows kept only the final request in an OpenCode turn,
+			// Historical audit rows kept only the final request in a Pi turn,
 			// while retained engine rows include every tool round and inherited task.
 			// Direct engines have no equivalent native-session index, so add only
 			// their explicitly separated audit output to avoid overlap.
 			const engineOutput =
 				engine?.sessionAttribution === "measured" ? engine.bySession?.[id]?.output : undefined;
-			const output = attributedSessionOutput(s.output, s.nonOpencodeOutput, engineOutput);
+			const output = engineOutput ?? s.output;
 			allSessions.add(id);
 			const m = meta.get(id);
 			// Review sessions run with run_kind "prompt"; give them their own
@@ -1203,11 +1225,7 @@ export async function buildAnalytics(from: string, to: string): Promise<Analytic
 		const dayPrs = allPrs.filter((pr) => pr.byOpensession);
 		const prsOpened = dayPrs.filter((pr) => pr.createdAt.slice(0, 10) === date).length;
 		const prsMerged = dayPrs.filter((pr) => pr.mergedAt?.slice(0, 10) === date).length;
-		const unmeasuredSources = engine
-			? Object.entries(engine.coverage)
-					.filter(([, coverage]) => coverage === "unmeasured")
-					.map(([source]) => source)
-			: [];
+		const unmeasuredSources: string[] = [];
 		days.push({
 			date,
 			sessions: sessionIds.size,
@@ -1510,7 +1528,10 @@ export interface HomeStatsBucket {
  *  engine usage supplies tokens. This avoids the session-store and gh scans. */
 export async function buildHomeStats(
 	now = Date.now(),
-	loadEngineUsage: typeof engineUsageForDates = engineUsageForDates,
+	loadEngineUsage: (dates: string[]) => Promise<Map<string, { input: number; output: number; cacheRead: number; cacheWrite: number }>> = async (dates) => new Map(dates.map((date) => {
+		const usage = cachedRollup(date).tokens;
+		return [date, usage];
+	})),
 ): Promise<{
 	today: HomeStatsBucket;
 	week: HomeStatsBucket;

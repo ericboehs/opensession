@@ -2,9 +2,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
 	allClients,
 	computeGlobalPresence,
+	computeTypingUsers,
 	joinSession,
 	leaveSession,
 	sessionWatchers,
+	setClientTyping,
 	type WSClientData,
 } from "./ws-hub";
 
@@ -158,7 +160,7 @@ describe("computeGlobalPresence", () => {
 		leaveSession(socket);
 	});
 
-	test("a new watcher receives an empty snapshot when presence has not changed", () => {
+	test("a new watcher receives empty presence and typing snapshots", () => {
 		const sessionId = crypto.randomUUID();
 		const first = {
 			data: { user: "Ada", watchingSessionId: sessionId, away: true },
@@ -179,6 +181,54 @@ describe("computeGlobalPresence", () => {
 			type: "presence",
 			sessionId,
 			viewers: [],
+		});
+		expect(frames).toContainEqual({
+			type: "typing",
+			sessionId,
+			users: [],
+		});
+	});
+});
+
+describe("typing presence", () => {
+	test("deduplicates people and expires stale leases", () => {
+		const now = Date.now();
+		const viewers = new Set<any>([
+			{ data: { user: "Ada", typingUntil: now + 1_000, activeAt: now, lastSeenAt: now } },
+			{ data: { user: "Ada", typingUntil: now + 2_000, activeAt: now, lastSeenAt: now } },
+			{ data: { user: "Grace", typingUntil: now - 1, activeAt: now, lastSeenAt: now } },
+		]);
+		expect(computeTypingUsers(viewers, now)).toEqual(["Ada"]);
+	});
+
+	test("broadcasts start and stop to the other viewers", () => {
+		const sessionId = crypto.randomUUID();
+		const received: any[] = [];
+		const ada = {
+			data: { user: "Ada", watchingSessionId: sessionId },
+			send() {},
+		};
+		const grace = {
+			data: { user: "Grace", watchingSessionId: sessionId },
+			send(payload: string) { received.push(JSON.parse(payload)); },
+		};
+		joinSession(ada, sessionId);
+		joinSession(grace, sessionId);
+		received.length = 0;
+
+		setClientTyping(ada, sessionId, true);
+		expect(received).toContainEqual({
+			type: "typing",
+			sessionId,
+			users: ["Ada"],
+		});
+
+		received.length = 0;
+		setClientTyping(ada, sessionId, false);
+		expect(received).toContainEqual({
+			type: "typing",
+			sessionId,
+			users: [],
 		});
 	});
 });

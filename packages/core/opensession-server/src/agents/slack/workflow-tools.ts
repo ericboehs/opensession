@@ -5,7 +5,7 @@
  * The script executes in a
  * contained Bun Worker (env-scrubbed, exfil/spawn globals stripped — see
  * workflow-worker.ts; exposure gating is the real boundary); each agent()
- * call becomes a plain opencode run in ask mode, while mcp.* calls go through
+ * call becomes a plain pi run in ask mode, while mcp.* calls go through
  * workflow-mcp.ts — a round trip, not a model turn, scoped by the
  * ctx.mcpAllowlist/deniedTools this server was built with (see
  * src/server/workflow-types.ts for the contract, workflow-runner.ts for
@@ -44,7 +44,7 @@ import type {
  * cost only a tie-breaker (CLAUDE.md's priority rule). A script can still route
  * per agent via opts.model when it has a reason to.
  */
-export const WORKFLOW_DEFAULT_MODEL = "claude-opus-5";
+export const WORKFLOW_DEFAULT_MODEL = "pi/anthropic/claude-opus-5";
 
 export interface WorkflowsToolContext {
 	sessionId: string;
@@ -64,6 +64,12 @@ export interface WorkflowsToolContext {
 	/** Per-call tool denials for mcp.* (automation runs: Plain customer-facing
 	 *  writes, WorkOS identity mutation). */
 	deniedTools?: Record<string, string>;
+	/** The in-process opensession-* servers this run carries, built FRESH per
+	 *  call (an McpServer holds one transport — see workflow-mcp.ts). Supplied
+	 *  by interactive sessions only; an automation's script stays external-only.
+	 *  workflow-mcp.ts intersects the result with its own allowlist, so passing
+	 *  the full interactive set here cannot widen the script's surface. */
+	inProcessMcp?: () => Record<string, unknown>;
 }
 
 function text(s: string) {
@@ -237,6 +243,7 @@ export function createWorkflowsMcpServer(ctx: WorkflowsToolContext) {
 						budgetTotal: args.budget_tokens,
 						mcpAllowlist: ctx.mcpAllowlist,
 						deniedTools: ctx.deniedTools,
+						inProcessMcp: ctx.inProcessMcp,
 					});
 					return text(
 						`Workflow started: ${runId}. Poll workflow_status for progress; it also streams live to this session's Agents panel.`,
@@ -325,15 +332,15 @@ export function createWorkflowsMcpServer(ctx: WorkflowsToolContext) {
 					lines.push("Result:");
 					if (result.length > 20_000) {
 						// Spill the full value to a scratch file so it isn't lost to
-						// the tool-output cap. /tmp/opencode/** is readable by the
+						// the tool-output cap. /tmp/pi/** is readable by the
 						// Read tool in BOTH shell and ask-mode runs (see
-						// ASK_EXTERNAL_DIR_PERMISSIONS in opencode-runner.ts), so the
+						// ASK_EXTERNAL_DIR_PERMISSIONS in pi-runner.ts), so the
 						// agent can read the untruncated result instead of replaying
 						// the whole workflow with a compacted return shape (the
 						// "resume_workflow just to reshape the return" papercut).
 						let spillPath = "";
 						try {
-							const dir = "/tmp/opencode/workflow-results";
+							const dir = "/tmp/pi/workflow-results";
 							mkdirSync(dir, { recursive: true });
 							spillPath = `${dir}/${run.runId}.txt`;
 							writeFileSync(spillPath, result);
@@ -458,6 +465,7 @@ export function createWorkflowsMcpServer(ctx: WorkflowsToolContext) {
 						resumeFromRunId: args.run_id,
 						mcpAllowlist: ctx.mcpAllowlist,
 						deniedTools: ctx.deniedTools,
+						inProcessMcp: ctx.inProcessMcp,
 					});
 					return text(
 						`Resumed as ${runId} (journal replay from ${args.run_id}). Poll workflow_status; progress streams to the Agents panel.`,

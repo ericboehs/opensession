@@ -16,6 +16,8 @@ import { cleanSessionTitle } from "./session-title";
 export interface WorktreeRow extends PrStatusInput {
   key: string;
   session?: UnifiedSession;
+  /** Preserved even when the session is archived and absent from the live list. */
+  sessionId?: string;
   title: string;
   repo: string;
   branch: string;
@@ -39,6 +41,7 @@ function worktreesForSession(session: UnifiedSession): WorktreeRow[] {
     .map((pr) => ({
       key: pr.url,
       session,
+      sessionId: session.id,
       title: cleanSessionTitle(pr.title || session.title),
       repo: pr.repo,
       branch: pr.branch,
@@ -110,6 +113,7 @@ export function buildWorktreeRows(recentPrs: RecentPr[], sessions: UnifiedSessio
   for (const pr of recentPrs) {
     byPr.set(pr.url, {
       key: pr.url,
+      sessionId: pr.sessionId,
       title: pr.title,
       repo: pr.repo,
       branch: pr.branch,

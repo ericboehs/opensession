@@ -8,7 +8,7 @@
  *
  * - `safeFlushLength` decides what a sender may SHIP: block-level boundaries
  *   (a completed line, a finished sentence), so a viewer only ever holds text
- *   that renders as itself. The server's opencode runner cuts its stream
+ *   that renders as itself. The server's pi runner cuts its stream
  *   frames with it.
  * - `advanceReveal` decides what a viewer may SHOW of what it holds: the same
  *   safety rule at word granularity, so a bubble can type a shipped block out

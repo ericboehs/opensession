@@ -1,7 +1,7 @@
 // Per-user session tab colors, stored server-side (keyed on the UserPicker
 // name) so they follow you across devices. The public API stays synchronous
 // (an in-memory cache) so callers don't await: the store is a lib/user-map
-// instance, which owns the hydration and the optimistic whole-map PUT.
+// instance, which owns hydration and ordered per-key delta writes.
 import { fetchTabColors, saveTabColorsApi } from "./api";
 import { makeUserMap } from "./user-map";
 
@@ -25,7 +25,7 @@ export function colorHex(key: string | undefined): string | null {
 const store = makeUserMap<string>({
 	changeEvent: CHANGE_EVENT,
 	fetchMap: fetchTabColors,
-	saveMap: saveTabColorsApi,
+	saveDelta: saveTabColorsApi,
 });
 
 export function getTabColors(): Record<string, string> {

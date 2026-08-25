@@ -17,6 +17,7 @@
 
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { dirname } from "path";
+import { configuredIngress } from "../config";
 import { getDefaultModel, providerFor, resolveModel } from "../models";
 import { OPENSESSION_SESSIONS_DIR } from "../paths";
 import { stateDir } from "../paths";
@@ -61,7 +62,7 @@ export type SandboxTransport = "socket" | "ws";
 
 /** How remote providers authenticate `git clone` inside the sandbox (they
  *  can't mount host creds). "none" = public clone; "https-token" injects the
- *  token into the https URL (GitHub PAT / x-access-token). */
+ *  token into the https URL (GitHub App token / x-access-token). */
 export interface SandboxCloneCredential {
   type: "none" | "https-token";
   token?: string;
@@ -92,11 +93,8 @@ const SNAPSHOT_DEFAULTS: SandboxSnapshotsConfig = {
   quickSyncOnRestore: true,
 };
 
-/** The isolated public dial-back listener (src/server/public-ingress.ts):
- *  a SECOND Bun.serve that exposes ONLY the run-ws/rpc-ws upgrade routes (+ a
- *  bare health check) so remote sandboxes on the public internet can dial
- *  back without the rest of the app ever being reachable. Front it with a
- *  TLS terminator (Caddy/tunnel) — it binds loopback by default. */
+/** Advanced internal bind override for the unified public gateway. The
+ * canonical public URL lives only in config.json's ingress section. */
 export interface SandboxPublicIngressConfig {
   /** Master switch. The listener only starts (at boot — needs a restart) when true. */
   enabled: boolean;
@@ -104,10 +102,6 @@ export interface SandboxPublicIngressConfig {
   port: number;
   /** Bind host (default "127.0.0.1" — a reverse proxy/tunnel fronts it). */
   host: string;
-  /** The base URL remote sandboxes dial, e.g. "wss://sessions.example.com"
-   *  (http(s) is normalized to ws(s)). When set, remote-provider launches use
-   *  it as their callback base instead of callbackBaseUrl. */
-  publicBaseUrl?: string;
 }
 
 const PUBLIC_INGRESS_DEFAULT_PORT = 3860;
@@ -119,13 +113,16 @@ export interface SandboxPrewarmConfig {
   enabled: boolean;
   /** Destroy an untouched prewarm after this many minutes (default 10). */
   ttlMinutes: number;
-  /** At most this many live prewarms across all keys (default 2 — paid compute). */
+  /** At most this many live prewarms across all keys (default 2). */
   maxLive: number;
+  /** Explicit targets kept prepared even while nobody is typing. */
+  keepReady: Array<{ provider: string; repoId: string }>;
 }
 
 const PREWARM_DEFAULTS: Omit<SandboxPrewarmConfig, "enabled"> = {
   ttlMinutes: 10,
   maxLive: 2,
+  keepReady: [],
 };
 
 export interface SandboxDaytonaConfig {
@@ -135,9 +132,9 @@ export interface SandboxDaytonaConfig {
    * Org snapshot to create sandboxes from (custom `resources` are rejected
    * when creating from a snapshot, so sizing lives in the snapshot itself).
    * Unset = Daytona's default snapshot: 1 vCPU / 1GB / 3GiB disk — too small
-   * for real repo workspaces (the runner payload alone is ~2GB; a tella-fusion
-   * clone died on ENOSPC, 2026-07-09). Create one via the SDK, e.g. name
-   * backstage-lg-us, image daytonaio/sandbox:0.8.0, resources {cpu:2,
+   * for real repo workspaces (the runner payload alone is ~2GB; a large repo's
+   * clone died on ENOSPC). Create one via the SDK, e.g. name
+   * sandbox-lg-us, image daytonaio/sandbox:0.8.0, resources {cpu:2,
    * memory:4, disk:10 (org max)}, regionId "us".
    */
   snapshot?: string;
@@ -249,9 +246,9 @@ export interface SandboxConfig {
   firecrackerMicrovm?: SandboxFirecrackerMicrovmConfig;
   /** Credential-minimal unattended-run profile. */
   automation?: SandboxAutomationConfig;
-  /** Clone auth for remote-provider workspaces + runner bootstrap. On hosted
-   *  GitHub clones, the live GITHUB_API_TOKEN takes precedence so an expiring
-   *  GitHub App user token is never treated as durable sandbox config. */
+  /** Clone auth for remote-provider workspaces + runner bootstrap. The selected
+   *  live GitHub service credential takes precedence; App mode never falls back
+   *  to a persisted token because it may be stale static authority. */
   cloneCredential?: SandboxCloneCredential;
   /** Warm-on-typing prewarm pool. Absent = defaults, with `enabled` true
    *  whenever a provider with a prewarm adapter is configured. */
@@ -358,7 +355,6 @@ export function sandboxConfig(): SandboxConfig {
                     ? raw.publicIngress.port
                     : PUBLIC_INGRESS_DEFAULT_PORT,
                 host: str(raw.publicIngress.host) || "127.0.0.1",
-                publicBaseUrl: str(raw.publicIngress.publicBaseUrl),
               }
             : undefined,
         e2b:
@@ -457,6 +453,22 @@ export function sandboxConfig(): SandboxConfig {
                   typeof raw.prewarm.maxLive === "number" && raw.prewarm.maxLive >= 1
                     ? Math.floor(raw.prewarm.maxLive)
                     : undefined,
+                keepReady: Array.isArray(raw.prewarm.keepReady)
+                  ? raw.prewarm.keepReady
+                      .filter(
+                        (target: unknown): target is { provider: string; repoId: string } =>
+                          Boolean(
+                            target &&
+                              typeof target === "object" &&
+                              typeof (target as any).provider === "string" &&
+                              typeof (target as any).repoId === "string",
+                          ),
+                      )
+                      .map((target: { provider: string; repoId: string }) => ({
+                        provider: target.provider.trim(),
+                        repoId: target.repoId.trim(),
+                      }))
+                  : undefined,
               }
             : undefined,
         runnerBundleUrl: str(raw?.runnerBundleUrl),
@@ -504,6 +516,12 @@ export function sandboxPrewarmConfig(): SandboxPrewarmConfig {
     enabled: cfg.prewarm?.enabled ?? prewarmProviderConfigured,
     ttlMinutes: cfg.prewarm?.ttlMinutes ?? PREWARM_DEFAULTS.ttlMinutes,
     maxLive: cfg.prewarm?.maxLive ?? PREWARM_DEFAULTS.maxLive,
+    keepReady: Array.isArray(cfg.prewarm?.keepReady)
+      ? cfg.prewarm.keepReady.filter(
+          (target): target is { provider: string; repoId: string } =>
+            typeof target?.provider === "string" && typeof target?.repoId === "string",
+        )
+      : PREWARM_DEFAULTS.keepReady,
   };
 }
 
@@ -628,39 +646,6 @@ export function setWorkspaceSandboxDefault(
   return normalized as RunnableSandboxProviderId | "none";
 }
 
-/** Store the operator-approved public callback origin without touching
- * provider credentials or requiring a server restart (3860 already listens). */
-export function setSandboxPublicIngressUrl(value: string): string {
-  const url = new URL(value.trim());
-  if (url.protocol !== "https:" && url.protocol !== "wss:") {
-    throw new Error("Sandbox ingress URL must use HTTPS or WSS");
-  }
-  url.protocol = "https:";
-  url.pathname = url.pathname.replace(/\/$/, "");
-  url.search = "";
-  url.hash = "";
-  const publicBaseUrl = url.toString().replace(/\/$/, "");
-  let raw: Record<string, unknown> = {};
-  try {
-    const parsed = JSON.parse(readFileSync(configPath(), "utf-8"));
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) raw = parsed;
-  } catch {}
-  const previous =
-    raw.publicIngress && typeof raw.publicIngress === "object"
-      ? (raw.publicIngress as Record<string, unknown>)
-      : {};
-  raw.publicIngress = {
-    ...previous,
-    enabled: true,
-    port: PUBLIC_INGRESS_DEFAULT_PORT,
-    host: typeof previous.host === "string" ? previous.host : "127.0.0.1",
-    publicBaseUrl,
-  };
-  mkdirSync(dirname(configPath()), { recursive: true });
-  writeJsonAtomic(configPath(), raw);
-  return publicBaseUrl;
-}
-
 export function isRunnableSandboxProvider(v: unknown): v is RunnableSandboxProviderId {
   return (
     typeof v === "string" &&
@@ -766,18 +751,12 @@ export interface SandboxModelFamily {
   id: string;
   /** Human name for warnings. */
   label: string;
-  match: { provider: "claude" | "codex" | "opencode" | "pi" };
+  match: { provider: "claude" | "codex" | "pi" };
   sandboxable: boolean;
   hint?: string;
 }
 
 export const SANDBOX_MODEL_FAMILIES: SandboxModelFamily[] = [
-  {
-    id: "opencode",
-    label: "OpenCode",
-    match: { provider: "opencode" },
-    sandboxable: true,
-  },
   {
     id: "pi",
     label: "Pi",
@@ -787,12 +766,12 @@ export const SANDBOX_MODEL_FAMILIES: SandboxModelFamily[] = [
   {
     // Native Codex runs need a writable CODEX_HOME (refresh-token rotation) —
     // deliberately never mounted or uploaded into sandboxes. GPT-in-a-sandbox
-    // goes through opencode/openai/* instead.
+    // goes through pi/openai/* instead.
     id: "codex",
     label: "GPT (Codex)",
     match: { provider: "codex" },
     sandboxable: false,
-    hint: "Codex account state stays on the host; use an opencode/openai/* or pi/openai/* model for GPT in a sandbox",
+    hint: "Codex account state stays on the host; use an pi/openai/* or pi/openai/* model for GPT in a sandbox",
   },
   {
     id: "claude",
@@ -926,13 +905,12 @@ export function sandboxCapabilityStatus(): SandboxCapabilityStatus {
   // Only an actually-missing dial-back URL surfaces a caveat (no static
   // "unverified" scare-copy — dial-back is proven in production).
   const remoteDialBackConfigured = Boolean(
-    (cfg.publicIngress?.enabled && cfg.publicIngress.publicBaseUrl) ||
-      cfg.callbackBaseUrl,
+    configuredIngress().publicBaseUrl || cfg.callbackBaseUrl,
   );
   const remoteNote = remoteDialBackConfigured
     ? {}
     : {
-        note: "no dial-back URL configured — set publicIngress.publicBaseUrl (or callbackBaseUrl) so sandboxes can reach this server; see docs/self-hosting-sandboxes.md",
+        note: "no public ingress configured — choose an exposure method in Settings so remote sandboxes can reach this server",
       };
   const providersWithoutCertification: Array<
     Omit<SandboxProviderStatusEntry, "certified" | "lastPassedAt" | "usability">
@@ -1083,7 +1061,7 @@ export function publicIngressConfig(): SandboxPublicIngressConfig | null {
  * use this — they stay on sandboxCallbackBaseUrl (the internal bridge path).
  */
 export function remoteSandboxCallbackBaseUrl(): string {
-  const pi = publicIngressConfig();
-  if (pi?.publicBaseUrl) return normalizeWsBase(pi.publicBaseUrl);
+  const ingress = configuredIngress().publicBaseUrl;
+  if (ingress) return normalizeWsBase(ingress);
   return sandboxCallbackBaseUrl();
 }

@@ -12,10 +12,10 @@ const pill = { width: 120, height: 32 };
 const viewport = { width: 1000, height: 800 };
 
 describe("placeQuoteOffer", () => {
-	it("hangs above the first line, aligned with where the passage starts", () => {
+	it("hangs above the first line, centered on the highlighted text", () => {
 		const line = rect(300, 400, 700, 420);
 		expect(placeQuoteOffer(line, line, pill, viewport)).toEqual({
-			left: 300,
+			left: 440,
 			top: 400 - OFFER_GAP - pill.height,
 			side: "above",
 		});
@@ -25,7 +25,7 @@ describe("placeQuoteOffer", () => {
 		const first = rect(300, 20, 700, 40);
 		const last = rect(100, 60, 400, 80);
 		expect(placeQuoteOffer(first, last, pill, viewport)).toEqual({
-			left: 100,
+			left: 190,
 			top: 80 + OFFER_GAP,
 			side: "below",
 		});
@@ -39,7 +39,7 @@ describe("placeQuoteOffer", () => {
 	});
 
 	it("keeps the pill on screen when the passage runs to the left edge", () => {
-		const line = rect(0, 400, 200, 420);
+		const line = rect(0, 400, 10, 420);
 		expect(placeQuoteOffer(line, line, pill, viewport).left).toBe(OFFER_MARGIN);
 	});
 

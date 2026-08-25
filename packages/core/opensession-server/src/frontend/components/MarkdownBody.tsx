@@ -3,10 +3,23 @@ import {
 	createContext,
 	useContext,
 	useEffect,
-	useMemo,
 	useRef,
 	useState,
 } from "react";
+import { attachCodeCopy, decorateCodeBlocks } from "../lib/code-copy";
+
+// Lazy loaders live at module scope: the compiler cannot lower dynamic
+// imports inside components.
+let mermaidPromise: Promise<typeof import("../lib/mermaid")> | null = null;
+function loadMermaid() {
+	mermaidPromise ??= import("../lib/mermaid");
+	return mermaidPromise;
+}
+let codeHighlightPromise: Promise<typeof import("./CodeHighlight")> | null = null;
+function loadCodeHighlight() {
+	codeHighlightPromise ??= import("./CodeHighlight");
+	return codeHighlightPromise;
+}
 import {
 	type EffectiveTheme,
 	effectiveTheme,
@@ -65,7 +78,7 @@ export function MarkdownBody({
 	// and a rewrite silently destroys the mermaid/shiki upgrades below. A
 	// stable object keeps unrelated re-renders (visibility flips, parent
 	// updates) from resetting the DOM back to the plain fences.
-	const innerHtml = useMemo(() => ({ __html: html }), [html]);
+	const innerHtml = (({ __html: html }));
 	// The (element, html, theme) combination whose upgrade last completed —
 	// lets the effect skip redoing (and visibly flashing) work whose output is
 	// already in the DOM, e.g. when scrolling a diagram out of and back into
@@ -115,7 +128,7 @@ export function MarkdownBody({
 			// ```mermaid fences become inline diagrams; source that doesn't parse
 			// (still streaming, or just wrong) keeps the plain code fence.
 			if (fences.some((f) => f.lang === "mermaid")) {
-				const m = await import("../lib/mermaid").catch(() => null);
+				const m = await loadMermaid().catch(() => null);
 				for (const { code, lang } of fences) {
 					if (!m || lang !== "mermaid") continue;
 					const svg = await m
@@ -148,7 +161,7 @@ export function MarkdownBody({
 			}
 
 			if (!fences.some((f) => f.lang && f.lang !== "mermaid")) return;
-			const m = await import("./CodeHighlight").catch(() => null);
+			const m = await loadCodeHighlight().catch(() => null);
 			if (!m || !alive) return;
 			for (const { code, lang } of fences) {
 				if (!lang || lang === "mermaid" || !el.contains(code)) continue;
@@ -185,6 +198,23 @@ export function MarkdownBody({
 			alive = false;
 		};
 	}, [html, theme, visible]);
+
+	// The copy control on each fence (lib/code-copy.ts). Declared AFTER the
+	// upgrade effect on purpose: that one restores the pristine markdown into
+	// the DOM before its first await, which would throw these buttons away.
+	// Effects run in declaration order, so this re-decorates what the reset just
+	// put back. The upgrades that follow are `pre.replaceWith(...)` INSIDE the
+	// wrapper this creates, so the button survives them without being rebuilt.
+	useEffect(() => {
+		const el = ref.current;
+		if (!el || !html.includes("<pre")) return;
+		decorateCodeBlocks(el);
+	}, [html, theme, visible]);
+
+	useEffect(() => {
+		const el = ref.current;
+		return el ? attachCodeCopy(el) : undefined;
+	}, []);
 
 	return (
 		<div ref={ref} className={className} dangerouslySetInnerHTML={innerHtml} />

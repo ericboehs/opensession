@@ -1,5 +1,6 @@
 import React from "react";
 import { openLightbox } from "./MediaLightbox";
+import { IconX } from "./icons";
 
 interface Props {
   /** Attached images as `data:` URLs. */
@@ -39,17 +40,17 @@ export function ImageThumbs({ images, onRemove, disabled, pending = 0 }: Props) 
             <img
               src={src}
               alt=""
-              className="h-14 w-auto max-w-[120px] rounded-control border border-line-strong object-cover"
+              className="h-14 w-auto max-w-[120px] rounded-control border border-line/60 object-cover"
             />
           </button>
           <button
             type="button"
-            className="absolute -top-1.5 -right-1.5 flex size-[18px] items-center justify-center rounded-full bg-fg text-label leading-none text-panel"
+            className="absolute -top-1.5 -right-1.5 flex size-[18px] items-center justify-center rounded-full bg-fg p-0 text-panel"
             onClick={() => onRemove(i)}
             disabled={disabled}
             title="Remove image"
           >
-            ×
+            <IconX className="block" size={12} dense />
           </button>
         </div>
       ))}

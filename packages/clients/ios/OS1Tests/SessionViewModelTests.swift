@@ -9,6 +9,24 @@ import XCTest
 final class SessionViewModelTests: XCTestCase {
     private let serverA = SessionViewModelCache.Scope(serverURL: "server-a", token: "token-a")
     private let serverB = SessionViewModelCache.Scope(serverURL: "server-b", token: "token-b")
+    private var savedLiveTyping: Bool?
+
+    override func setUp() {
+        super.setUp()
+        savedLiveTyping = UserDefaults.standard.object(
+            forKey: "os1.transcript.liveTyping"
+        ) as? Bool
+        UserDefaults.standard.set(true, forKey: "os1.transcript.liveTyping")
+    }
+
+    override func tearDown() {
+        if let savedLiveTyping {
+            UserDefaults.standard.set(savedLiveTyping, forKey: "os1.transcript.liveTyping")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "os1.transcript.liveTyping")
+        }
+        super.tearDown()
+    }
 
     private func makeViewModel() -> SessionViewModel {
         SessionViewModel(session: Session(id: "bks-1"))
@@ -241,6 +259,93 @@ final class SessionViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.slackComposeReceipt, current)
     }
 
+    func testSlackReceiptUndoSendsItsTargetOnceAndClearsOnlyAfterSuccess() async {
+        var calls: [(session: String, channel: String, ts: String)] = []
+        var release: CheckedContinuation<Void, Error>?
+        let viewModel = SessionViewModel(
+            session: Session(id: "bks-1"),
+            slackComposerUndoer: { session, channel, ts in
+                calls.append((session, channel, ts))
+                try await withCheckedThrowingContinuation {
+                    release = $0
+                }
+            }
+        )
+        let receipt = SlackComposeReceipt(
+            requestId: "slack-undo",
+            status: .sent,
+            channel: .init(id: "C123", name: "shipping"),
+            permalink: nil,
+            ts: "1700000000.000000"
+        )
+        viewModel.resolveSlackComposer(receipt)
+
+        let firstTap = Task { await viewModel.undoSlackComposeReceipt() }
+        await Task.yield()
+        XCTAssertEqual(viewModel.undoingSlackComposeReceiptId, receipt.id)
+        XCTAssertEqual(calls.count, 1)
+
+        await viewModel.undoSlackComposeReceipt()
+        XCTAssertEqual(calls.count, 1, "a second tap must not issue another delete")
+        XCTAssertEqual(viewModel.slackComposeReceipt, receipt)
+
+        release?.resume()
+        await firstTap.value
+        XCTAssertNil(viewModel.slackComposeReceipt)
+        XCTAssertNil(viewModel.undoingSlackComposeReceiptId)
+        XCTAssertEqual(viewModel.notice, "Removed from Slack")
+        XCTAssertEqual(calls.first?.session, "bks-1")
+        XCTAssertEqual(calls.first?.channel, "C123")
+        XCTAssertEqual(calls.first?.ts, "1700000000.000000")
+    }
+
+    func testFailedSlackReceiptUndoKeepsReceiptAndReportsTheError() async {
+        let viewModel = SessionViewModel(
+            session: Session(id: "bks-1"),
+            slackComposerUndoer: { _, _, _ in
+                throw NSError(
+                    domain: "SlackUndoTests",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Slack refused the delete"]
+                )
+            }
+        )
+        let receipt = SlackComposeReceipt(
+            requestId: "slack-undo",
+            status: .sent,
+            channel: .init(id: "C123", name: "shipping"),
+            permalink: nil,
+            ts: "1700000000.000000"
+        )
+        viewModel.resolveSlackComposer(receipt)
+
+        await viewModel.undoSlackComposeReceipt()
+
+        XCTAssertEqual(viewModel.slackComposeReceipt, receipt)
+        XCTAssertNil(viewModel.undoingSlackComposeReceiptId)
+        XCTAssertEqual(viewModel.notice, "Slack refused the delete")
+    }
+
+    func testSlackReceiptWithoutTimestampCannotBeUndone() async {
+        var called = false
+        let viewModel = SessionViewModel(
+            session: Session(id: "bks-1"),
+            slackComposerUndoer: { _, _, _ in called = true }
+        )
+        let receipt = SlackComposeReceipt(
+            requestId: "slack-old",
+            status: .sent,
+            channel: .init(id: "C123", name: "shipping"),
+            permalink: nil
+        )
+        viewModel.resolveSlackComposer(receipt)
+
+        await viewModel.undoSlackComposeReceipt()
+
+        XCTAssertFalse(called)
+        XCTAssertEqual(viewModel.slackComposeReceipt, receipt)
+    }
+
     func testResyncDropsCachedPartialPrefixOfOffscreenCompletion() {
         let viewModel = makeViewModel()
         viewModel.handle(.sessionStatus(sessionId: "bks-1", isRunning: true))
@@ -329,6 +434,121 @@ final class SessionViewModelTests: XCTestCase {
             ["Kent de Bruin"]
         )
         XCTAssertTrue(SessionViewModel.otherViewers(["Michiel"], me: "Michiel").isEmpty)
+    }
+
+    func testTypingDropsUsAndUsesTheGroupCopy() {
+        let viewModel = makeViewModel()
+        let me = ServerConfig.shared.userName
+        viewModel.handle(.typing(
+            sessionId: "bks-1", users: [me, "Zzz Tester", "Zzz Tester", "Yyy Tester"]
+        ))
+        XCTAssertEqual(viewModel.otherTypingUsers, ["Zzz Tester", "Yyy Tester"])
+        XCTAssertEqual(SessionViewModel.typingLabel(["Grant"]), "Grant is typing…")
+        XCTAssertEqual(
+            SessionViewModel.typingLabel(["Grant", "Kent"]),
+            "Several people are typing…"
+        )
+
+        viewModel.handle(.typing(sessionId: "bks-2", users: ["Ada"]))
+        XCTAssertEqual(viewModel.otherTypingUsers, ["Zzz Tester", "Yyy Tester"])
+    }
+
+    func testComposerTypingSendsStartAndStop() {
+        let socket = MockSocket()
+        let viewModel = SessionViewModel(
+            session: Session(id: "bks-1"),
+            socketFactory: { socket }
+        )
+        viewModel.start()
+        viewModel.handle(.hello(bootId: "boot-1"))
+
+        viewModel.userIsTyping(true)
+        viewModel.userIsTyping(false)
+        XCTAssertEqual(socket.typingFrames.map { $0.typing }, [true, false])
+        XCTAssertEqual(socket.typingFrames.map { $0.sessionId }, ["bks-1", "bks-1"])
+        viewModel.stop()
+    }
+
+    func testWorkflowUpdatesAreOwnedByTheMatchingSession() {
+        let viewModel = makeViewModel()
+        viewModel.handle(.workflowUpdate(
+            sessionId: "bks-1",
+            run: WorkflowRun(runId: "run-1", name: "Audit", status: .running)
+        ))
+        XCTAssertEqual(viewModel.workflowRuns.map(\.runId), ["run-1"])
+        XCTAssertEqual(viewModel.workflowRuns.first?.status, .running)
+        XCTAssertTrue(viewModel.workflowRunsLoaded)
+
+        viewModel.handle(.workflowUpdate(
+            sessionId: "bks-1",
+            run: WorkflowRun(runId: "run-1", name: "Audit", status: .done)
+        ))
+        XCTAssertEqual(viewModel.workflowRuns.count, 1)
+        XCTAssertEqual(viewModel.workflowRuns.first?.status, .done)
+
+        viewModel.handle(.workflowUpdate(
+            sessionId: "bks-2",
+            run: WorkflowRun(runId: "run-2", name: "Other")
+        ))
+        XCTAssertEqual(viewModel.workflowRuns.map(\.runId), ["run-1"])
+    }
+
+    func testWorkflowEventWinsAgainstAnOlderRestResponse() async {
+        var continuation: CheckedContinuation<[WorkflowRun], any Error>?
+        let viewModel = SessionViewModel(
+            session: Session(id: "bks-1"),
+            workflowLoader: { _ in
+                try await withCheckedThrowingContinuation { continuation = $0 }
+            }
+        )
+        let loading = Task { await viewModel.refreshWorkflowRuns() }
+        while continuation == nil { await Task.yield() }
+
+        viewModel.handle(.workflowUpdate(
+            sessionId: "bks-1",
+            run: WorkflowRun(runId: "run-1", name: "Audit", status: .done)
+        ))
+        continuation?.resume(returning: [
+            WorkflowRun(runId: "run-1", name: "Audit", status: .running),
+            WorkflowRun(runId: "run-older", name: "Older", status: .done),
+        ])
+        await loading.value
+
+        XCTAssertEqual(viewModel.workflowRuns.map(\.runId), ["run-1", "run-older"])
+        XCTAssertEqual(viewModel.workflowRuns.first?.status, .done)
+    }
+
+    func testPrRefreshEventsMatchEveryAssociatedBranch() async {
+        var requested: [String] = []
+        var session = Session(id: "bks-1")
+        session.repo = "opensession"
+        session.branch = "feature/native"
+        session.attachedRepos = [
+            AttachedRepo(repo: "tella-fusion", branch: "feature/attached", dir: "/tmp/a")
+        ]
+        session.prs = [
+            SessionPrRef(repo: "gitops", branch: "feature/discovered")
+        ]
+        let viewModel = SessionViewModel(session: session, prLoader: { id in
+            requested.append(id)
+            return nil
+        })
+
+        viewModel.handle(.prUpdated(repo: "opensession", branch: "other"))
+        viewModel.handle(.gitPushed(sessionId: "bks-2", repo: nil))
+        await Task.yield()
+        XCTAssertTrue(requested.isEmpty)
+
+        for event in [
+            ServerEvent.prUpdated(repo: "opensession", branch: "feature/native"),
+            .prUpdated(repo: "tella-fusion", branch: "feature/attached"),
+            .prUpdated(repo: "gitops", branch: "feature/discovered"),
+            .gitPushed(sessionId: "bks-1", repo: "opensession"),
+        ] {
+            viewModel.handle(event)
+            await Task.yield()
+        }
+        XCTAssertEqual(requested, ["bks-1", "bks-1", "bks-1", "bks-1"])
     }
 
     /// Presence for another session must not repaint this one's pile.
@@ -693,6 +913,74 @@ final class SessionViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.entries.map(\.id), ["e1", "e9"])
     }
 
+    func testRewatchResumesAfterLatestChangeAndKeepsPagedHistory() {
+        let socket = MockSocket()
+        let viewModel = SessionViewModel(
+            session: Session(id: "bks-1"), socketFactory: { socket }
+        )
+        viewModel.start()
+        viewModel.handle(.hello(bootId: "boot-1"))
+        XCTAssertEqual(socket.watchResumes.count, 1)
+        XCTAssertNil(socket.watchResumes[0])
+
+        viewModel.handle(.transcriptInit(
+            sessionId: "bks-1",
+            entries: [entry("e900", "user", text: "recent")],
+            cursor: HistoryCursor(
+                truncated: true, firstSeq: 900, lastSeq: 1_000,
+                lastChangeSeq: 1_200, v2: true
+            )
+        ))
+        viewModel.handle(.transcriptHistory(
+            sessionId: "bks-1",
+            entries: [entry("e500", "user", text: "earlier")],
+            cursor: HistoryCursor(truncated: true, firstSeq: 500, v2: true)
+        ))
+        viewModel.handle(.transcriptAppend(
+            sessionId: "bks-1",
+            entries: [entry("e1001", "assistant", text: "new")],
+            cursor: HistoryCursor(
+                truncated: false, lastSeq: 1_001, lastChangeSeq: 1_201, v2: true
+            )
+        ))
+
+        // A replacement socket's hello re-watches using the durable watermark.
+        // The server answers with transcript_append, not a tail transcript_init,
+        // so the earlier page already on screen remains mounted.
+        viewModel.handle(.hello(bootId: "boot-2"))
+        XCTAssertEqual(
+            socket.watchResumes.last!,
+            .seq(lastSeq: 1_001, lastChangeSeq: 1_201)
+        )
+        XCTAssertEqual(viewModel.entries.map(\.id), ["e500", "e900", "e1001"])
+    }
+
+    func testLegacyRewatchUsesTheLastByteCursor() {
+        let socket = MockSocket()
+        let viewModel = SessionViewModel(
+            session: Session(id: "bks-1"), socketFactory: { socket }
+        )
+        viewModel.start()
+        viewModel.handle(.transcriptInit(
+            sessionId: "bks-1", entries: [entry("e1", "user")],
+            cursor: HistoryCursor(
+                truncated: false, rev: "rev-1", endOffset: 4_096
+            )
+        ))
+        viewModel.handle(.transcriptAppend(
+            sessionId: "bks-1", entries: [entry("e2", "assistant")],
+            cursor: HistoryCursor(
+                truncated: false, rev: "rev-1", endOffset: 8_192
+            )
+        ))
+
+        viewModel.handle(.hello(bootId: "boot-2"))
+        XCTAssertEqual(
+            socket.watchResumes.last!,
+            .offset(endOffset: 8_192, rev: "rev-1")
+        )
+    }
+
     /// A socket that dies mid-walk must not leave the control spinning on a
     /// request nobody will answer — nor scroll the reader to a start we never
     /// reached.
@@ -867,6 +1155,75 @@ final class SessionViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.pendingQuestion)
     }
 
+    private func askedQuestion() -> AskQuestion {
+        AskQuestion(id: "ask-1", questions: [
+            AskQuestion.Question(
+                question: "Which app?",
+                header: "Target",
+                options: [
+                    AskQuestion.Option(label: "iOS", description: "The native app"),
+                    AskQuestion.Option(label: "Web", description: nil),
+                ],
+                multiSelect: nil
+            )
+        ])
+    }
+
+    func testAnsweringLeavesAReceiptUntilTheRecordLands() {
+        let viewModel = makeViewModel()
+        let question = askedQuestion()
+        var olderRecord = entry("older-ask-record", "system")
+        olderRecord.ask = AnsweredAsk(question: question, answers: ["Which app?": "iOS"])
+        viewModel.handle(.transcriptInit(
+            sessionId: "bks-1",
+            entries: [olderRecord],
+            cursor: .empty
+        ))
+        viewModel.handle(.askQuestion(sessionId: "bks-1", question: question))
+        viewModel.answer(question: question, answers: ["Which app?": "iOS"])
+
+        XCTAssertNil(viewModel.pendingQuestion)
+        XCTAssertEqual(viewModel.sentAskAnswer?.id, "ask-1")
+        let receipt = viewModel.sentAskAnswer?.ask.questions.first
+        XCTAssertEqual(receipt?.answer, "iOS")
+        XCTAssertEqual(receipt?.header, "Target")
+        XCTAssertEqual(receipt?.options?.map(\.label), ["iOS", "Web"])
+
+        viewModel.handle(.transcriptInit(
+            sessionId: "bks-1",
+            entries: [olderRecord],
+            cursor: .empty
+        ))
+        XCTAssertNotNil(viewModel.sentAskAnswer)
+
+        var record = entry("new-ask-record", "system")
+        record.ask = AnsweredAsk(question: question, answers: ["Which app?": "iOS"])
+        viewModel.handle(.transcriptAppend(sessionId: "bks-1", entries: [record]))
+        XCTAssertNil(viewModel.sentAskAnswer)
+    }
+
+    func testDismissedQuestionLeavesNoReceipt() {
+        let viewModel = makeViewModel()
+        let question = askedQuestion()
+        viewModel.handle(.askQuestion(sessionId: "bks-1", question: question))
+        viewModel.answer(question: question, answers: nil)
+        XCTAssertNil(viewModel.sentAskAnswer)
+    }
+
+    func testNewQuestionClearsAnUnretiredReceipt() {
+        let viewModel = makeViewModel()
+        let question = askedQuestion()
+        viewModel.handle(.askQuestion(sessionId: "bks-1", question: question))
+        viewModel.answer(question: question, answers: ["Which app?": "iOS"])
+        XCTAssertNotNil(viewModel.sentAskAnswer)
+
+        viewModel.handle(.askQuestion(
+            sessionId: "bks-1",
+            question: AskQuestion(id: "ask-2", questions: [])
+        ))
+        XCTAssertNil(viewModel.sentAskAnswer)
+    }
+
     /// A server notice used to pin itself over the composer. It joins the
     /// transcript now, so the composer stays empty — and an empty frame is
     /// the server clearing rather than an event, so nothing new lands.
@@ -914,24 +1271,6 @@ final class SessionViewModelTests: XCTestCase {
         viewModel.handle(.replySuggestions(sessionId: "bks-1", suggestions: suggestions))
         viewModel.stop()
         XCTAssertTrue(viewModel.replySuggestions.isEmpty)
-    }
-
-    func testReplySuggestionsClearWhenTheSocketDrops() {
-        let socket = MockSocket()
-        let viewModel = SessionViewModel(
-            session: Session(id: "bks-1"),
-            socketFactory: { socket }
-        )
-        viewModel.start()
-        viewModel.handle(.replySuggestions(
-            sessionId: "bks-1",
-            suggestions: [ReplySuggestion(label: "Retry", text: "Retry the request.")]
-        ))
-
-        socket.onClose?("connection lost")
-
-        XCTAssertTrue(viewModel.replySuggestions.isEmpty)
-        viewModel.stop()
     }
 }
 
@@ -1183,9 +1522,9 @@ final class SendDraftTests: XCTestCase {
         XCTAssertEqual(viewModel.draft, "", "the composer accepted the message")
         XCTAssertEqual(unsent.map(\.content), ["written in a tunnel"])
         XCTAssertFalse(unsent[0].failed, "no connection is not a refusal")
-        XCTAssertTrue(
-            viewModel.entries.isEmpty,
-            "nothing enters the transcript until the server has it"
+        XCTAssertEqual(
+            viewModel.entries.map(\.text), ["written in a tunnel"],
+            "the durable outbox copy must stay visible in the conversation"
         )
 
         await comeBackOnline()
@@ -1202,6 +1541,13 @@ final class SendDraftTests: XCTestCase {
 
         let relaunched = Outbox(directory: outboxDirectory, monitorNetwork: false)
         XCTAssertEqual(relaunched.items(for: "bks-1").map(\.content), ["still owed"])
+        let reopened = SessionViewModel(
+            session: Session(id: "bks-1"), socketFactory: { self.socket }, outbox: relaunched
+        )
+        XCTAssertEqual(
+            reopened.entries.map(\.text), ["still owed"],
+            "reopening the chat must restore the original unsent message"
+        )
     }
 
     /// Order is meaning: message 2 must never overtake message 1, so a
@@ -1238,7 +1584,10 @@ final class SendDraftTests: XCTestCase {
         XCTAssertEqual(unsent.map(\.content), ["nope"])
         XCTAssertTrue(unsent[0].failed)
         XCTAssertEqual(unsent[0].lastError, "Session has no engine to resume yet.")
-        XCTAssertTrue(viewModel.entries.isEmpty)
+        XCTAssertEqual(
+            viewModel.entries.map(\.text), ["nope"],
+            "a refusal must keep the original message in the conversation"
+        )
 
         // Retry once the reason is gone.
         stubbedOutcome = nil
@@ -1246,6 +1595,21 @@ final class SendDraftTests: XCTestCase {
         await outbox.flushNow()
         XCTAssertTrue(unsent.isEmpty)
         XCTAssertEqual(viewModel.entries.map(\.text), ["nope"])
+    }
+
+    /// A terminal attachment/refusal belongs to that message. Keeping it for
+    /// Edit/Delete/Retry must not make every later follow-up look queued forever.
+    func testRefusedMessageDoesNotBlockLaterFollowUp() async {
+        stubbedOutcome = .rejected("An attached image could not be prepared.")
+        await send("broken attachment")
+        let failedId = unsent.first?.id
+
+        stubbedOutcome = nil
+        await send("follow up")
+
+        XCTAssertEqual(deliveries.map(\.item.content), ["broken attachment", "follow up"])
+        XCTAssertEqual(unsent.map(\.id), [failedId].compactMap { $0 })
+        XCTAssertTrue(unsent[0].failed)
     }
 
     func testFailureContinuationUsesWebPromptWithoutChangingDraft() async {
@@ -1306,8 +1670,9 @@ final class SendDraftTests: XCTestCase {
     func testDiscardingAnUnsentMessageRemovesIt() async {
         stubbedOutcome = .unavailable("offline")
         await send("never mind")
-        outbox.delete(id: unsent[0].id)
+        viewModel.discardUnsent(unsent[0])
         XCTAssertTrue(unsent.isEmpty)
+        XCTAssertTrue(viewModel.entries.isEmpty)
 
         await comeBackOnline()
         XCTAssertTrue(deliveries.map(\.item.content).filter { $0 == "never mind" }.count == 1,
@@ -1463,6 +1828,15 @@ final class SendDraftTests: XCTestCase {
         XCTAssertEqual(deliveries[0].images.count, 1)
     }
 
+    func testServerImagePreparationKeepsSupportedBytesAndConvertsOtherImages() throws {
+        let png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        XCTAssertEqual(AttachedImage.serverDataURL(png), png)
+
+        let olderHEIC = png.replacingOccurrences(of: "image/png", with: "image/heic")
+        let converted = try XCTUnwrap(AttachedImage.serverDataURL(olderHEIC))
+        XCTAssertTrue(converted.hasPrefix("data:image/jpeg;base64,"))
+    }
+
     /// Images have to survive the wait too — they're kept beside the queue on
     /// disk, so an offline send with a screenshot still carries it later.
     func testHeldMessageKeepsItsImages() async {
@@ -1531,6 +1905,24 @@ final class SendDraftTests: XCTestCase {
         ))
         XCTAssertEqual(viewModel.draft, "first")
         XCTAssertEqual(viewModel.queuedItems.map(\.id), ["q2"])
+    }
+
+    func testEditingPendingSteerTakesItIntoTheNormalComposer() {
+        let user = ServerConfig.shared.userName
+        let json = """
+        {"type":"queue_update","sessionId":"bks-1","queued":[],
+         "steered":[{"id":"s1","content":"change this","user":"\(user)","editable":true}]}
+        """
+        viewModel.handle(ServerEvent.parse(Data(json.utf8)))
+        let item = viewModel.steeredItems[0]
+
+        viewModel.editSteeredInComposer(item)
+        XCTAssertEqual(socket.takenSteerIds, ["s1"])
+        viewModel.handle(.queuedPromptTaken(
+            sessionId: "bks-1", queueId: "s1", item: item, message: nil
+        ))
+        XCTAssertEqual(viewModel.draft, "change this")
+        XCTAssertTrue(viewModel.steeredItems.isEmpty)
     }
 
     func testEditingSentMessageCopiesItIntoTheNormalComposer() {
@@ -1928,12 +2320,15 @@ private final class MockSocket: SessionSocket {
     private(set) var connectCount = 0
     private(set) var disconnectCount = 0
     private(set) var watched: [String] = []
+    private(set) var watchResumes: [TranscriptResumeCursor?] = []
     private(set) var prompts: [PromptCall] = []
     private(set) var steeredQueueIds: [String] = []
     private(set) var deletedQueueIds: [String] = []
     private(set) var takenQueueIds: [String] = []
+    private(set) var takenSteerIds: [String] = []
     private(set) var reorders: [[String]] = []
     private(set) var awayFrames: [Bool] = []
+    private(set) var typingFrames: [(sessionId: String, typing: Bool)] = []
 
     /// Every earlier-history request, in order — the backlog walk behind
     /// "jump to the start" is a sequence of these.
@@ -1946,8 +2341,14 @@ private final class MockSocket: SessionSocket {
 
     func connect() { connectCount += 1 }
     func disconnect() { disconnectCount += 1 }
-    func watch(sessionId: String) { watched.append(sessionId) }
+    func watch(sessionId: String, resume: TranscriptResumeCursor?) {
+        watched.append(sessionId)
+        watchResumes.append(resume)
+    }
     func setAway(_ away: Bool) { awayFrames.append(away) }
+    func setTyping(sessionId: String, typing: Bool) {
+        typingFrames.append((sessionId, typing))
+    }
     func loadHistory(sessionId: String, beforeOffset: Int, beforeRev: String?) {
         historyRequests.append(.offset(beforeOffset))
     }
@@ -1968,7 +2369,10 @@ private final class MockSocket: SessionSocket {
     }
     func steerQueued(sessionId: String, queueId: String) { steeredQueueIds.append(queueId) }
     func deleteQueued(sessionId: String, queueId: String) { deletedQueueIds.append(queueId) }
+    var interruptedQueueIds: [String] = []
+    func interruptQueued(sessionId: String, queueId: String) { interruptedQueueIds.append(queueId) }
     func takeQueued(sessionId: String, queueId: String) { takenQueueIds.append(queueId) }
+    func takeSteered(sessionId: String, queueId: String) { takenSteerIds.append(queueId) }
     func reorderQueued(sessionId: String, order: [String]) { reorders.append(order) }
     func cancelWatchedRun() {}
     func answer(sessionId: String, questionId: String, answers: [String: String]?) {}

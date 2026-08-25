@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { BASE_PATH } from "../lib/base";
 import type {
 	WorkflowAgentSnapshot,
@@ -17,7 +17,7 @@ import {
 	INFO_LABEL_CLASS,
 	INFO_SECTION_CLASS,
 } from "../lib/session-viewer-classes";
-import { friendlyModelSlug, opencodeModelParts } from "./ModelEffortSelect";
+import { friendlyModelSlug, routedModelParts } from "./ModelEffortSelect";
 import { WorkflowAgentTranscript } from "./WorkflowAgentTranscript";
 import { Badge } from "../ui/badge";
 
@@ -51,10 +51,12 @@ interface Props {
 	/** Opens a sub-agent's conversation in its own view tab. */
 	onOpenSubagent?: (agentId: string, label: string) => void;
 	/** Set when this renders as a page pushed on top of the workspace panel
-	 *  (the Agents item on its bottom bar). Page mode carries a back header and
-	 *  shows the empty state; without it this is a section of the phone info
+	 *  (the Agents item in its tab strip). Page mode shows the empty state and
+	 *  can carry a back header; without it this is a section of the phone info
 	 *  page, which renders nothing until a run exists. */
 	onBack?: () => void;
+	/** The desktop panel's standing tab strip already names this page. */
+	hideHeader?: boolean;
 }
 
 /** A finished run says so with its green marks and its totals, so `done` gets
@@ -130,11 +132,11 @@ function fmtTokens(n: number): string {
 	return String(n);
 }
 
-/** "opencode/anthropic/claude-sonnet-5" → "Sonnet 5", and
+/** "pi/anthropic/claude-sonnet-5" → "Sonnet 5", and
  *  "…/claude-haiku-4-5-20251001" → "Haiku 4.5": the trailing release date is
  *  version noise that doubles the width of every row's model readout. */
 function shortModel(id: string): string {
-	const oc = opencodeModelParts(id);
+	const oc = routedModelParts(id);
 	return friendlyModelSlug((oc ? oc.model : id).replace(/-\d{8}$/, ""));
 }
 
@@ -256,17 +258,14 @@ export function WorkflowPanel({
 	subagents,
 	onOpenSubagent,
 	onBack,
+	hideHeader = false,
 }: Props) {
 	// Server list + WS prepends both keep newest-first; re-sorting is cheap
 	// insurance against an out-of-order upsert.
-	const ordered = useMemo(
-		() =>
-			[...runs].sort(
+	const ordered = ([...runs].sort(
 				(a, b) =>
 					new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
-			),
-		[runs],
-	);
+			));
 	const subs = subagents ?? [];
 	const anyRunning =
 		ordered.some((r) => r.status === "running") ||
@@ -285,17 +284,14 @@ export function WorkflowPanel({
 		runId: string;
 		seq: number;
 	} | null>(null);
-	const onOpenAgent = useCallback(
-		(runId: string, seq: number) => setOpenConvo({ runId, seq }),
-		[],
-	);
-	const closeConvo = useCallback(() => setOpenConvo(null), []);
-	const convoAgent = useMemo(() => {
+	const onOpenAgent = (runId: string, seq: number) => setOpenConvo({ runId, seq });
+	const closeConvo = () => setOpenConvo(null);
+	const convoAgent = (() => {
 		if (!openConvo) return undefined;
 		return ordered
 			.find((r) => r.runId === openConvo.runId)
 			?.agents.find((a) => a.seq === openConvo.seq);
-	}, [openConvo, ordered]);
+	})();
 
 	if (openConvo && convoAgent)
 		return (
@@ -324,23 +320,25 @@ export function WorkflowPanel({
 		</>
 	);
 
-	// Page mode: pushed on top of the workspace panel from its bottom bar, the
-	// same one level deep that Portals opens to. It owns the whole column, so
+	// Page mode: selected in the workspace panel's tab strip, the same level
+	// that Portals opens to. It owns the whole column, so
 	// it carries the back header and can afford the empty state.
 	if (onBack)
 		return (
 			<>
-				<PanelPageHeader
-					title="Agents"
-					onBack={onBack}
-					trailing={
-						anyRunning && (
-							<Badge tone="warning" dot className="mr-1 animate-pulse">
-								running
-							</Badge>
-						)
-					}
-				/>
+				{!hideHeader && (
+					<PanelPageHeader
+						title="Agents"
+						onBack={onBack}
+						trailing={
+							anyRunning && (
+								<Badge tone="warning" dot className="mr-1 animate-pulse">
+									running
+								</Badge>
+							)
+						}
+					/>
+				)}
 				<div className="grid gap-4 px-2 pt-1 pb-[22px]">
 					{empty ? (
 						<WorkflowsEmptyState />
@@ -371,7 +369,7 @@ export function WorkflowPanel({
 	);
 }
 
-/** Sub-agents the session spawned directly with the task tool (opencode child
+/** Sub-agents the session spawned directly with the task tool (pi child
  *  sessions / Claude-SDK Task agents) — one card in the same visual grammar as
  *  a workflow run: StatusMark rows with agent-type/model chips, tokens and
  *  duration. Clicking a row opens the sub-agent's real conversation in the
@@ -491,7 +489,7 @@ function WorkflowsEmptyState() {
 					))}
 				</CardList>
 			</div>
-			<p className="px-2 text-meta leading-snug text-faint">
+			<p className="px-2 text-supporting leading-snug text-faint">
 				Agents read this worktree. Write agents each get their own branch, and
 				merging back is explicit.
 			</p>
@@ -523,7 +521,7 @@ function RunCard({
 
 	// Phase order: meta-seeded titles first, then first-seen agent phases;
 	// agents without a phase render as a leading ungrouped block.
-	const groups = useMemo(() => {
+	const groups = (() => {
 		const order: string[] = [];
 		const seen = new Set<string>();
 		for (const t of run.phases)
@@ -544,22 +542,21 @@ function RunCard({
 			else loose.push(a);
 		}
 		return { order, byPhase, loose };
-	}, [run.phases, run.agents]);
+	})();
 
-	const toggleAgent = useCallback((seq: number) => {
+	const toggleAgent = (seq: number) => {
 		setOpenAgents((prev) => {
 			const next = new Set(prev);
 			if (next.has(seq)) next.delete(seq);
 			else next.add(seq);
 			return next;
 		});
-	}, []);
+	};
 
-	const loadDetail = useCallback(
-		async (seq: number) => {
+	const loadDetail = async (seq: number) => {
 			setDetails((prev) => ({ ...prev, [seq]: "loading" }));
-			try {
-				const res = await fetch(
+			await (async () => {
+const res = await fetch(
 					`${BASE_PATH}/api/workflows/${encodeURIComponent(run.runId)}/agents/${seq}`,
 				);
 				if (!res.ok) throw new Error(String(res.status));
@@ -575,12 +572,10 @@ function RunCard({
 				if (!entry || typeof entry.prompt !== "string")
 					throw new Error("bad shape");
 				setDetails((prev) => ({ ...prev, [seq]: entry }));
-			} catch {
-				setDetails((prev) => ({ ...prev, [seq]: "missing" }));
-			}
-		},
-		[run.runId],
-	);
+})().catch(async () => {
+setDetails((prev) => ({ ...prev, [seq]: "missing" }));
+});
+		};
 
 	const startMs = new Date(run.startedAt).getTime();
 	const elapsedMs =
@@ -610,10 +605,7 @@ function RunCard({
 	if (elapsedMs > 0 || run.status === "running")
 		meta.push(fmtDuration(elapsedMs));
 
-	const openConversation = useCallback(
-		(seq: number) => onOpenAgent(run.runId, seq),
-		[onOpenAgent, run.runId],
-	);
+	const openConversation = (seq: number) => onOpenAgent(run.runId, seq);
 
 	function agentRow(a: WorkflowAgentSnapshot) {
 		return (
@@ -811,7 +803,7 @@ function RunCard({
  *  of nodes per second. The drill-in body mounts only while expanded: the 0fr
  *  grid wrapper stays mounted so the expand still animates (enter-only —
  *  collapse unmounts the content immediately). */
-const AgentRow = React.memo(function AgentRow({
+const AgentRow = function AgentRow({
 	a,
 	open,
 	detail,
@@ -933,4 +925,4 @@ const AgentRow = React.memo(function AgentRow({
 			</div>
 		</>
 	);
-});
+};

@@ -66,7 +66,7 @@
  * decoration.
  */
 export const PANEL_SHELL =
-	"viewer-panel relative flex min-h-0 w-[var(--panel-w,32%)] min-w-[320px] shrink-0 flex-col " +
+	"viewer-panel @container relative flex min-h-0 w-[var(--panel-w,32%)] min-w-[320px] shrink-0 flex-col " +
 	"max-w-[max(480px,calc(100vw-620px))] border-l border-divider bg-panel-surface [--bg-panel:var(--panel-plate)] " +
 	// From 920px down it stops being a column in the layout and becomes an
 	// overlay over the session, anchored under the top bar (--header-h is 0 on
@@ -141,17 +141,18 @@ export const PANEL_INFO_TOP = "pt-2 [.panel-pr-plate:not(:empty)~*_&]:pt-0";
 export const PANEL_BODY = "min-h-0 flex-1 overflow-y-auto";
 
 /**
- * The bar along the bottom of the panel: the places this workspace can open,
- * on one line. It sits outside PANEL_BODY so it stays put while the panel
- * scrolls, and it is a genuine edge between two regions, so it takes a rule.
+ * The panel's standing tab strip: the places this workspace can open, on one
+ * line above their content. It sits outside PANEL_BODY so it stays put while
+ * the selected page scrolls, and its bottom rule separates chrome from page.
  */
-export const PANEL_FOOTER =
-	"flex shrink-0 items-center gap-1 border-t border-divider px-2 py-1.5";
+export const PANEL_TABS =
+	"flex h-[var(--desktop-header-h)] shrink-0 items-center gap-1 border-b border-divider px-2";
 
-/** One place on that bar: an icon, a word, and whatever it wants to report. */
-export const PANEL_FOOTER_ITEM =
+/** One tab: an icon, a word, and whatever that destination wants to report. */
+export const PANEL_TAB =
 	"focus-ring flex min-w-0 items-center gap-1.5 rounded-control px-2 py-1 " +
-	"text-label text-dim transition-colors hover:bg-hover hover:text-fg";
+	"text-label text-dim transition-colors hover:bg-hover hover:text-fg " +
+	"@max-[380px]:flex-1 @max-[380px]:justify-center @max-[380px]:px-1";
 
 /**
  * The scrim behind the panel once it stops being a column and starts being an
@@ -163,15 +164,3 @@ export const PANEL_OVERLAY =
 	"max-[920px]:fixed max-[920px]:inset-[var(--header-h)_0_0_0] max-[920px]:z-[25] " +
 	"max-[920px]:block max-[920px]:bg-[rgba(0,0,0,0.45)] " +
 	"phone:inset-0 phone:z-[45] phone:bg-[rgba(0,0,0,0.5)]";
-
-/**
- * Chevron-back at the top of the panel on phones — the panel is a deeper page
- * reached from the ⋯ menu, so it carries its own way back to the session,
- * matching the top-bar back chevron (no "Back" word). The old sheet gave it a
- * `6px 0 0 6px` margin that both of its call sites immediately zeroed; it
- * isn't carried over.
- */
-export const PANEL_BACK =
-	"inline-flex size-10 cursor-pointer items-center justify-center border-0 bg-transparent p-0 " +
-	"text-accent touch-manipulation [-webkit-tap-highlight-color:transparent] " +
-	"active:opacity-40 [&_svg]:-ml-px";

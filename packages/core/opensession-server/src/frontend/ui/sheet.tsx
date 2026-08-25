@@ -1,6 +1,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { cn } from "./cn";
+import { PhoneTopBarAction } from "./top-bar";
 
 /**
  * The app's sheet/dialog language for surfaces that own their own open state —
@@ -81,6 +82,8 @@ export function ResponsiveDialog({
 	sheetClassName,
 	modalClassName,
 	backdropClassName,
+	showPhoneGrabber = true,
+	phonePresentation = "sheet",
 	children,
 }: {
 	open: boolean;
@@ -96,22 +99,25 @@ export function ResponsiveDialog({
 	 * sockets, scroll position — that must survive a dismiss.
 	 */
 	keepMounted?: boolean;
-	/** `"scale-drop"` adds an asymmetric scale-in/drop-out transition. */
-	desktopTransition?: "pop" | "scale-drop" | "none";
+	/** `"none"` for overlays that toggle like a HUD rather than open like a dialog. */
+	desktopTransition?: "pop" | "none";
 	/** Extra classes for the phone sheet panel (e.g. a fixed height). */
 	sheetClassName?: string;
 	/** Extra classes for the desktop modal panel (e.g. a fixed size). */
 	modalClassName?: string;
 	/** Override the shared backdrop when a surface needs stronger separation. */
 	backdropClassName?: string;
+	/** Full-screen phone lightboxes close explicitly and have no sheet grabber. */
+	showPhoneGrabber?: boolean;
+	/** A page covers the viewport without sheet chrome, a backdrop, or drag dismissal. */
+	phonePresentation?: "sheet" | "page";
 	children: React.ReactNode | ((dismiss: () => void) => React.ReactNode);
 }) {
-	// The sheet always animates: its drag-to-dismiss needs something to follow.
-	const scaleDrop = !phone && desktopTransition === "scale-drop";
+	const phonePage = phone && phonePresentation === "page";
+	// Phone surfaces always animate. Desktop HUD-style overlays can opt out.
 	const animated = phone || desktopTransition !== "none";
-	const phase = usePhase(open, animated, phone ? SHEET_MS : scaleDrop ? 100 : MODAL_MS);
+	const phase = usePhase(open, animated, phone ? SHEET_MS : MODAL_MS);
 	const panelRef = React.useRef<HTMLDivElement>(null);
-	const restoreRef = React.useRef<HTMLElement | null>(null);
 
 	const [booted, setBooted] = React.useState(open);
 	React.useEffect(() => {
@@ -143,22 +149,28 @@ export function ResponsiveDialog({
 	// to whatever opened us on close.
 	React.useEffect(() => {
 		if (!open || !mounted) return;
-		restoreRef.current = document.activeElement as HTMLElement | null;
+		// A local in effect scope (not a ref) so teardown hands focus back to
+		// exactly the element this open parked.
+		let restoreTo = document.activeElement as HTMLElement | null;
 		const raf = requestAnimationFrame(() => {
 			const panel = panelRef.current;
 			if (!panel || panel.contains(document.activeElement)) return;
 			panel.focus();
 		});
-		return () => {
-			cancelAnimationFrame(raf);
-			const prev = restoreRef.current;
-			restoreRef.current = null;
+		// Setup-scope helper so teardown reads the latest panel node without
+		// touching `.current` directly inside the cleanup body.
+		const handBackFocus = () => {
+			const prev = restoreTo;
 			if (!prev || !document.body.contains(prev)) return;
 			// Only take focus back if it was still ours — the user may have
 			// clicked into the page behind us.
 			const inside =
 				panelRef.current?.contains(document.activeElement) ?? false;
 			if (inside || document.activeElement === document.body) prev.focus();
+		};
+		return () => {
+			cancelAnimationFrame(raf);
+			handBackFocus();
 		};
 	}, [open, mounted]);
 
@@ -230,24 +242,22 @@ export function ResponsiveDialog({
 			aria-label={label}
 			aria-hidden={parked || undefined}
 		>
-			<div
-				className={cn(
-					"absolute inset-0 bg-black/45",
-					backdropClassName,
-					animated && [
-						"transition-opacity",
-						phone
-							? "duration-[var(--dur-lg)]"
-							: scaleDrop
-								? phase === "exiting"
-									? "duration-[100ms]"
-									: "duration-[var(--dur-micro)]"
+			{!phonePage && (
+				<div
+					className={cn(
+						"absolute inset-0 bg-black/45",
+						backdropClassName,
+						animated && [
+							"transition-opacity",
+							phone
+								? "duration-[var(--dur-lg)]"
 								: "duration-[var(--dur)]",
-						shown ? "opacity-100" : "opacity-0",
-					],
-				)}
-				onClick={onClose}
-			/>
+							shown ? "opacity-100" : "opacity-0",
+						],
+					)}
+					onClick={onClose}
+				/>
+			)}
 			<div
 				ref={panelRef}
 				tabIndex={-1}
@@ -257,37 +267,24 @@ export function ResponsiveDialog({
 					// and its circular fallback with everything else.
 					"absolute flex flex-col overflow-hidden outline-none [corner-shape:squircle]",
 					phone
-						? "inset-x-0 bottom-0 max-h-[94dvh] rounded-t-[calc(16.5px*var(--rf))] bg-surface pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_40px_rgba(0,0,0,0.35)]"
-						: cn(
-								"left-1/2 top-1/2 max-h-[85vh] w-[92vw] max-w-[30rem] rounded-[calc(18px*var(--rf))] bg-raised smooth-shadow-ring-lg",
-								!scaleDrop && "-translate-x-1/2 -translate-y-1/2",
-							),
+						? phonePage
+							? "inset-0 h-dvh max-h-none rounded-none bg-surface pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] shadow-none"
+							: "inset-x-0 bottom-0 max-h-[94dvh] rounded-t-[calc(var(--sheet-radius,34px)*var(--rf))] bg-surface pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_40px_rgba(0,0,0,0.35)]"
+						: "left-1/2 top-1/2 max-h-[85vh] w-[92vw] max-w-[30rem] -translate-x-1/2 -translate-y-1/2 rounded-[calc(18px*var(--rf))] bg-raised smooth-shadow-ring-lg",
 					animated &&
 						(phone
 							? [
 									"transition-transform duration-[var(--dur-lg)] ease-[var(--ease)]",
 									shown ? "translate-y-0" : "translate-y-full",
 								]
-							: scaleDrop
-								? [
-										"origin-center transition-[scale,translate,opacity] ease-out",
-										phase === "exiting"
-											? "duration-[100ms] scale-100 opacity-0 [translate:-50%_calc(-50%_+_16px)]"
-											: cn(
-													"duration-[var(--dur-micro)] [translate:-50%_-50%]",
-													phase === "entering"
-														? "scale-90 opacity-0"
-														: "scale-100 opacity-100",
-												),
-									]
-								: [
+							: [
 									"origin-center transition-[transform,opacity] duration-[var(--dur)] ease-[var(--ease)]",
 									shown ? "scale-100 opacity-100" : "scale-[0.96] opacity-0",
 								]),
 					phone ? sheetClassName : modalClassName,
 				)}
 			>
-				{phone && (
+				{phone && !phonePage && showPhoneGrabber && (
 					<div
 						className="flex shrink-0 touch-none justify-center pb-1.5 pt-2.5"
 						onTouchStart={onTouchStart}
@@ -304,11 +301,25 @@ export function ResponsiveDialog({
 	);
 }
 
+/** Shared iOS-style chrome for icon actions in a phone sheet header. */
+export function SheetIconButton({
+	className,
+	children,
+	...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+	return (
+		<PhoneTopBarAction
+			className={className}
+			icon={children}
+			{...props}
+		/>
+	);
+}
+
 /**
  * The scrolling, padded interior of a bottom sheet. `ResponsiveDialog` clips
- * its panel at 94dvh, so a sheet whose action list can grow — the sidebar's
- * long-press menus do — needs its own scroller or the last rows are simply
- * unreachable.
+ * its panel at 94dvh, so a sheet whose action list can grow has its own
+ * scroller so every action stays reachable.
  */
 export function SheetBody({
 	className,
@@ -389,34 +400,32 @@ export function SheetItem({
 	);
 }
 
-/**
- * Phone-only bottom sheet with a self-closing contract: owners render it while
- * it should exist and unmount it in `onClose`, so the exit animation has to run
- * before they hear about it.
- */
-export function BottomSheet({
-	onClose,
-	label,
-	className,
-	children,
-}: {
-	/** Called after the exit animation — unmount the sheet here. */
+type PhoneSurfaceProps = {
+	/** Called after the exit animation. Unmount the surface here. */
 	onClose: () => void;
 	/** Accessible dialog label. */
 	label: string;
-	/** Extra classes for the sheet panel (e.g. a fixed height). */
+	/** Extra classes for the phone surface. */
 	className?: string;
 	children: React.ReactNode | ((dismiss: () => void) => React.ReactNode);
-}) {
+};
+
+function DismissiblePhoneSurface({
+	onClose,
+	label,
+	className,
+	presentation,
+	children,
+}: PhoneSurfaceProps & { presentation: "sheet" | "page" }) {
 	const [open, setOpen] = React.useState(true);
 	const closingRef = React.useRef(false);
 
-	const dismiss = React.useCallback(() => {
+	const dismiss = () => {
 		if (closingRef.current) return;
 		closingRef.current = true;
 		setOpen(false);
 		setTimeout(onClose, SHEET_MS);
-	}, [onClose]);
+	};
 
 	return (
 		<ResponsiveDialog
@@ -424,9 +433,20 @@ export function BottomSheet({
 			onClose={dismiss}
 			phone
 			label={label}
+			phonePresentation={presentation}
 			sheetClassName={className}
 		>
 			{children}
 		</ResponsiveDialog>
 	);
+}
+
+/** Phone-only bottom sheet with a self-closing contract. */
+export function BottomSheet(props: PhoneSurfaceProps) {
+	return <DismissiblePhoneSurface {...props} presentation="sheet" />;
+}
+
+/** Full-screen phone page that covers the current app surface. */
+export function PhonePage(props: PhoneSurfaceProps) {
+	return <DismissiblePhoneSurface {...props} presentation="page" />;
 }

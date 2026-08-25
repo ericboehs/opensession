@@ -32,6 +32,15 @@ final class ServerEventTests: XCTestCase {
         XCTAssertEqual(viewers, ["Kent", "Michiel"])
     }
 
+    func testTypingDecodesUsers() {
+        let json = #"{"type":"typing","sessionId":"bks-1","users":["Grant","Kent"]}"#
+        guard case .typing(let id, let users) = parse(json) else {
+            return XCTFail("expected .typing")
+        }
+        XCTAssertEqual(id, "bks-1")
+        XCTAssertEqual(users, ["Grant", "Kent"])
+    }
+
     /// Everyone left: the frame still arrives, with an empty list.
     func testPresenceWithNoViewers() {
         guard case .presence(_, let viewers) =
@@ -65,6 +74,23 @@ final class ServerEventTests: XCTestCase {
         XCTAssertEqual(entries[2].toolInput?["command"]?.stringValue, "ls")
         XCTAssertEqual(entries[3].toolUseId, "tu-1")
         XCTAssertEqual(entries[3].isError, false)
+    }
+
+    func testTranscriptResumeCursorsDecode() {
+        guard case .transcriptInit(_, _, let seq) = parse(#"{"type":"transcript_init","sessionId":"bks-1","entries":[],"truncated":true,"firstSeq":9,"lastSeq":140,"lastChangeSeq":151,"v2":true}"#) else {
+            return XCTFail("expected seq transcript init")
+        }
+        XCTAssertEqual(seq.firstSeq, 9)
+        XCTAssertEqual(seq.lastSeq, 140)
+        XCTAssertEqual(seq.lastChangeSeq, 151)
+        XCTAssertTrue(seq.v2)
+
+        guard case .transcriptAppend(_, _, let offset) = parse(#"{"type":"transcript_append","sessionId":"bks-1","entries":[],"endOffset":8192,"rev":"rev-1"}"#) else {
+            return XCTFail("expected legacy transcript append")
+        }
+        XCTAssertEqual(offset.endOffset, 8_192)
+        XCTAssertEqual(offset.rev, "rev-1")
+        XCTAssertFalse(offset.v2)
     }
 
     func testTranscriptFramesWithoutSessionIdAreIgnored() {
@@ -149,8 +175,27 @@ final class ServerEventTests: XCTestCase {
         XCTAssertEqual(questionId, "ask-1")
     }
 
-    func testSlackComposerSentReceiptDecodesDestinationAndPermalink() {
-        let json = #"{"type":"slack_composer_resolved","sessionId":"bks-1","requestId":"slack-1","status":"sent","channel":{"id":"C123","name":"shipping"},"permalink":"https://tella.slack.com/archives/C123/p1700000000000000"}"#
+    func testReplySuggestionsDecodeAndNullClears() {
+        let json = #"{"type":"reply_suggestions","sessionId":"bks-1","suggestions":[{"label":"Fix both","text":"Fix both issues, then run the tests."},{"label":"Only cache","text":"Fix only the stale cache read."}]}"#
+        guard case .replySuggestions(let id, let suggestions) = parse(json) else {
+            return XCTFail("expected .replySuggestions")
+        }
+        XCTAssertEqual(id, "bks-1")
+        XCTAssertEqual(suggestions.map(\.label), ["Fix both", "Only cache"])
+        XCTAssertEqual(suggestions.first?.text, "Fix both issues, then run the tests.")
+
+        guard case .replySuggestions(_, let cleared) =
+            parse(#"{"type":"reply_suggestions","sessionId":"bks-1","suggestions":null}"#)
+        else { return XCTFail("expected a clear event") }
+        XCTAssertTrue(cleared.isEmpty)
+
+        guard case .ignored = parse(#"{"type":"reply_suggestions","suggestions":[]}"#) else {
+            return XCTFail("reply_suggestions without sessionId should be .ignored")
+        }
+    }
+
+    func testSlackComposerSentReceiptDecodesDestinationPermalinkAndTimestamp() {
+        let json = #"{"type":"slack_composer_resolved","sessionId":"bks-1","requestId":"slack-1","status":"sent","channel":{"id":"C123","name":"shipping"},"permalink":"https://tella.slack.com/archives/C123/p1700000000000000","ts":"1700000000.000000"}"#
         guard case .slackComposerResolved(let sessionId, let receipt) = parse(json) else {
             return XCTFail("expected .slackComposerResolved")
         }
@@ -162,6 +207,16 @@ final class ServerEventTests: XCTestCase {
             receipt.permalink,
             "https://tella.slack.com/archives/C123/p1700000000000000"
         )
+        XCTAssertEqual(receipt.ts, "1700000000.000000")
+    }
+
+    func testOlderSlackComposerSentReceiptDecodesWithoutTimestamp() {
+        guard case .slackComposerResolved(_, let receipt) = parse(
+            #"{"type":"slack_composer_resolved","sessionId":"bks-1","requestId":"slack-old","status":"sent","channel":{"id":"C123","name":"shipping"}}"#
+        ) else {
+            return XCTFail("expected .slackComposerResolved")
+        }
+        XCTAssertNil(receipt.ts)
     }
 
     func testSlackComposerCancelledReceiptDecodesWithoutDestination() {
@@ -173,6 +228,24 @@ final class ServerEventTests: XCTestCase {
         XCTAssertEqual(receipt.status, .cancelled)
         XCTAssertNil(receipt.channel)
         XCTAssertNil(receipt.permalink)
+    }
+
+    func testSessionNotesDecodeAndADeletedNoteCarriesItsId() {
+        let note = #"{"type":"session_note","sessionId":"bks-1","note":{"id":"note-1","user":"Kent","text":"Check this","ts":1760000000000}}"#
+        guard case .sessionNote(let sessionId, let decoded) = parse(note) else {
+            return XCTFail("expected .sessionNote")
+        }
+        XCTAssertEqual(sessionId, "bks-1")
+        XCTAssertEqual(decoded.id, "note-1")
+        XCTAssertEqual(decoded.user, "Kent")
+        XCTAssertEqual(decoded.text, "Check this")
+        XCTAssertEqual(decoded.ts, 1_760_000_000_000)
+
+        guard case .sessionNoteDeleted(let deletedSession, let noteId) =
+            parse(#"{"type":"session_note_deleted","sessionId":"bks-1","noteId":"note-1"}"#)
+        else { return XCTFail("expected .sessionNoteDeleted") }
+        XCTAssertEqual(deletedSession, "bks-1")
+        XCTAssertEqual(noteId, "note-1")
     }
 
     func testMentionAndMentionClearFrames() {
@@ -197,41 +270,39 @@ final class ServerEventTests: XCTestCase {
         XCTAssertNil(allSessionId)
     }
 
-    func testReplySuggestionsDecodeAndNullClears() {
-        let json = #"{"type":"reply_suggestions","sessionId":"bks-1","suggestions":[{"label":"Fix both","text":"Fix both issues, then run the tests."},{"label":"Only cache","text":"Fix only the stale cache read."}]}"#
-        guard case .replySuggestions(let id, let suggestions) = parse(json) else {
-            return XCTFail("expected .replySuggestions")
+    func testWorkflowAndGitRefreshFrames() {
+        let workflow = #"{"type":"workflow_update","sessionId":"os-1","run":{"runId":"run-1","name":"Audit","status":"running","agents":[]}}"#
+        guard case .workflowUpdate(let sessionId, let run) = parse(workflow) else {
+            return XCTFail("expected .workflowUpdate")
         }
-        XCTAssertEqual(id, "bks-1")
-        XCTAssertEqual(suggestions.map(\.label), ["Fix both", "Only cache"])
-        XCTAssertEqual(suggestions.first?.text, "Fix both issues, then run the tests.")
+        XCTAssertEqual(sessionId, "os-1")
+        XCTAssertEqual(run.runId, "run-1")
+        XCTAssertEqual(run.name, "Audit")
+        XCTAssertEqual(run.status, .running)
 
-        guard case .replySuggestions(_, let cleared) =
-            parse(#"{"type":"reply_suggestions","sessionId":"bks-1","suggestions":null}"#)
-        else { return XCTFail("expected a clear event") }
-        XCTAssertTrue(cleared.isEmpty)
+        guard case .gitPushed(let pushedSession, let repo) = parse(
+            #"{"type":"git_pushed","sessionId":"os-1","repo":"opensession"}"#
+        ) else { return XCTFail("expected .gitPushed") }
+        XCTAssertEqual(pushedSession, "os-1")
+        XCTAssertEqual(repo, "opensession")
 
-        guard case .ignored = parse(#"{"type":"reply_suggestions","suggestions":[]}"#) else {
-            return XCTFail("reply_suggestions without sessionId should be .ignored")
-        }
+        guard case .prUpdated(let updatedRepo, let branch) = parse(
+            #"{"type":"pr_updated","repo":"tella-fusion","branch":"feature/native"}"#
+        ) else { return XCTFail("expected .prUpdated") }
+        XCTAssertEqual(updatedRepo, "tella-fusion")
+        XCTAssertEqual(branch, "feature/native")
     }
 
-    func testSessionNotesDecodeAndADeletedNoteCarriesItsId() {
-        let note = #"{"type":"session_note","sessionId":"bks-1","note":{"id":"note-1","user":"Kent","text":"Check this","ts":1760000000000}}"#
-        guard case .sessionNote(let sessionId, let decoded) = parse(note) else {
-            return XCTFail("expected .sessionNote")
+    func testMalformedLiveRefreshFramesAreIgnored() {
+        for json in [
+            #"{"type":"workflow_update","sessionId":"os-1"}"#,
+            #"{"type":"git_pushed"}"#,
+            #"{"type":"pr_updated","repo":"opensession"}"#,
+        ] {
+            guard case .ignored = parse(json) else {
+                return XCTFail("incomplete live refresh frame should be ignored")
+            }
         }
-        XCTAssertEqual(sessionId, "bks-1")
-        XCTAssertEqual(decoded.id, "note-1")
-        XCTAssertEqual(decoded.user, "Kent")
-        XCTAssertEqual(decoded.text, "Check this")
-        XCTAssertEqual(decoded.ts, 1_760_000_000_000)
-
-        guard case .sessionNoteDeleted(let deletedSession, let noteId) =
-            parse(#"{"type":"session_note_deleted","sessionId":"bks-1","noteId":"note-1"}"#)
-        else { return XCTFail("expected .sessionNoteDeleted") }
-        XCTAssertEqual(deletedSession, "bks-1")
-        XCTAssertEqual(noteId, "note-1")
     }
 
     func testNoticeAndError() {

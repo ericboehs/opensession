@@ -8,7 +8,7 @@ import {
 	formatSessionLine,
 	resolveSpawnDepth,
 	sessionMatchesCreatedBy,
-	sessionNoticePayload,
+	sessionMessagePayload,
 	spawnTaskImpl,
 	taskStateOf,
 	taskStatusImpl,
@@ -64,17 +64,16 @@ describe("buildChildSessionPrompt", () => {
 	});
 });
 
-describe("sessionNoticePayload", () => {
-	it("marks an informational heads-up for system rendering", () => {
-		expect(sessionNoticePayload("Heads-up from another session: a commit landed.")).toBe(
-			"<!--os:session-notice-->\nHeads-up from another session: a commit landed.",
-		);
-	});
-
-	it("leaves ordinary cross-session prompts untouched", () => {
-		expect(sessionNoticePayload("Please continue with the implementation.")).toBe(
+describe("sessionMessagePayload", () => {
+	it("marks every agent-authored delivery for notice rendering", () => {
+		for (const message of [
+			"Heads-up from another session: a commit landed.",
 			"Please continue with the implementation.",
-		);
+		]) {
+			expect(sessionMessagePayload(message)).toBe(
+				`<!--os:session-notice-->\n${message}`,
+			);
+		}
 	});
 });
 
@@ -381,6 +380,9 @@ describe("session creator metadata", () => {
 			const listedTools = await client.listTools();
 			const listTool = listedTools.tools.find((tool) => tool.name === "list_sessions");
 			expect(listTool?.inputSchema.properties).toHaveProperty("createdBy");
+			expect(listedTools.tools.map((tool) => tool.name)).toEqual(
+				expect.arrayContaining(["wait_for", "wait_status", "cancel_wait"]),
+			);
 
 			const result = await client.callTool({
 				name: "list_sessions",
@@ -400,7 +402,7 @@ describe("session creator metadata", () => {
 		}
 	});
 
-	it("generates a branch when create_session code mode cannot inherit one", async () => {
+	it("delegates omitted branch generation to the durable create plan", async () => {
 		const h = makeHarness();
 		registerSessionControl(h.deps.control);
 		const server = createSessionsMcpServer(ctx("bks-parent"), {
@@ -431,8 +433,8 @@ describe("session creator metadata", () => {
 			const output = (
 				result as { content: Array<{ type: string; text: string }> }
 			).content[0].text;
-			expect(h.created[0].branch).toBe("fix-session-branch-ux");
-			expect(output).toContain("code on fix-session-branch-ux");
+			expect(h.created[0].branch).toBeUndefined();
+			expect(output).toContain("code session");
 		} finally {
 			await client.close();
 			await server.instance.close();
@@ -494,6 +496,8 @@ describe("session creator metadata", () => {
 			expect(h.deliveries).toHaveLength(1);
 			expect(h.deliveries[0]).toMatchObject({
 				id: "bks-target",
+				content:
+					"<!--os:session-notice-->\nPlease inspect the failing test.",
 				user: "agent bks-sender",
 				opts: { deliveryId: "delivery-test-1" },
 			});
@@ -540,9 +544,9 @@ describe("task_status / cancel_task", () => {
 		expect(await taskStatusImpl({ taskId: "bks-nope" }, h.deps)).toContain("No task/session");
 	});
 
-	it("cancel_task cancels through the registry", () => {
+	it("cancel_task cancels through the registry", async () => {
 		const h = makeHarness();
-		expect(cancelTaskImpl({ taskId: "bks-test-task" }, h.deps)).toContain("Cancelled");
+		expect(await cancelTaskImpl({ taskId: "bks-test-task" }, h.deps)).toContain("Cancelled");
 		expect(h.cancelled).toEqual(["bks-test-task"]);
 	});
 });

@@ -18,6 +18,8 @@
  * concurrent hosts never read-modify-write the shared active-runs.json.
  */
 
+import { existsSync, unlinkSync, writeFileSync } from "fs";
+import { processIdentity } from "../server/process-identity";
 import { dirname, resolve } from "path";
 
 const specPath = process.argv[2];
@@ -26,6 +28,31 @@ if (!specPath) {
   process.exit(2);
 }
 const hostDir = dirname(resolve(specPath));
+const projectedGithubAuthPath = process.env.OPENSESSION_GITHUB_RUN_AUTH_FILE;
+const cleanupProjectedGithubAuth = () => {
+  if (
+    projectedGithubAuthPath &&
+    dirname(resolve(projectedGithubAuthPath)) === hostDir
+  ) {
+    try {
+      unlinkSync(projectedGithubAuthPath);
+    } catch {}
+  }
+};
+// Covers validation/import failures as well as the ordinary terminal path.
+process.once("exit", cleanupProjectedGithubAuth);
+// Publish process identity before reading the cancellation marker. A stopper
+// can now close the startup race without broad process-name matching.
+writeFileSync(
+  `${hostDir}/startup.json`,
+  JSON.stringify({ ...processIdentity(), pid: process.pid, specPath: resolve(specPath), startedAt: new Date().toISOString() }),
+  { mode: 0o600 },
+);
+if (existsSync(`${hostDir}/cancelled`)) {
+  cleanupProjectedGithubAuth();
+  console.log(`[run-host] ${hostDir}: cancelled before startup`);
+  process.exit(0);
+}
 
 // Must be set before claude-runner is evaluated — it resolves the journal path
 // at module load. The transient unit sets it too; this is the belt-and-braces
@@ -37,16 +64,22 @@ process.env.OPENSESSION_RUN_JOURNAL ||=
   process.env.OPENSESSION_RUN_JOURNAL || `${hostDir}/journal.json`;
 process.env.OPENSESSION_RUN_JOURNAL = process.env.OPENSESSION_RUN_JOURNAL;
 
-const { runAgent, cancelAgentRun, steerAgentRun, interruptAndSteerAgentRun } =
-  await import("../server/agent-runner");
+const {
+  runAgent,
+  cancelAgentRun,
+  steerAgentRun,
+  retractAgentSteer,
+  interruptAndSteerAgentRun,
+} = await import("../server/agent-runner");
 const { shouldPersistModelSwitch } = await import("../server/run-events");
-const { readFileSync, writeFileSync, existsSync, unlinkSync } = await import("fs");
+const { readFileSync } = await import("fs");
 const { writeJsonAtomic } = await import("../server/shared/atomic-write");
 const {
   ndjsonReader,
   HOST_SOCK_NAME,
   HOST_META_NAME,
   MCP_PROXY_ENTRY,
+  mcpProxyArgv,
   rpcSocketPath,
 } = await import("./protocol");
 const { WsFrameBuffer, replayStartFor } = await import("./ws-buffer");
@@ -59,12 +92,24 @@ type ClientToHostMsg = import("./protocol").ClientToHostMsg;
 type AskResult = import("./protocol").AskResult;
 type StreamEvent = import("../server/run-events").StreamEvent;
 
-const spec: RunHostSpec = JSON.parse(readFileSync(specPath, "utf-8"));
+const specBytes = readFileSync(specPath);
+const expectedSpecHash = process.env.OPENSESSION_RUN_SPEC_HASH;
+if (expectedSpecHash) {
+  const actualSpecHash = new Bun.CryptoHasher("sha256")
+    .update(specBytes)
+    .digest("hex");
+  if (actualSpecHash !== expectedSpecHash) {
+    console.error("run host spec changed after executor validation");
+    process.exit(2);
+  }
+}
+const spec: RunHostSpec = JSON.parse(specBytes.toString("utf-8"));
 const sockPath = `${hostDir}/${HOST_SOCK_NAME}`;
 const metaPath = `${hostDir}/${HOST_META_NAME}`;
 
 const meta: RunHostMeta = {
   hostId: spec.hostId,
+  ...processIdentity(),
   pid: process.pid,
   osSessionId: spec.osSessionId,
   startedAt: new Date().toISOString(),
@@ -205,20 +250,52 @@ function handleClientMsg(msg: ClientToHostMsg): void {
       break;
     }
     case "steer": {
-      if (!steerAgentRun([spec.osSessionId, meta.engineSessionId], msg.text)) {
+      // Attachments ride the steer into the live turn (pi's session.steer
+      // takes image parts). A bounce carries the text alone on purpose: the
+      // server matches its steer receipt by text and re-queues the ORIGINAL
+      // item, images included.
+      if (
+        !steerAgentRun(
+          [spec.osSessionId, meta.engineSessionId],
+          msg.text,
+          msg.images,
+
+          msg.steerId
+
+        )
+      ) {
         // Too late (run finishing) or backend can't steer — bounce it back so
         // opensession queues it instead of the message evaporating.
         send({ t: "steer_failed", text: msg.text });
       }
       break;
     }
+    case "retract_steer": {
+      void retractAgentSteer(
+        [spec.osSessionId, meta.engineSessionId],
+        msg.steerId
+      ).then((retracted) => {
+        send({
+          t: "steer_retracted",
+          requestId: msg.requestId,
+          steerId: msg.steerId,
+          retracted,
+        });
+      });
+      break;
+    }
     case "interrupt_steer": {
       if (
         !interruptAndSteerAgentRun(
           [spec.osSessionId, meta.engineSessionId],
-          msg.text
+          msg.text,
+          msg.images
         ) &&
-        !steerAgentRun([spec.osSessionId, meta.engineSessionId], msg.text)
+        !steerAgentRun(
+          [spec.osSessionId, meta.engineSessionId],
+          msg.text,
+          msg.images
+        )
       ) {
         send({ t: "steer_failed", text: msg.text });
       }
@@ -434,13 +511,15 @@ function proxyMcpConfigs(): Record<string, unknown> | undefined {
       }
     : { OPENSESSION_RPC_SOCKET: rpcSocketPath(OPENSESSION_SESSIONS_DIR) };
   const out: Record<string, unknown> = {};
+  // The interpreter running THIS process re-launches the proxy: from source
+  // that is `bun run <mcp-proxy.ts>` (process.execPath is bun — resolves both
+  // on the host and inside a sandbox container where protocol.ts's BUN_BIN host
+  // path doesn't exist); as a compiled binary it is `<exe> mcp-proxy`.
+  const [proxyCommand, ...proxyArgs] = mcpProxyArgv(process.execPath, MCP_PROXY_ENTRY);
   for (const name of names) {
     out[name] = {
-      // The bun running THIS process — resolves correctly both on the host
-      // (~/.bun/bin/bun) and inside a sandbox container (/usr/local/bin/bun),
-      // where protocol.ts's BUN_BIN host path doesn't exist.
-      command: process.execPath,
-      args: ["run", MCP_PROXY_ENTRY],
+      command: proxyCommand,
+      args: proxyArgs,
       env: {
         ...transportEnv,
         OPENSESSION_RPC_TOKEN: spec.rpcToken,
@@ -538,19 +617,14 @@ await new Promise<void>((resolveWait) => {
 });
 
 exiting = true; // stop the WS redial loop
-// Opencode engine: this process owns any `opencode serve` it spawned (the
-// server pool is per-process, and there is one run-host process per turn) —
-// kill it here or every opencode turn orphans a server inside the sandbox
-// container until the container stops. No-op for claude/codex runs, and the
-// next turn's run-host resumes the opencode session from its on-disk storage.
-try {
-  const oc = await import("../server/opencode-runner");
-  if (oc.killAllOpencodeServers("run-host exit") > 0) await oc.awaitOpencodeServersDead();
-} catch {}
 if (!RUN_WS_URL) {
   try {
     unlinkSync(sockPath);
   } catch {}
 }
+// Remote interactive runs receive a short-lived access token in their private
+// run directory. Remove it on every ordinary host exit; a crashed sandbox is
+// still bounded by the token's own expiry and the sandbox lifecycle cleanup.
+cleanupProjectedGithubAuth();
 log("exiting");
 process.exit(0);

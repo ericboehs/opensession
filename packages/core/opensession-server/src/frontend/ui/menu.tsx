@@ -4,6 +4,7 @@ import { ContextMenu as BaseContextMenu } from "@base-ui/react/context-menu";
 import { IconCheck } from "../components/icons";
 import { cn } from "./cn";
 import {
+	FLOATING_OVERLAY_LAYER,
 	POPUP_HOOK,
 	popupItemClasses,
 	popupScrollClasses,
@@ -36,17 +37,23 @@ function Trigger({
 
 function Popup({
 	className,
+	positionerClassName,
 	side,
 	align,
 	sideOffset = 8,
+	alignOffset = 0,
 	anchor,
 	finalFocus,
 	children,
 }: {
 	className?: string;
+	/** Override the portal layer when this menu opens inside a higher popup. */
+	positionerClassName?: string;
 	side?: React.ComponentProps<typeof BaseMenu.Positioner>["side"];
 	align?: React.ComponentProps<typeof BaseMenu.Positioner>["align"];
 	sideOffset?: number;
+	/** Shift the popup along its alignment axis. */
+	alignOffset?: React.ComponentProps<typeof BaseMenu.Positioner>["alignOffset"];
 	/** Anchor something other than the trigger — an element, a ref, or a
 	 * virtual element with `getBoundingClientRect`. That last form is for a
 	 * menu whose subject is not a control at all: the composer's pill menu
@@ -64,9 +71,10 @@ function Popup({
 				side={side}
 				align={align}
 				sideOffset={sideOffset}
+				alignOffset={alignOffset}
 				anchor={anchor}
 				collisionPadding={8}
-				className="z-[10001] outline-none"
+				className={cn(FLOATING_OVERLAY_LAYER, "outline-none", positionerClassName)}
 			>
 				<BaseMenu.Popup
 					className={cn(POPUP_HOOK, popupSurfaceClasses, className)}
@@ -96,7 +104,7 @@ function ContextPopup({
 		<BaseContextMenu.Portal>
 			<BaseContextMenu.Positioner
 				collisionPadding={8}
-				className="z-[10001] outline-none"
+				className={cn(FLOATING_OVERLAY_LAYER, "outline-none")}
 			>
 				<BaseContextMenu.Popup
 					className={cn(POPUP_HOOK, popupSurfaceClasses, className)}

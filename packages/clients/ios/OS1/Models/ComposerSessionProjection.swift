@@ -251,8 +251,7 @@ struct ComposerSessionProjection {
         guard let url = URL(string: value),
               url.scheme == "http" || url.scheme == "https",
               let host = url.host?.lowercased(),
-              host == "os.tella.dev"
-                || host == ServerConfig.shared.baseURL?.host?.lowercased()
+              host == ServerConfig.shared.baseURL?.host?.lowercased()
         else { return nil }
         var path = url.path
         for prefix in ["/opensession", "/backstage"] where path.hasPrefix(prefix + "/") {

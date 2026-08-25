@@ -5,13 +5,15 @@ import { IconArrowDownRight } from "./icons";
 import { shortModelLabel } from "./ModelEffortSelect";
 
 /**
- * Orchestrator/executor relationship chips for the session header. A session
- * spawned as a worker via opensession-sessions `create_session` carries a
- * `parentSessionId`; the reverse edge (a session's own workers) is derived by
- * the caller from the sessions list. This surfaces both so you can hop between
- * an orchestrator (e.g. a Fable session) and the executor workers it delegated
- * to (e.g. gpt-5.5 sessions) — the whole point of making the engines
- * interchangeable is being able to see and steer the tree.
+ * The DOWNWARD half of a session's orchestrator/executor tree: the workers this
+ * session delegated to, derived by the caller from the sessions list (each
+ * carries this session's id as its `parentSessionId`). Hopping down into one
+ * and steering it is the whole point of making the engines interchangeable.
+ *
+ * The upward half is not a chip. A worker's header renders its parent as a
+ * breadcrumb crumb before the title (repo > session > worker, see
+ * SessionViewer), because "where am I" belongs in the path, not in a chip after
+ * the name.
  */
 
 export interface RelatedSession {
@@ -30,42 +32,20 @@ const chip =
 	"inline-flex max-w-[220px] items-center gap-1 rounded-control px-1.5 py-[2px] text-label font-medium text-dim transition-colors hover:bg-hover hover:text-fg";
 
 export function SessionRelations({
-	parent,
 	workers,
 	models,
 	onOpen,
 }: {
-	parent?: RelatedSession | null;
 	workers?: RelatedSession[];
 	models: ModelOption[];
 	onOpen: (id: string) => void;
 }) {
 	const hasWorkers = !!workers && workers.length > 0;
-	if (!parent && !hasWorkers) return null;
-	const workerLabel = hasWorkers
-		? `${workers!.length} delegated worker${workers!.length > 1 ? "s" : ""}`
-		: "";
+	if (!hasWorkers) return null;
+	const workerLabel = `${workers!.length} delegated worker${workers!.length > 1 ? "s" : ""}`;
 
 	return (
 		<div className="flex items-center gap-1.5">
-			{parent && (
-				<button
-					type="button"
-					className={chip}
-					onClick={() => onOpen(parent.id)}
-					title={`Worker of “${parent.title}”${
-						shortModel(parent.model, models)
-							? ` · orchestrated by ${shortModel(parent.model, models)}`
-							: ""
-					}`}
-				>
-					{/* rotated to point up-left: "this belongs to a parent above".
-					    Sized in CSS: the `size` prop floors at 20px (icons.tsx), which
-					    outweighs this chip's 13px label. */}
-					<IconArrowDownRight className="size-[18px] shrink-0 rotate-180" />
-					<span className="truncate">worker of {parent.title}</span>
-				</button>
-			)}
 			{hasWorkers && (
 				<Menu.Root>
 					{/* Count only: the arrow already says "delegated to", so the word

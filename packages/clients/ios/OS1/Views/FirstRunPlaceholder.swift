@@ -108,7 +108,7 @@ struct FirstRunPlaceholder: View {
     }
 
     /// Names them while naming them all is possible, and counts them
-    /// otherwise. "tella-fusion and 8 more" was the first try, and it reads
+    /// otherwise. "webapp and 8 more" was the first try, and it reads
     /// wrong under the tiles: three of those eight are already on screen, so
     /// the line invites you to add it to what you can see and get twelve.
     private var repoSummary: String {

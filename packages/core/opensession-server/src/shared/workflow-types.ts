@@ -9,7 +9,7 @@
  * script executes in a contained Bun Worker (src/server/workflow-worker.ts —
  * env-scrubbed and de-fanged, but exposure gating is the real trust boundary);
  * `agent()` calls bridge to the parent process, which executes them as plain
- * opencode runs (kind "workflow") via runAgent and returns the result into the
+ * pi runs (kind "workflow") via runAgent and returns the result into the
  * script. Heavier, steerable work (code mode + PR) stays on spawn_task — a
  * workflow agent is a focused, mostly read/analyze/report worker.
  *
@@ -86,7 +86,7 @@ export interface WorkflowAgentOpts {
 	/** JSON Schema; when set the agent must return matching JSON and the
 	 *  resolved value is the parsed object instead of text. */
 	schema?: unknown;
-	/** Model id (native or opencode form); defaults to the workflow default. */
+	/** Model id (native or pi form); defaults to the workflow default. */
 	model?: string;
 	/** Reasoning effort for this agent: low, medium, high, xhigh or max, per the
 	 *  chosen model's own ladder. Unset = that model's default. Typed as a plain
@@ -165,7 +165,7 @@ export interface WorkflowAgentOutcome {
 	error?: string;
 	model?: string;
 	tokens?: { input: number; output: number };
-	/** The opencode session this agent ran in — the transcript drill-in pointer. */
+	/** The pi session this agent ran in — the transcript drill-in pointer. */
 	engineSessionId?: string;
 	/** Where it ran (the session's worktree, or a write agent's own one). */
 	cwd?: string;
@@ -273,7 +273,7 @@ export interface WorkflowAgentSnapshot {
 	cached?: boolean;
 	/** True when the call carried a schema. */
 	structured?: boolean;
-	/** The agent's opencode session — the UI's transcript drill-in pointer.
+	/** The agent's pi session — the UI's transcript drill-in pointer.
 	 *  Set as soon as the engine session exists (not only when the agent ends). */
 	engineSessionId?: string;
 	// ── write agents ──

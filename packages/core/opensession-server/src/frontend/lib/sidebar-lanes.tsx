@@ -26,6 +26,17 @@ export function runNeedsAttention(s: UnifiedSession): boolean {
 	return !!s.lastRunError && !s.isRunning;
 }
 
+// A workspace reflects its top-level sessions, not implementation-detail
+// workers. A failed subagent must not make recovered parent work look failed.
+// Keep the child-only fallback for the unusual workspace whose parent is not
+// present in the current list, where hiding the only actionable run is worse.
+export function workspaceRunNeedingAttention(
+	sessions: UnifiedSession[],
+): UnifiedSession | undefined {
+	const topLevel = sessions.filter((session) => !session.parentSessionId);
+	return (topLevel.length > 0 ? topLevel : sessions).find(runNeedsAttention);
+}
+
 // Whether this session lives in YOUR sidebar lanes. Your own sessions always do;
 // automation runs and teammates' workspaces only once you claim them (the
 // lane entry is the claim — see lib/lanes.ts).
@@ -60,10 +71,11 @@ export function mineStatus(s: UnifiedSession): MineStatus {
 	// moment the question is answered / the run recovers), so it doesn't stomp the
 	// manual pin permanently — it just floats above it while live.
 	if (s.waitingForInput || runNeedsAttention(s)) return "needsinput";
-	// A human-pinned lane wins over the live run state below.
+	// Live execution is authoritative. A pinned lane parks idle work; it must
+	// never leave a visibly working chat filed under Backlog or another stage.
+	if (s.isRunning) return "inprogress";
 	const lane = pinnedLane(s);
 	if (lane) return lane;
-	if (s.isRunning) return "inprogress";
 	// Everything else is idle. A single session knows nothing about the PR
 	// lifecycle — the workspace row reads that across its sessions
 	// (prLaneForSessions), because a session that shipped one feature as three

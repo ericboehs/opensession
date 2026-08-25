@@ -9,7 +9,7 @@
 import { describe, expect, test } from "bun:test";
 import { MCP_SERVER_CATALOG, catalogFor, type McpServerCatalogEntry } from "./mcp-catalog";
 import { interactiveMcpServers } from "./interactive-mcp";
-import { ENGINE_IDS } from "./engine/engines-config";
+const ENGINE_IDS = ["pi"] as const;
 import { ENGINE_NOTES } from "../../../../../scripts/gen-catalogs";
 
 const SESSION_ID = "os-00000000-0000-7000-0000-000000000000";

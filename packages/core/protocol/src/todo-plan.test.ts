@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { currentPlanItem, parsePlanItems, planDoneCount } from "./todo-plan";
 
 describe("parsePlanItems", () => {
-	test("reads the opencode todowrite shape", () => {
+	test("reads the pi todowrite shape", () => {
 		const items = parsePlanItems({
 			todos: [
 				{ content: "Find the view", status: "completed", priority: "high" },

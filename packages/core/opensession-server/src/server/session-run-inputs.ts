@@ -45,7 +45,7 @@ export interface SessionRunInputs {
   isAutomationSession: boolean;
   /** MCP allowlist for the run; undefined means "all" (no allowlist). Kept as
    *  undefined rather than [] on purpose: an empty array is truthy, and
-   *  `sharedOpencodeEligible` reads any allowlist as "not shared", which once
+   *  `sharedPiEligible` reads any allowlist as "not shared", which once
    *  kicked every follow-up prompt onto a dedicated server whose empty shard
    *  DB could not resume the engine session (bks-019f818d, 2026-07-20). */
   mcpServers: string[] | undefined;

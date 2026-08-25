@@ -37,7 +37,7 @@ configuration for the run.
   Linear (incl. issue creation) and Sentry are internal, so their writes are
   allowed — that's the "spin off work" affordance.
 - Automations run on Pi in detached run hosts. `runAutomation` maps every
-  native or legacy OpenCode model id onto Pi at dispatch (`automationModel`;
+  native or legacy Pi model id onto Pi at dispatch (`automationModel`;
   unset uses `DEFAULT_PI_AUTOMATION_MODEL` in automations.ts). Deny-sets are
   enforced before Pi registers MCP tools, and its guarded local tools keep
   filesystem and environment access contained. opensession-admin,
@@ -70,7 +70,7 @@ stripe_api_write since they can hit any permitted endpoint — keep this list in
 sync with mcp.stripe.com's live catalog). Run the MCP on a restricted key
 (write on Refunds + Subscriptions + Invoices only — invoice voiding included;
 read on core billing resources, nothing else — Stripe enforces this ceiling
-server-side). On the opencode engine there is no per-call approval card, so
+server-side). On the pi engine there is no per-call approval card, so
 the confirm tools are STRIPPED from the model's tool list on every run — the
 server stays mounted and Stripe reads keep working. Guidance differs by run
 type: unattended runs get post-the-proposal-in-your-note wording, interactive
@@ -93,13 +93,13 @@ two people who should see it.
 
 - Enforcement is at the runner layer, not the prompt:
   `filterMcpServers(allowlist, user)` (runner-shared.ts, consumed by
-  `buildOpencodeMcpConfig` in opencode-runner.ts) drops a restricted server
+  the MCP bridge in pi-mcp-bridge.ts) drops a restricted server
   the run's user isn't cleared for, and strips the `allowedUsers` field before
   the config reaches the engine. Both the per-automation allowlist and the
   per-user gate apply.
 - The `user` is threaded from the run paths (`runSessionPrompt`, both
   `create_session` paths, goal wakes, the Slack/Linear loops) through
-  `runAgent` → `runOpencode`, and is journaled on the `ActiveRunRecord` so a
+  `runAgent` → `runPi`, and is journaled on the `ActiveRunRecord` so a
   resume after a restart keeps the same visibility. **Automation runs pass no
   user**, so an `allowedUsers`-restricted server is invisible to them —
   untrusted ticket text can never reach a restricted server, even if the
@@ -116,104 +116,105 @@ two people who should see it.
   `allowedUsers` is neither enforced nor stripped — so restart after wiring a
   restricted server.
 
-## Personal MCP OAuth credentials
+## Personal MCP OAuth grants
 
-Personal tool connections, including Slack user OAuth grants that can post as
-the connected person, are encrypted at rest in
-`~/.opensession-mcp-oauth.json` (AES-256-GCM with an authenticated header).
-The key is a systemd credential (`LoadCredential=mcp-oauth-key`) where an
-operator has set one up, and otherwise a 0600 file minted beside the store on
-first use. Nothing about it lives in the repository, the environment, engine
-configuration, command arguments, or session state.
+Browser-connected MCP grants are stored as authenticated AES-256-GCM
+ciphertext. Open Session prefers an operator-supplied systemd credential for
+the 32-byte key. A rootless simple-mode install instead mints a `0600` key next
+to the store on first use, so the feature works without a root step. That
+fallback protects a stray copy of the grant file. It does not protect a whole
+state-directory backup, or defend against another process already running as
+the same Unix user, because that process can read both files.
 
-The coordinator mounts OAuth-connected MCP servers as run-rpc proxies and
-decrypts a token only when opening the upstream request or stdio transport.
-Engines and remote sandboxes receive the run-scoped RPC capability, never an
-access token, a refresh token, or a durable relay bearer. A grant is pinned to
-the server binding it was issued against (URL, or command plus arguments plus
-a canonicalized environment), so editing `mcp-config.json` to point a name
-somewhere else does not redirect the token to it.
+Remote HTTP MCP grants are mounted as coordinator-side in-process proxies. The
+provider token is resolved immediately before the upstream connection and does
+not enter engine config, process environment, command arguments, projected
+sandbox files, or the run transcript. The grant is bound to the configured
+upstream URL; repointing the same server name makes the connection fail closed
+until it is reconnected.
 
-Personal grants follow the signed-in prompter, never the creator of a session
-someone else is steering, and never widen a server's `allowedUsers` gate.
-Anyone signed in can prompt anyone else's session, so this is the boundary
-that keeps one person's run from spending another person's token. Shared
-grants remain available to explicitly allowlisted automations through the same
-proxy. A run carrying a personal proxy uses a per-session engine server, since
-a provider tool must not join the shared server's union configuration.
+Personal tokens are never injected into local stdio MCP processes. On a normal
+rootless install those executables and their package entrypoints can be changed
+by the same Unix identity as an agent run, so pinning a pathname would not make
+the token handoff safe. A stdio MCP keeps its configured workspace credential.
+Provider-specific personal grants such as Slack may still be used by
+coordinator-owned UI actions that call the provider API directly.
 
-On the first read after upgrading, a legacy plaintext store is atomically
-replaced by an encrypted envelope, preserving grants and refresh state. Legacy
-relay bearers are deleted and their route is gone. Removing an MCP server also
-removes its OAuth registration and every grant under it.
+On an operator install, per-user grants and `allowedUsers` visibility follow the
+verified **prompter**, never the session creator. A teammate steering somebody
+else's session therefore cannot spend or reveal the owner's personal grant. A
+simple-mode install has no web identity gate and creates shared grants, which
+matches its single-user trust model. The OAuth callback is tied to the same
+verified account that started it whenever web sign-in is enabled.
 
-### What this does and does not protect against
+Encryption at rest and coordinator proxying are useful reductions, not a
+same-UID sandbox. Full isolation requires a small broker under a separate OS
+identity that holds the key and issues narrow per-use capabilities.
 
-It keeps tokens out of the places a credential usually escapes from: engine
-configuration, process environments, command arguments, logs, transcripts and
-projected sandbox files. They are also unreadable to anything that gets the
-store without the key, which covers a stray copy of the file, a paste of its
-contents, and a partial sync. A grant is pinned to the server binding it was
-issued against, including the resolved absolute executable for stdio servers,
-so a redirected URL or a name shadowed on PATH cannot capture it.
+## GitHub webhook actor trust (public repositories)
 
-It does not make a whole-home backup safe: with the fallback key the key file
-sits in the same directory as the store, so a backup that takes both can be
-decrypted offline. Only a systemd credential (or a future broker) puts the key
-somewhere a copy of the home directory does not reach.
+A valid webhook signature proves that GitHub sent an event. It does **not**
+prove that the GitHub user who caused it is trusted. This distinction is
+critical for public repositories, where anyone can open or update a PR, write a
+PR comment, or submit a review.
 
-It does not isolate the coordinator from the agents it runs. They share a Unix
-user, so a process running as that user can read the key exactly as the server
-does. Making that a real boundary needs the key held by a second uid, which
-needs root, which a rootless install deliberately does not have. The intended
-end state is a small privileged broker that holds the key and returns a
-short-lived, per-use grant, so a process at the coordinator's uid has nothing
-reusable to steal; the encrypted store is the substrate that sits under it.
+The GitHub agent therefore treats `identity.team[].github` as its human trust
+roster and `policy.githubBotLogins` as its machine trust roster. Actor-driven
+entry points fail closed before starting an agent run or steering a session:
 
-Two deployment shapes matter for how much the current state buys you. Where
-the coordinator runs a release artefact and sessions work in their own
-repositories, agents do not author the code the coordinator executes, and the
-remaining same-uid exposure is a real but narrow one. Where Open Session is
-self-hosted from a checkout that its own sessions edit and deploy, agents do
-author that code, and no confinement of the agent can close the gap; treat
-personal grants on such an instance as reachable by anything you run there.
+- PR and inline-review `@mention` commands require the comment author's exact
+  GitHub login on the team roster. `author_association` is never accepted as a
+  substitute.
+- label-triggered review, auto-fix, simplify, and adversarial runs require the
+  label actor on the roster.
+- automatic review on open/reopen/push/ready events requires a rostered sender
+  or configured bot. The reconcile sweep applies the same gate and will not
+  infer trust merely from a label that lacks a persisted trusted requester.
+- merge automations and deploy-workflow session notifications require a
+  rostered actor or configured bot.
+- startup recovery revalidates persisted requesters, so a previously accepted
+  public event cannot bypass the boundary after a restart.
 
-`OPENSESSION_PERSONAL_MCP=0` is the operator switch: reads degrade to no
-personal connections and the grant file is left byte-for-byte unchanged.
-Connecting an account requires a signed-in web identity, so the OAuth callback
-is bound to the person who started it.
+Keep every trusted GitHub login in the identity roster. An empty roster disables
+human GitHub commands rather than making the integration public.
 
 ## GitHub credential scoping (out-of-org writes fail server-side)
 
-The "public repositories require confirmation" rule in AGENTS.md is enforced
-with credential scope, not just prompts: run the bot on a fine-grained token
-whose resource owner is your org (no Administration/Secrets, no gists, cannot
-fork or create repos outside the org), and give teammates GitHub App user
-tokens limited to the app's installation on that org. Then any GitHub write
-outside the org, from ANY code path including raw API calls and CLI/tmux
-sessions, fails at GitHub's side with 403 "Resource not accessible". Caveat:
-`gh auth switch` to another hosts.yml account would sidestep the scoping —
-keep unscoped human logins out of the host's gh config.
+The "repositories outside your org require confirmation" rule in AGENTS.md is
+enforced with credential scope, not just prompts. The selected GitHub App
+installation belongs to `integrations.github.installationOwner`; server reads
+and writes use short-lived installation tokens, while trusted repository code
+runs receive a token narrowed to the owner-verified `owner/repo`. Teammate
+device-flow tokens are limited by both that App installation and the person's
+own GitHub access. Out-of-installation writes therefore fail at GitHub's side.
+
+The App is a fail-closed boundary: token-mint failure never consults ambient
+`gh` hosts.yml accounts, SSH credentials, or a connected human. Process-local
+Git config rewrites GitHub SSH remotes to HTTPS so the projected App or user
+credential is the only authority a run can use.
 
 ## Per-user GitHub auth + web sign-in (opt-in, config `integrations.github`)
 
-Off by default — with no config the bot-PR + localStorage-name-picker behavior
-is byte-identical. Opting in (`integrations.github: { userPrAuth: true,
-oauthClientId: "<GitHub App client id>" }`; env OPENSESSION_GITHUB_CLIENT_ID
-wins over the config id) activates BOTH halves at once:
+Off by default. Opting in uses the same App identity as bot traffic:
+`integrations.github` carries `userPrAuth`, `oauthClientId`,
+`oauthClientSecret`, `appSlug`, and `installationOwner`; the private key lives
+at `~/.opensession/github-app.pem` (or the path in
+`OPENSESSION_GITHUB_APP_KEY`). Environment App identity values win over config.
+Enabling `userPrAuth` activates both halves below:
 
 - **PRs as the session owner** (packages/core/opensession-server/src/server/github-auth.ts): teammates connect
   their GitHub account via the OAuth *device flow* (Connections UI card, or
   implicitly by signing in). Tokens live per-login in
-  `~/.opensession-github-auth.json` (0600, never returned by any API). The
+  `~/.opensession/github-auth.json` (0600, never returned by any API). The
   runner injects them as GH_TOKEN/GITHUB_TOKEN into the engine-server env —
   interactive kinds only and never a least-privilege run
-  (`policy.unattended`: automations, deniedTools carriers incl. the
-  Slack/Linear loops keep the bot credential, fail-closed). The run user
+  (`policy.unattended`: automations and deniedTools carriers including the
+  Slack/Linear loops stay credential-free; trusted GitHub code workflows alone
+  receive a repository-scoped App token). The run user
   resolves to a login through the SAME identity table as commit attribution,
   so the mapping is config (identity.team[].github), not code. The
   PR-attribution instructions swap the `--assignee` bot wording for "authored
-  by them" when the token rides. Injection lives in opencode-runner.ts ⇒
+  by them" when the token rides. Injection lives in pi-runner.ts ⇒
   needs a real restart.
 - **GitHub web sign-in** (packages/core/opensession-server/src/server/web-auth.ts + routes/auth.ts): when
   active, the UI's name picker is replaced by a real sign-in (UserGate →
@@ -236,14 +237,14 @@ suspended phone doesn't lose the outcome). There is deliberately no
 authorization-code redirect. A redirect has to return to the exact origin it
 left, and on the iOS PWA it comes back in Safari rather than the installed
 app; native apps can't take one at all. GitHub side: one
-org-owned **GitHub App** with "Enable Device Flow" checked, installed on your
-org → All repositories, installable only on that account. GitHub App user
+org-owned **GitHub App** with "Enable Device Flow" checked, installed only on
+the repositories Open Session should reach. GitHub App user
 tokens are what scopes teammates' tokens to your org (see the previous
 section): they can't reach public/third-party repos, they expire ~8h, and
 github-auth.ts refreshes them via a rotating refresh token (20-min ticker
 parked on globalThis + refresh-on-boot; getters never hand out an expired
-token: runs fall back to the bot credential, web mutations 403 to "connect
-your account"). A refresh rotates the token string, which changes the
+token: interactive runs receive no GitHub credential and web mutations return
+403 to "connect your account"). A refresh rotates the token string, which changes the
 shared-server config hash → drain-respawn at next run start, by design.
 `oauthClientSecret` is what that refresh grant needs. Signing in never uses
 it, so an instance without one signs people in and then drops them at the
@@ -281,7 +282,7 @@ ticket text must never reach these tools. Open Session is network- and
 team-gated and already exposes all of this through its UI, so interactive
 users are treated as `isAdmin: true` there. The in-process servers are built
 with `packages/core/opensession-server/src/server/inprocess-mcp.ts` (a thin @modelcontextprotocol/sdk wrapper)
-and reach opencode runs as stdio MCP proxies that forward to the in-process
+and reach pi runs as stdio MCP proxies that forward to the in-process
 tools through the run-RPC socket; the Slack loop registers its own
 slack-context server set per run via `registerSessionMcpServers` (run-rpc.ts)
 so those proxies execute the right context. The runner adds a short "Managing

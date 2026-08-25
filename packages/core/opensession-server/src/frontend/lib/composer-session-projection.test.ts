@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { setSessionTitles } from "./markdown";
+import {
+	resetResolvedSessionTitles,
+	setResolvedSessionTitles,
+	setSessionTitles,
+	setWorkspaceTitles,
+} from "./markdown";
 import {
 	SESSION_GLYPH_SLOT,
 	SESSION_PILL_MARGIN,
@@ -13,9 +18,14 @@ import {
 
 const ID = "os-01a006d8-eddd-7000-bca2-b010caf2d8e7";
 const OTHER_ID = "os-01a00733-0547-7000-9abb-cc2b8fc3502f";
+const WORKSPACE_ID = "ws-28712580-a369-4d58-996b-f8c23e523ed1";
 
 describe("composer session projection", () => {
-	beforeEach(() => setSessionTitles([[ID, "Clean pasted session links"]]));
+	beforeEach(() => {
+		resetResolvedSessionTitles();
+		setSessionTitles([[ID, "Clean pasted session links"]]);
+		setWorkspaceTitles([[WORKSPACE_ID, "Release planning"]]);
+	});
 
 	test("shows the title, behind a slot for the chat glyph, while retaining the canonical id", () => {
 		const label = `${SESSION_GLYPH_SLOT}Clean pasted session links`;
@@ -34,6 +44,19 @@ describe("composer session projection", () => {
 				label,
 			},
 		]);
+	});
+
+	test("marks an on-demand archived title for the archive glyph", () => {
+		setSessionTitles([]);
+		setResolvedSessionTitles([
+			{ requestedId: ID, title: "Clean pasted session links", archived: true },
+		]);
+		const projected = projectComposerSessions(ID);
+		expect(projected.sessions[0]).toMatchObject({
+			id: ID,
+			label: `${SESSION_GLYPH_SLOT}Clean pasted session links`,
+			archived: true,
+		});
 	});
 
 	test("keeps edits outside a token in canonical text", () => {
@@ -62,6 +85,23 @@ describe("composer session projection", () => {
 		expect(
 			applyComposerSessionEdit(projected, next, 8, 8).canonicalText,
 		).toBe(next);
+	});
+
+	test("shows a workspace name while retaining its stable mention token", () => {
+		const canonical = `Review @workspace:${WORKSPACE_ID} today`;
+		const projected = projectComposerSessions(canonical);
+		expect(projected.displayText).toBe(`Review ${SESSION_PILL_MARGIN}Release planning${SESSION_PILL_MARGIN} today`);
+		expect(projected.sessions).toEqual([
+			{
+				start: 7,
+				end: 7 + SESSION_PILL_MARGIN.length * 2 + "Release planning".length,
+				id: WORKSPACE_ID,
+				kind: "workspace",
+				canonicalStart: 7,
+				canonicalEnd: 7 + `@workspace:${WORKSPACE_ID}`.length,
+				label: "Release planning",
+			},
+		]);
 	});
 
 	test("an exact edit range distinguishes sessions with the same title", () => {

@@ -12,7 +12,7 @@
  * script yields a loud terminal error rather than hanging or silently
  * succeeding. Calls are recorded on `calls` for assertions.
  *
- * Journal fidelity: like the real runOpencode, a turn with
+ * Journal fidelity: like the real runPi, a turn with
  * `opts.journal.osSessionId` registers in the run journal for its duration
  * (journalSet → run_registered → journalClear), so FSM/busy/journal consumers
  * see the same lifecycle a real run produces. Point the journal at a temp file
@@ -23,8 +23,8 @@
  * not run-session's; the consumer loop only broadcasts those events. So a
  * fake engine that doesn't write leaves a session whose transcript is just its
  * user lines. With the option on, the fake persists through the same
- * production path the opencode adapter uses (recordBksSessionFor +
- * transcriptLine* builders + appendOpencodeTranscript), which is what lets the
+ * production path the pi adapter uses (recordEngineSessionOwner +
+ * transcriptLine* builders + appendTranscriptEntries), which is what lets the
  * snapshot harness assert real stored entries. Redirect the store and the
  * engine→unified map at temp paths first.
  */
@@ -32,16 +32,16 @@ import type { EngineRunner, RunAgentOpts } from "../agent-runner";
 import type { StreamEvent, TurnUsage } from "../run-events";
 import { journalClear, journalSet } from "../run-journal";
 import {
-  appendOpencodeTranscript,
-  recordBksSessionFor,
+  appendTranscriptEntries,
+  recordEngineSessionOwner,
   transcriptLineAssistantText,
   transcriptLineToolResult,
   transcriptLineToolUse,
-} from "../opencode-transcript";
+} from "../transcript-persistence";
 
 /** Which backend a scripted turn claims to be: the `provider` on its
  *  init/done events, which is what a session records as its last engine. */
-export type FakeProvider = "claude" | "codex" | "opencode" | "pi";
+export type FakeProvider = "claude" | "codex" | "pi";
 
 export type FakeTurn =
   | {
@@ -49,7 +49,7 @@ export type FakeTurn =
       /** init.sessionId — defaults to a stable per-call fake id. */
       engineSessionId?: string;
       /** init/done `provider`: what engine the session records as its last.
-       *  Defaults to "opencode"; set it to model a run on another engine
+       *  Defaults to "pi"; set it to model a run on another engine
        *  (a cross-engine handoff needs the two turns to disagree). */
       provider?: FakeProvider;
       /** One text_chunk per element. */
@@ -165,14 +165,14 @@ export function makeFakeEngine(
 
     const engineSessionId =
       turn.engineSessionId || opts.sessionId || `fake-ses-${callIndex + 1}`;
-    const provider = turn.provider || "opencode";
+    const provider = turn.provider || "pi";
     const bks = opts.journal?.osSessionId;
     // Like a real adapter, claim the engine→unified mapping BEFORE the first
     // event: every later store write resolves the owning session through it.
     const unifiedId = bks || opts.transcriptSessionId;
     if (options.persistTranscript && unifiedId)
-      recordBksSessionFor(engineSessionId, unifiedId);
-    const runKey = bks ? `fake-${bks}` : null;
+      recordEngineSessionOwner(engineSessionId, unifiedId);
+    const runKey = bks ? opts.startToken || `fake-${bks}` : null;
     if (runKey) {
       journalSet({
         runKey,
@@ -215,7 +215,7 @@ export function makeFakeEngine(
       for (const text of turn.text ?? []) {
         yield { type: "text_chunk", text };
         if (options.persistTranscript)
-          appendOpencodeTranscript(engineSessionId, [
+          appendTranscriptEntries(engineSessionId, [
             transcriptLineAssistantText(
               text,
               `fake-text-${++fakeEntrySeq}`,
@@ -238,7 +238,7 @@ export function makeFakeEngine(
           toolUseId,
         };
         if (options.persistTranscript)
-          appendOpencodeTranscript(engineSessionId, [
+          appendTranscriptEntries(engineSessionId, [
             transcriptLineToolUse(toolUseId, tool.name, tool.input ?? {}),
             transcriptLineToolResult(toolUseId, tool.result ?? "(ok)"),
           ]);

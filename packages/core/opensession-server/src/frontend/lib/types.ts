@@ -292,6 +292,9 @@ export interface SessionSlackShare {
 	at: string;
 	by?: string;
 	prNumber?: number;
+	/** Message timestamp. Present when the message can still be undone. */
+	ts?: string;
+	announcementKey?: string;
 }
 
 /** A team note on a session: human-to-human, interleaved into the transcript
@@ -319,6 +322,8 @@ export interface SessionPrRef {
 	title?: string;
 	isDraft?: boolean;
 	reviewDecision?: string;
+	/** MERGEABLE | CONFLICTING | UNKNOWN — the provider's conflict probe. */
+	mergeable?: string;
 	additions?: number;
 	deletions?: number;
 	checks?: { total: number; passed: number; failed: number; pending: number };
@@ -412,6 +417,8 @@ export interface UnifiedSession {
 	workspaceName?: string;
 	/** Parent/orchestrator session when spawned as a worker sub-session. */
 	parentSessionId?: string;
+	/** Started by a server-side agent action rather than a person's composer. */
+	agentStarted?: boolean;
 	/** The session whose agent created this one through `create_session`, set
 	 *  even for a standalone create (which has no parentSessionId). An agent's
 	 *  own helper session belongs to that agent's run, so the sidebar leaves it
@@ -444,6 +451,8 @@ export interface UnifiedSession {
 	 *  composer that sent it into a receipt, so nobody re-sends the update. */
 	slackShares?: SessionSlackShare[];
 	automation?: string;
+	/** Total live runs in this automation. Present on the bounded sidebar list. */
+	automationRunCount?: number;
 	/** Stable automation id for linking back to its settings. */
 	automationId?: string;
 	archived?: boolean;
@@ -459,7 +468,7 @@ export interface UnifiedSession {
 	 */
 	slim?: boolean;
 	plainThreadId?: string;
-	/** Generic feed-item linkage (Tella videos, …) — the feeds design. */
+	/** Generic feed-item linkage (videos, …) — the feeds design. */
 	externalRefs?: ExternalRef[];
 	goal?: string;
 	/** The Goal record driving this session, when a goal woke it. */
@@ -472,7 +481,7 @@ export interface UnifiedSession {
 	};
 	aliasIds?: string[];
 	model?: string;
-	/** OpenCode reasoning variant for this session's runs; unset = model default. */
+	/** Pi reasoning variant for this session's runs; unset = model default. */
 	effort?: string;
 	/** OpenAI priority service tier for ChatGPT OAuth Codex runs. */
 	fastMode?: boolean;
@@ -557,7 +566,7 @@ export interface Workspace {
 	worktreeDir?: string;
 	/** For support-ticket workspaces: the Plain thread they're attached to. */
 	plainThreadId?: string;
-	/** Generic feed-item linkage (Tella videos, …) — the feeds design. */
+	/** Generic feed-item linkage (videos, …) — the feeds design. */
 	externalRefs?: ExternalRef[];
 	/** An unsent composer prompt parked here before any session exists. */
 	draft?: { text: string; updatedAt: string; by?: string; autoName?: boolean };
@@ -730,7 +739,7 @@ export interface PrDetails {
 	/** CLEAN | BEHIND | BLOCKED | DIRTY | UNSTABLE | … — merge-box state. */
 	mergeStateStatus?: string;
 	/** The PR's webapp preview environment (Vercel preview), when one exists.
-	 * `embeddable` is true once the deploy's CSP lets os.tella.dev frame it. */
+	 * `embeddable` is true once the deploy's CSP lets this app frame it. */
 	staging?: { url: string; status: string; embeddable?: boolean } | null;
 	/** The GitHub stack this PR is a layer of. Null/absent covers both "not
 	 *  stacked" and "the stack read failed" — the UI treats them the same. */
@@ -799,7 +808,9 @@ export type WSClientMessage =
 	// Presence only: this tab went hidden or idle (or came back). The watch is
 	// untouched — the transcript keeps streaming — but an away socket stops
 	// showing this person's face to teammates.
-	| { type: "away"; away: boolean };
+	| { type: "away"; away: boolean }
+	// Short-lived composer activity. The server expires it unless refreshed.
+	| { type: "typing"; sessionId: string; typing: boolean };
 
 export type WSServerMessage =
 	// The protocol core: hello/pong/error/notice, the transcript frames (init/
@@ -807,11 +818,15 @@ export type WSServerMessage =
 	// usage, queue, asks, session_created / workspace_status / model_changed.
 	| ProtocolServerMessage
 	| { type: "presence"; sessionId: string; viewers: string[] }
+	| { type: "typing"; sessionId: string; users: string[] }
 	| {
 			type: "global_presence";
 			viewing: Array<{ user: string; sessionId: string }>;
 	  }
 	| { type: "pins_changed"; user: string; pins: string[] }
+	// The materialized session list changed. Web clients refetch their scoped
+	// sidebar projection; older and native clients safely ignore this frame.
+	| { type: "sessions_invalidated" }
 	// term_* frames carry the termId of the shell tab (PTY) they belong to;
 	// absent on frames from servers that predate multi-tab shells.
 	| { type: "term_data"; termId?: string; data: string }

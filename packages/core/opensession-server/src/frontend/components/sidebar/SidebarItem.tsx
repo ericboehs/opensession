@@ -18,18 +18,23 @@ import {
 	SIDEBAR_SWIPE_ROW,
 	SIDEBAR_WS_DRAFT,
 } from "../../lib/sidebar-classes";
-import { isClaimed, pinnedLane, runNeedsAttention, stripPrTitlePrefix } from "../../lib/sidebar-lanes";
-import { sessionWasAutoCreated } from "../../lib/sidebar-placement";
+import { isClaimed, mineStatus, pinnedLane, runNeedsAttention, stripPrTitlePrefix } from "../../lib/sidebar-lanes";
+import { sessionWasAgentStarted } from "../../lib/sidebar-placement";
 import { LONG_PRESS_MS, LONG_PRESS_SLOP, SWIPE_AXIS_LOCK_PX, SWIPE_COMMIT_MS, SWIPE_OPEN_THRESHOLD, SWIPE_REVEAL_PX, clampSwipe, fullSwipeThreshold, swipeCommitOffset, type SwipeAction } from "../../lib/sidebar-swipe";
-import { MINE_STATUS_META, type LaneChoice } from "../../lib/sidebar-types";
+import type { LaneChoice } from "../../lib/sidebar-types";
 import type { UnifiedSession } from "../../lib/types";
-import { Button } from "../../ui/button";
 import { cn } from "../../ui/cn";
 import { Popover } from "../../ui/popover";
 import { BottomSheet, SheetBody, SheetItem, SheetSeparator, SheetTitle } from "../../ui/sheet";
 import { Tooltip } from "../../ui/tooltip";
 import { RowCardPopup, useRowHoverCard } from "../SidebarRowCards";
 import { AutoCreatedMark } from "./AutoCreatedMark";
+import {
+	LanePickerPage,
+	LaneStatusMark,
+	SheetDrillInItem,
+	lanePickerLabel,
+} from "./MobileSheetPages";
 import { OriginMark } from "./OriginMark";
 import { IconArchive, IconInbox, IconMail, IconPencil, IconPin } from "../icons";
 import { SessionCardBody, WsPrStatusMark } from "../sidebar/HoverCards";
@@ -46,12 +51,11 @@ import React, { useEffect, useRef, useState } from "react";
  *
  *  Rows wrapped in a swipe shell add `mt-0` — the wrapper carries the 2px gap
  *  for them — plus the swipe transform; bare rows keep the margin. On phones,
- *  row content sits one 4px step inside the repo and lane headings, matching
- *  the native list hierarchy instead of flattening every label onto one rail.
- *  That step is written against `--sidebar-icon-left` (8px at its default 16)
- *  rather than as a flat 8, so a family that nests by overriding that variable,
- *  today the runs under an automation, indents at phone width too and not only
- *  on desktop, where the rail pad already reads it.
+ *  row marks sit on the same 16px rail as tool and repo marks. The inset is
+ *  written against `--sidebar-icon-left` (12px at its default 16) rather than
+ *  as a flat 4, so a family that nests by overriding that variable, today the
+ *  runs under an automation, indents at phone width too and not only on
+ *  desktop, where the rail pad already reads it.
  *
  *  `--sidebar-row-pad` around the 22px rail is the sidebar's ITEM height (see
  *  the height scale in lib/sidebar-classes.ts): 7px for a 36px box, and 4px
@@ -63,7 +67,7 @@ import React, { useEffect, useRef, useState } from "react";
  *  Phones keep `py-[13px]` at both densities: 36px is a reading height, not a
  *  tap target, so the compact values are gated to desktop where they are set. */
 export const SIDEBAR_ROW =
-	`group relative mt-0.5 w-full rounded-row border-0 bg-transparent py-[var(--sidebar-row-pad)] pr-2 ${SIDEBAR_RAIL_PAD} text-left text-fg phone:pr-2 phone:pl-[calc(var(--sidebar-icon-left,16px)-8px)] phone:py-[13px]`;
+	`group relative mt-0.5 w-full rounded-row border-0 bg-transparent py-[var(--sidebar-row-pad)] pr-2 ${SIDEBAR_RAIL_PAD} text-left text-fg phone:pr-2 phone:pl-[calc(var(--sidebar-icon-left,16px)-12px)] phone:py-[13px]`;
 
 /** A row's title: one line that fades smoothly at the available edge instead
  *  of ending in an ellipsis. Read conversations stay quiet; unread ones
@@ -94,9 +98,10 @@ export function SidebarItem({
 	mention,
 	mine,
 	onClick,
-	onArchive,
+	onArchive: onArchiveRequest,
 	pinned,
 	onTogglePin,
+	shipsDirectlyToMain = false,
 	onRename,
 	onSetStatus,
 }: {
@@ -113,9 +118,11 @@ export function SidebarItem({
 	    dropped and the timestamp moves up onto the title line. */
 	mine: boolean;
 	onClick: () => void;
-	onArchive: () => void;
+	onArchive: (current: HTMLButtonElement | null) => void;
 	pinned: boolean;
 	onTogglePin: () => void;
+	/** The session commits to the repo's default branch, so no PR is expected. */
+	shipsDirectlyToMain?: boolean;
 	onRename: (title: string) => void;
 	/** Pin this session into a sidebar lane (null = back to derived). Present on
 	    automation rows — it's how an automation run graduates into your lanes. */
@@ -125,7 +132,8 @@ export function SidebarItem({
 	// The row's tooltips advertise whatever the user has these bound to.
 	const pinKeys = useShortcutKeys("session-pin");
 	const archiveKeys = useShortcutKeys("session-archive");
-	const waiting = !!session.waitingForInput || runNeedsAttention(session);
+	const waitingForInput = !!session.waitingForInput;
+	const failed = runNeedsAttention(session);
 	const [editing, setEditing] = useState(false);
 	const [draft, setDraft] = useState("");
 	// Desktop right-click menu (mobile long-press opens the action sheet).
@@ -147,6 +155,7 @@ export function SidebarItem({
 	const btnRef = useRef<HTMLButtonElement>(null);
 	const card = useRowHoverCard(editing);
 	const closeHover = card.close;
+	const onArchive = () => onArchiveRequest(btnRef.current);
 
 	// Mobile long-press → action sheet, and — importantly — the *tap* to open a
 	// session is driven from `touchend`, not the synthesized `click`. The row
@@ -399,7 +408,10 @@ export function SidebarItem({
 						// own opaque plate that kept a long title out of the way;
 						// a solid chip can't sit on a translucent row. `hover:`, not
 						// `group-hover:` — this element is the group itself.
-						"hover:pr-[68px]",
+						// Two chips' worth while the pin is there to unpin; one
+						// chip less (26px + the 4px gap) on an unpinned row, which
+						// reveals archive alone.
+						pinned ? "hover:pr-[68px]" : "hover:pr-[38px]",
 						// No trim here for other people's sessions, which stack a meta
 						// line under the title. That used to re-state `py-[7px]` against
 						// a 9px base; the base is now the shared `--sidebar-row-pad`, and
@@ -419,8 +431,11 @@ export function SidebarItem({
 						(dragging || swipeOpen) && "will-change-transform",
 					)}
 					data-sidebar-row=""
+					data-sidebar-item-key={`session:${session.id}`}
 					data-selected={selected || undefined}
-					data-waiting={waiting || undefined}
+					data-waiting={waitingForInput || undefined}
+					data-failed={failed || undefined}
+					data-running={session.isRunning || undefined}
 					data-unread={unread || undefined}
 					style={
 						visibleSwipeOffset
@@ -469,21 +484,29 @@ export function SidebarItem({
 			    SIDEBAR_RAIL slot in front, that pair is what puts every title on
 			    one rail. */}
 			<div className={cn("flex min-w-0 items-center", SIDEBAR_RAIL_GAP)}>
-				{/* Match workspace rows: blocked-on-you takes the rail first and in
-				    blue, then the live run, then the PR glyph — where merged PRs keep
-				    the glyph itself purple instead of adding metadata. */}
+				{/* Questions stay blue. A stopped run is red, so it cannot look as
+				    though it is waiting for a reply. */}
 				<span className={SIDEBAR_RAIL}>
-					{waiting && <span className="sr-only">Needs your attention</span>}
-					{waiting ? (
+					{waitingForInput && <span className="sr-only">Waiting for your input</span>}
+					{failed && <span className="sr-only">Last run failed</span>}
+					{waitingForInput ? (
 						<span
 							className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.waiting}`}
+						/>
+					) : failed ? (
+						<span
+							className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.failed}`}
 						/>
 					) : session.isRunning ? (
 						<span
 							className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.running}`}
 						/>
 					) : (
-						<WsPrStatusMark sessions={[session]} size={18} />
+						<WsPrStatusMark
+							sessions={[session]}
+							size={18}
+							shipsDirectlyToMain={shipsDirectlyToMain}
+						/>
 					)}
 				</span>
 				{editing ? (
@@ -514,11 +537,9 @@ export function SidebarItem({
 						{stripPrTitlePrefix(session.title)}
 					</span>
 				)}
-				{/* Nobody started this one by hand. An automation RUN is a different
-				    concept with a band of its own, so it is not marked here. */}
-				{!editing && !session.automation && sessionWasAutoCreated(session) && (
-					<AutoCreatedMark />
-				)}
+				{/* Nobody started this one in a composer. The same quiet mark covers
+				    automation runs, report tasks, and sessions an agent minted itself. */}
+				{!editing && sessionWasAgentStarted(session) && <AutoCreatedMark />}
 				{/* Started somewhere else: a Slack thread, a Linear issue. Same slot
 				    and ink as the mark above, since both answer "where did this row
 				    come from" for a list that mixes origins. */}
@@ -583,9 +604,13 @@ export function SidebarItem({
 					))}
 				</div>
 			)}
-			{!isPhone && (
+			{/* Pin is not one of the row's standing actions. An unpinned row
+			    reveals archive alone, and pinning stays on the context menu, the
+			    keyboard chord and the swipe. A pinned row gets the chip back,
+			    because unpinning has to be reachable from the thing it marks. */}
+			{!isPhone && pinned && (
 			<Tooltip
-				label={pinned ? "Unpin session" : "Pin session"}
+				label="Unpin session"
 				shortcut={selected ? (pinKeys ?? undefined) : undefined}
 			>
 				<span
@@ -597,16 +622,16 @@ export function SidebarItem({
 						// It has to be a calc: the chip narrows with the density.
 						"right-[calc(var(--sidebar-row-action,26px)_+_11px)] data-[on]:bg-pressed data-[on]:text-fg",
 					)}
-					data-on={pinned || undefined}
+					data-on=""
 					role="button"
-					aria-label={pinned ? "Unpin session" : "Pin session"}
+					aria-label="Unpin session"
 					onMouseEnter={closeHover}
 					onClick={(e) => {
 						e.stopPropagation();
 						onTogglePin();
 					}}
 				>
-					<IconPin size={19} fill={pinned ? "currentColor" : "none"} />
+					<IconPin size={19} fill="currentColor" />
 				</span>
 			</Tooltip>
 			)}
@@ -753,6 +778,9 @@ function MobileActionSheet({
 	onSetStatus?: (status: LaneChoice | null) => void;
 	onClose: () => void;
 }) {
+	const [page, setPage] = useState<"actions" | "status">("actions");
+	const currentLane = pinnedLane(session) ?? null;
+	const displayedLane = currentLane ?? mineStatus(session);
 	// Lock the page behind the sheet so a scroll drags the list, not the page.
 	useEffect(() => {
 		const prev = document.body.style.overflow;
@@ -763,7 +791,20 @@ function MobileActionSheet({
 	}, []);
 	return (
 		<BottomSheet label={`Actions for ${session.title}`} onClose={onClose}>
-			{(dismiss) => (
+			{(dismiss) => {
+				if (page === "status" && onSetStatus) {
+					return (
+						<LanePickerPage
+							current={currentLane}
+							onBack={() => setPage("actions")}
+							onSelect={(status) => {
+								onSetStatus(status);
+								dismiss();
+							}}
+						/>
+					);
+				}
+				return (
 				<SheetBody>
 					<SheetTitle>{session.title}</SheetTitle>
 					<SheetItem
@@ -799,68 +840,13 @@ function MobileActionSheet({
 								: "Add to my workspaces"}
 						</SheetItem>
 					)}
-					{/* Same lane chips as the workspace sheet — forcing a specific lane
-					    for a run from a phone. Lanes are per-user: the move happens in
-					    YOUR sidebar only. */}
 					{onSetStatus && (
-						<div className="px-4 py-2">
-							<div className="mb-1.5 text-meta font-semibold text-faint">
-								Move to lane
-							</div>
-							<div className="flex flex-wrap gap-1.5">
-								{MINE_STATUS_META.map((m) => {
-									const on = pinnedLane(session) === m.key;
-									return (
-										<Button
-											variant="ghost"
-											size="sm"
-											key={m.key}
-											type="button"
-											className="gap-1.5 whitespace-normal px-2 text-control-label leading-normal"
-											style={{
-												borderColor: on ? m.dotColor : "var(--border)",
-												color: on ? "var(--text)" : "var(--text-dim)",
-											}}
-											onClick={() => {
-												onSetStatus(on ? null : m.key);
-												dismiss();
-											}}
-										>
-											<span
-												style={{
-													width: 8,
-													height: 8,
-													borderRadius: "50%",
-													background: m.dotColor,
-													flexShrink: 0,
-												}}
-											/>
-											{m.label}
-										</Button>
-									);
-								})}
-								<Button
-									variant="ghost"
-									size="sm"
-									type="button"
-									className="whitespace-normal px-2 text-control-label leading-normal"
-									style={{
-										borderColor: !pinnedLane(session)
-											? "var(--text-dim)"
-											: "var(--border)",
-										color: !pinnedLane(session)
-											? "var(--text)"
-											: "var(--text-dim)",
-									}}
-									onClick={() => {
-										onSetStatus(null);
-										dismiss();
-									}}
-								>
-									Auto
-								</Button>
-							</div>
-						</div>
+						<SheetDrillInItem
+							icon={<LaneStatusMark value={displayedLane} />}
+							label="Status"
+							value={lanePickerLabel(displayedLane)}
+							onClick={() => setPage("status")}
+						/>
 					)}
 					<SheetSeparator />
 					<SheetItem
@@ -885,7 +871,8 @@ function MobileActionSheet({
 						Archive
 					</SheetItem>
 				</SheetBody>
-			)}
+				);
+			}}
 		</BottomSheet>
 	);
 }

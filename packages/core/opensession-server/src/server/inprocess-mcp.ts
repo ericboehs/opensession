@@ -9,8 +9,8 @@
  * pendingAsks, attachRepo…). Consumers:
  *  - run-rpc.ts connects `instance` over an InMemoryTransport pair and
  *    forwards tools/list + tools/call from the per-run stdio proxies
- *    (src/runner-host/mcp-proxy.ts) that opencode runs receive.
- *  - opencode-runner's proxyOpencodeMcpConfigs turns the server names into
+ *    (src/runner-host/mcp-proxy.ts) that pi runs receive.
+ *  - pi-runner's proxyPiMcpConfigs turns the server names into
  *    those stdio proxy configs.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

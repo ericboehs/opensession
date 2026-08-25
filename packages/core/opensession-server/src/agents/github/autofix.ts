@@ -1,5 +1,5 @@
 /**
- * Behavior 2: the `os-auto-fix` label (legacy `michael-auto-fix`). Checks out the PR head branch in a dedicated
+ * Behavior 2: the `os-auto-fix` label. Checks out the PR head branch in a dedicated
  * worktree, fixes merge conflicts + review findings + failing CI, pushes to the PR branch,
  * polls CI, and re-fixes until green AND a fresh review of the pushed
  * code finds nothing blocking — bounded so it can never run away. The loop is
@@ -7,8 +7,7 @@
  * stop while the agent's review would still flag a P0/P1. Removes the label when it
  * finishes.
  */
-import { $ } from "bun";
-import { getPrDetailsFresh, type PrDetails } from "../../server/pr-info";
+import { getPrAutomationDetails, getPrDetailsFresh, type PrDetails } from "../../server/pr-info";
 import { ghBackoffUntil } from "../../server/github-limit";
 import { createWorktreeForPrBranch } from "../../server/worktree";
 import {
@@ -44,8 +43,7 @@ const REPO = defaultRepo().ghRepo;
 
 async function headSha(headRef: string, ghRepo: string = REPO): Promise<string> {
   try {
-    const raw = await $`gh pr view ${headRef} --repo ${ghRepo} --json headRefOid`.quiet().text();
-    return JSON.parse(raw).headRefOid || "";
+    return (await getPrAutomationDetails(headRef, ghRepo))?.headRefOid || "";
   } catch {
     return "";
   }
@@ -140,7 +138,13 @@ export async function runAutoFix(
     return;
   }
 
-  const author = authorForLogin(requestedBy);
+  const receivedState = readPrState(pr.number, pr.ghRepo);
+  const effectiveRequestedBy =
+    requestedBy ||
+    receivedState?.pendingAutoFix?.requestedBy ||
+    receivedState?.autoFix?.requestedBy ||
+    "";
+  const author = authorForLogin(effectiveRequestedBy);
   let statusCommentId: number | undefined;
   // Transient exits (engine/pool error, CI never settled, mergeability probe
   // hung) KEEP the os-auto-fix label so the reconcile sweep retries the loop;
@@ -174,7 +178,7 @@ export async function runAutoFix(
   };
 
   try {
-    const prior = readPrState(pr.number, pr.ghRepo)?.autoFix;
+    const prior = receivedState?.autoFix;
     // Reuse the status comment only when recovering an interrupted loop; a fresh
     // re-trigger posts a new comment instead of editing the previous run's.
     statusCommentId = resuming ? prior?.statusCommentId : undefined;
@@ -187,7 +191,8 @@ export async function runAutoFix(
       pr.number,
       pr.headRef,
       (s) => {
-        s.autoFix = { active: true, iterations, startedAt, statusCommentId, requestedBy, worktreeDir: prior?.worktreeDir, lastPushedSha: prior?.lastPushedSha, steer: effectiveSteer };
+        s.autoFix = { active: true, iterations, startedAt, statusCommentId, requestedBy: effectiveRequestedBy, worktreeDir: prior?.worktreeDir, lastPushedSha: prior?.lastPushedSha, steer: effectiveSteer };
+        delete s.pendingAutoFix;
       },
       pr.ghRepo,
     );
@@ -285,7 +290,7 @@ export async function runAutoFix(
         pr.number,
         pr.headRef,
         (s) => {
-          s.autoFix = { active: true, iterations, startedAt, statusCommentId, requestedBy, worktreeDir, lastPushedSha, steer: effectiveSteer };
+          s.autoFix = { active: true, iterations, startedAt, statusCommentId, requestedBy: effectiveRequestedBy, worktreeDir, lastPushedSha, steer: effectiveSteer };
         },
         pr.ghRepo,
       );

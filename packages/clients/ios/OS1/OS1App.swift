@@ -82,8 +82,65 @@ struct OS1App: App {
     }
 }
 
+/// Runs account lifecycle work without putting scene state in SwiftUI's view
+/// graph. Platform notifications can suspend and resume the stores without
+/// asking AttributeGraph to compare the sessions list and open transcript.
+private struct RootSceneLifecycle: View {
+    let config: ServerConfig
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .task(id: hydrationID) {
+                if AppLifecycle.isActive {
+                    PresenceStore.shared.start()
+                } else {
+                    PresenceStore.shared.suspend()
+                }
+                while !Task.isCancelled {
+                    if AppLifecycle.isActive { await hydrate() }
+                    try? await Task.sleep(for: .seconds(30))
+                }
+            }
+            .task {
+                for await _ in NotificationCenter.default.notifications(
+                    named: AppLifecycle.didBecomeActiveNotification
+                ) {
+                    PresenceStore.shared.start()
+                    GitHubSignIn.shared.nudge()
+                    // A grant can die while the app is in the background, and
+                    // polls that fail quietly are exactly what this replaces.
+                    AuthGate.shared.confirm()
+                    await hydrate()
+                }
+            }
+            .task {
+                for await _ in NotificationCenter.default.notifications(
+                    named: AppLifecycle.willResignActiveNotification
+                ) {
+                    PresenceStore.shared.suspend()
+                    DraftsStore.shared.flushAll()
+                }
+            }
+    }
+
+    private var hydrationID: String {
+        "\(config.activeId)|\(config.baseURLString)|\(config.userName)|\(config.githubLogin)|\(config.token.hashValue)"
+    }
+
+    private func hydrate() async {
+        await NativePreferences.hydrate()
+        await HideStore.shared.hydrate()
+        await PinStore.shared.hydrate()
+        await WorkspaceSnoozeStore.shared.hydrate()
+        await LaneStore.shared.hydrate()
+        await MentionStore.shared.hydrate()
+        await ReadsStore.shared.hydrate()
+        await DraftsStore.shared.hydrate()
+    }
+}
+
 struct RootView: View {
-    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("os1.appearance") private var appearance = "system"
     @State private var config = ServerConfig.shared
     @State private var authGate = AuthGate.shared
@@ -95,6 +152,7 @@ struct RootView: View {
 
     var body: some View {
         SessionsListView()
+            .id(config.activeId)
             .tint(OS1VisualStyle.accentInk)
             .os1AccentToggles()
             .background(OS1VisualStyle.background.ignoresSafeArea())
@@ -143,36 +201,9 @@ struct RootView: View {
                     }
                 }
             }
-            .task(id: preferenceHydrationID) {
-                guard scenePhase == .active else {
-                    PresenceStore.shared.stop()
-                    return
-                }
-                PresenceStore.shared.start()
-                while !Task.isCancelled {
-                    await NativePreferences.hydrate()
-                    await HideStore.shared.hydrate()
-                    await PinStore.shared.hydrate()
-                    await LaneStore.shared.hydrate()
-                    await MentionStore.shared.hydrate()
-                    await ReadsStore.shared.hydrate()
-                    await DraftsStore.shared.hydrate()
-                    try? await Task.sleep(for: .seconds(30))
-                }
-            }
-            // Coming back from Safari/GitHub after approving the device code:
-            // poll right away so the sign-in lands the moment we're foreground
-            // (also revives a poll loop that died with the process).
-            .onChange(of: scenePhase) { _, phase in
-                if phase == .active {
-                    GitHubSignIn.shared.nudge()
-                    // A grant can die while the app is in the background, and
-                    // polls that fail quietly are exactly what this replaces.
-                    AuthGate.shared.confirm()
-                } else {
-                    DraftsStore.shared.flushAll()
-                }
-            }
+            // Keep lifecycle state out of this root. Platform notifications
+            // let the leaf run side effects without invalidating this tree.
+            .background { RootSceneLifecycle(config: config) }
             #if os(iOS)
             .task(id: liveActivityTaskID) {
                 if liveActivitiesEnabled {
@@ -195,13 +226,13 @@ struct RootView: View {
         }
     }
 
-    private var preferenceHydrationID: String {
-        "\(scenePhase)|\(config.baseURLString)|\(config.userName)|\(config.githubLogin)|\(config.token.hashValue)"
+    private var connectionID: String {
+        "\(config.activeId)|\(config.baseURLString)|\(config.userName)|\(config.githubLogin)|\(config.token.hashValue)"
     }
 
     #if os(iOS)
     private var liveActivityTaskID: String {
-        "\(liveActivitiesEnabled)|\(preferenceHydrationID)"
+        "\(liveActivitiesEnabled)|\(connectionID)"
     }
     #endif
 }

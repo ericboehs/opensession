@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { fetchSupportThreads } from "../lib/api";
 import {
@@ -126,7 +126,7 @@ export function SupportInbox({
 
 	// Newest live session per thread — the same rule the sidebar's Support rows
 	// use to decide what their dot says.
-	const sessionByThread = useMemo(() => {
+	const sessionByThread = (() => {
 		const m = new Map<string, UnifiedSession>();
 		for (const s of sessions) {
 			if (s.archived || !s.plainThreadId) continue;
@@ -134,7 +134,7 @@ export function SupportInbox({
 			if (!prev || s.lastActivity > prev.lastActivity) m.set(s.plainThreadId, s);
 		}
 		return m;
-	}, [sessions]);
+	})();
 
 	// Phone: list and ticket are separate pages, with a back button between.
 	const showList = !isPhone || !threadId;

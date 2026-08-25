@@ -4,7 +4,6 @@ import { SettingCard, SettingRow, SettingRowDescription, SettingRowText, Setting
 import { toast } from "../ui/toast";
 import {
 	StateChip,
-	githubAuthState,
 	integrationState,
 	repoLifecycleState,
 	setupRequest,
@@ -44,8 +43,7 @@ function ChecklistRow({
 	);
 }
 
-/** Checklist row for model capacity. Everything else here is optional;
- *  without this, no session runs a single turn. */
+/** Checklist row for model capacity. Without this, no session runs a turn. */
 export function EngineRow({
 	engine,
 	onChanged,
@@ -57,18 +55,18 @@ export function EngineRow({
 
 	async function enable() {
 		setEnabling(true);
-		try {
-			await setupRequest("/api/settings/opencode-engine", {
+		await (async () => {
+await setupRequest("/api/settings/pi-engine", {
 				method: "PUT",
 				json: { enabled: true },
 			});
 			await onChanged();
 			toast("Engine enabled");
-		} catch (e: any) {
-			toast(e?.message || "Couldn't enable the engine");
-		} finally {
-			setEnabling(false);
-		}
+})().catch(async (e: any) => {
+toast(e?.message || "Couldn't enable the engine");
+}).finally(async () => {
+setEnabling(false);
+});
 	}
 
 	const pool =
@@ -83,11 +81,11 @@ export function EngineRow({
 
 	return (
 		<ChecklistRow
-			title="Engine"
+			title="Providers"
 			description={
 				engine.ready
 					? `Ready to run turns on ${engine.defaultModel} (${pool}).`
-					: `${engine.blocker} ${engine.fix}`
+					: [engine.blocker, engine.fix].filter(Boolean).join(" ") || "The engine is not ready."
 			}
 			tone={engine.ready ? "on" : "warn"}
 			label={engine.ready ? "Ready" : "Can't run turns"}
@@ -121,9 +119,13 @@ export function SetupChecklist({
 			</Button>
 		) : undefined;
 
-	const githubState = githubAuthState(status.github);
+	const github = status.integrations.find((integration) => integration.id === "github");
+	const githubState = github ? integrationState(github) : { tone: "warn" as const, label: "Missing" };
+	const githubTone: ChipTone = githubState.tone === "on" ? "on" : "warn";
 	const reposTone: ChipTone = status.repos.length > 0 ? "on" : "warn";
-	const teamTone: ChipTone = status.team.count > 0 ? "on" : "warn";
+	const membersTone: ChipTone = status.team.count > 0 ? "on" : "warn";
+	const memberNames = status.team.names.slice(0, 3).join(", ");
+	const remainingMembers = status.team.count - 3;
 	const bootable = status.repos.filter((r) => repoLifecycleState(r).tone === "on");
 	const missing = status.repos.filter((r) => repoLifecycleState(r).tone !== "on");
 	const namedMissing = missing
@@ -134,6 +136,23 @@ export function SetupChecklist({
 
 	return (
 		<SettingCard>
+			<ChecklistRow
+				title="GitHub"
+				description={
+					githubState.tone === "on"
+						? "Sessions can access repositories and open pull requests with the workspace account."
+						: "Configure the GitHub App used for repositories and pull requests."
+				}
+				tone={githubTone}
+				label={githubState.label}
+				action={fix("github", githubTone)}
+			/>
+			<ChecklistRow
+				title="Organisation"
+				description="The organisation profile and instance identity are configured here."
+				tone="on"
+				label="Configured"
+			/>
 			<EngineRow engine={status.engine} onChanged={onChanged} />
 			<ChecklistRow
 				title="Repositories"
@@ -172,47 +191,17 @@ export function SetupChecklist({
 				title="Members"
 				description={
 					status.team.count > 0
-						? status.team.names.join(", ")
-						: "Add teammates so commits and sessions attribute to real people."
+						? `${memberNames}${remainingMembers > 0 ? ` and ${remainingMembers} more` : ""}`
+						: "Add everyone who uses this instance so sessions and commits attribute to real people."
 				}
-				tone={teamTone}
+				tone={membersTone}
 				label={
-					status.team.count > 0
-						? `${status.team.count} ${status.team.count === 1 ? "member" : "members"}`
-						: "Empty"
+					status.team.count === 1
+						? "1 member"
+						: `${status.team.count} members`
 				}
-				action={fix("team", teamTone)}
+				action={fix("members", membersTone)}
 			/>
-			<ChecklistRow
-				title="GitHub sign-in"
-				description={
-					status.github.userPrAuth && status.github.clientIdConfigured
-						? "Teammates sign in with GitHub and open PRs as themselves."
-						: "Off. The UI uses the name picker and PRs come from the bot account."
-				}
-				tone={githubState.tone}
-				label={githubState.label}
-				action={fix("github", githubState.tone)}
-			/>
-			{status.integrations.map((i) => {
-				const s = integrationState(i);
-				return (
-					<ChecklistRow
-						key={i.id}
-						title={i.label}
-						description={
-							s.tone === "on"
-								? "Configured."
-								: s.tone === "warn"
-									? `Enabled, but missing ${i.missingRequired.join(", ")}.`
-									: "Not enabled. Set it up when your team needs it."
-						}
-						tone={s.tone}
-						label={s.label}
-						action={fix("integrations", s.tone)}
-					/>
-				);
-			})}
 		</SettingCard>
 	);
 }

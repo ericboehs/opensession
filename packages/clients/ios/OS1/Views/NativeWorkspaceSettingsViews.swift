@@ -3,23 +3,26 @@ import SwiftUI
 // Native settings panels intentionally use only SettingsAPI. They can be hosted by
 // any settings navigation container without depending on the legacy web settings view.
 
-/// Settings → Models. Which model a session starts on, which engine carries
-/// it, and any provider someone brought a key for.
+/// Settings → Providers. Which model a session starts on, which engine
+/// carries it, the subscription accounts runs draw from and how close each one
+/// is to its limit, and any provider someone brought a key for.
 ///
-/// The subscription accounts those models run on live in Settings → Usage,
-/// as they do on the web (src/frontend/components/settings/ModelsPanel.tsx):
-/// their meters move hourly and get read far more often than any of this gets
-/// changed.
-struct ModelsSettingsView: View {
+/// One page, as on the web (ProvidersPanel.tsx). The account meters were their
+/// own page for a while, on the grounds that they move hourly while a default
+/// model is set once. They are back here because the answer to "this pool is
+/// spent" is on this page too: connect another account, or start runs on a
+/// different model.
+struct ProvidersSettingsView: View {
     @State private var reload = 0
 
     var body: some View {
         List {
             ModelDefaultsSections(reload: reload)
+            ProviderAccountSections(reload: reload)
             ModelProvidersSections(reload: reload)
         }
         .insetGroupedListCompat()
-        .navigationTitle("Models")
+        .navigationTitle("Providers")
         .refreshable { reload += 1 }
     }
 }

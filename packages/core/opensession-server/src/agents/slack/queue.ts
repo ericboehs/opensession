@@ -41,6 +41,10 @@ export interface QueuedMessage {
    * before the run and attaches them to the prompt as native image parts.
    */
   files?: SlackFileRef[];
+  /** Stable transcript identity for this Slack message across provider retries. */
+  promptEntryId?: string;
+  /** Set when shutdown leaves this queue head for boot to continue. */
+  restartRecovery?: boolean;
 }
 
 export interface SessionQueue {
@@ -73,6 +77,9 @@ export function interruptQueuesForRestart(): number {
   for (const sq of sessionQueues.values()) {
     if (!sq.abortController || sq.abortController.signal.aborted) continue;
     sq.restartInterrupted = true;
+    // Boot must continue the interrupted turn, not submit the person's Slack
+    // message as a new turn. This marker survives with the durable queue item.
+    if (sq.queue[0]) sq.queue[0].restartRecovery = true;
     sq.abortController.abort(RESTART_ABORT_REASON);
     interrupted++;
   }
@@ -147,6 +154,9 @@ export function enqueueMessage(sessionKey: string, msg: QueuedMessage): void {
     return;
   }
 
+  // The same Slack event can cross provider boundaries or a process restart.
+  // Keep one transcript uuid so every attempt addresses the original row.
+  msg.promptEntryId ??= crypto.randomUUID();
   sq.queue.push(msg);
   console.log(
     `[slack] Enqueued message for ${sessionKey} (queue length: ${sq.queue.length})`

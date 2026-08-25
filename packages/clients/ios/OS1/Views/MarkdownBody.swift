@@ -7,14 +7,14 @@ import UIKit
 import AppKit
 #endif
 
-private struct TranscriptRepoKey: EnvironmentKey {
+private struct TranscriptSessionIdKey: EnvironmentKey {
     static let defaultValue: String? = nil
 }
 
 extension EnvironmentValues {
-    var transcriptRepo: String? {
-        get { self[TranscriptRepoKey.self] }
-        set { self[TranscriptRepoKey.self] = newValue }
+    var transcriptSessionId: String? {
+        get { self[TranscriptSessionIdKey.self] }
+        set { self[TranscriptSessionIdKey.self] = newValue }
     }
 }
 
@@ -34,7 +34,7 @@ struct MarkdownBody: View {
     @Environment(\.openPanel) private var openPanel
     /// Repo context exists on both native clients. The Mac has no pushable
     /// `openPanel`, but its commit references still need the session's repo.
-    @Environment(\.transcriptRepo) private var transcriptRepo
+    @Environment(\.transcriptSessionId) private var transcriptSessionId
     @Environment(\.transcriptQuoteSelection) private var quoteSelection
 
     init(_ text: String, dimmed: Bool = false) {
@@ -144,7 +144,7 @@ struct MarkdownBody: View {
                         MarkdownAutolink.linkify(
                             CommitLinks.linkify(
                                 PrLinks.linkify(value, sessionId: openPanel.sessionId),
-                                repo: transcriptRepo
+                                sessionId: openPanel.sessionId ?? transcriptSessionId
                             )
                         )
                     )

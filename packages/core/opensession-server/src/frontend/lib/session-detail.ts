@@ -4,7 +4,6 @@ import type { UnifiedSession } from "./types";
  * The fields `GET /api/sessions` leaves out that this client reads, which only
  * the session you have OPEN does. They live on `GET /api/sessions/:id`.
  *
- * The server also holds back `opencodeSessionId` and `piSessionId`; they are
  * absent here because the web has never read either, and modelling a field
  * nothing renders is how one ends up back in the payload.
  *

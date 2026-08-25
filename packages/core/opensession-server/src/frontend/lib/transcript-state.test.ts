@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
 	classifyQueuedContent,
+	isClientVisibleQueuedContent,
 	mergeTranscriptEntries,
 	normalizeLegacyVoiceToolEntries,
 	orderTranscriptEntries,
@@ -124,6 +125,46 @@ describe("transcript client state", () => {
 			title: "PR #42 review feedback",
 		});
 		expect(classified.content).not.toContain("os:review-handoff");
+	});
+
+	test("classifies a queued workflow result as system traffic", () => {
+		const content =
+			'<!--os:workflow-notice:wf-1-->\n✅ Workflow "review" finished';
+		const classified = classifyQueuedContent(content, "Kent");
+
+		expect(classified.content).toBe('Workflow "review" finished');
+		expect(classified.notice).toMatchObject({
+			kind: "workflow",
+			title: 'Workflow "review" finished',
+		});
+		expect(classified.sender).toBeUndefined();
+		expect(queueAttribution(classified, "Michiel")).toBeNull();
+		expect(isClientVisibleQueuedContent(content, "Kent")).toBe(false);
+	});
+
+	test("never exposes auto-continues as queued messages", () => {
+		expect(isClientVisibleQueuedContent("(auto-continue)", "auto-continue")).toBe(
+			false,
+		);
+		expect(isClientVisibleQueuedContent("Please continue", "Kent")).toBe(true);
+	});
+
+	test("classifies queued peer-session messages as notices", () => {
+		const id = "os-01a01e56-a1fc-7000-bb91-bc99b916c4ad";
+		for (const content of [
+			"Please avoid overlapping edits.",
+			"<!--os:session-notice-->\nPlease avoid overlapping edits.",
+		]) {
+			const classified = classifyQueuedContent(content, `agent ${id}`);
+			expect(classified.content).toBe("Please avoid overlapping edits.");
+			expect(classified.notice).toMatchObject({
+				kind: "session-notice",
+				title: "Message from another session",
+			});
+			expect(queueAttribution(classified, "Grant")).toBe(
+				"Message from another session",
+			);
+		}
 	});
 
 	test("credits a teammate on a queue chip but never the viewer", () => {

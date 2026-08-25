@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   daytonaCreateResources,
   daytonaCreateSource,
+  daytonaSnapshotIsRecent,
   daytonaSnapshotIsRecoverable,
   parseDaytonaExecResult,
 } from "./daytona";
@@ -51,6 +52,18 @@ describe("Daytona create source", () => {
     expect(
       daytonaSnapshotIsRecoverable(
         { state: "active", updatedAt: "2026-08-11T11:55:00.000Z" },
+        now,
+      ),
+    ).toBe(false);
+    expect(
+      daytonaSnapshotIsRecent(
+        { updatedAt: "2026-08-11T12:55:00.000Z" },
+        now,
+      ),
+    ).toBe(true);
+    expect(
+      daytonaSnapshotIsRecent(
+        { updatedAt: "2026-08-11T11:55:00.000Z" },
         now,
       ),
     ).toBe(false);

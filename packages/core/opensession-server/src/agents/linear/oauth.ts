@@ -21,7 +21,7 @@ function redirectUri(): string {
   const configured = configuredIntegration("linear").oauthRedirectUrl;
   return typeof configured === "string" && configured.trim()
     ? configured.trim()
-    : `${configuredServer().publicBaseUrl.replace(/\/+$/, "")}/oauth/callback`;
+    : `${configuredServer().webhookBaseUrl.replace(/\/+$/, "")}/oauth/callback`;
 }
 
 export interface LinearTokens {

@@ -6,6 +6,7 @@ import {
 	bootstrapSignature,
 	loadRemoteWorkspaceSeedFiles,
 	runRemoteLifecycleHook,
+	setupRemoteWorkspace,
 	type RemoteDriver,
 } from "./bootstrap";
 
@@ -46,7 +47,8 @@ describe("remote repo lifecycle", () => {
 	test("bootstrap identity includes the preview runtime contract", () => {
 		expect(bootstrapSignature()).toContain("node@24.18.1");
 		expect(bootstrapSignature()).toContain("just@1.43.1");
-		expect(bootstrapSignature()).toContain("workspace-runtime-v7");
+		expect(bootstrapSignature()).toContain("gh@2.83.1");
+		expect(bootstrapSignature()).toContain("workspace-runtime-v8");
 	});
 
 	test("setup is skipped after its durable stamp", async () => {
@@ -85,6 +87,8 @@ describe("remote repo lifecycle", () => {
 		expect(result.log).toContain("/.opensession/lifecycle/");
 		expect(d.commands[2]!.command).toContain("OPENSESSION_BOOT_MODE=fresh");
 		expect(d.commands[2]!.command).toContain("PATH=");
+		expect(d.commands[2]!.command).toContain("setup-bin");
+		expect(d.commands[2]!.command).toContain("install --frozen-lockfile");
 		expect(d.commands[2]!.command).toContain("touch");
 		expect(d.commands[2]!.opts.timeoutMs).toBe(20 * 60_000);
 	});
@@ -116,6 +120,8 @@ describe("remote repo lifecycle", () => {
 			runRemoteLifecycleHook(d.value, "/work/repo", "resume", "resume"),
 		).rejects.toThrow(".agents/resume failed with exit 7");
 		expect(d.commands[2]!.command).not.toContain("setup.done");
+		expect(d.commands[2]!.command).not.toContain("setup-bin");
+		expect(d.commands[2]!.command).not.toContain("install --frozen-lockfile");
 	});
 
 	test("refuses a present non-executable hook", async () => {
@@ -126,6 +132,110 @@ describe("remote repo lifecycle", () => {
 		await expect(
 			runRemoteLifecycleHook(d.value, "/work/repo", "resume", "resume"),
 		).rejects.toThrow("not executable");
+	});
+
+	test("adopts and syncs a prepared Daytona workspace in one command", async () => {
+		const d = driver([
+			{ exitCode: 0, stdout: "warm\n" },
+			{ exitCode: 0 },
+			{ exitCode: 0, stdout: "absent\n" },
+		]);
+		await setupRemoteWorkspace(
+			d.value,
+			"/work/feature",
+			"https://token@example.test/repo.git",
+			"feature/new-ui",
+			"main",
+			"opensession",
+			{ sandboxId: "sbx-test", provider: "daytona", repoId: "opensession" },
+		);
+
+		expect(d.commands).toHaveLength(3);
+		const adoption = d.commands[1]!;
+		expect(adoption.opts.timeoutMs).toBe(180_000);
+		expect(adoption.command).toContain("ln -s");
+		expect(adoption.command).not.toContain("mount --bind");
+		expect(adoption.command).toContain("remote set-url origin");
+		expect(adoption.command).toContain("fetch --no-tags origin +refs/heads/feature/new-ui:refs/remotes/origin/feature/new-ui --quiet");
+		expect(adoption.command).toContain("fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main --quiet");
+		expect(adoption.command).toContain("__start=origin/feature/new-ui");
+		expect(adoption.command).toContain("update-ref refs/heads/feature/new-ui");
+		expect(adoption.command).toContain("symbolic-ref HEAD refs/heads/feature/new-ui");
+		expect(adoption.command).toContain("checkout -B feature/new-ui");
+		expect(adoption.command).toContain("opensession-adopted-by");
+		expect(d.commands.some(({ command }) => command === "git branch --show-current")).toBe(false);
+	});
+
+	test("cold-clones instead of taking over another workspace's warm clone", async () => {
+		const d = driver([
+			{ exitCode: 0, stdout: "warm\n" },
+			{ exitCode: 73 },
+			{ exitCode: 0 },
+			{ exitCode: 0, stdout: "feature/new-ui\n" },
+			{ exitCode: 0, stdout: "absent\n" },
+		]);
+		await setupRemoteWorkspace(
+			d.value,
+			"/work/feature",
+			"https://token@example.test/repo.git",
+			"feature/new-ui",
+			"main",
+			"opensession",
+			{ sandboxId: "sbx-test", provider: "box", repoId: "opensession" },
+		);
+
+		expect(d.commands[0]!.command).toContain("echo cwd");
+		expect(d.commands[0]!.command).toContain("echo warm");
+		expect(d.commands[1]!.command).toContain("exit 73");
+		expect(d.commands[1]!.command).toContain("ln -s");
+		expect(d.commands[1]!.command).not.toContain("mount --bind");
+		expect(d.commands[2]!.command).toContain("git clone --filter=blob:none");
+	});
+
+	test("scrubs a short-lived GitHub token after the bounded clone", async () => {
+		const d = driver([
+			{ exitCode: 0, stdout: "none\n" },
+			{ exitCode: 0 },
+			{ exitCode: 0, stdout: "feature/new-ui\n" },
+			{ exitCode: 0 },
+			{ exitCode: 0, stdout: "absent\n" },
+		]);
+		await setupRemoteWorkspace(
+			d.value,
+			"/work/feature",
+			"https://x-access-token:short-lived@github.com/tellahq/opensession.git",
+			"feature/new-ui",
+			"main",
+		);
+
+		const scrub = d.commands.find(({ command }) =>
+			command.startsWith("git remote set-url origin"),
+		);
+		expect(scrub?.command).toContain("https://github.com/tellahq/opensession.git");
+		expect(scrub?.command).not.toContain("short-lived");
+	});
+
+	test("cleans up a failed warm attach before cold-cloning", async () => {
+		const d = driver([
+			{ exitCode: 0, stdout: "warm\n" },
+			{ exitCode: 1, stderr: "fetch failed" },
+			{ exitCode: 0 },
+			{ exitCode: 0, stdout: "feature/new-ui\n" },
+			{ exitCode: 0, stdout: "absent\n" },
+		]);
+		await setupRemoteWorkspace(
+			d.value,
+			"/work/feature",
+			"https://token@example.test/repo.git",
+			"feature/new-ui",
+			"main",
+			"opensession",
+			{ sandboxId: "sbx-test", provider: "daytona", repoId: "opensession" },
+		);
+
+		expect(d.commands[1]!.command).toContain("umount /work/feature");
+		expect(d.commands[1]!.command).toContain("rm -f /work/feature");
+		expect(d.commands[2]!.command).toContain("git clone --filter=blob:none");
 	});
 });
 

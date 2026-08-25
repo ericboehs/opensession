@@ -169,7 +169,7 @@ export function CodeFlow({
 					</article>
 				))}
 			</div>
-			<footer className="mt-3 px-1 text-meta text-faint">
+			<footer className="mt-3 px-1 text-supporting text-faint">
 				Approximate, syntax-based structure{data.skippedFiles ? ` · ${data.skippedFiles} file${data.skippedFiles === 1 ? "" : "s"} skipped` : ""}
 			</footer>
 		</section>

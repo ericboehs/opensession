@@ -1,13 +1,12 @@
-import { BASE_PATH } from "../lib/base";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { WSServerMessage } from "../lib/types";
 import { PRODUCT_NAME } from "../lib/brand";
-import { FloatingStatus } from "../ui/floating-status";
-import { toast } from "../ui/toast";
+import { dismissToast, toast } from "../ui/toast";
+import { fetchHealthStatus } from "../lib/health";
 
-const HEALTH_URL = `${BASE_PATH}/api/health`;
-// Grace before showing anything — most socket blips reconnect within this.
-const PILL_DELAY_MS = 2500;
+// Give foreground recovery enough time to probe and replace the stale PWA
+// socket before showing anything. Background time never counts toward this.
+const PILL_DELAY_MS = 8_000;
 // A disconnect older than this whose health probe ALSO fails escalates from
 // the calm pill to the full restart overlay (covers hard crashes).
 const ESCALATE_AFTER_MS = 22_000;
@@ -30,8 +29,8 @@ interface Props {
  *  - Socket loss with no restart signal → a calm "Reconnecting…" pill while
  *    useWebSocket retries. On reconnect the server's bootId (hello frame;
  *    /api/health fallback for servers without it) is compared: unchanged →
- *    pure blip, the pill clears silently; changed → it really was a restart —
- *    a brief toast, then business as usual.
+ *    pure blip; changed → it really was a restart. Either way, the pill clears
+ *    silently.
  *  - An explicit `server_restarting` broadcast (graceful drain) shows the same
  *    NON-blocking pill — restarts complete in a couple of seconds and Caddy
  *    parks in-flight requests, so nothing needs to block the composer or
@@ -46,13 +45,12 @@ interface Props {
 export function RestartOverlay({ connected, addHandler }: Props) {
   const [phase, setPhase] = useState<"ok" | "reconnecting" | "restarting" | "crashed">("ok");
   const [backOnline, setBackOnline] = useState(false);
-  // Who likely caused the restart: `by` on server_restarting (pill), `restartBy`
-  // on the new server's hello (post-restart toast).
+  // Who likely caused the restart: `by` on server_restarting, or `restartBy`
+  // on the new server's hello.
   const [restartBy, setRestartBy] = useState<string | null>(null);
-  const restartByRef = useRef<string | null>(null);
-  restartByRef.current = restartBy;
   const bootId = useRef<string | null>(null);
   const sawDown = useRef(false);
+  const statusToast = useRef<number | null>(null);
   // Set when the server explicitly told us it's going down; cleared only by
   // resolveRestart. The old instance's socket can stay open into the drain, so
   // "connected + health answering" alone must not clear the pill instantly.
@@ -60,20 +58,24 @@ export function RestartOverlay({ connected, addHandler }: Props) {
   const explicitAt = useRef(0);
   const disconnectedAt = useRef<number | null>(null);
   const phaseRef = useRef(phase);
-  phaseRef.current = phase;
+	useLayoutEffect(() => {
+		phaseRef.current = phase;
+	});
 
   const resolveRestart = () => {
     explicit.current = false;
+    if (statusToast.current !== null) {
+      dismissToast(statusToast.current);
+      statusToast.current = null;
+    }
     if (phaseRef.current === "restarting") setPhase("ok");
-    const by = restartByRef.current;
-    toast(`${PRODUCT_NAME} restarted${by ? ` (${by})` : ""}.`);
   };
 
-  // Adopt/compare a server-reported bootId. First sighting just records it —
+  // Adopt/compare a server-reported bootId. First sighting just records it,
   // unless an explicit restart is pending, where ANY fresh sighting after the
   // announcement is evidence of the new instance (a never-learned old bootId
-  // must not wedge the pill). A change outside the restart flow means the
-  // server restarted behind a blip-looking disconnect — say so briefly.
+  // must not wedge the pill). A change outside the restart flow needs no UI:
+  // there is no pending restart status to clear.
   const handleBootId = (id: unknown) => {
     if (typeof id !== "string" || !id) return;
     const prev = bootId.current;
@@ -82,12 +84,6 @@ export function RestartOverlay({ connected, addHandler }: Props) {
       if (!prev || id !== prev) resolveRestart();
       return;
     }
-    if (prev && id !== prev) {
-      const by = restartByRef.current;
-      toast(
-        `${PRODUCT_NAME} restarted${by ? ` (${by})` : ""}. Reconnected to the new server.`,
-      );
-    }
   };
 
   const handleHealth = (data: { bootId?: unknown }) => handleBootId(data.bootId);
@@ -95,8 +91,7 @@ export function RestartOverlay({ connected, addHandler }: Props) {
   // Learn the current instance's bootId up front (also the fallback for
   // servers that don't send the hello frame yet).
   useEffect(() => {
-    fetch(HEALTH_URL, { cache: "no-store" })
-      .then((r) => r.json())
+    fetchHealthStatus()
       .then(handleHealth)
       .catch(() => {});
   }, []);
@@ -117,38 +112,54 @@ export function RestartOverlay({ connected, addHandler }: Props) {
             setPhase("restarting");
           }
         } else if (msg.type === "hello") {
-          // Adopt the attribution BEFORE the bootId compare fires the
-          // "restarted" toast so the toast can name the culprit — setState
-          // is async, so write the ref directly too.
-          if (msg.restartBy) {
-            restartByRef.current = msg.restartBy;
-            setRestartBy(msg.restartBy);
-          }
+          if (msg.restartBy) setRestartBy(msg.restartBy);
           handleBootId(msg.bootId);
         }
       }),
     [addHandler]
   );
 
-  // Disconnect tracking: after a short grace, show the calm reconnecting pill.
-  // On reconnect, clear it and settle the blip-vs-restart question via bootId
-  // (hello handles new servers; one health fetch covers old ones).
+  // Disconnect tracking: after a foreground grace, show the calm reconnecting
+  // pill. Backgrounding a PWA routinely kills its socket, so hiding the page
+  // cancels the grace and reopening starts it again instead of flashing stale
+  // connection state. On reconnect, clear the pill and settle the
+  // blip-vs-restart question via bootId (hello handles new servers; one health
+  // fetch covers old ones).
   useEffect(() => {
     if (connected) {
       disconnectedAt.current = null;
       if (phaseRef.current === "reconnecting") {
         setPhase(explicit.current ? "restarting" : "ok");
-        fetch(HEALTH_URL, { cache: "no-store" })
-          .then((r) => r.json())
+        fetchHealthStatus()
           .then(handleHealth)
           .catch(() => {});
       }
       return;
     }
-    if (phase !== "ok" && phase !== "restarting") return;
-    disconnectedAt.current ??= Date.now();
-    const t = setTimeout(() => setPhase("reconnecting"), phase === "restarting" ? 0 : PILL_DELAY_MS);
-    return () => clearTimeout(t);
+    if (disconnectedAt.current === null) disconnectedAt.current = Date.now();
+    if (phase === "crashed") return;
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+      if (document.visibilityState === "hidden") {
+        if (phaseRef.current === "reconnecting" && !explicit.current) setPhase("ok");
+        return;
+      }
+      if (phaseRef.current !== "ok" && phaseRef.current !== "restarting") return;
+      const delay = phaseRef.current === "restarting" ? 0 : PILL_DELAY_MS;
+      timer = setTimeout(() => {
+        if (document.visibilityState !== "hidden") setPhase("reconnecting");
+      }, delay);
+    };
+
+    schedule();
+    document.addEventListener("visibilitychange", schedule);
+    return () => {
+      if (timer !== undefined) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", schedule);
+    };
   }, [connected, phase]);
 
   // Escalation: still disconnected after a while AND health unreachable →
@@ -160,15 +171,14 @@ export function RestartOverlay({ connected, addHandler }: Props) {
     const iv = setInterval(async () => {
       const started = disconnectedAt.current ?? Date.now();
       if (Date.now() - started < ESCALATE_AFTER_MS) return;
-      try {
-        const r = await fetch(HEALTH_URL, { cache: "no-store" });
-        if (!r.ok) throw new Error(String(r.status));
-      } catch {
-        if (!cancelled) {
+      await (async () => {
+await fetchHealthStatus();
+})().catch(async () => {
+if (!cancelled) {
           sawDown.current = true;
           setPhase("crashed");
         }
-      }
+});
     }, 3000);
     return () => {
       cancelled = true;
@@ -187,10 +197,12 @@ export function RestartOverlay({ connected, addHandler }: Props) {
         resolveRestart();
         return;
       }
-      try {
-        const d = await fetch(HEALTH_URL, { cache: "no-store" }).then((r) => r.json());
+      await (async () => {
+const d = await fetchHealthStatus();
         if (!cancelled) handleHealth(d);
-      } catch {}
+})().catch(async () => {
+
+});
     }, 1500);
     return () => {
       cancelled = true;
@@ -203,13 +215,15 @@ export function RestartOverlay({ connected, addHandler }: Props) {
     if (phase !== "crashed") return;
     let cancelled = false;
     const iv = setInterval(async () => {
-      try {
-        await fetch(HEALTH_URL, { cache: "no-store" }).then((r) => r.json());
+      await (async () => {
+await fetchHealthStatus();
         if (!cancelled) {
           setBackOnline(true);
           setTimeout(() => location.reload(), 700);
         }
-      } catch {}
+})().catch(async () => {
+
+});
     }, 1500);
     return () => {
       cancelled = true;
@@ -217,31 +231,23 @@ export function RestartOverlay({ connected, addHandler }: Props) {
     };
   }, [phase]);
 
-  if (phase === "reconnecting" || phase === "restarting") {
+  // Connection recovery uses the regular toast lane above the composer. Unlike
+  // a receipt, this status has no expiry line and stays until recovery settles.
+  useEffect(() => {
+    if (phase !== "reconnecting" && phase !== "restarting") return;
     const restarting = phase === "restarting" || explicit.current;
-    return (
-      <FloatingStatus
-        // Same floating-surface vocabulary as the scroll-to-bottom pill and the
-        // toast this hands off to: glass fill, no border, hairline from the
-        // shadow ring — so the restart sequence doesn't change materials
-        // halfway through. The `sm` tier is the compact-control one the scroll
-        // pill uses; `md` is calibrated for a menu and reads as a grey halo on
-        // a surface this small.
-        className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom,0px)+14px)] left-1/2 z-[200] -translate-x-1/2"
-        role="status"
-        aria-live="polite"
-      >
-        <span
-          aria-hidden
-          className="size-3 shrink-0 animate-spin rounded-full border border-current/25 border-t-current text-accent"
-        />
-        <span>{restarting ? `${PRODUCT_NAME} is restarting` : "Connection lost"}</span>
-        <span className="text-faint">
-          {restarting && restartBy ? restartBy : "Retrying"}
-        </span>
-      </FloatingStatus>
+    const id = toast(
+      restarting
+        ? `Restarting${restartBy ? ` · ${restartBy}` : ""}`
+        : "Connection lost · Retrying",
+      { ongoing: true },
     );
-  }
+    statusToast.current = id;
+    return () => {
+      dismissToast(id);
+      if (statusToast.current === id) statusToast.current = null;
+    };
+  }, [phase, restartBy]);
 
   if (phase !== "crashed") return null;
 

@@ -1,5 +1,5 @@
 import { repoLabel } from "../lib/repo-label";
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PRODUCT_NAME, docTitle } from "../lib/brand";
 import { fetchAnalytics } from "../lib/api";
 import type { AnalyticsPerson, AnalyticsPersonRepo, AnalyticsSummary } from "../lib/types";
@@ -9,6 +9,7 @@ import { Button } from "../ui/button";
 import { Segmented, SegmentedOption } from "../ui/segmented";
 import { DateRangeField } from "../ui/date-picker";
 import { PageTitle } from "../ui/page-header";
+import { TopBar, TopBarActions, TopBarTitle } from "../ui/top-bar";
 import { cn } from "../ui/cn";
 import {
 	DETAIL_TOPBAR_TITLE_TEXT,
@@ -530,15 +531,23 @@ function PersonRepoBars({
 	// together would clear the segment on the next pixel of travel.
 	const [segment, setSegment] = useState<string | null>(null);
 	// The readout is placed against its own size, which changes with the
-	// number of repos in the row. Measured after layout, before paint.
+	// number of repos in the row. Measure while it is mounted; the observer also
+	// catches content changes as the pointer moves between rows.
 	const [tip, setTip] = useState({ w: 0, h: 0 });
+	const open = hover !== null;
 	useLayoutEffect(() => {
 		const el = tipRef.current;
-		if (!el) return;
-		const w = el.offsetWidth;
-		const h = el.offsetHeight;
-		setTip((cur) => (cur.w === w && cur.h === h ? cur : { w, h }));
-	});
+		if (!open || !el) return;
+		const measure = () => {
+			const w = el.offsetWidth;
+			const h = el.offsetHeight;
+			setTip((cur) => (cur.w === w && cur.h === h ? cur : { w, h }));
+		};
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(el);
+		return () => observer.disconnect();
+	}, [open]);
 
 	const show = (index: number, e: React.MouseEvent<HTMLDivElement>) => {
 		const wrap = wrapRef.current;
@@ -559,7 +568,6 @@ function PersonRepoBars({
 	};
 	// A tap has no way out of its own accord: there is no pointer to leave the
 	// row with, so the next touch anywhere else is what closes the readout.
-	const open = hover !== null;
 	useEffect(() => {
 		if (!open) return;
 		const onDown = (e: PointerEvent) => {
@@ -749,7 +757,7 @@ export function Analytics() {
 		};
 	}, [from, to]);
 
-	const derived = useMemo(() => {
+	const derived = (() => {
 		if (!data) return null;
 		const labels = data.days.map((d) => d.date);
 
@@ -885,7 +893,7 @@ export function Analytics() {
 		const splitDate = labels[Math.floor(labels.length / 2)] || "";
 
 		return { labels, engineLabels, unmeasuredDays, kindSeries, kindValues, modelSeries, modelValues, tokenSeries, tokenValues, totalTokens, costSeries, costValues, costUsd, requests, hasCost, prSeries, prValues, turnSeries, turnValues, factorySeries, factoryValues, rq, reviewSeries, reviewValues, splitDate, repoColor, coloredRepos };
-	}, [data]);
+	})();
 
 	// The per-person bars: rebuilt per metric and per filter rather than held
 	// in `derived`, so switching either does not rebuild every other chart.
@@ -929,7 +937,8 @@ export function Analytics() {
 			    The fill is the page's own, so there is no seam to draw at rest;
 			    SCROLL_EDGE_DIVIDER grows the hairline once something is actually
 			    passing underneath. */}
-			<header
+			<TopBar
+				as="header"
 				ref={setBarEl}
 				className={cn(
 					"wco-chrome flex h-[var(--desktop-header-h)] shrink-0 items-center",
@@ -946,7 +955,7 @@ export function Analytics() {
 				    was a small copy of the word stacked 60px above the real one, which
 				    read as a mistake rather than as chrome. */}
 				<div className="mx-auto flex w-full max-w-[1080px] flex-wrap items-center justify-between gap-3 px-4 md:px-6">
-					<span
+					<TopBarTitle
 						className={cn(
 							"text-item-title font-semibold text-fg",
 							DETAIL_TOPBAR_TITLE_TEXT,
@@ -954,23 +963,25 @@ export function Analytics() {
 						data-shown={titleHandedOver || undefined}
 					>
 						Analytics
-					</span>
+					</TopBarTitle>
 					{/* The presets and the span are one control: they set one value
 					    between them, and it carries the chrome tier the rest of the bar
 					    is on rather than a plate per end. */}
-					<DateRangeField
-						label="Date range"
+					<TopBarActions>
+						<DateRangeField
+							label="Date range"
 						from={from}
 						to={to}
 						max={utcToday()}
 						presets={PRESETS}
-						onRangeChange={(start, end) => {
-							setFrom(start);
-							setTo(end);
-						}}
-					/>
+							onRangeChange={(start, end) => {
+								setFrom(start);
+								setTo(end);
+							}}
+						/>
+					</TopBarActions>
 				</div>
-			</header>
+			</TopBar>
 
 			<div className="analytics-scroll min-h-0 flex-1 overflow-y-auto">
 				{/* No top padding: every block in here opens with its own `mt-4`,
@@ -1052,7 +1063,7 @@ export function Analytics() {
 							</div>
 
 							{derived.unmeasuredDays > 0 && (
-								<p className="m-0 mt-2 text-meta text-faint">
+								<p className="m-0 mt-2 text-supporting text-faint">
 									Tokens and cost cover {shortDate(derived.engineLabels[0])} onwards. The engine keeps about a month of message
 									history, so the earlier {derived.unmeasuredDays === 1 ? "day" : `${derived.unmeasuredDays} days`} of
 									this range have no data left to read. Everything else on this page covers the full range.
@@ -1087,7 +1098,7 @@ export function Analytics() {
 											formatValue={fmtUsd}
 											formatTick={fmtUsdTick}
 										/>
-										<p className="m-0 mt-2 text-meta text-faint">
+										<p className="m-0 mt-2 text-supporting text-faint">
 											What this traffic would have cost on the API, not what was paid: every model runs on a
 											subscription pool. Counted per model request, so tool calls and sub-agents are included.
 										</p>
@@ -1195,7 +1206,7 @@ export function Analytics() {
 													})()}
 												</tbody>
 											</table>
-											<p className="m-0 mt-2 text-meta text-faint">
+											<p className="m-0 mt-2 text-supporting text-faint">
 												Addressed = author acted on the finding · pushback = author explicitly rejected it · reviews-run
 												metrics collect from Jul 28 on. High addressed rate + low pushback/missed bugs = healthier reviews.
 											</p>
@@ -1244,7 +1255,7 @@ export function Analytics() {
 										</table>
 									</div>
 									{(data.totals.unpricedRequests ?? 0) > 0 && (
-										<p className="m-0 mt-2 text-meta text-faint">
+										<p className="m-0 mt-2 text-supporting text-faint">
 											A dash means the model carries no catalog price, so its requests are left out of the total.
 										</p>
 									)}
@@ -1284,7 +1295,7 @@ export function Analytics() {
 											</tbody>
 										</table>
 									</div>
-									<p className="m-0 mt-2 text-meta text-faint">
+									<p className="m-0 mt-2 text-supporting text-faint">
 										Opened/Merged = {PRODUCT_NAME} PRs / all PRs in range · share = {PRODUCT_NAME}'s cut of merges.
 									</p>
 								</ChartCard>

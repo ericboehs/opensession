@@ -8,7 +8,7 @@
  *
  * The overlay is the default way in: an artifact is something you glance at
  * mid-conversation, and an overlay costs nothing to dismiss. The Assets tab
- * stays for when you mean to sit with it — "Open as tab" in the header is the
+ * stays for when you mean to sit with it — Open in the action bar is the
  * promotion, and the way into the folder around the file.
  */
 
@@ -55,6 +55,8 @@ import {
 	IconChevronRight,
 	IconCopy,
 	IconDotsHorizontal,
+	IconLink,
+	IconMessage,
 	IconTrash,
 	IconX,
 } from "./icons";
@@ -91,7 +93,10 @@ function AssetPager({
 						size="sm"
 						icon={<IconChevronLeft size={16} />}
 						aria-label="Previous asset"
-						className="size-9"
+						className={cn(
+							"size-9",
+							onDark && "text-white/60 hover:bg-white/15 hover:text-white",
+						)}
 						onClick={onPrevious}
 					/>
 				</Tooltip>
@@ -144,7 +149,10 @@ function AssetPager({
 						size="sm"
 						icon={<IconChevronRight size={16} />}
 						aria-label="Next asset"
-						className="size-9"
+						className={cn(
+							"size-9",
+							onDark && "text-white/60 hover:bg-white/15 hover:text-white",
+						)}
 						onClick={onNext}
 					/>
 				</Tooltip>
@@ -190,11 +198,19 @@ function AssetMenu({
 	file,
 	refresh,
 	onClose,
+	phone = false,
+	deleteOnly = false,
+	bar = false,
 }: {
 	sessionId: string;
 	file: SessionAssetFile;
 	refresh?: () => void;
 	onClose?: () => void;
+	phone?: boolean;
+	/** The overlay exposes its safe actions directly and keeps only Delete here. */
+	deleteOnly?: boolean;
+	/** Match the overlay's centered action-bar controls. */
+	bar?: boolean;
 }) {
 	const rawUrl = sessionAssetPreviewUrl(sessionId, file);
 	const stableUrl = sessionAssetRawUrl(sessionId, file.path);
@@ -202,66 +218,82 @@ function AssetMenu({
 	const name = file.path.split("/").pop() || "asset";
 
 	async function onDownload() {
-		try {
-			await saveFileWithNativeShare(sessionAssetDownloadUrl(sessionId, file), name);
-		} catch (error) {
-			if (!nativeShareWasCancelled(error)) toast("Could not save that file");
-		}
+		await (async () => {
+await saveFileWithNativeShare(sessionAssetDownloadUrl(sessionId, file), name);
+})().catch(async (error) => {
+if (!nativeShareWasCancelled(error)) toast("Could not save that file");
+});
 	}
 
 	async function onOpen() {
-		try {
-			await shareURL(rawUrl);
-		} catch (error) {
-			if (!nativeShareWasCancelled(error)) toast("Could not share that link");
-		}
+		await (async () => {
+await shareURL(rawUrl);
+})().catch(async (error) => {
+if (!nativeShareWasCancelled(error)) toast("Could not share that link");
+});
 	}
 
 	async function onDelete() {
 		if (!confirm(`Delete ${file.path}?`)) return;
-		try {
-			await deleteSessionAssetApi(sessionId, file.path);
+		await (async () => {
+await deleteSessionAssetApi(sessionId, file.path);
 			refresh?.();
 			onClose?.();
-		} catch {
-			toast("Could not delete that file");
-		}
+})().catch(async () => {
+toast("Could not delete that file");
+});
 	}
 
 	return (
 		<Menu.Root>
 			<Menu.Trigger
-				aria-label="Asset actions"
-				className="flex size-7 shrink-0 items-center justify-center rounded-control border-0 bg-transparent text-dim hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg"
+				aria-label={deleteOnly ? "More asset actions" : "Asset actions"}
+				className={cn(
+					"flex shrink-0 items-center justify-center border-0",
+					bar
+						? cn(
+								"size-10 rounded-full bg-transparent transition-[transform,background-color,color] active:scale-[0.96] phone:size-11",
+								phone
+									? "text-white/55 hover:bg-white/10 hover:text-white/80 data-[popup-open]:bg-white/10 data-[popup-open]:text-white/80"
+									: "text-white/60 hover:bg-white/15 hover:text-white data-[popup-open]:bg-white/15 data-[popup-open]:text-white",
+							)
+						: phone
+							? "size-11 rounded-full bg-panel text-dim active:bg-pressed data-[popup-open]:bg-pressed data-[popup-open]:text-fg"
+							: "size-7 rounded-control bg-transparent text-dim hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg",
+				)}
 			>
-				<IconDotsHorizontal size={16} />
+				<IconDotsHorizontal size={phone ? 24 : 16} />
 			</Menu.Trigger>
 			<Menu.Popup align="end">
-				<Menu.Item
-					{...(nativeShare
-						? { onClick: onDownload }
-						: { render: <a href={sessionAssetDownloadUrl(sessionId, file)} /> })}
-				>
-					<IconArrowDown size={18} className="text-faint" />
-					Download
-				</Menu.Item>
-				<Menu.Item
-					{...(nativeShare
-						? { onClick: onOpen }
-						: { render: <a href={rawUrl} target="_blank" rel="noreferrer" /> })}
-				>
-					<IconArrowUpRight size={18} className="text-faint" />
-					{nativeShare ? "Open or share" : "Open in a browser tab"}
-				</Menu.Item>
-				<Menu.Item
-					onClick={() =>
-						copyToClipboard(absoluteLink(stableUrl), () => toast("Link copied"))
-					}
-				>
-					<IconCopy size={18} className="text-faint" />
-					Copy link
-				</Menu.Item>
-				<Menu.Separator />
+				{!deleteOnly && (
+					<>
+						<Menu.Item
+							{...(nativeShare
+								? { onClick: onDownload }
+								: { render: <a href={sessionAssetDownloadUrl(sessionId, file)} /> })}
+						>
+							<IconArrowDown size={18} className="text-faint" />
+							Download
+						</Menu.Item>
+						<Menu.Item
+							{...(nativeShare
+								? { onClick: onOpen }
+								: { render: <a href={rawUrl} target="_blank" rel="noreferrer" /> })}
+						>
+							<IconArrowUpRight size={18} className="text-faint" />
+							{nativeShare ? "Open or share" : "Open in a browser tab"}
+						</Menu.Item>
+						<Menu.Item
+							onClick={() =>
+								copyToClipboard(absoluteLink(stableUrl), () => toast("Link copied"))
+							}
+						>
+							<IconCopy size={18} className="text-faint" />
+							Copy link
+						</Menu.Item>
+						<Menu.Separator />
+					</>
+				)}
 				<Menu.Item onClick={onDelete} className="text-red">
 					<IconTrash size={18} />
 					Delete
@@ -271,47 +303,223 @@ function AssetMenu({
 	);
 }
 
+/** Safe file actions stay visible in the overlay, matching the media
+ * lightbox. Delete remains behind More so a destructive action never reads as
+ * a peer of Comment, Download, Copy link, and Open. */
+function AssetOverlayActionBar({
+	sessionId,
+	file,
+	refresh,
+	onClose,
+	onOpenAsTab,
+	phone,
+}: {
+	sessionId: string;
+	file: SessionAssetFile;
+	refresh: () => void;
+	onClose: () => void;
+	onOpenAsTab?: () => void;
+	phone: boolean;
+}) {
+	const rawUrl = sessionAssetPreviewUrl(sessionId, file);
+	const stableUrl = sessionAssetRawUrl(sessionId, file.path);
+	const downloadUrl = sessionAssetDownloadUrl(sessionId, file);
+	const nativeShare = canUseNativeIOSShare();
+	const name = file.path.split("/").pop() || "asset";
+	const commentable = assetPreviewKind(file.path) === "image";
+	const actionClass = cn(
+		"shrink-0 cursor-pointer",
+		phone &&
+			"size-11 rounded-full px-0 text-xs text-white/55 hover:bg-white/10 hover:text-white/80",
+	);
+	const actionSize: "sm" | "md" = phone ? "sm" : "md";
+	const actionLabel = (label: string) => (phone ? null : label);
+
+	async function download() {
+		await (async () => {
+await saveFileWithNativeShare(downloadUrl, name);
+})().catch(async (error) => {
+if (!nativeShareWasCancelled(error)) toast("Could not save that file");
+});
+	}
+
+	async function open() {
+		await (async () => {
+await shareURL(rawUrl);
+})().catch(async (error) => {
+if (!nativeShareWasCancelled(error)) toast("Could not share that link");
+});
+	}
+
+	return (
+		<div
+			role="group"
+			aria-label="Asset actions"
+			className={cn(
+				"flex items-center justify-center gap-1",
+				phone &&
+					"rounded-full bg-white/10 p-1 ring-1 ring-white/10 backdrop-blur-xl",
+			)}
+		>
+			{commentable && (
+				<Button
+					variant="overlay"
+					size={actionSize}
+					icon={<IconMessage size={phone ? 24 : 20} />}
+					className={actionClass}
+					aria-label={phone ? "Comment" : undefined}
+					onClick={() =>
+						openLightbox(
+							[
+								{
+									kind: "image",
+									src: rawUrl,
+									sessionTitle: file.path,
+									description: file.description,
+									commentSessionId: sessionId,
+								},
+							],
+							0,
+							null,
+							{ startCommenting: true },
+						)
+					}
+				>
+					{actionLabel("Comment")}
+				</Button>
+			)}
+			{nativeShare ? (
+				<Button
+					variant="overlay"
+					size={actionSize}
+					icon={<IconArrowDown size={phone ? 24 : 20} />}
+					className={actionClass}
+					aria-label={phone ? "Download" : undefined}
+					onClick={download}
+				>
+					{actionLabel("Download")}
+				</Button>
+			) : (
+				<Button
+					variant="overlay"
+					size={actionSize}
+					icon={<IconArrowDown size={phone ? 24 : 20} />}
+					className={actionClass}
+					aria-label={phone ? "Download" : undefined}
+					render={<a href={downloadUrl} />}
+				>
+					{actionLabel("Download")}
+				</Button>
+			)}
+			<Button
+				variant="overlay"
+				size={actionSize}
+				icon={<IconLink size={phone ? 24 : 20} />}
+				className={actionClass}
+				aria-label={phone ? "Copy link" : undefined}
+				onClick={() =>
+					copyToClipboard(absoluteLink(stableUrl), () => toast("Link copied"))
+				}
+			>
+				{actionLabel("Copy link")}
+			</Button>
+			{onOpenAsTab ? (
+				<Button
+					variant="overlay"
+					size={actionSize}
+					icon={<IconArrowUpRight size={phone ? 24 : 20} />}
+					className={actionClass}
+					aria-label={phone ? "Open" : undefined}
+					onClick={onOpenAsTab}
+				>
+					{actionLabel("Open")}
+				</Button>
+			) : nativeShare ? (
+				<Button
+					variant="overlay"
+					size={actionSize}
+					icon={<IconArrowUpRight size={phone ? 24 : 20} />}
+					className={actionClass}
+					aria-label={phone ? "Open or share" : undefined}
+					onClick={open}
+				>
+					{actionLabel("Open or share")}
+				</Button>
+			) : (
+				<Button
+					variant="overlay"
+					size={actionSize}
+					icon={<IconArrowUpRight size={phone ? 24 : 20} />}
+					className={actionClass}
+					aria-label={phone ? "Open" : undefined}
+					render={<a href={rawUrl} target="_blank" rel="noreferrer" />}
+				>
+					{actionLabel("Open")}
+				</Button>
+			)}
+			<AssetMenu
+				sessionId={sessionId}
+				file={file}
+				refresh={refresh}
+				onClose={onClose}
+				phone={phone}
+				deleteOnly
+				bar
+			/>
+		</div>
+	);
+}
+
 /**
  * What you are looking at, under the file — name, then description, then the
  * pager. The same stack the media lightbox puts under a picture, because an
  * asset and a screenshot are the same gesture: glance at one thing lifted over
- * the conversation. Actions stay up top with Close, so nothing down here reads
- * as a control.
+ * the conversation. Actions stay in their own toolbar, so this stack remains
+ * a description rather than another row of controls.
  */
 function AssetOverlayFooter({
 	file,
 	navigation,
 	phone,
+	showSize,
 }: {
 	file: SessionAssetFile;
 	navigation: AssetNavigation | null;
 	phone: boolean;
+	showSize: boolean;
 }) {
 	const name = file.path.split("/").pop() || file.path;
 	return (
 		<div
 			className={cn(
 				"z-20 flex shrink-0 flex-col items-center gap-1 px-3 py-2",
-				phone
-					? "border-t border-line"
-					: "absolute left-0 right-0 top-full mt-2",
+				!phone && "absolute left-0 right-0 top-full mt-2",
 			)}
 		>
 			<div className="flex max-w-full flex-col items-center gap-0.5 text-center">
-				<div
-					className={cn(
-						"max-w-full truncate font-medium",
-						phone ? "text-label text-fg" : "text-sm text-white",
+				<div className="flex max-w-full items-center justify-center gap-2">
+					<div
+						className={cn(
+							"max-w-full truncate font-medium text-white",
+							phone ? "text-label" : "text-sm",
+						)}
+						title={file.path}
+					>
+						{name}
+					</div>
+					{showSize && (
+						<span
+							className="shrink-0 text-meta text-white/55"
+						>
+							{formatAssetSize(file.size)}
+						</span>
 					)}
-					title={file.path}
-				>
-					{name}
 				</div>
 				{file.description && (
 					<div
 						className={cn(
-							"max-w-[min(720px,90vw)] line-clamp-2 leading-snug",
-							phone ? "text-supporting text-dim" : "text-sm text-white/75",
+							"max-w-[min(720px,90vw)] line-clamp-2 leading-snug text-white/75",
+							phone ? "text-supporting" : "text-sm",
 						)}
 					>
 						{file.description}
@@ -320,7 +528,7 @@ function AssetOverlayFooter({
 			</div>
 			<div className="flex max-w-full items-center justify-center gap-2">
 				{navigation && (
-					<AssetPager navigation={navigation} arrows={phone} onDark={!phone} />
+					<AssetPager navigation={navigation} arrows={phone} onDark />
 				)}
 			</div>
 		</div>
@@ -666,6 +874,8 @@ export function AssetOverlay({
 	if (!shown) return null;
 	const file = assetFileFor(shown, files);
 	const name = file.path.split("/").pop() || file.path;
+	const kind = assetPreviewKind(file.path);
+	const visual = kind === "image" || kind === "video";
 	const listed = files.some((candidate) => candidate.path === shown);
 	const listedIndex = files.findIndex((candidate) => candidate.path === shown);
 	const navigate = (direction: -1 | 1) => {
@@ -694,6 +904,17 @@ export function AssetOverlay({
 			file={file}
 			navigation={navigation}
 			phone={isPhone}
+			showSize={listed}
+		/>
+	);
+	const actions = (
+		<AssetOverlayActionBar
+			sessionId={sessionId}
+			file={file}
+			refresh={refresh}
+			onClose={onClose}
+			onOpenAsTab={onOpenAsTab ? () => onOpenAsTab(file.path) : undefined}
+			phone={isPhone}
 		/>
 	);
 
@@ -703,49 +924,34 @@ export function AssetOverlay({
 			onClose={onClose}
 			phone={isPhone}
 			label={`Preview ${name}`}
-			// The default modal is a 30rem confirm box; an artifact needs the
-			// room a page or a chart was drawn for. `max-w-none` first, or the
-			// default clamp wins.
-			modalClassName="h-[min(820px,78vh)] w-[min(1120px,84vw)] max-w-none overflow-visible"
-			sheetClassName="h-[94dvh]"
-			backdropClassName={!isPhone ? "bg-black/65" : undefined}
+			// Assets float directly on the scrim, like transcript media. Files
+			// that need a page surface bring their own inside the stage below.
+			modalClassName="h-[min(820px,78vh)] w-[min(1120px,84vw)] max-w-none overflow-visible bg-transparent [box-shadow:none]!"
+			sheetClassName="top-0 h-[100dvh] max-h-none bg-black [border-radius:0]! [box-shadow:none]!"
+			backdropClassName="bg-black/85"
+			showPhoneGrabber={false}
 		>
 			<div
 				className={cn(
 					"flex min-h-0 flex-1 flex-col overflow-hidden",
-					!isPhone && "rounded-[inherit]",
+					isPhone && "bg-black",
 				)}
 			>
-				{/* Actions only: the file's name reads under it, in the footer. */}
+				{/* Desktop keeps the centered action bar above the asset. Phones put
+				    the same controls at the bottom, beside the caption and pager. */}
+				{!isPhone && (
+					<div className="flex min-h-10 shrink-0 items-center justify-center px-12 pb-2">
+						{actions}
+					</div>
+				)}
 				<div
-					className="flex min-h-10 shrink-0 items-center justify-end gap-1 px-3 pr-12"
+					className={cn(
+						"relative flex min-h-0 flex-1",
+						!visual && "m-3 overflow-hidden rounded-xl bg-surface text-fg",
+					)}
 				>
-					{listed && (
-						<span className="shrink-0 text-meta text-faint">
-							{formatAssetSize(file.size)}
-						</span>
-					)}
-					{onOpenAsTab && (
-						<Button
-							variant="ghost"
-							size="sm"
-							icon={<IconArrowUpRight size={15} />}
-							className="shrink-0"
-							onClick={() => onOpenAsTab(file.path)}
-						>
-							Open
-						</Button>
-					)}
-					<AssetMenu
-						sessionId={sessionId}
-						file={file}
-						refresh={refresh}
-						onClose={onClose}
-					/>
-				</div>
-				<div className="relative flex min-h-0 flex-1">
 					{missingPath === file.path ? (
-						<div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-label text-faint">
+						<div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-label text-white/60">
 							This file is no longer available.
 						</div>
 					) : (
@@ -761,18 +967,34 @@ export function AssetOverlay({
 					)}
 				</div>
 				{isPhone && footer}
+				{isPhone && (
+					<div className="flex shrink-0 items-center justify-center px-5 pt-2 pb-4">
+						{actions}
+					</div>
+				)}
 			</div>
 			{!isPhone && footer}
-			<Tooltip label="Close">
-				<Button
-					variant="ghost"
-					size="md"
-					icon={<IconX size={18} />}
+			{isPhone ? (
+				<button
+					type="button"
 					aria-label="Close"
-					className="absolute right-2 top-2 z-20 size-8"
+					className="absolute right-3 top-3 z-20 grid size-11 place-items-center rounded-full border-0 bg-white/15 text-white backdrop-blur-xl transition-[transform,background-color] active:scale-[0.96] hover:bg-white/20"
 					onClick={onClose}
-				/>
-			</Tooltip>
+				>
+					<IconX size={24} />
+				</button>
+			) : (
+				<Tooltip label="Close">
+					<button
+						type="button"
+						aria-label="Close"
+						className="absolute right-0 top-0 z-20 grid size-10 place-items-center rounded-full border-0 bg-white/15 text-white backdrop-blur-xl transition-[transform,background-color] active:scale-[0.96] hover:bg-white/20"
+						onClick={onClose}
+					>
+						<IconX size={20} />
+					</button>
+				</Tooltip>
+			)}
 			{!isPhone && navigation && (
 				<>
 					<AssetSideButton direction="previous" onClick={navigation.onPrevious} />

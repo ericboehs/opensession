@@ -2,10 +2,9 @@ import Foundation
 
 /// How full a subscription account is, and when it frees up.
 ///
-/// The web reads this on its own page (Settings → Usage, and
-/// `src/frontend/lib/account-usage.ts`) because the meters move hourly while
-/// everything else about an account is set once. The reading rules below are a
-/// port of that file: an account reports three or four limits, any of them can
+/// The web shows this in Settings → Providers beside the model defaults.
+/// `src/frontend/lib/account-usage.ts` defines the same reading rules. An
+/// account reports three or four limits, any of them can
 /// be the one that stops a run, and they free up at different times, so a row
 /// draws them all.
 struct UsageWindow: Codable, Sendable, Equatable {

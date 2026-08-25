@@ -205,7 +205,10 @@ final class SessionsListViewModel {
                 // fallback, for a workspace this client has no name for.
                 let workspace = session.workspaceName ?? ""
                 let title = workspace.isEmpty ? session.displayTitle : workspace
-                if !title.isEmpty { titles[session.id] = title }
+                if !title.isEmpty {
+                    titles[session.id] = title
+                    for aliasId in session.aliasIds ?? [] { titles[aliasId] = title }
+                }
             }
             return (
                 sidebarRows(
@@ -482,10 +485,10 @@ final class SessionsListViewModel {
     }
 
     /// Workspace rows split into the web sidebar's Inbox bands. The bands are
-    /// exclusive, with priority needs-action > done > live-or-today >
-    /// yesterday > earlier, and every band ranks by last activity —
-    /// deliberately ignoring the "Created" sort, since an inbox orders by what
-    /// moved last. Empty bands are dropped.
+    /// exclusive, with priority needs-action > live-or-today > yesterday >
+    /// earlier, and every band ranks by last activity — deliberately ignoring
+    /// the "Created" sort, since an inbox orders by what moved last. Empty
+    /// bands are dropped.
     nonisolated static func inboxBands(
         _ workspaces: [SidebarWorkspace],
         mentionedSessionIds: Set<String> = [],
@@ -504,11 +507,6 @@ final class SessionsListViewModel {
             if workspace.lane == .needsInput
                 || workspace.sessions.contains(where: { mentionedSessionIds.contains($0.id) }) {
                 band = .needsAction
-            } else if workspace.lane == .done {
-                // Landed work leaves the day bands and settles at the bottom,
-                // the way the status lanes end on Done. A row that merged an
-                // hour ago is finished, not recent.
-                band = .done
             } else if workspace.isRunning || date >= dayStart {
                 // A live row is recent whatever its day — work in flight is
                 // recent by definition — but ranks by activity like the rest.
@@ -1093,7 +1091,7 @@ enum SessionHistoryPlacement: Equatable {
 /// The web sidebar's Inbox bands: an email-style split of the rows by when
 /// they last moved, with "blocked on you" lifted out in front.
 enum InboxBand: String, CaseIterable {
-    case needsAction, recent, yesterday, earlier, done
+    case needsAction, recent, yesterday, earlier
 
     var label: String {
         switch self {
@@ -1101,7 +1099,6 @@ enum InboxBand: String, CaseIterable {
         case .recent: "Recent"
         case .yesterday: "Yesterday"
         case .earlier: "Earlier"
-        case .done: "Done"
         }
     }
 }

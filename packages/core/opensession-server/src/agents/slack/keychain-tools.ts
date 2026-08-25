@@ -73,7 +73,7 @@ export function createKeychainMcpServer(ctx: KeychainToolContext) {
         purpose: z
           .string()
           .describe(
-            "What you need it for, one specific sentence the owner can judge — e.g. 'read the tella-fusion project's latest deployment status to diagnose the failing preview'."
+            "What you need it for, one specific sentence the owner can judge — e.g. 'read the project's latest deployment status to diagnose the failing preview'."
           ),
         mode: z
           .enum(["once", "standing"])

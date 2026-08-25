@@ -1,3 +1,4 @@
+import type { MapDelta } from "../user-map";
 import { request } from "./request";
 
 // ── Pins (per-user pinned tabs) ──
@@ -137,6 +138,10 @@ export async function saveUiPrefsApi(
 	return body?.prefs && typeof body.prefs === "object" ? body.prefs : {};
 }
 
+// ── The per-user maps (lanes, snoozes, hides, tab colors) ──
+// Writes send only what changed. A whole-map PUT from a client whose cache
+// predates another device's write deleted that write; see lib/user-map.ts.
+
 // ── Lanes (per-user sidebar status lanes) ──
 
 export async function fetchLanes(
@@ -151,14 +156,14 @@ export async function fetchLanes(
 
 export async function saveLanesApi(
 	user: string,
-	lanes: Record<string, string>,
+	delta: MapDelta<string>,
 ): Promise<Record<string, string>> {
 	const body = await request<{ lanes?: Record<string, string> }>("/lanes", {
 		method: "PUT",
-		body: { user, lanes },
+		body: { user, ...delta },
 		label: "Failed to save lanes",
 	});
-	return body?.lanes && typeof body.lanes === "object" ? body.lanes : lanes;
+	return body?.lanes && typeof body.lanes === "object" ? body.lanes : {};
 }
 
 // ── Snoozes (per-user workspace snoozes) ──
@@ -175,15 +180,19 @@ export async function fetchSnoozes(
 
 export async function saveSnoozesApi(
 	user: string,
-	snoozes: Record<string, string>,
+	delta: MapDelta<string>,
 ): Promise<Record<string, string>> {
 	const body = await request<{ snoozes?: Record<string, string> }>(
 		"/snoozes",
-		{ method: "PUT", body: { user, snoozes }, label: "Failed to save snoozes" },
+		{
+			method: "PUT",
+			body: { user, ...delta },
+			label: "Failed to save snoozes",
+		},
 	);
 	return body?.snoozes && typeof body.snoozes === "object"
 		? body.snoozes
-		: snoozes;
+		: {};
 }
 
 // ── Hides (per-user sidebar hides) ──
@@ -200,14 +209,14 @@ export async function fetchHides(
 
 export async function saveHidesApi(
 	user: string,
-	hides: Record<string, string>,
+	delta: MapDelta<string>,
 ): Promise<Record<string, string>> {
 	const body = await request<{ hides?: Record<string, string> }>("/hides", {
 		method: "PUT",
-		body: { user, hides },
+		body: { user, ...delta },
 		label: "Failed to save hides",
 	});
-	return body?.hides && typeof body.hides === "object" ? body.hides : hides;
+	return body?.hides && typeof body.hides === "object" ? body.hides : {};
 }
 
 // ── Tab colors (per-user session tab colors) ──
@@ -224,11 +233,15 @@ export async function fetchTabColors(
 
 export async function saveTabColorsApi(
 	user: string,
-	colors: Record<string, string>,
+	delta: MapDelta<string>,
 ): Promise<Record<string, string>> {
 	const body = await request<{ colors?: Record<string, string> }>(
 		"/tab-colors",
-		{ method: "PUT", body: { user, colors }, label: "Failed to save tab colors" },
+		{
+			method: "PUT",
+			body: { user, ...delta },
+			label: "Failed to save tab colors",
+		},
 	);
-	return body?.colors && typeof body.colors === "object" ? body.colors : colors;
+	return body?.colors && typeof body.colors === "object" ? body.colors : {};
 }

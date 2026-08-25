@@ -4,7 +4,7 @@
  * The bar is a single `<header>` in App.tsx that wears three different faces:
  * `display:none` on desktop (the brand and user controls live in the sidebar
  * there), a solid band in flow on ordinary pushed routes, and a fixed
- * transparent overlay on the two routes that scroll under it (home, a
+ * transparent overlay on the routes that scroll under it (home, Feed, and a
  * session). The faces are one element, so they migrate together: splitting
  * them would leave the overlay's `position:fixed` fighting the band's
  * `height` across two stylesheets.
@@ -62,9 +62,9 @@ const APP_HEADER_BASE =
 const APP_HEADER_DETAIL = "phone:bg-transparent";
 
 /**
- * Home and a session: the bar floats over the content instead of reserving a
- * band above it, so the list / the transcript fill the full height and scroll
- * UNDER the pills. Taps fall through the gaps between the pills to the content
+ * Home, Feed, and a session: the bar floats over the content instead of
+ * reserving a band above it, so the list / the transcript fill the full height
+ * and scroll UNDER the pills. Taps fall through the gaps between the pills to the content
  * underneath — `*:pointer-events-auto` hands them back to the pills themselves.
  *
  * `::before` is the scroll edge, and it is the reason this works at all: a blur
@@ -75,34 +75,30 @@ const APP_HEADER_DETAIL = "phone:bg-transparent";
  * the bar's own stacking context, so still above the page, but below the pills,
  * which are positioned siblings that would otherwise be washed out by it.
  *
- * When the docked tab strip is present the whole top block goes opaque instead:
- * a transparent header ghosting the transcript above a solid tab bar looks
- * broken. The header is a sibling of the pane, so that state is keyed off the
- * nearest common ancestor.
+ * When the docked tab strip is present, the scroll edge stops at the header so
+ * it cannot wash over the tab labels. The tabs carry their own glass material.
+ * The header is a sibling of the pane, so that state is keyed off the nearest
+ * common ancestor.
  *
- * Immersive reading: SessionViewer sets `body.chrome-collapsed` from the
- * transcript's scroll direction and the bar slides off-screen. A transform, so
- * the layout never reflows.
+ * SessionViewer can still collapse lower chat chrome while reading, but this
+ * navigation bar stays pinned so Back and its actions never scroll away.
  */
 const APP_HEADER_OVERLAY =
 	"app-header-overlay " +
 	"phone:fixed phone:inset-x-0 phone:top-0 phone:z-40 phone:bg-transparent " +
 	"phone:pointer-events-none phone:*:pointer-events-auto " +
-	"phone:[transition-property:transform] phone:duration-[var(--dur-lg)] " +
-	"phone:ease-[var(--ease)] " +
-	// Spelled as `transform` rather than `-translate-y-full`: that utility moves
-	// the bar with the `translate` property, which the transition above does not
-	// name — the bar would jump off-screen instead of sliding.
-	"phone:[body.chrome-collapsed_&]:[transform:translateY(-100%)] " +
-	"phone:[.app:has(.session-tab-view)_&]:bg-surface " +
-	"phone:[.app:has(.session-tab-view)_&]:min-h-[var(--header-h)] " +
-	"phone:[.app:has(.session-tab-reorder~.session-tab-reorder)_&]:bg-surface " +
-	"phone:[.app:has(.session-tab-reorder~.session-tab-reorder)_&]:min-h-[var(--header-h)] " +
 	"phone:before:absolute phone:before:inset-x-0 phone:before:top-0 " +
 	"phone:before:bottom-auto phone:before:z-[-1] phone:before:h-[calc(100%+30px)] " +
+	"phone:[.app:has(.session-tabs)_&]:before:h-full " +
 	"phone:before:pointer-events-none phone:before:content-[''] " +
-	"phone:before:[background:linear-gradient(to_bottom,var(--bg)_0%,var(--bg)_50%,color-mix(in_srgb,var(--bg)_70%,transparent)_75%,transparent_100%)] " +
-	"phone:before:backdrop-blur-[16px] " +
+	// The fade is thinned deliberately. It used to be SOLID `--bg` for its first
+	// half, which is exactly the band the controls sit in, so each control was
+	// backed by an opaque plate of the page colour and had nothing to be
+	// translucent against. Full strength survives only across the status-bar
+	// strip, where the clock has to stay legible; from there down the blur is
+	// what does the work, which is how an iOS scroll edge behaves.
+	"phone:before:[background:linear-gradient(to_bottom,var(--bg)_0%,color-mix(in_srgb,var(--bg)_55%,transparent)_52%,color-mix(in_srgb,var(--bg)_18%,transparent)_78%,transparent_100%)] " +
+	"phone:before:backdrop-blur-[20px] phone:before:backdrop-saturate-[1.4] " +
 	"phone:before:[-webkit-mask-image:linear-gradient(to_bottom,#000_0%,#000_62%,transparent_100%)] " +
 	"phone:before:[mask-image:linear-gradient(to_bottom,#000_0%,#000_62%,transparent_100%)]";
 
@@ -116,8 +112,8 @@ const APP_HEADER_OVERLAY =
  * answer for free, by source order. So the in-flow face and the floating face
  * each spell their own position, and the caller picks one.
  *
- * `detail` — a pushed page: no chrome band. `floating` — home or a session:
- * out of flow, over the scrolling content.
+ * `detail`: a pushed page with no chrome band. `floating`: home, Feed, or a
+ * session, out of flow over the scrolling content.
  */
 export function appHeader({
 	detail,
@@ -136,67 +132,54 @@ export function appHeader({
 }
 
 /** Leading slot: the brand on the root page, the Back bubble on a pushed one. */
-export const APP_HEADER_LEFT = "flex items-center gap-2";
+export const APP_HEADER_LEFT = "flex shrink-0 items-center gap-2";
 
 /**
- * Back control on a pushed page: a circular bubble carrying just the chevron,
- * no "Back" word — the same white floating surface and soft shadow as the
- * title pill and the actions beside it, so the whole bar reads as one set of
- * floating controls. The chevron is nudged a pixel left of dead-centre because
- * the glyph's mass leans right.
+ * What every floating control in this bar is made of: a thinned fill over a
+ * blur, so the page passing underneath tints it. This is the whole difference
+ * between an iOS toolbar item and a white pill sitting on a page, and it is one
+ * string rather than four copies because the four controls are one material:
+ * Back, the title pill, the grouped actions capsule, and the session header's
+ * ⋯ trigger (components/SessionViewer.tsx, which imports it).
  *
- * `rounded-full`, not `rounded-[999px]`: the rule spelled a bare
- * `border-radius: 50%` with no `corner-shape`, so this circle is a true circle
- * and must opt out of the app's squircle (see the `@supports` block in
- * base.css). Press feel is iOS: dim instantly on touch-down, ease back up.
+ * The `-webkit-` spelling is not legacy dressing: iOS Safari, and the installed
+ * PWA with it, still ships `backdrop-filter` only under the prefix, so dropping
+ * it turns the glass back into a flat wash on the exact client this is for.
+ * base.css collapses the fill back to an opaque `--bg` where the browser has no
+ * backdrop-filter at all, and for reduced transparency.
  */
-export const MOBILE_BACK =
-	"phone:m-0 phone:inline-flex phone:size-10 phone:items-center phone:justify-center " +
-	"phone:rounded-full phone:border phone:border-line phone:bg-surface phone:p-0 " +
-	"phone:text-accent phone:shadow-[0_2px_12px_rgba(0,0,0,0.1)] " +
+export const MOBILE_CONTROL_GLASS_EFFECTS =
+	"phone:[backdrop-filter:var(--mobile-header-control-blur)] " +
+	"phone:[-webkit-backdrop-filter:var(--mobile-header-control-blur)]";
+
+export const MOBILE_CONTROL_GLASS =
+	"phone:bg-[var(--mobile-header-control-surface)] " +
+	MOBILE_CONTROL_GLASS_EFFECTS;
+
+/**
+ * One circular mobile top-bar control: Back, More and future page actions all
+ * share this material, size, neutral ink and press response. `rounded-full`,
+ * not `rounded-[999px]`, keeps the platform's true-circle toolbar shape.
+ */
+export const MOBILE_TOP_BAR_CONTROL =
+	"phone:m-0 phone:inline-flex phone:size-11 phone:min-h-11 phone:items-center phone:justify-center " +
+	`phone:rounded-full phone:border phone:border-[color:var(--mobile-header-control-border)] ${MOBILE_CONTROL_GLASS} phone:p-0 ` +
+	"phone:text-fg phone:shadow-[var(--mobile-header-control-shadow)] " +
 	"phone:cursor-pointer phone:touch-manipulation " +
 	"phone:[-webkit-tap-highlight-color:transparent] " +
 	"phone:[transition-property:opacity] phone:duration-[var(--dur)] " +
-	"phone:ease-[var(--ease)] phone:active:opacity-40 phone:active:duration-0 " +
-	"phone:[&_svg]:-ml-px phone:[&_svg]:shrink-0";
+	"phone:ease-[var(--ease)] phone:active:scale-100 phone:active:opacity-40 phone:active:duration-0 " +
+	"phone:[&_svg]:size-[26px] phone:[&_svg]:shrink-0";
+
+/** Back adds only its PWA hook and the chevron's optical left nudge. */
+export const MOBILE_BACK =
+	`pwa-header-back ${MOBILE_TOP_BAR_CONTROL} ` +
+	"phone:[&_svg]:size-[34px] phone:[&_svg]:-ml-px";
 
 /**
- * Product mark + the update nudge, kept tight together. `app-brand` stays on
- * the markup as a hook: `components/UpdatePill.tsx` sizes and re-orders itself
- * through `[.app-brand_&]` when it renders here rather than in the sidebar.
- */
-export const APP_BRAND = "app-brand flex min-w-0 items-center gap-0.5";
-
-/**
- * The mark, as the Settings trigger. `order-1` seats it before the update pill
- * (which claims `order-3`); the 4px indent lines the MARK up with the list's
- * 16px text column below rather than with the bar's own 12px edge — the button
- * sits 4px in because the mark starts at the button's left edge, its 52px image
- * overhanging the 42px button by 5px a side against ~5px of transparent margin
- * baked into the untrimmed asset.
- */
-export const APP_LOGO_BUTTON =
-	"relative inline-flex size-[42px] items-center justify-center rounded-control " +
-	"border-none bg-transparent p-0 text-inherit cursor-pointer " +
-	"[-webkit-tap-highlight-color:transparent] active:bg-hover " +
-	"phone:order-1 phone:ml-1";
-
-/**
- * Sized so the MARK measures ~42px, a hair under the 44px bar buttons opposite
- * it. Those are outlines around air and this is solid ink, so equal boxes would
- * read mark-heavy; the pair balances with the mark the slightly smaller box.
- * The box runs bigger again than the mark — unlike a repo icon this asset isn't
- * trimmed (it is also the favicon and the og:image, which want their padding)
- * and carries its artwork on 80% of its canvas, so 52 × 0.8 ≈ 42px of ink. The
- * overflow past the button is transparent margin and touches nothing.
- */
-export const APP_LOGO_IMAGE = "block size-[52px]";
-
-/**
- * Live connection dot on the avatar's corner (the desktop sidebar's chrome
- * row). It rides a relative wrapper because the tile itself is
- * `overflow:hidden` for the scanner beam. The colour is set inline from the
- * socket state.
+ * Live connection dot on the organization mark in the sidebar selector. It
+ * rides a relative wrapper because the tile itself can clip its image. The
+ * colour is set inline from the socket state.
  */
 export const APP_LOGO_STATUS =
 	"absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-raised";
@@ -217,12 +200,34 @@ export const APP_LOGO_STATUS =
  * anyway; spelling it `999px` would hand it a squircle it never had.
  */
 export const HEADER_TITLE_PILL =
-	"phone:flex phone:flex-[0_1_auto] phone:min-w-0 phone:items-center " +
+	"phone:flex phone:min-h-11 phone:flex-[0_1_auto] phone:min-w-0 phone:items-center " +
 	"phone:justify-start phone:gap-[9px] phone:ml-2 phone:mr-auto " +
 	"phone:py-[5px] phone:pr-4 phone:pl-[11px] " +
-	"phone:rounded-full phone:border phone:border-line phone:bg-surface " +
-	"phone:shadow-[0_2px_12px_rgba(0,0,0,0.1)] phone:text-fg " +
+	`phone:rounded-full phone:border phone:border-[color:var(--mobile-header-control-border)] ${MOBILE_CONTROL_GLASS} ` +
+	"phone:shadow-[var(--mobile-header-control-shadow)] phone:text-fg " +
 	"phone:pointer-events-auto";
+
+/** Center a plain page title independently of the leading and trailing controls. */
+export const HEADER_TITLE_PILL_CENTERED =
+	"phone:absolute phone:left-1/2 phone:ml-0 phone:mr-0 phone:[transform:translateX(-50%)]";
+
+/**
+ * Archived keeps Search at the phone's bottom edge. While that field is
+ * focused, the controls recede and the page rises into their space. Both
+ * directions are transitions so a quick focus change reverses from its current
+ * position instead of restarting. Overflow stays visible while resting so the
+ * floating controls' shadows can extend below the header box. Archived also
+ * keeps the shadow inside the bar: 16px above and below the controls when
+ * there is no status-bar safe area.
+ */
+export const ARCHIVED_SEARCH_HEADER =
+	"phone:h-[calc(max(env(safe-area-inset-top,0px),16px)+60px)]! " +
+	"phone:pt-[max(env(safe-area-inset-top,0px),16px)]! " +
+	"phone:transition-[height,padding-top,opacity,transform] " +
+	"phone:duration-[var(--dur)] phone:ease-[var(--ease)] " +
+	"phone:[body.kb-open_&]:h-0! phone:[body.kb-open_&]:pt-0! " +
+	"phone:[body.kb-open_&]:pointer-events-none phone:[body.kb-open_&]:opacity-0 " +
+	"phone:[body.kb-open_&]:[transform:translateY(-8px)] motion-reduce:transition-none";
 
 /**
  * The pill on a page that names itself, which is every page but a session: it
@@ -273,9 +278,9 @@ export const HEADER_TITLE_ROW =
 	"phone:flex phone:min-w-0 phone:max-w-full phone:items-center phone:gap-[7px] " +
 	"phone:text-base phone:leading-4 phone:font-semibold";
 
-/** The name itself, ellipsised, dimming while the pill is pressed. */
+/** The name itself, softly faded if clipped and dimming while pressed. */
 export const HEADER_TITLE_TEXT =
-	"phone:truncate phone:group-active/titlepill:opacity-60";
+	"phone:flex-1 phone:group-active/titlepill:opacity-60";
 
 /**
  * The metadata line's slot under the name — filled by SessionViewer's portal.
@@ -348,7 +353,7 @@ const HEADER_ACTIONS_BASE =
  * On the root page the two glyphs in this slot — Filter and Search — are one
  * control, the way adjacent bar-button items group on iOS: a single capsule
  * carrying both, split by a hairline, rather than two separate circles floating
- * next to each other. So the surface (border, fill, shadow, radius) lives here
+ * next to each other. So the surface (edge, fill, shadow, radius) lives here
  * on the container and the segments inside it are transparent; `gap-0` closes
  * the 10px the loose pair sat on, and `overflow-hidden` keeps a segment's press
  * dim inside the capsule's own curve.
@@ -367,8 +372,8 @@ const HEADER_ACTIONS_BASE =
  */
 export const APP_HEADER_ACTIONS =
 	`${HEADER_ACTIONS_BASE} phone:ml-auto phone:gap-0 phone:overflow-hidden ` +
-	"phone:rounded-full phone:border phone:border-line phone:bg-surface " +
-	"phone:shadow-[0_2px_12px_rgba(0,0,0,0.1)]";
+	`phone:rounded-full phone:border phone:border-[color:var(--mobile-header-control-border)] ${MOBILE_CONTROL_GLASS} ` +
+	"phone:shadow-[var(--mobile-header-control-shadow)]";
 
 /**
  * On a pushed page the title pill already carries `mr-auto` to shove this
@@ -380,20 +385,25 @@ export const APP_HEADER_ACTIONS_DETAIL =
 	`${HEADER_ACTIONS_BASE} phone:ml-2.5 phone:flex-none phone:gap-2.5`;
 
 /**
- * A segment of the grouped bar control (see `APP_HEADER_ACTIONS`): 44pt tall
- * and wider than it is high, with no chrome of its own — the capsule around it
- * draws the border, fill and shadow. The glyph is thickened past its 1.5 stroke
+ * A segment of the grouped bar control (see `APP_HEADER_ACTIONS`): 40pt tall
+ * and wider than it is high, with no chrome of its own. The capsule around it
+ * draws the edge, fill and shadow. The glyph is thickened past its 1.5 stroke
  * because iOS nav-bar glyphs are bold and it reads spindly at this size
- * otherwise.
+ * otherwise. `--header-h` in base.css leaves this control 40px below the bar's
+ * 8px top inset. Move the two together.
+ *
+ * 40 rather than 44: the segment is wider than it is tall, so the target the
+ * thumb actually meets stays past 44pt across, and the bar reads as chrome
+ * rather than as the tallest thing on the screen.
  */
 const MOBILE_BAR_SEGMENT =
-	"phone:relative phone:inline-flex phone:h-11 phone:w-13 phone:shrink-0 " +
+	"phone:relative phone:inline-flex phone:h-10 phone:w-13 phone:shrink-0 " +
 	"phone:items-center phone:justify-center phone:rounded-none " +
 	"phone:border-none phone:bg-transparent phone:p-0 phone:shadow-none " +
 	"phone:cursor-pointer phone:touch-manipulation " +
 	"phone:[-webkit-tap-highlight-color:transparent] " +
 	"phone:active:opacity-35 phone:active:duration-0 " +
-	"phone:[&_svg]:size-[25px] phone:[&_svg]:[stroke-width:2]";
+	"phone:[&_svg]:size-[23px] phone:[&_svg]:[stroke-width:2]";
 
 /**
  * Search — the trailing half of the pair. No rule divides it from the filter:
@@ -401,18 +411,19 @@ const MOBILE_BAR_SEGMENT =
  * grouped toolbar item. The air between them is the separation.
  */
 export const MOBILE_SEARCH_BTN =
-	`${MOBILE_BAR_SEGMENT} phone:text-accent ` +
+	`${MOBILE_BAR_SEGMENT} phone:text-fg ` +
 	"phone:[transition-property:opacity] phone:duration-[var(--dur)] " +
 	"phone:ease-[var(--ease)]";
 
 /**
  * Filter, portaled out of the sidebar header into the same capsule. `-order-1`
- * seats it to Search's left. Muted until a filter is actually set.
+ * seats it to Search's left. Muted until a filter is actually set, then raised
+ * to the neutral foreground used by the other bar actions.
  *
  * Two whole strings rather than a shared base plus a colour: two `text-*`
  * utilities on one element are resolved by Tailwind's OUTPUT order, not the
- * order they are written in, so the muted and accented states each spell their
- * own set. Read them through `mobileFilterBtn()`, never build the class name.
+ * order they were written in. Read them through `mobileFilterBtn()`, never
+ * build the class name.
  */
 const MOBILE_FILTER_BTN_BASE =
 	`${MOBILE_BAR_SEGMENT} phone:-order-1 ` +
@@ -420,10 +431,10 @@ const MOBILE_FILTER_BTN_BASE =
 
 const MOBILE_FILTER_BTN = {
 	muted: `${MOBILE_FILTER_BTN_BASE} phone:text-dim`,
-	tinted: `${MOBILE_FILTER_BTN_BASE} phone:text-accent`,
+	active: `${MOBILE_FILTER_BTN_BASE} phone:text-fg`,
 } as const;
 
-/** Tinted while the popover is open or a filter is set. */
+/** Raised to the neutral foreground while the popover is open or filtered. */
 export function mobileFilterBtn(active: boolean): string {
-	return active ? MOBILE_FILTER_BTN.tinted : MOBILE_FILTER_BTN.muted;
+	return active ? MOBILE_FILTER_BTN.active : MOBILE_FILTER_BTN.muted;
 }

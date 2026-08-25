@@ -2,7 +2,7 @@
  * Async subprocess runner for code paths that used to call
  * child_process.spawnSync on the server's main thread. spawnSync blocks
  * Bun's single event loop for the child's entire runtime — a `wt delete`
- * on tella-fusion takes ~10s, and the boot-time worktree cleanup running a
+ * on a large repo takes ~10s, and the boot-time worktree cleanup running a
  * string of them froze every HTTP request, WebSocket upgrade and transcript
  * load server-wide (2026-07-23). The result shape mirrors spawnSync's
  * (status/stdout/stderr) so call sites convert 1:1; status is null when the

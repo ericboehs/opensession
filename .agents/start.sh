@@ -18,7 +18,7 @@
 # CRITICAL — why every override below is EXPLICIT: when the preview flow runs
 # this script, the inherited environment is the calling server's env. On a
 # production box that is the systemd service env (EnvironmentFile
-# ~/.opensession.env) carrying the production PORT/HOST/WEBHOOK_PORT, live
+# ~/.opensession.env) carrying the production PORT/HOST, live
 # ENABLE_* agent toggles and real integration secrets. A `bun run
 # opensession.ts` that trusted inheritance would bind production ports, steal
 # the live server's run-rpc unix socket, and double-run its agents. So this
@@ -59,8 +59,8 @@ mkdir -p "$STATE_DIR"
 
 # env -u flags must precede the NAME=VALUE assignments (GNU env argument
 # order). What each line neutralizes:
-#   -u WEBHOOK_PORT / OPENSESSION_MCP_HTTP_PORT
-#       production webhook (3848) / MCP-HTTP (3852) ports ride in via env;
+#   -u OPENSESSION_MCP_HTTP_PORT
+#       the production MCP-HTTP (3852) port rides in via env;
 #       the dev boot gate skips both binds when they are unset.
 #   -u OPENSESSION_SESSIONS_DIR / _CONFIG / _RUN_JOURNAL
 #       per-store overrides would defeat OPENSESSION_STATE_DIR isolation.
@@ -78,25 +78,16 @@ mkdir -p "$STATE_DIR"
 #       the service env pins NODE_ENV=production; this is a dev instance.
 #   OPENSESSION_UI_BASE
 #       generated links point at the preview origin, not the production UI.
-#   OPENSESSION_OC_DETACH=0
-#       never spawn detached engine servers from a preview instance.
 #   OPENSESSION_GITHUB_AUTH_STORE / _WEB_SESSIONS_STORE / _KEYCHAIN_STORE /
 #   _SEARCH_DB
 #       belt-and-braces: these stores anchor to $HOME, not the state dir; an
 #       ungated writer (e.g. the github-auth token refresher rotating shared
 #       refresh tokens) must see empty dev copies, never the live stores.
-#   OPENSESSION_OPENCODE_DB / _DB_MAP / _BKS_MAP / _TRANSCRIPTS_DIR
-#       the opencode transcript stores default to literal ${HOME}/.opensession-
-#       sessions/opencode/* paths that follow NEITHER the sessions-dir env NOR the
-#       state dir (opencode-transcript.ts) — the demo replayer writes through
-#       recordBksSessionFor, so without these a preview instance would scribble
-#       map entries into the live store.
 #   ENABLE_*=false
 #       the service env sets these to true with real secrets present; only
 #       the literal "true" enables an agent, so "false" hard-disables each
 #       one even if a boot-gate gap slips through.
 exec env \
-	-u WEBHOOK_PORT \
 	-u OPENSESSION_MCP_HTTP_PORT \
 	-u OPENSESSION_SESSIONS_DIR \
 	-u OPENSESSION_CONFIG \
@@ -107,22 +98,17 @@ exec env \
 	OPENSESSION_DEMO=1 \
 	OPENSESSION_STATE_DIR="$STATE_DIR" \
 	OPENSESSION_ENV_FILE=/dev/null \
+	OPENSESSION_EXECUTOR=0 \
 	NODE_ENV=development \
 	OPENSESSION_UI_BASE="${PREVIEW_URL:-http://127.0.0.1:$WEBAPP_PORT}" \
-	OPENSESSION_OC_DETACH=0 \
 	OPENSESSION_GITHUB_AUTH_STORE="$STATE_DIR/github-auth.json" \
 	OPENSESSION_WEB_SESSIONS_STORE="$STATE_DIR/web-sessions.json" \
 	OPENSESSION_KEYCHAIN_STORE="$STATE_DIR/keychain.json" \
 	OPENSESSION_SEARCH_DB="$STATE_DIR/search.db" \
-	OPENSESSION_OPENCODE_DB="$STATE_DIR/opencode/opencode.db" \
-	OPENSESSION_OPENCODE_DB_MAP="$STATE_DIR/opencode/db-map.json" \
-	OPENSESSION_OPENCODE_BKS_MAP="$STATE_DIR/opencode/bks-map.json" \
-	OPENSESSION_OPENCODE_TRANSCRIPTS_DIR="$STATE_DIR/opencode/transcripts" \
 	ENABLE_SLACK_AGENT=false \
 	ENABLE_LINEAR_AGENT=false \
 	ENABLE_PLAIN_AGENT=false \
 	ENABLE_STRIPE_AGENT=false \
 	ENABLE_GITHUB_AGENT=false \
 	ENABLE_GRAFANA_POLLER=false \
-	ENABLE_TELLA_MODULE=false \
 	bun run packages/core/opensession-server/opensession.ts

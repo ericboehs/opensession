@@ -24,9 +24,10 @@ const ENV_KEYS = [
   "OPENSESSION_CONFIG",
   "OPENSESSION_WORKTREES_DIR",
   "OPENSESSION_CLAUDE_BIN",
-  "OPENSESSION_OPENCODE_BIN",
+  "OPENSESSION_PI_BIN",
   "OPENSESSION_MCP_CONFIG",
   "OPENSESSION_UI_BASE",
+  "OPENSESSION_INGRESS_BASE",
   "PREVIEW_HOST",
 ] as const;
 const saved: Record<string, string | undefined> = {};
@@ -50,6 +51,29 @@ afterEach(() => {
 });
 
 describe("config loader", () => {
+  test("supports one canonical public ingress origin", () => {
+    withConfig(JSON.stringify({
+      server: { publicBaseUrl: "https://ui.example.test" },
+      ingress: { publicBaseUrl: "https://ingress.example.test", exposure: "custom" },
+    }));
+    delete process.env.OPENSESSION_UI_BASE;
+    delete process.env.OPENSESSION_INGRESS_BASE;
+
+    expect(configuredServer().publicBaseUrl).toBe("https://ui.example.test");
+    expect(configuredServer().webhookBaseUrl).toBe("https://ingress.example.test");
+
+    process.env.OPENSESSION_INGRESS_BASE = "https://env-ingress.example.test";
+    expect(configuredServer().webhookBaseUrl).toBe("https://env-ingress.example.test");
+  });
+
+  test("keeps an unconfigured ingress distinct while setup remains portable", () => {
+    withConfig(JSON.stringify({ server: { publicBaseUrl: "https://ui.example.test" } }));
+    delete process.env.OPENSESSION_UI_BASE;
+    delete process.env.OPENSESSION_INGRESS_BASE;
+
+    expect(configuredServer().webhookBaseUrl).toBe("https://ui.example.test");
+  });
+
 	test("defaults preview portals to the public UI hostname", () => {
 		withConfig(JSON.stringify({ server: { publicBaseUrl: "https://os.example.test" } }));
 		delete process.env.OPENSESSION_UI_BASE;
@@ -128,6 +152,21 @@ describe("config loader", () => {
     expect(repos.opensession).toBeUndefined();
     expect(defaultRepo().id).toBe("acme-app");
     expect(configuredPaths().worktreesDir).toBe("/srv/worktrees");
+  });
+
+  test("unsafe default branch text falls back before reaching prompts", () => {
+    withConfig(
+      JSON.stringify({
+        repos: {
+          app: {
+            repo: "/srv/app",
+            defaultBranch: "main;echo-not-a-command",
+            default: true,
+          },
+        },
+      }),
+    );
+    expect(configuredRepos().app.defaultBranch).toBe("main");
   });
 
   test("repo entry without a checkout path is ignored", () => {

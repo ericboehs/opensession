@@ -1,31 +1,36 @@
 // Workspace snoozes, stored server-side per user (keyed on the UserPicker
 // name) like pins, so they follow you across devices. A snooze is an overlay
 // on a sidebar row key (`workspace:<id>` or a solo session id): while its `until`
-// is in the future the row parks in the Snoozed section; once lapsed the entry
+// is in the future, or is `"someday"`, the row parks in the Snoozed section; once lapsed the entry
 // is ignored (the row falls back to its derived lane) and the Sidebar prunes
 // it, marking the row unread so the wake is visible. The public API stays
 // synchronous (an in-memory cache): the store is a lib/user-map instance,
-// which owns the hydration and the optimistic whole-map PUT.
+// which owns hydration and ordered per-key delta writes.
 import { fetchSnoozes, saveSnoozesApi } from "./api";
 import { makeUserMap } from "./user-map";
 
 const CHANGE_EVENT = "opensession-snoozes-changed";
+export const SNOOZE_SOMEDAY = "someday";
 
 const store = makeUserMap<string>({
 	changeEvent: CHANGE_EVENT,
 	fetchMap: fetchSnoozes,
-	saveMap: saveSnoozesApi,
+	saveDelta: saveSnoozesApi,
 });
 
 export function getSnoozes(): Record<string, string> {
 	return store.get();
 }
 
-/** The active snooze expiry for a row key, or null (lapsed entries excluded). */
+/** Whether a stored snooze is still active. */
+export function snoozeIsActive(until: string | undefined, now = Date.now()): boolean {
+	return until === SNOOZE_SOMEDAY || (!!until && Date.parse(until) > now);
+}
+
+/** The active snooze value for a row key, or null (lapsed entries excluded). */
 export function snoozeUntil(key: string): string | null {
 	const until = store.get()[key];
-	if (!until) return null;
-	return Date.parse(until) > Date.now() ? until : null;
+	return snoozeIsActive(until) ? until : null;
 }
 
 export function setSnooze(key: string, untilIso: string): void {
@@ -51,7 +56,7 @@ export function onSnoozesChanged(handler: () => void): () => void {
 
 export interface SnoozePreset {
 	label: string;
-	until: Date;
+	until: string;
 }
 
 function fmtTime(d: Date): string {
@@ -65,17 +70,17 @@ function fmtDay(d: Date): string {
 export function snoozePresets(now = new Date()): SnoozePreset[] {
 	const out: SnoozePreset[] = [];
 	const inOneHour = new Date(now.getTime() + 60 * 60 * 1000);
-	out.push({ label: `In 1 hour (${fmtTime(inOneHour)})`, until: inOneHour });
+	out.push({ label: `In 1 hour (${fmtTime(inOneHour)})`, until: inOneHour.toISOString() });
 	const evening = new Date(now);
 	evening.setHours(18, 0, 0, 0);
 	if (evening.getTime() - now.getTime() > 30 * 60 * 1000)
-		out.push({ label: `This evening (${fmtTime(evening)})`, until: evening });
+		out.push({ label: `This evening (${fmtTime(evening)})`, until: evening.toISOString() });
 	const tomorrow = new Date(now);
 	tomorrow.setDate(tomorrow.getDate() + 1);
 	tomorrow.setHours(9, 0, 0, 0);
 	out.push({
 		label: `Tomorrow (${fmtDay(tomorrow)} ${fmtTime(tomorrow)})`,
-		until: tomorrow,
+		until: tomorrow.toISOString(),
 	});
 	const nextWeek = new Date(now);
 	// Next Monday 9:00 — always at least a full day out.
@@ -85,13 +90,15 @@ export function snoozePresets(now = new Date()): SnoozePreset[] {
 	nextWeek.setHours(9, 0, 0, 0);
 	out.push({
 		label: `Next week (${fmtDay(nextWeek)} ${fmtTime(nextWeek)})`,
-		until: nextWeek,
+		until: nextWeek.toISOString(),
 	});
+	out.push({ label: "Someday", until: SNOOZE_SOMEDAY });
 	return out;
 }
 
 /** Compact time-to-wake for the row badge: "57m", "14h", "6d". */
 export function formatRemaining(untilIso: string, nowMs = Date.now()): string {
+	if (untilIso === SNOOZE_SOMEDAY) return "Someday";
 	const ms = Math.max(0, Date.parse(untilIso) - nowMs);
 	const minutes = Math.ceil(ms / 60_000);
 	if (minutes < 60) return `${minutes}m`;

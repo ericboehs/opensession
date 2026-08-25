@@ -2,8 +2,8 @@
  * Setup routes — what the Settings → Setup page renders and writes.
  *
  * GET /api/setup/status stays the read-only snapshot. The write endpoints
- * (integrations env/enable, GitHub auth settings, team CRUD, repo clone +
- * register, self-restart) implement web-based instance configuration:
+ * (server origins, integrations env/enable, GitHub auth settings, team CRUD,
+ * repo clone + register, self-restart) implement web-based instance configuration:
  * secrets go to the env file (~/.opensession.env — the systemd
  * EnvironmentFile, shared with the CLI; env-file-edit.ts), everything else
  * to config.json, all serialized under the shared config mutation lock
@@ -22,7 +22,9 @@
  */
 
 import { audit } from "../audit";
-import type { IntegrationSpec } from "../integrations/registry";
+import { GITHUB_APP_GRANT_PERMISSIONS } from "../../shared/github-app-permissions";
+import { envRequired, type IntegrationSpec } from "../integrations/registry";
+import { setupAccessSnapshot } from "../setup-access";
 import { requireWorkspaceAdmin } from "../workspace-auth";
 import type { RouteContext } from "./context";
 import { handleSetupCodestorageRoutes } from "./setup-codestorage";
@@ -44,7 +46,7 @@ async function integrationSnapshot(
       : !!process.env[name];
   const env = spec.env.map((e) => ({
     name: e.name,
-    required: !!e.required,
+    required: envRequired(e, present),
     description: e.description,
     present: present(e.name),
   }));
@@ -103,18 +105,80 @@ async function primaryGithubOrg(): Promise<string | undefined> {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
 }
 
+/** GitHub's new-App form accepts these settings as query parameters. Keep the
+ *  two personal choices editable: the generated name is only a likely-unique
+ *  starting point, and the Homepage URL has no role in the device-code flow. */
+export function buildOnboardingGithubAppCreateUrl(
+  org: string | undefined,
+  homepageUrl: string,
+  ingressUrl: string,
+  appName = `Open Session (${Math.random().toString(36).slice(2, 6)})`,
+): string {
+  const params = new URLSearchParams({
+    name: appName,
+    url: homepageUrl.trim() || "http://localhost:3850",
+    public: "false",
+    hook_url: `${ingressUrl.replace(/\/$/, "")}/github/webhook`,
+    webhook_active: "true",
+    // The canonical grant set (checks + statuses + issues included) — the same
+    // permissions the installation token mints request, so a created App is
+    // never born missing a scope the server needs.
+    ...GITHUB_APP_GRANT_PERMISSIONS,
+    // Undocumented by GitHub, but supported by the new-App form. The onboarding
+    // still tells the person to check it in case GitHub ever drops the parameter.
+    device_flow_enabled: "true",
+  });
+  const owner = org?.trim();
+  const base = owner
+    ? `https://github.com/organizations/${encodeURIComponent(owner)}/settings/apps/new`
+    : "https://github.com/settings/apps/new";
+  return `${base}?${params}`;
+}
+
 async function githubSnapshot() {
-  const { githubUserAuthSettings } = await import("../github-auth");
+  const {
+    githubAppIdentity,
+    githubUserAuthSettings,
+    githubAppOrg,
+    githubAuthOnConnect,
+  } = await import("../github-auth");
+  const { githubAppConfigured, githubAppPrivateKeyConfigured } =
+    await import("../github-app");
+  const { configuredIntegration, configuredServer, personaName } = await import("../config");
   const github = githubUserAuthSettings();
+  const app = githubAppIdentity();
+  const integration = configuredIntegration("github");
   const org = await primaryGithubOrg();
+  const configuredHandles = configuredIntegration("github").mentionHandles;
+  const mentionHandle = (
+    process.env.GITHUB_MENTION_HANDLES?.split(",")[0] ||
+    (Array.isArray(configuredHandles)
+      ? configuredHandles.find((value): value is string => typeof value === "string")
+      : "") ||
+    personaName().toLowerCase().replace(/[^a-z0-9-]/g, "")
+  ).trim().replace(/^@/, "");
   return {
     userPrAuth: github.enabled,
     clientIdConfigured: !!github.clientId,
     clientSecretConfigured: !!github.clientSecret,
-    botTokenPresent: !!process.env.GITHUB_API_TOKEN,
-    appCreateUrl: org
-      ? `https://github.com/organizations/${org}/settings/apps/new`
-      : "https://github.com/settings/apps/new",
+    mentionHandle,
+    appCredentialConfigured: githubAppConfigured(),
+    privateKeyConfigured: githubAppPrivateKeyConfigured(),
+    appSlug: app.slug,
+    installationOwner:
+      typeof integration.installationOwner === "string"
+        ? integration.installationOwner
+        : null,
+    // Captured install/app-setup intent: the org the App is owned by, and
+    // whether connecting should turn on per-user sign-in. Both are inert until
+    // the simple-mode connect handler consumes authOnConnect.
+    appOrg: githubAppOrg(),
+    authOnConnect: githubAuthOnConnect(),
+    appCreateUrl: buildOnboardingGithubAppCreateUrl(
+      org,
+      configuredServer().publicBaseUrl,
+      configuredServer().webhookBaseUrl,
+    ),
   };
 }
 
@@ -153,12 +217,42 @@ export async function handleSetupRoutes(
   const { req, path } = ctx;
   if (!path.startsWith("/api/setup/")) return undefined;
 
+  // This one boolean is safe for every signed-in teammate to read. It must sit
+  // before the admin gate so a completed instance never sends non-admins into
+  // an onboarding flow they cannot configure.
+  if (path === "/api/setup/onboarding" && req.method === "GET") {
+    // Read the file directly rather than the mtime-cached resolved config: a GET
+    // immediately after the completion PUT must observe that write even on a
+    // filesystem whose timestamp resolution folds both operations together.
+    const { rawConfig } = await import("../config-mutation");
+    // Older instances predate the flag and have already been in use. Only the
+    // installer-written explicit false represents a first run.
+    return Response.json({ completed: rawConfig().onboardingCompleted !== false });
+  }
+
   const forbidden = requireWorkspaceAdmin(ctx);
   if (forbidden) return forbidden;
 
+  if (path === "/api/setup/onboarding" && req.method === "PUT") {
+    const body = (await req.json().catch(() => null)) as { completed?: unknown } | null;
+    if (body?.completed !== true) {
+      return Response.json({ error: "completed must be true" }, { status: 400 });
+    }
+    const { rawConfig, persistRawConfig, withConfigMutationLock } =
+      await import("../config-mutation");
+    return withConfigMutationLock(async () => {
+      const config = rawConfig();
+      if (config.onboardingCompleted !== true) {
+        config.onboardingCompleted = true;
+        persistRawConfig(config);
+        audit({ kind: "setup_onboarding_complete", by: ctx.authUser?.login || null });
+      }
+      return Response.json({ completed: true });
+    });
+  }
+
   if (path === "/api/setup/status" && req.method === "GET") {
-    const { configuredServer, configuredRepos, configuredIdentity } =
-      await import("../config");
+    const { configuredRepos, configuredIdentity } = await import("../config");
     const { INTEGRATIONS } = await import("../integrations/registry");
     // The env FILE, not process.env: a credential saved via PUT must keep
     // reading as present on every later status refetch, not flap back to
@@ -166,16 +260,21 @@ export async function handleSetupRoutes(
     const { readEnvFileValues } = await import("../env-file-edit");
     const { repoLifecycle } = await import("../preview");
     const { engineStatus } = await import("../engine-status");
-    const envValues = readEnvFileValues();
+    const { sharedCheckoutForNewSessions } = await import("../worktree");
+    const envValues = readEnvFileValues({ includeUnset: true });
 
-    const publicBaseUrl = configuredServer().publicBaseUrl.replace(/\/$/, "");
+    const access = setupAccessSnapshot({ persistedEnv: envValues });
 
     return Response.json({
-      publicBaseUrl,
+      // Compatibility field for the native app's tolerant setup snapshot.
+      publicBaseUrl: access.publicBaseUrl,
+      access,
       repos: Object.values(configuredRepos()).map((r) => ({
         id: r.id,
         label: r.label,
         path: r.repo,
+        defaultBranch: r.defaultBranch,
+        isolatedWorktrees: !sharedCheckoutForNewSessions(r),
         // Can sessions in this repo provision and boot themselves? Read off
         // the main checkout — worktrees carry the same committed files.
         lifecycle: {
@@ -302,6 +401,10 @@ export async function handleSetupRoutes(
       userPrAuth?: unknown;
       oauthClientId?: unknown;
       oauthClientSecret?: unknown;
+      appSlug?: unknown;
+      installationOwner?: unknown;
+      mentionHandle?: unknown;
+      privateKey?: unknown;
     } | null;
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return Response.json({ error: "Invalid JSON body" }, { status: 400 });
@@ -309,21 +412,69 @@ export async function handleSetupRoutes(
     if (body.userPrAuth !== undefined && typeof body.userPrAuth !== "boolean") {
       return Response.json({ error: "userPrAuth must be a boolean" }, { status: 400 });
     }
-    for (const field of ["oauthClientId", "oauthClientSecret"] as const) {
+    for (const field of [
+      "oauthClientId",
+      "oauthClientSecret",
+      "appSlug",
+      "installationOwner",
+    ] as const) {
       if (body[field] === undefined) continue;
       const invalid = await validateSetting(body[field]);
       if (invalid) {
         return Response.json({ error: `${field}: ${invalid}` }, { status: 400 });
       }
     }
+    const mentionHandle =
+      typeof body.mentionHandle === "string"
+        ? body.mentionHandle.trim().replace(/^@/, "")
+        : body.mentionHandle;
+    if (
+      mentionHandle !== undefined &&
+      (typeof mentionHandle !== "string" ||
+        (mentionHandle !== "" && !/^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(mentionHandle)))
+    ) {
+      return Response.json(
+        { error: "mentionHandle must be a valid GitHub handle" },
+        { status: 400 },
+      );
+    }
+    // The private key is a multi-line PEM, so it bypasses validateSetting (single
+    // line). Require a complete block that parses, so a truncated paste cannot
+    // overwrite a working key on disk.
+    const privateKey =
+      typeof body.privateKey === "string" ? body.privateKey.trim() : "";
+    if (privateKey) {
+      const { createPrivateKey } = await import("node:crypto");
+      const wellFormed =
+        /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]+-----END [A-Z ]*PRIVATE KEY-----/.test(
+          privateKey,
+        );
+      let parses = false;
+      if (wellFormed) {
+        try {
+          createPrivateKey(privateKey);
+          parses = true;
+        } catch {
+          parses = false;
+        }
+      }
+      if (!parses)
+        return Response.json(
+          { error: "privateKey must be a valid PEM private key" },
+          { status: 400 },
+        );
+    }
     if (
       body.userPrAuth === undefined &&
       body.oauthClientId === undefined &&
-      body.oauthClientSecret === undefined
+      body.oauthClientSecret === undefined &&
+      body.appSlug === undefined &&
+      body.installationOwner === undefined &&
+      mentionHandle === undefined &&
+      !privateKey
     ) {
       return Response.json({ error: "Nothing to change" }, { status: 400 });
     }
-
     const { rawConfig, persistRawConfig, withConfigMutationLock } =
       await import("../config-mutation");
 
@@ -343,17 +494,166 @@ export async function handleSetupRoutes(
           ? (integrations.github as Record<string, unknown>)
           : {};
       integrations.github = github;
+
+      const nextClientId = body.oauthClientId;
+      const keyMutation = privateKey ||
+        (nextClientId !== undefined && github.oauthClientId !== nextClientId
+          ? null
+          : undefined);
+      const { githubAppIdentity } = await import("../github-auth");
+      const { githubAppConfigured } = await import("../github-app");
+      const effectiveAppSlug =
+        body.appSlug !== undefined
+          ? String(body.appSlug).trim()
+          : githubAppIdentity().slug;
+      const appSettingsChanging =
+        body.oauthClientId !== undefined ||
+        body.oauthClientSecret !== undefined ||
+        body.appSlug !== undefined ||
+        body.installationOwner !== undefined ||
+        !!privateKey;
+      if ((appSettingsChanging || body.userPrAuth === true) && !effectiveAppSlug) {
+        return Response.json(
+          { error: "Configure the GitHub App slug" },
+          { status: 409 },
+        );
+      }
+      if (keyMutation === null) {
+        return Response.json(
+          { error: "Changing the GitHub App client id requires its replacement private key" },
+          { status: 409 },
+        );
+      }
+      const effectiveClientId =
+        body.oauthClientId !== undefined
+          ? String(body.oauthClientId).trim()
+          : typeof github.oauthClientId === "string"
+            ? github.oauthClientId
+            : "";
+      const effectiveOwner =
+        body.installationOwner !== undefined
+          ? String(body.installationOwner).trim()
+          : typeof github.installationOwner === "string"
+            ? github.installationOwner
+            : typeof github.appOrg === "string"
+              ? github.appOrg
+              : "";
+      const effectiveSecret =
+        body.oauthClientSecret !== undefined
+          ? String(body.oauthClientSecret).trim()
+          : typeof github.oauthClientSecret === "string"
+            ? github.oauthClientSecret
+            : "";
+      if (
+        (appSettingsChanging || body.userPrAuth === true) &&
+        (!effectiveClientId || !effectiveOwner || (!privateKey && !githubAppConfigured()))
+      ) {
+        return Response.json(
+          { error: "Client id, installation owner and private key are required for the GitHub App" },
+          { status: 409 },
+        );
+      }
+      if (body.userPrAuth === true && !effectiveSecret) {
+        return Response.json(
+          { error: "A client secret is required for GitHub authentication" },
+          { status: 409 },
+        );
+      }
+
+      // Turning on the sign-in gate must never strand a personal install with
+      // nobody who can pass it. Organization onboarding already rosters people
+      // before enabling the gate; the Settings toggle also serves single-user
+      // installs, where the only identity is the GitHub account they connected.
+      // Promote that sole, verified account to the first workspace admin in the
+      // SAME config write as userPrAuth. If neither a sign-in-capable admin nor a
+      // connected account exists, refuse the flip and leave the instance open.
+      if (body.userPrAuth === true && github.userPrAuth !== true) {
+        const { rawTeam } = await import("./setup-team");
+        const team = rawTeam(config);
+        const explicitRoles = team.some((member) => member.admin !== undefined);
+        const hasSigninAdmin = team.some(
+          (member) =>
+            typeof member.github === "string" &&
+            !!member.github.trim() &&
+            (!explicitRoles || member.admin === true),
+        );
+        if (!hasSigninAdmin) {
+          const { connectedGithubAccounts, soleGithubLogin } = await import(
+            "../github-auth"
+          );
+          const login = soleGithubLogin();
+          const account = login
+            ? connectedGithubAccounts().find(
+                (candidate) => candidate.login.toLowerCase() === login.toLowerCase(),
+              )
+            : undefined;
+          if (!login || !account) {
+            return Response.json(
+              {
+                error:
+                  "Connect one GitHub account or add a team member before enabling GitHub sign-in",
+              },
+              { status: 409 },
+            );
+          }
+          const key = login.toLowerCase();
+          const displayName = account.name?.trim() || login;
+          const existing = team.find(
+            (member) =>
+              (typeof member.github === "string" &&
+                member.github.trim().toLowerCase() === key) ||
+              (typeof member.name === "string" &&
+                member.name.trim().toLowerCase() === displayName.toLowerCase()),
+          );
+          if (existing) {
+            existing.github = login;
+            existing.admin = true;
+            if (typeof existing.name !== "string" || !existing.name.trim())
+              existing.name = displayName;
+          } else {
+            team.push({ name: displayName, github: login, admin: true });
+          }
+          (config.identity as Record<string, unknown>).team = team;
+        }
+      }
       if (body.userPrAuth !== undefined) github.userPrAuth = body.userPrAuth;
-      for (const field of ["oauthClientId", "oauthClientSecret"] as const) {
+      if (mentionHandle !== undefined) {
+        if (mentionHandle) github.mentionHandles = [mentionHandle];
+        else delete github.mentionHandles;
+      }
+      for (const field of [
+        "oauthClientId",
+        "oauthClientSecret",
+        "appSlug",
+        "installationOwner",
+      ] as const) {
         const value = body[field];
         if (value === undefined) continue;
         if (value === "") delete github[field]; // empty string clears
         else github[field] = value;
       }
-      persistRawConfig(config);
+      try {
+        const { commitGithubAppKeyMutation } = await import("../github-app");
+        await commitGithubAppKeyMutation(
+          keyMutation,
+          () => persistRawConfig(config),
+        );
+      } catch (e) {
+        return Response.json(
+          { error: String((e as Error)?.message || e) },
+          { status: 409 },
+        );
+      }
       audit({
         kind: "setup_github_update",
-        fields: (["userPrAuth", "oauthClientId", "oauthClientSecret"] as const).filter(
+        fields: ([
+          "userPrAuth",
+          "oauthClientId",
+          "oauthClientSecret",
+          "appSlug",
+          "installationOwner",
+          "mentionHandle",
+        ] as const).filter(
           (f) => body[f] !== undefined,
         ),
       });
@@ -364,7 +664,8 @@ export async function handleSetupRoutes(
       // createdByLogin boot migration waits for the next restart.)
       return Response.json({
         github: await githubSnapshot(),
-        restartRequired: false,
+        // Mention matching is initialized with the GitHub agent at boot.
+        restartRequired: mentionHandle !== undefined,
       });
     });
   }
@@ -398,7 +699,7 @@ export async function handleSetupRoutes(
     return Response.json({ restarting: true });
   }
 
-  // ── Sibling modules: /api/setup/team*, /api/setup/{github/repos,repos},
+  // ── Sibling modules: /api/setup/{team*,github/repos,repos},
   //    /api/setup/codestorage/{connect,status,disconnect} ───────────────────
   return (
     (await handleSetupTeamRoutes(ctx)) ??

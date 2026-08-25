@@ -85,12 +85,15 @@ function jwtClaims(jwt: string): any {
 
 /** Begin a PKCE sign-in that will create pool account `name` on completion. */
 export async function startCodexOauthLogin(
-  name: string,
+  name = "",
   owner?: string
 ): Promise<CodexOauthLoginStart | { error: string }> {
   prune();
-  const trimmed = name.trim();
-  if (!trimmed) return { error: "Name is required" };
+  const loginId = crypto.randomUUID();
+  // Only the temporary directory needs a label. The registered account takes
+  // its email from the returned ID token; `name` remains a compatibility input
+  // for older clients that still send one.
+  const trimmed = name.trim() || `chatgpt-${loginId.slice(0, 8)}`;
   const slug = trimmed.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
   if (!slug) return { error: "Name must contain letters or digits" };
   if (listCodexAccounts().some((a) => a.name === trimmed)) {
@@ -106,7 +109,7 @@ export async function startCodexOauthLogin(
     new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)))
   );
   const login: PendingLogin = {
-    id: crypto.randomUUID(),
+    id: loginId,
     name: trimmed,
     ...(owner?.trim() ? { owner: owner.trim() } : {}),
     slug,

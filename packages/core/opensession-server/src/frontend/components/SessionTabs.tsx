@@ -1,21 +1,23 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useShortcutLabel } from "../hooks/useShortcutBindings";
-import { Reorder } from "motion/react";
+import { Reorder, useReducedMotion } from "motion/react";
 import type { UnifiedSession } from "../lib/types";
 import { TAB_COLORS, colorHex } from "../lib/tab-colors";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
-import { relativeTime } from "../lib/api";
 import { Menu, ContextMenu } from "../ui/menu";
 import { sessionPath, absoluteLink, copyToClipboard } from "../lib/share-link";
 import { copySessionTranscript } from "../lib/transcript-copy";
-import { IconChevronRight, IconHistory, IconPencil, IconPlus, IconRestore, IconRobot } from "./icons";
-import { isAutomationSession } from "../lib/landing-session";
+import {
+	IconChevronRight,
+	IconHistory,
+	IconPencil,
+	IconPlus,
+	IconX,
+} from "./icons";
 import { ArchivedSessionItems } from "./ArchivedSessionItems";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { UserAvatar } from "./UserAvatar";
 import {
-	NEW_MENU,
-	NEW_MENU_ITEM,
 	PANEL_TAB_DOT,
 	TAB_ACTIONS,
 	TAB_DRAFT,
@@ -41,6 +43,12 @@ import {
 	tabDotClass,
 } from "../lib/session-tab-classes";
 import { cn } from "../ui/cn";
+import {
+	animateEmptyTabClose,
+	animateEmptyTabOpen,
+} from "./session-tabs/empty-tab-morph";
+import { useTabReorder } from "./session-tabs/useTabReorder";
+import { shouldShowTabStrip } from "../lib/split-tabs";
 
 /**
  * The tab strip is scoped to ONE Workspace: it shows the sibling sessions of the
@@ -65,6 +73,13 @@ import { cn } from "../ui/cn";
  * A non-session pane (Review, …) surfaced in the strip. It starts after the session
  * tabs and is draggable from there like any session tab.
  */
+export type NewTabMorphOrigin = {
+	left: number;
+	top: number;
+	width: number;
+	height: number;
+};
+
 export type ViewTab = {
 	/** Stable id, e.g. `review:<sessionId>`. */
 	id: string;
@@ -153,7 +168,16 @@ interface Props {
 	 * (the + button's plain-click default), stack = new worktree branched off it,
 	 * ask = no worktree.
 	 */
-	onNewSession: (mode: "share" | "stack" | "ask") => void;
+	onNewSession?: (
+		mode: "share" | "stack" | "ask",
+		origin?: NewTabMorphOrigin,
+	) => void;
+	/** The workspace's reusable empty tab, which morphs from and back into +. */
+	emptySessionId?: string | null;
+	/** Client-minted tab id available in the same optimistic render as the click. */
+	morphingSessionId?: string | null;
+	/** Pointer control rectangle that the opening tab grows from. */
+	morphOrigin?: NewTabMorphOrigin | null;
 	/** Rename a session (double-click the title); empty title resets it. */
 	onRename: (id: string, title: string) => void;
 	/** Close (archive) a session — the × revealed on hover. */
@@ -164,10 +188,77 @@ interface Props {
 	onToast: (message: string) => void;
 }
 
-type NewMenu = { x: number; y: number };
 type TabMember =
 	| { kind: "session"; id: string; session: UnifiedSession }
 	| { kind: "view"; id: string; view: ViewTab };
+
+function ReorderTabItem({
+	tabKey,
+	nextActive,
+	draggable,
+	dragging,
+	onPointerDown,
+	onDragStart,
+	onDragEnd,
+	onClickCapture,
+	children,
+}: {
+	tabKey: string;
+	nextActive: boolean;
+	draggable: boolean;
+	dragging: boolean;
+	onPointerDown: (key: string, event: React.PointerEvent) => void;
+	onDragStart: (key: string) => void;
+	onDragEnd: (key: string) => void;
+	onClickCapture: (event: React.MouseEvent) => void;
+	children: React.ReactNode;
+}) {
+	return (
+		<Reorder.Item
+			as="div"
+			value={tabKey}
+			data-tab-key={tabKey}
+			data-next-active={nextActive ? "" : undefined}
+			dragListener={draggable}
+			onPointerDown={(event) => onPointerDown(tabKey, event)}
+			onDragStart={() => onDragStart(tabKey)}
+			onDragEnd={() => onDragEnd(tabKey)}
+			whileDrag={{ scale: 1.02, zIndex: 3 }}
+			onClickCapture={onClickCapture}
+			className={dragging ? `${TAB_ITEM} ${TAB_ITEM_DRAGGING}` : TAB_ITEM}
+		>
+			{children}
+		</Reorder.Item>
+	);
+}
+
+/** Apply the edge fade only when the title is genuinely clipped. Keeping this
+ * as a DOM attribute avoids rerendering the full tab strip for presentation. */
+function TabTitle({
+	children,
+	onDoubleClick,
+}: {
+	children: React.ReactNode;
+	onDoubleClick?: React.MouseEventHandler<HTMLSpanElement>;
+}) {
+	const ref = useRef<HTMLSpanElement>(null);
+	useEffect(() => {
+		const title = ref.current;
+		if (!title) return;
+		const sync = () =>
+			title.toggleAttribute("data-overflow", title.scrollWidth - title.clientWidth > 1);
+		const observer = new ResizeObserver(sync);
+		observer.observe(title);
+		sync();
+		return () => observer.disconnect();
+	}, [children]);
+
+	return (
+		<span ref={ref} className={TAB_TITLE} onDoubleClick={onDoubleClick}>
+			{children}
+		</span>
+	);
+}
 
 export function SessionTabs({
 	tabs,
@@ -189,6 +280,9 @@ export function SessionTabs({
 	onSelectView,
 	onCloseView,
 	onNewSession,
+	emptySessionId,
+	morphingSessionId,
+	morphOrigin,
 	onRename,
 	onClose,
 	onRestore,
@@ -196,7 +290,7 @@ export function SessionTabs({
 }: Props) {
 	const copyTranscriptLabel = useShortcutLabel("session-copy-transcript");
 	const closeLabel = useShortcutLabel("session-close");
-	const [newMenu, setNewMenu] = useState<NewMenu | null>(null);
+	const reducedMotion = useReducedMotion();
 	const [editKey, setEditKey] = useState<string | null>(null);
 	const [draft, setDraft] = useState("");
 	// Re-render when a composer draft appears/disappears — tabs check hasDraft()
@@ -208,126 +302,27 @@ export function SessionTabs({
 	// desktop they stay pinned after the last tab. Icons run a touch bigger on
 	// touch for an easier hit.
 	const isPhone = useIsPhone();
-	const ctrlIconSize = isPhone ? 25 : 22;
+	const ctrlIconSize = isPhone ? 23 : 20;
 
-	// Drag-to-reorder the session tabs (desktop only — an x-drag would fight touch
-	// scrolling / the phone swipe gestures). `orderDraft` holds the in-flight
-	// order during a drag so the strip stays smooth; it's cleared on drop once
-	// the parent's reordered `tabs` come back. `justDragged` swallows the click
-	// that fires synchronously after a drop so it doesn't select the tab.
-	const [orderDraft, setOrderDraft] = useState<string[] | null>(null);
-	const orderDraftRef = useRef<string[] | null>(null);
-	const justDragged = useRef(false);
-	const dragPoint = useRef<{ x: number; y: number } | null>(null);
-	const stopPointerTracking = useRef<(() => void) | null>(null);
-	// The frame the split preview is waiting on, so both ends of the drag can
-	// drop it: a queued preview must never land after the drag has cleared it.
-	const splitDragFrame = useRef(0);
-	function cancelSplitDragFrame() {
-		if (!splitDragFrame.current) return;
-		cancelAnimationFrame(splitDragFrame.current);
-		splitDragFrame.current = 0;
-	}
-	// A lone tab has nowhere to go WITHIN its own bar — but in a split it can
-	// still be dragged into the other column, so the count only gates a single
-	// unsplit strip.
-	const canDragTabs = !isPhone && (inSplit || tabs.length + viewTabs.length > 1);
-
-	// Where the dragged tab will land. Desktop tabs are flat text on the strip's
-	// own background, so a dragged one has no surface to separate it from the
-	// labels it passes — it lifts into a chip (`TAB_ITEM_DRAGGING`) and this ghost
-	// marks the gap it left behind. Reorder already opens that gap live; the
-	// ghost just makes an otherwise invisible hole readable.
-	const [dropSlot, setDropSlot] = useState<{
-		key: string;
-		left: number;
-		width: number;
-	} | null>(null);
-	const groupRef = useRef<HTMLDivElement | null>(null);
-	// Unit widths + inter-tab gap, measured once at drag start: they can't change
-	// mid-drag, so the slot's x is arithmetic from the live key order rather than
-	// a re-measure of siblings that are still spring-animating into place.
-	const dragMetrics = useRef<{
-		widths: Map<string, number>;
-		gap: number;
-		key: string;
-	} | null>(null);
-
-	/** Position the ghost at `key`'s slot in the given left-to-right unit order. */
-	function placeDropSlot(keys: string[]) {
-		const metrics = dragMetrics.current;
-		if (!metrics) return;
-		const index = keys.indexOf(metrics.key);
-		if (index < 0) return setDropSlot(null);
-		let left = 0;
-		for (let i = 0; i < index; i++) left += (metrics.widths.get(keys[i]) ?? 0) + metrics.gap;
-		setDropSlot({ key: metrics.key, left, width: metrics.widths.get(metrics.key) ?? 0 });
-	}
-
-	function beginDrag(key: string) {
-		const group = groupRef.current;
-		if (!group) return;
-		// offsetWidth/offsetLeft (layout box) rather than rects: whileDrag's scale
-		// is already applied to the dragged item and would inflate its width.
-		const items = [...group.children].filter(
-			(el): el is HTMLElement => el instanceof HTMLElement && !!el.dataset.tabKey,
-		);
-		const widths = new Map(items.map((el) => [el.dataset.tabKey!, el.offsetWidth] as const));
-		const gap =
-			items.length > 1
-				? Math.max(0, items[1].offsetLeft - (items[0].offsetLeft + items[0].offsetWidth))
-				: 0;
-		dragMetrics.current = { widths, gap, key };
-		placeDropSlot(items.map((el) => el.dataset.tabKey!));
-	}
-
-	function endDrag() {
-		dragMetrics.current = null;
-		setDropSlot(null);
-	}
-
-	/**
-	 * Follow the pointer for the whole drag so the split preview can track it.
-	 * The drop itself is handled in the item's `onDragEnd`, which reads the last
-	 * point from `dragPoint` — this only keeps that ref (and the preview) fresh.
-	 */
-	function trackPointer(id: string, event: React.PointerEvent) {
-		stopPointerTracking.current?.();
-		dragPoint.current = { x: event.clientX, y: event.clientY };
-		// The ref follows every pointer event, because the drop reads it
-		// synchronously. The PREVIEW only needs the position the next frame is
-		// drawn with, and it costs a parent state update, so it takes one per
-		// frame and only when the point has actually moved.
-		let sent: { x: number; y: number } | null = null;
-		const flush = () => {
-			splitDragFrame.current = 0;
-			const point = dragPoint.current;
-			if (!point || (sent && sent.x === point.x && sent.y === point.y)) return;
-			sent = point;
-			onSplitDrag?.(id, point);
-		};
-		const move = (pointer: PointerEvent) => {
-			dragPoint.current = { x: pointer.clientX, y: pointer.clientY };
-			if (!splitDragFrame.current)
-				splitDragFrame.current = requestAnimationFrame(flush);
-		};
-		const finish = () => {
-			cancelSplitDragFrame();
-			window.removeEventListener("pointermove", move);
-			window.removeEventListener("pointerup", up);
-			window.removeEventListener("pointercancel", cancel);
-			stopPointerTracking.current = null;
-			onSplitDrag?.(null);
-		};
-		const up = () => finish();
-		const cancel = () => finish();
-		stopPointerTracking.current = cancel;
-		window.addEventListener("pointermove", move);
-		window.addEventListener("pointerup", up);
-		window.addEventListener("pointercancel", cancel);
-	}
-
-	useEffect(() => () => stopPointerTracking.current?.(), []);
+	// A lone unsplit tab has nowhere to move. Split bars remain draggable so their
+	// final tab can cross into the other column.
+	const tabDragEnabled = !isPhone && (inSplit || tabs.length + viewTabs.length > 1);
+	const {
+		draftOrder,
+		dropSlot,
+		groupRef,
+		handleReorder,
+		handleItemPointerDown,
+		handleItemDragStart,
+		handleItemDragEnd,
+		handleItemClickCapture,
+	} = useTabReorder({
+		enabled: tabDragEnabled,
+		editingId: editKey,
+		onReorder: onReorderTabs,
+		onSplitDrag,
+		onSplitDrop,
+	});
 
 	// Sessions and view panes are one draggable row: the same drag that moves a
 	// session moves Review or Assets, and a pane can end up anywhere among the
@@ -340,7 +335,7 @@ export function SessionTabs({
 		...tabs.map((session): TabMember => ({ kind: "session", id: session.id, session })),
 		...viewTabs.map((view): TabMember => ({ kind: "view", id: view.id, view })),
 	];
-	const rank = new Map((orderDraft ?? tabOrder).map((id, i) => [id, i] as const));
+	const rank = new Map((draftOrder ?? tabOrder).map((id, i) => [id, i] as const));
 	const orderedMembers = members
 		.map((member, natural) => ({ member, natural }))
 		.sort((a, b) => {
@@ -404,116 +399,67 @@ export function SessionTabs({
 		return () => observer.disconnect();
 	}, [tabs.length, viewTabs.length]);
 
-	// Drop: hand the new order to the parent (which persists it and feeds it back
-	// as the next `tabs`), swallow the trailing click, then release the draft.
-	function commitReorder() {
-		justDragged.current = true;
-		setTimeout(() => {
-			justDragged.current = false;
-		}, 0);
-		const order = orderDraftRef.current;
-		orderDraftRef.current = null;
-		setOrderDraft(null);
-		endDrag();
-		if (order) onReorderTabs(order);
-	}
-
-	function reorderTabs(keys: string[]) {
-		orderDraftRef.current = keys;
-		setOrderDraft(keys);
-		placeDropSlot(keys);
-	}
-
-	/**
-	 * The drag wiring every tab in the strip shares — sessions and view panes are
-	 * the same kind of draggable item, differing only in what they render.
-	 * A drag that ends over the pane hands the tab to the other split column
-	 * (`onSplitDrop`) instead of committing a reorder.
-	 */
-	function reorderItemProps(key: string) {
-		const draggable = canDragTabs && editKey !== key;
-		return {
-			as: "div" as const,
-			value: key,
-			"data-tab-key": key,
-			dragListener: draggable,
-			onPointerDown: (event: React.PointerEvent) => {
-				if (draggable) trackPointer(key, event);
-			},
-			onDragStart: () => beginDrag(key),
-			onDragEnd: () => {
-				cancelSplitDragFrame();
-				onSplitDrag?.(null);
-				const point = dragPoint.current;
-				dragPoint.current = null;
-				if (point && onSplitDrop?.(key, point)) {
-					orderDraftRef.current = null;
-					setOrderDraft(null);
-					endDrag();
-					justDragged.current = true;
-					setTimeout(() => (justDragged.current = false), 0);
-					return;
-				}
-				commitReorder();
-			},
-			whileDrag: { scale: 1.02, zIndex: 3 },
-			onClickCapture: (e: React.MouseEvent) => {
-				if (justDragged.current) {
-					e.stopPropagation();
-					e.preventDefault();
-				}
-			},
-			className: dropSlot?.key === key ? `${TAB_ITEM} ${TAB_ITEM_DRAGGING}` : TAB_ITEM,
-		};
-	}
-
 	function commitRename() {
 		if (editKey !== null) onRename(editKey, draft.trim());
 		setEditKey(null);
 	}
 
-	useEffect(() => {
-		if (!newMenu) return;
-		const close = () => setNewMenu(null);
-		const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
-		window.addEventListener("click", close);
-		window.addEventListener("scroll", close, true);
-		window.addEventListener("keydown", onKey);
-		return () => {
-			window.removeEventListener("click", close);
-			window.removeEventListener("scroll", close, true);
-			window.removeEventListener("keydown", onKey);
-		};
-	}, [newMenu]);
-
 	// Closed sessions of this workspace, if there are any to offer.
 	const hasHistory = showHistory && archived.length > 0;
 
-	// One session and no view tabs → no strip. A bar holding a single tab is a
-	// row of chrome that names what the header already names, so it goes: the
-	// lone workspace's "+ New tab" button lives next to the session title in the
-	// header instead, and its closed sessions move to the header's ⋯ menu. But
-	// once a non-session pane (Review) is open, the strip appears so it has
-	// somewhere to live — a lone code session then reads as [session][Review].
-	if (!inSplit && tabs.length <= 1 && viewTabs.length === 0) return null;
+	// One tab of either kind → no strip. The pane header already names a lone
+	// Chat, Review or other view, and carries the + that the hidden strip would
+	// have owned. A session plus Review remains a real two-way choice.
+	if (!shouldShowTabStrip(tabs.length + viewTabs.length, inSplit)) return null;
 
-	// New-tab "+" — plain-click shares the workspace worktree; right-click offers
-	// the stacked/ask modes.
-	const newTabButton = (
-		<button
-			type="button"
-			className={TAB_NEW}
-			data-menu-open={newMenu ? "" : undefined}
-			aria-label="New session in this workspace"
-			title="New session. Shares this workspace's worktree (right-click for options)"
-			onClick={() => onNewSession("share")}
-			onContextMenu={(e) => {
-				e.preventDefault();
-				setNewMenu({ x: e.clientX, y: e.clientY });
-			}}
-		>
-			<IconPlus size={ctrlIconSize} />
-		</button>
+	function closeEmptySession(button: HTMLButtonElement, session: UnifiedSession) {
+		if (!reducedMotion && !isPhone) animateEmptyTabClose(button);
+		onClose(session);
+	}
+
+	// Plain-click shares the workspace worktree. The standard context menu owns
+	// right-click positioning, dismissal, focus and keyboard behavior.
+	const newTabButton = onNewSession && (
+		<ContextMenu.Root>
+			<ContextMenu.Trigger
+				render={
+					<button
+						type="button"
+						className={cn(TAB_NEW, "relative z-[1]")}
+						aria-label="New session in this workspace"
+						title="New session. Shares this workspace's worktree (right-click for options)"
+						onClick={(event) => {
+							const animate = event.detail > 0 && !reducedMotion && !isPhone;
+							const rect = animate ? event.currentTarget.getBoundingClientRect() : null;
+							onNewSession(
+								"share",
+								rect
+									? {
+											left: rect.left,
+											top: rect.top,
+											width: rect.width,
+											height: rect.height,
+										}
+									: undefined,
+							);
+						}}
+					/>
+				}
+			>
+				<IconPlus size={ctrlIconSize} />
+			</ContextMenu.Trigger>
+			<ContextMenu.Popup className="min-w-[250px]">
+				<ContextMenu.Item onClick={() => onNewSession("share")}>
+					New session · share worktree
+				</ContextMenu.Item>
+				<ContextMenu.Item onClick={() => onNewSession("stack")}>
+					New session · stacked worktree
+				</ContextMenu.Item>
+				<ContextMenu.Item onClick={() => onNewSession("ask")}>
+					New session · ask (no worktree)
+				</ContextMenu.Item>
+			</ContextMenu.Popup>
+		</ContextMenu.Root>
 	);
 
 	// History: every archived (closed) session of this workspace, in one list.
@@ -531,7 +477,7 @@ export function SessionTabs({
 	);
 
 	return (
-		<div className={cn(TAB_STRIP, !inSplit && "desktop:-mt-[5px]")} role="tablist">
+		<div className={cn(TAB_STRIP, !inSplit && "desktop:-mt-[11px]")} role="tablist">
 			<div className={TAB_SCROLL} ref={scrollRef}>
 				<Reorder.Group
 					as="div"
@@ -539,24 +485,40 @@ export function SessionTabs({
 					ref={groupRef}
 					className={TAB_GROUP}
 					values={orderedKeys}
-					onReorder={reorderTabs}
+					onReorder={handleReorder}
 				>
 					{/* First child so the tabs sliding over it paint on top. */}
 					{dropSlot && (
 						<div
 							className={TAB_DROP_SLOT}
-							style={{ left: dropSlot.left, width: dropSlot.width }}
+							style={{
+								left: dropSlot.left,
+								width: dropSlot.width,
+							}}
 							aria-hidden="true"
 						/>
 					)}
-					{orderedMembers.map((member) => {
+					{orderedMembers.map((member, memberIndex) => {
 						const key = member.id;
+						// A separator belongs only between two inactive tabs. The active
+						// surface supplies both of its own edges.
+						const nextActive = orderedMembers[memberIndex + 1]?.id === activeTopId;
 						// A view pane (Review, Assets, …): the same draggable item as a
 						// session, minus the rename/color/transcript menu it has no use for.
 						if (member.kind === "view") {
 							const v = member.view;
 							return (
-								<Reorder.Item key={key} {...reorderItemProps(key)}>
+								<ReorderTabItem
+								key={key}
+								tabKey={key}
+								nextActive={nextActive}
+								draggable={tabDragEnabled && editKey !== key}
+								dragging={dropSlot?.key === key}
+								onPointerDown={handleItemPointerDown}
+								onDragStart={handleItemDragStart}
+								onDragEnd={handleItemDragEnd}
+								onClickCapture={handleItemClickCapture}
+							>
 									<div
 										role="tab"
 										aria-selected={v.active}
@@ -567,16 +529,19 @@ export function SessionTabs({
 									>
 										{v.dotClass && <span className={`${PANEL_TAB_DOT} ${v.dotClass}`} />}
 										{v.icon ? (
-											<span className={TAB_VICON} aria-hidden="true">
+											<span
+												className={cn(TAB_VICON, v.closable !== false && "desktop:mr-3.5")}
+												aria-hidden="true"
+											>
 												{v.icon}
 											</span>
 										) : (
-											<span className={TAB_TITLE}>{v.label}</span>
+											<TabTitle>{v.label}</TabTitle>
 										)}
 										{v.closable !== false && (
 											<button
 												type="button"
-												className={tabCloseClass(v.active)}
+												className={tabCloseClass(isPhone)}
 												aria-label={`Close ${v.label}`}
 												title={`Close ${v.label}`}
 												onClick={(e) => {
@@ -584,30 +549,84 @@ export function SessionTabs({
 													onCloseView(v.id);
 												}}
 											>
-												×
+												<IconX size={16} dense aria-hidden="true" />
 											</button>
 										)}
 									</div>
-								</Reorder.Item>
+								</ReorderTabItem>
 							);
 						}
 						const session = member.session;
 						const waiting = !!session.waitingForInput;
 						const hex = colorHex(colors[key]);
+						const empty = key === emptySessionId;
+						const openingEmpty = key === morphingSessionId && !!morphOrigin;
+						const emptyVisual = empty || openingEmpty;
+
+						const titleContent =
+							editKey === key ? (
+								<input
+									className={TAB_RENAME}
+									value={draft}
+									autoFocus
+									onChange={(e) => setDraft(e.target.value)}
+									onClick={(e) => e.stopPropagation()}
+									onDoubleClick={(e) => e.stopPropagation()}
+									onBlur={commitRename}
+									onKeyDown={(e) => {
+										if (e.key === "Enter") commitRename();
+										else if (e.key === "Escape") setEditKey(null);
+										e.stopPropagation();
+									}}
+								/>
+							) : (
+								<TabTitle
+									onDoubleClick={(e) => {
+										e.stopPropagation();
+										setDraft(session.title);
+										setEditKey(key);
+									}}
+								>
+									{session.title}
+								</TabTitle>
+							);
 						return (
-							<Reorder.Item key={key} {...reorderItemProps(key)}>
+							<ReorderTabItem
+								key={key}
+								tabKey={key}
+								nextActive={nextActive}
+								draggable={tabDragEnabled && editKey !== key}
+								dragging={dropSlot?.key === key}
+								onPointerDown={handleItemPointerDown}
+								onDragStart={handleItemDragStart}
+								onDragEnd={handleItemDragEnd}
+								onClickCapture={handleItemClickCapture}
+							>
 								<ContextMenu.Root>
 									<ContextMenu.Trigger
 										render={
 											<div
+												ref={(node) => {
+													if (!openingEmpty || !node || !morphOrigin) return;
+													animateEmptyTabOpen(node, morphOrigin);
+												}}
 												role="tab"
 												aria-selected={key === activeId}
-												className={`group/tab ${tabClass({
-													active: key === activeId,
-													waiting,
-													colored: !!hex,
-												})}`}
-												style={hex ? ({ "--tab-color": hex } as React.CSSProperties) : undefined}
+												className={cn(
+													"group/tab",
+													tabClass({
+														active: key === activeId,
+														waiting,
+														colored: !!hex,
+													}),
+													emptyVisual && "desktop:pr-7",
+												)}
+												style={{
+													...(hex ? { "--tab-color": hex } : {}),
+													...(emptyVisual
+														? { overflow: "hidden", transition: "none" }
+														: {}),
+												} as React.CSSProperties}
 												onClick={() => onSelect(session)}
 												title={session.title}
 											/>
@@ -618,32 +637,15 @@ export function SessionTabs({
 										) : (
 											session.isRunning && <span className={tabDotClass(false)} />
 										)}
-										{editKey === key ? (
-											<input
-												className={TAB_RENAME}
-												value={draft}
-												autoFocus
-												onChange={(e) => setDraft(e.target.value)}
-												onClick={(e) => e.stopPropagation()}
-												onDoubleClick={(e) => e.stopPropagation()}
-												onBlur={commitRename}
-												onKeyDown={(e) => {
-													if (e.key === "Enter") commitRename();
-													else if (e.key === "Escape") setEditKey(null);
-													e.stopPropagation();
-												}}
-											/>
-										) : (
+										{emptyVisual ? (
 											<span
-												className={TAB_TITLE}
-												onDoubleClick={(e) => {
-													e.stopPropagation();
-													setDraft(session.title);
-													setEditKey(key);
-												}}
+												className="inline-flex min-w-0"
+												data-empty-tab-title=""
 											>
-												{session.title}
+												{titleContent}
 											</span>
+										) : (
+											titleContent
 										)}
 										{/* Who else is in this tab. The sidebar's workspace row shows
 							    the same faces for the whole strip, which says a teammate
@@ -678,20 +680,32 @@ export function SessionTabs({
 							    already on screen in the composer — no pencil needed). */}
 										{key !== activeId && hasDraft(`session:${key}`) && (
 											<span className={TAB_DRAFT} title="Unsent draft">
-												<IconPencil size={20} />
+												<IconPencil size={16} dense />
 											</span>
 										)}
 										<button
 											type="button"
-											className={tabCloseClass(key === activeId)}
+											className={tabCloseClass(isPhone)}
+											style={
+												emptyVisual && !isPhone
+													? { opacity: 1, pointerEvents: "auto" }
+													: undefined
+											}
 											aria-label="Close session"
 											title="Close session"
 											onClick={(e) => {
 												e.stopPropagation();
-												onClose(session);
+												if (empty) closeEmptySession(e.currentTarget, session);
+												else onClose(session);
 											}}
 										>
-											×
+											{emptyVisual ? (
+												<span className="inline-flex" data-empty-tab-glyph="">
+													<IconX size={16} dense aria-hidden="true" />
+												</span>
+											) : (
+												<IconX size={16} dense aria-hidden="true" />
+											)}
 										</button>
 									</ContextMenu.Trigger>
 									{/* finalFocus=false: "Rename session" mounts the inline rename
@@ -769,7 +783,7 @@ export function SessionTabs({
 										</ContextMenu.Item>
 									</ContextMenu.Popup>
 								</ContextMenu.Root>
-							</Reorder.Item>
+							</ReorderTabItem>
 						);
 					})}
 				</Reorder.Group>
@@ -783,44 +797,6 @@ export function SessionTabs({
 			{!isPhone && newTabButton}
 			{!isPhone && <div className={TAB_ACTIONS}>{historyMenu}</div>}
 
-			{newMenu && (
-				<div
-					className={NEW_MENU}
-					style={{ left: newMenu.x, top: newMenu.y }}
-					onClick={(e) => e.stopPropagation()}
-				>
-					<button
-						type="button"
-						className={NEW_MENU_ITEM}
-						onClick={() => {
-							setNewMenu(null);
-							onNewSession("share");
-						}}
-					>
-						New session · share worktree
-					</button>
-					<button
-						type="button"
-						className={NEW_MENU_ITEM}
-						onClick={() => {
-							setNewMenu(null);
-							onNewSession("stack");
-						}}
-					>
-						New session · stacked worktree
-					</button>
-					<button
-						type="button"
-						className={NEW_MENU_ITEM}
-						onClick={() => {
-							setNewMenu(null);
-							onNewSession("ask");
-						}}
-					>
-						New session · ask (no worktree)
-					</button>
-				</div>
-			)}
 		</div>
 	);
 }

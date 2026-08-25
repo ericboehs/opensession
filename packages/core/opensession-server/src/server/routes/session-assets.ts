@@ -13,13 +13,12 @@
 
 import type { RouteContext } from "./context";
 import {
-	assetMime,
+	assetStorageLocation,
 	deleteAssetAcross,
-	assetsDirFor,
-	findAssetPath,
 	listAssetsAcross,
+	openAssetAcross,
 } from "../session-assets";
-import { sessionIdsFor } from "../session-cache";
+import { sessionIdsForAsync } from "../session-cache";
 
 export async function handleSessionAssetsRoutes(
 	ctx: RouteContext,
@@ -33,10 +32,10 @@ export async function handleSessionAssetsRoutes(
 	if (listMatch && req.method === "GET") {
 		try {
 			const sessionId = decodeURIComponent(listMatch[1]!);
-			const sessionIds = sessionIdsFor(sessionId);
+			const sessionIds = await sessionIdsForAsync(sessionId);
 			return Response.json({
-				dir: assetsDirFor(sessionIds[0] || sessionId),
-				files: listAssetsAcross(sessionIds),
+				dir: assetStorageLocation(sessionIds[0] || sessionId),
+				files: await listAssetsAcross(sessionIds),
 			});
 		} catch (e: any) {
 			return Response.json(
@@ -52,28 +51,25 @@ export async function handleSessionAssetsRoutes(
 		/^\/api\/sessions\/([^/]+)\/assets\/raw\/(.+)$/,
 	);
 	if (rawMatch && req.method === "GET") {
-		let found: ReturnType<typeof findAssetPath>;
+		let found;
 		try {
 			const sessionId = decodeURIComponent(rawMatch[1]!);
 			const relRaw = decodeURIComponent(rawMatch[2]!);
-			found = findAssetPath(sessionIdsFor(sessionId), relRaw);
+			found = await openAssetAcross(await sessionIdsForAsync(sessionId), relRaw);
 		} catch (e: any) {
 			return new Response(e?.message || "bad path", { status: 400 });
 		}
 		if (!found) return new Response("not found", { status: 404 });
-		const { abs, rel } = found;
-		const file = Bun.file(abs);
 		const headers: Record<string, string> = {
-			"Content-Type": assetMime(rel),
-			"Content-Length": String(file.size),
-			// Agents iterate on these files in place; never cache a stale preview.
+			"Content-Type": found.type,
+			"Content-Length": String(found.size),
 			"Cache-Control": "no-store",
 		};
 		if (url.searchParams.get("download")) {
-			const name = rel.split("/").pop()?.replace(/[^\w. -]/g, "_") || "asset";
+			const name = found.path.split("/").pop()?.replace(/[^\w. -]/g, "_") || "asset";
 			headers["Content-Disposition"] = `attachment; filename="${name}"`;
 		}
-		return new Response(file, { headers });
+		return new Response(found.body, { headers });
 	}
 
 	// POST /api/sessions/:id/assets/delete { path } — POST (not DELETE) so the
@@ -89,7 +85,7 @@ export async function handleSessionAssetsRoutes(
 			};
 			if (!body.path)
 				return Response.json({ error: "path required" }, { status: 400 });
-			deleteAssetAcross(sessionIdsFor(sessionId), body.path);
+			await deleteAssetAcross(await sessionIdsForAsync(sessionId), body.path);
 			return Response.json({ ok: true });
 		} catch (e: any) {
 			return Response.json(

@@ -13,6 +13,7 @@ import type { PreviewService, PreviewStatus } from "./preview";
 /** `state` is optional on the wire of this durable store: entries written
  *  before it became a required PreviewService field have none. */
 type CachedPortal = Pick<PreviewService, "name" | "key" | "port" | "description" | "defaultPath" | "managed"> & { state?: PreviewService["state"] };
+type CachedPortalInput = Pick<CachedPortal, "name" | "key" | "port"> & Partial<Pick<CachedPortal, "description" | "defaultPath" | "managed" | "state">>;
 type CachedEntry = { sessionId: string; sandboxId: string; services: CachedPortal[]; updatedAt: string };
 type Store = { portals: CachedEntry[] };
 
@@ -25,7 +26,7 @@ function load(): Store {
 }
 function save(store: Store): void { writeJsonAtomic(storePath(), store); }
 
-export function cacheSandboxPortals(sessionId: string, sandboxId: string, services: PreviewService[]): void {
+function cacheSandboxPortalMetadata(sessionId: string, sandboxId: string, services: CachedPortalInput[]): void {
 	const entry: CachedEntry = {
 		sessionId,
 		sandboxId,
@@ -36,6 +37,17 @@ export function cacheSandboxPortals(sessionId: string, sandboxId: string, servic
 	const index = store.portals.findIndex((item) => item.sessionId === sessionId);
 	if (index < 0) store.portals.push(entry); else store.portals[index] = entry;
 	save(store);
+}
+
+export function cacheSandboxPortals(sessionId: string, sandboxId: string, services: PreviewService[]): void {
+	cacheSandboxPortalMetadata(sessionId, sandboxId, services);
+}
+
+/** Persist supervisor state at each transition, before a later status probe.
+ * This keeps newly starting, failed, and stopped Portals visible even when a
+ * remote provider cannot currently be inspected. */
+export function cacheSandboxPortalRecords(sessionId: string, sandboxId: string, records: CachedPortalInput[]): void {
+	cacheSandboxPortalMetadata(sessionId, sandboxId, records.map((record) => ({ ...record, managed: true })));
 }
 
 /** A non-waking status for the sidebar. There is intentionally no live URL. */
@@ -63,6 +75,20 @@ export function sleepingSandboxPortalStatus(sessionId: string, sandboxId?: strin
 		services,
 		portalRecipes: [],
 	};
+}
+
+/** Find the session that last registered this sandbox service. The caller
+ * still verifies the live session and sandbox before restoring authority. */
+export function cachedSandboxPortalOwner(
+	sandboxId: string,
+	port: number,
+): string | null {
+	const entry = load().portals.find(
+		(item) =>
+			item.sandboxId === sandboxId &&
+			item.services.some((service) => service.port === port),
+	);
+	return entry?.sessionId ?? null;
 }
 
 export function dropCachedSandboxPortals(sandboxId: string): void {

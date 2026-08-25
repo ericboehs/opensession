@@ -15,6 +15,29 @@ contextBridge.exposeInMainWorld("os1", {
   // window stays where it is, so the click routed the app to the right session
   // behind whatever the person was actually looking at.
   focusWindow: () => ipcRenderer.send("os1:focus-window"),
+  organizations: {
+    inlineAdd: true,
+    list: () => ipcRenderer.invoke("os1:organizations-list"),
+    switch: (id) => ipcRenderer.send("os1:organizations-switch", id),
+    add: (url, check = true) =>
+      ipcRenderer.invoke("os1:organizations-add", url, check),
+    manage: () => ipcRenderer.send("os1:organizations-manage"),
+  },
+  // Electron does not connect Chromium's Web Speech API to a recognition
+  // service. Stream the renderer's microphone PCM to the shell's signed native
+  // helper instead, which uses Apple's on-device recognizer when available.
+  dictation: {
+    start: (id, sampleRate, language) =>
+      ipcRenderer.invoke("os1:dictation-start", id, sampleRate, language),
+    push: (id, samples) => ipcRenderer.send("os1:dictation-audio", id, samples),
+    finish: (id) => ipcRenderer.invoke("os1:dictation-finish", id),
+    cancel: (id) => ipcRenderer.send("os1:dictation-cancel", id),
+    onText: (cb) => {
+      const listener = (_event, payload) => cb(payload);
+      ipcRenderer.on("os1:dictation-text", listener);
+      return () => ipcRenderer.removeListener("os1:dictation-text", listener);
+    },
+  },
   // Which Open Session server this shell talks to. Only the shell's own
   // file:// pages (setup.html, offline.html) call these, and main.js refuses
   // them from anywhere else: the app served BY a server must not be able to

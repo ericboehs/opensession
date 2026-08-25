@@ -25,7 +25,7 @@ Create an OAuth application in Linear (with agent/app-actor capability). The
 code requests scopes `app:assignable read write` with `actor: "app"`
 (`packages/core/opensession-server/src/agents/linear/oauth.ts`).
 
-Routes (on the [webhook server](install.md#webhook-server), port 3848 behind
+Routes (on the [public ingress gateway](install.md#public-ingress), port 3860 behind
 your TLS proxy):
 
 - `GET /oauth/authorize` — redirects to Linear's consent page
@@ -35,7 +35,7 @@ your TLS proxy):
 
 The OAuth `redirect_uri` is derived, not hardcoded: it is
 `integrations.linear.oauthRedirectUrl` if you set it, otherwise
-`<server.publicBaseUrl>/oauth/callback`. Register whichever one applies on your
+`<ingress.publicBaseUrl>/oauth/callback`. Register that exact public ingress URL on your
 Linear OAuth app — they must match exactly, including the scheme and any
 trailing path.
 
@@ -45,7 +45,7 @@ sessions get authenticated Linear MCP tools from the same grant.
 
 ## Webhook intake
 
-Point a Linear webhook at `POST /webhook` on the webhook server. Signature
+Point a Linear webhook at `POST /webhook` on Public ingress. Signature
 header: `linear-signature` (HMAC-SHA256 of the raw body with
 `LINEAR_WEBHOOK_SECRET`, timing-safe compare).
 

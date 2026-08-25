@@ -9,7 +9,6 @@
 #
 #   ~/.bun/bin/bun                      user-local bun (REMOTE_BUN)
 #   ~/.local/bin/claude                 claude.ai installer (REMOTE_CLAUDE)
-#   ~/.bun/bin/opencode                 bun add -g opencode-ai@<pin> (REMOTE_OPENCODE)
 #   /home/ubuntu/projects/opensession   SHALLOW GIT CLONE at the pinned sha —
 #                                       `.git` is kept deliberately so the
 #                                       in-VM runnerSha reconcile
@@ -35,15 +34,9 @@
 ARG BASE_IMAGE=opensession-workspace-microvm:latest
 FROM ${BASE_IMAGE}
 
-# Pins. OPENCODE_VERSION must match REMOTE_OPENCODE_VERSION (bootstrap.ts) —
-# refresh-sandbox-golden.sh passes it explicitly, extracted from
-# bootstrapSignature(). BUN_VERSION mirrors Dockerfile.workspace;
-# CLAUDE_VERSION mirrors deploy/sandbox/Dockerfile (the bootstrap installs
-# latest, but a golden build pins for reproducibility — the claude version is
-# not part of the signature).
-ARG OPENCODE_VERSION=1.18.18
+# Tool versions are pinned for reproducible golden images.
 ARG CLAUDE_VERSION=2.1.218
-ARG BUN_VERSION=1.3.14
+ARG BUN_VERSION=1.4.0
 # Commit sha (or ref) the payload clone is pinned to. Required.
 ARG RUNNER_SHA
 # Exact bootstrapSignature() string for ~/.bks-bootstrapped. Required.
@@ -84,12 +77,6 @@ RUN curl -fsSL https://claude.ai/install.sh | bash -s "${CLAUDE_VERSION}" \
          "${CLAUDE_VERSION}"|"${CLAUDE_VERSION} "*) echo "claude ${installed} OK" ;; \
          *) echo "claude version mismatch: got '${installed}', want ${CLAUDE_VERSION}"; exit 1 ;; \
        esac
-
-# opencode at ~/.bun/bin/opencode via bun's global dir — same command as
-# bootstrap.ts, same version assert.
-RUN BUN_INSTALL=/home/ubuntu/.bun /home/ubuntu/.bun/bin/bun add -g "opencode-ai@${OPENCODE_VERSION}" \
-    && v="$(/home/ubuntu/.bun/bin/opencode --version)" \
-    && { [ "$v" = "${OPENCODE_VERSION}" ] || { echo "opencode version mismatch: got '$v', want ${OPENCODE_VERSION}"; exit 1; }; }
 
 # ~/.claude seed (bootstrap parity).
 RUN mkdir -p /home/ubuntu/.claude && printf '{}' > /home/ubuntu/.claude/settings.json

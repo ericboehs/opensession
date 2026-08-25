@@ -13,6 +13,7 @@ const TEAM = [
 	{ name: "Kent", fullName: "Kent de Bruin" },
 ];
 const ID = "os-01a006d8-eddd-7000-bca2-b010caf2d8e7";
+const WORKSPACE_ID = "ws-28712580-a369-4d58-996b-f8c23e523ed1";
 
 describe("composerHighlightHtml", () => {
 	test("plain text passes through escaped", () => {
@@ -135,6 +136,15 @@ describe("session ids in the mirror", () => {
 		);
 	});
 
+	test("an archived session uses the archived glyph class", () => {
+		const label = SESSION_GLYPH_SLOT + "Clean pasted session links";
+		expect(
+			composerHighlightHtml(label, [], [
+				{ start: 0, end: label.length, id: ID, label, archived: true },
+			]),
+		).toContain('class="cmp-session cmp-session-named cmp-archived"');
+	});
+
 	test("keeps projected margin outside the painted session pill", () => {
 		const label = SESSION_GLYPH_SLOT + "Clean pasted session links";
 		const shown = SESSION_PILL_MARGIN + label + SESSION_PILL_MARGIN;
@@ -175,6 +185,31 @@ describe("session ids in the mirror", () => {
 		).toBe(
 			'<span class="cmp-session cmp-session-named">Fix ``` fences</span>\n' +
 				'<span class="cmp-fence">```\ncode\n```</span>\nplain​',
+		);
+	});
+
+	test("a workspace mention becomes an atomic named pill", () => {
+		const canonical = `Review @workspace:${WORKSPACE_ID} now`;
+		expect(composerSessionRanges(canonical)).toEqual([
+			{
+				start: 7,
+				end: 7 + `@workspace:${WORKSPACE_ID}`.length,
+				id: WORKSPACE_ID,
+				kind: "workspace",
+			},
+		]);
+		expect(
+			composerHighlightHtml("Release planning", [], [
+				{
+					start: 0,
+					end: "Release planning".length,
+					id: WORKSPACE_ID,
+					kind: "workspace",
+					label: "Release planning",
+				},
+			]),
+		).toBe(
+			'<span class="cmp-session cmp-session-named cmp-workspace">Release planning</span>​',
 		);
 	});
 

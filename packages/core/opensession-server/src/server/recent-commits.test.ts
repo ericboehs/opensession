@@ -14,8 +14,8 @@ describe("parseCommitLog", () => {
 			entry(
 				[
 					"a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
-					"Michael Robot",
-					"michael@tella.dev",
+					"OS Robot",
+					"os@tella.dev",
 					"2026-08-14T10:17:45+00:00",
 					"Open a turn's diff from the fold header",
 				],
@@ -28,8 +28,9 @@ describe("parseCommitLog", () => {
 			repo: "opensession",
 			sha: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
 			title: "Open a turn's diff from the fold header",
-			author: "Michael Robot",
+			author: "OS Robot",
 			committedAt: "2026-08-14T10:17:45+00:00",
+			filesChanged: 3,
 			additions: 21,
 			deletions: 4,
 			url: "https://github.com/tellahq/opensession/commit/a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
@@ -54,6 +55,7 @@ describe("parseCommitLog", () => {
 			{ id: "local" },
 		);
 		expect(row.url).toBeUndefined();
+		expect(row.filesChanged).toBe(0);
 		expect(row.additions).toBe(0);
 	});
 

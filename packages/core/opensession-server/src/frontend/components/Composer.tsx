@@ -1,11 +1,18 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+	useEffect,
+	useEffectEvent,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import {
   useShortcutKeys,
   useShortcutLabel,
 } from "../hooks/useShortcutBindings";
 import type { ModelOption, FileMention, ProviderAccountOption } from "../lib/api";
 import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../lib/images";
-import { loadDraft, onDraftsChanged, saveDraft } from "../lib/drafts";
+import { clearDraft, loadDraft, onDraftsChanged, saveDraft } from "../lib/drafts";
+import { appendDictation } from "../lib/dictation";
 import {
   addStaging,
   attachingLabel,
@@ -98,6 +105,7 @@ import {
   MOD_ENTER_GLYPH,
 } from "../lib/send-key";
 import { getSendKeyPref, onSendKeyChanged } from "../lib/send-key-pref";
+import { useDefaultModelPreference } from "../hooks/useDefaultModelPreference";
 import { isApple } from "../lib/platform";
 import { matchesShortcut } from "../lib/shortcuts";
 import { VoiceInput } from "./VoiceInput";
@@ -115,6 +123,33 @@ import { composerMorph, composerChipMotion } from "../ui/motion";
 import { ModelEffortSelect, shortModelLabel } from "./ModelEffortSelect";
 import type { SessionUsage } from "../lib/types";
 
+type ComposerPressButtonProps = Omit<
+  React.ComponentPropsWithoutRef<"button">,
+  "onClick" | "onTouchEnd"
+> & { onPress: () => void };
+
+const ComposerPressButton = React.forwardRef<
+  HTMLButtonElement,
+  ComposerPressButtonProps
+>(function ComposerPressButton({ onPress, ...props }, ref) {
+  const touchFiredAt = useRef(0);
+  return (
+    <button
+      {...props}
+      ref={ref}
+      onTouchEnd={(event) => {
+        event.preventDefault();
+        touchFiredAt.current = Date.now();
+        onPress();
+      }}
+      onClick={() => {
+        if (Date.now() - touchFiredAt.current < 700) return;
+        onPress();
+      }}
+    />
+  );
+});
+
 interface Props {
   /**
    * Controlled draft text. Omit it (with `onChange`) to let the Composer own
@@ -125,6 +160,10 @@ interface Props {
    */
   value?: string;
   onChange?: (value: string) => void;
+  /** Composer activity for the session's live typing indicator. */
+  onTyping?: (active: boolean) => void;
+  /** Reports when dictation owns the input so a host can coordinate nearby UI. */
+  onDictationActive?: (active: boolean) => void;
   /**
    * Uncontrolled mode only: persist the text draft under this key (lib/drafts)
    * so it survives the component unmounting — switching to another session,
@@ -149,6 +188,11 @@ interface Props {
   sendTitle?: string;
   busy?: boolean;
   onStop?: () => void;
+  /** A stop was asked for and the turn has not settled yet. The button stays
+   *  live (a second press re-sends the cancel, which is what people already do
+   *  when nothing seems to happen) but reads as acknowledged rather than
+   *  ignored. */
+  stopping?: boolean;
   /**
    * Ask for the stop confirmation from outside the composer — the parent bumps
    * this counter, and each bump opens the same dialog Escape does. A counter
@@ -428,6 +472,8 @@ function StopConfirmModal({
 export function Composer({
   value,
   onChange,
+  onTyping,
+  onDictationActive,
   draftKey,
   onSend,
   placeholder,
@@ -436,6 +482,7 @@ export function Composer({
   sendTitle,
   busy,
   onStop,
+  stopping,
   stopRequest,
   models,
   defaultModel,
@@ -482,6 +529,7 @@ export function Composer({
   const textareaRef = externalRef ?? internalRef;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
+  const voiceOverlayRef = useRef<HTMLDivElement>(null);
   // Uncontrolled mode (no `value` prop): the draft lives here so keystrokes
   // re-render only the Composer, not the whole parent view. With a `draftKey`
   // it seeds from — and mirrors into — the draft store, so navigating away
@@ -509,6 +557,10 @@ export function Composer({
     [],
   );
   const sendKey = effectiveSendKey(storedSendKey);
+  // The preference applies only to new sessions; this session's model remains
+  // the value selected in the same menu.
+  const { preferredDefaultModel, setPreferredDefaultModel } =
+    useDefaultModelPreference();
   // Follow-up behavior preferences (Settings → Preferences): what each send
   // gesture — plain Enter/the send button vs ⌘/Ctrl+Enter — does while the
   // run is busy. Both configurable; defaults queue/steer.
@@ -565,14 +617,22 @@ export function Composer({
     });
   }, [isControlled, draftKey, textareaRef]);
   // One-shot prefill (see the prop doc): each new seq folds the given text
-  // into the draft and focuses the field for immediate editing.
+  // into the draft and focuses the field for immediate editing. The fold
+  // itself reads the latest draft through an effect event, so the trigger
+  // stays just the prefill sequence.
   const prefillSeqRef = useRef(0);
-  useEffect(() => {
+  const applyPrefill = useEffectEvent(() => {
     if (!prefill || prefill.seq === prefillSeqRef.current) return;
     prefillSeqRef.current = prefill.seq;
     const next = !prefill.replace && text.trim()
       ? `${text.replace(/\s+$/, "")}\n${prefill.text}`
       : prefill.text;
+    // Persist the handoff before React commits it. Restoring queued attachments
+    // can emit a draft-store change in the same pass; if the store still holds
+    // the old empty text, that event otherwise erases the restored message.
+    if (!isControlled && draftKey) {
+      saveDraft(draftKey, { text: next, pastedTexts });
+    }
     setText(next);
     queueMicrotask(() => {
       const el = textareaRef.current;
@@ -582,6 +642,9 @@ export function Composer({
         el.selectionStart = el.selectionEnd = at;
       }
     });
+  });
+  useEffect(() => {
+    applyPrefill();
   }, [prefill]);
   // Fire a send handler with the current draft; in uncontrolled mode a `true`
   // return means "consumed" — clear the draft (falsy keeps it, e.g. offline).
@@ -591,15 +654,29 @@ export function Composer({
       opts?: { steer?: boolean },
     ) => boolean | void | Promise<boolean | void>,
     opts?: { steer?: boolean },
+    /** A draft that has not reached state yet, which is what the dictation
+     *  bar's ↑ sends: the transcript and the send land in one gesture, and
+     *  the `setDisplayText` beside it has not committed. */
+    overrideText?: string,
   ) {
     const sentPastedIds = new Set(pastedTexts.map((attachment) => attachment.id));
     const consume = () => {
-      if (!isControlled) setInnerValue("");
+      onTyping?.(false);
+      if (!isControlled) {
+        // Clear the store before React commits the empty field. On iOS the send
+        // button can blur the textarea first; a pending remote draft would then
+        // see the old stored value and restore the message that just sent.
+        if (draftKey) clearDraft(draftKey);
+        setInnerValue("");
+      }
       setPastedTexts((current) =>
         current.filter((attachment) => !sentPastedIds.has(attachment.id)),
       );
     };
-    const consumed = handler(composePastedText(text, pastedTexts), opts);
+    const consumed = handler(
+      composePastedText(overrideText ?? text, pastedTexts),
+      opts,
+    );
     if (consumed instanceof Promise) {
       void consumed.then((result) => {
         if (result === true) consume();
@@ -609,9 +686,15 @@ export function Composer({
     }
   }
   const outgoingText = composePastedText(text, pastedTexts);
-  const isSendDisabled =
-    (typeof sendDisabled === "function" ? sendDisabled(outgoingText) : sendDisabled) ||
-    isStaging(activeStaging);
+  /** Whether a given draft may be sent right now. The dictation bar asks about
+   *  a draft it is about to write, so the question takes the text. */
+  const sendBlockedFor = (draft: string) =>
+    !!(
+      (typeof sendDisabled === "function"
+        ? sendDisabled(composePastedText(draft, pastedTexts))
+        : sendDisabled) || isStaging(activeStaging)
+    );
+  const isSendDisabled = sendBlockedFor(text);
   const imgs = images || [];
   const fls = files || [];
   // Notes accept images but not arbitrary files: images remain team-visible,
@@ -638,13 +721,16 @@ export function Composer({
 
   // Phones get a ChatGPT-style resting state: while the field is empty and
   // unfocused, the composer collapses to a single-row pill ("+ · placeholder ·
-  // mic · send"), hiding the model/effort/goal chips. Focusing the field or
-  // adding any content (text or attachment) expands it to the full toolbar.
+  // mic · send"), hiding the model/effort/goal chips. Note mode keeps this
+  // compact yellow state too; focusing the field reveals its context chip.
+  // Focusing the field or adding content expands it to the full toolbar.
   // The open model menu also holds it expanded: the portaled popup takes focus
   // (blurring the textarea), and collapsing would unmount the pill trigger and
   // slam the menu shut mid-interaction.
   const [focused, setFocused] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [dictating, setDictating] = useState(false);
+  const [dictationClipping, setDictationClipping] = useState(false);
   const hasAttached = !!attached;
   const hasContent =
     !!text.trim() ||
@@ -655,7 +741,21 @@ export function Composer({
     !!quote ||
     hasAttached;
   const minimized = isPhone && !focused && !hasContent && !modelMenuOpen;
+  const composerIconButtonClass = cn(
+    paletteIconBtn,
+    minimized && paletteIconBtnRound,
+    !minimized && "phone:[&_svg]:size-[22px]",
+  );
+  const addButtonClass = cn(
+    composerIconButtonClass,
+    minimized ? "ml-0" : "-ml-1.5",
+  );
   const showSend = !busy || hasContent;
+  function handleDictationActive(active: boolean) {
+    setDictating(active);
+    if (active) setDictationClipping(true);
+    onDictationActive?.(active);
+  }
   // Whether the send button/plain send steers right now: each gesture has its
   // own configured busy action — Enter/button uses the "enter" pref, holding
   // ⌘/Ctrl switches to the "mod" pref. (With ⌘/Ctrl+Enter as the send key the
@@ -701,7 +801,9 @@ export function Composer({
   // the dialog goes away with it rather than stopping the NEXT turn.
   const [stopConfirm, setStopConfirm] = useState(false);
   const busyRef = useRef(busy);
-  busyRef.current = busy;
+  useLayoutEffect(() => {
+    busyRef.current = busy;
+  });
   useEffect(() => {
     if (!busy) setStopConfirm(false);
   }, [busy]);
@@ -723,7 +825,7 @@ export function Composer({
     if (asked === lastStopRequest.current) return;
     lastStopRequest.current = asked;
     if (busy && onStop && !disabled) requestStop();
-  }, [stopRequest]);
+  }, [stopRequest, busy, onStop, disabled]);
 
   // Which toolbar popover is open ("add" menu or "goal" editor). Closed on an
   // outside click or after an action.
@@ -752,22 +854,15 @@ export function Composer({
   // synthesized mousedown → textarea blur → keyboard dismiss → click) makes
   // toolbar taps close the keyboard and, on an empty draft, collapse the
   // composer mid-tap. Cancelling pointerdown does NOT stop that on iOS — the
-  // only reliable point is touchend itself. tapProps(action) fires the action
-  // on touchend and cancels the mouse synthesis; onClick stays for mouse/pen,
-  // guarded by the shared timestamp against browsers that still send both.
-  const touchFiredAt = useRef(0);
-  function tapProps(action: () => void) {
-    return {
-      onTouchEnd: (e: React.TouchEvent) => {
-        e.preventDefault();
-        touchFiredAt.current = Date.now();
-        action();
-      },
-      onClick: () => {
-        if (Date.now() - touchFiredAt.current < 700) return;
-        action();
-      },
-    };
+  // only reliable point is touchend itself. ComposerPressButton fires the
+  // action there and cancels mouse synthesis; mouse and pen still use click.
+  function attachFilesFromMenu() {
+    setMenu(null);
+    fileInputRef.current?.click();
+  }
+  function mentionFileFromMenu() {
+    setMenu(null);
+    startMention();
   }
 
   // Modal editing on the draft (Settings → Preferences → Vim mode). The engine
@@ -780,7 +875,14 @@ export function Composer({
   });
 
   // "@"-mention file autocomplete (shared with the New-session prompt field).
-  const mentions = useFileMentions({
+  const {
+    inputWrapRef: mentionInputWrapRef,
+    popup: mentionPopup,
+    inputProps: mentionInputProps,
+    sync: syncMentions,
+    handleKeyDown: handleMentionKeyDown,
+    close: closeMentions,
+  } = useFileMentions({
     value: displayText,
     onChange: setDisplayText,
     textareaRef,
@@ -839,8 +941,8 @@ export function Composer({
       : selected.filter(allowed);
     const batch = countStaging(accepted);
     setLocalStaging((current) => addStaging(current, batch));
-    try {
-      const { images: newImgs, files: newFls, rejected } =
+    await (async () => {
+const { images: newImgs, files: newFls, rejected } =
         await splitAttachments(accepted);
       // Images ride the vision channel; other files need a dedicated file channel
       // (if the parent only wired images, non-image files are simply ignored).
@@ -856,9 +958,9 @@ export function Composer({
         ),
       ];
       if (failures.length) alert(`Couldn't attach:\n${failures.join("\n")}`);
-    } finally {
-      setLocalStaging((current) => subtractStaging(current, batch));
-    }
+})().finally(async () => {
+setLocalStaging((current) => subtractStaging(current, batch));
+});
   }
 
   function handlePaste(e: React.ClipboardEvent) {
@@ -882,12 +984,6 @@ export function Composer({
     }
   }
 
-  function handleDrop(e: React.DragEvent) {
-    if (!canAttach || !e.dataTransfer?.files?.length) return;
-    e.preventDefault();
-    void addFiles(e.dataTransfer.files);
-  }
-
   function removeImage(i: number) {
     onImagesChange?.(imgs.filter((_, idx) => idx !== i));
   }
@@ -908,7 +1004,7 @@ export function Composer({
         t.focus();
         t.selectionStart = t.selectionEnd = at + 1;
       }
-      mentions.sync();
+      syncMentions();
     });
   }
 
@@ -999,7 +1095,7 @@ export function Composer({
     appliedHeight.current = height;
     // Height (and thus clip state) just changed — re-evaluate both edges.
     updateScrollEdges(el);
-  }, [displayText, isPhone, minimized]);
+  }, [displayText, isPhone, minimized, textareaRef]);
 
   // The draft can also start or stop clipping without a keystroke: the pane is
   // resized, a split opens, the phone keyboard takes the field's cap down. The
@@ -1010,7 +1106,7 @@ export function Composer({
     const observer = new ResizeObserver(() => updateScrollEdges(el));
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [textareaRef]);
 
   // Live code styling: when the draft contains a backtick, a metrics-identical
   // mirror div paints `inline` / ```fence``` tints behind a transparent-text
@@ -1024,17 +1120,10 @@ export function Composer({
   const hlRef = useRef<HTMLDivElement>(null);
   const sessionRanges = sessionNames.sessions;
   const hlActive = needsComposerHighlight(displayText, people, sessionRanges);
-  const hlHtml = useMemo(
-    () =>
-      hlActive
+  const hlHtml = (hlActive
         ? composerHighlightHtml(displayText, people, sessionRanges)
-        : "",
-    [hlActive, displayText, people, sessionRanges],
-  );
-  const mentionRanges = useMemo(
-    () => composerMentionRanges(displayText, people),
-    [displayText, people],
-  );
+        : "");
+  const mentionRanges = (composerMentionRanges(displayText, people));
   // A mention pill's padding is bought out of the space beside it, so the draft
   // pays a wider word space only while it holds one. Both the field and the
   // mirror wear it, or the painted text slides off the caret behind it. Session
@@ -1106,9 +1195,7 @@ export function Composer({
   // Base UI positions against an element; a pill is a box of text with no
   // element of its own, so it is handed the box instead. Rebuilt with the
   // menu's own state, which is the only thing that moves it.
-  const pillAnchor = useMemo(
-    () =>
-      pillMenu
+  const pillAnchor = (pillMenu
         ? {
             getBoundingClientRect: () =>
               new DOMRect(
@@ -1118,9 +1205,7 @@ export function Composer({
                 pillMenu.rect.height,
               ),
           }
-        : null,
-    [pillMenu],
-  );
+        : null);
 
   /** Point the reference somewhere else, rather than at nothing. */
   function changePill() {
@@ -1134,7 +1219,7 @@ export function Composer({
       // typing searches for the person to put there instead. Selecting the
       // `@` too would end the mention the moment the first letter replaced it.
       el.setSelectionRange(start + 1, end);
-      mentions.sync();
+      syncMentions();
     } else {
       // A session has no picker to re-open: the whole token stays selected,
       // and typing or pasting another link over it replaces the reference
@@ -1237,11 +1322,11 @@ export function Composer({
   }, [displayText]);
 
   // Dictated text lands at the end of the draft (with a joining space) and
-  // focus returns to the textarea so you can touch it up and send.
+  // focus returns to the textarea so you can touch it up and send. Appending
+  // rather than replacing is what lets someone keep ✓, read the transcript,
+  // and press the mic again to add to it.
   function insertDictation(t: string) {
-    const next = displayText.trim()
-      ? `${displayText.replace(/\s+$/, "")} ${t}`
-      : t;
+    const next = appendDictation(displayText, t);
     setDisplayText(next);
     queueMicrotask(() => {
       const el = textareaRef.current;
@@ -1250,6 +1335,22 @@ export function Composer({
         el.selectionStart = el.selectionEnd = next.length;
       }
     });
+  }
+
+  /** The dictation bar's ↑: the same append, sent as it stands. What leaves is
+   *  the CANONICAL draft (a session reference is an id there and a title in
+   *  the field), handed to `fireSend` directly because the state write beside
+   *  it has not committed yet. A draft that cannot be sent (offline, a host
+   *  that vetoes it) still keeps the text, so nothing dictated is lost. */
+  function sendDictation(t: string) {
+    insertDictation(t);
+    const nextCanonical = appendDictation(text, t);
+    if (disabled || sendBlockedFor(nextCanonical)) return;
+    fireSend(
+      onSend,
+      steerSend ? { steer: true } : undefined,
+      nextCanonical,
+    );
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -1261,7 +1362,7 @@ export function Composer({
     // An undo that has to cross a session token replays canonical state; every
     // other ⌘Z is left to the field's own history.
     if (sessionNames.handleUndoRedoKey(e)) return;
-    if (mentions.handleKeyDown(e)) return;
+    if (handleMentionKeyDown(e)) return;
     if ((e.nativeEvent as any).isComposing) return;
     if (
       (e.key === "Backspace" || e.key === "Delete") &&
@@ -1334,6 +1435,11 @@ export function Composer({
       : {}),
     "--composer-note-bg": noteSurface("var(--composer-surface)"),
   } as React.CSSProperties;
+  const dictationSurfaceStyle: React.CSSProperties | undefined = noteMode
+    ? { backgroundColor: noteSurface("var(--composer-surface)") }
+    : askMode
+      ? { backgroundColor: askSurface("var(--composer-surface)") }
+      : undefined;
 
   return (
     <div className="mx-auto w-full max-w-[calc(var(--session-col)+40px)]">
@@ -1380,14 +1486,22 @@ export function Composer({
           borderTopRightRadius: minimized ? 999 : hasAttached ? 0 : composerRadius(),
           borderBottomLeftRadius: minimized ? 999 : composerRadius(),
           borderBottomRightRadius: minimized ? 999 : composerRadius(),
+          // The controls stay in their toolbar positions while the top edge
+          // comes down to wrap them. Returning to auto reveals the draft.
+          height: dictating ? (minimized ? 50 : isPhone ? 60 : 62) : "auto",
         }}
         transition={composerMorph}
+        onAnimationComplete={() => {
+          // Keep the draft clipped until the top edge has finished expanding.
+          // Dropping overflow at the start would reveal text outside the box.
+          if (!dictating) setDictationClipping(false);
+        }}
         // `composer` and `composer-min` stay on the markup as hooks, not as
-        // styling: the viewer's input wrap keys the phone keyboard gap off the
-        // pair with `body.kb-open .viewer-input:has(.composer:not(
-        // .composer-min))` (see lib/session-viewer-classes.ts), and
-        // VoiceInput's recording overlay fills `.composer` as its positioned
-        // ancestor.
+        // styling: `.composer.composer-min .palette-icon-btn` is styled from
+        // the stylesheet, and VoiceInput's recording overlay fills `.composer`
+        // as its positioned ancestor. (The phone keyboard gap used to read this
+        // pair too; it now keys off `--kb-inset` instead, which does not care
+        // which composer is up — see lib/session-viewer-classes.ts.)
         className={cn(
           "composer",
           minimized && "composer-min",
@@ -1395,12 +1509,18 @@ export function Composer({
           minimized ? composerBoxMinimized : composerBoxExpanded,
           "isolate before:pointer-events-none before:absolute before:inset-0 before:z-0 before:rounded-[inherit] before:[corner-shape:inherit] before:bg-[var(--composer-note-bg)] before:opacity-0 before:transition-opacity before:duration-150 before:ease-[cubic-bezier(0.32,0.72,0,1)] [&>*]:relative [&>*]:z-[1]",
           noteMode && "before:opacity-100",
+          dictationClipping && "overflow-hidden",
           disabled && "opacity-60",
         )}
         style={surfaceStyle}
-        onDrop={handleDrop}
-        onDragOver={(e) => canAttach && e.preventDefault()}
       >
+        {/* The mic lives in the toolbar, but recording replaces this entire
+            surface. VoiceInput portals the active bar here so a positioned
+            toolbar cannot trap it at one-row height. */}
+        <div
+          ref={voiceOverlayRef}
+          className="pointer-events-none !absolute inset-0 !z-[6]"
+        />
         {/* Vim mode indicator — only surfaces outside insert mode, so plain
             typing looks identical with the pref on. Sits above the input wrap's
             scroll-fade mask. */}
@@ -1441,10 +1561,10 @@ export function Composer({
             )}
             {/* Note mode is context attached to the next send, exactly like a
                 quoted selection, so it says so in the same place and the same
-                shape rather than as a marker down in the toolbar — where the ✕
-                had to be small enough to fit beside the "+" and the model pill,
-                which made it hard to read and hard to hit. */}
-            {noteMode && (
+                shape rather than as a marker down in the toolbar. The resting
+                phone pill communicates it through its yellow surface and
+                placeholder; the named chip appears once the field expands. */}
+            {noteMode && !minimized && (
               <ComposerContextChip
                 key="note-mode"
                 icon={<IconNote size={15} />}
@@ -1515,9 +1635,9 @@ export function Composer({
             "relative",
             minimized && "order-2 min-w-0 flex-auto",
           )}
-          ref={mentions.inputWrapRef}
+          ref={mentionInputWrapRef}
         >
-          {mentions.popup}
+          {mentionPopup}
           {hlActive && (
             // `composer-hl` stays as a hook: the tint spans inside this mirror
             // are written as innerHTML by lib/composer-highlight.ts, so their
@@ -1553,7 +1673,7 @@ export function Composer({
           )}
           <textarea
             ref={textareaRef}
-            {...mentions.inputProps}
+            {...mentionInputProps}
             // `composer-textarea` stays as a class NAME hook: the sidebar swipe
             // guard (lib/sidebar-swipe.ts) and SessionViewer's global keys both
             // ask whether the caret is in a composer by looking for it.
@@ -1602,12 +1722,13 @@ export function Composer({
               // effect, which is both later and more reliable than a microtask
               // queued from here (see useFileMentions).
               sessionNames.handleChange(e);
+              onTyping?.(e.currentTarget.value.length > 0);
             }}
             onKeyDown={handleKeyDown}
-            onKeyUp={mentions.sync}
+            onKeyUp={syncMentions}
             onClick={(e) => {
               if (openPillMenu(e.currentTarget, e.clientX, e.clientY)) return;
-              mentions.sync();
+              syncMentions();
             }}
             onMouseMove={(e) => updatePillHover(e.clientX, e.clientY)}
             onMouseLeave={() => updatePillHover(-1, -1)}
@@ -1621,13 +1742,14 @@ export function Composer({
             onFocus={() => setFocused(true)}
             onBlur={() => {
               setFocused(false);
+              onTyping?.(false);
               const remote = pendingRemoteText.current;
               pendingRemoteText.current = null;
               if (remote !== null && (!draftKey || loadDraft(draftKey).text === remote)) {
                 setInnerValue((current) => (current === remote ? current : remote));
               }
               // Let a click on a suggestion (mousedown) win the race first.
-              setTimeout(mentions.close, 120);
+              setTimeout(closeMentions, 120);
             }}
             onCopy={sessionNames.handleCopy}
             onCut={sessionNames.handleCut}
@@ -1682,7 +1804,7 @@ export function Composer({
           // keyboard. Cancelling pointerdown covers pointer-event browsers,
           // but NOT iOS Safari — there the blur rides the touchend→mousedown
           // synthesis, which only touchend's own preventDefault stops. That's
-          // what tapProps() on the individual buttons is for; this handler is
+          // what ComposerPressButton does for each button; this handler is
           // the non-iOS half.
           onPointerDown={(e) => {
             if (isPhone) e.preventDefault();
@@ -1710,7 +1832,7 @@ export function Composer({
               )}
             >
               <Tooltip label="Attach files and session options">
-                <button
+                <ComposerPressButton
                   type="button"
                   // The "+" is a 40px target around a 22px glyph, so aligning
                   // its BOX with the composer's padding parks the visible ink
@@ -1718,19 +1840,14 @@ export function Composer({
                   // its wrapper, which the menu anchors to) back out so the glyph
                   // sits about where the send circle does. The resting pill
                   // insets everything by 4px already, so it stays put there.
-                  className={cn(
-                    paletteIconBtn,
-                    minimized && paletteIconBtnRound,
-                    !minimized && "phone:[&_svg]:size-[22px]",
-                    minimized ? "ml-0" : "-ml-1.5",
-                  )}
-                  {...tapProps(() => setMenu(menu === "add" ? null : "add"))}
+                  className={addButtonClass}
+                  onPress={() => setMenu(menu === "add" ? null : "add")}
                   disabled={disabled}
                   aria-label="Attach files and session options"
                   aria-expanded={menu === "add"}
                 >
                   <IconPlus size={22} />
-                </button>
+                </ComposerPressButton>
               </Tooltip>
               {menu === "add" && (
                 <div
@@ -1741,13 +1858,10 @@ export function Composer({
                   )}
                 >
                   {canAttach && (
-                    <button
+                    <ComposerPressButton
                       type="button"
                       className={composerMenuItem}
-                      {...tapProps(() => {
-                        setMenu(null);
-                        fileInputRef.current?.click();
-                      })}
+                      onPress={attachFilesFromMenu}
                     >
                       <span className={composerMenuIcon}>
                         <IconPaperclip size={22} />
@@ -1758,16 +1872,13 @@ export function Composer({
                       {!isPhone && attachChord && (
                         <MenuShortcut>{attachChord}</MenuShortcut>
                       )}
-                    </button>
+                    </ComposerPressButton>
                   )}
                   {canAttach && mentionFetch && (
-                    <button
+                    <ComposerPressButton
                       type="button"
                       className={composerMenuItem}
-                      {...tapProps(() => {
-                        setMenu(null);
-                        startMention();
-                      })}
+                      onPress={mentionFileFromMenu}
                     >
                       <span className={composerMenuIcon}>
                         <IconAtSign size={22} />
@@ -1778,15 +1889,15 @@ export function Composer({
                           Hidden on phones, where there are no keys to press —
                           the same call the Enter hint under the field makes. */}
                       {!isPhone && <MenuShortcut>@</MenuShortcut>}
-                    </button>
+                    </ComposerPressButton>
                   )}
                   {onSetGoal && (
-                    <button
+                    <ComposerPressButton
                       type="button"
                       className={composerMenuItem}
                       // Opens the goal editor: `menu` is single-valued, so this
                       // closes the add menu and opens the modal in one step.
-                      {...tapProps(() => setMenu("goal"))}
+                      onPress={() => setMenu("goal")}
                       title={goal ? `Goal: ${goal}` : undefined}
                     >
                       <span className={composerMenuIcon}>
@@ -1795,16 +1906,16 @@ export function Composer({
                       <span className="grow whitespace-nowrap">
                         {goal ? "Edit goal" : "Set a goal"}
                       </span>
-                    </button>
+                    </ComposerPressButton>
                   )}
                   {onNoteModeChange && (
-                    <button
+                    <ComposerPressButton
                       type="button"
                       className={composerMenuItem}
-                      {...tapProps(() => {
+                      onPress={() => {
                         setMenu(null);
                         onNoteModeChange(!noteMode);
-                      })}
+                      }}
                       title={
                         noteMode
                           ? "Prompt the agent again (⌘N)"
@@ -1820,7 +1931,7 @@ export function Composer({
                       {!isPhone && (
                         <MenuShortcut>{isApple ? "⌘N" : "Ctrl N"}</MenuShortcut>
                       )}
-                    </button>
+                    </ComposerPressButton>
                   )}
                   {menuExtra?.({ close: () => setMenu(null) })}
                   {sendMenu?.({
@@ -1882,7 +1993,7 @@ export function Composer({
                 key="model-effort"
                 layout="position"
                 {...composerChipMotion}
-                className={composerToolbarSelect}
+                className={cn("pwa-composer-auxiliary", composerToolbarSelect)}
               >
                 <ModelEffortSelect
                   className={cn(palettePill, composerToolbarPill)}
@@ -1901,6 +2012,8 @@ export function Composer({
                   defaultModel={defaultModel}
                   model={model}
                   onModelChange={onModelChange}
+                  preferredDefaultModel={preferredDefaultModel}
+                  onSetAsDefault={setPreferredDefaultModel}
                   modelDisabled={modelDisabled}
                   modelTitle={modelTitle}
                   effort={effort}
@@ -1926,7 +2039,7 @@ export function Composer({
             transition={composerMorph}
             layoutDependency={minimized}
             className={cn(
-              "inline-flex shrink-0 items-center",
+              "pwa-composer-auxiliary inline-flex shrink-0 items-center",
               minimized && "order-3",
             )}
           >
@@ -1934,25 +2047,41 @@ export function Composer({
                 round variant with the "+" — that pairing used to come from a
                 `.composer.composer-min .palette-icon-btn` descendant rule. */}
             <VoiceInput
-              className={cn(
-                paletteIconBtn,
-                minimized && paletteIconBtnRound,
-                !minimized && "phone:[&_svg]:size-[22px]",
-              )}
+              className={composerIconButtonClass}
+              shortcutActive={!!attachmentShortcutActive || focused}
+              cancelClassName={addButtonClass}
+              cancelFromPlus
               onText={insertDictation}
+              onTextSend={sendDictation}
+              editTargetRef={textareaRef}
+              overlayTargetRef={voiceOverlayRef}
+              overlayStyle={dictationSurfaceStyle}
+              onActiveChange={handleDictationActive}
+              // The bar covers the whole composer, so it takes the composer's
+              // own corner. The resting phone pill is included, which is a
+              // capsule rather than the expanded box's radius.
+              overlayClassName={
+                minimized
+                  ? "rounded-[999px] phone:pl-2 phone:pr-0.5 phone:pb-1"
+                  : "rounded-[var(--composer-radius)]"
+              }
               disabled={disabled}
             />
           </motion.div>
 
           {busy && onStop && (
             <Tooltip
-              label="Stop. Interrupts the current turn; the session stays ready."
+              label={
+                stopping
+                  ? "Stopping. The turn ends as soon as the work in flight returns."
+                  : "Stop. Interrupts the current turn; the session stays ready."
+              }
               // The chord that reaches this from anywhere in the session.
               // Escape does the same from inside the composer, but two chords
               // side by side in one badge row would read as a single one.
               shortcut={stopKeys ?? undefined}
             >
-              <button
+              <ComposerPressButton
                 type="button"
                 className={cn(
                   composerSend,
@@ -1961,13 +2090,16 @@ export function Composer({
                   // the far left of the resting row; seat it just before send.
                   minimized && "order-4",
                   minimized && composerSendMinimizedFill,
+                  // Acknowledged: the press registered, the engine is winding
+                  // down. Not `disabled` — pressing again re-sends the cancel.
+                  stopping && "opacity-60",
                 )}
-                {...tapProps(() => onStop())}
+                onPress={onStop}
                 disabled={disabled}
-                aria-label="Stop current turn"
+                aria-label={stopping ? "Stopping current turn" : "Stop current turn"}
               >
                 <IconStopSquare size={24} />
-              </button>
+              </ComposerPressButton>
             </Tooltip>
           )}
           {/* One busy-send button: the Enter follow-up preference (Settings →
@@ -2009,7 +2141,7 @@ export function Composer({
                 >
                   <ContextMenu.Trigger
                     render={
-                      <button
+                      <ComposerPressButton
                         className={cn(
                           composerSend,
                           // A note posts straight away, so it keeps the plain
@@ -2023,12 +2155,12 @@ export function Composer({
                                 : composerSendDefault,
                           minimized && composerSendMinimizedFill,
                         )}
-                        {...tapProps(() =>
+                        onPress={() =>
                           fireSend(
                             onSend,
                             steerSend ? { steer: true } : undefined,
-                          ),
-                        )}
+                          )
+                        }
                         disabled={disabled || isSendDisabled}
                         aria-label={
                           noteMode
@@ -2114,7 +2246,7 @@ export function Composer({
                 ["→", "ArrowRight"],
               ] as const
             ).map(([label, key]) => (
-              <button
+              <ComposerPressButton
                 key={key}
                 type="button"
                 className={`h-8 flex-1 select-none rounded-md border border-line bg-surface text-label font-semibold text-dim active:bg-panel ${
@@ -2122,11 +2254,11 @@ export function Composer({
                     ? "border-accent text-fg"
                     : ""
                 }`}
-                {...tapProps(() => vim.injectKey(key))}
+                onPress={() => vim.injectKey(key)}
                 aria-label={key}
               >
                 {label}
-              </button>
+              </ComposerPressButton>
             ))}
           </div>
         )}

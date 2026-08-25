@@ -71,19 +71,19 @@ function SandboxDefaultRow({ scope, canManage = true }: { scope: Scope; canManag
 
 	async function save(next: string) {
 		setSaving(true);
-		try {
-			const response = await saveSandboxDefault({ scope, value: next, user });
+		await (async () => {
+const response = await saveSandboxDefault({ scope, value: next, user });
 			setStatus((current) =>
 				current ? { ...current, defaults: response.defaults } : current,
 			);
-		} catch (error) {
-			toast(error instanceof Error ? error.message : "Failed to save sandbox default", {
+})().catch(async (error) => {
+toast(error instanceof Error ? error.message : "Failed to save sandbox default", {
 				variant: "error",
 			});
 			fetchSandboxStatus(user).then(setStatus).catch(() => {});
-		} finally {
-			setSaving(false);
-		}
+}).finally(async () => {
+setSaving(false);
+});
 	}
 
 	return (

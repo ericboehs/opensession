@@ -7,10 +7,18 @@
 import { existsSync, readFileSync } from "fs";
 import { OPENSESSION_SESSIONS_DIR } from "./paths";
 import {
+	engineSessionIdFor,
 	getAllSessions,
 	getAllSessionsAsync,
+	readNativeSession,
+	readNativeSessionListRow,
 	type SessionArchiveSlice,
 } from "./sessions";
+import {
+	indexedSessions,
+	upsertIndexedSession,
+	upsertIndexedSessions,
+} from "./session-list-store";
 import { activeRunRecords } from "./run-journal";
 import {
 	getRunState,
@@ -24,22 +32,44 @@ import {
 	isAgentSessionBusy,
 } from "./agent-runner";
 import { audit } from "./audit";
-import { SESSION_EFFORTS as MODEL_EFFORTS } from "./models";
+import {
+	getDefaultModel,
+	SESSION_EFFORTS as MODEL_EFFORTS,
+} from "./models";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import type { UnifiedSession, NativeSessionFile } from "./types";
+import {
+  sessionDeliveryProjection,
+  sessionGatewayCommand,
+  sessionKernel,
+  sessionKernelActorActive,
+  sessionTurn,
+} from "./session-kernel";
+import { withSessionMutationLock } from "./session-mutation-lock";
+import { broadcastToAll } from "./ws-hub";
 
 export const SESSIONS_DIR = OPENSESSION_SESSIONS_DIR;
 
 const g = globalThis as any;
 
-type SessionsCache = { data: UnifiedSession[]; ts: number } | null;
+type SessionsCache = {
+	data: UnifiedSession[];
+	ts: number;
+	/** A process-local write landed after this snapshot. Synchronous readers
+	 * still rebuild immediately; async request paths may serve it briefly while
+	 * one cooperative refresh catches up. */
+	invalidated: boolean;
+} | null;
 const CACHE_SLICES = ["include", "exclude", "only"] as const;
 const sessionsCaches: Record<SessionArchiveSlice, SessionsCache> = {
 	include: null,
 	exclude: null,
 	only: null,
 };
-const sessionsRefreshes: Record<SessionArchiveSlice, Promise<void> | null> = {
+const sessionsRefreshes: Record<
+	SessionArchiveSlice,
+	Promise<UnifiedSession[]> | null
+> = {
 	include: null,
 	exclude: null,
 	only: null,
@@ -49,29 +79,42 @@ const sessionsCacheGenerations: Record<SessionArchiveSlice, number> = {
 	exclude: 0,
 	only: 0,
 };
-// The UI polls every 5s and live run changes also arrive over WebSocket. Keep
-// the expensive multi-thousand-file fallback scan out of every poll wave;
+// The UI refreshes on WebSocket invalidations, with a slow fallback poll. Keep
+// the expensive multi-thousand-file fallback scan out of every refresh wave;
 // in-process mutations invalidate this cache immediately.
 const CACHE_TTL = 10_000;
 
-/** Drop the cached list so the next getCachedSessions() re-reads from disk. */
+/** Mark cached lists stale. Synchronous readers still re-read from disk on
+ * their next access. Async request paths retain the last complete snapshot so
+ * a routine session write cannot make unrelated HTTP requests wait for a scan
+ * of every historical session. */
 export function invalidateSessionsCache(): void {
 	for (const slice of CACHE_SLICES) {
 		sessionsCacheGenerations[slice]++;
-		sessionsCaches[slice] = null;
+		if (sessionsCaches[slice]) sessionsCaches[slice]!.invalidated = true;
 	}
-	// The list ROUTE caches its serialized response on top of this cache, and
-	// that copy outliving its source is what made an archive take up to five
-	// seconds to disappear from every client. Cleared through globalThis
-	// because routes/sessions.ts imports this module — same cycle-breaker as
-	// promptQueues below.
-	(g.__osSessionsResponseSnapshots as Map<string, unknown> | undefined)?.clear();
+	// The list route caches its serialized response on top of this cache. Mark
+	// those snapshots stale so ordinary slices rebuild on their next request;
+	// the bounded live slice deliberately serves the stale body while it does
+	// that scan, instead of blocking every sidebar poll on thousands of files.
+	// Reached through globalThis because routes/sessions.ts imports this module.
+	const responses = g.__osSessionsResponseSnapshots as
+		| Map<string, { expiresAt: number }>
+		| undefined;
+	for (const snapshot of responses?.values() || []) snapshot.expiresAt = 0;
+	// Publish only after every cache layer is stale, so a client reacting
+	// immediately cannot race ahead of the invalidation it was told about.
+	// Older and native clients safely ignore unknown server frames.
+	broadcastToAll({ type: "sessions_invalidated" });
 }
 
-function enrichCachedSessions(
-	slice: SessionArchiveSlice,
-	data: UnifiedSession[],
-): UnifiedSession[] {
+export interface SessionRuntimeSnapshot {
+	runStarts: Map<string, string>;
+	journalBusy: Set<string>;
+}
+
+/** Capture shared run-journal state once for a whole list projection. */
+export function sessionRuntimeSnapshot(): SessionRuntimeSnapshot {
 	// Earliest run-start per session id, from the run journal — feeds the "in
 	// progress" elapsed ticker and survives a page refresh (a session can carry
 	// its bks id and its engine session id across records; key on both).
@@ -86,6 +129,14 @@ function enrichCachedSessions(
 			if (!prev || r.startedAt < prev) runStarts.set(key, r.startedAt);
 		}
 	}
+	return { runStarts, journalBusy };
+}
+
+export function enrichSessionRuntime(
+	data: UnifiedSession[],
+	snapshot = sessionRuntimeSnapshot(),
+): UnifiedSession[] {
+	const { runStarts, journalBusy } = snapshot;
 	// Sessions driven from the web UI run in-process; surface those too
 	for (const s of data) {
 		const rs = getRunState(s.id);
@@ -103,20 +154,32 @@ function enrichCachedSessions(
 			journalBusy.has(s.id) ||
 			(!!s.claudeSessionId && journalBusy.has(s.claudeSessionId)) ||
 			(!!s.codexThreadId && journalBusy.has(s.codexThreadId));
-		if (!s.isRunning && (engineBusy || recoveryBusy || isRunStateUnsettled(rs))) {
-			s.isRunning = true;
-		}
+		// Indexed rows are snapshots and may still carry `isRunning: true` from
+		// an earlier write. Runtime state is authoritative in both directions:
+		// promote a newly active run and demote a finished one so the sidebar can
+		// leave In progress on its next poll.
+		s.isRunning = engineBusy || recoveryBusy || isRunStateUnsettled(rs);
 		if (s.isRunning) {
 			s.runStartedAt =
 				runStarts.get(s.id) ||
 				(s.claudeSessionId ? runStarts.get(s.claudeSessionId) : undefined) ||
 				(s.codexThreadId ? runStarts.get(s.codexThreadId) : undefined);
+		} else {
+			delete s.runStartedAt;
 		}
 		if (rs !== "idle") s.runState = rs;
 		checkRunStateWedge(s.id, rs, liveEngineBusy);
 	}
+	return data;
+}
+
+function enrichCachedSessions(
+	slice: SessionArchiveSlice,
+	data: UnifiedSession[],
+): UnifiedSession[] {
+	enrichSessionRuntime(data);
 	const ts = Date.now();
-	sessionsCaches[slice] = { data, ts };
+	sessionsCaches[slice] = { data, ts, invalidated: false };
 	// An internal/legacy whole-list scan already paid for both halves. Seed the
 	// narrower caches when they are idle so the next UI poll does not rescan the
 	// same files immediately after a background index refresh.
@@ -125,11 +188,13 @@ function enrichCachedSessions(
 			sessionsCaches.exclude = {
 				data: data.filter((session) => !session.archived),
 				ts,
+				invalidated: false,
 			};
 		if (!sessionsRefreshes.only && !sessionsCaches.only)
 			sessionsCaches.only = {
 				data: data.filter((session) => !!session.archived),
 				ts,
+				invalidated: false,
 			};
 	}
 	return data;
@@ -137,9 +202,17 @@ function enrichCachedSessions(
 
 export function getCachedSessions(): UnifiedSession[] {
 	const cached = sessionsCaches.include;
+	// Targeted writes update the authoritative session file and SQLite list row
+	// immediately. Rebuilding the entire materialized list after each one only
+	// turns active-run bookkeeping into continuous 10,000-row deserialization.
+	// Whole-list synchronous consumers may use the last complete snapshot for
+	// this short TTL, matching the async path below; direct session reads remain
+	// current.
 	if (cached && Date.now() - cached.ts < CACHE_TTL) {
 		return cached.data;
 	}
+	const indexed = indexedSessions("include");
+	if (indexed) return enrichCachedSessions("include", indexed);
 	// Supersede any cooperative scan already in flight. Its generation check
 	// prevents the older snapshot from replacing this synchronous result.
 	sessionsCacheGenerations.include++;
@@ -147,35 +220,65 @@ export function getCachedSessions(): UnifiedSession[] {
 }
 
 /**
- * Return the same fresh cache as getCachedSessions(), but let request traffic
+ * Return the same cache shape as getCachedSessions(), but let request traffic
  * through while thousands of session files are read.
  *
- * Explicit invalidation remains a hard freshness boundary. If a write lands
- * during the cooperative scan, its generation bump discards that scan and the
- * single flight retries rather than publishing a snapshot from before the
- * write. Synchronous callers keep their existing read-after-write contract.
+ * Once a complete snapshot exists, async request paths use stale-while-refresh:
+ * expiry or process-local invalidation starts one cooperative scan, while the
+ * caller immediately receives the last complete snapshot. This matters because
+ * active runs update session files often, and making every unrelated route join
+ * that refresh turned a background 10,000-file scan into multi-second TTFB.
+ *
+ * One call performs at most one cooperative scan. If a write lands mid-scan,
+ * publish the completed snapshot when no synchronous reader already installed
+ * a newer one. The direct native-session lookup keeps the open conversation
+ * fresh, and the next poll repairs list-level staleness without monopolising
+ * Bun's event loop.
  */
 export async function getCachedSessionsAsync(
 	slice: SessionArchiveSlice = "include",
 ): Promise<UnifiedSession[]> {
-	while (
-		!sessionsCaches[slice] ||
-		Date.now() - sessionsCaches[slice]!.ts >= CACHE_TTL
-	) {
-		if (!sessionsRefreshes[slice]) {
-			const generation = ++sessionsCacheGenerations[slice];
-			sessionsRefreshes[slice] = getAllSessionsAsync(slice)
-				.then((data) => {
-					if (sessionsCacheGenerations[slice] === generation)
-						enrichCachedSessions(slice, data);
-				})
-				.finally(() => {
-					sessionsRefreshes[slice] = null;
-				});
-		}
-		await sessionsRefreshes[slice];
+	const cached = sessionsCaches[slice];
+	// Async callers may serve a complete snapshot through the short TTL even
+	// after a targeted write. The SQLite row and detail endpoint are already
+	// current; invalidation must not turn a burst of writes into a burst of
+	// whole-list deserializations.
+	const needsRefresh = !cached || Date.now() - cached.ts >= CACHE_TTL;
+	if (cached && !needsRefresh) return cached.data;
+	const indexed = indexedSessions(slice);
+	if (indexed) return enrichCachedSessions(slice, indexed);
+
+	if (!sessionsRefreshes[slice]) {
+		const generation = ++sessionsCacheGenerations[slice];
+		const startingCache = sessionsCaches[slice];
+		sessionsRefreshes[slice] = getAllSessionsAsync(slice)
+			.then((data) => {
+				upsertIndexedSessions(data, slice);
+				const current = sessionsCaches[slice];
+				if (
+					sessionsCacheGenerations[slice] === generation ||
+					current === startingCache ||
+					!current
+				)
+					return enrichCachedSessions(slice, data);
+				return current.data;
+			})
+			.finally(() => {
+				sessionsRefreshes[slice] = null;
+			});
 	}
-	return sessionsCaches[slice]!.data;
+
+	if (cached) {
+		// Observe failures even though this request deliberately does not wait.
+		void sessionsRefreshes[slice]!.catch((error) =>
+			console.warn(
+				`[session-cache] ${slice} background refresh failed:`,
+				error instanceof Error ? error.message : error,
+			),
+		);
+		return cached.data;
+	}
+	return await sessionsRefreshes[slice];
 }
 
 /**
@@ -209,11 +312,10 @@ export function isRunSettled(sessionId: string): boolean {
 	) {
 		return false;
 	}
-	// promptQueues lives in queue-state.ts, which imports SESSIONS_DIR from
-	// this module — importing it back would be a TDZ-crashing cycle. The map
-	// is parked on globalThis (hot-reload survival), so read it there.
-	const queues = g.__promptQueues as Map<string, unknown[]> | undefined;
-	if ((queues?.get(id)?.length ?? 0) > 0) return false;
+	// Queue authority lives in the actor. Read its per-session delivery snapshot
+	// directly rather than reaching through queue-state's former global map.
+	if (sessionDeliveryProjection(id).queued.length > 0)
+		return false;
 	return true;
 }
 
@@ -267,6 +369,11 @@ function checkRunStateWedge(
 }
 
 export function findSession(sessionId: string): UnifiedSession | undefined {
+	// Native ids map directly to the one session file we own. Detail and run
+	// paths should not depend on a materialized list snapshot having observed a
+	// newly created session, and they should never scan the list to open one.
+	const native = readNativeSession(sessionId);
+	if (native) return enrichSessionRuntime([native])[0];
 	return getCachedSessions().find(
 		(s) => s.id === sessionId || s.aliasIds?.includes(sessionId),
 	);
@@ -275,9 +382,12 @@ export function findSession(sessionId: string): UnifiedSession | undefined {
 export async function findSessionAsync(
 	sessionId: string,
 ): Promise<UnifiedSession | undefined> {
-	// Correctness lookups keep the original fresh, atomic whole-list contract.
-	// The split caches can be different ages, and peekCachedSessions is allowed
-	// to be stale for autocomplete, so neither is safe for opening a session.
+	// Native ids map one-to-one to files we own. Reading that file lets a deep
+	// link and its transcript watch open while the sidebar's cold list scan runs
+	// in parallel. External and historical alias ids still need the full merged
+	// scan because only that scan knows which source won deduplication.
+	const native = readNativeSession(sessionId);
+	if (native) return enrichSessionRuntime([native])[0];
 	return (await getCachedSessionsAsync()).find(
 		(s) => s.id === sessionId || s.aliasIds?.includes(sessionId),
 	);
@@ -292,6 +402,17 @@ export function sessionIdsFor(
 	const session = sessions.find(
 		(s) => s.id === sessionId || s.aliasIds?.includes(sessionId),
 	);
+	return session
+		? [...new Set([session.id, ...(session.aliasIds || [])])]
+		: [sessionId];
+}
+
+/** Request-safe counterpart to sessionIdsFor. A canonical native id reads its
+ * one owned file; aliases and external sessions use the cooperative cache scan.
+ * Never make an HTTP or WebSocket handler rebuild every session synchronously
+ * just to resolve one asset namespace. */
+export async function sessionIdsForAsync(sessionId: string): Promise<string[]> {
+	const session = await findSessionAsync(sessionId);
 	return session
 		? [...new Set([session.id, ...(session.aliasIds || [])])]
 		: [sessionId];
@@ -313,14 +434,22 @@ export type SessionFileMutator = (
 	data: NativeSessionFile,
 ) => NativeSessionFile;
 
-const sessionFileLocks: Map<string, Promise<void>> = (g.__osSessionFileLocks ??=
-	new Map());
-
 export function updateSessionFile(
 	sessionId: string,
 	mutator: SessionFileMutator,
 ): Promise<void> {
-	const write = () => {
+  return withSessionMutationLock(sessionId, () => {
+    const requestId = `session-file:${crypto.randomUUID()}`;
+    const plan = sessionGatewayCommand({
+      op: "request",
+      sessionId,
+      requestId,
+      operation: "session_file_updated",
+    });
+    if (plan.status !== "execute")
+      throw new Error("Unexpected duplicate session-file command");
+    let physicalFinished = false;
+    try {
 		const path = `${SESSIONS_DIR}/${sessionId}.json`;
 		const current: NativeSessionFile = existsSync(path)
 			? JSON.parse(readFileSync(path, "utf-8"))
@@ -329,42 +458,57 @@ export function updateSessionFile(
 		const rev = (current as { rev?: unknown }).rev;
 		(next as { rev?: number }).rev = (typeof rev === "number" ? rev : 0) + 1;
 		writeJsonAtomic(path, next);
-		invalidateSessionsCache();
-	};
-	const prev = sessionFileLocks.get(sessionId);
-	let done: Promise<void>;
-	if (!prev) {
-		// Uncontended fast path: run synchronously so read-after-write callers
-		// (`persist(); findSession(id)`) keep today's visibility.
-		try {
-			write();
-			done = Promise.resolve();
-		} catch (e) {
-			done = Promise.reject(e);
+		const indexed = readNativeSessionListRow(sessionId);
+		if (indexed) {
+			enrichSessionRuntime([indexed]);
+			upsertIndexedSession(indexed);
 		}
-	} else {
-		done = prev.then(write);
-	}
-	// The stored chain link never rejects, so one failed write can't poison
-	// (or double-report through) the writes queued behind it.
-	const settled = done.catch(() => {});
-	sessionFileLocks.set(sessionId, settled);
-	void settled.finally(() => {
-		if (sessionFileLocks.get(sessionId) === settled)
-			sessionFileLocks.delete(sessionId);
+		invalidateSessionsCache();
+      physicalFinished = true;
+      sessionGatewayCommand({
+        op: "complete",
+        sessionId,
+        requestId,
+        operation: "session_file_updated",
+        result: null,
+      });
+    } catch (error) {
+      if (!physicalFinished) sessionGatewayCommand({
+        op: "fail",
+        sessionId,
+        requestId,
+        operation: "session_file_updated",
+        error: error instanceof Error ? error.message : String(error),
+        retryable: false,
+      });
+      throw error;
+    }
 	});
-	return done;
+}
+
+export function touchNativeSessionStrict(
+	bksId: string,
+	patch: Partial<NativeSessionFile>,
+): Promise<void> {
+	return updateSessionFile(bksId, (data) => ({
+		...data,
+		...patch,
+		lastActivity: new Date().toISOString(),
+	}));
+}
+
+function projectNativeRunErrorStrict(
+	bksId: string,
+	lastRunError: NativeSessionFile["lastRunError"],
+): Promise<void> {
+	return updateSessionFile(bksId, (data) => ({ ...data, lastRunError }));
 }
 
 export function touchNativeSession(
 	bksId: string,
 	patch: Partial<NativeSessionFile>,
-): void {
-	updateSessionFile(bksId, (data) => ({
-		...data,
-		...patch,
-		lastActivity: new Date().toISOString(),
-	})).catch((e) => {
+): Promise<void> {
+	return touchNativeSessionStrict(bksId, patch).catch((e) => {
 		console.error(`Failed to update opensession session ${bksId}:`, e);
 	});
 }
@@ -411,6 +555,13 @@ export function persistAutoModelSwitch(input: {
 		return {
 			...data,
 			model: input.model,
+			// Preserve the FIRST displaced selection across a multi-hop walk. A
+			// null marker keeps an inherited default implicit rather than pinning
+			// whichever concrete model happened to be the default today.
+			autoFallbackModel:
+				data.autoFallbackModel !== undefined
+					? data.autoFallbackModel
+					: (data.model ?? null),
 			modelHistory: [...(data.modelHistory || []), input.entry],
 			lastActivity: new Date().toISOString(),
 		};
@@ -421,6 +572,55 @@ export function persistAutoModelSwitch(input: {
 			return false;
 		},
 	);
+}
+
+export interface AutoFallbackRetry {
+	fromModel?: string;
+	model: string;
+	by: string;
+}
+
+/**
+ * Retry the selection displaced by the previous turn's automatic usage
+ * fallback. The compare-and-swap includes both fields observed before the
+ * serialized write, so a concurrent explicit /model always wins.
+ */
+export async function retryAutoFallbackModel(
+	sessionId: string,
+): Promise<AutoFallbackRetry | undefined> {
+	const path = `${SESSIONS_DIR}/${sessionId}.json`;
+	let observed: NativeSessionFile;
+	try {
+		if (!existsSync(path)) return undefined;
+		observed = JSON.parse(readFileSync(path, "utf-8"));
+	} catch {
+		return undefined;
+	}
+	if (observed.autoFallbackModel === undefined) return undefined;
+
+	let retry: AutoFallbackRetry | undefined;
+	await updateSessionFile(sessionId, (data) => {
+		if (
+			data.model !== observed.model ||
+			data.autoFallbackModel !== observed.autoFallbackModel
+		)
+			return data;
+
+		const model = data.autoFallbackModel ?? getDefaultModel();
+		const by = "auto-retry — checking the original selection again";
+		retry = { fromModel: data.model, model, by };
+		return {
+			...data,
+			model: data.autoFallbackModel ?? undefined,
+			autoFallbackModel: undefined,
+			modelHistory: [
+				...(data.modelHistory || []),
+				{ model, from: data.model, at: new Date().toISOString(), by },
+			],
+			lastActivity: new Date().toISOString(),
+		};
+	});
+	return retry;
 }
 
 // Reasoning-effort values the composer/new-session pill can send. Model-specific
@@ -473,23 +673,38 @@ export const runErrors: Map<string, { message: string; at: string }> =
  * `lastRunError` but wrote no transcript line, so for those the banner was the
  * only trace the run had died (bks-019fb757, 2026-07-31).
  *
- * `require` rather than a static import: opencode-transcript lazily requires
+ * `require` rather than a static import: pi-transcript lazily requires
  * this module back (its own cycle-breaker), and the transcript write must be
  * synchronous so it lands before the client re-reads the transcript.
  * Never throws — a dead transcript store must not break outcome recording.
  */
 function persistRunFailureNotice(
+	sessionId: string,
 	engineSessionId: string | null | undefined,
 	message: string,
 	label: string,
+	projectionId?: string,
+	projectedAt?: string,
+	strict = false,
 ): void {
-	if (!engineSessionId) return;
 	try {
-		const m = require("./opencode-transcript") as typeof import("./opencode-transcript");
-		m.appendOpencodeTranscript(engineSessionId, [
-			m.transcriptLineRunnerNotice(`${label}: ${message}`),
-		]);
-	} catch {}
+		const m = require("./transcript-persistence") as typeof import("./transcript-persistence");
+		const line = m.transcriptLineRunnerNotice(
+			`${label}: ${message}`,
+			projectionId,
+			projectedAt,
+		);
+		if (strict)
+			m.applyForwardedTranscriptStrict(
+				sessionId,
+				engineSessionId || sessionId,
+				[line],
+			);
+		else
+			m.applyForwardedTranscript(sessionId, engineSessionId || sessionId, [line]);
+	} catch (error) {
+		if (strict) throw error;
+	}
 }
 
 /**
@@ -503,14 +718,21 @@ function persistRunFailureNotice(
  * file's id for a run that rotated to a fresh engine session mid-turn;
  * `opts.noticeLabel` re-words it for stops that were not errors.
  */
+export type RunOutcomeProjectionOptions = {
+	noticePersisted?: boolean;
+	engineSessionId?: string;
+	noticeLabel?: string;
+	/** Immutable physical owner for a durable terminal projection. */
+	runId?: string;
+	runGeneration?: number;
+	projectionId?: string;
+	projectedAt?: string;
+};
+
 export function recordRunOutcome(
 	sessionId: string,
 	errorMessage: string | null,
-	opts?: {
-		noticePersisted?: boolean;
-		engineSessionId?: string;
-		noticeLabel?: string;
-	},
+	opts?: RunOutcomeProjectionOptions,
 ): void {
 	const session = findSession(sessionId);
 	const id = session?.id || sessionId;
@@ -518,33 +740,95 @@ export function recordRunOutcome(
 	// persistence choke point compatible with non-runner callers without
 	// emitting a false double-teardown rejection for the normal path.
 	if (isRunStateUnsettled(getRunState(id)))
-		transitionRunState(id, errorMessage ? "run_failed" : "turn_end");
+		transitionRunState(id, errorMessage ? "run_failed" : "turn_end", {
+			...(opts?.runId ? { run_key: opts.runId } : {}),
+		});
+	if (opts?.projectionId && opts.runId && sessionKernelActorActive()) {
+		const runGeneration =
+			opts.runGeneration ?? sessionKernel(id).runState().generation;
+		sessionTurn({
+			op: "prepare_outcome_projection",
+			sessionId: id,
+			projectionId: opts.projectionId,
+			runId: opts.runId,
+			runGeneration,
+			errorMessage: errorMessage?.slice(0, 500) ?? null,
+			...(opts.engineSessionId
+				? { engineSessionId: opts.engineSessionId }
+				: {}),
+			noticePersisted: opts.noticePersisted === true,
+			...(opts.noticeLabel ? { noticeLabel: opts.noticeLabel } : {}),
+			projectedAt: opts.projectedAt || new Date().toISOString(),
+		});
+		return;
+	}
+	if (
+		opts?.projectionId &&
+		opts.runId &&
+		process.env.NODE_ENV !== "test" &&
+		!process.env.OPENSESSION_RUN_JOURNAL
+	)
+		throw new Error("Turn outcome projection requires the authoritative actor");
+	void applyRunOutcomeProjection(id, errorMessage, opts);
+}
+
+/** Idempotent destination-side implementation for actor-issued projections. */
+export async function applyRunOutcomeProjection(
+	sessionId: string,
+	errorMessage: string | null,
+	opts?: RunOutcomeProjectionOptions,
+	strict = false,
+): Promise<void> {
+	const session = findSession(sessionId);
+	const id = session?.id || sessionId;
+	const projectedAt = opts?.projectedAt || new Date().toISOString();
 	if (errorMessage) {
 		const entry = {
 			message: errorMessage.slice(0, 500),
-			at: new Date().toISOString(),
+			at: projectedAt,
 		};
 		runErrors.set(id, entry);
-		if (session?.source === "opensession")
-			touchNativeSession(id, { lastRunError: entry });
-		if (!opts?.noticePersisted)
+		if (!opts?.noticePersisted) {
+			const provider =
+				session?.lastEngineProvider ||
+				(session?.piSessionId
+					? "pi"
+					: session?.codexThreadId
+						? "codex"
+						: "claude");
 			persistRunFailureNotice(
-				opts?.engineSessionId || session?.claudeSessionId,
+				id,
+				opts?.engineSessionId ||
+					(session ? engineSessionIdFor(session, provider) : undefined),
 				errorMessage,
 				opts?.noticeLabel || "Run failed",
+				opts?.projectionId,
+				projectedAt,
+				strict,
 			);
-		// A worker that dies can't report back, and its parent is usually idle
-		// (spawn_task returns immediately), so nothing polls either — the server
-		// says it instead. Fire-and-forget, dynamic import to keep this module
-		// free of the delivery/git graph. No-ops for anything without a parent.
-		void import("./handoff-evidence")
-			.then((m) => m.notifyParentOfFailedRun(id, entry.message))
-			.catch(() => {});
+		}
+		if (session?.source === "opensession") {
+			if (strict) await projectNativeRunErrorStrict(id, entry);
+			else await touchNativeSession(id, { lastRunError: entry });
+		}
+		try {
+			const handoff = await import("./handoff-evidence");
+			const outcome = await handoff.notifyParentOfFailedRun(
+				id,
+				entry.message,
+				undefined,
+				opts?.projectionId,
+			);
+			if (strict && outcome === "failed")
+				throw new Error("Worker failure notification projection failed");
+		} catch (error) {
+			if (strict) throw error;
+		}
 	} else {
-		// Only rewrite the session file when there's actually a flag to clear
-		// (the in-memory map, or one persisted by a previous process).
 		const had = runErrors.delete(id) || !!session?.lastRunError;
-		if (had && session?.source === "opensession")
-			touchNativeSession(id, { lastRunError: undefined });
+		if (had && session?.source === "opensession") {
+			if (strict) await projectNativeRunErrorStrict(id, undefined);
+			else await touchNativeSession(id, { lastRunError: undefined });
+		}
 	}
 }

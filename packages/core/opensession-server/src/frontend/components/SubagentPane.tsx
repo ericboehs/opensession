@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { fetchSubagent, type SubagentTranscript } from "../lib/api";
-import { friendlyModelSlug, opencodeModelParts } from "./ModelEffortSelect";
+import { friendlyModelSlug, routedModelParts } from "./ModelEffortSelect";
 import { TranscriptBlocks } from "./TranscriptBlocks";
 import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
 import { PANEL_BODY } from "../lib/session-panel-classes";
@@ -69,19 +69,19 @@ export function SubagentPane({
         setData(null);
         followRef.current = true;
       }
-      try {
-        const next = await fetchSubagent(sessionId, current.agentId);
+      await (async () => {
+const next = await fetchSubagent(sessionId, current.agentId);
         if (cancelled) return;
         setData(next);
         setLoading(false);
         // Keep polling only while the parent session is live (the sub-agent may
         // still be streaming); once idle the transcript is final.
         if (next.sessionRunning) timer = setTimeout(() => load(false), 1500);
-      } catch (e: any) {
-        if (cancelled) return;
+})().catch(async (e: any) => {
+if (cancelled) return;
         setError(e?.message || "Failed to load sub-agent");
         setLoading(false);
-      }
+});
     }
 
     load(true);
@@ -112,7 +112,7 @@ export function SubagentPane({
     if (resolvedLabel) onLabel?.(current.agentId, resolvedLabel);
   }, [current.agentId, resolvedLabel, onLabel]);
   const modelLabel = meta?.model
-    ? friendlyModelSlug(opencodeModelParts(meta.model)?.model ?? meta.model)
+    ? friendlyModelSlug(routedModelParts(meta.model)?.model ?? meta.model)
     : null;
 
   return (

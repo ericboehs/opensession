@@ -17,7 +17,7 @@ import {
 } from "./icons";
 import { useOpenAsset } from "../lib/open-asset";
 import { formatDuration, fullTime } from "../lib/time";
-import { friendlyModelSlug, opencodeModelParts } from "./ModelEffortSelect";
+import { friendlyModelSlug, routedModelParts } from "./ModelEffortSelect";
 import { canonicalToolName, useToolPathRoots } from "./ToolCallBlock";
 import { tidyPath, type PathRoot } from "../lib/tidy-path";
 import { useIsPhone } from "../hooks/useIsPhone";
@@ -41,14 +41,10 @@ export interface TouchedFile {
  * bottom margin to 8px: these actions belong to that answer, and a full row
  * gap read as the next block starting.
  *
- * It is a class the CALLER places rather than one the row wears, because the
- * lift only works on a box nothing clips. TranscriptBlocks wraps each block in
- * VirtualTranscriptBlock, whose `content-visibility: auto` applies layout and
- * paint containment: layout containment stops this margin collapsing out
- * through the wrapper, so the row hangs 10px above the wrapper's box, and
- * paint containment then clips exactly those 10px off the top, taking half the
- * duration and the top of every chip with them. On that wrapper the same class
- * is a plain margin, outside the box it contains.
+ * It is a class the CALLER places rather than one the row wears. Transcript
+ * blocks sit inside measured virtual rows, and a negative margin inside that
+ * measurement does not move the row's own start. On the measured wrapper the
+ * same class shifts the whole row and remains part of its virtual position.
  */
 export const TURN_FOOTER_LIFT = "-mt-2.5";
 
@@ -76,7 +72,7 @@ interface Props {
  * reads past. The full file list, with paths rather than bare names, is in the
  * ⋯ menu, which is also where a narrow row's "+N more" resolves.
  */
-export const TurnFooter = React.memo(function TurnFooter({
+export const TurnFooter = function TurnFooter({
   entry,
   durationMs,
   files,
@@ -197,7 +193,7 @@ export const TurnFooter = React.memo(function TurnFooter({
       <TouchedFileChips files={files} max={isPhone ? 1 : MAX_CHIPS} />
     </div>
   );
-}, turnFooterPropsEqual);
+};
 
 /**
  * The files a turn wrote, named with the ±lines each moved, and one count for
@@ -276,11 +272,11 @@ function fileName(path: string): string {
   return path.split("/").pop() || path;
 }
 
-/** Friendly name for a per-message model id: opencode ids take their model
- * part, raw API ids drop the date suffix — "opencode/anthropic/claude-sonnet-5"
+/** Friendly name for a per-message model id: pi ids take their model
+ * part, raw API ids drop the date suffix — "pi/anthropic/claude-sonnet-5"
  * and "claude-sonnet-5-20250929" both read "Sonnet 5". */
 function messageModelLabel(id: string): string {
-  const slug = opencodeModelParts(id)?.model || id;
+  const slug = routedModelParts(id)?.model || id;
   return friendlyModelSlug(slug.replace(/-\d{8}$/, ""));
 }
 
@@ -459,14 +455,22 @@ const MAX_CARD_FILES = 4;
  * the transcript's chip cards do. Hover only, for the same reason those are:
  * a tap belongs to the fold, and the fold names the same files as chips.
  */
-export function TurnLineStatsCard({ files }: { files: TouchedFile[] }) {
+export function TurnLineStatsCard({
+  files,
+  additions: additionsProp,
+  deletions: deletionsProp,
+}: {
+  files: TouchedFile[];
+  additions?: number;
+  deletions?: number;
+}) {
+  const additions = additionsProp ?? files.reduce((n, file) => n + file.additions, 0);
+  const deletions = deletionsProp ?? files.reduce((n, file) => n + file.deletions, 0);
   const roots = useToolPathRoots();
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLSpanElement | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const additions = files.reduce((n, f) => n + f.additions, 0);
-  const deletions = files.reduce((n, f) => n + f.deletions, 0);
   const shown = files
     .filter((f) => f.hunks.some(Boolean))
     .slice(0, MAX_CARD_FILES);
@@ -616,7 +620,7 @@ function readTouchedFiles(entry: TranscriptEntry): TouchedFile[] {
     for (let at = v.indexOf("\n"); at >= 0; at = v.indexOf("\n", at + 1)) count++;
     return count;
   };
-  // Engines disagree on casing: opencode writes `filePath`/`oldString`, the
+  // Engines disagree on casing: pi writes `filePath`/`oldString`, the
   // Claude SDK `file_path`/`old_string`.
   const key = (...names: string[]) => {
     for (const n of names) if (typeof inp[n] === "string" && inp[n]) return inp[n] as string;

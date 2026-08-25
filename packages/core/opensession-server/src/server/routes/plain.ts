@@ -8,25 +8,40 @@
 
 import { requestUser, type RouteContext } from "./context";
 import { listAutomations, runAutomation } from "../automations";
-import { findSession, getCachedSessions, invalidateSessionsCache } from "../session-cache";
+import {
+	findSessionAsync,
+	getCachedSessionsAsync,
+	invalidateSessionsCache,
+} from "../session-cache";
 import { type Workspace } from "../workspaces";
 
-// Land a Plain thread in a triage session: reuse the most recent live
-// (non-archived) session already linked to the thread, else kick off the
-// "Plain ticket triage" automation with the same context the webhook event
-// carries and wait (up to 2 min) for its session to boot. Shared by the
-// /plain-triage redirect (Plain support cards) and the JSON API behind the
-// Support view's "Triage this ticket" button.
-async function resolvePlainTriageSession(
+// The most recent live (non-archived) session already triaging this thread,
+// or null when the ticket has never been opened here. A cache read — cheap
+// enough to sit in front of a redirect that must answer immediately.
+async function existingPlainTriageSession(
 	threadId: string,
 ): Promise<string | null> {
-	const existing = getCachedSessions()
+	const existing = (await getCachedSessionsAsync())
 		.filter((s) => s.plainThreadId === threadId && !s.archived)
 		.sort(
 			(a, b) =>
 				new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime(),
 		)[0];
-	if (existing) return existing.id;
+	return existing ? existing.id : null;
+}
+
+// Land a Plain thread in a triage session: reuse the most recent live
+// (non-archived) session already linked to the thread, else kick off the
+// "Plain ticket triage" automation with the same context the webhook event
+// carries and wait (up to 2 min) for its session to boot. The JSON API behind
+// the Support view's "Triage this ticket" button awaits this; the
+// /plain-triage redirect must NOT (see the handler — a navigation that hangs
+// for minutes gets replaced by the cached app shell and loses its URL).
+async function resolvePlainTriageSession(
+	threadId: string,
+): Promise<string | null> {
+	const existing = await existingPlainTriageSession(threadId);
+	if (existing) return existing;
 
 	const automation = listAutomations().find(
 		(a) => a.eventKey === "plain:thread_created",
@@ -120,18 +135,35 @@ export async function handlePlainRoutes(
 	// exists for this thread, jump straight to it; otherwise start a fresh
 	// triage run with the same context the automation gets on thread_created.
 	// Linked from the Plain support cards.
+	//
+	// This ALWAYS answers immediately. Booting a triage session takes 15-120s,
+	// and a navigation held open that long is not a slow page — the service
+	// worker's stall guard paints the cached app shell over it after 5s, at a
+	// URL the router has no route for, and the app falls back to restoring the
+	// viewer's last session (looks like "the link opened the wrong ticket").
+	// So: hand back the thread-scoped Support view, which renders the real
+	// ticket right away, and let the run boot behind it — the session files
+	// itself under this thread's workspace and appears as a tab there.
 	const plainTriageMatch = path.match(
 		/^\/plain-triage\/([^/]+)$/,
 	);
 	if (plainTriageMatch && req.method === "GET") {
 		const threadId = decodeURIComponent(plainTriageMatch[1]);
-		const sessionId = await resolvePlainTriageSession(threadId);
+		const sessionId = await existingPlainTriageSession(threadId);
+		if (!sessionId) {
+			void resolvePlainTriageSession(threadId).catch((e) =>
+				console.error(`[plain-triage] Background boot for ${threadId} failed:`, e),
+			);
+		}
+		console.log(
+			`[plain-triage] ${threadId} -> ${sessionId ? `session ${sessionId}` : "support view (triage booting)"}`,
+		);
 		return new Response(null, {
 			status: 302,
 			headers: {
 				Location: sessionId
 					? `${publicPrefix}/session/${sessionId}`
-					: `${publicPrefix}/`,
+					: `${publicPrefix}/support/${encodeURIComponent(threadId)}`,
 			},
 		});
 	}
@@ -185,7 +217,7 @@ export async function handlePlainRoutes(
 	);
 	if (plainThreadMatch && req.method === "GET") {
 		const sessionId = decodeURIComponent(plainThreadMatch[1]);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		const threadId = session?.plainThreadId;
 		if (!threadId)
 			return Response.json(

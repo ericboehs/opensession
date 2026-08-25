@@ -76,7 +76,7 @@ describe("isContextRebuildStep", () => {
 
   test("fires when a warm step is followed by a cold, freshly-written prompt", () => {
     // bks-019fc695, 2026-08-03: step 5 read 258k, step 6 read nothing and
-    // wrote a 94k prefix — the SDK had compacted underneath opencode.
+    // wrote a 94k prefix — the SDK had compacted underneath pi.
     expect(isContextRebuildStep(step(257_998, 3_819), step(0, 94_429))).toBe(true);
   });
 

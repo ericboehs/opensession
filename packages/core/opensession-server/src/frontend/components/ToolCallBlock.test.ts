@@ -1,15 +1,21 @@
 import { expect, test } from "bun:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import {
   assetToolPath,
   canonicalToolName,
+  mcpLabelParts,
   mcpServerDisplayName,
   mcpToolDisplayName,
   parseMcpTool,
+  PathSummary,
+  pathSummaryParts,
   toolDurationMs,
   toolDisplayName,
   toolFamily,
   toolLineStats,
   toolSummary,
+  unwrapMcpDispatcher,
   visibleResultContent,
 } from "./ToolCallBlock";
 
@@ -20,14 +26,27 @@ const roots = [
 
 // The engine emits lowercase ids with camelCase inputs; transcripts from the
 // Claude-SDK era use "Read"/"file_path". Both have to render the same.
-test("opencode and Claude-SDK file reads summarize identically", () => {
+test("pi and Claude-SDK file reads summarize identically", () => {
   const path = "/home/user/projects/opensession/package.json";
   expect(toolSummary("read", { filePath: path, limit: 40 }, "Using read", roots)).toBe(
     "package.json"
   );
   expect(toolSummary("Read", { file_path: path }, "Using Read", roots)).toBe("package.json");
+  // The engine actually in use spells it `path`, and a row that misses the
+  // spelling falls back to the useless "Using read".
+  expect(toolSummary("read", { path, limit: 40 }, "Using read", roots)).toBe("package.json");
+  expect(toolSummary("write", { path, content: "x\n" }, "Using write", roots)).toBe(
+    "package.json"
+  );
   expect(toolFamily("read")).toBe("file");
   expect(canonicalToolName("read")).toBe("Read");
+});
+
+test("an edit row names its file and counts its lines in every spelling", () => {
+  const path = "/home/user/projects/opensession/src/a.ts";
+  const edits = [{ oldText: "one\ntwo", newText: "one\nupdated\nthree" }];
+  expect(toolSummary("edit", { path, edits }, "Using edit", roots)).toBe("src/a.ts");
+  expect(toolLineStats("edit", { path, edits })).toEqual({ additions: 3, deletions: 2 });
 });
 
 test("paths render relative to the session's worktrees", () => {
@@ -37,13 +56,39 @@ test("paths render relative to the session's worktrees", () => {
   // Outside every worktree, only $HOME collapses.
   expect(toolSummary("read", { filePath: "/home/user/notes.md" }, "", roots)).toBe("~/notes.md");
   expect(toolSummary("read", { filePath: "/etc/hosts" }, "", roots)).toBe("/etc/hosts");
-  // No roots (evidence pane, previews outside a session) — absolute, tidied.
+  // No roots (evidence pane, previews outside a session), absolute, tidied.
   expect(toolSummary("read", { filePath: "/home/user/projects/x/a.ts" }, "")).toBe(
     "~/projects/x/a.ts"
   );
 });
 
-test("bash, grep and glob summaries drop their plumbing", () => {
+test("path summaries truncate the complete left-aligned path", () => {
+  expect(pathSummaryParts("packages/core/protocol/src/tool-presentation.ts")).toEqual({
+    directory: "packages/core/protocol/src",
+    separator: "/",
+    filename: "tool-presentation.ts",
+  });
+  expect(pathSummaryParts("/etc/hosts")).toEqual({
+    directory: "/etc",
+    separator: "/",
+    filename: "hosts",
+  });
+  expect(pathSummaryParts("package.json")).toEqual({
+    directory: "",
+    separator: "",
+    filename: "package.json",
+  });
+
+  const markup = renderToStaticMarkup(
+    createElement(PathSummary, {
+      path: "packages/core/protocol/src/tool-presentation.ts",
+    }),
+  );
+  expect(markup).toContain("truncate");
+  expect(markup).not.toContain("w-full");
+});
+
+test("bash, grep, find and glob summaries drop their plumbing", () => {
   expect(
     toolSummary("bash", { command: "ls -la", workdir: "/tmp", timeout: 5 }, "", roots)
   ).toBe("ls -la");
@@ -56,6 +101,26 @@ test("bash, grep and glob summaries drop their plumbing", () => {
       roots
     )
   ).toBe("/foo/ src");
+  expect(
+    toolSummary(
+      "find",
+      { pattern: "**/*website*.ts", path: "/home/user/projects/opensession/scripts", limit: 100 },
+      "",
+      roots
+    )
+  ).toBe("**/*website*.ts scripts");
+  expect(canonicalToolName("find")).toBe("Find");
+  expect(toolFamily("find")).toBe("find");
+  // A directory listing is a search, not an unknown tool: left in `other` it
+  // read as a standalone row and split the run of steps around it.
+  expect(canonicalToolName("ls")).toBe("Glob");
+  expect(toolFamily("ls")).toBe("find");
+  expect(toolDisplayName("ls")).toBe("ls");
+  expect(canonicalToolName("web_search")).toBe("WebSearch");
+  expect(toolFamily("web_fetch")).toBe("web");
+  expect(toolFamily("notebook_edit")).toBe("file");
+  expect(toolFamily("str_replace_editor")).toBe("edit");
+  expect(toolFamily("TaskUpdate")).toBe("checklist");
   // A glob with no path used to render a stray trailing space.
   expect(toolSummary("glob", { pattern: "**/*.tsx" }, "", roots)).toBe("**/*.tsx");
 });
@@ -126,13 +191,50 @@ test("MCP tools parse in both the mcp__ and flattened forms", () => {
   expect(parseMcpTool("read")).toBeNull();
 });
 
-test("MCP labels read as actions rather than machine identifiers", () => {
-	expect(mcpServerDisplayName("opensession-portals")).toBe("Open Session Portals");
-	expect(mcpToolDisplayName("start_portal")).toBe("Start portal");
-	expect(toolDisplayName("opensession-portals_start_portal")).toBe(
-		"Open Session Portals · Start portal"
-	);
-	expect(toolSummary("opensession-portals_start_portal", {}, "Using opensession-portals_start_portal")).toBe("");
+test("Open Session MCP labels read as a hierarchy", () => {
+  expect(mcpServerDisplayName("opensession-portals")).toBe("Open Session Portals");
+  expect(mcpToolDisplayName("start_portal")).toBe("Start portal");
+  expect(mcpLabelParts("opensession-workflows", "workflow_status")).toEqual([
+    "Open Session",
+    "Workflows",
+    "Status",
+  ]);
+  expect(mcpLabelParts("opensession-sessions", "get_session")).toEqual([
+    "Open Session",
+    "Sessions",
+    "Get",
+  ]);
+  expect(mcpLabelParts("opensession-connected-services", "list_connected_services")).toEqual([
+    "Open Session",
+    "Connected Services",
+    "List",
+  ]);
+  expect(mcpLabelParts("screen-studio", "start_recording")).toEqual([
+    "Screen Studio",
+    "Start recording",
+  ]);
+  expect(toolDisplayName("opensession-portals_start_portal")).toBe(
+    "Open Session · Portals · Start"
+  );
+  expect(
+    toolSummary(
+      "opensession-portals_start_portal",
+      {},
+      "Using opensession-portals_start_portal"
+    )
+  ).toBe("");
+});
+
+test("pi's MCP dispatcher renders the call inside its envelope", () => {
+  const dispatched = {
+    name: "opensession-workflows_workflow_status",
+    arguments: { runId: "run-1" },
+  };
+  expect(unwrapMcpDispatcher("mcp_call", dispatched)).toEqual({
+    toolName: "opensession-workflows_workflow_status",
+    input: { runId: "run-1" },
+  });
+  expect(toolSummary("mcp_call", dispatched, "Using mcp_call")).toBe("runId: run-1");
 });
 
 test("an assets call reads as the file it names, not its contents", () => {

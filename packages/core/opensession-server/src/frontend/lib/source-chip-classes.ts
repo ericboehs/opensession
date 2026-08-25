@@ -1,9 +1,8 @@
-import { CAP_LABEL } from "./cap-label";
 import type { SessionSource } from "./types";
 
 /**
  * Source chips — the small pill naming where a session came from (slack,
- * linear, ask), plus the neutral variant the "Archived" button wears.
+ * linear, ask).
  *
  * The tone is a LOOKUP, not a built class name. The markup used to spell
  * `` `source-chip source-${session.source}` ``, which works for a stylesheet
@@ -38,28 +37,3 @@ const TONE: Record<string, string> = {
 export function sourceChipTone(source: SessionSource | "ask" | string): string {
 	return TONE[source] ?? "";
 }
-
-/**
- * The "Archived" chip in the session header. Not a source chip: it is a state,
- * and a button, so it stands on its own class rather than overriding
- * SOURCE_CHIP. It carries the archive glyph beside the word — the word alone
- * read as a label dropped into the title line, where the glyph names the state
- * the way the automation and sandbox badges beside it name theirs.
- *
- * Medium, not bold: the glyph is a 1.5 stroke, and bold text next to it reads
- * as two weights in one chip.
- *
- * The two paddings are deliberately unequal, and the smaller one is on the
- * glyph's side: a 24-grid glyph draws only ~60% of its box, so it brings ~3px
- * of its own air, while a word ends on a stem with almost none. Equal numbers
- * there measure equal and look lopsided — the eye compares the air at the two
- * ENDS of the pill. Same rule the inline markdown chips follow in base.css.
- */
-export const SOURCE_CHIP_ARCHIVED =
-	"inline-flex shrink-0 cursor-pointer items-center gap-[3px] rounded-full bg-active py-[3px] pl-[7px] pr-[9px] " +
-	"text-meta font-medium leading-[1.2] text-dim transition-[background,color] " +
-	"duration-[var(--dur-micro)] ease-[var(--ease)] [&:hover:not(:disabled)]:bg-hover " +
-	"[&:hover:not(:disabled)]:text-fg disabled:cursor-default disabled:opacity-60";
-
-/** The chip's label, centred on its cap band like every other one. */
-export const SOURCE_CHIP_ARCHIVED_LABEL = CAP_LABEL;

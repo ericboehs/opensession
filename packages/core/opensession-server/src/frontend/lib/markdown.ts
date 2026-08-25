@@ -1,10 +1,10 @@
 import { Marked } from "marked";
 import { BASE_PATH } from "./base";
 import { sanitizeHtmlFragment } from "./html-sanitize";
-import { prStatusMark, type PrStatusInput } from "./pr-status";
+import { prStatusDisplay, type PrStatusInput } from "./pr-status";
 import { repoLabel } from "./repo-label";
 import { cleanSessionTitle } from "./session-title";
-import { INTERNAL_HOSTS, UUIDV7, internalUrlTarget } from "./session-url";
+import { INTERNAL_ORIGINS, UUIDV7, internalUrlTarget } from "./session-url";
 import { sessionAssetRawUrl } from "./api/sessions";
 
 // Dedicated marked instance for session messages so this config doesn't leak
@@ -166,9 +166,7 @@ function assetLinkTarget(href: string | null | undefined): string | null {
   } catch {
     return null;
   }
-  const sameOrigin =
-    typeof location !== "undefined" && url.origin === location.origin;
-  if (!sameOrigin && !INTERNAL_HOSTS.has(url.hostname)) return null;
+  if (!INTERNAL_ORIGINS.has(url.origin)) return null;
   const match = /\/api\/sessions\/([^/]+)\/assets\/raw\/(.+)$/.exec(url.pathname);
   if (!match) return null;
   // Another session's scratch folder is not this session's to open over.
@@ -213,13 +211,136 @@ interface SessionName {
    *  conversation a chip opens, and two chips into one workspace would
    *  otherwise be identical down to the tooltip. */
   tab?: string;
+  /** On-demand metadata carries this for references outside the live list. */
+  archived?: boolean;
 }
 let sessionTitles = new Map<string, SessionName>();
+/** Names resolved on demand for archived references. Kept separate because
+ *  each live-list poll replaces `sessionTitles` wholesale. */
+let resolvedSessionTitles = new Map<string, SessionName>();
+let unavailableSessionIds = new Set<string>();
+const queuedSessionTitleRequests = new Set<string>();
+const inFlightSessionTitleRequests = new Set<string>();
+const sessionTitleRequestListeners = new Set<(ids: string[]) => void>();
+let sessionTitleRequestFlushQueued = false;
+let workspaceTitles = new Map<string, string>();
 const sessionTitleListeners = new Set<() => void>();
 /** Sessions whose agent is mid-run, for the chip's live dot. */
 let runningSessions = new Set<string>();
 const SESSION_TITLE_MAX = 38;
 const SESSION_ID_SHORT = 12; // `os-019fb3ad2` / `bks-019fb3ad`
+
+function knownSessionName(id: string): SessionName | undefined {
+  return sessionTitles.get(id) ?? resolvedSessionTitles.get(id);
+}
+
+function flushSessionTitleRequests(): void {
+  sessionTitleRequestFlushQueued = false;
+  if (!queuedSessionTitleRequests.size || !sessionTitleRequestListeners.size)
+    return;
+  const ids = [...queuedSessionTitleRequests];
+  queuedSessionTitleRequests.clear();
+  for (const id of ids) inFlightSessionTitleRequests.add(id);
+  for (const listener of sessionTitleRequestListeners) listener(ids);
+}
+
+function queueSessionTitleRequest(id: string): void {
+  if (
+    knownSessionName(id) ||
+    unavailableSessionIds.has(id) ||
+    queuedSessionTitleRequests.has(id) ||
+    inFlightSessionTitleRequests.has(id)
+  )
+    return;
+  queuedSessionTitleRequests.add(id);
+  if (sessionTitleRequestFlushQueued) return;
+  sessionTitleRequestFlushQueued = true;
+  queueMicrotask(flushSessionTitleRequests);
+}
+
+/** Ask the app shell to resolve ids omitted from its deliberately live-only list. */
+export function onSessionTitleResolutionRequested(
+  listener: (ids: string[]) => void,
+): () => void {
+  sessionTitleRequestListeners.add(listener);
+  // A transcript can render before App's effect subscribes. Requeue any work a
+  // Strict Mode effect cleanup may also have left in flight.
+  for (const id of inFlightSessionTitleRequests) queuedSessionTitleRequests.add(id);
+  inFlightSessionTitleRequests.clear();
+  if (queuedSessionTitleRequests.size && !sessionTitleRequestFlushQueued) {
+    sessionTitleRequestFlushQueued = true;
+    queueMicrotask(flushSessionTitleRequests);
+  }
+  return () => sessionTitleRequestListeners.delete(listener);
+}
+
+export interface ResolvedSessionTitle {
+  requestedId: string;
+  /** Canonical id when the request used an alias. */
+  id?: string;
+  title?: string | null;
+  tabTitle?: string | null;
+  aliases?: readonly string[];
+  archived?: boolean;
+}
+
+/** Publish lightweight metadata fetched for references outside the live list.
+ *  A missing title marks a deleted/unknown id so it keeps the honest id label. */
+export function setResolvedSessionTitles(
+  entries: Iterable<ResolvedSessionTitle>,
+): void {
+  let changed = false;
+  for (const entry of entries) {
+    inFlightSessionTitleRequests.delete(entry.requestedId);
+    queuedSessionTitleRequests.delete(entry.requestedId);
+    const label = cleanSessionTitle(String(entry.title ?? "").trim());
+    if (!label) {
+      unavailableSessionIds.add(entry.requestedId);
+      continue;
+    }
+    const tab = cleanSessionTitle(String(entry.tabTitle ?? "").trim());
+    const name: SessionName = {
+      label,
+      ...(tab && tab !== label ? { tab } : {}),
+      ...(entry.archived ? { archived: true } : {}),
+    };
+    const ids = [entry.requestedId, entry.id, ...(entry.aliases ?? [])].filter(
+      (id): id is string => !!id,
+    );
+    for (const id of ids) {
+      unavailableSessionIds.delete(id);
+      const had = resolvedSessionTitles.get(id);
+      if (
+        !had ||
+        had.label !== name.label ||
+        had.tab !== name.tab ||
+        had.archived !== name.archived
+      ) {
+        resolvedSessionTitles.set(id, name);
+        changed = true;
+      }
+    }
+  }
+  if (!changed) return;
+  syncRenderedSessionTitles();
+  mdCache.clear();
+  for (const listener of sessionTitleListeners) listener();
+}
+
+/** A failed request may be attempted again on a later render. */
+export function retrySessionTitleResolution(id: string): void {
+  inFlightSessionTitleRequests.delete(id);
+}
+
+/** Test isolation for the module-level on-demand cache. */
+export function resetResolvedSessionTitles(): void {
+  resolvedSessionTitles = new Map();
+  unavailableSessionIds = new Set();
+  queuedSessionTitleRequests.clear();
+  inFlightSessionTitleRequests.clear();
+  sessionTitleRequestFlushQueued = false;
+  mdCache.clear();
+}
 
 /**
  * Register id → name (whether that session is running, and its own tab title
@@ -230,17 +351,30 @@ const SESSION_ID_SHORT = 12; // `os-019fb3ad2` / `bks-019fb3ad`
  */
 export function setSessionTitles(
   entries: Iterable<
-    readonly [string, string | null | undefined, boolean?, (string | null)?]
+    readonly [
+      string,
+      string | null | undefined,
+      boolean?,
+      (string | null)?,
+      (readonly string[])?,
+    ]
   >,
 ): void {
   const next = new Map<string, SessionName>();
   const running = new Set<string>();
-  for (const [id, title, isRunning, tabTitle] of entries) {
+  for (const [id, title, isRunning, tabTitle, aliases] of entries) {
     const label = cleanSessionTitle(String(title ?? "").trim());
     const tab = cleanSessionTitle(String(tabTitle ?? "").trim());
-    if (id && label)
-      next.set(id, { label, ...(tab && tab !== label ? { tab } : {}) });
-    if (id && isRunning) running.add(id);
+    const ids = [id, ...(aliases ?? [])].filter(Boolean);
+    const name = { label, ...(tab && tab !== label ? { tab } : {}) };
+    if (label)
+      for (const knownId of ids) {
+        next.set(knownId, name);
+        queuedSessionTitleRequests.delete(knownId);
+        inFlightSessionTitleRequests.delete(knownId);
+        unavailableSessionIds.delete(knownId);
+      }
+    if (isRunning) for (const knownId of ids) running.add(knownId);
   }
   runningSessions = running;
   // Unconditional: a chip rendered from the markdown cache carries whatever
@@ -259,12 +393,35 @@ export function setSessionTitles(
     if (same) return; // the common case: a poll that only moved lastActivity
   }
   sessionTitles = next;
-  // Labels are baked into the cached HTML, so it has to go when they change.
+  // A transcript can mount from the same session-list render that supplies its
+  // names. The registry updates in an effect after that render, while the
+  // markdown HTML is memoized, so correct chips already in the DOM directly
+  // rather than waiting for an unrelated transcript render.
+  syncRenderedSessionTitles();
+  // Labels are baked into the cached HTML, so future renders need fresh HTML.
   mdCache.clear();
   for (const listener of sessionTitleListeners) listener();
 }
 
-/** Re-render draft projections when a session is named or renamed. */
+/** Register id to name for workspace mentions in composer drafts. */
+export function setWorkspaceTitles(
+  entries: Iterable<readonly [string, string | null | undefined]>,
+): void {
+  const next = new Map<string, string>();
+  for (const [id, name] of entries) {
+    const label = String(name ?? "").trim();
+    if (id && label) next.set(id, label);
+  }
+  if (
+    next.size === workspaceTitles.size &&
+    [...next].every(([id, name]) => workspaceTitles.get(id) === name)
+  )
+    return;
+  workspaceTitles = next;
+  for (const listener of sessionTitleListeners) listener();
+}
+
+/** Re-render draft projections when a referenced session or workspace is renamed. */
 export function onSessionTitlesChanged(listener: () => void): () => void {
   sessionTitleListeners.add(listener);
   return () => sessionTitleListeners.delete(listener);
@@ -358,12 +515,53 @@ function syncRenderedSessionRuns(): void {
   }
 }
 
+/** Name chips that mounted before the polled session registry was published. */
+function syncRenderedSessionTitles(): void {
+  if (
+    typeof document === "undefined" ||
+    typeof document.querySelectorAll !== "function"
+  )
+    return;
+  for (const anchor of document.querySelectorAll<HTMLAnchorElement>(
+    "a.session-link[data-session-id]",
+  )) {
+    const id = anchor.dataset.sessionId;
+    if (!id) continue;
+    const name = knownSessionName(id);
+    if (!name) {
+      queueSessionTitleRequest(id);
+      continue;
+    }
+    const label = anchor.querySelector<HTMLElement>(".session-link-label");
+    if (!label) continue;
+    label.textContent = sessionLabel(name.label);
+    delete anchor.dataset.sessionLabel;
+    if (name.archived) anchor.dataset.sessionArchived = "";
+    else delete anchor.dataset.sessionArchived;
+    const icon = anchor.querySelector<HTMLElement>(".session-link-icon");
+    if (icon) icon.innerHTML = sessionIconSvg(name.archived);
+    anchor.title = sessionTip(id);
+  }
+}
+
 /**
  * The title we know for a session id. The composer and sent-message chips use
  * the same registry, so a reference keeps one name before and after sending.
  */
 export function sessionTitleFor(id: string): string | undefined {
-  return sessionTitles.get(id)?.label;
+  const name = knownSessionName(id);
+  if (!name) queueSessionTitleRequest(id);
+  return name?.label;
+}
+
+/** Whether a resolved session reference points into archived history. */
+export function sessionArchivedFor(id: string): boolean {
+  return knownSessionName(id)?.archived === true;
+}
+
+/** The name shown for a stable workspace mention in a composer draft. */
+export function workspaceTitleFor(id: string): string | undefined {
+  return workspaceTitles.get(id);
 }
 
 export function shortSessionId(id: string): string {
@@ -376,15 +574,26 @@ export function shortSessionId(id: string): string {
     : `${id.slice(0, SESSION_ID_SHORT).replace(/-+$/, "")}…`;
 }
 
-// The chip's leading glyph: a conversation, because that is what opens when
-// you click it. Same 24-grid, 1.5 stroke and 18px box as the PR chip's branch
-// glyph, so the two chips sit on one line without either looking heavier.
-const SESSION_CHIP_ICON =
-  `<span class="session-link-icon" aria-hidden="true">` +
+// The chip's leading glyph names the destination state: a conversation for
+// live work, the shared archive crate for archived history. Same 24-grid, 1.5
+// stroke and 18px box as the PR chip's branch glyph.
+const SESSION_CONVERSATION_SVG =
   `<svg viewBox="0 0 24 24" fill="none"><path d="M6.75 5.25H17.25C18.3546 5.25` +
   ` 19.25 6.14543 19.25 7.25V14.25C19.25 15.3546 18.3546 16.25 17.25 16.25H11.25` +
   `L7.25 19.25V16.25H6.75C5.64543 16.25 4.75 15.3546 4.75 14.25V7.25C4.75 6.14543` +
-  ` 5.64543 5.25 6.75 5.25Z"/></svg></span>`;
+  ` 5.64543 5.25 6.75 5.25Z"/></svg>`;
+const SESSION_ARCHIVE_SVG =
+  `<svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4.75" width="16" height="4" rx="1"/>` +
+  `<path d="M5.5 8.75V17.25C5.5 18.3546 6.39543 19.25 7.5 19.25H16.5C17.6046` +
+  ` 19.25 18.5 18.3546 18.5 17.25V8.75"/><path d="M10 12.25H14"/></svg>`;
+
+function sessionIconSvg(archived?: boolean): string {
+  return archived ? SESSION_ARCHIVE_SVG : SESSION_CONVERSATION_SVG;
+}
+
+function sessionChipIcon(archived?: boolean): string {
+  return `<span class="session-link-icon" aria-hidden="true">${sessionIconSvg(archived)}</span>`;
+}
 
 /**
  * The chip markup shared by both ways a session reference is written: a bare
@@ -394,7 +603,7 @@ const SESSION_CHIP_ICON =
 function sessionChip(
   id: string,
   label: string,
-  opts: { href?: string; tip?: string; idLabel?: boolean },
+  opts: { href?: string; tip?: string; idLabel?: boolean; archived?: boolean },
 ): string {
   // With an href it's a real link (cmd/middle-click open a tab); without one
   // the delegated click handler is the only way in, so it needs the button role
@@ -405,25 +614,34 @@ function sessionChip(
   return (
     `<a ${anchor}class="session-link" data-session-id="${attr(id)}"` +
     `${opts.idLabel ? ' data-session-label="id"' : ""}` +
+    `${opts.archived ? " data-session-archived" : ""}` +
     // Baked from the current set so a fresh chip is right on first paint;
     // syncRenderedSessionRuns corrects it from then on.
     `${runningSessions.has(id) ? " data-session-running" : ""}` +
     `${opts.tip ? ` title="${attr(opts.tip)}"` : ""}>` +
-    `${SESSION_CHIP_ICON}<span class="session-link-label">${label}</span></a>`
+    `${sessionChipIcon(opts.archived)}<span class="session-link-label">${label}</span></a>`
   );
 }
 
+function sessionLabel(title: string): string {
+  return title.length > SESSION_TITLE_MAX
+    ? `${title.slice(0, SESSION_TITLE_MAX - 1).trimEnd()}…`
+    : title;
+}
+
 function sessionLink(id: string, href?: string): string {
-  const title = sessionTitles.get(id)?.label;
-  const label = title
-    ? title.length > SESSION_TITLE_MAX
-      ? `${title.slice(0, SESSION_TITLE_MAX - 1).trimEnd()}…`
-      : title
-    : shortSessionId(id);
+  const name = knownSessionName(id);
+  if (!name) queueSessionTitleRequest(id);
+  const label = name ? sessionLabel(name.label) : shortSessionId(id);
   // The label is lossy either way (truncated title, abbreviated id), so the
   // full id always stays in the tooltip. data-session-label marks the id
   // fallback for the monospace treatment.
-  return sessionChip(id, attr(label), { href, tip: sessionTip(id), idLabel: !title });
+  return sessionChip(id, attr(label), {
+    href,
+    tip: sessionTip(id),
+    idLabel: !name,
+    archived: name?.archived,
+  });
 }
 
 const AUTOMATION_CHIP_ICON =
@@ -446,15 +664,19 @@ function automationChip(id: string, label?: string, href?: string): string {
  *  The label names the workspace, so the session's own title goes here when it
  *  differs. That is the only thing separating two chips into one workspace. */
 function sessionTip(id: string): string {
-  const name = sessionTitles.get(id);
-  const running = runningSessions.has(id) ? " · running" : "";
-  if (!name) return `Open session ${id}${running}`;
+  const name = knownSessionName(id);
+  const status = runningSessions.has(id)
+    ? " · running"
+    : name?.archived
+      ? " · archived"
+      : "";
+  if (!name) return `Open session ${id}${status}`;
   const tab = name.tab ? ` · ${name.tab}` : "";
-  return `Open ${name.label}${tab} (${id})${running}`;
+  return `Open ${name.label}${tab} (${id})${status}`;
 }
 
 // Agents write pull requests the GitHub way — a bare `#5528`, sometimes
-// qualified (`tella-fusion#5528`, `tellahq/tella-fusion#5528`) — and those
+// qualified (`webapp#5528`, `acme/webapp#5528`) — and those
 // references are the most-followed link in a transcript. They render as chips
 // into OS1's OWN review surface (`/pr/<repo>/<number>`, which resolves to the
 // PR's workspace Review tab), not to github.com: the review is here.
@@ -473,7 +695,7 @@ const PR_NUMBER_MAX_DIGITS = 5;
 // (`color: #333`, `#111`), and rankings (`#29`).
 //
 // Repos numbered under a thousand are the reason this can't just be a length
-// floor — backstage is at #92, tella-mac at #14. A short number links when
+// floor: a young repo can be at #92, or #14. A short number links when
 // something other than its digits says PR: the word in front of it (`PR #92`,
 // the dominant form in practice), a qualifier (`backstage#92`), or a PR the
 // session list already knows for that repo.
@@ -516,46 +738,26 @@ type PrDisplayState = {
   label: string;
   state: string;
   tone: PrTone;
+  terminal: boolean;
 };
 
 type PrTone = "green" | "purple" | "red" | "yellow" | "muted";
 
-const PR_MARK_TONE: Record<string, PrTone> = {
-  "text-green": "green",
-  "text-purple": "purple",
-  "text-red": "red",
-  "text-yellow": "yellow",
-  "text-faint": "muted",
-};
-
-const PR_MARK_LABEL: Record<string, string> = {
-  "PR has conflicts": "Conflicts",
-  "PR changes requested": "Changes requested",
-  "PR checks failing": "Checks failing",
-  "PR checks running": "Checks running",
-  "Draft PR": "Draft",
-};
-
 let knownPrStates = new Map<string, PrDisplayState>();
+let sessionPrStates = new Map<string, PrDisplayState>();
+let repoPrStates = new Map<string, PrDisplayState>();
 
 function prStateKey(repo: string, number: string | number): string {
   return `${repo}\u0000${number}`;
 }
 
 function displayPrState(pr: PrStateInput): PrDisplayState | null {
-  if (!pr.state) return null;
-  const mark = prStatusMark(pr);
-  const tone = PR_MARK_TONE[mark.className] ?? "muted";
-  const label =
-    mark.label === "PR open" && pr.mergeable === "MERGEABLE"
-      ? "Mergeable"
-      : (PR_MARK_LABEL[mark.label] ??
-        mark.label.replace(/^PR /, "").replace(/^./, (c) => c.toUpperCase()));
-  return {
-    label,
-    state: label.toLowerCase().replaceAll(" ", "-"),
-    tone,
-  };
+  return pr.state
+    ? {
+        ...prStatusDisplay(pr),
+        terminal: pr.state === "MERGED" || pr.state === "CLOSED",
+      }
+    : null;
 }
 
 function prRefTitle(repo: string, number: string, state?: PrDisplayState): string {
@@ -564,15 +766,57 @@ function prRefTitle(repo: string, number: string, state?: PrDisplayState): strin
   }`;
 }
 
+/**
+ * A bare number normally belongs to the rendering repo. If that repo has no
+ * such known PR and exactly one other configured repo does, use the unique
+ * match instead. This repairs agent shorthand without guessing when numbers
+ * overlap across repos.
+ */
+function resolveBarePrRepo(contextRepo: string, number: string): string {
+  if (knownPrStates.has(prStateKey(contextRepo, number))) return contextRepo;
+  const suffix = `\u0000${number}`;
+  let match: string | null = null;
+  for (const key of knownPrStates.keys()) {
+    if (!key.endsWith(suffix)) continue;
+    const repo = key.slice(0, -suffix.length);
+    if (match && match !== repo) return contextRepo;
+    match = repo;
+  }
+  return match ?? contextRepo;
+}
+
+function syncPrAnchorTarget(
+  anchor: HTMLAnchorElement,
+  repo: string,
+  number: string,
+): void {
+  anchor.dataset.prRepo = repo;
+  anchor.setAttribute(
+    "href",
+    `${BASE_PATH}/pr/${encodeURIComponent(repo)}/${number}`,
+  );
+  const ghRepo = knownRepos.get(repo);
+  if (ghRepo) anchor.dataset.prGh = ghRepo;
+  else delete anchor.dataset.prGh;
+}
+
 /** Keep already-rendered transcript chips in sync with the bulk PR cache. */
 function syncRenderedPrStates(): void {
   if (typeof document === "undefined") return;
   for (const anchor of document.querySelectorAll<HTMLAnchorElement>(
     "a.pr-ref[data-pr-repo][data-pr-number]",
   )) {
-    const repo = anchor.dataset.prRepo;
+    let repo = anchor.dataset.prRepo;
     const number = anchor.dataset.prNumber;
     if (!repo || !number) continue;
+    const contextRepo = anchor.dataset.prContextRepo;
+    if (contextRepo) {
+      const resolvedRepo = resolveBarePrRepo(contextRepo, number);
+      if (resolvedRepo !== repo) {
+        syncPrAnchorTarget(anchor, resolvedRepo, number);
+        repo = resolvedRepo;
+      }
+    }
     const state = knownPrStates.get(prStateKey(repo, number));
     if (!state) {
       delete anchor.dataset.prState;
@@ -586,14 +830,25 @@ function syncRenderedPrStates(): void {
   }
 }
 
-/** Register live PR state from the session list for transcript references. */
-export function setKnownPrStates(prs: Iterable<PrStateInput>): void {
+function collectPrStates(prs: Iterable<PrStateInput>): Map<string, PrDisplayState> {
   const next = new Map<string, PrDisplayState>();
   for (const pr of prs) {
     if (!pr.repo || !pr.number) continue;
     const state = displayPrState(pr);
     const key = prStateKey(pr.repo, pr.number);
     if (state && !next.has(key)) next.set(key, state);
+  }
+  return next;
+}
+
+function syncKnownPrStates(): void {
+  // Session state carries richer checks/conflict data. A terminal repo-wide
+  // state is the exception: an older live-session snapshot must not resurrect
+  // a PR that recent history already knows was merged or closed.
+  const next = new Map(repoPrStates);
+  for (const [key, state] of sessionPrStates) {
+    if (next.get(key)?.terminal && !state.terminal) continue;
+    next.set(key, state);
   }
   if (
     next.size === knownPrStates.size &&
@@ -608,6 +863,18 @@ export function setKnownPrStates(prs: Iterable<PrStateInput>): void {
   knownPrStates = next;
   mdCache.clear();
   syncRenderedPrStates();
+}
+
+/** Register live PR state from the session list for transcript references. */
+export function setKnownPrStates(prs: Iterable<PrStateInput>): void {
+  sessionPrStates = collectPrStates(prs);
+  syncKnownPrStates();
+}
+
+/** Register repo-wide PRs, including PRs no loaded session owns. */
+export function setKnownRepoPrStates(prs: Iterable<PrStateInput>): void {
+  repoPrStates = collectPrStates(prs);
+  syncKnownPrStates();
 }
 
 /** Register the repos, so `<repo>#123` mentions link and chips know GitHub. */
@@ -675,7 +942,14 @@ function bareMentionLinks(repo: string, number: string): boolean {
   );
 }
 
-function prMentionLink(repo: string, number: string, label: string): string {
+function prMentionLink(
+  repo: string,
+  number: string,
+  label: string,
+  unqualified = false,
+): string {
+  const contextRepo = repo;
+  if (unqualified) repo = resolveBarePrRepo(contextRepo, number);
   const href = `${BASE_PATH}/pr/${encodeURIComponent(repo)}/${number}`;
   // `data-pr-gh` is the escape hatch, not the destination: a plain click
   // stays in the review here, cmd/ctrl-click leaves for github.com.
@@ -684,6 +958,7 @@ function prMentionLink(repo: string, number: string, label: string): string {
   return (
     `<a href="${attr(href)}" class="pr-ref" data-pr-repo="${attr(repo)}"` +
     ` data-pr-number="${attr(number)}"` +
+    (unqualified ? ` data-pr-context-repo="${attr(contextRepo)}"` : "") +
     (ghRepo ? ` data-pr-gh="${attr(ghRepo)}"` : "") +
     (state
       ? ` data-pr-state="${state.state}" data-pr-tone="${state.tone}"`
@@ -723,6 +998,67 @@ function githubPrTarget(
       return { repo, number: match[3] };
   }
   return null;
+}
+
+// The same pull request, written twice on one line. The house style asks for a
+// qualified reference and the link gets pasted next to it anyway, so
+// "**webapp#5832** — https://github.com/acme/webapp/pull/5832" is everyday
+// output. Both forms are references and both chip, so the line renders as two
+// identical pills joined by a separator that only ever existed to introduce
+// the URL. One reference written twice is still one reference: keep the form
+// that was written first and drop the duplicate with its separator.
+//
+// Two DIFFERENT pull requests side by side are two references and stay two
+// chips — the repo and the number both have to match, resolved through the
+// same helpers the chips themselves resolve through.
+const DUPLICATE_PR_PAIR = new RegExp(
+  // The character in front, captured rather than looked behind: a mention glued
+  // to a word (or to another `#`) is not a mention, and re-emitting the guard
+  // keeps the rewrite lossless.
+  `(?<lead>^|[^\\w#&/-])` +
+    // Bold wraps a mention without changing what it is. A code span does: a
+    // mention in backticks renders as code and never chips, so collapsing
+    // there would delete the only linkable form. It is left alone.
+    `(?<mention>(?<cue>[Pp][Rr]s?[ \\t]+)?(?<wrap>\\*\\*)?` +
+    `(?<qualifier>(?:[A-Za-z0-9][\\w.-]*/)?[A-Za-z0-9][\\w.-]*)?` +
+    `#(?<number>\\d{1,${PR_NUMBER_MAX_DIGITS}})\\k<wrap>?)` +
+    // What joins the two: a dash/middot/colon, an opening paren, or just space.
+    `(?<sep>[ \\t]*[—–·:|-][ \\t]*|[ \\t]*\\([ \\t]*|[ \\t]+)` +
+    `<?(?<url>https?://(?:www\\.)?github\\.com/[\\w.-]+/[\\w.-]+/pull/\\d{1,${PR_NUMBER_MAX_DIGITS}})/?>?` +
+    `(?<close>[ \\t]*\\))?`,
+  "gm",
+);
+
+/** Run a rewrite over prose only, leaving fenced code blocks verbatim. */
+function outsideCodeFences(src: string, fn: (chunk: string) => string): string {
+  if (!src.includes("```")) return fn(src);
+  return src
+    .split(/(```[\s\S]*?```)/g)
+    .map((part) => (part.startsWith("```") ? part : fn(part)))
+    .join("");
+}
+
+/** Collapse `repo#123 — https://github.com/owner/repo/pull/123` to one chip. */
+function collapseDuplicatePrReferences(src: string): string {
+  if (!src.includes("/pull/")) return src;
+  return outsideCodeFences(src, (chunk) =>
+    chunk.replace(DUPLICATE_PR_PAIR, (match, ...args) => {
+      const g = args[args.length - 1] as Record<string, string | undefined>;
+      const lead = g.lead ?? "";
+      const target = githubPrTarget(g.url);
+      if (!target) return match;
+      const repo = prMentionRepo(g.qualifier);
+      if (repo !== target.repo || g.number !== target.number) return match;
+      // A mention that wouldn't chip on its own is prose, and dropping the URL
+      // next to it would leave the reference with nothing to open.
+      if (!g.qualifier && !g.cue && !bareMentionLinks(repo, g.number!))
+        return match;
+      // An unbalanced parenthesis means the separator wasn't one.
+      if (g.sep?.includes("(") && !g.close) return match;
+      const close = g.sep?.includes("(") ? "" : (g.close ?? "");
+      return `${lead}${g.mention}${close}`;
+    }),
+  );
 }
 
 // Commit shas are the other reference agents write constantly ("this reverts
@@ -943,11 +1279,18 @@ md.use({
         // chip + data-session-id so the delegated handler (SessionViewer)
         // navigates client-side; href stays for middle/cmd-click and for
         // surfaces without the handler (full-page load, same tab).
-        if (internal.sessionId)
+        if (internal.sessionId) {
+          // A label that is only the id (bare or in a codespan) repeats what
+          // the chip already identifies, at full 39-char length. Label it
+          // from the session's own name instead, like a bare id in prose.
+          const label = (token.text ?? "").trim().replace(/^`+|`+$/g, "");
+          if (SESSION_ID_EXACT.test(label))
+            return sessionLink(internal.sessionId, token.href);
           return sessionChip(internal.sessionId, text, {
             href: token.href,
             tip: token.title || sessionTip(internal.sessionId),
           });
+        }
         if (internal.automationId)
           return automationChip(internal.automationId, text, token.href);
         return `<a href="${attr(token.href)}"${title}>${text}</a>`;
@@ -1119,14 +1462,26 @@ md.use({
         // Same for a short number with nothing but its digits to go on.
         if (!cue && !qualifier && !bareMentionLinks(repo, number))
           return { type: "text", raw, text: raw };
-        return { type: "prMention", raw, cue, repo, number };
+        return {
+          type: "prMention",
+          raw,
+          cue,
+          repo,
+          number,
+          unqualified: !qualifier,
+        };
       },
       renderer(token: any) {
         // The cue stays prose: it reads as `PR` + a chip labelled `#92`, so a
         // chip already carrying a PR icon doesn't also spell the word out.
         return (
           attr(token.cue) +
-          prMentionLink(token.repo, token.number, token.raw.slice(token.cue.length))
+          prMentionLink(
+            token.repo,
+            token.number,
+            token.raw.slice(token.cue.length),
+            token.unqualified,
+          )
         );
       },
     },
@@ -1205,7 +1560,7 @@ export function renderMarkdown(src: string, ctx?: MarkdownContext): string {
   renderAssetSessionId = ctx?.sessionId;
   renderRawHtml = ctx?.rawHtml ?? "escape";
   try {
-    out = md.parse(src) as string;
+    out = md.parse(collapseDuplicatePrReferences(src)) as string;
   } catch {
     out = src;
   } finally {

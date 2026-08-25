@@ -5,6 +5,7 @@ import {
   wrapContext,
   stripContext,
   isContextOnly,
+  parseContextBlocks,
 } from "./prompt-context";
 import { AUTO_CONTINUE_PROMPT, AUTO_CONTINUE_USER } from "./auto-continue";
 
@@ -14,6 +15,14 @@ describe("prompt-context", () => {
     expect(w).toContain(CTX_OPEN);
     expect(w).toContain(CTX_CLOSE);
     expect(w).toContain("system stuff");
+  });
+
+  it("records background waits as typed, hidden system context", () => {
+    const wait = wrapContext("Continue after CI settles.", "background-wait");
+    expect(isContextOnly(wait)).toBe(true);
+    expect(parseContextBlocks(wait)).toEqual([
+      { source: "background-wait", body: "Continue after CI settles." },
+    ]);
   });
 
   it("strips a fenced block, leaving only the human message", () => {
@@ -31,6 +40,32 @@ describe("prompt-context", () => {
     expect(out).toBe("the actual question");
     expect(out).not.toContain("Engine handoff");
     expect(out).not.toContain("PREAMBLE");
+  });
+
+  it("keeps a pinned session goal as typed, hidden context", () => {
+    const goal = wrapContext(
+      "Pinned session goal. Keep working toward it:\n\nShip the stable sandbox flow.",
+      "pinned-goal",
+    );
+    const prompt = `${goal}\n\nWhat did Ramp report?`;
+
+    expect(stripContext(prompt)).toBe("What did Ramp report?");
+    expect(parseContextBlocks(prompt)).toEqual([
+      {
+        source: "pinned-goal",
+        body:
+          "Pinned session goal. Keep working toward it:\n\nShip the stable sandbox flow.",
+      },
+    ]);
+  });
+
+  it("strips legacy pinned-goal suffixes from stored user turns", () => {
+    const suffix =
+      "[Pinned session goal — keep working toward it and note how this turn advanced it: Ship the stable sandbox flow.]";
+    expect(stripContext(`What did Ramp report?\n\n${suffix}`)).toBe(
+      "What did Ramp report?",
+    );
+    expect(stripContext(suffix)).toBe("");
   });
 
   it("leaves plain text untouched", () => {

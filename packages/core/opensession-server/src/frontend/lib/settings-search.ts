@@ -2,8 +2,8 @@
  * Search over the Settings nav.
  *
  * Settings is a couple of dozen sections deep and their names are the *place*
- * a setting lives, not the words anyone arrives with: "vim mode" is in Preferences,
- * "dark mode" in Appearance, "cron" in Automations. So each section carries a
+ * a setting lives, not the words anyone arrives with: "dark mode" is in
+ * Preferences, "cron" in Automations. So each section carries a
  * few aliases — the notable settings inside it plus the words people reach for
  * — and a query matches a section's label, its group, or one of those.
  *
@@ -44,12 +44,23 @@ export const SETTINGS_KEYWORDS: Record<string, string[]> = {
 		"access request",
 	],
 	preferences: [
+		"theme",
+		"accent",
+		"dark mode",
+		"light mode",
+		"row density",
+		"show in sidebar",
 		"default model",
+		"output style",
+		"concise",
+		"response length",
 		"send messages with",
 		"enter key",
 		"steer",
 		"queue",
 		"follow-up",
+		"next button",
+		"next chat",
 		"vim mode",
 		"pin new sessions",
 		"tool calls",
@@ -66,7 +77,6 @@ export const SETTINGS_KEYWORDS: Record<string, string[]> = {
 		"needs input",
 		"run complete",
 	],
-	appearance: ["theme", "dark mode", "light mode", "section order"],
 	shortcuts: [
 		"keyboard",
 		"key bindings",
@@ -89,27 +99,35 @@ export const SETTINGS_KEYWORDS: Record<string, string[]> = {
 	setup: ["onboarding", "getting started", "checklist", "first run"],
 	repos: ["repositories", "projects", "checkout", "worktree", "branch", "clone"],
 	members: ["team", "people", "teammates", "access"],
-	models: [
+	authentication: ["sign in", "login", "github", "oauth", "device flow", "none"],
+	providers: [
+		"models",
+		"default model",
 		"engine",
-		"opencode",
+		"pi",
 		"claude accounts",
 		"codex",
-		"provider",
 		"api key",
 		"fallback",
 		"usage",
+		"spend",
+		"cost",
+		"tokens",
 		"credits",
+		"limits",
+		"quota",
 	],
-	usage: ["spend", "cost", "tokens", "credits", "limits", "quota"],
 	runners: ["run hosts", "machines", "workers", "capacity", "detached runs"],
 	library: ["templates", "prompts", "skills", "starters", "commands"],
 	sandboxes: ["docker", "daytona", "box", "ascii", "modal", "microvm", "firecracker", "isolation", "compute"],
-	integrations: ["github sign-in", "oauth app"],
+	integrations: ["tools", "webhooks", "credentials", "github app", "private key", "client secret"],
 	connections: ["mcp servers", "tools", "agents", "add mcp server"],
 	memory: ["facts", "remember", "scopes"],
 	automations: ["scheduled", "cron", "triggers", "watchers", "jobs"],
 	goals: ["standing goals", "objectives"],
 	security: ["scans", "deepsec", "vulnerabilities", "findings"],
+	ingress: ["webhooks", "public", "github", "plain", "tailscale funnel", "cloudflare tunnel", "caddy", "dns", "oidc", "workload identity"],
+	storage: ["assets", "s3", "r2", "bucket", "object storage", "cloudflare"],
 	prewarming: ["acceleration", "faster starts", "dependency cache", "preview pool", "warm", "install"],
 	deploys: ["releases", "restart", "version"],
 	papercuts: ["friction", "annoyances"],

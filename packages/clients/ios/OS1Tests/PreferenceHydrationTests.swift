@@ -10,6 +10,13 @@ final class PreferenceHydrationTests: XCTestCase {
         XCTAssertNil(NativePreferences.replySuggestionsEnabled("future-value"))
     }
 
+    func testNextChatButtonPreferenceUsesWebValues() {
+        XCTAssertEqual(NativePreferences.nextChatButtonEnabled("on"), true)
+        XCTAssertEqual(NativePreferences.nextChatButtonEnabled("off"), false)
+        XCTAssertNil(NativePreferences.nextChatButtonEnabled(nil))
+        XCTAssertNil(NativePreferences.nextChatButtonEnabled("future-value"))
+    }
+
     /// The same "on"/"off" shape the web writes for `live-typing`. An unset
     /// value is nil rather than false, so hydration leaves this device's
     /// cached answer alone instead of snapping it to a choice nobody made.

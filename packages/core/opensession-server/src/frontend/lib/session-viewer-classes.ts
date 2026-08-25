@@ -20,7 +20,7 @@
  *   · `viewer-header-actions` — lib/pr-tone-classes.ts spaces the PR chip off
  *     the row with `[.viewer-header-actions_&]:mx-1.5`;
  *   · `viewer-messages` — base.css's selection policy opts the whole transcript
- *     in, and MarkdownBody, VirtualTranscriptBlock and CodeHighlight all find
+ *     in, and MarkdownBody, VirtualTranscriptList and CodeHighlight all find
  *     their scroll container with `closest(".viewer-messages")`.
  *
  * One more joins them from the row's contents:
@@ -74,15 +74,27 @@ export const VIEWER_TITLE =
 	"flex min-w-0 items-center gap-2.5 font-medium phone:hidden";
 
 /**
- * The workspace name. Capped so a long one truncates instead of eating the
- * whole bar; it still shrinks below that when the row runs out of room. The
- * shell makes the surrounding header a native window drag region, so this opts
- * out — its text stays selectable and copyable.
+ * The workspace name. Capped so a long one clips instead of eating the whole
+ * bar; OverflowFadeText softens that clipped edge. The shell makes the
+ * surrounding header a native window drag region, so this opts out — its text
+ * stays selectable and copyable.
  */
 export const VIEWER_BRANCH =
-	"min-w-0 max-w-[420px] select-text overflow-hidden text-ellipsis whitespace-nowrap text-item-title " +
+	"min-w-0 max-w-[420px] -translate-y-px select-text overflow-hidden whitespace-nowrap text-item-title " +
 	"[-webkit-touch-callout:default] " +
-	"[html.wco_&]:[-webkit-app-region:no-drag] [html.wco_&]:[app-region:no-drag]";
+	"[html.wco_&]:[-webkit-app-region:no-drag] [html.wco_&]:[app-region:no-drag] " +
+	"[html.desktop-shell_&]:[-webkit-app-region:no-drag] [html.desktop-shell_&]:[app-region:no-drag]";
+
+/**
+ * A crumb BEFORE the session's own name: the session a worker was spawned from.
+ * It reads as the level above (dim, like the repo before it) and lights up on
+ * hover because clicking it is the way back up. Narrower than the name it
+ * precedes, since the name is what the bar is about.
+ */
+export const VIEWER_CRUMB_UP =
+	"-mx-2 -my-[5px] max-w-[240px] shrink cursor-pointer overflow-hidden text-ellipsis rounded-[calc(6px*var(--rf))] px-2 py-[5px] " +
+	"text-label font-medium text-dim transition-colors duration-[var(--dur-micro)] ease-[var(--ease)] " +
+	"hover:bg-hover hover:text-fg";
 
 /** Double-clickable to rename — hinted on hover without shifting the row. */
 export const VIEWER_BRANCH_EDITABLE =
@@ -97,22 +109,28 @@ export const VIEWER_BRANCH_RENAME =
  * The trailing controls. Icon buttons sit in a tight cluster so they read as
  * one group; the labelled items in the row (the Linear/Plain links, the
  * presence facepile, the PR chip) space themselves.
+ *
+ * `pwa-header-actions` lets base.css tune these controls only in an installed
+ * PWA.
  */
 export const VIEWER_HEADER_ACTIONS =
-	"viewer-header-actions flex shrink-0 items-center gap-0.5 phone:justify-end " +
-	// Phones give every control in the row a real touch target. Keyed off the
+	// The tab strip overlaps the header's lower edge to tighten the two rows.
+	// Keep every header action above that overlap so its bottom edge and hit area
+	// remain intact.
+	"viewer-header-actions pwa-header-actions relative z-[1] flex shrink-0 items-center gap-0.5 phone:justify-end " +
+	// Phones give every control in the row a 44px touch target. Keyed off the
 	// row rather than written on each control because these are shared
-	// primitives (Button, and the source links below): a descendant selector is
-	// also what lets it outrank the primitive's own padding, exactly as the
-	// legacy rule did. `inline-flex`/`items-center` are not carried — the
-	// primitive is already both, on every viewport.
-	"phone:[&_button]:min-h-[38px] phone:[&_button]:px-[11px] phone:[&_button]:py-[7px] " +
+	// primitives (Button, and the source links below). A descendant selector also
+	// lets this outrank the primitive's own padding, exactly as the legacy rule
+	// did. `inline-flex` and `items-center` are not carried because the primitive
+	// is already both on every viewport.
+	"phone:[&_button]:min-h-11 phone:[&_button]:px-[11px] phone:[&_button]:py-[7px] " +
 	"phone:[&_button]:text-label";
 
 /** The presence facepile (Figma/Notion-style), just before Share. Labelled
  *  items in the row space themselves off the icon cluster; the icons keep the
  *  row's tight 2px gap. */
-export const VIEWER_PRESENCE = "mr-1.5 flex items-center";
+export const VIEWER_PRESENCE = "mx-1.5 flex items-center";
 
 /**
  * One face in it. They overlap by 8px so the pile reads as a stack, and the
@@ -140,14 +158,14 @@ export const VIEWER_PRESENCE_AVATAR = "-ml-2 first:ml-0";
 export const SESSION_LINK =
 	"session-link mr-1.5 rounded-control border border-line-strong px-[11px] py-[5px] " +
 	"text-label font-semibold text-dim no-underline " +
-	// Phones give it the same 38px touch target as the buttons beside it. These
-	// sit on the link rather than on the row (where the buttons' copy lives)
-	// because this is the element's own styling and nothing else wears the
-	// class in this row. Only the declarations that actually change are
-	// written: the 11px sides are already the resting value. A `phone:` variant
-	// beats the unprefixed `py-[5px]`/`text-label` on the same element because
-	// Tailwind emits every breakpoint variant after the unprefixed utilities.
-	"phone:inline-flex phone:min-h-[38px] phone:items-center phone:py-[7px] phone:text-label";
+	// Phones give it the same 44px touch target as the buttons beside it. These
+	// sit on the link rather than on the row, where the buttons' copy lives,
+	// because this is the element's own styling and nothing else wears the class
+	// in this row. Only the declarations that actually change are written: the
+	// 11px sides are already the resting value. A `phone:` variant beats the
+	// unprefixed `py-[5px]` and `text-label` on the same element because Tailwind
+	// emits every breakpoint variant after the unprefixed utilities.
+	"phone:inline-flex phone:min-h-11 phone:items-center phone:py-[7px] phone:text-label";
 export const SESSION_LINK_LINEAR = "border-[rgba(94,106,210,0.5)] text-[#7b86e8]";
 export const SESSION_LINK_PLAIN = "border-[rgba(13,148,136,0.5)] text-[#5eead4]";
 
@@ -198,6 +216,16 @@ export const VIEWER_REVIEW_MAIN =
 export const VIEWER_MESSAGES_REGION = "relative flex min-h-0 flex-1 flex-col";
 
 /**
+ * Background transcript hydration sits in the clear strip immediately above
+ * the composer instead of becoming the transcript's last row. Absolute
+ * placement keeps both the scroll height and the reader's position stable.
+ * The action-band clearance lifts it past any replies or navigation controls;
+ * its child mirrors the composer's width at the call site.
+ */
+export const TRANSCRIPT_LOADING_MORE =
+	"pointer-events-none absolute inset-x-0 bottom-[calc(20px+var(--suggestions-under,0px))] z-[5] px-5 text-faint phone:px-3";
+
+/**
  * The scroll container.
  *
  * Never a sideways-pannable session: anything internally wide (code, tables)
@@ -222,6 +250,11 @@ export const VIEWER_MESSAGES =
 	// Keep the reader's place when content loads or expands above them.
 	"[overflow-anchor:auto] px-5 pt-0 " +
 	"pb-[calc(var(--session-under)_+_var(--suggestions-under,0px)_+_16px)] " +
+	// A focused phone composer is fixed and no longer reserves flow height,
+	// while the transcript's layout viewport still extends behind the keyboard.
+	// Clear both measured obstructions so even a tall draft and the last live
+	// status row can scroll completely into the visible strip above them.
+	"phone:[body.kb-open_&]:pb-[calc(var(--kb-inset,0px)_+_var(--viewer-input-height,64px)_+_var(--suggestions-under,0px)_+_8px)] " +
 	// Wider side padding where the message rail lives, so its ticks have a
 	// gutter of their own instead of sitting on the bubbles (lib/message-rail.ts).
 	`${RAIL_GUTTER_CLASS} ` +
@@ -240,11 +273,7 @@ export const VIEWER_MESSAGES =
 	// A non-linear fade mirrored into mask alpha:
 	// hidden for the first fifth, 45% by three fifths, full at the bar height.
 	"phone:[-webkit-mask-image:linear-gradient(to_bottom,transparent_0,transparent_calc(var(--pane-header-h)*0.2),rgba(0,0,0,0.45)_calc(var(--pane-header-h)*0.6),#000_var(--pane-header-h))] " +
-	"phone:[mask-image:linear-gradient(to_bottom,transparent_0,transparent_calc(var(--pane-header-h)*0.2),rgba(0,0,0,0.45)_calc(var(--pane-header-h)*0.6),#000_var(--pane-header-h))] " +
-	// With the header slid away, the revealed rows read at full strength rather
-	// than dissolving into an absent bar.
-	"phone:[body.chrome-collapsed_&]:[-webkit-mask-image:none] " +
-	"phone:[body.chrome-collapsed_&]:[mask-image:none]";
+	"phone:[mask-image:linear-gradient(to_bottom,transparent_0,transparent_calc(var(--pane-header-h)*0.2),rgba(0,0,0,0.45)_calc(var(--pane-header-h)*0.6),#000_var(--pane-header-h))]";
 
 /**
  * The composer floats up over the transcript so the session scrolls UNDER it,
@@ -267,18 +296,55 @@ export const VIEWER_INPUT =
 	// raising the scroller would incorrectly lift transcript content too.
 	"[background:linear-gradient(to_bottom,transparent_0,var(--bg)_var(--session-under))_left_top/calc(100%_-_14px)_100%_no-repeat] " +
 	// Phone: clear the home indicator rather than jamming the composer against
-	// the very bottom edge — that gap is also all the room the composer's
-	// shadow gets in mobile Safari, where there is no safe-area inset.
+	// the very bottom edge. That gap is also all the room the composer's shadow
+	// gets in mobile Safari, where there is no safe-area inset.
 	"phone:px-3 phone:pb-[max(16px,env(safe-area-inset-bottom,0px))] " +
-	// Keyboard up: iOS keeps reporting the inset even though the keyboard now
-	// covers that area. Scoped to the EXPANDED composer — the resting pill only
-	// shows while the field is unfocused, so it must keep the full gap.
-	"phone:[body.kb-open_&:has(.composer:not(.composer-min))]:pb-0";
+	// Keyboard up: pin the input to Safari's fixed viewport instead of relying on
+	// its focus pan, which can stop with the toolbar floating above the keyboard.
+	// Fixed bottom already follows the visible keyboard edge on iOS Safari, so do
+	// not add `--kb-inset` again: that double-counts the keyboard and lifts the
+	// composer by hundreds of pixels. The painted wrapper keeps the solid tail of
+	// the fade behind a compact 8px gap down to the keyboard.
+	"phone:[body.kb-open_&]:fixed phone:[body.kb-open_&]:inset-x-0 phone:[body.kb-open_&]:bottom-0 " +
+	"phone:[body.kb-open_&]:pb-2";
 
 /**
- * Where the quick-reply row hangs (components/ReplySuggestions).
+ * The step the transcript and the composer take while the workspace summary
+ * card is up.
  *
- * `bottom-full` lifts it off the top of the input box, so the row lies on the
+ * The distance is a variable rather than a fixed utility because it depends on
+ * how much pane is left beside the card: on a wide window it is zero and the
+ * reading column stays centred (`workspaceSummaryShift`).
+ *
+ * It moves the children, not the scroller, so the scroll container keeps its
+ * own box, its padding and its overflow exactly where they were.
+ */
+export const VIEWER_SUMMARY_STEP =
+	"desktop:[&>*]:translate-x-[var(--ws-summary-step,0px)]";
+
+/**
+ * The session's floating actions on the composer's own width. Desktop keeps
+ * quick replies and Next on one row. Phone stacks quick replies above a centered
+ * action bar with Archive, More, New workspace, and Next.
+ *
+ * The band already repeats the input's side padding, so `--session-col` + 40px
+ * here is the composer's own box. Desktop keeps the input's 20px right inset.
+ */
+export const VIEWER_ACTION_ROW =
+	"flex w-full max-w-[calc(var(--session-col)+40px)] items-center justify-end gap-3 pr-5 " +
+	"phone:flex-col phone:gap-2 phone:pr-0";
+
+/** Keep the reading action centred between replies and Next when all three
+ * share the desktop row. Equal side tracks let either side yield and scroll
+ * without moving the middle control off the conversation's centre line. */
+export const VIEWER_ACTION_ROW_WITH_SCROLL =
+	"desktop:grid desktop:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]";
+
+/**
+ * The band the session's own offers hang in: the quick-reply chips and the
+ * Next action (VIEWER_ACTION_ROW).
+ *
+ * `bottom-full` lifts it off the top of the input box, so the band lies on the
  * transcript's last rows and costs the input no height: it arrives and retires
  * without moving the composer under your hands. The transcript pays for what it
  * covers in bottom padding instead (`--suggestions-under`, above).
@@ -302,28 +368,45 @@ export const VIEWER_SUGGESTIONS =
 	`${RAIL_GUTTER_CLASS} phone:px-3`;
 
 /**
- * The room the transcript keeps clear while that row is up, set on the session
+ * The room the transcript keeps clear while that band is up, set on the session
  * column as `--suggestions-under` and 0 the rest of the time.
  *
- * The pills float ON the last rows of the transcript rather than sitting in
- * flow above the composer, so they cost the conversation no height while they
- * are up and none of it back when they retire. What they do cost is cover:
- * without this the answer's own last line ends underneath them, and no amount
- * of scrolling brings it out. One pill tall (28px) plus the row's standoff, so
+ * The band floats ON the last rows of the transcript rather than sitting in
+ * flow above the composer, so it costs the conversation no height while it is
+ * up and none of it back when it retires. What it does cost is cover: without
+ * this the answer's own last line ends underneath it, and no amount of
+ * scrolling brings it out. One pill tall (28px) plus the band's standoff, so
  * the reading stops the same 16px clear of the pills that it normally stops
  * clear of the input. ReplySuggestions.test.tsx holds the two together.
  */
-export const SUGGESTIONS_CLEARANCE = "34px";
+export const SUGGESTIONS_CLEARANCE = "[--suggestions-under:34px]";
+
+/** A 32px reading action plus the action band's 6px standoff. */
+export const SCROLL_ACTION_CLEARANCE = "[--suggestions-under:38px]";
 
 /**
- * The row inside it, on the composer's own width.
+ * The same clearance once Next shares the band and gives it its height: a 40px
+ * button, or the phone action bar at 48px, plus the same standoff. The phone
+ * toolbar hides while the keyboard is open, so its clearance retires too.
+ * Written out rather than derived, because Tailwind compiles the class names it
+ * can find spelled in the source.
+ */
+export const ACTION_CLEARANCE =
+	"[--suggestions-under:46px] phone:[--suggestions-under:54px] phone:[body.kb-open_&]:[--suggestions-under:0px]";
+
+/** Phone stacks quick replies above the 48px action bar. With the keyboard up,
+ * only the 28px reply row and its 6px standoff remain. */
+export const ACTION_WITH_REPLIES_CLEARANCE =
+	"[--suggestions-under:46px] phone:[--suggestions-under:90px] phone:[body.kb-open_&]:[--suggestions-under:34px]";
+
+/**
+ * The chips themselves, filling the action row beside Next.
  *
- * The 4px of padding, and the +8px on both widths that pays it back, are for
- * the pills' cast shadow. The row scrolls sideways, and a scroll container
- * clips: `overflow-x: auto` forces the other axis to `auto` too, so at the
- * row's own height the lift under each pill was cut off square, and the first
- * pill lost the left edge of its hairline. Centring is the flex parent's job
- * rather than `mx-auto`, since the negative margins want that side of the box.
+ * The 4px of padding, and the negative margins that pay it back, are for the
+ * pills' cast shadow. The row scrolls sideways, and a scroll container clips:
+ * `overflow-x: auto` forces the other axis to `auto` too, so at the row's own
+ * height the lift under each pill was cut off square, and the first pill lost
+ * the left edge of its hairline.
  *
  * The left side carries that allowance plus an indent, so the first pill
  * starts on the composer's own content rail rather than on its outer edge:
@@ -338,8 +421,19 @@ export const SUGGESTIONS_CLEARANCE = "34px";
  * holds the two together.
  */
 export const VIEWER_SUGGESTIONS_ROW =
-	"w-[calc(100%+8px)] max-w-[calc(var(--session-col)+48px)] " +
-	"-m-1 py-1 pr-1 pl-[19px] phone:pl-[17px]";
+	"min-w-0 flex-1 -my-1 -ml-1 py-1 pr-1 pl-[19px] phone:pl-[17px]";
+
+/**
+ * The same chips once Next shares the row with them.
+ *
+ * They keep the desktop shadow allowance and content-rail indent exactly as
+ * above. On a phone they start on the composer's outer edge instead. That gives
+ * the rail enough room to finish ordinary two-chip choices before Next, rather
+ * than clipping the final capsule for an indent the narrow row cannot afford.
+ * `min-w-0` still lets longer choices scroll sideways instead of pushing Next.
+ */
+export const VIEWER_SUGGESTIONS_ROW_INLINE =
+	"min-w-0 flex-1 -my-1 -ml-1 py-1 pr-1 pl-[19px] phone:pl-[10px]";
 
 /* ── Banners and the delete overlay ─────────────────────────────────────── */
 
@@ -371,8 +465,8 @@ export const SESSION_DELETE_LABEL = "text-label text-dim";
  * The padding is asymmetric on purpose. Every one of these carries a leading
  * icon, and an icon brings its own whitespace to the edge, so matching the
  * label's padding on that side reads as a gap. Trimming the leading side by
- * 4px puts the two ends back in optical balance — the same trim Tella makes on
- * its icon+label buttons.
+ * 4px puts the two ends back in optical balance, the usual trim for an
+ * icon+label button.
  */
 
 /** Everything but the fill and the gap — the two values these pills disagree
@@ -424,11 +518,36 @@ const PILL_PRESSABLE =
 	"group relative cursor-pointer transition-[scale] " +
 	"before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] " +
 	"before:[corner-shape:inherit] before:bg-transparent before:transition-colors before:content-[''] " +
-	"after:absolute after:-inset-1 after:content-[''] hover:before:bg-hover " +
+	"after:absolute after:content-[''] hover:before:bg-hover " +
 	"focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg active:scale-[0.96]";
 
-export const TRANSCRIPT_PILL_BUTTON = `${TRANSCRIPT_PILL} ${PILL_PRESSABLE}`;
-export const FLOATING_PILL_BUTTON = `${FLOATING_PILL} ${PILL_PRESSABLE}`;
+export const TRANSCRIPT_PILL_BUTTON = `${TRANSCRIPT_PILL} ${PILL_PRESSABLE} after:-inset-1`;
+export const FLOATING_PILL_BUTTON = `${FLOATING_PILL} ${PILL_PRESSABLE} after:-inset-1`;
+
+/** A compact transcript action whose visible surface is only the glyph. */
+export const TRANSCRIPT_ICON_BUTTON =
+	"inline-flex size-8 items-center justify-center rounded-full bg-popup-glass text-fg " +
+	"[backdrop-filter:var(--popup-blur)] [--smooth-ring-color:var(--popup-ring)] smooth-shadow-ring-sm " +
+	`${PILL_PRESSABLE} after:-inset-1.5`;
+
+/**
+ * Centring for a pill that floats over the transcript.
+ *
+ * `left-1/2` centres on the PANE, and the reading column is not always in the
+ * middle of it: while the workspace summary card is up, the transcript and the
+ * composer step left by `--ws-summary-step` (VIEWER_SUMMARY_STEP) while these
+ * pills are siblings of the scroller, so a pane-centred pill is left hanging
+ * over the card's side of the composition. Folding the step into the same
+ * translate keeps the pill on the column it belongs to.
+ *
+ * One utility rather than `-translate-x-1/2` with an override beside it: two
+ * translate utilities on one element resolve by Tailwind's output order, not
+ * by the order they are written. The variable is only ever set while the card
+ * is up, which never happens on a phone, so its default leaves every other
+ * case at a plain -50%.
+ */
+export const PILL_CENTRED =
+	"translate-x-[calc(-50%+var(--ws-summary-step,0px))]";
 
 /** The loading state's leading spinner, and the wider gap it asks for: an arrow
  *  glyph carries side bearing of its own, a bare 12px ring carries none, so at
@@ -450,15 +569,13 @@ export const TRANSCRIPT_PILL_SPINNER =
  * same chrome the transcript clears.
  *
  * SessionViewer shows it only within a screenful of the head of the
- * transcript, and scrolling down through that screenful is what collapses the
- * phone chrome, so the pill follows the bar off screen on the header's own
- * transform and timing. Without that it hangs in the space the bar just
- * vacated, which is the floating-over-the-transcript look this pill is
- * supposed to avoid. A transform rather than a moved `top`: it composes with
- * the `translate` property doing the centring, and costs no layout.
+ * transcript. As secondary chrome collapses, the pill follows the docked tabs
+ * upward and tucks behind the still-pinned navigation bar rather than hanging
+ * in the strip's vacated space. A transform rather than a moved `top` composes
+ * with the `translate` property doing the centring and costs no layout.
  */
 export const TRANSCRIPT_PILL_TOP =
-	"pointer-events-none absolute top-3 left-1/2 z-[5] -translate-x-1/2 " +
+	`pointer-events-none absolute top-3 left-1/2 z-[5] ${PILL_CENTRED} ` +
 	"phone:top-[calc(var(--pane-header-h)+var(--strip-clearance,0px)+8px)] " +
 	"phone:[transition-property:transform] phone:duration-[var(--dur-lg)] " +
 	"phone:ease-[var(--ease)] " +
@@ -496,31 +613,29 @@ export const INFO_PAGE =
 	"[animation:session-info-in_var(--dur)_var(--ease)]";
 
 const INFO_TOPBAR =
-	"session-info-topbar sticky top-0 z-[4] flex items-center border-b " +
+	"session-info-topbar sticky top-0 z-[4] flex items-center " +
 	"min-h-[calc(env(safe-area-inset-top,0px)+52px)] " +
 	"pt-[env(safe-area-inset-top,0px)] px-2 pb-0 " +
-	"[transition:background-color_var(--dur)_var(--ease),border-color_var(--dur)_var(--ease)]";
+	"[transition:background-color_var(--dur)_var(--ease)]";
 
-/** Transparent until the page scrolls, then a frosted bar with a hairline —
- *  each state carries its whole set, since two background utilities in one
- *  variant bucket resolve by Tailwind's output order. */
+/** Transparent until the page scrolls, then a frosted surface. The fill and
+ *  blur separate the fixed chrome without drawing a grey rule across it. */
 export const infoTopbarClass = (scrolled: boolean) =>
 	`${INFO_TOPBAR} ` +
 	(scrolled
-		? "border-b-line bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] " +
+		? "bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] " +
 			"backdrop-blur-[18px] backdrop-saturate-[1.35]"
-		: "border-b-transparent bg-transparent");
+		: "bg-transparent");
 
 const INFO_TOPBAR_TITLE =
-	"pointer-events-none absolute right-14 bottom-0 left-14 flex h-[52px] items-center justify-center " +
-	"overflow-hidden text-ellipsis whitespace-nowrap text-item-title font-semibold tracking-[-0.01em] text-fg " +
+	"pointer-events-none absolute right-14 bottom-0 left-14 block h-[52px] " +
+	"overflow-hidden text-ellipsis whitespace-nowrap text-center text-item-title font-semibold leading-[52px] tracking-[-0.01em] text-fg " +
 	// `transform`, not Tailwind's `translate` property: that is what the
 	// transition beside it names.
 	"[transition:opacity_var(--dur)_var(--ease),transform_var(--dur)_var(--ease)]";
 
-/** The bar's own title fades up as the hero scrolls away. 15px in the old
- *  sheet, which is not a step on the type scale; it is an item title, so it
- *  snaps to `text-item-title` (14px). */
+/** The bar's own title can fade with a page hero or stay visible when the
+ * compact summary starts immediately below it. */
 export const infoTopbarTitleClass = (scrolled: boolean) =>
 	`${INFO_TOPBAR_TITLE} ` +
 	(scrolled ? "opacity-100 [transform:translateY(0)]" : "opacity-0 [transform:translateY(5px)]");
@@ -528,14 +643,15 @@ export const infoTopbarTitleClass = (scrolled: boolean) =>
 /** Identity block: repo tile, name, and the repo · model line. The tile gets a
  *  soft key shadow here that it doesn't carry elsewhere. */
 export const INFO_HERO =
-	"flex flex-col items-center gap-[9px] px-5 pt-0.5 pb-5 text-center " +
+	"flex flex-col items-center gap-0 px-5 pt-0.5 pb-5 text-center " +
 	"[&_.repo-tile]:smooth-shadow-ring-sm";
 
 /** 20px in the old sheet — the page's one heading, so it snaps to
  *  `text-page-title` (22px). */
 export const INFO_NAME =
-	"max-w-full text-page-title font-semibold leading-[1.2] tracking-[-0.02em] break-words text-fg";
-export const INFO_SUB = "text-label font-medium text-dim";
+	"mt-[9px] max-w-full text-page-title font-semibold leading-[1.2] tracking-[-0.02em] break-words text-fg";
+export const INFO_SUB =
+	"flex min-h-11 w-full max-w-full items-center justify-center gap-x-1 px-6 text-label font-medium text-dim";
 
 /** Phone PR strip frame: spacing + clipping only. The status tone itself
  * reaches the outer radius, so the row does not become a card inside a card. */
@@ -543,10 +659,22 @@ export const INFO_STATUS =
 	// `empty:hidden` for the same reason as PANEL_PR_PLATE: the strip renders
 	// nothing when the session has no pull request to report, and a wrapper with
 	// only a margin left in it is a gap with no row above it.
-	"session-info-status mx-3 mb-3 overflow-hidden rounded-xl empty:hidden";
+	//
+	// `mx-3` + `rounded-lg`, like every plate under it: the page has one edge.
+	"session-info-status mx-3 mb-3 overflow-hidden rounded-lg empty:hidden";
 
-export const INFO_CONTENT = "min-h-[320px]";
-export const INFO_SECTION = "mt-2 border-t border-line p-3";
+export const INFO_CONTENT = "min-h-[320px] pb-2";
+
+/** The phone Workspace summary's card stack. Each semantic section supplies
+ * its own quiet background, so Review, Changes and media can be scanned as
+ * separate groups without returning to the old bordered dashboard. */
+export const INFO_SUMMARY_CARD = "mx-3 mt-2 flex flex-col gap-2.5";
+
+/** A section rendered by a component of its own (Agents, Reports) rather than
+ *  by WorkspaceInfo. It gets the page's inset and the same 16px gap the panel
+ *  puts between its own sections, and no rule above it: a section is separated
+ *  by its plate, never by a hairline. */
+export const INFO_SECTION = "mt-4 px-3";
 
 /**
  * The Info panel's section grammar, shared by everything that renders into it
@@ -570,17 +698,21 @@ export const INFO_LABEL_CLASS =
 	"px-3 text-label font-semibold tracking-[-0.01em] text-faint";
 export const INFO_LIST_CLASS = "grid gap-px overflow-hidden rounded-lg bg-panel p-1";
 
-/**
- * A static, full-width settings list. Its rows come from RepoBar and
- * ModelMenuRow, so their shape is a child variant here rather than a prop two
- * components away — the same relationship the old `> button` rule expressed.
- */
+/** Repo and model controls at the top of the phone summary card. They keep
+ * their labelled two-line content, but give up the separate plate and border
+ * now that the summary card supplies one shared surface. */
 export const INFO_LIST =
-	"session-info-list mx-3 flex flex-col items-stretch gap-1 rounded-xl border border-line bg-panel p-1.5 " +
-	"[&>button]:w-full [&>button]:justify-start [&>button]:gap-2 [&>button]:text-left " +
-	"[&>button]:rounded-[calc(6px*var(--rf))] [&>button]:border [&>button]:border-transparent " +
-	"[&>button]:bg-transparent [&>button]:px-2.5 [&>button]:py-2 [&>button]:text-label [&>button]:text-fg " +
+	"session-info-list grid gap-px overflow-hidden rounded-2xl bg-panel p-2 " +
+	"[&>button]:min-h-11 [&>button]:w-full [&>button]:justify-start [&>button]:gap-2 [&>button]:text-left " +
+	"[&>button]:rounded-row [&>button]:border-0 " +
+	"[&>button]:bg-transparent [&>button]:px-3 [&>button]:py-2 [&>button]:text-label [&>button]:text-fg " +
 	"[&>button:hover]:bg-hover";
 
-/** The whole-workspace view embedded below the actions. */
-export const INFO_OVERVIEW = "pt-2 [&_.workspace-info-panel]:pt-0";
+/** The whole-workspace view embedded below the actions.
+ *
+ *  The panel's own `px-2` is the desktop side panel's inset, which pays part of
+ *  it through the `px-1` its mounts wrap it in. The phone page has no such
+ *  wrapper, so it names its own 12px here and every plate on the page lands on
+ *  the same edge as the strip and the repo list above them. */
+export const INFO_OVERVIEW =
+	"pt-4 [&_.workspace-info-panel]:pt-0 [&_.workspace-info-panel]:px-3";

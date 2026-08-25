@@ -106,6 +106,29 @@ final class CommandPaletteTests: XCTestCase {
         XCTAssertEqual(Array(results.dropFirst()), ["s0", "s1", "s2", "s3", "s4"])
     }
 
+    func testTranscriptOnlyMatchRanksAfterMetadataMatch() {
+        let entries = [
+            session("content", "Unrelated recent session", minutesAgo: 1),
+            session("metadata", "Fix transcript search", minutesAgo: 20),
+            command("new", "New session")
+        ]
+        let results = CommandPaletteRanking.results(
+            entries,
+            query: "transcript",
+            contentMatches: ["content"]
+        )
+        XCTAssertEqual(results.map(\.id), ["metadata", "content"])
+    }
+
+    func testTranscriptMatchDoesNotAdmitACommand() {
+        let entries = [command("command", "Unrelated command")]
+        XCTAssertTrue(CommandPaletteRanking.results(
+            entries,
+            query: "needle",
+            contentMatches: ["command"]
+        ).isEmpty)
+    }
+
     func testNoMatchesReturnsNothingRatherThanEverything() {
         let entries = [command("new", "New session"), session("a", "A conversation")]
         XCTAssertEqual(ids(entries, "zzzz"), [])

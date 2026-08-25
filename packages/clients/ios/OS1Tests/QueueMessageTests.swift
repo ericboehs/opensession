@@ -18,6 +18,7 @@ final class QueueMessageTests: XCTestCase {
         XCTAssertEqual(message.body, "rebase this on main please")
         XCTAssertFalse(message.isGitHub)
         XCTAssertFalse(message.isReviewHandoff)
+        XCTAssertFalse(message.isSessionMessage)
     }
 
     /// The routing prefix is only stripped when a sentinel behind it proves
@@ -53,8 +54,25 @@ final class QueueMessageTests: XCTestCase {
 
     func testSessionNoticeIsLabelled() {
         let message = present("<!--os:session-notice-->\nHeads-up: the deploy is done.")
-        XCTAssertEqual(message.label, "Heads-up from another session")
+        XCTAssertEqual(message.label, "Message from another session")
         XCTAssertEqual(message.body, "Heads-up: the deploy is done.")
+        XCTAssertTrue(message.isSessionMessage)
+    }
+
+    func testHistoricalAgentDeliveryIsLabelledWithoutSentinel() {
+        let id = "os-01a01e56-a1fc-7000-bb91-bc99b916c4ad"
+        let message = present("Please avoid overlapping edits.", user: "agent \(id)")
+        XCTAssertEqual(message.label, "Message from another session")
+        XCTAssertEqual(message.body, "Please avoid overlapping edits.")
+        XCTAssertTrue(message.isSessionMessage)
+    }
+
+    func testHistoricalAttributedAgentDeliveryIsStripped() {
+        let id = "bks-019fa49c-71bb-7000-85d4-c8cc61d0ca85"
+        let message = present("[agent \(id)] Please reconcile these changes.")
+        XCTAssertEqual(message.label, "Message from another session")
+        XCTAssertEqual(message.body, "Please reconcile these changes.")
+        XCTAssertTrue(message.isSessionMessage)
     }
 
     func testHumanReplyCreditsTheTeammate() {

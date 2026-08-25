@@ -92,7 +92,7 @@ export class WsFrameBuffer {
     this.frames.push({ seq, line, bytes });
     this.bytes += bytes;
     // Allow ONE oversized frame on top of the normal byte budget. A sandboxed
-    // Read returns its image inline (opencodeToolResultImages), and after
+    // Read returns its image inline (piToolResultImages), and after
     // base64 expansion that single frame can exceed maxBytes on its own —
     // under a plain cap it would be evicted the moment it arrived, so the one
     // frame most worth replaying after a disconnect could never be replayed.

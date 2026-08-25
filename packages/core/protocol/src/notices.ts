@@ -48,7 +48,7 @@ export type NoticeTone = "error" | "warn" | "info";
 const ERROR_PATTERNS: RegExp[] = [
   // run-session.ts, both terminal-failure choke points.
   /^run (failed|stopped):/,
-  // The per-turn time limit (turnTimeoutNotice in opencode-config.ts). The
+  // The per-turn time limit (turnTimeoutNotice in pi-config.ts). The
   // second form is the wording used before 2026-07-31 — transcripts keep it
   // forever, so it keeps its colour.
   /^stopped after \d/,
@@ -138,7 +138,12 @@ export type NoticeKind =
    *  session per source and again only when its content hash changes, so a
    *  multi-KB blob is not copied onto every turn. Same "not conversation"
    *  discipline as context-injection, and the same projections drop it. */
-  | "standing-context";
+  | "standing-context"
+  /** A question card that has been answered: what was asked, what was on
+   *  offer, and what the human picked. The card itself is transient (it is
+   *  removed the moment it resolves), so without this the transcript kept no
+   *  trace that the run had ever stopped to ask. */
+  | "ask";
 
 /**
  * How a client renders the entry's `content` underneath the title:
@@ -157,6 +162,63 @@ export type NoticeBody = "inline" | "collapsed";
  */
 export type NoticeIcon = "merge" | "deploy" | "done";
 
+/** Exact read-only data behind an answered AskUserQuestion card. Versioned so
+ *  a newer server can extend the record while older clients keep rendering the
+ *  markdown fallback in the entry's `content`. */
+export interface AnsweredAskData {
+  version: 1;
+  questions: Array<{
+    question: string;
+    header?: string;
+    options?: Array<{ label: string; description?: string }>;
+    multiSelect?: boolean;
+    answer: string;
+  }>;
+}
+
+/** Validate the optional structured ask payload at the parser/classifier
+ *  boundary. A malformed or future version falls back to the markdown record. */
+export function parseAnsweredAskData(value: unknown): AnsweredAskData | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as { version?: unknown; questions?: unknown };
+  if (record.version !== 1 || !Array.isArray(record.questions) || !record.questions.length)
+    return undefined;
+  const questions: AnsweredAskData["questions"] = [];
+  for (const valueQuestion of record.questions) {
+    if (!valueQuestion || typeof valueQuestion !== "object") return undefined;
+    const q = valueQuestion as Record<string, unknown>;
+    if (typeof q.question !== "string" || typeof q.answer !== "string") return undefined;
+    let options: AnsweredAskData["questions"][number]["options"];
+    if (q.options !== undefined) {
+      if (!Array.isArray(q.options)) return undefined;
+      options = [];
+      for (const valueOption of q.options) {
+        if (!valueOption || typeof valueOption !== "object") return undefined;
+        const option = valueOption as Record<string, unknown>;
+        if (typeof option.label !== "string") return undefined;
+        if (option.description !== undefined && typeof option.description !== "string")
+          return undefined;
+        options.push({
+          label: option.label,
+          ...(typeof option.description === "string"
+            ? { description: option.description }
+            : {}),
+        });
+      }
+    }
+    if (q.header !== undefined && typeof q.header !== "string") return undefined;
+    if (q.multiSelect !== undefined && typeof q.multiSelect !== "boolean") return undefined;
+    questions.push({
+      question: q.question,
+      answer: q.answer,
+      ...(typeof q.header === "string" ? { header: q.header } : {}),
+      ...(options ? { options } : {}),
+      ...(typeof q.multiSelect === "boolean" ? { multiSelect: q.multiSelect } : {}),
+    });
+  }
+  return { version: 1, questions };
+}
+
 export interface EntryNotice {
   kind: NoticeKind;
   /** One line, always visible. Never empty. */
@@ -165,6 +227,9 @@ export interface EntryNotice {
   /** Only on `info` notices. A toned one already draws its alert glyph. */
   icon?: NoticeIcon;
   body?: NoticeBody;
+  /** Present only for an answered question card. Clients that understand it
+   *  render a read-only card; older clients keep using title + body. */
+  ask?: AnsweredAskData;
   /** At most one action, rendered at the end of the body. */
   link?: { label: string; sessionId: string };
 }
@@ -343,24 +408,36 @@ export function parseRecoveryNotice(content?: string): { body: string } | null {
 }
 
 /**
- * An informational heads-up sent by one session into another. The server marks
- * new notices; the strict opener keeps already-delivered ones from before the
- * marker shipped from looking like words the human typed.
+ * A message one agent sent into another session. New deliveries carry the
+ * sentinel. The strict `agent <session-id>` attribution recovers messages
+ * already stored before every send_to_session payload was marked.
  */
 const SESSION_NOTICE_SENTINEL_RE = /^<!--os:session-notice-->\s*/;
+const AGENT_ATTR_RE = /^\[agent\s+((?:os|bks)-[a-z0-9-]+)\]\s*/i;
 const LEGACY_SESSION_NOTICE_RE =
   /^Heads-up from another session(?:\s*\([^\n)]*\))?:/i;
 
-export function parseSessionNotice(content?: string): { body: string } | null {
+export function parseSessionNotice(
+  content?: string,
+): { body: string; sessionId: string | null } | null {
   if (!content) return null;
-  const text = content.replace(ATTR_PREFIX_RE, "");
+  let text = content;
+  let sessionId: string | null = null;
+  const agent = text.match(AGENT_ATTR_RE);
+  if (agent) {
+    sessionId = agent[1];
+    text = text.slice(agent[0].length);
+  } else {
+    text = text.replace(ATTR_PREFIX_RE, "");
+  }
   const sentinel = text.match(SESSION_NOTICE_SENTINEL_RE);
   const body = (sentinel ? text.slice(sentinel[0].length) : text).trim();
-  if (!sentinel && !LEGACY_SESSION_NOTICE_RE.test(body)) return null;
-  // Co-released steers can be joined into one user entry. Keep that entry a
-  // user turn rather than folding a real attributed instruction into a notice.
+  if (!agent && !sentinel && !LEGACY_SESSION_NOTICE_RE.test(body)) return null;
+  // Old co-released steers can share one entry with a real attributed human
+  // prompt. Keep that mixed entry visible rather than hiding the prompt inside
+  // a collapsed notice. New delegated messages drain alone at the queue layer.
   if (/\n\s*\n\[[^\]\n]{1,80}\]\s+/.test(body)) return null;
-  return { body };
+  return { body, sessionId };
 }
 
 /**
@@ -436,6 +513,92 @@ export function dropContextInjections<T extends TranscriptEntry>(
 }
 
 /**
+ * The durable record of an answered question card (asks.ts).
+ *
+ * One string carries both halves: a title line (the pick, which is what a
+ * reader scanning the transcript wants) and a markdown body (the question and
+ * the options it was chosen from, behind the show toggle). Keeping it in
+ * `content` means the record rides the ordinary entry path with no new wire
+ * field, and this pair is the only code that knows the layout.
+ */
+export function askRecordContent(title: string, body: string): string {
+  return body ? `${title}\n${body}` : title;
+}
+
+function parseLegacyAnsweredAsk(body: string): AnsweredAskData | undefined {
+  const questions: AnsweredAskData["questions"] = [];
+  let current: AnsweredAskData["questions"][number] | undefined;
+  let selected: string[] = [];
+  const finish = () => {
+    if (!current) return;
+    current.answer = selected.join(", ");
+    questions.push(current);
+    current = undefined;
+    selected = [];
+  };
+
+  for (const raw of body.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith("**") && line.endsWith("**") && !line.startsWith("- ")) {
+      finish();
+      const combined = line.slice(2, -2).trim();
+      const headed = combined.match(/^([^:*_`\[\]{}]{1,40}):\s+(.+)$/);
+      current = {
+        question: headed ? headed[2] : combined,
+        ...(headed ? { header: headed[1].trim() } : {}),
+        options: [],
+        answer: "",
+      };
+      if (!current.question) return undefined;
+      continue;
+    }
+    if (!current) return undefined;
+    if (line === "- No answer.") continue;
+    const typed = line.match(/^- \*\*(.+)\*\* \(typed\)$/);
+    if (typed) {
+      selected.push(typed[1]);
+      continue;
+    }
+    const picked = line.match(/^- \*\*[A-Z-]\. (.+)\*\*$/);
+    if (picked) {
+      current.options!.push({ label: picked[1] });
+      selected.push(picked[1]);
+      continue;
+    }
+    const option = line.match(/^- [A-Z-]\. (.+)$/);
+    if (option) {
+      current.options!.push({ label: option[1] });
+      continue;
+    }
+    return undefined;
+  }
+  finish();
+  if (!questions.length) return undefined;
+  for (const q of questions) {
+    if (!q.options?.length) delete q.options;
+    if ((q.options?.filter((o) => q.answer.split(", ").includes(o.label)).length ?? 0) > 1)
+      q.multiSelect = true;
+  }
+  return { version: 1, questions };
+}
+
+export function parseAskRecord(
+  content: string,
+  structured?: unknown,
+): {
+  title: string;
+  body: string;
+  ask?: AnsweredAskData;
+} {
+  const nl = (content || "").indexOf("\n");
+  const title = (nl === -1 ? content || "" : content.slice(0, nl)).trim();
+  const body = nl === -1 ? "" : content.slice(nl + 1).trim();
+  const ask = parseAnsweredAskData(structured) ?? parseLegacyAnsweredAsk(body);
+  return { title, body, ...(ask ? { ask } : {}) };
+}
+
+/**
  * A status line whose whole notice is its own text: the title IS the body, and
  * the presentation is derived from the phrasing. One helper for the three
  * branches that build one, so a runner notice, a GitHub event and a workflow
@@ -458,9 +621,37 @@ function statusNotice(kind: NoticeKind, body: string): EntryNotice {
  * item the server has since tagged) can't double-strip.
  */
 export function classifyEntry(entry: TranscriptEntry): TranscriptEntry {
+  // During a rolling deploy, an older server may already have classified an
+  // ask into its generic title + markdown notice before the newer web bundle
+  // receives it. Upgrade that one legacy shape client-side; every complete
+  // notice and every attributed message stays idempotent by reference.
+  if (entry.notice?.kind === "ask" && !entry.notice.ask) {
+    const { ask } = parseAskRecord(
+      `${entry.notice.title}\n${entry.content}`,
+      entry.ask,
+    );
+    if (ask) return { ...entry, notice: { ...entry.notice, ask } };
+  }
   if (entry.notice || entry.sender) return entry;
 
   if (entry.type === "system") {
+    // An answered question: the title is the pick, the body is what it was
+    // picked from. Not a PARSED_NOTICES row because its title is the record,
+    // not a fixed label.
+    if (entry.noticeKind === "ask") {
+      const { title, body, ask } = parseAskRecord(entry.content, entry.ask);
+      return {
+        ...entry,
+        content: body,
+        notice: {
+          kind: "ask",
+          title,
+          tone: "info",
+          ...(body ? { body: "collapsed" as const } : {}),
+          ...(ask ? { ask } : {}),
+        },
+      };
+    }
     const parsed = entry.noticeKind && PARSED_NOTICES[entry.noticeKind];
     if (parsed) return { ...entry, notice: { tone: "info", ...parsed } };
     const content = stripNoticeGlyph(entry.content);
@@ -510,9 +701,12 @@ export function classifyEntry(entry: TranscriptEntry): TranscriptEntry {
       content: sessionNotice.body,
       notice: {
         kind: "session-notice",
-        title: "Heads-up from another session",
+        title: "Message from another session",
         tone: "info",
         body: "collapsed",
+        ...(sessionNotice.sessionId
+          ? { link: { label: "Open session", sessionId: sessionNotice.sessionId } }
+          : {}),
       },
     };
 

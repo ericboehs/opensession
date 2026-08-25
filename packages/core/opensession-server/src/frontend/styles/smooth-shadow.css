@@ -3,7 +3,7 @@
  *
  * Based on shadow-plugin (MIT), https://github.com/flornkm/shadow-plugin at
  * 58886af. OpenSession keeps the three tiers its UI uses, calibrated to the
- * newer canonical scale in tellahq/tella-fusion#5517 rather than the much
+ * newer canonical scale rather than the much
  * blurrier shadows this branch originally replaced.
  *
  * `xs` is for controls that rest in the page, `sm` for compact floating

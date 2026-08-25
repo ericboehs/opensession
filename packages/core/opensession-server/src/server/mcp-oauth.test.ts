@@ -21,9 +21,6 @@ import { join } from "node:path";
 const root = mkdtempSync(join(tmpdir(), "mcp-oauth-security-"));
 const credentials = join(root, "credentials");
 const store = join(root, ".opensession-mcp-oauth.json");
-// A real executable on PATH: the stdio binding pins the RESOLVED path, so the
-// fixture needs something that actually resolves.
-const binDir = join(root, "bin");
 const key = Buffer.alloc(32, 0x42);
 const ACCESS = "synthetic-access-token-never-log";
 const REFRESH = "synthetic-refresh-token-never-log";
@@ -31,7 +28,6 @@ const previous = {
   state: process.env.OPENSESSION_STATE_DIR,
   credentials: process.env.CREDENTIALS_DIRECTORY,
   mcpConfig: process.env.OPENSESSION_MCP_CONFIG,
-  path: process.env.PATH,
 };
 
 let oauth: typeof import("./mcp-oauth");
@@ -42,11 +38,6 @@ let userMappings: typeof import("./shared/user-mappings");
 
 beforeAll(async () => {
   mkdirSync(credentials, { recursive: true });
-  mkdirSync(binDir, { recursive: true });
-  writeFileSync(join(binDir, "synthetic-slack-mcp"), "#!/bin/sh\nexit 0\n", {
-    mode: 0o755,
-  });
-  process.env.PATH = `${binDir}:${process.env.PATH}`;
   writeFileSync(join(credentials, "mcp-oauth-key"), key, { mode: 0o400 });
   const mcpConfig = join(root, "mcp-config.json");
   writeFileSync(
@@ -108,14 +99,12 @@ afterAll(() => {
   else process.env.CREDENTIALS_DIRECTORY = previous.credentials;
   if (previous.mcpConfig === undefined) delete process.env.OPENSESSION_MCP_CONFIG;
   else process.env.OPENSESSION_MCP_CONFIG = previous.mcpConfig;
-  if (previous.path === undefined) delete process.env.PATH;
-  else process.env.PATH = previous.path;
 });
 
 function legacyStore() {
   return {
-    slack: {
-      serverUrl: "https://mcp.example.test",
+    tella: {
+      serverUrl: "https://tella.example.test/mcp",
       endpoints: {
         authorize: "https://auth.example.test/authorize",
         token: "https://auth.example.test/token",
@@ -155,7 +144,7 @@ describe("personal MCP OAuth credential storage", () => {
     const original = console.log;
     console.log = (...args: unknown[]) => seenLogs.push(args.map(String).join(" "));
     try {
-      expect(oauth.mcpOauthStatus("slack").shared).toBeDefined();
+      expect(oauth.mcpOauthStatus("tella").shared).toBeDefined();
     } finally {
       console.log = original;
     }
@@ -168,52 +157,21 @@ describe("personal MCP OAuth credential storage", () => {
     expect(seenLogs.join("\n")).not.toContain(ACCESS);
     expect(seenLogs.join("\n")).not.toContain(REFRESH);
     expect(statSync(store).mode & 0o777).toBe(0o600);
-    expect(oauth.mcpSharedGrantHeader("slack")).toBe(`Bearer ${ACCESS}`);
+    expect(oauth.mcpSharedGrantHeader("tella")).toBe(`Bearer ${ACCESS}`);
     expect(oauth.hasMcpOauthGrantForUsers("expired", [])).toBe(true);
     expect(oauth.mcpSharedGrantHeader("expired")).toBeUndefined();
     expect(
-      oauth.mcpOauthBindingMatches("slack", {
-        command: "synthetic-slack-mcp",
-        args: [],
+      oauth.mcpOauthBindingMatches("tella", {
+        type: "http",
+        url: "https://tella.example.test/mcp",
       }),
     ).toBe(true);
     expect(
-      oauth.mcpOauthBindingMatches("slack", {
-        command: "attacker-controlled-mcp",
-        args: [],
+      oauth.mcpOauthBindingMatches("tella", {
+        type: "http",
+        url: "https://attacker.example.test/mcp",
       }),
     ).toBe(false);
-    // The command is what runs, but the environment decides WHICH command
-    // runs. Leaving command/args alone and pointing PATH at a workspace copy
-    // has to break the binding too, or the replacement receives the token.
-    expect(
-      oauth.mcpOauthBindingMatches("slack", {
-        command: "synthetic-slack-mcp",
-        args: [],
-        env: { PATH: "/tmp/agent-writable" },
-      }),
-    ).toBe(false);
-    // Key ORDER in the config file is not a change of execution.
-    expect(
-      oauth.mcpOauthBindingMatches("slack", { command: "synthetic-slack-mcp", args: [] }),
-    ).toBe(true);
-    // The pin is the resolved path, and the proxy launches that rather than
-    // the configured name, so shadowing the name on PATH cannot capture the
-    // token without also changing what the name resolves to.
-    expect(oauth.mcpOauthStdioCommand("slack")).toBe(
-      join(binDir, "synthetic-slack-mcp"),
-    );
-    const shadow = mkdtempSync(join(tmpdir(), "mcp-oauth-shadow-"));
-    writeFileSync(join(shadow, "synthetic-slack-mcp"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
-    const realPath = process.env.PATH;
-    process.env.PATH = `${shadow}:${realPath}`;
-    try {
-      expect(
-        oauth.mcpOauthBindingMatches("slack", { command: "synthetic-slack-mcp", args: [] }),
-      ).toBe(false);
-    } finally {
-      process.env.PATH = realPath;
-    }
   });
 
   test("mints its own 0600 key when no systemd credential is present", () => {
@@ -225,7 +183,7 @@ describe("personal MCP OAuth credential storage", () => {
     try {
       rmSync(keyPath, { force: true });
       writeFileSync(store, JSON.stringify(legacyStore()), { mode: 0o600 });
-      expect(oauth.mcpOauthStatus("slack").shared).toBeDefined();
+      expect(oauth.mcpOauthStatus("tella").shared).toBeDefined();
 
       expect(statSync(keyPath).mode & 0o777).toBe(0o600);
       expect(readFileSync(keyPath).length).toBe(32);
@@ -235,23 +193,23 @@ describe("personal MCP OAuth credential storage", () => {
       expect(disk).not.toContain(REFRESH);
       // Minted once and reused: a second read must not re-key the store.
       const minted = readFileSync(keyPath);
-      expect(oauth.mcpSharedGrantHeader("slack")).toBe(`Bearer ${ACCESS}`);
+      expect(oauth.mcpSharedGrantHeader("tella")).toBe(`Bearer ${ACCESS}`);
       expect(readFileSync(keyPath)).toEqual(minted);
     } finally {
       if (previousCredentials === undefined) delete process.env.CREDENTIALS_DIRECTORY;
       else process.env.CREDENTIALS_DIRECTORY = previousCredentials;
       rmSync(keyPath, { force: true });
       writeFileSync(store, JSON.stringify(legacyStore()), { mode: 0o600 });
-      expect(oauth.mcpOauthStatus("slack").shared).toBeDefined();
+      expect(oauth.mcpOauthStatus("tella").shared).toBeDefined();
     }
   });
 
   test("does not inject personal tokens into engine-facing MCP config", () => {
     const resolved = connections.withDynamicCredentials(
       {
-        slack: {
-          command: "synthetic-slack-mcp",
-          env: { SLACK_BOT_TOKEN: "workspace-bot-reference" },
+        tella: {
+          type: "http",
+          url: "https://tella.example.test/mcp",
         },
       },
       ["Michiel"],
@@ -267,9 +225,9 @@ describe("personal MCP OAuth credential storage", () => {
     chmodSync(join(credentials, "mcp-oauth-key"), 0o600);
     writeFileSync(join(credentials, "mcp-oauth-key"), Buffer.alloc(32, 0x24));
     chmodSync(join(credentials, "mcp-oauth-key"), 0o400);
-    expect(oauth.mcpOauthStatus("slack")).toEqual({ users: [] });
+    expect(oauth.mcpOauthStatus("tella")).toEqual({ users: [] });
     expect(readFileSync(store)).toEqual(before);
-    expect(() => oauth.removeMcpOauthGrant("slack")).toThrow(
+    expect(() => oauth.removeMcpOauthGrant("tella")).toThrow(
       "could not be decrypted",
     );
     chmodSync(join(credentials, "mcp-oauth-key"), 0o600);
@@ -279,12 +237,22 @@ describe("personal MCP OAuth credential storage", () => {
   test("consumes a connect state redeemed by a different account", async () => {
     const previousClient = process.env.SLACK_OAUTH_CLIENT_ID;
     const previousSecret = process.env.SLACK_OAUTH_CLIENT_SECRET;
+    const configPath = process.env.OPENSESSION_MCP_CONFIG!;
+    const originalConfig = readFileSync(configPath, "utf8");
     process.env.SLACK_OAUTH_CLIENT_ID = "synthetic-client";
     process.env.SLACK_OAUTH_CLIENT_SECRET = "synthetic-secret";
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          slack: { type: "http", url: "https://slack.example.test/mcp" },
+        },
+      }),
+    );
     try {
       const { url } = await oauth.startMcpOauthFlow(
         "slack",
-        "stdio://slack",
+        "https://slack.example.test/mcp",
         undefined,
         "Michiel",
       );
@@ -296,11 +264,45 @@ describe("personal MCP OAuth credential storage", () => {
         oauth.completeMcpOauthFlow(state, "unused-code", "Michiel"),
       ).rejects.toThrow("expired");
     } finally {
+      writeFileSync(configPath, originalConfig);
       if (previousClient === undefined) delete process.env.SLACK_OAUTH_CLIENT_ID;
       else process.env.SLACK_OAUTH_CLIENT_ID = previousClient;
       if (previousSecret === undefined) delete process.env.SLACK_OAUTH_CLIENT_SECRET;
       else process.env.SLACK_OAUTH_CLIENT_SECRET = previousSecret;
     }
+  });
+
+  test("simple mode can start a shared preset flow without web identity", async () => {
+    const previousClient = process.env.SLACK_OAUTH_CLIENT_ID;
+    const previousSecret = process.env.SLACK_OAUTH_CLIENT_SECRET;
+    process.env.SLACK_OAUTH_CLIENT_ID = "synthetic-client";
+    process.env.SLACK_OAUTH_CLIENT_SECRET = "synthetic-secret";
+    try {
+      const { url } = await oauth.startMcpOauthFlow("slack", "stdio://slack");
+      expect(new URL(url).searchParams.get("state")).toBeTruthy();
+    } finally {
+      if (previousClient === undefined) delete process.env.SLACK_OAUTH_CLIENT_ID;
+      else process.env.SLACK_OAUTH_CLIENT_ID = previousClient;
+      if (previousSecret === undefined) delete process.env.SLACK_OAUTH_CLIENT_SECRET;
+      else process.env.SLACK_OAUTH_CLIENT_SECRET = previousSecret;
+    }
+  });
+
+  test("never mounts a personal grant into a mutable stdio server", () => {
+    expect(
+      Object.keys(proxy.mcpOauthProxyServers("all", "Michiel", ["Michiel"])),
+    ).not.toContain("slack");
+    const resolved = connections.withDynamicCredentials(
+      {
+        slack: {
+          command: "synthetic-slack-mcp",
+          env: { SLACK_BOT_TOKEN: "workspace-bot-reference" },
+        },
+      },
+      ["Michiel"],
+    );
+    expect(resolved.slack.env.SLACK_BOT_TOKEN).toBe("workspace-bot-reference");
+    expect(JSON.stringify(resolved)).not.toContain(ACCESS);
   });
 });
 

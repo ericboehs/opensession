@@ -9,9 +9,10 @@
  * best fits each surface.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FileTree, useFileTree } from "@pierre/trees/react";
-import { fetchSessionAssets, type SessionAssetFile } from "../lib/api";
+import type { SessionAssetFile } from "../lib/api";
+import { useSessionAssetsResource } from "../hooks/useApiResources";
 import type { WSServerMessage } from "../lib/types";
 import type { NewSessionPrefill } from "../lib/new-session-link";
 import { Button } from "../ui/button";
@@ -24,16 +25,10 @@ export function useSessionAssets(
 	sessionId: string,
 	addHandler: (h: (msg: WSServerMessage) => void) => () => void,
 ) {
-	const [files, setFiles] = useState<SessionAssetFile[]>([]);
+	const { data: files = [], mutate } = useSessionAssetsResource(sessionId);
 	const refresh = useCallback(() => {
-		fetchSessionAssets(sessionId)
-			.then((r) => setFiles(r.files || []))
-			.catch(() => {});
-	}, [sessionId]);
-	useEffect(() => {
-		setFiles([]);
-		refresh();
-	}, [refresh]);
+		void mutate();
+	}, [mutate]);
 	useEffect(
 		() =>
 			addHandler((msg) => {
@@ -66,7 +61,9 @@ function AssetsTree({
 	onSelect: (path: string) => void;
 }) {
 	const onSelectRef = useRef(onSelect);
-	onSelectRef.current = onSelect;
+	useLayoutEffect(() => {
+		onSelectRef.current = onSelect;
+	});
 	const { model } = useFileTree({
 		paths,
 		initialExpandedPaths: allDirs(paths),
@@ -98,11 +95,8 @@ export function AssetsPanel({
 	onSelectPath: (path: string | null) => void;
 	onOpenNewSession: (prefill: NewSessionPrefill) => void;
 }) {
-	const paths = useMemo(() => files.map((f) => f.path), [files]);
-	const selected = useMemo(
-		() => resolvedAssetPath(paths, selectedPath),
-		[paths, selectedPath],
-	);
+	const paths = (files.map((f) => f.path));
+	const selected = (resolvedAssetPath(paths, selectedPath));
 	// Keep SessionViewer aligned with tree navigation. Without this, promoting
 	// the same overlay twice can be a React no-op after the tree selected
 	// another file in between.

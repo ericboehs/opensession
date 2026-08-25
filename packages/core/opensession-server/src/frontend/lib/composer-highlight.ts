@@ -89,14 +89,17 @@ export const SESSION_GLYPH_SLOT = "\u2007\u2007";
  */
 export const SESSION_PILL_MARGIN = "\u2009";
 
-/** One session id in the draft, as offsets into it. */
+/** One stable session or workspace reference in the draft. */
 export interface SessionRange {
 	start: number;
 	/** Exclusive. */
 	end: number;
 	id: string;
+	kind?: "session" | "workspace";
 	/** Visible title when the textarea is projecting this id as a named token. */
 	label?: string;
+	/** The resolved session is archived, so its glyph names that state. */
+	archived?: boolean;
 }
 
 /**
@@ -106,25 +109,40 @@ export interface SessionRange {
  * would promise a chip in a place no chip appears.
  */
 const SESSION_RE = new RegExp(`(^|[^\\w/-])((?:os|bks)-${UUIDV7})`, "gi");
+const WORKSPACE_RE =
+	/(^|[\s(\[])@workspace:(ws-[A-Za-z0-9_-]{1,61})(?=$|[\s.,;:!?)\]])/gi;
 
 /**
- * The session ids in a draft. Only the minted shape, matching what the
- * renderer chips as a bare word (the `sessionId` extension in markdown.ts) —
- * a pill the sent message does not draw would be a promise the composer
- * cannot keep.
+ * Stable references in a draft. Session ids use the minted shape that the
+ * renderer chips as a bare word. Workspaces use the explicit
+ * `@workspace:<id>` token inserted by the mention palette.
  *
- * This is where a pasted link ends up: `pastedSessionId` shortens the URL to
- * the id it carries, and the pill is what says so.
+ * This is also where a pasted session link ends up: `pastedSessionId` shortens
+ * the URL to the id it carries, and the pill is what says so.
  */
 export function composerSessionRanges(text: string): SessionRange[] {
 	if (!text.includes("-")) return [];
 	const out: SessionRange[] = [];
 	SESSION_RE.lastIndex = 0;
-	for (let m = SESSION_RE.exec(text); m; m = SESSION_RE.exec(text)) {
-		const start = m.index + m[1]!.length;
-		out.push({ start, end: start + m[2]!.length, id: m[2]! });
+	for (let match = SESSION_RE.exec(text); match; match = SESSION_RE.exec(text)) {
+		const start = match.index + match[1]!.length;
+		out.push({ start, end: start + match[2]!.length, id: match[2]! });
 	}
-	return out;
+	WORKSPACE_RE.lastIndex = 0;
+	for (
+		let match = WORKSPACE_RE.exec(text);
+		match;
+		match = WORKSPACE_RE.exec(text)
+	) {
+		const start = match.index + match[1]!.length;
+		out.push({
+			start,
+			end: start + match[0].length - match[1]!.length,
+			id: match[2]!,
+			kind: "workspace",
+		});
+	}
+	return out.sort((a, b) => a.start - b.start);
 }
 
 /** Both kinds of pill, in the order they appear in the draft. */
@@ -139,8 +157,8 @@ function draftRanges(
 		...composerMentionRanges(text, people),
 		...sessions,
 	];
-	// A mention starts at an `@` and an id never does, so the two kinds cannot
-	// overlap and sorting by start is enough to walk them as one list.
+	// A person mention and a stable reference cannot overlap. Sorting by start
+	// is enough to walk them as one list.
 	return ranges.sort((a, b) => a.start - b.start);
 }
 
@@ -182,14 +200,10 @@ function mentionHtml(text: string, range: MentionRange): string {
 }
 
 /**
- * One session pill. A known session already arrives as its projected title,
- * so the mirror only paints the pill around those same characters. An unknown
- * session keeps its id. The chat glyph then has nowhere to go except a slot the
- * text already owns, so the `os-` / `bks-` prefix lends it one.
- *
- * Hiding the whole prefix rather than part of it is the point. A uuid is not
- * read as a word, so losing `os-` reads as a labelled chip; losing only the
- * `o` would leave `s-01a0…`, which reads as damage.
+ * One stable-reference pill. A known reference already arrives as its
+ * projected title, so the mirror paints around those same characters. An
+ * unknown session keeps its id and lends its prefix to the chat glyph. An
+ * unknown workspace keeps its explicit token intact.
  */
 function sessionHtml(text: string, range: SessionRange): string {
 	const shown = text.slice(range.start, range.end);
@@ -211,9 +225,16 @@ function sessionHtml(text: string, range: SessionRange): string {
 			: 0;
 		return (
 			before +
-			`<span class="cmp-session cmp-session-named">` +
+			`<span class="cmp-session cmp-session-named${range.kind === "workspace" ? " cmp-workspace" : ""}${range.archived ? " cmp-archived" : ""}">` +
 			(slot ? `<span class="cmp-sglyph">${esc(token.slice(0, slot))}</span>` : "") +
 			`${esc(token.slice(slot))}</span>` +
+			after
+		);
+	}
+	if (range.kind === "workspace") {
+		return (
+			before +
+			`<span class="cmp-session cmp-workspace">${esc(token)}</span>` +
 			after
 		);
 	}

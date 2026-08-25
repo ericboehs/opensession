@@ -21,19 +21,19 @@ export function ExclusivePopupProvider({
 	const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [instant, setInstant] = React.useState(false);
 
-	const activate = React.useCallback((entry: PopupEntry) => {
+	const activate = (entry: PopupEntry) => {
 		if (timeoutRef.current) clearTimeout(timeoutRef.current);
 		const previous = activeRef.current;
 		activeRef.current = entry;
 		setInstant(true);
 		if (previous !== entry) previous?.close();
-	}, []);
-	const deactivate = React.useCallback((entry: PopupEntry) => {
+	};
+	const deactivate = (entry: PopupEntry) => {
 		if (activeRef.current !== entry) return;
 		activeRef.current = null;
 		if (timeoutRef.current) clearTimeout(timeoutRef.current);
 		timeoutRef.current = setTimeout(() => setInstant(false), 300);
-	}, []);
+	};
 
 	React.useEffect(
 		() => () => {
@@ -42,14 +42,11 @@ export function ExclusivePopupProvider({
 		[],
 	);
 
-	const group = React.useMemo<PopupGroup>(
-		() => ({
+	const group = (({
 			activate,
 			deactivate,
 			instant,
-		}),
-		[activate, deactivate, instant],
-	);
+		}));
 
 	return (
 		<PopupGroupContext.Provider value={group}>
@@ -60,10 +57,11 @@ export function ExclusivePopupProvider({
 
 export function useExclusivePopup(entry: PopupEntry) {
 	const group = React.useContext(PopupGroupContext);
+	const deactivate = group?.deactivate;
 
 	React.useEffect(
-		() => () => group?.deactivate(entry),
-		[entry, group?.deactivate],
+		() => () => deactivate?.(entry),
+		[entry, deactivate],
 	);
 
 	return group;

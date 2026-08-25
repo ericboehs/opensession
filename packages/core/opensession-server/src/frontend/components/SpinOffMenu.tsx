@@ -1,3 +1,4 @@
+import { toast } from "../ui/toast";
 import { AGENT_NAME } from "../lib/brand";
 import React, { useRef, useState } from "react";
 import { Button } from "../ui/button";
@@ -8,6 +9,8 @@ import type { UnifiedSession, TranscriptEntry } from "../lib/types";
 import { getCurrentUser } from "./UserPicker";
 import { Field, fieldClasses } from "../ui/input";
 import { noAutofill } from "../lib/composer-autofill";
+import { composerSessionRef } from "../lib/share-link";
+import type { NewSessionPrefill } from "../lib/new-session-link";
 
 type Flavor = "build" | "learnings" | "analyze";
 
@@ -16,6 +19,9 @@ interface Props {
   entries: TranscriptEntry[];
   send: (msg: any) => void;
   connected: boolean;
+  /** Open the new-session composer prefilled — the one flavor that writes no
+      prompt of its own. */
+  onOpenNewSession: (prefill: NewSessionPrefill) => void;
 }
 
 /**
@@ -23,8 +29,18 @@ interface Props {
  *  - build:     ask → code handoff with conversation context (Devin's "spin-off")
  *  - learnings: code session that feeds durable learnings back into the repo's docs as a PR
  *  - analyze:   ask session reviewing what went well/wrong + better prompt
+ *
+ * A fourth row spins nothing off itself: it opens the new-session composer with
+ * a link to this session already in the draft, for when the handoff is one the
+ * person wants to word themselves.
  */
-export function SpinOffMenu({ session, entries, send, connected }: Props) {
+export function SpinOffMenu({
+  session,
+  entries,
+  send,
+  connected,
+  onOpenNewSession,
+}: Props) {
   const [flavor, setFlavor] = useState<Flavor | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [branch, setBranch] = useState("");
@@ -48,6 +64,17 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
     }
   }
 
+  function openLinkedSession() {
+    onOpenNewSession({
+      // A reference, not a transcript: the new session reads this one through
+      // the link when it needs to, instead of carrying a copy that goes stale.
+      // The trailing space parks the caret clear of the chip.
+      prompt: `${composerSessionRef(session)} `,
+      mode: session.mode ?? "code",
+      ...(session.repo ? { repo: session.repo } : {}),
+    });
+  }
+
   function start() {
     if (!flavor || starting) return;
     setStarting(true);
@@ -55,6 +82,7 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
     const context = buildContext(entries, flavor === "build" ? 6000 : 9000);
     const me = getCurrentUser();
 
+    try {
     if (flavor === "analyze") {
       send({
         type: "create_session",
@@ -108,6 +136,10 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
         `so trust its conclusions but re-verify file paths before editing.\n\n` +
         `## Ask conversation\n\n${context}\n\n## Task\n\n${task.trim() || "Implement what was discussed above."}`,
     });
+    } catch (error) {
+      setStarting(false);
+      toast(error instanceof Error ? error.message : String(error), { variant: "error" });
+    }
   }
 
   const needsBranch = flavor === "build" || flavor === "learnings";
@@ -154,16 +186,22 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
           {isAsk && (
             <Menu.Item closeOnClick={false} onClick={() => pick("build")} className={itemCls}>
               <span className="text-label font-semibold text-fg">Build this</span>
-              <span className="text-meta leading-[1.4] text-faint">Start a coding session with this conversation as context</span>
+              <span className="text-supporting leading-[1.4] text-faint">Start a coding session with this conversation as context</span>
             </Menu.Item>
           )}
           <Menu.Item closeOnClick={false} onClick={() => pick("learnings")} className={itemCls}>
             <span className="text-label font-semibold text-fg">Capture learnings → docs PR</span>
-            <span className="text-meta leading-[1.4] text-faint">{AGENT_NAME} adds what was learned here to {session.repo || "the repository"} docs</span>
+            <span className="text-supporting leading-[1.4] text-faint">{AGENT_NAME} adds what was learned here to {session.repo || "the repository"} docs</span>
           </Menu.Item>
           <Menu.Item closeOnClick={false} onClick={() => pick("analyze")} className={itemCls}>
             <span className="text-label font-semibold text-fg">Analyze session</span>
-            <span className="text-meta leading-[1.4] text-faint">What went well, what didn't, and a better prompt</span>
+            <span className="text-supporting leading-[1.4] text-faint">What went well, what didn't, and a better prompt</span>
+          </Menu.Item>
+          {/* Closes the whole menu rather than opening the form above: there is
+              nothing to fill in here, the composer IS the form. */}
+          <Menu.Item onClick={openLinkedSession} className={itemCls}>
+            <span className="text-label font-semibold text-fg">Reference this session</span>
+            <span className="text-supporting leading-[1.4] text-faint">Opens the new-session composer with a link to this one — you write the prompt</span>
           </Menu.Item>
         </Menu.Popup>
       </Menu.SubmenuRoot>
@@ -218,7 +256,7 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
 
           <Modal.Footer>
             {starting && (
-              <span className="text-meta text-faint">
+              <span className="text-supporting text-faint">
                 Starting the session. We'll take you there automatically.
               </span>
             )}

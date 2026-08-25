@@ -57,11 +57,13 @@ export function MyAccountsPanel() {
 	const [error, setError] = useState<string | null>(null);
 
 	const load = useCallback(async () => {
-		try {
-			const body = await fetchToolAccounts();
+		await (async () => {
+const body = await fetchToolAccounts();
 			setTools(body.servers);
 			setChecking(body.pending);
-		} catch {}
+})().catch(async () => {
+
+});
 	}, []);
 
 	useEffect(() => {
@@ -75,34 +77,36 @@ export function MyAccountsPanel() {
 		if (!checking) return;
 		let tries = 0;
 		const t = setInterval(() => {
-			if (++tries >= 4) clearInterval(t);
+			tries += 1;
+			if (tries >= 4) clearInterval(t);
 			void load();
 		}, 1500);
 		return () => clearInterval(t);
 	}, [checking, load]);
 
 	async function connect(name: string) {
-		try {
-			const { url } = await startToolConnect(name);
+		await (async () => {
+const { url } = await startToolConnect(name);
 			window.open(url, "_blank", "noopener");
 			// Re-poll for a while so the row flips once they approve the consent.
 			let polls = 0;
 			const t = setInterval(() => {
-				if (++polls > 24) return clearInterval(t);
+				polls += 1;
+				if (polls > 24) return clearInterval(t);
 				void load();
 			}, 5000);
-		} catch (e: any) {
-			setError(e.message);
-		}
+})().catch(async (e: any) => {
+setError(e.message);
+});
 	}
 
 	async function disconnect(name: string) {
-		try {
-			await disconnectTool(name);
+		await (async () => {
+await disconnectTool(name);
 			void load();
-		} catch (e: any) {
-			setError(e.message);
-		}
+})().catch(async (e: any) => {
+setError(e.message);
+});
 	}
 
 	const isMe = (teamName: string) => {

@@ -1,7 +1,13 @@
 import React from "react";
 import { cn } from "../ui/cn";
 import { repoLetter } from "../lib/repo-label";
-import { REPO_TILE_INK, repoColor, repoIconFill, repoIconRevision } from "../lib/repo-colors";
+import {
+	hasRepoIcon,
+	REPO_TILE_INK,
+	repoColor,
+	repoIconFill,
+	repoIconRevision,
+} from "../lib/repo-colors";
 
 // The display-name map lives in lib/repo-label and the tile colors in
 // lib/repo-colors, so lib-level formatters can reach both without a component
@@ -78,7 +84,7 @@ export function RepoTile({
 	style.color = REPO_TILE_INK;
 	const rev = repoIconRevision(name);
 	const attempt = `${name}:${rev ?? 0}`;
-	if (failedFor !== attempt) {
+	if (hasRepoIcon(name) && failedFor !== attempt) {
 		return (
 			<span className={cn(TILE, className)} style={style}>
 				{/* The img fills the tile and inherits its rounding; the tile keeps

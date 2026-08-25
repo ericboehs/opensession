@@ -17,6 +17,7 @@ import {
 	listFeedDescriptors,
 } from "../feeds";
 import { listProjects } from "../projects";
+import { conditionalJsonResponse } from "../http-json";
 
 export async function handleFeedsRoutes(
 	ctx: RouteContext,
@@ -83,7 +84,7 @@ export async function handleFeedsRoutes(
 	}
 
 	// Options for one of a feed's filter controls (resolved via MCP on the
-	// viewer's grant — e.g. tella tags via list_tags).
+	// viewer's grant, e.g. tags via list_tags).
 	const filterOptsMatch = path.match(
 		/^\/api\/feeds\/([^/]+)\/filters\/([^/]+)\/options$/,
 	);
@@ -129,7 +130,7 @@ export async function handleFeedsRoutes(
 			);
 			if (!items)
 				return Response.json({ error: "Unknown feed" }, { status: 404 });
-			return Response.json({ items });
+			return conditionalJsonResponse(req, { items });
 		} catch (e: any) {
 			console.error(`[feeds] Items fetch failed for ${feedId}:`, e);
 			return Response.json(

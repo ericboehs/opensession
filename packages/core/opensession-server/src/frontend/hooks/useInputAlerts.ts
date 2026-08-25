@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import type { UnifiedSession } from "../lib/types";
 import { notifyEvent } from "../lib/notify";
 
@@ -33,9 +33,13 @@ export function useInputAlerts(
 	const isMineRef = useRef(opts.isMine);
 	const isMyReviewRef = useRef(opts.isMyReview);
 	const onOpenRef = useRef(opts.onOpen);
-	isMineRef.current = opts.isMine;
-	isMyReviewRef.current = opts.isMyReview;
-	onOpenRef.current = opts.onOpen;
+	// Mirror latest props for the effect/handlers below. Committed values are
+	// enough: nothing reads these during render.
+	useLayoutEffect(() => {
+		isMineRef.current = opts.isMine;
+		isMyReviewRef.current = opts.isMyReview;
+		onOpenRef.current = opts.onOpen;
+	});
 
 	// A disconnect voids the baselines: the next snapshot after reconnect
 	// seeds silently instead of diffing against pre-restart state.

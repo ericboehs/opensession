@@ -13,8 +13,8 @@ import {
  * Pixel spinner — a 3×3 grid of tiny pixels that light up in a single,
  * consistent diagonal wave sweeping top-left → bottom-right. The wavefront
  * runs along successive anti-diagonals, so the number of lit pixels grows
- * 1 → 2 → 3 and then recedes 3 → 2 → 1 as it crosses the grid. Ported from
- * tella-fusion's `UI__PixelSpinner`. The pixels inherit the surrounding text
+ * 1 → 2 → 3 and then recedes 3 → 2 → 1 as it crosses the grid.
+ * The pixels inherit the surrounding text
  * color (via `currentColor`), so the color is controlled by the caller's text
  * class (e.g. `text-fg` for a neutral black/white loader).
  *

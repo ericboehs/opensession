@@ -17,6 +17,7 @@ import {
 } from "../../lib/pr-tone-classes";
 import type { GitStatusInfo, PrDetails } from "../../lib/types";
 import { Button } from "../../ui/button";
+import { MergeUndoControl } from "./MergeUndoControl";
 
 /**
  * Local/remote discrepancy rows for the Status card: each gets a line with one
@@ -33,7 +34,7 @@ export function GitStatusRows({
   onRefresh,
   onMerge,
   merging,
-  confirmMerge,
+  mergeScheduled,
 }: {
   git: GitStatusInfo | null;
   pr: PrDetails | null;
@@ -43,7 +44,7 @@ export function GitStatusRows({
   onRefresh: () => Promise<void> | void;
   onMerge?: () => void;
   merging?: boolean;
-  confirmMerge?: boolean;
+  mergeScheduled?: boolean;
 }) {
   const runner = useGitTaskRunner({ sessionId, repo, send, onRefresh });
   const { prompted, error } = runner;
@@ -75,14 +76,18 @@ export function GitStatusRows({
       action:
         resolveAction ||
         (pr.state === "OPEN" && !pr.isDraft && onMerge ? (
-          <button
-            className={GIT_ACTION}
-            onClick={onMerge}
-            disabled={merging}
-            title="Squash and merge this pull request"
-          >
-            {merging ? "Merging…" : confirmMerge ? "Confirm merge" : "Merge"}
-          </button>
+          mergeScheduled ? (
+            <MergeUndoControl compact onUndo={onMerge} />
+          ) : (
+            <button
+              className={GIT_ACTION}
+              onClick={onMerge}
+              disabled={merging}
+              title="Squash and merge this pull request"
+            >
+              {merging ? "Merging…" : "Merge"}
+            </button>
+          )
         ) : undefined),
     });
   }

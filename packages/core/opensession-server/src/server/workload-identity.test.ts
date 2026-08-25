@@ -63,11 +63,13 @@ describe("sandbox workload identity", () => {
     const document = await response?.json() as Record<string, unknown>;
     expect(document.issuer).toBe("https://identity.example.test/workload-identity");
     expect(document.jwks_uri).toBe("https://identity.example.test/workload-identity/jwks.json");
+    expect(document.claims_supported).toEqual(["aud", "exp", "iat", "iss", "sub"]);
     const jwks = await identity.handleWorkloadIdentityRequest(
       new Request("https://identity.example.test/workload-identity/jwks.json"),
     );
     const keys = (await jwks?.json() as { keys: Array<Record<string, unknown>> }).keys;
     expect(keys).toHaveLength(1);
+    expect(Object.keys(keys[0] || {}).sort()).toEqual(["alg", "e", "kid", "kty", "n", "use"]);
     expect(keys[0]?.alg).toBe("RS256");
     expect(keys[0]?.use).toBe("sig");
   });

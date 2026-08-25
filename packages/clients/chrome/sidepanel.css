@@ -33,6 +33,16 @@ header {
   flex: none;
 }
 .logo { width: 20px; height: 20px; border-radius: 5px; }
+#account-picker {
+  width: min(118px, 34vw);
+  min-width: 76px;
+  border: 0;
+  background: transparent;
+  padding: 4px 18px 4px 4px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
 nav { display: flex; gap: 2px; flex: 1; }
 .tab {
   background: none;
@@ -102,7 +112,9 @@ nav { display: flex; gap: 2px; flex: 1; }
 }
 .chip .x:hover { color: var(--red); }
 
-.capture-row, .opts-row { display: flex; gap: 6px; }
+.capture-row, .opts-row, .account-actions { display: flex; gap: 6px; }
+.account-actions > * { flex: 1; }
+.cap-btn.danger { color: var(--red); }
 .cap-btn {
   flex: 1;
   background: var(--panel);

@@ -1,14 +1,14 @@
 /**
  * The two attribution helpers behind GET /api/sessions/:id/effective-config.
  * Both are deliberately pure: membership is decided by the real resolvers
- * (filterMcpServers, opencodeRunPolicy) and handed in, so these only have to
+ * (filterMcpServers, runToolPolicy) and handed in, so these only have to
  * explain the outcome, never reproduce it.
  */
 
 import { describe, expect, test } from "bun:test";
 import { explainMcpServers, describeStrippedTools } from "./effective-config";
 import { filterMcpServers, STRIPE_CONFIRM_TOOLS } from "./runner-shared";
-import { opencodeRunPolicy } from "./opencode-policy";
+import { runToolPolicy } from "./run-policy";
 
 const CATALOG = {
   slack: { command: "bunx", args: ["slack-mcp"] },
@@ -93,7 +93,7 @@ describe("explainMcpServers", () => {
 
 describe("describeStrippedTools", () => {
   const policy = (deniedTools?: Record<string, string>) =>
-    opencodeRunPolicy({ deniedTools, confirmTools: STRIPE_CONFIRM_TOOLS, journalKind: "prompt" });
+    runToolPolicy({ deniedTools, confirmTools: STRIPE_CONFIRM_TOOLS, journalKind: "prompt" });
 
   test("money-movers are attributed to the confirm catalog on every run", () => {
     const p = policy();

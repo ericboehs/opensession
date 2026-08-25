@@ -32,7 +32,7 @@ describe("LiveTurnStore", () => {
 	});
 
 	test("drops a half-streamed block when its durable entry lands mid-flight", async () => {
-		// The opencode runner delivers a block as deltas, so the transcript
+		// The pi runner delivers a block as deltas, so the transcript
 		// entry can arrive while the tail is still coming. Without prefix
 		// matching the bubble keeps growing beside the durable entry and the
 		// reply shows twice.

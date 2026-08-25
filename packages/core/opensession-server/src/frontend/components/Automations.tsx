@@ -1,5 +1,5 @@
 import { BASE_PATH } from "../lib/base";
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   fetchAutomations,
   createAutomationApi,
@@ -19,6 +19,7 @@ import {
   type AutomationDraft,
 } from "../lib/api";
 import { fetchWorkspaces } from "../lib/api/workspaces";
+import { providerAccountLabel } from "../lib/provider-account";
 import type { Workspace } from "../lib/types";
 import { getCurrentUser } from "./UserPicker";
 import { CheckStatusIcon } from "./CheckStatusIcon";
@@ -31,7 +32,7 @@ import {
   IconPlug,
   IconPlus,
 } from "./icons";
-import { AGENT_NAME, PUBLIC_BASE_URL, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
+import { AGENT_NAME, WEBHOOK_BASE_URL, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { cn } from "../ui/cn";
@@ -186,6 +187,10 @@ function useProviderAccounts(): ProviderAccountOption[] {
 
 export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
   const [automations, setAutomations] = useState<Automation[]>([]);
+  const pendingToggles = React.useRef(
+    new Map<string, { enabled: boolean; request: number }>(),
+  );
+  const toggleRequest = React.useRef(0);
   const [defaultModel, setDefaultModel] = useState("");
   const [loading, setLoading] = useState(true);
   const providerAccounts = useProviderAccounts();
@@ -203,11 +208,25 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
   // Leaving/changing the selection always drops back to the read view.
   useEffect(() => setEditMode(false), [selectedId]);
 
+  // Stable identity: only refs and setters are captured, so the polling
+  // effect can list `load` without ever refiring from re-renders.
   const load = useCallback(async () => {
-    try {
-      setAutomations(await fetchAutomations());
+    await (async () => {
+const next = (await fetchAutomations()) as Automation[];
+      setAutomations(
+        next.map((automation) =>
+          pendingToggles.current.has(automation.id)
+            ? {
+                ...automation,
+                enabled: pendingToggles.current.get(automation.id)!.enabled,
+              }
+            : automation,
+        ),
+      );
       setLoading(false);
-    } catch {}
+})().catch(async () => {
+
+});
   }, []);
 
   useEffect(() => {
@@ -221,19 +240,16 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
   }, [load]);
 
   // The routed selection — matched by id, or by name for sidebar deep-links.
-  const sel = useMemo(
-    () =>
-      selectedId
+  const sel = (selectedId
         ? automations.find((a) => a.id === selectedId || a.name === selectedId) ||
           null
-        : null,
-    [automations, selectedId],
-  );
+        : null);
 
   // Escape backs out one layer: inline edit → read view → closed. (The create
   // modal handles its own Escape — don't close both from one keypress.)
+  const hasSelection = !!sel;
   useEffect(() => {
-    if (!sel || showModal) return;
+    if (!hasSelection || showModal) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       const t = e.target as HTMLElement | null;
@@ -243,44 +259,68 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [!!sel, showModal, editMode, onSelect]);
+  }, [hasSelection, showModal, editMode, onSelect]);
 
-  async function handleToggle(a: Automation) {
-    try {
-      await updateAutomationApi(a.id, { enabled: !a.enabled });
-      load();
-    } catch (e: any) {
+  async function handleToggle(a: Automation, enabled: boolean) {
+    const previous = a.enabled;
+    const request = ++toggleRequest.current;
+    pendingToggles.current.set(a.id, { enabled, request });
+    setError(null);
+    setAutomations((current) =>
+      current.map((automation) =>
+        automation.id === a.id ? { ...automation, enabled } : automation,
+      ),
+    );
+
+    await (async () => {
+await updateAutomationApi(a.id, { enabled });
+      // A second click may have superseded this request. Only the latest intent
+      // gets to reconcile the optimistic state with the server response.
+      if (pendingToggles.current.get(a.id)?.request !== request) return;
+      await load();
+      if (pendingToggles.current.get(a.id)?.request === request)
+        pendingToggles.current.delete(a.id);
+})().catch(async (e: any) => {
+if (pendingToggles.current.get(a.id)?.request !== request) return;
+      pendingToggles.current.delete(a.id);
+      setAutomations((current) =>
+        current.map((automation) =>
+          automation.id === a.id && automation.enabled === enabled
+            ? { ...automation, enabled: previous }
+            : automation,
+        ),
+      );
       setError(e.message);
-    }
+});
   }
 
   async function handleDelete(a: Automation) {
     if (!confirm(`Delete automation "${a.name}"?`)) return;
-    try {
-      await deleteAutomationApi(a.id);
+    await (async () => {
+await deleteAutomationApi(a.id);
       if (sel?.id === a.id) onSelect("");
       load();
-    } catch (e: any) {
-      setError(e.message);
-    }
+})().catch(async (e: any) => {
+setError(e.message);
+});
   }
 
   async function handleRunNow(a: Automation) {
-    try {
-      await runAutomationApi(a.id);
+    await (async () => {
+await runAutomationApi(a.id);
       setTimeout(load, 800);
-    } catch (e: any) {
-      setError(e.message);
-    }
+})().catch(async (e: any) => {
+setError(e.message);
+});
   }
 
   async function handleRetrigger(sessionId: string) {
-    try {
-      await retriggerAutomationApi(sessionId);
+    await (async () => {
+await retriggerAutomationApi(sessionId);
       setTimeout(load, 800);
-    } catch (e: any) {
-      setError(e.message);
-    }
+})().catch(async (e: any) => {
+setError(e.message);
+});
   }
 
   return (
@@ -411,7 +451,7 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
                   size="sm"
                   className="relative"
                   checked={a.enabled}
-                  onCheckedChange={() => handleToggle(a)}
+                  onCheckedChange={(enabled) => handleToggle(a, enabled)}
                   aria-label={`${a.name} · ${a.enabled ? "on" : "off"}`}
                 />
               </div>
@@ -493,7 +533,7 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
                 <div className="flex items-center gap-2.5">
                   <Switch
                     checked={sel.enabled}
-                    onCheckedChange={() => handleToggle(sel)}
+                    onCheckedChange={(enabled) => handleToggle(sel, enabled)}
                     aria-label={`${sel.name} · ${sel.enabled ? "on" : "off"}`}
                   />
                   <span className="text-dim text-label">
@@ -583,8 +623,11 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
                       <>
                         <DetailKey>Account</DetailKey>
                         <span className="text-dim">
-                          {providerAccounts.find((x) => x.id === sel.accountId)?.name ||
-                            "pinned account"}
+                          {providerAccountLabel(
+                            providerAccounts.find((x) => x.id === sel.accountId) ?? {
+                              name: "pinned account",
+                            },
+                          )}
                           <span className="text-faint">
                             {sel.accountStrict === false
                               ? " · preferred, falls back to the shared pool"
@@ -776,7 +819,7 @@ const PLOT_H = 26;
  *  the reserved status tokens (green/yellow/red); per-bar tooltips carry the
  *  counts in text and the expanded run ledger is the table view. */
 function TriggerGraph({ runs, compact }: { runs: AutomationRun[]; compact?: boolean }) {
-  const buckets = useMemo(() => {
+  const buckets = (() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const out = Array.from({ length: GRAPH_DAYS }, (_, i) => {
@@ -790,7 +833,7 @@ function TriggerGraph({ runs, compact }: { runs: AutomationRun[]; compact?: bool
       if (idx >= 0 && idx < out.length) out[idx][r.status]++;
     }
     return out;
-  }, [runs]);
+  })();
 
   const max = Math.max(1, ...buckets.map((b) => b.ok + b.error + b.running));
   const total = buckets.reduce((n, b) => n + b.ok + b.error + b.running, 0);
@@ -908,7 +951,7 @@ function RunLedger({
 /** Secret webhook URL as a Configuration-grid value: truncated URL + copy. */
 function WebhookUrl({ id, secret }: { id: string; secret: string }) {
   const [copied, setCopied] = useState(false);
-  const url = `${PUBLIC_BASE_URL}/automations/${id}/${secret}`;
+  const url = `${WEBHOOK_BASE_URL}/automations/${id}/${secret}`;
 
   return (
     <span className="flex items-center gap-2 min-w-0">
@@ -1045,7 +1088,7 @@ function ChooserRow({
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.75">
         <span className="text-item-title font-semibold leading-5 text-fg">{title}</span>
-        <span className="text-meta leading-normal text-faint">{description}</span>
+        <span className="text-supporting leading-normal text-faint">{description}</span>
       </span>
       {meta && <span className="mt-0.5 shrink-0 text-meta text-faint">{meta}</span>}
     </button>
@@ -1073,12 +1116,12 @@ function TypeChooser({
     if (description.trim().length < 10 || drafting) return;
     setDrafting(true);
     setError(null);
-    try {
-      onPick(await draftAutomationApi(description), "classic");
-    } catch (e: any) {
-      setError(e.message);
+    await (async () => {
+onPick(await draftAutomationApi(description), "classic");
+})().catch(async (e: any) => {
+setError(e.message);
       setDrafting(false);
-    }
+});
   }
 
   return (
@@ -1262,7 +1305,7 @@ function McpPicker({
 // ── Classic / watch form (step 2) ────────────────────────────
 
 /** " (Claude)" / " (OpenAI Codex)" by the model's ACCOUNT POOL — the engine
- *  provider ("opencode"/"pi") says nothing about whose subscription pays, and
+ *  provider ("pi"/"pi") says nothing about whose subscription pays, and
  *  keying off it labeled every engine entry "(Claude)". Pool-less models get
  *  no suffix. */
 function accountPoolSuffix(m: ModelOption): string {
@@ -1306,7 +1349,7 @@ function DataFlowEditor({
       <div className="flex flex-col gap-2">
         <div className="flex min-h-10 items-center gap-2">
           <span className="text-label font-medium text-dim">Inputs</span>
-          <span className="text-meta text-faint">Each source is bounded and treated as untrusted data</span>
+          <span className="text-supporting text-faint">Each source is bounded and treated as untrusted data</span>
           <div className="ml-auto flex gap-1.5">
             <Button
               size="sm"
@@ -1510,7 +1553,7 @@ function DataFlowEditor({
       <div className="mt-1 flex flex-col gap-2">
         <div className="flex min-h-10 items-center gap-2">
           <span className="text-label font-medium text-dim">Outputs</span>
-          <span className="text-meta text-faint">Reports are durable; Slack delivery is optional</span>
+          <span className="text-supporting text-faint">Reports are durable; Slack delivery is optional</span>
           <div className="ml-auto flex gap-1.5">
             {!outputs.some((output) => output.type === "report") && (
               <Button
@@ -1742,8 +1785,8 @@ function AutomationForm({
   async function handleSave() {
     setSaving(true);
     setError(null);
-    try {
-      const slackWatch = isWatch
+    await (async () => {
+const slackWatch = isWatch
         ? { channel: watchChannel.trim().toUpperCase() }
         : initial?.slackWatch
           ? { channel: "" } // editing a watch automation into a classic one clears it
@@ -1793,10 +1836,10 @@ function AutomationForm({
         });
       }
       onSaved();
-    } catch (e: any) {
-      setError(e.message);
+})().catch(async (e: any) => {
+setError(e.message);
       setSaving(false);
-    }
+});
   }
 
   return (
@@ -1818,7 +1861,7 @@ function AutomationForm({
             onChange={(e) => setOwner(e.target.value)}
             placeholder={getCurrentUser() || "Kent"}
           />
-          <span className="mt-1 text-meta leading-snug text-faint">
+          <span className="mt-1 text-supporting leading-snug text-faint">
             Who reviews what it does. It appears in their sidebar.
           </span>
         </label>
@@ -1835,7 +1878,7 @@ function AutomationForm({
               </option>
             ))}
           </Select>
-          <span className="mt-1 text-meta leading-snug text-faint">
+          <span className="mt-1 text-supporting leading-snug text-faint">
             Files the automation under a workspace. Its runs stay in the
             Automations section.
           </span>
@@ -1851,7 +1894,7 @@ function AutomationForm({
             placeholder="C0123456789 (channel id)"
             className="mono-input"
           />
-          <span className="mt-1 text-meta leading-snug text-faint">
+          <span className="mt-1 text-supporting leading-snug text-faint">
             Invite @{AGENT_NAME} to the channel first. The bot only receives messages
             for channels it's a member of. One run per top-level message; thread
             replies don't re-trigger. Channel id is in the channel's “About” tab.
@@ -1898,7 +1941,7 @@ function AutomationForm({
                 ))}
               </Select>
             </label>
-            <div className="text-meta text-faint">
+            <div className="text-supporting text-faint">
               Schedules and events can be combined. Manual “Run now” is always available.
             </div>
             <label className="flex min-h-10 items-center gap-2.5 text-label text-dim">
@@ -2014,7 +2057,7 @@ function AutomationForm({
               <option value="">Auto · shared pool rotation</option>
               {eligibleAccounts.map((x) => (
                 <option key={x.id} value={x.id}>
-                  {x.name}
+                  {providerAccountLabel(x)}
                   {x.owner ? ` · ${x.owner}'s` : ""}
                 </option>
               ))}

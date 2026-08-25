@@ -17,16 +17,15 @@ struct PrSlackShareRequest: Identifiable {
 }
 
 enum ShippedChangeCopy {
-    static func suggestion(title: String, repo: String?, summary: String?) -> String {
+    /// A first draft of the Slack message announcing a merged change, shown
+    /// in the composer for the person to edit before sending.
+    /// Repository-neutral: it reads the walkthrough summary when there is one,
+    /// and otherwise turns the PR title from an instruction into an outcome.
+    static func suggestion(title: String, summary: String?) -> String {
         if let summary, let prose = outcome(summary) { return prose }
         let clean = title
             .replacingOccurrences(of: #"^\[[^\]]+\]\s*"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"[.!?]+$"#, with: "", options: .regularExpression)
-            .replacingOccurrences(
-                of: repo == "tella-fusion" ? #"\bOpenSession\s+"# : #"$^"#,
-                with: "",
-                options: [.regularExpression, .caseInsensitive]
-            )
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return "The update is now available." }
         if clean.range(of: #"\b(now|is|are|has|have|can)\b"#, options: [.regularExpression, .caseInsensitive]) != nil {
@@ -35,18 +34,16 @@ enum ShippedChangeCopy {
         let words = clean.split(separator: " ").map(String.init)
         let verb = words.first?.lowercased() ?? ""
         let object = words.dropFirst().joined(separator: " ")
-        let product = repo == "tella-fusion" && clean.range(of: #"\btella\b"#, options: [.regularExpression, .caseInsensitive]) == nil
-            ? " in Tella" : ""
-        guard !object.isEmpty else { return sentence("\(clean) is now available\(product)") }
+        guard !object.isEmpty else { return sentence("\(clean) is now available") }
         switch verb {
-        case "add", "create": return sentence("\(object) is now available\(product)")
-        case "fix": return sentence("\(object) now works correctly\(product)")
-        case "remove": return sentence("\(object) is now removed\(product)")
+        case "add", "create": return sentence("\(object) is now available")
+        case "fix": return sentence("\(object) now works correctly")
+        case "remove": return sentence("\(object) is now removed")
         case "improve", "polish", "redesign", "simplify":
-            return sentence("\(object) is now improved\(product)")
+            return sentence("\(object) is now improved")
         case "adopt", "change", "make", "replace", "update", "use":
-            return sentence("\(object) is now updated\(product)")
-        default: return sentence("\(clean) is now available\(product)")
+            return sentence("\(object) is now updated")
+        default: return sentence("\(clean) is now available")
         }
     }
 
@@ -164,7 +161,6 @@ struct PrSlackShareSheet: View {
         _description = State(initialValue: request.merged
             ? ShippedChangeCopy.suggestion(
                 title: request.title,
-                repo: request.repo,
                 summary: request.walkthroughSummary
             )
             : request.title)
@@ -375,7 +371,8 @@ struct PrSlackShareSheet: View {
                         channel: response.channel.map {
                             .init(id: $0.id, name: $0.name)
                         },
-                        permalink: response.permalink
+                        permalink: response.permalink,
+                        ts: response.ts
                     ))
                 } else if request.merged {
                     var screenshots: [String] = []

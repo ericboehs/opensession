@@ -15,7 +15,7 @@ log in one SQLite database (WAL): `<sessions dir>/transcripts.db`, managed by
   `seq`, which is what makes streamed assistant rewrites ("same id, last
   wins") work.
 - Session ids are **unified** ids (`bks-…`, `slack-…`, `linear-…`), never
-  engine session ids; `packages/core/opensession-server/src/server/opencode-transcript.ts` keeps the
+  engine session ids; `packages/core/opensession-server/src/server/transcript-persistence.ts` keeps the
   engine-id → unified-id map, so engine account rotation (many engine ids,
   one session) doesn't fragment a transcript.
 - Entries over 32 KB are stored twice: the full entry in a blob table, and a
@@ -34,10 +34,24 @@ live viewers of server-owned sessions get pushes, not polling.
 The client advertises `supportsSeq` on `watch`; the server serves seq-mode
 when it owns the session and the store has it:
 
-- init: a small `transcript_init` tail plus a `transcript_history` page
-  moments later; older pages via `load_history {beforeSeq}`; reconnects
-  resume with `sinceSeq` — no snapshot re-send.
-- live: bus-driven `transcript_append` frames carrying `seq`.
+- init: a small `transcript_init` tail paints first. Web clients that advertise
+  `supportsTranscriptIndex` then receive a complete content-free
+  `transcript_index`, so the virtualizer owns the full scroll range without
+  downloading every message.
+- history: indexed web clients request only visible seq spans with
+  `load_transcript_range`; older clients keep prepend paging through
+  `load_history {beforeSeq}`.
+- live: bus-driven `transcript_append` frames carry `seq` and `changeSeq`, so
+  the browser updates both sparse content and the lightweight outline.
+- collapsed detail: opening and range frames carry 512-byte previews for tool
+  results and intermediate assistant notes hidden inside work folds. The web
+  and native clients fetch the full entry through `/api/sessions/:id/entry/:id`
+  only when someone opens that message.
+
+`transcript_outline` is a one-row-per-event structural projection maintained in
+SQLite with the canonical event write. It carries ids, ordering, display roles
+and content lengths, but no message bodies. Existing sessions backfill this
+projection only when an indexed client opens them.
 
 Sessions the server does *not* own — CLI/tmux runs writing their own
 transcript files — are served by the legacy file-watcher + byte-offset
@@ -61,8 +75,8 @@ the normal entry path is the point: blob-splitting bounds a 180KB handoff like
 any other oversized entry, and the ws protocol needs no new frame.
 
 - **Choke point**: `runOnModel` (`packages/core/opensession-server/src/server/agent-runner.ts`) — the single
-  dispatch for every engine (opencode, pi, claude-direct, codex-direct, the
-  test fake) and every model of a fallback walk. The opencode runner calls in
+  dispatch for every engine (pi, pi, claude-direct, codex-direct, the
+  test fake) and every model of a fallback walk. The pi runner calls in
   as well for the same-engine-restart handoff it prepends *below* that point;
   entry ids are content-derived, so overlapping calls upsert one row.
 - **Attribution rides the fence**, not the call site: `wrapContext(body,
@@ -104,12 +118,12 @@ Three sources today:
 | source | written at | content |
 | --- | --- | --- |
 | `tools` | `runOnModel` (every engine) | the run's tool scoping: MCP allowlist, in-process servers, tool denials, mode |
-| `mcp-servers` | the opencode runner | the servers that config actually mounts, the strips that narrow them, the subagents `task` can reach |
+| `mcp-servers` | the pi runner | the servers that config actually mounts, the strips that narrow them, the subagents `task` can reach |
 | `instructions` | each engine runner or adapter at its final-text point | the standing instruction text, which already folds in `AGENTS.local.md` / `CLAUDE.local.md` |
 
 **The tool schemas themselves are not recordable.** Every mounted tool's name,
 description and JSON schema is the largest single model input (roughly 104k
-tokens a run), and OpenCode neither persists nor exposes it: `/experimental/tool`
+tokens a run), and Pi neither persists nor exposes it: `/experimental/tool`
 returns only its own built-ins and `/mcp` returns a connection status per
 server. Capturing the schemas would mean connecting to every configured MCP
 server ourselves, per session. So what is recorded is the tool *surface* —
@@ -117,7 +131,7 @@ which servers were mounted and which tools were taken away — not the wording o
 each schema.
 
 The direct engines have no runner to log their `instructions` from — claude-direct
-and codex-direct assemble their own system prompt and never reach the opencode
+and codex-direct assemble their own system prompt and never reach the pi
 runner — so each adapter logs at the point its text is final: the append to the
 `claude_code` preset, and the thread's `developerInstructions`. Pi likewise logs
 beside its finalized `buildRunInstructions` result before that text joins the
@@ -140,7 +154,7 @@ serving, not as an alternate store.
   a per-session mutex where each caller overlays only the fields it owns.
 - **Engine boundary**: `packages/core/opensession-server/src/server/engine/` defines the `EngineAdapter`
   surface (`startTurn` as an event stream, plus steer/cancel/reattach) that
-  the transcript pipeline consumes; OpenCode is the production adapter.
+  the transcript pipeline consumes; Pi is the production adapter.
 - **Snapshot fixtures**: scripted sessions run through the real pipeline on a
   fake engine, freezing both the entries written here and the prompt/config
   the engine received. See [transcript-snapshots.md](transcript-snapshots.md);

@@ -15,9 +15,9 @@ const TRANSIENT_CODES = new Set([
 ]);
 
 const PERMANENT_MESSAGE =
-  /(?:api[ -]?key|credential|token|unauthori[sz]ed|forbidden|permission|billing|quota|not configured|not ready|invalid|unsupported|attached repos?|kill switch|disabled)/i;
+  /(?:api[ -]?key|credential|token|unauthori[sz]ed|forbidden|permission|billing|quota|rate.?limit|plan allows|per day|not configured|not ready|invalid|unsupported|attached repos?|kill switch|disabled)/i;
 const TRANSIENT_MESSAGE =
-  /(?:timed? ?out|temporar(?:y|ily) unavailable|connection (?:reset|refused)|fetch failed|network (?:error|unreachable)|rate.?limit|\b(?:408|425|429|500|502|503|504)\b|ECONN|ETIMEDOUT|UND_ERR_)/i;
+  /(?:timed? ?out|temporar(?:y|ily) unavailable|connection (?:reset|refused)|fetch failed|network (?:error|unreachable)|\b(?:408|425|500|502|503|504)\b|ECONN|ETIMEDOUT|UND_ERR_)/i;
 
 function errorValues(error: unknown): unknown[] {
   const values: unknown[] = [];
@@ -48,7 +48,10 @@ export function isTransientSandboxStartError(error: unknown): boolean {
     const candidate = value as { code?: unknown; status?: unknown; statusCode?: unknown };
     if (typeof candidate.code === "string" && TRANSIENT_CODES.has(candidate.code)) return true;
     const status = Number(candidate.status ?? candidate.statusCode);
-    if ([408, 425, 429, 500, 502, 503, 504].includes(status)) return true;
+    // A blind sub-second retry cannot help a 429 and can consume another
+    // provider start from a daily quota. Providers may expose a future
+    // Retry-After-aware path, but generic session creation must fail once.
+    if ([408, 425, 500, 502, 503, 504].includes(status)) return true;
   }
   return TRANSIENT_MESSAGE.test(message);
 }

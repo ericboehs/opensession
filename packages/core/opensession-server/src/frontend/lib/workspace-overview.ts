@@ -1,9 +1,8 @@
 /**
- * Client-side workspace overview loading, shared by the WorkspaceInfo block
- * in the session right panel and the sidebar's workspace hover card: one
- * session-lifetime cache (switching back paints instantly), the server route
- * as the fast path, and transcript-based fallbacks for servers that haven't
- * restarted onto newer overview code (routes don't hot-apply).
+ * Client-side workspace overview loading for the shared SWR resource used by
+ * the session right panel and sidebar hover cards. The server route is the fast
+ * path; transcript-based fallbacks cover servers that have not restarted onto
+ * newer overview code (routes do not hot-apply).
  */
 
 import {
@@ -23,13 +22,6 @@ export interface OverviewSessionRef {
 	/** When known, picks the freshest session for the lastMessage fallback. */
 	lastActivity?: string;
 }
-
-// Session-lifetime cache; a background refetch replaces entries. Keyed by
-// workspace id (or the session set for workspace-less rows).
-export const overviewCache = new Map<
-	string,
-	{ data: WorkspaceOverview; at: number }
->();
 
 function firstPrompt(entries: TranscriptEntry[]): TranscriptEntry | undefined {
 	return entries.find((e) => {
@@ -82,16 +74,15 @@ export async function buildClientOverview(
 }
 
 /**
- * One session's own overview, for its hover card. Same cache as the workspace
- * loader below, under the session-set key a one-session row would use, so a
- * chip and a single-session workspace row share the answer. A server that
+ * One session's own overview, for its hover card. Its caller uses the same SWR
+ * key a one-session workspace row uses, so a chip and that row share the
+ * answer. A server that
  * predates the route (they do not hot-apply) falls back to assembling it from
  * the transcript here.
  */
 export async function loadSessionOverview(
 	session: OverviewSessionRef,
 ): Promise<WorkspaceOverview> {
-	const cacheKey = `sessions:${session.id}`;
 	let ov: WorkspaceOverview;
 	try {
 		ov = await fetchSessionOverview(session.id);
@@ -100,19 +91,17 @@ export async function loadSessionOverview(
 			ov = await buildClientOverview([session]);
 		else throw e;
 	}
-	overviewCache.set(cacheKey, { data: ov, at: Date.now() });
 	return ov;
 }
 
 /**
  * Load an overview (server route when the row is a real workspace, client
- * assembly otherwise) and cache it under cacheKey. Two staleness fallbacks:
+ * assembly otherwise). Two compatibility fallbacks:
  * a 404 means the server predates the route entirely; a response without the
- * lastMessage key means it predates the description — fill it from the
+ * lastMessage key means it predates the description. Fill it from the
  * freshest session's transcript so the hover card still shows one.
  */
 export async function loadOverview(
-	cacheKey: string,
 	workspaceId: string | null,
 	sessions: OverviewSessionRef[],
 ): Promise<WorkspaceOverview> {
@@ -144,6 +133,5 @@ export async function loadOverview(
 	} else {
 		ov = await buildClientOverview(sessions);
 	}
-	overviewCache.set(cacheKey, { data: ov, at: Date.now() });
 	return ov;
 }

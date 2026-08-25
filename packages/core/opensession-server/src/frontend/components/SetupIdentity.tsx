@@ -7,19 +7,16 @@ import {
 import { AGENT_NAME, PRODUCT_NAME } from "../lib/brand";
 import { cn } from "../ui/cn";
 import {
-	SettingCard,
 	SettingRow,
 	SettingRowDescription,
 	SettingRowText,
 	SettingRowTitle,
-	SettingsHint,
 	settingsInputClass,
 } from "../ui/settings";
 import { toast } from "../ui/toast";
-import { Code } from "./setup-shared";
 
-// What this instance and its agent are called: a Setup step and a group in
-// Workspace > General, rendered from the same card.
+// What this instance and its agent are called. These rows sit inside the
+// organization card, so Setup and Workspace > General both show one section.
 
 const IDENTITY_INPUT_CLASS = cn(settingsInputClass, "w-[140px]");
 
@@ -46,13 +43,13 @@ function IdentityInput({
 			return;
 		}
 		setSaving(true);
-		try {
-			await onSave(next);
-		} catch {
-			setDraft(value);
-		} finally {
-			setSaving(false);
-		}
+		await (async () => {
+await onSave(next);
+})().catch(async () => {
+setDraft(value);
+}).finally(async () => {
+setSaving(false);
+});
 	};
 	return (
 		<input
@@ -71,7 +68,9 @@ function IdentityInput({
 	);
 }
 
-export function IdentityCard() {
+/** The instance's own names, as rows. They live inside the organization card
+ *  so setup and settings show one section rather than two near-identical ones. */
+export function IdentityRows() {
 	const [identity, setIdentity] = useState<InstanceIdentityDto | null>(null);
 	useEffect(() => {
 		let cancelled = false;
@@ -85,57 +84,47 @@ export function IdentityCard() {
 		};
 	}, []);
 	const save = async (patch: { personaName?: string; productName?: string }) => {
-		try {
-			setIdentity(await saveInstanceIdentity(patch));
+		await (async () => {
+setIdentity(await saveInstanceIdentity(patch));
 			toast("Saved. Open tabs update after the next rebuild.", {
 				variant: "success",
 			});
-		} catch (e: any) {
-			toast(e?.message || "Failed to save", { variant: "error" });
+})().catch(async (e: any) => {
+toast(e?.message || "Failed to save", { variant: "error" });
 			throw e;
-		}
+});
 	};
 
 	return (
 		<>
-			<SettingCard>
-				<SettingRow>
-					<SettingRowText>
-						<SettingRowTitle>Agent name</SettingRowTitle>
-						<SettingRowDescription>
-							What the agent calls itself in prompts, Slack messages, and the
-							UI. Stored as <Code>persona.name</Code> in{" "}
-							<Code>~/.opensession/config.json</Code> on the server.
-						</SettingRowDescription>
-					</SettingRowText>
-					<IdentityInput
-						label="Agent name"
-						value={identity?.personaName ?? AGENT_NAME}
-						placeholder="Assistant"
-						onSave={(next) => save({ personaName: next })}
-					/>
-				</SettingRow>
-				<SettingRow>
-					<SettingRowText>
-						<SettingRowTitle>Product name</SettingRowTitle>
-						<SettingRowDescription>
-							What this app calls itself in titles and headers. Stored as{" "}
-							<Code>branding.productName</Code> in the same config file.
-						</SettingRowDescription>
-					</SettingRowText>
-					<IdentityInput
-						label="Product name"
-						value={identity?.productName ?? PRODUCT_NAME}
-						placeholder="Open Session"
-						onSave={(next) => save({ productName: next })}
-					/>
-				</SettingRow>
-			</SettingCard>
-			<SettingsHint>
-				Workspace-wide, shared by everyone on this instance. Changes apply to
-				new agent runs immediately; clearing a field restores the built-in
-				default.
-			</SettingsHint>
+			<SettingRow>
+				<SettingRowText>
+					<SettingRowTitle>Agent name</SettingRowTitle>
+					<SettingRowDescription>
+						Shown in prompts, Slack messages, and the app.
+					</SettingRowDescription>
+				</SettingRowText>
+				<IdentityInput
+					label="Agent name"
+					value={identity?.personaName ?? AGENT_NAME}
+					placeholder="Assistant"
+					onSave={(next) => save({ personaName: next })}
+				/>
+			</SettingRow>
+			<SettingRow>
+				<SettingRowText>
+					<SettingRowTitle>Product name</SettingRowTitle>
+					<SettingRowDescription>
+						Shown in titles and headings.
+					</SettingRowDescription>
+				</SettingRowText>
+				<IdentityInput
+					label="Product name"
+					value={identity?.productName ?? PRODUCT_NAME}
+					placeholder="Open Session"
+					onSave={(next) => save({ productName: next })}
+				/>
+			</SettingRow>
 		</>
 	);
 }

@@ -22,7 +22,7 @@
  * piped into a shell, here-strings, and simple `V=cmd; $V` indirection — to a
  * depth of 8.
  *
- * Enforcement wiring lives in opencode-runner.ts: unattended code-mode runs
+ * Enforcement wiring lives in pi-runner.ts: unattended code-mode runs
  * get a `bash: {"*": "ask"}` permission config, and the permission-ask bridge
  * answers each ask with `bashAskPolicyReply` below. Interactive runs are
  * untouched — the human at the keyboard is the authority there, and the only
@@ -738,8 +738,8 @@ export function evaluateCommand(command: string, policy: CommandPolicy): Command
 }
 
 /**
- * Decide the reply to an opencode bash permission ask, for BOTH permission
- * bridges in opencode-runner.ts (master run + reattach — one decision, two
+ * Decide the reply to an pi bash permission ask, for BOTH permission
+ * bridges in pi-runner.ts (master run + reattach — one decision, two
  * call sites). Returns null when the ask isn't bash or when the interactive
  * flow should keep handling it (surface a question card); a non-null reply is
  * final.

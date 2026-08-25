@@ -39,6 +39,7 @@
  */
 
 import { chmodSync, existsSync, mkdirSync, readFileSync } from "fs";
+import { dirname } from "path";
 import { stateDir } from "../../paths";
 import { getRepo, worktreePathFor } from "../../worktree";
 import { sandboxConfig } from "../config";
@@ -99,6 +100,7 @@ interface BoxRecord {
   state?: string;
   url?: string | null;
   ip?: string | null;
+  sshEndpoint?: string | null;
   type?: BoxMachineType;
 }
 
@@ -259,21 +261,24 @@ async function waitForLive(
 ): Promise<void> {
   const deadline = Date.now() + deadlineMs;
   let last = "";
+  let resumeRequested = false;
   while (Date.now() < deadline) {
     const box = await getBox(cfg, boxId);
     if (!box) throw new Error(`box ${boxId} is gone`);
     last = String(box.state || "");
     if (LIVE_STATES.has(last)) return;
     if (last === "error") throw new Error(`box ${boxId} is in error state`);
-    if (last === "archived") {
+    if (last === "archived" && !resumeRequested) {
+      resumeRequested = true;
       try {
         await boxApi(cfg, "POST", `/boxes/${boxId}/resume`, {
           noEnv: true,
           ttlSeconds: idleTtlSeconds(),
         });
       } catch (e) {
-        // Racing resumes 4xx — the state poll below decides.
-        console.warn(`[sandbox:box] resume(${boxId}) failed (will re-poll):`, e);
+        // The response may be lost after Box accepted the wake. Never turn one
+        // follow-up into dozens of start-counting resume requests.
+        console.warn(`[sandbox:box] resume(${boxId}) failed (will only poll):`, e);
       }
     }
     await sleep(3_000);
@@ -304,7 +309,7 @@ async function waitForState(
 
 /** cwd/env fold into the command string: the commands endpoint only takes a
  *  cwd RELATIVE to the box work dir, and no env at all. */
-function composeShell(cmd: string, opts?: RemoteExecOpts): string {
+export function boxComposeShell(cmd: string, opts?: RemoteExecOpts): string {
   let s = cmd;
   const env = opts?.env && Object.keys(opts.env).length ? opts.env : undefined;
   if (env) {
@@ -314,7 +319,7 @@ function composeShell(cmd: string, opts?: RemoteExecOpts): string {
     s = `env ${pairs} sh -c ${shellQuoteWord(s)}`;
   }
   if (opts?.cwd) s = `cd ${shellQuoteWord(opts.cwd)} && { ${s}\n}`;
-  return s;
+  return `mkdir -p /home/ubuntu/.tmp && export TMPDIR=/home/ubuntu/.tmp && ${s}`;
 }
 
 export function boxNativeFilePath(path: string): string {
@@ -323,6 +328,136 @@ export function boxNativeFilePath(path: string): string {
     return `/home/user/${path.slice("/home/ubuntu/".length)}`;
   }
   return path;
+}
+
+export function boxResumePrimeCommand(cwd: string): string {
+  return `if test -d ${shellQuoteWord(cwd)}/.git; then cd ${shellQuoteWord(cwd)} && ` +
+    `{ git ls-files -z | xargs -0 -r -n 64 -P 16 stat -c '%n' -- >/dev/null 2>&1; ` +
+    `GIT_OPTIONAL_LOCKS=0 git status --porcelain >/dev/null 2>&1; }; fi`;
+}
+
+function primeBoxWorkspaceAfterResume(driver: RemoteDriver, cwd: string): void {
+  void driver.execBackground(boxResumePrimeCommand(cwd), { timeoutMs: 15_000 }).catch((error) => {
+    console.warn(`[sandbox:box] could not start resumed workspace hydration:`, error);
+  });
+}
+
+export const BOX_RUNTIME_HOME_COMMAND =
+  "test -d /home/user && test -w /home/user && " +
+  "if mountpoint -q /home/ubuntu; then " +
+  "if ! test /home/ubuntu -ef /home/user; then " +
+  "sudo -n umount /home/ubuntu && sudo -n mount --bind /home/user /home/ubuntu; fi; " +
+  "else " +
+  "if [ -L /home/ubuntu ]; then sudo -n rm /home/ubuntu; " +
+  'elif [ -d /home/ubuntu ] && [ -z "$(ls -A /home/ubuntu)" ]; then sudo -n rmdir /home/ubuntu; ' +
+  "elif [ -e /home/ubuntu ]; then echo 'cannot replace non-empty /home/ubuntu' >&2; exit 1; fi; " +
+  "sudo -n mkdir -p /home/ubuntu && sudo -n mount --bind /home/user /home/ubuntu; " +
+  "fi && test ! -L /home/ubuntu && mountpoint -q /home/ubuntu && " +
+  "test /home/ubuntu -ef /home/user && test -w /home/ubuntu";
+
+function boxSshTargets(): Map<string, BoxSshTarget> {
+  const global = globalThis as typeof globalThis & {
+    __opensessionBoxSshTargets?: Map<string, BoxSshTarget>;
+  };
+  return (global.__opensessionBoxSshTargets ??= new Map());
+}
+
+export function parseBoxSshEndpoint(endpoint: string | null | undefined): { host: string; port: number } | null {
+  const value = endpoint?.trim();
+  if (!value) return null;
+  const bracketed = value.match(/^\[([^\]]+)\]:(\d+)$/);
+  if (bracketed) return { host: bracketed[1]!, port: Number(bracketed[2]) };
+  const separator = value.lastIndexOf(":");
+  if (separator <= 0 || value.slice(0, separator).includes(":")) return null;
+  const port = Number(value.slice(separator + 1));
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) return null;
+  return { host: value.slice(0, separator), port };
+}
+
+function existingBoxSshTarget(box: BoxRecord, user = "user"): BoxSshTarget | null {
+  const endpoint = parseBoxSshEndpoint(box.sshEndpoint);
+  if (!endpoint || !existsSync(boxSshPrivateKey)) return null;
+  return { ...endpoint, user, privateKeyPath: boxSshPrivateKey };
+}
+
+export function boxKnownHostsKey(target: Pick<BoxSshTarget, "host" | "port">): string {
+  return target.port === 22 ? target.host : `[${target.host}]:${target.port}`;
+}
+
+export function boxMachineIpSshEndpoint(machineIp: string | null | undefined): { host: string; port: number } | null {
+  const value = machineIp?.trim();
+  // The documented sshkey response returns a direct IPv4 machineIp and uses
+  // OpenSSH's standard port. IPv6 is not a safe fallback here: Box also
+  // exposes an IPv6 machine address that is not reachable from every host.
+  return value && /^(?:\d{1,3}\.){3}\d{1,3}$/.test(value)
+    ? { host: value, port: 22 }
+    : null;
+}
+
+/** Box regenerates its SSH host key when an archived VM resumes. The endpoint
+ * comes from Box's authenticated API and we install our public key in that
+ * same API call, so forget only this exact host:port before accepting the new
+ * provider key. */
+async function forgetBoxSshHostKey(target: Pick<BoxSshTarget, "host" | "port">): Promise<void> {
+  const knownHosts = `${boxSshKeyDir}/known_hosts`;
+  if (!existsSync(knownHosts)) return;
+  const process = Bun.spawn([
+    "ssh-keygen", "-q", "-R", boxKnownHostsKey(target), "-f", knownHosts,
+  ], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+  await process.exited;
+}
+
+function boxSshArgs(target: BoxSshTarget, command: string): string[] {
+  return [
+    "ssh", "-p", String(target.port), "-i", target.privateKeyPath,
+    "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
+    "-o", "StrictHostKeyChecking=accept-new",
+    "-o", `UserKnownHostsFile=${boxSshKeyDir}/known_hosts`,
+    "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=15",
+    "-o", "ServerAliveCountMax=2",
+    // Reuse one host-local authenticated connection for launch material. The
+    // %C hash scopes the socket to user/host/port/key, and OpenSSH falls back
+    // safely when a resumed VM has killed the old master.
+    "-o", "ControlMaster=auto", "-o", "ControlPersist=120",
+    "-o", `ControlPath=${boxSshKeyDir}/cm-%C`,
+    `${target.user}@${target.host}`, command,
+  ];
+}
+
+async function boxSshExec(target: BoxSshTarget, shell: string, timeoutMs: number) {
+  const process = Bun.spawn(boxSshArgs(target, shell), {
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    try { process.kill(); } catch {}
+  }, timeoutMs);
+  timer.unref?.();
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(process.stdout).text(),
+    new Response(process.stderr).text(),
+    process.exited,
+  ]).finally(() => clearTimeout(timer));
+  return { exitCode: timedOut ? 124 : exitCode, stdout, stderr };
+}
+
+async function boxSshWriteFile(target: BoxSshTarget, path: string, content: string): Promise<void> {
+  const command = `mkdir -p ${shellQuoteWord(dirname(path))} && cat > ${shellQuoteWord(path)}`;
+  const process = Bun.spawn(boxSshArgs(target, command), {
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  process.stdin.write(content);
+  await process.stdin.end();
+  const [stderr, exitCode] = await Promise.all([
+    new Response(process.stderr).text(),
+    process.exited,
+  ]);
+  if (exitCode !== 0) throw new Error(`Box SSH writeFile(${path}) failed: ${stderr.trim().slice(0, 300)}`);
 }
 
 export function boxDriver(cfg: BoxClientConfig, boxId: string): RemoteDriver {
@@ -346,23 +481,15 @@ export function boxDriver(cfg: BoxClientConfig, boxId: string): RemoteDriver {
 
   const ensureRuntimeHome = async () => {
     // Box persists /home/user across archive/resume and named snapshots, while
-    // the VM root is rebuilt. Keep the cross-provider /home/ubuntu contract by
-    // linking it to that durable home on every fresh boot.
+    // the VM root is rebuilt. Bind-mount it at the cross-provider path on every
+    // boot: unlike a symlink, this keeps path-sensitive tools such as direnv on
+    // the stable /home/ubuntu spelling.
     const response = result(
       await boxApi<BoxCommandResponse>(
         cfg,
         "POST",
         `/boxes/${boxId}/commands`,
-        {
-          command:
-            "test -d /home/user && test -w /home/user && " +
-            "if [ -L /home/ubuntu ] && [ \"$(readlink -f /home/ubuntu)\" = /home/user ]; then :; " +
-            "elif [ -L /home/ubuntu ]; then sudo -n rm /home/ubuntu && sudo -n ln -s /home/user /home/ubuntu; " +
-            "elif [ -d /home/ubuntu ] && [ -z \"$(ls -A /home/ubuntu)\" ]; then sudo -n rmdir /home/ubuntu && sudo -n ln -s /home/user /home/ubuntu; " +
-            "elif [ ! -e /home/ubuntu ]; then sudo -n ln -s /home/user /home/ubuntu; " +
-            "else echo 'cannot map /home/ubuntu to the persistent Box home' >&2; exit 1; fi",
-          timeoutSeconds: 60,
-        },
+        { command: BOX_RUNTIME_HOME_COMMAND, timeoutSeconds: 60 },
         90_000,
       ),
     );
@@ -379,6 +506,7 @@ export function boxDriver(cfg: BoxClientConfig, boxId: string): RemoteDriver {
   const waitForCommandPlane = async () => {
     const deadline = Date.now() + 90_000;
     let last: unknown;
+    let resumeRequested = false;
     while (Date.now() < deadline) {
       try {
         const probe = await boxApi<BoxCommandResponse>(
@@ -402,13 +530,15 @@ export function boxDriver(cfg: BoxClientConfig, boxId: string): RemoteDriver {
       } catch (error) {
         last = error;
         if (!boxCommandPlaneUnavailable(error)) throw error;
-        // A Box can briefly report `idle` while its restored VM is still
-        // bringing the command service online. Resume is idempotent here;
-        // only the explicit 409 proves no user command has run.
-        try {
-          await boxApi(cfg, "POST", `/boxes/${boxId}/resume`, { noEnv: true }, 30_000);
-        } catch (resumeError) {
-          if (!boxCommandPlaneUnavailable(resumeError)) throw resumeError;
+        // Resume consumes the provider's daily start quota even when repeated
+        // for the same archived Box. Request it once, then readiness-poll only.
+        if (!resumeRequested) {
+          resumeRequested = true;
+          try {
+            await boxApi(cfg, "POST", `/boxes/${boxId}/resume`, { noEnv: true }, 30_000);
+          } catch (resumeError) {
+            if (!boxCommandPlaneUnavailable(resumeError)) throw resumeError;
+          }
         }
         await sleep(POLL_INTERVAL_MS);
       }
@@ -494,8 +624,10 @@ export function boxDriver(cfg: BoxClientConfig, boxId: string): RemoteDriver {
 
   return {
     async exec(cmd: string, opts?: RemoteExecOpts) {
-      const shell = composeShell(cmd, opts);
+      const shell = boxComposeShell(cmd, opts);
       const timeoutMs = opts?.timeoutMs ?? 120_000;
+      const ssh = boxSshTargets().get(boxId);
+      if (ssh) return boxSshExec(ssh, shell, timeoutMs);
       // Keep short probes on Box's reliable synchronous endpoint. Long setup
       // work and explicitly backgrounded workspace work use its independent
       // detached-process lane, so a clone or fetch cannot monopolize the
@@ -513,16 +645,26 @@ export function boxDriver(cfg: BoxClientConfig, boxId: string): RemoteDriver {
     },
 
     async execBackground(cmd: string, opts?: RemoteExecOpts) {
-      const started = await afterCommandPlaneReady(() => startDetached(composeShell(cmd, opts)));
+      const shell = boxComposeShell(cmd, opts);
+      const ssh = boxSshTargets().get(boxId);
+      if (ssh) {
+        const detached = `nohup bash -c ${shellQuoteWord(shell)} </dev/null >/dev/null 2>&1 &`;
+        const result = await boxSshExec(ssh, detached, opts?.timeoutMs ?? 30_000);
+        if (result.exitCode !== 0) throw new Error(result.stderr.trim() || "Box SSH background launch failed");
+        return;
+      }
+      const started = await afterCommandPlaneReady(() => startDetached(shell));
       if (!Number.isInteger(started.processId)) {
         throw new Error("Box returned no process id for background command");
       }
     },
 
     async writeFile(path: string, content: string) {
+      const ssh = boxSshTargets().get(boxId);
+      if (ssh) return boxSshWriteFile(ssh, path, content);
       // Box canonicalizes file paths and permits only /home/user or /tmp.
-      // /home/ubuntu is our symlink to that persistent home, so translate the
-      // prefix explicitly and use the native file API instead of serializing
+      // /home/ubuntu is our bind mount of that persistent home, so translate
+      // the prefix explicitly and use the native file API instead of serializing
       // every launch-time credential write through a shell command.
       const nativePath = boxNativeFilePath(path);
       await afterCommandPlaneReady(() =>
@@ -537,15 +679,45 @@ export function boxDriver(cfg: BoxClientConfig, boxId: string): RemoteDriver {
     },
 
     async ensureStarted() {
-      const box = await getBox(cfg, boxId);
+      let box = await getBox(cfg, boxId);
       if (!box) throw new Error(`box ${boxId} is gone`);
       if (!LIVE_STATES.has(String(box.state || ""))) {
         runtimeHomeReady = false;
         commandPlaneReady = false;
+        boxSshTargets().delete(boxId);
         await waitForLive(cfg, boxId, 300_000);
+        box = await getBox(cfg, boxId);
+        if (!box) throw new Error(`box ${boxId} disappeared after resume`);
       }
+
+      // Box recommends a customer daemon/SSH lane for high-frequency control.
+      // Its per-command HTTP proxy can report box_direct_failed while the VM
+      // and durable disk are healthy. Reuse the installed key and the current
+      // IPv4 endpoint after coordinator restarts and archive/resume rotations.
+      const existingSsh = boxSshTargets().get(boxId) || existingBoxSshTarget(box);
+      if (existingSsh) {
+        const probe = await boxSshExec(existingSsh, "true", 20_000);
+        if (probe.exitCode === 0) {
+          boxSshTargets().set(boxId, existingSsh);
+          const home = await boxSshExec(existingSsh, BOX_RUNTIME_HOME_COMMAND, 60_000);
+          if (home.exitCode !== 0) {
+            boxSshTargets().delete(boxId);
+            throw new Error(`Box SSH could not restore /home/ubuntu: ${(home.stderr || home.stdout).trim().slice(0, 200)}`);
+          }
+          runtimeHomeReady = true;
+          commandPlaneReady = true;
+          return;
+        }
+      }
+
       if (!commandPlaneReady) await waitForCommandPlane();
       if (!runtimeHomeReady) await ensureRuntimeHome();
+      try {
+        const target = await installBoxSshTarget(cfg, box);
+        boxSshTargets().set(boxId, target);
+      } catch (error) {
+        console.warn(`[sandbox:box] could not establish SSH control lane for ${boxId}:`, error);
+      }
     },
   };
 }
@@ -558,6 +730,7 @@ interface BoxSshKeyResponse {
 
 export interface BoxSshTarget {
   host: string;
+  port: number;
   user: string;
   privateKeyPath: string;
 }
@@ -607,28 +780,50 @@ async function ensureBoxSshKey(): Promise<{ privateKeyPath: string; publicKey: s
   }
 }
 
-/** Wake a Box and install Open Session's dedicated public key for a real
- * interactive terminal. The private key never leaves this host. */
-export async function boxSshTarget(sandboxId: string): Promise<BoxSshTarget> {
-  const cfg = boxClientConfig();
-  const box = await getBox(cfg, sandboxId);
-  if (!box || stateOf(box) === "gone") throw new Error(`box ${sandboxId} is gone`);
-  await boxDriver(cfg, sandboxId).ensureStarted();
+async function installBoxSshTarget(
+  cfg: BoxClientConfig,
+  box: BoxRecord,
+): Promise<BoxSshTarget> {
   const key = await ensureBoxSshKey();
   const response = await boxApi<BoxSshKeyResponse>(
     cfg,
     "POST",
-    `/boxes/${sandboxId}/sshkey`,
+    `/boxes/${box.id}/sshkey`,
     { key: key.publicKey },
     60_000,
   );
-  const host = response.machineIp || box.ip;
-  if (!response.success || !host) throw new Error("Box did not return an SSH address");
-  return {
-    host,
+  // The SSH endpoint can appear only after key installation. Refresh once
+  // instead of giving up and paying Box's slow per-command HTTP proxy for the
+  // whole session. Some API versions also return host:port in machineIp.
+  let endpoint = parseBoxSshEndpoint(box.sshEndpoint);
+  if (!endpoint) endpoint = parseBoxSshEndpoint((await getBox(cfg, box.id))?.sshEndpoint);
+  if (!endpoint) endpoint = boxMachineIpSshEndpoint(response.machineIp);
+  if (!response.success || !endpoint) {
+    throw new Error("Box did not return a reachable SSH endpoint");
+  }
+  const target = {
+    ...endpoint,
     user: response.sshUser || "user",
     privateKeyPath: key.privateKeyPath,
   };
+  await forgetBoxSshHostKey(target);
+  return target;
+}
+
+/** Wake a Box and install Open Session's dedicated public key for a real
+ * interactive terminal. The private key never leaves this host. */
+export async function boxSshTarget(sandboxId: string): Promise<BoxSshTarget> {
+  const cfg = boxClientConfig();
+  let box = await getBox(cfg, sandboxId);
+  if (!box || stateOf(box) === "gone") throw new Error(`box ${sandboxId} is gone`);
+  await boxDriver(cfg, sandboxId).ensureStarted();
+  box = await getBox(cfg, sandboxId);
+  if (!box) throw new Error(`box ${sandboxId} disappeared after resume`);
+  const cached = boxSshTargets().get(sandboxId);
+  if (cached) return cached;
+  const target = await installBoxSshTarget(cfg, box);
+  boxSshTargets().set(sandboxId, target);
+  return target;
 }
 
 // ── Provider ──────────────────────────────────────────────────────────────────
@@ -641,6 +836,8 @@ export class BoxProvider implements SandboxProvider {
   }
 
   private async ensureInner(spec: SandboxSessionSpec): Promise<Sandbox> {
+    const startedAt = Date.now();
+    const mark = (stage: string) => console.log(`[sandbox:box] ${spec.sessionId}: ${stage} (+${Date.now() - startedAt}ms)`);
     if (spec.attachedDirs?.length) {
       throw new Error("attached repos are not supported in remote sandboxes — detach them or use docker/local");
     }
@@ -652,14 +849,12 @@ export class BoxProvider implements SandboxProvider {
     const cwd =
       spec.cwd || prevState?.cwd || worktreePathFor(branch, repo.id, { isolated: true });
 
-    // Find by name (authoritative — set via PATCH below), else state file.
+    // The durable local mapping is written immediately after provider create,
+    // before workspace setup. Prefer its O(1) id lookup: listing up to 500
+    // account Boxes for a brand-new session added avoidable provider latency.
     let box: BoxRecord | null = null;
-    try {
-      box = await this.findBoxBySession(cfg, spec.sessionId);
-    } catch (e) {
-      console.warn(`[sandbox:box] name lookup failed (will create):`, e);
-    }
-    if (!box && prevState) {
+    let lifecycleRefreshed = false;
+    if (prevState) {
       try {
         box = await getBox(cfg, prevState.sandboxId);
       } catch {}
@@ -675,6 +870,7 @@ export class BoxProvider implements SandboxProvider {
               name: spec.sessionId,
               ttlSeconds: idleTtlSeconds(),
             });
+            lifecycleRefreshed = true;
             box = candidate;
             console.log(
               `[sandbox:box] adopted prewarmed box ${candidate.id} for ${spec.sessionId}`,
@@ -712,7 +908,7 @@ export class BoxProvider implements SandboxProvider {
       try {
         created = await create(template?.artifactId);
       } catch (error) {
-        if (!template) throw error;
+        if (!template || !isNotFound(error)) throw error;
         invalidateRemoteRepoTemplate("box", repo.id);
         console.warn(
           `[sandbox:box] repo template ${template.artifactId} is unavailable; retrying cold`,
@@ -720,26 +916,49 @@ export class BoxProvider implements SandboxProvider {
         created = await create();
       }
       box = created.box;
-      // The session name is the recovery index (the API has no labels). A
+      mark("box created");
+      // The session name is the provider-side recovery index. The durable
+      // local id written below is the hot path; the name remains useful for
+      // operator recovery when local state is lost. A
       // rename failure is non-fatal — the local state file still maps it.
       try {
         await boxApi(cfg, "PATCH", `/boxes/${box.id}`, { name: spec.sessionId });
       } catch (e) {
         console.warn(`[sandbox:box] rename(${box.id}) failed (state file still maps it):`, e);
       }
-    } else {
-      // Adopted an existing box — reset the archival countdown for this turn.
+    } else if (!lifecycleRefreshed) {
+      // Reused an existing box. Adoption already refreshed this countdown in
+      // the rename request above, so avoid a duplicate provider round trip.
       try {
         await boxApi(cfg, "PATCH", `/boxes/${box.id}`, { ttlSeconds: idleTtlSeconds() });
       } catch {}
     }
 
+    writeRemoteState({
+      sandboxId: box.id,
+      provider: this.id,
+      sessionId: spec.sessionId,
+      cwd,
+      repoId: repo.id,
+      branch,
+      createdAt: prevState?.createdAt || new Date().toISOString(),
+      lastActivityAt: new Date().toISOString(),
+      ...trust,
+    });
+
     const driver = boxDriver(cfg, box.id);
+    const resumingExistingWorkspace = Boolean(
+      prevState && prevState.sandboxId === box.id && stateOf(box) !== "running",
+    );
     await driver.ensureStarted();
+    mark("box started");
+    if (resumingExistingWorkspace) primeBoxWorkspaceAfterResume(driver, cwd);
     // Cheap dial-back probe BEFORE the expensive bootstrap — same rationale
     // as daytona: a box that can't reach our callback URL can never run.
     await assertDialbackReachable(driver, "box");
+    mark("dial-back verified");
     await bootstrapRemoteSandbox(driver, "box");
+    mark("runner ready");
     await setupRemoteWorkspace(
       driver,
       cwd,
@@ -749,6 +968,7 @@ export class BoxProvider implements SandboxProvider {
       repo.id,
       { sandboxId: box.id, provider: this.id, sessionId: spec.sessionId, repoId: repo.id, trustProfile: trust.trustProfile },
     );
+    mark("workspace ready");
     writeRemoteState({
       sandboxId: box.id,
       provider: this.id,
@@ -763,24 +983,6 @@ export class BoxProvider implements SandboxProvider {
     return this.makeHandle(cfg, box.id, spec.sessionId, cwd);
   }
 
-  /** Cursor-paginated list, matched by name client-side (no server filter). */
-  private async findBoxBySession(
-    cfg: BoxClientConfig,
-    sessionId: string,
-  ): Promise<BoxRecord | null> {
-    let cursor: string | null = null;
-    for (let page = 0; page < 5; page++) {
-      const qs = `limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
-      const res: BoxListPage = await boxApi<BoxListPage>(cfg, "GET", `/boxes?${qs}`);
-      const hit = (res.boxes || []).find(
-        (b) => b.name === sessionId && String(b.state || "") !== "error",
-      );
-      if (hit) return hit;
-      if (!res.pageInfo?.hasMore || !res.pageInfo.nextCursor) return null;
-      cursor = res.pageInfo.nextCursor;
-    }
-    return null;
-  }
 
   private makeHandle(
     cfg: BoxClientConfig,
@@ -873,7 +1075,8 @@ export class BoxProvider implements SandboxProvider {
     const cfg = boxClientConfig();
     const box = await getBox(cfg, sandboxId);
     if (!box) return null;
-    if (!LIVE_STATES.has(String(box.state || ""))) {
+    const resumed = !LIVE_STATES.has(String(box.state || ""));
+    if (resumed) {
       if (String(box.state || "") === "archived") {
         await boxApi(cfg, "POST", `/boxes/${sandboxId}/resume`, {
           noEnv: true,
@@ -882,7 +1085,9 @@ export class BoxProvider implements SandboxProvider {
       }
       await waitForLive(cfg, sandboxId, 300_000);
     }
-    await boxDriver(cfg, sandboxId).ensureStarted();
+    const driver = boxDriver(cfg, sandboxId);
+    await driver.ensureStarted();
+    if (resumed) primeBoxWorkspaceAfterResume(driver, state.cwd);
     return this.makeHandle(cfg, sandboxId, state.sessionId, state.cwd);
   }
 
@@ -911,6 +1116,17 @@ interface NamedSnapshot {
   name: string;
   status: "saving" | "ready" | "failed";
   error?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function boxSnapshotSaveIsRecoverable(
+  snapshot: Pick<NamedSnapshot, "status" | "createdAt" | "updatedAt">,
+  now = Date.now(),
+): boolean {
+  const startedAt = Date.parse(snapshot.updatedAt || snapshot.createdAt || "");
+  const age = now - startedAt;
+  return snapshot.status === "saving" && Number.isFinite(startedAt) && age >= 0 && age < 20 * 60_000;
 }
 
 function boxSnapshotName(repoId: string): string {
@@ -951,12 +1167,43 @@ async function waitForNamedSnapshot(
   throw new Error(`Box named snapshot ${name} was not ready after ${timeoutMs}ms`);
 }
 
+async function recoverBoxRepoTemplate(
+  cfg: BoxClientConfig,
+  repoId: string,
+) {
+  const stored = readRemoteRepoTemplate("box", repoId);
+  if (stored) return stored;
+  const name = boxSnapshotName(repoId);
+  let snapshot = await getNamedSnapshot(cfg, name);
+  if (snapshot && boxSnapshotSaveIsRecoverable(snapshot)) {
+    await waitForNamedSnapshot(cfg, name);
+    snapshot = await getNamedSnapshot(cfg, name);
+  }
+  if (snapshot?.status !== "ready") return null;
+  writeRemoteRepoTemplate("box", repoId, name);
+  console.log(`[sandbox:box] recovered completed repo template ${name}`);
+  return readRemoteRepoTemplate("box", repoId);
+}
+
 async function deleteNamedSnapshot(cfg: BoxClientConfig, name: string): Promise<void> {
   try {
     await boxApi(cfg, "DELETE", `/named-snapshots/${encodeURIComponent(name)}`);
   } catch (error) {
     if (!isNotFound(error)) throw error;
   }
+}
+
+async function waitForNamedSnapshotGone(
+  cfg: BoxClientConfig,
+  name: string,
+  timeoutMs = 2 * 60_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!(await getNamedSnapshot(cfg, name))) return;
+    await sleep(2_000);
+  }
+  throw new Error(`Box named snapshot ${name} was not deleted after ${timeoutMs}ms`);
 }
 
 async function stopBox(cfg: BoxClientConfig, boxId: string): Promise<void> {
@@ -987,7 +1234,7 @@ export const boxPrewarmAdapter: PrewarmAdapter = {
     const key = labels[PREWARM_KEY_LABEL] || "";
     const repoId = key.startsWith("box:") ? key.slice("box:".length) : "";
     if (!repoId) throw new Error(`invalid Box prewarm key: ${key || "(missing)"}`);
-    const template = readRemoteRepoTemplate("box", repoId);
+    const template = await recoverBoxRepoTemplate(cfg, repoId);
     const type = boxMachineType(opts.resources);
     const create = (from?: string) =>
       boxApi<{ box: BoxRecord }>(
@@ -1007,7 +1254,7 @@ export const boxPrewarmAdapter: PrewarmAdapter = {
     try {
       response = await create(template?.artifactId);
     } catch (error) {
-      if (!template) throw error;
+      if (!template || !isNotFound(error)) throw error;
       invalidateRemoteRepoTemplate("box", repoId);
       restoredFromTemplate = false;
       response = await create();
@@ -1033,7 +1280,26 @@ export const boxPrewarmAdapter: PrewarmAdapter = {
     const driver = boxDriver(cfg, sandboxId);
     await sealRemoteRepoTemplate(driver, "box", repo);
     const existing = await getNamedSnapshot(cfg, name);
-    if (existing?.status === "saving") await waitForNamedSnapshot(cfg, name);
+    if (existing && boxSnapshotSaveIsRecoverable(existing)) {
+      // Snapshot publication survives a coordinator restart. Its deterministic
+      // name includes the runner signature, so finishing this recent in-flight
+      // save is the exact artifact the restarted prewarm needs. A provider save
+      // stuck longer than 20 minutes is deleted and rebuilt below instead of
+      // blocking every rebuild on the same dead operation forever.
+      await waitForNamedSnapshot(cfg, name);
+      writeRemoteRepoTemplate("box", repo.id, name);
+      console.log(`[sandbox:box] recovered in-flight post-setup repo template ${name}`);
+      return;
+    }
+    // Box already captures a final filesystem snapshot while stopping. Saving
+    // a named template from that archived state reuses the completed capture;
+    // saving from a running multi-gigabyte tella-fusion Box stayed in `saving`
+    // for hours and was repeatedly interrupted by coordinator restarts.
+    await stopBox(cfg, sandboxId);
+    if (existing) {
+      await deleteNamedSnapshot(cfg, name);
+      await waitForNamedSnapshotGone(cfg, name);
+    }
     await boxApi(cfg, "POST", "/named-snapshots", { boxId: sandboxId, name }, 60_000);
     await waitForNamedSnapshot(cfg, name);
     writeRemoteRepoTemplate("box", repo.id, name);
@@ -1051,6 +1317,12 @@ export const boxPrewarmAdapter: PrewarmAdapter = {
       console.warn(`[sandbox:box] prewarm archive(${sandboxId}):`, error);
       throw error;
     }
+  },
+
+  async keepAlive(sandboxId, opts) {
+    await boxApi(boxClientConfig(), "PATCH", `/boxes/${sandboxId}`, {
+      ttlSeconds: Math.min(30 * 24 * 60 * 60, opts.autoStopMinutes * 60),
+    });
   },
 
   async listPrewarmed() {
@@ -1079,6 +1351,16 @@ export const boxPrewarmAdapter: PrewarmAdapter = {
     return out;
   },
 };
+
+async function assertBoxRuntimeHome(driver: RemoteDriver): Promise<void> {
+  const probe = await driver.exec(
+    "test ! -L /home/ubuntu && mountpoint -q /home/ubuntu && test /home/ubuntu -ef /home/user && " +
+      "temporary=$(mktemp -d) && case $temporary in /home/ubuntu/.tmp/*) rmdir $temporary ;; *) exit 1 ;; esac",
+  );
+  if (probe.exitCode !== 0) {
+    throw new Error("Box did not preserve /home/ubuntu as the durable canonical home");
+  }
+}
 
 /** Workspace qualification: credentials/quota, exec semantics, file upload,
  * private preview registration, stop/resume persistence, and a distinct
@@ -1117,6 +1399,7 @@ export async function qualifyBoxConnection(
     await waitForLive(cfg, created.box.id, 300_000);
     let driver = boxDriver(cfg, created.box.id);
     await driver.ensureStarted();
+    await assertBoxRuntimeHome(driver);
     progress("Checking commands and private ingress", 45);
     await assertDialbackReachable(driver, "box-qualification");
     const semantics = await driver.exec(
@@ -1144,6 +1427,7 @@ export async function qualifyBoxConnection(
     await waitForLive(cfg, created.box.id, 300_000);
     driver = boxDriver(cfg, created.box.id);
     await driver.ensureStarted();
+    await assertBoxRuntimeHome(driver);
     const persisted = await driver.exec(
       "test \"$(cat /home/ubuntu/.opensession-qualification)\" = opensession-qualified",
     );
@@ -1172,6 +1456,7 @@ export async function qualifyBoxConnection(
     await waitForLive(cfg, restored.box.id, 300_000);
     const restoredDriver = boxDriver(cfg, restored.box.id);
     await restoredDriver.ensureStarted();
+    await assertBoxRuntimeHome(restoredDriver);
     const restoredProbe = await restoredDriver.exec(
       "test \"$(cat /home/ubuntu/.opensession-qualification)\" = opensession-qualified",
     );

@@ -59,7 +59,7 @@ describe("transcript snapshots", () => {
       title: "Earlier investigation",
       mode: "scratch",
       workspaceId: "ws-snap-attached",
-      opencodeSessionId: "ses_snap_attached",
+      piSessionId: "ses_snap_attached",
     });
     h.writeEngineTranscript("ses_snap_attached", [
         {
@@ -202,25 +202,25 @@ describe("transcript snapshots", () => {
     });
 
     // The human switches models to the other engine, then keeps going.
-    h.patchSession(sid, { model: "codex/openai/gpt-5.6-sol" });
+    h.patchSession(sid, { model: "pi/openai/gpt-5.6-sol" });
     await h.prompt({
       sessionId: sid,
       content: "keep going",
       user: "SnapshotOwner",
       collect: calls,
-      turns: [{ kind: "clean", provider: "codex", engineSessionId: "codex-thread-1", text: ["Continuing."] }],
+      turns: [{ kind: "clean", provider: "pi", engineSessionId: "pi-session-1", text: ["Continuing."] }],
     });
 
     expect(calls).toHaveLength(2);
-    // Turn two starts a fresh engine session and is handed the prior one.
-    expect(calls[1].opts.sessionId).toBeUndefined();
+    // Pi is the only engine, so the second turn resumes the same engine session.
+    expect(calls[1].opts.sessionId).toBe("11111111-2222-4333-8444-555555555555");
     expect(calls[1].prompt).toContain('<opensession:context source="handoff">');
     h.snapshot("engine-switch-handoff", { sessionId: sid, calls });
   });
 
   // Memory scopes are injected into the run's session note (repo / user / team)
   // and logged into the transcript as a context-injection entry.
-  test("memory scopes: injected into the session note", async () => {
+  test("memory scopes: retrieved into the turn prompt", async () => {
     if (!h.ready) return;
     const sid = "bks-snap-memory";
     h.writeSession(sid, {
@@ -251,7 +251,7 @@ describe("transcript snapshots", () => {
       async () => {
         await h.prompt({
           sessionId: sid,
-          content: "what do you already know here?",
+          content: "How do this fixture repo's tests run?",
           user: "SnapshotUser",
           collect: calls,
           turns: [{ kind: "clean", engineSessionId: "ses_snap_memory", text: ["Three standing facts."] }],
@@ -259,7 +259,7 @@ describe("transcript snapshots", () => {
       },
     );
 
-    expect(calls[0].opts.reposNote).toContain("mem-repo-1");
+    expect(calls[0].opts.prompt).toContain("tests only run from its own worktree");
     h.snapshot("memory-scope-injection", { sessionId: sid, calls });
   });
 });

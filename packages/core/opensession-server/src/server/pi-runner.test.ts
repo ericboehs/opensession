@@ -3,9 +3,9 @@
  * deny-by-default run gate, the provider-aware usage-limit classifier, the
  * local-tool path containment guard (the in-process engine's security
  * invariant), the custom bash tool's exit-gated completion (wedge
- * regression), and the pi/openai account-wiring failure paths (isolated
- * codex store — every case fails before the SDK import or any network use).
- * The engine turn itself is covered by the smoke harness
+ * regression), and pi/openai account wiring against an isolated Codex store
+ * plus a fake SDK for the in-band terminal path. No test reaches the network.
+ * A real engine turn is covered by the smoke harness
  * (POST /api/admin/pi-smoke) against a live bridge, not unit tests.
  */
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
@@ -20,7 +20,9 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 import {
+  acceptSteerOnce,
   assertContainedPiPath,
+  assistantRenderableBlockCount,
   buildPiThirdPartyProviderPlan,
   isPiSessionBusy,
   isPiUsageLimitShape,
@@ -28,17 +30,77 @@ import {
   makeGuardedToolOps,
   makePiBashTool,
   parsePiModel,
+  PI_STATE_DIR,
   piDialOracleAgent,
   piGateReason,
+  piStreamEventBlocksAccountRotation,
   piToolNames,
   resolvePiPresetWiring,
   resolvePiRoutedModel,
   resolvePiDialModel,
+  retractPendingSteer,
   runPi,
   runPiSmokeTurn,
 } from "./pi-runner";
+import type { PiBashAuditEvent } from "./pi-runner";
 import { __setCodexAccountsPathForTest } from "./codex-accounts";
 import type { ResolvedWorkspaceModelPreset } from "./workspace-model-presets";
+
+describe("acceptSteerOnce", () => {
+  test("records only successful acceptance and deduplicates retries", () => {
+    const accepted = new Set<string>();
+    expect(() =>
+      acceptSteerOnce(accepted, "one", () => {
+        throw new Error("not accepted");
+      }),
+    ).toThrow("not accepted");
+    expect(accepted.has("one")).toBe(false);
+    let calls = 0;
+    expect(acceptSteerOnce(accepted, "one", () => { calls += 1; })).toBe(true);
+    expect(acceptSteerOnce(accepted, "one", () => { calls += 1; })).toBe(true);
+    expect(calls).toBe(1);
+  });
+});
+
+describe("retractPendingSteer", () => {
+  test("retracts an exact duplicate id and replays the remaining payloads in order", () => {
+    const pending = [
+      { steerId: "first", text: "same", images: ["first-image"] },
+      { steerId: "second", text: "same", images: ["second-image"] },
+      { steerId: "third", text: "after" },
+    ];
+    let replayed: readonly typeof pending[number][] = [];
+
+    expect(retractPendingSteer(pending, "second", (remaining) => {
+      replayed = [...remaining];
+    })).toBe(true);
+    expect(pending.map((item) => item.steerId)).toEqual(["first", "third"]);
+    expect(replayed).toEqual(pending);
+    expect(retractPendingSteer(pending, "missing", () => {})).toBe(false);
+  });
+});
+
+describe("assistantRenderableBlockCount (empty-completion guard)", () => {
+  test("counts text and tool-call blocks, ignoring thinking-only content", () => {
+    expect(
+      assistantRenderableBlockCount([
+        { type: "thinking", thinking: "hmm" },
+        { type: "text", text: "Done." },
+        { type: "toolCall", id: "t1", name: "bash" },
+      ]),
+    ).toBe(2);
+  });
+
+  test("zero for the empty-completion shapes providers emit", () => {
+    // The exact os-01a02486 shape: content: [] with stopReason "stop".
+    expect(assistantRenderableBlockCount([])).toBe(0);
+    expect(assistantRenderableBlockCount(undefined)).toBe(0);
+    // Whitespace-only text and thinking-only replies are equally invisible.
+    expect(assistantRenderableBlockCount([{ type: "text", text: "  \n" }])).toBe(0);
+    expect(assistantRenderableBlockCount([{ type: "thinking", thinking: "..." }])).toBe(0);
+    expect(assistantRenderableBlockCount([null, 42, {}])).toBe(0);
+  });
+});
 
 describe("parsePiModel", () => {
   test("splits pi/<provider>/<model>", () => {
@@ -56,7 +118,7 @@ describe("parsePiModel", () => {
   });
 
   test("rejects non-pi ids and malformed remainders", () => {
-    expect(parsePiModel("opencode/anthropic/claude-opus-5")).toBeNull();
+    expect(parsePiModel("anthropic/claude-opus-5")).toBeNull();
     expect(parsePiModel("claude-opus-5")).toBeNull();
     expect(parsePiModel("pi/anthropic")).toBeNull();
     expect(parsePiModel("pi/anthropic/")).toBeNull();
@@ -281,6 +343,38 @@ describe("buildPiThirdPartyProviderPlan", () => {
     expect(plan.config).toEqual({ apiKey: "csk-test" });
   });
 
+  test("supplements OpenRouter with Ox Alpha without replacing known builtins", () => {
+    const ox = buildPiThirdPartyProviderPlan({
+      providerID: "openrouter",
+      modelID: "stealth/ox-alpha",
+      apiKey: "sk-or-test",
+      builtinModelIds: ["anthropic/claude-sonnet-4"],
+    });
+    if ("error" in ox) throw new Error(ox.error);
+    expect(ox.config).toMatchObject({
+      apiKey: "sk-or-test",
+      api: "openai-completions",
+      baseUrl: "https://openrouter.ai/api/v1",
+    });
+    expect(ox.config.models).toEqual([
+      expect.objectContaining({
+        id: "stealth/ox-alpha",
+        input: ["text", "image"],
+        contextWindow: 1_048_576,
+        maxTokens: 131_072,
+      }),
+    ]);
+
+    const builtin = buildPiThirdPartyProviderPlan({
+      providerID: "openrouter",
+      modelID: "anthropic/claude-sonnet-4",
+      apiKey: "sk-or-test",
+      builtinModelIds: ["anthropic/claude-sonnet-4"],
+    });
+    if ("error" in builtin) throw new Error(builtin.error);
+    expect(builtin.config.models).toBeUndefined();
+  });
+
   test("a model newer than both catalogs gets a conservative fallback entry", () => {
     const plan = buildPiThirdPartyProviderPlan({
       providerID: "cerebras",
@@ -385,6 +479,12 @@ describe("isPiUsageLimitShape (provider-aware)", () => {
     expect(isPiUsageLimitShape("upstream returned 529", "anthropic")).toBe(true);
     expect(isPiUsageLimitShape("overloaded_error", "anthropic")).toBe(true);
     expect(isPiUsageLimitShape("no designated bridge account", "anthropic")).toBe(true);
+    expect(
+      isPiUsageLimitShape(
+        "Your organization has disabled Claude subscription access for Claude Code",
+        "anthropic",
+      ),
+    ).toBe(true);
     expect(isPiUsageLimitShape("ordinary tool failure", "anthropic")).toBe(false);
   });
 
@@ -410,10 +510,25 @@ describe("isPiUsageLimitShape (provider-aware)", () => {
   });
 });
 
-describe("runPi pi/openai account wiring (no engine, no network)", () => {
-  // Enabled pi config + an isolated codex store: every path exercised here
-  // must fail BEFORE the SDK import — a throw any later would mean a live
-  // engine (or chatgpt.com) was nearly reached from a unit test.
+describe("pi/openai in-band account rotation gate", () => {
+  test("zero-token usage bookkeeping does not strand the rest of the account pool", () => {
+    // Pi emits init → usage_snapshot(0) → stopReason:error for a provider
+    // usage limit. The terminal is handled after the queue drains, so the
+    // snapshot must not masquerade as assistant output and block rotation.
+    expect(piStreamEventBlocksAccountRotation({ type: "init" })).toBe(false);
+    expect(piStreamEventBlocksAccountRotation({ type: "usage_snapshot" })).toBe(false);
+
+    // Real output and durable operational notices still make replay unsafe.
+    expect(piStreamEventBlocksAccountRotation({ type: "text_chunk" })).toBe(true);
+    expect(piStreamEventBlocksAccountRotation({ type: "tool_use" })).toBe(true);
+    expect(piStreamEventBlocksAccountRotation({ type: "tool_result" })).toBe(true);
+    expect(piStreamEventBlocksAccountRotation({ type: "runner_notice" })).toBe(true);
+  });
+});
+
+describe("runPi pi/openai account wiring (fake engine, no network)", () => {
+  // Enabled Pi config + an isolated Codex store. Most tests fail before SDK
+  // import; the in-band terminal regression installs a fake SDK explicitly.
   const dir = mkdtempSync(join(tmpdir(), "pi-openai-"));
   const cfgPath = join(dir, "pi.json");
   const storePath = join(dir, "codex-accounts.json");
@@ -456,13 +571,13 @@ describe("runPi pi/openai account wiring (no engine, no network)", () => {
     const events = await collect("pi/openai/gpt-5.6-sol");
     const err = events.find((e) => e.type === "error")!;
     expect(err).toBeDefined();
-    expect(String(err.content)).toContain("no codex accounts configured");
+    expect(String(err.content)).toContain("no ChatGPT subscription or API-key accounts are configured");
     // The pre-init throw's text never matches the classifier — the catch must
     // honor the thrown error's usageLimitExhausted property.
     expect(err.usageLimitExhausted).toBe(true);
   });
 
-  test("api_key codex accounts are refused with a clear, unflagged error", async () => {
+  test("a pinned API-key account uses Pi's standard OpenAI runtime", async () => {
     writeFileSync(
       storePath,
       JSON.stringify({
@@ -471,89 +586,89 @@ describe("runPi pi/openai account wiring (no engine, no network)", () => {
             id: "k1",
             name: "org-key",
             kind: "api_key",
-            value: "sk-test",
+            value: "sk-test-remote-runtime",
             createdAt: new Date().toISOString(),
           },
         ],
-      })
+      }),
     );
-    const events = await collect("pi/openai/gpt-5.6-sol");
-    const err = events.find((e) => e.type === "error")!;
-    expect(err).toBeDefined();
-    expect(String(err.content)).toMatch(/only API-key codex accounts are currently eligible/);
-    // Wrong account kind is a configuration wall, not an exhausted pool — it
-    // must not trigger the fallback walk.
-    expect(err.usageLimitExhausted).toBeUndefined();
-  });
 
-  test("mixed pool: an api_key pick is excluded and the home account is retried", async () => {
-    // Two accounts; whichever the HRW hash ranks first, the run must end up
-    // on the home account's path — never the api_key configuration wall.
-    // The home account here has no CODEX_HOME auth.json, so reaching
-    // buildSeededOpenaiAuth's distinct error IS the proof the re-pick landed
-    // on it.
-    const codexHome = join(dir, "codex-home-mixed");
-    mkdirSync(codexHome, { recursive: true });
-    writeFileSync(
-      storePath,
-      JSON.stringify({
-        accounts: [
-          {
-            id: "k1",
-            name: "org-key",
-            kind: "api_key",
-            value: "sk-test",
-            createdAt: new Date().toISOString(),
+    const runtimeKeys: Array<[string, string]> = [];
+    const fakeSdk = {
+      ModelRuntime: {
+        create: async () => ({
+          getModel: (_provider: string, id: string) => ({ id, name: id }),
+          registerProvider: () => {},
+          setRuntimeApiKey: async (provider: string, key: string) => {
+            runtimeKeys.push([provider, key]);
           },
-          {
-            id: "h1",
-            name: "home-acct",
-            kind: "home",
-            value: codexHome,
-            createdAt: new Date().toISOString(),
+        }),
+      },
+      SettingsManager: { inMemory: () => ({}) },
+      DefaultResourceLoader: class {
+        async reload() {}
+        getSkills() {
+          return { skills: [] };
+        }
+      },
+      SessionManager: { create: () => ({}), open: () => ({}) },
+      createAgentSession: async () => {
+        let listener: (event: any) => void = () => {};
+        const session = {
+          sessionId: "fake-api-key",
+          pendingMessageCount: 0,
+          agent: { continue: async () => {} },
+          getActiveToolNames: () => [],
+          setSteeringMode: () => {},
+          subscribe: (fn: (event: any) => void) => {
+            listener = fn;
+            return () => {};
           },
-        ],
-      })
-    );
-    const events = await collect("pi/openai/gpt-5.6-sol");
-    const err = events.find((e) => e.type === "error")!;
-    expect(err).toBeDefined();
-    // The home account's failure mode (unreadable seed), not the api_key wall.
-    expect(String(err.content)).not.toMatch(/API-key/);
-    expect(err.usageLimitExhausted).toBe(true);
-  });
+          prompt: async () => {
+            listener({
+              type: "message_end",
+              message: {
+                role: "assistant",
+                stopReason: "stop",
+                usage: {
+                  input: 1,
+                  output: 1,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                  cost: { total: 0 },
+                },
+                content: [{ type: "text", text: "ok" }],
+                timestamp: Date.now(),
+              },
+            });
+            listener({ type: "agent_settled" });
+          },
+          getLastAssistantText: () => "ok",
+          steer: async () => {},
+          abort: async () => {},
+          abortRetry: () => {},
+          dispose: () => {},
+        };
+        return { session };
+      },
+    };
 
-  test("explicitly pinned api_key account errors clearly instead of re-picking", async () => {
-    const codexHome = join(dir, "codex-home-pin");
-    mkdirSync(codexHome, { recursive: true });
-    writeFileSync(
-      storePath,
-      JSON.stringify({
-        accounts: [
-          {
-            id: "k1",
-            name: "org-key",
-            kind: "api_key",
-            value: "sk-test",
-            createdAt: new Date().toISOString(),
-          },
-          {
-            id: "h1",
-            name: "home-acct",
-            kind: "home",
-            value: codexHome,
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      })
-    );
-    const events = await collect("pi/openai/gpt-5.6-sol", { accountId: "k1" });
-    const err = events.find((e) => e.type === "error")!;
-    expect(err).toBeDefined();
-    // A pin is an explicit choice — surface the configuration error, never
-    // silently hop to another account.
-    expect(String(err.content)).toMatch(/pinned codex account .* is an API-key account/);
-    expect(err.usageLimitExhausted).toBeUndefined();
+    const sdkState = globalThis as any;
+    const previousSdkPromise = sdkState.__piSdkPromise;
+    sdkState.__piSdkPromise = Promise.resolve(fakeSdk);
+    try {
+      const events = await collect("pi/openai/gpt-5.6-sol", {
+        accountId: "k1",
+        accountStrict: true,
+        disableLocalWorkspaceTools: true,
+      });
+      expect(runtimeKeys).toEqual([["openai", "sk-test-remote-runtime"]]);
+      const errors = events.filter((event) => event.type === "error");
+      expect(errors, JSON.stringify(errors)).toHaveLength(0);
+      expect(events.find((event) => event.type === "done")).toMatchObject({ result: "ok" });
+    } finally {
+      sdkState.__piSdkPromise = previousSdkPromise;
+    }
   });
 
   test("expired ChatGPT access token → flagged terminal (dry-pool parity)", async () => {
@@ -605,7 +720,7 @@ describe("runPi pi/openai account wiring (no engine, no network)", () => {
     return { id, name: id, kind: "home", value: home, createdAt: new Date().toISOString() };
   };
 
-  test("a usage-limited codex account rotates to the next one inside the same turn", async () => {
+  test("a pre-init usage failure rotates to the next account inside the same turn", async () => {
     const ids = ["rot-a", "rot-b", "rot-c", "rot-d", "rot-e", "rot-f"];
     writeFileSync(
       storePath,
@@ -631,6 +746,151 @@ describe("runPi pi/openai account wiring (no engine, no network)", () => {
     expect(switches).toHaveLength(5);
     expect(String(errors[0].content)).not.toContain("rot-a");
     expect(errors[0].usageLimitExhausted).toBe(true);
+  });
+
+  test("an in-band zero-usage limit rotates before model fallback", async () => {
+    const servingHomeAccount = (id: string, providerAccountId: string) => {
+      const home = join(dir, `codex-home-${id}`);
+      mkdirSync(home, { recursive: true });
+      const payload = Buffer.from(
+        JSON.stringify({ exp: Math.floor((Date.now() + 60 * 60_000) / 1000) })
+      ).toString("base64url");
+      writeFileSync(
+        join(home, "auth.json"),
+        JSON.stringify({
+          tokens: {
+            access_token: `h.${payload}.s`,
+            account_id: providerAccountId,
+          },
+        })
+      );
+      return { id, name: id, kind: "home", value: home, createdAt: new Date().toISOString() };
+    };
+
+    writeFileSync(
+      storePath,
+      JSON.stringify({
+        accounts: [
+          servingHomeAccount("live-a", "provider-a"),
+          {
+            id: "live-b",
+            name: "live-b",
+            kind: "api_key",
+            value: "sk-provider-b",
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      })
+    );
+
+    const usedProviderAccounts: string[] = [];
+    const transportSettings: Array<Record<string, unknown>> = [];
+    const fakeSdk = {
+      ModelRuntime: {
+        create: async ({ credentials }: any) => {
+          const auth = await credentials.read("openai-codex");
+          const runtime = {
+            providerAccountId: String(auth?.accountId || ""),
+            getModel: (_provider: string, id: string) => ({ id, name: id }),
+            registerProvider: () => {},
+            setRuntimeApiKey: async (provider: string, key: string) => {
+              if (provider === "openai" && key === "sk-provider-b") {
+                runtime.providerAccountId = "provider-b";
+              }
+            },
+          };
+          return runtime;
+        },
+      },
+      SettingsManager: {
+        inMemory: (settings: Record<string, unknown>) => {
+          transportSettings.push(settings);
+          return {};
+        },
+      },
+      DefaultResourceLoader: class {
+        async reload() {}
+        getSkills() {
+          return { skills: [] };
+        }
+      },
+      SessionManager: {
+        create: () => ({}),
+        open: () => ({}),
+      },
+      createAgentSession: async ({ modelRuntime }: any) => {
+        const providerAccountId = String(modelRuntime.providerAccountId);
+        usedProviderAccounts.push(providerAccountId);
+        const limited = providerAccountId === "provider-a";
+        let listener: (event: any) => void = () => {};
+        const session = {
+          sessionId: `fake-${providerAccountId}`,
+          pendingMessageCount: 0,
+          agent: { continue: async () => {} },
+          setSteeringMode: () => {},
+          subscribe: (fn: (event: any) => void) => {
+            listener = fn;
+            return () => {};
+          },
+          prompt: async () => {
+            listener({
+              type: "message_end",
+              message: {
+                role: "assistant",
+                stopReason: limited ? "error" : "stop",
+                errorMessage: limited
+                  ? "Codex error: The usage limit has been reached"
+                  : undefined,
+                usage: {
+                  input: limited ? 0 : 1,
+                  output: limited ? 0 : 1,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                  cost: { total: 0 },
+                },
+                content: limited ? [] : [{ type: "text", text: "ok" }],
+                timestamp: Date.now(),
+              },
+            });
+            listener({ type: "agent_settled" });
+          },
+          getLastAssistantText: () => (limited ? "" : "ok"),
+          steer: async () => {},
+          abort: async () => {},
+          abortRetry: () => {},
+          dispose: () => {},
+        };
+        return { session };
+      },
+    };
+
+    const sdkState = globalThis as any;
+    const previousSdkPromise = sdkState.__piSdkPromise;
+    const sessionKey = `pi-inband-limit-${crypto.randomUUID()}`;
+    sdkState.__piSdkPromise = Promise.resolve(fakeSdk);
+    const warnings = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const events = await collect("pi/openai/gpt-5.6-sol", {
+        accountId: "live-a",
+        sessionId: sessionKey,
+        disableLocalWorkspaceTools: true,
+      });
+      expect(usedProviderAccounts).toEqual(["provider-a", "provider-b"]);
+      // Subscription traffic skips the experimental ChatGPT WebSocket, whose
+      // mid-stream 1006 failures otherwise force a visible whole-step retry.
+      // The API-key rotation still uses Pi's ordinary provider defaults.
+      expect(transportSettings).toEqual([{ transport: "sse" }, {}]);
+      expect(events.filter((event) => event.type === "init")).toHaveLength(2);
+      expect(events.filter((event) => event.type === "error")).toHaveLength(0);
+      expect(events.find((event) => event.type === "done")).toMatchObject({
+        model: "pi/openai/gpt-5.6-sol",
+        result: "ok",
+      });
+    } finally {
+      warnings.mockRestore();
+      sdkState.__piSdkPromise = previousSdkPromise;
+      rmSync(join(PI_STATE_DIR, "sessions", sessionKey), { recursive: true, force: true });
+    }
   });
 
   test("a strict pin refuses instead of rotating off the pinned account", async () => {
@@ -811,6 +1071,79 @@ describe("makePiBashTool exit-gated completion", () => {
       (tool as any).execute("t3", { command: "sleep 60" }, ac.signal, undefined)
     ).rejects.toThrow(/aborted/i);
     expect(Date.now() - started).toBeLessThan(8_000);
+  });
+
+  test("emits paired, redacted audit events for a successful command", async () => {
+    const events: PiBashAuditEvent[] = [];
+    const auditedTool = makePiBashTool({
+      cwd: tmpdir(),
+      env,
+      gated: false,
+      unattended: false,
+      onAudit: (event) => events.push(event),
+    });
+    const command = "sleep 0.01; printf 'token=top-secret'";
+    await (auditedTool as any).execute("audit-ok", { command }, undefined, undefined);
+
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({
+      phase: "start",
+      command_kind: "sleep",
+      sleep_calls: 1,
+      sleep_seconds: 0.01,
+      timeout_s: 120,
+    });
+    expect(events[1]).toMatchObject({
+      phase: "finish",
+      outcome: "ok",
+      exit_code: 0,
+      timed_out: false,
+      cancelled: false,
+    });
+    expect(events[0]?.command_sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(events[0]?.command_sha256).toBe(events[1]?.command_sha256);
+    expect(events[1]?.duration_ms).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify(events)).not.toContain("top-secret");
+  });
+
+  test("records timeout and cancellation outcomes", async () => {
+    const timeoutEvents: PiBashAuditEvent[] = [];
+    const timeoutTool = makePiBashTool({
+      cwd: tmpdir(),
+      env,
+      gated: false,
+      unattended: false,
+      onAudit: (event) => timeoutEvents.push(event),
+    });
+    await expect(
+      (timeoutTool as any).execute("audit-timeout", { command: "sleep 60", timeout: 0.1 })
+    ).rejects.toThrow(/timed out/);
+    expect(timeoutEvents.at(-1)).toMatchObject({
+      phase: "finish",
+      outcome: "timed_out",
+      timed_out: true,
+      cancelled: false,
+    });
+
+    const cancelEvents: PiBashAuditEvent[] = [];
+    const cancelTool = makePiBashTool({
+      cwd: tmpdir(),
+      env,
+      gated: false,
+      unattended: false,
+      onAudit: (event) => cancelEvents.push(event),
+    });
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 100);
+    await expect(
+      (cancelTool as any).execute("audit-cancel", { command: "sleep 60" }, ac.signal)
+    ).rejects.toThrow(/aborted/i);
+    expect(cancelEvents.at(-1)).toMatchObject({
+      phase: "finish",
+      outcome: "cancelled",
+      timed_out: false,
+      cancelled: true,
+    });
   });
 });
 

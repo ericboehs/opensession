@@ -15,11 +15,24 @@ export interface WorkspaceMediaItem {
 	at: string;
 }
 
+export interface WorkspaceCommit {
+	repo: string;
+	sha: string;
+	title: string;
+	url?: string;
+	committedAt: string;
+	filesChanged: number;
+	additions: number;
+	deletions: number;
+}
+
 export interface WorkspaceOverview {
 	prompt: { content: string; sessionId: string; at: string } | null;
 	/** Latest assistant text across the workspace's sessions. Optional because a
 	 *  server that hasn't restarted onto the new overview code omits the key. */
 	lastMessage?: { content: string; sessionId: string; at: string } | null;
+	/** Commits attributed to this workspace. Optional for older servers. */
+	commits?: WorkspaceCommit[];
 	media: WorkspaceMediaItem[];
 }
 
@@ -61,7 +74,7 @@ export async function fetchWorkspaces(): Promise<Workspace[]> {
 		const data = await request<{
 			workspaces?: Workspace[];
 			defaultModelSettings?: Workspace["modelSettings"];
-		}>("/workspaces");
+		}>("/workspaces?active=1");
 		if (data?.defaultModelSettings) defaultModelSettings = data.defaultModelSettings;
 		return data?.workspaces ?? [];
 	} catch (e) {

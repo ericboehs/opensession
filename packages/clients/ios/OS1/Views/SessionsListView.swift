@@ -13,44 +13,16 @@ private let sidebarMargin: CGFloat = 20
 private let sidebarMargin: CGFloat = 16
 #endif
 
-/// Sessions list, mirroring the web sidebar's organization: group by Status
-/// (In progress / Needs input / In review / Done / Backlog), by Repo, by Repo
-/// and Status, by Repo and Inbox (each repo's rows banded by activity, the
-/// web's Inbox mode nested per repo), by Inbox (one flat activity-banded list
-/// across every repo), or a flat Recent list — plus a repo filter, sort, and
-/// search.
-/// The grouping/filter choices persist like the web's filter popover does.
+/// Sessions list, organized the way the web sidebar is.
+///
+/// Inbox keeps work in stable Active and Snoozed sections. Activity restores
+/// the date bands, and Status is the dynamic lane view (`SidebarGroupBy`). A
+/// separate project switch repeats any of those sections per project. The list
+/// is then narrowed to a project and a person and searched. Every choice persists,
+/// under the same
+/// values the web's filter popover stores, so one account reads the same list
+/// in both places. The controls live in `SessionsFilterPanel`.
 struct SessionsListView: View {
-    enum GroupBy: String, CaseIterable {
-        case status, repo
-        case repoStatus = "repo-status"
-        case repoInbox = "repo-inbox"
-        case inbox
-        case recent
-
-        var label: String {
-            switch self {
-            case .status: "Status"
-            case .repo: "Repo"
-            case .repoStatus: "Repo and status"
-            case .repoInbox: "Repo and inbox"
-            case .inbox: "Inbox"
-            case .recent: "Recently active"
-            }
-        }
-    }
-
-    enum SortBy: String, CaseIterable {
-        case updated, created
-
-        var label: String {
-            switch self {
-            case .updated: "Last activity"
-            case .created: "Created"
-            }
-        }
-    }
-
     @State private var viewModel = SessionsListViewModel()
     @State private var showSettings = false
     @State private var settingsAutomationId: String?
@@ -60,6 +32,19 @@ struct SessionsListView: View {
     @State private var showSupport = false
     @State private var supportQueue = SupportQueueModel()
     #if os(iOS)
+    /// The tools that are lists: what the team shipped and your own tasks.
+    /// Each is pushed onto this stack like a ticket is, for the same reason:
+    /// it is a place you go from the list, not a window over it.
+    @State private var showFeed = false
+    @State private var showTasks = false
+    /// Open tasks, for the row's own number. Cheap to ask for because the
+    /// server reads one small file.
+    @State private var openTaskCount = 0
+    /// A session named by id from one of those screens, parked until the
+    /// screen has closed. They hand back ids rather than sessions because most
+    /// of what they can open is archived, and an archived session is not in
+    /// the live list at all.
+    @State private var pendingToolSessionOpen: String?
     /// The published reports, pushed onto this stack like a ticket is: a
     /// place you go from the list, not a window over it.
     @State private var showReports = false
@@ -81,6 +66,10 @@ struct SessionsListView: View {
     /// equivalent: the open session stays selected in the sidebar.
     @State private var lastOpenedSessionID: String?
     @State private var searchText = ""
+    /// Full-text hits from the same transcript search the PWA uses. Kept by
+    /// session id so workspace rows can match any conversation behind them.
+    @State private var transcriptSnippets: [String: String] = [:]
+    @State private var transcriptSearchRevision = 0
     /// Non-nil opens the new-session sheet; carries the per-repo "+" preset.
     @State private var newSessionRequest: NewSessionRequest?
     /// Parked "Start an Agent" requests (`StartAgentIntent`, widgets, Siri).
@@ -101,9 +90,13 @@ struct SessionsListView: View {
     /// Loaded transcripts for recently visited mobile conversations. The
     /// cache is bounded and cached view models disconnect while off-screen.
     @State private var sessionPageCache = SessionViewModelCache()
-    /// Surfaced when a background session create fails after the sheet closed.
+    /// Surfaced when a file handoff or background session create fails.
     @State private var createError: String?
+    @State private var createErrorTitle = "Couldn't start session"
     @State private var showArchived = false
+    /// The view controls (`SessionsFilterPanel`): a sheet on the phone, a
+    /// popover on the Mac.
+    @State private var showFilterPanel = false
     /// An archived row opens only after its sheet has dismissed; pushing while
     /// the sheet is still closing can drop the navigation transition on iOS.
     @State private var pendingArchivedOpen: Session?
@@ -142,23 +135,41 @@ struct SessionsListView: View {
         var workspaceId: String?
         /// A sessionless workspace's parked prompt, reopened in New Session.
         var draft: OS1API.WorkspaceDraft?
+        /// Files iOS opened with this app. Images keep the vision channel;
+        /// everything else stages through `/api/upload` in the composer.
+        var images: [AttachedImage] = []
+        var files: [AttachedFile] = []
     }
 
     // Empty until the person picks a grouping, so the default can stay a
-    // decision rather than a stored answer — see `defaultGroupBy`.
+    // decision rather than a stored answer — see `SidebarGroupBy.fallback`.
     @AppStorage("os1.list.groupBy") private var groupByRaw = ""
+    /// Project bands are independent from the section mode. Empty means no
+    /// explicit pick yet, so the project count decides.
+    @AppStorage("os1.list.groupByProject") private var groupByProjectRaw = ""
     /// Projects registered on this instance, as of the last load. Read here so
     /// the list re-groups when the first `/api/repos` of a launch lands.
     @AppStorage(RepoCount.storageKey) private var knownRepoCount = RepoCount.unknown
     @AppStorage("os1.list.repo") private var repoFilter = "all"
     @State private var registeredRepoIDs: [String] = []
-    @AppStorage("os1.list.sort") private var sortByRaw = SortBy.updated.rawValue
+    @AppStorage("os1.list.sort") private var sortByRaw = SidebarSortBy.updated.rawValue
     // Default to the signed-in person's own sessions, like the web sidebar —
     // the server also hosts hundreds of automation runs and teammates' sessions.
-    @AppStorage("os1.list.people") private var peopleFilter = "mine"
+    // Stored raw because two older spellings ("mine", "all") are still on disk;
+    // `person` below is what the list reads. See `SidebarPersonLens`.
+    @AppStorage(SidebarPersonLens.storageKey) private var peopleFilterRaw = SidebarPersonLens.me
+    /// Workspaces an agent started for itself, through the automation machine
+    /// identity. They stay out of the list until somebody asks for them, and
+    /// say so with a robot beside the name when shown.
+    @AppStorage("os1.list.autoCreated") private var showAutoCreated = false
+    /// A registered project with no work in it still draws a band, so a
+    /// project you just connected has somewhere to start from. On an instance
+    /// with more projects than you work in, that is a screen of empty
+    /// headings, and this takes them out.
+    @AppStorage("os1.list.hideEmptyProjects") private var hideEmptyProjects = false
     @AppStorage("os1.sidebar.repoOrder") private var preferredRepoOrder = "[]"
-    /// Section headings the person has folded shut — repo bands, status lanes
-    /// and inbox bands, keyed like the web sidebar's collapse state and stored
+    /// Section headings the person has folded shut: repo bands, status lanes,
+    /// Active and Snoozed. They are keyed like the web sidebar's collapse state and stored
     /// as a JSON array so the choice survives relaunches.
     @AppStorage("os1.list.collapsed") private var collapsedGroupsRaw = "[]"
     /// Source rows the person has hidden — the account's, shared with the web
@@ -177,34 +188,53 @@ struct SessionsListView: View {
     private var accountShortcuts: AccountShortcuts { AccountShortcuts(rawValue: rawShortcuts) }
     #endif
 
-    private var groupBy: GroupBy {
-        GroupBy(rawValue: groupByRaw) ?? Self.defaultGroupBy(repoCount: knownRepoCount)
-    }
-
-    /// The grouping to use when nobody has picked one. A single project has
-    /// nothing to group by, so it reads as a plain inbox; several keep the
-    /// repo bands. It re-decides as projects are added, since the choice is
-    /// stored as "unpicked" rather than as its answer.
-    ///
-    /// The count is only unknown on the very first load, before `/api/repos`
-    /// answers — assume several then, so an instance that has them doesn't
-    /// paint a flat list and re-band a moment later.
-    ///
-    /// The web makes the same call with a different multi-project answer
-    /// (repo-and-INBOX, lib/sidebar-filter): this list has banded its repos by
-    /// status since before it had inbox bands, and moving every existing phone
-    /// off that is a separate decision from giving one-project instances a
-    /// grouping that means something.
-    static func defaultGroupBy(repoCount: Int) -> GroupBy {
-        repoCount == RepoCount.unknown || repoCount > 1 ? .repoStatus : .inbox
+    private var groupBy: SidebarGroupBy {
+        SidebarGroupBy.stored(groupByRaw)
+            ?? SidebarGroupBy.fallback(repoCount: knownRepoCount)
     }
 
     /// The picker reads through `groupBy`, so an unpicked grouping still shows
-    /// its default as the selected row instead of nothing.
+    /// its default as the selected row instead of nothing — and a value stored
+    /// under one of this app's five older spellings shows what it now means.
     private var groupBySelection: Binding<String> {
-        Binding(get: { groupBy.rawValue }, set: { groupByRaw = $0 })
+        Binding(get: { groupBy.rawValue }, set: { next in
+            if groupByProjectRaw.isEmpty,
+               let legacy = SidebarGroupBy.legacyGroupsByProject(groupByRaw) {
+                groupByProjectRaw = legacy ? "on" : "off"
+            }
+            groupByRaw = next
+        })
     }
-    private var sortBy: SortBy { SortBy(rawValue: sortByRaw) ?? .updated }
+
+    private var groupsByProject: Bool {
+        switch groupByProjectRaw {
+        case "on": true
+        case "off": false
+        default:
+            SidebarGroupBy.legacyGroupsByProject(groupByRaw)
+                ?? SidebarGroupBy.defaultGroupsByProject(repoCount: knownRepoCount)
+        }
+    }
+
+    private var groupsByProjectSelection: Binding<Bool> {
+        Binding(
+            get: { groupsByProject },
+            set: { groupByProjectRaw = $0 ? "on" : "off" }
+        )
+    }
+    private var sortBy: SidebarSortBy { SidebarSortBy(rawValue: sortByRaw) ?? .updated }
+
+    /// Whose work the list is showing, as the lens spells it now.
+    private var person: String { SidebarPersonLens.stored(peopleFilterRaw) }
+
+    private var personSelection: Binding<String> {
+        Binding(get: { person }, set: { peopleFilterRaw = $0 })
+    }
+
+    /// The agent's own name, which is also the key its work files under.
+    private var agentKey: String {
+        InstanceIdentity.shared.personaName.trimmingCharacters(in: .whitespaces).lowercased()
+    }
 
     private var collapsedGroups: Set<String> {
         guard let data = collapsedGroupsRaw.data(using: .utf8),
@@ -318,6 +348,9 @@ struct SessionsListView: View {
             .task {
                 viewModel.startPolling()
             }
+            .task(id: searchText) {
+                await updateTranscriptSearch()
+            }
             .task(id: knownRepoCount) {
                 // Not for the sheet's repo picker — for the tiles in this
                 // list. The repo list carries each repo's assigned tile
@@ -345,6 +378,13 @@ struct SessionsListView: View {
                     reportGroupCount = groups.count
                 }
             }
+            // Same shape, same reason: one read, and only so the Tasks row can
+            // say how much is on the list before you open it.
+            .task { await refreshOpenTaskCount() }
+            // The presence strip draws only once the roster names somebody, so
+            // the list has to be what loads it: gating the band on a roster its
+            // own child would have fetched is a strip that never appears.
+            .task { await TeamDirectory.shared.ensureLoaded() }
             #endif
             .onDisappear {
                 viewModel.stopPolling()
@@ -387,11 +427,23 @@ struct SessionsListView: View {
             .onAppear {
                 openQuickCapture()
                 openRequestedSession()
+                #if DEBUG
+                // Screenshot and simulator probe hook for the result-only UI.
+                // Showing everyone makes the fixture independent of the
+                // Automation identity used by capture-ios.ts.
+                if let query = ProcessInfo.processInfo.environment["OS1_SEARCH_QUERY"] {
+                    peopleFilterRaw = SidebarPersonLens.everyone
+                    searchText = query
+                }
+                #endif
             }
             .onChange(of: quickCapture.request?.id) { openQuickCapture() }
             .onChange(of: requestedSession.request?.id) { openRequestedSession() }
+            #if os(iOS)
+            .onOpenURL(perform: openFile)
+            #endif
             .alert(
-                "Couldn't start session",
+                createErrorTitle,
                 isPresented: Binding(
                     get: { createError != nil },
                     set: { if !$0 { createError = nil } }
@@ -573,7 +625,9 @@ struct SessionsListView: View {
                 initialRepo: request.repo,
                 initialWorkspaceId: request.workspaceId,
                 initialDraft: request.draft,
-                autoDictate: request.dictate
+                autoDictate: request.dictate,
+                initialImages: request.images,
+                initialFiles: request.files
             ) { session, seed in
                 openOptimistic(session, seed: seed)
             } onResolved: { tempId, result in
@@ -607,6 +661,7 @@ struct SessionsListView: View {
         }
         .safeAreaInset(edge: .bottom) {
             errorBanner
+                .padding(.bottom, 8)
         }
         // A sheet, not an overlay over the split view. An overlay was the
         // first shape this took, and on macOS it does not repaint: the state
@@ -826,6 +881,8 @@ struct SessionsListView: View {
     /// the app menu (Cmd+,), where Mac users expect it.
     private var macSidebarHeader: some View {
         VStack(alignment: .leading, spacing: 9) {
+            ServerAccountPicker(iconSize: 28, openSettings: { openSettings() })
+
             HStack(spacing: 7) {
                 Text("Sessions")
                     .font(.headline)
@@ -833,9 +890,7 @@ struct SessionsListView: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(OS1VisualStyle.textFaint)
                 Spacer(minLength: 8)
-                filterMenu
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
+                filterButton
                     .controlSize(.small)
                     .help("Filter, group, and sort sessions")
                 if supportLocation.showsPage {
@@ -907,56 +962,13 @@ struct SessionsListView: View {
                 .searchable(text: $searchText, prompt: "Search sessions")
                 .toolbar {
                     ToolbarItem(placement: .topLeadingCompat) {
-                        Button {
+                        ServerAccountPicker(iconSize: 44, compact: true) {
                             showSettings = true
-                        } label: {
-                            // The tile this button wore before the icon work
-                            // of 2026-08-07 — restored deliberately, after a
-                            // day of resizing it landed nowhere better.
-                            //
-                            // What that was: a 44pt round tile painting an
-                            // UNTRIMMED icon, i.e. one whose own transparent
-                            // margin left the mark on ~80% of the picture.
-                            // The icon route now crops that margin off
-                            // (png-trim.ts), so reproducing the old look
-                            // takes the inset back as `artScale`, a notch
-                            // under the 0.867 that reproduced it exactly:
-                            // the mark is solid ink against actions that are
-                            // a near-transparent capsule holding two ~22pt
-                            // glyphs, so it stays under their 44pt capsule:
-                            // 44 × 0.88 × 0.93 ≈ 36pt.
-                            //
-                            // Square clip, not `round`, once the art is this
-                            // close to the tile's edge: a circle inscribed in
-                            // the same 44pt box crosses inside the mark's own
-                            // rounded-square corners and flattens them, which
-                            // is the "cutting off the radius" this button was
-                            // reported for. Nothing is clipped either way at
-                            // this size — the square is just the shape that
-                            // stays true if the art grows again.
-                            RepoTile(
-                                name: "opensession",
-                                size: 44,
-                                artScale: 0.88
-                            )
                         }
-                        .accessibilityLabel("Settings")
-                        // Hiding the glass background leaves the padding the
-                        // capsule reserved, so the bare tile sits well right
-                        // of everything under it. Pull it back until the MARK
-                        // starts on the list's own column — band headings and
-                        // row tiles both begin at ~16pt — which is further
-                        // than the tile's frame suggests: the art is inset
-                        // inside it by `artScale`, so the frame has to sit
-                        // ~5pt left of where the ink should land, i.e. 33.5pt
-                        // left of the column itself.
-                        .padding(.leading, sidebarMargin - 33.5)
                     }
-                    // The bare app tile is the control; the toolbar's glass
-                    // circle around it read as a stray border.
                     .sharedBackgroundVisibility(.hidden)
                     ToolbarItem(placement: .topTrailingCompat) {
-                        filterMenu
+                        filterButton
                     }
                     ToolbarItem(placement: .topTrailingCompat) {
                         Button {
@@ -1021,6 +1033,16 @@ struct SessionsListView: View {
                 .navigationDestination(isPresented: $showReports) {
                     ReportsListView()
                 }
+                .navigationDestination(isPresented: $showFeed) {
+                    FeedView { sessionId in
+                        requestToolSessionOpen(sessionId)
+                    }
+                }
+                .navigationDestination(isPresented: $showTasks) {
+                    TasksView { sessionId in
+                        requestToolSessionOpen(sessionId)
+                    }
+                }
                 // Pushed onto this stack, not thrown over it: a ticket is
                 // somewhere you go from the list, the same as a session, and
                 // a sheet would have covered the list you came from. It can't
@@ -1048,6 +1070,13 @@ struct SessionsListView: View {
                     if env["OS1_OPEN_NEW"] != nil {
                         newSessionRequest = NewSessionRequest()
                     }
+                    if let name = env["OS1_OPEN_FILE_NAME"], !name.isEmpty {
+                        newSessionRequest = NewSessionRequest(files: [AttachedFile(
+                            name: name,
+                            mediaType: "application/pdf",
+                            path: "/debug/\(name)"
+                        )])
+                    }
                     if env["OS1_OPEN_SUPPORT"] != nil, supportLocation != .off {
                         openSupport()
                     }
@@ -1056,6 +1085,10 @@ struct SessionsListView: View {
                     if env["OS1_OPEN_REPORTS"] != nil {
                         showReports = true
                     }
+                    // Same reason again for the two list tools: each is a row
+                    // a scripted run would have to find and scroll to.
+                    if env["OS1_OPEN_FEED"] != nil { showFeed = true }
+                    if env["OS1_OPEN_TASKS"] != nil { showTasks = true }
                     if env["OS1_OPEN_SETTINGS"] != nil {
                         showSettings = true
                     }
@@ -1065,6 +1098,11 @@ struct SessionsListView: View {
                     if env["OS1_OPEN_CATCHUP"] != nil {
                         showCatchUp = true
                     }
+                    // The person lens is a picker two sheets deep, so a
+                    // scripted run cannot reach a borrowed list any other way.
+                    if let lens = env["OS1_PERSON_LENS"], !lens.isEmpty {
+                        peopleFilterRaw = lens
+                    }
                     #endif
                 }
                 .sheet(item: $newSessionRequest) { request in
@@ -1072,7 +1110,9 @@ struct SessionsListView: View {
                         initialRepo: request.repo,
                         initialWorkspaceId: request.workspaceId,
                         initialDraft: request.draft,
-                        autoDictate: request.dictate
+                        autoDictate: request.dictate,
+                        initialImages: request.images,
+                        initialFiles: request.files
                     ) { session, seed in
                         openOptimistic(session, seed: seed)
                     } onResolved: { tempId, result in
@@ -1080,6 +1120,9 @@ struct SessionsListView: View {
                     } onDraftSaved: { _ in
                         Task { await viewModel.refresh() }
                     }
+                }
+                .sheet(isPresented: $showFilterPanel) {
+                    filterPanel
                 }
                 .sheet(isPresented: $showArchived) {
                     ArchivedSessionsView(
@@ -1111,8 +1154,21 @@ struct SessionsListView: View {
                     pendingCatchUpOpen = nil
                     path.append(session)
                 }
-                .safeAreaInset(edge: .bottom) {
+                // A tool screen and a session share this one stack, so the
+                // push waits for the screen it came from to leave rather than
+                // landing underneath it.
+                .onChange(of: showFeed) { _, shown in
+                    if !shown { consumePendingToolSessionOpen() }
+                }
+                .onChange(of: showTasks) { _, shown in
+                    if !shown {
+                        consumePendingToolSessionOpen()
+                        Task { await refreshOpenTaskCount() }
+                    }
+                }
+                .safeAreaInset(edge: .top) {
                     errorBanner
+                        .padding(.top, 8)
                 }
         }
         // Recorded on the way IN, from the stack itself rather than at each
@@ -1207,7 +1263,6 @@ struct SessionsListView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
             .glassSurface(in: Capsule())
-            .padding(.bottom, 8)
         }
     }
 
@@ -1244,6 +1299,31 @@ struct SessionsListView: View {
             base.appendingPathComponent("session").appendingPathComponent(id)
         )
     }
+
+    #if os(iOS)
+    /// Adopt a document iOS opened with this app, then put it in a fresh
+    /// composer. Reading happens off-main while the security-scoped URL is
+    /// valid; the composer owns plain Data after that, so Files can revoke the
+    /// source URL without breaking the upload.
+    private func openFile(_ url: URL) {
+        Task {
+            do {
+                let attachment = try await Task.detached(priority: .userInitiated) {
+                    try ImportedComposerAttachment.load(from: url)
+                }.value
+                switch attachment {
+                case .image(let image):
+                    newSessionRequest = NewSessionRequest(images: [image])
+                case .file(let file):
+                    newSessionRequest = NewSessionRequest(files: [file])
+                }
+            } catch {
+                createErrorTitle = "Couldn't open file"
+                createError = error.localizedDescription
+            }
+        }
+    }
+    #endif
 
     /// Open the composer for an Action Button "New Idea", mic hot. A request
     /// is consumed once, so returning to the list later doesn't reopen it.
@@ -1361,6 +1441,7 @@ struct SessionsListView: View {
             // screen, not whatever the person is looking at now.
             path.removeAll { $0.id == tempId }
             #endif
+            createErrorTitle = "Couldn't start session"
             createError = error.localizedDescription
         }
     }
@@ -1377,27 +1458,106 @@ struct SessionsListView: View {
         )
     }
 
-    /// Empty registered repos belong in the normal project list while looking
-    /// at your own unsearched work. Search and teammate lenses stay result-driven.
+    /// Empty registered projects belong in the normal project list while
+    /// looking at your own unsearched work: the band's "+" is the shortest
+    /// path to a first session. Search and teammate lenses stay
+    /// result-driven, and so does the whole list once "Hide when empty" is on
+    /// — except when the list is scoped to one project, where the band is what
+    /// was asked for rather than clutter.
     private var repoBandRepos: [String] {
         let occupied = Set(filteredWorkspaces.map(\.effectiveRepo))
+        let keepsEmptyBands = repoFilter != "all" || !hideEmptyProjects
         return availableRepos.filter { repo in
             guard repoFilter == "all" || repoFilter == repo else { return false }
-            if !searchText.trimmingCharacters(in: .whitespaces).isEmpty
-                || peopleFilter != "mine" {
+            if !keepsEmptyBands
+                || !searchText.trimmingCharacters(in: .whitespaces).isEmpty
+                || person != SidebarPersonLens.me {
                 return occupied.contains(repo)
             }
             return true
         }
     }
 
-    /// What counts as "mine" here — one rule, shared with the Archived sheet.
+    /// Whose work is whose: one rule, shared with the Archived sheet.
     private var peopleLens: PeopleLens { PeopleLens.current() }
+
+    /// Debounced server search with a revision guard. Cancellation normally
+    /// stops URLSession too, but the guard also covers a request that finishes
+    /// after the query changed away and then back to the same text.
+    private func updateTranscriptSearch() async {
+        transcriptSearchRevision += 1
+        let revision = transcriptSearchRevision
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        transcriptSnippets = [:]
+        guard query.count >= 2 else { return }
+        do {
+            try await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            let matches = try await OS1API.searchTranscripts(query)
+            guard !Task.isCancelled, revision == transcriptSearchRevision,
+                  query == searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            else { return }
+            var next: [String: String] = [:]
+            for match in matches where next[match.id] == nil {
+                next[match.id] = match.snippet
+            }
+            transcriptSnippets = next
+        } catch {
+            // Metadata search remains useful when a server predates this route
+            // or the connection drops. The next query tries again.
+        }
+    }
+
+    private func sessionMatchesMetadata(_ session: Session, query: String) -> Bool {
+        [session.title, session.effectiveRepo, session.branch, session.id]
+            .compactMap { $0 }
+            .contains { $0.lowercased().contains(query) }
+    }
+
+    private func workspaceMatchesMetadata(
+        _ workspace: SidebarWorkspace,
+        query: String
+    ) -> Bool {
+        workspace.title.lowercased().contains(query)
+            || workspace.sessions.contains { sessionMatchesMetadata($0, query: query) }
+    }
+
+    /// Snippets explain only transcript-only hits. A metadata match already
+    /// explains itself through the row's title, repository, or branch.
+    private func workspaceSearchSnippet(_ workspace: SidebarWorkspace) -> String? {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty, !workspaceMatchesMetadata(workspace, query: query) else {
+            return nil
+        }
+        return workspace.sessions.compactMap { transcriptSnippets[$0.id] }.first
+    }
+
+    private var archivedSearchResults: [Session] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else { return [] }
+        let lens = peopleLens
+        let person = person
+        let agentKey = agentKey
+        return viewModel.archivedSessions.filter { session in
+            lens.matches(session, person: person, agentKey: agentKey)
+                && (repoFilter == "all" || session.effectiveRepo == repoFilter)
+                && (sessionMatchesMetadata(session, query: query)
+                    || transcriptSnippets[session.id] != nil)
+        }
+    }
+
+    private func archivedSearchSnippet(_ session: Session) -> String? {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !sessionMatchesMetadata(session, query: query) else { return nil }
+        return transcriptSnippets[session.id]
+    }
 
     private var visibleArchivedSessions: [Session] {
         let lens = peopleLens
+        let person = person
+        let agentKey = agentKey
         return viewModel.archivedSessions.filter { session in
-            (peopleFilter != "mine" || lens.isMine(session))
+            lens.matches(session, person: person, agentKey: agentKey)
                 && (repoFilter == "all" || session.effectiveRepo == repoFilter)
         }
     }
@@ -1408,7 +1568,8 @@ struct SessionsListView: View {
     /// changes independently of the session list, so a hidden row has to
     /// disappear on the tap, not on the next poll.
     private func visibilityFilter() -> (SidebarWorkspace) -> Bool {
-        let people = peopleFilter
+        let person = person
+        let agentKey = agentKey
         let lens = peopleLens
         let repo = repoFilter
         let query = searchText.trimmingCharacters(in: .whitespaces).lowercased()
@@ -1426,15 +1587,13 @@ struct SessionsListView: View {
                 return false
             }
             #endif
-            if people == "mine", !lens.owns(workspace) { return false }
+            if !lens.matches(workspace, person: person, agentKey: agentKey) {
+                return false
+            }
             if repo != "all", workspace.effectiveRepo != repo { return false }
             guard !query.isEmpty else { return true }
-            if workspace.title.lowercased().contains(query) { return true }
-            return workspace.sessions.contains { session in
-                [session.title, session.effectiveRepo, session.branch, session.id]
-                    .compactMap { $0 }
-                    .contains { $0.lowercased().contains(query) }
-            }
+            if workspaceMatchesMetadata(workspace, query: query) { return true }
+            return workspace.sessions.contains { transcriptSnippets[$0.id] != nil }
         }
     }
 
@@ -1445,28 +1604,82 @@ struct SessionsListView: View {
         allSidebarWorkspaces.contains(where: visibilityFilter())
     }
 
-    private var filteredWorkspaces: [SidebarWorkspace] {
-        let workspaces = allSidebarWorkspaces.filter(visibilityFilter())
-        // Decorated sort: parse each row's date once, not once per
-        // comparison — this runs on the main thread on every body
-        // evaluation, and the list can be thousands of rows with the
-        // people filter set to "everyone".
-        return workspaces
-            .map { workspace in
-                (
-                    workspace: workspace,
-                    inProgress: workspace.lane == .inProgress,
-                    date: sortBy == .updated
-                        ? workspace.lastActivityDate
-                        : workspace.createdDate
-                )
+    /// The lens applied once: the rows the list draws, and how many rows the
+    /// auto-created switch is moving.
+    private struct FilterOutcome {
+        var visible: [SidebarWorkspace] = []
+        /// Rows that are here only because an agent's work is shown, or held
+        /// back only because it isn't — the number the switch at the foot of
+        /// the list carries either way. A filter that removes rows silently is
+        /// one you forget you set.
+        var autoCreatedHeld = 0
+    }
+
+    /// One pass, not two. The count of what the auto-created setting moves is
+    /// the same walk that decides which rows survive it, which is both the
+    /// cheap way to get it and the only way it can't disagree with the list.
+    private var filterOutcome: FilterOutcome {
+        let passes = visibilityFilter()
+        let show = showAutoCreated
+        let lens = peopleLens
+        let openId = openSessionID
+        var outcome = FilterOutcome()
+        var kept: [(workspace: SidebarWorkspace, inProgress: Bool, date: Date)] = []
+        for workspace in allSidebarWorkspaces {
+            guard passes(workspace) else { continue }
+            // "Hide" only ever removes a row that is here BECAUSE the machine
+            // made it. The row you have open still shows — the list has to
+            // keep saying where you are — and so does one you claimed or were
+            // tagged in, which are your own acts, not the machine's.
+            if AutoCreatedOrigin.wasAutoCreated(workspace),
+               !survivesAutoCreatedHide(workspace, lens: lens, openSessionID: openId) {
+                outcome.autoCreatedHeld += 1
+                if !show { continue }
             }
+            // Decorated sort: parse each row's date once, not once per
+            // comparison — this runs on the main thread on every body
+            // evaluation, and the list can be thousands of rows with the
+            // person lens set to everyone.
+            kept.append((
+                workspace,
+                workspace.lane == .inProgress,
+                sortBy == .updated ? workspace.lastActivityDate : workspace.createdDate
+            ))
+        }
+        outcome.visible = kept
             .sorted {
                 if $0.inProgress != $1.inProgress { return $0.inProgress }
                 return $0.date > $1.date
             }
             .map(\.workspace)
+        return outcome
     }
+
+    /// An auto-created row the hide must not take: the one you have open, one
+    /// you claimed into your own list, and one a teammate tagged you in.
+    private func survivesAutoCreatedHide(
+        _ workspace: SidebarWorkspace,
+        lens: PeopleLens,
+        openSessionID: String?
+    ) -> Bool {
+        workspace.sessions.contains { session in
+            session.id == openSessionID
+                || lens.claims.contains(session.id)
+                || lens.mentions.contains(session.id)
+        }
+    }
+
+    /// The session on screen beside the list (Mac) or the one you last came
+    /// back from (iPhone).
+    private var openSessionID: String? {
+        #if os(macOS)
+        selectedSessionID
+        #else
+        lastOpenedSessionID
+        #endif
+    }
+
+    private var filteredWorkspaces: [SidebarWorkspace] { filterOutcome.visible }
 
     /// Grouped once by the view model, not per read: several properties below
     /// (`filteredWorkspaces`, the empty-state overlay, the tab-strip lookup)
@@ -1486,171 +1699,253 @@ struct SessionsListView: View {
     private struct RepoSessionGroup: Identifiable {
         let repo: String
         let workspaces: [SidebarWorkspace]
-        /// The sections nested under the repo band: status lanes in "Repo and
-        /// status", activity bands in "Repo and inbox".
-        let lanes: [SessionGroup]
+        let sections: [SessionGroup]
 
         var id: String { repo }
     }
 
-    private var groups: [SessionGroup] {
-        let workspaces = filteredWorkspaces
+    /// Snoozed rows leave the active sections in every grouping. Inbox keeps
+    /// both lists nearby, while Activity and Status append the same Snoozed shelf.
+    private struct InboxOutcome {
+        var active: [SidebarWorkspace] = []
+        var snoozed: [SidebarWorkspace] = []
+    }
+
+    private var inboxOutcome: InboxOutcome {
+        let store = WorkspaceSnoozeStore.shared
+        var outcome = InboxOutcome()
+        for workspace in filteredWorkspaces {
+            if store.isSnoozed(workspace) { outcome.snoozed.append(workspace) }
+            else { outcome.active.append(workspace) }
+        }
+        outcome.active = WorkspaceSnooze.sortActive(outcome.active)
+        outcome.snoozed = WorkspaceSnooze.sortSnoozed(
+            outcome.snoozed,
+            values: store.snoozes
+        )
+        return outcome
+    }
+
+    private func sessionGroups(
+        for workspaces: [SidebarWorkspace],
+        namespace: String = ""
+    ) -> [SessionGroup] {
+        let ids = Set(workspaces.map(\.id))
+        let inbox = inboxOutcome
+        let active = inbox.active.filter { ids.contains($0.id) }
+        let snoozed = inbox.snoozed.filter { ids.contains($0.id) }
+        let snoozedGroup = SessionGroup(
+            id: "\(namespace)snoozed",
+            title: "Snoozed",
+            workspaces: snoozed,
+            repo: nil
+        )
         switch groupBy {
-        case .recent:
-            return workspaces.isEmpty
-                ? []
-                : [SessionGroup(
-                    id: "recent",
-                    title: "",
-                    workspaces: workspaces,
-                    repo: nil
-                )]
-        case .repo:
-            let byRepo = Dictionary(grouping: workspaces, by: \.effectiveRepo)
-            return repoBandRepos.map {
-                SessionGroup(
-                    id: "repo-\($0)",
-                    title: $0,
-                    workspaces: byRepo[$0] ?? [],
-                    repo: $0
-                )
-            }
         case .inbox:
-            // One flat list across every repo, banded like an email inbox:
-            // Needs action first, then by when the row last moved. Repo
-            // identity moves onto the rows themselves (see `sessionRow`).
-            return SessionsListViewModel.inboxBands(
-                workspaces,
+            return [
+                SessionGroup(
+                    id: "\(namespace)inbox-active",
+                    title: "Active",
+                    workspaces: active,
+                    repo: nil
+                ),
+                snoozedGroup,
+            ].filter { !$0.workspaces.isEmpty }
+        case .activity:
+            var groups = SessionsListViewModel.inboxBands(
+                active,
                 mentionedSessionIds: MentionStore.shared.sessionIds
             ).map { band in
                 SessionGroup(
-                    id: "inbox-\(band.band.rawValue)",
+                    id: "\(namespace)activity-\(band.band.rawValue)",
                     title: band.band.label,
                     workspaces: band.workspaces,
                     repo: nil
                 )
             }
+            if !snoozed.isEmpty { groups.append(snoozedGroup) }
+            return groups
         case .status:
-            return Session.Lane.allCases.compactMap { lane in
-                let inLane = workspaces.filter { $0.lane == lane }
+            var groups = Session.Lane.allCases.compactMap { lane in
+                let inLane = active.filter { $0.lane == lane }
                 return inLane.isEmpty
                     ? nil
                     : SessionGroup(
-                        id: "lane-\(lane.rawValue)",
+                        id: "\(namespace)lane-\(lane.rawValue)",
                         title: lane.label,
                         workspaces: inLane,
                         repo: nil
                     )
             }
-        case .repoStatus, .repoInbox:
-            // Both nest their sections under repo bands — see
-            // repoSessionGroups / repoInboxGroups.
-            return []
+            if !snoozed.isEmpty { groups.append(snoozedGroup) }
+            return groups
         }
+    }
+
+    private var groups: [SessionGroup] {
+        sessionGroups(for: filteredWorkspaces)
     }
 
     private var repoSessionGroups: [RepoSessionGroup] {
         let byRepo = Dictionary(grouping: filteredWorkspaces, by: \.effectiveRepo)
         return repoBandRepos.map { repo in
             let workspaces = byRepo[repo] ?? []
-            let lanes = Session.Lane.allCases.compactMap { lane in
-                let inLane = workspaces.filter { $0.lane == lane }
-                return inLane.isEmpty
-                    ? nil
-                    : SessionGroup(
-                        id: "repo-\(repo)-lane-\(lane.rawValue)",
-                        title: lane.label,
-                        workspaces: inLane,
-                        repo: nil
-                    )
-            }
-            return RepoSessionGroup(repo: repo, workspaces: workspaces, lanes: lanes)
+            return RepoSessionGroup(
+                repo: repo,
+                workspaces: workspaces,
+                sections: sessionGroups(for: workspaces, namespace: "repo-\(repo)-")
+            )
         }
     }
 
-    /// "Repo and inbox": the same repo bands, with each repo's rows split into
-    /// the Inbox activity bands instead of status lanes.
-    private var repoInboxGroups: [RepoSessionGroup] {
-        let byRepo = Dictionary(grouping: filteredWorkspaces, by: \.effectiveRepo)
-        return repoBandRepos.map { repo in
-            let workspaces = byRepo[repo] ?? []
-            let bands = SessionsListViewModel.inboxBands(
-                workspaces,
-                mentionedSessionIds: MentionStore.shared.sessionIds
-            ).map { band in
-                SessionGroup(
-                    id: "repo-\(repo)-band-\(band.band.rawValue)",
-                    title: band.band.label,
-                    workspaces: band.workspaces,
-                    repo: nil
+    #if os(iOS)
+    /// Workspace rows in the order the sidebar actually draws them. Next chat
+    /// reads this instead of a backing sessions array because pins, grouping
+    /// and collapsed sections all change what comes after the open row.
+    private var renderedChatWorkspaces: [SidebarWorkspace] {
+        var rendered = visibleWorkspaces(pinnedWorkspaces, collapsedKey: "pinned")
+        if groupsByProject {
+            for repoGroup in repoSessionGroups {
+                guard !isCollapsed(repoBandKey(repoGroup.repo)) else { continue }
+                for group in repoGroup.sections {
+                    rendered += visibleWorkspaces(
+                        group.workspaces,
+                        collapsedKey: group.id
+                    )
+                }
+            }
+        } else {
+            for group in groups {
+                rendered += visibleWorkspaces(
+                    group.workspaces,
+                    collapsedKey: group.id
                 )
             }
-            return RepoSessionGroup(repo: repo, workspaces: workspaces, lanes: bands)
         }
+        return rendered
     }
 
-    private var filterMenu: some View {
-        Menu {
-            filterMenuContent
+    /// Nil removes the button when this is the only visible chat.
+    private func nextChatAction(after session: Session) -> (() -> Void)? {
+        guard nextWorkspace(after: session) != nil else { return nil }
+        return { openNextChat(after: session) }
+    }
+
+    private func nextWorkspace(after session: Session) -> SidebarWorkspace? {
+        guard let current = workspace(containing: session), !current.isDraftWorkspace
+        else { return nil }
+        return SidebarNext.workspace(
+            after: current.id,
+            in: renderedChatWorkspaces,
+            isUnread: { ReadsStore.shared.isUnread($0.sessions) }
+        )
+    }
+
+    /// Replace the current push rather than stacking chats. Back still returns
+    /// to the sidebar in one gesture, however many times Next was used.
+    private func openNextChat(after session: Session) {
+        guard let current = workspace(containing: session),
+              let open = path.last,
+              workspace(containing: open)?.id == current.id,
+              let next = nextWorkspace(after: open)
+        else { return }
+        Haptics.play(.selection)
+        path[path.count - 1] = next.mainSession
+    }
+    #endif
+
+    /// The list's view controls. A panel rather than a menu: there are seven
+    /// of them now, and two are switches — every switch inside a `Menu`
+    /// dismisses the whole stack, so turning two things off meant opening it
+    /// twice and walking two levels down each time.
+    @ViewBuilder
+    private var filterButton: some View {
+        let button = Button {
+            showFilterPanel = true
         } label: {
-            #if os(macOS)
-            Image(
-                systemName: repoFilter == "all"
-                    ? "line.3.horizontal.decrease"
-                    : "line.3.horizontal.decrease.circle.fill"
-            )
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(repoFilter == "all" ? OS1VisualStyle.textDim : OS1VisualStyle.accentInk)
-            .frame(width: 26, height: 24)
-            .contentShape(Rectangle())
-            #else
-            // The same symbol pair the Mac branch above uses, at the phone's
-            // touch size: one control should not be drawn from two sets.
-            Image(
-                systemName: repoFilter == "all"
-                    ? "line.3.horizontal.decrease"
-                    : "line.3.horizontal.decrease.circle.fill"
-            )
-            .font(.system(size: 17, weight: .medium))
-            .foregroundStyle(repoFilter == "all" ? OS1VisualStyle.textDim : OS1VisualStyle.accentInk)
-            .frame(width: 24, height: 24)
-            #endif
+            filterGlyph
         }
+        .buttonStyle(.plain)
         .accessibilityLabel("Filter sessions")
         .accessibilityValue(filterAccessibilityValue)
+
+        // The Mac's panel is a popover, so it hangs off the button it points
+        // at. The phone's is a sheet, and a sheet presented from inside a
+        // `ToolbarItem` does not reliably appear — SwiftUI hosts toolbar
+        // content apart from the view it decorates. It rides the navigation
+        // container instead, where every other sheet on this screen lives.
+        #if os(macOS)
+        button.popover(isPresented: $showFilterPanel, arrowEdge: .bottom) {
+            filterPanel
+        }
+        #else
+        button
+        #endif
     }
 
-    private var filterMenuContent: some View {
-        Group {
-            Button("Archived") { showArchived = true }
-            Picker("Show", selection: $peopleFilter) {
-                Text("My sessions").tag("mine")
-                Text("Everyone").tag("all")
-            }
-            Picker("Group by", selection: groupBySelection) {
-                ForEach(GroupBy.allCases, id: \.rawValue) { option in
-                    Text(option.label).tag(option.rawValue)
-                }
-            }
-            Picker("Repo", selection: $repoFilter) {
-                Text("All repos").tag("all")
-                ForEach(availableRepos, id: \.self) { repo in
-                    Text(RepoTile.label(for: repo)).tag(repo)
-                }
-            }
-            .pickerStyle(.menu)
-            Picker("Sort by", selection: $sortByRaw) {
-                ForEach(SortBy.allCases, id: \.rawValue) { option in
-                    Text(option.label).tag(option.rawValue)
-                }
-            }
-        }
+    @ViewBuilder
+    private var filterGlyph: some View {
+        // One symbol pair across both clients, at each one's own size: a
+        // control should not be drawn from two sets. It fills in whenever
+        // anything is narrowing or hiding rows, which is the state you want to
+        // find again when the list looks short.
+        let symbol = filterIsActive
+            ? "line.3.horizontal.decrease.circle.fill"
+            : "line.3.horizontal.decrease"
+        let ink = filterIsActive ? OS1VisualStyle.accentInk : OS1VisualStyle.textDim
+        #if os(macOS)
+        Image(systemName: symbol)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(ink)
+            .frame(width: 26, height: 24)
+            .contentShape(Rectangle())
+        #else
+        Image(systemName: symbol)
+            .font(.system(size: 17, weight: .medium))
+            .foregroundStyle(ink)
+            .frame(width: 24, height: 24)
+        #endif
+    }
+
+    private var filterPanel: some View {
+        SessionsFilterPanel(
+            groupBy: groupBySelection,
+            groupByProject: groupsByProjectSelection,
+            repo: $repoFilter,
+            person: personSelection,
+            sort: $sortByRaw,
+            showAutoCreated: $showAutoCreated,
+            hideEmptyProjects: $hideEmptyProjects,
+            repos: availableRepos,
+            currentUser: ServerConfig.shared.userName
+        )
+    }
+
+    /// Whether anything is narrowing or hiding rows. The grouping and the sort
+    /// are not part of it: they change how the list reads, not what is in it.
+    private var filterIsActive: Bool {
+        repoFilter != "all"
+            || person != SidebarPersonLens.me
+            || showAutoCreated
+            || hideEmptyProjects
     }
 
     private var filterAccessibilityValue: String {
-        let people = peopleFilter == "mine" ? "My sessions" : "Everyone"
-        let repo = repoFilter == "all" ? "All repositories" : RepoTile.label(for: repoFilter)
-        return "\(people), grouped by \(groupBy.label), \(repo), sorted by \(sortBy.label)"
+        let people: String
+        switch person {
+        case SidebarPersonLens.me: people = "My sessions"
+        case SidebarPersonLens.everyone: people = "Everyone"
+        case SidebarPersonLens.unassigned: people = "Unassigned"
+        default: people = person
+        }
+        let repo = repoFilter == "all" ? "All projects" : RepoTile.label(for: repoFilter)
+        let order = switch groupBy {
+        case .inbox: "stable creation order"
+        case .activity: "ordered by activity"
+        case .status: "sorted by \(sortBy.label)"
+        }
+        let projects = groupsByProject ? "grouped by project" : "all projects together"
+        return "\(people), grouped by \(groupBy.label), \(projects), \(repo), \(order)"
     }
 
     // ── List body ─────────────────────────────────────────────────────────
@@ -1737,6 +2032,7 @@ struct SessionsListView: View {
                     )
                     return nil
                 },
+                onNextChat: nextChatAction(after: session),
                 onRenameWorkspace: { name in
                     guard let workspace = workspace(containing: session) else { return }
                     viewModel.rename(workspace, to: name)
@@ -1773,7 +2069,7 @@ struct SessionsListView: View {
     /// that's already one repo (a repo filter, or a single-repo instance)
     /// would only repeat itself.
     private func inboxRowRepo(_ workspace: SidebarWorkspace) -> String? {
-        guard groupBy == .inbox, repoFilter == "all", availableRepos.count > 1
+        guard !groupsByProject, repoFilter == "all", availableRepos.count > 1
         else { return nil }
         return workspace.effectiveRepo
     }
@@ -1792,32 +2088,34 @@ struct SessionsListView: View {
     private func sessionRow(_ workspace: SidebarWorkspace) -> some View {
         let session = workspace.mainSession
         let canArchive = !workspace.isOptimistic && !workspace.isDraftWorkspace
+        let snoozeValue = WorkspaceSnoozeStore.shared.value(for: workspace)
+        let pinned = PinStore.shared.isPinned(workspace)
         let repo = inboxRowRepo(workspace)
         #if os(macOS)
         // Selection drives the detail column; select by id so rows replaced
         // by polling (fresh struct values every refresh) keep the selection.
-        // Archiving is Mac-idiomatic here: hover button on the row, context
-        // menu, and the Delete key — swipe also works but isn't the primary.
+        // The hover cluster matches web exactly: Pin, Snooze, Archive.
         SessionRow(
             session: workspace.statusSession,
             title: workspace.title,
             sessions: workspace.sessions,
             repo: repo,
+            autoCreated: AutoCreatedOrigin.wasAutoCreated(workspace),
+            searchSnippet: workspaceSearchSnippet(workspace),
             isWorkspaceDraft: workspace.isDraftWorkspace,
+            snoozeValue: snoozeValue,
+            pinned: pinned,
+            onTogglePin: canArchive ? { PinStore.shared.toggle(workspace) } : nil,
+            onToggleSnooze: canArchive ? { toggleSnooze(workspace) } : nil,
             onArchive: canArchive ? { archive(workspace) } : nil
         )
         .tag(workspace.isDraftWorkspace ? workspace.id : session.id)
-        .swipeActions(edge: .trailing) {
-            if workspace.isDraftWorkspace {
-                deleteDraftButton(workspace, viaSwipe: true)
-            } else {
-                archiveButton(workspace, viaSwipe: true)
-            }
-        }
         .contextMenu {
             if workspace.isDraftWorkspace {
                 deleteDraftButton(workspace)
             } else {
+                pinButton(workspace)
+                snoozeButton(workspace)
                 archiveButton(workspace)
             }
         }
@@ -1834,8 +2132,11 @@ struct SessionsListView: View {
                 title: workspace.title,
                 sessions: workspace.sessions,
                 repo: repo,
+                autoCreated: AutoCreatedOrigin.wasAutoCreated(workspace),
+                searchSnippet: workspaceSearchSnippet(workspace),
                 highlighted: isLastOpened(workspace),
-                isWorkspaceDraft: workspace.isDraftWorkspace
+                isWorkspaceDraft: workspace.isDraftWorkspace,
+                snoozeValue: snoozeValue
             )
         }
         .buttonStyle(.plain)
@@ -1849,10 +2150,10 @@ struct SessionsListView: View {
                 deleteDraftButton(workspace, viaSwipe: true)
             } else {
                 archiveButton(workspace, viaSwipe: true)
+                snoozeButton(workspace, viaSwipe: true)
             }
         }
-        // Swipe right to pin, left to archive: the pin is the reversible one,
-        // so it takes the leading edge (and its full swipe just toggles).
+        // Swipe right pins. Swipe left keeps Snooze and Archive together.
         // The tint rides on the swipe, not on the button: it paints the swipe
         // action's own background here, but in the context menu the same tint
         // would land on the glyph and make Pin the one coloured item in a
@@ -1876,6 +2177,40 @@ struct SessionsListView: View {
             }
         })
         #endif
+    }
+
+    private func archivedSearchRow(_ session: Session) -> some View {
+        Button {
+            openArchivedSearchResult(session)
+        } label: {
+            SessionRow(
+                session: session,
+                repo: repoFilter == "all" && availableRepos.count > 1
+                    ? session.effectiveRepo
+                    : nil,
+                searchSnippet: archivedSearchSnippet(session)
+            )
+        }
+        .buttonStyle(.plain)
+        #if os(iOS)
+        .listRowInsets(EdgeInsets(
+            top: 2, leading: sidebarMargin, bottom: 2, trailing: sidebarMargin
+        ))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+        #endif
+    }
+
+    private func openArchivedSearchResult(_ session: Session) {
+        Task {
+            let hydrated = await viewModel.hydrated(session)
+            #if os(macOS)
+            selectedSessionID = nil
+            openedArchivedSession = hydrated
+            #else
+            path.append(hydrated)
+            #endif
+        }
     }
 
     #if os(iOS)
@@ -1958,11 +2293,10 @@ struct SessionsListView: View {
 
     @ViewBuilder
     private func workspaceMenu(_ workspace: SidebarWorkspace) -> some View {
-        readButton(workspace)
-
-        // Same action as the leading swipe, for anyone who reaches for the
-        // long press instead.
+        // The same three filing actions as the row: Pin, Snooze, Archive.
         pinButton(workspace)
+        snoozeButton(workspace)
+        readButton(workspace)
 
         Button {
             renameText = workspace.title
@@ -1983,7 +2317,7 @@ struct SessionsListView: View {
             Divider()
             Label(state.label, systemImage: prStateIcon(state))
                 .disabled(true)
-            prAction(state, session: session, workspace: workspace)
+            prAction(state, session: session)
             if let prURL = session.prUrl.flatMap(URL.init(string:)) {
                 Button {
                     copyToPasteboard(prURL.absoluteString)
@@ -2049,12 +2383,10 @@ struct SessionsListView: View {
                     Label("Hide from sidebar", systemImage: "eye.slash")
                 }
             }
-            if workspace.pullRequestSession?.pullRequestContextState?.suggestsArchive != true {
-                Button(role: .destructive) {
-                    archive(workspace)
-                } label: {
-                    Label("Archive", systemImage: "archivebox")
-                }
+            Button(role: .destructive) {
+                archive(workspace)
+            } label: {
+                Label("Archive", systemImage: "archivebox")
             }
         }
     }
@@ -2067,14 +2399,11 @@ struct SessionsListView: View {
     @ViewBuilder
     private func prAction(
         _ state: Session.PullRequestContextState,
-        session: Session,
-        workspace: SidebarWorkspace
+        session: Session
     ) -> some View {
         switch state {
         case .merged, .closed:
-            Button(role: .destructive) { archive(workspace) } label: {
-                Label("Archive", systemImage: "archivebox")
-            }
+            EmptyView()
         case .conflicts:
             Button {
                 promptForPr(
@@ -2202,40 +2531,70 @@ struct SessionsListView: View {
     }
     #endif
 
-    /// Trailing swipe (and Mac context-menu) action. Hidden for optimistic
-    /// rows — even after create returns a real id, the server may not have
-    /// exposed the session through its cached list yet.
-    ///
-    /// The swipe variant is `role: .destructive` and skips our own
-    /// `withAnimation`: the destructive role tells the List the row is going
-    /// away, so a full swipe runs the system's native delete choreography
-    /// (row slides off, neighbors close up). A non-destructive button first
-    /// snaps the cell shut and then our animation re-ran the whole
-    /// inset-grouped section reflow — visibly morphing iOS 26's
-    /// position-dependent corner radii at our curve's pace.
+    #if os(macOS)
+    @ViewBuilder
+    private func pinButton(_ workspace: SidebarWorkspace) -> some View {
+        if !workspace.isOptimistic && !workspace.isDraftWorkspace {
+            let pinned = PinStore.shared.isPinned(workspace)
+            Button {
+                withAnimation(.snappy(duration: 0.28)) {
+                    PinStore.shared.toggle(workspace)
+                }
+            } label: {
+                Label(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin")
+            }
+        }
+    }
+    #endif
+
+    /// Reversible filing shared with the web. Snooze means Someday when the
+    /// row has no explicit wake date; a snoozed row gets Unsnooze.
+    @ViewBuilder
+    private func snoozeButton(
+        _ workspace: SidebarWorkspace,
+        viaSwipe: Bool = false
+    ) -> some View {
+        if !workspace.isOptimistic && !workspace.isDraftWorkspace {
+            let snoozed = WorkspaceSnoozeStore.shared.isSnoozed(workspace)
+            let button = Button {
+                toggleSnooze(workspace)
+            } label: {
+                Label(
+                    snoozed ? "Unsnooze" : "Snooze",
+                    systemImage: viaSwipe ? "moon.fill" : "moon"
+                )
+            }
+            if viaSwipe { button.tint(.gray) }
+            else { button }
+        }
+    }
+
+    /// Archive stays explicit and destructive in context menus and on the Mac
+    /// Delete key. It never runs automatically.
     @ViewBuilder
     private func archiveButton(
         _ workspace: SidebarWorkspace,
         viaSwipe: Bool = false
     ) -> some View {
-        if !workspace.isOptimistic {
-            Button(role: viaSwipe ? .destructive : nil) {
+        if !workspace.isOptimistic && !workspace.isDraftWorkspace {
+            let button = Button(role: viaSwipe ? .destructive : nil) {
                 archive(workspace, animated: !viaSwipe)
             } label: {
-                // A Label, not our own icon+text stack: a swipe action lays
-                // out the system's label shape (glyph over caption, dropping
-                // to the glyph alone in a short swipe), and a custom view is
-                // rendered as its text only — which is why the archive glyph
-                // never appeared. `archivebox` is the metaphor the overflow
-                // menus here and in the session already use.
-                Label("Archive", systemImage: "archivebox.fill")
+                Label("Archive", systemImage: viaSwipe ? "archivebox.fill" : "archivebox")
             }
-            // Red, matching the web sidebar's own swipe action at phone width
-            // (.sidebar-swipe-action--archive, var(--red)): the same gesture on
-            // the same row should not change colour between the two clients.
-            // Our own palette rather than stock .red — see OS1VisualStyle.
-            .tint(OS1VisualStyle.red)
+            if viaSwipe {
+                button.tint(OS1VisualStyle.red)
+            } else {
+                button
+            }
         }
+    }
+
+    private func toggleSnooze(_ workspace: SidebarWorkspace) {
+        withAnimation(.snappy(duration: 0.28)) {
+            WorkspaceSnoozeStore.shared.toggleSomeDay(workspace)
+        }
+        Haptics.play(.selection)
     }
 
     @ViewBuilder
@@ -2257,12 +2616,10 @@ struct SessionsListView: View {
         workspace.sessions.forEach {
             sessionPageCache.remove(sessionId: $0.id)
         }
-        #if os(iOS)
         // The server unpins archived work for everyone (`unpinEverywhere`);
         // dropping it locally too keeps the Pinned band from holding a row
         // that just left the list.
         PinStore.shared.unpin(workspace)
-        #endif
         #if os(macOS)
         if workspace.sessions.contains(where: { $0.id == selectedSessionID }) {
             selectedSessionID = nil
@@ -2299,6 +2656,7 @@ struct SessionsListView: View {
         let store = PinStore.shared
         guard !store.pins.isEmpty else { return [] }
         return filteredWorkspaces
+            .filter { !WorkspaceSnoozeStore.shared.isSnoozed($0) }
             .compactMap { workspace in store.rank(workspace).map { (workspace, $0) } }
             .sorted { $0.1 < $1.1 }
             .map(\.0)
@@ -2308,10 +2666,17 @@ struct SessionsListView: View {
     private var listSections: some View {
         Group {
             #if os(iOS)
+            // Where you can go, above the work: the way the web sidebar has
+            // carried its tools since the band lost its heading. A destination
+            // you reach by scrolling past every workspace you have is a
+            // destination nobody reaches. Who is around rides the Feed row's
+            // right edge, where the desktop sidebar puts it.
+            mobileToolsBand
             if !pinnedWorkspaces.isEmpty {
                 Section {
                     ForEach(
-                        visibleWorkspaces(pinnedWorkspaces, collapsedKey: "pinned")
+                        visibleWorkspaces(pinnedWorkspaces, collapsedKey: "pinned"),
+                        id: \.id
                     ) { workspace in
                         sessionRow(workspace)
                     }
@@ -2325,19 +2690,17 @@ struct SessionsListView: View {
             }
             #endif
 
-            if groupBy == .repoStatus || groupBy == .repoInbox {
-                ForEach(groupBy == .repoInbox ? repoInboxGroups : repoSessionGroups) { repoGroup in
-                    // Folding a repo band takes its lane headings with it —
-                    // the band's own heading is the one thing left standing.
+            if groupsByProject {
+                ForEach(repoSessionGroups) { repoGroup in
                     let bandKey = repoBandKey(repoGroup.repo)
                     Section {
                         if !isCollapsed(bandKey) {
-                            ForEach(repoGroup.lanes) { laneGroup in
-                                statusLaneHeader(laneGroup)
+                            ForEach(repoGroup.sections) { group in
+                                statusLaneHeader(group)
                                 ForEach(
                                     visibleWorkspaces(
-                                        laneGroup.workspaces,
-                                        collapsedKey: laneGroup.id
+                                        group.workspaces,
+                                        collapsedKey: group.id
                                     )
                                 ) { workspace in
                                     sessionRow(workspace)
@@ -2374,10 +2737,26 @@ struct SessionsListView: View {
                 }
             }
 
+            let archivedMatches = archivedSearchResults
+            if !archivedMatches.isEmpty {
+                Section {
+                    ForEach(archivedMatches) { session in
+                        archivedSearchRow(session)
+                    }
+                } header: {
+                    Text("Archived matches")
+                }
+            }
+
+            let autoCreatedHeld = filterOutcome.autoCreatedHeld
+            if autoCreatedHeld > 0 { autoCreatedSwitch(held: autoCreatedHeld) }
+
+            // The tools moved to the top of the list on the phone (see
+            // `mobileToolsBand`). The Mac keeps the Plain feed row down here,
+            // where a window with room to spare can carry it at the foot of
+            // the workspaces it belongs beside.
+            #if os(macOS)
             if supportLocation.showsSidebar { plainSidebarRow }
-            #if os(iOS)
-            if supportLocation.showsPage { mobileSupportToolRow }
-            if !isReportsHidden && reportGroupCount > 0 { mobileReportsRow }
             #endif
 
             // The archived entry is a destination, not a proof that its index
@@ -2449,6 +2828,53 @@ struct SessionsListView: View {
         }
     }
 
+    /// The agent's own workspaces, switched from the foot of the list it is
+    /// adding to or taking from: after the rows it counts, where the list runs
+    /// out and you would wonder what is missing. It says which way it goes, so
+    /// it is always its own undo. Faint, because it is a note about the list
+    /// rather than a row in it.
+    ///
+    /// It does not say "automations". An automation is a job somebody
+    /// configured, with a name and a trigger; these are one-off workspaces an
+    /// agent opened for itself with no automation behind them.
+    private func autoCreatedSwitch(held: Int) -> some View {
+        #if os(iOS)
+        let glyph: CGFloat = 22
+        #else
+        let glyph: CGFloat = 16
+        #endif
+        return Section {
+            Button {
+                withAnimation(.snappy(duration: 0.25)) { showAutoCreated.toggle() }
+            } label: {
+                HStack(spacing: 9) {
+                    WebIcon(kind: .robot, size: glyph, color: OS1VisualStyle.textFaint)
+                    Text(
+                        showAutoCreated
+                            ? "Hide \(held) started by an agent"
+                            : "Show \(held) started by an agent"
+                    )
+                    #if os(iOS)
+                    .font(.callout.weight(.medium))
+                    #else
+                    .font(.body)
+                    #endif
+                    .foregroundStyle(OS1VisualStyle.textFaint)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            #if os(iOS)
+            .listRowInsets(EdgeInsets(
+                top: 2, leading: sidebarMargin, bottom: 2, trailing: sidebarMargin
+            ))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            #endif
+        }
+    }
+
     @ViewBuilder
     private var emptyFilterOverlay: some View {
         if !hasVisibleWorkspaces
@@ -2456,7 +2882,7 @@ struct SessionsListView: View {
             && viewModel.archivedSessions.isEmpty {
             if !searchText.isEmpty {
                 ContentUnavailableView.search(text: searchText)
-            } else if peopleFilter == "mine" {
+            } else if person == SidebarPersonLens.me {
                 // Same look as the other two states on this screen: three
                 // different placeholder styles on one list is what makes a
                 // surface read as unfinished.
@@ -2469,8 +2895,10 @@ struct SessionsListView: View {
                         newSessionRequest = NewSessionRequest()
                     }
                     .buttonStyle(PlaceholderActionStyle())
-                    Button("Show everyone's") { peopleFilter = "all" }
-                        .buttonStyle(PlaceholderActionStyle(prominent: false))
+                    Button("Show everyone's") {
+                        peopleFilterRaw = SidebarPersonLens.everyone
+                    }
+                    .buttonStyle(PlaceholderActionStyle(prominent: false))
                 }
             }
         }
@@ -2482,7 +2910,11 @@ struct SessionsListView: View {
         Section {
             Button(action: openSupport) {
                 HStack(spacing: 9) {
+                    #if os(iOS)
+                    mobileToolIcon("lifepreserver")
+                    #else
                     RepoTile(name: "plain", size: plainRowTileSize)
+                    #endif
                     Text("Plain")
                         #if os(iOS)
                         .font(.callout.weight(.medium))
@@ -2550,17 +2982,22 @@ struct SessionsListView: View {
     }
 
     #if os(iOS)
+    /// Tool glyphs start on the same leading edge as the repo tiles below.
+    /// Their 22-point rail still keeps every label on one shared column.
+    private func mobileToolIcon(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.callout)
+            .foregroundStyle(OS1VisualStyle.textDim)
+            .frame(width: 22, height: 22, alignment: .leading)
+    }
+
     /// Support as a tool: the direct queue page, separate from the Plain feed
     /// row above. `supportLocation` makes the two mutually exclusive.
     private var mobileSupportToolRow: some View {
         Section {
             Button(action: openSupport) {
                 HStack(spacing: 9) {
-                    Image(systemName: "lifepreserver")
-                        .font(.callout)
-                        .foregroundStyle(OS1VisualStyle.textDim)
-                        .frame(width: 22, height: 22)
-                        .offset(x: 1)
+                    mobileToolIcon("lifepreserver")
                     Text("Support")
                         .font(.callout.weight(.medium))
                         .foregroundStyle(OS1VisualStyle.textDim)
@@ -2609,14 +3046,7 @@ struct SessionsListView: View {
                 showReports = true
             } label: {
                 HStack(spacing: 9) {
-                    // Built exactly like the Archived row under it: same
-                    // symbol font, same box, same optical nudge, so the two
-                    // rows that lead somewhere read as one pair.
-                    Image(systemName: "text.document")
-                        .font(.callout)
-                        .foregroundStyle(OS1VisualStyle.textDim)
-                        .frame(width: 22, height: 22)
-                        .offset(x: 1)
+                    mobileToolIcon("text.document")
                     Text("Reports")
                         .font(.callout.weight(.medium))
                         .foregroundStyle(OS1VisualStyle.textDim)
@@ -2652,6 +3082,224 @@ struct SessionsListView: View {
         ))
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
+    }
+
+    /// The tools, above the work rather than under it.
+    ///
+    /// Same set and same order as the web's strip, and the same rule for what
+    /// shows: each row is one account-level preference away, and Support is
+    /// the three-way location choice rather than a switch.
+    @ViewBuilder
+    private var mobileToolsBand: some View {
+        // None of the tools belong to the person whose list you are borrowing:
+        // Tasks and Catch up are yours, and Feed, Plain and Reports are the
+        // whole team's. Under a bar with someone else's name on it they read as
+        // theirs, so a borrowed list is their workspaces and the bar out.
+        if SidebarPersonLens.isBorrowed(person) {
+            borrowedLensBar
+        } else {
+            if !isFeedHidden { mobileFeedRow }
+            if !isTasksHidden { mobileTasksRow }
+            if supportLocation.showsSidebar { plainSidebarRow }
+            if supportLocation.showsPage { mobileSupportToolRow }
+            if !isReportsHidden && reportGroupCount > 0 { mobileReportsRow }
+        }
+    }
+
+    /// Whose list this is, when it is not yours.
+    ///
+    /// The same bar the web sidebar puts at the top of a borrowed lens
+    /// (`borrowedLens` in components/Sidebar.tsx): a filled row that names the
+    /// person and carries the one action that belongs to it, which is leaving.
+    /// Without it the phone showed a teammate's workspaces with nothing saying
+    /// so, and the way back was buried in the filter panel.
+    private var borrowedLensBar: some View {
+        Section {
+            HStack(spacing: 8) {
+                if person == SidebarPersonLens.everyone {
+                    Image(systemName: "person.2")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(OS1VisualStyle.textDim)
+                        .frame(width: 22, height: 22)
+                } else if person != SidebarPersonLens.unassigned {
+                    UserAvatar(person: borrowedLensName, size: 22)
+                }
+                Text(borrowedLensName)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(OS1VisualStyle.text)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Button {
+                    Haptics.play(.selection)
+                    withAnimation(.snappy(duration: 0.22)) {
+                        peopleFilterRaw = SidebarPersonLens.me
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(OS1VisualStyle.textDim)
+                        .frame(width: 34, height: 34)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back to your workspaces")
+                // The 34pt target overhangs the glyph, so pull it back out to
+                // the margin the way the repo bands' "+" does.
+                .padding(.trailing, -8)
+            }
+            .padding(.leading, 12)
+            .padding(.trailing, 10)
+            .padding(.vertical, 7)
+            .background {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(OS1VisualStyle.blueSoft)
+            }
+            .accessibilityElement(children: .contain)
+        }
+        .listRowInsets(EdgeInsets(
+            top: 2, leading: sidebarMargin, bottom: 6, trailing: sidebarMargin
+        ))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+    }
+
+    /// What the bar calls the lens. Everyone reads as itself rather than as
+    /// "All workspaces", since the bar already says these are workspaces.
+    private var borrowedLensName: String {
+        SidebarPersonLens.label(
+            for: person,
+            agentName: InstanceIdentity.shared.personaName,
+            roster: TeamDirectory.shared.names
+        )
+    }
+
+    /// What the team shipped. Merged pull requests and commits in one list,
+    /// which is what makes it the page you open when you have not decided
+    /// what to work on yet.
+    private var mobileFeedRow: some View {
+        toolRow(
+            title: "Feed",
+            symbol: "waveform.path.ecg",
+            count: nil,
+            accessibility: "Open Feed",
+            hides: SidebarTools.feed,
+            // The team rides this row's right edge, the way it does in the
+            // desktop sidebar: whose work you are reading is a question about
+            // the feed, so it is answered on the row that leads to it rather
+            // than in a strip of its own above the list.
+            trailing: {
+                TeamLensPile(
+                    person: personSelection,
+                    currentUser: ServerConfig.shared.userName
+                )
+            }
+        ) {
+            showFeed = true
+        }
+    }
+
+    /// Your list, and the one any session can add to.
+    private var mobileTasksRow: some View {
+        toolRow(
+            title: "Tasks",
+            symbol: "checklist",
+            count: openTaskCount > 0 ? openTaskCount : nil,
+            accessibility: openTaskCount == 1
+                ? "Open Tasks, 1 open"
+                : "Open Tasks, \(openTaskCount) open",
+            hides: SidebarTools.tasks,
+            trailing: { EmptyView() }
+        ) {
+            showTasks = true
+        }
+    }
+
+    /// The shape every tool row shares: glyph, name, an optional number, and
+    /// the one-item menu that puts it away. Built once rather than per row so
+    /// the tools cannot drift apart from each other the way they would if each
+    /// carried its own copy of this.
+    private func toolRow<Trailing: View>(
+        title: String,
+        symbol: String,
+        count: Int?,
+        accessibility: String,
+        hides id: String,
+        @ViewBuilder trailing: () -> Trailing,
+        open: @escaping () -> Void
+    ) -> some View {
+        Section {
+            // The trailing view is a SIBLING of the button, not a child of it:
+            // a button nested inside another swallows its taps on iOS, and the
+            // point of the pile on the Feed row is that it is its own target.
+            HStack(spacing: 0) {
+                Button(action: open) {
+                    HStack(spacing: 9) {
+                        mobileToolIcon(symbol)
+                        Text(title)
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(OS1VisualStyle.textDim)
+                        if let count {
+                            Text(verbatim: "\(count)")
+                                .font(.footnote.weight(.medium))
+                                .foregroundStyle(OS1VisualStyle.textFaint)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, 11)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(accessibility)
+                trailing()
+            }
+            // The same one-item menu the Plain and Reports rows carry, for the
+            // same reason: the row leads somewhere rather than holding state,
+            // and Settings → Appearance brings it back.
+            .contextMenu {
+                Button {
+                    withAnimation(.snappy(duration: 0.28)) {
+                        SidebarTools.setVisible(id, false)
+                    }
+                } label: {
+                    Label("Hide from sidebar", systemImage: "eye.slash")
+                }
+            }
+        }
+        .listRowInsets(EdgeInsets(
+            top: 2, leading: sidebarMargin, bottom: 2, trailing: sidebarMargin
+        ))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+    }
+
+    /// Push a session one of the tool screens named, now that the screen it
+    /// was named on has gone.
+    private func consumePendingToolSessionOpen() {
+        guard let id = pendingToolSessionOpen else { return }
+        pendingToolSessionOpen = nil
+        Task {
+            guard let session = try? await OS1API.session(id: id) else { return }
+            path.append(session)
+        }
+    }
+
+    private func requestToolSessionOpen(_ id: String) {
+        pendingToolSessionOpen = id
+        showFeed = false
+        showTasks = false
+    }
+
+    private func refreshOpenTaskCount() async {
+        guard let todos = try? await OS1API.todos() else { return }
+        openTaskCount = todos.lazy.filter { $0.status == .open }.count
+    }
+
+    private var isFeedHidden: Bool {
+        SidebarTools.isHidden(SidebarTools.feed, in: hiddenToolsRaw)
+    }
+
+    private var isTasksHidden: Bool {
+        SidebarTools.isHidden(SidebarTools.tasks, in: hiddenToolsRaw)
     }
 
     /// Read off `@AppStorage` rather than `UserDefaults` so hiding the row
@@ -2939,15 +3587,6 @@ struct SessionsListView: View {
         Task {
             await viewModel.refresh()
             isRetrying = false
-        }
-    }
-}
-
-private extension Session.PullRequestContextState {
-    var suggestsArchive: Bool {
-        switch self {
-        case .merged, .closed: true
-        default: false
         }
     }
 }
@@ -3257,6 +3896,15 @@ struct SessionRow: View {
     /// rather than its org's mark — spelling the name out instead cost either
     /// the title's width or a second line, and both read worse than a swatch.
     var repo: String? = nil
+    /// A row an agent minted for itself through the automation machine
+    /// identity, rather than one a person started. It wears the same robot an
+    /// automation run does: sitting in the ordinary bands next to work a
+    /// person started, that is the question the row still raises.
+    var autoCreated = false
+    /// Conversation context for a transcript-only search hit. Metadata matches
+    /// keep their normal one-line row because the title already explains why
+    /// they are present.
+    var searchSnippet: String? = nil
     /// iOS: the session you last had open. A neutral plate rather than a hue —
     /// every colour on this list already means something (the status marks and
     /// repo tiles), and "where you were" is chrome, not status. `tertiary`
@@ -3266,11 +3914,16 @@ struct SessionRow: View {
     /// A parked workspace prompt has no session yet. It reuses the row's
     /// layout, but its pencil is the state mark rather than a session status.
     var isWorkspaceDraft = false
+    /// Active snooze value: an ISO wake time or Someday.
+    var snoozeValue: String? = nil
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     /// Settings → Appearance → Show last used time. Off by default, like the
     /// web's resting sidebar, and per device like the web's own copy of it.
     @AppStorage("os1.list.lastUsed") private var lastUsedPref = "off"
-    /// Mac: hover-revealed archive button (nil hides it).
+    /// Mac: the hover-revealed Pin, Snooze, Archive cluster.
+    var pinned = false
+    var onTogglePin: (() -> Void)? = nil
+    var onToggleSnooze: (() -> Void)? = nil
     var onArchive: (() -> Void)? = nil
 
     #if os(macOS)
@@ -3281,16 +3934,29 @@ struct SessionRow: View {
         #if os(macOS)
         content
             .overlay(alignment: .trailing) {
-                if hovering, let onArchive {
-                    Button(action: onArchive) {
-                        Image(systemName: "archivebox")
-                            .font(.body)
-                            .foregroundStyle(.secondary)
+                if hovering,
+                   onTogglePin != nil || onToggleSnooze != nil || onArchive != nil {
+                    HStack(spacing: 2) {
+                        if let onTogglePin {
+                            filingButton(
+                                pinned ? "pin.slash" : "pin",
+                                help: pinned ? "Unpin" : "Pin",
+                                action: onTogglePin
+                            )
+                        }
+                        if let onToggleSnooze {
+                            filingButton(
+                                snoozeValue != nil ? "moon.fill" : "moon",
+                                help: snoozeValue != nil ? "Unsnooze" : "Snooze until Someday",
+                                action: onToggleSnooze
+                            )
+                        }
+                        if let onArchive {
+                            filingButton("archivebox", help: "Archive", action: onArchive)
+                        }
                     }
-                    .buttonStyle(.borderless)
-                    .help("Archive")
-                    // Keep the action legible over a long title.
-                    .padding(4)
+                    // Keep the actions legible over a long title.
+                    .padding(2)
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 5))
                 }
             }
@@ -3302,6 +3968,23 @@ struct SessionRow: View {
         content
         #endif
     }
+
+    #if os(macOS)
+    private func filingButton(
+        _ systemName: String,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+        }
+        .buttonStyle(.borderless)
+        .help(help)
+    }
+    #endif
 
     /// Mac sidebar rows are compact and body-sized like Finder/System
     /// Settings; iOS keeps the roomier touch metrics.
@@ -3316,24 +3999,30 @@ struct SessionRow: View {
             // tile: this row is a machine's run, not yours. Faint and a step
             // under the tile so a band of automation rows stays a list rather
             // than a wall of glyphs.
-            if session.isAutomation {
+            if session.wasAgentStarted || autoCreated {
                 WebIcon(kind: .robot, size: tileSize, color: OS1VisualStyle.textFaint)
                     .accessibilityHidden(true)
             }
-            Text(rowTitle)
-                #if os(iOS)
-                // The web sidebar's phone type, exactly: 16px titles (callout)
-                // in medium, dimmed — and, when the row has activity you
-                // haven't read, semibold at full strength. Same Slack-style
-                // pair as `.sidebar-item-title` / `.sidebar-item-unread`.
-                .font(.callout.weight(unread ? .semibold : .medium))
-                .foregroundStyle(unread ? OS1VisualStyle.text : OS1VisualStyle.textDim)
-                #else
-                .font(.body.weight(unread ? .semibold : .regular))
-                .foregroundStyle(.primary)
-                #endif
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(rowTitle)
+                    #if os(iOS)
+                    // The web sidebar's phone type, exactly: 16px titles (callout)
+                    // in medium, dimmed. Unread rows step up in both weight and ink.
+                    .font(.callout.weight(unread ? .semibold : .medium))
+                    .foregroundStyle(unread ? OS1VisualStyle.text : OS1VisualStyle.textDim)
+                    #else
+                    .font(.body.weight(unread ? .semibold : .regular))
+                    .foregroundStyle(.primary)
+                    #endif
+                    .lineLimit(1)
+                if let searchSnippet, !searchSnippet.isEmpty {
+                    Text(searchSnippet)
+                        .font(.caption)
+                        .foregroundStyle(OS1VisualStyle.textFaint)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             if hasDraft && !isWorkspaceDraft {
                 Image(systemName: "pencil")
                     .font(.system(size: 15, weight: .semibold))
@@ -3387,7 +4076,16 @@ struct SessionRow: View {
                     viewers: rowViewers, size: faceSize, separation: .seam
                 )
             }
-            if showsClock {
+            if let snoozeValue {
+                HStack(spacing: 3) {
+                    Image(systemName: "moon.fill")
+                    Text(WorkspaceSnooze.label(snoozeValue))
+                }
+                .font(.caption.weight(.medium))
+                .foregroundStyle(OS1VisualStyle.textFaint)
+                .fixedSize(horizontal: true, vertical: false)
+                .accessibilityLabel("Snoozed: \(WorkspaceSnooze.label(snoozeValue))")
+            } else if showsClock {
                 WorkspaceRunElapsedLabel(since: session.runStartedDate)
                     // No trailing pad: the repo header's "+" now hangs its tap
                     // target past the row margin so its INK sits on 16pt, and

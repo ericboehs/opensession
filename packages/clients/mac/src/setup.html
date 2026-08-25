@@ -46,7 +46,8 @@
       const params = new URLSearchParams(location.search);
       // Someone who already has a server and came back through the app menu or
       // the status page. The first run has nothing to go back to.
-      const changing = params.get("mode") === "change";
+      const mode = params.get("mode");
+      const changing = mode === "change" || mode === "add";
 
       const field = document.getElementById("field");
       const submit = document.getElementById("submit");
@@ -56,8 +57,8 @@
 
       field.value = params.get("url") || "";
       if (changing) {
-        document.getElementById("title").textContent = "Change server";
-        submit.textContent = "Save";
+        document.getElementById("title").textContent = mode === "add" ? "Add organization" : "Change server";
+        submit.textContent = mode === "add" ? "Connect" : "Save";
         cancel.hidden = false;
       } else {
         status.textContent = "You can change this later in the app menu.";

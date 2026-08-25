@@ -44,6 +44,65 @@ language instead of introducing a new local style for each feature.
   alert, button, or popup. Extend the shared primitive with a small, general
   variant when the difference is genuinely reusable.
 
+## Both widths, one change
+
+This tree is one bundle serving a desktop window and a phone (the browser and
+the installed PWA). A missing phone layout therefore has no file whose absence
+would remind you of it: the feature is already "in" the phone build, just
+unusable there. Build both widths in the change that introduces the feature,
+or say in your final report which part is still desktop-only and why. The
+retrofits this rule exists to prevent were two follow-up commits on the /new
+palette, and the list below is what they had to add.
+
+The mechanisms, by name:
+
+- `phone:` and `desktop:` variants (`styles/tailwind.css`), the 720px boundary.
+- `PHONE_QUERY` (`lib/breakpoints.ts`) is the same boundary for `matchMedia`,
+  pinned to the stylesheet by `breakpoints.test.ts`. Do not write the query
+  again in a component.
+- `useIsPhone()` (`hooks/useIsPhone.ts`) to swap a surface for a different one.
+- `isTouchPrimary` (`lib/platform.ts`) for input-shape questions: whether the
+  client has a hover, a physical keyboard, a right-click. A narrow desktop
+  window is not a phone, and an iPad with a keyboard is not a desktop.
+- `ResponsiveDialog` / `BottomSheet` (`ui/sheet.tsx`): one content, centered
+  modal on desktop and bottom sheet on phone, with dismissal, focus and
+  animation already handled. Reach for this before hand-rolling a phone branch.
+- `toolFitsViewport()` (`lib/sidebar-tools.ts`) is the one place a whole
+  surface is deliberately width-gated. A new one belongs there, not inline.
+
+What a desktop-shaped surface is usually missing at 390px:
+
+- **Touch targets.** 44px minimum (`min-h-11`, `size-11`). Desktop rows of 28
+  to 36px controls are all under it.
+- **A way out.** A phone has no Esc and no click-outside habit, so a dialog or
+  sheet needs a visible close control.
+- **The bottom edge.** Anything resting on it clears the home indicator with
+  `env(safe-area-inset-bottom)`; `ui/sheet.tsx` already does, a hand-rolled
+  footer does not.
+- **Room for a label.** A trigger that truncates to two characters needs its
+  label above it at phone width. Do not solve it by shrinking the type.
+- **A row that fits.** `justify-between` with `max-w-[46%]` siblings is a
+  desktop shape; on a phone it becomes a labelled column or grid.
+- **A tap path.** A control revealed on hover, a native `title` tooltip, or a
+  submenu that opens on hover does not exist on a phone.
+- **16px text inputs** (`--text-input-phone`), or iOS zooms the page on focus.
+- **The right send key.** `effectiveSendKey()` (`lib/send-key.ts`): a soft
+  keyboard has no Shift+Enter, so Enter cannot also send.
+
+`phone:hidden` is the last resort, not the phone layout. When you use it, the
+same change says where that thing went instead.
+
+Verify at the real width rather than by reasoning about the classes:
+
+```
+bun scripts/capture-ui.ts /tmp/after-phone.png --route /new --width 390 --height 844
+```
+
+Any width at or below 720 captures at phone density with the desktop chrome
+off. `bun scripts/css-shots.ts <name>` sweeps routes x {desktop, mobile} x
+{dark, light} and `--diff` compares two runs, which is what keeps a phone
+layout from regressing once it exists.
+
 ## Styling
 
 - Use Tailwind utilities for new and touched UI. `styles/legacy.css` is empty
@@ -64,8 +123,8 @@ language instead of introducing a new local style for each feature.
   today is the settings plate (`--settings-plate`, `ui/settings.tsx`): there
   the hairline replaces the weight the fill gave up rather than adding to it,
   and the pair is quieter than the full L1 grey was on its own. It takes
-  `border-divider`, the chrome seam, not the `border-line` its own rows take:
-  closing a block's shape asks less of a line than separating two rows does,
+  `border-divider-soft`, a third-strength outline, not the `border-line` its own
+  rows take: closing a block's shape asks less of a line than separating rows,
   and at the row weight the outline was the loudest thing on the page. That is
   a trade, not a licence. It does not extend to `Card`, which stays
   borderless, and a card that still carries a normal fill has nothing to
@@ -129,8 +188,8 @@ language instead of introducing a new local style for each feature.
 - Preserve visible focus, disabled, loading, error, empty, hover, and pressed
   states. Hover may enhance a control but cannot be the only way to discover or
   operate it.
-- Keep touch targets usable on mobile and verify layouts at both desktop and
-  phone widths. A desktop-only success is not a finished UI change.
+- Give anything a finger operates a 44px target, and treat a desktop-only
+  success as an unfinished UI change. See "Both widths, one change" above.
 - Use the motion guidance and shared presets from the root `AGENTS.md`. Motion
   should clarify state or spatial relationships, remain interruptible where
   appropriate, and respect reduced-motion preferences.
@@ -139,10 +198,28 @@ language instead of introducing a new local style for each feature.
 
 ## React and verification
 
-- Follow the existing React 19 patterns. Do not add `useMemo` or `useCallback`
-  by default; no React Compiler is configured in the build (Bun.build in
-  frontend-build.ts has no compiler plugin), so memoize manually — and only
-  where a measured re-render cost justifies it.
+- Follow the existing React 19 patterns. The build runs the React Compiler
+  (oxc Rust port, wired as a Bun plugin in `frontend-build.ts`), and all hand
+  memoization has been removed: do not add `useMemo`, `useCallback`, or
+  `React.memo`. The compiler preserves value and callback identity across
+  renders, which is what those hooks were doing by hand. The one measured
+  exception is callback refs passed to DOM elements (`ref={...}`): keep those
+  stable yourself if both calls update state — see `useSessionScroll.ts`.
+  Do not use `"use no memo"`: `bun run lint` compiles every frontend source and
+  fails on any bailout, and production builds enforce the same invariant.
+  Rules-of-hooks and exhaustive-deps are errors in CI (oxlint). Use
+  `useEffectEvent` for non-reactive logic that must read the latest props or
+  state without restarting an effect. Note the compiler only runs on the
+  prod/release bundle; Bun's dev HMR server has no plugin hook, so dev serves
+  uncompiled sources.
+
+  Exception — explicit identities are load-bearing in three files and must not
+  be de-memoized (removing them caused React #185 render loops, and closed the
+  live WebSocket before `transcript_init` could arrive):
+  `components/SessionViewer.tsx`, `hooks/useWebSocket.ts`,
+  `hooks/useSessionScroll.ts`. Leave their `useMemo`/`useCallback` in place.
+  The same care applies anywhere a callback ref sets state: an unstable
+  identity detaches and reattaches the ref every render.
 - Keep component files component-only: put non-component helpers/constants in
   `lib/` or `ui/` modules, because mixed component+helper exports disqualify a
   module from React Fast Refresh and downgrade every edit to a full page
@@ -150,6 +227,8 @@ language instead of introducing a new local style for each feature.
 - Keep state close to where it is used. Do not add a new context, store, or
   abstraction for state that belongs to one component tree.
 - Run `bun run typecheck` and the relevant `bun test` targets after code
-  changes. For visible changes, verify the real page at desktop and mobile
-  sizes and exercise keyboard interaction, loading, empty, and error states
-  that the change affects.
+  changes. For visible changes, capture the real page at both 1440x900 and
+  390x844 with `scripts/capture-ui.ts` and look at each, then exercise
+  keyboard interaction, loading, empty, and error states that the change
+  affects. The phone capture is the one that catches what reasoning about the
+  classes does not.

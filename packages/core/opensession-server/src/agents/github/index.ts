@@ -1,25 +1,24 @@
 /**
  * GitHub PR agent: automated review + auto-fix + simplify for the configured repos.
  *
- * Does NOT own a webhook route — the single GitHub webhook lives in the Slack agent
- * (`POST /github/webhook`), which forwards `pull_request` events to
- * `handleGithubPrEvent` (webhook.ts). This module owns lifecycle: seeding the
- * disabled review automation, recovering interrupted auto-fix loops on restart,
- * health, and a secret-gated manual trigger for testing.
+ * Owns the signature-verified GitHub webhook route (`POST /github/webhook`) and
+ * its PR behaviors. Slack review notifications are an optional side effect when
+ * the Slack agent is enabled.
  */
 import { configuredIntegration, defaultRepo, personaName } from "../../server/config";
-import type { AgentModule } from "../types";
 import {
   RequestBodyTooLargeError,
   readRequestTextWithinLimit,
   webhookBodyTooLargeResponse,
 } from "../../server/shared/bounded-body";
+import type { AgentModule } from "../types";
 import {
   listAutomations,
   createAutomation,
   saveAutomation,
 } from "../../server/automations";
 import { githubConfigured } from "./github-rest";
+import { githubAppCredentialHealth, githubToken } from "../../server/github-app";
 import {
   PR_EVENT_KEY,
   REVIEW_AUTOMATION_NAME,
@@ -29,6 +28,8 @@ import {
 import { DEFAULT_REVIEW_PROMPT } from "./prompts";
 import { DEFAULT_GITHUB_FLOW_MCP_SERVERS } from "./run";
 import { setGithubSessionInvalidate, resolveReviewConfig } from "./webhook";
+import { githubWebhookCount, loadGithubDeliveries } from "./webhook-deliveries";
+import { handleGithubWebhook } from "./webhook-intake";
 import {
   listPrStates,
   activeCodeLoops,
@@ -36,11 +37,13 @@ import {
   clearRecoveryMarker,
   planRecovery,
   recoveryMarkerAt,
+  readPrState,
   type GithubPrState,
   type RecoveryKind,
 } from "./state";
 import { feedbackStats } from "./feedback";
 import type { PrRef } from "./review";
+import { isTrustedGithubLogin, isTrustedUser } from "../../server/shared/user-mappings";
 
 const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET || "";
 
@@ -109,6 +112,28 @@ function ensureDocsSyncAutomation(): void {
 
 /** Fire the one recovery `planRecovery` picked for this PR. */
 async function fireRecovery(s: GithubPrState, kind: RecoveryKind): Promise<void> {
+  const requester =
+    kind === "auto-fix"
+      ? s.autoFix?.requestedBy
+      : kind === "pending-auto-fix"
+        ? s.pendingAutoFix?.requestedBy
+        : kind === "run"
+          ? s.activeRun?.requestedBy
+          : kind === "mention"
+            ? s.activeMention?.author
+            : s.pendingMention?.author;
+  const requesterTrusted =
+    kind === "mention" || kind === "pending-mention"
+      ? isTrustedGithubLogin(requester)
+      : isTrustedUser(requester);
+  if (!requesterTrusted) {
+    console.warn(
+      `[github] Refusing ${kind} recovery for PR #${s.prNumber} from untrusted @${requester || "unknown"}`,
+    );
+    clearRecoveryMarker(s, kind);
+    return;
+  }
+
   switch (kind) {
     case "auto-fix": {
       console.log(`[github] Recovering interrupted auto-fix loop for PR #${s.prNumber}`);
@@ -116,6 +141,16 @@ async function fireRecovery(s: GithubPrState, kind: RecoveryKind): Promise<void>
       const ref: PrRef = { number: s.prNumber, headRef: s.headRef, headSha: "", title: `PR #${s.prNumber}`, ...(s.ghRepo ? { ghRepo: s.ghRepo } : {}) };
       void runAutoFix(ref, s.autoFix?.requestedBy || "", undefined, /*resuming*/ true, s.autoFix?.steer).catch((e) =>
         console.error(`[github] auto-fix recovery failed for PR #${s.prNumber}:`, e),
+      );
+      return;
+    }
+    case "pending-auto-fix": {
+      const pending = s.pendingAutoFix!;
+      console.log(`[github] Recovering dropped auto-fix request for PR #${s.prNumber} (from @${pending.requestedBy})`);
+      const { runAutoFix } = await import("./autofix");
+      const ref: PrRef = { number: s.prNumber, headRef: s.headRef, headSha: "", title: `PR #${s.prNumber}`, ...(s.ghRepo ? { ghRepo: s.ghRepo } : {}) };
+      void runAutoFix(ref, pending.requestedBy).catch((e) =>
+        console.error(`[github] dropped auto-fix recovery failed for PR #${s.prNumber}:`, e),
       );
       return;
     }
@@ -151,19 +186,19 @@ async function fireRecovery(s: GithubPrState, kind: RecoveryKind): Promise<void>
         inline: p.inline,
         ghRepo: s.ghRepo,
       })
-        .catch((e) => console.error(`[github] dropped-mention recovery failed for PR #${s.prNumber}:`, e))
-        .finally(() => clearPendingMention(s.prNumber, s.ghRepo));
+        .then(() => clearPendingMention(s.prNumber, s.ghRepo))
+        .catch((e) => console.error(`[github] dropped-mention recovery remains queued for PR #${s.prNumber}:`, e));
       return;
     }
   }
 }
 
 /**
- * Re-enter the work a restart interrupted: auto-fix loops, one-shot actions
- * (review/simplify/adversarial), conversational @mentions, and mentions that
- * were received but dropped before their run could self-persist — the classic
- * case being a webhook that landed during shutdown drain (acked 200, so GitHub
- * won't redeliver).
+ * Re-enter the work a restart interrupted: auto-fix loops, label requests that
+ * were received before a run could self-persist, one-shot actions
+ * (review/simplify/adversarial), conversational @mentions, and mentions dropped
+ * in the same receipt-to-run window. The classic case is a webhook that landed
+ * during shutdown drain (acked 200, so GitHub won't redeliver).
  *
  * ONE pass over the state files, at most one run fired per PR. These markers
  * legitimately coexist — auto-fix arms `autoFix.active` and its gate review arms
@@ -171,6 +206,52 @@ async function fireRecovery(s: GithubPrState, kind: RecoveryKind): Promise<void>
  * every restart. planRecovery picks the outermost live marker; the nested ones
  * belong to runs the resumed one starts again itself.
  */
+async function retryPendingMentions(): Promise<void> {
+  const { ghRateLimited } = await import("../../server/github-limit");
+  if (ghRateLimited("rest")) return;
+  for (const s of listPrStates()) {
+    if (!s.pendingMention || s.activeMention || s.activeRun) continue;
+    const p = s.pendingMention;
+    if (!isTrustedGithubLogin(p.author)) {
+      clearPendingMention(s.prNumber, s.ghRepo);
+      continue;
+    }
+    const { dispatchMention } = await import("./mention");
+    await dispatchMention({
+      prNumber: s.prNumber,
+      kind: p.kind,
+      body: p.body,
+      author: p.author,
+      replyToId: p.replyToId,
+      inline: p.inline,
+      ghRepo: s.ghRepo,
+    }).then(
+      async () => {
+        const stillPending = readPrState(s.prNumber, s.ghRepo)?.pendingMention;
+        if (stillPending?.progressCommentId) {
+          const { editIssueComment, REPLY_MARKER } = await import("./github-rest");
+          await editIssueComment(
+            stillPending.progressCommentId,
+            `${REPLY_MARKER}
+Request accepted.`,
+            s.ghRepo,
+          ).catch(() => {});
+        }
+        clearPendingMention(s.prNumber, s.ghRepo);
+      },
+      (error) => console.warn(`[github] pending mention remains queued for PR #${s.prNumber}:`, error),
+    );
+  }
+}
+
+function startPendingMentionRetry(): void {
+  const g = globalThis as any;
+  if (g.__githubPendingMentionRetryTimer) return;
+  const timer = setInterval(() => void retryPendingMentions(), 60_000);
+  timer.unref?.();
+  g.__githubPendingMentionRetryTimer = timer;
+}
+
 async function recoverInterrupted(): Promise<void> {
   for (const s of listPrStates()) {
     const { fire, stale } = planRecovery(s);
@@ -198,6 +279,8 @@ export class GithubAgent implements AgentModule {
 
   getRoutes(): Map<string, (req: Request, url: URL) => Promise<Response>> {
     const routes = new Map<string, (req: Request, url: URL) => Promise<Response>>();
+
+    routes.set("POST /github/webhook", handleGithubWebhook);
 
     // Manual trigger for testing: POST /github-pr/<secret> { prNumber, headRef, headSha?, behavior, requestedBy? }
     routes.set("POST /github-pr/*", async (req, url) => {
@@ -232,20 +315,34 @@ export class GithubAgent implements AgentModule {
       return Response.json({ ok: true, behavior, prNumber });
     });
 
+    // GitHub normally owns this shared route. Slack registers the same handler
+    // only when this independently gated agent is disabled.
+    routes.set("POST /github/webhook", handleGithubWebhook);
+
     return routes;
   }
 
   async startup(): Promise<void> {
+    // Eagerly restore webhook replay protection. The webhook server binds
+    // earlier in boot, so the delivery read/write paths also restore the store
+    // lazily on first touch; this keeps it warm when no delivery arrives. A
+    // GitHub-only install has no Slack startup to warm it, so this agent loads
+    // the store itself.
+    loadGithubDeliveries();
     if (!githubConfigured()) {
-      console.warn("[github] GITHUB_API_TOKEN unset — review/fix/simplify can't post; agent idle");
+      console.warn("[github] GitHub App identity is incomplete — review/fix/simplify can't post; agent idle");
+    } else if (!(await githubToken())) {
+      console.warn("[github] GitHub App installation token is unavailable — review/fix/simplify can't post; agent idle");
     }
     if (!GITHUB_WEBHOOK_SECRET) {
-      console.warn("[github] GITHUB_WEBHOOK_SECRET unset — PR webhooks won't be verified/forwarded");
+      console.warn("[github] GITHUB_WEBHOOK_SECRET unset — PR webhooks won't be verified");
     }
+    loadGithubDeliveries();
     if (this.onSessionInvalidate) setGithubSessionInvalidate(this.onSessionInvalidate);
     ensureReviewAutomation();
     ensureDocsSyncAutomation();
     await recoverInterrupted();
+    startPendingMentionRetry();
     // Safety net under all of the above: the webhook path is fire-once, so
     // work lost AFTER an event was consumed (debounce killed by a restart,
     // review dead on dry pools, missed delivery) is re-fired by the sweep.
@@ -266,11 +363,15 @@ export class GithubAgent implements AgentModule {
   health(): Record<string, unknown> {
     const { autoEnabled } = resolveReviewConfig();
     return {
-      status: githubConfigured() ? "operational" : "missing GITHUB_API_TOKEN",
+      status: githubAppCredentialHealth(),
+      githubCredentialMode: "app",
+      githubCredentialConfigured: githubConfigured(),
       reviewAutomationEnabled: autoEnabled,
       trackedPrs: listPrStates().length,
       activeCodeLoops: activeCodeLoops(),
       reviewFeedback: feedbackStats(),
+      webhookConfigured: !!GITHUB_WEBHOOK_SECRET,
+      webhooksReceived: githubWebhookCount(),
     };
   }
 }

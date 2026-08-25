@@ -2,7 +2,7 @@ import { GITHUB_BOT_LOGINS } from "./brand";
 
 /** Superseded automated reviews remain on GitHub for history, not as actionable discussion. */
 export function isOutdatedReviewComment(body: string): boolean {
-	return /<!--\s*(?:os|michael)-review-outdated\s*-->/.test(body);
+	return /<!--\s*os-review-outdated\s*-->/.test(body);
 }
 
 /**

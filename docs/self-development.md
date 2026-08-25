@@ -14,7 +14,7 @@ A dev instance is `bun run packages/core/opensession-server/opensession.ts` with
   `.frontend-dist` bundle. It gated nothing on the backend. With the dev boot
   gate, `OPENSESSION_DEV=1` additionally skips every boot side effect that
   talks to the outside world or to shared state: integration agents
-  (Slack/Linear/Plain/GitHub/Stripe/Grafana), the webhook server, the cron
+  (Slack/Linear/Plain/GitHub/Stripe/Grafana), public webhook intake, the cron
   automation scheduler and all background tickers/sweeps, the public-ingress
   listener, detached-engine-server adoption, run resume/redelivery, and the
   seed writes to automations. What remains is the web server, the
@@ -89,8 +89,9 @@ can't write to our upstream) and, after your first local commit, ff-only
 deploys abort permanently because your history has diverged from ours. Clone
 your **fork** (keep `tellahq/opensession` as an `upstream` remote to pull our
 updates), and in worktree mode set the self repo's `ghRepo` in your config to
-the fork so the PR flow targets it. Beyond that, the service user needs
-passwordless sudo for `systemctl restart <service>` and `systemd-run`.
+the fork so the PR flow targets it. Run `opensession service install` once as
+an administrator; it installs the fixed run-host helper and narrowly scoped
+service-restart grants used by self-deploy.
 
 Staying current is one command: **`opensession update`** detects the fork
 topology (origin = your fork + an upstream remote), fetches upstream, merges

@@ -54,9 +54,9 @@ import { cn } from "../ui/cn";
  * What keeps the row quiet is its ink, not its surface: dim at medium weight,
  * no icon, against the near-black semibold of the transcript's own pills.
  *
- * The 28px height is fixed rather than left to the label, because the
- * transcript pads for exactly that (SUGGESTIONS_CLEARANCE) and inherited
- * leading would otherwise decide how much of the answer the row covers.
+ * The 28px height is fixed rather than left to the label, because
+ * SUGGESTIONS_CLEARANCE is measured from it and inherited leading would
+ * otherwise decide how much of the answer the row covers.
  */
 const chip =
 	"relative inline-flex h-7 w-full items-center whitespace-nowrap rounded-[999px] px-3 " +
@@ -81,13 +81,44 @@ interface Props {
 }
 
 export function ReplySuggestions({ suggestions, onPick, className }: Props) {
+	const rowRef = React.useRef<HTMLDivElement>(null);
+
+	React.useEffect(() => {
+		const row = rowRef.current;
+		if (!row) return;
+		const syncEdges = () => {
+			const overflow = row.scrollWidth - row.clientWidth > 1;
+			row.toggleAttribute("data-overflow-start", overflow && row.scrollLeft > 1);
+			row.toggleAttribute(
+				"data-overflow-end",
+				overflow && row.scrollLeft + row.clientWidth < row.scrollWidth - 1,
+			);
+		};
+		const observer = new ResizeObserver(syncEdges);
+		observer.observe(row);
+		for (const child of row.children) observer.observe(child);
+		row.addEventListener("scroll", syncEdges, { passive: true });
+		syncEdges();
+		return () => {
+			observer.disconnect();
+			row.removeEventListener("scroll", syncEdges);
+		};
+	}, [suggestions]);
+
 	if (!suggestions.length) return null;
 	return (
 		<div
+			ref={rowRef}
 			className={cn(
 				// One row that scrolls sideways rather than wrapping: a second line
 				// costs the transcript real height, and these are optional.
 				"flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+				// Fade only the edge with more content. A hard clip beside Next made
+				// a complete chip look broken, while the fade says the row scrolls.
+				"[--reply-fade-start:#000] [--reply-fade-end:#000] " +
+					"data-[overflow-start]:[--reply-fade-start:transparent] data-[overflow-end]:[--reply-fade-end:transparent] " +
+					"[-webkit-mask-image:linear-gradient(to_right,var(--reply-fade-start)_0,#000_16px,#000_calc(100%_-_16px),var(--reply-fade-end)_100%)] " +
+					"[mask-image:linear-gradient(to_right,var(--reply-fade-start)_0,#000_16px,#000_calc(100%_-_16px),var(--reply-fade-end)_100%)]",
 				// The caller floats this over the transcript, so the row spans the
 				// whole column while the chips fill only part of it. Nothing but the
 				// chips may take a click: the rest of that band is transcript you

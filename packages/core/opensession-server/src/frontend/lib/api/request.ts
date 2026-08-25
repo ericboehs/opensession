@@ -1,9 +1,17 @@
 import { BASE_PATH } from "../base";
+import { resolveAnonymousUserPath } from "../auth-ready";
 
 export const BASE = `${BASE_PATH}/api`;
 
 /** API base for building direct resource URLs (e.g. <img src> endpoints). */
 export const API_BASE = BASE;
+
+// A page can mount several surfaces that need the same resource at once. Share
+// only the request that is currently in flight: this removes duplicate cold
+// loads without turning the API layer into a stale response cache. Requests
+// with an AbortSignal stay independent because one caller must not be able to
+// cancel another caller's work.
+const inflightGets = new Map<string, Promise<unknown>>();
 
 /** Single error shape for every API failure: HTTP status + the server's
  * `error` field when it sent one (else a "<label>: <status>" message). */
@@ -22,7 +30,7 @@ export class ApiError extends Error {
  * useful ApiError instead of `SyntaxError: Unexpected token '<'` — and parses
  * JSON defensively (a bodyless 204/500 just yields null).
  */
-export async function request<T>(
+export function request<T>(
 	path: string,
 	opts: {
 		method?: string;
@@ -34,27 +42,51 @@ export async function request<T>(
 		label?: string;
 	} = {},
 ): Promise<T> {
-	const res = await fetch(`${BASE}${path}`, {
-		method: opts.method || "GET",
-		signal: opts.signal,
-		keepalive: opts.keepalive,
-		...(opts.body !== undefined
-			? {
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify(opts.body),
-				}
-			: {}),
-	});
-	if (!res.ok) {
-		const body = (await res.json().catch(() => null)) as {
-			error?: string;
-		} | null;
-		throw new ApiError(
-			body?.error || `${opts.label || "Failed"}: ${res.status}`,
-			res.status,
+	const method = opts.method || "GET";
+	if (method === "GET" && /[?&]user=Anonymous(?:&|$)/.test(path)) {
+		return resolveAnonymousUserPath(path).then((resolvedPath) =>
+			request<T>(resolvedPath, opts),
 		);
 	}
-	return (await res.json().catch(() => null)) as T;
+	const share = method === "GET" && opts.body === undefined && !opts.signal;
+	if (share) {
+		const existing = inflightGets.get(path);
+		if (existing) return existing as Promise<T>;
+	}
+
+	const pending = (async () => {
+		const res = await fetch(`${BASE}${path}`, {
+			method,
+			signal: opts.signal,
+			keepalive: opts.keepalive,
+			...(opts.body !== undefined
+				? {
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify(opts.body),
+					}
+				: {}),
+		});
+		if (!res.ok) {
+			const body = (await res.json().catch(() => null)) as {
+				error?: string;
+			} | null;
+			throw new ApiError(
+				body?.error || `${opts.label || "Failed"}: ${res.status}`,
+				res.status,
+			);
+		}
+		return (await res.json().catch(() => null)) as T;
+	})();
+
+	if (share) {
+		inflightGets.set(path, pending);
+		void pending
+			.finally(() => {
+				if (inflightGets.get(path) === pending) inflightGets.delete(path);
+			})
+			.catch(() => {});
+	}
+	return pending;
 }
 
 export function getWebSocketUrl(): string {

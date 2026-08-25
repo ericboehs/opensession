@@ -114,7 +114,7 @@ export function QuoteSelection({
 		setOffer({ text, ...boxes });
 	}, [containerRef, disabled]);
 
-	const add = useCallback(() => {
+	const add = () => {
 		const range = offerRangeRef.current;
 		if (!range || !offer) return;
 		stagedRef.current = range;
@@ -122,14 +122,14 @@ export function QuoteSelection({
 		window.getSelection()?.removeAllRanges();
 		setOffer(null);
 		onInputIntent?.();
-	}, [offer, onQuote, onInputIntent]);
+	};
 
-	const startNewChat = useCallback(() => {
+	const startNewChat = () => {
 		if (!offer) return;
 		window.getSelection()?.removeAllRanges();
 		setOffer(null);
 		onStartNewChat(newQuote(offer.text));
-	}, [offer, onStartNewChat]);
+	};
 
 	useEffect(() => {
 		if (disabled) return;

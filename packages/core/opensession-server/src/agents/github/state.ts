@@ -59,6 +59,13 @@ export interface GithubPrState {
   /** The last review's conclusion (verdict/confidence), for the UI. */
   lastReview?: LastReviewState;
   autoFix?: AutoFixState;
+  /** A label-triggered request persisted before its async run starts. If the
+   *  process exits during dispatch, reconcile can still attribute the run to
+   *  the person who applied the label. Cleared when runAutoFix takes ownership. */
+  pendingAutoFix?: {
+    requestedBy: string;
+    receivedAt: string;
+  };
   /** Review → owning-session fix rounds (handoff.ts); cleared when a review
    *  comes back satisfied or the PR closes. */
   handoff?: HandoffState;
@@ -82,8 +89,18 @@ export interface GithubPrState {
     kind: "review" | "simplify" | "adversarial";
     requestedBy: string;
     startedAt: string;
-    /** The run's progress comment id — reused only on restart recovery, not on a fresh re-trigger. */
+    /** A person stopped this run. Recovery must not start it again. */
+    cancelRequestedAt?: string;
+    /** The head under review. Recovery only reuses a progress comment for this same SHA. */
+    headSha?: string;
+    /** The run's progress comment id, reused only on restart recovery, not on a fresh re-trigger. */
     progressCommentId?: number;
+    /** Durable model result. Recovery can finish GitHub posting without rerunning a completed review. */
+    reviewResult?: {
+      text: string;
+      error?: string;
+      model?: string;
+    };
     /** Free-text steer from the triggering message, so a restart can re-pass it. */
     steer?: string;
   };
@@ -112,6 +129,8 @@ export interface GithubPrState {
     replyToId?: number;
     inline?: { path: string; line?: number; diffHunk?: string };
     receivedAt: string;
+    /** REST-posted receipt, reused as the run progress comment after a retry. */
+    progressCommentId?: number;
   };
   updatedAt: string;
 }
@@ -239,6 +258,37 @@ export function clearActiveRun(
   );
 }
 
+/** Persist a stop request before aborting the engine, so startup recovery and
+ *  pre-engine setup cannot bring the run back. */
+export function requestActiveRunCancellation(
+  prNumber: number,
+  headRef: string,
+  kind: NonNullable<GithubPrState["activeRun"]>["kind"],
+  ghRepo?: string,
+): boolean {
+  let requested = false;
+  updatePrState(
+    prNumber,
+    headRef,
+    (s) => {
+      if (s.activeRun?.kind !== kind) return;
+      s.activeRun.cancelRequestedAt ||= new Date().toISOString();
+      requested = true;
+    },
+    ghRepo,
+  );
+  return requested;
+}
+
+export function activeRunCancellationRequested(
+  prNumber: number,
+  kind: NonNullable<GithubPrState["activeRun"]>["kind"],
+  ghRepo?: string,
+): boolean {
+  const run = readPrState(prNumber, ghRepo)?.activeRun;
+  return run?.kind === kind && Boolean(run.cancelRequestedAt);
+}
+
 /** Every PR state file (for the startup recovery sweep). */
 export function listPrStates(): GithubPrState[] {
   const out: GithubPrState[] = [];
@@ -257,7 +307,7 @@ export function listPrStates(): GithubPrState[] {
  *  run owns the PR. Outermost first: auto-fix's gate review sets `activeRun`
  *  while `autoFix.active` is still set (that pair is NORMAL, not corruption), so
  *  resuming the fix loop resumes the review with it. */
-export type RecoveryKind = "auto-fix" | "run" | "mention" | "pending-mention";
+export type RecoveryKind = "auto-fix" | "pending-auto-fix" | "run" | "mention" | "pending-mention";
 
 const RECOVERY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
@@ -266,6 +316,8 @@ export function recoveryMarkerAt(s: GithubPrState, kind: RecoveryKind): string |
   switch (kind) {
     case "auto-fix":
       return s.autoFix?.startedAt;
+    case "pending-auto-fix":
+      return s.pendingAutoFix?.receivedAt;
     case "run":
       return s.activeRun?.startedAt;
     case "mention":
@@ -278,6 +330,7 @@ export function recoveryMarkerAt(s: GithubPrState, kind: RecoveryKind): string |
 function markersOn(s: GithubPrState): RecoveryKind[] {
   const out: RecoveryKind[] = [];
   if (s.autoFix?.active) out.push("auto-fix");
+  if (s.pendingAutoFix) out.push("pending-auto-fix");
   if (s.activeRun) out.push("run");
   if (s.activeMention) out.push("mention");
   if (s.pendingMention) out.push("pending-mention");
@@ -304,6 +357,12 @@ export function planRecovery(
 ): { fire?: RecoveryKind; stale: RecoveryKind[] } {
   const stale: RecoveryKind[] = [];
   for (const kind of markersOn(s)) {
+    // A cancelled one-shot stays marked until its running function unwinds.
+    // Treat it as cleanup-only if the process restarts in that window.
+    if (kind === "run" && s.activeRun?.cancelRequestedAt) {
+      stale.push(kind);
+      continue;
+    }
     const t = Date.parse(recoveryMarkerAt(s, kind) || "");
     if (t && now - t <= RECOVERY_MAX_AGE_MS) return { fire: kind, stale };
     stale.push(kind);
@@ -320,6 +379,9 @@ export function clearRecoveryMarker(s: GithubPrState, kind: RecoveryKind): void 
       switch (kind) {
         case "auto-fix":
           if (st.autoFix) st.autoFix.active = false;
+          break;
+        case "pending-auto-fix":
+          st.pendingAutoFix = undefined;
           break;
         case "run":
           st.activeRun = undefined;

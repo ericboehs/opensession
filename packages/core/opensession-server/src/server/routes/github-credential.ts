@@ -1,6 +1,7 @@
 import {
   githubCredentialForLogin,
   serviceGithubCredential,
+  soleGithubAccount,
   type GithubCredential,
 } from "../github-auth";
 import { webAuthRequired } from "../web-auth";
@@ -12,7 +13,10 @@ import type { RouteContext } from "./context";
  * that would attribute a deliberate human action to the bot.
  */
 export function githubMutationCredential(ctx: RouteContext): GithubCredential | null {
-  if (!webAuthRequired()) return serviceGithubCredential;
+  // Simple mode: the single connected account is the identity, so a PR the sole
+  // user opens is authored by them, not the bot. Fall back to the service
+  // credential only when nobody has connected (soleGithubAccount() is null).
+  if (!webAuthRequired()) return soleGithubAccount() ?? serviceGithubCredential;
   return ctx.authUser?.login ? githubCredentialForLogin(ctx.authUser.login) : null;
 }
 

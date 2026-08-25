@@ -29,9 +29,9 @@
  * - Big working-tree churn (rebase/checkout) can leave the watcher serving a
  *   stale build with no error — restart this server after git surgery.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import spaEntry from "../packages/core/opensession-server/src/frontend/index.html";
 
 const UPSTREAM = process.env.OS1_UPSTREAM || "http://127.0.0.1:3850";
@@ -39,7 +39,12 @@ const WS_UPSTREAM = UPSTREAM.replace(/^http/, "ws") + "/ws";
 const LOGIN = process.env.OS1_LOGIN || process.env.USER || "developer";
 const SSH_HOST = process.env.OS1_SSH_HOST || "";
 const PORT = Number(process.env.PORT || 3851);
-const TOKEN_CACHE = join(homedir(), ".opensession-frontend-dev-token.json");
+const TOKEN_CACHE = (() => {
+	const home = homedir();
+	const current = join(home, ".opensession", "frontend-dev-token.json");
+	const legacy = join(home, ".opensession-frontend-dev-token.json");
+	return existsSync(current) || !existsSync(legacy) ? current : legacy;
+})();
 
 async function tokenValid(candidate: string): Promise<boolean> {
 	try {
@@ -66,6 +71,7 @@ async function loadToken(): Promise<string> {
 		}
 	} catch {}
 	const fresh = fetchTokenViaSsh();
+	mkdirSync(dirname(TOKEN_CACHE), { recursive: true });
 	writeFileSync(
 		TOKEN_CACHE,
 		JSON.stringify({ login: LOGIN, upstream: UPSTREAM, token: fresh, fetchedAt: Date.now() }),
@@ -81,7 +87,7 @@ function fetchTokenViaSsh(): string {
 		"-o",
 		"BatchMode=yes",
 		SSH_HOST,
-		"cat ~/.opensession-web-sessions.json",
+		"cat ~/.opensession/web-sessions.json 2>/dev/null || cat ~/.opensession-web-sessions.json",
 	]);
 	if (proc.exitCode !== 0) {
 		console.error(proc.stderr.toString());

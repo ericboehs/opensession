@@ -119,7 +119,7 @@ final class SidebarToolsTests: XCTestCase {
     func testSurfacedToolsAreOnesThisAppDraws() {
         XCTAssertEqual(
             SidebarTools.surfaced.map(\.id),
-            [SidebarTools.catchUp, SidebarTools.reports]
+            [SidebarTools.feed, SidebarTools.tasks, SidebarTools.catchUp, SidebarTools.reports]
         )
         for tool in SidebarTools.surfaced {
             XCTAssertTrue(SidebarTools.allIds.contains(tool.id), tool.id)

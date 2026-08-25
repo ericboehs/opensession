@@ -1,5 +1,5 @@
 /**
- * Feed registry: external-object feeds (Tella videos; eventually Plain
+ * Feed registry: external-object feeds (videos; eventually Plain
  * tickets, any MCP/API) rendered as sidebar bands.
  *
  * A feed is a *project* in product terms — the non-git kind. A registered repo
@@ -33,7 +33,7 @@ import {
 export type { ExternalRef, FeedContextSpec, FeedPanelSpec };
 
 export interface FeedItem {
-  /** Stable external id (e.g. Tella `vid_…`); becomes ExternalRef.id. */
+  /** Stable external id (e.g. `vid_…`); becomes ExternalRef.id. */
   id: string;
   title: string;
   preview?: string;
@@ -354,7 +354,7 @@ export async function feedMcpServersForRefs(
 /**
  * The opening-context block for a session whose workspace carries these refs:
  * names the linked objects, adds the scratch-dir note for scratch sessions,
- * and for Tella refs appends the video's metadata + chapters + transcript
+ * and for video refs appends the video's metadata + chapters + transcript
  * excerpt (the Plain ticket-context analogue). Used by BOTH create paths and
  * the first prompt of prompt-less creates (tab-strip "+" siblings) — a session
  * in a feed workspace must get this no matter how it was born. Returns null

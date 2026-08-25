@@ -18,10 +18,9 @@
 FROM ubuntu:24.04
 
 # --- version pins (bump these when the host bumps; see README) ---
-ARG BUN_VERSION=1.3.14
+ARG BUN_VERSION=1.4.0
 ARG CLAUDE_VERSION=2.1.218
 ARG NODE_MAJOR=24
-ARG OPENCODE_VERSION=1.18.18
 
 # Locale parity note: the host runs a full en_US.UTF-8 locale; the image uses
 # C.UTF-8 (no `locales` package) on the assumption that nothing in the runner
@@ -70,14 +69,6 @@ RUN curl -fsSL https://just.systems/install.sh \
 RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
-
-# --- opencode (pinned to host; opencode-first direction needs it in-sandbox) ---
-# npm -g as root → /usr/bin/opencode (on PATH for uid 1000 too). The npm
-# package pulls the platform binary via optionalDependencies.
-RUN npm install -g --no-audit --no-fund "opencode-ai@${OPENCODE_VERSION}" \
-    && npm cache clean --force \
-    && installed="$(opencode --version)" \
-    && { [ "$installed" = "${OPENCODE_VERSION}" ] || { echo "opencode version mismatch: got '$installed', want ${OPENCODE_VERSION}"; exit 1; }; }
 
 # --- GitHub CLI (official apt repo) ---
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
@@ -144,9 +135,7 @@ WORKDIR /home/ubuntu
 # Pre-create HOME dirs that are PARENTS of bind-mount targets (~/.config/gh,
 # ~/.opensession-sessions/sandbox-runs/…, the rpc socket) — if they don't
 # exist, docker creates them ROOT-owned when materializing the mount target,
-# and then uid-1000 tools can't write siblings (opencode needs
-# ~/.config/opencode and ~/.opensession-sessions/opencode — both EACCES'd
-# before this). Runs as USER ubuntu, so ownership is right by construction.
+# and then uid-1000 tools cannot write sibling state directories. Runs as USER ubuntu, so ownership is right by construction.
 RUN mkdir -p /home/ubuntu/.config \
              /home/ubuntu/.local/share \
              /home/ubuntu/.opensession-sessions

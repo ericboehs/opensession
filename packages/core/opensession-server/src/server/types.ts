@@ -2,7 +2,7 @@ export type SessionSource = "slack" | "linear" | "opensession" | "cli";
 
 /**
  * Generic linkage from a session/workspace to an external object surfaced by
- * a feed (Tella video, eventually Plain thread, …). `kind` matches the feed's
+ * a feed (a video, eventually a Plain thread, …). `kind` matches the feed's
  * refKind; `id` is the item's stable external id. The successor to per-source
  * foreign keys like plainThreadId — see the feeds design.
  */
@@ -131,6 +131,8 @@ export interface UnifiedSession {
   workspaceName?: string;
   /** Parent/orchestrator session when spawned as a worker sub-session. */
   parentSessionId?: string;
+  /** Started by a server-side agent action rather than a person's composer. */
+  agentStarted?: boolean;
   /** The session whose agent created this as an internal helper. Visible
    *  create_session results omit this and stay in the user's workspaces. */
   spawnedBy?: string;
@@ -163,6 +165,8 @@ export interface UnifiedSession {
   /** Slack messages a teammate sent from this session. */
   slackShares?: SessionSlackShare[];
   automation?: string;
+  /** Total live runs in this automation. Present on the bounded sidebar list. */
+  automationRunCount?: number;
   /** Stable automation id for linking back to its settings. Older sessions may
    *  only have `automation`, which the settings route also accepts by name. */
   automationId?: string;
@@ -178,7 +182,7 @@ export interface UnifiedSession {
    */
   slim?: boolean;
   plainThreadId?: string;
-  /** Generic external-object linkage (feed items: Tella videos, …) — the
+  /** Generic external-object linkage (feed items: videos, …) — the
    *  successor to per-source foreign keys like plainThreadId (see
    *  the feeds design). A session can carry several. */
   externalRefs?: ExternalRef[];
@@ -186,7 +190,7 @@ export interface UnifiedSession {
   model?: string;
   /** Workspace model-preset instructions captured when this session was created. */
   presetNote?: string;
-  /** OpenCode reasoning variant for runs in this session; unset = model default. */
+  /** Pi reasoning variant for runs in this session; unset = model default. */
   effort?: string;
   /** Use OpenAI's priority service tier for ChatGPT OAuth Codex runs. */
   fastMode?: boolean;
@@ -198,21 +202,20 @@ export interface UnifiedSession {
   accountId?: string;
   /** Codex thread id, when this session has run on a codex-provider model. */
   codexThreadId?: string;
-  /** OpenCode session id (`ses_…`), when this session has run on an
-   *  opencode/* model. Its own slot (not the claude slot) so a migration to
-   *  the opencode engine keeps the claude history resumable/readable. Legacy
+  /** Pi session id (`ses_…`), when this session has run on an
+   *  pi/* model. Its own slot (not the claude slot) so a migration to
+   *  the pi engine keeps the claude history resumable/readable. Legacy
    *  session files from before this field may still carry a `ses_…` id in
    *  claudeSessionId — readers fall back on the id shape. */
-  opencodeSessionId?: string;
   /** Pi engine session id (the pi session header uuid), when this session has
    *  run on a pi/* model. Own slot, no legacy mirror — nothing pre-pi ever
    *  read a pi id, so there is no compat ride to keep. */
   piSessionId?: string;
   /** Provider whose engine last drove a run — lets the next run detect an
    *  in-place cross-provider switch and bridge context. */
-  lastEngineProvider?: "claude" | "codex" | "opencode" | "pi";
+  lastEngineProvider?: "claude" | "codex" | "pi";
   /** Model that last actually drove a run. Anthropic and OpenAI models both
-   *  report provider "opencode", so provider alone can't detect a family
+   *  report provider "pi", so provider alone can't detect a family
    *  switch (which lands on another server as a fresh engine session and
    *  needs a transcript bridge) — this can. */
   lastEngineModel?: string;
@@ -323,7 +326,7 @@ export interface SlackSessionFile {
   model?: string;
   codexThreadId?: string | null;
   /** Registered repo id this session works in; unset/null = the default repo
-   *  (tella-fusion), which is the historical shape, so old session files stay
+   *  (the instance default repo), which is the historical shape, so old session files stay
    *  valid. */
   repoId?: string | null;
   /** Pi engine session id, written by agent-session-sync for pi/* runs (its
@@ -416,6 +419,8 @@ export interface SessionPrRef {
   title?: string;
   isDraft?: boolean;
   reviewDecision?: string;
+  /** MERGEABLE | CONFLICTING | UNKNOWN — the provider's conflict probe. */
+  mergeable?: string;
   additions?: number;
   deletions?: number;
   checks?: { total: number; passed: number; failed: number; pending: number };
@@ -434,7 +439,7 @@ export interface WalkthroughShot {
  * A Cursor-style PR walkthrough the agent publishes when it finishes a
  * user-visible change: a short demo video, before/after screenshots, and a
  * writeup. Rendered inline in the session's Review tab and mirrored into the
- * GitHub PR description (video + images as os.tella.dev links there — the
+ * GitHub PR description (video + images as instance links there — the
  * server is tailnet-only, so GitHub's camo proxy can't inline them).
  */
 export interface SessionWalkthrough {
@@ -467,6 +472,10 @@ export interface SessionSlackShare {
   by?: string;
   /** The merged PR this share announced, for the in-transcript share card. */
   prNumber?: number;
+  /** Message timestamp. Undo needs it, and Slack only returns it sometimes. */
+  ts?: string;
+  /** Receipt to drop on undo, so the same update can be shared again. */
+  announcementKey?: string;
 }
 
 export interface NativeSessionFile {
@@ -507,6 +516,8 @@ export interface NativeSessionFile {
   stackedOn?: StackedOn;
   /** Parent/orchestrator session when this session was spawned as a visible worker sub-session. */
   parentSessionId?: string;
+  /** Started by a server-side agent action rather than a person's composer. */
+  agentStarted?: boolean;
   /** The session whose agent created this as an internal helper (see
    *  UnifiedSession.spawnedBy). Visible create_session results omit it. */
   spawnedBy?: string;
@@ -536,18 +547,20 @@ export interface NativeSessionFile {
   plainThreadId?: string; // Plain thread this session is triaging
   externalRefs?: ExternalRef[]; // generic feed-item linkage (the feeds design)
   model?: string; // model id for this session's runs; unset = default
+  /** Original selection displaced by an automatic usage fallback. `null` means
+   *  the session inherited the instance default; retried on the next prompt. */
+  autoFallbackModel?: string | null;
 	/** Workspace model-preset instructions captured when this session was created. */
 	presetNote?: string;
-  effort?: string; // OpenCode reasoning variant for this session's runs; unset = model default
+  effort?: string; // Pi reasoning variant for this session's runs; unset = model default
   fastMode?: boolean; // OpenAI priority service tier for ChatGPT OAuth Codex runs
   accountId?: string; // pinned Claude/Codex provider account; unset = auto pool
   codexThreadId?: string; // codex thread id once the session has run on a codex model
-  opencodeSessionId?: string; // opencode session id (ses_…) once the session has run on an opencode/* model
   piSessionId?: string; // pi engine session id (uuid) once the session has run on a pi/* model
   /** Provider whose engine last actually drove a run in this session. Lets the
    *  next run detect an in-place cross-provider switch (Claude↔Codex) and hand
    *  the incoming engine a transcript bridge so context carries over. */
-  lastEngineProvider?: "claude" | "codex" | "opencode" | "pi";
+  lastEngineProvider?: "claude" | "codex" | "pi";
   lastEngineModel?: string; // model that last drove a run (family-switch detection)
   modelHistory?: Array<{ model: string; from?: string; at: string; by?: string }>;
   usage?: SessionUsage; // cumulative token/cost accounting for this session's runs

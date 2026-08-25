@@ -6,6 +6,7 @@ import {
 	refTone,
 	sessionPrTone,
 	summarizePrSeries,
+	worstPrRef,
 	type SessionPrRef,
 } from "./pr-refs";
 import { sessionPrPresentation } from "./session-prs";
@@ -129,6 +130,25 @@ describe("refLabel", () => {
 		expect(refLabel(ref({ title: "Fix the uploader" }))).toBe(
 			"tella-fusion #72 (open) · Fix the uploader",
 		);
+	});
+});
+
+describe("worstPrRef", () => {
+	test("nothing to pick from", () => {
+		expect(worstPrRef([])).toBeUndefined();
+	});
+
+	test("the failing PR wins the single slot a phone bar has", () => {
+		const green = ref({ repo: "tella-fusion", branch: "a" });
+		const failing = ref({
+			repo: "tella-mac",
+			branch: "b",
+			checks: { total: 2, passed: 1, failed: 1, pending: 0 },
+		});
+		const merged = ref({ repo: "tella-windows", branch: "c", state: "MERGED" });
+
+		expect(worstPrRef([green, failing, merged])).toBe(failing);
+		expect(worstPrRef([merged, green])).toBe(green);
 	});
 });
 

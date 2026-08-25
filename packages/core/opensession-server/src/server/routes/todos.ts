@@ -8,7 +8,7 @@ import type { RouteContext } from "./context";
 import { requestUser } from "./context";
 import { clearDesk, ensureDeskSession } from "../desk";
 import { buildDeskState } from "../desk-state";
-import { findSession } from "../session-cache";
+import { findSessionAsync } from "../session-cache";
 import { addTodo, listTodos, updateTodo, type TodoStatus } from "../todos";
 
 const STATUSES = new Set(["open", "done", "dropped", "all"]);
@@ -93,7 +93,7 @@ export async function handleTodosRoutes(
 		return Response.json({
 			sessionId,
 			clearedAt: clearedAt ?? null,
-			session: findSession(sessionId) ?? null,
+			session: await findSessionAsync(sessionId) ?? null,
 		});
 	}
 

@@ -11,19 +11,35 @@ import {
 	setSidebarDensity,
 	type SidebarDensity,
 } from "../../lib/sidebar-density";
-import { AGENT_PERSON_KEY } from "../../lib/automation-audience";
+import {
+	getWsTimePref,
+	onWsTimeChanged,
+	setWsTimePref,
+	type WsTimePref,
+} from "../../lib/workspace-time";
 import { useIsPhone } from "../../hooks/useIsPhone";
 import { Menu } from "../../ui/menu";
+import {
+	SETTING_GLYPH,
+	SETTING_ROW,
+	SETTING_ROW_PRESSABLE,
+} from "../../lib/setting-row-classes";
+import {
+	type SettingOption,
+	ValueOptions,
+	ValueRow,
+} from "../../ui/setting-row";
 import { SwitchIndicator } from "../../ui/switch";
 import { cn } from "../../ui/cn";
 import { RepoTile, repoLabel } from "../RepoTile";
+import { IconChevronRight, IconRepo } from "../icons";
 import {
-	IconChevronDown,
-	IconChevronRight,
-	IconRobot,
-	IconSliders,
-} from "../icons";
-import { UserAvatar } from "../UserAvatar";
+	GROUP_BY_OPTIONS,
+	LAST_USED_TIME_OPTIONS,
+	personFilterOptions,
+	PR_FILTER_OPTIONS,
+	repoFilterOptions,
+} from "./filter-options";
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -33,12 +49,6 @@ import { createPortal } from "react-dom";
 // is scoped to, what it hides, how it is sorted, and how tight its rows are.
 // Rendered in a portal so it can overflow the narrow sidebar.
 
-interface SelectOption {
-	value: string;
-	label: string;
-	icon?: React.ReactNode;
-}
-
 /** Full-screen transparent catcher that closes the popover on outside click.
  *  The row menus portal above it (Base UI positions them at z-10001), so a
  *  press inside an open menu never reaches this. */
@@ -47,111 +57,12 @@ const BACKDROP = "fixed inset-0 z-[300]";
 /** The panel itself, portalled and fixed-positioned at the anchor: the app's
  *  popup surface, so it reads as the same object as every menu it opens.
  *
- *  Padding is 12px because the rows inside carry `rounded-md` (7px × --rf) and
- *  the panel `rounded-popup` (16px × --rf): 7 + 12 lands on 16 once both scale
- *  together, which is the concentric-corner rule. `gap-0.5` keeps two adjacent
- *  hover washes from fusing into one block. */
+ *  Padding is 8px, keeping the rows inside close to the panel edge without
+ *  crowding its `rounded-popup` corners. `gap-0.5` keeps two adjacent hover
+ *  washes from fusing into one block. */
 const FILTER_POPOVER =
 	"fixed z-[301] flex flex-col gap-0.5 rounded-popup bg-popup-glass [backdrop-filter:var(--popup-blur)] [--smooth-ring-color:var(--popup-ring)] " +
-	"p-3 smooth-shadow-ring-md animate-[hovercard-in_var(--dur-micro)_var(--ease)]";
-
-/** One control per row, and the row IS the control: the setting's name on the
- *  left, its current value and a chevron on the right.
- *
- *  These wear the popup's vocabulary (a menu row's corner and hover wash), not
- *  the field's. A bordered field per row put seven of the strong hairline on a
- *  290px panel whose whole job is to be quiet, and a 7px box inside a 16px
- *  panel corner reads square; boxes sized to their own content also left-ragged
- *  the column. Taking the frames away leaves the values themselves as the only
- *  thing to read, and the chevrons land on one x.
- *
- *  The phone step is the row's own, not the panel's: 36px is a comfortable
- *  pointer row and a tight thumb one, and the whole row is the target now, so
- *  the padding is the only thing standing between it and 44. */
-const FILTER_ROW =
-	"flex w-full cursor-pointer select-none items-center gap-3 rounded-md px-2 py-2 phone:py-3 text-left text-item-title hover:bg-hover data-[popup-open]:bg-hover";
-
-/** The leading glyph in a row and in its menu: one 16px box either way, so a
- *  list where only some options carry one keeps its labels on a single x. */
-const GLYPH_SLOT = "flex size-4 shrink-0 items-center justify-center text-dim";
-
-/** The options themselves. Shared, because the same question is asked from
- *  two places now: a row on the panel, and a row inside the Advanced menu. */
-function ValueOptions({
-	value,
-	options,
-	onSelect,
-}: {
-	value: string;
-	options: SelectOption[];
-	onSelect: (value: string) => void;
-}) {
-	const glyphs = options.some((option) => option.icon);
-	return (
-		<Menu.RadioGroup
-			value={value}
-			onValueChange={(next) => onSelect(String(next))}
-		>
-			{options.map((option) => (
-				// `closeOnClick`, because this list is a value picker: Base UI
-				// leaves a radio item's menu open by default, which is right
-				// for a menu you keep toggling things in and wrong for one
-				// answering a single question.
-				<Menu.RadioItem
-					key={option.value}
-					value={option.value}
-					closeOnClick
-					className="justify-between gap-3"
-				>
-					<span className="flex min-w-0 items-center gap-2">
-						{glyphs && <span className={GLYPH_SLOT}>{option.icon}</span>}
-						<span className="min-w-0 truncate">{option.label}</span>
-					</span>
-					<Menu.Check on={option.value === value} />
-				</Menu.RadioItem>
-			))}
-		</Menu.RadioGroup>
-	);
-}
-
-function FilterRow({
-	label,
-	value,
-	options,
-	onSelect,
-	footer,
-}: {
-	label: string;
-	value: string;
-	options: SelectOption[];
-	onSelect: (value: string) => void;
-	/** Rows under the options, below a rule: a setting about the things the
-	 *  options name, rather than another one of them to pick. */
-	footer?: React.ReactNode;
-}) {
-	const current = options.find((option) => option.value === value);
-	return (
-		<Menu.Root>
-			<Menu.Trigger className={FILTER_ROW}>
-				<span className="shrink-0 text-dim">{label}</span>
-				<span className="ml-auto flex min-w-0 items-center gap-2 text-fg">
-					{current?.icon && <span className={GLYPH_SLOT}>{current.icon}</span>}
-					<span className="truncate">{current?.label ?? value}</span>
-					<IconChevronDown size={16} className="-mr-0.5 shrink-0 text-faint" />
-				</span>
-			</Menu.Trigger>
-			<Menu.Popup align="end" sideOffset={6}>
-				<ValueOptions value={value} options={options} onSelect={onSelect} />
-				{footer && (
-					<>
-						<Menu.Separator />
-						{footer}
-					</>
-				)}
-			</Menu.Popup>
-		</Menu.Root>
-	);
-}
+	"p-2 smooth-shadow-ring-md animate-[hovercard-in_var(--dur-micro)_var(--ease)]";
 
 /** The same control as a row inside the Advanced menu: label, current value,
  *  and its options one level in. Reads as a menu row rather than a panel row,
@@ -164,7 +75,7 @@ function FilterSubmenu({
 }: {
 	label: string;
 	value: string;
-	options: SelectOption[];
+	options: SettingOption[];
 	onSelect: (value: string) => void;
 }) {
 	const current = options.find((option) => option.value === value);
@@ -173,7 +84,7 @@ function FilterSubmenu({
 			<Menu.SubmenuTrigger className="justify-between gap-3">
 				<span className="truncate">{label}</span>
 				<span className="flex flex-none items-center gap-2 text-dim">
-					{current?.icon && <span className={GLYPH_SLOT}>{current.icon}</span>}
+					{current?.icon && <span className={SETTING_GLYPH}>{current.icon}</span>}
 					<span className="truncate">{current?.label ?? value}</span>
 					<IconChevronRight className="shrink-0 text-faint" size={17} />
 				</span>
@@ -193,7 +104,6 @@ export function FilterPopover({
 	currentUser,
 	onChange,
 	onClose,
-	onCustomize,
 }: {
 	anchor: HTMLElement | null;
 	filter: FilterState;
@@ -204,11 +114,10 @@ export function FilterPopover({
 	onClose: () => void;
 	onCustomize: () => void;
 }) {
-	// Row density is a property of this list, so it sits with the other view
-	// controls rather than only in settings. It is a stored preference, not part
-	// of FilterState — hence its own state here, kept live by the pref's change
-	// event so the Appearance switch and this row never disagree.
-	// Both hooks run before the `anchor` early return: an unmounted anchor must
+	// Density and last used time belong to this list, but they are stored display
+	// preferences rather than part of FilterState. Keep them live here so the
+	// menu always reflects changes from another tab.
+	// All hooks run before the `anchor` early return: an unmounted anchor must
 	// not change how many hooks this component calls.
 	const isPhone = useIsPhone();
 	const [density, setDensity] = useState<SidebarDensity>(getSidebarDensity);
@@ -216,6 +125,8 @@ export function FilterPopover({
 		() => onSidebarDensityChanged(() => setDensity(getSidebarDensity())),
 		[],
 	);
+	const [wsTime, setWsTime] = useState<WsTimePref>(getWsTimePref);
+	useEffect(() => onWsTimeChanged(() => setWsTime(getWsTimePref())), []);
 
 	if (!anchor) return null;
 	const r = anchor.getBoundingClientRect();
@@ -223,51 +134,16 @@ export function FilterPopover({
 	const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
 	const top = r.bottom + 6;
 
-	const repoOptions: SelectOption[] = [
-		{ value: "all", label: "All repos" },
-		...repos.map((name) => ({
-			value: name,
-			label: repoLabel(name),
-			icon: <RepoTile name={name} size={16} />,
-		})),
-	];
-
-	// You first (the default), then teammates and the agent, the aggregate
-	// Backlog lens, and "Everyone" last. Owner-focused views retain their own
-	// Backlog rows.
-	const meKey = currentUser.toLowerCase();
-	const personAvatar = (name: string) => <UserAvatar name={name} size={16} />;
-	// The agent is one of the people in this list: it owns every automation
-	// nobody has taken. It has no photo, and an initial tile would read as a
-	// teammate you don't recognise, so it wears the machine face automation
-	// rows already use.
-	const personIcon = (key: string, label: string) =>
-		key === AGENT_PERSON_KEY ? (
-			<span className="inline-flex size-4 shrink-0 items-center justify-center rounded-avatar bg-active text-dim">
-				<IconRobot size={13} />
-			</span>
-		) : (
-			personAvatar(label)
-		);
-	const personOptions: SelectOption[] = [
-		{ value: "me", label: `${currentUser} (you)`, icon: personAvatar(currentUser) },
-		...people
-			.filter(({ key }) => key !== meKey)
-			.map(({ key, label }) => ({
-				value: key,
-				label,
-				icon: personIcon(key, label),
-			})),
-		{ value: "unassigned", label: "Unassigned" },
-		{ value: "everyone", label: "Everyone" },
-	];
+	const repoOptions = repoFilterOptions(repos.map((id) => ({ id })));
+	const personOptions = personFilterOptions({ people, currentUser });
 
 	// How much of what is now out of sight is doing something. Only the three
-	// that change which rows the list holds count: density is a look, and sort
-	// is an order. Empty projects counts here even though the Repo picker is
-	// its other door, because this is the number that explains a short list.
+	// that change which rows the list holds count: density and time are looks,
+	// and sort is an order. Empty projects counts here even though the Repo
+	// picker is its other door, because this is the number that explains a short
+	// list.
 	const advancedChanged =
-		(filter.prs === "default" ? 0 : 1) +
+		(filter.prs === "none" ? 0 : 1) +
 		(filter.autoCreated === "hide" ? 0 : 1) +
 		(filter.emptyProjects === "show" ? 0 : 1);
 
@@ -275,35 +151,30 @@ export function FilterPopover({
 		<>
 			<div className={BACKDROP} onClick={onClose} />
 			<div className={FILTER_POPOVER} style={{ left, top, width }}>
-				{/* The list is an inbox whichever of these is picked: its rows
-				    band by what they want from you and when they last moved. This
-				    is what sits above those bands — nothing, one band per project,
-				    or the status lanes, which stand in for them. It was two rows
-				    ("Sections" and "Group by") answering that as six combinations,
-				    two of which nobody needed: a list with no headings at all, and
-				    the status lanes nested under every project, which split the one
-				    "Needs input" heading status is for into one per project. */}
-				<FilterRow
+				{/* The section mode and project nesting are independent answers. */}
+				<ValueRow
 					label="Group by"
 					value={filter.groupBy}
-					options={[
-						// "Activity", not "Nothing": this is the inbox's own bands
-						// (Needs action / Recent / Yesterday / Earlier / Done) with
-						// nothing above them, so a list with five headings in it must
-						// not claim to have none. The stored value stays "none".
-						{ value: "none", label: "Activity" },
-						{ value: "repo", label: "Project" },
-						{ value: "status", label: "Status" },
-					]}
+					options={GROUP_BY_OPTIONS}
 					onSelect={(v) => onChange({ groupBy: v as GroupBy })}
 				/>
+				<button
+					type="button"
+					className={cn(SETTING_ROW, SETTING_ROW_PRESSABLE)}
+					onClick={() => onChange({ byProject: !filter.byProject })}
+				>
+					<span className="shrink-0 text-dim">Group by project</span>
+					<span className="ml-auto">
+						<SwitchIndicator on={filter.byProject} />
+					</span>
+				</button>
 				{/* The projects, and under them the one setting about the set of
 				    them rather than about which one you are in. It is in two
 				    places on purpose: here, under the list of projects it is
 				    about, and in Advanced with the other things that decide what
 				    the list holds. Whichever you open, it reads and writes the
 				    same setting. */}
-				<FilterRow
+				<ValueRow
 					label="Repo"
 					value={filter.repo}
 					options={repoOptions}
@@ -315,15 +186,12 @@ export function FilterPopover({
 								onChange({ emptyProjects: hide ? "hide" : "show" })
 							}
 						>
-							{/* "when empty", not "empty projects": the list above it has
-							    just named the projects, so the row only has to say what
-							    happens to one. */}
 							<span className="grow truncate">Hide when empty</span>
 							<SwitchIndicator on={filter.emptyProjects === "hide"} />
 						</Menu.CheckboxItem>
 					}
 				/>
-				<FilterRow
+				<ValueRow
 					label="Person"
 					value={filter.person}
 					options={personOptions}
@@ -336,11 +204,11 @@ export function FilterPopover({
 				    It says how many of them are off their default, because a
 				    setting that hides rows is exactly the one you want to find
 				    again when the list looks short, and a closed menu cannot
-				    show you that it is the reason. Sort and density change how
-				    the list reads rather than what is in it, so neither is part
-				    of that count. */}
+				    show you that it is the reason. Sort, density, and time change
+				    how the list reads rather than what is in it, so they are not
+				    part of that count. */}
 				<Menu.Root>
-					<Menu.Trigger className={cn(FILTER_ROW, "mt-1")}>
+					<Menu.Trigger className={cn(SETTING_ROW, SETTING_ROW_PRESSABLE, "mt-1")}>
 						<span className="shrink-0 text-dim">Advanced</span>
 						<span className="ml-auto flex min-w-0 items-center gap-2 text-fg">
 							{advancedChanged > 0 && (
@@ -354,26 +222,32 @@ export function FilterPopover({
 							/>
 						</span>
 					</Menu.Trigger>
-					<Menu.Popup align="end" sideOffset={6}>
-						<FilterSubmenu
-							label="Sort by"
-							value={filter.sort}
-							options={[
-								{ value: "updated", label: "Updated" },
-								{ value: "created", label: "Created" },
-							]}
-							onSelect={(v) => onChange({ sort: v as SortBy })}
-						/>
+					<Menu.Popup
+						align="end"
+						sideOffset={6}
+						alignOffset={isPhone ? -6 : -30}
+						className="[&>div]:p-2"
+					>
+						{/* Inbox has stable creation order and Activity owns recency.
+						    Status is the one layout where choosing lane order still makes
+						    sense, so only it offers this override. */}
+						{filter.groupBy === "status" && (
+							<FilterSubmenu
+								label="Sort by"
+								value={filter.sort}
+								options={[
+									{ value: "updated", label: "Updated" },
+									{ value: "created", label: "Created" },
+								]}
+								onSelect={(v) => onChange({ sort: v as SortBy })}
+							/>
+						)}
 						{/* Session-less PR rows in the project sections (the dissolved
 						    PR band): whose PRs surface. */}
 						<FilterSubmenu
 							label="Pull requests"
 							value={filter.prs}
-							options={[
-								{ value: "default", label: "Mine + requested" },
-								{ value: "all", label: "Everyone's" },
-								{ value: "none", label: "Hidden" },
-							]}
+							options={PR_FILTER_OPTIONS}
 							onSelect={(v) => onChange({ prs: v as PrsFilter })}
 						/>
 						{/* Workspaces an agent started for itself. They sit in the
@@ -419,44 +293,30 @@ export function FilterPopover({
 							<span className="grow truncate">Hide empty projects</span>
 							<SwitchIndicator on={filter.emptyProjects === "hide"} />
 						</Menu.CheckboxItem>
-						{/* Behind a rule, because it is the odd one here: everything
-						    above decides which rows the list holds, and this only
-						    decides how tightly they are drawn. It is also the only
-						    row here that is not part of the filter at all: it writes
-						    a stored preference the Appearance settings share.
-
-						    Desktop only, because that is the whole of what the
-						    preference does: a phone row is a tap target and keeps its
-						    own padding at either setting (see SIDEBAR_DENSITY_VARS),
-						    so offering the control there would be a switch that
-						    changes nothing. The rule goes inside that check, so a
-						    phone does not end the menu on a line with nothing under
-						    it. */}
+						{/* Display preferences stay beside the filters they affect and also
+						    remain available in Settings. Density is desktop only here because
+						    phone rows keep their touch padding at either value. */}
+						<Menu.Separator />
 						{!isPhone && (
-							<>
-								<Menu.Separator />
-								<FilterSubmenu
-									label="Density"
-									value={density}
-									options={DENSITY_OPTIONS.map(({ value, label, Icon }) => ({
-										value,
-										label,
-										icon: <Icon size={16} />,
-									}))}
-									onSelect={(v) => setSidebarDensity(v as SidebarDensity)}
-								/>
-							</>
+							<FilterSubmenu
+								label="Density"
+								value={density}
+								options={DENSITY_OPTIONS.map(({ value, label, Icon }) => ({
+									value,
+									label,
+									icon: <Icon size={16} />,
+								}))}
+								onSelect={(v) => setSidebarDensity(v as SidebarDensity)}
+							/>
 						)}
+						<FilterSubmenu
+							label="Last used time"
+							value={wsTime}
+							options={LAST_USED_TIME_OPTIONS}
+							onSelect={(v) => setWsTimePref(v as WsTimePref)}
+						/>
 					</Menu.Popup>
 				</Menu.Root>
-				<button
-					type="button"
-					className={cn(FILTER_ROW, "mt-1 text-fg")}
-					onClick={onCustomize}
-				>
-					<IconSliders size={20} className="shrink-0 text-dim" />
-					<span className="truncate">Customize sidebar</span>
-				</button>
 			</div>
 		</>,
 		document.body,
@@ -520,7 +380,9 @@ export const RepoFilterChip = React.forwardRef<
 								className="justify-between gap-3"
 							>
 								<span className="flex min-w-0 items-center gap-2">
-									<span className={GLYPH_SLOT} />
+									<span className={SETTING_GLYPH}>
+										<IconRepo size={16} />
+									</span>
 									<span className="min-w-0 truncate">All repos</span>
 								</span>
 								<Menu.Check on={repo === "all"} />
@@ -533,7 +395,7 @@ export const RepoFilterChip = React.forwardRef<
 									className="justify-between gap-3"
 								>
 									<span className="flex min-w-0 items-center gap-2">
-										<span className={GLYPH_SLOT}>
+										<span className={SETTING_GLYPH}>
 											<RepoTile name={name} size={16} />
 										</span>
 										<span className="min-w-0 truncate">{repoLabel(name)}</span>

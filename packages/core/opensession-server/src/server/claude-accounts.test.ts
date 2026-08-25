@@ -363,20 +363,20 @@ describe("pickBridgeAccount renders the owner-gate refusals", () => {
   // whether the model-fallback walk engages by matching these substrings
   // against the lowercased message, so resolveAccount hands back a structured
   // refusal and each caller keeps its own text.
-  const ocConfig = join(dir, "opencode.json");
-  const saved = process.env.OPENSESSION_OPENCODE_CONFIG;
+  const ocConfig = join(dir, "model-providers.json");
+  const saved = process.env.OPENSESSION_MODEL_PROVIDERS_CONFIG;
   let bridge: typeof import("./anthropic-bridge");
   const designate = (ids: string[]) =>
     writeFileSync(ocConfig, JSON.stringify({ enabled: true, bridge: { accounts: ids } }));
 
   beforeAll(async () => {
-    process.env.OPENSESSION_OPENCODE_CONFIG = ocConfig;
+    process.env.OPENSESSION_MODEL_PROVIDERS_CONFIG = ocConfig;
     bridge = await import("./anthropic-bridge");
   });
 
   afterAll(() => {
-    if (saved === undefined) delete process.env.OPENSESSION_OPENCODE_CONFIG;
-    else process.env.OPENSESSION_OPENCODE_CONFIG = saved;
+    if (saved === undefined) delete process.env.OPENSESSION_MODEL_PROVIDERS_CONFIG;
+    else process.env.OPENSESSION_MODEL_PROVIDERS_CONFIG = saved;
   });
 
   test("a designation of only someone else's personal account is dry", () => {

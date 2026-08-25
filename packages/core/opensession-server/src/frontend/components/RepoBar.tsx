@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
+  cachedRepos,
   fetchRepos,
   attachRepoApi,
   detachRepoApi,
@@ -24,10 +25,10 @@ interface Props {
    *  - "breadcrumb" (default): the desktop session-header pill, followed by a
    *    "›" separator before the title.
    *  - "menu-row": a full-width row styled like the ⋯ overflow menu's other
-   *    items, so the switch/attach menu is reachable from there on a phone (the
-   *    phone top bar just *shows* the repo — settings live behind the heading).
+   *    items.
+   *  - "hero": the compact repository link below the phone Workspace title.
    */
-  variant?: "breadcrumb" | "menu-row";
+  variant?: "breadcrumb" | "menu-row" | "hero";
 }
 
 /**
@@ -48,7 +49,10 @@ export function RepoBar({
 }: Props) {
   const [attached, setAttached] = useState<AttachedRepo[]>(initialAttached);
   const [primary, setPrimary] = useState(primaryRepo);
-  const [repos, setRepos] = useState<RepoInfo[]>([]);
+  // Opens on the repos this browser saw last (lib/repo-cache) and revalidates
+  // behind them: the registered set barely moves, so waiting for /repos before
+  // drawing a single row spent a request on a menu that was already right.
+  const [repos, setRepos] = useState<RepoInfo[]>(cachedRepos);
   const [open, setOpen] = useState(false);
   const [switchable, setSwitchable] = useState(false); // false only for ask sessions
   const [hasWork, setHasWork] = useState(false); // already has edits/commits → confirm on switch
@@ -61,8 +65,14 @@ export function RepoBar({
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   // Keep in sync if the session prop changes (e.g. the agent attached one, or a
-  // switch landed and the parent re-fetched).
-  useEffect(() => setAttached(initialAttached), [JSON.stringify(initialAttached)]);
+  // switch landed and the parent re-fetched). Compared by content: the parent
+  // rebuilds the array each fetch.
+  const initialAttachedKey = JSON.stringify(initialAttached);
+  const initialAttachedValue = useMemo(
+    () => JSON.parse(initialAttachedKey) as AttachedRepo[],
+    [initialAttachedKey],
+  );
+  useEffect(() => setAttached(initialAttachedValue), [initialAttachedValue]);
   useEffect(() => setPrimary(primaryRepo), [primaryRepo]);
 
   // Can this session's primary repo be switched, and does it already have work?
@@ -76,7 +86,9 @@ export function RepoBar({
   }, [sessionId, primary]);
 
   useEffect(() => {
-    if (open && !repos.length) fetchRepos().then(setRepos).catch(() => {});
+    // Every open, not just the first: a repo added since is exactly what the
+    // cached list is missing, and a failed refresh keeps the rows on screen.
+    if (open) fetchRepos().then(setRepos).catch(() => {});
   }, [open]);
 
   const attachedIds = new Set(attached.map((r) => r.repo));
@@ -89,25 +101,25 @@ export function RepoBar({
   async function attach(repo: string) {
     setBusy("Attaching…");
     setError(null);
-    try {
-      setAttached(await attachRepoApi(sessionId, repo, branch || undefined));
-    } catch (e: any) {
-      setError(e.message || String(e));
-    } finally {
-      setBusy(null);
-    }
+    await (async () => {
+setAttached(await attachRepoApi(sessionId, repo, branch || undefined));
+})().catch(async (e: any) => {
+setError(e.message || String(e));
+}).finally(async () => {
+setBusy(null);
+});
   }
 
   async function detach(repo: string) {
     setBusy("Detaching…");
     setError(null);
-    try {
-      setAttached(await detachRepoApi(sessionId, repo));
-    } catch (e: any) {
-      setError(e.message || String(e));
-    } finally {
-      setBusy(null);
-    }
+    await (async () => {
+setAttached(await detachRepoApi(sessionId, repo));
+})().catch(async (e: any) => {
+setError(e.message || String(e));
+}).finally(async () => {
+setBusy(null);
+});
   }
 
   function switchPrimary(repo: string) {
@@ -124,17 +136,17 @@ export function RepoBar({
     void doSwitch(repo);
   }
 
-  async function doSwitch(repo: string) {
+  const doSwitch = async (repo: string) => {
     setConfirmOpen(false);
     setBusy("Switching…");
     setError(null);
-    try {
-      const res = await switchPrimaryRepoApi(sessionId, repo, hasWork);
+    await (async () => {
+const res = await switchPrimaryRepoApi(sessionId, repo, hasWork);
       setPrimary(res.repo);
       setHasWork(false); // the new worktree starts fresh
       setAttached((prev) => prev.filter((r) => r.repo !== res.repo));
-    } catch (e: any) {
-      setError(e.message || String(e));
+})().catch(async (e: any) => {
+setError(e.message || String(e));
       // Resync in case a concurrent turn changed the session's state.
       fetchRepoSwitchable(sessionId)
         .then(({ switchable, hasWork }) => {
@@ -142,10 +154,10 @@ export function RepoBar({
           setHasWork(hasWork);
         })
         .catch(() => {});
-    } finally {
-      setBusy(null);
-    }
-  }
+}).finally(async () => {
+setBusy(null);
+});
+  };
 
   // Static (non-menu-item) row — current repo when it can't switch, attached rows.
   const staticRow = "flex items-center gap-2 rounded-md px-2.5 py-2 text-control-label text-fg";
@@ -169,13 +181,26 @@ export function RepoBar({
         </span>
         <IconChevronRight size={16} className="shrink-0 text-faint" />
       </Menu.Trigger>
+    ) : variant === "hero" ? (
+      <Menu.Trigger
+        className="inline-flex min-h-11 max-w-full shrink-0 cursor-pointer items-center rounded-md border-0 bg-transparent px-1.5 text-label font-medium text-dim transition-[color,background-color,scale] hover:bg-hover hover:text-fg active:scale-[0.96] data-[popup-open]:bg-hover data-[popup-open]:text-fg"
+        title="Switch or attach another repository"
+        aria-label={`Repository: ${repoLabel(primary)}. Change repository`}
+      >
+        <span className="truncate">{busy ?? repoLabel(primary)}</span>
+        {attached.length > 0 && (
+          <span className="ml-1 text-faint">+{attached.length}</span>
+        )}
+      </Menu.Trigger>
     ) : (
       <Menu.Trigger
         className="-mx-1.5 -my-1 flex min-w-0 shrink-0 cursor-pointer items-center gap-[7px] rounded-md border-0 bg-transparent px-1.5 py-1 text-item-title font-medium text-fg hover:bg-hover data-[popup-open]:bg-hover"
         title="Click to switch or attach another repo"
       >
         <RepoTile name={primary} />
-        <span className="max-w-[180px] truncate">{busy ?? repoLabel(primary)}</span>
+        {/* Type sits optically high beside a centered image tile: its descender
+            space otherwise makes the word look low even when the line boxes agree. */}
+        <span className="max-w-[180px] -translate-y-px truncate">{busy ?? repoLabel(primary)}</span>
         {attached.length > 0 && (
           <span
             className="text-label text-dim"
@@ -259,13 +284,13 @@ export function RepoBar({
                 )}
               </Menu.Group>
               {!switchable ? (
-                <div className="max-w-[240px] px-2.5 pt-1.5 pb-0.5 text-meta leading-snug text-faint">
+                <div className="max-w-[240px] px-2.5 pt-1.5 pb-0.5 text-supporting leading-snug text-faint">
                   Ask sessions read the shared checkout, so there's no primary repo
                   to switch.
                 </div>
               ) : (
                 hasWork && (
-                  <div className="max-w-[240px] px-2.5 pt-1.5 pb-0.5 text-meta leading-snug text-faint">
+                  <div className="max-w-[240px] px-2.5 pt-1.5 pb-0.5 text-supporting leading-snug text-faint">
                     Switching keeps your current changes in the {repoLabel(primary)} worktree.
                     They won't move to the new repo.
                   </div>

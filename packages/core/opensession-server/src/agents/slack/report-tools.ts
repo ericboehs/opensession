@@ -23,8 +23,10 @@ import {
 	MAX_REPORT_TASK_PROMPT,
 	MAX_REPORT_TASKS,
 } from "../../server/reports";
-import { assetsDirFor, resolveAssetPath } from "../../server/session-assets";
-import { lstatSync, readFileSync, realpathSync, statSync } from "fs";
+import { safeAssetPath } from "../../server/session-assets";
+import { ensureSessionScratch } from "../../server/session-scratch";
+import { lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 function text(s: string) {
 	return { content: [{ type: "text" as const, text: s }] };
@@ -35,7 +37,7 @@ export function createReportMcpServer(ctx: {
 	automationName: string;
 	sessionId?: string;
 }) {
-	const stagingDir = ctx.sessionId ? assetsDirFor(ctx.sessionId) : null;
+	const stagingDir = ctx.sessionId ? ensureSessionScratch(ctx.sessionId) : undefined;
 	const tools = [
 		tool(
 			"publish_report",
@@ -58,7 +60,7 @@ Write plain semantic HTML and set no colours. Readers view reports in a light or
 					.max(MAX_REPORT_ASSETS)
 					.optional()
 					.describe(
-						`Relative file paths staged in this run's assets folder${stagingDir ? ` (${stagingDir})` : ""}. They are copied into durable report storage and served at assets/<path>. Combined max ${Math.floor(MAX_REPORT_ASSET_BYTES / 1024 / 1024)} MB.`,
+						`Relative file paths staged in this run's scratch directory${stagingDir ? ` (${stagingDir})` : ""}. They are copied into durable report storage and served at assets/<path>. Combined max ${Math.floor(MAX_REPORT_ASSET_BYTES / 1024 / 1024)} MB.`,
 					),
 				summary: z
 					.string()
@@ -123,32 +125,27 @@ prompt: the whole opening prompt for that session (max ${MAX_REPORT_TASK_PROMPT}
 				try {
 					if (args.assets?.length && !ctx.sessionId)
 						throw new Error("Report assets require a session id");
-					const realStagingDir = args.assets?.length
-						? realpathSync(stagingDir!)
-						: null;
+					if (args.assets?.length && !stagingDir)
+						throw new Error("Report assets require session scratch");
+					const realStagingDir = args.assets?.length ? realpathSync(stagingDir!) : null;
 					let assetBytes = 0;
 					const assetPaths = new Set<string>();
-					const sources = (args.assets || []).map((path) => {
-						const source = resolveAssetPath(ctx.sessionId!, path);
-						if (assetPaths.has(source.rel))
-							throw new Error(`Duplicate report asset: ${source.rel}`);
-						assetPaths.add(source.rel);
-						if (!lstatSync(source.abs).isFile())
-							throw new Error(`Not a file: ${path}`);
-						const realPath = realpathSync(source.abs);
+					const assets = (args.assets || []).map((path) => {
+						const rel = safeAssetPath(path);
+						if (assetPaths.has(rel)) throw new Error(`Duplicate report asset: ${rel}`);
+						assetPaths.add(rel);
+						const candidate = resolve(join(stagingDir!, rel));
+						if (!lstatSync(candidate).isFile()) throw new Error(`Not a file: ${path}`);
+						const realPath = realpathSync(candidate);
 						if (!realPath.startsWith(`${realStagingDir!}/`))
-							throw new Error(`Asset resolves outside the session folder: ${path}`);
+							throw new Error(`Asset resolves outside session scratch: ${path}`);
 						assetBytes += statSync(realPath).size;
 						if (assetBytes > MAX_REPORT_ASSET_BYTES)
 							throw new Error(
 								`Report assets too large (${assetBytes} bytes > ${MAX_REPORT_ASSET_BYTES})`,
 							);
-						return { path: source.rel, realPath };
+						return { path: rel, data: readFileSync(realPath) };
 					});
-					const assets = sources.map((source) => ({
-						path: source.path,
-						data: readFileSync(source.realPath),
-					}));
 					const meta = publishReport({
 						automationId: ctx.automationId,
 						automationName: ctx.automationName,

@@ -17,11 +17,11 @@ final class TurnActivityTests: XCTestCase {
         let runningOpen = TurnActivity(work: .running, tools: .open)
         XCTAssertTrue(runningOpen.defaultExpanded(isLive: true))
         XCTAssertFalse(runningOpen.defaultExpanded(isLive: false))
-        XCTAssertTrue(runningOpen.expandsToolRuns)
+        XCTAssertTrue(runningOpen.rendersToolCallsInPlace)
 
         let alwaysOpenFolded = TurnActivity(work: .open, tools: .folded)
         XCTAssertTrue(alwaysOpenFolded.defaultExpanded(isLive: false))
-        XCTAssertFalse(alwaysOpenFolded.expandsToolRuns)
+        XCTAssertFalse(alwaysOpenFolded.rendersToolCallsInPlace)
     }
 
     func testLegacyRemoteValueWinsOverAStaleLocalToolCache() {

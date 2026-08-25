@@ -48,6 +48,7 @@ describe("planRecovery picks exactly one run per PR", () => {
     const plan = planRecovery(
       state({
         autoFix: { active: true, iterations: 0, startedAt: fresh },
+        pendingAutoFix: { requestedBy: "soutar", receivedAt: fresh },
         activeRun: { kind: "review", requestedBy: "someone", startedAt: fresh },
         activeMention: { author: "someone", body: "hi", kind: "issue", startedAt: fresh },
         pendingMention: { kind: "issue", commentId: 7, body: "hi", author: "someone", receivedAt: fresh },
@@ -55,6 +56,15 @@ describe("planRecovery picks exactly one run per PR", () => {
       NOW,
     );
     expect(plan.fire).toBe("auto-fix");
+    expect(plan.stale).toEqual([]);
+  });
+
+  test("a label receipt that lost dispatch is recovered with its requester", () => {
+    const plan = planRecovery(
+      state({ pendingAutoFix: { requestedBy: "soutar", receivedAt: fresh } }),
+      NOW,
+    );
+    expect(plan.fire).toBe("pending-auto-fix");
     expect(plan.stale).toEqual([]);
   });
 
@@ -101,6 +111,22 @@ describe("planRecovery picks exactly one run per PR", () => {
       NOW,
     );
     expect(plan.fire).toBe("run");
+  });
+
+  test("a cancelled review is cleared instead of restarted", () => {
+    const plan = planRecovery(
+      state({
+        activeRun: {
+          kind: "review",
+          requestedBy: "someone",
+          startedAt: fresh,
+          cancelRequestedAt: fresh,
+        },
+      }),
+      NOW,
+    );
+    expect(plan.fire).toBeUndefined();
+    expect(plan.stale).toEqual(["run"]);
   });
 
   test("a PR with no markers is left alone", () => {

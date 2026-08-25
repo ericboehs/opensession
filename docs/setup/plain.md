@@ -36,7 +36,7 @@ config, or the `ENABLE_PLAIN_AGENT` env flag (which wins when set — see
 ## Webhook intake
 
 Point a Plain webhook at `POST /plain/webhook` on the
-[webhook server](install.md#webhook-server). Signature header:
+[public ingress gateway](install.md#public-ingress). Signature header:
 `plain-request-signature` (HMAC-SHA256, timing-safe).
 
 Consumed events (`packages/core/opensession-server/src/agents/plain/handlers.ts`):
@@ -77,7 +77,7 @@ shape is the reference for scoping any automation:
 - **Denied tools** — every automation run hard-denies customer-facing and
   identity-mutating tools (`AUTOMATION_DENIED_TOOLS` in
   `packages/core/opensession-server/src/server/automations.ts`, enforced by stripping the tools from the
-  model's tool list — `opencodeRunPolicy`): the Plain thread writes
+  model's tool list — `runToolPolicy`): the Plain thread writes
   (`mcp__plain__reply_to_thread`, `mark_thread_done`, `mark_thread_todo`,
   `snooze_thread`) and the WorkOS write/impersonation set (create/delete/
   update user+org+membership, revoke, invitations, password-reset and

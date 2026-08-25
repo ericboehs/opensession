@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import type { TranscriptEntry } from "../lib/types";
 import { renderMarkdown } from "../lib/markdown";
 import { MarkdownBody, useMarkdownRepo } from "./MarkdownBody";
@@ -17,6 +17,7 @@ import { UserAvatar } from "./UserAvatar";
 import { openGalleryFrom } from "./MediaLightbox";
 import { IconExpand, IconPencil } from "./icons";
 import { personKey } from "../lib/review-queue";
+import { AnsweredAskCard } from "./AnsweredAskCard";
 
 import {
 	fileChipCard,
@@ -84,42 +85,38 @@ export function ClampedBody({
 
 	// Cut the eager head at a line boundary so we don't render half a line of
 	// a diff/log as its own paragraph.
-	const head = useMemo(() => {
+	const head = (() => {
 		if (!isLong || showAll) return content;
 		const slice = content.slice(0, EAGER_MD_CHARS);
 		const nl = slice.lastIndexOf("\n");
 		return nl > EAGER_MD_CHARS / 2 ? slice.slice(0, nl) : slice;
-	}, [content, isLong, showAll]);
+	})();
 
 	const shown = showAll ? (fetched ?? content) : head;
 	// Giant expanded payloads skip markdown entirely — see FULL_MD_CHARS.
 	const asMarkdown = shown.length <= FULL_MD_CHARS;
 	const repo = useMarkdownRepo();
 	const assetPaths = useOpenAssetPaths();
-	const html = useMemo(
-		() =>
-			asMarkdown
+	const html = (asMarkdown
 				? renderMarkdown(shown, { repo, sessionId, assetPaths })
-				: "",
-		[asMarkdown, shown, repo, sessionId, assetPaths],
-	);
+				: "");
 
 	const expand = async () => {
 		if (wireClamped && !fetched && entry && sessionId) {
 			setFetching(true);
-			try {
-				const res = await fetch(
+			await (async () => {
+const res = await fetch(
 					`${BASE_PATH}/api/sessions/${encodeURIComponent(sessionId)}/entry/${encodeURIComponent(entry.id)}`,
 				);
 				if (res.ok) {
 					const data = await res.json();
 					if (typeof data?.content === "string") setFetched(data.content);
 				}
-			} catch {
-				// keep the wire-clamped text — the tail just stays truncated
-			} finally {
-				setFetching(false);
-			}
+})().catch(async () => {
+// keep the wire-clamped text — the tail just stays truncated
+}).finally(async () => {
+setFetching(false);
+});
 		}
 		setShowAll(true);
 	};
@@ -397,8 +394,8 @@ function EditAgainButton({ onClick }: { onClick: () => void }) {
  * every one of them would just be noise while reading — so the time stays
  * hover-capable pointers only, where the assistant's equivalent lives in the ⋯
  * menu instead. The reveal is opacity-only over an absolutely positioned row —
- * nothing here may change a block's height, or VirtualTranscriptBlock's
- * measured placeholders would mis-size and jump the scroll. The ::selection
+ * nothing here may change a block's height, or the virtual transcript's
+ * measured rows would resize and jump the scroll. The ::selection
  * mask is the same WebKit fix as the label's: a drag-select sweeping past
  * unselectable text paints a phantom highlight without it, and a fully
  * transparent background is ignored. */
@@ -568,7 +565,7 @@ function EntryFiles({
 // reuses objects) and owner is stable upstream, so a tool event appended to
 // the transcript re-renders only the affected blocks — not every bubble's
 // markdown/highlighting.
-export const MessageBubble = React.memo(function MessageBubble({
+export const MessageBubble = function MessageBubble({
 	entry,
 	owner,
 	sessionId,
@@ -581,10 +578,15 @@ export const MessageBubble = React.memo(function MessageBubble({
 	// (classifyEntry, protocol/notices.ts). Re-running it here is free on an
 	// already-classified entry and keeps the UI correct against a server that
 	// predates the field, which is what a rolling deploy looks like.
-	const e = useMemo(() => classifyEntry(entry), [entry]);
+	const e = (classifyEntry(entry));
 	const displayContent = e.content;
 
-	// Anything that isn't a message is a notice, whatever produced it.
+	// An answered question is a durable sent receipt. It keeps the question and
+	// exact answer visible without making the old choices look actionable.
+	if (e.notice?.kind === "ask" && e.notice.ask)
+		return <AnsweredAskCard record={e.notice.ask} entryId={e.id} />;
+
+	// Anything else that isn't a message is a notice, whatever produced it.
 	if (e.notice)
 		return (
 			<NoticeRow
@@ -702,4 +704,4 @@ export const MessageBubble = React.memo(function MessageBubble({
 			<EntryVideos videos={e.videos} />
 		</div>
 	);
-});
+};

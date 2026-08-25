@@ -2,7 +2,7 @@ import React from "react";
 import { SETTINGS_NAV_ICON, SETTINGS_NAV_ROW } from "../lib/settings-classes";
 import { SIDEBAR_HOVER_LAYER, SIDEBAR_RAIL_GAP } from "../lib/sidebar-classes";
 import { Menu } from "../ui/menu";
-import { IconCheck, IconLogOut } from "./icons";
+import { IconCheck, IconChevronRight, IconLogOut } from "./icons";
 import {
 	TEAM,
 	setCurrentUser,
@@ -81,22 +81,7 @@ export function SettingsAccountFooter() {
 						className={`flex w-full min-w-0 items-center ${SIDEBAR_RAIL_GAP} rounded-row border-none bg-transparent py-[var(--sidebar-row-pad)] pl-2.5 pr-2 text-left data-[popup-open]:bg-selected ${SIDEBAR_HOVER_LAYER}`}
 					>
 						<AccountIdentity name={currentUser} subtitle={subtitle} />
-						<svg
-							className="shrink-0 text-faint"
-							width="14"
-							height="14"
-							viewBox="0 0 10 10"
-							aria-hidden="true"
-						>
-							<path
-								d="M3.5 2L6.5 5L3.5 8"
-								fill="none"
-								stroke="currentColor"
-								strokeWidth="1.5"
-								strokeLinecap="round"
-								strokeLinejoin="round"
-							/>
-						</svg>
+						<IconChevronRight size={20} className="shrink-0 text-faint" />
 					</Menu.Trigger>
 					{/* The trigger sits at the very bottom — open upward. */}
 					<Menu.Popup side="top" align="start" sideOffset={8} className="min-w-[200px]">
@@ -123,7 +108,7 @@ export function SettingsAccountFooter() {
 			{canSignOut && (
 				<button className={SETTINGS_NAV_ROW} onClick={() => void signOut()}>
 					<span className={SETTINGS_NAV_ICON}>
-						<IconLogOut size={18} />
+						<IconLogOut />
 					</span>
 					Sign out
 				</button>
@@ -136,14 +121,14 @@ export function SettingsAccountFooter() {
 export function SettingsAccountCard() {
 	const { currentUser, githubAuth, canSignOut, subtitle } = useAccount();
 	const rowClass =
-		"flex w-full items-center gap-3 border-x-0 border-b border-t-0 border-solid border-line bg-transparent px-3.5 py-3 text-left last:border-b-0 active:bg-hover";
+		"relative flex w-full items-center gap-3 border-0 bg-transparent px-3.5 py-3 text-left after:absolute after:bottom-0 after:left-[54px] after:right-0 after:h-px after:bg-divider-soft last:after:hidden active:bg-hover";
 
 	return (
 		<div>
 			<div className="mb-2 mt-5 px-1 text-control-label font-semibold text-faint">
 				Account
 			</div>
-			<div className="overflow-hidden rounded-2xl border border-divider bg-settings-plate">
+			<div className="overflow-hidden rounded-2xl border border-divider-soft bg-settings-plate">
 				{githubAuth ? (
 					<div className={rowClass}>
 						<AccountIdentity name={currentUser} subtitle={subtitle} />
@@ -167,7 +152,7 @@ export function SettingsAccountCard() {
 				)}
 				{canSignOut && (
 					<button className={rowClass} onClick={() => void signOut()}>
-						<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-active text-dim">
+						<span className="flex h-7 w-7 shrink-0 items-center justify-center text-dim">
 							<IconLogOut size={20} />
 						</span>
 						<span className="min-w-0 flex-1 text-item-title font-medium text-fg">

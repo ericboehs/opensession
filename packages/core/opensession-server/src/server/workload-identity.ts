@@ -276,6 +276,7 @@ async function discovery(): Promise<Response> {
     issuer,
     jwks_uri: `${issuer}/jwks.json`,
     token_endpoint: `${issuer}/token`,
+    claims_supported: ["aud", "exp", "iat", "iss", "sub"],
     id_token_signing_alg_values_supported: ["RS256"],
     response_types_supported: ["id_token"],
     subject_types_supported: ["public"],
@@ -285,7 +286,16 @@ async function discovery(): Promise<Response> {
 async function jwks(): Promise<Response> {
   const key = await signingKey();
   return Response.json({
-    keys: [{ ...key.publicKey, kid: key.kid, use: "sig", alg: "RS256" }],
+    keys: [
+      {
+        kty: key.publicKey.kty,
+        alg: "RS256",
+        use: "sig",
+        kid: key.kid,
+        n: key.publicKey.n,
+        e: key.publicKey.e,
+      },
+    ],
   });
 }
 

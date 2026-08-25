@@ -12,7 +12,7 @@
  * the CLI uses.
  *
  * OpenAI ROTATES the refresh token on every successful refresh — one rotating
- * family per login (see opencode-openai-auth.ts for the full hazard writeup).
+ * family per login (see pi-openai-auth.ts for the full hazard writeup).
  * The rules that keep this safe:
  *  - CODEX_HOME/auth.json stays the single source of truth: we refresh with
  *    ITS refresh token and write the rotated pair straight back (atomic,

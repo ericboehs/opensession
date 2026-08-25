@@ -178,3 +178,18 @@ describe("ghApiErrorMessage", () => {
     expect(ghApiErrorMessage("", "", "gh api failed")).toBe("gh api failed");
   });
 });
+
+describe("durable PR detail restart grace", () => {
+  test("does not replay an expired rich refresh immediately after boot", async () => {
+    const { shouldRefreshPrDetails } = await import("./pr-info");
+    const now = 1_000_000;
+    expect(shouldRefreshPrDetails(now - 6 * 60_000, now, now - 30_000)).toBe(false);
+    expect(shouldRefreshPrDetails(now - 6 * 60_000, now, now - 11 * 60_000)).toBe(true);
+  });
+
+  test("keeps a still-fresh durable row fresh regardless of process age", async () => {
+    const { shouldRefreshPrDetails } = await import("./pr-info");
+    const now = 1_000_000;
+    expect(shouldRefreshPrDetails(now - 60_000, now, 0)).toBe(false);
+  });
+});

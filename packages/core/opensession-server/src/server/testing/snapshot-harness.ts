@@ -32,7 +32,7 @@ import { join } from "path";
 import type { FakeCall, FakeTurn } from "./fake-engine";
 import { Normalizer, expectSnapshot } from "./snapshot";
 // NOTE: snapshot-views is imported dynamically in loadSnapshotHarness, never
-// here. It reaches opencode-policy → runner-shared → connections, which
+// here. It reaches pi-policy → runner-shared → connections, which
 // freezes the MCP config path into a module const the moment it loads. A
 // static import would do that BEFORE prepareSnapshotEnv() sets the env, and
 // every scenario would then project this box's real MCP servers.
@@ -102,19 +102,22 @@ export function prepareSnapshotEnv(label: string): SnapshotDirs {
   prevEnv = {
     state: process.env.OPENSESSION_STATE_DIR,
     mcpConfig: process.env.OPENSESSION_MCP_CONFIG,
+    piDetach: process.env.OPENSESSION_PI_DETACH,
   };
   process.env.OPENSESSION_STATE_DIR = state;
   process.env.OPENSESSION_MCP_CONFIG = mcpConfig;
+  process.env.OPENSESSION_PI_DETACH = "0";
   dirs = { root, state, sessions, automations, memory, mcpConfig };
   return dirs;
 }
 
-let prevEnv: { state?: string; mcpConfig?: string } = {};
+let prevEnv: { state?: string; mcpConfig?: string; piDetach?: string } = {};
 
 function restoreEnv(): void {
   for (const [name, value] of [
     ["OPENSESSION_STATE_DIR", prevEnv.state],
     ["OPENSESSION_MCP_CONFIG", prevEnv.mcpConfig],
+    ["OPENSESSION_PI_DETACH", prevEnv.piDetach],
   ] as const) {
     if (value === undefined) delete process.env[name];
     else process.env[name] = value;
@@ -170,20 +173,12 @@ export async function loadSnapshotHarness(): Promise<SnapshotHarness> {
   const prevJournal = runJournal.__setActiveRunsPathForTest(
     join(d.root, "active-runs.json"),
   );
-  const ocTranscript = await import("../opencode-transcript");
-  const prevMapPath = ocTranscript.__setOpencodeBksMapPathForTest(
-    join(d.root, "opencode-sessions.json"),
-  );
-  // OpenCode's own store: a fake engine session never lives there, and the
-  // default path is this box's real engine DB, so point it somewhere empty:
-  // cross-engine read is deterministic instead of merely usually-empty.
-  const prevOcDb = ocTranscript.__setOpencodeDbPathForTest(
-    join(d.root, "opencode.db"),
-  );
-  const prevOcTranscripts = ocTranscript.__setOpencodeTranscriptsDirForTest(
-    join(d.root, "opencode-transcripts"),
+  const transcriptPersistence = await import("../transcript-persistence");
+  const prevMapPath = transcriptPersistence.__setEngineSessionMapPathForTest(
+    join(d.root, "engine-session-map.json"),
   );
   const memory = await import("../../agents/slack/memory");
+  const memoryV2 = await import("../memory-v2/runtime");
   const prevMemoryDir = memory.__setMemoryDirForTest(d.memory);
 
   const runSession = await import("../run-session");
@@ -257,10 +252,25 @@ export async function loadSnapshotHarness(): Promise<SnapshotHarness> {
       writeSession(id, { ...readSession(id), ...extra });
     },
     writeEngineTranscript(engineSessionId, lines) {
-      const path = ocTranscript.getOpencodeTranscriptPath(engineSessionId);
-      mkdirSync(join(path, ".."), { recursive: true });
-      writeFileSync(path, lines.map((l) => JSON.stringify(l)).join("\n"));
-      return path;
+      const files = require("fs").readdirSync(d.sessions) as string[];
+      const owner = files
+        .filter((file) => file.endsWith(".json"))
+        .map((file) => JSON.parse(require("fs").readFileSync(join(d.sessions, file), "utf8")))
+        .find((session) =>
+          session.piSessionId === engineSessionId ||
+          session.claudeSessionId === engineSessionId ||
+          session.codexThreadId === engineSessionId,
+        );
+      if (!owner?.id) throw new Error(`No session owns engine id ${engineSessionId}`);
+      const { parseJsonlLines } = require("../jsonl-parser") as typeof import("../jsonl-parser");
+      transcriptStore.transcriptStore().importLegacyTranscript(
+        owner.id,
+        parseJsonlLines(lines.map((line) => JSON.stringify(line))),
+        "merged",
+        null,
+      );
+      transcriptPersistence.recordEngineSessionOwner(engineSessionId, owner.id);
+      return transcriptStore.transcriptStore().dbPath;
     },
     async withMemory(scopes, fn) {
       const dir = mkdtempSync(join(d.root, "memory-"));
@@ -272,10 +282,16 @@ export async function loadSnapshotHarness(): Promise<SnapshotHarness> {
           }),
         );
       const prev = memory.__setMemoryDirForTest(dir);
+      const prevDb = process.env.OPENSESSION_MEMORY_DB;
+      process.env.OPENSESSION_MEMORY_DB = join(dir, "memory-v2.sqlite");
+      memoryV2.closeMemoryRuntime();
       normalizer.path(dir, "<memory>");
       try {
         await fn();
       } finally {
+        memoryV2.closeMemoryRuntime();
+        if (prevDb === undefined) delete process.env.OPENSESSION_MEMORY_DB;
+        else process.env.OPENSESSION_MEMORY_DB = prevDb;
         memory.__setMemoryDirForTest(prev);
       }
     },
@@ -317,9 +333,7 @@ export async function loadSnapshotHarness(): Promise<SnapshotHarness> {
     restore() {
       agentRunner.__setEngineForTest(null);
       memory.__setMemoryDirForTest(prevMemoryDir);
-      ocTranscript.__setOpencodeTranscriptsDirForTest(prevOcTranscripts);
-      ocTranscript.__setOpencodeDbPathForTest(prevOcDb);
-      ocTranscript.__setOpencodeBksMapPathForTest(prevMapPath);
+      transcriptPersistence.__setEngineSessionMapPathForTest(prevMapPath);
       runJournal.__setActiveRunsPathForTest(prevJournal);
       paths.__setSessionsDirForTest(prevSessionsDir);
       // Later files in a full-suite run must not inherit the fixture env.

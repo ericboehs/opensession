@@ -13,7 +13,12 @@ import { HostHandle, type HandleCallbacks, type HostLauncher } from "./host-clie
 import { HOST_SPEC_NAME, runHostsDir, type RunHostSpec } from "../runner-host/protocol";
 import { OPENSESSION_SESSIONS_DIR } from "./paths";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
-import { launchRunnerHost, runnerHostAlive, runnerHostStatus } from "./runner-ws";
+import {
+	launchRunnerHost,
+	RunnerHostLaunchRejectedError,
+	runnerHostAlive,
+	runnerHostStatus,
+} from "./runner-ws";
 import { claimRunnerWorkload, getRunner, setRunnerWorkload } from "./runners";
 import { registerRunWsHost, runWsConnector } from "./run-ws";
 import type { UnifiedSession } from "./types";
@@ -25,19 +30,40 @@ import { makeAskHandler } from "./asks";
 import type { McpScope } from "./runner-shared";
 import type { StreamEvent } from "./agent-runner";
 import type { ImageInput } from "./run-events";
-import { journalClear, journalSet, type ActiveRunRecord } from "./run-journal";
+import {
+	activeRunRecords,
+	journalClear,
+  journalClearIfLineage,
+	journalQuarantine,
+	journalRecordAbnormalCompletion,
+	journalSet,
+	type ActiveRunRecord,
+} from "./run-journal";
 import { writeJsonAtomic } from "./shared/atomic-write";
 
 type RunnerLaunchOpts = {
 	prompt: string;
+	promptEntryId?: string;
+	hostId?: string;
 	engineSessionId?: string;
 	images?: ImageInput[];
 	mcpServers?: McpScope;
 	user?: string;
 	reposNote?: string;
+  shouldCancel?: () => boolean;
 };
 
 type RunnerEvents = AsyncGenerator<StreamEvent> & { runnerId: string };
+
+type RunnerOpeningLaunchState = {
+	version: 1;
+	hostId: string;
+	sessionId: string;
+	promptEntryId?: string;
+	phase: "prepared" | "launching" | "started" | "rejected";
+};
+
+const RUNNER_OPENING_LAUNCH_STATE = "opening-launch.json";
 
 function serverWsBase(): string {
 	return configuredServer().publicBaseUrl.replace(/\/$/, "");
@@ -57,15 +83,44 @@ export async function maybeLaunchRunnerRun(
 	const runner = claimRunnerWorkload(registeredRunner.id, { user: opts.user, repo: session.repo, sessionId: session.id, operation: "full session" });
 	if (!runner) throw new Error("This Runner is no longer available for this session");
 
-	const hostId = `rh-${Bun.randomUUIDv7()}`;
-	const rpcToken = crypto.randomUUID();
-	const wsToken = crypto.randomUUID();
+	const hostId = opts.hostId || `rh-${Bun.randomUUIDv7()}`;
 	const hostDir = `${runHostsDir(OPENSESSION_SESSIONS_DIR)}/${hostId}`;
-	mkdirSync(hostDir, { recursive: true });
-	const spec: RunHostSpec = {
+	const specPath = `${hostDir}/${HOST_SPEC_NAME}`;
+	const launchStatePath = `${hostDir}/${RUNNER_OPENING_LAUNCH_STATE}`;
+	const priorSpec = existsSync(specPath) ? readRunnerHostSpec(specPath) : null;
+	if (existsSync(specPath) && !priorSpec)
+		throw new Error(`Runner host ${hostId} has an unreadable durable specification`);
+	if (
+		priorSpec &&
+		(priorSpec.hostId !== hostId ||
+			priorSpec.osSessionId !== session.id ||
+			priorSpec.cwd !== session.worktreeDir ||
+			priorSpec.promptEntryId !== opts.promptEntryId)
+	)
+		throw new Error(`Runner host ${hostId} crossed opening ownership`);
+	const priorRun = activeRunRecords().find(
+		(run) =>
+			run.osSessionId === session.id &&
+			run.hostId === hostId &&
+			run.promptEntryId === opts.promptEntryId,
+	);
+	const priorLaunchState = existsSync(launchStatePath)
+		? readRunnerOpeningLaunchState(launchStatePath)
+		: null;
+	if (existsSync(launchStatePath) && !priorLaunchState)
+		throw new Error(`Runner host ${hostId} has unreadable durable launch state`);
+	if (
+		priorLaunchState &&
+		(priorLaunchState.hostId !== hostId ||
+			priorLaunchState.sessionId !== session.id ||
+			priorLaunchState.promptEntryId !== opts.promptEntryId)
+	)
+		throw new Error(`Runner host ${hostId} crossed durable launch ownership`);
+	const spec: RunHostSpec = priorSpec ?? {
 		hostId,
 		osSessionId: session.id,
 		prompt: opts.prompt,
+		promptEntryId: opts.promptEntryId,
 		engineSessionId: opts.engineSessionId,
 		cwd: session.worktreeDir,
 		mode: session.mode,
@@ -78,8 +133,8 @@ export async function maybeLaunchRunnerRun(
 		proxyMcpServers: Object.keys(
 			interactiveMcpServers(opts.user, session.id, opts.mcpServers ?? "all"),
 		),
-		rpcToken,
-		wsToken,
+		rpcToken: crypto.randomUUID(),
+		wsToken: crypto.randomUUID(),
 		reposNote: opts.reposNote,
 		confirmTools: STRIPE_CONFIRM_TOOLS,
 		author: commitAuthorFor(opts.user, session.startedBy),
@@ -88,11 +143,29 @@ export async function maybeLaunchRunnerRun(
 		fallbackModel: interactiveFallbackModel(session.model),
 		journalKind: "prompt",
 	};
-	writeJsonAtomic(`${hostDir}/${HOST_SPEC_NAME}`, spec);
-	journalSet({
-		runKey: session.id,
+	if (!spec.rpcToken || !spec.wsToken)
+		throw new Error(`Runner host ${hostId} is missing its durable connection fence`);
+	if (!priorSpec) {
+		mkdirSync(hostDir, { recursive: true });
+		writeJsonAtomic(specPath, spec);
+	}
+	let launchState: RunnerOpeningLaunchState = priorLaunchState ?? {
+		version: 1,
+		hostId,
+		sessionId: session.id,
+		promptEntryId: opts.promptEntryId,
+		phase: priorRun?.launchPhase ?? "prepared",
+	};
+	if (!priorLaunchState) writeJsonAtomic(launchStatePath, launchState);
+	const rpcToken = spec.rpcToken;
+	const wsToken = spec.wsToken;
+	let run: ActiveRunRecord = {
+		...priorRun,
+    // Host identity is immutable for one physical dispatch; the session id is
+    // a reusable alias and cannot fence delayed cancellation from a successor.
+    runKey: hostId,
 		osSessionId: session.id,
-		prompt: opts.prompt,
+		prompt: spec.prompt,
 		cwd: session.worktreeDir,
 		mode: session.mode,
 		mcpServers: opts.mcpServers ?? "all",
@@ -104,8 +177,13 @@ export async function maybeLaunchRunnerRun(
 		fallbackModel: interactiveFallbackModel(session.model),
 		kind: "prompt",
 		runnerId: runner.id,
-		startedAt: new Date().toISOString(),
-	});
+		hostId,
+		promptEntryId: opts.promptEntryId,
+		launchPhase:
+			launchState.phase === "rejected" ? "prepared" : launchState.phase,
+		startedAt: priorRun?.startedAt ?? new Date().toISOString(),
+	};
+	journalSet(run);
 	registerRunToken(rpcToken, { sessionId: session.id, user: opts.user });
 	registerRunWsHost(hostId, wsToken);
 	const hostSpecs = new Map<string, RunHostSpec>([[hostId, spec]]);
@@ -138,12 +216,64 @@ export async function maybeLaunchRunnerRun(
 	let handle: HostHandle | undefined;
 	try {
 		handle = new HostHandle(hostDir, spec, callbacks, launcher);
+    if (opts.shouldCancel?.() && run.launchPhase === "prepared")
+      throw new RunnerHostLaunchRejectedError(
+        `Runner dispatch ${hostId} was cancelled before launch`,
+      );
+		if (launchState.phase === "rejected")
+			throw new RunnerHostLaunchRejectedError(
+				`Runner opening ${hostId} was durably rejected before dispatch`,
+			);
+		if (run.launchPhase === "prepared") {
+			// `launching` is durable before the request can reach the Runner. A
+			// restart may adopt remote evidence, but may never infer non-execution
+			// from an absent connection and launch the same turn again.
+			launchState = { ...launchState, phase: "launching" };
+			writeJsonAtomic(launchStatePath, launchState);
+			run = { ...run, launchPhase: "launching" };
+			journalSet(run);
+			await launcher.launch(hostId, hostDir);
+      if (opts.shouldCancel?.()) handle.requestCancel();
+			launchState = { ...launchState, phase: "started" };
+			writeJsonAtomic(launchStatePath, launchState);
+			run = { ...run, launchPhase: "started" };
+			journalSet(run);
+		} else {
+			const alive =
+				runnerHostAlive(hostId) &&
+				(await runnerHostStatus(runner.id, {
+					sessionId: session.id,
+					repo: session.repo,
+					workspacePath: session.worktreeDir,
+					hostId,
+					user: opts.user,
+				}));
+			if (!alive)
+				throw new Error(
+					`Runner opening ${hostId} was admitted but has no adoptable remote evidence`,
+				);
+			if (run.launchPhase !== "started") {
+				launchState = { ...launchState, phase: "started" };
+				writeJsonAtomic(launchStatePath, launchState);
+				run = { ...run, launchPhase: "started" };
+				journalSet(run);
+			}
+		}
 		await handle.connectWithWait(20_000);
+    if (opts.shouldCancel?.()) handle.requestCancel();
 		const events = (async function* (): AsyncGenerator<StreamEvent> {
+			let sourceCompleted = false;
+			let sawTerminal = false;
 			try {
-				yield* handle!.events();
+				for await (const event of handle!.events()) {
+					if (event.type === "done" || event.type === "error")
+						sawTerminal = true;
+					yield event;
+				}
+				sourceCompleted = true;
 			} finally {
-				journalClear(session.id);
+        if (sourceCompleted && sawTerminal) journalClear(run.runKey);
+				else if (sourceCompleted) journalRecordAbnormalCompletion(run);
 				setRunnerWorkload(runner.id, undefined, session.id);
 			}
 		})() as RunnerEvents;
@@ -152,7 +282,23 @@ export async function maybeLaunchRunnerRun(
 	} catch (error) {
 		handle?.abandon();
 		unregisterRunToken(rpcToken);
-		journalClear(session.id);
+		if (
+			run.launchPhase === "prepared" ||
+			error instanceof RunnerHostLaunchRejectedError
+		) {
+			// Server-side preflight rejection proves the launch request was never
+			// sent. Fence retries durably before retiring the prepared journal.
+			launchState = { ...launchState, phase: "rejected" };
+			writeJsonAtomic(launchStatePath, launchState);
+      journalClearIfLineage(run);
+		} else {
+			// Once launch admission may have crossed the Runner connection, absence
+			// is not proof of non-execution. Remove the record from boot recovery but
+			// retain it for operator inspection beside the actor's terminal failure.
+			journalQuarantine([
+				{ run, reason: "ambiguous_runner_launch", notify: false },
+			]);
+		}
 		setRunnerWorkload(runner.id, undefined, session.id);
 		throw error;
 	}
@@ -161,6 +307,28 @@ export async function maybeLaunchRunnerRun(
 function readRunnerHostSpec(path: string): RunHostSpec | null {
 	try {
 		return JSON.parse(readFileSync(path, "utf8")) as RunHostSpec;
+	} catch {
+		return null;
+	}
+}
+
+function readRunnerOpeningLaunchState(
+	path: string,
+): RunnerOpeningLaunchState | null {
+	try {
+		const value = JSON.parse(readFileSync(path, "utf8")) as Partial<RunnerOpeningLaunchState>;
+		if (
+			value.version !== 1 ||
+			typeof value.hostId !== "string" ||
+			typeof value.sessionId !== "string" ||
+			(value.promptEntryId !== undefined &&
+				typeof value.promptEntryId !== "string") ||
+			!["prepared", "launching", "started", "rejected"].includes(
+				String(value.phase),
+			)
+		)
+			return null;
+		return value as RunnerOpeningLaunchState;
 	} catch {
 		return null;
 	}
@@ -190,11 +358,19 @@ export async function resumeRunnerRun(
 				candidate &&
 				candidate.osSessionId === session.id &&
 				candidate.cwd === session.worktreeDir &&
+				(!run.hostId || candidate.hostId === run.hostId) &&
+				(!run.promptEntryId ||
+					candidate.promptEntryId === run.promptEntryId) &&
 				candidate.wsToken &&
 				candidate.rpcToken,
 			);
 		});
-	const candidate = candidates.at(-1);
+	const candidate =
+		run.hostId || run.promptEntryId
+			? candidates.length === 1
+				? candidates[0]
+				: undefined
+			: candidates.at(-1);
 	if (!candidate) return null;
 	const spec = candidate.spec;
 	registerRunToken(spec.rpcToken!, { sessionId: session.id, user: spec.user });
@@ -232,7 +408,7 @@ export async function resumeRunnerRun(
 		},
 	};
 	setRunnerWorkload(run.runnerId, { sessionId: session.id, operation: "full session", startedAt: run.startedAt });
-	const handle = new HostHandle(candidate.dir, spec, callbacks, launcher);
+	const handle = new HostHandle(candidate.dir, spec, callbacks, launcher, run.runKey);
 	try {
 		await handle.connectWithWait(20_000);
 		return (async function* (): AsyncGenerator<StreamEvent> {

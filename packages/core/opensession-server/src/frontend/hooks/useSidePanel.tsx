@@ -1,27 +1,26 @@
-import { useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PANEL_RESIZE } from "../lib/session-panel-classes";
+import {
+	SIDE_PANEL_OPEN_KEY,
+	sidePanelOpen,
+	storeSidePanelOpen,
+} from "../lib/side-panel-open";
 import { suppressLayoutAnimations } from "../ui/motion";
 
 /**
  * The right side panel's open state and width, shared by every surface that
- * shows one — the session viewer and the session-less workspace route.
+ * shows one: the session viewer and the session-less workspace route.
  *
- * Both live in localStorage rather than in a session or workspace record, so
- * the panel is one browser-level preference: opening it in a session leaves it
- * open when you land on a workspace with no session yet, and a drag on either
- * resizes both. That sameness is the point — the panel is the same column in
- * the same place, whatever is in the pane beside it.
+ * Open state is a browser-wide view choice. The summary card is the default;
+ * once the person opens the panel, it stays open as they move between
+ * workspaces or reload. A window event keeps simultaneous panel hosts in sync,
+ * while the storage event does the same across tabs.
  *
- * Width is written to `--panel-w`, which PANEL_SHELL reads; 0 means "no stored
- * width", leaving the shell's own default. The handle drags from the panel's
- * LEFT edge, so the width it computes is the pointer's distance from the
- * container's right side.
+ * Width also remains in localStorage. The handle drags from the panel's left
+ * edge, so its width is the pointer's distance from the container's right side.
  */
-const OPEN_KEY = "opensession-panel-open";
+const OPEN_CHANGE_EVENT = "opensession-panel-open-changed";
 const WIDTH_KEY = "opensession-panel-w";
-/** Below this the panel stops being a column and overlays the pane, so it
-    starts closed rather than covering a screen that has no room for both. */
-const COLUMN_MIN_WIDTH = 920;
 const MIN_W = 320;
 const MAX_W = 2400;
 
@@ -35,15 +34,27 @@ export interface SidePanel {
 }
 
 export function useSidePanel(): SidePanel {
-	const [open, setOpenState] = useState(() => {
-		const stored = localStorage.getItem(OPEN_KEY);
-		if (stored !== null)
-			return stored === "true" && window.innerWidth > COLUMN_MIN_WIDTH;
-		return window.innerWidth > COLUMN_MIN_WIDTH;
-	});
+	const [open, setOpenState] = useState(sidePanelOpen);
+	useEffect(() => {
+		const syncOpen = (event: Event) => {
+			if (!(event instanceof CustomEvent) || typeof event.detail !== "boolean")
+				return;
+			setOpenState(event.detail);
+		};
+		const syncStorage = (event: StorageEvent) => {
+			if (event.key === SIDE_PANEL_OPEN_KEY) setOpenState(sidePanelOpen());
+		};
+		window.addEventListener(OPEN_CHANGE_EVENT, syncOpen);
+		window.addEventListener("storage", syncStorage);
+		return () => {
+			window.removeEventListener(OPEN_CHANGE_EVENT, syncOpen);
+			window.removeEventListener("storage", syncStorage);
+		};
+	}, []);
 	function setOpen(next: boolean) {
 		setOpenState(next);
-		localStorage.setItem(OPEN_KEY, String(next));
+		storeSidePanelOpen(next);
+		window.dispatchEvent(new CustomEvent(OPEN_CHANGE_EVENT, { detail: next }));
 	}
 
 	const [width, setWidth] = useState<number>(() => {
@@ -51,8 +62,8 @@ export function useSidePanel(): SidePanel {
 		return stored >= MIN_W && stored <= MAX_W ? stored : 0;
 	});
 	const widthRef = useRef(width);
-	widthRef.current = width;
-
+	useLayoutEffect(() => {		widthRef.current = width;
+	});
 	function startResize(e: React.MouseEvent) {
 		e.preventDefault();
 		const right =

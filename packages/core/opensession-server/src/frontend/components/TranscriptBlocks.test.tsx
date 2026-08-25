@@ -96,8 +96,9 @@ describe("TranscriptBlocks shipped change action", () => {
 		expect(html).toContain("%2Ftmp%2Ftoggle-after.png");
 		expect(html).toContain('aria-label="Open screenshot preview"');
 		expect(html).toContain('aria-label="Remove screenshot"');
-		expect(html).toContain("group/image");
-		expect(html).toContain("group-hover/image:opacity-100");
+		expect(html).toContain("group/overlay-action");
+		expect(html).toContain("group-hover/overlay-action:opacity-100");
+		expect(html).toContain("bg-white");
 		expect(html).toContain('aria-label="Add images"');
 		expect(html).toContain('aria-label="Slack channel"');
 		expect(html).toContain("border-line bg-surface");
@@ -227,33 +228,120 @@ describe("TranscriptBlocks compact tool runs", () => {
 		{ id: `bash-result-${n}`, type: "tool_result", toolUseId: `bash-call-${n}`, content: "ok", timestamp: `2026-08-13T06:01:0${n}.500Z` },
 	];
 
-	test("folds routine calls to one icon-led row by default", () => {
+	test("keeps tool-only live work to one summary row by default", () => {
 		setTurnPrefs(null);
 		const html = renderToStaticMarkup(
 			<TranscriptBlocks live entries={toolEntries} />,
 		);
 
-		expect(html).toContain('data-tool-run="true"');
-		// The folded row is the count and nothing else: which tools ran is
-		// what it folds away, and the names are left to the aria-label.
+		// The Working row already owns the count. Until the agent writes a real
+		// update, a second grouped-step row would only repeat the same information.
+		expect(html).toContain('aria-expanded="false"');
+		expect(html).toContain(">Working</span>");
 		expect(html).toContain("2 steps</span>");
-		expect(html).toContain("Show 2 grouped steps: Bash · Read");
-		expect(html).toContain('x="8.25" y="4.75" width="11" height="11" rx="2"');
-		expect(html).toContain("group-hover:opacity-0");
-		expect(html).toContain("group-hover:opacity-100");
+		expect(html).not.toContain('data-tool-run="true"');
+		expect(html).not.toContain("Show 2 grouped steps");
 		expect(html).not.toContain("git status");
 		expect(html).not.toContain("package.json");
 	});
 
-	test("leaves a lone routine call as its own row", () => {
+	test("keeps a lone live call behind its Working row", () => {
 		setTurnPrefs(null);
 		const html = renderToStaticMarkup(
 			<TranscriptBlocks live entries={toolEntries.slice(0, 3)} />,
 		);
 
-		// No fold: a lone call's own row already says more than "1 step".
 		expect(html).not.toContain('data-tool-run="true"');
-		expect(html).toContain("git status");
+		expect(html).toContain('aria-expanded="false"');
+		expect(html).toContain(">Working</span>");
+		expect(html).toContain("1 step</span>");
+		expect(html).not.toContain("git status");
+	});
+
+	test("folds a settled lone call into its Worked group", () => {
+		setTurnPrefs(null);
+		const html = renderToStaticMarkup(
+			<TranscriptBlocks
+				entries={[
+					...toolEntries.slice(0, 3),
+					{
+						id: "answer",
+						type: "assistant",
+						content: "The repository is clean.",
+						timestamp: "2026-08-13T06:00:03Z",
+					},
+				]}
+			/>,
+		);
+
+		expect(html).toContain(">Worked</span>");
+		expect(html).not.toContain("git status");
+		expect(html).toContain("The repository is clean.");
+	});
+
+	test("lets a worker report split work without leaving tool calls bare", () => {
+		setTurnPrefs(null);
+		const html = renderToStaticMarkup(
+			<TranscriptBlocks
+				entries={[
+					...toolEntries.slice(0, 3),
+					{
+						id: "worker-report",
+						type: "user",
+						content:
+							"[worker os-worker] <!--os:worker-report-->\nFound the relevant file.",
+						timestamp: "2026-08-13T06:00:02.500Z",
+					},
+					...toolEntries.slice(3),
+					{
+						id: "answer",
+						type: "assistant",
+						content: "Finished both checks.",
+						timestamp: "2026-08-13T06:00:05Z",
+					},
+				]}
+			/>,
+		);
+
+		expect(html.match(/>Worked<\/span>/g)).toHaveLength(2);
+		expect(html.indexOf(">Worked</span>")).toBeLessThan(
+			html.indexOf("Worker report"),
+		);
+		expect(html.indexOf("Worker report")).toBeLessThan(
+			html.lastIndexOf(">Worked</span>"),
+		);
+		expect(html).not.toContain("git status");
+		expect(html).not.toContain("package.json");
+		expect(html).toContain("Finished both checks.");
+	});
+
+	test("does not split work on a delivery row that renders nothing", () => {
+		setTurnPrefs(null);
+		const html = renderToStaticMarkup(
+			<TranscriptBlocks
+				entries={[
+					...toolEntries.slice(0, 3),
+					{
+						id: "empty-delivery",
+						type: "user",
+						content: "",
+						timestamp: "2026-08-13T06:00:02.500Z",
+						sender: "auto-continue",
+					},
+					...toolEntries.slice(3),
+					{
+						id: "grouped-answer",
+						type: "assistant",
+						content: "Finished both checks.",
+						timestamp: "2026-08-13T06:00:05Z",
+					},
+				]}
+			/>,
+		);
+
+		expect(html.match(/>Worked<\/span>/g)).toHaveLength(1);
+		expect(html).toContain("2 steps");
+		expect(html).not.toContain("1 step");
 	});
 
 	test("folds edits into the run and counts their lines on the row", () => {
@@ -275,15 +363,49 @@ describe("TranscriptBlocks compact tool runs", () => {
 			/>,
 		);
 
-		// One row for the whole run, edits included, carrying the lines those
-		// edits moved. The individual edit rows are behind it; the turn's own
-		// file chips still name what changed.
-		expect(html.match(/data-tool-run="true"/g)).toHaveLength(1);
+		// The one Working row carries both the total and the lines moved. The
+		// individual calls stay behind that row until someone opens it.
+		expect(html).not.toContain('data-tool-run="true"');
+		expect(html).toContain('aria-expanded="false"');
 		expect(html).toContain("4 steps");
 		expect(html).toContain("+3");
 		expect(html).toContain("-3");
-		expect(html).toContain("Show 4 grouped steps: Edit ×3 · Bash");
+		expect(html).not.toContain("Show 4 grouped steps");
 		expect(html).not.toContain('data-eid="edit-1"');
+	});
+
+	test("keeps server-derived code totals on the one Working row", () => {
+		setTurnPrefs(null);
+		const html = renderToStaticMarkup(
+			<TranscriptBlocks
+				live
+				entries={[
+					{ id: "prompt", type: "user", content: "Implement it", timestamp: "2026-08-13T06:00:00Z" },
+					{
+						id: "remote-edit",
+						type: "tool_use",
+						toolUseId: "remote-edit-call",
+						toolName: "remote_code_change",
+						toolInput: {},
+						content: "Editing",
+						timestamp: "2026-08-13T06:00:01Z",
+						presentation: {
+							canonical: "Edit",
+							name: "Edit",
+							family: "edit",
+							detail: { kind: "none" },
+							lineStats: { additions: 400, deletions: 23 },
+						},
+					},
+				]}
+			/>,
+		);
+
+		expect(html).toContain(">Working</span>");
+		expect(html).toContain("1 step</span>");
+		expect(html).toContain("+400");
+		expect(html).toContain("-23");
+		expect(html).not.toContain('data-tool-run="true"');
 	});
 
 	test("shows every call in place under the always-expanded preference", () => {
@@ -318,7 +440,7 @@ describe("TranscriptBlocks compact tool runs", () => {
 		expect(html.match(/data-tool-run="true"/g)).toHaveLength(2);
 	});
 
-	test("surfaces failure and incidental media status on the compact row", () => {
+	test("keeps incidental media status without repeating failures on the compact row", () => {
 		setTurnPrefs(null);
 		const html = renderToStaticMarkup(
 			<TranscriptBlocks
@@ -333,9 +455,10 @@ describe("TranscriptBlocks compact tool runs", () => {
 			/>,
 		);
 
-		expect(html).toContain("1 failed");
+		expect(html).not.toContain("1 failed");
+		expect(html).not.toContain("failed step");
 		expect(html).toContain("1 image");
-		expect(html).toContain("1 failed, 1 media");
+		expect(html).toContain("1 media");
 	});
 
 	test("keeps featured media and subagents as direct rows", () => {
@@ -371,6 +494,13 @@ describe("TranscriptBlocks turn work and tool call preferences", () => {
 		{ id: "note", type: "assistant", content: "The repository is clean.", timestamp: "2026-08-19T06:00:05Z" },
 		{ id: "answer", type: "assistant", content: "All good.", timestamp: "2026-08-19T06:00:06Z" },
 	];
+	// A live message remains inside the work only after another step follows it.
+	// Until then it is the visible streaming tail outside the disclosure.
+	const liveNarratedTurn: TranscriptEntry[] = [
+		...narratedTurn.slice(0, -1),
+		{ id: "verify", type: "tool_use", toolUseId: "verify-call", toolName: "bash", toolInput: { command: "bun test" }, content: "Using bash", timestamp: "2026-08-19T06:00:06Z" },
+		{ id: "verify-result", type: "tool_result", toolUseId: "verify-call", content: "ok", timestamp: "2026-08-19T06:00:07Z" },
+	];
 
 	test("keeps grouped calls closed inside steps that stay open", () => {
 		setTurnPrefs("open", "folded");
@@ -386,7 +516,7 @@ describe("TranscriptBlocks turn work and tool call preferences", () => {
 	test("opens grouped calls independently of the step timing", () => {
 		setTurnPrefs("running", "open");
 		const html = renderToStaticMarkup(
-			<TranscriptBlocks live entries={narratedTurn.slice(0, -1)} />,
+			<TranscriptBlocks live entries={liveNarratedTurn} />,
 		);
 
 		expect(html).not.toContain('data-tool-run="true"');
@@ -420,7 +550,7 @@ describe("TranscriptBlocks turn work and tool call preferences", () => {
 	test("opens the outer steps only while a turn runs", () => {
 		setTurnPrefs("running", "folded");
 		const running = renderToStaticMarkup(
-			<TranscriptBlocks live entries={narratedTurn.slice(0, -1)} />,
+			<TranscriptBlocks live entries={liveNarratedTurn} />,
 		);
 		expect(running).toContain("The repository is clean.");
 		expect(running).toContain('data-tool-run="true"');
@@ -658,13 +788,7 @@ describe("TranscriptBlocks review loops", () => {
 	});
 });
 
-describe("TranscriptBlocks turn windowing", () => {
-	// A review loop swallows the blocks it contains, so the rendered array is
-	// shorter than the flat one. The trailing window has to be measured against
-	// what is rendered, or the loops' absorbed rows come out of it.
-	const windowed = (html: string) =>
-		html.split("[content-visibility:auto]").length - 1;
-
+describe("TranscriptBlocks virtual-list fallback", () => {
 	/** A review loop that swallows `absorbed` agent answers, then `tail` turns. */
 	function transcriptWithReviewLoop(
 		absorbed: number,
@@ -699,28 +823,378 @@ describe("TranscriptBlocks turn windowing", () => {
 		return built;
 	}
 
-	const windowedFor = (absorbed: number, tail: number) =>
-		windowed(
-			renderToStaticMarkup(
-				<TranscriptBlocks entries={transcriptWithReviewLoop(absorbed, tail)} />,
-			),
-		);
-
-	test("windows the same blocks however many a review loop absorbed", () => {
-		// One loop plus the same tail either way, so the same rows render and the
-		// same rows may be windowed. Measured against the flat array instead, a
-		// loop that swallowed ten blocks took ten off the trailing window: 32 and
-		// 24 windowed here rather than 21.
-		expect(windowedFor(10, 30)).toBe(windowedFor(2, 30));
-		expect(windowedFor(10, 30)).toBe(windowedFor(0, 30));
-		expect(windowedFor(10, 30)).toBeGreaterThan(0);
-	});
-
-	test("windows nothing while the whole transcript fits the trailing window", () => {
+	test("renders every row when measurement is unavailable", () => {
 		const html = renderToStaticMarkup(
-			<TranscriptBlocks entries={transcriptWithReviewLoop(10, 12)} />,
+			<TranscriptBlocks entries={transcriptWithReviewLoop(10, 30)} />,
 		);
 		expect(html).toContain('aria-label="Review loop, 1 round, PR #42"');
-		expect(windowed(html)).toBe(0);
+		expect(html).toContain("Tail message 29.");
+		expect(html).not.toContain("data-virtual-transcript");
+	});
+});
+
+describe("TranscriptBlocks indexed ranges", () => {
+	const indexRow = (
+		seq: number,
+		role:
+			| "user"
+			| "assistant"
+			| "tool_use"
+			| "tool_result"
+			| "review_handoff",
+		extra: Record<string, unknown> = {},
+	) => ({
+		id: `indexed-${seq}`,
+		seq,
+		changeSeq: seq,
+		timestampMs: Date.parse(`2026-08-12T12:00:0${seq}Z`),
+		role,
+		contentLength: 24,
+		...extra,
+	});
+
+	test("keeps unloaded history out of the transcript until it hydrates", () => {
+		const html = renderToStaticMarkup(
+			<TranscriptBlocks
+				transcriptIndex={[
+					indexRow(1, "user"),
+					indexRow(2, "assistant"),
+					indexRow(3, "user"),
+				]}
+				entries={[
+					{
+						id: "indexed-3",
+						seq: 3,
+						changeSeq: 3,
+						type: "user",
+						content: "Newest prompt",
+						timestamp: "2026-08-12T12:00:03Z",
+					},
+				]}
+			/>,
+		);
+		expect(html).not.toContain("Loading messages");
+		expect(html).toContain("Newest prompt");
+	});
+
+	test("keeps a message that arrived mid-turn below the turn it interrupted", () => {
+		// The interrupting message is stamped 09:56:47, while the turn it landed in
+		// the middle of kept emitting tool rows until 09:56:52. Its range is newer by
+		// seq and older by time, so only the seq spine orders these two correctly.
+		const ms = (clock: string) => Date.parse(`2026-08-21T09:56:${clock}Z`);
+		const html = renderToStaticMarkup(
+			<TranscriptBlocks
+				transcriptIndex={[
+					indexRow(1, "user", { timestampMs: ms("28.274") }),
+					indexRow(2, "tool_use", { timestampMs: ms("52.223") }),
+					indexRow(3, "tool_result", { timestampMs: ms("52.269") }),
+					indexRow(4, "user", { timestampMs: ms("47.472") }),
+				]}
+				entries={[
+					{
+						id: "indexed-1",
+						seq: 1,
+						changeSeq: 1,
+						type: "user",
+						content: "First question",
+						timestamp: "2026-08-21T09:56:28.274Z",
+					},
+					{
+						id: "indexed-2",
+						seq: 2,
+						changeSeq: 2,
+						type: "tool_use",
+						toolName: "grep",
+						toolInput: { pattern: "filterMcpServers" },
+						content: "Using grep",
+						timestamp: "2026-08-21T09:56:52.223Z",
+					},
+					{
+						id: "indexed-3",
+						seq: 3,
+						changeSeq: 3,
+						type: "tool_result",
+						toolUseId: "indexed-2",
+						content: "runner-shared.ts",
+						timestamp: "2026-08-21T09:56:52.269Z",
+					},
+					{
+						id: "indexed-4",
+						seq: 4,
+						changeSeq: 4,
+						type: "user",
+						content: "Second question",
+						timestamp: "2026-08-21T09:56:47.472Z",
+					},
+				]}
+			/>,
+		);
+		expect(html.indexOf("First question")).toBeLessThan(
+			html.indexOf("Second question"),
+		);
+	});
+
+	test("places an optimistic prompt before tool calls that landed first", () => {
+		setTurnPrefs("open", "open");
+		const html = renderToStaticMarkup(
+			<TranscriptBlocks
+				transcriptIndex={[indexRow(2, "tool_use")]}
+				entries={[
+					{
+						id: "indexed-2",
+						seq: 2,
+						changeSeq: 2,
+						type: "tool_use",
+						toolName: "bash",
+						toolInput: { command: "git status" },
+						content: "Using bash",
+						timestamp: "2026-08-12T12:00:02Z",
+					},
+				]}
+				optimisticEntries={[
+					{
+						id: "outbox-prompt",
+						type: "user",
+						content: "Question before tools",
+						timestamp: "2026-08-12T12:00:01Z",
+					},
+				]}
+			/>,
+		);
+		expect(html.indexOf("Question before tools")).toBeLessThan(
+			html.indexOf("git status"),
+		);
+		setTurnPrefs(null);
+	});
+
+	test("keeps a partial opening range visible while its prefix hydrates", () => {
+		const html = renderToStaticMarkup(
+			<TranscriptBlocks
+				transcriptIndex={[
+					indexRow(1, "user"),
+					indexRow(2, "assistant"),
+				]}
+				entries={[
+					{
+						id: "indexed-2",
+						seq: 2,
+						changeSeq: 2,
+						type: "assistant",
+						content: "Visible tail answer",
+						timestamp: "2026-08-12T12:00:02Z",
+					},
+				]}
+			/>,
+		);
+		expect(html).toContain("Visible tail answer");
+		expect(html).not.toContain("Loading messages");
+	});
+
+	test("keeps live tool frames inside their indexed work group", () => {
+		setTurnPrefs(null);
+		const at = (seq: number) => `2026-08-12T12:00:0${seq}Z`;
+		const tool = (seq: number, durable = true): TranscriptEntry => ({
+			id: `indexed-${seq}`,
+			type: "tool_use",
+			toolUseId: `call-${seq}`,
+			toolName: "bash",
+			toolInput: { command: `check ${seq}` },
+			content: "Using bash",
+			timestamp: at(seq),
+			...(durable ? { seq, changeSeq: seq } : {}),
+		});
+		const result = (
+			seq: number,
+			toolSeq: number,
+			durable = true,
+		): TranscriptEntry => ({
+			id: `indexed-${seq}`,
+			type: "tool_result",
+			toolUseId: `call-${toolSeq}`,
+			content: "ok",
+			timestamp: at(seq),
+			...(durable ? { seq, changeSeq: seq } : {}),
+		});
+		const baseIndex = [
+			indexRow(1, "user"),
+			indexRow(2, "tool_use"),
+			indexRow(3, "tool_result"),
+			indexRow(4, "tool_use"),
+			indexRow(5, "tool_result"),
+		];
+		const fullIndex = [
+			...baseIndex,
+			indexRow(6, "tool_use"),
+			indexRow(7, "tool_result"),
+		];
+		const baseEntries: TranscriptEntry[] = [
+			{
+				id: "indexed-1",
+				seq: 1,
+				changeSeq: 1,
+				type: "user",
+				content: "Inspect the session",
+				timestamp: at(1),
+			},
+			tool(2),
+			result(3, 2),
+			tool(4),
+			result(5, 4),
+		];
+		const liveTool = tool(6, false);
+		const liveResult = result(7, 6, false);
+		const scenarios = [
+			{ index: baseIndex, entries: [...baseEntries, liveTool, liveResult] },
+			{
+				index: [...baseIndex, indexRow(6, "tool_use")],
+				entries: [
+					...baseEntries,
+					{ ...liveTool, seq: 6, changeSeq: 6 },
+					liveResult,
+				],
+			},
+			// The index and payload state updates can render in either order.
+			{ index: fullIndex, entries: [...baseEntries, liveTool, liveResult] },
+			{
+				index: fullIndex,
+				entries: [
+					...baseEntries,
+					{ ...liveTool, seq: 6, changeSeq: 6 },
+					{ ...liveResult, seq: 7, changeSeq: 7 },
+				],
+			},
+		];
+
+		for (const scenario of scenarios) {
+			const html = renderToStaticMarkup(
+				<TranscriptBlocks
+					live
+					transcriptIndex={scenario.index}
+					entries={scenario.entries}
+				/>,
+			);
+			expect(html).toContain(">Working</span>");
+			expect(html).not.toContain(">Worked</span>");
+			expect(html).toContain("3 steps");
+			expect(html).toContain('data-eid="indexed-6#turn"');
+		}
+	});
+
+	test("keeps a note inside its loaded conversation range", () => {
+		const html = renderToStaticMarkup(
+			<TranscriptBlocks
+				transcriptIndex={[
+					indexRow(1, "user"),
+					indexRow(2, "assistant"),
+				]}
+				entries={[
+					{
+						id: "indexed-1",
+						seq: 1,
+						changeSeq: 1,
+						type: "user",
+						content: "Question before note",
+						timestamp: "2026-08-12T12:00:01Z",
+					},
+					{
+						id: "indexed-2",
+						seq: 2,
+						changeSeq: 2,
+						type: "assistant",
+						content: "Answer after note",
+						timestamp: "2026-08-12T12:00:02Z",
+					},
+				]}
+				notes={[
+					{
+						id: "middle-note",
+						user: "Kent",
+						text: "Note in between",
+						ts: Date.parse("2026-08-12T12:00:01.500Z"),
+					},
+				]}
+			/>,
+		);
+		expect(html.indexOf("Question before note")).toBeLessThan(
+			html.indexOf("Note in between"),
+		);
+		expect(html.indexOf("Note in between")).toBeLessThan(
+			html.indexOf("Answer after note"),
+		);
+	});
+
+	test("drops an unloaded review loop until its payload hydrates", () => {
+		const html = renderToStaticMarkup(
+			<TranscriptBlocks
+				transcriptIndex={[
+					indexRow(1, "review_handoff", { reviewPrNumber: 42 }),
+					indexRow(2, "assistant"),
+				]}
+				entries={[]}
+			/>,
+		);
+		expect(html).not.toContain("PR #42");
+
+		const hydrated = renderToStaticMarkup(
+			<TranscriptBlocks
+				transcriptIndex={[
+					indexRow(1, "review_handoff", { reviewPrNumber: 42 }),
+					indexRow(2, "assistant"),
+				]}
+				entries={[
+					{
+						id: "indexed-1",
+						seq: 1,
+						changeSeq: 1,
+						type: "system",
+						content: "Starting review of PR #42",
+						timestamp: "2026-08-12T12:00:01Z",
+						notice: {
+							kind: "review-handoff",
+							title: "Reviewing PR #42",
+							tone: "info",
+						},
+					},
+				]}
+			/>,
+		);
+		expect(hydrated).toContain("PR #42");
+	});
+
+	test("grows around unloaded middle history while loaded neighbors keep order", () => {
+		const html = renderToStaticMarkup(
+			<TranscriptBlocks
+				transcriptIndex={[
+					indexRow(1, "user"),
+					indexRow(2, "assistant"),
+					indexRow(3, "user"),
+					indexRow(4, "assistant"),
+					indexRow(5, "user"),
+					indexRow(6, "assistant"),
+				]}
+				entries={[
+					{
+						id: "indexed-2",
+						seq: 2,
+						changeSeq: 2,
+						type: "assistant",
+						content: "Early answer",
+						timestamp: "2026-08-12T12:00:02Z",
+					},
+					{
+						id: "indexed-6",
+						seq: 6,
+						changeSeq: 6,
+						type: "assistant",
+						content: "Late answer",
+						timestamp: "2026-08-12T12:00:06Z",
+					},
+				]}
+			/>,
+		);
+		expect(html).not.toContain("Loading messages");
+		expect(html.indexOf("Early answer")).toBeLessThan(
+			html.indexOf("Late answer"),
+		);
 	});
 });

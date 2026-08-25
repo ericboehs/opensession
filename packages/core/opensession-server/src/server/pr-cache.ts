@@ -75,7 +75,7 @@ export interface PrInfo {
 /**
  * The session id out of the attribution footer every session-opened PR carries
  * ("Started by … in [this session](<public base URL>/session/<id>)",
- * written by opencode-runner/system-prompt). This is how a session finds the
+ * written by pi-runner/system-prompt). This is how a session finds the
  * PRs it opened on branches it doesn't own — a second branch of its own repo,
  * or a repo it never attached.
  *
@@ -176,7 +176,8 @@ function reviewMutationKey(
 // state root changed — a test's scratch HOME, a demo instance's state dir —
 // is read from the right place by an explicit loadPrCacheSnapshot() call.
 const prCacheFile = () => statePath(".opensession-pr-cache.json");
-const PR_CACHE_VERSION = 4;
+const PR_CACHE_VERSION = 5;
+const DURABLE_CACHE_MAX_AGE_MS = 30 * 60_000;
 const probeEtags = new Map<string, string>(); // ghRepo → last seen ETag
 const lastFullRefresh = new Map<string, number>(); // repo id → epoch ms
 /**
@@ -190,7 +191,7 @@ export function loadPrCacheSnapshot(): void {
 try {
   const parsed = JSON.parse(readFileSync(prCacheFile(), "utf8"));
   const raw: Record<string, Record<string, PrInfo>> =
-    ([2, 3, PR_CACHE_VERSION].includes(parsed?.version)) && parsed?.repos
+    ([2, 3, 4, PR_CACHE_VERSION].includes(parsed?.version)) && parsed?.repos
       ? parsed.repos
       : parsed;
   prCache.data = new Map(
@@ -204,9 +205,12 @@ try {
   // timestamps so the current shape refills immediately.
   if (parsed?.version === PR_CACHE_VERSION) {
     const now = Date.now();
-    for (const repo of prRepos()) {
+    let durableRepos = 0;
+    const repos = prRepos();
+    for (const repo of repos) {
       if (!prCache.data.has(repo.id)) continue;
       if (parsed.recentLimits?.[repo.id] !== repo.recentLimit) continue;
+      if (parsed.openLimits?.[repo.id] !== repo.openLimit) continue;
       const etag = parsed.probeEtags?.[repo.ghRepo];
       if (typeof etag === "string" && etag) probeEtags.set(repo.ghRepo, etag);
       const refreshedAt = parsed.lastFullRefresh?.[repo.id];
@@ -217,8 +221,13 @@ try {
         refreshedAt <= now + 60_000
       ) {
         lastFullRefresh.set(repo.id, refreshedAt);
+        if (now - refreshedAt < DURABLE_CACHE_MAX_AGE_MS) durableRepos++;
       }
     }
+    // Keep the snapshot hot across a restart only when every configured repo is
+    // represented with the current query bounds and a recent full refresh.
+    // Otherwise first access reconciles immediately, preserving multi-repo correctness.
+    if (repos.length > 0 && durableRepos === repos.length) prCache.ts = now;
   }
 } catch {}
 }
@@ -232,6 +241,7 @@ function persistPrCache(data: Map<string, Map<string, PrInfo>>) {
       version: PR_CACHE_VERSION,
       repos: obj,
       recentLimits: Object.fromEntries(prRepos().map((repo) => [repo.id, repo.recentLimit])),
+      openLimits: Object.fromEntries(prRepos().map((repo) => [repo.id, repo.openLimit])),
       probeEtags: Object.fromEntries(probeEtags),
       lastFullRefresh: Object.fromEntries(lastFullRefresh),
     }, false);
@@ -652,7 +662,7 @@ const MIN_FULL_REFRESH_MS = 10 * 60_000;
 const PROBE_MAX_SKIP_MS = 30 * 60_000;
 
 // GitHub only populates a PR's `reviewDecision` when branch protection *requires*
-// a review. tella-fusion has no such rule, so reviewDecision comes back "" even
+// a review. A repo with no such rule answers reviewDecision "" even
 // after a teammate approves — which left approved-but-unmerged PRs stuck in the
 // sidebar's "Awaiting review" band forever (it clears only on APPROVED or MERGED).
 // Derive an effective decision from the actual latest review per reviewer,
@@ -1027,6 +1037,17 @@ export interface RecentPrEntry extends Omit<OpenPrEntry, "reviewActive" | "osRev
 	state: "OPEN" | "MERGED" | "CLOSED";
 	additions: number;
 	deletions: number;
+	/** The session named by the trusted attribution footer, when there is one. */
+	sessionId?: string;
+}
+
+/** Only trusted authors may turn a PR-body link into an in-app session route. */
+function trustedPrSessionId(pr: Pick<PrInfo, "author" | "sessionRef">): string | undefined {
+	if (!pr.sessionRef) return undefined;
+	const author = pr.author.toLowerCase();
+	return githubBotLogins().includes(author) || githubLoginToPersonKey(author)
+		? pr.sessionRef
+		: undefined;
 }
 
 /** The recent repo-wide PR window, including PRs created outside Open Session. */
@@ -1034,7 +1055,11 @@ export function getRecentPrs(): RecentPrEntry[] {
 	const out: RecentPrEntry[] = [];
 	for (const [repoId, byBranch] of getPrsByRepo()) {
 		const repoCfg = configuredRepos()[repoId];
-		const capabilities = repoCfg ? prHostFor(repoCfg).capabilities : undefined;
+		// GitHub is the client default. Only alternate hosts need to repeat a
+		// capability object on every row.
+		const capabilities = repoCfg?.host === "codestorage"
+			? prHostFor(repoCfg).capabilities
+			: undefined;
 		for (const [branch, pr] of byBranch) {
 			out.push({
 				capabilities,
@@ -1060,6 +1085,7 @@ export function getRecentPrs(): RecentPrEntry[] {
 				checks: pr.checks,
 				mergeable: pr.mergeable,
 				reviewRequested: pr.reviewRequested,
+				sessionId: trustedPrSessionId(pr),
 			});
 		}
 	}
@@ -1090,8 +1116,9 @@ export async function getRecentPrsForPerson(person: string): Promise<RecentPrEnt
 		createdAt: string;
 		updatedAt: string;
 		assignees?: Array<{ login?: string }>;
+		body?: string;
 	};
-	const fields = "headRefName,url,state,number,title,isDraft,additions,deletions,author,createdAt,updatedAt,assignees";
+	const fields = "headRefName,url,state,number,title,isDraft,additions,deletions,author,createdAt,updatedAt,assignees,body";
 	const out = new Map(
 		getRecentPrs().filter((pr) => pr.person === key).map((pr) => [pr.url, pr]),
 	);
@@ -1111,6 +1138,7 @@ export async function getRecentPrsForPerson(person: string): Promise<RecentPrEnt
 		for (const pr of prs || []) {
 			const author = pr.author?.login || pr.author?.name || "";
 			const assignees = (pr.assignees || []).map((entry) => entry.login || "").filter(Boolean);
+			const sessionRef = sessionRefFromPrBody(pr.body);
 			out.set(pr.url, {
 				repo: repo.id,
 				branch: pr.headRefName,
@@ -1129,6 +1157,7 @@ export async function getRecentPrsForPerson(person: string): Promise<RecentPrEnt
 				checks: { total: 0, passed: 0, failed: 0, pending: 0 },
 				mergeable: "UNKNOWN",
 				reviewRequested: [],
+				sessionId: trustedPrSessionId({ author, sessionRef }),
 			});
 		}
 	}
@@ -1179,7 +1208,9 @@ export function getOpenPrs(): OpenPrEntry[] {
 	for (const [repoId, byBranch] of getPrsByRepo()) {
 		const repoCfg = configuredRepos()[repoId];
 		const ghRepo = repoCfg?.ghRepo;
-		const capabilities = repoCfg ? prHostFor(repoCfg).capabilities : undefined;
+		const capabilities = repoCfg?.host === "codestorage"
+			? prHostFor(repoCfg).capabilities
+			: undefined;
 		for (const [branch, pr] of byBranch) {
 			if (pr.state !== "OPEN") continue;
 			const review = getPrReviewStatus(pr.number, ghRepo, pr.headRefOid);

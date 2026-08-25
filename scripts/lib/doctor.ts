@@ -14,7 +14,11 @@
 import { existsSync, statSync } from "fs";
 import { tailnetIp } from "./config-edit";
 import { CONFIG_PATH, ENV_PATH, REPO_ROOT } from "./paths";
-import { INTEGRATIONS } from "../../packages/core/opensession-server/src/server/integrations/registry";
+import { isCompiledBinary } from "../../packages/core/opensession-server/src/runner-host/exe";
+import {
+  envRequired,
+  INTEGRATIONS,
+} from "../../packages/core/opensession-server/src/server/integrations/registry";
 import * as service from "./service";
 import { dim, fail, heading, info, ok, run, warn } from "./ui";
 
@@ -24,14 +28,6 @@ const TOOLS = [
   { bin: "bun", label: "Bun", required: true, hint: "https://bun.sh" },
   { bin: "git", label: "git", required: true, hint: "sessions run in git worktrees" },
   { bin: "gh", label: "GitHub CLI", required: false, hint: "needed for PR operations" },
-  // Required, not optional: it executes every agent turn. Listing it as a
-  // warning let `doctor` report a healthy instance that could not run one.
-  {
-    bin: "opencode",
-    label: "OpenCode",
-    required: true,
-    hint: "the engine that runs agent turns — `npm i -g opencode-ai`",
-  },
   // Installed by install.sh, but only there — a manual clone or a
   // `--no-engine` run still has to get these two, and both back a credential
   // path: `claude setup-token` for the default model, `codex login` for the
@@ -54,6 +50,12 @@ const TOOLS = [
 async function checkTools(t: Tally): Promise<void> {
   heading("Tooling");
   for (const tool of TOOLS) {
+    // A compiled-binary install has no `bun` on the box; the runtime is baked
+    // into the release binary. Report it as such rather than running `bun`.
+    if (tool.bin === "bun" && isCompiledBinary()) {
+      ok("Bun", "embedded in the release binary");
+      continue;
+    }
     // This CLI is itself running under Bun, so a PATH lookup failing does not
     // mean Bun is missing — it means PATH is thin (a non-login shell, cron,
     // systemd). Trust the running interpreter over the lookup.
@@ -171,7 +173,9 @@ async function checkIntegrations(t: Tally, config?: Record<string, unknown>): Pr
     if (!enabled(spec)) continue;
     anyEnabled = true;
 
-    const missing = spec.env.filter((e) => e.required && !value(e.name));
+    const missing = spec.env.filter(
+      (e) => envRequired(e, (name) => !!value(name)) && !value(e.name),
+    );
     if (missing.length) {
       fail(
         `${spec.label} is enabled but missing ${missing.map((m) => m.name).join(", ")}`,
@@ -270,7 +274,7 @@ async function checkEngine(t: Tally): Promise<void> {
 
   fail(e.blocker || "cannot run agent turns", e.fix || undefined);
   t.errors++;
-  if (e.opencodeBin) info(dim(`bridge ${e.bridgeEnabled ? "enabled" : "disabled"}, ${pool}`));
+  if (e.piEnabled) info(dim(`Pi enabled, ${pool}`));
 }
 
 export async function doctor(): Promise<number> {

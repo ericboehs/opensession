@@ -31,19 +31,6 @@ import { audit } from "./audit";
 import { devInstanceBootError, isDevInstance } from "./dev-mode";
 import { MCP_HTTP_PORT, rpcSocketPath } from "./run-rpc-protocol";
 
-/**
- * In-process MCP server ids renamed michael-* → opensession-*.
- * Legacy ids still arrive at runtime from persisted state: journaled runs
- * resumed after a restart (RunHostSpec.proxyMcpServers, per-run proxy env)
- * and engine sessions whose context still names old tool ids. Normalize at
- * lookup points; never at definition sites (those use the new ids only).
- */
-export function canonicalMcpServerId(name: string): string {
-	return name.startsWith("michael-")
-		? `opensession-${name.slice("michael-".length)}`
-		: name;
-}
-
 const g = globalThis as any;
 
 // Proxied tool calls can legitimately block for many minutes (opensession-humans
@@ -61,8 +48,8 @@ export interface RunTokenContext {
 
 // token → run context. Parked on globalThis (hot reload keeps live runs'
 // tokens); repopulated from host specs on boot reattach after a real restart.
-// Refcounted: a SHARED opencode server carries one stable token that several
-// concurrent runs register/unregister (opencode-runner) — the token must stay
+// Refcounted: a SHARED engine server carries one stable token that several
+// concurrent runs register/unregister (engine-runner) — the token must stay
 // valid until the LAST of them finishes. ctx is the most recent registration:
 // it is only the fallback identity for calls that arrive without a per-call
 // ocSession tag (see dispatchRunRpc below).
@@ -79,50 +66,6 @@ export function unregisterRunToken(token: string | undefined): void {
   const existing = tokens.get(token);
   if (!existing || existing.refs <= 1) tokens.delete(token);
   else existing.refs -= 1;
-}
-
-// opencode session id → the opensession session driving it, registered by
-// opencode-runner for the duration of each run on a SHARED server. Tool calls
-// proxied from such a server carry the opencode session id (injected by
-// opencode-plugin-session-tag.js, stripped back out of the args by
-// mcp-proxy.ts), which resolves here to the RIGHT session context — the
-// token's own ctx is just the shared server's most recent run. `token` pins
-// the mapping to the server that registered it: a call authenticated with a
-// different token cannot borrow another server's session identities.
-export interface OcSessionContext {
-  sessionId: string;
-  user?: string;
-  token: string;
-}
-
-const ocSessions: Map<string, OcSessionContext> = (g.__runRpcOcSessions ??= new Map());
-
-export function registerOcSessionContext(ocSessionId: string, ctx: OcSessionContext): void {
-  ocSessions.set(ocSessionId, ctx);
-}
-
-export function unregisterOcSessionContext(ocSessionId: string | undefined): void {
-  if (ocSessionId) ocSessions.delete(ocSessionId);
-}
-
-/**
- * Identity-scoped release: drop the mapping only if it is still the exact
- * context object the caller registered.
- *
- * Boot re-registers an interrupted run's mapping from the journal
- * (restoreJournaledRunRpcContext) so its still-live detached engine can reach
- * the in-process tools before its recovery is scheduled. That registration
- * and the reattach's own (opencode-runner) overlap, and an engine session id
- * is REUSED by the session's next prompt — so an unconditional delete on the
- * boot registration's release can take a live run's routing away with it.
- * Reference identity is the cheapest way to only ever release your own.
- */
-export function releaseOcSessionContext(
-  ocSessionId: string | undefined,
-  ctx: OcSessionContext,
-): void {
-  if (!ocSessionId) return;
-  if (ocSessions.get(ocSessionId) === ctx) ocSessions.delete(ocSessionId);
 }
 
 /** Constant-time string compare (length mismatch short-circuits — the length
@@ -207,40 +150,13 @@ export async function dispatchRunRpc(path: string, body: any): Promise<RunRpcDis
   let ctx: RunTokenContext | undefined = tokens.get(token);
   if (!ctx) return imm(403, { error: "unauthorized (unknown run token)" });
 
-  // Per-call session refinement (shared opencode servers): the proxied call
-  // names the opencode session it came from; resolve it to the opensession
-  // session that owns it — but only when that mapping was registered under
-  // the SAME token (a spoofed/stale id falls back to the token's own ctx).
-  const ocSession = String(body?.ocSession || "");
-  if (ocSession) {
-    const oc = ocSessions.get(ocSession);
-    if (oc && timingSafeEqStr(oc.token, token)) {
-      ctx = { sessionId: oc.sessionId, user: oc.user };
-    } else {
-      audit({
-        msg: "run_rpc_oc_session_miss",
-        oc_session: ocSession,
-        fallback_session_id: ctx.sessionId,
-        server: String(body?.server || ""),
-        stale: !!oc,
-      });
-      return imm(403, { error: "unauthorized (unresolved opencode session)" });
-    }
-  }
 
   const builder: InteractiveMcpBuilder | undefined = g.__runRpcMcpBuilder;
   if (!builder) return imm(503, { error: "MCP builder not registered yet" });
 
-  // Legacy michael-* ids still arrive from journaled runs resumed across the
-  // 2026-07-09 opensession-* rename — normalize before lookup.
-  const serverName = canonicalMcpServerId(String(body?.server || ""));
+  const serverName = String(body?.server || "");
   const perSession = sessionServers.get(ctx.sessionId);
-  const cfg =
-    (perSession
-      ? Object.fromEntries(
-          Object.entries(perSession).map(([n, s]) => [canonicalMcpServerId(n), s]),
-        )[serverName]
-      : undefined) ?? builder(ctx.sessionId, ctx.user)[serverName];
+  const cfg = perSession?.[serverName] ?? builder(ctx.sessionId, ctx.user)[serverName];
   if (!cfg?.instance) {
     // tools/list for a server this session doesn't carry (shared servers list
     // the union of in-process servers in their config) answers with an empty
@@ -426,7 +342,7 @@ export function startRunRpcServer(): void {
 }
 
 // ── Streamable-HTTP MCP endpoint (loopback) ──────────────────────────────────
-// Host-local opencode runs consume the in-process opensession-* servers as
+// Host-local engine runs consume the in-process opensession-* servers as
 // `type:"remote"` MCP entries against this listener instead of spawning a
 // `bun run mcp-proxy.ts` stdio subprocess per server per instance — which
 // reached 664 processes / ~42GB RSS on 2026-07-27. Sandbox/runner-host runs
@@ -437,7 +353,7 @@ export function startRunRpcServer(): void {
 // BEFORE dispatch picks the session's server instance, and long tool calls
 // need SSE heartbeats (Bun's fetch client hard-aborts responses idle >300s —
 // same constraint the unix-socket path solves with whitespace). The method
-// surface opencode's MCP client uses is tiny; everything funnels into the
+// surface engine's MCP client uses is tiny; everything funnels into the
 // same dispatchRunRpc core (token auth, ocSession refinement, per-session
 // overrides, automation fail-closed builder, audit).
 
@@ -451,9 +367,19 @@ function jsonRpcError(id: unknown, code: number, message: string): Record<string
 
 async function handleMcpHttp(req: Request): Promise<Response> {
   const url = new URL(req.url);
+  // Fresh-auth relay for OAuth-connected EXTERNAL servers (mcp-relay.ts):
+  // per-request Authorization from the grant store, so short-lived tokens
+  // never 401 mid-turn. Gated by its own minted token.
+  const relay = url.pathname.match(/^\/relay\/([A-Za-z0-9_-]+)$/);
+  if (relay) {
+    const t = url.searchParams.get("t") || "";
+    if (!t) return json({ error: "missing relay token" }, 401);
+    const { handleMcpRelay } = await import("./mcp-relay");
+    return handleMcpRelay(req, decodeURIComponent(relay[1]), t);
+  }
   const m = url.pathname.match(/^\/mcp\/([A-Za-z0-9_-]+)$/);
   if (!m) return json({ error: "not found" }, 404);
-  const server = canonicalMcpServerId(m[1]);
+  const server = m[1];
   if (req.method !== "POST") {
     // GET is the client's optional standalone SSE stream probe — a 405 tells
     // it we don't push server-initiated messages, which is true.
@@ -470,7 +396,7 @@ async function handleMcpHttp(req: Request): Promise<Response> {
     return json(jsonRpcError(null, -32700, "parse error"), 400);
   }
   if (Array.isArray(msg)) {
-    // opencode's client never batches; keep the surface minimal.
+    // engine's client never batches; keep the surface minimal.
     return json(jsonRpcError(null, -32600, "batching not supported"), 400);
   }
   const method = String(msg?.method || "");
@@ -500,18 +426,12 @@ async function handleMcpHttp(req: Request): Promise<Response> {
   }
 
   if (method === "tools/call") {
-    // Session-tag extraction — same semantics as mcp-proxy.ts: the shared-
-    // server plugin injects the opencode session id into the arguments; strip
-    // it (tool schemas don't know it) and pass it as the routing sibling.
     const args: Record<string, unknown> = { ...(msg?.params?.arguments ?? {}) };
-    const ocSession = args.__bks_oc_session;
-    delete args.__bks_oc_session;
     const d = await dispatchRunRpc("/mcp/call", {
       token,
       server,
       tool: String(msg?.params?.name || ""),
       args,
-      ...(typeof ocSession === "string" && ocSession ? { ocSession } : {}),
     });
     const toResult = (respBody: Record<string, unknown>): Record<string, unknown> =>
       respBody.error
@@ -585,7 +505,7 @@ export function startMcpHttpServer(): void {
     console.log(`[run-rpc] MCP HTTP listening on 127.0.0.1:${MCP_HTTP_PORT}`);
   } catch (e) {
     // Port taken (a second instance?): config generation falls back to stdio
-    // proxies when the listener isn't up — see remoteOpencodeMcpConfigs.
+    // proxies when the listener isn't up — see remotePiMcpConfigs.
     console.error(`[run-rpc] MCP HTTP bind on ${MCP_HTTP_PORT} failed:`, e);
   }
 }

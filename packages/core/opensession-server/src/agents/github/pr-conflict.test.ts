@@ -1,12 +1,25 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { classifyEntry } from "@tellahq/opensession-protocol/notices";
 import type { TranscriptEntry } from "@tellahq/opensession-protocol/session";
 import type { PrInfo } from "../../server/pr-cache";
 import {
+  __setConflictIntentPathForTest,
   conflictMessage,
+  isCurrentConflictIntent,
   resetConflictWatch,
+  settleConflictIntent,
   scanConflictTransitions,
 } from "./pr-conflict";
+
+const scratch = mkdtempSync(join(tmpdir(), "pr-conflicts-"));
+__setConflictIntentPathForTest(join(scratch, "pending.json"));
+afterAll(() => {
+  __setConflictIntentPathForTest(undefined);
+  rmSync(scratch, { recursive: true, force: true });
+});
 
 function pr(overrides: Partial<PrInfo> = {}): PrInfo {
   return {
@@ -62,9 +75,30 @@ describe("scanConflictTransitions", () => {
 
   test("fires once, not on every following sweep", () => {
     sweep("MERGEABLE");
-    expect(sweep("CONFLICTING")).toHaveLength(1);
+    const [event] = sweep("CONFLICTING");
+    expect(event).toBeDefined();
+    settleConflictIntent(event!);
     expect(sweep("CONFLICTING")).toEqual([]);
     expect(sweep("CONFLICTING")).toEqual([]);
+  });
+
+  test("retries a transition until durable delivery admission", () => {
+    sweep("MERGEABLE");
+    const [first] = sweep("CONFLICTING");
+    const [retry] = sweep("CONFLICTING");
+    expect(retry?.conflictId).toBe(first?.conflictId);
+  });
+
+  test("a delayed old settlement cannot delete a newer transition", () => {
+    sweep("MERGEABLE");
+    const [first] = sweep("CONFLICTING");
+    expect(isCurrentConflictIntent(first!)).toBe(true);
+    sweep("MERGEABLE");
+    expect(isCurrentConflictIntent(first!)).toBe(false);
+    const [second] = sweep("CONFLICTING");
+    settleConflictIntent(first!);
+    const [retry] = sweep("CONFLICTING");
+    expect(retry?.conflictId).toBe(second?.conflictId);
   });
 
   test("a flicker through UNKNOWN does not hide the transition", () => {
@@ -82,9 +116,12 @@ describe("scanConflictTransitions", () => {
 
   test("re-fires after a conflict is resolved and returns", () => {
     sweep("MERGEABLE");
-    expect(sweep("CONFLICTING")).toHaveLength(1);
+    const first = sweep("CONFLICTING");
+    expect(first).toHaveLength(1);
     sweep("MERGEABLE");
-    expect(sweep("CONFLICTING")).toHaveLength(1);
+    const second = sweep("CONFLICTING");
+    expect(second).toHaveLength(1);
+    expect(second[0]?.conflictId).not.toBe(first[0]?.conflictId);
   });
 
   test("carries the PR body's session ref when it has one", () => {
@@ -139,6 +176,7 @@ describe("conflictMessage", () => {
     number: 42,
     title: "Test PR",
     url: "https://github.com/tellahq/tella-fusion/pull/42",
+    conflictId: "sha:transition-1",
   });
 
   test("names the PR and links it", () => {

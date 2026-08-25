@@ -159,3 +159,15 @@ export function workspaceRowOwnsSession(
 	if (selected.workspaceId) return row.workspace?.id === selected.workspaceId;
 	return !!selected.worktreeDir && row.key === `wt:${selected.worktreeDir}`;
 }
+
+/** A workspace route can be selected before its first session exists. */
+export function workspaceRowOwnsSelection(
+	row: Parameters<typeof workspaceRowOwnsSession>[0],
+	selectedSession: Parameters<typeof workspaceRowOwnsSession>[1],
+	selectedWorkspaceId: string | null,
+): boolean {
+	return (
+		(!!selectedWorkspaceId && row.workspace?.id === selectedWorkspaceId) ||
+		workspaceRowOwnsSession(row, selectedSession)
+	);
+}

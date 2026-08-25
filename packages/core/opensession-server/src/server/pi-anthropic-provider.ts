@@ -5,11 +5,10 @@
  * pi-runner registers it via `runtime.registerNativeProvider` when
  * `~/.opensession-pi.json` has `anthropicTransport: "inprocess"` (the
  * default; "bridge" keeps the pre-2026-08 loopback path as rollback), so
- * `pi/anthropic/*` turns reach opencode/meridian's level: native token-level
+ * `pi/anthropic/*` turns reach pi/meridian's level: native token-level
  * streaming (SDK partial message events → pi text/thinking deltas), no
- * end-of-request replay assembly, and no stop-nudging — the PreToolUse block
- * reason invites the model to call every OTHER tool it needs in the same
- * turn instead of ordering it to stop.
+ * end-of-request replay assembly, and Meridian's durable passthrough
+ * checkpoint protocol without a loopback HTTP hop.
  *
  * How a stream call maps onto the SDK (the anthropic-bridge.ts recipe, HTTP
  * hop removed — the shared helpers are imported from there so the two stay
@@ -18,8 +17,10 @@
  *    conversation each turn. Messages convert to the bridge's Anthropic wire
  *    shape (piMessagesToAnthropic) and the bridge's session store logic
  *    decides continuation vs replay (planSdkTurn): history strictly grew past
- *    what the SDK session has seen → resume with only the new tail flattened
- *    (tool results unwrap to raw output text); anything else (first turn,
+ *    what the SDK session has seen → resume with only the new tail flattened;
+ *    a durable passthrough checkpoint instead resumes at its tool-bearing
+ *    assistant UUID with the exact real tool results as structured content.
+ *    Anything else (first turn,
  *    edited/compacted history, or the designated walk moving to a DIFFERENT
  *    account — SDK sessions live in per-account isolated config dirs, so a
  *    cross-account resume cannot work) → fresh SDK session with a full flat
@@ -31,12 +32,12 @@
  *    session), unified id as fallback, parked on globalThis: hot reloads
  *    keep it, a real restart just replays — correct, only slower.
  *  - The request's tools become no-op SDK-MCP passthrough tools; a PreToolUse
- *    hook captures {id, name, input} and blocks with
- *    PI_PASSTHROUGH_BLOCK_REASON. Captured calls stream out as pi toolcall
- *    events as they are captured; the final `done` carries reason "toolUse"
- *    when any exist, else "stop". maxTurns is generous (8), and
- *    error_max_turns WITH captures is a success (the bridge's fix): the
- *    captures are the whole point — return them and let pi execute.
+ *    hook captures {id, name, input} and blocks with Meridian's explicit stop
+ *    instruction. Once every denial reaches the iterator, Pi receives its
+ *    terminal toolUse event immediately while the provider suppresses and
+ *    drains the hidden SDK digest to a canonical result. Only then is the
+ *    tool-bearing assistant UUID published as resumable. The next Pi step
+ *    waits for that per-session drain and resumes there with real results.
  *  - Text/thinking stream token-level via `includePartialMessages` stream
  *    events; if the CLI ever yields no stream events, whole assistant
  *    messages fall back to one delta per text block on arrival — still
@@ -46,10 +47,10 @@
  *    "aborted", which runPi's user-cancel path swallows quietly.
  *
  * Containment (all enforced here, not in prompts):
- *  - Account pick mirrors opencode/meridian: pickBridgeAccount (exported by
+ *  - Account pick mirrors pi/meridian: pickBridgeAccount (exported by
  *    the bridge) draws from the general claude-accounts pool with the run
  *    user's personal-first routing, honoring run-level pins (accountId/
- *    accountStrict/usageCredits). An opencode bridgeAccountIds designation,
+ *    accountStrict/usageCredits). An pi bridgeAccountIds designation,
  *    when set, still contains serving to exactly those ids (legacy override).
  *    Building the provider throws bridgeDesignationError()'s exact message
  *    when the engine is disabled or no account exists, so the run fails as
@@ -64,16 +65,16 @@
  *    account ended the run while the rest of the pool sat idle and the
  *    sideline only helped the next prompt. agent-runner cannot rescue that
  *    either, because an explicit engine choice pins preferredFallback to
- *    "none" rather than crossing into an opencode fallback. The per-account
+ *    "none" rather than crossing into an pi fallback. The per-account
  *    rolling hourly cap (admitBridgeRequest, shared counter with the bridge)
  *    refuses 429-worded for the same classifier, and rotates too, but is
  *    exempt from the sideline: it is local admission control that frees
- *    within the hour, and the sideline map is shared with opencode.
+ *    within the hour, and the sideline map is shared with pi.
  *    Rotation is bounded to a turn that has streamed NOTHING yet, so a
  *    failure mid-answer still surfaces plainly instead of replaying text the
  *    reader already saw. Known gap: the provider has no channel back to
  *    pi-runner's transcript, so a switch is visible in the audit log and the
- *    server log, not as a runner_notice the way opencode's is.
+ *    server log, not as a runner_notice the way pi's is.
  *  - Audit parity with the bridge (this replaces its per-request audit for pi
  *    traffic): `pi_anthropic_request` in/out with summarizeText, unified
  *    session attribution, account, tokens, duration — never raw text dumps,
@@ -89,8 +90,12 @@
  * Known approximations (bridge parity, documented): `temperature`/`maxTokens`
  * /`timeoutMs` and pi's `reasoning` thinking level are ignored (the SDK does
  * not expose them); thinking blocks stream out but are dropped from replay
- * (signatures cannot round-trip through flat text); images in replayed
- * history are dropped.
+ * (signatures cannot round-trip through flat text). Images are NOT dropped:
+ * the flat replay cannot carry them, so planSdkTurn lifts the delivered
+ * slice's image blocks out and the turn goes to the SDK as a structured user
+ * message (see sdkPromptContent). They used to be filtered away here, which
+ * meant a person's screenshot reached the transcript and then vanished before
+ * the model, with no error on either side.
  *
  * pi-ai is not a direct dependency (only @earendil-works/pi-coding-agent is),
  * so the Provider surface is structurally typed: types derive from
@@ -107,12 +112,12 @@ import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { stateDir } from "./paths";
 import { audit, summarizeText } from "./audit";
 import {
-  BRIDGE_CWD,
   DISALLOWED_BUILTINS,
   PASSTHROUGH_MCP,
   PASSTHROUGH_PREFIX,
   admitBridgeRequest,
   bridgeDesignationError,
+  ensureAnthropicBridgeCwd,
   flattenMessageText,
   jsonSchemaToZodShape,
   pickBridgeAccount,
@@ -122,19 +127,38 @@ import {
 } from "./anthropic-bridge";
 import { markExhausted, type ClaudeAccount } from "./claude-accounts";
 import {
+  createEarlyStopTracker,
+  isCompleteToolResultContinuation,
+  noteAssistantMessage,
+  noteUserContent,
+  settledToolCallAssistantUuid,
+  shouldEarlyStop,
+} from "./meridian-passthrough";
+import {
   CLAUDE_CODE_BIN,
   describeUsageLimitReset,
+  isClaudeSubscriptionError,
   isClaudeUsageLimitError,
   usageLimitResetAt,
 } from "./runner-shared";
 
 const g = globalThis as any;
 
-const LIMIT_NOTICE_PROBE_CHARS = 64;
+const ACCOUNT_NOTICE_PROBE_CHARS = 64;
 
-/** Hold a small prefix until provider limit text can be distinguished from a real answer. */
+function isClaudeAccountUnavailable(message: string, isErrorResult: boolean): boolean {
+  return (
+    isClaudeUsageLimitError(message, isErrorResult) ||
+    isClaudeSubscriptionError(message)
+  );
+}
+
+/** Hold a small prefix until provider account notices can be distinguished from a real answer. */
 export function shouldDeferClaudeText(text: string): boolean {
-  return text.length < LIMIT_NOTICE_PROBE_CHARS || isClaudeUsageLimitError(text, false);
+  return (
+    text.length < ACCOUNT_NOTICE_PROBE_CHARS ||
+    isClaudeAccountUnavailable(text, false)
+  );
 }
 
 // ── Types (derived from the SDK so pi-ai never becomes a value import) ───────
@@ -202,31 +226,53 @@ type PiStreamEvent =
   | { type: "done"; reason: "stop" | "length" | "toolUse"; message: PiAssistantMessageShape }
   | { type: "error"; reason: "aborted" | "error"; error: PiAssistantMessageShape };
 
-// ── The passthrough block wording (the no-stop-nudging change) ───────────────
+// ── Passthrough capture and durable checkpoint drain ─────────────────────────
 
-/** PreToolUse block reason. Unlike the bridge's wording it never says "do not
- *  call more tools": the call is captured for client-side execution and the
- *  model is invited to emit every OTHER call it needs in the same turn, then
- *  end it — that keeps multi-tool batches one round-trip instead of nudging
- *  sequential models into max-turns. */
+/** Meridian's model-facing denial. It is never part of Pi's transcript: once
+ *  the visible tool batch settles, the provider closes Pi's stream and drains
+ *  the SDK's digest branch invisibly to its canonical result. */
 export const PI_PASSTHROUGH_BLOCK_REASON =
-  "This tool call was captured and queued for client-side execution; its result will arrive " +
-  "in the next turn. If you need other tools run in this same batch, call each OTHER tool " +
-  "you need now — then end your turn. Do not retry this same call.";
+  "This tool call has been forwarded to the client for execution. " +
+  "The result will be delivered in a future turn. " +
+  "Do not retry, do not call additional tools, and do not generate further text. End your turn now.";
 
-/** Generous turn budget: each blocked tool call costs a turn boundary, and
- *  multi-tool batches (or models that try tools one at a time) need headroom.
- *  error_max_turns WITH captures is still a success (see the run loop). */
+/** The SDK still needs room for its hidden digest after the visible tool turn. */
 export const PI_SDK_MAX_TURNS = 8;
 
 // ── pi messages → the bridge's Anthropic wire shape ──────────────────────────
+
+/** Media types the Anthropic messages API reads as an image. Anything else
+ *  (bmp, svg, a missing mime) is dropped rather than sent as a block the API
+ *  would reject for the whole request. */
+const ANTHROPIC_IMAGE_MEDIA_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+]);
+
+/**
+ * pi's `{type:"image", data, mimeType}` → Anthropic's base64 image block, or
+ * null when it is not an image this API can read. Exported for the tests.
+ */
+export function piImageBlockToAnthropic(block: Record<string, any>): ContentBlock | null {
+  if (!block || block.type !== "image") return null;
+  if (typeof block.data !== "string" || !block.data) return null;
+  const mediaType = typeof block.mimeType === "string" ? block.mimeType.toLowerCase() : "";
+  if (!ANTHROPIC_IMAGE_MEDIA_TYPES.has(mediaType)) return null;
+  return { type: "image", source: { type: "base64", media_type: mediaType, data: block.data } };
+}
 
 /**
  * Convert pi's Message[] into the AnthropicMessage[] the bridge helpers
  * (flattenMessageText / replayConversation) understand: assistant ToolCall
  * blocks become tool_use, toolResult messages become user tool_result
- * messages, thinking blocks and images are dropped (they cannot round-trip
- * through a flat-text replay). Exported for the unit tests.
+ * messages, thinking blocks are dropped (signatures cannot round-trip through
+ * a flat-text replay). User images are KEPT: they do not survive the flat
+ * replay either, so planSdkTurn lifts them out and rides them to the SDK as
+ * real content blocks. Dropping them here was silent data loss — the model
+ * answered as if the person had never attached a screenshot, with no error on
+ * either side. Exported for the unit tests.
  */
 export function piMessagesToAnthropic(messages: readonly PiWireMessage[]): AnthropicMessage[] {
   const out: AnthropicMessage[] = [];
@@ -236,9 +282,16 @@ export function piMessagesToAnthropic(messages: readonly PiWireMessage[]): Anthr
       if (typeof m.content === "string") {
         out.push({ role: "user", content: m.content });
       } else if (Array.isArray(m.content)) {
-        const blocks: ContentBlock[] = m.content
-          .filter((b) => b?.type === "text" && typeof b.text === "string")
-          .map((b) => ({ type: "text", text: b.text }));
+        const blocks: ContentBlock[] = [];
+        for (const b of m.content) {
+          if (!b || typeof b !== "object") continue;
+          if (b.type === "text" && typeof b.text === "string") {
+            blocks.push({ type: "text", text: b.text });
+            continue;
+          }
+          const image = piImageBlockToAnthropic(b);
+          if (image) blocks.push(image);
+        }
         out.push({ role: "user", content: blocks });
       }
     } else if (m.role === "assistant") {
@@ -255,14 +308,29 @@ export function piMessagesToAnthropic(messages: readonly PiWireMessage[]): Anthr
       }
       out.push({ role: "assistant", content: blocks });
     } else if (m.role === "toolResult") {
-      const inner: ContentBlock[] = Array.isArray(m.content)
-        ? m.content
-            .filter((b) => b?.type === "text" && typeof b.text === "string")
-            .map((b) => ({ type: "text", text: b.text }))
-        : [{ type: "text", text: String(m.content ?? "") }];
+      const inner: ContentBlock[] = [];
+      if (Array.isArray(m.content)) {
+        for (const block of m.content) {
+          if (block?.type === "text" && typeof block.text === "string") {
+            inner.push({ type: "text", text: block.text });
+            continue;
+          }
+          const image = piImageBlockToAnthropic(block);
+          if (image) inner.push(image);
+        }
+      } else {
+        inner.push({ type: "text", text: String(m.content ?? "") });
+      }
       out.push({
         role: "user",
-        content: [{ type: "tool_result", tool_use_id: m.toolCallId, content: inner }],
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: m.toolCallId,
+            content: inner,
+            ...(m.isError === true ? { is_error: true } : {}),
+          },
+        ],
       });
     }
   }
@@ -281,6 +349,11 @@ export interface PiSdkSessionState {
    *  never-touching-host-creds) — the caller treats an account mismatch as
    *  divergence and replays fresh. */
   accountId: string;
+  /** Durable assistant boundary for a visible passthrough tool turn. When set,
+   *  the next exact tool-result continuation resumes here rather than after
+   *  the hidden SDK digest branch. */
+  passthroughToolCallAssistantUuid?: string;
+  passthroughToolCallIds?: string[];
   lastUsedAt: number;
 }
 
@@ -290,30 +363,131 @@ export function piSdkSessionStore(): Map<string, PiSdkSessionState> {
   return (g.__piAnthropicSdkSessions ??= new Map<string, PiSdkSessionState>());
 }
 
+/** Canonical SDK drains still running after Pi received a terminal toolUse
+ *  event. The next step for that session waits here before reading its mapping. */
+function piSdkCanonicalDrains(): Map<string, Promise<void>> {
+  return (g.__piAnthropicCanonicalDrains ??= new Map<string, Promise<void>>());
+}
+
+function beginPiSdkCanonicalDrain(key: string): () => void {
+  const drains = piSdkCanonicalDrains();
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  drains.set(key, promise);
+  return () => {
+    if (drains.get(key) === promise) drains.delete(key);
+    resolve();
+  };
+}
+
 export interface PiSdkTurnPlan {
   /** SDK session to resume; undefined = fresh session. */
   resume: string | undefined;
-  /** Flat-text prompt: the new tail on continuation, the full replay else. */
+  /** Assistant checkpoint to resume from for an exact tool-result delta. */
+  resumeSessionAt: string | undefined;
+  /** Flat-text prompt: the new tail on an ordinary continuation, the full
+   *  replay on divergence, or empty for a structured tool-result delta. */
   prompt: string;
+  /** Structured tool results delivered after resumeSessionAt. */
+  toolResults: ContentBlock[] | null;
+  /** Image blocks from the delivered slice, oldest first. Empty = a plain-text
+   *  turn, which rides the SDK's string prompt exactly as it always has. */
+  images: ContentBlock[];
   continuation: boolean;
 }
 
-/** The bridge's continuation decision, factored pure for tests: continuation
- *  = the history strictly grew past what the stored SDK session has seen (only
- *  the new tail is delivered); anything else — first turn, edited or
- *  compacted history — replays the whole conversation into a fresh session. */
+/** Per-turn image ceiling. A fresh replay delivers the whole conversation, so
+ *  without a cap a session that had traded a dozen screenshots would re-upload
+ *  all of them on every divergence. The newest are the ones the turn is about. */
+export const MAX_TURN_IMAGES = 8;
+
+/** The image blocks a delivered slice carries, newest kept. */
+export function turnImages(messages: AnthropicMessage[]): ContentBlock[] {
+  const images: ContentBlock[] = [];
+  for (const m of messages) {
+    if (m.role !== "user" || !Array.isArray(m.content)) continue;
+    for (const b of m.content) if (b?.type === "image") images.push(b);
+  }
+  return images.length > MAX_TURN_IMAGES ? images.slice(-MAX_TURN_IMAGES) : images;
+}
+
+/** Merge an exact resumed tool-result delta into the one structured user
+ *  message the SDK expects after resumeSessionAt. */
+export function resumedToolResults(
+  messages: AnthropicMessage[],
+  expectedIds: readonly string[]
+): ContentBlock[] | null {
+  const blocks: ContentBlock[] = [];
+  for (const message of messages) {
+    // Pi stores parallel tool results as sibling toolResult messages. Meridian's
+    // Anthropic wire input carries them as blocks in one user message, so merge
+    // that representation before asking its exact-continuation validator.
+    if (message.role !== "user" || !Array.isArray(message.content)) return null;
+    blocks.push(...message.content);
+  }
+  const merged = [{ role: "user", content: blocks }];
+  return isCompleteToolResultContinuation(merged, expectedIds) ? blocks : null;
+}
+
+/** Meridian's continuation decision, factored pure for tests. A checkpointed
+ *  tool turn resumes only when the new tail contains exactly its real tool
+ *  results. Partial results, extra user content, edits, compaction, and stale
+ *  counts full-replay into a fresh SDK session. */
 export function planSdkTurn(
   stored: PiSdkSessionState | undefined,
   messages: AnthropicMessage[]
 ): PiSdkTurnPlan {
-  const continuation = !!stored && messages.length > stored.messageCount;
-  return continuation
-    ? {
-        resume: stored!.sdkSessionId,
-        prompt: replayConversation(messages.slice(stored!.messageCount)),
-        continuation,
+  if (stored && messages.length > stored.messageCount) {
+    const delivered = messages.slice(stored.messageCount);
+    const checkpointUuid = stored.passthroughToolCallAssistantUuid;
+    const checkpointIds = stored.passthroughToolCallIds || [];
+    if (checkpointUuid) {
+      const toolResults = resumedToolResults(delivered, checkpointIds);
+      if (toolResults) {
+        return {
+          resume: stored.sdkSessionId,
+          resumeSessionAt: checkpointUuid,
+          prompt: "",
+          toolResults,
+          images: [],
+          continuation: true,
+        };
       }
-    : { resume: undefined, prompt: replayConversation(messages), continuation: false };
+    } else {
+      return {
+        resume: stored.sdkSessionId,
+        resumeSessionAt: undefined,
+        prompt: replayConversation(delivered),
+        toolResults: null,
+        images: turnImages(delivered),
+        continuation: true,
+      };
+    }
+  }
+  return {
+    resume: undefined,
+    resumeSessionAt: undefined,
+    prompt: replayConversation(messages),
+    toolResults: null,
+    images: turnImages(messages),
+    continuation: false,
+  };
+}
+
+/** Placeholder for a turn whose only content is an image: replayConversation
+ *  skips a message with no text, and an empty prompt reads to the SDK as an
+ *  empty turn. */
+export const IMAGE_ONLY_PROMPT = "(see the attached image)";
+
+/** The structured user content for a turn carrying images, or null when the
+ *  turn is plain text and should keep using the string prompt. */
+export function sdkPromptContent(plan: PiSdkTurnPlan): ContentBlock[] | null {
+  if (plan.toolResults) return plan.toolResults;
+  if (!plan.images.length) return null;
+  const text = plan.prompt.trim();
+  return [...plan.images, { type: "text", text: text || IMAGE_ONLY_PROMPT }];
 }
 
 export const MAX_PI_SDK_SESSIONS = 500;
@@ -324,13 +498,20 @@ export function rememberSdkTurn(
   key: string,
   sdkSessionId: string,
   wireMessageCount: number,
-  accountId: string
+  accountId: string,
+  checkpoint?: { assistantUuid: string; toolCallIds: string[] }
 ): void {
   const store = piSdkSessionStore();
   store.set(key, {
     sdkSessionId,
     messageCount: wireMessageCount + 1,
     accountId,
+    ...(checkpoint
+      ? {
+          passthroughToolCallAssistantUuid: checkpoint.assistantUuid,
+          passthroughToolCallIds: [...checkpoint.toolCallIds],
+        }
+      : {}),
     lastUsedAt: Date.now(),
   });
   if (store.size <= MAX_PI_SDK_SESSIONS) return;
@@ -575,6 +756,8 @@ async function* runSdkAttempt(
 
   let account: ClaudeAccount | undefined;
   const captured: CapturedToolUse[] = [];
+  let clientDone = false;
+  let finishCanonicalDrain: (() => void) | undefined;
   try {
     if (signal?.aborted) {
       yield fail("aborted", "Request aborted");
@@ -590,6 +773,11 @@ async function* runSdkAttempt(
     });
     if ("error" in picked) throw new Error(picked.error);
     account = picked;
+
+    // Pi can begin executing a visible tool call while the preceding SDK query
+    // invisibly drains its digest. Serialize only this session boundary so the
+    // follow-up cannot read the mapping before its checkpoint is durable.
+    await piSdkCanonicalDrains().get(storeKey);
 
     // Continuation planning happens with the account known: a stored SDK
     // session lives in ITS account's isolated CLAUDE_CONFIG_DIR, so a turn
@@ -608,9 +796,12 @@ async function* runSdkAttempt(
     // usage-limit-shaped for isPiUsageLimitShape (fallback walk engages), but
     // the tag keeps the catch from markExhausted-ing the account: the cap is
     // OUR local admission control, it frees within the hour, and the
-    // exhaustion sideline is shared with the opencode bridge — a synthetic
+    // exhaustion sideline is shared with the pi bridge — a synthetic
     // refusal must never bench the account cross-engine until the 5h reset.
-    const estTokens = Math.ceil((plan.prompt.length + system.length) / 4);
+    // ~1.6k tokens is a typical screenshot. The estimate only feeds our local
+    // rolling cap, so rough is the right amount of precision here.
+    const estTokens =
+      Math.ceil((plan.prompt.length + system.length) / 4) + plan.images.length * 1600;
     const rate = admitBridgeRequest(account.id, estTokens);
     if (!rate.allowed) {
       const rateErr = new Error(
@@ -646,22 +837,59 @@ async function* runSdkAttempt(
     let sdkSessionId: string | undefined;
     let sdkUsage: Record<string, number> | undefined;
     let reachedResult = false;
+    let checkpoint: { assistantUuid: string; toolCallIds: string[] } | undefined;
+    const earlyStop = createEarlyStopTracker();
+
+    // PreToolUse hooks can resolve before the stream iterator has delivered
+    // every tool_use block in a parallel batch. Hold each block result until
+    // the assistant message ends, then let the SDK persist all denials before
+    // the tracker aborts the otherwise automatic digest turn.
+    const pendingDenyReleases: Array<() => void> = [];
+    let turnGenerating = false;
+    const releaseHeldDenies = () => {
+      turnGenerating = false;
+      for (const release of pendingDenyReleases.splice(0)) release();
+    };
+    const holdDenyUntilTurnEnd = () =>
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 8_000);
+        pendingDenyReleases.push(() => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
     // Stream-event bookkeeping: SDK content-block index (per SDK message) →
     // index into `partial.content`; -1 marks a block we deliberately skip
     // (tool_use streams are ignored — the post-hook captures are authoritative
     // and a blocked-then-retried call must not double).
     let idxMap = new Map<number, number>();
-    let pendingText = new Map<number, { text: string; usageLimit: boolean }>();
-    let deferredUsageLimit: string | undefined;
+    let pendingText = new Map<number, { text: string; accountUnavailable: boolean }>();
+    let deferredAccountUnavailable: string | undefined;
     let sawStreamContent = false;
     let emittedCaptures = 0;
 
+    // A turn carrying images goes in as one streaming-input user message whose
+    // content holds the real image blocks; a plain-text turn keeps the string
+    // prompt unchanged. Everything else about the turn (resume, hooks, partial
+    // streaming, the passthrough tools) is indifferent to which shape it gets.
+    const promptContent = sdkPromptContent(plan);
+    const sdkPrompt = promptContent
+      ? (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: promptContent },
+            parent_tool_use_id: null,
+          };
+        })()
+      : plan.prompt;
+
     const q = query({
-      prompt: plan.prompt,
+      prompt: sdkPrompt as any,
       options: {
-        cwd: BRIDGE_CWD,
+        cwd: ensureAnthropicBridgeCwd(),
         model: model.id,
         resume: plan.resume,
+        ...(plan.resumeSessionAt ? { resumeSessionAt: plan.resumeSessionAt } : {}),
         abortController: controller,
         includePartialMessages: true,
         maxTurns: PI_SDK_MAX_TURNS,
@@ -690,8 +918,21 @@ async function* runSdkAttempt(
                   const bare = name.startsWith(PASSTHROUGH_PREFIX)
                     ? name.slice(PASSTHROUGH_PREFIX.length)
                     : name;
-                  captured.push({ id: input.tool_use_id, name: bare, input: input.tool_input ?? {} });
-                  return { decision: "block" as const, reason: PI_PASSTHROUGH_BLOCK_REASON };
+                  // Calls after the visible checkpoint belong to the hidden
+                  // digest branch. Block them, but never expose them to Pi.
+                  if (!checkpoint) {
+                    captured.push({ id: input.tool_use_id, name: bare, input: input.tool_input ?? {} });
+                  }
+                  if (turnGenerating && !controller.signal.aborted) {
+                    await holdDenyUntilTurnEnd();
+                  }
+                  return {
+                    decision: "block" as const,
+                    reason: checkpoint
+                      ? "This tool call has already been handled by the client-facing turn. " +
+                        "Do not repeat it, do not call additional tools, and do not generate further text. End your turn now."
+                      : PI_PASSTHROUGH_BLOCK_REASON,
+                  };
                 },
               ],
             },
@@ -704,8 +945,13 @@ async function* runSdkAttempt(
      *  Captures happen after the model finished emitting that tool_use block,
      *  so appending at the next SDK message keeps content order coherent. */
     function* drainCaptures(): Generator<PiStreamEvent> {
+      if (clientDone) return;
       while (emittedCaptures < captured.length) {
-        const c = captured[emittedCaptures++];
+        const c = captured[emittedCaptures];
+        // Hook capture can run ahead of the iterator. Emit only calls the
+        // upstream tracker has attached to the visible assistant message.
+        if (!earlyStop.expected.has(c.id)) break;
+        emittedCaptures += 1;
         const toolCall = { type: "toolCall", id: c.id, name: c.name, arguments: c.input ?? {} };
         const contentIndex = partial.content.push(toolCall) - 1;
         yield { type: "toolcall_start", contentIndex, partial };
@@ -714,12 +960,34 @@ async function* runSdkAttempt(
       }
     }
 
+    const finishVisibleToolTurn = (): PiStreamEvent | undefined => {
+      if (clientDone || !shouldEarlyStop(earlyStop)) return undefined;
+      const assistantUuid = settledToolCallAssistantUuid(earlyStop);
+      if (!assistantUuid) return undefined;
+      checkpoint = { assistantUuid, toolCallIds: [...earlyStop.expected] };
+      for (let i = captured.length - 1; i >= 0; i--) {
+        if (!earlyStop.expected.has(captured[i].id)) captured.splice(i, 1);
+      }
+      emittedCaptures = Math.min(emittedCaptures, captured.length);
+      finishCanonicalDrain = beginPiSdkCanonicalDrain(storeKey);
+      clientDone = true;
+      const usage = usageFromSdkResult(model, sdkUsage);
+      partial.usage = usage;
+      const message: PiAssistantMessageShape = {
+        ...partial,
+        stopReason: "toolUse",
+        usage,
+        timestamp: Date.now(),
+      };
+      return { type: "done", reason: "toolUse", message };
+    };
+
     try {
       for await (const msg of q) {
         yield* drainCaptures();
         const m = msg as Record<string, any>;
+        if (m.session_id) sdkSessionId = String(m.session_id) || sdkSessionId;
         if (m.type === "system" && m.subtype === "init") {
-          sdkSessionId = String(m.session_id || "") || sdkSessionId;
           continue;
         }
         if (m.type === "stream_event") {
@@ -729,15 +997,38 @@ async function* runSdkAttempt(
           if (m.parent_tool_use_id) continue;
           const ev = m.event as Record<string, any> | undefined;
           if (!ev) continue;
+          if (
+            ev.type === "message_delta" ||
+            ev.type === "message_stop" ||
+            (ev.type === "message_start" && turnGenerating)
+          ) {
+            releaseHeldDenies();
+          }
+          // Pi has already received its terminal toolUse event. Continue only
+          // the bookkeeping needed to reach the SDK's canonical result; every
+          // digest token and block remains invisible.
+          if (clientDone) {
+            if (ev.type === "message_start") {
+              turnGenerating = true;
+              if (ev.message?.usage) sdkUsage = { ...sdkUsage, ...ev.message.usage };
+            } else if (ev.type === "message_delta" && ev.usage) {
+              sdkUsage = { ...sdkUsage, ...ev.usage };
+            }
+            continue;
+          }
           if (ev.type === "message_start") {
+            turnGenerating = true;
             idxMap = new Map();
             pendingText = new Map();
+            if (ev.message?.usage) sdkUsage = { ...sdkUsage, ...ev.message.usage };
+          } else if (ev.type === "message_delta") {
+            if (ev.usage) sdkUsage = { ...sdkUsage, ...ev.usage };
           } else if (ev.type === "content_block_start") {
             const block = ev.content_block as Record<string, any> | undefined;
             const sdkIdx = Number(ev.index);
             if (block?.type === "text") {
               sawStreamContent = true;
-              pendingText.set(sdkIdx, { text: "", usageLimit: false });
+              pendingText.set(sdkIdx, { text: "", accountUnavailable: false });
             } else if (block?.type === "thinking") {
               sawStreamContent = true;
               const contentIndex = partial.content.push({ type: "thinking", thinking: "" }) - 1;
@@ -754,8 +1045,8 @@ async function* runSdkAttempt(
             const delta = ev.delta as Record<string, any> | undefined;
             if (pending && delta?.type === "text_delta" && typeof delta.text === "string") {
               pending.text += delta.text;
-              pending.usageLimit ||= isClaudeUsageLimitError(pending.text, false);
-              if (pending.usageLimit || shouldDeferClaudeText(pending.text)) continue;
+              pending.accountUnavailable ||= isClaudeAccountUnavailable(pending.text, false);
+              if (pending.accountUnavailable || shouldDeferClaudeText(pending.text)) continue;
               const contentIndex = partial.content.push({ type: "text", text: pending.text }) - 1;
               idxMap.set(sdkIdx, contentIndex);
               pendingText.delete(sdkIdx);
@@ -784,8 +1075,11 @@ async function* runSdkAttempt(
             const pending = pendingText.get(sdkIdx);
             if (pending) {
               pendingText.delete(sdkIdx);
-              if (pending.usageLimit || isClaudeUsageLimitError(pending.text, false)) {
-                deferredUsageLimit = pending.text;
+              if (
+                pending.accountUnavailable ||
+                isClaudeAccountUnavailable(pending.text, false)
+              ) {
+                deferredAccountUnavailable = pending.text;
                 continue;
               }
               const contentIndex = partial.content.push({ type: "text", text: pending.text }) - 1;
@@ -806,28 +1100,49 @@ async function* runSdkAttempt(
           }
           continue;
         }
-        if (m.type === "assistant" && !sawStreamContent) {
-          // Fallback (no partial stream events from the CLI): emit each text
-          // block as one delta on arrival — per-message, not end-of-request.
-          const blocks = m.message?.content;
-          if (Array.isArray(blocks)) {
-            for (const b of blocks) {
-              if (!b || typeof b !== "object" || b.type !== "text" || !b.text) continue;
-              if (isClaudeUsageLimitError(b.text, false)) {
-                deferredUsageLimit = b.text;
-                continue;
+        if (m.type === "assistant") {
+          let assistantAddedForwardedCall = false;
+          if (!checkpoint && earlyStop.resolved.size === 0) {
+            const expectedBefore = earlyStop.expected.size;
+            noteAssistantMessage(earlyStop, m);
+            assistantAddedForwardedCall = earlyStop.expected.size > expectedBefore;
+          }
+          if (m.message?.usage) sdkUsage = { ...sdkUsage, ...m.message.usage };
+          if (!clientDone && !sawStreamContent) {
+            // Fallback (no partial stream events from the CLI): emit each text
+            // block as one delta on arrival, per-message, not end-of-request.
+            const blocks = m.message?.content;
+            if (Array.isArray(blocks)) {
+              for (const b of blocks) {
+                if (!b || typeof b !== "object" || b.type !== "text" || !b.text) continue;
+                if (isClaudeAccountUnavailable(b.text, false)) {
+                  deferredAccountUnavailable = b.text;
+                  continue;
+                }
+                const contentIndex = partial.content.push({ type: "text", text: b.text }) - 1;
+                yield { type: "text_start", contentIndex, partial };
+                yield { type: "text_delta", contentIndex, delta: b.text, partial };
+                yield { type: "text_end", contentIndex, content: b.text, partial };
               }
-              const contentIndex = partial.content.push({ type: "text", text: b.text }) - 1;
-              yield { type: "text_start", contentIndex, partial };
-              yield { type: "text_delta", contentIndex, delta: b.text, partial };
-              yield { type: "text_end", contentIndex, content: b.text, partial };
             }
           }
+          // Usually the user envelope arrives last. The SDK can invert those
+          // two messages, so recheck after each assistant fragment too.
+          if (assistantAddedForwardedCall) yield* drainCaptures();
+          const terminal = finishVisibleToolTurn();
+          if (terminal) yield terminal;
+          continue;
+        }
+        if (m.type === "user") {
+          if (!checkpoint) noteUserContent(earlyStop, m.message?.content);
+          yield* drainCaptures();
+          const terminal = finishVisibleToolTurn();
+          if (terminal) yield terminal;
           continue;
         }
         if (m.type === "result") {
           sdkSessionId = String(m.session_id || "") || sdkSessionId;
-          if (deferredUsageLimit) throw new Error(deferredUsageLimit);
+          if (deferredAccountUnavailable) throw new Error(deferredAccountUnavailable);
           // error_max_turns WITH captures is a SUCCESS (the bridge's fix):
           // models that answer a blocked call by trying the next tool burn a
           // turn per call and can blow the cap before ending cleanly — the
@@ -855,6 +1170,7 @@ async function* runSdkAttempt(
       }
       yield* drainCaptures();
     } finally {
+      releaseHeldDenies();
       signal?.removeEventListener("abort", onAbort);
       // Abandonment backstop: a consumer that stops iterating this generator
       // (early .return()/throw upstream) must not leave the SDK subprocess
@@ -864,6 +1180,7 @@ async function* runSdkAttempt(
     }
 
     if (signal?.aborted) {
+      piSdkSessionStore().delete(storeKey);
       audit({
         ...auditBase,
         direction: "out",
@@ -872,7 +1189,7 @@ async function* runSdkAttempt(
         duration_ms: Date.now() - started,
         error: "aborted",
       });
-      yield fail("aborted", "Request aborted");
+      if (!clientDone) yield fail("aborted", "Request aborted");
       return;
     }
     if (!reachedResult) {
@@ -882,7 +1199,7 @@ async function* runSdkAttempt(
     }
 
     if (sdkSessionId) {
-      rememberSdkTurn(storeKey, sdkSessionId, wireMessages.length, account.id);
+      rememberSdkTurn(storeKey, sdkSessionId, wireMessages.length, account.id, checkpoint);
     }
 
     const usage = usageFromSdkResult(model, sdkUsage);
@@ -903,6 +1220,7 @@ async function* runSdkAttempt(
       duration_ms: Date.now() - started,
       stop_reason: stopReason,
       tool_uses: captured.length,
+      checkpoint_drain: !!checkpoint,
       sdk_session_id: sdkSessionId,
       input_tokens: usage.input,
       output_tokens: usage.output,
@@ -914,9 +1232,10 @@ async function* runSdkAttempt(
           .join("\n")
       ),
     });
-    yield { type: "done", reason: stopReason, message };
+    if (!clientDone) yield { type: "done", reason: stopReason, message };
   } catch (e: any) {
     if (signal?.aborted) {
+      piSdkSessionStore().delete(storeKey);
       audit({
         ...auditBase,
         direction: "out",
@@ -925,21 +1244,36 @@ async function* runSdkAttempt(
         duration_ms: Date.now() - started,
         error: "aborted",
       });
-      yield fail("aborted", "Request aborted");
+      if (!clientDone) yield fail("aborted", "Request aborted");
       return;
     }
     const message: string = e?.message || String(e);
+    // A failed hidden drain occurs after Pi already received a successful tool
+    // turn. Evict its unpublished checkpoint and let the next step replay; a
+    // second terminal event would corrupt the already-finished Pi turn.
+    if (clientDone) {
+      piSdkSessionStore().delete(storeKey);
+      audit({
+        ...auditBase,
+        direction: "out",
+        ok: false,
+        ...(account ? { account: account.name } : {}),
+        duration_ms: Date.now() - started,
+        error: `checkpoint drain failed: ${message}`,
+      });
+      return;
+    }
     // A failed continuation may mean the resumed SDK session is dead (config
     // dir swept/wiped): evict the mapping so the next turn replays fresh.
     if (plannedContinuation) piSdkSessionStore().delete(storeKey);
     const localCap = e?.piLocalRateCap === true;
-    const usageShaped = isClaudeUsageLimitError(message, true);
-    // Usage-limit-shaped death: sideline the picked designated account before
+    const accountUnavailable = isClaudeAccountUnavailable(message, true);
+    // Account-level death: sideline the picked designated account before
     // surfacing (claude-direct's markExhausted discipline); the preserved
     // message is what isPiUsageLimitShape classifies upstream. The local
     // rolling-cap refusal is exempt (tagged at the throw): it is 429-worded
     // for the classifier but is not account exhaustion.
-    if (account && !localCap && usageShaped) {
+    if (account && !localCap && accountUnavailable) {
       // Bench it until the reset the account itself named, when it named one:
       // a weekly limit otherwise came back into the pool in an hour and failed
       // again, every hour, until it genuinely reset.
@@ -958,7 +1292,7 @@ async function* runSdkAttempt(
     // never ran: multiple accounts were consulted and the reader was shown the
     // last one's sentence, so working rotation read as no rotation at all.
     let poolRefusal: string | undefined;
-    if (account && (usageShaped || localCap) && partial.content.length === 0) {
+    if (account && (accountUnavailable || localCap) && partial.content.length === 0) {
       excluded.add(account.id);
       const next = pickBridgeAccount(model.id, {
         accountId: opts.accountId,
@@ -1009,5 +1343,7 @@ async function* runSdkAttempt(
       return;
     }
     yield fail("error", message);
+  } finally {
+    finishCanonicalDrain?.();
   }
 }

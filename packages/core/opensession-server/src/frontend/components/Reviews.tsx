@@ -1,7 +1,7 @@
 import { repoLabel } from "../lib/repo-label";
 import { cleanSessionTitle } from "../lib/session-title";
 import { AGENT_NAME } from "../lib/brand";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { UnifiedSession, WSServerMessage } from "../lib/types";
 import { relativeTime } from "../lib/api";
 import { PrPanel } from "./PrPanel";
@@ -223,7 +223,7 @@ export function Reviews({
 
   // One row per PR (deduped by URL across the sessions on a branch), newest
   // session wins for metadata.
-  const prSessions = useMemo(() => {
+  const prSessions = (() => {
     const byPr = new Map<string, UnifiedSession>();
     for (const s of sessions) {
       if (!s.prUrl || s.archived) continue;
@@ -237,9 +237,9 @@ export function Reviews({
       if (r !== 0) return r;
       return new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime();
     });
-  }, [sessions]);
+  })();
 
-  const counts = useMemo(() => {
+  const counts = (() => {
     const c = { review: 0, open: 0, merged: 0, closed: 0, all: prSessions.length };
     for (const s of prSessions) {
       const state = s.prState || "OPEN";
@@ -249,9 +249,9 @@ export function Reviews({
       if (needsReview(s)) c.review++;
     }
     return c;
-  }, [prSessions]);
+  })();
 
-  const filtered = useMemo(() => {
+  const filtered = (() => {
     const q = query.trim().toLowerCase();
     return prSessions.filter((s) => {
       const state = s.prState || "OPEN";
@@ -274,7 +274,7 @@ export function Reviews({
         (s.prAuthor || "").toLowerCase().includes(q)
       );
     });
-  }, [prSessions, filter, query]);
+  })();
 
   const selected =
     (selectedId && filtered.find((s) => s.id === selectedId)) ||
@@ -282,8 +282,9 @@ export function Reviews({
     null;
 
   // Escape backs out of the detail drawer (unless typing in a field).
+  const hasSelection = !!selected;
   useEffect(() => {
-    if (!selected) return;
+    if (!hasSelection) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       const t = e.target as HTMLElement | null;
@@ -292,13 +293,10 @@ export function Reviews({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [!!selected, onSelect]);
+  }, [hasSelection, onSelect]);
 
   // Only label rows with their repo when the list actually spans repos.
-  const multiRepo = useMemo(
-    () => new Set(prSessions.map((s) => s.repo || "repository")).size > 1,
-    [prSessions],
-  );
+  const multiRepo = (new Set(prSessions.map((s) => s.repo || "repository")).size > 1);
 
   const TABS: Array<{ key: FilterKey; label: string; count: number }> = [
     { key: "review", label: "Needs review", count: counts.review },

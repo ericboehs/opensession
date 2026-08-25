@@ -7,7 +7,7 @@
  * remote bootstrap provides the runner payload and WS dial-back transport.
  */
 
-import type { ModalClient, Sandbox as ModalSandbox } from "modal";
+import type { App as ModalApp, ModalClient, Sandbox as ModalSandbox } from "modal";
 import { getRepo, worktreePathFor } from "../../worktree";
 import { sandboxConfig } from "../config";
 import { getSandboxConnection, sandboxProviderCredential } from "../connections";
@@ -56,6 +56,28 @@ const DEFAULT_IMAGE = "daytonaio/sandbox:0.8.0";
 const DEFAULT_IDLE_STOP_MINUTES = 30;
 const MAX_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const RECREATE_BEFORE_EXPIRY_MS = 60 * 60 * 1000;
+const CHECKPOINT_WAIT_MS = 90_000;
+const MAX_TAG_SCAN = 8;
+
+function modalCheckpointLocks(): Map<string, Promise<void>> {
+  const g = globalThis as typeof globalThis & {
+    __opensessionModalCheckpointLocks?: Map<string, Promise<void>>;
+  };
+  return (g.__opensessionModalCheckpointLocks ||= new Map());
+}
+
+async function waitForModalCheckpoint(sandboxId: string | undefined): Promise<void> {
+  if (!sandboxId) return;
+  const checkpoint = modalCheckpointLocks().get(sandboxId);
+  if (!checkpoint) return;
+  await withModalControlDeadline(
+    checkpoint.catch(() => {}),
+    CHECKPOINT_WAIT_MS,
+    `Modal checkpoint wait (${sandboxId})`,
+  ).catch((error) => {
+    console.warn(`[sandbox:modal] ${error instanceof Error ? error.message : String(error)}; continuing with the last completed checkpoint`);
+  });
+}
 
 function modalConfig(): ReturnType<typeof sandboxConfig> {
   const cfg = sandboxConfig();
@@ -75,6 +97,20 @@ function modalConfig(): ReturnType<typeof sandboxConfig> {
       publicPreviews: settings.publicPreviews,
     },
   };
+}
+
+function modalArtifactNotFound(error: unknown): boolean {
+  const detail = error as { name?: string; status?: number; statusCode?: number; message?: string };
+  return (
+    detail?.name === "NotFoundError" ||
+    detail?.status === 404 ||
+    detail?.status === 410 ||
+    detail?.status === 412 ||
+    detail?.statusCode === 404 ||
+    detail?.statusCode === 410 ||
+    detail?.statusCode === 412 ||
+    /(?:image|artifact).{0,30}(?:not.?found|expired|deleted|gone)/i.test(detail?.message || "")
+  );
 }
 
 function memoryMiB(value: string | undefined): number | undefined {
@@ -111,48 +147,137 @@ async function modalClient(): Promise<ModalClient> {
   return client;
 }
 
+function modalApp(client: ModalClient): Promise<ModalApp> {
+  const name = modalConfig().modal?.app || DEFAULT_APP;
+  const global = globalThis as any;
+  const cached = global.__opensessionModalApp as
+    | { client: ModalClient; name: string; app: Promise<ModalApp> }
+    | undefined;
+  if (cached?.client === client && cached.name === name) return cached.app;
+  const app = client.apps.fromName(name, { createIfMissing: true });
+  const record = { client, name, app };
+  global.__opensessionModalApp = record;
+  app.catch(() => {
+    if (global.__opensessionModalApp === record) delete global.__opensessionModalApp;
+  });
+  return app;
+}
+
+async function withModalControlDeadline<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> {
+  // Promise.race does not cancel its loser. Keep a late control-stream failure
+  // from becoming a process-level unhandled rejection after our deadline won.
+  operation.catch(() => {});
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} did not settle within ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function modalDriver(sandbox: ModalSandbox): RemoteDriver {
   return {
     async exec(cmd: string, opts?: RemoteExecOpts) {
+      const timeoutMs = opts?.timeoutMs ?? 120_000;
+      let process: any;
       try {
-        const process = await sandbox.exec(["sh", "-lc", cmd], {
-          workdir: opts?.cwd,
-          env: opts?.env,
-          timeoutMs: opts?.timeoutMs ?? 120_000,
-        });
-        const [stdout, stderr, exitCode] = await Promise.all([
-          process.stdout.readText(),
-          process.stderr.readText(),
-          process.wait(),
-        ]);
+        // A login shell runs Modal's image profile hooks, which emit OSC
+        // terminal-title sequences even without a PTY. Those bytes corrupt
+        // machine-readable stdout (and once poisoned a sourced `.ports.conf`).
+        process = await withModalControlDeadline(
+          sandbox.exec(["sh", "-c", cmd], {
+            workdir: opts?.cwd,
+            env: opts?.env,
+            timeoutMs,
+            pty: false,
+          }),
+          Math.min(timeoutMs, 30_000),
+          "Modal exec launch",
+        );
+        const [stdout, stderr, exitCode] = await withModalControlDeadline(
+          Promise.all([
+            process.stdout.readText(),
+            process.stderr.readText(),
+            process.wait(),
+          ]),
+          timeoutMs + 5_000,
+          "Modal exec stream",
+        );
         return { exitCode, stdout, stderr };
       } catch (e: any) {
+        // ContainerProcess has no kill API in modal@0.9. Closing stdin is the
+        // supported cancellation boundary and releases commands such as `cat`
+        // that would otherwise hold the wedged exec stream until its timeout.
+        if (process?.closeStdin) {
+          await withModalControlDeadline(
+            process.closeStdin(),
+            5_000,
+            "Modal exec stdin close",
+          ).catch(() => {});
+        }
         return { exitCode: 1, stdout: "", stderr: String(e?.message || e) };
       }
     },
 
     async execBackground(cmd: string, opts?: RemoteExecOpts) {
-      await sandbox.exec(["sh", "-lc", cmd], {
-        workdir: opts?.cwd,
-        env: opts?.env,
-      });
+      // Modal's exec timeout is the child lifetime, while RemoteDriver's
+      // timeout is the launch deadline. Keep the detached process alive for
+      // the sandbox lifetime, but never let a wedged control stream block the
+      // coordinator. Discard output because callers receive no process handle.
+      await withModalControlDeadline(
+        sandbox.exec(["sh", "-c", `( ${cmd}\n) >/dev/null 2>&1`], {
+          workdir: opts?.cwd,
+          env: opts?.env,
+          timeoutMs: MAX_LIFETIME_MS,
+          pty: false,
+        }),
+        opts?.timeoutMs ?? 30_000,
+        "Modal background exec launch",
+      );
     },
 
     async writeFile(path: string, content: string) {
       // modal@0.9's filesystem.writeText uses ReadableStream.from, which Bun
-      // does not implement. Stream through the process stdin instead.
-      const process = await sandbox.exec([
-        "sh",
-        "-lc",
-        `mkdir -p $(dirname ${shellQuoteWord(path)}) && cat > ${shellQuoteWord(path)}`,
-      ]);
-      await process.stdin.writeText(content);
-      await process.stdin.close();
-      const exitCode = await process.wait();
-      if (exitCode !== 0) {
-        throw new Error(
-          `modal writeFile(${path}) failed: ${(await process.stderr.readText()).slice(0, 300)}`,
-        );
+      // does not implement. Stream through process stdin with a local control
+      // deadline so a broken stdio channel cannot wedge all later launches.
+      let process: any;
+      try {
+        await withModalControlDeadline((async () => {
+          process = await sandbox.exec([
+            "sh",
+            "-c",
+            `mkdir -p $(dirname ${shellQuoteWord(path)}) && cat > ${shellQuoteWord(path)}`,
+          ], { pty: false, timeoutMs: 60_000 });
+          await process.stdin.writeText(content);
+          await process.stdin.close();
+          const exitCode = await process.wait();
+          if (exitCode !== 0) {
+            throw new Error(
+              `modal writeFile(${path}) failed: ${(await process.stderr.readText()).slice(0, 300)}`,
+            );
+          }
+        })(), 65_000, `Modal writeFile(${path})`);
+      } catch (error) {
+        if (process?.closeStdin) {
+          await withModalControlDeadline(
+            process.closeStdin(),
+            5_000,
+            `Modal writeFile(${path}) stdin close`,
+          ).catch(() => {});
+        }
+        throw error;
       }
     },
 
@@ -177,64 +302,79 @@ export class ModalProvider implements SandboxProvider {
     }
     const cfg = modalConfig();
     const client = await modalClient();
-    const app = await client.apps.fromName(cfg.modal?.app || DEFAULT_APP, {
-      createIfMissing: true,
-    });
     let prevState = findRemoteStateBySession(this.id, spec.sessionId);
+    let sandbox: ModalSandbox | null = null;
+    let created = false;
+    let adoptedPrewarmId: string | undefined;
+
+    // The durable O(1) id is the normal follow-up path. A live sandbox does
+    // not need the previous turn's filesystem image, so never serialize a
+    // warm ensure behind a potentially multi-minute checkpoint.
+    if (prevState) {
+      try {
+        const candidate = await client.sandboxes.fromId(prevState.sandboxId);
+        if ((await candidate.poll()) === null) sandbox = candidate;
+      } catch {}
+    }
+    if (!sandbox) {
+      await waitForModalCheckpoint(prevState?.sandboxId);
+      prevState = findRemoteStateBySession(this.id, spec.sessionId);
+    }
+
     const trust = resolveTrustPolicy(spec, prevState);
     const repo = getRepo(spec.repo || prevState?.repoId);
     const branch = spec.branch || prevState?.branch || repo.defaultBranch;
     const cwd =
       spec.cwd || prevState?.cwd || worktreePathFor(branch, repo.id, { isolated: true });
 
-    let sandbox: ModalSandbox | null = null;
-    let created = false;
-    try {
-      for await (const candidate of client.sandboxes.list({
-        appId: app.appId,
-        tags: { [SESSION_TAG]: spec.sessionId },
-      })) {
-        sandbox = candidate;
-        break;
-      }
-    } catch (e) {
-      console.warn("[sandbox:modal] tag lookup failed (will use local state/create):", e);
-    }
-    if (!sandbox && prevState) {
+    // Durable state is authoritative. If its sandbox is gone, restore its
+    // checkpoint rather than scanning older tag-matched siblings. The bounded
+    // scan only recovers a live sandbox after coordinator state loss.
+    if (!sandbox && !prevState) {
       try {
-        const candidate = await client.sandboxes.fromId(prevState.sandboxId);
-        if ((await candidate.poll()) === null) sandbox = candidate;
-      } catch {}
+        let scanned = 0;
+        const app = await modalApp(client);
+        for await (const candidate of client.sandboxes.list({
+          appId: app.appId,
+          tags: { [SESSION_TAG]: spec.sessionId },
+        })) {
+          if (++scanned > MAX_TAG_SCAN) break;
+          if ((await candidate.poll()) === null) {
+            sandbox = candidate;
+            break;
+          }
+        }
+      } catch (e) {
+        console.warn("[sandbox:modal] tag lookup failed (will create/restore):", e);
+      }
     }
     if (sandbox && prevState && sandbox.sandboxId !== prevState.sandboxId) {
       removeRemoteState(this.id, prevState.sandboxId);
       prevState = null;
     }
     // Modal's absolute timeout is not extended by activity. Leave a one-hour
-    // margin so a newly-started turn cannot be killed by the 24-hour deadline.
+    // margin and rotate through a session-private image before a new turn can
+    // be killed by the 24-hour deadline. This preserves uncommitted work.
     if (
       sandbox &&
       prevState &&
       Date.now() - Date.parse(prevState.createdAt) >=
         MAX_LIFETIME_MS - RECREATE_BEFORE_EXPIRY_MS
     ) {
-      const pending = await modalDriver(sandbox).exec(
-        `cd ${shellQuoteWord(cwd)} && ` +
-          `git rev-parse --verify '@{upstream}' >/dev/null 2>&1 && ` +
-          `test -z "$(git status --porcelain)" && ` +
-          `test -z "$(git log --format=%H '@{upstream}..HEAD')"`,
-      );
-      if (pending.exitCode !== 0) {
-        throw new Error(
-          "Modal sandbox is nearing its hard lifetime without a clean, fully pushed upstream branch; commit and push before it can rotate",
-        );
-      }
+      await withModalControlDeadline(
+        this.checkpoint(sandbox.sandboxId),
+        3 * 60_000,
+        `Modal rotation checkpoint (${sandbox.sandboxId})`,
+      ).catch((error) => {
+        console.warn(`[sandbox:modal] rotation checkpoint failed; rotating before the hard lifetime anyway:`, error);
+      });
+      prevState = findRemoteStateBySession(this.id, spec.sessionId);
+      await sandbox.setTags({ "opensession.completed": spec.sessionId }).catch(() => {});
       await sandbox.terminate();
       removeRemoteState(this.id, sandbox.sandboxId);
-      prevState = null;
       sandbox = null;
     }
-    if (!sandbox) {
+    if (!sandbox && !prevState?.checkpointArtifactId) {
       const claim = await claimPrewarmOrWait(this.id, repo.id, spec.sessionId);
       if (claim) {
         try {
@@ -243,8 +383,10 @@ export class ModalProvider implements SandboxProvider {
             await candidate.setTags({
               [SESSION_TAG]: spec.sessionId,
               "opensession.sandbox": "1",
+              "opensession.repo": repo.id,
             });
             sandbox = candidate;
+            adoptedPrewarmId = candidate.sandboxId;
             console.log(
               `[sandbox:modal] adopted prewarmed sandbox ${candidate.sandboxId} for ${spec.sessionId}`,
             );
@@ -259,40 +401,80 @@ export class ModalProvider implements SandboxProvider {
       }
     }
     if (!sandbox) {
-      if (prevState) {
-        removeRemoteState(this.id, prevState.sandboxId);
-        prevState = null;
-      }
+      const checkpointArtifactId = prevState?.checkpointArtifactId;
+      const checkpointCreatedAt = prevState?.checkpointCreatedAt;
+      if (prevState) removeRemoteState(this.id, prevState.sandboxId);
       console.log(`[sandbox:modal] creating sandbox for ${spec.sessionId}`);
       const template = readRemoteRepoTemplate("modal", repo.id);
+      // The per-repo environment shape (Settings -> Sandboxes machine profile)
+      // must reach session creation, not only prewarm — otherwise a 16 GB
+      // profile silently launches on the connection default (measured: 8 GB).
+      const { sandboxEnvironmentSettings } = await import("../environments");
+      const projectResources = sandboxEnvironmentSettings(repo.id, "modal");
       const create = async (imageId?: string) => {
-        const image = imageId
-          ? await client.images.fromId(imageId)
-          : client.images.fromRegistry(cfg.modal?.image || DEFAULT_IMAGE);
+        const [app, image] = await Promise.all([
+          modalApp(client),
+          imageId
+            ? client.images.fromId(imageId)
+            : Promise.resolve(client.images.fromRegistry(cfg.modal?.image || DEFAULT_IMAGE)),
+        ]);
         return client.sandboxes.create(app, image, {
-          tags: { [SESSION_TAG]: spec.sessionId, "opensession.sandbox": "1" },
+          tags: { [SESSION_TAG]: spec.sessionId, "opensession.sandbox": "1", "opensession.repo": repo.id },
           timeoutMs: MAX_LIFETIME_MS,
           idleTimeoutMs:
             (cfg.idleStopMinutes || DEFAULT_IDLE_STOP_MINUTES) * 60_000,
-          cpu: cfg.cpus,
-          cpuLimit: cfg.cpus,
-          memoryMiB: memoryMiB(cfg.memory),
-          memoryLimitMiB: memoryMiB(cfg.memory),
+          cpu: projectResources?.cpu || cfg.cpus,
+          cpuLimit: projectResources?.cpu || cfg.cpus,
+          memoryMiB: projectResources?.memoryMb || memoryMiB(cfg.memory),
+          memoryLimitMiB: projectResources?.memoryMb || memoryMiB(cfg.memory),
           regions: cfg.modal?.region ? [cfg.modal.region] : undefined,
           cloud: cfg.modal?.cloud,
           encryptedPorts: cfg.modal?.publicPreviews ? cfg.previewPorts : undefined,
         });
       };
+      let restoredCheckpoint = Boolean(checkpointArtifactId);
       try {
-        sandbox = await create(template?.artifactId);
+        sandbox = await create(checkpointArtifactId || template?.artifactId);
       } catch (error) {
-        if (!template) throw error;
-        invalidateRemoteRepoTemplate("modal", repo.id);
-        console.warn(
-          `[sandbox:modal] repo template ${template.artifactId} is unavailable; retrying cold`,
-        );
-        sandbox = await create();
+        if (!modalArtifactNotFound(error)) throw error;
+        if (checkpointArtifactId) {
+          restoredCheckpoint = false;
+          await client.images.delete(checkpointArtifactId).catch(() => {});
+          console.warn(
+            `[sandbox:modal] session checkpoint ${checkpointArtifactId} is unavailable; retrying from the project image`,
+          );
+          try {
+            sandbox = await create(template?.artifactId);
+          } catch (templateError) {
+            if (!template || !modalArtifactNotFound(templateError)) throw templateError;
+            invalidateRemoteRepoTemplate("modal", repo.id);
+            sandbox = await create();
+          }
+        } else if (template) {
+          invalidateRemoteRepoTemplate("modal", repo.id);
+          console.warn(
+            `[sandbox:modal] repo template ${template.artifactId} is unavailable; retrying cold`,
+          );
+          sandbox = await create();
+        } else {
+          throw error;
+        }
       }
+      prevState = restoredCheckpoint && checkpointArtifactId
+        ? {
+            sandboxId: sandbox.sandboxId,
+            provider: this.id,
+            sessionId: spec.sessionId,
+            cwd,
+            repoId: repo.id,
+            branch,
+            checkpointArtifactId,
+            checkpointCreatedAt,
+            createdAt: new Date().toISOString(),
+            lastActivityAt: new Date().toISOString(),
+            ...trust,
+          }
+        : null;
       created = true;
     }
 
@@ -312,8 +494,11 @@ export class ModalProvider implements SandboxProvider {
       );
     } catch (e) {
       // A failed first bootstrap is not useful and otherwise remains paid
-      // compute for up to 24 hours without a session-side sandbox id.
+      // compute for up to 24 hours without a session-side sandbox id. An
+      // adopted prewarm already lost its pool tags but has no state record yet,
+      // so hand it back to the prewarm cleanup path explicitly.
       if (created) await sandbox.terminate().catch(() => {});
+      else if (adoptedPrewarmId) discardClaimedPrewarm(this.id, adoptedPrewarmId);
       throw e;
     }
     const createdAt = created ? new Date().toISOString() : prevState?.createdAt;
@@ -326,6 +511,12 @@ export class ModalProvider implements SandboxProvider {
       branch,
       createdAt: createdAt || new Date().toISOString(),
       lastActivityAt: new Date().toISOString(),
+      ...(prevState?.checkpointArtifactId
+        ? {
+            checkpointArtifactId: prevState.checkpointArtifactId,
+            checkpointCreatedAt: prevState.checkpointCreatedAt,
+          }
+        : {}),
       ...trust,
     });
     return this.makeHandle(sandbox, spec.sessionId, cwd);
@@ -344,7 +535,7 @@ export class ModalProvider implements SandboxProvider {
         const cfg = modalConfig();
         if (!cfg.modal?.publicPreviews || !cfg.previewPorts?.length) return map;
         try {
-          const tunnels = await sandbox.tunnels();
+          const tunnels = await sandbox.tunnels(60_000);
           for (const port of cfg.previewPorts) {
             const tunnel = tunnels[port];
             if (tunnel?.url) map[port] = { url: tunnel.url };
@@ -379,14 +570,62 @@ export class ModalProvider implements SandboxProvider {
     }
   }
 
+  async checkpoint(sandboxId: string): Promise<void> {
+    const locks = modalCheckpointLocks();
+    const existing = locks.get(sandboxId);
+    if (existing) return existing;
+    const task = withModalControlDeadline(
+      this.checkpointInner(sandboxId),
+      12 * 60_000,
+      `Modal checkpoint (${sandboxId})`,
+    ).finally(() => {
+      if (locks.get(sandboxId) === task) locks.delete(sandboxId);
+    });
+    locks.set(sandboxId, task);
+    return task;
+  }
+
+  private async checkpointInner(sandboxId: string): Promise<void> {
+    const state = readRemoteState(this.id, sandboxId);
+    if (!state || state.sessionId.startsWith("__prewarm__:")) return;
+    const client = await modalClient();
+    const sandbox = await client.sandboxes.fromId(sandboxId);
+    if ((await sandbox.poll()) !== null) return;
+    const image = await sandbox.snapshotFilesystem({
+      timeoutMs: 10 * 60_000,
+      ttlMs: REMOTE_REPO_TEMPLATE_TTL_MS,
+    });
+    const current = readRemoteState(this.id, sandboxId);
+    if (!current || current.sessionId !== state.sessionId) {
+      await client.images.delete(image.imageId).catch(() => {});
+      return;
+    }
+    const previous = current.checkpointArtifactId;
+    current.checkpointArtifactId = image.imageId;
+    current.checkpointCreatedAt = new Date().toISOString();
+    writeRemoteState(current);
+    if (previous && previous !== image.imageId) {
+      await client.images.delete(previous).catch(() => {});
+    }
+    console.log(
+      `[sandbox:modal] checkpointed ${state.sessionId} as ${image.imageId}`,
+    );
+  }
+
   async destroy(sandboxId: string): Promise<void> {
+    await waitForModalCheckpoint(sandboxId);
+    const state = readRemoteState(this.id, sandboxId);
+    const client = await modalClient();
     try {
-      const client = await modalClient();
       const sandbox = await client.sandboxes.fromId(sandboxId);
+      await sandbox.setTags({ "opensession.completed": state?.sessionId || sandboxId }).catch(() => {});
       await sandbox.terminate();
     } catch (e) {
       console.warn(`[sandbox:modal] destroy(${sandboxId}):`, e);
       if ((e as { name?: string })?.name !== "NotFoundError") throw e;
+    }
+    if (state?.checkpointArtifactId) {
+      await client.images.delete(state.checkpointArtifactId).catch(() => {});
     }
     removeRemoteState(this.id, sandboxId);
   }
@@ -401,9 +640,7 @@ export const modalPrewarmAdapter: PrewarmAdapter = {
     const repoId = key.startsWith("modal:") ? key.slice("modal:".length) : "";
     if (!repoId) throw new Error(`invalid Modal prewarm key: ${key || "(missing)"}`);
     const client = await modalClient();
-    const app = await client.apps.fromName(cfg.modal?.app || DEFAULT_APP, {
-      createIfMissing: true,
-    });
+    const app = await modalApp(client);
     const template = readRemoteRepoTemplate("modal", repoId);
     const create = async (imageId?: string) => {
       const image = imageId
@@ -431,7 +668,7 @@ export const modalPrewarmAdapter: PrewarmAdapter = {
     try {
       sandbox = await create(template?.artifactId);
     } catch (error) {
-      if (!template) throw error;
+      if (!template || !modalArtifactNotFound(error)) throw error;
       invalidateRemoteRepoTemplate("modal", repoId);
       restoredFromTemplate = false;
       sandbox = await create();
@@ -464,6 +701,7 @@ export const modalPrewarmAdapter: PrewarmAdapter = {
     try {
       const client = await modalClient();
       const sandbox = await client.sandboxes.fromId(sandboxId);
+      await sandbox.setTags({ "opensession.completed": sandboxId }).catch(() => {});
       await sandbox.terminate();
     } catch (error) {
       if ((error as { name?: string })?.name !== "NotFoundError") {
@@ -473,11 +711,8 @@ export const modalPrewarmAdapter: PrewarmAdapter = {
   },
 
   async listPrewarmed() {
-    const cfg = modalConfig();
     const client = await modalClient();
-    const app = await client.apps.fromName(cfg.modal?.app || DEFAULT_APP, {
-      createIfMissing: true,
-    });
+    const app = await modalApp(client);
     const out: Array<{ id: string; key: string }> = [];
     for await (const sandbox of client.sandboxes.list({
       appId: app.appId,
@@ -501,9 +736,7 @@ export async function qualifyModalConnection(): Promise<void> {
   const cfg = modalConfig();
   const client = await modalClient();
   const suffix = crypto.randomUUID().slice(0, 12);
-  const app = await client.apps.fromName(cfg.modal?.app || DEFAULT_APP, {
-    createIfMissing: true,
-  });
+  const app = await modalApp(client);
   let source: ModalSandbox | undefined;
   let restored: ModalSandbox | undefined;
   let imageId: string | undefined;

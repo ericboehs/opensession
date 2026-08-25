@@ -1,4 +1,8 @@
 import {
+	AGENT_PERSON_KEY,
+	AUTOMATION_MACHINE_IDENTITY,
+} from "./automation-audience";
+import {
 	personKey,
 	prReviewCompletion,
 	reviewRequestTargetsPerson,
@@ -30,8 +34,6 @@ export interface PlacedSidebarRow<T extends WsRow = WsRow> {
 	placement: SidebarPlacement;
 }
 
-const AUTOMATION_MACHINE_IDENTITY = "automation";
-
 /**
  * One session minted through the browser automation identity rather than by a
  * person. An automation RUN is a different product concept: it keeps its own
@@ -45,6 +47,37 @@ export function sessionWasAutoCreated(session: {
 	return [session.createdBy, session.startedBy].some(
 		(person) => person?.trim().toLowerCase() === AUTOMATION_MACHINE_IDENTITY,
 	);
+}
+
+/** A session whose opening turn came from an agent action, not a composer. */
+export function sessionWasAgentStarted(session: {
+	id: string;
+	branch?: string | null;
+	automation?: string;
+	parentSessionId?: string;
+	spawnedBy?: string;
+	agentStarted?: boolean;
+	createdBy?: string | null;
+	startedBy?: string | null;
+}): boolean {
+	return Boolean(
+		session.agentStarted ||
+			session.automation ||
+			session.parentSessionId ||
+			session.spawnedBy ||
+			session.id.startsWith("bks-ghpr-") ||
+			// Report fan-out predates `agentStarted`; its durable branch prefix
+			// keeps existing sessions identifiable after this field ships.
+			session.branch?.startsWith("report-") ||
+			sessionWasAutoCreated(session),
+	);
+}
+
+/** A row where every represented session was opened by an agent action. */
+export function rowWasAgentStarted(row: WsRow): boolean {
+	if (row.sessions.length > 0)
+		return row.sessions.every(sessionWasAgentStarted);
+	return rowWasAutoCreated(row);
 }
 
 /**
@@ -85,19 +118,18 @@ export function rowOriginSource(row: WsRow): string {
 
 /**
  * Whether an auto-created row belongs in the list the person lens is showing.
- * The machine is not a teammate, so its work joins YOUR list (the default
- * lens) rather than some named person's; the aggregate and machine-person
- * lenses reach these rows through their own scope rules.
+ * The machine is the agent, not whichever teammate is looking, so anonymous
+ * browser work stays out of every human's Me lens.
  *
- * Only the lens question lives here. Whether you want to see them at all is
- * the `autoCreated` filter, and it is the caller's to apply, because a row you
- * hid can still be one GitHub is asking you to review.
+ * Only the lens question lives here. Whether you want to see these rows at all
+ * is the `autoCreated` filter, and it is the caller's to apply, because a row
+ * you hid can still be one GitHub is asking you to review.
  */
 export function rowAutoCreatedInLens(
 	row: WsRow,
 	personFilter: string,
 ): boolean {
-	return personFilter === "me" && rowWasAutoCreated(row);
+	return personFilter === AGENT_PERSON_KEY && rowWasAutoCreated(row);
 }
 
 export function classifySidebarPlacement(

@@ -4,7 +4,7 @@
  *
  * Host previews expose a webapp at Caddy https port `webappPort + 6000`
  * (webapp ports 3100-3999 → https 9100-9999). That's collision-free on the
- * host because the tella-fusion port allocator enforces webapp-port
+ * host because the repo's own port allocator enforces webapp-port
  * uniqueness with lsof — but a SANDBOXED dev server's webapp port lives in
  * the container's private netns, where the host allocator can't see it: a
  * host session and a sandbox (or two sandboxes) can hold the same webapp
@@ -93,9 +93,24 @@ export function sandboxHttpsPortFor(sandboxId: string, containerPort: number): n
   throw new Error("sandbox preview https-port range exhausted (20000-27999 all allocated)");
 }
 
-/** Existing allocation only — never allocates (stop/teardown paths). */
+/** Existing allocation only, never allocates (stop/teardown paths). */
 export function lookupSandboxHttpsPort(sandboxId: string, containerPort: number): number | null {
   return readAllocations()[keyFor(sandboxId, containerPort)] ?? null;
+}
+
+/** Reverse an existing allocation so the authenticated Portal route can
+ * rebuild its process-local relay after an Open Session restart. */
+export function sandboxAllocationForHttpsPort(
+  httpsPort: number,
+): { sandboxId: string; containerPort: number } | null {
+  for (const [key, allocated] of Object.entries(readAllocations())) {
+    if (allocated !== httpsPort) continue;
+    const split = key.lastIndexOf(":");
+    const sandboxId = key.slice(0, split);
+    const containerPort = Number(key.slice(split + 1));
+    if (sandboxId && Number.isInteger(containerPort)) return { sandboxId, containerPort };
+  }
+  return null;
 }
 
 /**

@@ -12,23 +12,19 @@
  *
  * WHY THE POLICY IS PROJECTED, NOT OBSERVED: the last mile (resolving that
  * scope into mounted MCP servers, and the denials into stripped tool ids)
- * happens inside the opencode adapter, which spawns `opencode serve` and can
+ * happens inside the pi adapter, which loads the model runtime and can
  * never run hermetically. So `enginePolicyView` calls the adapter's OWN policy
- * functions (opencode-policy.ts: opencodeGateReason, opencodeRunPolicy,
- * buildOpencodeMcpConfig, sharedOpencodeEligible) on the recorded opts, in the
- * same order and with the same arguments runOpencode passes them. That is real
+ * functions (pi-policy.ts: piGateReason, runToolPolicy,
+ * buildPiMcpConfig, sharedPiEligible) on the recorded opts, in the
+ * same order and with the same arguments runPi passes them. That is real
  * production code deciding the answer; only the caller is the harness. Keep it
- * in step with opencode-runner.ts if that call site changes. The comment
+ * in step with pi-runner.ts if that call site changes. The comment
  * beside each call names the line it mirrors.
  */
 import type { RunAgentOpts } from "../agent-runner";
 import type { TranscriptEntry } from "../types";
-import {
-  buildOpencodeMcpConfig,
-  opencodeGateReason,
-  opencodeRunPolicy,
-  sharedOpencodeEligible,
-} from "../opencode-policy";
+import { runGateReason, runToolPolicy } from "../run-policy";
+import { filterMcpServers } from "../runner-shared";
 import {
   parseContextBlocks,
   stripContext,
@@ -80,25 +76,13 @@ export function engineCallView(call: FakeCall) {
 
 export function enginePolicyView(call: FakeCall) {
   const opts = call.opts;
-  // opencode-runner.ts: the run gate, then the shared-vs-per-session server
-  // decision, then the MCP projection for whichever kind of server this is.
-  const gateReason = opencodeGateReason(opts);
-  const shared = sharedOpencodeEligible({
-    journal: opts.journal,
-    mcpServers: opts.mcpServers,
-    user: opts.user,
-    mcpGrantUser: opts.mcpGrantUser,
-    inProcessMcp: opts.inProcessMcp,
-  });
-  // Mirrors `buildOpencodeMcpConfig(shared ? "all" : mcpServers, user,
-  // [opts.mcpGrantUser, user])`. A shared server's config is multi-session, so
-  // an allowlisted run necessarily lands on a per-session server.
-  const { mcp } = buildOpencodeMcpConfig(
-    shared ? "all" : opts.mcpServers,
+  const gateReason = runGateReason({ journal: opts.journal });
+  const mcp = filterMcpServers(
+    opts.mcpServers,
     opts.user,
     [opts.mcpGrantUser, opts.user],
   );
-  const policy = opencodeRunPolicy({
+  const policy = runToolPolicy({
     deniedTools: opts.deniedTools,
     confirmTools: opts.confirmTools,
     journalKind: opts.journal?.kind,
@@ -106,14 +90,14 @@ export function enginePolicyView(call: FakeCall) {
   });
   return {
     gateReason,
-    sharedServerEligible: shared,
+    sharedServerEligible: false,
     unattended: policy.unattended,
     mountedMcpServers: Object.keys(mcp).sort(),
     mcpConfig: mcp,
     strippedTools: Object.keys(policy.disables).sort(),
-    toolStripNotes: policy.noteGroups.map((g) => ({
-      tools: [...g.tools].sort(),
-      message: g.message,
+    toolStripNotes: policy.noteGroups.map((group) => ({
+      tools: [...group.tools].sort(),
+      message: group.message,
     })),
   };
 }

@@ -36,7 +36,6 @@ describe("recoverFreshEngineTranscript", () => {
 			{
 				id: "bks-history",
 				transcriptPath: null,
-				opencodeSessionId: "ses_old_shard",
 				claudeSessionId: null,
 			},
 		]);
@@ -51,7 +50,6 @@ describe("recoverFreshEngineTranscript", () => {
 			{ priorEngineSessionId: "ses_legacy" },
 			async (ref) => {
 				expect(ref.id).toBeUndefined();
-				expect(ref.opencodeSessionId).toBe("ses_legacy");
 				return [entry("old", "assistant", "legacy history")];
 			},
 		);

@@ -32,8 +32,14 @@ import {
 	snapshotMemoryNote,
 	sessionMemoryScopes,
 } from "./session-memory";
+import {
+	memoryRolloutMode,
+	renderAmbientMemoryForPrompt,
+	retrieveMemoryForPrompt,
+} from "./memory-v2";
 import { DESK_NOTE } from "./desk";
 import { deskBriefingFor } from "./desk-state";
+import { personalOutputStyleNoteFor } from "./personal-output-style";
 import { personalPromptNoteFor } from "./personal-prompts";
 import {
 	findSession,
@@ -110,7 +116,7 @@ export function resolveSessionRepoContext(
  * that branch as THE branch — sibling commits included. Without this, each
  * sibling session decided the extra commits on the shared branch weren't its own
  * and cherry-picked onto a fresh branch, producing one PR per session instead of
- * one per workspace (tella-fusion PRs #4529–#4531).
+ * one per workspace.
  */
 export function buildBranchNote(session: {
 	mode?: "ask" | "code" | "scratch";
@@ -243,9 +249,9 @@ export async function buildSessionNote(
 	);
 }
 
-/** The per-user prompt sections for a run: the user's personal system prompt
- *  (Settings → Personal prompt) + repo/user/team memory (with tool guidance —
- *  callers are interactive paths only; automations pass no user and skip this).
+/** The per-user prompt sections for a run: output style, personal system
+ *  prompt, and repo/user/team memory (with tool guidance). Callers are
+ *  interactive paths only; automations pass no user and skip this.
  *  Never throws: a store failure must not block a run, the note just goes out
  *  without that piece. */
 export async function memoryNoteFor(
@@ -258,19 +264,65 @@ export async function memoryNoteFor(
 	 *  memory writes refresh it (invalidateMemorySnapshot). */
 	sessionId?: string,
 ): Promise<string> {
-	const parts: string[] = [personalPromptNoteFor(user)];
+	const parts: string[] = [
+		personalOutputStyleNoteFor(user),
+		personalPromptNoteFor(user),
+	];
 	try {
-		parts.push(
-			await snapshotMemoryNote(sessionId, () =>
-				renderSessionMemoryNote(sessionMemoryScopes({ user, repos }), {
-					tools: true,
-				}),
-			),
-		);
+		const scopes = sessionMemoryScopes({ user, repos });
+		const mode = memoryRolloutMode();
+		if (mode === "v2") {
+			parts.push(
+				await snapshotMemoryNote(sessionId, async () =>
+					(
+						await renderAmbientMemoryForPrompt({
+							scopeKeys: scopes.map((scope) => scope.key),
+							primaryRepoKey: scopes.find((scope) => scope.kind === "repo")?.key,
+						})
+					).text,
+				),
+			);
+		} else {
+			parts.push(
+				await snapshotMemoryNote(sessionId, () =>
+					renderSessionMemoryNote(scopes, { tools: true }),
+				),
+			);
+			if (mode === "shadow") {
+				void renderAmbientMemoryForPrompt({
+					scopeKeys: scopes.map((scope) => scope.key),
+					primaryRepoKey: scopes.find((scope) => scope.kind === "repo")?.key,
+				}).catch(() => {});
+			}
+		}
 	} catch (e) {
 		console.warn("[memory] failed to render session memory note:", e);
 	}
 	return parts.filter(Boolean).join("\n\n");
+}
+
+/**
+ * Prompt-matched memory belongs to this turn, not the stable system prefix.
+ * It is fenced and context-logged by retrieveMemoryForPrompt.
+ */
+export async function retrievedMemoryNoteFor(
+	query: string,
+	user: string | undefined,
+	repos: string[],
+): Promise<string> {
+	const mode = memoryRolloutMode();
+	if (mode === "legacy") return "";
+	try {
+		const scopes = sessionMemoryScopes({ user, repos });
+		const result = await retrieveMemoryForPrompt(query, {
+			scopeKeys: scopes.map((scope) => scope.key),
+			primaryRepoKey: scopes.find((scope) => scope.kind === "repo")?.key,
+		});
+		return mode === "v2" ? result.text : "";
+	} catch (e) {
+		console.warn("[memory] failed to retrieve turn memory:", e);
+		return "";
+	}
 }
 
 export interface WorktreeTarget {
@@ -440,6 +492,7 @@ export async function attachRepo(
 	sessionId: string,
 	repoId: string,
 	branch?: string,
+	gitEnv?: Record<string, string>,
 ): Promise<{ attached: AttachedRepo; all: AttachedRepo[] }> {
 	const session = findSession(sessionId);
 	if (!session) throw new Error("Session not found");
@@ -458,7 +511,7 @@ export async function attachRepo(
 		throw new Error("No branch to attach on — pass a branch name");
 	}
 
-	const attached = await prepareAttachedWorktree(repoId, effectiveBranch);
+	const attached = await prepareAttachedWorktree(repoId, effectiveBranch, gitEnv);
 	// Read-modify-write inside the session-file lock rather than from the
 	// snapshot above: cutting the worktree takes as long as a fetch, and a
 	// create attaching several repos in a row must not have the last one's list
@@ -556,6 +609,7 @@ export async function switchPrimaryRepo(
 	sessionId: string,
 	repoId: string,
 	force = false,
+	gitEnv?: Record<string, string>,
 ): Promise<{ repo: string; branch: string; worktreeDir: string }> {
 	const session = findSession(sessionId);
 	if (!session) throw new Error("Session not found");
@@ -592,7 +646,11 @@ export async function switchPrimaryRepo(
 		const worktrees = await listWorktrees(target.id);
 		wtPath =
 			worktrees.find((w) => w.branch === branch)?.path ||
-			(await createWorktree(branch, target.id));
+			(await createWorktree(
+				branch,
+				target.id,
+				gitEnv ? { gitEnv } : undefined,
+			));
 	}
 
 	// Drop the target from attached repos if it was attached — it's the primary now.

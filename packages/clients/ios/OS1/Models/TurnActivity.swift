@@ -54,7 +54,10 @@ struct TurnActivity: Equatable {
         work == .open || (work == .running && isLive)
     }
 
-    var expandsToolRuns: Bool {
+    /// Whether grouped tool runs render every call in place instead of behind
+    /// their compact step row. It never opens a call's own body: that stays
+    /// behind the row's disclosure either way, as it does on the web.
+    var rendersToolCallsInPlace: Bool {
         tools == .open
     }
 }

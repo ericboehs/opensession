@@ -3,7 +3,6 @@ import type { TranscriptEntry } from "./types";
 interface HandoffTranscriptRef {
 	id?: string;
 	transcriptPath: null;
-	opencodeSessionId: string;
 	claudeSessionId: null;
 }
 
@@ -14,15 +13,15 @@ type HandoffTranscriptLoader = (
 async function loadMergedTranscript(
 	session: HandoffTranscriptRef,
 ): Promise<TranscriptEntry[]> {
-	// Dynamic to avoid a module cycle: sessions.ts reads opencode-transcript,
-	// while the OpenCode runner reaches this helper through the same module graph.
+	// Dynamic to avoid a module cycle: sessions.ts reads pi-transcript,
+	// while the Pi runner reaches this helper through the same module graph.
 	const { mergedSessionTranscriptAsync } = await import("./sessions");
 	return mergedSessionTranscriptAsync(session);
 }
 
 /**
  * Recover the transcript for a fresh engine session that replaced an
- * unresumable OpenCode session (account/model shard rotation).
+ * unresumable Pi session (account/model shard rotation).
  *
  * The unified session id is important: post-mirror-retirement history lives in
  * transcript v2, not in per-engine JSONL files. mergedSessionTranscriptAsync
@@ -39,7 +38,6 @@ export async function recoverFreshEngineTranscript(
 	const entries = await loadTranscript({
 		id: input.unifiedSessionId,
 		transcriptPath: null,
-		opencodeSessionId: input.priorEngineSessionId,
 		claudeSessionId: null,
 	});
 

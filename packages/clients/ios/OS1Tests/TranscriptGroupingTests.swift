@@ -129,7 +129,7 @@ final class TranscriptGroupingTests: XCTestCase {
     func testOnlyFinalErrorNoticeOffersFailureContinuation() {
         let errorNotice = EntryNotice(
             kind: "system", title: "Run failed", tone: "error",
-            body: nil, link: nil, icon: nil
+            body: nil, link: nil, ask: nil, icon: nil
         )
         append([
             TranscriptEntry(
@@ -150,7 +150,7 @@ final class TranscriptGroupingTests: XCTestCase {
                 id: tone, type: "system", content: "Stopped",
                 notice: EntryNotice(
                     kind: "system", title: "Stopped", tone: tone,
-                    body: nil, link: nil, icon: nil
+                    body: nil, link: nil, ask: nil, icon: nil
                 )
             )
         }
@@ -202,10 +202,39 @@ final class TranscriptGroupingTests: XCTestCase {
             return XCTFail("expected a fold")
         }
         XCTAssertTrue(turn.isLive)
+        XCTAssertTrue(turn.hasNarration)
+        XCTAssertTrue(turn.defaultExpanded(preference: .standard))
+        XCTAssertFalse(
+            turn.rendersToolCallsInPlace(preference: .standard),
+            "tool runs around narration keep their own grouped step rows"
+        )
         XCTAssertNotNil(turn.livePreview, "a collapsed live fold must say what it is doing")
         for block in blocks {
             if case .footer = block { XCTFail("a running turn has no settled duration") }
         }
+    }
+
+    func testToolOnlyLiveTurnUsesOneClosedSummaryUntilOpened() {
+        viewModel.handle(.sessionStatus(sessionId: "bks-1", isRunning: true))
+        append([
+            TranscriptEntry(id: "u1", type: "user", content: "go"),
+            toolUse("t1", name: "Edit", input: [
+                "file_path": .string("/tmp/x.swift"),
+                "old_string": .string("old"),
+                "new_string": .string("one\ntwo"),
+            ]),
+        ])
+
+        guard case .work(let turn) = viewModel.displayBlocks[1] else {
+            return XCTFail("expected a work fold")
+        }
+        XCTAssertFalse(turn.hasNarration)
+        XCTAssertFalse(turn.defaultExpanded(preference: .standard))
+        XCTAssertTrue(
+            turn.rendersToolCallsInPlace(preference: .standard),
+            "opening the only summary must reveal calls without another step row"
+        )
+        XCTAssertEqual(turn.lineStats, ToolLineStats(additions: 2, deletions: 1))
     }
 
     func testFooterCarriesDurationModelAndTouchedFiles() {
@@ -227,7 +256,7 @@ final class TranscriptGroupingTests: XCTestCase {
                 type: "assistant",
                 content: "Done.",
                 timestamp: "2026-01-01T00:00:12Z",
-                model: "opencode/anthropic/claude-sonnet-5"
+                model: "pi/anthropic/claude-sonnet-5"
             ),
         ])
 
@@ -237,7 +266,7 @@ final class TranscriptGroupingTests: XCTestCase {
         }
         XCTAssertEqual(footers.count, 1)
         XCTAssertEqual(footers[0].files.map(\.basename), ["App.tsx"])
-        XCTAssertEqual(footers[0].model, "opencode/anthropic/claude-sonnet-5")
+        XCTAssertEqual(footers[0].model, "pi/anthropic/claude-sonnet-5")
         XCTAssertEqual(TranscriptFormat.modelLabel(footers[0].model ?? ""), "Sonnet 5")
     }
 
@@ -489,6 +518,7 @@ final class TranscriptGroupingTests: XCTestCase {
                 tone: "info",
                 body: "collapsed",
                 link: nil,
+                ask: nil,
                 icon: nil
             )
         )
@@ -507,6 +537,7 @@ final class TranscriptGroupingTests: XCTestCase {
                 tone: "info",
                 body: nil,
                 link: nil,
+                ask: nil,
                 icon: "deploy"
             )
         )
@@ -784,9 +815,12 @@ final class ToolPresentationTests: XCTestCase {
           }
         }
         """#.utf8)
+
         let entry = try JSONDecoder().decode(TranscriptEntry.self, from: data)
+
         XCTAssertEqual(entry.presentation?.canonical, "mcp__opensession-portals__start_portal")
         XCTAssertEqual(entry.presentation?.mcpServer, "opensession-portals")
+        XCTAssertEqual(entry.presentation?.detail?.kind, "text")
         XCTAssertEqual(entry.presentation?.detail?.text, "Start the preview")
         XCTAssertEqual(entry.presentation?.lineStats?.additions, 4)
     }
@@ -809,14 +843,17 @@ final class ToolPresentationTests: XCTestCase {
         }
         """#.utf8)
         let entry = try JSONDecoder().decode(TranscriptEntry.self, from: data)
+
         let presentation = ToolPresentation.make(
             toolName: entry.toolName,
             input: entry.toolInput,
             server: entry.presentation
         )
+
         XCTAssertEqual(presentation.serverLabel, "Open Session Portals")
         XCTAssertEqual(presentation.label, "Start portal")
-        XCTAssertEqual(presentation.displayName, "Open Session Portals · Start portal")
+        XCTAssertEqual(presentation.labelParts, ["Open Session", "Portals", "Start"])
+        XCTAssertEqual(presentation.displayName, "Open Session · Portals · Start")
         XCTAssertEqual(presentation.summary, "Start the preview")
         XCTAssertEqual(presentation.lineStats, ToolLineStats(additions: 4, deletions: 1))
     }
@@ -835,11 +872,13 @@ final class ToolPresentationTests: XCTestCase {
         }
         """#.utf8)
         let entry = try JSONDecoder().decode(TranscriptEntry.self, from: data)
+
         let presentation = ToolPresentation.make(
             toolName: entry.toolName,
             input: entry.toolInput,
             server: entry.presentation
         )
+
         XCTAssertEqual(presentation.canonical, "Bash")
         XCTAssertEqual(presentation.family, .run)
         XCTAssertEqual(presentation.summary, "bun test")
@@ -863,6 +902,7 @@ final class ToolPresentationTests: XCTestCase {
         }
         """#.utf8)
         let entry = try JSONDecoder().decode(TranscriptEntry.self, from: data)
+
         let blocks = TranscriptGrouping.blocks(
             from: TranscriptGrouping.displayItems(from: [entry]),
             live: false,
@@ -872,6 +912,7 @@ final class ToolPresentationTests: XCTestCase {
               case .tool(let item)? = turn.items.first else {
             return XCTFail("expected the tool call inside a work turn")
         }
+
         XCTAssertEqual(item.presentation.displayName, "PostHog · Query trends")
         XCTAssertEqual(item.presentation.summary, "Weekly active people")
     }
@@ -886,12 +927,14 @@ final class ToolPresentationTests: XCTestCase {
         }
         """#.utf8)
         let entry = try JSONDecoder().decode(TranscriptEntry.self, from: data)
+
         let presentation = ToolPresentation.make(
             toolName: entry.toolName,
             input: entry.toolInput,
             server: entry.presentation,
             worktreeDir: "/wt"
         )
+
         XCTAssertNil(entry.presentation)
         XCTAssertEqual(presentation.canonical, "Read")
         XCTAssertEqual(presentation.summary, "src/App.swift")
@@ -913,11 +956,13 @@ final class ToolPresentationTests: XCTestCase {
         }
         """#.utf8)
         let entry = try JSONDecoder().decode(TranscriptEntry.self, from: data)
+
         let presentation = ToolPresentation.make(
             toolName: entry.toolName,
             input: entry.toolInput,
             server: entry.presentation
         )
+
         XCTAssertEqual(presentation.summary, "reports/summary.html")
         XCTAssertTrue(presentation.summaryIsPath)
     }
@@ -942,28 +987,37 @@ final class ToolPresentationTests: XCTestCase {
         }
         """#.utf8)
         let entry = try JSONDecoder().decode(TranscriptEntry.self, from: data)
+
         let presentation = ToolPresentation.make(
             toolName: entry.toolName,
             input: entry.toolInput,
             server: entry.presentation,
             worktreeDir: "/wt"
         )
+
         XCTAssertEqual(presentation.summary, "Update a.swift  ·  Add b.swift  ·  +2")
         XCTAssertFalse(presentation.summaryIsPath)
     }
 
     func testEngineDialectsFoldOntoOneName() {
-        for raw in ["bash", "shell", "exec_command"] {
+        let dialects = [
+            ("bash", "Bash"),
+            ("shell", "Bash"),
+            ("exec_command", "Bash"),
+            ("apply_patch", "Edit"),
+            ("str_replace_editor", "Edit"),
+            ("notebook_edit", "NotebookEdit"),
+            ("ls", "Glob"),
+            ("web_fetch", "WebFetch"),
+            ("web_search", "WebSearch"),
+        ]
+        for (raw, canonical) in dialects {
             XCTAssertEqual(
                 ToolPresentation.make(toolName: raw, input: nil).canonical,
-                "Bash",
-                "\(raw) should read as Bash"
+                canonical,
+                "\(raw) should read as \(canonical)"
             )
         }
-        XCTAssertEqual(
-            ToolPresentation.make(toolName: "apply_patch", input: nil).canonical,
-            "Edit"
-        )
     }
 
     func testMcpNamesSplitIntoServerAndTool() {
@@ -975,6 +1029,51 @@ final class ToolPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.name, "list_issues")
         XCTAssertEqual(presentation.family, .mcp)
         XCTAssertEqual(presentation.displayName, "Linear · List issues")
+    }
+
+    func testOpenSessionMcpLabelsReadAsAHierarchy() {
+        XCTAssertEqual(
+            ToolPresentation.mcpLabelParts(
+                server: "opensession-workflows",
+                tool: "workflow_status"
+            ),
+            ["Open Session", "Workflows", "Status"]
+        )
+        XCTAssertEqual(
+            ToolPresentation.mcpLabelParts(
+                server: "opensession-sessions",
+                tool: "get_session"
+            ),
+            ["Open Session", "Sessions", "Get"]
+        )
+        XCTAssertEqual(
+            ToolPresentation.mcpLabelParts(
+                server: "opensession-connected-services",
+                tool: "list_connected_services"
+            ),
+            ["Open Session", "Connected Services", "List"]
+        )
+        XCTAssertEqual(
+            ToolPresentation.mcpLabelParts(
+                server: "screen-studio",
+                tool: "start_recording"
+            ),
+            ["Screen Studio", "Start recording"]
+        )
+    }
+
+    func testPiMcpDispatcherUsesTheCallInsideItsEnvelope() {
+        let presentation = ToolPresentation.make(
+            toolName: "mcp_call",
+            input: .object([
+                "name": .string("opensession-workflows_workflow_status"),
+                "arguments": .object(["runId": .string("run-1")]),
+            ])
+        )
+        XCTAssertEqual(presentation.mcpServer, "opensession-workflows")
+        XCTAssertEqual(presentation.name, "workflow_status")
+        XCTAssertEqual(presentation.displayName, "Open Session · Workflows · Status")
+        XCTAssertEqual(presentation.summary, "runId: run-1")
     }
 
     /// The generic MCP summary lists inputs alphabetically, which for an
@@ -1079,6 +1178,24 @@ final class ToolPresentationTests: XCTestCase {
         XCTAssertEqual(TranscriptFormat.duration(12), "12s")
         XCTAssertEqual(TranscriptFormat.duration(184), "3m 4s")
         XCTAssertEqual(TranscriptFormat.duration(3_900), "1h 5m")
+    }
+
+    func testToolDurationIsPreparedBeforeTheRowRenders() {
+        let use = TranscriptEntry(
+            id: "use", type: "tool_use", timestamp: "2026-08-19T12:00:00Z"
+        )
+        let result = TranscriptEntry(
+            id: "result", type: "tool_result", timestamp: "2026-08-19T12:00:02Z"
+        )
+        let item = ToolCallItem(
+            id: "tool-use",
+            use: use,
+            result: result,
+            isLive: false,
+            presentation: ToolPresentation.make(toolName: "Bash", input: nil)
+        )
+
+        XCTAssertEqual(item.durationLabel, "2s")
     }
 
     func testEditedFilesSummaryCountsTheRest() {

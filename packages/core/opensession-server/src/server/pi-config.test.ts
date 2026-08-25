@@ -54,7 +54,7 @@ describe("normalizePiConfig", () => {
           "pi/anthropic/claude-opus-5",
           "pi/anthropic", // no model segment
           "pi/", // empty remainder
-          "opencode/anthropic/claude-opus-5", // wrong engine
+          "other/anthropic/claude-opus-5", // wrong engine
           "claude-opus-5", // bare native id
           42,
           null,
@@ -96,7 +96,7 @@ describe("isPiModelId", () => {
     for (const bad of [
       "pi/anthropic", // no model segment
       "pi/", // empty remainder
-      "opencode/anthropic/claude-opus-5", // wrong engine
+      "other/anthropic/claude-opus-5", // wrong engine
       "claude-opus-5", // bare native id
       42,
       null,
@@ -228,7 +228,7 @@ describe("write path", () => {
       "pi/openai/gpt-5.2-codex",
     ]);
     // Malformed ids throw instead of writing something the reader drops.
-    for (const bad of ["pi/anthropic", "anthropic/claude-opus-5", "opencode/xai/grok-4", ""]) {
+    for (const bad of ["pi/anthropic", "anthropic/claude-opus-5", "xai/grok-4", ""]) {
       expect(() => addPiPickerModel(bad)).toThrow(/Invalid pi model id/);
     }
     expect(rawFile().pickerModels).toEqual([

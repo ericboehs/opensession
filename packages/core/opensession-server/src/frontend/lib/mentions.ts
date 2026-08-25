@@ -11,6 +11,7 @@
 
 import { clearMentionApi, fetchMentions, type MentionRecord } from "./api";
 import { getCurrentUser } from "../components/UserPicker";
+import { whenCurrentUserReady } from "./auth-ready";
 
 const CHANGE_EVENT = "opensession-mentions-changed";
 const USER_CHANGE_EVENT = "opensession-user-changed";
@@ -40,7 +41,7 @@ async function load(user: string) {
 	emit();
 }
 
-void load(getCurrentUser());
+whenCurrentUserReady((user) => void load(user));
 window.addEventListener(USER_CHANGE_EVENT, () => void load(getCurrentUser()));
 
 /** The mention on this session, if you have one. */

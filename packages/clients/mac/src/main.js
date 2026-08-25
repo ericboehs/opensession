@@ -18,8 +18,12 @@ const {
 } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
+const crypto = require("node:crypto");
 const { execFile } = require("node:child_process");
+const { NativeDictation } = require("./native-dictation");
+const { resumableAccountUrl } = require("./account-navigation");
 const packageConfig = require("../package.json").opensession || {};
+const nativeDictation = new NativeDictation();
 
 // AppKit can show its persistent-window crash-recovery prompt before Electron
 // finishes launching. On macOS 26 that modal can trap the browser process and
@@ -111,18 +115,28 @@ function adoptLegacyUserData() {
 // ready: Chromium reads these files as it opens the session.
 adoptLegacyUserData();
 
+// Visible app windows share Chromium's profile (auth, preferences and drafts),
+// but each renderer owns its own route so two windows can stay in different
+// workspaces. `win` is the most recently focused one and is only a fallback for
+// actions, such as deep links and app-menu commands, that do not name a window.
 let win = null;
+const appWindows = new Set();
+const windowData = new WeakMap();
 let quitting = false;
 let appReady = false;
 let pendingDeepLink = null;
-let windowReady = false;
-// Chromium keeps a zoom level per origin for the life of the process only, and
-// the View menu's zoom roles change it without any event we can subscribe to
-// (zoom-changed only covers pinch/wheel). So the level is mirrored here, read
-// back whenever window state is written, and re-applied after every load: on a
-// scaled display the app is unreadable at 100% and the setting has to survive
-// both an in-app navigation and a relaunch.
-let zoomLevel = 0;
+
+function activeWindow() {
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused && appWindows.has(focused) && !focused.isDestroyed()) return focused;
+  if (win && appWindows.has(win) && !win.isDestroyed()) return win;
+  return [...appWindows].findLast((candidate) => !candidate.isDestroyed()) || null;
+}
+
+function eventWindow(event) {
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  return owner && appWindows.has(owner) && !owner.isDestroyed() ? owner : null;
+}
 
 // ---- Choosing a server ------------------------------------------------------
 // Which server this shell talks to belongs to the person using it, not to
@@ -131,6 +145,8 @@ let zoomLevel = 0;
 // back.
 
 const serverFile = () => path.join(app.getPath("userData"), "server.json");
+let backgroundAccountWindows = new Map();
+let badgeByOrigin = new Map();
 
 // Declarations rather than consts: DEFAULT_URL calls into these while this
 // module is still evaluating, and a const would still be in its dead zone.
@@ -164,23 +180,90 @@ function normalizeServerUrl(raw) {
   }
 }
 
-function readStoredServer() {
+function readStoredAccounts() {
   try {
-    return normalizeServerUrl(JSON.parse(fs.readFileSync(serverFile(), "utf8"))?.url);
-  } catch {
-    return null;
-  }
+    const stored = JSON.parse(fs.readFileSync(serverFile(), "utf8"));
+    if (Array.isArray(stored?.accounts) && stored.accounts.length) {
+      const accounts = stored.accounts.flatMap((account) => {
+        const url = normalizeServerUrl(account?.url);
+        if (!url) return [];
+        return [{
+          id: String(account.id || crypto.randomUUID()),
+          label: String(account.label || new URL(url).host),
+          url,
+          lastUrl: resumableAccountUrl(url, account.lastUrl),
+        }];
+      });
+      if (accounts.length) {
+        const activeId = accounts.some((account) => account.id === stored.activeId)
+          ? stored.activeId
+          : accounts[0].id;
+        return { accounts, activeId };
+      }
+    }
+    const legacyURL = normalizeServerUrl(stored?.url);
+    if (legacyURL) {
+      const account = {
+        id: crypto.randomUUID(),
+        label: new URL(legacyURL).host,
+        url: legacyURL,
+      };
+      const migrated = { accounts: [account], activeId: account.id };
+      fs.writeFileSync(serverFile(), JSON.stringify(migrated, null, 2));
+      return migrated;
+    }
+  } catch {}
+  return { accounts: [], activeId: null };
 }
 
-function writeStoredServer(url) {
+function writeStoredAccounts(accounts) {
   try {
     fs.mkdirSync(path.dirname(serverFile()), { recursive: true });
-    fs.writeFileSync(serverFile(), JSON.stringify({ url }, null, 2));
+    fs.writeFileSync(serverFile(), JSON.stringify(accounts, null, 2));
     return true;
   } catch (err) {
     console.error("[server] could not save", err);
     return false;
   }
+}
+
+function activeAccountResumeUrl() {
+  const stored = readStoredAccounts();
+  const account = stored.accounts.find((candidate) => candidate.id === stored.activeId);
+  return account?.lastUrl || account?.url || APP_URL;
+}
+
+// pushState changes the renderer's URL without a document load, so local web
+// state alone is not enough for the shell's next launch. Persist the route of
+// the most recently focused app window whenever it changes.
+function rememberActiveAccountUrl(target) {
+  if (!target || target.isDestroyed() || target !== activeWindow()) return;
+  const stored = readStoredAccounts();
+  const account = stored.accounts.find((candidate) => candidate.id === stored.activeId);
+  if (!account) return;
+  const next = resumableAccountUrl(account.url, target.webContents.getURL());
+  if (!next || next === account.lastUrl) return;
+  account.lastUrl = next;
+  writeStoredAccounts(stored);
+}
+
+function readStoredServer() {
+  const stored = readStoredAccounts();
+  return stored.accounts.find((account) => account.id === stored.activeId)?.url || null;
+}
+
+function writeStoredServer(url, addingAccount = false) {
+  const stored = readStoredAccounts();
+  const active = stored.accounts.find((account) => account.id === stored.activeId);
+  if (addingAccount || !active) {
+    const account = { id: crypto.randomUUID(), label: new URL(url).host, url };
+    stored.accounts.push(account);
+    stored.activeId = account.id;
+  } else {
+    active.url = url;
+    if (!active.label) active.label = new URL(url).host;
+  }
+  return writeStoredAccounts(stored);
 }
 
 // A profile that has been used before answered this question by working, so an
@@ -191,10 +274,14 @@ function adoptDefaultForExistingProfile() {
   writeStoredServer(DEFAULT_URL);
 }
 
+function trustedAccountOrigins() {
+  return readStoredAccounts().accounts.map((account) => new URL(account.url).origin);
+}
+
 function setServer(url) {
   APP_URL = url;
   APP_ORIGIN = new URL(url).origin;
-  IN_WINDOW_ORIGINS = [APP_ORIGIN];
+  IN_WINDOW_ORIGINS = [...new Set([APP_ORIGIN, ...trustedAccountOrigins()])];
   blockServiceWorker();
 }
 
@@ -207,7 +294,10 @@ function blockServiceWorker() {
   // A filter is fixed when its listener is registered and a session holds only
   // one of them, so re-registering is how the block follows a server change.
   session.defaultSession.webRequest.onBeforeRequest(
-    { urls: [APP_ORIGIN + "/*sw.js*"] },
+    {
+      urls: [...new Set([APP_ORIGIN, ...trustedAccountOrigins()])]
+        .map((origin) => origin + "/*sw.js*"),
+    },
     (_details, callback) => callback({ cancel: true }),
   );
 }
@@ -239,15 +329,32 @@ async function probeServer(url) {
   }
 }
 
-function showSetup() {
-  if (!win || win.isDestroyed()) return;
-  clearStallGuard();
-  win.loadFile(path.join(__dirname, "setup.html"), {
+async function resolveServer(raw) {
+  const url = normalizeServerUrl(raw);
+  if (!url) return { ok: false, error: "That doesn't look like a server address." };
+  const reached = await probeServer(url);
+  if (reached.ok) return { ok: true, url };
+  // A bare tailnet or LAN host often serves plain HTTP. Match the first-run
+  // flow by trying it only when the person did not choose a scheme themselves.
+  const plain = hasScheme(raw) ? null : url.replace(/^https:/, "http:");
+  if (plain && (await probeServer(plain)).ok) return { ok: true, url: plain };
+  return { ...reached, url };
+}
+
+function showSetup(returnDestination = "app", target = activeWindow(), addingAccount = false) {
+  if (!target || target.isDestroyed()) return;
+  const data = windowData.get(target);
+  if (data) {
+    data.setupReturnDestination = returnDestination;
+    data.addingAccount = addingAccount;
+  }
+  clearStallGuard(target);
+  target.loadFile(path.join(__dirname, "setup.html"), {
     query: {
-      url: APP_URL || DEFAULT_URL,
+      url: addingAccount ? "" : APP_URL || DEFAULT_URL,
       // A later visit can be called off; the first run has nothing to go back
       // to.
-      mode: APP_URL ? "change" : "first-run",
+      mode: addingAccount ? "add" : APP_URL ? "change" : "first-run",
     },
   });
 }
@@ -263,8 +370,8 @@ let updateState = { state: "idle", version: null };
 
 function setUpdateState(next) {
   updateState = next;
-  if (win && !win.isDestroyed()) {
-    win.webContents.send("os1:update-state", updateState);
+  for (const target of appWindows) {
+    if (!target.isDestroyed()) target.webContents.send("os1:update-state", updateState);
   }
 }
 
@@ -449,6 +556,22 @@ function onScreenBounds(saved) {
   return bounds;
 }
 
+function cascadeWindowBounds(bounds) {
+  if (!appWindows.size) return bounds;
+  const area = screen.getDisplayMatching(bounds).workArea;
+  const offset = 24 * (1 + ((appWindows.size - 1) % 6));
+  const shift = (position, size, start, available) => {
+    if (position + size + offset <= start + available) return position + offset;
+    if (position - offset >= start) return position - offset;
+    return position;
+  };
+  return {
+    ...bounds,
+    x: shift(bounds.x, bounds.width, area.x, area.width),
+    y: shift(bounds.y, bounds.height, area.y, area.height),
+  };
+}
+
 function loadWindowState() {
   let saved = null;
   try {
@@ -468,32 +591,35 @@ function clampZoom(value) {
   return Number.isFinite(value) ? Math.min(4, Math.max(-3, value)) : 0;
 }
 
-function saveWindowState() {
-  if (!win || win.isDestroyed()) return;
+function saveWindowState(target = activeWindow()) {
+  if (!target || target.isDestroyed()) return;
+  const data = windowData.get(target);
+  let currentZoom = data?.zoomLevel ?? 0;
   try {
-    if (!win.webContents.isDestroyed()) {
-      zoomLevel = win.webContents.getZoomLevel();
+    if (!target.webContents.isDestroyed()) {
+      currentZoom = target.webContents.getZoomLevel();
+      if (data) data.zoomLevel = currentZoom;
     }
   } catch {}
   try {
     const state = {
-      ...win.getNormalBounds(),
-      maximized: win.isMaximized(),
-      fullScreen: win.isFullScreen(),
-      zoomLevel: clampZoom(zoomLevel),
+      ...target.getNormalBounds(),
+      maximized: target.isMaximized(),
+      fullScreen: target.isFullScreen(),
+      zoomLevel: clampZoom(currentZoom),
     };
     fs.writeFileSync(stateFile(), JSON.stringify(state));
   } catch {}
 }
 
-// Written whenever the window settles, not only at quit: a force quit, a crash
+// Written whenever a window settles, not only at quit: a force quit, a crash
 // or an update restart would otherwise throw away the size you just set, and
 // opening where you left off is the whole point of saving it.
-let saveTimer = null;
-
-function scheduleSaveWindowState() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveWindowState, 400);
+function scheduleSaveWindowState(target) {
+  const data = windowData.get(target);
+  if (!data) return;
+  clearTimeout(data.saveTimer);
+  data.saveTimer = setTimeout(() => saveWindowState(target), 400);
 }
 
 function inWindow(url) {
@@ -504,8 +630,16 @@ function inWindow(url) {
   }
 }
 
+function inActiveWindow(url) {
+  try {
+    return new URL(url).origin === APP_ORIGIN;
+  } catch {
+    return false;
+  }
+}
+
 // Sign-in pages for external services (e.g. the ChatGPT device-code sign-in
-// from Settings → Models). The default browser is often not where you're
+// from Settings → Providers). The default browser is often not where you're
 // logged into these accounts, so prefer Chrome and fall back to the default
 // browser when it isn't installed. github.com is NOT in this list: it is also
 // where every PR and docs link goes, and those belong in whichever browser
@@ -599,10 +733,22 @@ function openDeepLink(raw) {
     pendingDeepLink = raw;
     return;
   }
+  try {
+    const incoming = new URL(raw);
+    if (incoming.protocol === "http:" || incoming.protocol === "https:") {
+      const stored = readStoredAccounts();
+      const account = stored.accounts.find(
+        (candidate) => new URL(candidate.url).origin === incoming.origin,
+      );
+      if (account && account.id !== stored.activeId) {
+        switchAccount(account.id, raw);
+        return;
+      }
+    }
+  } catch {}
   const url = deepLinkToUrl(raw);
   if (!url) return;
-  showWindow();
-  loadApp(url);
+  loadApp(url, showWindow());
 }
 
 // Answers whether there was one, so a caller that would otherwise load the app
@@ -615,25 +761,28 @@ function flushPendingDeepLink() {
   return true;
 }
 
-function showWindow() {
-  if (!win || win.isDestroyed()) {
-    if (appReady) createWindow();
-  } else if (windowReady) {
+function showWindow(target = activeWindow()) {
+  if (!target || target.isDestroyed()) {
+    return appReady ? createWindow() : null;
+  }
+  const data = windowData.get(target);
+  if (data?.ready) {
     // show() alone leaves a minimized window in the Dock, so a deep link or a
     // notification click would land on a window nobody can see.
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
+    if (target.isMinimized()) target.restore();
+    target.show();
+    target.focus();
     // The window is only half of it on macOS: an app that is not frontmost
     // stays behind the one that is until it asks for the activation itself.
     app.focus({ steal: true });
   }
+  return target;
 }
 
-function showStatusPage() {
-  if (!win || win.isDestroyed()) return;
-  clearStallGuard();
-  win.loadFile(path.join(__dirname, "offline.html"), {
+function showStatusPage(target = activeWindow()) {
+  if (!target || target.isDestroyed()) return;
+  clearStallGuard(target);
+  target.loadFile(path.join(__dirname, "offline.html"), {
     query: { url: APP_URL },
   });
 }
@@ -649,39 +798,39 @@ function showStatusPage() {
 // shell blocks that worker (Electron 43's renderer crashes on Cache Storage
 // writes), so it needs a deadline of its own.
 const LOAD_STALL_MS = 8000;
-let stallTimer = null;
 
-function clearStallGuard() {
-  if (!stallTimer) return;
-  clearTimeout(stallTimer);
-  stallTimer = null;
+function clearStallGuard(target) {
+  const data = windowData.get(target);
+  if (!data?.stallTimer) return;
+  clearTimeout(data.stallTimer);
+  data.stallTimer = null;
 }
 
 // The deadline is on the main frame committing, not on the page finishing to
 // load: once the document arrives its splash paints, and a big bundle on a slow
 // but working connection must not be swapped out for the status page.
-function armStallGuard() {
-  clearStallGuard();
-  stallTimer = setTimeout(() => {
-    stallTimer = null;
-    showStatusPage();
+function armStallGuard(target) {
+  const data = windowData.get(target);
+  if (!data) return;
+  clearStallGuard(target);
+  data.stallTimer = setTimeout(() => {
+    data.stallTimer = null;
+    showStatusPage(target);
   }, LOAD_STALL_MS);
 }
 
 // Every main-frame load the shell starts goes through here, so a hung
 // navigation always has a way back.
-function loadApp(url) {
-  if (!win || win.isDestroyed()) return;
-  armStallGuard();
-  win.loadURL(url);
+function loadApp(url, target = activeWindow()) {
+  if (!target || target.isDestroyed()) return;
+  armStallGuard(target);
+  target.loadURL(url);
 }
 
-function createWindow() {
+function createWindow(initialURL = null) {
   const state = loadWindowState();
-  zoomLevel = state.zoomLevel;
-  windowReady = false;
-  win = new BrowserWindow({
-    ...state.bounds,
+  const createdWindow = new BrowserWindow({
+    ...cascadeWindowBounds(state.bounds),
     minWidth: MIN_WIDTH,
     minHeight: MIN_HEIGHT,
     fullscreen: state.fullScreen,
@@ -711,7 +860,19 @@ function createWindow() {
     },
   });
 
-  if (state.maximized && !state.fullScreen) win.maximize();
+  const data = {
+    ready: false,
+    zoomLevel: state.zoomLevel,
+    stallTimer: null,
+    saveTimer: null,
+    addingAccount: false,
+    setupReturnDestination: "app",
+  };
+  appWindows.add(createdWindow);
+  windowData.set(createdWindow, data);
+  win = createdWindow;
+
+  if (state.maximized && !state.fullScreen) createdWindow.maximize();
 
   for (const settled of [
     "resize",
@@ -721,68 +882,91 @@ function createWindow() {
     "enter-full-screen",
     "leave-full-screen",
   ]) {
-    win.on(settled, scheduleSaveWindowState);
+    createdWindow.on(settled, () => scheduleSaveWindowState(createdWindow));
   }
 
-  const createdWindow = win;
+  createdWindow.on("focus", () => {
+    win = createdWindow;
+    rememberActiveAccountUrl(createdWindow);
+  });
   createdWindow.once("ready-to-show", () => {
-    if (createdWindow.isDestroyed() || win !== createdWindow) return;
-    windowReady = true;
+    if (createdWindow.isDestroyed()) return;
+    data.ready = true;
     createdWindow.show();
     createdWindow.focus();
   });
 
   // Chromium drops the zoom level on a cross-origin load (the status page is
   // one), so it is restored per load rather than once at startup.
-  win.webContents.on("did-finish-load", () => {
-    if (createdWindow.isDestroyed() || win !== createdWindow) return;
-    createdWindow.webContents.setZoomLevel(clampZoom(zoomLevel));
+  createdWindow.webContents.on("did-finish-load", () => {
+    if (createdWindow.isDestroyed()) return;
+    createdWindow.webContents.setZoomLevel(clampZoom(data.zoomLevel));
+    if (inActiveWindow(createdWindow.webContents.getURL())) {
+      const stored = readStoredAccounts();
+      if (stored.activeId) refreshAccountLabel(stored.activeId, createdWindow.webContents);
+    }
   });
   // A commit means the server answered, so the stall guard's job is done —
-  // whatever the page does from here is the app's own to report.
-  win.webContents.on("did-navigate", clearStallGuard);
+  // whatever the page does from here is the app's own to report. In-app router
+  // changes are a separate Electron event because they use history.pushState.
+  createdWindow.webContents.on("did-navigate", () => {
+    clearStallGuard(createdWindow);
+    rememberActiveAccountUrl(createdWindow);
+  });
+  createdWindow.webContents.on("did-navigate-in-page", () => {
+    rememberActiveAccountUrl(createdWindow);
+  });
   // Pinch and wheel zoom land in the renderer, so the level has to be read back
   // a tick later; the View menu's roles are picked up by saveWindowState.
-  win.webContents.on("zoom-changed", () => {
+  createdWindow.webContents.on("zoom-changed", () => {
     setTimeout(() => {
-      if (!win || win.isDestroyed() || win !== createdWindow) return;
-      zoomLevel = clampZoom(win.webContents.getZoomLevel());
+      if (createdWindow.isDestroyed()) return;
+      data.zoomLevel = clampZoom(createdWindow.webContents.getZoomLevel());
     }, 0);
   });
 
-  win.on("close", (e) => {
-    saveWindowState();
-    if (!quitting) {
-      e.preventDefault();
-      win.hide();
+  createdWindow.on("close", (event) => {
+    if (quitting) return;
+    saveWindowState(createdWindow);
+    // Keep the established Mac behavior for the last workspace: closing it
+    // hides the app without discarding its route or drafts. Extra windows close
+    // normally so hidden renderers do not accumulate.
+    if (appWindows.size === 1) {
+      event.preventDefault();
+      createdWindow.hide();
     }
   });
-  win.on("closed", () => {
-    windowReady = false;
-    win = null;
+  createdWindow.on("closed", () => {
+    clearTimeout(data.saveTimer);
+    clearStallGuard(createdWindow);
+    appWindows.delete(createdWindow);
+    if (win === createdWindow) win = activeWindow();
   });
 
   // Keep app navigation in-window; everything else (the device-code page, PR
   // links, docs, …) goes to the default browser.
-  win.webContents.on("will-navigate", (e, url) => {
-    if (!inWindow(url)) {
+  createdWindow.webContents.on("will-navigate", (e, url) => {
+    if (!inActiveWindow(url)) {
       e.preventDefault();
       openExternal(url);
       return;
     }
     // The status page navigates back to the app on its own, and that retry can
     // stall the same way the first load did.
-    armStallGuard();
+    armStallGuard(createdWindow);
   });
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (inWindow(url)) return { action: "allow" };
+  createdWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (inActiveWindow(url)) {
+      createWindow(url);
+      return { action: "deny" };
+    }
     openExternal(url);
     return { action: "deny" };
   });
 
   // Native right-click menu (copy link, copy, paste, …) — Electron shows
   // nothing by default.
-  win.webContents.on("context-menu", (_e, params) => {
+  createdWindow.webContents.on("context-menu", (_e, params) => {
     const items = [];
 
     if (params.linkURL) {
@@ -801,7 +985,10 @@ function createWindow() {
 
     if (params.hasImageContents && params.srcURL) {
       items.push(
-        { label: "Copy Image", click: () => win.webContents.copyImageAt(params.x, params.y) },
+        {
+          label: "Copy Image",
+          click: () => createdWindow.webContents.copyImageAt(params.x, params.y),
+        },
         { label: "Copy Image Address", click: () => clipboard.writeText(params.srcURL) },
         { type: "separator" },
       );
@@ -822,40 +1009,141 @@ function createWindow() {
     // Drop a trailing separator so link-only menus end cleanly.
     while (items.length && items[items.length - 1].type === "separator") items.pop();
     if (!items.length) return;
-    Menu.buildFromTemplate(items).popup({ window: win });
+    Menu.buildFromTemplate(items).popup({ window: createdWindow });
   });
 
   // Show a themed recovery page instead of Chromium's network error.
-  win.webContents.on("did-fail-load", (_e, code, _desc, _url, isMainFrame) => {
+  createdWindow.webContents.on("did-fail-load", (_e, code, _desc, _url, isMainFrame) => {
     if (!isMainFrame) return;
     // A superseded navigation aborts as a matter of course, so ERR_ABORTED is
     // not a failure to report. It must not call off the stall guard either: an
     // abort that commits nothing is the empty window this guards against.
     if (code === -3 /* ERR_ABORTED */) return;
-    showStatusPage();
+    showStatusPage(createdWindow);
   });
 
   // Belt-and-braces: if the renderer ever dies, come back instead of showing
   // a dead window.
-  win.webContents.on("render-process-gone", (_e, details) => {
+  createdWindow.webContents.on("render-process-gone", (_e, details) => {
     if (details.reason === "clean-exit") return;
-    openHome();
+    openHome(createdWindow);
   });
 
-  openHome();
+  if (initialURL && inActiveWindow(initialURL)) loadApp(initialURL, createdWindow);
+  else openHome(createdWindow);
+  return createdWindow;
 }
 
-// What the window opens on: the app once there is a server to open, and the
+async function refreshAccountLabel(accountID, webContents) {
+  try {
+    const name = await webContents.executeJavaScript(
+      "fetch('/api/settings/general', { credentials: 'include' }).then(r => r.ok ? r.json() : null).then(v => v && v.organizationName)",
+      true,
+    );
+    if (typeof name !== "string" || !name.trim()) return;
+    const stored = readStoredAccounts();
+    const account = stored.accounts.find((candidate) => candidate.id === accountID);
+    if (!account || account.label === name.trim()) return;
+    account.label = name.trim();
+    if (writeStoredAccounts(stored)) buildAppMenu();
+  } catch {}
+}
+
+function syncBackgroundAccountWindows() {
+  if (!appReady) return;
+  const stored = readStoredAccounts();
+  const inactive = stored.accounts.filter((account) => account.id !== stored.activeId);
+  const inactiveIDs = new Set(inactive.map((account) => account.id));
+  for (const [id, accountWindow] of backgroundAccountWindows) {
+    if (!inactiveIDs.has(id) || accountWindow.isDestroyed()) {
+      if (!accountWindow.isDestroyed()) accountWindow.destroy();
+      backgroundAccountWindows.delete(id);
+    }
+  }
+  for (const account of inactive) {
+    if (backgroundAccountWindows.has(account.id)) continue;
+    const accountWindow = new BrowserWindow({
+      show: false,
+      webPreferences: {
+        preload: path.join(__dirname, "preload.js"),
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        spellcheck: false,
+        backgroundThrottling: false,
+      },
+    });
+    accountWindow.webContents.setAudioMuted(true);
+    const accountOrigin = new URL(account.url).origin;
+    accountWindow.webContents.on("will-navigate", (event, url) => {
+      try {
+        if (new URL(url).origin !== accountOrigin) event.preventDefault();
+      } catch {
+        event.preventDefault();
+      }
+    });
+    accountWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    accountWindow.on("closed", () => backgroundAccountWindows.delete(account.id));
+    accountWindow.webContents.on("did-finish-load", () => {
+      refreshAccountLabel(account.id, accountWindow.webContents);
+    });
+    backgroundAccountWindows.set(account.id, accountWindow);
+    accountWindow.loadURL(account.lastUrl || account.url).catch(() => {});
+  }
+}
+
+function switchAccount(id, targetURL = null, target = activeWindow()) {
+  const stored = readStoredAccounts();
+  const account = stored.accounts.find((candidate) => candidate.id === id);
+  if (!account || account.id === stored.activeId) return;
+
+  // Keep each organization at its exact in-app URL. Loading the account root
+  // delegated this to the web app's generic cold-start fallback, which could
+  // only recover one session id and often selected the workspace's first tab.
+  // Capturing before setServer changes the active origin preserves sessions,
+  // workspace panes, review tabs, and route refinements independently per org.
+  const current = stored.accounts.find((candidate) => candidate.id === stored.activeId);
+  if (current && target && !target.isDestroyed()) {
+    const currentUrl = resumableAccountUrl(current.url, target.webContents.getURL());
+    if (currentUrl) current.lastUrl = currentUrl;
+  }
+  const destination =
+    resumableAccountUrl(account.url, targetURL) || account.lastUrl || account.url;
+  account.lastUrl = destination;
+  stored.activeId = account.id;
+  if (!writeStoredAccounts(stored)) return;
+  setServer(account.url);
+  syncBackgroundAccountWindows();
+  buildAppMenu();
+  initAutoUpdate();
+  const destinationWindow = showWindow(target);
+  for (const appWindow of appWindows) {
+    loadApp(appWindow === destinationWindow ? destination : account.url, appWindow);
+  }
+}
+
+// What a window opens on: the app once there is a server to open, and the
 // question itself until then.
-function openHome() {
-  if (APP_URL) loadApp(APP_URL);
-  else showSetup();
+function openHome(target = activeWindow()) {
+  if (APP_URL) loadApp(APP_URL, target);
+  else showSetup("app", target);
+}
+
+function organizationAccountMenuItems(stored = readStoredAccounts()) {
+  return stored.accounts.map((account, index) => ({
+    label: `${account.label}${badgeByOrigin.get(new URL(account.url).origin) ? ` (${badgeByOrigin.get(new URL(account.url).origin)})` : ""}`,
+    type: "radio",
+    checked: account.id === stored.activeId,
+    accelerator: index < 9 ? `CommandOrControl+Shift+${index + 1}` : undefined,
+    click: () => switchAccount(account.id),
+  }));
 }
 
 // Electron's default menu, plus "Check for Updates…" in the app menu — the
 // standard roles keep all the stock items and shortcuts (edit, view, window).
 function buildAppMenu() {
   if (process.platform !== "darwin") return;
+  const organizationItems = organizationAccountMenuItems();
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {
@@ -865,11 +1153,25 @@ function buildAppMenu() {
           { label: "Check for Updates…", click: checkForUpdatesFromMenu },
           { type: "separator" },
           {
-            label: "Change Server…",
-            click: () => {
-              showWindow();
-              showSetup();
-            },
+            label: "Organizations",
+            submenu: [
+              ...organizationItems,
+              { type: "separator" },
+              {
+                label: "Add organization…",
+                click: () => {
+                  const target = showWindow();
+                  showSetup("app", target, true);
+                },
+              },
+              {
+                label: "Edit current server…",
+                click: () => {
+                  const target = showWindow();
+                  showSetup("app", target);
+                },
+              },
+            ],
           },
           { type: "separator" },
           { role: "services" },
@@ -881,7 +1183,17 @@ function buildAppMenu() {
           { role: "quit" },
         ],
       },
-      { role: "fileMenu" },
+      {
+        label: "File",
+        submenu: [
+          {
+            label: "New Window",
+            accelerator: "CommandOrControl+N",
+            click: () => createWindow(),
+          },
+          { role: "close" },
+        ],
+      },
       { role: "editMenu" },
       { role: "viewMenu" },
       { role: "windowMenu" },
@@ -925,15 +1237,111 @@ app.whenReady().then(async () => {
   );
 
   ipcMain.on("os1:set-badge", (e, count) => {
-    if (!inWindow(e.senderFrame?.url ?? "")) return;
-    app.setBadgeCount(Number.isFinite(count) && count > 0 ? Math.floor(count) : 0);
+    const source = e.senderFrame?.url ?? "";
+    if (!inWindow(source)) return;
+    let origin;
+    try { origin = new URL(source).origin; } catch { return; }
+    const next = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+    if (next) badgeByOrigin.set(origin, next);
+    else badgeByOrigin.delete(origin);
+    const total = [...badgeByOrigin.values()].reduce((sum, value) => sum + value, 0);
+    app.setBadgeCount(total);
+    buildAppMenu();
   });
 
   // The web app asks for this from a notification click handler, where its own
   // window.focus() cannot raise a background app.
   ipcMain.on("os1:focus-window", (e) => {
+    const source = e.senderFrame?.url ?? "";
+    if (!inWindow(source)) return;
+    let origin;
+    try { origin = new URL(source).origin; } catch { return; }
+    const stored = readStoredAccounts();
+    const account = stored.accounts.find((candidate) => new URL(candidate.url).origin === origin);
+    const target = eventWindow(e) || activeWindow();
+    if (account && account.id !== stored.activeId) switchAccount(account.id, source, target);
+    else showWindow(target);
+  });
+
+  const fromActiveOrganizationPicker = (e) => {
+    const source = e.senderFrame?.url ?? "";
+    return !!eventWindow(e) && inActiveWindow(source);
+  };
+  ipcMain.handle("os1:organizations-list", (e) => {
+    if (!fromActiveOrganizationPicker(e)) return null;
+    const stored = readStoredAccounts();
+    return {
+      activeId: stored.activeId,
+      accounts: stored.accounts.map((account, index) => ({
+        id: account.id,
+        label: account.label,
+        unread: badgeByOrigin.get(new URL(account.url).origin) || 0,
+        shortcut: index < 9 ? index + 1 : null,
+      })),
+    };
+  });
+  ipcMain.on("os1:organizations-switch", (e, id) => {
+    if (fromActiveOrganizationPicker(e) && typeof id === "string") {
+      switchAccount(id, null, eventWindow(e));
+    }
+  });
+  ipcMain.handle("os1:organizations-add", async (e, raw, check = true) => {
+    if (!fromActiveOrganizationPicker(e)) return { ok: false };
+    const normalized = normalizeServerUrl(raw);
+    const resolved = check
+      ? await resolveServer(raw)
+      : { ok: !!normalized, url: normalized };
+    if (!resolved.ok || !resolved.url) {
+      return {
+        ok: false,
+        error: resolved.error || "Couldn't reach that Open Session server.",
+        canAddAnyway: !!resolved.url,
+        url: resolved.url,
+      };
+    }
+    const stored = readStoredAccounts();
+    if (stored.accounts.some((account) => account.url === resolved.url)) {
+      return { ok: false, error: "That organization is already added." };
+    }
+    const account = {
+      id: crypto.randomUUID(),
+      label: new URL(resolved.url).host,
+      url: resolved.url,
+    };
+    stored.accounts.push(account);
+    if (!writeStoredAccounts(stored)) {
+      return { ok: false, error: "Couldn't save that organization." };
+    }
+    // Let invoke resolve before navigation destroys its renderer, then activate
+    // the new account through the normal switch path.
+    const target = eventWindow(e);
+    setImmediate(() => switchAccount(account.id, null, target));
+    return { ok: true };
+  });
+  ipcMain.on("os1:organizations-manage", (e) => {
+    if (!fromActiveOrganizationPicker(e)) return;
+    showSetup("app", eventWindow(e));
+  });
+
+  ipcMain.handle("os1:dictation-start", (e, id, sampleRate, language) => {
+    if (!inWindow(e.senderFrame?.url ?? "")) return { ok: false };
+    const sender = e.sender;
+    return nativeDictation.start(id, Number(sampleRate), language, (text) => {
+      if (sender.isDestroyed() || !inWindow(sender.getURL())) return;
+      sender.send("os1:dictation-text", { id, text });
+    });
+  });
+  ipcMain.on("os1:dictation-audio", (e, id, samples) => {
     if (!inWindow(e.senderFrame?.url ?? "")) return;
-    showWindow();
+    nativeDictation.push(id, samples);
+  });
+  ipcMain.handle("os1:dictation-finish", (e, id) => {
+    if (!inWindow(e.senderFrame?.url ?? "")) return { text: "" };
+    return nativeDictation.finish(id);
+  });
+  ipcMain.on("os1:dictation-cancel", (e, id) => {
+    if (!inWindow(e.senderFrame?.url ?? "")) return;
+    nativeDictation.cancel(id);
   });
 
   ipcMain.handle("os1:update-state", (e) =>
@@ -944,8 +1352,8 @@ app.whenReady().then(async () => {
   ipcMain.on("os1:update-install", (e) => {
     if (!inWindow(e.senderFrame?.url ?? "")) return;
     if (updateState.state !== "downloaded") return;
-    // quitAndInstall closes every window; flip `quitting` first so the
-    // close-to-hide handler doesn't cancel the relaunch.
+    // quitAndInstall closes every window; flip `quitting` first so the last
+    // window's close-to-hide behavior does not cancel the relaunch.
     quitting = true;
     autoUpdater.quitAndInstall();
   });
@@ -956,29 +1364,28 @@ app.whenReady().then(async () => {
   const fromShellPage = (e) => (e.senderFrame?.url ?? "").startsWith("file://");
 
   ipcMain.on("os1:server-open", (e) => {
-    if (fromShellPage(e)) showSetup();
+    if (fromShellPage(e)) showSetup("status", eventWindow(e));
   });
   ipcMain.on("os1:server-cancel", (e) => {
-    if (fromShellPage(e) && APP_URL) loadApp(APP_URL);
+    if (!fromShellPage(e) || !APP_URL) return;
+    const target = eventWindow(e);
+    const data = target && windowData.get(target);
+    if (data?.setupReturnDestination === "status") showStatusPage(target);
+    else loadApp(APP_URL, target);
   });
   ipcMain.handle("os1:server-probe", async (e, raw) => {
     if (!fromShellPage(e)) return { ok: false };
-    const url = normalizeServerUrl(raw);
-    if (!url) return { ok: false, error: "That doesn't look like a server address." };
-    const reached = await probeServer(url);
-    if (reached.ok) return { ok: true, url };
-    // Nothing they typed said https, and an instance on a LAN or a tailnet is
-    // often plain http. Trying is cheaper than expecting them to know, and it
-    // only ever happens after the secure form failed outright.
-    const plain = hasScheme(raw) ? null : url.replace(/^https:/, "http:");
-    if (plain && (await probeServer(plain)).ok) return { ok: true, url: plain };
-    return { ...reached, url };
+    return resolveServer(raw);
   });
   ipcMain.handle("os1:server-save", (e, raw) => {
     if (!fromShellPage(e)) return { ok: false };
+    const target = eventWindow(e);
+    const data = target && windowData.get(target);
     const url = normalizeServerUrl(raw);
     if (!url) return { ok: false, error: "That doesn't look like a server address." };
-    if (!writeStoredServer(url)) return { ok: false, error: "Couldn't save that address." };
+    if (!writeStoredServer(url, data?.addingAccount)) {
+      return { ok: false, error: "Couldn't save that address." };
+    }
     // A change reaches a running app by restarting it. The service-worker
     // block, the update feed, the origins this window keeps and the page
     // already loaded were all wired to the old address, and one restart is
@@ -992,29 +1399,36 @@ app.whenReady().then(async () => {
     }
     setServer(url);
     initAutoUpdate();
-    if (!flushPendingDeepLink()) openHome();
+    if (!flushPendingDeepLink()) {
+      for (const appWindow of appWindows) openHome(appWindow);
+    }
     return { ok: true };
   });
 
   buildAppMenu();
 
   appReady = true;
-  createWindow();
+  createWindow(activeAccountResumeUrl());
+  syncBackgroundAccountWindows();
 
   flushPendingDeepLink();
 
   initAutoUpdate();
 
-  app.on("activate", showWindow);
+  app.on("activate", () => showWindow());
 
   // Waking with the network still down is how the shell lands on the status
   // page in the first place, and that page can only retry while it is the page
   // on screen. A loaded app reconnects on its own and would lose drafts and
   // scroll position on a reload, so only the status page is retried here.
   powerMonitor.on("resume", () => {
-    if (!win || win.isDestroyed() || !APP_URL) return;
-    // Named rather than any file:// page: the setup page is someone typing.
-    if (win.webContents.getURL().includes("offline.html")) loadApp(APP_URL);
+    if (!APP_URL) return;
+    for (const appWindow of appWindows) {
+      // Named rather than any file:// page: the setup page is someone typing.
+      if (appWindow.webContents.getURL().includes("offline.html")) {
+        loadApp(APP_URL, appWindow);
+      }
+    }
   });
 });
 
@@ -1033,7 +1447,9 @@ app.on("continue-activity", (e, _type, _userInfo, details) => {
 });
 
 app.on("before-quit", () => {
+  rememberActiveAccountUrl(activeWindow());
   quitting = true;
+  nativeDictation.cancel();
   saveWindowState();
 });
 

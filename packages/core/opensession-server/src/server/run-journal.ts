@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from "fs";
 import { OPENSESSION_SESSIONS_DIR } from "./paths";
 import { } from "./paths";
 import { transitionRunState } from "./run-state";
+import { sessionDelivery, sessionTurn } from "./session-kernel/kernel";
 import { writeJsonAtomic } from "./shared/atomic-write";
 
 // Overridable so a detached run host (src/runner-host/host.ts) journals to its
@@ -86,10 +87,12 @@ export interface ActiveRunRecord {
    *  unlike reposNote there is no rebuild callback for automation sessions, so
    *  an unjournaled value would be silently dropped by a restart. */
   prReviewer?: string;
-  /** Pool key of the opencode server hosting this run — lets resume-after-
+  /** Legacy pool key retained while decoding old run records — lets resume-after-
    *  restart REATTACH to a detached server that survived (adoption via the
-   *  opencode-detach registry) instead of re-prompting a fresh one. */
+   *  pi-detach registry) instead of re-prompting a fresh one. */
   serverKey?: string;
+  /** Eager sandbox launch checkpoint. Prepared means full spec durable but no launch admitted. */
+  launchPhase?: "prepared" | "launching" | "started";
   /** Sandbox the run executes in (docs/self-hosting-sandboxes.md); absent = host process */
   sandboxId?: string;
   /** Persistent Runner that owns this run's remote workspace and run host. */
@@ -112,6 +115,9 @@ export interface ActiveRunRecord {
   resumeAttempts?: number;
   /** Time the most recent boot recovery attempt started. */
   lastResumeAt?: string;
+  /** Durable abnormal completion observed before a backend produced a terminal
+   * stream event. Opening recovery adopts this receipt instead of relaunching. */
+  terminalFailure?: { type: "error"; content: string; at: string };
   startedAt: string;
   /** Stamped when a boot sweep hands the record to resumeInterruptedRuns. The
    *  record stays journaled until its resume outcome re-registers (journalSet)
@@ -218,9 +224,12 @@ export function journalSet(record: ActiveRunRecord): void {
   journal[record.runKey] = {
     ...record,
     firstJournaledAt:
-      record.firstJournaledAt || prior?.firstJournaledAt || prior?.startedAt || record.startedAt,
-    resumeAttempts: record.resumeAttempts ?? prior?.resumeAttempts,
-    lastResumeAt: record.lastResumeAt ?? prior?.lastResumeAt,
+      prior?.firstJournaledAt || record.firstJournaledAt || prior?.startedAt || record.startedAt,
+    // An existing record is the live source of recovery health. A fallback
+    // may re-journal stale opts captured before model output reset the
+    // consecutive-failure fuse; it must not resurrect the old attempt count.
+    resumeAttempts: prior ? prior.resumeAttempts : record.resumeAttempts,
+    lastResumeAt: prior ? prior.lastResumeAt : record.lastResumeAt,
   };
   writeRunJournal(journal);
   try {
@@ -243,7 +252,7 @@ export type RunQuarantineReason =
   | "recursive_recovery_kind"
   | "resume_attempts_exhausted"
   | "recovery_expired"
-  | "boot_recovery_limit";
+  | "ambiguous_runner_launch";
 
 export interface QuarantinedRun {
   run: ActiveRunRecord;
@@ -308,9 +317,10 @@ export function journalStartRecovery(record: ActiveRunRecord): ActiveRunRecord {
   return returned;
 }
 
-/** A live detached turn was successfully reattached. Reboots while the turn
- * keeps running should not exhaust the recovery-attempt fuse: that fuse is for
- * consecutive failed recoveries, not successful adoptions of the same turn. */
+/** A recovered turn was successfully reattached or produced new model work.
+ * Reboots while the turn keeps running should not exhaust the recovery-attempt
+ * fuse: that fuse is for consecutive failed recoveries, not healthy resumptions
+ * of the same turn. */
 export function journalMarkRecoveryAttached(record: ActiveRunRecord): ActiveRunRecord | undefined {
   const journal = readRunJournal();
   const current = journal[record.runKey];
@@ -332,6 +342,75 @@ export function journalMarkRecoveryAttached(record: ActiveRunRecord): ActiveRunR
   writeRunJournal(journal);
   const { claimedAt: _claimed, ...returned } = attached;
   return returned;
+}
+
+export function journalRecordAbnormalCompletion(
+  record: ActiveRunRecord,
+  content = "Physical run ended without a terminal event",
+): ActiveRunRecord {
+  const failed: ActiveRunRecord = {
+    ...record,
+    terminalFailure: {
+      type: "error",
+      content,
+      at: new Date().toISOString(),
+    },
+  };
+  journalSet(failed);
+  journalRetireSettledCancelAbnormal(failed.osSessionId, failed.runKey);
+  return failed;
+}
+
+/** Retire an exact abnormal-completion owner only after its actor cancel has
+ * settled. Called from both sides of the race: source completion and actor
+ * settlement. Private detached-host journals never consult gateway actor state. */
+function retireCancelAbnormalEvidence(
+  sessionId: string | undefined,
+  runKey: string,
+): boolean {
+  if (process.env.OPENSESSION_RUN_JOURNAL || !sessionId) return false;
+  const current = readRunJournal()[runKey];
+  if (!current?.terminalFailure || current.osSessionId !== sessionId)
+    return false;
+  return journalClearIfLineage(current);
+}
+
+/** Source-side race participant: actor uncertainty retains evidence because
+ * the durable effect will perform the authoritative settlement-side check. */
+export function journalRetireSettledCancelAbnormal(
+  sessionId: string | undefined,
+  runKey: string,
+): boolean {
+  if (process.env.OPENSESSION_RUN_JOURNAL || !sessionId) return false;
+  try {
+    const cancel = sessionTurn({ op: "snapshot", sessionId }).cancel;
+    if (cancel?.runId === runKey && cancel.phase === "settled")
+      return retireCancelAbnormalEvidence(sessionId, runKey);
+  } catch {
+    // The independent interrupt owner may still positively prove settlement.
+  }
+  try {
+    const delivery = sessionDelivery({ op: "snapshot", sessionId });
+    const dispatchedInterrupt = (
+      delivery.dispatch as { interrupt?: typeof delivery.interrupt } | undefined
+    )?.interrupt;
+    const interrupt = delivery.interrupt || dispatchedInterrupt;
+    if (interrupt?.dispatchId === runKey && interrupt.phase === "confirmed")
+      return retireCancelAbnormalEvidence(sessionId, runKey);
+  } catch {
+    // Neither independent actor domain proved settlement; retain evidence.
+  }
+  return false;
+}
+
+/** Settlement-side race participant. The caller has just committed settlement
+ * or read an authoritative `settled` decision, so no second actor snapshot may
+ * turn a successful durable effect into an acknowledged cleanup gap. */
+export function journalRetireCancelledAbnormalAfterSettlement(
+  sessionId: string,
+  runKey: string,
+): boolean {
+  return retireCancelAbnormalEvidence(sessionId, runKey);
 }
 
 export function journalClear(runKey: string): void {

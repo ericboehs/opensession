@@ -12,7 +12,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TranscriptStore } from "./transcript-store";
-import { transcriptLineUser } from "./opencode-transcript";
+import { transcriptLineUser } from "./transcript-persistence";
 import { parseJsonlLines } from "./jsonl-parser";
 
 function withStore(run: (store: TranscriptStore) => void) {
@@ -36,6 +36,19 @@ function userEntries(text: string, uuid: string) {
 }
 
 describe("intake-time user-line persist", () => {
+  test("session creation persists the visible prompt before workspace setup", async () => {
+    const source = await Bun.file(
+      new URL("./session-create.ts", import.meta.url),
+    ).text();
+    const persisted = source.indexOf("await persist();");
+    const promptWrite = source.indexOf("storeAppendUserLineEarly(", persisted);
+    const workspaceSetup = source.indexOf("await spec.materializeWorktree();", persisted);
+
+    expect(persisted).toBeGreaterThan(-1);
+    expect(promptWrite).toBeGreaterThan(persisted);
+    expect(workspaceSetup).toBeGreaterThan(promptWrite);
+  });
+
   test("intake write + runner write with the same uuid = one upserted row", () => {
     withStore((store) => {
       const uuid = "prompt-uuid-1";

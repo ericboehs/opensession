@@ -21,7 +21,7 @@
  * breaks one. Unknown frame types must be ignored by clients.
  */
 
-import type { EntryNotice, NoticeKind } from "./notices";
+import type { AnsweredAskData, EntryNotice, NoticeKind } from "./notices";
 import type { ToolPresentation } from "./tool-presentation";
 
 /** One rendered line of a session's durable transcript (the jsonl record). */
@@ -78,6 +78,10 @@ export interface TranscriptEntry {
    *  the marker is gone by the time an entry reaches the classifier; adding a
    *  kind must not add another boolean here. */
   noticeKind?: NoticeKind;
+  /** Structured payload parsed from a durable answered-question record. The
+   *  classifier moves it onto `notice.ask`; title + markdown content remain the
+   *  compatibility path for clients that predate the richer card. */
+  ask?: AnsweredAskData;
   /** What this tool call is and what it did (tool_use entries only), derived
    *  server-side so no client re-parses tool input — see tool-presentation.ts. */
   presentation?: ToolPresentation;
@@ -112,6 +116,29 @@ export interface TranscriptEntry {
   sender?: string;
   /** Where `sender` said it, when they weren't in the app. */
   senderVia?: "slack";
+}
+
+/** Display role needed to group a transcript without downloading its bodies. */
+export type TranscriptIndexRole =
+  | "user"
+  | "notice"
+  | "review_handoff"
+  | "system"
+  | "assistant"
+  | "tool_use"
+  | "tool_result"
+  | "hidden";
+
+/** One compact durable-row descriptor in a complete transcript outline. */
+export interface TranscriptIndexEntry {
+  id: string;
+  seq: number;
+  changeSeq: number;
+  timestampMs: number;
+  role: TranscriptIndexRole;
+  contentLength: number;
+  /** Present only on review handoffs, for the collapsed loop label. */
+  reviewPrNumber?: number;
 }
 
 /** Cumulative token/cost accounting for a session, as viewers render it. */
@@ -150,6 +177,14 @@ export interface QueuedPrompt {
   contextSessions?: string[];
   /** False for routed/system items that must keep queue-only metadata. */
   editable?: boolean;
+  /**
+   * When the engine ACCEPTED this message as a steer (epoch ms). Acceptance
+   * is not delivery: the agent loop only polls its steering queue after the
+   * current assistant message and its whole tool batch have finished, so the
+   * wait is routinely seconds and occasionally minutes (a long test run, a
+   * subagent). Clients count from here so a still chip cannot read as a hang.
+   */
+  steeredAt?: number;
 }
 
 /**
@@ -160,6 +195,7 @@ export type ProtocolClientMessage =
   // Liveness probe — the server echoes `pong`. Detects half-open sockets
   // (iOS/Safari kills backgrounded connections without firing onclose).
   | { type: "ping" }
+  | { type: "command_ack"; sessionId: string; requestId: string }
   | {
       type: "watch";
       sessionId: string;
@@ -175,6 +211,9 @@ export type ProtocolClientMessage =
       supportsSeq?: boolean;
       /** This client resumes every mutation, including old-seq rewrites. */
       supportsChangeSeq?: boolean;
+      /** This client can render a complete lightweight transcript outline and
+       *  hydrate arbitrary seq ranges as they approach the viewport. */
+      supportsTranscriptIndex?: boolean;
       /** Seq-mode resume cursor: the lastSeq of the last v2 frame this
        *  client received for the session (used instead of offset/rev). */
       sinceSeq?: number;
@@ -185,12 +224,25 @@ export type ProtocolClientMessage =
       feedEpoch?: string;
     }
   | { type: "unwatch"; sessionId: string }
+  | { type: "load_transcript_index"; sessionId: string }
+  | {
+      type: "load_transcript_range";
+      sessionId: string;
+      requestId: string;
+      firstSeq: number;
+      lastSeq: number;
+      /** Continue a block larger than one bounded response. */
+      afterSeq?: number;
+      /** Index generation this request was planned against. */
+      epoch: number;
+    }
   /** The client half of `ask_question`: answers keyed by question TEXT, or
    *  null to dismiss. Only applied while `questionId` is still the session's
    *  pending ask, so a stale card can't answer a newer question. */
   | {
       type: "answer_question";
       sessionId: string;
+      requestId?: string;
       questionId: string;
       answers: Record<string, string> | null;
     }
@@ -208,6 +260,7 @@ export type ProtocolClientMessage =
   | {
       type: "prompt";
       sessionId: string;
+      requestId?: string;
       content: string;
       user?: string;
       images?: string[];
@@ -224,6 +277,7 @@ export type ProtocolClientMessage =
   | {
       type: "interrupt_prompt";
       sessionId: string;
+      requestId?: string;
       content: string;
       user?: string;
       images?: string[];
@@ -234,14 +288,17 @@ export type ProtocolClientMessage =
   | {
       type: "delete_queued_prompt";
       sessionId: string;
+      requestId?: string;
       queueId?: string;
       queueIndex?: number;
     }
-  | { type: "take_queued_prompt"; sessionId: string; queueId: string }
+  | { type: "take_queued_prompt"; sessionId: string; requestId?: string; queueId: string; }
+  | { type: "take_steered_prompt"; sessionId: string; requestId?: string; queueId: string; }
   | {
       /** @deprecated Current clients take the item back into the composer. */
       type: "update_queued_prompt";
       sessionId: string;
+      requestId?: string;
       queueId?: string;
       queueIndex?: number;
       content: string;
@@ -250,12 +307,14 @@ export type ProtocolClientMessage =
   | {
       type: "steer_queued_prompt";
       sessionId: string;
+      requestId?: string;
       queueId?: string;
       queueIndex?: number;
     }
   | {
       type: "interrupt_queued_prompt";
       sessionId: string;
+      requestId?: string;
       queueId?: string;
       queueIndex?: number;
     }
@@ -264,13 +323,19 @@ export type ProtocolClientMessage =
       // order. The server reconciles its queue array to match.
       type: "reorder_queued_prompt";
       sessionId: string;
+      requestId?: string;
       order: string[];
     }
-  | { type: "cancel" }
+  | { type: "cancel"; sessionId?: string; requestId?: string }
   | {
       type: "create_session";
+      requestId?: string;
+      /** Client-minted native id. Replaying the same create after reconnect is idempotent. */
+      clientSessionId?: string;
       branch: string;
       prompt: string;
+      /** Prompt projected with visible session names, used only for naming this session. */
+      titlePrompt?: string;
       user: string;
       /** Local-profile bridge only: create this session on the hosted upstream. */
       cloud?: boolean;
@@ -292,8 +357,14 @@ export type ProtocolClientMessage =
        *  configured provider id. Omit = host. */
       sandbox?: boolean | string;
       images?: string[];
-      /** Reasoning effort — persisted on the new session and enforced per run. */
-      effort?: "low" | "medium" | "high";
+      /** Non-image composer attachments, staged server-side or kept inline. */
+      files?: unknown;
+      /** Reasoning effort persisted on the new session and enforced per run. */
+      effort?: "none" | "low" | "medium" | "high" | "xhigh" | "max";
+      /** OpenAI priority service tier for the opening and later turns. */
+      fastMode?: boolean;
+      /** Pinned provider account; omitted means automatic pool selection. */
+      accountId?: string;
       /** Fork an existing session, keeping its real conversation history. */
       forkFrom?: { sourceId: string; messageId?: string };
       /**
@@ -355,7 +426,14 @@ export type ProtocolServerMessage =
   // can tell a real restart (changed) from a transient blip (unchanged).
   // `restartBy` (when the boot was seconds after a shutdown) names the
   // session that likely triggered that restart.
-  | { type: "hello"; bootId: string; restartBy?: string }
+  | {
+      type: "hello";
+      bootId: string;
+      restartBy?: string;
+      capabilities?: { commandResults?: boolean };
+      /** Verified durable-command partition. Never derived from client claims. */
+      commandScope?: string;
+    }
   | {
       type: "transcript_init";
       sessionId?: string;
@@ -376,6 +454,30 @@ export type ProtocolServerMessage =
       firstSeq?: number;
       lastSeq?: number;
       lastChangeSeq?: number;
+    }
+  | {
+      /** Complete content-free outline for full-range virtual scrolling. */
+      type: "transcript_index";
+      sessionId: string;
+      entries: TranscriptIndexEntry[];
+      firstSeq: number;
+      lastSeq: number;
+      lastChangeSeq: number;
+      /** Authoritative replacement generation; stale range replies are ignored. */
+      epoch: number;
+    }
+  | {
+      /** One bounded chunk of an arbitrary indexed range. */
+      type: "transcript_range";
+      sessionId: string;
+      requestId: string;
+      entries: TranscriptEntry[];
+      firstSeq: number;
+      lastSeq: number;
+      coveredThroughSeq: number;
+      complete: boolean;
+      epoch: number;
+      lastChangeSeq: number;
     }
   | {
       /** Older entries from one "load earlier" page. Client merges by id and
@@ -426,10 +528,12 @@ export type ProtocolServerMessage =
       newWorkspace?: boolean;
       /** True while the session's worktree is still being created. */
       preparingWorkspace?: boolean;
+      /** Stored result of an already-completed durable create command. */
+      replayed?: boolean;
     }
   // The create run finished (or failed) preparing the session's worktree.
   | { type: "workspace_status"; sessionId: string; ready: boolean }
-  | { type: "model_changed"; sessionId: string; model: string; from?: string; by?: string }
+  | { type: "model_changed"; sessionId: string; model: string; from?: string; by?: string; }
   | {
       type: "queue_update";
       sessionId: string;
@@ -478,6 +582,18 @@ export type ProtocolServerMessage =
       /** Set when the message was sent, so viewers can show where it landed. */
       channel?: { id: string; name: string };
       permalink?: string;
+      /** Message timestamp, so the sender can undo the post. */
+      ts?: string;
+    }
+  | { type: "command_ack_result"; sessionId: string; requestId: string }
+  | { type: "command_result";
+      sessionId: string;
+      requestId: string;
+      status: "completed" | "failed";
+      result?: unknown;
+      error?: string;
+      /** Failed validation is terminal; transient ownership/storage failures stay queued. */
+      terminal?: boolean;
     }
   | { type: "notice"; sessionId?: string; message: string }
   | { type: "pong" }

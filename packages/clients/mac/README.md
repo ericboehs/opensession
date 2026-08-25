@@ -65,14 +65,15 @@ production. For a fully isolated sandbox instead, run the whole server locally
 empty local state, optionally rsync'd from prod.
 ## Which server
 
-The app asks the first time it opens and keeps the answer in its profile
-(`server.json`), so a build is not tied to the address it was made with. A bare
+The app asks the first time it opens and keeps an account list plus its active
+organization in `server.json`, so a build is not tied to one address. A bare
 host resolves to `https`, except on this machine, and the answer is checked
-against `/api/health` before it is saved; the address that answered is what gets
-stored, which is how a plain-http instance on a LAN or a tailnet is found.
-Change Server in the app menu, and a button on the status page, bring the
-question back; changing it restarts the app, since the update feed and the
-window's own origins are wired at launch.
+against `/api/health` before it is saved. **Add organization** opens that
+address check in an in-app modal. The organization row above Feed and **OS →
+Organizations** both switch accounts; ⌘⇧1…9 remains available from the keyboard.
+Inactive organizations stay loaded in hidden sandboxed windows so
+WebSockets and notifications remain live; unread counts aggregate into the Dock
+badge and menu labels.
 
 `OS1_URL` overrides the stored answer for one run. Distributions set the address
 the first-run screen offers with `opensession.defaultServer` in `package.json`
@@ -81,18 +82,29 @@ asked.
 
 ## Architecture
 
-- `src/main.js` — a single sandboxed `BrowserWindow` loading the configured
-  server (`contextIsolation`, no Node in the renderer). In-window
-  navigation is limited to the active app origin; everything else opens in the
-  default browser. Window close hides to the dock; state persists across
-  launches.
+- `src/main.js` — sandboxed `BrowserWindow`s for the active server plus hidden
+  sandboxed windows for inactive organizations (`contextIsolation`, no Node in
+  the renderer). Use **File → New Window** or ⌘N to keep different workspaces
+  open side by side. In-window navigation is limited to the active app origin;
+  everything else opens in the default browser. Additional windows close
+  normally; closing the last one hides it to the Dock so its route and drafts
+  stay intact. Window state persists across launches.
 - `src/preload.js`: exposes `window.os1` (`desktop`, `setBadge`, `clearBadge`,
-  `updates`) for the frontend to feature-detect and mirror its app badge to the
-  dock, plus `server` for the two shell pages below. The main process refuses
-  `server` calls from anything but a `file://` page, so the app a server serves
-  cannot repoint the shell.
+  `updates`, `dictation`) for the frontend to feature-detect and mirror its app
+  badge to the dock, plus `server` for the two shell pages below. The main
+  process refuses `server` calls from anything but a `file://` page, so the app
+  a server serves cannot repoint the shell.
+- Native dictation: Electron exposes Chromium's speech-recognition API without
+  connecting it to a working service. The renderer therefore streams mono PCM
+  through the preload bridge to `native/DictationHelper.swift`, a signed helper
+  that uses Apple Speech and prefers its on-device recognizer. The browser's
+  recorded clip stays available as the server fallback if native recognition
+  is unavailable. `scripts/before-pack.js` compiles the helper before every
+  local or release package.
 - `src/setup.html`: the server prompt, shown when nothing is stored yet and
-  again from Change Server. It checks the address before saving it.
+  when adding from the native app menu or editing an organization. The in-app
+  organization menu uses its own modal instead. Both check the address before
+  saving it.
 - `src/offline.html` — retry screen for when the configured server is
   unreachable, with a way back to that prompt, since a stored address that is
   wrong looks exactly like a server that is down.

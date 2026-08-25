@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import * as mod from "./run-journal";
@@ -8,6 +8,8 @@ import { clearRunState, getRunState, transitionRunState } from "./run-state";
 import * as shared from "./runner-shared";
 import type { StreamEvent } from "./run-events";
 import { makeFakeEngine } from "./testing/fake-engine";
+import { stripContext } from "./prompt-context";
+import { sessionKernelStore } from "./session-kernel/kernel";
 
 // __setActiveRunsPathForTest repoints the LIVE ACTIVE_RUNS_PATH binding, so
 // agent-runner.ts's own (already-cached, possibly earlier-imported-with-the-
@@ -29,8 +31,6 @@ beforeEach(() => {
 
 afterEach(() => {
 	agent.__setEngineForTest(null);
-	agent.__setAbortDetachedForTest(null);
-	agent.__setReattachForTest(null);
 	agent.__setLocalHostResumeForTest(null);
 	mod.__setActiveRunsPathForTest(oldJournal);
 	if (oldForceLimit === undefined) delete process.env.OPENSESSION_FORCE_LIMIT;
@@ -81,7 +81,8 @@ describe("run journal", () => {
 			expect(handled).toEqual([sessionId]);
 			expect(terminal).toMatchObject({
 				type: "error",
-				content: expect.stringContaining("restart recovery attempts"),
+				content:
+					"Restart recovery failed twice. Send the prompt again to continue.",
 			});
 			expect(agent.isAgentSessionBusy(sessionId)).toBe(false);
 			expect(mod.activeRunRecords()).toEqual([]);
@@ -91,7 +92,32 @@ describe("run journal", () => {
 		}
 	});
 
-	it("cancels a journal-owned recovery before its queued worker starts", () => {
+	it("leaves a detached GitHub review journal for its posting workflow", () => {
+		const sessionId = `github-review-${crypto.randomUUID()}`;
+		const runKey = `rh-${crypto.randomUUID()}`;
+		try {
+			mod.journalSet({
+				runKey,
+				hostId: runKey,
+				osSessionId: sessionId,
+				prompt: "review this PR",
+				cwd: "/tmp",
+				kind: "github-review",
+				startedAt: new Date().toISOString(),
+			});
+			clearRunState(sessionId);
+
+			expect(agent.resumeInterruptedRuns()).toContain(sessionId);
+			expect(
+				mod.activeRunRecords().some((run) => run.runKey === runKey),
+			).toBe(true);
+		} finally {
+			mod.journalClear(runKey);
+			clearRunState(sessionId);
+		}
+	});
+
+	it("keeps an unclaimed journal owner fenced until recovery proves it absent", () => {
 		const sessionId = `queued-recovery-${crypto.randomUUID()}`;
 		const runKey = `run-${crypto.randomUUID()}`;
 		try {
@@ -106,12 +132,163 @@ describe("run journal", () => {
 
 			expect(agent.cancelAgentRun(sessionId)).toBe(true);
 
-			expect(agent.isAgentSessionBusy(sessionId)).toBe(false);
-			expect(mod.activeRunRecords().some((run) => run.runKey === runKey)).toBe(false);
+      expect(agent.isAgentSessionBusy(sessionId)).toBe(true);
+      expect(mod.activeRunRecords().some((run) => run.runKey === runKey)).toBe(true);
 		} finally {
+      mod.journalClear(runKey);
 			clearRunState(sessionId);
 		}
 	});
+
+  it("preserves a stopped journal owned by a durable cancel effect", () => {
+    const sessionId = `durable-stop-recovery-${crypto.randomUUID()}`;
+    const runKey = `rh-${crypto.randomUUID()}`;
+    const store = sessionKernelStore();
+    try {
+      store.applyRunEvent({ sessionId, event: "prompt" });
+      store.applyRunEvent({ sessionId, event: "run_registered", runKey });
+      const generation = store.runState(sessionId).generation;
+      store.prepareTurnCancel({
+        sessionId,
+        cancelId: `stop:${runKey}`,
+        expectedRunId: runKey,
+        expectedGeneration: generation,
+        dispatchId: runKey,
+        requeueIds: [],
+        source: "test",
+      });
+      const recovery = {
+        runKey,
+        hostId: runKey,
+        osSessionId: sessionId,
+        cwd: "/tmp",
+        startedAt: new Date().toISOString(),
+      };
+      expect(agent.durableCancelOwnsRecovery(recovery)).toBe(true);
+      store.settleTurnCancel({
+        sessionId,
+        cancelId: `stop:${runKey}`,
+        outcome: "confirmed",
+      });
+      // A boot after actor settlement still restores the exact cancellation
+      // latch before the detached control reconnects.
+      expect(agent.reissueDurableRecoveryCancel(recovery)).toBe(false);
+      expect(agent.isAgentSessionCancelled(sessionId, runKey)).toBe(true);
+      mod.journalSet(recovery);
+      mod.journalRecordAbnormalCompletion(recovery);
+      expect(mod.activeRunRecords().some((run) => run.runKey === runKey)).toBe(
+        false,
+      );
+    } finally {
+      agent.unmarkSessionStarting(sessionId, runKey);
+      store.clearSession(sessionId);
+    }
+  });
+
+  it("retires abnormal ownership when actor settlement wins the reverse race", () => {
+    const sessionId = `cancel-abnormal-reverse-${crypto.randomUUID()}`;
+    const runKey = `rh-${crypto.randomUUID()}`;
+    const store = sessionKernelStore();
+    const record: mod.ActiveRunRecord = {
+      runKey,
+      hostId: runKey,
+      osSessionId: sessionId,
+      cwd: "/tmp",
+      startedAt: new Date().toISOString(),
+    };
+    try {
+      store.applyRunEvent({ sessionId, event: "prompt" });
+      store.applyRunEvent({ sessionId, event: "run_registered", runKey });
+      const generation = store.runState(sessionId).generation;
+      store.prepareTurnCancel({
+        sessionId,
+        cancelId: `stop:${runKey}`,
+        expectedRunId: runKey,
+        expectedGeneration: generation,
+        dispatchId: runKey,
+        requeueIds: [],
+        source: "test",
+      });
+      expect(store.beginTurnCancelEffect({
+        sessionId,
+        cancelId: `stop:${runKey}`,
+        runGeneration: generation,
+      })).toBe("execute");
+      mod.journalSet(record);
+      mod.journalRecordAbnormalCompletion(record);
+      expect(mod.activeRunRecords().some((run) => run.runKey === runKey)).toBe(true);
+      store.settleTurnCancel({
+        sessionId,
+        cancelId: `stop:${runKey}`,
+        outcome: "confirmed",
+      });
+      expect(mod.journalRetireSettledCancelAbnormal(sessionId, runKey)).toBe(true);
+      expect(mod.activeRunRecords().some((run) => run.runKey === runKey)).toBe(false);
+    } finally {
+      mod.journalClear(runKey);
+      store.clearSession(sessionId);
+    }
+  });
+
+  it("retires confirmed interrupt abnormal ownership in both race orders", () => {
+    const store = sessionKernelStore();
+    for (const sourceFirst of [true, false]) {
+      const sessionId = `interrupt-abnormal-${sourceFirst}-${crypto.randomUUID()}`;
+      const runKey = `rh-${crypto.randomUUID()}`;
+      const interruptId = `interrupt-${crypto.randomUUID()}`;
+      const record: mod.ActiveRunRecord = {
+        runKey,
+        hostId: runKey,
+        osSessionId: sessionId,
+        cwd: "/tmp",
+        startedAt: new Date().toISOString(),
+      };
+      try {
+        store.applyRunEvent({ sessionId, event: "prompt" });
+        store.applyRunEvent({ sessionId, event: "run_registered", runKey });
+        store.setDeliverySlot(sessionId, "queued", [
+          { id: "anchor", content: "interrupt now" },
+        ]);
+        const prepared = store.prepareDeliveryInterrupt({
+          sessionId,
+          interruptId,
+          anchorId: "anchor",
+          dispatchId: runKey,
+        });
+        if (sourceFirst) {
+          expect(store.beginDeliveryInterruptEffect({
+            sessionId,
+            interruptId,
+            runGeneration: prepared.runGeneration,
+          })).toBe("execute");
+          mod.journalSet(record);
+          mod.journalRecordAbnormalCompletion(record);
+          expect(mod.activeRunRecords().some((run) => run.runKey === runKey)).toBe(
+            true,
+          );
+        }
+        store.settleDeliveryInterrupt({
+          sessionId,
+          interruptId,
+          outcome: "confirmed",
+        });
+        if (sourceFirst) {
+          expect(
+            mod.journalRetireCancelledAbnormalAfterSettlement(sessionId, runKey),
+          ).toBe(true);
+        } else {
+          mod.journalSet(record);
+          mod.journalRecordAbnormalCompletion(record);
+        }
+        expect(mod.activeRunRecords().some((run) => run.runKey === runKey)).toBe(
+          false,
+        );
+      } finally {
+        mod.journalClear(runKey);
+        store.clearSession(sessionId);
+      }
+    }
+  });
 
 	it("keeps an active cancelled recovery reserved until its worker exits", async () => {
 		const sessionId = `active-recovery-${crypto.randomUUID()}`;
@@ -151,6 +328,124 @@ describe("run journal", () => {
 			clearRunState(sessionId);
 		}
 	});
+
+  it("settles a pre-journal terminal against its reserved dispatch token", () => {
+    const sessionId = `pre-journal-terminal-${crypto.randomUUID()}`;
+    const token = agent.markSessionStarting(sessionId);
+    try {
+      expect(sessionKernelStore().runState(sessionId)).toMatchObject({
+        state: "starting",
+        currentRunId: token,
+      });
+      transitionRunState(sessionId, "run_failed", {
+        run_key: token,
+        source: "pre_journal_failure",
+      });
+      expect(getRunState(sessionId)).toBe("failed");
+    } finally {
+      agent.unmarkSessionStarting(sessionId, token);
+      clearRunState(sessionId);
+    }
+  });
+
+  it("keeps process and actor ownership on the first concurrent preparation", () => {
+    const sessionId = `preparation-winner-${crypto.randomUUID()}`;
+    const firstToken = agent.markSessionStarting(sessionId);
+    const secondToken = agent.markSessionStarting(sessionId);
+    const store = sessionKernelStore();
+    try {
+      expect(secondToken).not.toBe(firstToken);
+      expect(agent.isAgentSessionCancelled(sessionId, secondToken)).toBe(true);
+      expect(agent.currentAgentRunToken(sessionId)).toBe(firstToken);
+      expect(store.runState(sessionId)).toMatchObject({
+        state: "starting",
+        currentRunId: firstToken,
+      });
+      expect(store.prepareTurnCancel({
+        sessionId,
+        cancelId: `stop:${firstToken}`,
+        expectedRunId: firstToken,
+        expectedGeneration: store.runState(sessionId).generation,
+        dispatchId: firstToken,
+        requeueIds: [],
+        source: "test",
+      })).toMatchObject({
+        cancel: { runId: firstToken, phase: "prepared" },
+        runState: { state: "stopped" },
+      });
+    } finally {
+      agent.unmarkSessionStarting(sessionId, firstToken);
+      agent.unmarkSessionStarting(sessionId, secondToken);
+      store.clearSession(sessionId);
+    }
+  });
+
+  it("uses one stable physical token without admitting a concurrent duplicate", () => {
+    const sessionId = `stable-preparation-${crypto.randomUUID()}`;
+    const stableToken = `rh-opening-${crypto.randomUUID()}`;
+    const admitted = agent.markSessionStarting(sessionId, stableToken);
+    const rejected = agent.markSessionStarting(sessionId, stableToken);
+    try {
+      expect(admitted).toBe(stableToken);
+      expect(rejected).not.toBe(stableToken);
+      expect(agent.isAgentSessionCancelled(sessionId, rejected)).toBe(true);
+      expect(agent.currentAgentRunToken(sessionId)).toBe(stableToken);
+      expect(sessionKernelStore().runState(sessionId)).toMatchObject({
+        currentRunId: stableToken,
+      });
+    } finally {
+      agent.unmarkSessionStarting(sessionId, rejected);
+      agent.unmarkSessionStarting(sessionId, stableToken);
+      clearRunState(sessionId);
+    }
+  });
+
+  it("does not let a stale gateway projection replace the actor's start owner", () => {
+    const sessionId = `actor-preparation-winner-${crypto.randomUUID()}`;
+    const firstToken = agent.markSessionStarting(sessionId);
+    agent.unmarkSessionStarting(sessionId, firstToken);
+    const rejectedToken = agent.markSessionStarting(sessionId);
+    try {
+      expect(agent.isAgentSessionCancelled(sessionId, rejectedToken)).toBe(true);
+      expect(agent.currentAgentRunToken(sessionId)).toBeUndefined();
+      expect(sessionKernelStore().runState(sessionId)).toMatchObject({
+        state: "starting",
+        currentRunId: firstToken,
+      });
+    } finally {
+      agent.unmarkSessionStarting(sessionId, rejectedToken);
+      clearRunState(sessionId);
+    }
+  });
+
+  it("never launches a rejected concurrent preparation before the actor winner", async () => {
+    const sessionId = `preparation-engine-winner-${crypto.randomUUID()}`;
+    const fake = makeFakeEngine([{ kind: "clean" }]);
+    agent.__setEngineForTest(fake.engine);
+    const firstToken = agent.markSessionStarting(sessionId);
+    const rejectedToken = agent.markSessionStarting(sessionId);
+    const run = (startToken: string) => agent.runAgent({
+      prompt: "continue",
+      cwd: "/tmp",
+      mcpServers: [],
+      model: "claude-fable-5",
+      fallbackModel: "none",
+      journal: { osSessionId: sessionId, kind: "prompt" },
+      startToken,
+    });
+    try {
+      for await (const _event of run(rejectedToken)) {}
+      expect(fake.calls).toHaveLength(0);
+      agent.unmarkSessionStarting(sessionId, rejectedToken);
+      for await (const _event of run(firstToken)) {}
+      expect(fake.calls).toHaveLength(1);
+      expect(getRunState(sessionId)).toBe("idle");
+    } finally {
+      agent.unmarkSessionStarting(sessionId, rejectedToken);
+      agent.unmarkSessionStarting(sessionId, firstToken);
+      clearRunState(sessionId);
+    }
+  });
 
 	it("latches Stop while a prompt is still preparing", async () => {
 		const sessionId = `preparing-${crypto.randomUUID()}`;
@@ -212,6 +507,94 @@ describe("run journal", () => {
 		}
 	});
 
+  it("an old dispatch token cannot cancel a successor using the same session alias", async () => {
+    const sessionId = `dispatch-fence-${crypto.randomUUID()}`;
+    const fake = makeFakeEngine([{ kind: "clean" }, { kind: "clean" }]);
+    agent.__setEngineForTest(fake.engine);
+    const run = (startToken: string) => agent.runAgent({
+      prompt: "continue",
+      cwd: "/tmp",
+      mcpServers: [],
+      model: "claude-fable-5",
+      fallbackModel: "none",
+      journal: { osSessionId: sessionId, kind: "prompt" },
+      startToken,
+    });
+    const firstToken = agent.markSessionStarting(sessionId);
+    for await (const _event of run(firstToken)) {}
+    agent.unmarkSessionStarting(sessionId, firstToken);
+    const successorToken = agent.markSessionStarting(sessionId);
+    try {
+      expect(agent.cancelAgentRunToken(firstToken)).toBe(false);
+      expect(agent.isAgentSessionCancelled(sessionId, successorToken)).toBe(false);
+      for await (const _event of run(successorToken)) {}
+      expect(fake.calls).toHaveLength(2);
+    } finally {
+      agent.unmarkSessionStarting(sessionId, successorToken);
+      clearRunState(sessionId);
+    }
+  });
+
+  it("confirms an exact cancel without crossing or retiring source ownership", async () => {
+    const sessionId = `dispatch-wait-${crypto.randomUUID()}`;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fake = makeFakeEngine([{ kind: "clean", gate }]);
+    agent.__setEngineForTest(fake.engine);
+    const token = agent.markSessionStarting(sessionId);
+    const running = (async () => {
+      try {
+        for await (const _event of agent.runAgent({
+          prompt: "continue",
+          cwd: "/tmp",
+          mcpServers: [],
+          model: "claude-fable-5",
+          fallbackModel: "none",
+          journal: { osSessionId: sessionId, kind: "prompt" },
+          startToken: token,
+        })) {}
+      } finally {
+        agent.unmarkSessionStarting(sessionId, token);
+      }
+    })();
+    try {
+      while (fake.calls.length === 0) await Bun.sleep(1);
+      expect(await agent.cancelAgentRunTokenAndWait(token, 1_000)).toBe(true);
+      expect(agent.isAgentSessionBusy(sessionId)).toBe(true);
+      release();
+      await running;
+      expect(agent.isAgentSessionBusy(sessionId)).toBe(false);
+    } finally {
+      release();
+      await running;
+      agent.unmarkSessionStarting(sessionId, token);
+      clearRunState(sessionId);
+    }
+  });
+
+  it("does not confirm an unreachable detached dispatch from journal evidence alone", async () => {
+    const sessionId = `detached-cancel-${crypto.randomUUID()}`;
+    const runKey = `rh-${crypto.randomUUID()}`;
+    try {
+      mod.journalSet({
+        runKey,
+        hostId: runKey,
+        osSessionId: sessionId,
+        cwd: "/tmp",
+        startedAt: new Date().toISOString(),
+      });
+      await expect(agent.cancelAgentRunTokenAndWait(runKey, 10)).rejects.toThrow(
+        "Timed out reconciling cancelled dispatch",
+      );
+      expect(mod.activeRunRecords().some((run) => run.runKey === runKey)).toBe(true);
+    } finally {
+      mod.journalClear(runKey);
+      clearRunState(sessionId);
+    }
+  });
+
 	it("bridges pending preparations left by the pre-token hot-reload global", () => {
 		const sessionId = `legacy-preparing-${crypto.randomUUID()}`;
 		const g = globalThis as any;
@@ -255,7 +638,7 @@ describe("run journal", () => {
 		}
 	});
 
-	it("resets the consecutive recovery fuse after a live turn reattaches", () => {
+	it("resets the consecutive recovery fuse after resumed work progresses", () => {
 		const sessionId = `attached-${crypto.randomUUID()}`;
 		const runKey = `engine-${crypto.randomUUID()}`;
 		const startedAt = new Date().toISOString();
@@ -265,12 +648,25 @@ describe("run journal", () => {
 			expect(started.resumeAttempts).toBe(1);
 			expect(started.lastResumeAt).toBeTruthy();
 
-			const attached = mod.journalMarkRecoveryAttached(started);
-			expect(attached?.resumeAttempts).toBe(0);
-			expect(attached?.lastResumeAt).toBeUndefined();
+			expect(agent.markRecoveryProgress(started, { type: "init" })).toBe(false);
+			expect(started.resumeAttempts).toBe(1);
+			expect(agent.markRecoveryProgress(started, { type: "tool_use" })).toBe(true);
+			expect(started.resumeAttempts).toBe(0);
+			expect(started.lastResumeAt).toBeUndefined();
 			expect(mod.activeRunRecords()[0].resumeAttempts).toBe(0);
 
-			const nextBoot = mod.journalStartRecovery(attached!);
+			// A later model fallback re-journals opts captured before the reset.
+			// The live journal's healthy state must win over those stale fields.
+			mod.journalSet({
+				...started,
+				resumeAttempts: 1,
+				lastResumeAt: new Date().toISOString(),
+				startedAt: new Date().toISOString(),
+			});
+			expect(mod.activeRunRecords()[0].resumeAttempts).toBe(0);
+			expect(mod.activeRunRecords()[0].lastResumeAt).toBeUndefined();
+
+			const nextBoot = mod.journalStartRecovery(started);
 			expect(nextBoot.resumeAttempts).toBe(1);
 		} finally {
 			mod.journalClear(runKey);
@@ -443,194 +839,7 @@ describe("run journal", () => {
 		});
 	});
 
-	it("aborts a discarded duplicate's different detached engine session", async () => {
-		const sessionId = `duplicate-engine-${crypto.randomUUID()}`;
-		const oldEngine = `engine-old-${crypto.randomUUID()}`;
-		const keptEngine = `engine-kept-${crypto.randomUUID()}`;
-		const now = Date.now();
-		const aborted: string[] = [];
-		agent.__setAbortDetachedForTest((async (run: mod.ActiveRunRecord) => {
-			aborted.push(run.claudeSessionId!);
-			return true;
-		}) as typeof import("./opencode-runner").abortDetachedOpencodeTurn);
-		agent.__setReattachForTest((async (run: mod.ActiveRunRecord) => {
-			const stream = (async function* () {
-				yield { type: "done", sessionId: run.claudeSessionId, result: "done" } as StreamEvent;
-			})();
-			(stream as any).cancelDetachedTurn = async () => {};
-			return stream;
-		}) as any);
-		mod.journalSet({
-			runKey: `run-old-${crypto.randomUUID()}`,
-			osSessionId: sessionId,
-			claudeSessionId: oldEngine,
-			serverKey: `server-${crypto.randomUUID()}`,
-			cwd: "/tmp",
-			startedAt: new Date(now - 1_000).toISOString(),
-		});
-		mod.journalSet({
-			runKey: `run-kept-${crypto.randomUUID()}`,
-			osSessionId: sessionId,
-			claudeSessionId: keptEngine,
-			serverKey: `server-${crypto.randomUUID()}`,
-			cwd: "/tmp",
-			startedAt: new Date(now).toISOString(),
-		});
-		clearRunState(sessionId);
-
-		try {
-			agent.resumeInterruptedRuns();
-			const deadline = Date.now() + 2_000;
-			while (!aborted.length && Date.now() < deadline) await Bun.sleep(5);
-			expect(aborted).toEqual([oldEngine]);
-			while (agent.isAgentSessionBusy(sessionId) && Date.now() < deadline) await Bun.sleep(5);
-		} finally {
-			clearRunState(sessionId);
-		}
-	});
-
-	it("does not abort a discarded duplicate when the kept recovery owns the same engine session", async () => {
-		const sessionId = `duplicate-same-engine-${crypto.randomUUID()}`;
-		const engineId = `engine-${crypto.randomUUID()}`;
-		const now = Date.now();
-		const aborted: string[] = [];
-		agent.__setAbortDetachedForTest((async (run: mod.ActiveRunRecord) => {
-			aborted.push(run.claudeSessionId!);
-			return true;
-		}) as typeof import("./opencode-runner").abortDetachedOpencodeTurn);
-		agent.__setReattachForTest((async (run: mod.ActiveRunRecord) => {
-			const stream = (async function* () {
-				yield { type: "done", sessionId: run.claudeSessionId, result: "done" } as StreamEvent;
-			})();
-			(stream as any).cancelDetachedTurn = async () => {};
-			return stream;
-		}) as any);
-		for (const [suffix, startedAt] of [
-			["old", new Date(now - 1_000).toISOString()],
-			["kept", new Date(now).toISOString()],
-		] as const) {
-			mod.journalSet({
-				runKey: `run-${suffix}-${crypto.randomUUID()}`,
-				osSessionId: sessionId,
-				claudeSessionId: engineId,
-				serverKey: `server-${crypto.randomUUID()}`,
-				cwd: "/tmp",
-				startedAt,
-			});
-		}
-		clearRunState(sessionId);
-
-		try {
-			agent.resumeInterruptedRuns();
-			const deadline = Date.now() + 2_000;
-			while (agent.isAgentSessionBusy(sessionId) && Date.now() < deadline) await Bun.sleep(5);
-			expect(aborted).toEqual([]);
-		} finally {
-			clearRunState(sessionId);
-		}
-	});
-
-	it("waits for a discarded duplicate's abort before starting the kept recovery", async () => {
-		const sessionId = `duplicate-abort-gate-${crypto.randomUUID()}`;
-		const now = Date.now();
-		let releaseAbort!: () => void;
-		const abortGate = new Promise<void>((resolve) => {
-			releaseAbort = resolve;
-		});
-		let reattachCalls = 0;
-		agent.__setAbortDetachedForTest((async () => {
-			await abortGate;
-			return true;
-		}) as typeof import("./opencode-runner").abortDetachedOpencodeTurn);
-		agent.__setReattachForTest((async (run: mod.ActiveRunRecord) => {
-			reattachCalls++;
-			const stream = (async function* () {
-				yield { type: "done", sessionId: run.claudeSessionId, result: "done" } as StreamEvent;
-			})();
-			(stream as any).cancelDetachedTurn = async () => {};
-			return stream;
-		}) as any);
-		for (const [suffix, startedAt] of [
-			["old", new Date(now - 1_000).toISOString()],
-			["kept", new Date(now).toISOString()],
-		] as const) {
-			mod.journalSet({
-				runKey: `run-${suffix}-${crypto.randomUUID()}`,
-				osSessionId: sessionId,
-				claudeSessionId: `engine-${suffix}-${crypto.randomUUID()}`,
-				serverKey: `server-${crypto.randomUUID()}`,
-				cwd: "/tmp",
-				startedAt,
-			});
-		}
-		clearRunState(sessionId);
-
-		try {
-			agent.resumeInterruptedRuns();
-			await Bun.sleep(50);
-			expect(reattachCalls).toBe(0);
-
-			releaseAbort();
-			const deadline = Date.now() + 2_000;
-			while (reattachCalls === 0 && Date.now() < deadline) await Bun.sleep(5);
-			expect(reattachCalls).toBe(1);
-			while (agent.isAgentSessionBusy(sessionId) && Date.now() < deadline) await Bun.sleep(5);
-		} finally {
-			releaseAbort();
-			clearRunState(sessionId);
-		}
-	});
-
-	it("starts the kept recovery after a discarded duplicate's abort times out", async () => {
-		const sessionId = `duplicate-abort-timeout-${crypto.randomUUID()}`;
-		const now = Date.now();
-		let reattachCalls = 0;
-		let abortCancelled = false;
-		agent.__setAbortDetachedForTest((async (_run, signal) =>
-			new Promise<boolean>((resolve) => {
-				signal?.addEventListener("abort", () => {
-					abortCancelled = true;
-					resolve(false);
-				}, { once: true });
-			})) as typeof import("./opencode-runner").abortDetachedOpencodeTurn);
-		agent.__setReattachForTest((async (run: mod.ActiveRunRecord) => {
-			reattachCalls++;
-			const stream = (async function* () {
-				yield { type: "done", sessionId: run.claudeSessionId, result: "done" } as StreamEvent;
-			})();
-			(stream as any).cancelDetachedTurn = async () => {};
-			return stream;
-		}) as any);
-		for (const [suffix, startedAt] of [
-			["old", new Date(now - 1_000).toISOString()],
-			["kept", new Date(now).toISOString()],
-		] as const) {
-			mod.journalSet({
-				runKey: `run-${suffix}-${crypto.randomUUID()}`,
-				osSessionId: sessionId,
-				claudeSessionId: `engine-${suffix}-${crypto.randomUUID()}`,
-				serverKey: `server-${crypto.randomUUID()}`,
-				cwd: "/tmp",
-				startedAt,
-			});
-		}
-		clearRunState(sessionId);
-		const previousWait = agent.__setDetachedAbortWaitMsForTest(30);
-
-		try {
-			agent.resumeInterruptedRuns();
-			const deadline = Date.now() + 2_000;
-			while (reattachCalls === 0 && Date.now() < deadline) await Bun.sleep(5);
-			expect(reattachCalls).toBe(1);
-			expect(abortCancelled).toBe(true);
-			while (agent.isAgentSessionBusy(sessionId) && Date.now() < deadline) await Bun.sleep(5);
-		} finally {
-			agent.__setDetachedAbortWaitMsForTest(previousWait);
-			clearRunState(sessionId);
-		}
-	});
-
-	it("deduplicates and bounds restart recovery while rejecting recursive records", () => {
+	it("deduplicates and recovers every valid run while rejecting recursive records", () => {
 		const now = Date.now();
 		const records: mod.ActiveRunRecord[] = Array.from({ length: 40 }, (_, i) => ({
 			runKey: `run-${i}`,
@@ -646,11 +855,54 @@ describe("run journal", () => {
 		records.push({ ...records[1], runKey: "recursive", kind: "prompt-resume-resume" });
 
 		const result = agent.sanitizeInterruptedRuns(records, now);
-		expect(result.interrupted).toHaveLength(agent.MAX_BOOT_RECOVERIES);
-		expect(result.interrupted.find((r) => r.osSessionId === "session-0")?.runKey).toBe("run-0-new");
+		expect(result.interrupted).toHaveLength(40);
+		expect(result.interrupted.some((r) => r.runKey === "run-0")).toBe(false);
+		expect(result.interrupted.some((r) => r.runKey === "run-0-new")).toBe(true);
 		expect(result.interrupted.some((r) => r.runKey === "recursive")).toBe(false);
 		expect(result.quarantined.some((r) => r.run.runKey === "run-0" && r.reason === "duplicate_session")).toBe(true);
 		expect(result.quarantined.some((r) => r.run.runKey === "recursive" && r.reason === "recursive_recovery_kind")).toBe(true);
+	});
+
+	it("recovers the oldest unique runs first so repeated restarts cannot starve them", () => {
+		const now = Date.now();
+		const result = agent.sanitizeInterruptedRuns(
+			[
+				{
+					runKey: "newest",
+					osSessionId: "newest-session",
+					cwd: "/tmp",
+					startedAt: new Date(now).toISOString(),
+				},
+				{
+					runKey: "oldest",
+					osSessionId: "oldest-session",
+					cwd: "/tmp",
+					startedAt: new Date(now - 60_000).toISOString(),
+				},
+			],
+			now,
+		);
+
+		expect(result.interrupted.map((run) => run.runKey)).toEqual([
+			"oldest",
+			"newest",
+		]);
+	});
+
+	it("accepts interleaved fallback recovery markers with a bounded durable counter", () => {
+		const now = Date.now();
+		const run: mod.ActiveRunRecord = {
+			runKey: "interleaved",
+			osSessionId: "interleaved-session",
+			cwd: "/tmp",
+			kind: "create-resume-fallback-resume",
+			resumeAttempts: 0,
+			firstJournaledAt: new Date(now - 60_000).toISOString(),
+			startedAt: new Date(now).toISOString(),
+		};
+		const result = agent.sanitizeInterruptedRuns([run], now);
+		expect(result.interrupted).toEqual([run]);
+		expect(result.quarantined).toEqual([]);
 	});
 
 	it("rejects expired lineage and exhausted durable resume attempts", () => {
@@ -677,8 +929,18 @@ describe("run journal", () => {
 		expect(agent.recoveryKind("prompt", "resume")).toBe("prompt-resume");
 		expect(agent.recoveryKind("prompt-resume", "resume")).toBe("prompt-resume");
 		expect(agent.recoveryKind("prompt-resume-rerun", "rerun")).toBe("prompt-rerun");
+		expect(agent.recoveryKind("create-resume-fallback", "resume")).toBe(
+			"create-resume-fallback",
+		);
+		expect(agent.recoveryKind("prompt-resume-fallback-resume", "rerun")).toBe(
+			"prompt-rerun-fallback",
+		);
 		const once = agent.resumeContinuationPrompt("original task");
 		expect(agent.resumeContinuationPrompt(once)).toBe(once);
+		const hidden = agent.restartContinuationPrompt("original task");
+		expect(hidden).toContain("original task");
+		expect(stripContext(hidden)).toBe("");
+		expect(agent.restartContinuationPrompt(hidden)).toBe(hidden);
 	});
 
 	it("runs boot recovery with bounded concurrency", async () => {
@@ -723,7 +985,7 @@ describe("run journal", () => {
 			mcpServers: [],
 			deniedTools: { mcp__danger__delete: "No deletes" },
 			confirmTools: { mcp__stripe__create_refund: "Create a refund" },
-			model: "opencode/openai/gpt-5.6-terra",
+			model: "pi/openai/gpt-5.6-terra",
 			selectedModel: "dial/medium",
 			transientFallback: true,
 			fallbackModel: "gpt-5.5",
@@ -750,12 +1012,67 @@ describe("run journal", () => {
 		expect(mod.takeInterruptedRuns()).toEqual([]);
 	});
 
+	it("defers actor-owned opening journals to the durable effect executor", () => {
+		mod.journalSet({
+			runKey: "opening-run",
+			osSessionId: "opening-session",
+			promptEntryId: "opening-prompt",
+			prompt: "start",
+			cwd: "/tmp",
+			mcpServers: [],
+			startedAt: new Date().toISOString(),
+		});
+		expect(
+			agent.resumeInterruptedRuns(
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				[],
+				(run) => run.promptEntryId === "opening-prompt",
+			),
+		).toEqual([]);
+		expect(mod.activeRunRecords()).toMatchObject([
+			{ runKey: "opening-run", promptEntryId: "opening-prompt" },
+		]);
+	});
+
+	it("adopts a durable abnormal-completion receipt without relaunching", () => {
+		const runKey = "abnormal-opening";
+		const record: mod.ActiveRunRecord = {
+			runKey,
+			osSessionId: "abnormal-session",
+			promptEntryId: "abnormal-prompt",
+			prompt: "start",
+			cwd: "/tmp",
+			mcpServers: [],
+			startedAt: new Date().toISOString(),
+		};
+		mod.journalSet(record);
+		mod.journalRecordAbnormalCompletion(
+			record,
+			"Opening backend ended without a terminal event",
+		);
+		let terminal: StreamEvent | undefined;
+		expect(
+			agent.resumeInterruptedRuns((_sessionId, event) => {
+				terminal = event;
+			}),
+		).toEqual(["abnormal-session"]);
+		expect(terminal).toMatchObject({
+			type: "error",
+			content: "Opening backend ended without a terminal event",
+		});
+		expect(mod.activeRunRecords()).toEqual([]);
+	});
+
 	it("moves rejected recovery records into an inspectable quarantine", async () => {
 		for (let i = 0; i < 5; i++) {
 			mod.journalSet({ runKey: `batch-${i}`, cwd: "/tmp", mcpServers: [], startedAt: new Date().toISOString() });
 		}
 		mod.journalQuarantine([
-			{ run: mod.activeRunRecords().find((run) => run.runKey === "batch-1")!, reason: "boot_recovery_limit", notify: true },
+			{ run: mod.activeRunRecords().find((run) => run.runKey === "batch-1")!, reason: "recovery_expired", notify: true },
 			{ run: mod.activeRunRecords().find((run) => run.runKey === "batch-3")!, reason: "duplicate_session", notify: false },
 		]);
 		expect(mod.activeRunRecords().map((run) => run.runKey).sort()).toEqual([
@@ -763,8 +1080,37 @@ describe("run journal", () => {
 		]);
 		const quarantine = await Bun.file(join(dir, "active-runs.quarantine.json")).json();
 		expect(Object.values(quarantine).map((run: any) => run.quarantineReason).sort()).toEqual([
-			"boot_recovery_limit",
 			"duplicate_session",
+			"recovery_expired",
+		]);
+	});
+
+	it("quarantines ambiguous Runner admission out of boot recovery", () => {
+		const run: mod.ActiveRunRecord = {
+			runKey: "ambiguous-runner-opening",
+			osSessionId: "ambiguous-runner-session",
+			runnerId: "runner-one",
+			hostId: "runner-host-one",
+			promptEntryId: "opening-prompt",
+			prompt: "start",
+			cwd: "/runner/workspace",
+			mcpServers: [],
+			launchPhase: "launching",
+			startedAt: new Date().toISOString(),
+		};
+		mod.journalSet(run);
+		mod.journalQuarantine([
+			{ run, reason: "ambiguous_runner_launch", notify: false },
+		]);
+		expect(mod.activeRunRecords()).toEqual([]);
+		const quarantine = JSON.parse(
+			readFileSync(join(dir, "active-runs.quarantine.json"), "utf8"),
+		);
+		expect(Object.values(quarantine)).toMatchObject([
+			{
+				runKey: "ambiguous-runner-opening",
+				quarantineReason: "ambiguous_runner_launch",
+			},
 		]);
 	});
 
@@ -781,9 +1127,11 @@ describe("run journal", () => {
 	});
 
 	it("emits recovered run stream events during restart resume", async () => {
+		agent.__setEngineForTest(makeFakeEngine([{ kind: "usage_exhausted" }]).engine);
 		process.env.OPENSESSION_FORCE_LIMIT = "1";
 		mod.journalSet({
 			runKey: "run-2",
+            kind: "prompt",
 			osSessionId: "bks-2",
 			claudeSessionId: "engine-2",
 			prompt: "continue",
@@ -802,7 +1150,10 @@ describe("run journal", () => {
 				undefined,
 				undefined,
 				undefined,
-				(id: string, event: unknown) => resolve({ id, event }),
+				(id: string, event: unknown) => {
+					const type = (event as { type?: string })?.type;
+					if (type === "done" || type === "error") resolve({ id, event });
+				},
 			);
 			expect(resumed).toEqual(["bks-2"]);
 		});
@@ -818,8 +1169,8 @@ describe("run journal", () => {
 			id: "bks-2",
 			event: {
 				type: "done",
-				provider: "opencode",
-				model: "opencode/anthropic/claude-fable-5",
+				provider: "pi",
+				model: "pi/anthropic/claude-fable-5",
 				usageLimitExhausted: true,
 			},
 		});
@@ -838,8 +1189,8 @@ describe("run journal", () => {
 				type: "done",
 				sessionId: "engine-1",
 				result: '[your bash cd /tmp && ffmpeg ...]:\n=== raw ssim output ===',
-				provider: "opencode",
-				model: "opencode/anthropic/claude-opus-5",
+				provider: "pi",
+				model: "pi/anthropic/claude-opus-5",
 			}),
 		).toBe(true);
 		// MCP tool ids must match too — 2026-07-29: a turn recited fabricated
@@ -849,8 +1200,8 @@ describe("run journal", () => {
 				type: "done",
 				sessionId: "engine-1",
 				result: '[your tella_create_source]:\n{"source":{"id":"src_fabricated"}}',
-				provider: "opencode",
-				model: "opencode/anthropic/claude-opus-5",
+				provider: "pi",
+				model: "pi/anthropic/claude-opus-5",
 			}),
 		).toBe(true);
 		expect(
@@ -858,8 +1209,8 @@ describe("run journal", () => {
 				type: "done",
 				sessionId: "engine-1",
 				result: "The proxy GOP is 60 frames, or two seconds at 30fps.",
-				provider: "opencode",
-				model: "opencode/anthropic/claude-opus-5",
+				provider: "pi",
+				model: "pi/anthropic/claude-opus-5",
 			}),
 		).toBe(false);
 		// Prose that merely mentions the envelope shape mid-answer stays a
@@ -869,8 +1220,8 @@ describe("run journal", () => {
 				type: "done",
 				sessionId: "engine-1",
 				result: "The leak shape starts with `[your bash …]:` in assistant text.",
-				provider: "opencode",
-				model: "opencode/anthropic/claude-opus-5",
+				provider: "pi",
+				model: "pi/anthropic/claude-opus-5",
 			}),
 		).toBe(false);
 		expect(
@@ -878,8 +1229,8 @@ describe("run journal", () => {
 				type: "done",
 				sessionId: "engine-1",
 				result: "Done! (no text output)",
-				provider: "opencode",
-				model: "opencode/anthropic/claude-opus-5",
+				provider: "pi",
+				model: "pi/anthropic/claude-opus-5",
 			}),
 		).toBe(true);
 	});
@@ -932,15 +1283,14 @@ describe("run journal", () => {
 });
 
 describe("restart recovery queue", () => {
-	it("starts a starved recovery instead of declaring it dead", async () => {
+	it("frees its boot slot once a recovered engine has started", async () => {
 		const gates: Array<() => void> = [];
 		const gated = () =>
 			new Promise<void>((resolve) => {
 				gates.push(resolve);
 			});
 		// Four gated turns hold every queue slot (BOOT_RECOVERY_CONCURRENCY).
-		// The fifth run is the one that used to be told "send the prompt again"
-		// while its own engine turn kept running on a detached server.
+		// The fifth run must not wait for any of the first four full agent turns.
 		const fake = makeFakeEngine([
 			{ kind: "clean", gate: gated() },
 			{ kind: "clean", gate: gated() },
@@ -965,24 +1315,18 @@ describe("restart recovery queue", () => {
 			});
 			clearRunState(sessionId);
 		});
-		const waitMs = 300;
-		const previousWait = agent.__setRecoveryQueueWaitMsForTest(waitMs);
 		const terminals: StreamEvent[] = [];
 		try {
-			const resumedAt = Date.now();
 			agent.resumeInterruptedRuns((_id, event) => {
 				if (event) terminals.push(event);
 			});
-			// The four gated turns never end, so a fifth engine call can only
-			// come from a recovery that started OUTSIDE the queue — and only
-			// after the wait, which is what makes this the promotion and not a
-			// free slot.
+			// Each fake emits `init` before its gate. That proves the replacement
+			// engine is live and should free the queue slot immediately, allowing
+			// all five recoveries to start despite four long-running turns.
 			while (fake.calls.length < 5) await Bun.sleep(5);
-			expect(Date.now() - resumedAt).toBeGreaterThanOrEqual(waitMs);
 			// Never a failure report for a run whose engine is still working.
 			expect(terminals.filter((event) => event.type === "error")).toEqual([]);
 		} finally {
-			agent.__setRecoveryQueueWaitMsForTest(previousWait);
 			for (const open of gates) open();
 			for (const sessionId of sessions) {
 				while (agent.isAgentSessionBusy(sessionId)) await Bun.sleep(5);
@@ -993,6 +1337,142 @@ describe("restart recovery queue", () => {
 });
 
 describe("restart recovery reattach", () => {
+	it("does not re-prompt when a local host is not proven dead", async () => {
+		const sessionId = `local-host-uncertain-${crypto.randomUUID()}`;
+		const hostId = `rh-${crypto.randomUUID()}`;
+		const fake = makeFakeEngine([{ kind: "clean" }]);
+		agent.__setEngineForTest(fake.engine);
+		let resumeCalls = 0;
+		agent.__setLocalHostResumeForTest(async () => {
+			resumeCalls++;
+			return "uncertain";
+		});
+		const snapshotRun: mod.ActiveRunRecord = {
+			runKey: hostId,
+			hostId,
+			osSessionId: sessionId,
+			claudeSessionId: `pi-${crypto.randomUUID()}`,
+			prompt: "perform this once",
+			cwd: "/tmp",
+			model: "pi/anthropic/claude-sonnet-5",
+			kind: "prompt",
+			startedAt: new Date().toISOString(),
+		};
+		try {
+			agent.resumeInterruptedRuns(
+				() => {},
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				[snapshotRun],
+			);
+			while (resumeCalls === 0) await Bun.sleep(5);
+			await Bun.sleep(10);
+			expect(fake.calls).toHaveLength(0);
+			expect(agent.isAgentSessionBusy(sessionId)).toBe(true);
+		} finally {
+			clearRunState(sessionId);
+		}
+	});
+
+  it("keeps the old lineage when a missing local host falls back in-process", async () => {
+    const sessionId = `local-host-fallback-lineage-${crypto.randomUUID()}`;
+    const hostId = `rh-${crypto.randomUUID()}`;
+    const fake = makeFakeEngine([{ kind: "error", content: "replacement failed" }]);
+    agent.__setEngineForTest(fake.engine);
+    agent.__setLocalHostResumeForTest(async () => null);
+    const snapshotRun: mod.ActiveRunRecord = {
+      runKey: hostId,
+      hostId,
+      osSessionId: sessionId,
+      claudeSessionId: `pi-${crypto.randomUUID()}`,
+      prompt: "resume with same lineage",
+      cwd: "/tmp",
+      model: "pi/anthropic/claude-sonnet-5",
+      kind: "prompt",
+      startedAt: new Date().toISOString(),
+    };
+    const terminal = Promise.withResolvers<StreamEvent>();
+    try {
+      agent.resumeInterruptedRuns(
+        (_id, event) => event && terminal.resolve(event),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        [snapshotRun],
+      );
+      await expect(terminal.promise).resolves.toMatchObject({
+        type: "error",
+        content: "replacement failed",
+      });
+      expect(fake.calls).toHaveLength(1);
+      expect(fake.calls[0].opts.startToken).toBe(hostId);
+    } finally {
+      mod.journalClear(hostId);
+      clearRunState(sessionId);
+    }
+  });
+
+  it("does not re-prompt a durably cancelled local host proven absent", async () => {
+    const sessionId = `local-host-cancelled-absent-${crypto.randomUUID()}`;
+    const hostId = `rh-${crypto.randomUUID()}`;
+    const fake = makeFakeEngine([{ kind: "clean" }]);
+    agent.__setEngineForTest(fake.engine);
+    let resumeCalls = 0;
+    agent.__setLocalHostResumeForTest(async () => {
+      resumeCalls++;
+      return null;
+    });
+    const snapshotRun: mod.ActiveRunRecord = {
+      runKey: hostId,
+      hostId,
+      osSessionId: sessionId,
+      claudeSessionId: `pi-${crypto.randomUUID()}`,
+      prompt: "must not run again",
+      cwd: "/tmp",
+      model: "pi/anthropic/claude-sonnet-5",
+      kind: "prompt",
+      startedAt: new Date().toISOString(),
+    };
+    const store = sessionKernelStore();
+    try {
+      store.applyRunEvent({ sessionId, event: "prompt" });
+      store.applyRunEvent({ sessionId, event: "run_registered", runKey: hostId });
+      const generation = store.runState(sessionId).generation;
+      store.prepareTurnCancel({
+        sessionId,
+        cancelId: `stop:${hostId}`,
+        expectedRunId: hostId,
+        expectedGeneration: generation,
+        dispatchId: hostId,
+        requeueIds: [],
+        source: "test",
+      });
+      store.settleTurnCancel({
+        sessionId,
+        cancelId: `stop:${hostId}`,
+        outcome: "confirmed",
+      });
+      agent.resumeInterruptedRuns(
+        () => {},
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        [snapshotRun],
+      );
+      while (resumeCalls === 0) await Bun.sleep(5);
+      await Bun.sleep(10);
+      expect(fake.calls).toHaveLength(0);
+      expect(mod.activeRunRecords().some((run) => run.runKey === hostId)).toBe(false);
+    } finally {
+      mod.journalClear(hostId);
+      store.clearSession(sessionId);
+    }
+  });
+
 	it("claims a snapshot-only local host before the generic wake can re-prompt", async () => {
 		const sessionId = `local-host-snapshot-${crypto.randomUUID()}`;
 		const hostId = `rh-${crypto.randomUUID()}`;
@@ -1059,65 +1539,45 @@ describe("restart recovery reattach", () => {
 		}
 	});
 
-	it("does not let a reattached turn hold a queue slot", async () => {
-		// Every one of these runs survived the restart on its own detached
-		// server and is still executing. Following such a turn costs this
-		// process nothing, so all five must attach at once — holding a slot
-		// for the turn's whole lifetime is what starved the fifth run until
-		// the queue-wait timer fired (2026-08-16).
-		const attached: string[] = [];
-		let openGate!: () => void;
-		const gate = new Promise<void>((resolve) => {
-			openGate = resolve;
-		});
-		agent.__setReattachForTest((async (run: any) => {
-			attached.push(run.runKey);
-			const stream = (async function* () {
-				yield { type: "init", sessionId: run.claudeSessionId, provider: "opencode" };
-				await gate;
-				yield {
-					type: "done",
-					sessionId: run.claudeSessionId,
-					provider: "opencode",
-					result: "picked up where the restart left off",
-				};
-			})();
-			(stream as any).cancelDetachedTurn = async () => {};
-			return stream;
-		}) as any);
-		const sessions = Array.from(
-			{ length: 5 },
-			(_, i) => `reattach-${i}-${crypto.randomUUID()}`,
+	it("does not report a recovery error after another owner settles the run", async () => {
+		const sessionId = `local-host-superseded-${crypto.randomUUID()}`;
+		const hostId = `rh-${crypto.randomUUID()}`;
+		const startedAt = new Date().toISOString();
+		const run: mod.ActiveRunRecord = {
+			runKey: hostId,
+			hostId,
+			osSessionId: sessionId,
+			claudeSessionId: `pi-${crypto.randomUUID()}`,
+			prompt: "finish once",
+			cwd: "/tmp",
+			model: "pi/anthropic/claude-sonnet-5",
+			kind: "prompt",
+			firstJournaledAt: startedAt,
+			startedAt,
+		};
+		mod.journalSet(run);
+		clearRunState(sessionId);
+		const streamEnded = Promise.withResolvers<void>();
+		agent.__setLocalHostResumeForTest(async () =>
+			(async function* () {
+				mod.journalClear(hostId);
+				transitionRunState(sessionId, "turn_end", { run_key: hostId });
+				streamEnded.resolve();
+			})(),
 		);
-		sessions.forEach((sessionId, i) => {
-			mod.journalSet({
-				runKey: `run-${sessionId}`,
-				osSessionId: sessionId,
-				claudeSessionId: `engine-${sessionId}`,
-				serverKey: `shared:test-${i}`,
-				prompt: "continue",
-				cwd: "/tmp",
-				model: "claude-fable-5",
-				startedAt: new Date(Date.now() - i * 1000).toISOString(),
-			});
-			clearRunState(sessionId);
-		});
-		// Long enough that a fifth attach can only come from a freed slot,
-		// never from the queue-wait timer starting the run outside the queue.
-		const previousWait = agent.__setRecoveryQueueWaitMsForTest(30_000);
+		const terminals: StreamEvent[] = [];
+
 		try {
-			const resumedAt = Date.now();
-			agent.resumeInterruptedRuns();
-			while (attached.length < 5) await Bun.sleep(5);
-			expect(Date.now() - resumedAt).toBeLessThan(5_000);
+			expect(agent.resumeInterruptedRuns((_id, event) => {
+				if (event) terminals.push(event);
+			})).toEqual([sessionId]);
+			await streamEnded.promise;
+			await Bun.sleep(10);
+			expect(terminals).toEqual([]);
+			expect(mod.activeRunRecords()).toEqual([]);
 		} finally {
-			agent.__setRecoveryQueueWaitMsForTest(previousWait);
-			agent.__setReattachForTest(null);
-			openGate();
-			for (const sessionId of sessions) {
-				while (agent.isAgentSessionBusy(sessionId)) await Bun.sleep(5);
-				clearRunState(sessionId);
-			}
+			clearRunState(sessionId);
 		}
 	});
+
 });

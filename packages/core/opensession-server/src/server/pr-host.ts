@@ -12,7 +12,11 @@
  * pr-info.ts and are host-agnostic.
  */
 import type { Repo } from "./config";
-import type { GithubCredential } from "./github-auth";
+import {
+  resolveGithubCredential,
+  serviceGithubCredential,
+  type GithubCredential,
+} from "./github-auth";
 import {
 	botGhToken,
 	ghRateLimited,
@@ -43,6 +47,7 @@ import type {
 } from "./pr-contract";
 export type { PrHostCapabilities } from "./pr-contract";
 import { fetchWithTimeout } from "./shared/fetch-with-timeout";
+import { noteGithubGraphqlCall } from "./github-budget";
 
 /** One row of the bulk `gh pr list` refresh (sessions.ts). `latestReviews`
  *  and `body` are only populated by listOpenPrs — see the field comments. */
@@ -152,10 +157,17 @@ export interface PrHost {
 
 /** Run `gh` and parse its JSON output; null on any failure (also flags shared
  *  rate-limit backoff). Moved from sessions.ts — same behavior. */
-export async function ghJson<T>(args: string[]): Promise<T | null> {
+export async function ghJson<T>(args: string[], consumer = "gh-json"): Promise<T | null> {
 	if (ghRateLimited()) return null;
+	const started = Date.now();
+	let ok = false;
 	try {
-		const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe" });
+		const credential = await resolveGithubCredential(serviceGithubCredential);
+		const proc = Bun.spawn(["gh", ...args], {
+			stdout: "pipe",
+			stderr: "pipe",
+			env: { ...process.env, ...credential.env },
+		});
 		const [raw, err] = await Promise.all([
 			new Response(proc.stdout).text(),
 			new Response(proc.stderr).text(),
@@ -165,9 +177,12 @@ export async function ghJson<T>(args: string[]): Promise<T | null> {
 			return null;
 		}
 		if (!raw.trim()) return null;
+		ok = true;
 		return JSON.parse(raw) as T;
 	} catch {
 		return null;
+	} finally {
+		noteGithubGraphqlCall(consumer, Date.now() - started, ok);
 	}
 }
 
@@ -218,7 +233,7 @@ export const githubPrHost: PrHost = {
 			String(opts.limit),
 			"--json",
 			`${BULK_FIELDS},latestReviews,body`,
-		]),
+		], "pr-cache:list-open"),
 	// sort:updated-desc, not gh's default creation order: a PR created long ago
 	// that merges today must enter this window immediately, or the sweep drops
 	// its row and the session renders as having no PR at all.
@@ -236,7 +251,7 @@ export const githubPrHost: PrHost = {
 			String(opts.limit),
 			"--json",
 			BULK_FIELDS,
-		]),
+		], "pr-cache:list-recent"),
 
 	// Conditional GET (If-None-Match) on the most recently updated PR: 304 =
 	// the repo's PR set is untouched, and GitHub documents that 304s on
@@ -274,6 +289,7 @@ export const githubPrHost: PrHost = {
 				noteGhRateLimited(
 					"pr-cache-rest",
 					Number.isFinite(reset) ? reset : undefined,
+					"rest",
 				);
 			}
 			return { changed: true, cursor };

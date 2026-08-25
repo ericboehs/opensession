@@ -205,15 +205,15 @@ export function extractAssistantVideos(text: string): {
 }
 
 /**
- * A tool result's media, derived once for every engine. The claude, opencode
- * and codex parsers and the live opencode stream all render the same result
+ * A tool result's media, derived once for every engine. The claude, pi
+ * and codex parsers and the live pi stream all render the same result
  * text, so they all call this: while each kept its own copy the codex branches
  * read video markers only, and an `OPENSESSION_IMAGE:` line — the thing agents
  * are told to print when they want a human to LOOK at something — rendered on
  * two engines and silently vanished on the third (2026-08-16).
  *
  * `attached` is the media the engine hands over out of band: a Read's image
- * block on claude, opencodeToolResultImages on opencode, nothing on codex.
+ * block on claude, piToolResultImages on pi, nothing on codex.
  * Markers are the agent asking for that one to be SHOWN, so only they are
  * featured; attachments and paths that merely turn up in the output attach
  * without opening their row (see TranscriptEntry.featuredMedia).

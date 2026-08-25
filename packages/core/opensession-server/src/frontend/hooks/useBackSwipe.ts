@@ -1,4 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
+
+import { PHONE_QUERY } from "../lib/breakpoints";
 
 /**
  * iOS-style edge-swipe-to-go-back for the mobile page stack, plus a permanent
@@ -54,7 +56,6 @@ interface Opts {
   priority?: number;
 }
 
-const MOBILE = "(max-width: 720px)";
 const EDGE = 32; // px from the left that may begin a back drag
 const SLOP = 8; // px of movement before committing to an axis
 const SNAP_MS = 260; // matches the CSS page transition
@@ -203,7 +204,7 @@ function settle(toBack: boolean) {
 }
 
 const mq =
-  typeof window !== "undefined" ? window.matchMedia(MOBILE) : null;
+  typeof window !== "undefined" ? window.matchMedia(PHONE_QUERY) : null;
 
 function onStart(e: TouchEvent) {
   if (!mq?.matches || e.touches.length !== 1) return;
@@ -338,21 +339,24 @@ export function useBackSwipe({ active, onBack, paneRef, priority = 0 }: Opts) {
   // (any re-render, e.g. a WebSocket session update), the manager would drop
   // the in-flight drag and strand the pane on its inline transform.
   const activeRef = useRef(active);
-  activeRef.current = active;
   const onBackRef = useRef(onBack);
-  onBackRef.current = onBack;
+  useLayoutEffect(() => {
+    activeRef.current = active;
+    onBackRef.current = onBack;
+  });
 
   useEffect(() => {
     const layer: Layer = {
-      seq: ++seqCounter,
+      seq: (seqCounter += 1),
       priority,
       activeRef,
       onBackRef,
       paneRef,
     };
     layers.add(layer);
-    syncListeners();
-    return () => {
+    // Setup-scope helper so teardown reads the latest pane node without
+    // touching `.current` inside the cleanup body itself.
+    const releaseLayer = () => {
       layers.delete(layer);
       // If teardown lands mid-gesture on this layer (route change, unmount),
       // hand the pane back to the CSS class instead of leaving it stuck
@@ -363,6 +367,10 @@ export function useBackSwipe({ active, onBack, paneRef, priority = 0 }: Opts) {
         endGestureState();
       }
       syncListeners();
+    };
+    syncListeners();
+    return () => {
+      releaseLayer();
     };
   }, [paneRef, priority]);
 }

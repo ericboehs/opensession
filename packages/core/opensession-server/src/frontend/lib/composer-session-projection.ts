@@ -4,7 +4,11 @@ import {
 	SESSION_PILL_MARGIN,
 	type SessionRange,
 } from "./composer-highlight";
-import { sessionTitleFor } from "./markdown";
+import {
+	sessionArchivedFor,
+	sessionTitleFor,
+	workspaceTitleFor,
+} from "./markdown";
 
 export interface DisplaySessionRange extends SessionRange {
 	canonicalStart: number;
@@ -56,11 +60,19 @@ export function projectComposerSessions(
 		)
 			continue;
 		displayText += canonicalText.slice(canonicalCursor, range.start);
-		// A named reference leads with the chat glyph, the way the chip in a
-		// sent message does, so the slot it is painted into comes first.
-		const title = sessionTitleFor(range.id);
-		const label = title ? SESSION_GLYPH_SLOT + title : undefined;
-		const token = label ?? range.id;
+		// A named session leads with the chat glyph, so its projected text reserves
+		// a slot. A workspace keeps the same pill shape but does not pretend it is
+		// one conversation.
+		const title =
+			range.kind === "workspace"
+				? workspaceTitleFor(range.id)
+				: sessionTitleFor(range.id);
+		const label = title
+			? (range.kind === "workspace" ? title : SESSION_GLYPH_SLOT + title)
+			: undefined;
+		const archived =
+			range.kind !== "workspace" && !!title && sessionArchivedFor(range.id);
+		const token = label ?? canonicalText.slice(range.start, range.end);
 		const leadingMargin = range.start > 0 ? SESSION_PILL_MARGIN : "";
 		const trailingMargin =
 			range.end < canonicalText.length ? SESSION_PILL_MARGIN : "";
@@ -70,6 +82,8 @@ export function projectComposerSessions(
 			start,
 			end: displayText.length,
 			id: range.id,
+			...(range.kind ? { kind: range.kind } : {}),
+			...(archived ? { archived: true } : {}),
 			canonicalStart: range.start,
 			canonicalEnd: range.end,
 			label,

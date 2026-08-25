@@ -1,18 +1,25 @@
 # Open Session website
 
-The public marketing site is a separate entry from the authenticated
-Open Session app. Its product preview renders the production app inside an
-iframe with deterministic browser-side fixtures, so the UI stays synchronized
-with the product without connecting to an Open Session instance.
+The public marketing site is a Next.js app. Its product preview renders the
+production Open Session web client inside an iframe with deterministic
+browser-side fixtures, so it stays synchronized with the product without
+connecting to an instance.
 
 ```sh
 bun run website:dev    # http://127.0.0.1:3865
-bun run website:build  # writes .website-dist/
+bun run website:build  # production build
 ```
 
-Deploy the contents of `.website-dist/` as a static site. The build always
-emits stable `index.html`, `setup.html`, `setup/index.html`, `product-demo.html`, and `opensession-social.png`
-paths; scripts, styles, and the in-page icon remain content-hashed.
+## Deploy to Vercel
+
+1. Import the `tellahq/opensession` repository.
+2. Set **Root Directory** to `packages/clients/website`.
+3. Leave the detected framework and build settings as Next.js defaults.
+4. Deploy.
+
+The app serves `/`, `/setup`, and `/product-demo`. Compatibility rewrites keep
+`/setup.html` and `/product-demo.html` working for existing links and capture
+tooling.
 
 The hero uses animated background artwork from Tella. The iframe overrides
 `fetch` and `WebSocket` before importing the production app, serves fixed

@@ -1,15 +1,18 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useEffectEvent, useState } from "react";
 import {
+	fetchGithubOrganizationProfile,
 	fetchOrganizationSettings,
 	removeOrganizationIcon,
 	saveOrganizationSettings,
 	uploadOrganizationIcon,
 	type OrganizationSettingsDto,
 } from "../../lib/api";
-import { pngFromImageFile } from "../../lib/icon-image";
+import { rememberOrganizationIcon } from "../../hooks/useOrganizationIcon";
+import { PRODUCT_NAME } from "../../lib/brand";
+import { pngFromImageFile, pngFromImageUrl } from "../../lib/icon-image";
 import { REPO_TILE_INK, repoColor, repoIconFill } from "../../lib/repo-colors";
-import { Button } from "../../ui/button";
 import { cn } from "../../ui/cn";
+import { OverlayAction } from "../../ui/overlay-action";
 import {
 	SettingCard,
 	SettingCardSkeleton,
@@ -17,7 +20,6 @@ import {
 	SettingRowControl,
 	SettingRowText,
 	SettingRowTitle,
-	SettingsGroupLabel,
 	SettingsHeader,
 	SettingsHint,
 	SettingsPanel,
@@ -26,31 +28,49 @@ import {
 import { toast } from "../../ui/toast";
 import { InlineAlert } from "../../ui/state";
 import { IconArrowUpToLine, IconTrash } from "../icons";
-import { IdentityCard } from "../SetupIdentity";
+import { IdentityRows } from "../SetupIdentity";
 
 const NAME_INPUT_CLASS = cn(settingsInputClass, "w-[220px] max-w-full");
 
-export function GeneralPanel() {
+/**
+ * The organization's name and mark.
+ *
+ * In onboarding this step runs directly after GitHub, and `githubOrganization`
+ * is the org that was just connected. Rather than ask for two things the
+ * connection already knows, the first render of a fresh instance fills them in
+ * from GitHub: the org's display name and avatar. It leaves both editable and
+ * only fills values nobody has set, so re-opening onboarding cannot overwrite
+ * a rename.
+ */
+export function OrganizationProfileSection({
+	githubOrganization,
+}: {
+	githubOrganization?: string;
+} = {}) {
 	const [settings, setSettings] = useState<OrganizationSettingsDto | null>(null);
 	const [draft, setDraft] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [loadError, setLoadError] = useState<string | null>(null);
 	const [iconFailed, setIconFailed] = useState(false);
 	const fileInput = React.useRef<HTMLInputElement>(null);
+	// One attempt per mount: a failed lookup must not retry on every render, and
+	// a successful one must not fight the operator's own edits.
+	const prefilled = React.useRef(false);
 
 	async function load(cancelled?: () => boolean) {
 		setLoadError(null);
-		try {
-			const next = await fetchOrganizationSettings();
+		await (async () => {
+const next = await fetchOrganizationSettings();
 			if (cancelled?.()) return;
 			setSettings(next);
 			setDraft(next.organizationName);
-		} catch (error: any) {
-			if (cancelled?.()) return;
+			rememberOrganizationIcon(next);
+})().catch(async (error: any) => {
+if (cancelled?.()) return;
 			const message = error?.message || "Couldn’t load organization settings";
 			setLoadError(message);
 			toast(message, { variant: "error" });
-		}
+});
 	}
 
 	useEffect(() => {
@@ -64,20 +84,21 @@ export function GeneralPanel() {
 	async function update(work: () => Promise<OrganizationSettingsDto>, message: string) {
 		if (busy) return;
 		setBusy(true);
-		try {
-			const next = await work();
+		await (async () => {
+const next = await work();
 			setSettings(next);
 			setDraft(next.organizationName);
 			setIconFailed(false);
+			rememberOrganizationIcon(next);
 			toast(message, { variant: "success" });
-		} catch (error: any) {
-			toast(error?.message || "Couldn’t save organization settings", {
+})().catch(async (error: any) => {
+toast(error?.message || "Couldn’t save organization settings", {
 				variant: "error",
 			});
 			if (settings) setDraft(settings.organizationName);
-		} finally {
-			setBusy(false);
-		}
+}).finally(async () => {
+setBusy(false);
+});
 	}
 
 	async function commitName() {
@@ -92,11 +113,44 @@ export function GeneralPanel() {
 		);
 	}
 
+	// Fill only what is still unset. A fresh install has no icon and a name that
+	// is still the product's own.
+	// The body reads `update` through an effect event: the trigger set stays the
+	// org/settings state, while the call always reaches the latest closure.
+	const maybePrefillFromGithub = useEffectEvent(() => {
+		const login = githubOrganization?.trim();
+		if (!login || !settings || prefilled.current || busy) return;
+		const needsName =
+			!settings.organizationName || settings.organizationName === PRODUCT_NAME;
+		const needsIcon = !settings.organizationIconUrl;
+		if (!needsName && !needsIcon) return;
+		prefilled.current = true;
+		void (async () => {
+			const profile = await fetchGithubOrganizationProfile(login);
+			await update(async () => {
+				if (needsIcon && profile?.avatarUrl) {
+					const icon = await pngFromImageUrl(profile.avatarUrl);
+					if (icon) await uploadOrganizationIcon(icon);
+				}
+				return saveOrganizationSettings({
+					...(needsName ? { organizationName: profile?.name || login } : {}),
+				});
+			}, `Filled in from ${login} on GitHub.`);
+		})();
+	});
+	useEffect(() => {
+		maybePrefillFromGithub();
+	}, [githubOrganization, settings, busy]);
+
 	async function upload(file: File) {
 		await update(async () => {
 			const png = await pngFromImageFile(file);
 			return uploadOrganizationIcon(png);
 		}, "Organization icon updated.");
+	}
+
+	function removeIcon() {
+		void update(removeOrganizationIcon, "Organization icon removed.");
 	}
 
 	const nameParts = (settings?.organizationName || "Organization").trim().split(/\s+/);
@@ -109,8 +163,7 @@ export function GeneralPanel() {
 	const fallbackColor = repoColor(settings?.organizationName || "organization");
 
 	return (
-		<SettingsPanel>
-			<SettingsHeader title="General" className="phone:hidden" />
+		<>
 			{loadError && !settings ? (
 				<InlineAlert onRetry={() => void load()}>{loadError}</InlineAlert>
 			) : settings ? (
@@ -121,47 +174,47 @@ export function GeneralPanel() {
 								<SettingRowTitle>Upload icon</SettingRowTitle>
 							</SettingRowText>
 							<SettingRowControl className="flex flex-wrap items-center justify-end gap-2">
-								{settings.organizationIconUrl && (
-									<Button
-										variant="ghost"
-										icon={<IconTrash size={20} />}
+								<div className="group/overlay-action relative flex shrink-0 flex-col items-center gap-1.5">
+									<button
+										type="button"
 										disabled={busy}
-										onClick={() =>
-											void update(removeOrganizationIcon, "Organization icon removed.")
+										onClick={() => fileInput.current?.click()}
+										aria-label={showIcon ? "Change organization icon" : "Upload organization icon"}
+										className="focus-ring group/upload relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg text-section-title font-semibold outline outline-1 outline-divider disabled:pointer-events-none"
+										style={
+											showIcon
+												? undefined
+												: {
+														backgroundImage: repoIconFill(fallbackColor),
+														color: REPO_TILE_INK,
+													}
 										}
 									>
-										Remove
-									</Button>
-								)}
-								<button
-									type="button"
-									disabled={busy}
-									onClick={() => fileInput.current?.click()}
-									aria-label={showIcon ? "Change organization icon" : "Upload organization icon"}
-									className="focus-ring group relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg text-section-title font-semibold outline outline-1 outline-divider disabled:pointer-events-none"
-									style={
-										showIcon
-											? undefined
-											: {
-													backgroundImage: repoIconFill(fallbackColor),
-													color: REPO_TILE_INK,
-												}
-									}
-								>
-									{showIcon ? (
-										<img
-											src={settings.organizationIconUrl || undefined}
-											alt=""
-											className="size-full object-cover"
-											onError={() => setIconFailed(true)}
+										{showIcon ? (
+											<img
+												src={settings.organizationIconUrl || undefined}
+												alt=""
+												className="size-full object-cover"
+												onError={() => setIconFailed(true)}
+											/>
+										) : (
+											initials
+										)}
+										<span className="pointer-events-none absolute inset-0 grid place-items-center rounded-[inherit] bg-black/50 text-white opacity-0 transition-opacity duration-150 group-hover/upload:opacity-100 group-focus-visible/upload:opacity-100">
+											<IconArrowUpToLine size={20} />
+										</span>
+									</button>
+									{settings.organizationIconUrl && (
+										<OverlayAction
+											icon={<IconTrash className="text-red" size={20} />}
+											disabled={busy}
+											onClick={removeIcon}
+											aria-label="Remove organization icon"
+											title="Remove icon"
+											className="phone:pointer-events-auto! phone:opacity-100!"
 										/>
-									) : (
-										initials
 									)}
-									<span className="pointer-events-none absolute inset-0 grid place-items-center rounded-[inherit] bg-black/50 text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
-										<IconArrowUpToLine size={20} />
-									</span>
-								</button>
+								</div>
 								<input
 									ref={fileInput}
 									type="file"
@@ -194,17 +247,25 @@ export function GeneralPanel() {
 								aria-label="Organization name"
 							/>
 						</SettingRow>
+						<IdentityRows />
 					</SettingCard>
 					<SettingsHint>
-						Shared by everyone in this workspace. Clearing the name restores the
-						 product name.
+						Shared by everyone in this organization. Clearing the name restores the
+						product name.
 					</SettingsHint>
 				</>
 			) : (
 				<SettingCardSkeleton rows={2} label="Loading organization settings" />
 			)}
-			<SettingsGroupLabel>Identity</SettingsGroupLabel>
-			<IdentityCard />
+		</>
+	);
+}
+
+export function GeneralPanel() {
+	return (
+		<SettingsPanel>
+			<SettingsHeader title="General" className="phone:hidden" />
+			<OrganizationProfileSection />
 		</SettingsPanel>
 	);
 }

@@ -1,5 +1,5 @@
 /**
- * Engine-neutral run event types shared by the runner (opencode) and by
+ * Engine-neutral run event types shared by the runner (pi) and by
  * everything that consumes a run's event stream (opensession.ts, sandbox
  * providers, the runner host).
  */
@@ -39,12 +39,12 @@ export interface StepPromptUsage {
 }
 
 /**
- * Did the layer BELOW opencode silently rebuild this conversation's context
+ * Did the layer BELOW pi silently rebuild this conversation's context
  * between two steps of the same turn?
  *
  * Anthropic models run through the bundled Meridian bridge onto Claude Agent
  * SDK sessions, and two things down there can replace the conversation without
- * opencode (or us) ever seeing it: the SDK auto-compacting its session near the
+ * pi (or us) ever seeing it: the SDK auto-compacting its session near the
  * context limit, and Meridian classifying a request as diverged and replaying
  * the history into a fresh SDK session. Both look identical from here — the
  * next step reads NOTHING from the prompt cache and writes a new prefix, after
@@ -101,7 +101,7 @@ export interface StreamEvent {
   text?: string;
   /**
    * On a text_chunk: which assistant block this text belongs to, when the
-   * engine names its blocks (opencode's part id). The durable transcript
+   * engine names its blocks (pi's part id). The durable transcript
    * entry for that block carries the SAME id, which is what lets a viewer
    * cancel the live copy exactly when the durable one lands, instead of
    * subtracting strings (see LiveTextBuffer in the protocol package).
@@ -142,7 +142,7 @@ export interface StreamEvent {
    */
   featuredMedia?: string[];
   /** Which backend emitted this event (set on init/done). */
-  provider?: "claude" | "codex" | "opencode" | "pi";
+  provider?: "claude" | "codex" | "pi";
   /** Effective model for the run (set on init/done). */
   model?: string;
   /**

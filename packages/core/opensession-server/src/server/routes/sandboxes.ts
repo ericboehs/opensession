@@ -3,7 +3,6 @@
 import { requestUser, type RouteContext } from "./context";
 import { requireWorkspaceAdmin, workspaceAdminAuthorized } from "../workspace-auth";
 import { sandboxCapabilityStatus } from "../sandbox/config";
-import { setSandboxPublicIngressUrl } from "../sandbox/config";
 import { sandboxIngressStatus } from "../sandbox/caddy-ingress";
 import {
   sandboxDefaultsStatus,
@@ -71,21 +70,6 @@ export async function handleSandboxesRoutes(
     return Response.json(await connectionPayload(ctx));
   }
 
-	if (path === "/api/sandbox/ingress" && req.method === "PATCH") {
-		const forbidden = requireWorkspaceAdmin(ctx);
-		if (forbidden) return forbidden;
-		const body = await req.json().catch(() => null);
-		if (!body || typeof body.publicBaseUrl !== "string") {
-			return errorResponse("publicBaseUrl is required");
-		}
-		try {
-			setSandboxPublicIngressUrl(body.publicBaseUrl);
-			return Response.json({ ingress: await sandboxIngressStatus() });
-		} catch (error) {
-			return errorResponse(error);
-		}
-	}
-
 	if (path === "/api/sandbox/environments" && req.method === "GET") {
 		return Response.json({ environments: await listSandboxEnvironments() });
 	}
@@ -149,13 +133,6 @@ export async function handleSandboxesRoutes(
     if (action === "connect" && req.method === "POST") {
       const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
       try {
-				if (
-					(provider === "daytona" || provider === "box" || provider === "modal") &&
-					typeof body.publicBaseUrl === "string" &&
-					body.publicBaseUrl.trim()
-				) {
-					setSandboxPublicIngressUrl(body.publicBaseUrl);
-				}
         connectSandboxProvider(provider, {
           secret:
             typeof body.secret === "string"

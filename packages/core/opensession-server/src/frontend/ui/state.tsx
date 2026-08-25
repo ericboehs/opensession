@@ -22,10 +22,9 @@ import { Spinner } from "./spinner";
  *    row list just takes the row's padding and stays left-aligned (`row`), so
  *    it lines up with the rows it replaces instead of floating in the middle.
  *  - loading is the quietest register, and its mark follows the placement: a
- *    `block` stands in for a whole region and wears the launch screen's wave
- *    (`PageLoader`), a `row` or `card` is one small thing working and keeps the
- *    ring (`Spinner`). Never the PixelSpinner, which means a model is
- *    generating,
+ *    `block` stands in for a whole region and wears the larger waiting ring
+ *    (`PageLoader`), while a `row` or `card` uses the smaller `Spinner`. Never
+ *    the PixelSpinner, which means a model is generating,
  *    empty sits one step up (dim, with an optional title/icon/action when
  *    there's something to *do* about it), and alerts are the only state that
  *    gets a surface and a hue.

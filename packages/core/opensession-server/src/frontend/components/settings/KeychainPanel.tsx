@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
+import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
 import {
 	addKeychainCredential,
 	deleteKeychainCredential,
@@ -39,11 +39,11 @@ export function KeychainSection() {
 	const [adding, setAdding] = useState(false);
 	const serviceRef = useRef<HTMLInputElement>(null);
 
-	const reload = useCallback(() => {
+	const reload = () => {
 		fetchKeychain()
 			.then(setData)
 			.catch((e) => setError(e.message));
-	}, []);
+	};
 	useEffect(reload, [reload]);
 
 	// The label, its action and the hint below the card are all static, so they
@@ -283,7 +283,7 @@ function AddCredentialForm({
 					</Field>
 					{/* The hint belongs to this zone, so it sits inside it rather
 					    than floating between the fields and the actions. */}
-					<p className="m-0 text-meta leading-relaxed text-faint">
+					<p className="m-0 text-supporting leading-relaxed text-faint">
 						Narrow the methods and paths where you can. A grant can only reach what the
 						credential allows, so this is the ceiling on anything you approve later.
 					</p>

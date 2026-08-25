@@ -24,6 +24,46 @@ final class ActiveSessionsActivityTests: XCTestCase {
         XCTAssertEqual(snapshot.updatedAt, 123)
     }
 
+    func testSnapshotCountsOnlyOwnedUnreadSessions() {
+        let unread = session(
+            "os-unread", title: "Unread", owner: "Michiel", running: false,
+            at: "2026-08-11T10:00:00Z"
+        )
+        let read = session(
+            "os-read", title: "Read", owner: "Michiel", running: false,
+            at: "2026-08-11T10:01:00Z"
+        )
+        var worker = session(
+            "os-worker", title: "Worker", owner: "Michiel", running: false,
+            at: "2026-08-11T10:02:00Z"
+        )
+        worker.spawnedBy = unread.id
+        let other = session(
+            "os-other", title: "Other", owner: "Kent", running: false,
+            at: "2026-08-11T10:04:00Z"
+        )
+        let unreadIDs = Set([unread.id, worker.id, other.id])
+
+        let snapshot = ActiveSessionsSnapshot.make(
+            from: [unread, read, worker, other],
+            userName: "Michiel",
+            githubLogin: "happylinks",
+            isUnread: { unreadIDs.contains($0.id) }
+        )
+
+        XCTAssertEqual(snapshot.unreadCount, 1)
+    }
+
+    func testSnapshotDecodesOlderStateWithoutUnreadCount() throws {
+        let data = Data(
+            #"{"sessions":[],"totalCount":1,"updatedAt":100}"#.utf8
+        )
+
+        let snapshot = try JSONDecoder().decode(ActiveSessionsSnapshot.self, from: data)
+
+        XCTAssertEqual(snapshot.unreadCount, 0)
+    }
+
     func testVerifiedCreatorLoginWinsOverAmbiguousDisplayName() {
         var mine = session(
             "os-mine", title: "Mine", owner: "Alex", running: true,

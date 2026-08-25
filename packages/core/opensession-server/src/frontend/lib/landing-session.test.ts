@@ -3,6 +3,9 @@ import {
 	sessionNeverRan,
 	defaultSessionWorkspaceView,
 	mainSession,
+	newSessionSource,
+	workspaceLandingReady,
+	workspaceSessionSeed,
 	pinMainSessionFirst,
 	pickLandingSession,
 } from "./landing-session";
@@ -61,6 +64,14 @@ describe("defaultSessionWorkspaceView", () => {
 	});
 });
 
+describe("workspaceLandingReady", () => {
+	test("waits for sessions before deciding a workspace is session-less", () => {
+		expect(workspaceLandingReady(true, true)).toBe(false);
+		expect(workspaceLandingReady(false, false)).toBe(false);
+		expect(workspaceLandingReady(true, false)).toBe(true);
+	});
+});
+
 describe("mainSession", () => {
 	test("prefers the oldest human session that actually ran", () => {
 		const review = session({
@@ -96,6 +107,47 @@ describe("mainSession", () => {
 			"main",
 			"sibling",
 		]);
+	});
+});
+
+describe("newSessionSource", () => {
+	test("uses archived history when Review is the workspace's only tab", () => {
+		const archived = session({ id: "archived", archived: true, ran: true });
+		expect(newSessionSource(null, [], [archived])).toBe(archived);
+	});
+
+	test("prefers the open or live session over archived history", () => {
+		const current = session({ id: "current", ran: true });
+		const live = session({ id: "live", ran: true });
+		const archived = session({ id: "archived", archived: true, ran: true });
+		expect(newSessionSource(current, [live], [archived])).toBe(current);
+		expect(newSessionSource(null, [live], [archived])).toBe(live);
+	});
+});
+
+describe("workspaceSessionSeed", () => {
+	test("projects a Review-only workspace into an immediate local tab", () => {
+		const seed = workspaceSessionSeed(
+			{
+				id: "ws-1",
+				name: "Review PR 42",
+				repo: "opensession",
+				branch: "fix-tabs",
+				worktreeDir: "/tmp/fix-tabs",
+				createdBy: "Kent",
+				createdAt: "2026-08-22T09:00:00.000Z",
+			},
+			"Kent",
+		);
+		expect(seed).toMatchObject({
+			id: "workspace:ws-1",
+			workspaceId: "ws-1",
+			repo: "opensession",
+			branch: "fix-tabs",
+			worktreeDir: "/tmp/fix-tabs",
+			mode: "code",
+			startedBy: "Kent",
+		});
 	});
 });
 

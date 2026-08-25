@@ -2,7 +2,7 @@
  * Assembling one session list out of the slices the server now serves.
  *
  * `GET /api/sessions` used to answer with every session, archived included —
- * 8.5 MB and 6,223 rows on Tella's instance, of which the archived ones were
+ * 8.5 MB and 6,223 rows on a busy instance, of which the archived ones were
  * 46% of the bytes and none of the cold start. The app now polls the live
  * slice (`?archived=exclude`) and fetches the archived index
  * (`?archived=only&slim=1`) separately, after first paint.

@@ -71,6 +71,37 @@ test("keeps the item state as the only in-tab send lock", async () => {
 	outbox.dispose();
 });
 
+test("reports a handled command before retiring its durable row", async () => {
+	const outbox = new PromptOutbox({
+		storage: memoryStorage(),
+		scope: "handled-command",
+		deliver: async (_sessionId, body) => ({
+			status: "handled",
+			message: `Goal pinned: ${body.content}`,
+			deliveryId: body.clientId,
+		}),
+	});
+	const deliveries: Array<{ content: string; status: string; message: string }> = [];
+	outbox.observeDelivery((item, result) =>
+		deliveries.push({
+			content: item.content,
+			status: result.status,
+			message: result.message,
+		}),
+	);
+	outbox.enqueue({ sessionId: "s1", content: "/goal ship it" });
+	await outbox.flush();
+	expect(deliveries).toEqual([
+		{
+			content: "/goal ship it",
+			status: "handled",
+			message: "Goal pinned: /goal ship it",
+		},
+	]);
+	expect(outbox.list()).toEqual([]);
+	outbox.dispose();
+});
+
 test("keeps a retryable failed head item and exposes it for retry or editing", async () => {
 	const storage = memoryStorage();
 	let fail = true;
@@ -107,6 +138,31 @@ test("marks a rejected delivery failed without losing its editable payload", asy
 	]);
 	outbox.discard(item.clientId);
 	expect(outbox.list()).toEqual([]);
+	outbox.dispose();
+});
+
+test("a terminally rejected item does not block a later follow-up", async () => {
+	const delivered: string[] = [];
+	const outbox = new PromptOutbox({
+		storage: memoryStorage(),
+		scope: "rejected-head",
+		deliver: async (_sessionId, body) => {
+			delivered.push(body.content);
+			if (body.content === "bad image") {
+				throw Object.assign(new Error("Unsupported image"), { status: 400 });
+			}
+			return { status: "queued", message: "ok" };
+		},
+	});
+	const failed = outbox.enqueue({ sessionId: "s1", content: "bad image" });
+	await outbox.flush();
+	outbox.enqueue({ sessionId: "s1", content: "follow up" });
+	await outbox.flush();
+
+	expect(delivered).toEqual(["bad image", "follow up"]);
+	expect(outbox.list("s1")).toEqual([
+		expect.objectContaining({ clientId: failed.clientId, state: "failed" }),
+	]);
 	outbox.dispose();
 });
 

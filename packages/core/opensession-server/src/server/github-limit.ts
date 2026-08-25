@@ -1,45 +1,42 @@
 /**
- * Shared GitHub rate-limit gate.
+ * Per-resource GitHub rate-limit gates.
  *
- * Every server-side GitHub caller (gh CLI spawns and direct api.github.com
- * fetches) reports rate-limit failures here and consults the gate before
- * firing, so one exhausted quota pauses ALL pollers together instead of each
- * one independently burning doomed calls into the same bot account's window.
- * Callers with cached data keep serving their stale snapshot for the duration;
- * callers without any answer fast with a friendly error instead of spawning gh.
- *
- * State parks on globalThis so a `bun --hot` reload keeps an active backoff
- * window instead of resetting it and re-firing everything at once — and the
- * backoff window is ALSO persisted to disk, because a real `systemctl restart`
- * used to forget it and boot the PR-cache warm sweep straight into the
- * exhausted window (2026-07-23: restarts every ~10min kept the GraphQL quota
- * pinned at 0 for hours).
+ * GitHub meters REST (`core`) and GraphQL independently. App installation and
+ * App user tokens share those installation buckets, so exhausting GraphQL must
+ * pause GraphQL consumers without suppressing healthy REST acknowledgements,
+ * metadata reads, comments, or writes. Backoffs survive process restarts.
  */
-
 import { existsSync, readFileSync } from "fs";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { stateDir } from "./paths";
 
 const PERSIST_PATH = stateDir("github-limit.json");
+export type GithubRateResource = "graphql" | "rest";
 
 interface GhLimitState {
-  /** Epoch ms until which GitHub calls should not be attempted. 0 = clear. */
-  backoffUntil: number;
-  probe: Promise<void> | null;
-  /** Cached `gh auth token` output for direct REST calls (null = probed, none). */
-  botToken: string | null | undefined;
+  backoffUntil: Record<GithubRateResource, number>;
+  probe: Record<GithubRateResource, Promise<void> | null>;
 }
 
-const state: GhLimitState = ((globalThis as any).__osGhLimitState ||= (() => {
-  const s: GhLimitState = { backoffUntil: 0, probe: null, botToken: undefined };
+const state: GhLimitState = ((globalThis as any).__osGhLimitStateV2 ||= (() => {
+  const s: GhLimitState = {
+    backoffUntil: { graphql: 0, rest: 0 },
+    probe: { graphql: null, rest: null },
+  };
   try {
     if (existsSync(PERSIST_PATH)) {
       const parsed = JSON.parse(readFileSync(PERSIST_PATH, "utf-8"));
-      if (typeof parsed?.backoffUntil === "number" && parsed.backoffUntil > Date.now()) {
-        s.backoffUntil = parsed.backoffUntil;
-        console.error(
-          `[github-limit] resuming persisted backoff until ${new Date(s.backoffUntil).toISOString()}`,
-        );
+      // Migrate the old global gate conservatively to GraphQL. It was almost
+      // always set by gh porcelain, and must not keep suppressing healthy REST.
+      const saved = parsed?.resources || { graphql: parsed?.backoffUntil };
+      for (const resource of ["graphql", "rest"] as const) {
+        const until = saved?.[resource];
+        if (typeof until === "number" && until > Date.now()) {
+          s.backoffUntil[resource] = until;
+          console.error(
+            `[github-limit] resuming persisted ${resource} backoff until ${new Date(until).toISOString()}`,
+          );
+        }
       }
     }
   } catch {}
@@ -48,104 +45,85 @@ const state: GhLimitState = ((globalThis as any).__osGhLimitState ||= (() => {
 
 function persistBackoff(): void {
   try {
-    writeFileAtomic(PERSIST_PATH, JSON.stringify({ backoffUntil: state.backoffUntil }) + "\n");
+    writeFileAtomic(PERSIST_PATH, JSON.stringify({ resources: state.backoffUntil }) + "\n");
   } catch {}
 }
 
-export function ghRateLimited(): boolean {
-  return Date.now() < state.backoffUntil;
+/** Defaults to GraphQL for existing gh-pr callers. REST callers must opt in. */
+export function ghRateLimited(resource: GithubRateResource = "graphql"): boolean {
+  return Date.now() < state.backoffUntil[resource];
 }
 
-/** Epoch ms the current backoff ends, or 0 when no backoff is active. */
-export function ghBackoffUntil(): number {
-  return ghRateLimited() ? state.backoffUntil : 0;
+export function ghBackoffUntil(resource: GithubRateResource = "graphql"): number {
+  return ghRateLimited(resource) ? state.backoffUntil[resource] : 0;
 }
 
-/**
- * Test seam (bun tests only): open or clear the backoff window WITHOUT
- * persisting it. Tests that seed a PR-cache snapshot need the gate closed, or
- * a live `gh` refresh lands mid-test and replaces the snapshot with whatever
- * GitHub actually returns — which is also a real network call from a unit
- * test. noteGhRateLimited is the wrong tool for that: it writes the backoff to
- * disk, and `stateDir` resolves against the HOME captured at module load, so a
- * test would pause the running server's GitHub polling for an hour. Returns
- * the previous value so afterAll can restore it.
- */
-export function __setGhBackoffForTest(untilEpochMs: number): number {
-  const prev = state.backoffUntil;
-  state.backoffUntil = untilEpochMs;
+export function __setGhBackoffForTest(
+  untilEpochMs: number,
+  resource: GithubRateResource = "graphql",
+): number {
+  const prev = state.backoffUntil[resource];
+  state.backoffUntil[resource] = untilEpochMs;
   return prev;
 }
 
-/** True when a gh CLI / API error message is a rate-limit rejection. */
 export function isGhRateLimitMsg(msg: string): boolean {
   return /rate limit|secondary limit|abuse detection/i.test(msg);
 }
 
-/**
- * Record that GitHub rejected a call for rate limiting. When the caller knows
- * the reset time (REST's x-ratelimit-reset header), it passes it; otherwise we
- * probe `gh api rate_limit` for the GraphQL reset — rate_limit itself is REST
- * (core quota), so it usually still answers when GraphQL, which nearly all of
- * our polling runs on, is exhausted. A 15-minute fallback covers the probe
- * failing too (core quota can be gone as well).
- */
-export function noteGhRateLimited(source: string, resetEpochMs?: number): void {
+/** Record a rejection against only the resource that rejected the request. */
+export function noteGhRateLimited(
+  source: string,
+  resetEpochMs?: number,
+  resource: GithubRateResource = "graphql",
+): void {
   if (resetEpochMs && resetEpochMs > Date.now()) {
-    // Cap at 2h in case a caller feeds us a bogus far-future reset.
     const until = Math.min(resetEpochMs + 30_000, Date.now() + 2 * 3600_000);
-    if (until > state.backoffUntil) {
-      state.backoffUntil = until;
+    if (until > state.backoffUntil[resource]) {
+      state.backoffUntil[resource] = until;
       persistBackoff();
       console.error(
-        `[github-limit] ${source}: rate-limited; pausing GitHub calls until ${new Date(until).toISOString()}`,
+        `[github-limit] ${source}: ${resource} rate-limited; pausing ${resource} calls until ${new Date(until).toISOString()}`,
       );
     }
     return;
   }
-  if (ghRateLimited() || state.probe) return;
-  // Fallback first, in case the probe below fails.
-  state.backoffUntil = Date.now() + 15 * 60_000;
+  if (ghRateLimited(resource) || state.probe[resource]) return;
+  state.backoffUntil[resource] = Date.now() + 15 * 60_000;
   persistBackoff();
-  state.probe = (async () => {
+  state.probe[resource] = (async () => {
     try {
-      const proc = Bun.spawn(
-        ["gh", "api", "rate_limit", "--jq", ".resources.graphql.reset"],
-        { stdout: "pipe", stderr: "ignore" },
-      );
-      const raw = await new Response(proc.stdout).text();
-      if ((await proc.exited) === 0) {
-        const reset = parseInt(raw.trim(), 10) * 1000;
-        if (reset > Date.now()) {
-          state.backoffUntil = reset + 30_000;
+      const { githubToken } = await import("./github-app");
+      const token = await githubToken();
+      if (token) {
+        const response = await fetch("https://api.github.com/rate_limit", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+            "User-Agent": "opensession",
+          },
+          signal: AbortSignal.timeout(10_000),
+        });
+        const data = await response.json().catch(() => null) as any;
+        const key = resource === "rest" ? "core" : "graphql";
+        const reset = Number(data?.resources?.[key]?.reset) * 1000;
+        if (response.ok && reset > Date.now()) {
+          state.backoffUntil[resource] = reset + 30_000;
           persistBackoff();
         }
       }
     } catch {}
     console.error(
-      `[github-limit] ${source}: rate-limited; pausing GitHub calls until ${new Date(state.backoffUntil).toISOString()}`,
+      `[github-limit] ${source}: ${resource} rate-limited; pausing ${resource} calls until ${new Date(state.backoffUntil[resource]).toISOString()}`,
     );
-    state.probe = null;
+    state.probe[resource] = null;
   })();
 }
 
-/**
- * Token for direct api.github.com calls made on the bot's behalf (conditional
- * change probes and the like): the GITHUB_API_TOKEN PAT when configured, else
- * the gh CLI's own token, probed once and cached for the process lifetime.
- */
-export async function botGhToken(): Promise<string | null> {
-  if (process.env.GITHUB_API_TOKEN) return process.env.GITHUB_API_TOKEN;
-  if (state.botToken !== undefined) return state.botToken;
-  try {
-    const proc = Bun.spawn(["gh", "auth", "token"], {
-      stdout: "pipe",
-      stderr: "ignore",
-    });
-    const raw = await new Response(proc.stdout).text();
-    state.botToken = (await proc.exited) === 0 && raw.trim() ? raw.trim() : null;
-  } catch {
-    state.botToken = null;
-  }
-  return state.botToken;
+/** Service token for direct REST calls. Missing App authority fails closed. */
+export async function botGhToken(
+  opts: { write?: boolean } = {},
+): Promise<string | null> {
+  const { githubToken } = await import("./github-app");
+  return githubToken(opts);
 }

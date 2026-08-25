@@ -36,6 +36,7 @@ import { createSelfDeployMcpServer } from "./self-deploy";
 import { createWebMcpServer } from "./web-mcp";
 import { papercutsEnabledForRepo } from "./papercuts";
 import { defaultRepo, productName } from "./config";
+import { githubCredentialForRun } from "./github-auth";
 import { REPOS, sessionRepoId } from "./worktree";
 import { registerInteractiveMcpBuilder } from "./run-rpc";
 import { automationRunMcpForSession, selfImproveMcpForSession } from "./automations";
@@ -229,8 +230,20 @@ export function interactiveMcpServers(
 					// Cross-repo: attach secondary repos as isolated worktrees.
 					"opensession-repos": createReposMcpServer({
 						sessionId,
-						attach: (repo, branch) => attachRepo(sessionId, repo, branch),
-						switchPrimary: (repo) => switchPrimaryRepo(sessionId, repo),
+						attach: (repo, branch) =>
+							attachRepo(
+								sessionId,
+								repo,
+								branch,
+								githubCredentialForRun(createdBy)?.env,
+							),
+						switchPrimary: (repo) =>
+							switchPrimaryRepo(
+								sessionId,
+								repo,
+								false,
+								githubCredentialForRun(createdBy)?.env,
+							),
 						snapshot: () => {
 							const s = findSession(sessionId);
 							if (!s) return null;
@@ -249,8 +262,8 @@ export function interactiveMcpServers(
 							})),
 						linkPr: (input) => linkPr(sessionId, input),
 					}),
-					// Durable repo/user/team memory (stored under ~/.michael-memory,
-					// shared both ways with Slack's channel memory). Write tools are
+					// Durable repo/user/team memory, shared both ways with Slack's
+					// channel memory. Write tools are
 					// interactive-only — automation runs get read-only injection; see
 					// memory-tools.ts for the trust model.
 					"opensession-memory": createMemoryMcpServer({
@@ -327,6 +340,22 @@ export function interactiveMcpServers(
 								baseBranch: context.branch,
 							};
 						},
+						// The in-process servers a SCRIPT may call (mcp.opensession-assets
+						// .write_asset and friends). Passing the whole set is safe and is
+						// the point: workflow-mcp.ts intersects it with its own allowlist,
+						// so this can only ever narrow, and a server this run does not
+						// carry stays absent. Rebuilt per host because an McpServer holds
+						// exactly ONE transport — mounting the session's own instance on
+						// the workflow's in-memory pair would steal it from run-rpc. The
+						// recursion is lazy and terminates: this closure runs on a
+						// script's first mcp.* call, and the workflows server the rebuild
+						// produces is excluded from the allowlist anyway.
+						inProcessMcp: () =>
+							interactiveMcpServers(
+								user,
+								sessionId,
+								personalMcpScopeForSession(findSession(sessionId)),
+							),
 					}),
 					// Per-session scratch assets (previewed in the Assets tab).
 					// Works in Ask mode — writes land outside the checkout.

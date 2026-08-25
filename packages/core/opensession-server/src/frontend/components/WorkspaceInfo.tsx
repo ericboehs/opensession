@@ -1,29 +1,32 @@
 import { AGENT_NAME, GITHUB_BOT_NAME } from "../lib/brand";
 import { BASE_PATH } from "../lib/base";
 import { commitPrompt } from "../lib/commit-prompt";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
 import { parsePatchFiles } from "@pierre/diffs";
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 import { useResolvedTheme } from "./CodeHighlight";
 import {
-	fetchDiff,
-	fetchPr,
-	fetchGitStatus,
 	setSessionReviewerApi,
 	acceptReviewApi,
+	cancelPrReviewApi,
 	triggerPrActionApi,
 	sessionAssetPreviewUrl,
 	type PrAgentAction,
+	type WorkspaceCommit,
 	type WorkspaceMediaItem,
-	type WorkspaceOverview,
 	type SessionAssetFile,
 } from "../lib/api";
 import { assetPreviewKind, isVisualAsset } from "../lib/asset-preview";
+import { useAssetViewMode } from "../lib/asset-view-mode";
+import { AssetViewToggle } from "./AssetViewToggle";
+import { PR_WEBHOOK_FALLBACK_POLL_MS } from "../lib/poll";
 import {
-	pollWhileVisible,
-	PR_WEBHOOK_FALLBACK_POLL_MS,
-} from "../lib/poll";
+	useSessionDiffResource,
+	useSessionGitResource,
+	useSessionPrResource,
+	useWorkspaceOverviewResource,
+} from "../hooks/useApiResources";
 import { getCurrentUser, TEAM, useCurrentUser } from "./UserPicker";
 import { personNameForKey, usePeople, useReviewTeams } from "../lib/people";
 import { UserAvatar } from "./UserAvatar";
@@ -45,11 +48,7 @@ import {
 	reviewRequestTargetsPerson,
 } from "../lib/review-queue";
 import { MarkdownBody, useMarkdownRepo } from "./MarkdownBody";
-import {
-	loadOverview,
-	overviewCache,
-	type OverviewSessionRef,
-} from "../lib/workspace-overview";
+import type { OverviewSessionRef } from "../lib/workspace-overview";
 import {
 	GIT_ACTION,
 	GIT_ACTION_CARET,
@@ -72,8 +71,10 @@ import {
 	IconCheck,
 	IconChevronDown,
 	IconFile,
+	IconGitCommit,
 	IconPeople,
 	IconPlay,
+	IconPlayRectangle,
 	IconPullRequest,
 	IconRobot,
 	IconStack,
@@ -294,7 +295,7 @@ function relTime(iso?: string): string {
 const FILE_PREVIEW = 6;
 const COMMENT_PREVIEW = 3;
 
-/** The author's real GitHub avatar (Greptile, Tella Butler, Vercel, a human…),
+/** The author's real GitHub avatar (a review bot, a deploy bot, a human…),
 		served at github.com/<login>.png. Falls back to a lettered brand tile if the
 		image 404s or the author isn't a plausible login (e.g. a display name). */
 function CommentAvatar({ author }: { author: string }) {
@@ -342,12 +343,9 @@ function CommentCard({
 	onAddToInput?: (text: string) => void;
 }) {
 	const repo = useMarkdownRepo();
-	const html = useMemo(
-		() => renderMarkdown(cleanCommentMarkdown(comment.body), { repo }),
-		[comment.body, repo],
-	);
+	const html = (renderMarkdown(cleanCommentMarkdown(comment.body), { repo }));
 	// The one-line label: lead with the comment's title/first words, flattened.
-	const title = useMemo(() => plainComment(comment.body), [comment.body]);
+	const title = (plainComment(comment.body));
 
 	const addBtn = onAddToInput && (
 		<button
@@ -429,13 +427,50 @@ const PREVIEW_DIFF_OPTIONS = {
 	enableLineSelection: false,
 };
 
+/** One commit attributed to this workspace. The title is the useful identity;
+ * the file count confirms that completed work still exists after the branch
+ * diff becomes empty. */
+function CommitRow({ commit }: { commit: WorkspaceCommit }) {
+	const content = (
+		<>
+			<span className="grid size-4 shrink-0 place-items-center text-faint">
+				<IconGitCommit size={20} />
+			</span>
+			<span className="min-w-0 flex-1 truncate text-label text-fg">
+				{commit.title}
+			</span>
+			<span className="shrink-0 text-meta font-medium text-dim tabular-nums">
+				{commit.filesChanged} file{commit.filesChanged === 1 ? "" : "s"}
+			</span>
+		</>
+	);
+	const title = `${commit.title} · ${commit.sha.slice(0, 8)} · ${fullTime(commit.committedAt)}`;
+	const className =
+		"flex min-w-0 items-center gap-2 rounded-md px-2 py-[5px] text-left no-underline transition-colors hover:bg-hover";
+	return commit.url ? (
+		<a
+			className={className}
+			href={commit.url}
+			target="_blank"
+			rel="noopener"
+			title={title}
+		>
+			{content}
+		</a>
+	) : (
+		<div className={className} title={title}>
+			{content}
+		</div>
+	);
+}
+
 /**
-* One "file changed" row. Hovering reveals a floated card with the file's actual
-* diff (parsed from the primary repo's patch), mirroring the PR-comment hover in
-* the same panel; clicking still jumps to the full Changes tab. Rows whose file
-* isn't in the parsed patch (binary, or a not-yet-loaded/truncated patch) simply
-* don't open a popover.
-*/
+ * One "file changed" row. Hovering reveals a floated card with the file's actual
+ * diff (parsed from the primary repo's patch), mirroring the PR-comment hover in
+ * the same panel; clicking still jumps to the full Changes tab. Rows whose file
+ * isn't in the parsed patch (binary, or a not-yet-loaded/truncated patch) simply
+ * don't open a popover.
+ */
 function FileRow({
 	file,
 	meta,
@@ -450,14 +485,11 @@ function FileRow({
 	const slash = file.path.lastIndexOf("/");
 	const dir = slash >= 0 ? file.path.slice(0, slash + 1) : "";
 	const base = slash >= 0 ? file.path.slice(slash + 1) : file.path;
-	const options = useMemo(
-		() => ({
+	const options = (({
 			...PREVIEW_DIFF_OPTIONS,
 			theme: theme === "light" ? "pierre-light" : "pierre-dark",
 			themeType: theme,
-		}),
-		[theme],
-	);
+		}));
 	const stats = (
 		<span className="inline-flex shrink-0 items-center gap-1 text-meta font-semibold tabular-nums">
 			{file.additions > 0 && (
@@ -576,6 +608,8 @@ function AgentReviewCard({
 	children?: React.ReactNode;
 }) {
 	const [busy, setBusy] = useState<PrAgentAction | null>(null);
+	const [reviewCancelling, setReviewCancelling] = useState(false);
+	const [reviewCancelRequested, setReviewCancelRequested] = useState(false);
 	const [done, setDone] = useState<{
 		label: string;
 		bksId?: string;
@@ -589,7 +623,10 @@ function AgentReviewCard({
 	const score = review?.confidence;
 	const stale = !!review?.stale;
 	const actionable = pr.state === "OPEN";
-	const active = !!pr.reviewActive || busy === "review" || !!reviewQueued;
+	const active =
+		(!!pr.reviewActive && !reviewCancelRequested) ||
+		busy === "review" ||
+		!!reviewQueued;
 	const canFix = actionable && !!review && !stale && review.findings > 0;
 	const scoreTone = stale
 		? "text-faint"
@@ -631,13 +668,9 @@ function AgentReviewCard({
 				.find((comment) => comment.body.trim().startsWith("<!-- os-review -->"))
 		: undefined;
 	const reviewMessage = reviewComment?.body.replace(/^<!-- os-review -->\s*/, "");
-	const reviewHtml = useMemo(
-		() =>
-			reviewMessage
+	const reviewHtml = (reviewMessage
 				? renderMarkdown(cleanCommentMarkdown(reviewMessage), { repo })
-				: "",
-		[reviewMessage, repo],
-	);
+				: "");
 
 	// Keep the just-started state latched until a later PR refresh observes the
 	// run or its new result; otherwise the button flashes idle after the POST.
@@ -648,15 +681,30 @@ function AgentReviewCard({
 		) {
 			setReviewQueued(null);
 		}
+		if (!pr.reviewActive) setReviewCancelRequested(false);
 	}, [pr.reviewActive, pr.osReview?.at, reviewQueued]);
+
+	async function cancelReview() {
+		if (!pr.reviewActive || reviewCancelling) return;
+		setReviewCancelling(true);
+		setError(null);
+		await (async () => {
+await cancelPrReviewApi(sessionId, getCurrentUser(), repo);
+			setReviewCancelRequested(true);
+})().catch(async (error: any) => {
+setError(error?.message || "Couldn't cancel the review");
+}).finally(async () => {
+setReviewCancelling(false);
+});
+	}
 
 	async function run(action: (typeof PR_AGENT_ACTIONS)[number]) {
 		if (busy) return;
 		setBusy(action.kind);
 		setError(null);
 		setDone(null);
-		try {
-			const res = await triggerPrActionApi(
+		await (async () => {
+const res = await triggerPrActionApi(
 				sessionId,
 				action.kind,
 				getCurrentUser(),
@@ -673,11 +721,11 @@ function AgentReviewCard({
 				}
 				setDone({ label: action.label, bksId: res.bksId, session: res.session });
 			} else setError(res.error || res.message || "Couldn't start");
-		} catch (e: any) {
-			setError(e?.message || "Couldn't start");
-		} finally {
-			setBusy(null);
-		}
+})().catch(async (e: any) => {
+setError(e?.message || "Couldn't start");
+}).finally(async () => {
+setBusy(null);
+});
 	}
 
 	// One action on the row, all of them in the menu: the row offers whichever
@@ -715,7 +763,7 @@ function AgentReviewCard({
 									>
 										<div className="min-w-0">
 											<div className="font-semibold text-fg">{action.label}</div>
-											<div className="mt-0.5 text-meta leading-[1.35] text-faint">
+											<div className="mt-0.5 text-supporting leading-[1.35] text-faint">
 												{action.hint}
 											</div>
 										</div>
@@ -806,18 +854,18 @@ function AgentReviewCard({
 						<button
 							type="button"
 							className={gitActionClass(rowTone)}
-							disabled={busy !== null || active}
-							onClick={() => run(primary)}
-							title={primary.hint}
+							disabled={busy !== null || reviewCancelling}
+							onClick={active ? () => void cancelReview() : () => void run(primary)}
+							title={active ? `Cancel ${AGENT_NAME} review` : primary.hint}
 						>
-							{primaryLabel}
+							{active ? (reviewCancelling ? "Stopping" : "Cancel") : primaryLabel}
 						</button>
 					)}
 				</div>
 				{children}
 			</div>
 			{done && (
-				<div className="px-3 text-meta font-medium text-dim">
+				<div className="px-3 text-supporting text-dim">
 					Started {done.label.toLowerCase()}. {AGENT_NAME} will post results on{" "}
 					{pr.url ? (
 						<a
@@ -853,7 +901,7 @@ function AgentReviewCard({
 				</div>
 			)}
 			{error && (
-				<div className="px-3 text-meta font-medium text-red">
+				<div className="px-3 text-supporting text-red">
 					{error}
 				</div>
 			)}
@@ -904,10 +952,20 @@ function ReviewerChip({
 	const [error, setError] = useState<string | null>(null);
 	// Follow the polled session as it refreshes (another viewer may re-assign or
 	// sign off). Track accepted's timestamp too so the sign-off lands live.
-	useEffect(() => {
+	const reqKey = [
+		reviewRequest?.to,
+		reviewRequest?.at,
+		reviewRequest?.accepted?.at,
+	].join("\0");
+	// Content-keyed resync: the trigger is the request's identity fields; the
+	// copy lands through an effect event so the object itself stays out of deps.
+	const syncRequest = useEffectEvent(() => {
 		setReq(reviewRequest ?? null);
 		setError(null);
-	}, [reviewRequest?.to, reviewRequest?.at, reviewRequest?.accepted?.at]);
+	});
+	useEffect(() => {
+		syncRequest();
+	}, [reqKey]);
 
 	// The session that owns an existing request; a brand-new one anchors to the open session.
 	const owner = (req && requestSessionId) || sessionId;
@@ -919,9 +977,13 @@ function ReviewerChip({
 	const me = personKey(currentUser);
 	// Local so clearing them lands immediately; the polled session confirms.
 	const [ghRequested, setGhRequested] = useState(prReviewRequested || []);
-	useEffect(() => {
+	const ghRequestedKey = (prReviewRequested || []).join("\n");
+	const syncGhRequested = useEffectEvent(() => {
 		setGhRequested(prReviewRequested || []);
-	}, [(prReviewRequested || []).join("\n")]);
+	});
+	useEffect(() => {
+		syncGhRequested();
+	}, [ghRequestedKey]);
 	const githubRequested = ghRequested.map((person) => person.toLowerCase());
 	const githubRequestsMe = githubRequested.some((person) => person === me);
 	const needsMyReview =
@@ -1198,7 +1260,7 @@ function GitStatusRows({
 
 	return (
 		<div className={INFO_SECTION_CLASS}>
-			<div className={INFO_LABEL_CLASS}>Git status</div>
+			<div className={INFO_LABEL_CLASS}>Uncommitted</div>
 			<div className={INFO_LIST_CLASS}>
 				<div className={`${GIT_ROW} py-2`}>
 					<span className={`${GIT_DOT} ${GIT_DOT_BG.yellow}`} aria-hidden />
@@ -1222,10 +1284,13 @@ function GitStatusRows({
 	);
 }
 
-/** One frame in a media strip, and what clicking it opens. */
+/** One frame in a media strip, and what clicking it opens. `file` is an asset
+ *  with nothing to show: it holds the same tile with a glyph in it, so a
+ *  folder of captures and notes stays one set instead of a strip with the
+ *  notes stranded under it. */
 type StripItem = {
 	key: string;
-	kind: "image" | "video";
+	kind: "image" | "video" | "file";
 	src: string;
 	/** Native tooltip: where the frame came from, or what the file is. */
 	title?: string;
@@ -1290,7 +1355,11 @@ function MediaStrip({ items }: { items: StripItem[] }) {
 						// the fill alone: there is no line above strong to escalate to.
 						className="relative block aspect-video w-full overflow-hidden rounded-[calc(14px*var(--rf)-12px)] border border-line-strong bg-surface transition-colors group-hover/frame:bg-hover"
 					>
-						{item.kind === "image" ? (
+						{item.kind === "file" ? (
+							<span className="grid h-full w-full place-items-center text-faint">
+								<IconFile size={24} />
+							</span>
+						) : item.kind === "image" ? (
 							<img
 								src={item.src}
 								alt=""
@@ -1361,118 +1430,47 @@ export function WorkspaceInfo({
 }: Props) {
 	const sessionsKey = sessions.map((c) => c.id).join(",");
 	const cacheKey = workspaceId || `sessions:${sessionsKey}`;
-	const [data, setData] = useState<WorkspaceOverview | null>(
-		() => overviewCache.get(cacheKey)?.data ?? null,
+	const overviewRevision = `${sessions
+		.map((session) => session.lastActivity || session.createdAt)
+		.join(",")}\0${liveMediaCount}`;
+	const overviewResource = useWorkspaceOverviewResource(
+		cacheKey,
+		workspaceId,
+		sessions,
+		{ revision: overviewRevision },
 	);
+	const prResource = useSessionPrResource(sessionId, repo, undefined, {
+		enabled: Boolean(prState),
+		refreshInterval: PR_WEBHOOK_FALLBACK_POLL_MS,
+		revision: refreshTick,
+	});
+	const diffResource = useSessionDiffResource(sessionId, {
+		enabled: Boolean(repo && sessionId),
+		refreshInterval: 45_000,
+		revision: liveMediaCount,
+	});
+	const gitResource = useSessionGitResource(sessionId, repo, {
+		enabled: Boolean(repo && sessionId),
+		refreshInterval: 45_000,
+		revision: liveMediaCount,
+	});
+	const data = overviewResource.data ?? null;
+	const commits = data?.commits ?? [];
+	const pr = prState ? (prResource.data ?? null) : null;
+	const primaryDiff =
+		diffResource.data?.repos.find((entry) => entry.primary) ||
+		diffResource.data?.repos[0] ||
+		null;
+	const files: DiffFile[] | null = repo
+		? (primaryDiff?.diff.files ?? (diffResource.data ? [] : null))
+		: null;
+	const rawPatch = primaryDiff?.diff.rawPatch ?? "";
+	const git: GitStatusInfo | null = repo ? (gitResource.data ?? null) : null;
 	const [commentsExpanded, setCommentsExpanded] = useState(false);
-	const [pr, setPr] = useState<PrDetails | null>(null);
-	const [files, setFiles] = useState<DiffFile[] | null>(null);
-	// The primary repo's raw patch, kept so the file rows can hover-reveal the
-	// actual diff for that file (parsed lazily below).
-	const [rawPatch, setRawPatch] = useState<string>("");
-	// Local git state (ahead/behind, dirty tree) for the Git status section.
-	const [git, setGit] = useState<GitStatusInfo | null>(null);
-
-	// The sessions array is re-created every App render — read it through a ref so
-	// the fetch effect keys on the stable sessionsKey instead.
-	const sessionsRef = useRef(sessions);
-	sessionsRef.current = sessions;
 
 	useEffect(() => {
-		let alive = true;
-		const cached = overviewCache.get(cacheKey);
-		setData(cached?.data ?? null);
 		setCommentsExpanded(false);
-		// Fresh cache → refresh quietly in the background after a beat (also
-		// debounces the liveMediaCount bumps during a streaming run).
-		const t = setTimeout(
-			() => {
-				loadOverview(cacheKey, workspaceId, sessionsRef.current)
-					.then((ov) => {
-						if (alive) setData(ov);
-					})
-					.catch(() => {
-						// Keep whatever we had — the block just doesn't refresh.
-					});
-			},
-			cached ? 1200 : 0,
-		);
-		return () => {
-			alive = false;
-			clearTimeout(t);
-		};
-	}, [cacheKey, sessionsKey, workspaceId, liveMediaCount]);
-
-	// PR (for the status chips) — webhooks trigger refreshTick; the slow poll only
-	// recovers a missed delivery or a deployment with no matching webhook.
-	useEffect(() => {
-		if (!prState) {
-			setPr(null);
-			return;
-		}
-		let alive = true;
-		const load = () =>
-			fetchPr(sessionId, repo)
-				.then((p) => alive && setPr(p))
-				.catch(() => {});
-		load();
-		const stop = pollWhileVisible(load, PR_WEBHOOK_FALLBACK_POLL_MS);
-		return () => {
-			alive = false;
-			stop();
-		};
-	}, [sessionId, repo, prState, refreshTick]);
-
-	// Files changed — the primary repo's diff (Changes tab has the full view
-	// + repo switcher; here we show a capped preview).
-	useEffect(() => {
-		// No session to read through: a session-less workspace has no worktree,
-		// so there is no diff to ask for (and nothing to poll for one).
-		if (!repo || !sessionId) {
-			setFiles(null);
-			setRawPatch("");
-			return;
-		}
-		let alive = true;
-		const load = () =>
-			fetchDiff(sessionId)
-				.then((res) => {
-					if (!alive) return;
-					const primary =
-						res.repos.find((r) => r.primary) || res.repos[0] || null;
-					setFiles(primary?.diff.files ?? []);
-					setRawPatch(primary?.diff.rawPatch ?? "");
-				})
-				.catch(() => {});
-		load();
-		const iv = setInterval(load, 45000);
-		return () => {
-			alive = false;
-			clearInterval(iv);
-		};
-	}, [sessionId, repo, liveMediaCount]);
-
-	// Local git status (ahead/behind, uncommitted) for the Git status section — same
-	// slow poll, refetched as live media bumps (a proxy for run activity) so the
-	// counts settle after a turn's auto-commit/push. Only when the session has a repo.
-	useEffect(() => {
-		// Same as the diff above: local git state is the session's worktree's.
-		if (!repo || !sessionId) {
-			setGit(null);
-			return;
-		}
-		let alive = true;
-		const load = () =>
-			fetchGitStatus(sessionId, repo)
-				.then((g) => alive && setGit(g))
-				.catch(() => {});
-		load();
-		const iv = setInterval(load, 45000);
-		return () => {
-			alive = false;
-			clearInterval(iv);
-		};
-	}, [sessionId, repo, liveMediaCount]);
+	}, [cacheKey]);
 
 	// This list is what the team said about the PR, so machines are dropped:
 	// deploy bots, preview tables, and the agent's own review, which the review
@@ -1483,22 +1481,18 @@ export function WorkspaceInfo({
 	// regex passes per comment, and this component re-renders on every live
 	// media frame while a session streams, which is not a reason to flatten
 	// the same markdown again.
-	const comments = useMemo(
-		() =>
-			(pr?.comments ?? [])
+	const comments = ((pr?.comments ?? [])
 				.filter((c) => !isMachinePrComment(c))
 				.filter((c) => !isOutdatedReviewComment(c.body))
 				.map((c) => ({ ...c, preview: plainComment(c.body) }))
-				.filter((c) => c.preview.length > 0),
-		[pr?.comments],
-	);
+				.filter((c) => c.preview.length > 0));
 	const changed = files ?? [];
 	const totalAdd = changed.reduce((n, f) => n + (f.additions || 0), 0);
 	const totalDel = changed.reduce((n, f) => n + (f.deletions || 0), 0);
 	// Parse the raw patch once into a path→file-diff map so each file row can
 	// hover-reveal its own hunks (same @pierre/diffs parse the Changes tab uses).
 	const diffTheme = useResolvedTheme();
-	const diffByPath = useMemo(() => {
+	const diffByPath = (() => {
 		const m = new Map<string, FileDiffMetadata>();
 		if (!rawPatch.trim()) return m;
 		try {
@@ -1508,12 +1502,12 @@ export function WorkspaceInfo({
 			/* malformed patch — rows just fall back to a plain click. */
 		}
 		return m;
-	}, [rawPatch]);
+	})();
 	// Live media leads, so a frame the overview has since caught up on keeps its
 	// first (live) position. One pass over a seen-set rather than a findIndex
 	// per item: this list runs to the hundreds on a long workspace, and it was
 	// rebuilt quadratically on every frame of a streaming run.
-	const media = useMemo(() => {
+	const media = (() => {
 		const seen = new Set<string>();
 		const out: WorkspaceMediaItem[] = [];
 		for (const m of [...liveMedia, ...(data?.media || [])]) {
@@ -1525,20 +1519,23 @@ export function WorkspaceInfo({
 			out.push(m);
 		}
 		return out;
-	}, [liveMedia, data?.media]);
+	})();
 
 	// A picture or a recording an agent wrote is shown, not listed: its name and
-	// size say nothing about it. Everything else (a page, a report, a data
-	// file) is the opposite, so it keeps the row, where the name and the
-	// description are the content.
-	const visualAssets = assets.filter((a) => isVisualAsset(a.path));
-	const fileAssets = assets.filter((a) => !isVisualAsset(a.path));
+	// size say nothing about it. A page, a report or a data file is the
+	// opposite, and its name and description ARE the content. Rather than draw
+	// half the band each way and leave the files stranded under a strip of
+	// pictures, the whole folder goes one way at a time and the heading's toggle
+	// says which. The header's summary card reads the same preference, so one
+	// window never shows the same folder two ways.
+	const [assetView, setAssetView] = useAssetViewMode();
 
 	// Ahead, behind and the PR itself are the status strip's; this section is
 	// only the uncommitted work in the tree.
 	const showGit = Boolean(git && git.uncommittedFiles > 0);
 	const hasBody = Boolean(
 		comments.length > 0 ||
+		commits.length > 0 ||
 		changed.length > 0 ||
 		media.length > 0 ||
 		assets.length > 0,
@@ -1582,7 +1579,10 @@ export function WorkspaceInfo({
 				</div>
 			)}
 			{sandbox && (
-				<div className="flex flex-wrap items-center gap-1.5 px-2">
+				// `px-3`, the label inset: the badge is a section's worth of content
+				// with no plate under it, so it lines up with the labels rather than
+				// with the rows inside a plate.
+				<div className="flex flex-wrap items-center gap-1.5 px-3">
 					<SandboxBadge sessionId={sessionId} sandbox={sandbox} />
 				</div>
 			)}
@@ -1637,6 +1637,16 @@ export function WorkspaceInfo({
 							</div>
 						</div>
 					)}
+					{commits.length > 0 && (
+						<div className={INFO_SECTION_CLASS}>
+							<div className={INFO_LABEL_CLASS}>Committed</div>
+							<div className={INFO_LIST_CLASS}>
+								{commits.map((commit) => (
+									<CommitRow key={commit.sha} commit={commit} />
+								))}
+							</div>
+						</div>
+					)}
 					{changed.length > 0 && (
 						<div className={INFO_SECTION_CLASS}>
 							<div className={cn(INFO_LABEL_CLASS, "flex items-center justify-between gap-2")}>
@@ -1676,17 +1686,18 @@ export function WorkspaceInfo({
 					)}
 					{media.length > 0 && (
 						<div className={INFO_SECTION_CLASS}>
-							{/* Not "screenshots": the strip has always shown recordings
-							    too. Naming the source instead is what separates this
-							    section from the assets below it: one is what appeared in
-							    the conversation, the other is what the session wrote. */}
+							{/* The strip shows recordings too, but screenshots are what
+							    people call the set, so that is the word to head it with.
+							    What separates this section from the assets below it is
+							    still the source: one is what appeared in the conversation,
+							    the other is what the session wrote. */}
 							<div
 								className={cn(
 									INFO_LABEL_CLASS,
 									"flex items-center justify-between gap-2",
 								)}
 							>
-								<span>Conversation</span>
+								<span>Screenshots</span>
 								<span className="tabular-nums">{media.length}</span>
 							</div>
 							<MediaStrip
@@ -1707,20 +1718,25 @@ export function WorkspaceInfo({
 							<div
 								className={cn(
 									INFO_LABEL_CLASS,
-									"flex items-center justify-between gap-2",
+									"group/assets flex items-center justify-between gap-2",
 								)}
 							>
 								<span>Assets</span>
-								<span className="tabular-nums">{assets.length}</span>
+								<span className="flex items-center gap-1.5">
+									<AssetViewToggle mode={assetView} onChange={setAssetView} />
+									<span className="tabular-nums">{assets.length}</span>
+								</span>
 							</div>
-							{visualAssets.length > 0 && (
+							{assetView === "preview" ? (
 								<MediaStrip
-									items={visualAssets.map((a) => ({
+									items={assets.map((a) => ({
 										key: a.path,
 										kind:
 											assetPreviewKind(a.path) === "video"
 												? ("video" as const)
-												: ("image" as const),
+												: isVisualAsset(a.path)
+													? ("image" as const)
+													: ("file" as const),
 										src: sessionAssetPreviewUrl(sessionId, a),
 										title: [`Open ${a.path}`, a.description]
 											.filter(Boolean)
@@ -1731,10 +1747,9 @@ export function WorkspaceInfo({
 										onOpen: () => onOpenAsset?.(a.path),
 									}))}
 								/>
-							)}
-							{fileAssets.length > 0 && (
+							) : (
 								<div className={INFO_LIST_CLASS}>
-									{fileAssets.map((a) => (
+									{assets.map((a) => (
 										<button
 											key={a.path}
 											type="button"
@@ -1748,17 +1763,42 @@ export function WorkspaceInfo({
 												a.description ? "items-start" : "items-center",
 											)}
 										>
-											<IconFile
-												size={14}
-												className={cn(
-													"shrink-0 text-faint",
-													a.description && "mt-0.5",
-												)}
-											/>
+											{assetPreviewKind(a.path) === "image" ? (
+												<img
+													src={sessionAssetPreviewUrl(sessionId, a)}
+													alt=""
+													loading="lazy"
+													// Too small to say what the capture is, which is
+													// what the frames are for. What it does is tell
+													// two rows apart once you already know them.
+													className={cn(
+														"size-3.5 shrink-0 rounded-[3px] border border-line-strong object-cover",
+														a.description && "mt-0.5",
+													)}
+												/>
+											) : assetPreviewKind(a.path) === "video" ? (
+												// A poster frame at 14px is a smudge, so a recording
+												// says what it is instead.
+												<IconPlayRectangle
+													size={14}
+													className={cn(
+														"shrink-0 text-faint",
+														a.description && "mt-0.5",
+													)}
+												/>
+											) : (
+												<IconFile
+													size={14}
+													className={cn(
+														"shrink-0 text-faint",
+														a.description && "mt-0.5",
+													)}
+												/>
+											)}
 											<span className="min-w-0 flex-1">
 												<span className="block truncate">{a.path}</span>
 												{a.description && (
-													<span className="mt-0.5 line-clamp-2 text-meta leading-snug text-dim">
+													<span className="mt-0.5 line-clamp-2 text-supporting leading-snug text-dim">
 														{a.description}
 													</span>
 												)}

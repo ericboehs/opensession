@@ -40,6 +40,8 @@ const COARSE_POINTER =
 export interface SessionScroll {
   /** Attach to the scrollable transcript container. */
   containerRef: React.RefObject<HTMLDivElement | null>;
+  /** Callback ref that keeps element-bound listeners attached across view swaps. */
+  setContainerRef: (node: HTMLDivElement | null) => void;
   /** Attach to a zero-content div rendered as the last child of the container. */
   spacerRef: React.RefObject<HTMLDivElement | null>;
   /** True while the reader is pinned to the live edge and we may auto-advance. */
@@ -64,6 +66,9 @@ export interface SessionScroll {
   endTurn: () => void;
   /** Call after each content change (run in a layout effect) to keep things in place. */
   relayout: () => void;
+  /** Suspend the live-edge glue for two animation frames so a fold toggle's
+   *  height change settles before any re-glue can move the reader. */
+  suspendEndMaintenance: () => void;
   /** Wire to the container's onScroll to track the live edge. */
   onScroll: () => void;
 }
@@ -105,6 +110,11 @@ function latestMessageVisible(container: HTMLElement): boolean {
 
 export function useSessionScroll(initialFollowing = true): SessionScroll {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const setContainerRef = useCallback((node: HTMLDivElement | null) => {
+    containerRef.current = node;
+    setContainer(node);
+  }, []);
   const spacerRef = useRef<HTMLDivElement>(null);
   // followingRef is the live value read inside handlers; `following` mirrors it for
   // rendering. Default true so a fresh, running session tracks the stream.
@@ -133,6 +143,13 @@ export function useSessionScroll(initialFollowing = true): SessionScroll {
   // never stuck. While in flight we only ever re-engage (on arrival); a real
   // gesture (wheel/touch) or the deadline cancels the flight.
   const autoFlightRef = useRef(0);
+  // True for two animation frames after a fold toggle. Expanding or collapsing
+  // a disclosure changes block heights, and at the live edge that reads as
+  // "the bottom moved" — the glue would yank the reader off the fold they just
+  // opened, and the scroll events it generates read as intent to leave. Both
+  // are held off until the layout settles. A real reader gesture cancels it.
+  const disclosureSettleRef = useRef(false);
+  const disclosureSettleFramesRef = useRef<number[]>([]);
   // Timestamps of the last real reader gestures. Scroll events without a
   // recent gesture are layout-driven — the pin's anchor animation, or the
   // clamp when stream text swaps for the final transcript entry — and must
@@ -143,6 +160,13 @@ export function useSessionScroll(initialFollowing = true): SessionScroll {
   // seconds after the last touch event, with no scrollend support to lean on.
   const lastGestureRef = useRef(0);
   const lastTouchRef = useRef(0);
+  // Persists across trailing layout-driven scroll events. Only movement back
+  // toward the live edge or an explicit jump clears the reader's upward intent.
+  const towardHistoryGestureRef = useRef(false);
+  // Position from the previous scroll event. Direction matters inside the stick
+  // threshold: a small first step toward history is still an instruction to
+  // stop following, even though it remains less than 90px from the bottom.
+  const lastScrollTopRef = useRef(0);
   // True while the pointer is dragging the scrollbar (classic scrollbars hit
   // the container itself past clientWidth; overlay scrollbars aren't
   // detectable — those readers re-engage via wheel/touch or the jump button).
@@ -171,6 +195,7 @@ export function useSessionScroll(initialFollowing = true): SessionScroll {
     followingRef.current = v;
     setFollowingState(v);
     if (v) {
+      towardHistoryGestureRef.current = false;
       // Returning to the live edge ends any pinned turn and clears the unread flag.
       setNewBelow(false);
       setShowScrollToBottom(false);
@@ -182,9 +207,10 @@ export function useSessionScroll(initialFollowing = true): SessionScroll {
   // together: the "Load all" pill at the head of the transcript and the return
   // control at its foot. Each one belongs to an end the reader can't see, and
   // showing either from anywhere else leaves it floating over live content.
-  const updateEdges = useCallback((isFollowing = followingRef.current) => {
+  const updateEdges = useCallback((isFollowing?: boolean) => {
+    const resolvedFollowing = isFollowing ?? followingRef.current;
     const el = containerRef.current;
-    setShowScrollToBottom(Boolean(el && !isFollowing && !latestMessageVisible(el)));
+    setShowScrollToBottom(Boolean(el && !resolvedFollowing && !latestMessageVisible(el)));
     setAtTop(
       Boolean(el && el.scrollTop <= Math.min(el.clientHeight, TOP_THRESHOLD))
     );
@@ -195,6 +221,7 @@ export function useSessionScroll(initialFollowing = true): SessionScroll {
     lastGestureRef.current = 0;
     lastTouchRef.current = 0;
     scrollbarDragRef.current = false;
+    towardHistoryGestureRef.current = true;
     setFollowing(false);
     updateEdges(false);
   }, [setFollowing, updateEdges]);
@@ -274,6 +301,22 @@ export function useSessionScroll(initialFollowing = true): SessionScroll {
 
   const endTurn = useCallback(() => { clearSpacer(); }, [clearSpacer]);
 
+  const suspendEndMaintenance = useCallback(() => {
+    for (const frame of disclosureSettleFramesRef.current) cancelAnimationFrame(frame);
+    disclosureSettleFramesRef.current = [];
+    disclosureSettleRef.current = true;
+    // Two frames: one for the fold's own layout pass, one for the follow-up
+    // resize nested content sometimes triggers.
+    const first = requestAnimationFrame(() => {
+      const second = requestAnimationFrame(() => {
+        disclosureSettleRef.current = false;
+        disclosureSettleFramesRef.current = [];
+      });
+      disclosureSettleFramesRef.current = [second];
+    });
+    disclosureSettleFramesRef.current = [first];
+  }, []);
+
   // Run from a layout effect after content changes. Two jobs: keep a following
   // reader glued to the live edge, and maintain the pinned-turn spacer.
   const relayout = useCallback(() => {
@@ -325,10 +368,15 @@ export function useSessionScroll(initialFollowing = true): SessionScroll {
     // Stick to the bottom only while following — and never mid-selection, since a
     // selection is the reader actively working with the text (principle 3).
     if (followingRef.current && !selectionWithin(el)) {
-      el.scrollTop = el.scrollHeight; // instant: a smooth animation per token janks
+      // A fold is settling: its height change IS this relayout's cause, and
+      // gluing now would drag the reader off the block they just toggled.
+      if (!disclosureSettleRef.current) {
+        el.scrollTop = el.scrollHeight; // instant: a smooth animation per token janks
+      }
     } else if (
       hadLayout &&
       !followingRef.current &&
+      !disclosureSettleRef.current &&
       distanceFromBottom() > STICK_THRESHOLD
     ) {
       setNewBelow(true); // content arrived out of view, let the UI announce it
@@ -353,6 +401,11 @@ export function useSessionScroll(initialFollowing = true): SessionScroll {
         }
       });
     }
+    const el = containerRef.current;
+    const scrollTop = el?.scrollTop ?? 0;
+    const movedTowardHistory = scrollTop < lastScrollTopRef.current - 0.5;
+    const movedTowardLatest = scrollTop > lastScrollTopRef.current + 0.5;
+    lastScrollTopRef.current = scrollTop;
     const atEdge = distanceFromBottom() < STICK_THRESHOLD;
     const now = performance.now();
     if (autoFlightRef.current) {
@@ -375,6 +428,18 @@ export function useSessionScroll(initialFollowing = true): SessionScroll {
       scrollbarDragRef.current ||
       now - lastGestureRef.current < 1000 ||
       now - lastTouchRef.current < 6000;
+    // Mid-settle positions carry no reader intent (same rule as autoFlight):
+    // the fold's growth moves scrollTop without the reader touching anything.
+    if (disclosureSettleRef.current && !gestured) return;
+    if (scrollbarDragRef.current && gestured) {
+      if (movedTowardHistory) towardHistoryGestureRef.current = true;
+      else if (movedTowardLatest) towardHistoryGestureRef.current = false;
+    }
+    if (towardHistoryGestureRef.current && gestured) {
+      if (followingRef.current) setFollowing(false);
+      updateEdges(false);
+      return;
+    }
     if (!atEdge && followingRef.current) setFollowing(false);
     else if (atEdge && !followingRef.current && gestured) setFollowing(true);
     updateEdges(followingRef.current);
@@ -386,23 +451,56 @@ export function useSessionScroll(initialFollowing = true): SessionScroll {
   // grows the content with no React state change, which otherwise left a
   // following reader silently stranded above the bottom.
   useEffect(() => {
-    const el = containerRef.current;
+    const el = container;
     if (!el) return;
-    const gesture = () => {
+    const markGesture = () => {
       autoFlightRef.current = 0;
+      disclosureSettleRef.current = false;
       lastGestureRef.current = performance.now();
     };
-    const touch = () => {
-      gesture();
+    const leaveForGesture = () => {
+      // A live frame can relayout before the browser delivers the gesture's
+      // scroll event. Retire both forms of automatic positioning immediately,
+      // or that frame can put the reader back at the live edge/pinned turn and
+      // erase their first attempt to scroll into history.
+      pinTopRef.current = null;
+      needAnchorRef.current = false;
+      lastScrollTopRef.current = el.scrollTop;
+      towardHistoryGestureRef.current = true;
+      if (followingRef.current) setFollowing(false);
+    };
+    const wheel = (event: WheelEvent) => {
+      markGesture();
+      if (event.deltaY < 0 && el.scrollTop > 0) leaveForGesture();
+      else if (event.deltaY > 0) towardHistoryGestureRef.current = false;
+    };
+    let touchY: number | null = null;
+    const touchStart = (event: TouchEvent) => {
+      markGesture();
       lastTouchRef.current = performance.now();
+      touchY = event.touches[0]?.clientY ?? null;
+    };
+    const touchMove = (event: TouchEvent) => {
+      markGesture();
+      lastTouchRef.current = performance.now();
+      const nextY = event.touches[0]?.clientY ?? null;
+      // Dragging the finger down moves the transcript toward earlier messages.
+      if (touchY !== null && nextY !== null && nextY > touchY && el.scrollTop > 0)
+        leaveForGesture();
+      else if (touchY !== null && nextY !== null && nextY < touchY)
+        towardHistoryGestureRef.current = false;
+      touchY = nextY;
     };
     const onPointerDown = (e: PointerEvent) => {
       // Classic scrollbar drags hit the container itself past the content box.
       if (
         e.target === el &&
         (e.offsetX >= el.clientWidth || e.offsetY >= el.clientHeight)
-      )
+      ) {
         scrollbarDragRef.current = true;
+        markGesture();
+        leaveForGesture();
+      }
     };
     const endDrag = () => {
       if (!scrollbarDragRef.current) return;
@@ -410,23 +508,23 @@ export function useSessionScroll(initialFollowing = true): SessionScroll {
       lastGestureRef.current = performance.now();
     };
     const onLoad = () => relayout();
-    el.addEventListener("wheel", gesture, { passive: true });
-    el.addEventListener("touchstart", touch, { passive: true });
-    el.addEventListener("touchmove", touch, { passive: true });
+    el.addEventListener("wheel", wheel, { passive: true });
+    el.addEventListener("touchstart", touchStart, { passive: true });
+    el.addEventListener("touchmove", touchMove, { passive: true });
     el.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("pointerup", endDrag);
     window.addEventListener("pointercancel", endDrag);
     el.addEventListener("load", onLoad, true);
     return () => {
-      el.removeEventListener("wheel", gesture);
-      el.removeEventListener("touchstart", touch);
-      el.removeEventListener("touchmove", touch);
+      el.removeEventListener("wheel", wheel);
+      el.removeEventListener("touchstart", touchStart);
+      el.removeEventListener("touchmove", touchMove);
       el.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("pointerup", endDrag);
       window.removeEventListener("pointercancel", endDrag);
       el.removeEventListener("load", onLoad, true);
     };
-  }, [relayout]);
+  }, [container, relayout, setFollowing]);
 
   // The container can change height with no content change at all: the composer
   // grows a line as the reader types, the queue flap folds out, a panel opens.
@@ -437,7 +535,7 @@ export function useSessionScroll(initialFollowing = true): SessionScroll {
   // resize never moves someone who is deliberately reading history, and never
   // announces "new messages" for content that didn't arrive.
   useEffect(() => {
-    const el = containerRef.current;
+    const el = container;
     if (!el || typeof ResizeObserver === "undefined") return;
     let first = true;
     const ro = new ResizeObserver(() => {
@@ -451,7 +549,7 @@ export function useSessionScroll(initialFollowing = true): SessionScroll {
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [relayout]);
+  }, [container, relayout]);
 
   // While a turn is pinned, keyboard open/close (visual-viewport pan/resize on
   // iOS) moves the visible window without any content change — re-seat the pin
@@ -472,6 +570,7 @@ export function useSessionScroll(initialFollowing = true): SessionScroll {
 
   return {
     containerRef,
+    setContainerRef,
     spacerRef,
     following,
     followingLive: followingRef,
@@ -484,6 +583,7 @@ export function useSessionScroll(initialFollowing = true): SessionScroll {
     beginTurn,
     endTurn,
     relayout,
+    suspendEndMaintenance,
     onScroll,
   };
 }

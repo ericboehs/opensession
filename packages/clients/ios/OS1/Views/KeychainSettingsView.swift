@@ -88,9 +88,16 @@ struct KeychainSettingsView: View {
                             }
                             Spacer(minLength: 12)
                             Button(role: .destructive) { deleting = credential } label: {
-                                Image(systemName: "trash")
+                                Label(
+                                    "Delete \(credential.service ?? "credential")",
+                                    systemImage: "trash"
+                                )
                             }
+                            .labelStyle(.iconOnly)
                             .buttonStyle(.borderless)
+                            #if os(iOS)
+                            .frame(minWidth: 44, minHeight: 44)
+                            #endif
                         }
                         .padding(.vertical, 2)
                     }

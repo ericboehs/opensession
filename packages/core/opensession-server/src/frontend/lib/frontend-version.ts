@@ -1,4 +1,4 @@
-import { BASE_PATH } from "./base";
+import { fetchHealthStatus } from "./health";
 
 /**
  * Stale-bundle detection for already-open windows.
@@ -12,7 +12,6 @@ import { BASE_PATH } from "./base";
  * half-typed composer out from under someone is worse than a stale bundle.
  * Subscribers surface the same non-blocking "Update" nudge as the broadcast.
  */
-const HEALTH_URL = `${BASE_PATH}/api/health`;
 const POLL_MS = 30_000;
 
 let seen: string | null = null;
@@ -24,7 +23,7 @@ async function check() {
   // wakeups for a nudge nobody can see.
   if (document.hidden) return;
   try {
-    const data = await fetch(HEALTH_URL, { cache: "no-store" }).then((r) => r.json());
+    const data = await fetchHealthStatus();
     const version = data?.frontendVersion;
     if (typeof version !== "string" || !version) return;
     if (seen === null) {

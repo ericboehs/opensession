@@ -90,18 +90,22 @@ export function ProjectsSection() {
 	const [error, setError] = useState<string | null>(null);
 
 	const load = useCallback(async () => {
-		try {
-			const res = await fetch(`${BASE_PATH}/api/feeds`);
+		await (async () => {
+const res = await fetch(`${BASE_PATH}/api/feeds`);
 			if (res.ok) setFeeds((await res.json()).feeds || []);
-		} catch {}
-		try {
-			// The union view: repo projects come from the registry, feed
+})().catch(async () => {
+
+});
+		await (async () => {
+// The union view: repo projects come from the registry, feed
 			// projects from the same descriptors above. Only feeds are
 			// editable here, but both belong in the list — a project is a
 			// project regardless of what backs it.
 			const res = await fetch(`${BASE_PATH}/api/projects`);
 			if (res.ok) setProjects((await res.json()).projects || []);
-		} catch {}
+})().catch(async () => {
+
+});
 	}, []);
 	useEffect(() => {
 		void load();
@@ -219,8 +223,8 @@ function NewProjectModal({
 	useEffect(() => {
 		if (!open) return;
 		void (async () => {
-			try {
-				const res = await fetch(`${BASE_PATH}/api/connections`);
+			await (async () => {
+const res = await fetch(`${BASE_PATH}/api/connections`);
 				if (!res.ok) return;
 				const body = await res.json();
 				setServers(
@@ -228,7 +232,9 @@ function NewProjectModal({
 						.filter((s: { transport: string }) => s.transport === "http")
 						.map((s: { name: string }) => s.name),
 				);
-			} catch {}
+})().catch(async () => {
+
+});
 		})();
 	}, [open]);
 
@@ -239,8 +245,8 @@ function NewProjectModal({
 		if (!server) return;
 		void (async () => {
 			setBusy("Loading tool catalog…");
-			try {
-				const res = await fetch(
+			await (async () => {
+const res = await fetch(
 					`${BASE_PATH}/api/connections/mcp/${encodeURIComponent(server)}/tools`,
 				);
 				const body = await res.json();
@@ -253,24 +259,24 @@ function NewProjectModal({
 					return la - lb || a.name.localeCompare(b.name);
 				});
 				setTools(all);
-			} catch (e: any) {
-				setError(e.message);
-			} finally {
-				setBusy(null);
-			}
+})().catch(async (e: any) => {
+setError(e.message);
+}).finally(async () => {
+setBusy(null);
+});
 		})();
 	}, [server]);
 
 	async function fetchSample() {
 		setError(null);
 		setBusy("Calling the tool…");
-		try {
-			let args: Record<string, unknown> = {};
-			try {
-				args = JSON.parse(argsText || "{}");
-			} catch {
-				throw new Error("Args must be valid JSON");
-			}
+		await (async () => {
+let args: Record<string, unknown> = {};
+			await (async () => {
+args = JSON.parse(argsText || "{}");
+})().catch(async () => {
+throw new Error("Args must be valid JSON");
+});
 			const res = await fetch(`${BASE_PATH}/api/feeds/preview`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
@@ -284,29 +290,29 @@ function NewProjectModal({
 			setPath(found.path);
 			setMap(suggestMap(found.sample));
 			setSampleItem(JSON.stringify(found.sample, null, 1).slice(0, 600));
-		} catch (e: any) {
-			setError(e.message);
-		} finally {
-			setBusy(null);
-		}
+})().catch(async (e: any) => {
+setError(e.message);
+}).finally(async () => {
+setBusy(null);
+});
 	}
 
 	async function save() {
 		setError(null);
 		setBusy("Saving…");
-		try {
-			const id = title
+		await (async () => {
+const id = title
 				.toLowerCase()
 				.replace(/[^a-z0-9]+/g, "-")
 				.replace(/^-+|-+$/g, "")
 				.slice(0, 30);
 			if (!id) throw new Error("Give the project a name");
 			let args: Record<string, unknown> = {};
-			try {
-				args = JSON.parse(argsText || "{}");
-			} catch {
-				throw new Error("Args must be valid JSON");
-			}
+			await (async () => {
+args = JSON.parse(argsText || "{}");
+})().catch(async () => {
+throw new Error("Args must be valid JSON");
+});
 			const body = {
 				id,
 				title: title.trim(),
@@ -342,11 +348,11 @@ function NewProjectModal({
 			const out = await res.json();
 			if (!res.ok) throw new Error(out.error || `Failed: ${res.status}`);
 			onSaved();
-		} catch (e: any) {
-			setError(e.message);
-		} finally {
-			setBusy(null);
-		}
+})().catch(async (e: any) => {
+setError(e.message);
+}).finally(async () => {
+setBusy(null);
+});
 	}
 
 	const canSave = !!title.trim() && !!server && !!tool && !!map.id && !!map.title;

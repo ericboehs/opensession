@@ -21,9 +21,10 @@ import {
 	settingsInputClass,
 } from "../ui/settings";
 import { Menu } from "../ui/menu";
+import { IconTile } from "./BrandTile";
 import { IconDotsHorizontal, IconPlus, IconTrash } from "./icons";
 
-// Settings → Model providers: third-party OpenCode providers (xai, openrouter,
+// Settings → Model providers: third-party Pi providers (xai, openrouter,
 // groq, …) — API key + optional baseURL, stored server-side (0600, returned
 // masked) — plus the model ids each one surfaces in the model picker. The
 // anthropic/openai bridges are configured under Accounts, never here; the server
@@ -33,11 +34,11 @@ interface ProviderInfo {
 	id: string;
 	apiKeyMasked: string;
 	baseURL?: string;
-	/** Full picker ids (opencode/<provider>/<model>) registered for it. */
+	/** Full picker ids (pi/<provider>/<model>) registered for it. */
 	models: string[];
 }
 
-/** Common opencode provider slugs, offered as datalist suggestions. */
+/** Common pi provider slugs, offered as datalist suggestions. */
 const COMMON_PROVIDER_IDS = [
 	"xai",
 	"meta",
@@ -63,10 +64,12 @@ export function ModelProvidersPanel() {
 	const [showAdd, setShowAdd] = useState(false);
 
 	const load = useCallback(async () => {
-		try {
-			const res = await fetch(`${BASE_PATH}/api/settings/model-providers`);
+		await (async () => {
+const res = await fetch(`${BASE_PATH}/api/settings/model-providers`);
 			if (res.ok) setProviders((await res.json()).providers);
-		} catch {}
+})().catch(async () => {
+
+});
 	}, []);
 
 	useEffect(() => {
@@ -82,8 +85,8 @@ export function ModelProvidersPanel() {
 			)
 		)
 			return;
-		try {
-			const res = await fetch(
+		await (async () => {
+const res = await fetch(
 				`${BASE_PATH}/api/settings/model-providers/${encodeURIComponent(p.id)}`,
 				{ method: "DELETE" },
 			);
@@ -91,9 +94,9 @@ export function ModelProvidersPanel() {
 			if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
 			toast(`Provider ${p.id} removed`);
 			load();
-		} catch (e: any) {
-			toast(e.message, { variant: "error" });
-		}
+})().catch(async (e: any) => {
+toast(e.message, { variant: "error" });
+});
 	}
 
 	return (
@@ -128,10 +131,8 @@ export function ModelProvidersPanel() {
 					</EmptyState>
 				) : (
 					providers.map((p) => (
-						<SettingRow key={p.id}>
-							<span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-active text-control-label font-bold text-dim">
-								{p.id.charAt(0).toUpperCase()}
-							</span>
+						<SettingRow key={p.id} className="items-start gap-x-3">
+							<IconTile name={p.id} size={28} />
 							<SettingRowText>
 								<SettingRowTitle>{p.id}</SettingRowTitle>
 								<SettingRowDescription className="truncate">
@@ -151,9 +152,9 @@ export function ModelProvidersPanel() {
 										))}
 									</div>
 								) : (
-									<div className="mt-1 text-meta text-faint">
+									<div className="mt-1 text-supporting text-faint">
 										No picker models, so its models are type-in only
-										(opencode/{p.id}/&lt;model&gt;).
+										(pi/{p.id}/&lt;model&gt;).
 									</div>
 								)}
 							</SettingRowText>
@@ -182,7 +183,7 @@ export function ModelProvidersPanel() {
 			</SettingCard>
 
 			<SettingsHint>
-				Any provider the OpenCode engine supports (xAI, OpenRouter, Groq,
+				Any provider the Pi engine supports (xAI, OpenRouter, Groq,
 				Mistral, …) with your API key. Keys are stored on the server (0600) and
 				only ever shown masked. Changes apply to new session runs immediately,
 				and saved models appear in the picker without a restart. To update a
@@ -213,8 +214,8 @@ function AddProviderForm({
 	async function handleSave() {
 		setSaving(true);
 		setError(null);
-		try {
-			const modelIds = models
+		await (async () => {
+const modelIds = models
 				.split(/[\s,]+/)
 				.map((m) => m.trim())
 				.filter(Boolean);
@@ -235,19 +236,19 @@ function AddProviderForm({
 			if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
 			toast(`Provider ${cleanId} saved`);
 			onSaved();
-		} catch (e: any) {
-			setError(e.message);
+})().catch(async (e: any) => {
+setError(e.message);
 			setSaving(false);
-		}
+});
 	}
 
 	return (
 		<SettingsForm>
 			<SettingsFormTitle>Add provider</SettingsFormTitle>
 			<SettingRowDescription className="-mt-2 mb-3">
-				The provider id must match opencode's slug for it (xai, openrouter,
+				The provider id must match pi's slug for it (xai, openrouter,
 				groq, …). Models are registered in the picker as{" "}
-				<code>opencode/&lt;provider&gt;/&lt;model&gt;</code>. List the
+				<code>pi/&lt;provider&gt;/&lt;model&gt;</code>. List the
 				provider's own model ids, e.g. <code>grok-4</code> for xai.
 			</SettingRowDescription>
 

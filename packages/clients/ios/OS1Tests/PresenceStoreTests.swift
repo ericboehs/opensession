@@ -37,6 +37,15 @@ final class PresenceStoreTests: XCTestCase {
         XCTAssertEqual(store.viewers(of: [Session(id: "os-1")]), ["Zzz Tester"])
     }
 
+    func testSuspendPreservesPresenceSnapshot() {
+        let store = PresenceStore.shared
+        store.apply([entry("Zzz Tester", "os-1")])
+
+        store.suspend()
+
+        XCTAssertEqual(store.viewers(of: [Session(id: "os-1")]), ["Zzz Tester"])
+    }
+
     func testStopClearsStaleViewers() {
         let store = PresenceStore.shared
         store.apply([entry("Zzz Tester", "os-1")])

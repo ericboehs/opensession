@@ -37,22 +37,26 @@ let scratch: string;
 let prevEnvConfig: string | undefined;
 let prevE2bKey: string | undefined;
 let prevSecretsStore: string | undefined;
+let prevInstanceConfig: string | undefined;
 const cfgPath = () => join(scratch, "sandbox.json");
+const instanceCfgPath = () => join(scratch, "config.json");
 
 beforeAll(() => {
   scratch = mkdtempSync(join(tmpdir(), "bks-sandbox-status-"));
   prevEnvConfig = process.env.OPENSESSION_SANDBOX_CONFIG;
   prevE2bKey = process.env.E2B_API_KEY;
   prevSecretsStore = process.env.OPENSESSION_WORKSPACE_SECRETS_STORE;
+  prevInstanceConfig = process.env.OPENSESSION_CONFIG;
   process.env.OPENSESSION_SANDBOX_CONFIG = cfgPath();
+  process.env.OPENSESSION_CONFIG = instanceCfgPath();
   delete process.env.E2B_API_KEY;
   process.env.OPENSESSION_WORKSPACE_SECRETS_STORE = join(scratch, "secrets.json");
 });
 
 afterEach(() => {
-  try {
-    unlinkSync(cfgPath());
-  } catch {}
+  for (const path of [cfgPath(), instanceCfgPath()]) {
+    try { unlinkSync(path); } catch {}
+  }
 });
 
 afterAll(() => {
@@ -61,10 +65,14 @@ afterAll(() => {
   if (prevE2bKey !== undefined) process.env.E2B_API_KEY = prevE2bKey;
   if (prevSecretsStore !== undefined) process.env.OPENSESSION_WORKSPACE_SECRETS_STORE = prevSecretsStore;
   else delete process.env.OPENSESSION_WORKSPACE_SECRETS_STORE;
+  if (prevInstanceConfig !== undefined) process.env.OPENSESSION_CONFIG = prevInstanceConfig;
+  else delete process.env.OPENSESSION_CONFIG;
   rmSync(scratch, { recursive: true, force: true });
 });
 
 const write = (cfg: object) => writeFileSync(cfgPath(), JSON.stringify(cfg));
+const writeIngress = (publicBaseUrl: string) =>
+  writeFileSync(instanceCfgPath(), JSON.stringify({ ingress: { publicBaseUrl, exposure: "custom" } }));
 const ready = (provider: "docker" | "daytona" | "box" | "modal" | "microvm") => {
   connectSandboxProvider(
     provider,
@@ -147,17 +155,15 @@ describe("sandboxCapabilityStatus (the /api/sandbox/status payload)", () => {
     const s = sandboxCapabilityStatus();
     const d = s.providers.find((p) => p.id === "daytona")!;
     expect(d.configured).toBe(true);
-    expect(d.note).toContain("no dial-back URL configured");
+    expect(d.note).toContain("no public ingress configured");
     const e = s.providers.find((p) => p.id === "e2b")!;
     expect(e.configured).toBe(true);
-    expect(e.note).toContain("no dial-back URL configured");
+    expect(e.note).toContain("no public ingress configured");
   });
 
   test("healthy remote provider (public ingress configured) carries no note", () => {
-    write({
-      provider: "docker",
-      publicIngress: { enabled: true, port: 3860, publicBaseUrl: "wss://example.ts.net" },
-    });
+    write({ provider: "docker" });
+    writeIngress("https://example.ts.net");
     ready("daytona");
     const d = sandboxCapabilityStatus().providers.find((p) => p.id === "daytona")!;
     expect(d.configured).toBe(true);
@@ -236,7 +242,7 @@ describe("sandboxCapabilityStatus (the /api/sandbox/status payload)", () => {
     });
     ready("daytona");
     const d = sandboxCapabilityStatus().providers.find((p) => p.id === "daytona")!;
-    expect(d.note).toContain("no dial-back URL configured");
+    expect(d.note).toContain("no public ingress configured");
   });
 
   test("garbage config = no config", () => {
@@ -252,39 +258,31 @@ describe("sandboxCapabilityStatus (the /api/sandbox/status payload)", () => {
 
 describe("provider-independent model-family sandboxability", () => {
   test("family derivation follows the resolved engine provider", () => {
-    expect(sandboxModelFamilyFor("claude-fable-5").id).toBe("claude");
-    expect(sandboxModelFamilyFor("gpt-5.5").id).toBe("codex");
-    expect(sandboxModelFamilyFor("codex").id).toBe("codex"); // alias resolves
-    expect(sandboxModelFamilyFor("opencode/openai/gpt-5.4-mini").id).toBe("opencode");
-    expect(sandboxModelFamilyFor("opencode/anthropic/claude-sonnet-5").id).toBe("opencode");
-    expect(sandboxModelFamilyFor("opencode/google/gemini-3").id).toBe("opencode");
+    expect(sandboxModelFamilyFor("claude-fable-5").id).toBe("pi");
+    expect(sandboxModelFamilyFor("gpt-5.5").id).toBe("pi");
+    expect(sandboxModelFamilyFor("codex").id).toBe("pi"); // alias resolves
+    expect(sandboxModelFamilyFor("pi/openai/gpt-5.4-mini").id).toBe("pi");
+    expect(sandboxModelFamilyFor("pi/anthropic/claude-sonnet-5").id).toBe("pi");
+    expect(sandboxModelFamilyFor("pi/google/gemini-3").id).toBe("pi");
     expect(sandboxModelFamilyFor("pi/anthropic/claude-sonnet-5").id).toBe("pi");
     expect(sandboxModelFamilyFor("pi/openai/gpt-5.5").id).toBe("pi");
   });
 
-  test("Claude, Pi, and every OpenCode provider are sandboxable", () => {
+  test("Claude, Pi, and every Pi provider are sandboxable", () => {
     for (const model of [
       "claude-fable-5",
       "pi/anthropic/claude-sonnet-5",
       "pi/openai/gpt-5.5",
-      "opencode/openai/gpt-5.6-sol",
-      "opencode/anthropic/claude-sonnet-5",
-      "opencode/google/gemini-3",
-      "opencode/xai/grok-4.5",
+      "pi/openai/gpt-5.6-sol",
+      "pi/anthropic/claude-sonnet-5",
+      "pi/google/gemini-3",
+      "pi/xai/grok-4.5",
     ]) {
       expect(sandboxableModelFamily(model)).toEqual({ ok: true });
     }
   });
 
-  test("native Codex is the sole host-only family", () => {
-    const codex = sandboxableModelFamily("gpt-5.5");
-    expect(codex.ok).toBe(false);
-    if (!codex.ok) {
-      expect(codex.error).toContain("GPT (Codex) models can't run in a sandbox");
-      expect(codex.error).toContain("opencode/openai");
-      expect(codex.error).toContain("pi/openai");
-    }
-  });
+
 });
 
 describe("resolveRequestedSandbox (create-path validation)", () => {
@@ -422,18 +420,15 @@ describe("resolveRequestedSandbox (create-path validation)", () => {
       provider: "daytona",
     });
     expect(
-      resolveRequestedSandbox("daytona", undefined, "opencode/openai/gpt-5.4-mini"),
+      resolveRequestedSandbox("daytona", undefined, "pi/openai/gpt-5.4-mini"),
     ).toEqual({ ok: true, provider: "daytona" });
-    // Native Codex fails with the family gate's message — including via the
-    // boolean `sandbox: true` path (config default provider).
-    const explicit = resolveRequestedSandbox("docker", undefined, "gpt-5.5");
-    expect(explicit.ok).toBe(false);
-    if (!explicit.ok) expect(explicit.error).toContain("GPT (Codex) models can't run in a sandbox");
+    // Bare OpenAI ids normalize to Pi and pass the same sandbox gate.
+    expect(resolveRequestedSandbox("docker", undefined, "gpt-5.5")).toEqual({
+      ok: true,
+      provider: "docker",
+    });
     const viaDefault = resolveRequestedSandbox(true, undefined, "gpt-5.5");
-    if (sandboxesEnabled()) {
-      expect(viaDefault.ok).toBe(false);
-      if (!viaDefault.ok) expect(viaDefault.error).toContain("can't run in a sandbox");
-    }
+    if (sandboxesEnabled()) expect(viaDefault.ok).toBe(true);
     // Host is always fine, whatever the model.
     expect(resolveRequestedSandbox("local", undefined, "gpt-5.5")).toEqual({
       ok: true,

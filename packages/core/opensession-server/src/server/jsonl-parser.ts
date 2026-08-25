@@ -2,12 +2,17 @@ import { readFileSync, statSync } from "fs";
 import { openSync, readSync, closeSync, fstatSync } from "fs";
 import { existsSync } from "fs";
 import type { TranscriptEntry } from "./types";
-import { classifyEntries, dropContextInjections } from "@tellahq/opensession-protocol/notices";
+import {
+  classifyEntries,
+  dropContextInjections,
+  parseAnsweredAskData,
+} from "@tellahq/opensession-protocol/notices";
 import { withToolPresentations } from "@tellahq/opensession-protocol/tool-presentation";
 import { SLACK_ID_TO_NAME } from "./shared/user-mappings";
 import { stripContext } from "./prompt-context";
 import { configuredIntegration } from "./config";
 import { extractAssistantVideos, toolResultMedia } from "./transcript-media";
+import { transcriptEntryMatchSnippet } from "./transcript-search";
 export {
   extractAssistantVideos,
   extractImageMarkers,
@@ -62,6 +67,9 @@ interface RawJsonlEntry {
   uuid?: string;
   timestamp?: string;
   requestId?: string;
+  // Structured companion to an <ask-record> text block. Older parsers ignore
+  // the extra line field and keep the markdown fallback in the message.
+  ask?: unknown;
   // Harness-injected user lines (skill bodies, command output) — not typed by the user
   isMeta?: boolean;
   // Present on a Task/Agent tool_result line: carries the spawned sub-agent's id
@@ -71,7 +79,7 @@ interface RawJsonlEntry {
     role?: string;
     content?: any;
     // Assistant lines: the model that produced the message (Claude SDK writes
-    // this natively; our opencode transcript writer mirrors it).
+    // this natively; our pi transcript writer mirrors it).
     model?: string;
   };
 }
@@ -209,6 +217,7 @@ function harnessEntryFor(
   text: string,
   ts: string,
   id: string,
+  structuredAsk?: unknown,
 ): TranscriptEntry[] | null {
   const t = text.trimStart();
   if (t.startsWith("<task-notification>")) {
@@ -225,7 +234,7 @@ function harnessEntryFor(
   }
   if (t.startsWith("<system-reminder>")) return [];
   // Runner-injected operational notice (account rotation, transient-error
-  // retry — transcriptLineRunnerNotice in opencode-transcript.ts): render as a
+  // retry — transcriptLineRunnerNotice in pi-transcript.ts): render as a
   // system chip, never as a user bubble.
   if (t.startsWith("<runner-notice>")) {
     const body = t.match(/<runner-notice>([\s\S]*?)<\/runner-notice>/)?.[1]?.trim();
@@ -233,8 +242,29 @@ function harnessEntryFor(
       ? [{ id, type: "system", content: body, timestamp: ts }]
       : [];
   }
+  // An answered question card (transcriptLineAskRecord in
+  // transcript-persistence.ts, written by asks.ts when the ask resolves). The
+  // card is transient, so this is the transcript's only trace of what was
+  // asked and what was picked. A system entry tagged `noticeKind: "ask"`,
+  // whose content is the record's title line plus its markdown body. New lines
+  // also carry exact structured data beside the text; old lines keep working
+  // through the protocol classifier's conservative markdown parser.
+  if (t.startsWith("<ask-record>")) {
+    const body = t.match(/<ask-record>([\s\S]*?)<\/ask-record>/)?.[1]?.trim();
+    const ask = parseAnsweredAskData(structuredAsk);
+    return body
+      ? [{
+          id,
+          type: "system",
+          content: body,
+          timestamp: ts,
+          noticeKind: "ask",
+          ...(ask ? { ask } : {}),
+        }]
+      : [];
+  }
   // Engine context-compaction summary (transcriptLineCompactionSummary in
-  // opencode-transcript.ts): the handoff the model wrote when its history was
+  // pi-transcript.ts): the handoff the model wrote when its history was
   // summarized to fit the context window. A system entry with `compaction`
   // set, so the UI shows a collapsed "context compacted" chip instead of the
   // model apparently dumping a status report mid-conversation.
@@ -244,7 +274,7 @@ function harnessEntryFor(
       ? [{ id, type: "system", content: body, timestamp: ts, noticeKind: "compaction" }]
       : [];
   }
-  // Session recap (transcriptLineRecap in opencode-transcript.ts): the
+  // Session recap (transcriptLineRecap in pi-transcript.ts): the
   // away-summary recap.ts writes when a viewer returns to a session whose turn
   // finished while nobody was watching. A system entry with `recap` set, so
   // the UI renders a "recap:" line instead of a generic system chip.
@@ -255,7 +285,7 @@ function harnessEntryFor(
       : [];
   }
   // A model-visible payload the harness injected into a prompt
-  // (transcriptLineContextInjection in opencode-transcript.ts, written by
+  // (transcriptLineContextInjection in pi-transcript.ts, written by
   // context-log.ts): the "model-visible means logged" record. A system entry
   // tagged `context-injection`, which every client-bound projection drops —
   // it exists for replay/eval/debugging, not for the conversation.
@@ -373,6 +403,7 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
             block.text || "",
             ts,
             harnessEntryId(raw, block.text || "", ts, bi),
+            raw.ask,
           );
           if (harness) {
             entries.push(...harness);
@@ -420,7 +451,12 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
     } else if (!raw.isMeta) {
       const stripped = stripContext(extractText(content));
       if (stripped) {
-        const harness = harnessEntryFor(stripped, ts, harnessEntryId(raw, stripped, ts));
+        const harness = harnessEntryFor(
+          stripped,
+          ts,
+          harnessEntryId(raw, stripped, ts),
+          raw.ask,
+        );
         if (harness) {
           entries.push(...harness);
         } else {
@@ -1122,52 +1158,58 @@ export function clampEntriesForWire(
   return entries.map((e) => clampEntryForWire(e, maxBytes));
 }
 
+/** Strip injected context from already-stored user entries. New parser output
+ * is clean before persistence, but old transcript-store rows can contain the
+ * pre-fence pinned-goal suffix. An injection-only row has no conversation to
+ * render; media-bearing rows stay so an attachment cannot disappear with it. */
+function stripStoredUserContext(entries: TranscriptEntry[]): TranscriptEntry[] {
+  let changed = false;
+  const shown: TranscriptEntry[] = [];
+  for (const entry of entries) {
+    if (entry.type !== "user") {
+      shown.push(entry);
+      continue;
+    }
+    const content = stripContext(entry.content);
+    if (content === entry.content) {
+      shown.push(entry);
+      continue;
+    }
+    changed = true;
+    if (content.trim() || entry.images?.length || entry.files?.length) {
+      shown.push({ ...entry, content });
+    }
+  }
+  return changed ? shown : entries;
+}
+
 /**
- * Everything a batch of entries needs before it leaves the server: classify
- * how each one reads (notices.ts), say what each tool call is
- * (tool-presentation.ts), then clamp what's left.
+ * Everything a batch of entries needs before it leaves the server: strip
+ * injected context, classify how each entry reads (notices.ts), say what each
+ * tool call is (tool-presentation.ts), then clamp what's left.
  *
- * That order is load-bearing. The classifier strips delivery plumbing —
- * sentinels, "[Name] " prefixes, the "💬 X answered" header — out of
- * `content`, so clamping afterwards measures the text a reader will actually
- * see. Classifying is also why history needs no migration: it runs on the way
- * out, over entries persisted long before any of these markers existed.
+ * That order is load-bearing. The context pass strips fenced and legacy
+ * injections; the classifier strips delivery plumbing such as "[Name] "
+ * prefixes and the "💬 X answered" header. Clamping afterwards therefore
+ * measures the text a reader will actually see. Running both on the way out is
+ * why history needs no migration, even for rows persisted before the markers.
  *
  * Use this at every send site; `clampEntriesForWire` alone would ship raw
  * plumbing to a client that no longer knows how to parse it.
  */
+export function prepareEntriesForWire(
+  entries: TranscriptEntry[]
+): TranscriptEntry[] {
+  return withToolPresentations(
+    classifyEntries(stripStoredUserContext(dropContextInjections(entries)))
+  );
+}
+
 export function entriesForWire(
   entries: TranscriptEntry[],
   maxBytes: number = WIRE_CLAMP_BYTES
 ): TranscriptEntry[] {
-  return clampEntriesForWire(
-    withToolPresentations(classifyEntries(dropContextInjections(entries))),
-    maxBytes
-  );
-}
-
-function safeStringify(v: unknown): string {
-  try {
-    return JSON.stringify(v);
-  } catch {
-    return "";
-  }
-}
-
-// Build a compact one-line snippet with the match shown in context, whitespace
-// collapsed and ellipses where text was trimmed.
-function makeSnippet(
-  text: string,
-  idx: number,
-  len: number,
-  ctx: number
-): string {
-  const start = Math.max(0, idx - ctx);
-  const end = Math.min(text.length, idx + len + ctx);
-  let snip = text.slice(start, end).replace(/\s+/g, " ").trim();
-  if (start > 0) snip = "…" + snip;
-  if (end < text.length) snip = snip + "…";
-  return snip;
+  return clampEntriesForWire(prepareEntriesForWire(entries), maxBytes);
 }
 
 /**
@@ -1184,18 +1226,9 @@ export function transcriptMatchSnippet(
   query: string,
   ctx: number = 60
 ): string | null {
-  const q = query.trim().toLowerCase();
-  if (!q) return null;
-  for (const e of parseTranscript(path)) {
-    // The text a person actually reads for this entry. For a tool call the
-    // rendered `content` is a truncated summary, so also search the full input
-    // (e.g. a Bash command or search query the summary cut off).
-    const hay =
-      e.type === "tool_use" && e.toolInput
-        ? `${e.content}\n${safeStringify(e.toolInput)}`
-        : e.content || "";
-    const idx = hay.toLowerCase().indexOf(q);
-    if (idx !== -1) return makeSnippet(hay, idx, q.length, ctx);
+  for (const entry of parseTranscript(path)) {
+    const snippet = transcriptEntryMatchSnippet(entry, query, ctx);
+    if (snippet) return snippet;
   }
   return null;
 }

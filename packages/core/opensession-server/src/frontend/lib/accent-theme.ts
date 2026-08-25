@@ -6,16 +6,16 @@ import {
 	isAccentTheme,
 } from "../../shared/accent-theme";
 import { getCurrentUser } from "../components/UserPicker";
-import { saveUiPrefsApi } from "./api";
+import { fetchUiPrefs, saveUiPrefsApi } from "./api";
+import { whenCurrentUserReady } from "./auth-ready";
 
 /**
  * Seven accents, ordered as a walk around the hue wheel from the blues.
  *
  * Each fill runs at 92% of the chroma its hue can physically reach in sRGB at
- * its lightness, which is as saturated as the colour gets before it leaves the
- * gamut. That share is flat across the wheel, but the results are not: teal and
- * sky top out near chroma 0.10 and 0.13 where indigo and coral reach 0.22, so
- * the cool end reads calmer than the warm one no matter what is asked of it.
+ * its lightness, which keeps the palette vivid without clipping. That share is
+ * flat across the wheel, but the results are not: Sky tops out below Indigo
+ * and Coral, so the cool end reads calmer than the warm one.
  *
  * Two entries sit outside the rule. `lime` (Honey) is a yellow, and yellow only
  * exists at high lightness, so it keeps one value in both appearances; its ink
@@ -36,6 +36,7 @@ export {
 
 const KEY = "opensession-accent";
 const CHANGE_EVENT = "opensession-accent-changed";
+const USER_CHANGE_EVENT = "opensession-user-changed";
 const PREF_KEY = "accent";
 
 /**
@@ -75,15 +76,52 @@ export function applyAccentTheme(theme: AccentTheme = getAccentTheme()) {
 	document.documentElement.dataset.accent = theme;
 }
 
-function publishAccentTheme(theme: AccentTheme) {
-	void saveUiPrefsApi(getCurrentUser(), { [PREF_KEY]: theme }).catch(() => {});
+let writeStamp = 0;
+
+function publishAccentTheme(theme: AccentTheme, user = getCurrentUser()) {
+	void saveUiPrefsApi(user, { [PREF_KEY]: theme }).catch(() => {});
 }
 
 export function setAccentTheme(theme: AccentTheme) {
+	writeStamp++;
 	localStorage.setItem(KEY, theme);
 	applyAccentTheme(theme);
 	publishAccentTheme(theme);
 	window.dispatchEvent(new Event(CHANGE_EVENT));
+}
+
+/** Pull the cross-device value once instead of writing the browser's cached
+ * value on every page load. The old eager write was both a redundant PUT and
+ * could overwrite a newer choice made on another device. */
+async function hydrateAccentTheme(user: string) {
+	const stampAtStart = writeStamp;
+	const localRaw = localStorage.getItem(KEY);
+	const localWasExplicit =
+		isAccentTheme(localRaw) ||
+		(localRaw !== null && RETIRED_THEMES[localRaw] !== undefined);
+	const localTheme = getAccentTheme();
+	let prefs: Record<string, string>;
+	try {
+		prefs = await fetchUiPrefs(user);
+	} catch {
+		return;
+	}
+	if (writeStamp !== stampAtStart || getCurrentUser() !== user) return;
+
+	const raw = prefs[PREF_KEY];
+	const serverTheme = isAccentTheme(raw) ? raw : RETIRED_THEMES[raw];
+	if (serverTheme) {
+		if (serverTheme !== localTheme) {
+			localStorage.setItem(KEY, serverTheme);
+			applyAccentTheme(serverTheme);
+			window.dispatchEvent(new Event(CHANGE_EVENT));
+		}
+		// Retire old server ids too, so the migration is paid once.
+		if (raw !== serverTheme) publishAccentTheme(serverTheme, user);
+	} else if (localWasExplicit) {
+		// Preserve a choice made while the server was unavailable.
+		publishAccentTheme(localTheme, user);
+	}
 }
 
 export function onAccentThemeChanged(handler: () => void): () => void {
@@ -94,6 +132,7 @@ export function onAccentThemeChanged(handler: () => void): () => void {
 export function handleAccentStorageChange(event: Pick<StorageEvent, "key">) {
 	// A null key is localStorage.clear(), which resets the accent to its default.
 	if (event.key !== KEY && event.key !== null) return;
+	writeStamp++;
 	applyAccentTheme();
 	window.dispatchEvent(new Event(CHANGE_EVENT));
 }
@@ -109,5 +148,8 @@ if (
 	// contract still holds if that bootstrap is ever removed.
 	const theme = getAccentTheme();
 	applyAccentTheme(theme);
-	publishAccentTheme(theme);
+	whenCurrentUserReady((user) => void hydrateAccentTheme(user));
+	window.addEventListener(USER_CHANGE_EVENT, () =>
+		void hydrateAccentTheme(getCurrentUser()),
+	);
 }

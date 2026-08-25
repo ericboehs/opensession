@@ -8,6 +8,7 @@ import {
   SANDBOX_HTTPS_RANGE,
   lookupSandboxHttpsPort,
   releaseSandboxPreviewPorts,
+  sandboxAllocationForHttpsPort,
   sandboxHttpsPortFor,
 } from "./preview-ports";
 
@@ -60,6 +61,15 @@ describe("sandbox preview https-port allocator", () => {
 
   test("lookup never allocates", () => {
     expect(lookupSandboxHttpsPort("bks-sbx-never-started", 3300)).toBeNull();
+  });
+
+  test("reverses a durable allocation for restart recovery", () => {
+    const httpsPort = sandboxHttpsPortFor("bks-sbx-recover", 3302);
+    expect(sandboxAllocationForHttpsPort(httpsPort)).toEqual({
+      sandboxId: "bks-sbx-recover",
+      containerPort: 3302,
+    });
+    expect(sandboxAllocationForHttpsPort(19_999)).toBeNull();
   });
 
   test("release drops all of a sandbox's allocations and returns the ports", () => {

@@ -6,7 +6,7 @@
  * runner refuses to start a turn with a clear config error. Deliberately
  * config-driven, never an env flag; the
  * OPENSESSION_PI_CONFIG override is a TEST SEAM (like
- * OPENSESSION_OPENCODE_CONFIG — verify scripts point it at a temp file), not
+ * OPENSESSION_MODEL_PROVIDERS_CONFIG — verify scripts point it at a temp file), not
  * the feature switch.
  *
  * Shape:
@@ -27,7 +27,7 @@
  *
  * Read fresh per call (tiny file) so edits apply without a restart. The write
  * path (Settings → Accounts "Pi engine" card via routes/connections.ts) is a
- * raw-JSON read-modify-write clone of opencode-config.ts's — unknown fields
+ * raw-JSON read-modify-write clone of pi-config.ts's — unknown fields
  * survive, atomic rename + 0600 (no secrets today; the mode keeps the
  * invariant if the file ever grows one).
  */
@@ -57,13 +57,13 @@ export interface PiEngineConfig {
 /** Pure normalization (exported for tests): raw JSON → typed config. Tolerant
  *  — anything that isn't a JSON object normalizes to the disabled config, and
  *  pickerModels entries that aren't full `pi/<provider>/<model>` ids are
- *  dropped (a bare "pi/foo" would otherwise mint a bogus opencode passthrough
+ *  dropped (a bare "pi/foo" would otherwise mint a bogus pi passthrough
  *  downstream). Unknown fields (e.g. the retired bridgeAccounts designation —
- *  pi picks from the account pool like opencode since 2026-08-06) are simply
+ *  pi picks from the account pool like pi since 2026-08-06) are simply
  *  ignored. */
 /** Whether `id` is a full `pi/<provider>/<model>` model id — the shape the
  *  picker, the write API, and normalizePiConfig's drop rule all agree on (a
- *  bare "pi/foo" would mint a bogus opencode passthrough downstream). */
+ *  bare "pi/foo" would mint a bogus pi passthrough downstream). */
 export function isPiModelId(id: unknown): id is string {
   return (
     typeof id === "string" &&
@@ -124,7 +124,7 @@ export function piAnthropicTransport(): PiAnthropicTransport {
 
 // ── Write path (Settings → Accounts "Pi engine" card) ───────────────────────
 //
-// Raw-JSON read-modify-write, cloned from opencode-config.ts: normalization
+// Raw-JSON read-modify-write, cloned from pi-config.ts: normalization
 // drops/renames fields, so writes always go through the raw object to preserve
 // everything we don't own. Atomic rename + 0600.
 

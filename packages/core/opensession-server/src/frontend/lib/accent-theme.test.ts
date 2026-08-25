@@ -116,12 +116,13 @@ describe("accent theme", () => {
 		);
 	});
 
-	test("the picker gives every accent a column", async () => {
+	test("the picker keeps every accent in a compact labelled group", async () => {
 		const panel = await Bun.file(
 			new URL("../components/settings/AppearancePanel.tsx", import.meta.url),
 		).text();
-		const columns = panel.match(/desktop:grid-cols-(\d+)"/)?.[1];
-		expect(Number(columns)).toBe(ACCENT_THEME_OPTIONS.length);
+		expect(panel).toContain("flex w-fit max-w-full flex-wrap gap-y-1");
+		expect(panel).toContain("<Tooltip label={option.label}>");
+		expect(panel).not.toContain("title={option.label}");
 	});
 
 	// Honey is the one deliberate exception, at 1.62:1. It is the pairing the

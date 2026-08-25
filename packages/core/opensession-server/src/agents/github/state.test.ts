@@ -8,8 +8,15 @@ import { join } from "path";
 const SCRATCH = mkdtempSync(join(tmpdir(), "gh-pr-state-"));
 const savedRoot = process.env.OPENSESSION_STATE_DIR;
 process.env.OPENSESSION_STATE_DIR = SCRATCH;
-const { getOrInitPrState, readPrState, updatePrState, setPendingMention, recordReviewed } =
-  await import("./state");
+const {
+  activeRunCancellationRequested,
+  getOrInitPrState,
+  readPrState,
+  recordReviewed,
+  requestActiveRunCancellation,
+  setPendingMention,
+  updatePrState,
+} = await import("./state");
 if (savedRoot === undefined) delete process.env.OPENSESSION_STATE_DIR;
 else process.env.OPENSESSION_STATE_DIR = savedRoot;
 
@@ -23,7 +30,8 @@ afterAll(() => {
   // every root it could have resolved to, so no run leaves state behind.
   for (const root of [SCRATCH, savedRoot, process.env.HOME, homedir()]) {
     if (!root) continue;
-    for (const pr of [PR, PR + 1]) rmSync(`${root}/.opensession-github/${pr}.json`, { force: true });
+    for (const pr of [PR, PR + 1, PR + 2])
+      rmSync(`${root}/.opensession-github/${pr}.json`, { force: true });
   }
 });
 
@@ -92,5 +100,21 @@ describe("concurrent writers on one PR's state", () => {
     expect(after.autoFix).toMatchObject({ active: false, iterations: 3, lastPushedSha: "ddddddd" });
     expect(after.lastReview?.sha).toBe("ccccccc");
     expect(after.lastReviewedSha).toBe("ccccccc");
+  });
+
+  test("a review cancellation is durable and kind-scoped", () => {
+    const pr = PR + 2;
+    updatePrState(pr, HEAD, (s) => {
+      s.activeRun = {
+        kind: "review",
+        requestedBy: "Kent",
+        startedAt: new Date().toISOString(),
+      };
+    });
+
+    expect(requestActiveRunCancellation(pr, HEAD, "review")).toBe(true);
+    expect(activeRunCancellationRequested(pr, "review")).toBe(true);
+    expect(requestActiveRunCancellation(pr, HEAD, "simplify")).toBe(false);
+    expect(readPrState(pr)?.activeRun?.cancelRequestedAt).toBeTruthy();
   });
 });

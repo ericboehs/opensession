@@ -1,3 +1,5 @@
+import type { PrTone } from "./pr-refs";
+
 /**
  * The PR glyph's color language, shared by every surface that paints a pull
  * request's state: purple = merged, faint = closed or draft, red = blocked
@@ -37,6 +39,7 @@ export function prStatusMark(pr: PrStatusInput): {
 	className: string;
 	bgClassName: string;
 	label: string;
+	tone: PrTone;
 	/**
 	 * The resting state: open, healthy, and waiting on nobody in particular.
 	 *
@@ -48,9 +51,9 @@ export function prStatusMark(pr: PrStatusInput): {
 	quiet: boolean;
 } {
 	if (pr.state === "MERGED")
-		return { className: "text-purple", bgClassName: MARK_BG.purple, label: "PR merged", quiet: false };
+		return { className: "text-purple", bgClassName: MARK_BG.purple, label: "PR merged", tone: "purple", quiet: false };
 	if (pr.state === "CLOSED")
-		return { className: "text-faint", bgClassName: MARK_BG.muted, label: "PR closed", quiet: false };
+		return { className: "text-faint", bgClassName: MARK_BG.muted, label: "PR closed", tone: "muted", quiet: false };
 
 	const conflicting = pr.mergeable === "CONFLICTING";
 	const failed = (pr.checks?.failed || 0) > 0;
@@ -59,16 +62,43 @@ export function prStatusMark(pr: PrStatusInput): {
 	const changesRequested = decision === "CHANGES_REQUESTED";
 
 	if (conflicting)
-		return { className: "text-red", bgClassName: MARK_BG.red, label: "PR has conflicts", quiet: false };
+		return { className: "text-red", bgClassName: MARK_BG.red, label: "PR has conflicts", tone: "red", quiet: false };
 	if (changesRequested)
-		return { className: "text-red", bgClassName: MARK_BG.red, label: "PR changes requested", quiet: false };
+		return { className: "text-red", bgClassName: MARK_BG.red, label: "PR changes requested", tone: "red", quiet: false };
 	if (failed)
-		return { className: "text-red", bgClassName: MARK_BG.red, label: "PR checks failing", quiet: false };
+		return { className: "text-red", bgClassName: MARK_BG.red, label: "PR checks failing", tone: "red", quiet: false };
 	if (pending)
-		return { className: "text-yellow", bgClassName: MARK_BG.yellow, label: "PR checks running", quiet: false };
+		return { className: "text-yellow", bgClassName: MARK_BG.yellow, label: "PR checks running", tone: "yellow", quiet: false };
 	if (pr.isDraft)
-		return { className: "text-faint", bgClassName: MARK_BG.muted, label: "Draft PR", quiet: false };
+		return { className: "text-faint", bgClassName: MARK_BG.muted, label: "Draft PR", tone: "muted", quiet: false };
 	if (decision === "APPROVED")
-		return { className: "text-green", bgClassName: MARK_BG.green, label: "PR approved", quiet: false };
-	return { className: "text-green", bgClassName: MARK_BG.green, label: "PR open", quiet: true };
+		return { className: "text-green", bgClassName: MARK_BG.green, label: "PR approved", tone: "green", quiet: false };
+	return { className: "text-green", bgClassName: MARK_BG.green, label: "PR open", tone: "green", quiet: true };
+}
+
+const STATUS_TEXT: Record<string, string> = {
+	"PR has conflicts": "Conflicts",
+	"PR changes requested": "Changes requested",
+	"PR checks failing": "Checks failing",
+	"PR checks running": "Checks running",
+	"Draft PR": "Draft",
+};
+
+/** Short status copy shared by compact PR references and their hover cards. */
+export function prStatusDisplay(pr: PrStatusInput): {
+	label: string;
+	state: string;
+	tone: PrTone;
+} {
+	const mark = prStatusMark(pr);
+	const label =
+		mark.label === "PR open" && pr.mergeable === "MERGEABLE"
+			? "Mergeable"
+			: (STATUS_TEXT[mark.label] ??
+				mark.label.replace(/^PR /, "").replace(/^./, (c) => c.toUpperCase()));
+	return {
+		label,
+		state: label.toLowerCase().replaceAll(" ", "-"),
+		tone: mark.tone,
+	};
 }

@@ -42,8 +42,11 @@ import {
   openDirectMessage,
   postSlackBlocks,
   sendSlackMessage,
+  updateSlackBlocks,
 } from "../agents/slack/slack-api";
 import { configuredServer, personaName, productName } from "./config";
+import { registerSessionEffectExecutor, sessionKernel } from "./session-kernel";
+import { workspaceName } from "./workspaces";
 
 const HOME = homeDir();
 const STORE = `${OPENSESSION_SESSIONS_DIR}/human-asks.json`;
@@ -146,6 +149,13 @@ function isTerminal(a: HumanAsk): boolean {
  * async — a late teammate reply then still steers into the (resumed) session
  * instead of vanishing. Re-arm timers for scheduled { atIso } deliveries.
  */
+function enqueueAskDelivery(a: HumanAsk, skipUi = false): void {
+  sessionKernel(a.sessionId).enqueueEffect(
+    "human_ask_deliver",
+    { askId: a.id, skipUi },
+    `${a.id}:${skipUi || !a.uiFirst ? "slack" : "ui"}`,
+  );
+}
 export function initHumanAsks(): void {
   if (existsSync(STORE)) {
     try {
@@ -167,6 +177,9 @@ export function initHumanAsks(): void {
   relinkAskThreads();
   for (const a of asks.values()) {
     if (a.state !== "scheduled") continue;
+    if (a.deliver === "now") {
+      enqueueAskDelivery(a);
+    }
     // Re-arm scheduled time deliveries.
     if (typeof a.deliver === "object" && a.deliver.atIso) {
       armTimer(a);
@@ -181,8 +194,7 @@ export function initHumanAsks(): void {
       const left = UI_FIRST_WINDOW_MS - (Date.now() - startedAt);
       if (left > 5_000) offerAskInUi(a, left);
       else if (a.uiOfferedAt) {
-        void deliverAsk(a.id, { skipUi: true }).catch((e) =>
-          console.error("[human-asks] boot escalation failed:", e)
+        enqueueAskDelivery(a, true
         );
       }
     }
@@ -218,9 +230,9 @@ function armTimer(a: HumanAsk): void {
         armTimer(cur); // not due yet (long-delay re-check) — re-arm
         return;
       }
-      void deliverAsk(a.id).catch((e) => console.error("[human-asks] timed delivery failed:", e));
+      enqueueAskDelivery(a, true);
     },
-    Math.min(delay, MAX)
+    Math.min(delay, MAX),
   );
   atTimers.set(a.id, timer);
 }
@@ -230,6 +242,8 @@ function armTimer(a: HumanAsk): void {
 // ---------------------------------------------------------------------------
 
 export interface CreateAskInput {
+  /** Stable id for idempotent external delivery. */
+  id?: string;
   sessionId: string;
   createdBy: string;
   person: { slackId: string; name: string };
@@ -261,7 +275,7 @@ export type AskDomainHandler = (ask: HumanAsk, answer: string) => string | null;
 const domainHandlers: Map<string, AskDomainHandler> = ((globalThis as any).__humanAskDomainHandlers ??=
   new Map());
 
-export function registerAskDomainHandler(kind: string, handler: AskDomainHandler): void {
+export function registerAskDomainHandler(kind: string, handler: AskDomainHandler,): void {
   domainHandlers.set(kind, handler);
 }
 
@@ -270,14 +284,14 @@ function applyDomainHandler(a: HumanAsk, answer: string): string {
   const handler = domainHandlers.get(a.domain.kind);
   if (!handler) {
     console.error(
-      `[human-asks] ask ${a.id} carries domain "${a.domain.kind}" but no handler is registered — delivering the raw answer`
+      `[human-asks] ask ${a.id} carries domain "${a.domain.kind}" but no handler is registered — delivering the raw answer`,
     );
     return answer;
   }
   try {
     return handler(a, answer) ?? answer;
   } catch (e) {
-    console.error(`[human-asks] domain handler ${a.domain.kind} failed for ${a.id}:`, e);
+    console.error(`[human-asks] domain handler ${a.domain.kind} failed for ${a.id}:`, e,);
     return answer;
   }
 }
@@ -336,8 +350,7 @@ function offerAskInUi(a: HumanAsk, windowMs: number): void {
       if (!cur || cur.state !== "scheduled") return;
       const live = uiOffers.get(a.id);
       if (live) live.timer = undefined; // card stays up; only the fallback fired
-      void deliverAsk(a.id, { skipUi: true }).catch((e) =>
-        console.error(`[human-asks] Slack fallback failed for ${a.id}:`, e)
+      enqueueAskDelivery(a, true
       );
     }, windowMs),
   };
@@ -363,7 +376,7 @@ function offerAskInUi(a: HumanAsk, windowMs: number): void {
           if (!answer) return;
           closeUiOffer(a.id, { retract: false }); // the card retracted itself
           resolveAskFromUI(a.id, answer, a.person.name);
-        }
+        },
       );
       if (uiOffers.get(a.id) !== entry) {
         card.close(); // resolved while the card was being built
@@ -390,8 +403,15 @@ function closeUiOffer(id: string, opts?: { retract?: boolean }): void {
 
 /** Register an ask and trigger its delivery if it's due now / arm its timer. */
 export function registerAsk(input: CreateAskInput): HumanAsk {
+  const id = input.id || `ask-${crypto.randomUUID()}`;
+  const existing = asks.get(id);
+  if (existing) {
+    if (existing.sessionId !== input.sessionId || existing.question !== input.question)
+      throw new Error(`Human ask id ${id} was reused with another request`);
+    return existing;
+  }
   const ask: HumanAsk = {
-    id: `ask-${crypto.randomUUID()}`,
+    id,
     sessionId: input.sessionId,
     createdBy: input.createdBy,
     person: input.person,
@@ -420,7 +440,7 @@ export function registerAsk(input: CreateAskInput): HumanAsk {
   });
 
   if (ask.deliver === "now") {
-    void deliverAsk(ask.id).catch((e) => console.error("[human-asks] deliver failed:", e));
+    enqueueAskDelivery(ask);
   } else if (typeof ask.deliver === "object") {
     armTimer(ask);
   } // when_done / on_pr stay scheduled until onSessionIdle fires them.
@@ -428,19 +448,30 @@ export function registerAsk(input: CreateAskInput): HumanAsk {
   return ask;
 }
 
-const firstName = (full: string) => full.split(" ")[0] || full;
+const escapeMrkdwn = (text: string) =>
+  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+function askDestination(a: HumanAsk): { link: string; subject: string } {
+  const session = findSession(a.sessionId);
+  return {
+    link: `${UI_BASE}/session/${a.sessionId}`,
+    subject:
+      session?.workspaceName ||
+      (session?.workspaceId ? workspaceName(session.workspaceId) : null) ||
+      session?.title ||
+      "this session",
+  };
+}
 
 function deliveryBlocks(a: HumanAsk): { fallback: string; blocks: any[] } {
-  const link = `${UI_BASE}/session/${a.sessionId}`;
-  const intro =
-    `Hey ${firstName(a.person.name)} — it's *${personaName()}* :robot_face:. ` +
-    `${a.createdBy} has me working on something and needs your input:`;
+  const { link, subject } = askDestination(a);
+  const intro = `*${personaName()} needs your input on <${link}|${escapeMrkdwn(subject)}>*`;
   const blocks: any[] = [
     { type: "section", text: { type: "mrkdwn", text: intro } },
-    { type: "section", text: { type: "mrkdwn", text: `> ${a.question.replace(/\n/g, "\n> ")}` } },
+    { type: "section", text: { type: "mrkdwn", text: a.question }, },
   ];
   if (a.context) {
-    blocks.push({ type: "section", text: { type: "mrkdwn", text: a.context.slice(0, 2900) } });
+    blocks.push({ type: "section", text: { type: "mrkdwn", text: a.context.slice(0, 2900) }, });
   }
   if (a.options?.length) {
     const buttons: any[] = a.options.slice(0, 9).map((label, i) => ({
@@ -460,15 +491,76 @@ function deliveryBlocks(a: HumanAsk): { fallback: string; blocks: any[] } {
     blocks.push({
       type: "context",
       elements: [
-        { type: "mrkdwn", text: "_Reply here and I'll bring it straight back into the session._" },
+        { type: "mrkdwn", text: "_Reply here and I'll bring it straight back into the session._", },
       ],
+    });
+  }
+  return {
+    fallback: `${personaName()} needs your input on ${subject}: ${a.question}`,
+    blocks,
+  };
+}
+
+function answeredBlocks(
+  a: HumanAsk,
+  answer: string,
+  answeredBy: string,
+  answeredIn: string,
+): { fallback: string; blocks: any[] } {
+  const { link, subject } = askDestination(a);
+  const blocks: any[] = [
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*${personaName()} received your input on <${link}|${escapeMrkdwn(subject)}>*`,
+      },
+    },
+    { type: "section", text: { type: "mrkdwn", text: a.question } },
+  ];
+  if (a.context) {
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: a.context.slice(0, 2900) },
     });
   }
   blocks.push({
     type: "context",
-    elements: [{ type: "mrkdwn", text: `<${link}|Open the session in ${productName()}>` }],
+    elements: [
+      {
+        type: "plain_text",
+        text: `Answered in ${answeredIn} by ${answeredBy}: ${answer}`.slice(0, 2000),
+        emoji: false,
+      },
+    ],
   });
-  return { fallback: `${personaName()} needs your input: ${a.question}`, blocks };
+  return {
+    fallback: `${personaName()} received input on ${subject}: ${answer}`,
+    blocks,
+  };
+}
+
+function markSlackAskAnswered(
+  a: HumanAsk,
+  answer: string,
+  answeredBy: string,
+  answeredIn: string,
+): void {
+  if (!a.slack) return;
+  const settled = answeredBlocks(a, answer, answeredBy, answeredIn);
+  void updateSlackBlocks(
+    a.slack.channel,
+    a.slack.rootTs,
+    settled.fallback,
+    settled.blocks,
+  )
+    .then((result) => {
+      if (!result?.ok)
+        throw new Error(result?.error || "Slack rejected the message update");
+    })
+    .catch((error) =>
+      console.error(`[human-asks] couldn't mark ${a.id} answered in Slack:`, error),
+    );
 }
 
 /**
@@ -476,7 +568,7 @@ function deliveryBlocks(a: HumanAsk): { fallback: string; blocks: any[] } {
  * session and returns here later through the fallback timer (skipUi); everything
  * else opens a DM with the teammate and posts the question straight away.
  */
-export async function deliverAsk(id: string, opts?: { skipUi?: boolean }): Promise<boolean> {
+export async function deliverAsk(id: string, opts?: { skipUi?: boolean },): Promise<boolean> {
   const a = asks.get(id);
   if (!a || a.state !== "scheduled") return false;
   if (a.uiFirst && !opts?.skipUi) {
@@ -485,11 +577,13 @@ export async function deliverAsk(id: string, opts?: { skipUi?: boolean }): Promi
   }
   const channel = await openDirectMessage(a.person.slackId);
   if (!channel) {
-    console.error(`[human-asks] couldn't open DM with ${a.person.name} (${a.person.slackId})`);
+    console.error(`[human-asks] couldn't open DM with ${a.person.name} (${a.person.slackId})`,);
     return false;
   }
   const { fallback, blocks } = deliveryBlocks(a);
-  const res = await postSlackBlocks(channel, fallback, blocks);
+  const res = await postSlackBlocks(channel, fallback, blocks, undefined, {
+    clientMsgId: a.id,
+  });
   if (!res?.ok || !res.ts) {
     console.error(`[human-asks] DM post failed for ${id}:`, res?.error);
     return false;
@@ -530,6 +624,17 @@ export async function deliverAsk(id: string, opts?: { skipUi?: boolean }): Promi
   }
   return true;
 }
+
+registerSessionEffectExecutor("human_ask_deliver", async (item) => {
+  const payload = item.payload;
+  const ask = asks.get(payload.askId);
+  if (!ask || ask.state !== "scheduled") return;
+  const delivered = await deliverAsk(payload.askId, {
+    skipUi: payload.skipUi === true,
+  });
+  if (!delivered && asks.get(payload.askId)?.state === "scheduled")
+    throw new Error(`Human ask ${payload.askId} is still pending delivery`);
+});
 
 // ---------------------------------------------------------------------------
 // Blocking await
@@ -574,7 +679,7 @@ function resolveAsk(
   a: HumanAsk,
   answer: string,
   answeredBy: string,
-  via: "slack" | "ui" = "slack"
+  via: "slack" | "ui" = "slack",
 ): void {
   closeUiOffer(a.id); // whichever channel won, take the card down
   a.state = "answered";
@@ -608,7 +713,7 @@ function resolveAsk(
   // the answer into the session like a human typing in the web UI.
   const ctrl = tryGetSessionControl();
   if (!ctrl) {
-    console.error(`[human-asks] no session control to deliver answer for ${a.id}`);
+    console.error(`[human-asks] no session control to deliver answer for ${a.id}`,);
     return;
   }
   // Unicode emoji (the Open Session markdown renderer doesn't expand :shortcodes:)
@@ -617,8 +722,10 @@ function resolveAsk(
   const who = via === "ui" ? answeredBy || a.person.name : a.person.name;
   const msg = `💬 **${who}** answered${via === "ui" ? "" : " (via Slack)"} — "${shortQ(a)}":\n\n${delivered}`;
   void ctrl
-    .deliverToSession(a.sessionId, msg, who)
-    .catch((e) => console.error(`[human-asks] deliver answer to ${a.sessionId} failed:`, e));
+    .deliverToSession(a.sessionId, msg, who, {
+      deliveryId: `human-ask-answer:${a.id}`,
+    })
+    .catch((e) => console.error(`[human-asks] deliver answer to ${a.sessionId} failed:`, e),);
 }
 
 /**
@@ -646,7 +753,7 @@ export function matchReply(input: {
     (a) =>
       a.state === "delivered" &&
       a.slack?.channel === input.channel &&
-      a.person.slackId === input.user
+      a.person.slackId === input.user,
   );
   if (!candidates.length) return null;
 
@@ -660,7 +767,7 @@ export function matchReply(input: {
     // (2026-07-23: a reply under an iOS-session thread got steered into a
     // week-old session's stale ask this way).
     match = candidates.sort(
-      (x, y) => new Date(y.deliveredAt!).getTime() - new Date(x.deliveredAt!).getTime()
+      (x, y) => new Date(y.deliveredAt!).getTime() - new Date(x.deliveredAt!).getTime(),
     )[0];
   }
   if (!match) return null;
@@ -693,7 +800,7 @@ export function noteAskThreadReply(input: {
   user: string;
 }): void {
   const a = [...asks.values()].find(
-    (x) => x.slack?.channel === input.channel && x.slack.rootTs === input.threadTs
+    (x) => x.slack?.channel === input.channel && x.slack.rootTs === input.threadTs,
   );
   if (!a) return;
   audit({
@@ -707,13 +814,10 @@ export function noteAskThreadReply(input: {
   });
 }
 
-/** Resolve an ask with an answer given in the session UI — either the card
- *  humans-tools puts up alongside the DM for block asks, or a uiFirst card that
- *  is still inside its pre-Slack window. Fires the live block resolver (the
- *  awaiting tool call returns this answer) and, when a DM did go out, posts a
- *  follow-up in that thread so the teammate isn't left answering a moot
- *  question. Returns true if the ask was still outstanding. */
-export function resolveAskFromUI(askId: string, answer: string, answeredBy: string): boolean {
+/** Resolve an ask with an answer given in the session UI. If Slack already
+ *  received the ask, replace its card with a read-only answered state so the
+ *  teammate cannot answer the same question again. */
+export function resolveAskFromUI(askId: string, answer: string, answeredBy: string,): boolean {
   const a = asks.get(askId);
   if (!a) return false;
   const inUiWindow = a.state === "scheduled" && !!a.uiOfferedAt;
@@ -728,13 +832,7 @@ export function resolveAskFromUI(askId: string, answer: string, answeredBy: stri
     answered_by: answeredBy,
   });
   resolveAsk(a, answer, answeredBy, "ui");
-  if (a.slack) {
-    void sendSlackMessage(
-      a.slack.channel,
-      `:white_check_mark: _${answeredBy} answered this in ${productName()} — all set: "${answer.slice(0, 280)}"_`,
-      a.slack.rootTs
-    ).catch(() => {});
-  }
+  markSlackAskAnswered(a, answer, answeredBy, productName());
   return true;
 }
 
@@ -752,6 +850,7 @@ export function resolveByOption(askId: string, label: string): boolean {
     via: "button",
   });
   resolveAsk(a, label, a.person.name);
+  markSlackAskAnswered(a, label, a.person.name, "Slack");
   return true;
 }
 
@@ -794,7 +893,7 @@ export function onSessionIdle(sessionId: string): void {
   }
 
   const pending = [...asks.values()].filter(
-    (a) => a.sessionId === sessionId && a.state === "scheduled"
+    (a) => a.sessionId === sessionId && a.state === "scheduled",
   );
   if (!pending.length) return;
   let hasPr = false;
@@ -802,8 +901,7 @@ export function onSessionIdle(sessionId: string): void {
   if (ctrl) hasPr = !!ctrl.getSession(sessionId)?.prUrl;
   for (const a of pending) {
     if (a.deliver === "when_done" || (a.deliver === "on_pr" && hasPr)) {
-      void deliverAsk(a.id).catch((e) =>
-        console.error(`[human-asks] idle delivery failed for ${a.id}:`, e)
+      enqueueAskDelivery(a, true
       );
     }
   }
@@ -813,13 +911,13 @@ export function onSessionIdle(sessionId: string): void {
 // Listing + cancelling (for the MCP)
 // ---------------------------------------------------------------------------
 
-export function listAsks(opts?: { sessionId?: string; includeAnswered?: boolean }): HumanAsk[] {
+export function listAsks(opts?: { sessionId?: string; includeAnswered?: boolean; }): HumanAsk[] {
   let out = [...asks.values()];
   if (opts?.sessionId) out = out.filter((a) => a.sessionId === opts.sessionId);
   if (!opts?.includeAnswered) {
     out = out.filter((a) => a.state === "scheduled" || a.state === "delivered");
   }
-  return out.sort((x, y) => new Date(y.createdAt).getTime() - new Date(x.createdAt).getTime());
+  return out.sort((x, y) => new Date(y.createdAt).getTime() - new Date(x.createdAt).getTime(),);
 }
 
 export function getAsk(id: string): HumanAsk | undefined {
@@ -840,13 +938,13 @@ export function cancelAsk(id: string): boolean {
   const resolver = resolvers.get(id);
   if (resolver) resolver(null);
   persist();
-  audit({ context: "human_ask", action: "cancelled", ask_id: id, session_id: a.sessionId });
+  audit({ context: "human_ask", action: "cancelled", ask_id: id, session_id: a.sessionId, });
   // If it was already delivered, let the teammate know it's moot.
   if (a.slack) {
     void sendSlackMessage(
       a.slack.channel,
-      `:heavy_multiplication_x: _Never mind — ${personaName()} no longer needs an answer to that one. Reply here anyway if you have something to add and I'll pass it to the session._`,
-      a.slack.rootTs
+      `_This question no longer needs an answer. Reply here anyway if you have something to add and I'll pass it to the session._`,
+      a.slack.rootTs,
     ).catch(() => {});
   }
   return true;

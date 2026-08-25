@@ -53,14 +53,85 @@ final class SessionsListLensTests: XCTestCase {
 
     // MARK: - Default grouping
 
-    func testOneProjectDefaultsToTheInbox() {
-        XCTAssertEqual(SessionsListView.defaultGroupBy(repoCount: 1), .inbox)
-        XCTAssertEqual(SessionsListView.defaultGroupBy(repoCount: 4), .repoStatus)
-        // Unknown until `/api/repos` answers: assume several, so an instance
-        // that has them doesn't paint a flat list and re-band a moment later.
-        XCTAssertEqual(
-            SessionsListView.defaultGroupBy(repoCount: RepoCount.unknown), .repoStatus
+    func testGroupingAxesHaveIndependentDefaults() {
+        XCTAssertEqual(SidebarGroupBy.fallback(repoCount: 1), .inbox)
+        XCTAssertEqual(SidebarGroupBy.fallback(repoCount: 4), .inbox)
+        XCTAssertFalse(SidebarGroupBy.defaultGroupsByProject(repoCount: 1))
+        XCTAssertTrue(SidebarGroupBy.defaultGroupsByProject(repoCount: 4))
+        XCTAssertTrue(
+            SidebarGroupBy.defaultGroupsByProject(repoCount: RepoCount.unknown)
         )
+    }
+
+    func testEveryGroupingThisAppEverStoredKeepsBothAxes() {
+        XCTAssertEqual(SidebarGroupBy.stored("none"), .inbox)
+        XCTAssertEqual(SidebarGroupBy.stored("settled"), .inbox)
+        XCTAssertEqual(SidebarGroupBy.stored("inbox"), .inbox)
+        XCTAssertEqual(SidebarGroupBy.stored("recent"), .activity)
+        XCTAssertEqual(SidebarGroupBy.stored("repo"), .inbox)
+        XCTAssertEqual(SidebarGroupBy.stored("repo-inbox"), .activity)
+        XCTAssertEqual(SidebarGroupBy.stored("repo-status"), .status)
+        XCTAssertEqual(SidebarGroupBy.stored("status"), .status)
+        XCTAssertTrue(SidebarGroupBy.legacyGroupsByProject("repo") == true)
+        XCTAssertTrue(SidebarGroupBy.legacyGroupsByProject("repo-inbox") == true)
+        XCTAssertTrue(SidebarGroupBy.legacyGroupsByProject("repo-status") == true)
+        XCTAssertFalse(SidebarGroupBy.legacyGroupsByProject("inbox") == true)
+        XCTAssertNil(SidebarGroupBy.stored(""))
+        XCTAssertNil(SidebarGroupBy.stored("repo-something-new"))
+    }
+
+    // MARK: - The person lens
+
+    func testTheTwoLensValuesThisAppWroteBeforeReadAsTheirNewSpelling() {
+        XCTAssertEqual(SidebarPersonLens.stored("mine"), SidebarPersonLens.me)
+        XCTAssertEqual(SidebarPersonLens.stored("all"), SidebarPersonLens.everyone)
+        XCTAssertEqual(SidebarPersonLens.stored(""), SidebarPersonLens.me)
+        // A person key is already what it means.
+        XCTAssertEqual(SidebarPersonLens.stored("Kent"), "kent")
+    }
+
+    /// One teammate reaches us as "Kent", "Kent de Bruin" and "kentdebruin"
+    /// depending on where the name came from, so all three answer to one
+    /// option — the web's `ownerMatchesPerson` rule.
+    func testOnePersonAnswersToEverySpellingOfTheirName() {
+        XCTAssertTrue(SidebarPersonLens.nameMatches("Kent de Bruin", key: "kent"))
+        XCTAssertTrue(SidebarPersonLens.nameMatches("Kent", key: "kent de bruin"))
+        XCTAssertFalse(SidebarPersonLens.nameMatches("Michiel", key: "kent"))
+        XCTAssertFalse(SidebarPersonLens.nameMatches("", key: "kent"))
+    }
+
+    // MARK: - Auto-created rows
+
+    @MainActor
+    func testAgentsOwnWorkspaceIsAutoCreatedUntilAPersonJoinsIt() throws {
+        let machine = try sessions(
+            #"[{"id":"os-1","workspaceId":"ws-1","startedBy":"Automation"}]"#
+        )
+        let shared = try sessions(
+            """
+            [{"id":"os-1","workspaceId":"ws-1","startedBy":"Automation"},
+             {"id":"os-2","workspaceId":"ws-1","startedBy":"Kent"}]
+            """
+        )
+
+        let machineRow = SessionsListViewModel.sidebarWorkspaces(in: machine)[0]
+        XCTAssertTrue(AutoCreatedOrigin.wasAutoCreated(machineRow))
+        // Once a person joins it is shared work, not machine clutter: hiding
+        // the row would hide that person's session too.
+        let sharedRow = SessionsListViewModel.sidebarWorkspaces(in: shared)[0]
+        XCTAssertFalse(AutoCreatedOrigin.wasAutoCreated(sharedRow))
+    }
+
+    @MainActor
+    func testAnAutomationsRunIsNotAnAutoCreatedRow() throws {
+        // An automation is a job somebody configured, and its runs carry that
+        // name. These are one-off workspaces an agent opened for itself.
+        let run = try sessions(
+            #"[{"id":"os-1","workspaceId":"ws-1","startedBy":"Automation","automation":"nightly-triage"}]"#
+        )
+        let row = SessionsListViewModel.sidebarWorkspaces(in: run)[0]
+
+        XCTAssertFalse(AutoCreatedOrigin.wasAutoCreated(row))
     }
 
     // MARK: - Archived owners

@@ -121,3 +121,34 @@ test("rows carry their state wash across the full surface", () => {
 	expect(noUrl).toContain('data-tone="');
 	expect(noUrl).not.toContain('aria-label="Open ');
 });
+
+test("summary rows show every stacked PR in the workspace card", () => {
+	const html = renderToStaticMarkup(
+		<PrSeriesRows
+			refs={[
+				ref({ title: "Foundation" }),
+				ref({
+					repo: "tella-mac",
+					branch: "stack/top",
+					number: 73,
+					title: "Desktop shell",
+					url: "https://github.com/tellahq/tella-mac/pull/73",
+					checks: { total: 1, passed: 0, failed: 1, pending: 0 },
+				}),
+			]}
+			primaryRepo="tella-fusion"
+			variant="summary"
+		/>,
+	);
+
+	expect(html.match(/data-tone="/g)).toHaveLength(2);
+	expect(html).toContain("#72");
+	expect(html).toContain("Foundation");
+	expect(html).toContain("tella-mac #73");
+	expect(html).toContain("Desktop shell");
+	expect(html).toContain("Checks failed");
+	expect(html).toContain('href="https://github.com/tellahq/tella-mac/pull/73"');
+	// Summary rows use the card's quiet row grammar instead of another status band.
+	expect(html).not.toContain("bg-green-soft");
+	expect(html).not.toContain("bg-red-soft");
+});

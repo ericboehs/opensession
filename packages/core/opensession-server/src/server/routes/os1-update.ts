@@ -23,7 +23,7 @@
  * ignores prereleases, so the two release streams can share the repo.
  */
 
-import { homeDir } from "../paths";
+import { stateDir } from "../paths";
 import { existsSync, mkdirSync, readdirSync, rmSync } from "fs";
 import { $ } from "bun";
 import type { RouteContext } from "./context";
@@ -32,8 +32,7 @@ import { configuredIntegration, configuredServer } from "../config";
 const updates = () => configuredIntegration("updates");
 const releaseRepo = () =>
 	typeof updates().releaseRepo === "string" ? updates().releaseRepo as string : "";
-const HOME = homeDir();
-const CACHE_DIR = `${HOME}/.opensession-os1-mac-updates`;
+const CACHE_DIR = stateDir("os1-mac-updates");
 const LATEST_TTL_MS = 5 * 60 * 1000;
 
 // os1-chrome: stable extension ID derived from the signing key
@@ -44,7 +43,7 @@ const chromeExtensionId = () =>
 		? updates().chromeExtensionId as string
 		: "";
 const CHROME_TAG_PREFIX = "os1-chrome-v";
-const CHROME_CACHE_DIR = `${HOME}/.opensession-os1-chrome-updates`;
+const CHROME_CACHE_DIR = stateDir("os1-chrome-updates");
 
 interface LatestRelease {
 	tag: string; // e.g. "v0.2.0"
@@ -75,6 +74,18 @@ const g = globalThis as {
  */
 export function isMacReleaseAsset(name: string | undefined): boolean {
 	return /^(OpenSession|OS1)-.*-arm64\.zip$/.test(name || "");
+}
+
+export function chromeDownloadTag(path: string): string | null {
+	return path.match(
+		/^\/api\/(?:packages\/clients\/chrome|os1-chrome)\/download\/(os1-chrome-v[\w.-]+)\.crx$/,
+	)?.[1] ?? null;
+}
+
+export function macDownloadTag(path: string): string | null {
+	return path.match(
+		/^\/api\/(?:packages\/clients\/mac|os1-mac)\/download\/(v\d+\.\d+\.\d+[\w.-]*)\.zip$/,
+	)?.[1] ?? null;
 }
 
 function parseVersion(v: string): [number, number, number] | null {
@@ -229,14 +240,19 @@ export async function handleOs1UpdateRoutes(
 	const { req, url, path } = ctx;
 	if (
 		!path.startsWith("/api/packages/clients/mac/") &&
-		!path.startsWith("/api/packages/clients/chrome/")
+		!path.startsWith("/api/packages/clients/chrome/") &&
+		!path.startsWith("/api/os1-mac/") &&
+		!path.startsWith("/api/os1-chrome/")
 	)
 		return undefined;
 	if (req.method !== "GET") return undefined;
 
 	// Omaha/gupdate feed Chrome's extension updater polls (also the update URL
 	// in ExtensionInstallForcelist). "noupdate" when no release exists yet.
-	if (path === "/api/packages/clients/chrome/updates.xml") {
+	if (
+		path === "/api/packages/clients/chrome/updates.xml" ||
+		path === "/api/os1-chrome/updates.xml"
+	) {
 		const rel = await chromeLatestRelease();
 		const base = configuredServer().publicBaseUrl.replace(/\/$/, "");
 		const app = rel
@@ -254,12 +270,10 @@ export async function handleOs1UpdateRoutes(
 	}
 
 	// The signed .crx Chrome installs from.
-	const crx = path.match(
-		/^\/api\/os1-chrome\/download\/(os1-chrome-v[\w.-]+)\.crx$/,
-	);
-	if (crx) {
+	const crxTag = chromeDownloadTag(path);
+	if (crxTag) {
 		const rel = await chromeLatestRelease();
-		if (!rel || rel.tag !== crx[1]) {
+		if (!rel || rel.tag !== crxTag) {
 			return Response.json({ error: "Unknown release" }, { status: 404 });
 		}
 		const file = await cachedAssetPath(rel, CHROME_CACHE_DIR);
@@ -278,14 +292,17 @@ export async function handleOs1UpdateRoutes(
 	// Squirrel.Mac static JSON feed. Squirrel compares currentRelease with the
 	// app version itself; unlike the dynamic server mode, this mode cannot use a
 	// 204 response to signal that the app is current.
-	if (path === "/api/packages/clients/mac/update") {
+	if (
+		path === "/api/packages/clients/mac/update" ||
+		path === "/api/os1-mac/update"
+	) {
 		const current = parseVersion(url.searchParams.get("version") || "");
 		const rel = await latestRelease();
 		if (!rel) {
 			const currentRelease = current?.join(".") || "0.0.0";
 			return Response.json({ currentRelease, releases: [] });
 		}
-		// Canonical public form is prefix-less (os.tella.dev root); it
+		// Canonical public form is prefix-less (the instance root); it
 		// normalizes back onto /api/* in the fetch preamble.
 		const base = configuredServer().publicBaseUrl.replace(/\/$/, "");
 		return Response.json({
@@ -306,10 +323,10 @@ export async function handleOs1UpdateRoutes(
 	}
 
 	// The signed app zip Squirrel installs from.
-	const dl = path.match(/^\/api\/os1-mac\/download\/(v\d+\.\d+\.\d+[\w.-]*)\.zip$/);
-	if (dl) {
+	const macTag = macDownloadTag(path);
+	if (macTag) {
 		const rel = await latestRelease();
-		if (!rel || rel.tag !== dl[1]) {
+		if (!rel || rel.tag !== macTag) {
 			return Response.json({ error: "Unknown release" }, { status: 404 });
 		}
 		const file = await cachedAssetPath(rel);

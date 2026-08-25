@@ -23,6 +23,7 @@
 import { fetchDrafts, saveDraftApi } from "./api";
 import { reconcileDrafts } from "./drafts-sync";
 import { getCurrentUser } from "../components/UserPicker";
+import { whenCurrentUserReady } from "./auth-ready";
 import type { FileAttachment } from "./images";
 import type { PastedTextAttachment } from "./pasted-text";
 
@@ -37,6 +38,12 @@ export interface ComposerDraft {
  *  overlay and the inline card are the same composer, so a prompt typed into
  *  one is already in the other. */
 export const NEW_SESSION_DRAFT_KEY = "new-session";
+
+/** The draft key for a workspace's own composer. Attachments parked from the
+ *  new-session palette land here, which is where WorkspacePane reads them. */
+export function workspaceDraftKey(workspaceId: string): string {
+  return `workspace-home:${workspaceId}`;
+}
 
 const EMPTY: ComposerDraft = { text: "", images: [], files: [], pastedTexts: [] };
 const drafts = new Map<string, ComposerDraft>();
@@ -410,21 +417,23 @@ if (
   typeof window !== "undefined" &&
   typeof window.addEventListener === "function"
 ) {
-  void hydrate(getCurrentUser());
+  whenCurrentUserReady((user) => void hydrate(user));
   window.addEventListener("opensession-user-changed", rehydrateForCurrentUser);
   window.addEventListener("storage", (event) => {
     if (event.key === "opensession-user" || event.key === "backstage-user") {
       rehydrateForCurrentUser();
     }
   });
-  // Coming back to a tab that sat in the background: pick up what was typed
-  // (or sent) on the other device while it was away.
-  document.addEventListener?.("visibilitychange", () => {
-    if (document.visibilityState === "visible") void hydrate(getCurrentUser());
-  });
-  window.setInterval(() => {
-    if (document.visibilityState === "visible") void hydrate(getCurrentUser());
-  }, 30_000);
+  if (typeof document !== "undefined") {
+    // Coming back to a tab that sat in the background: pick up what was typed
+    // (or sent) on the other device while it was away.
+    document.addEventListener?.("visibilitychange", () => {
+      if (document.visibilityState === "visible") void hydrate(getCurrentUser());
+    });
+    window.setInterval(() => {
+      if (document.visibilityState === "visible") void hydrate(getCurrentUser());
+    }, 30_000);
+  }
   // Don't let the debounce eat the last keystrokes when the tab goes away.
   window.addEventListener("pagehide", () => {
     unloading = true;

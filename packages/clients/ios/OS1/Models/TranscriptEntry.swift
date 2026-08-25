@@ -87,7 +87,7 @@ struct TranscriptEntry: Identifiable, Decodable, Equatable, Sendable {
     /// Video attachments and tool-result recordings, served through the media
     /// endpoint and streamed by the native player.
     var videos: [String]?
-    /// Media an agent marked as the visual result of its work. A merged-change
+    /// Images an agent marked as the visual result of its work. A merged-change
     /// share uses the newest local screenshot when no walkthrough still exists.
     var featuredMedia: [String]?
     /// Set when this entry is an operational notice rather than a message —
@@ -100,6 +100,10 @@ struct TranscriptEntry: Identifiable, Decodable, Equatable, Sendable {
     /// steered in, or one whose answer was routed back from `senderVia`.
     var sender: String?
     var senderVia: String?
+    /// Structured payload of an answered question card. The classified
+    /// notice carries it too (`notice.ask`); this is the compatibility spot
+    /// for a server that predates the notice-level field.
+    var ask: AnsweredAsk?
     /// Server-derived tool identity and summary data. Optional because older
     /// servers do not send it; `ToolPresentation` keeps the native derivation
     /// as the compatibility path.
@@ -198,6 +202,10 @@ struct EntryNotice: Decodable, Equatable, Sendable {
     /// the title is the whole notice.
     let body: String?
     let link: Link?
+    /// Present only for an answered question card: the structured record a
+    /// client that understands it renders read-only (`AnsweredAskCard`);
+    /// title + body stay the compatibility path.
+    let ask: AnsweredAsk?
     /// A quiet state mark on an `info` notice: "merge", "deploy", "done".
     /// These lines used to open with an emoji of their own; the server strips
     /// it and names the state instead, so each client draws it in its own

@@ -6,23 +6,22 @@ import { Tooltip } from "../ui/tooltip";
 import { IconX } from "./icons";
 
 /** Per-tone colour, spelled out in full: Tailwind scans source as text, so a
- *  class assembled from the tone name would never be generated. A tinted chip
- *  sits on a surface that already carries the same ink at a lower strength, so
- *  it takes a border as well as a fill: on the wash alone an 18% pill on a 10%
- *  box reads as a smudge rather than as a label. */
+ *  class assembled from the tone name would never be generated. Neutral keeps
+ *  an edge against the plain composer. Note and Ask use their tinted fills
+ *  alone for cleaner labels on the matching composer washes. */
 const CHIP_TONE = {
 	neutral: {
-		box: "border-line/60 bg-surface text-fg",
+		box: "border border-line/60 bg-surface text-fg",
 		icon: "text-faint opacity-60",
 		remove: "text-faint enabled:hover:text-fg",
 	},
 	note: {
-		box: "border-[color-mix(in_srgb,var(--yellow-tint)_45%,transparent)] bg-[color-mix(in_srgb,var(--yellow-tint)_18%,transparent)] text-yellow",
+		box: "bg-[color-mix(in_srgb,var(--yellow-tint)_18%,transparent)] text-yellow",
 		icon: "text-yellow",
 		remove: "text-yellow/60 enabled:hover:text-yellow",
 	},
 	ask: {
-		box: "border-[color-mix(in_srgb,var(--green)_45%,transparent)] bg-[color-mix(in_srgb,var(--green)_18%,transparent)] text-green",
+		box: "bg-[color-mix(in_srgb,var(--green)_18%,transparent)] text-green",
 		icon: "text-green",
 		remove: "text-green/60 enabled:hover:text-green",
 	},
@@ -76,7 +75,7 @@ export function ComposerContextChip({
 	const chip = (
 		<div
 			className={cn(
-				"inline-flex h-7 max-w-full items-center gap-1 rounded-full border px-2 text-label font-medium",
+				"inline-flex h-7 max-w-full items-center gap-1 rounded-full px-2 text-label font-medium",
 				colours.box,
 			)}
 		>

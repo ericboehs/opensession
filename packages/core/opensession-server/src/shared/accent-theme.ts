@@ -1,6 +1,6 @@
 export const ACCENT_THEME_OPTIONS = [
 	{ value: "sky", label: "Sky", light: "#1d82bc", dark: "#2495d6" },
-	{ value: "indigo", label: "Indigo", light: "#6361f5", dark: "#767bf6" },
+	{ value: "indigo", label: "Indigo", light: "#366ef5", dark: "#5386f6" },
 	{ value: "coral", label: "Coral", light: "#dd233a", dark: "#f73648" },
 	{ value: "orange", label: "Tangerine", light: "#d3571c", dark: "#eb6221" },
 	{ value: "lime", label: "Honey", light: "#eec75c", dark: "#eec75c" },

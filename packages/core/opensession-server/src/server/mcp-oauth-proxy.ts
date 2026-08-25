@@ -3,14 +3,12 @@
  *
  * The engine gets the existing run-rpc MCP capability and a tool catalog. The
  * provider credential is decrypted only in the coordinator, immediately before
- * opening the upstream transport. HTTP Authorization headers and stdio env vars
- * therefore never cross into an engine process or remote sandbox.
+ * opening the upstream HTTP transport. Provider tokens therefore never cross
+ * into an engine process or remote sandbox. Stdio grants remain available to
+ * coordinator-owned UI actions, but are never handed to the mutable local
+ * executable.
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import {
-  StdioClientTransport,
-  getDefaultEnvironment,
-} from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -23,11 +21,9 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { InProcessMcpServer } from "./inprocess-mcp";
 import { readMcpConfig } from "./connections";
 import {
-  hasMcpOauthGrantForUsers,
+  hasMcpOauthProxyGrantForUsers,
   mcpAuthHeaderFresh,
   mcpOauthBindingMatches,
-  mcpOauthStdioCommand,
-  oauthPresetFor,
 } from "./mcp-oauth";
 import {
   filterMcpServerCatalog,
@@ -50,39 +46,16 @@ async function connectUpstream(
   const grant = await mcpAuthHeaderFresh(name, users);
   if (!grant) throw new Error("Personal connection is unavailable");
   const client = new Client({ name: "opensession-oauth-proxy", version: "1.0.0" });
-  let transport: Transport;
-  if (cfg.type === "http" || cfg.type === "sse" || cfg.url) {
-    const headers = new Headers(cfg.headers || {});
-    headers.set("Authorization", grant.header);
-    const requestInit = { headers };
-    transport =
-      cfg.type === "sse"
-        ? new SSEClientTransport(new URL(cfg.url), { requestInit })
-        : new StreamableHTTPClientTransport(new URL(cfg.url), { requestInit });
-  } else {
-    const preset = oauthPresetFor(name);
-    if (!preset?.envVar || !cfg.command) {
-      throw new Error("Personal stdio connection has no protected OAuth preset");
-    }
-    // Launch the pinned absolute executable, never the configured name: the
-    // name would be resolved through the inherited PATH at spawn time, and on
-    // a normal install that runs through directories this same user can write.
-    // mcpOauthBindingMatches has already checked that today's resolution still
-    // agrees with what was pinned when the grant was issued.
-    const command = mcpOauthStdioCommand(name);
-    if (!command) {
-      throw new Error("Personal stdio connection has no pinned executable");
-    }
-    transport = new StdioClientTransport({
-      command,
-      args: Array.isArray(cfg.args) ? cfg.args.map(String) : [],
-      env: {
-        ...getDefaultEnvironment(),
-        ...(cfg.env || {}),
-        [preset.envVar]: grant.header.replace(/^Bearer\s+/i, ""),
-      },
-    });
+  if (!(cfg.type === "http" || cfg.type === "sse" || cfg.url)) {
+    throw new Error("Personal OAuth is supported only for remote HTTP MCP servers");
   }
+  const headers = new Headers(cfg.headers || {});
+  headers.set("Authorization", grant.header);
+  const requestInit = { headers };
+  const transport: Transport =
+    cfg.type === "sse"
+      ? new SSEClientTransport(new URL(cfg.url), { requestInit })
+      : new StreamableHTTPClientTransport(new URL(cfg.url), { requestInit });
   try {
     await client.connect(transport);
     return { client, slot: grant.slot };
@@ -182,7 +155,7 @@ export function mcpOauthProxyServers(
   const out: Record<string, InProcessMcpServer> = {};
   for (const [name, cfg] of Object.entries(visible)) {
     if (name.startsWith("opensession-") || name.startsWith("michael-")) continue;
-    if (!hasMcpOauthGrantForUsers(name, users)) continue;
+    if (!hasMcpOauthProxyGrantForUsers(name, users)) continue;
     out[name] = createProxy(name, cfg, users, user);
   }
   return out;

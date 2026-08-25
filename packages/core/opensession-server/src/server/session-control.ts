@@ -50,6 +50,8 @@ export interface DeliverResult {
   message: string;
   /** Stable acceptance receipt for cross-session delivery observability. */
   deliveryId?: string;
+  /** True when this request id was already committed by the session owner. */
+  duplicate?: boolean;
 }
 
 /**
@@ -72,9 +74,15 @@ export type SandboxRequest =
 
 export interface CreateSessionOpts {
   prompt: string;
+  /** Stable server-chosen id for an idempotent client create request. */
+  id?: string;
+  /** Stable caller request id used for durable create receipts. */
+  requestId?: string;
+  /** Verified actor scope used by the create command owner. */
+  requestScope?: string;
   /** Branch for a code-mode worktree session. Ignored for ask mode. */
   branch?: string;
-  /** Registered repo id to run in. Defaults to tella-fusion. */
+  /** Registered repo id to run in. Defaults to the instance default repo. */
   repo?: string;
   /** Explicitly run an Ask session without a repository checkout. */
   repoLess?: boolean;
@@ -88,6 +96,8 @@ export interface CreateSessionOpts {
   fastMode?: boolean;
   /** Composer image attachments as `data:image/...;base64,` URLs. */
   images?: string[];
+  /** Raw composer file references, already staged through `/api/upload`. */
+  files?: unknown;
   /** Optional MCP allowlist for the opening run. Empty array means no MCP servers. */
   mcpServers?: string[];
   /**
@@ -111,6 +121,8 @@ export interface CreateSessionOpts {
   isolatedWorktree?: boolean;
   /** Parent/orchestrator session id when this is a worker sub-session. */
   parentSessionId?: string;
+  /** Started by a server-side agent action rather than a person typing in a composer. */
+  agentStarted?: boolean;
   /**
    * The session whose agent issued an internal helper create. Visible
    * create_session results should omit this so they remain in the user's
@@ -163,7 +175,11 @@ export interface SessionControl {
    * Resolve a session's pending AskUserQuestion. `answers` maps each question's
    * header to the chosen option label. Returns false if nothing was waiting.
    */
-  answerQuestion(id: string, answers: Record<string, string>): boolean;
+  answerQuestion(
+    id: string,
+    answers: Record<string, string>,
+    opts?: { requestId?: string },
+  ): boolean | Promise<boolean>;
   /**
    * Deliver a message to a session: steer it into the running turn if busy and
    * owned by this process, queue it behind an external run, or start a fresh
@@ -206,10 +222,14 @@ export interface SessionControl {
 		deliveryId?: string;
 		/** Automated PR findings wait behind an active user turn and drain alone. */
 		reviewHandoff?: boolean;
+		/** Stable identity included in the durable command payload. */
+		admissionKey?: string;
+		/** Trusted synchronous precondition checked inside the session lease. */
+		admit?: () => boolean;
 	},
   ): Promise<DeliverResult>;
   /** Cancel a session's in-flight run (only runs this process owns). */
-  cancelSession(id: string): boolean;
+  cancelSession(id: string, opts?: { requestId?: string }): boolean | Promise<boolean>;
   /** Create a new session and start its first turn in the background. */
   createSession(opts: CreateSessionOpts): Promise<{
     id: string;

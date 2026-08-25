@@ -145,7 +145,7 @@ export function PaletteSelect({
 					// the hint changes as you pick, so a popup sized to it would be
 					// one width teaching the gesture and another naming the repos.
 					// The rows decide how wide the menu is; the hint wraps inside it.
-					<div className="w-0 min-w-full px-2.5 pt-1.5 pb-0.5 text-meta leading-snug text-faint">
+					<div className="w-0 min-w-full px-2.5 pt-1.5 pb-0.5 text-supporting leading-snug text-faint">
 						{multiHint}
 					</div>
 				)}

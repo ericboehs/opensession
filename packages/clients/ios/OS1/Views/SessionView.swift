@@ -3,6 +3,42 @@ import SwiftUI
 import AppKit
 #endif
 
+/// Owns session start/stop and foreground presence without putting lifecycle
+/// state in the large conversation's AttributeGraph dependencies.
+private struct SessionSceneLifecycle: View {
+    let viewModel: SessionViewModel
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .task {
+                let owner = UUID()
+                viewModel.start(owner: owner)
+                defer { viewModel.stop(owner: owner) }
+                if !AppLifecycle.isActive { viewModel.appDidEnterBackground() }
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(3_600))
+                }
+            }
+            .task {
+                for await _ in NotificationCenter.default.notifications(
+                    named: AppLifecycle.didBecomeActiveNotification
+                ) {
+                    // Reconnect and resync as soon as the app is active.
+                    viewModel.appDidBecomeActive()
+                }
+            }
+            .task {
+                for await _ in NotificationCenter.default.notifications(
+                    named: AppLifecycle.willResignActiveNotification
+                ) {
+                    // Presence follows the foreground app, not input activity.
+                    viewModel.appDidEnterBackground()
+                }
+            }
+    }
+}
+
 struct SessionView: View {
     @State private var viewModel: SessionViewModel
     private let tabs: [Session]
@@ -15,6 +51,8 @@ struct SessionView: View {
     private let onSaveComposerDraft: ((SessionViewModel.ComposerDraft) -> Void)?
     /// Opens the new-session composer from the iOS navigation bar.
     private let onNewSession: (() -> Void)?
+    /// Moves to the next visible chat, prioritizing settled unread work.
+    private let onNextChat: (() -> Void)?
     /// Worktree-level actions behind the iOS overflow menu. They belong to the
     /// sessions list, which owns the optimistic row removal and the refresh
     /// that follows — nil simply leaves those entries out of the menu.
@@ -28,7 +66,6 @@ struct SessionView: View {
     /// carrying them. Nil while the tab strip has them, which is what keeps
     /// one list from appearing in two places at once.
     private let workspaceHistory: WorkspaceSessionHistory?
-    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     /// The appearance the conversation itself is drawn in — read out here,
@@ -73,8 +110,10 @@ struct SessionView: View {
     /// screens-tall blocks has no row fine-grained enough to land on.
     @State private var scrollPosition = ScrollPosition()
 
-    /// How work folds start out: where a turn's steps rest, and whether nested
-    /// grouped tool calls start open. Shared with the web preference.
+    /// How work folds start out: where a turn's work rests (folded / running,
+    /// which opens it only while the turn is live / open), and whether that
+    /// includes its tool calls. Set in Settings → Preferences, shared with the
+    /// web.
     @AppStorage("os1.appearance.turnActivity") private var turnWork = "running"
     @AppStorage("os1.appearance.toolCalls") private var toolCalls = "folded"
     private var turnActivity: TurnActivity {
@@ -101,12 +140,16 @@ struct SessionView: View {
     /// geometry. New AI output only auto-scrolls while true; scrolling up to
     /// read releases the pin so streams don't yank the reader back down.
     @State private var pinnedToBottom = true
+    /// Proximity alone cannot express intent: the first small upward movement
+    /// still sits inside `pinTolerance`, but must release live following.
+    @State private var readerMovedTowardHistory = false
+    @State private var readerScrollActive = false
 
-    /// Height of the transcript's visible area, from live scroll geometry.
-    /// The content stack is never shorter than this, so a transcript that
-    /// doesn't fill the screen reads from the top instead of hanging off the
-    /// composer.
+    /// Size of the session surface. Height keeps short transcripts pinned to
+    /// the top; width gives custom toolbar content the finite proposal that a
+    /// principal ToolbarItem does not provide on its own.
     @State private var viewportHeight: CGFloat = 0
+    @State private var viewportWidth: CGFloat = 0
 
     /// How close to the bottom (pt) still counts as pinned.
     ///
@@ -116,6 +159,12 @@ struct SessionView: View {
     /// has to clear that, plus slack for keyboard/inset transitions and lazy
     /// rows settling.
     private let pinTolerance: CGFloat = 76
+    /// Gesture completion uses a tighter edge than live following. The wider
+    /// tolerance absorbs layout slack; this one recognizes the actual resting
+    /// bottom without treating a small upward nudge as a return.
+    private var restingBottomTolerance: CGFloat {
+        pinTolerance - SessionView.tailClearance
+    }
 
     /// Model/effort catalog for the toolbar picker; fetched on first open.
     @State private var catalog: ModelCatalog?
@@ -131,6 +180,7 @@ struct SessionView: View {
     /// Workspace-scoped archived summaries. Kept out of the global archived
     /// index so opening one session never downloads the whole server history.
     @State private var workspaceArchiveRows: [Session] = []
+    @Environment(\.openURL) private var macOpenURL
     #endif
 
     #if os(iOS)
@@ -181,6 +231,7 @@ struct SessionView: View {
     private var tailId: String? {
         if let receipt = viewModel.slackComposeReceipt { return "slack-receipt-\(receipt.id)" }
         if let ask = viewModel.pendingQuestion { return "ask-\(ask.id)" }
+        if let sent = viewModel.sentAskAnswer { return "ask-sent-\(sent.id)" }
         // While work is in flight the run clock IS the last row.
         if viewModel.isRunning { return "run-status" }
         if !viewModel.liveText.isEmpty { return "live-stream" }
@@ -214,6 +265,7 @@ struct SessionView: View {
         onSelectTab: ((Session) -> Void)? = nil,
         onSaveComposerDraft: ((SessionViewModel.ComposerDraft) -> Void)? = nil,
         onNewSession: (() -> Void)? = nil,
+        onNextChat: (() -> Void)? = nil,
         onRenameWorkspace: ((String) -> Void)? = nil,
         onArchiveWorkspace: (() -> Void)? = nil,
         onRestoreArchivedSession: ((Session) async -> Void)? = nil,
@@ -229,6 +281,7 @@ struct SessionView: View {
         self.onSelectTab = onSelectTab
         self.onSaveComposerDraft = onSaveComposerDraft
         self.onNewSession = onNewSession
+        self.onNextChat = onNextChat
         self.onRenameWorkspace = onRenameWorkspace
         self.onArchiveWorkspace = onArchiveWorkspace
         self.onRestoreArchivedSession = onRestoreArchivedSession
@@ -241,6 +294,7 @@ struct SessionView: View {
         workspaceNames: [String: String] = [:],
         onSaveComposerDraft: ((SessionViewModel.ComposerDraft) -> Void)? = nil,
         onNewSession: (() -> Void)? = nil,
+        onNextChat: (() -> Void)? = nil,
         onRenameWorkspace: ((String) -> Void)? = nil,
         onArchiveWorkspace: (() -> Void)? = nil,
         onRestoreArchivedSession: ((Session) async -> Void)? = nil,
@@ -252,6 +306,7 @@ struct SessionView: View {
         self.onSelectTab = nil
         self.onSaveComposerDraft = onSaveComposerDraft
         self.onNewSession = onNewSession
+        self.onNextChat = onNextChat
         self.onRenameWorkspace = onRenameWorkspace
         self.onArchiveWorkspace = onArchiveWorkspace
         self.onRestoreArchivedSession = onRestoreArchivedSession
@@ -276,9 +331,13 @@ struct SessionView: View {
                         TranscriptGeometry(
                             offset: $0.contentOffset.y,
                             contentHeight: $0.contentSize.height,
-                            insetTop: $0.contentInsets.top
+                            insetTop: $0.contentInsets.top,
+                            visibleMaxY: $0.visibleRect.maxY,
+                            insetBottom: $0.contentInsets.bottom,
+                            containerHeight: $0.containerSize.height
                         )
                     } action: { old, new in
+                        let wasFollowing = pinnedToBottom && !readerMovedTowardHistory
                         if awaitingPrepend, new.contentHeight != old.contentHeight {
                             awaitingPrepend = false
                             prependDistanceFromEnd = TranscriptScroll.distanceFromEnd(
@@ -288,6 +347,51 @@ struct SessionView: View {
                             prependBaselineContentHeight = old.contentHeight
                         }
                         restoreAfterPrependIfPossible(new)
+                        let nearBottom = TranscriptScroll.isNearBottom(
+                            TranscriptScroll.Geometry(
+                                visibleMaxY: new.visibleMaxY,
+                                contentHeight: new.contentHeight,
+                                insetBottom: new.insetBottom,
+                                containerHeight: new.containerHeight
+                            ),
+                            tolerance: pinTolerance
+                        )
+                        let follow = TranscriptScroll.followState(
+                            previousOffset: old.offset,
+                            offset: new.offset,
+                            previousContentHeight: old.contentHeight,
+                            contentHeight: new.contentHeight,
+                            previousDistanceFromBottom: TranscriptScroll.distanceFromBottom(
+                                TranscriptScroll.Geometry(
+                                    visibleMaxY: old.visibleMaxY,
+                                    contentHeight: old.contentHeight,
+                                    insetBottom: old.insetBottom,
+                                    containerHeight: old.containerHeight
+                                )
+                            ),
+                            isNearBottom: nearBottom,
+                            readerGestureActive: readerScrollActive,
+                            layoutChanged: old.insetTop != new.insetTop
+                                || old.insetBottom != new.insetBottom
+                                || old.containerHeight != new.containerHeight,
+                            readerMovedTowardHistory: readerMovedTowardHistory
+                        )
+                        var nextPinned = follow.pinned
+                        // Streamed markdown lays out asynchronously after
+                        // `liveText` changes. Follow its measured height, not
+                        // the pre-layout text update, so the run footer stays
+                        // planted instead of stepping around while words land.
+                        if new.contentHeight > old.contentHeight,
+                           !follow.readerMovedTowardHistory,
+                           wasFollowing || (holdingAtLatest && !readerScrollActive) {
+                            nextPinned = true
+                            scrollToBottom(proxy, animated: false, repin: false)
+                        }
+                        if pinnedToBottom != nextPinned { pinnedToBottom = nextPinned }
+                        if readerMovedTowardHistory != follow.readerMovedTowardHistory {
+                            readerMovedTowardHistory = follow.readerMovedTowardHistory
+                        }
+                        if nextPinned, newBelow { newBelow = false }
                     }
                     // One viewport, for the content stack's floor above.
                     // `containerSize` is the unobstructed visible region (it
@@ -362,13 +466,39 @@ struct SessionView: View {
                         )
                     // A scroll gesture is the reader taking over: the
                     // opening hold ends the moment they touch the transcript.
-                    .onScrollPhaseChange { _, phase in
+                    .onScrollPhaseChange { old, phase, context in
                         // A hand on the transcript outranks both the opening
                         // hold and a restore still settling a page of history.
-                        if phase == .interacting {
+                        let readerPhase = phase == .tracking
+                            || phase == .interacting
+                            || phase == .decelerating
+                        if phase == .interacting, old != .interacting {
                             scrollInteractionGeneration += 1
                             endHold()
                             cancelPrependRestore()
+                            if !readerMovedTowardHistory {
+                                readerMovedTowardHistory = true
+                            }
+                            if pinnedToBottom { pinnedToBottom = false }
+                        }
+                        if readerScrollActive != readerPhase {
+                            readerScrollActive = readerPhase
+                        }
+                        if phase == .idle, readerMovedTowardHistory {
+                            let atRestingBottom = TranscriptScroll.isNearBottom(
+                                TranscriptScroll.Geometry(
+                                    visibleMaxY: context.geometry.visibleRect.maxY,
+                                    contentHeight: context.geometry.contentSize.height,
+                                    insetBottom: context.geometry.contentInsets.bottom,
+                                    containerHeight: context.geometry.containerSize.height
+                                ),
+                                tolerance: restingBottomTolerance
+                            )
+                            if atRestingBottom {
+                                readerMovedTowardHistory = false
+                                pinnedToBottom = true
+                                newBelow = false
+                            }
                         }
                         // Reading counts as being here: a hand on the transcript
                         // is what keeps our face on this session (the view model
@@ -397,6 +527,9 @@ struct SessionView: View {
                             // The composer closes into this durable receipt.
                             scrollToBottom(proxy, animated: true)
                         }
+                        .onChange(of: viewModel.sentAskAnswer) {
+                            scrollToBottom(proxy, animated: true)
+                        }
 
                     let deliveryScroll = receivedScroll
                         .onChange(of: viewModel.composeSeq) {
@@ -410,6 +543,10 @@ struct SessionView: View {
                             // reader has scrolled up (or the keyboard resized the
                             // viewport), leaving the sent bubble below the fold.
                             scrollToBottom(proxy, animated: true)
+                            // The message arrives after the outbox round trip,
+                            // so keep following while its row and the keyboard
+                            // inset settle instead of stopping at the old tail.
+                            beginHold(proxy, after: .milliseconds(450))
                         }
                     // The size-change anchor alone doesn't reliably hold the
                     // bottom while new output arrives (keyboard insets + lazy
@@ -422,16 +559,16 @@ struct SessionView: View {
                     // unchanged, and following new output would stop.
                     let outputScroll = deliveryScroll
                         .onChange(of: viewModel.displayItems.count) {
-                            displayItemsChanged(proxy)
+                            displayItemsChanged()
                         }
                         // The clock arriving lengthens the transcript by a row;
                         // follow it so it lands above the composer rather than
                         // behind it.
                         .onChange(of: viewModel.isRunning) { _, running in
-                            runningChanged(running, proxy: proxy)
+                            runningChanged(running)
                         }
                         .onChange(of: viewModel.liveText) {
-                            liveTextChanged(proxy)
+                            liveTextChanged()
                         }
 
                     outputScroll
@@ -488,8 +625,8 @@ struct SessionView: View {
             }
             #endif
         }
-        let chromeContent = transcriptContent
-            .environment(\.transcriptRepo, viewModel.session.effectiveRepo)
+		let chromeContent = transcriptContent
+			.environment(\.transcriptSessionId, viewModel.session.id)
             .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
                 #if os(iOS)
@@ -514,6 +651,9 @@ struct SessionView: View {
                         onRestore: { _ in }
                     )
                 }
+                #endif
+                #if os(iOS)
+                SessionToastBanner(viewModel: viewModel)
                 #endif
                 statusBanner
             }
@@ -544,27 +684,22 @@ struct SessionView: View {
         #endif
         .inlineTitleBarCompat()
         #if os(iOS)
+        // Keep the bar itself transparent so the transcript's soft scroll-edge
+        // effect can provide the progressive blur beneath its glass controls.
         .toolbarBackground(.hidden, for: .navigationBar)
-        // The nav bar is adaptive chrome, exactly like the bottom bar (see
-        // `inputBar`): a black code block scrolling under it hands the bar a
-        // DARK appearance, and everything in it follows — the title pill's
-        // material, fill and text all flipped, so a light-mode app wore a
-        // black capsule that restyled itself against whatever happened to be
-        // passing behind. The bar wears the appearance the rest of the screen
-        // is drawn in instead. `environment(\.colorScheme:)` is NOT enough
-        // here the way it is on the composer: toolbar content is hoisted out
-        // of the view tree into the bar's own UIKit host, which resolves
-        // dynamic colours and materials against ITS trait collection, and
-        // ignored the pinned environment entirely (measured — the pill stayed
-        // black).
-            .toolbarColorScheme(appColorScheme, for: .navigationBar)
-            #endif
+        // Toolbar content is hosted outside this view tree, so pin its colour
+        // scheme here instead of relying on the surrounding environment.
+        .toolbarColorScheme(appColorScheme, for: .navigationBar)
+        #endif
 
         let toolbarContent = chromeContent
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: {
+                viewportWidth = $0
+            }
             .toolbar {
             #if os(iOS)
             ToolbarItem(placement: .principal) {
-                sessionIdentityButton
+                sessionHeaderLane
             }
             #endif
             // Whoever else has this session open, right before the actions
@@ -574,42 +709,53 @@ struct SessionView: View {
                     PresenceFacepile(viewers: viewModel.otherViewers, size: 24)
                 }
             }
-            #if os(iOS)
-            ToolbarItem(placement: .topTrailingCompat) {
-                SessionActionsMenu(
-                    viewModel: viewModel,
-                    tabs: tabs,
-                    workspaceNames: workspaceNames,
-                    catalog: catalog,
-                    onNewSession: onNewSession,
-                    onRenameWorkspace: onRenameWorkspace,
-                    onArchiveWorkspace: onArchiveWorkspace,
-                    showWorktreeInfo: $showWorktreeInfo,
-                    showPrPanel: $showPrPanel,
-                    renaming: $renamingWorkspace,
-                    renameText: $renameText,
-                    // Handed down rather than read from the environment: a
-                    // toolbar's content is hoisted out of the view tree, and
-                    // what reaches it there isn't something to bet a menu on.
-                    openPanel: openPanel,
-                    workspaceHistory: workspaceHistory
-                )
-            }
-            #else
+            #if os(macOS)
             // macOS retains the PR chip in its roomier toolbar; on iOS the
-            // same panel lives in the title-opened workspace sheet.
-            if let prNumber = viewModel.prDetails?.number ?? viewModel.session.prNumber {
+            // same series lives in the title-opened workspace sheet.
+            let prRows = SessionPrSeries.rows(for: viewModel.session)
+            let primaryPrNumber = viewModel.prDetails?.number ?? viewModel.session.prNumber
+            if let chipRow = prRows.first {
                 ToolbarItem(placement: .topTrailingCompat) {
-                    Button {
-                        showPrPanel = true
-                    } label: {
-                        PrChipLabel(number: prNumber, summary: viewModel.prDetails?.summary)
+                    if prRows.count == 1, let primaryPrNumber, chipRow.isPrimary {
+                        Button {
+                            showPrPanel = true
+                        } label: {
+                            PrChipLabel(
+                                number: primaryPrNumber,
+                                summary: viewModel.prDetails?.summary
+                            )
+                        }
+                        .accessibilityLabel(Text(verbatim: "Pull request #\(primaryPrNumber)"))
+                    } else {
+                        Menu {
+                            if let primaryPrNumber {
+                                Button {
+                                    showPrPanel = true
+                                } label: {
+                                    Text(verbatim: "Open pull request #\(primaryPrNumber)")
+                                }
+                            }
+                            ForEach(prRows.filter { primaryPrNumber == nil || !$0.isPrimary }) { row in
+                                Button {
+                                    openRelatedPr(row)
+                                } label: {
+                                    Text(verbatim: "\(row.identityLabel) · \(row.title ?? row.state)")
+                                }
+                            }
+                        } label: {
+                            if let number = chipRow.number {
+                                PrChipLabel(
+                                    number: number,
+                                    summary: chipRow.isPrimary ? viewModel.prDetails?.summary : nil
+                                )
+                            } else {
+                                Image(systemName: "arrow.trianglehead.pull")
+                            }
+                        }
+                        .accessibilityLabel(Text("Pull requests"))
                     }
-                    .accessibilityLabel(Text(verbatim: "Pull request #\(prNumber)"))
                 }
             }
-            #endif
-            #if os(macOS)
             ToolbarItem(placement: .principal) { macSessionTitle }
             if !workspaceHistoryRows.isEmpty, onRestoreArchivedSession != nil {
                 ToolbarItem(placement: .topTrailingCompat) {
@@ -683,52 +829,49 @@ struct SessionView: View {
             #endif
 
         presentedContent
+            // Platform lifecycle notifications avoid a scene-phase environment
+            // update walking this transcript during the 10-second background
+            // watchdog window. The zero-sized leaf owns only the side effects.
+            .background { SessionSceneLifecycle(viewModel: viewModel) }
             .task {
-            let owner = UUID()
-            viewModel.start(owner: owner)
-            defer { viewModel.stop(owner: owner) }
-            if scenePhase != .active { viewModel.appDidEnterBackground() }
-            catalog = try? await OS1API.models(workspaceId: viewModel.session.workspaceId)
-            #if DEBUG && os(iOS)
-            if ProcessInfo.processInfo.environment["OS1_OPEN_WORKTREE_INFO"] == "1" {
-                showWorktreeInfo = true
+                catalog = try? await OS1API.models(workspaceId: viewModel.session.workspaceId)
+                #if DEBUG && os(iOS)
+                if ProcessInfo.processInfo.environment["OS1_OPEN_WORKTREE_INFO"] == "1" {
+                    showWorktreeInfo = true
+                }
+                // Land straight on the PR panel. The simulator takes no taps from
+                // a headless host, so verifying anything behind a control means
+                // reaching it some other way, for the same reason as the sheet above.
+                if ProcessInfo.processInfo.environment["OS1_OPEN_PR"] == "1",
+                   openPanel.isAvailable {
+                    openPanel(.review(sessionId: viewModel.session.id))
+                }
+                if ProcessInfo.processInfo.environment["OS1_OPEN_CHANGES"] == "1",
+                   openPanel.isAvailable {
+                    openPanel(.changes(sessionId: viewModel.session.id))
+                }
+                if ProcessInfo.processInfo.environment["OS1_SHOW_SLACK_RECEIPT"] == "1" {
+                    viewModel.resolveSlackComposer(SlackComposeReceipt(
+                        requestId: "screenshot-slack-receipt",
+                        status: .sent,
+                        channel: .init(id: "C123", name: "shipping"),
+                        permalink: "https://slack.com",
+                        ts: "1700000000.000000"
+                    ))
+                }
+                #endif
             }
-            // Land straight on the PR panel. The simulator takes no taps from
-            // a headless host, so verifying anything behind a control means
-            // reaching it some other way — same reason as the sheet above.
-            if ProcessInfo.processInfo.environment["OS1_OPEN_PR"] == "1",
-               openPanel.isAvailable {
-                openPanel(.review(sessionId: viewModel.session.id))
+            .onDisappear {
+                onSaveComposerDraft?(SessionViewModel.ComposerDraft(
+                    text: viewModel.draft,
+                    images: viewModel.attachedImages
+                ))
+                viewModel.quoteSelection.clear()
             }
-            if ProcessInfo.processInfo.environment["OS1_OPEN_CHANGES"] == "1",
-               openPanel.isAvailable {
-                openPanel(.changes(sessionId: viewModel.session.id))
+            .onChange(of: DraftsStore.shared.remoteRevision) {
+                let remote = DraftsStore.shared.mountedText(for: viewModel.session.id)
+                if viewModel.draft != remote { viewModel.draft = remote }
             }
-            #endif
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(3_600))
-            }
-        }
-        .onDisappear {
-            onSaveComposerDraft?(SessionViewModel.ComposerDraft(
-                text: viewModel.draft,
-                images: viewModel.attachedImages
-            ))
-            viewModel.quoteSelection.clear()
-        }
-        .onChange(of: DraftsStore.shared.remoteRevision) {
-            let remote = DraftsStore.shared.mountedText(for: viewModel.session.id)
-            if viewModel.draft != remote { viewModel.draft = remote }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            // Presence follows the foreground app, not input activity. Resync
-            // (and reconnect if dead) the moment it becomes active again.
-            switch phase {
-            case .active: viewModel.appDidBecomeActive()
-            case .inactive, .background: viewModel.appDidEnterBackground()
-            @unknown default: viewModel.appDidEnterBackground()
-            }
-        }
     }
 
     /// A separate view struct on purpose: typing mutates `viewModel.draft` on
@@ -749,7 +892,14 @@ struct SessionView: View {
                 viewModel: viewModel,
                 contentMaxWidth: contentMaxWidth,
                 horizontalInset: contentInset,
-                autoFocusWhenNeverRan: emptyContent == nil
+                autoFocusWhenNeverRan: emptyContent == nil,
+                onNextChat: onNextChat,
+                // The session's actions ride above the composer on iOS (see
+                // `SessionActionBar`), which is why the navigation bar has no
+                // ⋯ of its own there.
+                onArchiveWorkspace: onArchiveWorkspace,
+                onNewSession: onNewSession,
+                actionMenu: actionsMenu
             )
         }
         // The system treats a bottom `safeAreaBar` as adaptive chrome: when
@@ -761,6 +911,33 @@ struct SessionView: View {
         // black). Pin the appearance the rest of the screen is using; the
         // glass keeps its own look, it just stops repainting the app.
         .environment(\.colorScheme, appColorScheme)
+    }
+
+    /// The ⋯ menu, erased so the input bar can carry it without becoming
+    /// generic. Built here because every binding it writes to is this view's
+    /// state. nil on the Mac, whose roomier toolbar keeps its own controls.
+    private var actionsMenu: AnyView? {
+        #if os(iOS)
+        AnyView(
+            SessionActionsMenu(
+                viewModel: viewModel,
+                tabs: tabs,
+                workspaceNames: workspaceNames,
+                catalog: catalog,
+                onNewSession: onNewSession,
+                onRenameWorkspace: onRenameWorkspace,
+                onArchiveWorkspace: onArchiveWorkspace,
+                showWorktreeInfo: $showWorktreeInfo,
+                showPrPanel: $showPrPanel,
+                renaming: $renamingWorkspace,
+                renameText: $renameText,
+                openPanel: openPanel,
+                workspaceHistory: workspaceHistory
+            )
+        )
+        #else
+        nil
+        #endif
     }
 
     /// Ghost rows in the transcript's own geometry, rather than a spinner in
@@ -905,11 +1082,25 @@ struct SessionView: View {
         Task { await onRestoreArchivedSession(session) }
     }
 
+    private func openRelatedPr(_ row: SessionPrRow) {
+        Task {
+            guard let url = await SessionPrSeries.destination(
+                for: row,
+                sessionId: viewModel.session.id
+            ) else { return }
+            macOpenURL(url)
+        }
+    }
+
     /// Own the detail title instead of accepting NavigationSplitView's
     /// automatic circular title-menu control, which had no useful action.
     private var macSessionTitle: some View {
         HStack(spacing: 8) {
             RepoTile(name: viewModel.session.effectiveRepo, size: 20)
+            if viewModel.session.wasAgentStarted {
+                WebIcon(kind: .robot, size: 15, color: OS1VisualStyle.textDim)
+                    .accessibilityHidden(true)
+            }
             Text(viewModel.session.displayTitle)
                 .font(.headline)
                 .lineLimit(1)
@@ -925,72 +1116,82 @@ struct SessionView: View {
     #endif
 
     #if os(iOS)
+    /// Use the principal lane for its flexible width, but anchor the title at
+    /// its leading edge so it follows Back and can consume the open right side.
+    private var sessionHeaderLane: some View {
+        sessionIdentityButton
+            .frame(width: sessionHeaderLaneWidth, alignment: .leading)
+    }
+
+    private var sessionHeaderLaneWidth: CGFloat {
+        let surfaceWidth = viewportWidth > 0 ? viewportWidth : 390
+        return min(560, max(200, surfaceWidth - 160))
+    }
+
     /// Mobile web opens workspace details when its title is tapped. Keep the
     /// same identity in native navigation and present a SwiftUI details sheet.
     private var sessionIdentityButton: some View {
         Button {
             showWorktreeInfo = true
         } label: {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 0) {
                 // No run dot up here: the bar is identity and navigation,
-                // and the running state now reads where the work is — the
+                // and the running state now reads where the work is, in the
                 // clock at the end of the transcript.
                 HStack(spacing: 4) {
                     // A machine owns this conversation. Same glyph and same
-                    // slot as the web header's automation link, and the same
-                    // reason: origin reads beside the name it produced.
-                    if viewModel.session.isAutomation {
+                    // slot as the web header's automation link. Origin reads
+                    // beside the name it produced.
+                    if viewModel.session.wasAgentStarted {
                         WebIcon(kind: .robot, size: 15, color: OS1VisualStyle.textDim)
                             .accessibilityHidden(true)
                     }
-                    Text(identityTitle)
-                        .font(.callout.weight(.semibold))
+                    SingleLineFadeText(
+                        text: identityTitle,
+                        font: .callout.weight(.semibold),
+                        width: sessionIdentityWidth - 22
+                    )
                         .foregroundStyle(OS1VisualStyle.text)
-                        .fixedSize(horizontal: true, vertical: false)
                 }
-                .frame(width: 176, alignment: .leading)
-                .clipped()
-                .mask(titleTrailingFade)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 if !dynamicTypeSize.isAccessibilitySize {
-                    Text(headerSubtitle)
+                    headerSubtitleText
                         .font(.footnote)
                         .foregroundStyle(OS1VisualStyle.textDim)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .frame(width: 176, alignment: .leading)
-                        .clipped()
-                        .mask(titleTrailingFade)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            // Match the bar's system navigation and actions controls so the
-            // identity reads as another tappable piece of its chrome.
-            //
-            // The semantic glass BUTTON style belongs to the control; never
-            // put `.glassEffect` on this label. That nested a second surface in
-            // the bar's glass group and let menu morphs flatten its controls.
-            .padding(.leading, 4)
-            .padding(.trailing, 10)
-            .padding(.vertical, 1)
-            .frame(width: 190, alignment: .leading)
+            // Keep the glass visually tighter than its toolbar-owned 44pt tap
+            // target while leaving enough height for both identity lines.
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
             .contentShape(Capsule())
         }
+        // Opt this custom identity control into the same Liquid Glass style as
+        // the system Back button.
         .buttonStyle(.glass)
         .buttonBorderShape(.capsule)
+        .controlSize(.small)
         .tint(.primary)
+        .frame(width: sessionIdentityWidth, alignment: .leading)
         .accessibilityLabel("Workspace details")
     }
 
-    private var titleTrailingFade: LinearGradient {
-        LinearGradient(
-            stops: [
-                .init(color: .black, location: 0),
-                .init(color: .black, location: 0.86),
-                .init(color: .clear, location: 1),
-            ],
-            startPoint: .leading,
-            endPoint: .trailing
-        )
+    private var sessionIdentityWidth: CGFloat {
+        let surfaceWidth = viewportWidth > 0 ? viewportWidth : 390
+        return min(360, max(128, surfaceWidth - 128))
     }
     #endif
+
+    private func pullRequestButton(number: Int) -> some View {
+        Button {
+            showPrPanel = true
+        } label: {
+            PrChipLabel(number: number, summary: viewModel.prDetails?.summary)
+        }
+        .accessibilityLabel(Text(verbatim: "Pull request #\(number)"))
+    }
 
     private var currentModel: String {
         viewModel.model.isEmpty ? (catalog?.defaultModel ?? "") : viewModel.model
@@ -1008,10 +1209,28 @@ struct SessionView: View {
     }
 
     private var headerSubtitle: String {
-        let label = catalog?.label(for: currentModel) ?? currentModel
-        return [RepoTile.label(for: viewModel.session.effectiveRepo), label]
+        let repo = RepoTile.label(for: viewModel.session.effectiveRepo)
+        let model = catalog?.label(for: currentModel) ?? currentModel
+        let prNumber = viewModel.prDetails?.number ?? viewModel.session.prNumber
+        var parts: [String] = []
+        if let prNumber {
+            parts.append("#\(prNumber)")
+        }
+        parts.append(repo)
+        parts.append(model)
+        return parts
             .filter { !$0.isEmpty }
-            .joined(separator: " · ")
+            .joined(separator: " • ")
+    }
+
+    private var headerSubtitleText: Text {
+        var subtitle = AttributedString(headerSubtitle)
+        if let pr = viewModel.prDetails,
+           let range = subtitle.range(of: "#\(pr.number)")
+        {
+            subtitle[range].foregroundColor = pr.summary.color
+        }
+        return Text(subtitle)
     }
 
     /// Re-pin to the latest for a beat while the transcript settles.
@@ -1039,7 +1258,7 @@ struct SessionView: View {
             for _ in 0..<max(1, Int(seconds / 0.25)) {
                 try? await Task.sleep(for: .milliseconds(250))
                 guard !Task.isCancelled, holdingAtLatest else { return }
-                scrollToBottom(proxy, animated: false)
+                scrollToBottom(proxy, animated: false, repin: false)
             }
             holdingAtLatest = false
         }
@@ -1112,10 +1331,19 @@ struct SessionView: View {
             .id("ask-\(ask.id)")
             .transcriptTail(true)
         }
-        if let receipt = viewModel.slackComposeReceipt {
-            SlackComposeReceiptRow(receipt: receipt)
-                .id("slack-receipt-\(receipt.id)")
+        if let sent = viewModel.sentAskAnswer {
+            AnsweredAskCard(ask: sent.ask)
+                .id("ask-sent-\(sent.id)")
                 .transcriptTail(true)
+        }
+        if let receipt = viewModel.slackComposeReceipt {
+            SlackComposeReceiptRow(
+                receipt: receipt,
+                isUndoing: viewModel.undoingSlackComposeReceiptId == receipt.id,
+                onUndo: { await viewModel.undoSlackComposeReceipt() }
+            )
+            .id("slack-receipt-\(receipt.id)")
+            .transcriptTail(true)
         }
         // A small child at the end keeps a single giant lazy transcript block
         // realized when the reader lands at the bottom. It is not the scroll
@@ -1149,29 +1377,15 @@ struct SessionView: View {
             viewModel.quoteSelection.clear()
             return .handled
         }
-        #if os(iOS)
-        .transcriptTopWash()
-        #endif
         .defaultScrollAnchor(showingEmptyContent ? .top : .bottom)
         .defaultScrollAnchor(
             showingEmptyContent ? .top : .bottom,
             for: .sizeChanges
         )
-        .scrollDismissesKeyboardCompat()
-        .onScrollGeometryChange(for: Bool.self) { geometry in
-            TranscriptScroll.isNearBottom(
-                TranscriptScroll.Geometry(
-                    visibleMaxY: geometry.visibleRect.maxY,
-                    contentHeight: geometry.contentSize.height,
-                    insetBottom: geometry.contentInsets.bottom,
-                    containerHeight: geometry.containerSize.height
-                ),
-                tolerance: pinTolerance
-            )
-        } action: { _, isNearBottom in
-            pinnedToBottom = isNearBottom
-            if isNearBottom { newBelow = false }
-        }
+        // Keep the composer anchored above an open keyboard while the reader
+        // scrolls. Interactive dismissal drags both down and can park the
+        // composer partly outside the viewport.
+        .scrollKeepsKeyboardPresentedCompat()
         .scrollPosition($scrollPosition)
     }
 
@@ -1194,8 +1408,15 @@ struct SessionView: View {
             // An automation's turns are not a person's words, so they get no
             // author fallback. The web makes the same exception.
             owner: viewModel.session.transcriptOwner,
+            outbox: viewModel.outbox,
             onEditMessage: { entry in
                 viewModel.editSentMessageInComposer(entry)
+            },
+            onEditUnsent: { item in
+                viewModel.editUnsent(item)
+            },
+            onDeleteUnsent: { item in
+                viewModel.discardUnsent(item)
             },
             onEditNote: { note, text in
                 try await viewModel.editSessionNote(note, text: text)
@@ -1220,31 +1441,25 @@ struct SessionView: View {
         awaitingPrepend = true
     }
 
-    private func displayItemsChanged(_ proxy: ScrollViewProxy) {
+    private func displayItemsChanged() {
         let isHistoryPrepend = lastDisplayHistoryPrependSeq != viewModel.historyPrependSeq
         lastDisplayHistoryPrependSeq = viewModel.historyPrependSeq
         if isHistoryPrepend { return }
         // A tail append during a restore breaks its pure-prepend invariant, so
         // the reader's current position wins over the stale distance from end.
         cancelPrependRestore()
-        if pinnedToBottom || holdingAtLatest {
-            scrollToBottom(proxy, animated: true)
-        } else {
+        if !pinnedToBottom, !holdingAtLatest {
             newBelow = true
         }
     }
 
-    private func runningChanged(_ running: Bool, proxy: ScrollViewProxy) {
-        if running, pinnedToBottom || holdingAtLatest {
-            scrollToBottom(proxy, animated: true)
-        }
+    private func runningChanged(_ running: Bool) {
+        if running, !pinnedToBottom, !holdingAtLatest { newBelow = true }
     }
 
-    private func liveTextChanged(_ proxy: ScrollViewProxy) {
+    private func liveTextChanged() {
         cancelPrependRestore()
-        if pinnedToBottom {
-            scrollToBottom(proxy, animated: false)
-        } else if !viewModel.liveText.isEmpty {
+        if !pinnedToBottom, !viewModel.liveText.isEmpty {
             newBelow = true
         }
     }
@@ -1275,8 +1490,16 @@ struct SessionView: View {
     /// The row's own `transcriptTail` padding is what keeps it clear of the
     /// composer's fade, since this puts its frame's bottom edge on the visible
     /// bottom.
-    private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
+    private func scrollToBottom(
+        _ proxy: ScrollViewProxy,
+        animated: Bool,
+        repin: Bool = true
+    ) {
         guard let target = tailId else { return }
+        if repin {
+            if readerMovedTowardHistory { readerMovedTowardHistory = false }
+            if !pinnedToBottom { pinnedToBottom = true }
+        }
         if animated {
             withAnimation(.snappy) { proxy.scrollTo(target, anchor: .bottom) }
         } else {
@@ -1291,6 +1514,7 @@ struct SessionView: View {
         guard let target = viewModel.blockId(containing: message.id) else { return }
         endHold()
         cancelPrependRestore()
+        readerMovedTowardHistory = true
         pinnedToBottom = false
         newBelow = false
         viewModel.userDidInteract()
@@ -1308,6 +1532,8 @@ private extension View {
 
 private struct SlackComposeReceiptRow: View {
     let receipt: SlackComposeReceipt
+    let isUndoing: Bool
+    let onUndo: () async -> Void
 
     var body: some View {
         HStack(spacing: 6) {
@@ -1327,6 +1553,15 @@ private struct SlackComposeReceiptRow: View {
                     Link("Open in Slack", destination: url)
                         .underline()
                 }
+                if receipt.channel != nil, receipt.ts != nil {
+                    Text("·").foregroundStyle(OS1VisualStyle.textFaint)
+                    Button(isUndoing ? "Undoing…" : "Undo") {
+                        Task { await onUndo() }
+                    }
+                    .buttonStyle(.plain)
+                    .underline()
+                    .disabled(isUndoing)
+                }
             } else {
                 Text("Slack message cancelled")
             }
@@ -1334,7 +1569,6 @@ private struct SlackComposeReceiptRow: View {
         .font(.footnote)
         .foregroundStyle(OS1VisualStyle.textDim)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -1571,7 +1805,7 @@ private struct SessionActionsMenu: View {
             }
         } label: {
             Image(systemName: "ellipsis")
-                .foregroundStyle(OS1VisualStyle.text)
+                .foregroundStyle(OS1VisualStyle.textDim)
         }
         .accessibilityLabel("Session actions")
         .confirmationDialog(
@@ -1750,6 +1984,8 @@ struct SessionTabsView: View {
     /// to open as one (a workspace-less session falls back to the composer
     /// sheet, and a failed create has already surfaced its error).
     let onNewSession: () async -> Session?
+    /// Move from this workspace to the next visible chat in the sidebar.
+    let onNextChat: (() -> Void)?
     /// Rename the worktree these sessions share, from the session's overflow menu.
     let onRenameWorkspace: (String) -> Void
     /// Archive every session of the worktree, from the session's overflow menu.
@@ -1803,6 +2039,7 @@ struct SessionTabsView: View {
         viewModelForSession: @escaping (Session) -> SessionViewModel,
         onSaveComposerDraft: @escaping (Session, SessionViewModel.ComposerDraft) -> Void,
         onNewSession: @escaping () async -> Session?,
+        onNextChat: (() -> Void)?,
         onRenameWorkspace: @escaping (String) -> Void,
         onArchiveWorkspace: @escaping () -> Void,
         onCloseTab: @escaping (Session) -> Void,
@@ -1814,6 +2051,7 @@ struct SessionTabsView: View {
         self.viewModelForSession = viewModelForSession
         self.onSaveComposerDraft = onSaveComposerDraft
         self.onNewSession = onNewSession
+        self.onNextChat = onNextChat
         self.onRenameWorkspace = onRenameWorkspace
         self.onArchiveWorkspace = onArchiveWorkspace
         self.onCloseTab = onCloseTab
@@ -1898,6 +2136,7 @@ struct SessionTabsView: View {
                             onSaveComposerDraft(session, draft)
                         },
                         onNewSession: openNewTab,
+                        onNextChat: onNextChat,
                         onRenameWorkspace: onRenameWorkspace,
                         // Archiving the worktree from within it leaves nothing to
                         // show here, so pop back to the sessions list — the same
@@ -2457,6 +2696,7 @@ private struct SessionInputBar: View {
     /// Read for the Mac send menu's key hints only. See `BusySendHints`.
     @AppStorage("os1.composer.busySendMod") private var busySendMod = "steer"
     @AppStorage("os1.composer.replySuggestions") private var showReplySuggestions = true
+    @AppStorage("os1.composer.nextChatButton") private var showNextChatButton = true
     /// Matches the transcript column cap so the bar centers with it.
     let contentMaxWidth: CGFloat
     let horizontalInset: CGFloat
@@ -2464,6 +2704,14 @@ private struct SessionInputBar: View {
     /// False when the caller has put something in the transcript's place (the
     /// Desk's board), which a keyboard would cover.
     var autoFocusWhenNeverRan = true
+    /// Kept optional so non-sidebar conversations, such as the Desk, draw no row.
+    var onNextChat: (() -> Void)?
+    /// The rest of the iOS action bar above the composer. Each is optional
+    /// for the same reason: a conversation with no workspace behind it (the
+    /// Desk) simply draws fewer buttons.
+    var onArchiveWorkspace: (() -> Void)?
+    var onNewSession: (() -> Void)?
+    var actionMenu: AnyView?
     @FocusState private var inputFocused: Bool
     /// What the "+" menu opened, if anything. One `@State` and one `.sheet`
     /// on purpose: stacking sheet modifiers on a single view leaves only the
@@ -2494,16 +2742,6 @@ private struct SessionInputBar: View {
     /// a long dictation does — state living in the button would die mid-word.
     @State private var dictation = Dictation()
     @State private var sessionProjection = ComposerSessionProjectionState()
-    /// Whether the outbox's pending rows have earned their place in the flap.
-    /// EVERY send lands in the outbox first, so rendering those rows the
-    /// instant they appear made the flap blink open and shut on ordinary
-    /// sends — a queue-looking panel for a message that was fine, gone before
-    /// you could read it. A send that the server takes normally is
-    /// acknowledged in a few hundred milliseconds and is better represented
-    /// by what it becomes (a transcript bubble, or a queued row while a run
-    /// is in flight), so the pending row waits out that window and only shows
-    /// up when the send is genuinely slow, offline, or refused.
-    @State private var pendingSendVisible = false
     /// Notes are one-message context: they post straight to the team and never
     /// enter the engine or busy-message queue.
     @State private var noteMode = false
@@ -2518,6 +2756,10 @@ private struct SessionInputBar: View {
     /// Air above the topmost element in the bar — and where the composer
     /// scrim's dissolve has to finish, so it ends level with that element.
     private static let barTopPadding: CGFloat = 6
+
+    private var typingLabel: String? {
+        SessionViewModel.typingLabel(viewModel.otherTypingUsers)
+    }
 
     #if os(macOS)
     /// Local key monitor that turns Shift+Return into a newline insert.
@@ -2537,14 +2779,39 @@ private struct SessionInputBar: View {
                     )
             }
 
-            if showReplySuggestions,
-               !viewModel.isRunning,
-               viewModel.pendingQuestion == nil,
-               !noteMode,
-               !viewModel.replySuggestions.isEmpty {
+            // Next chat is a button of its own here only on the Mac. On iOS
+            // it is one seat in the action bar below, next to the other
+            // session actions, rather than a second control saying the same
+            // thing a few points away.
+            #if os(iOS)
+            if offersReplySuggestions {
                 replySuggestionRow
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .bottomLeading)))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .transition(
+                        .opacity.combined(with: .scale(scale: 0.96, anchor: .bottomLeading))
+                    )
             }
+            #else
+            if offersReplySuggestions || (showNextChatButton && onNextChat != nil) {
+                HStack(spacing: 8) {
+                    if offersReplySuggestions {
+                        replySuggestionRow
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .transition(
+                                .opacity.combined(
+                                    with: .scale(scale: 0.96, anchor: .bottomLeading)
+                                )
+                            )
+                    } else {
+                        Spacer(minLength: 0)
+                    }
+                    if showNextChatButton, let onNextChat {
+                        nextChatButton(action: onNextChat)
+                            .padding(.trailing, 12)
+                    }
+                }
+            }
+            #endif
 
             if viewModel.quoteSelection.text != nil {
                 selectedTextChip
@@ -2554,7 +2821,7 @@ private struct SessionInputBar: View {
             }
 
             if (viewModel.queuedCount > 0 && viewModel.queuedItems.isEmpty)
-                || visibleNotice != nil {
+                || composerNotice != nil {
                 composerChip
                     // Grows out of the composer it belongs to, rather than
                     // being cut in above it.
@@ -2568,6 +2835,27 @@ private struct SessionInputBar: View {
                     viewModel.attachedImages.removeAll { $0.id == image.id }
                 }
             }
+
+            if let typingLabel {
+                Text(typingLabel)
+                    .font(.caption)
+                    .foregroundStyle(OS1VisualStyle.textFaint)
+                    .padding(.horizontal, 12)
+                    .accessibilityAddTraits(.updatesFrequently)
+            }
+
+            #if os(iOS)
+            // Keep the actions with the composer inside the keyboard-adjusted
+            // safe-area bar, so they remain directly above an open keyboard.
+            if hasActionBar {
+                SessionActionBar(
+                    onArchive: onArchiveWorkspace,
+                    onNewSession: onNewSession,
+                    onNextChat: showNextChatButton ? onNextChat : nil,
+                    menu: actionMenu
+                )
+            }
+            #endif
 
             VStack(spacing: 0) {
                 if hasQueueItems {
@@ -2594,7 +2882,7 @@ private struct SessionInputBar: View {
         .padding(.horizontal, horizontalInset)
         .padding(.top, Self.barTopPadding)
         .padding(.bottom, 8)
-        .animation(.smooth(duration: 0.22), value: visibleNotice)
+        .animation(.smooth(duration: 0.22), value: composerNotice)
         .animation(.smooth(duration: 0.18), value: noteMode)
         .animation(.smooth(duration: 0.2), value: viewModel.replySuggestions)
         .animation(.smooth(duration: 0.18), value: viewModel.quoteSelection.text)
@@ -2618,13 +2906,6 @@ private struct SessionInputBar: View {
         .onChange(of: viewModel.isRunning) { _, running in
             if !running { stopConfirm = false }
         }
-        // The send you can feel. Keyed on the view model's send counter rather
-        // than the button's action, so every way of sending gets it: the disc,
-        // the hold menu's steer/queue, Return on the software keyboard and
-        // ⌘/Ctrl+Return on the Mac. A send that was REFUSED (a full outbox)
-        // never increments it, so it stays silent and the notice below speaks
-        // instead.
-        .haptic(.send, trigger: viewModel.sendSeq)
         // Only the notices that carry bad news knock: "switched to code mode"
         // is information, and a phone that buzzes at information is a phone
         // people turn haptics off on.
@@ -2655,22 +2936,19 @@ private struct SessionInputBar: View {
         // Desk opens with a keyboard covering its own board.
         .onAppear {
             if viewModel.session.neverRan && autoFocusWhenNeverRan { inputFocused = true }
-        }
-        // Leaving the session must not leave the mic open.
-        .onDisappear { dictation.stop() }
-        // Reveal (or re-hide) the outbox's pending rows. Re-runs whenever the
-        // pending set changes, which is what makes the window per-send rather
-        // than a latch that stays open for the rest of the session.
-        .task(id: outboxSignature) {
-            let pending = viewModel.outbox.items(for: viewModel.session.id)
-            if pending.isEmpty {
-                pendingSendVisible = false
-                return
+            #if DEBUG && os(iOS)
+            // Open with the keyboard up, for the same reason as the panel
+            // hooks in `SessionView`: a headless capture host can tap
+            // nothing, so the focused state is only reachable this way.
+            if ProcessInfo.processInfo.environment["OS1_FOCUS_COMPOSER"] == "1" {
+                inputFocused = true
             }
-            if pending.contains(where: \.failed) || pendingSendVisible { return }
-            try? await Task.sleep(for: Self.pendingRevealDelay)
-            guard !Task.isCancelled else { return }
-            pendingSendVisible = true
+            #endif
+        }
+        // Leaving the session must not leave the mic or typing status open.
+        .onDisappear {
+            dictation.stop()
+            viewModel.userIsTyping(false)
         }
         // Presented from the bar, not from the "+" itself: the button moves
         // between the collapsed pill and the expanded toolbar, and a sheet
@@ -2693,6 +2971,7 @@ private struct SessionInputBar: View {
                 SchedulePromptSheet { at in
                     do {
                         try await viewModel.schedulePrompt(at: at)
+                        Haptics.play(.send)
                         return nil
                     } catch {
                         return "Couldn't schedule that message."
@@ -2713,6 +2992,46 @@ private struct SessionInputBar: View {
         .onDisappear { removeShiftReturnMonitor() }
         #endif
         .transcriptQuoteComposerRegion(viewModel.quoteSelection)
+    }
+
+    #if os(iOS)
+    /// Whether the action bar has anything to hold. A conversation with no
+    /// workspace behind it draws no bar at all rather than an empty capsule.
+    private var hasActionBar: Bool {
+        onArchiveWorkspace != nil
+            || onNewSession != nil
+            || actionMenu != nil
+            || (showNextChatButton && onNextChat != nil)
+    }
+    #endif
+
+    private var offersReplySuggestions: Bool {
+        showReplySuggestions
+            && !viewModel.isRunning
+            && viewModel.pendingQuestion == nil
+            && !noteMode
+            && !viewModel.replySuggestions.isEmpty
+    }
+
+    private func nextChatButton(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Text("Next")
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+            }
+            .font(.callout.weight(.medium))
+            .foregroundStyle(OS1VisualStyle.text)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 44)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .background(.thickMaterial, in: Capsule())
+        .glassSurface(in: Capsule(), interactive: true)
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityLabel("Next chat")
+        .help("Next chat")
     }
 
     /// The same quiet, horizontally scrolling pills as the web and Desk
@@ -2744,38 +3063,17 @@ private struct SessionInputBar: View {
         .scrollIndicators(.hidden)
     }
 
-    /// Messages this app is still holding for the server. Read here, in the
-    /// input bar, rather than in `SessionView.body` — an outbox change must
-    /// not re-evaluate the whole transcript.
-    private var unsentItems: [Outbox.Item] {
-        let pending = viewModel.outbox.items(for: viewModel.session.id)
-        // A refused message is never held back: it needs the person.
-        return pendingSendVisible ? pending : pending.filter(\.failed)
-    }
-
-    /// Identity of what's pending, so the reveal timer restarts when the set
-    /// changes and stops when the server has taken everything.
-    private var outboxSignature: String {
-        viewModel.outbox.items(for: viewModel.session.id)
-            .map { "\($0.id)\($0.failed ? "!" : "")" }
-            .joined(separator: "|")
-    }
-
-    /// ~0.7s: long enough that a healthy send never opens the flap, short
-    /// enough that a stalled one is still owned up to while the person is
-    /// looking at the composer they just sent from.
-    private static let pendingRevealDelay: Duration = .milliseconds(700)
-
     private var hasQueueItems: Bool {
         !viewModel.deliveringItems.isEmpty || !viewModel.steeredItems.isEmpty
-            || !viewModel.queuedItems.isEmpty || !unsentItems.isEmpty
+            || !viewModel.queuedItems.isEmpty
     }
 
     /// The compact chip floating above the composer: what is waiting to be
-    /// sent, and a word to the person who just tapped — a refused send, a
-    /// switch that didn't happen. A notice about the SESSION goes to the
-    /// transcript instead (`noteLocally`), where it reads in order and
-    /// doesn't sit over the composer after the thing it describes is over.
+    /// sent. On Mac it also carries a word to the person who just tapped — a
+    /// refused send, a switch that didn't happen. iOS presents that feedback
+    /// below the session tabs instead, where it cannot cover the composer.
+    /// A notice about the SESSION goes to the transcript (`noteLocally`),
+    /// where it reads in order.
     ///
     /// The notice wears its tone rather than a blanket orange — the same
     /// grey/amber/red the transcript's own notices use, so "run failed" and
@@ -2783,7 +3081,7 @@ private struct SessionInputBar: View {
     /// one: the wording is the server's, and truncating a sentence mid-word
     /// to keep a capsule tidy loses the half that says what to do.
     @ViewBuilder private var composerChip: some View {
-        let notice = visibleNotice
+        let notice = composerNotice
         let tone = notice.map(NoticeTone.derived(fromText:)) ?? .info
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             if viewModel.queuedCount > 0, viewModel.queuedItems.isEmpty {
@@ -2873,6 +3171,14 @@ private struct SessionInputBar: View {
         .help(viewModel.quoteSelection.text ?? "")
     }
 
+    private var composerNotice: String? {
+        #if os(iOS)
+        nil
+        #else
+        visibleNotice
+        #endif
+    }
+
     private var visibleNotice: String? {
         guard let notice = viewModel.notice else { return nil }
         if case .connected = viewModel.connectionState { return notice }
@@ -2902,24 +3208,42 @@ private struct SessionInputBar: View {
                     item: item,
                     phase: .steering,
                     showsDivider: item.id != firstRowId,
+                    // Forces the run's step boundary so the message lands now.
+                    // Ids the server never confirmed can't address the queue.
+                    onDeliverNow: item.isLocalEcho
+                        ? nil : { viewModel.deliverSteeredNow(item) },
+                    onEdit: (!item.isLocalEcho && item.editable
+                        && MessageAttribution.isViewer(
+                            item.user ?? "",
+                            viewerName: ServerConfig.shared.userName,
+                            viewerLogin: ServerConfig.shared.githubLogin
+                        ))
+                        ? {
+                            viewModel.editSteeredInComposer(item)
+                            inputFocused = true
+                        } : nil,
                     // The run keeps the message either way — this only
                     // retires the receipt early.
                     onDelete: { viewModel.dismissSteered(item) }
                 )
             }
             ForEach(viewModel.queuedItems) { item in
-                let isGitHub = QueueMessagePresentation(
+                let presentation = QueueMessagePresentation(
                     content: item.content,
                     user: item.user
-                ).isGitHub
+                )
                 QueuedMessageRow(
                         item: item,
                         phase: .queued,
                         showsDivider: item.id != firstRowId,
                         // Steering needs a run to fold into, and the server can't
                         // fold a message that carries files.
-                        onSteer: (viewModel.isRunning && !item.hasFiles && !isGitHub)
-                            ? { viewModel.steerQueued(item) } : nil,
+                        onSteer: (viewModel.isRunning && !item.hasFiles
+                            && !presentation.isGitHub)
+                            ? {
+                                Haptics.play(.send)
+                                viewModel.steerQueued(item)
+                            } : nil,
                         onEdit: (!item.isLocalEcho && !item.hasFiles
                             && !item.hasContextSessions && item.editable
                             && MessageAttribution.isViewer(
@@ -2931,38 +3255,12 @@ private struct SessionInputBar: View {
                                 viewModel.editQueuedInComposer(item)
                                 inputFocused = true
                             } : nil,
-                        onMove: (!isGitHub && viewModel.canReorder(item))
+                        onMove: (!presentation.isGitHub
+                            && !presentation.isSessionMessage
+                            && viewModel.canReorder(item))
                             ? { offset in viewModel.moveQueued(item, by: offset) } : nil,
                         onDelete: { viewModel.deleteQueued(item) }
                     )
-            }
-            // Still ours: written, saved, not yet acknowledged by the server.
-            // These sit last because they're the furthest from the transcript.
-            ForEach(unsentItems) { item in
-                QueuedMessageRow(
-                    // Images stay on disk as blobs — the row flags that the
-                    // message carries attachments rather than paying a read
-                    // per body evaluation to thumbnail them.
-                    item: QueueItem(
-                        id: item.id,
-                        content: item.content,
-                        user: item.user,
-                        hasFiles: !item.imageFiles.isEmpty
-                    ),
-                    phase: item.failed ? .failed : .unsent,
-                    showsDivider: item.id != firstRowId,
-                    detail: item.failed
-                        ? item.lastError
-                        : (viewModel.outbox.sendingId == item.id ? "Sending…" : nil),
-                    // Nothing has been sent yet, so "edit" is literally taking
-                    // the message back — it returns to the composer whole,
-                    // images included, and the outbox copy goes away.
-                    onEdit: viewModel.outbox.sendingId == item.id
-                        ? nil : { viewModel.editUnsent(item) },
-                    onRetry: item.failed
-                        ? { viewModel.outbox.retry(id: item.id) } : nil,
-                    onDelete: { viewModel.outbox.delete(id: item.id) }
-                )
             }
         }
         .padding(.top, 10)
@@ -3019,21 +3317,16 @@ private struct SessionInputBar: View {
         viewModel.deliveringItems.first?.id
             ?? viewModel.steeredItems.first?.id
             ?? viewModel.queuedItems.first?.id
-            ?? unsentItems.first?.id
     }
 
     private var queueTitle: String {
-        let reviewCount = viewModel.queuedItems.lazy.filter {
-            QueueMessagePresentation(content: $0.content, user: $0.user).isReviewHandoff
-        }.count
-        let queued = viewModel.queuedItems.count - reviewCount
-        let inFlight = viewModel.steeredItems.count + viewModel.deliveringItems.count
-        let unsent = unsentItems.count
-        // Unsent leads: "waiting on your connection" is the more urgent fact,
-        // and it's the one the person can act on.
-        if unsent > 0 && queued == 0 && inFlight == 0 {
-            return "\(unsent) unsent \(unsent == 1 ? "message" : "messages")"
+        let queuedPresentations = viewModel.queuedItems.map {
+            QueueMessagePresentation(content: $0.content, user: $0.user)
         }
+        let reviewCount = queuedPresentations.lazy.filter(\.isReviewHandoff).count
+        let sessionMessageCount = queuedPresentations.lazy.filter(\.isSessionMessage).count
+        let queued = viewModel.queuedItems.count - reviewCount - sessionMessageCount
+        let inFlight = viewModel.steeredItems.count + viewModel.deliveringItems.count
         var parts: [String] = []
         if queued > 0 {
             parts.append("\(queued) \(queued == 1 ? "message" : "messages") queued")
@@ -3041,11 +3334,16 @@ private struct SessionInputBar: View {
         if reviewCount > 0 {
             parts.append("\(reviewCount) PR \(reviewCount == 1 ? "review" : "reviews") waiting")
         }
+        if sessionMessageCount > 0 {
+            parts.append(
+                "\(sessionMessageCount) session "
+                    + "\(sessionMessageCount == 1 ? "message" : "messages") waiting"
+            )
+        }
         // Never folded into the "queued" count: these are already committed to
         // the running turn, and calling them queued reads as "my message
         // didn't go through" (the web learned this the hard way).
         if inFlight > 0 { parts.append("\(inFlight) in flight") }
-        if unsent > 0 { parts.append("\(unsent) unsent") }
         return parts.joined(separator: " · ")
     }
 
@@ -3057,7 +3355,6 @@ private struct SessionInputBar: View {
         parts.append(contentsOf: viewModel.deliveringItems.map { "d\($0.id)" })
         parts.append(contentsOf: viewModel.steeredItems.map { "s\($0.id)" })
         parts.append(contentsOf: viewModel.queuedItems.map { "q\($0.id):\($0.content.count)" })
-        parts.append(contentsOf: unsentItems.map { "u\($0.id)\($0.failed ? "!" : "")" })
         return parts.joined(separator: "|")
     }
 
@@ -3117,7 +3414,12 @@ private struct SessionInputBar: View {
                     ),
                     prompt: Text(composerPlaceholder).foregroundStyle(
                         noteMode ? OS1VisualStyle.notePlaceholder : OS1VisualStyle.textFaint
-                    )
+                    ),
+                    // Without the vertical axis a TextField is a one-line
+                    // field that scrolls sideways: the lineLimit below is
+                    // inert, the box never grows, and the multi-line layout
+                    // underneath can never be reached.
+                    axis: .vertical
                 ) {
                     Text(noteMode ? "Team note" : "Message")
                 }
@@ -3137,6 +3439,11 @@ private struct SessionInputBar: View {
                     // also covers sending, which empties the draft and so
                     // takes the pencil off the row here and in the browser.
                     DraftsStore.shared.setText(draft, for: viewModel.session.id)
+                    if inputFocused {
+                        viewModel.userIsTyping(!draft.isEmpty)
+                    } else if draft.isEmpty {
+                        viewModel.userIsTyping(false)
+                    }
                     // Typing is the loudest possible "I'm here".
                     viewModel.userDidInteract()
                     // Starting to write is a statement about where you want to
@@ -3165,6 +3472,9 @@ private struct SessionInputBar: View {
                 .padding(.top, isSingleRow ? 0 : multiLineInset.top)
                 .padding(.bottom, isSingleRow ? 0 : multiLineInset.bottom)
                 .focused($inputFocused)
+                .onChange(of: inputFocused) { _, focused in
+                    if !focused { viewModel.userIsTyping(false) }
+                }
                 // Mac: Return sends; Shift/Option-Return insert a newline. On
                 // iOS the software keyboard's return key just wraps, as before.
                 .onSubmit {
@@ -3198,6 +3508,8 @@ private struct SessionInputBar: View {
                     }
                 }
             }
+            // Keep the existing 4pt inset in every one-row state. The resting
+            // pill gets smaller through width, not tighter spacing.
             .padding(isSingleRow ? 4 : 0)
 
             if !isSingleRow {
@@ -3225,29 +3537,22 @@ private struct SessionInputBar: View {
         // and closing it flashed the pill back as a flat, square-cornered
         // white block. Behind the row instead, the glass is no longer an
         // ancestor of the "+" or the send menu, and the composer stays put.
-        // Same layers in the same order (glass, thick material, page colour,
-        // then the controls).
+        // The surface stays a sibling of the controls.
         .background {
             Color.clear
                 #if os(iOS)
-                // Near-solid surface, not a see-through pane: the transcript
-                // passes BEHIND the composer, and a washed-out bar over live
-                // text made the draft hard to read. The page color on top of a
-                // thick material lands on white in light mode and stays dark in
-                // dark mode — the session still shows around and below the
-                // pill, just not through it.
+                // Keep the writing surface truly solid so it takes visual
+                // priority over the translucent action bar. Applying glass on
+                // top of this fill tinted the white back toward the canvas.
                 .background(
-                    OS1VisualStyle.background.opacity(0.7),
+                    OS1VisualStyle.background,
                     in: composerShape
                 )
-                .background(
-                    .thickMaterial,
-                    in: composerShape
-                )
-                #endif
+                #else
                 .glassSurface(
                     in: composerShape
                 )
+                #endif
                 // Ask mode is ambient — it lasts the session's whole life, not
                 // one message — so it's said by tinting the surface you write
                 // on rather than by a chip you'd stop seeing. Same green, and
@@ -3264,24 +3569,36 @@ private struct SessionInputBar: View {
                         composerShape.fill(OS1VisualStyle.green.opacity(0.09))
                     }
                 }
+                #if os(iOS)
+                // Only the composer's empty surface focuses the field. Keeping
+                // this gesture behind the controls prevents it from competing
+                // with the send menu's tap.
+                .contentShape(composerShape)
+                .onTapGesture { inputFocused = true }
+                #endif
         }
         #if os(iOS)
-        // No focus ring: an accent-coloured border around the input read as a
-        // validation/error outline rather than "you can type here". The glass
-        // surface and the caret are affordance enough — same call the web
-        // composer made.
-        .contentShape(
-            composerShape
-        )
-        .simultaneousGesture(
-            TapGesture().onEnded { inputFocused = true }
-        )
+        // A subtle full-point edge keeps the solid input distinct from the
+        // canvas. Its neutral ink resolves separately in light and dark mode.
+        .overlay {
+            composerShape.strokeBorder(
+                OS1VisualStyle.composerBorder,
+                lineWidth: 1
+            )
+        }
         // Growth and the one-row → multi-line morph both want to track the
         // text rather than ease behind it — a snappy, short spring so a fast
         // typist never sees the box lagging the caret.
             .animation(.snappy(duration: 0.18), value: viewModel.draft)
             .animation(.snappy(duration: 0.18), value: isSingleRow)
+            .animation(.snappy(duration: 0.18), value: inputFocused)
             .animation(.snappy(duration: 0.18), value: noteMode)
+            // Preserve the pill's internal spacing and shorten only its
+            // resting footprint. An open queue stays flush with the composer.
+            .padding(
+                .horizontal,
+                isSingleRow && !inputFocused && !hasQueueItems ? 8 : 0
+            )
         #endif
     }
 
@@ -3332,6 +3649,9 @@ private struct SessionInputBar: View {
     private var composerPlaceholder: String {
         if noteMode { return "Only your team will see this" }
         if viewModel.quoteSelection.text != nil { return "Chat with selected text" }
+        if viewModel.workspacePreparing {
+            return "Setting up your workspace · messages queue until it's ready"
+        }
         guard viewModel.isRunning else { return "Message" }
         return busySend == "steer"
             ? "Message — steers this run"
@@ -3356,23 +3676,9 @@ private struct SessionInputBar: View {
         #endif
     }
 
-    /// Tapping sends the way the person's setting says (queue or steer);
-    /// holding offers the other one FOR THIS MESSAGE ONLY. Both verbs are
-    /// always one gesture away, the way Command/Control+Return makes them on
-    /// the web. Before this, steering a fresh message meant sending it,
-    /// finding its chip, and tapping Steer. Only a running turn has anything
-    /// to choose between, so an idle composer keeps the plain button.
-    ///
-    /// The web's equivalent menu SETS the preference and hands the other
-    /// action to the modifier. That is right there and wrong here, and the
-    /// difference is the modifier: on the web every send already holds a key
-    /// or doesn't, so the menu can spend itself on the default and leave the
-    /// per-message escape hatch to Command+Return. An iPhone has no modifier.
-    /// This menu IS the modifier, and a modifier that silently rewrote your
-    /// default every time you used it would be a strange key. So the override
-    /// stays one-off, and the default stays where a default belongs, in
-    /// Settings. On the Mac, where a modifier does exist, each row also names
-    /// the key that does the same thing.
+    /// A tap sends with the person's busy-send preference. During a run, a
+    /// long press exposes Steer and Queue without shrinking the familiar send
+    /// arrow or spending the common tap on a menu.
     @ViewBuilder
     private var sendButton: some View {
         if noteMode {
@@ -3384,22 +3690,7 @@ private struct SessionInputBar: View {
                 .accessibilityLabel("Add note")
         } else if viewModel.isRunning {
             Menu {
-                Button {
-                    viewModel.sendDraft(busyModeOverride: "steer")
-                } label: {
-                    Label(
-                        busyMenuTitle("Steer into this run", pref: "steer"),
-                        systemImage: busySend == "steer" ? "checkmark" : "arrow.turn.up.right"
-                    )
-                }
-                Button {
-                    viewModel.sendDraft(busyModeOverride: "queue")
-                } label: {
-                    Label(
-                        busyMenuTitle("Queue for after this run", pref: "queue"),
-                        systemImage: busySend == "steer" ? "clock" : "checkmark"
-                    )
-                }
+                busySendActions
             } label: {
                 sendButtonFace
             } primaryAction: {
@@ -3411,11 +3702,7 @@ private struct SessionInputBar: View {
             .frame(width: 44, height: 44)
             .contentShape(Circle())
             .accessibilityLabel("Send")
-            .accessibilityHint(
-                busySend == "steer"
-                    ? "Steers this run. Touch and hold to queue instead."
-                    : "Queues for after this run. Touch and hold to steer instead."
-            )
+            .accessibilityHint(busySendAccessibilityHint)
         } else {
             Button {
                 send()
@@ -3429,11 +3716,42 @@ private struct SessionInputBar: View {
         }
     }
 
-    /// The disc itself — identical in both forms, so gaining the hold menu
-    /// doesn't change how the button looks.
+    private var busySendAccessibilityHint: String {
+        let action = busySend == "steer"
+            ? "Steers this run."
+            : "Queues for after this run."
+        #if os(iOS)
+        return "\(action) Touch and hold for more send options."
+        #else
+        return "\(action) Open the menu for more send options."
+        #endif
+    }
+
+    @ViewBuilder
+    private var busySendActions: some View {
+        Button {
+            send(busyModeOverride: "steer")
+        } label: {
+            Label(
+                busyMenuTitle("Steer into this run", pref: "steer"),
+                systemImage: busySend == "steer" ? "checkmark" : "arrow.turn.up.right"
+            )
+        }
+        Button {
+            send(busyModeOverride: "queue")
+        } label: {
+            Label(
+                busyMenuTitle("Queue for after this run", pref: "queue"),
+                systemImage: busySend == "steer" ? "clock" : "checkmark"
+            )
+        }
+    }
+
+    /// The same full-size send arrow in every state. Long-press behavior stays
+    /// invisible until it is useful, like other system button menus.
     private var sendButtonFace: some View {
         Image(systemName: "arrow.up")
-            .font(.system(size: 13, weight: .semibold))
+            .font(.system(size: 15, weight: .semibold))
             // Explicit colours for the resting state, not the semantic
             // `.fill.secondary` / `Color.secondary` pair: both are faint
             // to begin with, and the dimming SwiftUI applies to a disabled
@@ -3461,16 +3779,24 @@ private struct SessionInputBar: View {
         return viewModel.canSend
     }
 
-    private func send() {
+    private func send(busyModeOverride: String? = nil) {
         guard canSubmit else { return }
         if noteMode {
             addingNote = true
             Task {
-                if await viewModel.addSessionNote() { noteMode = false }
+                if await viewModel.addSessionNote() {
+                    Haptics.play(.send)
+                    noteMode = false
+                }
                 addingNote = false
             }
         } else {
-            viewModel.sendDraft()
+            let previousSend = viewModel.sendSeq
+            viewModel.sendDraft(busyModeOverride: busyModeOverride)
+            // The outbox accepted it synchronously. Play here so button taps,
+            // menu picks, and keyboard sends all get one firm confirmation,
+            // while a full outbox gets the warning cue instead.
+            if viewModel.sendSeq != previousSend { Haptics.play(.send) }
         }
     }
 
@@ -3560,8 +3886,7 @@ private struct SessionInputBar: View {
                     let mode = UserDefaults.standard.string(
                         forKey: "os1.composer.busySendMod"
                     ) ?? "steer"
-                    if noteMode { send() }
-                    else { viewModel.sendDraft(busyModeOverride: mode) }
+                    send(busyModeOverride: noteMode ? nil : mode)
                     return nil
                 }
                 if mods == .shift || (mods.isEmpty && preferredSendKey == "mod-enter") {
@@ -3586,28 +3911,27 @@ private struct SessionInputBar: View {
 
     // MARK: - Queue rows
 
-    /// One message that isn't in the transcript yet. "Unsent" hasn't reached
-    /// the server at all (no signal, or it's still being retried) and is held
-    /// on disk until it does; "Undelivered" is one the server refused, waiting
-    /// on the person. "Queued" holds until the run fully finishes; "Steering"
-    /// is already committed to deliver at the run's next turn boundary (a
-    /// receipt — no actions left to take); "Delivering" has left the server
-    /// queue and is waiting on its transcript echo (~1s file watcher) — inert,
-    /// just kept visible.
+    /// One server-accepted message that isn't in the transcript yet. "Queued"
+    /// holds until the run fully finishes; "Steering" is accepted for the
+    /// run's next turn boundary but can still be pulled back before it crosses
+    /// that boundary; "Delivering" has left the server queue and is waiting on
+    /// its transcript echo (~1s file watcher), so it is inert but stays visible.
     private struct QueuedMessageRow: View {
-        enum Phase { case queued, steering, delivering, unsent, failed }
+        enum Phase { case queued, steering, delivering }
 
         let item: QueueItem
         let phase: Phase
         /// Every row but the first draws the hairline above it.
         var showsDivider = false
-        var detail: String?
         var onSteer: (() -> Void)?
+        /// Deliver-now on a steering receipt: end the run's current step so
+        /// the message lands immediately instead of waiting out a long tool
+        /// call. The agent resumes with the message in hand.
+        var onDeliverNow: (() -> Void)?
         var onEdit: (() -> Void)?
         /// -1 moves the message one place towards the front of the queue,
         /// +1 one place back. Absent when there's nothing to reorder.
         var onMove: ((Int) -> Void)?
-        var onRetry: (() -> Void)?
         var onDelete: (() -> Void)?
 
         /// Live drag state: how far the row rides the finger, and how much of
@@ -3628,10 +3952,8 @@ private struct SessionInputBar: View {
         private var label: String? {
             switch phase {
             case .queued: nil
-            case .steering: "Steering — delivers next turn"
+            case .steering: "Steering · delivers when this step ends"
             case .delivering: "Delivering…"
-            case .unsent: detail ?? "Unsent — sends when you're back online"
-            case .failed: detail ?? "Couldn't send"
             }
         }
 
@@ -3640,11 +3962,7 @@ private struct SessionInputBar: View {
         /// carries the colour and the label stays quiet, so a flap full of
         /// messages doesn't read as a flap full of warnings.
         private var labelColor: Color {
-            switch phase {
-            case .unsent: OS1VisualStyle.yellowInk
-            case .failed: OS1VisualStyle.redInk
-            case .queued, .steering, .delivering: OS1VisualStyle.textFaint
-            }
+            OS1VisualStyle.textFaint
         }
 
         /// Queued is the flap's ordinary state, so it wears no mark at all:
@@ -3668,14 +3986,6 @@ private struct SessionInputBar: View {
                 EmptyView()
             case .steering, .delivering:
                 PulsingDot(color: OS1VisualStyle.green, size: 6)
-            case .unsent:
-                Image(systemName: "arrow.up.circle")
-                    .font(.caption2)
-                    .foregroundStyle(OS1VisualStyle.yellowInk)
-            case .failed:
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.caption2)
-                    .foregroundStyle(OS1VisualStyle.redInk)
             }
         }
 
@@ -3737,6 +4047,9 @@ private struct SessionInputBar: View {
                                 .foregroundStyle(labelColor)
                                 .lineLimit(1)
                         }
+                        if phase == .steering, let since = item.steeredAt {
+                            SteerElapsed(since: since)
+                        }
                         if let from = message.label {
                             Text(from)
                                 .font(.caption2)
@@ -3775,11 +4088,11 @@ private struct SessionInputBar: View {
                     if let onDelete {
                         rowAction("xmark", "Discard message", onDelete)
                     }
-                    if let onRetry {
-                        rowAction("arrow.clockwise", "Try again", onRetry)
-                    }
                     if let onSteer {
                         rowAction("arrow.up", "Steer into this run", onSteer)
+                    }
+                    if let onDeliverNow {
+                        rowAction("arrow.up.to.line", "Deliver now", onDeliverNow)
                     }
                 }
             }
@@ -3800,9 +4113,9 @@ private struct SessionInputBar: View {
             }
             // The row IS the edit affordance now that the pencil is gone —
             // and the only way to read a message the two-line clamp cut off.
-            // Rows with nothing to edit (a worker report, GitHub feedback, a
-            // receipt) stay inert rather than opening a sheet on what they
-            // can't change.
+            // Rows with nothing to edit (a worker report, GitHub feedback, or
+            // a receipt from someone else) stay inert rather than opening a
+            // sheet on what they can't change.
             .contentShape(Rectangle())
             .onTapGesture { if canEdit { onEdit?() } }
             // Drag to reorder, without leaving for a menu: each row-height of
@@ -3852,6 +4165,36 @@ private struct SessionInputBar: View {
         /// skipping past a neighbour.
         private static let rowStep: CGFloat = 56
 
+        /// How long a steer may wait before the row starts counting. Under
+        /// this the number is noise on a fold-in about to land; past it the
+        /// silence is what reads as a hang (the engine reads its steering
+        /// queue only when the current step's tool calls finish, so a long
+        /// test run holds a steer for minutes).
+        private static let steerSlowSeconds: TimeInterval = 5
+
+        /// Ticking wait readout for a steering receipt. Counts up rather
+        /// than predicting a landing time, because nothing here knows how
+        /// long the running tool will take.
+        private struct SteerElapsed: View {
+            let since: Date
+            var body: some View {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    let waited = context.date.timeIntervalSince(since)
+                    if waited >= QueuedMessageRow.steerSlowSeconds {
+                        Text(Self.format(waited))
+                            .font(.caption2)
+                            .monospacedDigit()
+                            .foregroundStyle(OS1VisualStyle.textFaint)
+                    }
+                }
+            }
+            private static func format(_ t: TimeInterval) -> String {
+                let s = Int(t)
+                if s < 60 { return "\(s)s" }
+                return "\(s / 60)m \(String(format: "%02d", s % 60))s"
+            }
+        }
+
         /// One control in the row's trailing cluster. 40x32 of hit area around
         /// a 16pt glyph: these are peers of the composer's own buttons a few
         /// points below them, and at 32/13 they read as a smaller, more
@@ -3883,12 +4226,12 @@ private struct SessionInputBar: View {
             if let onSteer {
                 Button("Steer into this run", systemImage: "arrow.up", action: onSteer)
             }
+            if let onDeliverNow {
+                Button("Deliver now", systemImage: "arrow.up.to.line", action: onDeliverNow)
+            }
             if let onMove {
                 Button("Move up", systemImage: "arrow.up.to.line") { onMove(-1) }
                 Button("Move down", systemImage: "arrow.down.to.line") { onMove(1) }
-            }
-            if let onRetry {
-                Button("Try again", systemImage: "arrow.clockwise", action: onRetry)
             }
             if let onDelete {
                 Button(role: .destructive, action: onDelete) {

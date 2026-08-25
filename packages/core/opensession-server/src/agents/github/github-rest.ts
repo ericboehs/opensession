@@ -4,24 +4,19 @@
  * calls the review/fix/simplify behaviors need: the single updating summary
  * comment, formal reviews with inline comments, and label removal.
  *
- * Auth: the same `GITHUB_API_TOKEN` PAT the Slack agent uses (Bearer).
+ * Auth: a short-lived App installation token, resolved per call so expiry
+ * refresh is transparent and missing authority fails closed.
  */
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
-import { defaultRepo, githubBotLogins, personaName } from "../../server/config";
+import { defaultRepo, githubBotLogins, isGithubBotLogin, personaName } from "../../server/config";
+import { githubConfiguredCredential, githubToken } from "../../server/github-app";
 import { ghRateLimited, isGhRateLimitMsg, noteGhRateLimited } from "../../server/github-limit";
-
-const GITHUB_TOKEN = process.env.GITHUB_API_TOKEN;
+import { noteGithubGraphqlCall } from "../../server/github-budget";
 /** The PR agent's target — the instance's default repo (config-driven). */
 export const GITHUB_REPO = defaultRepo().ghRepo;
 /** The bot account our token posts as — used to recognise our own comments/events. */
 export const BOT_LOGIN = githubBotLogins()[0] || "";
-/**
- * Hidden markers the agent stamps on the comments it posts (one per
- * behavior). New comments carry the os-* form; comments written before the
- * michael-* → os-* rename carry the legacy form, so every place that MATCHES
- * a marker must accept both (legacyMarker / hasMarker) — only writes use
- * these constants directly.
- */
+/** Hidden markers the agent stamps on the comments it posts. */
 export const REVIEW_MARKER = "<!-- os-review -->";
 const REVIEW_OUTDATED_MARKER = "<!-- os-review-outdated -->";
 export const REPLY_MARKER = "<!-- os-reply -->";
@@ -29,12 +24,6 @@ export const AUTOFIX_MARKER = "<!-- os-autofix -->";
 export const SIMPLIFY_MARKER = "<!-- os-simplify -->";
 export const ADVERSARIAL_MARKER = "<!-- os-adversarial -->";
 
-/** The michael-* form of a marker, as stamped on pre-rename comments. */
-function legacyMarker(marker: string): string {
-  return marker.replace("<!-- os-", "<!-- michael-");
-}
-/** Every marker, current AND legacy forms — used to skip our own comments
- *  (no self-trigger loop). Older comments still carry the michael-* form. */
 export const OWN_MARKERS = [
   REVIEW_MARKER,
   REVIEW_OUTDATED_MARKER,
@@ -42,10 +31,19 @@ export const OWN_MARKERS = [
   AUTOFIX_MARKER,
   SIMPLIFY_MARKER,
   ADVERSARIAL_MARKER,
-].flatMap((m) => [m, legacyMarker(m)]);
+];
+
+/** Whether a comment is the unfinished review placeholder for this head. */
+export function isReviewProgressForHead(body: string, headSha: string): boolean {
+  if (!body.startsWith(REVIEW_MARKER)) return false;
+  const match = body.match(/🔄 Reviewing(?: `([0-9a-f]{7,40})`)?…/i);
+  if (!match) return false;
+  const shownSha = match[1];
+  return !shownSha || Boolean(headSha && headSha.toLowerCase().startsWith(shownSha.toLowerCase()));
+}
 
 export function githubConfigured(): boolean {
-  return !!GITHUB_TOKEN;
+  return githubConfiguredCredential();
 }
 
 interface GithubResult<T = any> {
@@ -60,14 +58,15 @@ export async function githubRequest<T = any>(
   path: string,
   body?: unknown
 ): Promise<GithubResult<T>> {
-  if (!GITHUB_TOKEN) return { ok: false, status: 0, data: null, error: "GITHUB_API_TOKEN unset" };
+  const token = await githubToken({ write: true });
+  if (!token) return { ok: false, status: 0, data: null, error: "GitHub App credential unavailable" };
   try {
     // Timeout matters here: these calls run while holding a per-PR lock with
     // no TTL — a hung fetch would block that PR until the next restart.
     const resp = await fetchWithTimeout(`https://api.github.com${path}`, {
       method,
       headers: {
-        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
         ...(body ? { "Content-Type": "application/json" } : {}),
@@ -91,8 +90,8 @@ export async function githubRequest<T = any>(
         (resp.headers.get("x-ratelimit-remaining") === "0" || isGhRateLimitMsg(String(error)))
       ) {
         const resetHeader = resp.headers.get("x-ratelimit-reset");
-        if (resetHeader) noteGhRateLimited("github-rest", Number(resetHeader) * 1000);
-        else noteGhRateLimited("github-rest");
+        if (resetHeader) noteGhRateLimited("github-rest", Number(resetHeader) * 1000, "rest");
+        else noteGhRateLimited("github-rest", undefined, "rest");
       }
       return { ok: false, status: resp.status, data, error };
     }
@@ -104,26 +103,29 @@ export async function githubRequest<T = any>(
 }
 
 /**
- * GraphQL request (the REST API can't resolve review threads). Same PAT/auth as
+ * GraphQL request (the REST API can't resolve review threads). Same App auth as
  * the REST helper. Returns the `data` object, or null on any error.
  */
 async function githubGraphQL<T = any>(
   query: string,
   variables?: Record<string, unknown>,
 ): Promise<T | null> {
-  if (!GITHUB_TOKEN) return null;
+  const token = await githubToken({ write: true });
+  if (!token) return null;
   if (ghRateLimited()) return null;
+  const started = Date.now();
   try {
     const resp = await fetchWithTimeout("https://api.github.com/graphql", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ query, variables: variables || {} }),
     });
     const json: any = await resp.json().catch(() => null);
     if (!resp.ok || !json || json.errors) {
+      noteGithubGraphqlCall("github-agent:review-threads", Date.now() - started, false);
       const msg = json?.errors?.map((e: any) => e.message).join("; ") || `GitHub GraphQL ${resp.status}`;
       console.warn(`[github] graphql → ${resp.status}: ${msg}`);
       if (json?.errors?.some((e: any) => e.type === "RATE_LIMITED") || isGhRateLimitMsg(msg)) {
@@ -131,8 +133,10 @@ async function githubGraphQL<T = any>(
       }
       return null;
     }
+    noteGithubGraphqlCall("github-agent:review-threads", Date.now() - started, true);
     return json.data as T;
   } catch (e: any) {
+    noteGithubGraphqlCall("github-agent:review-threads", Date.now() - started, false);
     console.warn(`[github] graphql error:`, e);
     return null;
   }
@@ -152,22 +156,31 @@ export async function getComment(commentId: number, ghRepo: string = GITHUB_REPO
   return r.ok && r.data ? r.data : null;
 }
 
-/** Find the current (active, not-outdated) agent review comment id, if any. */
-export async function findActiveReviewComment(prNumber: number, ghRepo: string = GITHUB_REPO): Promise<number | null> {
+async function listIssueComments(prNumber: number, ghRepo: string): Promise<IssueComment[]> {
   const list = await githubRequest<IssueComment[]>(
     "GET",
     `/repos/${ghRepo}/issues/${prNumber}/comments?per_page=100`,
   );
-  if (!list.ok || !Array.isArray(list.data)) return null;
-  // Newest first — supersede the most recent active one. Match either marker
-  // generation: pre-rename review comments start with the michael-* form.
-  const mine = list.data
+  return list.ok && Array.isArray(list.data) ? list.data : [];
+}
+
+/** Find the current (active, not-outdated) agent review comment id, if any. */
+export async function findActiveReviewComment(prNumber: number, ghRepo: string = GITHUB_REPO): Promise<number | null> {
+  const mine = (await listIssueComments(prNumber, ghRepo))
     .reverse()
-    .find(
-      (c) =>
-        typeof c.body === "string" &&
-        (c.body.startsWith(REVIEW_MARKER) || c.body.startsWith(legacyMarker(REVIEW_MARKER))),
-    );
+    .find((c) => typeof c.body === "string" && c.body.startsWith(REVIEW_MARKER));
+  return mine ? mine.id : null;
+}
+
+/** Recover a progress POST that succeeded just before its id was persisted. */
+export async function findReviewProgressComment(
+  prNumber: number,
+  headSha: string,
+  ghRepo: string = GITHUB_REPO,
+): Promise<number | null> {
+  const mine = (await listIssueComments(prNumber, ghRepo))
+    .reverse()
+    .find((c) => typeof c.body === "string" && isReviewProgressForHead(c.body, headSha));
   return mine ? mine.id : null;
 }
 
@@ -175,13 +188,9 @@ export async function findActiveReviewComment(prNumber: number, ghRepo: string =
 export async function supersedeReviewComment(commentId: number, ghRepo: string = GITHUB_REPO): Promise<void> {
   const old = await getComment(commentId, ghRepo);
   if (!old?.body) return;
-  // Strip the active marker and any previous outdated wrapper (either marker
-  // generation), then re-collapse.
   let inner = old.body
     .replace(REVIEW_MARKER, "")
     .replace(REVIEW_OUTDATED_MARKER, "")
-    .replace(legacyMarker(REVIEW_MARKER), "")
-    .replace(legacyMarker(REVIEW_OUTDATED_MARKER), "")
     .trim();
   const detailsMatch = inner.match(/<details>[\s\S]*?<summary>[\s\S]*?<\/summary>\s*([\s\S]*?)<\/details>/i);
   if (detailsMatch) inner = detailsMatch[1].trim(); // avoid nesting details on re-supersede
@@ -327,7 +336,7 @@ export async function submitReview(
 // ── Review thread resolution (GraphQL) ───────────────────────
 
 /** Hidden marker the auto-fixer stamps on its "Fixed in <sha>" thread replies. */
-export const FIXED_REPLY_MARKER = "<!-- michael-fixed -->";
+export const FIXED_REPLY_MARKER = "<!-- os-fixed -->";
 
 export interface ReviewThreadComment {
   login: string;
@@ -411,7 +420,7 @@ export async function resolveReviewThread(threadId: string): Promise<boolean> {
 /** A thread the auto-fixer addressed: it left a "Fixed in <sha>" reply (not the root). */
 function threadWasFixed(t: ReviewThread): boolean {
   return t.comments.slice(1).some(
-    (c) => c.login === BOT_LOGIN && (c.body.includes(FIXED_REPLY_MARKER) || /(^|\s)fixed in\b/i.test(c.body)),
+    (c) => isGithubBotLogin(c.login) && (c.body.includes(FIXED_REPLY_MARKER) || /(^|\s)fixed in\b/i.test(c.body)),
   );
 }
 
@@ -435,7 +444,7 @@ export async function resolveAddressedThreads(
   let resolved = 0;
   for (const t of threads) {
     if (t.isResolved) continue;
-    const staleBot = alsoOutdatedBotThreads && t.isOutdated && t.rootAuthor === BOT_LOGIN;
+    const staleBot = alsoOutdatedBotThreads && t.isOutdated && isGithubBotLogin(t.rootAuthor);
     if (!threadWasFixed(t) && !staleBot) continue;
     if (await resolveReviewThread(t.id)) resolved++;
   }
@@ -512,13 +521,9 @@ export async function fetchReviewFindings(prNumber: number, ghRepo?: string): Pr
     lines.push(`- [@${c.login} · comment ${c.id}] ${c.path}:${c.line} — ${c.body.replace(/\s+/g, " ").trim().slice(0, 400)}`);
   }
   for (const rv of reviews) {
-    // Skip the agent's own short "<persona> review · <sha>" boilerplate (legacy "Michael review" form included) (the inline
-    // comments above already carry its findings).
-    if (
-      rv.login === BOT_LOGIN &&
-      (rv.body.trim().startsWith(`${personaName()} review`) || rv.body.trim().startsWith("Michael review"))
-    )
-      continue;
+    // Skip the agent's own short review boilerplate. Inline comments already
+    // carry its findings.
+    if (isGithubBotLogin(rv.login) && rv.body.trim().startsWith(`${personaName()} review`)) continue;
     const state = rv.state ? ` ${rv.state.toLowerCase().replace(/_/g, " ")}` : "";
     lines.push(`- [@${rv.login} review${state}] ${rv.body.replace(/\s+/g, " ").trim().slice(0, 600)}`);
   }

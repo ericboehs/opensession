@@ -20,12 +20,14 @@ import { runAgent } from "./agent-runner";
 import { declaredRunFailure, hasRunStatusDeclaration } from "./runner-shared";
 import { createWorktree, listWorktrees, REPOS, getRepo, type Repo } from "./worktree";
 import { personaName, productName } from "./config";
-import { OPENSESSION_SESSIONS_DIR , newSessionId} from "./paths";
+import { newSessionId } from "./paths";
 import { providerFor, modelLabel } from "./models";
 import { engineSessionPatch } from "./sessions";
 import type { NativeSessionFile } from "./types";
 import { stateDir } from "./paths";
 import { shouldPersistModelSwitch } from "./run-events";
+import { updateSessionFile } from "./session-cache";
+import { shellQuoteWord } from "./sandbox/adapters/bootstrap";
 
 const SECURITY_DIR = stateDir("security");
 const SCANS_DIR = `${SECURITY_DIR}/scans`;
@@ -204,31 +206,34 @@ export function buildScanPrompt(
   // untouched.
   const cs = repo.host === "codestorage";
   const repoLabel = cs ? repo.csRepo || repo.id : repo.ghRepo;
-  return `You are ${personaName()} running an on-demand deepsec security scan on ${repo.id} (${repoLabel}). Sweep the repo for vulnerabilities and ${cs ? "push one fix branch" : "open one PR"} per CONFIRMED finding of severity MEDIUM or higher. NEVER merge anything; never push to ${repo.defaultBranch}.
+  const branchLabel = JSON.stringify(repo.defaultBranch);
+  const branchArg = shellQuoteWord(repo.defaultBranch);
+  const remoteRefArg = shellQuoteWord(`origin/${repo.defaultBranch}`);
+  return `You are ${personaName()} running an on-demand deepsec security scan on ${repo.id} (${repoLabel}). Sweep the repo for vulnerabilities and ${cs ? "push one fix branch" : "open one PR"} per CONFIRMED finding of severity MEDIUM or higher. NEVER merge anything; never push to branch ${branchLabel}.
 
-deepsec = vercel-labs/deepsec, an AI vuln scanner driving the \`claude\` CLI. This run's env already carries CLAUDE_CODE_OAUTH_TOKEN from the ${productName()} Claude account pool, so the CLI is pre-authenticated — never run \`claude /login\` and never rely on the host CLI's own login state. (\`--agent codex\` is also provisioned — CODEX_HOME/OPENAI_API_KEY from the ChatGPT pool — but default to \`--agent claude\` unless the scan profile or extra instructions say otherwise.) Use \`corepack pnpm\` — there is no global pnpm on this host. Node 22 is present.
+deepsec = vercel-labs/deepsec, an AI vuln scanner. Start with its \`claude\` agent. This run's env carries both CLAUDE_CODE_OAUTH_TOKEN from the ${productName()} Claude account pool and CODEX_HOME/OPENAI_API_KEY from the ChatGPT pool, so never run either CLI's login flow or rely on a host login. If Claude reports a usage limit, switch the DeepSec worker to \`--agent codex --model gpt-5.6-sol\`; do not abandon an otherwise runnable scan. Use \`corepack pnpm\` — there is no global pnpm on this host. Node 22 is present.
 
 ## Setup
-1. You are in a mode:code worktree of ${repo.id}. Run \`git fetch origin ${repo.defaultBranch}\`.
+1. You are in a mode:code worktree of ${repo.id}. Run \`git fetch origin ${branchArg}\`.
 2. If \`.deepsec/deepsec.config.ts\` exists, \`cd .deepsec\`. Otherwise from the repo root run \`npx -y deepsec@latest init\`, then \`cd .deepsec\` (a SETUP.md will be generated; a minimal default INFO.md is fine).
-3. Install deepsec: \`corepack pnpm install\` (expect an \`@anthropic-ai/sdk\` peer-dep warning — harmless). Then preflight the model account: \`claude -p "reply with exactly: ok"\` must print a reply — if it errors (e.g. "Not logged in"), the pool credential is missing from the env; stop immediately and report the failure (see Finish), do NOT run a scan that will silently analyze zero batches.
+3. Install deepsec: \`corepack pnpm install\` (expect an \`@anthropic-ai/sdk\` peer-dep warning — harmless). Set \`DEEPSEC_AGENT=claude\` and \`DEEPSEC_MODEL_FLAG=""\`, then preflight Claude with \`claude -p "reply with exactly: ok"\`. If it succeeds, keep those values. If it reports a usage limit, set \`DEEPSEC_AGENT=codex\` and \`DEEPSEC_MODEL_FLAG="--model gpt-5.6-sol"\` and continue; the first DeepSec batch is the Codex credential preflight. For any other preflight error, stop immediately and report it (see Finish), do NOT run a scan that will silently analyze zero batches.
 
 ## Scan
-4. deepsec scopes by project (\`deepsec.config.ts\` → \`projects: [{ id, root }]\`); a scan only sees files under a project's \`root\`. Read \`.deepsec/deepsec.config.ts\` and run the scan for EVERY project listed, so coverage isn't silently limited to one root: with a single project \`corepack pnpm deepsec process --agent claude\` auto-resolves; with more than one, run it once per project passing \`--project-id <id>\` (auto-resolution is disabled once a second project exists). Tee each to \`/tmp/deepsec-scan-${repo.id}-<id>.log\`. If a scoped focus is given below (profile / extra instructions), you may use \`--diff\` or path filters where deepsec supports them to match that scope.
+4. deepsec scopes by project (\`deepsec.config.ts\` → \`projects: [{ id, root }]\`); a scan only sees files under a project's \`root\`. Read \`.deepsec/deepsec.config.ts\` and run the scan for EVERY project listed, so coverage isn't silently limited to one root: with a single project \`corepack pnpm deepsec process --agent "$DEEPSEC_AGENT" $DEEPSEC_MODEL_FLAG\` auto-resolves; with more than one, run it once per project passing \`--project-id <id>\` (auto-resolution is disabled once a second project exists). Tee each to \`/tmp/deepsec-scan-${repo.id}-<id>.log\`. If a scoped focus is given below (profile / extra instructions), you may use \`--diff\` or path filters where deepsec supports them to match that scope.
 5. Export each project's findings (\`corepack pnpm deepsec export --format md-dir --out ./findings\`, adding \`--project-id <id>\` per project when there are several), then read findings under findings/CRITICAL, findings/HIGH, findings/MEDIUM. Ignore BUG/low severity.
 
 ## Per finding (MEDIUM/HIGH/CRITICAL only; cap 8 ${cs ? "branches" : "PRs"} per run — if more, list the overflow in the summary)
 6. VERIFY against the real code: open the cited file+lines and confirm the issue is genuinely real and reachable. deepsec has a real false-positive rate — DROP false positives.${repo.securityInstructions ? `\n\nRepository-specific guidance:\n${repo.securityInstructions}` : ""}
-7. For a confirmed finding, branch off origin/${repo.defaultBranch}: \`git checkout -b deepsec-scan-<short-slug> origin/${repo.defaultBranch}\`. Write a MINIMAL fix targeting the root cause only.
+7. For a confirmed finding, branch off ${branchLabel}: \`git checkout -b deepsec-scan-<short-slug> ${remoteRefArg}\`. Write a MINIMAL fix targeting the root cause only.
    - Validate that anything you change parses/builds where cheaply possible.
    - If you are NOT confident in a safe fix (e.g. it touches core auth broadly), do NOT guess — ${cs ? 'push the branch with the finding writeup + recommended fix in the commit message and NO code change, and add "[needs-human-fix]" to the commit title' : 'open the PR with the finding writeup + recommended fix and NO code change, and add "[needs-human-fix]" to the title'}.
-8. ${cs ? `Commit with message "[deepsec][scan] <concise title>" plus a body covering finding, impact, fix, severity (note: generated by an on-demand ${productName()} security scan via vercel-labs/deepsec), then push the branch with \`git push -u origin deepsec-scan-<short-slug>\` — this repo is hosted on Code Storage; there is no gh CLI and no pull requests; a pushed branch IS the change request. One branch per finding. NEVER merge.` : `Commit, push, then \`gh pr create --repo ${repo.ghRepo} --base ${repo.defaultBranch} --title "[deepsec][scan] <concise title>" --body "<finding, impact, fix, severity; note: generated by an on-demand ${productName()} security scan via vercel-labs/deepsec>"\`. One PR per finding. NEVER run \`gh pr merge\`.`}
+8. ${cs ? `Commit with message "[deepsec][scan] <concise title>" plus a body covering finding, impact, fix, severity (note: generated by an on-demand ${productName()} security scan via vercel-labs/deepsec), then push the branch with \`git push -u origin deepsec-scan-<short-slug>\`. This repo is hosted on Code Storage; there is no gh CLI and no pull requests; a pushed branch IS the change request. One branch per finding. NEVER merge.` : `Commit, push, then \`gh pr create --repo ${repo.ghRepo} --base ${branchArg} --title "[deepsec][scan] <concise title>" --body "<finding, impact, fix, severity; note: generated by an on-demand ${productName()} security scan via vercel-labs/deepsec>"\`. One PR per finding. NEVER run \`gh pr merge\`.`}
 
 ## Finish
 9. End with a concise summary in your final message: # findings by severity, ${cs ? "pushed branch names" : "PR links"}, and any findings you dropped as false positives (one line each on why). If the scan errored (e.g. claude CLI auth failure, deepsec analyzing zero batches despite matching files), report the error clearly rather than half-finishing. The LAST line of your final message MUST be exactly \`SCAN STATUS: ok\` — or \`SCAN STATUS: failed — <reason>\` when the scan could not genuinely run. A missing status line is recorded as a failed scan.
 
 ## Guardrails
-- Never push to ${repo.defaultBranch}, never merge, never force-push.
+- Never push to branch ${branchLabel}, never merge, never force-push.
 - Skip findings that are only in tests/fixtures/marketing content unless clearly exploitable in production.
 - Keep each ${cs ? "fix branch" : "PR"} small and focused; deduplicate if two findings share one root cause.${scanExtras(profile, instructions)}`;
 }
@@ -320,7 +325,9 @@ export async function executeScan(
           mode: "code",
           repo: repo.id,
         };
-        writeJsonAtomic(`${OPENSESSION_SESSIONS_DIR}/${bksId}.json`, data);
+        void updateSessionFile(bksId, (current) => ({ ...current, ...data })).catch(
+          (error) => console.error(`[security] Failed to persist session ${bksId}:`, error),
+        );
       };
       persistSession();
 

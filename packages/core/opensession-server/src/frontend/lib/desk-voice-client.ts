@@ -5,6 +5,7 @@
 // routes function calls through the server's tool endpoint.
 
 import { BASE_PATH } from "./base";
+import { randomUUID } from "./random-uuid";
 
 export type DeskVoiceState =
 	| "idle"
@@ -239,7 +240,7 @@ export class DeskVoiceClient {
 		);
 		this.dc.send(JSON.stringify({ type: "response.create" }));
 		this.mirrorTranscript({
-			id: "voice-typed-" + crypto.randomUUID(),
+			id: "voice-typed-" + randomUUID(),
 			role: "user",
 			text,
 		});
@@ -326,7 +327,7 @@ export class DeskVoiceClient {
 			case "conversation.item.input_audio_transcription.completed": {
 				const text = String(event.transcript ?? "");
 				this.mirrorTranscript({
-					id: "voice-" + String(event.item_id ?? crypto.randomUUID()),
+					id: "voice-" + String(event.item_id ?? randomUUID()),
 					role: "user",
 					text,
 				});
@@ -335,7 +336,7 @@ export class DeskVoiceClient {
 			case "response.output_audio_transcript.done": {
 				const text = String(event.transcript ?? "");
 				this.mirrorTranscript({
-					id: "voice-" + String(event.item_id ?? crypto.randomUUID()),
+					id: "voice-" + String(event.item_id ?? randomUUID()),
 					role: "assistant",
 					text,
 				});

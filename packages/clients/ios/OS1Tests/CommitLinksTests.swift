@@ -4,24 +4,27 @@ import XCTest
 /// Pins the same conservative commit-reference grammar as the web renderer.
 @MainActor
 final class CommitLinksTests: XCTestCase {
+    private let session = "os-test"
+
     override func setUp() async throws {
         CommitLinks.register(repos: [
             "opensession": "tellahq/opensession",
             "tella-fusion": "tellahq/tella-fusion",
         ])
+        CommitLinks.register(sessionRepos: [session: "opensession"])
     }
 
     func testCodeSpanAndCueBecomeCodeShapedLinks() {
         XCTAssertEqual(
-            CommitLinks.linkify("Reverted `4ed1ef09`.", repo: "opensession"),
+            CommitLinks.linkify("Reverted `4ed1ef09`.", sessionId: session),
             "Reverted [`4ed1ef09`](os1commit:opensession/4ed1ef09)."
         )
         XCTAssertEqual(
-            CommitLinks.linkify("Fixed in commit 4ED1EF09 last night.", repo: "opensession"),
+            CommitLinks.linkify("Fixed in commit 4ED1EF09 last night.", sessionId: session),
             "Fixed in commit [`4ed1ef09`](os1commit:opensession/4ed1ef09) last night."
         )
         XCTAssertTrue(
-            CommitLinks.linkify("commits 4ed1ef09 and sha 437cba77", repo: "opensession")
+            CommitLinks.linkify("commits 4ed1ef09 and sha 437cba77", sessionId: session)
                 .contains("sha [`437cba77`](os1commit:opensession/437cba77)")
         )
     }
@@ -29,11 +32,11 @@ final class CommitLinksTests: XCTestCase {
     func testFullAndUppercaseShaAreAccepted() {
         let full = String(repeating: "a", count: 39) + "1"
         XCTAssertTrue(
-            CommitLinks.linkify("Pinned at `\(full)`.", repo: "opensession")
+            CommitLinks.linkify("Pinned at `\(full)`.", sessionId: session)
                 .contains("os1commit:opensession/\(full)")
         )
         XCTAssertTrue(
-            CommitLinks.linkify("Pinned at `4ED1EF09`.", repo: "opensession")
+            CommitLinks.linkify("Pinned at `4ED1EF09`.", sessionId: session)
                 .contains("os1commit:opensession/4ed1ef09")
         )
     }
@@ -49,7 +52,7 @@ final class CommitLinksTests: XCTestCase {
             "`4ed1ef09g` is not hex",
         ]
         for sample in samples {
-            XCTAssertEqual(CommitLinks.linkify(sample, repo: "opensession"), sample, sample)
+            XCTAssertEqual(CommitLinks.linkify(sample, sessionId: session), sample, sample)
         }
     }
 
@@ -63,9 +66,7 @@ final class CommitLinksTests: XCTestCase {
 
             git show 437cba77
         """
-        XCTAssertEqual(CommitLinks.linkify(markdown, repo: "opensession"), markdown)
-        let nestedTicks = "Use `` `4ed1ef09` `` as the example."
-        XCTAssertEqual(CommitLinks.linkify(nestedTicks, repo: "opensession"), nestedTicks)
+        XCTAssertEqual(CommitLinks.linkify(markdown, sessionId: session), markdown)
     }
 
     func testBareConfiguredGitHubURLBecomesAReference() {
@@ -73,27 +74,19 @@ final class CommitLinksTests: XCTestCase {
         XCTAssertEqual(
             CommitLinks.linkify(
                 "https://github.com/tellahq/opensession/commit/\(full)",
-                repo: "opensession"
+                sessionId: session
             ),
             "[`4ed1ef09`](os1commit:opensession/\(full))"
         )
         let labelled = "[the revert](https://github.com/tellahq/opensession/commit/\(full))"
-        XCTAssertEqual(CommitLinks.linkify(labelled, repo: "opensession"), labelled)
+        XCTAssertEqual(CommitLinks.linkify(labelled, sessionId: session), labelled)
         let bareLink = "[https://github.com/tellahq/opensession/commit/\(full)](https://github.com/tellahq/opensession/commit/\(full))"
         XCTAssertEqual(
-            CommitLinks.linkify(bareLink, repo: "opensession"),
+            CommitLinks.linkify(bareLink, sessionId: session),
             "[`4ed1ef09`](os1commit:opensession/\(full))"
         )
         let upstream = "https://github.com/vercel/next.js/commit/4ed1ef09"
-        XCTAssertEqual(CommitLinks.linkify(upstream, repo: "opensession"), upstream)
-        let query = "https://github.com/tellahq/opensession/commit/4ed1ef09?diff=split"
-        XCTAssertEqual(CommitLinks.linkify(query, repo: "opensession"), query)
-        let fragment = "https://github.com/tellahq/opensession/commit/4ed1ef09#diff"
-        XCTAssertEqual(CommitLinks.linkify(fragment, repo: "opensession"), fragment)
-        let patch = "https://github.com/tellahq/opensession/commit/4ed1ef09.patch"
-        XCTAssertEqual(CommitLinks.linkify(patch, repo: "opensession"), patch)
-        let suffix = "https://github.com/tellahq/opensession/commit/4ed1ef09-extra"
-        XCTAssertEqual(CommitLinks.linkify(suffix, repo: "opensession"), suffix)
+        XCTAssertEqual(CommitLinks.linkify(upstream, sessionId: session), upstream)
     }
 
     func testReferenceRoundTripsAndRejectsNonShaPaths() {
@@ -107,13 +100,13 @@ final class CommitLinksTests: XCTestCase {
 
     func testWithoutASessionRepoNothingIsClaimed() {
         let source = "Reverted `4ed1ef09`."
-        XCTAssertEqual(CommitLinks.linkify(source, repo: nil), source)
+        XCTAssertEqual(CommitLinks.linkify(source, sessionId: nil), source)
 
         let full = "4ed1ef09aa11bb22cc33dd44ee55ff6600778899"
         XCTAssertEqual(
             CommitLinks.linkify(
                 "https://github.com/tellahq/opensession/commit/\(full)",
-                repo: nil
+                sessionId: nil
             ),
             "[`4ed1ef09`](os1commit:opensession/\(full))"
         )

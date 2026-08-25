@@ -3,10 +3,10 @@
  *
  * A repo with no icon of its own shows a colored letter tile, so the color is
  * the only thing separating two repos whose names start with the same letter —
- * and same-letter families are the norm (`tella-fusion`/`tella-mac`/
- * `tella-windows`, `gitops`/`gstreamer`/`gst-plugins-rs`). A plain hash can't
- * promise anything there: over this palette it puts `tella-fusion` and
- * `tella-windows` on neighbouring hues and can put unrelated same-letter ids
+ * and same-letter families are the norm (`acme-web`/`acme-mac`/
+ * `acme-windows`, `gitops`/`gstreamer`/`gst-plugins-rs`). A plain hash can't
+ * promise anything there: over this palette it puts two members of such a
+ * family on neighbouring hues and can put unrelated same-letter ids
  * on the identical swatch.
  *
  * So the color is assigned across the whole registered set instead of derived

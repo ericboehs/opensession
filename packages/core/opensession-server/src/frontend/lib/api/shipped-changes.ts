@@ -12,6 +12,15 @@ export function shareShippedChange(
 	});
 }
 
+/** Take a shared update back out of Slack and let the card offer it again. */
+export function undoShippedChange(sessionId: string, at: string): Promise<void> {
+	return request(`/sessions/${encodeURIComponent(sessionId)}/share-shipped-change`, {
+		method: "PUT",
+		body: { at },
+		label: "Couldn't undo the Slack message",
+	});
+}
+
 export function fetchShippedChangeChannels(sessionId: string): Promise<{
 	channels: Array<{ id: string; name: string }>;
 	defaultChannel?: string;
@@ -61,11 +70,24 @@ export function sendSlackComposer(
 	status: "sent";
 	channel: { id: string; name: string };
 	permalink?: string;
+	ts?: string;
 }> {
 	return request(`/sessions/${encodeURIComponent(sessionId)}/slack-composer`, {
 		method: "POST",
 		body: target,
 		label: "Couldn't send to Slack",
+	});
+}
+
+/** Delete a message this person just sent from the composer. */
+export function undoSlackComposer(
+	sessionId: string,
+	target: { channel: string; ts: string },
+): Promise<void> {
+	return request(`/sessions/${encodeURIComponent(sessionId)}/slack-composer/undo`, {
+		method: "POST",
+		body: target,
+		label: "Couldn't undo the Slack message",
 	});
 }
 

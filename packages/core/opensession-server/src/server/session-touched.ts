@@ -79,10 +79,7 @@ const CACHE_TTL = 30_000;
 const cache = new Map<string, CacheEntry>();
 
 /** What mergedSessionTranscriptAsync needs to find a session's entries. */
-export type TouchedSessionRef = Pick<
-  UnifiedSession,
-  "transcriptPath" | "opencodeSessionId" | "claudeSessionId"
-> & { id: string };
+export type TouchedSessionRef = Pick<UnifiedSession, "transcriptPath"> & { id: string };
 
 /** Repo-relative paths of every file this session's tool calls wrote. */
 export async function sessionTouchedPaths(

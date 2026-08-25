@@ -1,19 +1,21 @@
 /**
  * reply-suggestions: the quick-reply chips above the session composer.
  *
- * When a turn ends at a decision point ("I found two issues, want me to fix
- * both?"), a Haiku one-shot turns that ending into two to four chips: a 1-2
- * word label you can read at a glance, and the full sentence it pastes into
- * the composer. Picking one fills the draft, it never sends. That is the same call
- * the Desk's starter pills make (lib/desk-suggestions.ts), for the same
- * reason: a chip is a guess about what you meant, and a guess must not fire a
- * turn on one tap.
+ * When a turn ends by literally asking the human something ("I found two
+ * issues, want me to fix both?"), a Haiku one-shot turns that question into
+ * one or two chips: a 1-2 word label you can read at a glance, and the full
+ * sentence it pastes into the composer. Picking one fills the draft, it never
+ * sends. That is the same call the Desk's starter pills make
+ * (lib/desk-suggestions.ts), for the same reason: a chip is a guess about what
+ * you meant, and a guess must not fire a turn on one tap.
  *
  * Two things keep this from becoming noise above every composer:
  *
- * - **Zero is the normal answer.** The system prompt's first rule is to return
- *   nothing unless the turn actually ended on a choice. A row that appears
- *   every turn is a row nobody reads.
+ * - **Zero is the normal answer.** The gate is the agent's own last words: it
+ *   has to have asked, in writing. "This turn had an obvious next step" is not
+ *   a question, and a row that appears every turn is a row nobody reads. One
+ *   chip is a perfectly good answer when the question has one likely reply;
+ *   two is the ceiling.
  * - **Presence gates generation**, exactly like recap.ts: a turn that ends
  *   with someone watching generates immediately, and a turn that ends
  *   unwatched generates nothing until a viewer opens the session. Most turns
@@ -76,7 +78,13 @@ const STALE_MS = 12 * 60 * 60 * 1000;
  * common case and it should not each cost a model call.
  */
 const RETURN_WINDOW_MS = 24 * 60 * 60 * 1000;
-export const MAX_SUGGESTIONS = 4;
+/**
+ * Two is the ceiling, and one is common. A question with four answers is a
+ * question you should read and type an answer to. Beyond two the row stops
+ * being "tap the reply you were about to write" and becomes a menu to study,
+ * which costs more attention than typing would have.
+ */
+export const MAX_SUGGESTIONS = 2;
 
 /** Turn states during which suggestions for the *previous* turn are stale. */
 const ACTIVE_STATES = new Set(["preparing", "starting", "running", "reattaching"]);
@@ -199,16 +207,24 @@ function markTried(sessionId: string): void {
  *  call exactly rather than against a paraphrase of it. */
 export const SUGGESTION_SYSTEM = [
 	"You write quick-reply chips for Open Session, an agent-session dashboard.",
-	"An agent has just finished a turn. Your job is to offer the human the replies they are most likely to type next, as chips they can pick instead of typing.",
+	"An agent has just finished a turn. Your job is to offer the human the reply they are most likely to type next, as a chip they can pick instead of typing.",
 	"",
-	"RETURN AN EMPTY ARRAY unless the turn ended at a real decision point: it asked a question, offered options, listed things it could do next, stopped part-way, or finished work that has an obvious next step. Most turns end with nothing to decide. An empty array is the correct, common answer, and is always better than a generic chip.",
+	"RETURN AN EMPTY ARRAY unless the agent's final message LITERALLY asks the human something: a question addressed to them, or an explicit offer of named options (\"want me to fix both, or just the first?\"). Quote-level literal. If you cannot point at the sentence where it asked, there is no row.",
 	"",
-	"When there is something to decide, return 2 to 4 chips as a JSON array of objects with exactly two fields:",
+	"These are NOT asks, and all of them return []:",
+	"- The turn finished work and stopped, however obvious the next step looks.",
+	"- The turn reported findings, a summary, a diff, a PR link, or test results.",
+	"- The turn said what it will do next, or asked itself a rhetorical question.",
+	"- The turn hit an error and explained it without asking how to proceed.",
+	"Most turns are one of these. An empty array is the correct, common answer, and is always better than a chip nobody asked for.",
+	"",
+	"When it did ask, return 1 or 2 chips as a JSON array of objects with exactly two fields:",
 	'  "label": 1 or 2 words, sentence case, taken from the turn\'s own nouns and verbs. "Fix both", "Only step 1", "Ship it", "Keep digging", "Option B".',
 	'  "text": the full instruction that label stands for, written as the human speaking to the agent. One or two sentences. Self-contained: name the concrete things ("Fix both the queue race and the stale cache read, then run bun test"), because this becomes their message in the transcript.',
 	"",
 	"Rules:",
-	"- Chips must be genuinely different choices, not restatements of each other. Cover the real branches: do all of it, do part of it, do the opposite, ask for more detail.",
+	"- Prefer ONE chip. Return a second only when the question genuinely has two likely answers and the second is a different branch, not a restatement. Never pad to two.",
+	"- Answer the question that was asked. Do not offer a chip about something the human did not raise.",
 	'- Never offer filler ("Continue", "Looks good", "Thanks", "Explain more") unless the turn literally asked for exactly that.',
 	"- Sentence case only, no Title Case, no trailing punctuation on labels, no emoji, no quotes around the text.",
 	"- Never use an em dash. Use a period and a second sentence, or a comma.",
@@ -216,6 +232,41 @@ export const SUGGESTION_SYSTEM = [
 	"",
 	"Output ONLY the JSON array, nothing else. No markdown fence, no commentary.",
 ].join("\n");
+
+/**
+ * Labels that carry no answer in them. A lone "Continue" or "Sounds good" is
+ * what the model reaches for exactly when the turn ended without asking
+ * anything, so the chip that would be least useful is also the tell that the
+ * gate was missed. Dropping them by name is what makes a single chip safe to
+ * show at all.
+ */
+const FILLER_LABELS = new Set([
+	"continue",
+	"go on",
+	"go ahead",
+	"proceed",
+	"keep going",
+	"carry on",
+	"ok",
+	"okay",
+	"sure",
+	"yes",
+	"no",
+	"thanks",
+	"thank you",
+	"looks good",
+	"sounds good",
+	"nice",
+	"great",
+	"got it",
+	"done",
+	"next",
+	"more",
+	"tell me more",
+	"explain more",
+	"more detail",
+	"elaborate",
+]);
 
 /** Trim and validate one model-produced chip, or null when it is unusable. */
 export function sanitizeSuggestion(raw: unknown): ReplySuggestion | null {
@@ -236,6 +287,7 @@ export function sanitizeSuggestion(raw: unknown): ReplySuggestion | null {
 	// a glanceable chip; an empty or one-word instruction defeats the paste.
 	if (!cleanLabel || cleanLabel.length > 24 || cleanLabel.split(" ").length > 3)
 		return null;
+	if (FILLER_LABELS.has(cleanLabel.toLowerCase())) return null;
 	if (cleanText.length < 4) return null;
 	return { label: cleanLabel, text: cleanText.slice(0, 400) };
 }
@@ -272,9 +324,51 @@ export function parseSuggestions(raw: string | null): ReplySuggestion[] {
 		out.push(chip);
 		if (out.length >= MAX_SUGGESTIONS) break;
 	}
-	// One chip is not a choice, it is a nudge, and the model reaches for a lone
-	// "Continue" exactly when the turn had nothing to decide.
-	return out.length >= 2 ? out : [];
+	// A single chip is fine: most real questions have one likely answer, and
+	// making the model find a second one is how a row turns into a menu. What a
+	// lone chip must not be is filler, which sanitizeSuggestion already drops.
+	return out;
+}
+
+/**
+ * How much of the closing message counts as "the end". A `?` in the third
+ * paragraph of a long report is the agent quoting the task or narrating its
+ * own reasoning; a question it wants answered is the last thing it says.
+ */
+const CLOSING_PARAGRAPHS = 2;
+
+/**
+ * Did the turn's last assistant message literally END on a question? A
+ * question mark is a crude test, but it is the agent's own punctuation rather
+ * than a judgement call, and every false positive it lets through still has to
+ * get past the model's own "quote the sentence where it asked" rule.
+ *
+ * Two kinds of `?` are not the agent asking, and both are common enough to
+ * matter: one inside code (a shell glob, a query string, a ternary), and one
+ * buried mid-report ("the question was whether X?"). Code is stripped, and
+ * only the closing paragraphs are read.
+ */
+export function endsOnAQuestion(
+	entries: { type: string; content?: string }[],
+): boolean {
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const e = entries[i];
+		if (e.type !== "assistant") continue;
+		const text = (e.content || "").trim();
+		if (!text) continue;
+		const prose = text
+			.replace(/```[\s\S]*?```/g, " ")
+			.replace(/`[^`\n]*`/g, " ")
+			.replace(/https?:\/\/\S+/g, " ");
+		const closing = prose
+			.split(/\n\s*\n/)
+			.map((p) => p.trim())
+			.filter(Boolean)
+			.slice(-CLOSING_PARAGRAPHS)
+			.join("\n");
+		return closing.includes("?");
+	}
+	return false;
 }
 
 async function generate(sessionId: string, user?: string): Promise<void> {
@@ -289,6 +383,12 @@ async function generate(sessionId: string, user?: string): Promise<void> {
 	try {
 		const excerpt = await transcriptExcerpt(sessionId, { limit: 14, windows: 1 });
 		if (!excerpt.windows.some((w) => w.entries.length)) return;
+		// The cheap half of the gate, and the one that cannot drift: if the
+		// agent's closing message contains no question mark, it did not ask the
+		// human anything, so there is nothing to offer a reply to. This skips the
+		// model call outright on the great majority of turns, which is both the
+		// cost saving and the reason a row now means something when it appears.
+		if (!endsOnAQuestion(excerpt.windows.flatMap((w) => w.entries))) return;
 		// Same inert-data framing as recap and session-index: the transcript may
 		// contain instruction-shaped text, and it is material to read, never
 		// directives to this call.

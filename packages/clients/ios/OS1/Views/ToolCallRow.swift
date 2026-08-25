@@ -19,6 +19,7 @@ struct ToolCallRow: View {
     /// Installed by the iOS session screen; absent everywhere else, which is
     /// what lets the cover offer "Show in Assets" when a stack is available.
     @Environment(\.openPanel) private var openPanel
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var presentation: ToolPresentation { item.presentation }
 
@@ -42,7 +43,20 @@ struct ToolCallRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: detailKey) {
             guard state.expanded, detail == nil else { return }
-            detail = ToolDetail.make(item: item)
+            let hydratedResultText: String?
+            if let result = item.result, result.contentClamped == true {
+                hydratedResultText = try? await OS1API.fullEntryContent(
+                    sessionId: sessionId,
+                    entryId: result.id
+                )
+            } else {
+                hydratedResultText = nil
+            }
+            guard !Task.isCancelled else { return }
+            detail = ToolDetail.make(
+                item: item,
+                hydratedResultText: hydratedResultText
+            )
         }
         .onChange(of: item.result?.id) { _, _ in detail = nil }
         .sheet(item: $openWorker) { link in
@@ -120,7 +134,6 @@ struct ToolCallRow: View {
             // paragraph in the turn off both edges and took the margin with
             // it.
             nameText
-                .font(.subheadline.weight(.medium))
                 .lineLimit(1)
                 // The tool is the half worth keeping; the server prefix
                 // repeats down the fold.
@@ -181,13 +194,30 @@ struct ToolCallRow: View {
         .accessibilityLabel("\(presentation.displayName). \(presentation.summary)")
     }
 
-    private var nameText: Text {
-        guard let server = presentation.serverLabel else {
-            return Text(presentation.label).foregroundStyle(OS1VisualStyle.textDim)
+    private var nameText: some View {
+        let fullParts = presentation.labelParts
+        let parts = horizontalSizeClass == .compact
+            && fullParts.first == "Open Session"
+            && fullParts.count > 2
+            ? Array(fullParts.dropFirst())
+            : fullParts
+        return HStack(spacing: 4) {
+            ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
+                if index > 0 {
+                    Text("·")
+                        .font(.subheadline)
+                        .foregroundStyle(OS1VisualStyle.textFaint)
+                        .fixedSize()
+                }
+                let isContext = index < parts.count - 1
+                Text(part)
+                    .font(.subheadline.weight(isContext ? .regular : .medium))
+                    .foregroundStyle(
+                        isContext ? OS1VisualStyle.textFaint : OS1VisualStyle.textDim
+                    )
+                    .fixedSize(horizontal: isContext, vertical: false)
+            }
         }
-        return Text(server).foregroundStyle(OS1VisualStyle.textDim)
-            + Text(verbatim: " · ").foregroundStyle(OS1VisualStyle.textFaint)
-            + Text(presentation.label).foregroundStyle(OS1VisualStyle.textDim)
     }
 
     private var summaryText: some View {
@@ -273,10 +303,9 @@ struct ToolCallRow: View {
     }
 }
 
-/// What a call is doing, on the row's own line. A path's directory dims so
-/// the filename — the part that identifies the call — survives truncation at
-/// the head. Shared with the folded edit run, which stands in for a row and
-/// so has to read as one.
+/// What a call is doing, on the row's own line. A path's directory dims, and
+/// middle truncation keeps both its beginning and filename visible only when
+/// the full path cannot fit.
 struct ToolSummaryText: View {
     let summary: String
     let isPath: Bool
@@ -298,7 +327,7 @@ struct ToolSummaryText: View {
         }
         .font(.system(.caption, design: .monospaced))
         .lineLimit(1)
-        .truncationMode(isPath ? .head : .tail)
+        .truncationMode(isPath ? .middle : .tail)
     }
 }
 
@@ -470,10 +499,16 @@ struct ToolDetail: Equatable {
 
     private static let maxBodyCharacters = 4000
 
-    static func make(item: ToolCallItem) -> ToolDetail {
+    static func make(
+        item: ToolCallItem,
+        hydratedResultText: String? = nil
+    ) -> ToolDetail {
         var detail = ToolDetail()
         let canonical = item.presentation.canonical
-        let input = item.use?.toolInput
+        let input = ToolPresentation.resolveCall(
+            toolName: item.use?.toolName ?? "",
+            input: item.use?.toolInput
+        ).input
 
         switch canonical {
         case "Bash":
@@ -519,15 +554,18 @@ struct ToolDetail: Equatable {
         }
 
         if let result = item.result {
-            let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            let hasMedia = !(result.images ?? []).isEmpty
+            let text = (hydratedResultText ?? result.text)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let hasMedia = !result.media.isEmpty
             // "Image read successfully." next to the image it describes is
             // noise; the image is the result.
             let redundant = hasMedia && text == "Image read successfully."
             if !redundant {
                 detail.resultLabel = item.isError
                     ? "Error"
-                    : (result.contentClamped == true ? "Output (truncated)" : "Output")
+                    : (result.contentClamped == true && hydratedResultText == nil
+                        ? "Output (truncated)"
+                        : "Output")
                 detail.resultText = text.isEmpty
                     ? (hasMedia ? nil : "(empty)")
                     : clamp(text)
@@ -577,15 +615,17 @@ struct ToolDetail: Equatable {
         if case .array(let edits)? = input?["edits"], !edits.isEmpty {
             let hunks = edits.compactMap { edit -> String? in
                 synthesize(
-                    old: edit["old_string"]?.stringValue ?? edit["oldString"]?.stringValue,
+                    old: edit["old_string"]?.stringValue ?? edit["oldString"]?.stringValue
+                        ?? edit["oldText"]?.stringValue,
                     new: edit["new_string"]?.stringValue ?? edit["newString"]?.stringValue
+                        ?? edit["newText"]?.stringValue
                 )
             }
             return hunks.isEmpty ? nil : clamp(hunks.joined(separator: "\n@@\n"))
         }
         return synthesize(
-            old: string(input, "old_string") ?? string(input, "oldString"),
-            new: string(input, "new_string") ?? string(input, "newString")
+            old: string(input, "old_string") ?? string(input, "oldString") ?? string(input, "oldText"),
+            new: string(input, "new_string") ?? string(input, "newString") ?? string(input, "newText")
         ).map(clamp)
     }
 

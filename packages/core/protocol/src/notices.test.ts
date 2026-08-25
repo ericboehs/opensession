@@ -154,16 +154,32 @@ describe("cross-session notice detection", () => {
 		"Heads-up from another session (Ada, working on the sidebar): a shared-checkout commit picked up your changes.\n\nNothing was lost.";
 
 	it("detects an existing unmarked heads-up", () => {
-		expect(parseSessionNotice(headsUp)).toEqual({ body: headsUp });
+		expect(parseSessionNotice(headsUp)).toEqual({ body: headsUp, sessionId: null });
 	});
 
 	it("strips the marker and delivery attribution from new notices", () => {
 		expect(
 			parseSessionNotice(`[Alex] <!--os:session-notice-->\n${headsUp}`),
-		).toEqual({ body: headsUp });
+		).toEqual({ body: headsUp, sessionId: null });
 	});
 
-	it("leaves ordinary cross-session prompts as user turns", () => {
+	it("recovers historical agent deliveries regardless of their prose", () => {
+		for (const id of [
+			"os-01a01e56-a1fc-7000-bb91-bc99b916c4ad",
+			"bks-019fa49c-71bb-7000-85d4-c8cc61d0ca85",
+		]) {
+			expect(parseSessionNotice(`[agent ${id}] Please reconcile these changes.`)).toEqual({
+				body: "Please reconcile these changes.",
+				sessionId: id,
+			});
+		}
+	});
+
+	it("rejects a loose agent label that does not name a native session", () => {
+		expect(parseSessionNotice("[agent release-bot] Please ship this.")).toBeNull();
+	});
+
+	it("leaves ordinary prompts as user turns", () => {
 		expect(parseSessionNotice("Please keep editing and commit the fix.")).toBeNull();
 	});
 
@@ -358,12 +374,30 @@ describe("classifyEntry", () => {
 		expect(
 			classifyEntry(entry({ content: "<!--os:session-notice-->\nFYI: staging is down." }))
 				.notice,
-		).toMatchObject({ kind: "session-notice", body: "collapsed" });
+		).toMatchObject({
+			kind: "session-notice",
+			title: "Message from another session",
+			body: "collapsed",
+		});
+		const historical = classifyEntry(
+			entry({
+				content:
+					"[agent os-01a01e56-a1fc-7000-bb91-bc99b916c4ad] Please avoid overlapping edits.",
+			}),
+		);
+		expect(historical.content).toBe("Please avoid overlapping edits.");
+		expect(historical.notice).toMatchObject({
+			kind: "session-notice",
+			link: {
+				label: "Open session",
+				sessionId: "os-01a01e56-a1fc-7000-bb91-bc99b916c4ad",
+			},
+		});
 		expect(
 			classifyEntry(
 				entry({
 					content:
-						"This session was interrupted by a Michael service restart mid-run. Continue.",
+						"This session was interrupted by an OS service restart mid-run. Continue.",
 				}),
 			).notice,
 		).toEqual({
@@ -395,6 +429,87 @@ describe("classifyEntry", () => {
 			sender: "Michiel",
 			senderVia: "slack",
 			content: "Ship it.",
+		});
+	});
+
+	it("carries exact answered-ask data into the read-only card notice", () => {
+		const ask = {
+			version: 1 as const,
+			questions: [
+				{
+					header: "Demo choice",
+					question: "Which version?",
+					options: [
+						{ label: "Compact", description: "One calm card." },
+						{ label: "Detailed" },
+					],
+					answer: "Detailed",
+				},
+			],
+		};
+		const classified = classifyEntry(
+			entry({
+				type: "system",
+				noticeKind: "ask",
+				content:
+					"Answered: Compact\n**Demo choice: Which version?**\n\n- **A. Compact**\n- B. Detailed",
+				ask,
+			}),
+		);
+		expect(classified.notice).toMatchObject({ kind: "ask", ask });
+		expect(classified.notice?.ask?.questions[0].answer).toBe("Detailed");
+		expect(classified.content).toStartWith("**Demo choice:");
+	});
+
+	it("falls back to legacy markdown when structured ask data is unsupported", () => {
+		const classified = classifyEntry(
+			entry({
+				type: "system",
+				noticeKind: "ask",
+				content:
+					"Answered: Compact\n**Demo choice: Which version?**\n\n- **A. Compact**\n- B. Detailed",
+				ask: { version: 2, questions: [] } as never,
+			}),
+		);
+		expect(classified.notice?.ask?.questions[0].answer).toBe("Compact");
+	});
+
+	it("upgrades an ask already classified by an older server", () => {
+		const classified = classifyEntry(
+			entry({
+				type: "system",
+				content:
+					"**Demo choice: Which version?**\n\n- **A. Compact**\n- B. Detailed",
+				notice: {
+					kind: "ask",
+					title: "Answered: Compact",
+					tone: "info",
+					body: "collapsed",
+				},
+			}),
+		);
+		expect(classified.notice?.ask?.questions[0].answer).toBe("Compact");
+	});
+
+	it("upgrades legacy answered-ask markdown for already-written records", () => {
+		const classified = classifyEntry(
+			entry({
+				type: "system",
+				noticeKind: "ask",
+				content:
+					"Answered: Compact\n**Demo choice: Which version?**\n\n- **A. Compact**\n- B. Detailed",
+			}),
+		);
+		expect(classified.notice?.ask).toEqual({
+			version: 1,
+			questions: [
+				{
+					header: "Demo choice",
+					question: "Which version?",
+					options: [{ label: "Compact" }, { label: "Detailed" }],
+					answer: "Compact",
+				},
+			],
 		});
 	});
 

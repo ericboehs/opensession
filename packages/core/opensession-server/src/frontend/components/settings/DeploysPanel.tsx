@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
 	deleteDeployApp,
 	fetchDeploys,
@@ -25,11 +25,11 @@ export function DeploysPanel() {
 	const [deploys, setDeploys] = useState<DeployDto[] | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
-	const reload = useCallback(() => {
+	const reload = () => {
 		fetchDeploys()
 			.then((r) => setDeploys(r.deploys))
 			.catch((e) => setError(e.message));
-	}, []);
+	};
 	useEffect(reload, [reload]);
 
 	const act = (p: Promise<unknown>) =>

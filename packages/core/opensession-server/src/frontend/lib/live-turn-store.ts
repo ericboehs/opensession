@@ -5,6 +5,7 @@ import {
 	recordSessionPerf,
 	startSessionPerfObservers,
 } from "./session-performance";
+import { randomUUID } from "./random-uuid";
 
 export interface LiveTurnSnapshot {
 	text: string;
@@ -101,7 +102,7 @@ export class LiveTurnStore {
 			text: "",
 			live: true,
 			by: by ?? null,
-			runId: runId ?? crypto.randomUUID(),
+			runId: runId ?? randomUUID(),
 			revision: this.snapshot.revision + 1,
 		};
 		this.emit();

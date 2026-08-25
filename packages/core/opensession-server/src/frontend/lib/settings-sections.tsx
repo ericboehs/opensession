@@ -1,5 +1,6 @@
 import React from "react";
 import {
+	IconArchive,
 	IconBandAid,
 	IconBell,
 	IconBolt,
@@ -11,10 +12,9 @@ import {
 	IconConnections,
 	IconDatabase,
 	IconFileText2,
-	IconGauge,
 	IconHome,
+	IconGlobe,
 	IconKeyboard,
-	IconMoon,
 	IconPeople,
 	IconPlug,
 	IconRocket,
@@ -41,20 +41,21 @@ export type SettingsSectionKey =
 	| "myAccounts"
 	| "preferences"
 	| "notifications"
-	| "appearance"
 	| "shortcuts"
 	| "general"
 	| "setup"
 	| "repos"
 	| "members"
-	| "models"
-	| "usage"
+	| "authentication"
+	| "providers"
 	| "sandboxes"
 	| "runners"
 	| "library"
 	| "integrations"
 	| "connections"
 	| "memory"
+	| "storage"
+	| "ingress"
 	| "prewarming"
 	| "deploys"
 	| "papercuts"
@@ -93,12 +94,6 @@ export const SECTIONS: {
 		icon: <IconBell />,
 	},
 	{
-		key: "appearance",
-		label: "Appearance",
-		group: "Personal",
-		icon: <IconMoon />,
-	},
-	{
 		key: "shortcuts",
 		label: "Shortcuts",
 		group: "Personal",
@@ -107,78 +102,80 @@ export const SECTIONS: {
 	{
 		key: "general",
 		label: "General",
-		group: "Workspace",
+		group: "Organization",
 		adminOnly: true,
 		icon: <IconHome />,
 	},
 	{
 		key: "setup",
 		label: "Setup",
-		group: "Workspace",
+		group: "Organization",
 		adminOnly: true,
 		icon: <IconChecklist />,
 	},
 	{
 		key: "repos",
 		label: "Repositories",
-		group: "Workspace",
+		group: "Organization",
 		adminOnly: true,
 		icon: <IconBranches />,
 	},
 	{
 		key: "members",
 		label: "Members",
-		group: "Workspace",
+		group: "Organization",
 		adminOnly: true,
 		icon: <IconPeople />,
 	},
 	{
-		key: "models",
-		label: "Models",
-		group: "Workspace",
-		icon: <IconShapes />,
+		key: "authentication",
+		label: "Authentication",
+		group: "Organization",
+		adminOnly: true,
+		icon: <IconShieldCheck />,
 	},
 	{
-		key: "usage",
-		label: "Usage",
-		group: "Workspace",
-		icon: <IconGauge />,
+		key: "providers",
+		label: "Providers",
+		group: "Organization",
+		icon: <IconShapes />,
 	},
 	{
 		key: "sandboxes",
 		label: "Sandboxes",
-		group: "Workspace",
+		group: "Organization",
 		icon: <IconBox />,
 	},
 	{
 		key: "runners",
 		label: "Runners",
-		group: "Workspace",
+		group: "Organization",
 		icon: <IconServer />,
 	},
 	{
 		key: "library",
 		label: "Library",
-		group: "Workspace",
+		group: "Organization",
 		icon: <IconBook />,
 	},
 	{
 		key: "integrations",
 		label: "Integrations",
-		group: "Workspace",
+		group: "Organization",
 		adminOnly: true,
 		icon: <IconPlug />,
 	},
 	{
 		key: "connections",
 		label: "Connections",
-		group: "Workspace",
+		group: "Organization",
 		icon: <IconConnections />,
 	},
 	{
 		key: "memory",
-		label: "Memory",
-		group: "Workspace",
+		label: "Memories",
+		group: "Organization",
+		adminOnly: true,
 		icon: <IconDatabase />,
 	},
 	{
@@ -198,6 +195,20 @@ export const SECTIONS: {
 		label: "Security",
 		group: "Automation",
 		icon: <IconShieldCheck />,
+	},
+	{
+		key: "ingress",
+		label: "Public ingress",
+		group: "Infrastructure",
+		adminOnly: true,
+		icon: <IconGlobe />,
+	},
+	{
+		key: "storage",
+		label: "Storage",
+		group: "Infrastructure",
+		adminOnly: true,
+		icon: <IconArchive />,
 	},
 	{
 		key: "prewarming",

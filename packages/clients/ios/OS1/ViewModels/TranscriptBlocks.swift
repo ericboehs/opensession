@@ -178,21 +178,32 @@ struct ToolCallItem: Identifiable, Equatable {
     /// reloaded transcript can hold old uses with no persisted result.
     var isLive: Bool
     var presentation: ToolPresentation
+    /// Prepared with the transcript blocks, not from `ToolCallRow.body`. The
+    /// latter runs during scene updates and must stay free of date parsing.
+    let durationLabel: String?
+
+    init(
+        id: String,
+        use: TranscriptEntry?,
+        result: TranscriptEntry?,
+        isLive: Bool,
+        presentation: ToolPresentation
+    ) {
+        self.id = id
+        self.use = use
+        self.result = result
+        self.isLive = isLive
+        self.presentation = presentation
+        if let start = use?.timestampDate, let end = result?.timestampDate {
+            let elapsed = end.timeIntervalSince(start)
+            durationLabel = elapsed >= 1.5 ? TranscriptFormat.duration(elapsed) : nil
+        } else {
+            durationLabel = nil
+        }
+    }
 
     var isError: Bool { use?.isError == true || result?.isError == true }
     var isPending: Bool { result == nil && use != nil }
-
-    /// How long the call took, for the row's trailing meta. Under a second and
-    /// a half it says nothing worth a slot on the row — the same floor the web
-    /// viewer applies before it prints one.
-    var durationLabel: String? {
-        guard let start = use?.timestampDate, let end = result?.timestampDate else {
-            return nil
-        }
-        let elapsed = end.timeIntervalSince(start)
-        guard elapsed >= 1.5 else { return nil }
-        return TranscriptFormat.duration(elapsed)
-    }
     var media: TranscriptMedia { result?.media ?? TranscriptMedia() }
     var featuredMedia: TranscriptMedia {
         result?.explicitlyFeaturedMedia ?? TranscriptMedia()
@@ -204,9 +215,13 @@ struct ToolCallItem: Identifiable, Equatable {
     /// that opens it. Session assets live outside every worktree, so the path
     /// means nothing to anything but the assets tab.
     var assetPath: String? {
+        let input = ToolPresentation.resolveCall(
+            toolName: use?.toolName ?? "",
+            input: use?.toolInput
+        ).input
         guard presentation.mcpServer == "opensession-assets",
               presentation.name == "write_asset",
-              let path = use?.toolInput?["path"]?.stringValue,
+              let path = input?["path"]?.stringValue,
               !path.isEmpty
         else { return nil }
         return path
@@ -267,6 +282,8 @@ struct WorkTurn: Identifiable, Equatable {
     var failureCount: Int
     var touchedFiles: [TouchedFile]
     var lineStats: ToolLineStats
+    /// A result carried an image — the fold opens so it isn't hidden.
+    var hasMedia: Bool
     /// Media the agent explicitly surfaced. Closed folds keep this visible;
     /// open folds render it in the tool row that produced it.
     var featuredMedia: TranscriptMedia = TranscriptMedia()
@@ -274,9 +291,23 @@ struct WorkTurn: Identifiable, Equatable {
     /// live and collapsed so the work never looks stalled.
     var livePreview: String?
 
+    var hasFailure: Bool { failureCount > 0 }
+    var hasNarration: Bool
+
     /// How the fold should start out, before any manual toggle.
     func defaultExpanded(preference: TurnActivity) -> Bool {
-        preference.defaultExpanded(isLive: isLive)
+        // A tool-only turn already has one complete summary in its header.
+        // Keep it closed unless the person explicitly keeps all work open.
+        if !hasNarration, preference.work != .open { return false }
+        // The default is open while the work is happening and folded the
+        // moment it settles, which is also the only work setting where a
+        // finished turn's notes can be put away, since the header then owns
+        // them. The nested tool-call setting does not change this outer fold.
+        return preference.defaultExpanded(isLive: isLive)
+    }
+
+    func rendersToolCallsInPlace(preference: TurnActivity) -> Bool {
+        !hasNarration || preference.rendersToolCallsInPlace
     }
 }
 
@@ -686,8 +717,13 @@ enum TranscriptGrouping {
             failureCount: tools.filter(\.isError).count,
             touchedFiles: files,
             lineStats: stats,
+            hasMedia: tools.contains(where: \.hasMedia),
             featuredMedia: featuredMedia(from: tools),
-            livePreview: preview
+            livePreview: preview,
+            hasNarration: items.contains {
+                if case .message = $0 { return true }
+                return false
+            }
         )
     }
 

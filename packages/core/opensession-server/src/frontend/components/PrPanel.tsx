@@ -1,15 +1,14 @@
 import { repoLabel } from "../lib/repo-label";
 import { AGENT_NAME } from "../lib/brand";
+import { randomUUID } from "../lib/random-uuid";
 import React, {
-  useEffect,
-  useState,
   useCallback,
-  useId,
-  useMemo,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useState,
   useRef,
 } from "react";
-import { motion } from "motion/react";
-import { duration, ease } from "../ui/motion";
 import type {
   GitStatusInfo,
   DiffFileGroup,
@@ -22,12 +21,14 @@ import type {
 } from "../lib/types";
 import { PrSessionsList, prRelatedSessions } from "./PrSessions";
 import { WalkthroughCard } from "./WalkthroughCard";
+import { DiffPanel } from "./DiffPanel";
 import {
   API_BASE,
   fetchPr,
   fetchPrDiff,
   fetchPrCodeFlow,
   fetchPrDiffGroups,
+  fetchPrReviewThreads,
   fetchPrViewedFiles,
   fetchPrFile,
   setPrFileViewed,
@@ -49,6 +50,7 @@ import {
   mergePrPreviewApi,
   closePrPreviewApi,
 } from "../lib/api";
+import type { PrReviewThread } from "../lib/api/prs";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { toast } from "../ui/toast";
@@ -72,54 +74,69 @@ import {
 } from "../lib/pr-focus";
 import { providerFromUrl, prCapabilities } from "../lib/provider";
 import { pollWhileVisible, PR_WEBHOOK_FALLBACK_POLL_MS } from "../lib/poll";
+import {
+  WS_SUMMARY_REVIEW_CANVAS_CLEARANCE,
+} from "../lib/workspace-summary-classes";
 import { Textarea } from "../ui/input";
 import {
-  IconArrowDown,
-  IconArrowUp,
   IconBranches,
+  IconCheck,
   IconChevronRight,
   IconCopy,
-  IconDiffSplit,
-  IconDiffUnified,
   IconDotsHorizontal,
-  IconFile,
   IconGitMerge,
   IconGlobe,
-  IconListCircles,
+  IconMessage,
+  IconPullRequest,
   IconSliders,
+  IconUndo,
   IconX,
 } from "./icons";
 import { Menu, MENU_ICON } from "../ui/menu";
 import { Modal, useEnterOnMount } from "../ui/modal";
 import { Tooltip } from "../ui/tooltip";
+import { TopBar } from "../ui/top-bar";
 import { Popover } from "../ui/popover";
-import { Switch } from "../ui/switch";
 import { Segmented, SegmentedOption } from "../ui/segmented";
-import { OptionSelect } from "../ui/select";
+import { SettingRow } from "../ui/setting-row";
+import {
+  CodeDisplaySettings,
+  CodeOrganizationSettings,
+  DiffSourceSetting,
+} from "./CodeDisplaySettings";
+import {
+  useCodeDisplaySettings,
+  useCodeOrganizationSettings,
+} from "../hooks/useCodeDisplaySettings";
 
 import { checkClass, isDeployment, summarize } from "../lib/pr-status-derive";
 import { prStatusMark } from "../lib/pr-status";
-import {
-  PR_REPO_TAB_X,
-  PR_REPO_TABS,
-  prRepoTabClass,
-} from "../lib/pr-tone-classes";
+import { PR_NO_PR_BAR, PR_REPO_TABS } from "../lib/pr-tone-classes";
 import { formatPrCommentPrompt, stripHtmlComments } from "../lib/pr-prompts";
 import { CheckRow } from "./pr/CheckRow";
 import { PrStateIcon } from "./pr/PrStateIcon";
 import { ConversationView } from "./pr/PrViews";
 import { LinkPrControl } from "./pr/LinkPrControl";
 import { PrCard } from "./pr/PrCard";
-import { StackSection } from "./pr/Stack";
+import { MergeUndoControl } from "./pr/MergeUndoControl";
+import { StackLinkSection } from "./pr/Stack";
+import { PrStackChip } from "./pr/StackPopover";
 import { ReviewRail } from "./pr/ReviewRail";
 import { GitStatusRows } from "./pr/GitStatus";
-import { InlineAlert, LoadingState } from "../ui/state";
+import { ReviewToolbar } from "./pr/ReviewToolbar";
+import { EmptyState, LoadingState } from "../ui/state";
 import { CodeFlow } from "./CodeFlow";
 import { revealDiffFile } from "../lib/diff-navigation";
 import { PrFileTree } from "./pr/PrFileTree";
 import { reviewDiffLoadPolicy } from "../lib/review-diff";
 import { BrandMark } from "./BrandTile";
 import { useCopy } from "../ui/copy";
+import { useDeferredMergePhase } from "../hooks/useDeferredMerge";
+import {
+  cancelDeferredMergeByKey,
+  deferredMergeKey,
+  scheduleDeferredMerge,
+} from "../lib/deferred-merge";
 
 // Re-exported so existing importers of these (formerly local) helpers keep working.
 export {
@@ -132,36 +149,12 @@ export {
 
 type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
 
-/** The lenses the code page can be read through, in menu order. */
-const CODE_VIEWS = {
-  all: { label: "All changes", Icon: IconFile },
-  guide: { label: "Review guide", Icon: IconListCircles },
-  flow: { label: "Code flow", Icon: IconBranches },
-} as const;
-type CodeView = keyof typeof CODE_VIEWS;
+type CodeView = "all" | "guide" | "flow";
+type DiffSource = "pull-request" | "worktree";
+export type PrReviewPage = "overview" | "files";
 
 const NO_PR_FILES: NonNullable<PrDetails["files"]> = [];
-
-function useStoredCodeSetting<T extends string>(
-  key: string,
-  allowed: readonly T[],
-  fallback: T,
-): [T, (next: T) => void] {
-  const [value, setValue] = useState<T>(() => {
-    const stored = localStorage.getItem(key) as T | null;
-    return stored && allowed.includes(stored) ? stored : fallback;
-  });
-  const change = useCallback(
-    (next: T) => {
-      setValue(next);
-      try {
-        localStorage.setItem(key, next);
-      } catch {}
-    },
-    [key],
-  );
-  return [value, change];
-}
+const NOOP_SEND = () => {};
 
 interface Props {
   sessionId: string;
@@ -227,6 +220,16 @@ interface Props {
   onOpenPr?: (repo: string, branch: string) => void;
   /** WS handler hook — resets the new-session form on server errors. */
   addHandler?: (handler: (msg: WSServerMessage) => void) => () => void;
+  /** The surrounding review header already offers the workspace summary.
+   * Keep this panel's metadata rail only when it stacks for a narrow canvas. */
+  hideWideOverviewRail?: boolean;
+  /** Controlled page for hosts that move Review navigation into the summary. */
+  page?: PrReviewPage;
+  onPageChange?: (page: PrReviewPage) => void;
+  /** Move file controls into the identity row and omit the secondary row. */
+  compactToolbar?: boolean;
+  /** Legacy caller hint; Review now keeps its desktop top inset either way. */
+  flushToolbarTop?: boolean;
 }
 
 interface PrDiffData {
@@ -334,6 +337,10 @@ export function PrPanel({
   onOpenSessionById,
   onOpenPr,
   addHandler,
+  hideWideOverviewRail = false,
+  page: controlledPage,
+  onPageChange,
+  compactToolbar = false,
 }: Props) {
   // Local copy of the linked-PR list so link/unlink applies instantly; the
   // sessions list catches up on its next refresh.
@@ -341,9 +348,8 @@ export function PrPanel({
   // One identity for "no linked PRs", or the `targets` memo below re-runs on
   // every render for the (common) session with none.
   const linked = linkedLocal ?? linkedPrs ?? NO_LINKED_PRS;
-  const targets = useMemo<PrTarget[]>(
-    () =>
-      dedupeTargets([
+  const [targetPickerOpen, setTargetPickerOpen] = useState(false);
+  const targets = (dedupeTargets([
       ...(previewTarget
         ? [
             {
@@ -382,49 +388,28 @@ export function PrPanel({
           ? `${repoLabel(dp.repo)} #${dp.number}`
           : `${repoLabel(dp.repo)}:${dp.branch}`,
       })),
-    ]),
-    [repos, linked, discoveredPrs, previewTarget?.repo, previewTarget?.branch],
-  );
+    ]));
   const [activeKey, setActiveKey] = useState<string | undefined>(
     () => (targets.find((t) => t.primary) ?? targets[0])?.key,
   );
   const active = targets.find((t) => t.key === activeKey) ?? targets[0];
-  // A PR chip — in the Workspace strip, or a `repo#123` mention in prose —
-  // opened the Review tab on a specific PR. Keyed on `seq` so re-clicking the
-  // same chip re-focuses it, and so a re-render never fights a tab the reader
-  // picked by hand.
-  //
-  // A request waits for the target it names instead of being dropped: the PRs
-  // arrive with the session, so a `/pr/<number>` link followed cold resolves
-  // long before there is anything to select, and giving up on the first pass
-  // is exactly what leaves the reader on the primary PR.
-  const focusApplied = useRef<{ target?: number; checks?: number }>({});
-  useEffect(() => {
-    if (!focusTarget) return;
-    const { seq } = focusTarget;
-    if (focusTarget.repo && focusApplied.current.target !== seq) {
-      const match = matchFocusTarget(targets, focusTarget);
-      if (match) {
-        focusApplied.current.target = seq;
-        setActiveKey(match.key);
-      }
-    }
-    // Checks stopped being a page of their own: reveal them where they live.
-    if (focusTarget.view === "checks" && focusApplied.current.checks !== seq) {
-      focusApplied.current.checks = seq;
-      setPage("overview");
-      setFocusChecksSeq((prev) => prev + 1);
-    }
-  }, [focusTarget?.seq, targets]);
   const loadTargetKey = previewTarget
     ? `preview:${previewTarget.repo}:${previewTarget.branch}`
     : active?.key || sessionId;
+  // Scalars so the loaders below can be useCallback'd on stable values
+  // instead of the per-render preview object.
+  const previewRepo = previewTarget?.repo;
+  const previewBranch = previewTarget?.branch;
   // `#5528` in a PR body or review comment means a PR in the repo THIS panel is
   // showing — which is the attached repo's, not the session's, when the strip
   // is on a sibling PR. Only fall back to the surrounding surface's repo.
   const contextRepo = useMarkdownRepo();
   const markdownRepo = previewTarget?.repo || active?.repo || contextRepo;
   const [pr, setPr] = useState<PrDetails | null>(null);
+  const mergeKey = deferredMergeKey(pr?.url);
+  const mergePhase = useDeferredMergePhase(mergeKey);
+  const merging = mergePhase === "running";
+  const mergeScheduled = mergePhase === "scheduled";
   const [git, setGit] = useState<GitStatusInfo | null>(null);
   const [loadedDiff, setDiff] = useState<PrDiffData | null>(null);
   const diff = loadedDiff?.headRefOid === pr?.headRefOid ? loadedDiff : null;
@@ -454,12 +439,19 @@ export function PrPanel({
   const [submitting, setSubmitting] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewDone, setReviewDone] = useState<string | null>(null);
-  const [merging, setMerging] = useState(false);
-  const [confirmMerge, setConfirmMerge] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
+  // The branch has no PR yet and the bar's Create PR action has been asked for.
+  // The agent does the work, so this only confirms the ask briefly while the PR
+  // itself is still being created.
+  const [prRequested, setPrRequested] = useState(false);
+  useEffect(() => {
+    if (!prRequested) return;
+    const timer = window.setTimeout(() => setPrRequested(false), 6000);
+    return () => window.clearTimeout(timer);
+  }, [prRequested]);
   const { copy: copyPrLink } = useCopy();
   // Merging is a separate decision from approving, so it starts off: the
   // reviewer opts into it, and the primary action stays "Approve".
@@ -471,69 +463,67 @@ export function PrPanel({
    * code page uses, held apart from the page so a trip to Overview and back
    * never re-triggers guide or code-flow generation.
    */
-  const [page, setPage] = useState<"overview" | "files">("files");
+  const [localPage, setLocalPage] = useState<PrReviewPage>("files");
+  const page = controlledPage ?? localPage;
+  const setPage = (next: PrReviewPage) => {
+      setLocalPage(next);
+      onPageChange?.(next);
+    };
   const [codeView, setCodeView] = useState<"all" | "guide" | "flow">("all");
+  const [diffSource, setDiffSource] = useState<DiffSource>("pull-request");
+  const worktreeAvailable =
+    !!sessionId && !previewTarget && !active?.linked && !active?.discovered;
+  const sessionRunning = !!sessions?.find(
+    (session) => session.id === sessionId,
+  )?.isRunning;
+  useEffect(() => setDiffSource("pull-request"), [loadTargetKey]);
   /** A check chip elsewhere in the app asked for the checks (focusTarget). */
   const [focusChecksSeq, setFocusChecksSeq] = useState(0);
+  // A PR chip or prose link can request a target before session PRs arrive.
+  // Apply each request once after both the page setters and targets exist.
+  const focusApplied = useRef<{ target?: number; checks?: number }>({});
+  const applyFocusTarget = useEffectEvent(() => {
+    if (!focusTarget) return;
+    const { seq } = focusTarget;
+    if (focusTarget.repo && focusApplied.current.target !== seq) {
+      const match = matchFocusTarget(targets, focusTarget);
+      if (match) {
+        focusApplied.current.target = seq;
+        setActiveKey(match.key);
+      }
+    }
+    if (focusTarget.view === "checks" && focusApplied.current.checks !== seq) {
+      focusApplied.current.checks = seq;
+      setPage("overview");
+      setFocusChecksSeq((prev) => prev + 1);
+    }
+  });
+  useEffect(() => {
+    applyFocusTarget();
+  }, [focusTarget?.seq, targets]);
   /** A file picked on Overview, waiting for the code page to have its diff. */
   const [pendingReveal, setPendingReveal] = useState<string | null>(null);
   const phoneLayout = window.matchMedia("(max-width: 720px)").matches;
-  const [diffStyle, changeDiffStyle] = useStoredCodeSetting(
-    "opensession-pr-diff-style",
-    ["unified", "split"] as const,
+  // Rendering preferences are shared with sidebar Changes, so choosing wrap,
+  // split view, highlighting or a theme in either viewer updates the other.
+  const codeDisplaySettings = useCodeDisplaySettings(
     phoneLayout ? "unified" : "split",
   );
-  // Long lines scroll sideways by default (GitHub's behaviour). Wrapping keeps
-  // them all on screen, which matters most in split view where each side is
-  // half as wide.
-  const [wrapSetting, changeWrapSetting] = useStoredCodeSetting(
-    "opensession-pr-diff-wrap",
-    ["0", "1"] as const,
-    "0",
-  );
-  const wrapLines = wrapSetting === "1";
-  const changeWrapLines = (wrap: boolean) =>
-    changeWrapSetting(wrap ? "1" : "0");
-  const [structuralSetting, changeStructuralSetting] = useStoredCodeSetting(
-    "opensession-pr-structural-highlighting",
-    ["0", "1"] as const,
-    "1",
-  );
-  const [fileStatsSetting, changeFileStatsSetting] = useStoredCodeSetting(
-    "opensession-pr-file-stats",
-    ["0", "1"] as const,
-    "1",
-  );
-  const [grouping, changeGrouping] = useStoredCodeSetting(
-    "opensession-pr-grouping",
-    ["none", "ai"] as const,
-    "none",
-  );
-  const [fileListMode, changeFileListMode] = useStoredCodeSetting(
-    "opensession-pr-file-list",
-    ["flat", "tree", "hidden"] as const,
-    phoneLayout ? "hidden" : "flat",
-  );
-  const [fileOrder, changeFileOrder] = useStoredCodeSetting(
-    "opensession-pr-file-order",
-    ["path", "changes", "pull-request"] as const,
-    "path",
-  );
-  const [sortDirection, changeSortDirection] = useStoredCodeSetting(
-    "opensession-pr-file-order-direction",
-    ["asc", "desc"] as const,
-    "asc",
-  );
-  const [hideReviewedSetting, changeHideReviewedSetting] = useStoredCodeSetting(
-    "opensession-pr-hide-reviewed",
-    ["0", "1"] as const,
-    "0",
-  );
-  const [codeTheme, changeCodeTheme] = useStoredCodeSetting(
-    "opensession-pr-code-theme",
-    ["system", "light", "dark"] as const,
-    "system",
-  );
+  const {
+    diffStyle,
+    wrapLines,
+    structuralHighlighting,
+    showFileStats,
+    codeTheme,
+  } = codeDisplaySettings;
+  const organizationSettings = useCodeOrganizationSettings();
+  const {
+    grouping,
+    fileListMode,
+    fileOrder,
+    sortDirection,
+    hideReviewed,
+  } = organizationSettings;
   // Keyed like the code flow below, so one target's guide never renders under
   // another's diff and a slow response can't land after the panel moved on.
   const [guide, setGuide] = useState<{
@@ -558,7 +548,13 @@ export function PrPanel({
     viewed: ReadonlySet<string>;
   } | null>(null);
   const prViewedRef = useRef(prViewed);
-  prViewedRef.current = prViewed;
+  useLayoutEffect(() => {
+    prViewedRef.current = prViewed;
+  }, [prViewed]);
+  const [reviewThreads, setReviewThreads] = useState<{
+    key: string;
+    threads: PrReviewThread[];
+  } | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   /**
    * The rail collapses on the panel's own width, not the viewport's. In the
@@ -568,20 +564,18 @@ export function PrPanel({
    * conversation instead of sitting beside it.
    */
   const [rootEl, setRootEl] = useState<HTMLDivElement | null>(null);
+  const [diffControlsTarget, setDiffControlsTarget] =
+    useState<HTMLDivElement | null>(null);
+  const [worktreeToolbarTarget, setWorktreeToolbarTarget] =
+    useState<HTMLDivElement | null>(null);
   const [railStacked, setRailStacked] = useState(false);
   const [headerCompact, setHeaderCompact] = useState(
     () => window.matchMedia("(max-width: 720px)").matches,
   );
-  /* One underline that MOVES between the two tabs rather than a mark that
-     blinks on and off, so the strip says which way the choice went — the same
-     shape (and the same id-per-instance rule) as the Segmented knob. It is
-     minted up here with the other hooks: the render below returns early while
-     the PR loads, and a `useId` past that point is a conditional hook. */
-  const tabUnderlineId = useId();
-  const setRoot = useCallback((el: HTMLDivElement | null) => {
+  const setRoot = (el: HTMLDivElement | null) => {
     rootRef.current = el;
     setRootEl(el);
-  }, []);
+  };
   useEffect(() => {
     if (!rootEl || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(([entry]) => {
@@ -597,7 +591,9 @@ export function PrPanel({
     key: string;
     promise: Promise<void>;
   } | null>(null);
-  activeLoadTargetRef.current = loadTargetKey;
+  useLayoutEffect(() => {
+    activeLoadTargetRef.current = loadTargetKey;
+  }, [loadTargetKey]);
 
   const load = useCallback(
     (force = false): Promise<void> => {
@@ -623,8 +619,8 @@ export function PrPanel({
       setDiffLoading(false);
     };
       const prRequest = (
-        previewTarget
-      ? fetchPrPreview(previewTarget.repo, previewTarget.branch)
+        previewRepo && previewBranch
+      ? fetchPrPreview(previewRepo, previewBranch)
       : fetchPr(sessionId, active?.repo, active?.branch)
     )
       .then((data) => {
@@ -647,8 +643,8 @@ export function PrPanel({
         if (isCurrent()) setLoading(false);
       });
       const diffRequest = (
-        previewTarget
-      ? fetchPrPreviewDiff(previewTarget.repo, previewTarget.branch)
+        previewRepo && previewBranch
+      ? fetchPrPreviewDiff(previewRepo, previewBranch)
       : fetchPrDiff(sessionId, active?.repo, active?.branch)
     )
       .then((data) => {
@@ -666,7 +662,7 @@ export function PrPanel({
       });
     // A linked PR has no local worktree in this session — no git state.
       const gitRequest = (
-        previewTarget || active?.linked
+        previewRepo || active?.linked
       ? Promise.resolve(null)
       : fetchGitStatus(sessionId, active?.repo)
     )
@@ -676,28 +672,34 @@ export function PrPanel({
       .catch(() => {
         if (isCurrent()) setGit(null);
       });
+      const reviewThreadsRequest = prRequest.then(async () => {
+        if (!prResult) return;
+        await (async () => {
+const threads = await fetchPrReviewThreads(
+            active?.repo,
+            prResult.number,
+          );
+          if (isCurrent()) setReviewThreads({ key: loadTargetKey, threads });
+})().catch(async () => {
+// Resolved threads are supporting context. A provider or credential
+          // failure must not block the diff itself.
+});
+      });
 
       const promise = Promise.allSettled([
         prRequest,
         diffRequest,
         gitRequest,
+        reviewThreadsRequest,
       ]).then(() => undefined);
     loadInFlightRef.current = { key: loadTargetKey, promise };
-    void promise.then(() => {
+      void promise.then(() => {
         if (loadInFlightRef.current?.promise === promise)
           loadInFlightRef.current = null;
-    });
-    return promise;
+      });
+      return promise;
     },
-    [
-    sessionId,
-    loadTargetKey,
-    active?.repo,
-    active?.branch,
-    active?.linked,
-    previewTarget?.repo,
-    previewTarget?.branch,
-    ],
+    [sessionId, loadTargetKey, previewRepo, previewBranch, active?.repo, active?.branch, active?.linked],
   );
 
   useEffect(() => {
@@ -712,6 +714,7 @@ export function PrPanel({
     setReviewing(false);
     setReviewOpen(false);
     setPrViewed(null);
+    setReviewThreads(null);
     setCodeFlow(null);
     setCodeFlowLoading(false);
     setCodeFlowError(null);
@@ -729,6 +732,7 @@ export function PrPanel({
   // match those through the loaded PR number/head branch instead.
   // The server invalidated its caches before broadcasting, so this reads
   // fresh data.
+  const hasLoadedPr = pr !== null;
   useEffect(() => {
     if (!addHandler) return;
     return addHandler((msg) => {
@@ -739,7 +743,7 @@ export function PrPanel({
         msg.repo === repo &&
         (branch
           ? msg.branch === branch
-          : !pr || msg.number === pr.number || msg.branch === pr.headRefName)
+          : !hasLoadedPr || msg.number === pr?.number || msg.branch === pr?.headRefName)
       )
         void load(true);
     });
@@ -750,11 +754,12 @@ export function PrPanel({
     previewTarget?.branch,
     active?.repo,
     active?.branch,
+    hasLoadedPr,
     pr?.number,
     pr?.headRefName,
   ]);
 
-  useEffect(() => {
+  const loadDiffGroups = useEffectEvent(() => {
     const files = pr?.files || [];
     if (!diff?.patch || files.length < 3 || !diffLoadPolicy.groupFiles) {
       setDiffGroups(null);
@@ -795,7 +800,8 @@ export function PrPanel({
       live = false;
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [
+  });
+  useEffect(() => loadDiffGroups(), [
     sessionId,
     active?.repo,
     active?.branch,
@@ -813,26 +819,19 @@ export function PrPanel({
     const generation = ++guideGenerationRef.current;
     setGuideLoading(true);
     setGuideFailed(false);
-    try {
-      const data = previewTarget
-        ? await fetchPrPreviewGuide(previewTarget.repo, previewTarget.branch)
+    await (async () => {
+const data = previewRepo && previewBranch
+        ? await fetchPrPreviewGuide(previewRepo, previewBranch)
         : await fetchReviewGuide(sessionId, active?.repo, active?.branch);
       if (generation !== guideGenerationRef.current) return;
       if (data) setGuide({ key: guideKey, data });
       else setGuideFailed(true);
-    } catch {
-      if (generation === guideGenerationRef.current) setGuideFailed(true);
-    } finally {
-      if (generation === guideGenerationRef.current) setGuideLoading(false);
-    }
-  }, [
-    sessionId,
-    active?.repo,
-    active?.branch,
-    previewTarget?.repo,
-    previewTarget?.branch,
-    guideKey,
-  ]);
+})().catch(async () => {
+if (generation === guideGenerationRef.current) setGuideFailed(true);
+}).finally(async () => {
+if (generation === guideGenerationRef.current) setGuideLoading(false);
+});
+  }, [guideKey, sessionId, previewRepo, previewBranch, active?.repo, active?.branch]);
 
   const prPatchVersion = diff?.diffVersion || "";
   const codeFlowKey =
@@ -844,9 +843,9 @@ export function PrPanel({
     const generation = ++codeFlowGenerationRef.current;
     setCodeFlowLoading(true);
     setCodeFlowError(null);
-    try {
-      const data = previewTarget
-        ? await fetchPrPreviewCodeFlow(previewTarget.repo, previewTarget.branch)
+    await (async () => {
+const data = previewRepo && previewBranch
+        ? await fetchPrPreviewCodeFlow(previewRepo, previewBranch)
         : await fetchPrCodeFlow(sessionId, active?.repo, active?.branch);
       if (!data)
         throw new Error("Code flow isn't available for this pull request.");
@@ -860,38 +859,30 @@ export function PrPanel({
       }
       if (generation === codeFlowGenerationRef.current)
         setCodeFlow({ key: codeFlowKey, data });
-    } catch (error: any) {
-      if (generation === codeFlowGenerationRef.current)
+})().catch(async (error: any) => {
+if (generation === codeFlowGenerationRef.current)
         setCodeFlowError(error?.message || "Couldn't load code flow.");
-    } finally {
-      if (generation === codeFlowGenerationRef.current)
+}).finally(async () => {
+if (generation === codeFlowGenerationRef.current)
         setCodeFlowLoading(false);
-    }
-  }, [
-    sessionId,
-    active?.repo,
-    active?.branch,
-    previewTarget?.repo,
-    previewTarget?.branch,
-    diff?.patch,
-    prPatchVersion,
-    codeFlowKey,
-  ]);
+});
+  }, [diff, codeFlowKey, sessionId, prPatchVersion, previewRepo, previewBranch, active?.repo, active?.branch]);
 
-  const refreshCodeFlow = useCallback(async () => {
+  const refreshCodeFlow = async () => {
     codeFlowGenerationRef.current += 1;
     setCodeFlow(null);
     setCodeFlowError(null);
     setCodeFlowLoading(true);
     await load(true);
     setCodeFlowLoading(false);
-  }, [load]);
+  };
 
   // The guide is generated on demand (the first request per head commit takes
   // the model a while) — only fetch once the reviewer opens the Guide tab, and
   // refetch when a new push moves the head commit.
   const showingGuide = page === "files" && codeView === "guide";
   const showingFlow = page === "files" && codeView === "flow";
+  const hasSkippedFiles = !!diff?.skippedFiles;
   // A different PR or a new head commit is a different guide: drop the in-flight
   // and failed flags with it, or one failure would disable auto-load for the
   // rest of the panel's life. The keyed `guide` itself goes stale on its own.
@@ -918,7 +909,7 @@ export function PrPanel({
 
   useEffect(() => {
     if (!showingFlow || codeFlowLoading || codeFlowError) return;
-    if (!diff?.patch && !diff?.skippedFiles) {
+    if (!diff?.patch && !hasSkippedFiles) {
       if (diffLoading || diffOutOfDate) return;
       setCodeView("all");
       return;
@@ -933,6 +924,7 @@ export function PrPanel({
   }, [
     showingFlow,
     diff?.patch,
+    hasSkippedFiles,
     diffLoading,
     diffOutOfDate,
     codeFlow,
@@ -946,20 +938,32 @@ export function PrPanel({
   // together when the reviewer finishes the review (the provider's native flow).
   // Both are stable: they ride diffProps into every mounted file row, so a new
   // identity here re-renders the whole diff.
-  const handleAddPending = useCallback(
-    async (target: CommentTarget, text: string) => {
+  const handleAddPending = async (target: CommentTarget, text: string) => {
       setPending((prev) => [
         ...prev,
-        { ...target, text, id: crypto.randomUUID() },
+        { ...target, text, id: randomUUID() },
       ]);
     setReviewDone(null);
-    },
-    [],
-  );
+    };
 
-  const handleRemovePending = useCallback((id: string) => {
+  const handleRemovePending = (id: string) => {
     setPending((prev) => prev.filter((c) => c.id !== id));
-  }, []);
+  };
+
+  function handleFixChecks(summary: string) {
+    if (!send || !pr) return;
+    send({
+      type: "prompt",
+      sessionId,
+      user: getCurrentUser(),
+      content: `Investigate the failing checks on PR #${pr.number}, fix the failures, run the relevant tests, commit the changes, and push them.`,
+    });
+    setSummaryDraft(summary);
+    setReviewError(null);
+    setMergeAfterReview(false);
+    setReviewOpen(false);
+    toast("Fixing checks…");
+  }
 
   async function handleSubmitReview(summary: string) {
     if (submitting) return;
@@ -970,8 +974,8 @@ export function PrPanel({
     }
     setSubmitting(true);
     setReviewError(null);
-    try {
-      const payload = {
+    await (async () => {
+const payload = {
         user: getCurrentUser(),
         event: reviewEvent,
         summary: summary.trim() || undefined,
@@ -994,8 +998,8 @@ export function PrPanel({
         : await submitPrReviewApi(sessionId, payload);
       let merged = false;
       if (reviewEvent === "APPROVE" && mergeAfterReview) {
-        try {
-          if (previewTarget)
+        await (async () => {
+if (previewTarget)
             await mergePrPreviewApi(
               previewTarget.repo,
               previewTarget.branch,
@@ -1004,11 +1008,11 @@ export function PrPanel({
           else
             await mergePrApi(sessionId, "squash", active?.repo, active?.branch);
           merged = true;
-        } catch (e: any) {
-          setMergeError(
+})().catch(async (e: any) => {
+setMergeError(
             `Review approved, but merge failed: ${e.message || "unknown error"}`,
           );
-        }
+});
       }
       if (actionTargetKey !== activeLoadTargetRef.current) return;
       setPending([]);
@@ -1023,44 +1027,41 @@ export function PrPanel({
         setReviewing(false);
       }, 6000);
       await load(true);
-    } catch (e: any) {
-      if (actionTargetKey === activeLoadTargetRef.current)
+})().catch(async (e: any) => {
+if (actionTargetKey === activeLoadTargetRef.current)
         setReviewError(e.message || "Failed to submit review");
-    } finally {
-      setSubmitting(false);
-    }
+}).finally(async () => {
+setSubmitting(false);
+});
   }
 
-  // Two-click confirm guards against accidental merges (this mutates the repo).
-  async function handleMerge() {
-    if (!confirmMerge) {
-      setConfirmMerge(true);
-      setMergeError(null);
-      setTimeout(() => setConfirmMerge(false), 4000);
+  function handleMerge() {
+    if (!mergeKey) return;
+    if (mergePhase === "scheduled") {
+      cancelDeferredMergeByKey(mergeKey);
       return;
     }
-    setConfirmMerge(false);
-    setMerging(true);
+    if (mergePhase !== "idle") return;
     setMergeError(null);
     const actionTargetKey = loadTargetKey;
-    try {
-      if (previewTarget)
-        await mergePrPreviewApi(
-          previewTarget.repo,
-          previewTarget.branch,
-          "squash",
-        );
-      else await mergePrApi(sessionId, "squash", active?.repo, active?.branch);
-      if (actionTargetKey === activeLoadTargetRef.current) await load(true);
-    } catch (e: any) {
-      if (actionTargetKey === activeLoadTargetRef.current) {
-        const message = e.message || "Merge failed";
-        setMergeError(message);
-        toast(message);
-      }
-    } finally {
-      setMerging(false);
-    }
+    scheduleDeferredMerge(mergeKey, async () => {
+      await (async () => {
+if (previewTarget)
+          await mergePrPreviewApi(
+            previewTarget.repo,
+            previewTarget.branch,
+            "squash",
+          );
+        else await mergePrApi(sessionId, "squash", active?.repo, active?.branch);
+        if (actionTargetKey === activeLoadTargetRef.current) await load(true);
+})().catch(async (e: any) => {
+if (actionTargetKey === activeLoadTargetRef.current) {
+          const message = e.message || "Merge failed";
+          setMergeError(message);
+          toast(message);
+        }
+});
+    });
   }
 
   async function handleClose() {
@@ -1074,23 +1075,23 @@ export function PrPanel({
     setClosing(true);
     setCloseError(null);
     const actionTargetKey = loadTargetKey;
-    try {
-      if (previewTarget)
+    await (async () => {
+if (previewTarget)
         await closePrPreviewApi(previewTarget.repo, previewTarget.branch);
       else await closePrApi(sessionId, active?.repo, active?.branch);
       if (actionTargetKey === activeLoadTargetRef.current) await load(true);
-    } catch (e: any) {
-      if (actionTargetKey === activeLoadTargetRef.current)
+})().catch(async (e: any) => {
+if (actionTargetKey === activeLoadTargetRef.current)
         setCloseError(e.message || "Failed to close pull request");
-    } finally {
-      setClosing(false);
-    }
+}).finally(async () => {
+setClosing(false);
+});
   }
 
   // Roll the per-check list up into headline counts, and split deployments
   // (Vercel previews & friends) from CI checks — failing and running entries
   // sort first within each group.
-  const checkSummary = useMemo(() => {
+  const checkSummary = (() => {
     const checks = pr?.checks || [];
     const s = summarize(checks);
     const rank = (c: PrCheck) => {
@@ -1109,9 +1110,9 @@ export function PrPanel({
       deployments: sorted.filter(isDeployment),
       checks: sorted.filter((c) => !isDeployment(c)),
     };
-  }, [pr]);
+  })();
 
-  const bodyHtml = useMemo(() => {
+  const bodyHtml = (() => {
     if (!pr?.body) return "";
     // The mirrored walkthrough section is for GitHub readers; here
     // WalkthroughCard renders the real thing, so drop the mirror.
@@ -1126,8 +1127,8 @@ export function PrPanel({
     return stripped
       ? renderPrCommentMarkdown(stripped, { repo: markdownRepo })
       : "";
-  }, [pr?.body, markdownRepo]);
-  const provider = useMemo(() => providerFromUrl(pr?.url), [pr?.url]);
+  })();
+  const provider = (providerFromUrl(pr?.url));
   // Host capability gating: absent (GitHub, older cache entries) means all
   // true, so nothing GitHub-shaped ever disappears. code.storage payloads
   // carry an explicit set (no checks/reviewers/comments/viewed state/stacks).
@@ -1137,8 +1138,7 @@ export function PrPanel({
   // location) has to wait: the code page may not be mounted yet, and its diff
   // loads on its own clock. Park the path and let the effect below spend it
   // once both are true, rather than revealing into a tree that isn't there.
-  const scrollToFile = useCallback(
-    (path: string) => {
+  const scrollToFile = (path: string) => {
       if (page === "files" && codeView !== "flow") {
         revealDiffFile(rootRef.current, path);
         return;
@@ -1146,9 +1146,7 @@ export function PrPanel({
       setPage("files");
       if (codeView === "flow") setCodeView("all");
       setPendingReveal(path);
-    },
-    [page, codeView],
-  );
+    };
   useEffect(() => {
     if (
       !pendingReveal ||
@@ -1171,21 +1169,18 @@ export function PrPanel({
   const prBase = pr?.baseRefName;
   const prHead = pr?.headRefName;
   const activeRepoId = active?.repo;
-  const prImageSrcs = useCallback(
-    (file: FileDiffMetadata) => {
+  const prImageSrcs = (file: FileDiffMetadata) => {
       const src = (ref: string, p: string) =>
         `${API_BASE}/pr-image?${activeRepoId ? `repo=${encodeURIComponent(activeRepoId)}&` : ""}ref=${encodeURIComponent(ref)}&path=${encodeURIComponent(p)}`;
       return {
         oldSrc: prBase ? src(prBase, file.prevName || file.name) : undefined,
         newSrc: prHead ? src(prHead, file.name) : undefined,
       };
-    },
-    [prBase, prHead, activeRepoId],
-  );
+    };
   // The pr-image endpoint serves blobs through the GitHub API — on hosts
   // without it, image files fall back to the plain binary-diff placeholder.
   const imageSrcs = caps.images ? prImageSrcs : undefined;
-  const fileActions = useMemo(() => {
+  const fileActions = (() => {
     const ref = pr?.headRefOid || pr?.headRefName;
     const prUrl = pr?.url;
     return {
@@ -1210,7 +1205,7 @@ export function PrPanel({
           ? (file: FileDiffMetadata) => fetchPrFile(activeRepoId, ref, file.name)
           : undefined,
     };
-  }, [pr?.headRefOid, pr?.headRefName, pr?.url, provider, activeRepoId]);
+  })();
 
   // In-place edit mode on the review canvas. Only targets backed by one of the
   // session's own worktrees qualify (primary/attached repos — their worktree is
@@ -1223,9 +1218,7 @@ export function PrPanel({
   useEffect(() => setHandEdited([]), [sessionId, activeRepoId]);
   const worktreeEditable =
     !!editGate && !previewTarget && !!active && !active.branch;
-  const editFile = useMemo(
-    () =>
-      worktreeEditable
+  const editFile = (worktreeEditable
         ? {
             load: (file: FileDiffMetadata, side: "new" | "base") =>
               fetchWorktreeFile(
@@ -1246,10 +1239,8 @@ export function PrPanel({
                 .catch(() => {});
             },
           }
-        : undefined,
-    [worktreeEditable, sessionId, activeRepoId],
-  );
-  const tellAgentAboutEdits = useCallback(() => {
+        : undefined);
+  const tellAgentAboutEdits = () => {
     if (!send || !handEdited.length) return;
     const list = handEdited.map((p) => `- \`${p}\``).join("\n");
     send({
@@ -1262,17 +1253,18 @@ export function PrPanel({
         `Review the edits, keep them (don't revert them unless they're clearly broken), and commit + push them on this branch so the pull request picks them up.`,
     });
     setHandEdited([]);
-  }, [send, handEdited, sessionId, activeRepoId]);
+  };
 
   // GitHub "Viewed" state: fetched per PR (and refetched when the head moves,
   // since a push flips changed files to DIRTY = unviewed on GitHub's side).
   // Hosts without viewed state never fetch — prViewed stays unset, so the
   // checkboxes stay hidden.
   const viewedKey = diff ? `${activeRepoId || "pr"}#${diff.number}` : null;
+  const viewedPrNumber = diff?.number;
   useEffect(() => {
-    if (!caps.viewedState || !viewedKey || !diff) return;
+    if (!caps.viewedState || !viewedKey || viewedPrNumber === undefined) return;
     let live = true;
-    fetchPrViewedFiles(activeRepoId, diff.number, getCurrentUser())
+    fetchPrViewedFiles(activeRepoId, viewedPrNumber, getCurrentUser())
       .then((res) => {
         if (!live) return;
         setPrViewed({
@@ -1287,9 +1279,9 @@ export function PrPanel({
     return () => {
       live = false;
     };
-  }, [viewedKey, diff?.headRefOid, caps.viewedState]);
+  }, [viewedKey, viewedPrNumber, diff?.headRefOid, activeRepoId, caps.viewedState]);
 
-  const handleToggleViewed = useCallback((path: string, next: boolean) => {
+  const handleToggleViewed = (path: string, next: boolean) => {
     const info = prViewedRef.current;
     if (!info) return;
     const apply = (set: ReadonlySet<string>, add: boolean) => {
@@ -1307,7 +1299,7 @@ export function PrPanel({
           : prev,
       );
     });
-  }, []);
+  };
 
   function handleLinked(all: LinkedPrEntry[], justLinked: LinkedPrEntry) {
     setLinkedLocal(all);
@@ -1315,15 +1307,15 @@ export function PrPanel({
   }
 
   async function handleUnlink(t: PrTarget) {
-    try {
-      const res = await unlinkPrApi(sessionId, t.repo, t.branch!);
+    await (async () => {
+const res = await unlinkPrApi(sessionId, t.repo, t.branch!);
       setLinkedLocal(res.all);
       if (activeKey === t.key)
         setActiveKey((targets.find((x) => x.primary) ?? targets[0])?.key);
       toast("PR unlinked");
-    } catch (e: any) {
-      toast(e.message || "Couldn't unlink the PR");
-    }
+})().catch(async (e: any) => {
+toast(e.message || "Couldn't unlink the PR");
+});
   }
 
   // Tab bar across the top: one tab per PR (primary repo, attached repos,
@@ -1332,19 +1324,14 @@ export function PrPanel({
   // Sessions linked to the shown PR — only when the caller wires the list.
   // Matched against the ACTIVE target (linked PRs carry their own branch; the
   // primary/attached branch resolves through the loaded PR's headRefName).
-  const relatedSessions = useMemo(
-    () =>
-      sessions && active
+  const relatedSessions = (sessions && active
         ? prRelatedSessions(sessions, active.repo, active.branch, pr)
-        : [],
-    [sessions, active?.repo, active?.branch, pr?.number, pr?.headRefName],
-  );
+        : []);
 
   const files = pr?.files ?? NO_PR_FILES;
   const reviewedFiles =
     prViewed?.key === viewedKey ? prViewed.viewed : undefined;
-  const hideReviewed = hideReviewedSetting === "1";
-  const reviewFiles = useMemo(() => {
+  const reviewFiles = (() => {
     const visible =
       hideReviewed && reviewedFiles
         ? files.filter((file) => !reviewedFiles.has(file.path))
@@ -1359,35 +1346,28 @@ export function PrPanel({
           : left.path.localeCompare(right.path);
       return (result || left.path.localeCompare(right.path)) * direction;
     });
-  }, [files, reviewedFiles, hideReviewed, fileOrder, sortDirection]);
-  const visibleFileOrder = useMemo(
-    () => reviewFiles.map((file) => file.path),
-    [reviewFiles],
-  );
+  })();
+  const visibleFileOrder = (reviewFiles.map((file) => file.path));
 
   const currentGuide = guide?.key === guideKey ? guide.data : null;
   // Slicing the patch per section walks every byte of it, so it cannot run on
   // renders it has nothing to do with — while the guide is the open lens, that
   // would be once per keystroke in the review summary.
-  const guideSections = useMemo(
-    () =>
-      currentGuide && diff?.patch
+  const guideSections = (currentGuide && diff?.patch
         ? sectionsWithPatches(currentGuide, diff.patch)
-        : [],
-    [currentGuide, diff?.patch],
-  );
+        : []);
 
   // Every diff on the code page is the same commentable surface; only the
   // patch it is handed differs (the whole PR, or one guide section). Memoized
   // because it is the props object of every mounted file row: rebuilding it
   // re-renders the whole diff, however unrelated the state change was.
-  const diffProps = useMemo(
-    () =>
-      diff && {
+  const diffProps = (diff && {
         diffStyle,
+        controlsTarget: codeView === "all" ? diffControlsTarget : undefined,
+        showViewedProgress: false,
         wrapLines,
-        structuralHighlighting: structuralSetting === "1",
-        showFileStats: fileStatsSetting === "1",
+        structuralHighlighting,
+        showFileStats,
         codeTheme,
         visibleFileOrder,
         stickyFileHeaders: true,
@@ -1403,85 +1383,113 @@ export function PrPanel({
         placeholder: `Comment on #${diff.number}, added to your pending review…`,
         pendingComments: reviewing ? pending : undefined,
         onRemovePending: handleRemovePending,
+        reviewThreads:
+          reviewThreads?.key === loadTargetKey
+            ? reviewThreads.threads
+            : undefined,
+        commentRepo: markdownRepo,
         onSubmit: handleAddPending,
         imageSrcs,
         fileActions,
         editFile,
-      },
-    [
-      diff,
-      diffStyle,
-      wrapLines,
-      structuralSetting,
-      fileStatsSetting,
-      codeTheme,
-      visibleFileOrder,
-      prViewed,
-      viewedKey,
-      handleToggleViewed,
-      reviewing,
-      caps.reviewComments,
-      provider.name,
-      pending,
-      handleRemovePending,
-      handleAddPending,
-      imageSrcs,
-      fileActions,
-      editFile,
-      diffLoadPolicy.defaultExpandedFiles,
-      diffLoadPolicy.allowExpandAll,
-    ],
-  );
+      });
 
   const showBar = targets.length > 1;
-  const switcher = showBar ? (
-    <div className={PR_REPO_TABS}>
-      {targets.map((t) => (
-        <button
-          key={t.key}
-          className={prRepoTabClass(t.key === active?.key)}
-          onClick={() => setActiveKey(t.key)}
-          title={
-            t.linked
-              ? `Linked PR · branch ${t.branch}`
-              : t.discovered
-                ? `PR opened by this session · branch ${t.branch}`
-                : t.primary
-                  ? "Primary repo"
-                  : "Attached repo"
-          }
-        >
-          {t.label}
-          {t.linked && t.key === active?.key && (
-            <span
-              className={PR_REPO_TAB_X}
-              role="button"
-              title="Unlink this PR from the session"
-              onClick={(e) => {
-                e.stopPropagation();
-                void handleUnlink(t);
-              }}
+  const targetPicker = showBar ? (
+    <Popover.Root open={targetPickerOpen} onOpenChange={setTargetPickerOpen}>
+      <Tooltip label="Switch review target">
+        <Popover.Trigger
+          render={
+            <Button
+              variant="ghost"
+              size="sm"
+              className="min-w-0 max-w-[180px] px-2 text-label phone:min-h-9 phone:max-w-[104px]"
+              aria-label={`Switch review target. Current: ${active?.label || "repository"}`}
+              caret
             >
-              <IconX size={12} />
-            </span>
-          )}
-        </button>
-      ))}
-      {linkable && (
-        <LinkPrControl
-          sessionId={sessionId}
-          variant="tab"
-          onLinked={handleLinked}
+              <span className="truncate">{active?.label}</span>
+              {!headerCompact && (
+                <span className="shrink-0 text-faint">
+                  +{targets.length - 1}
+                </span>
+              )}
+            </Button>
+          }
         />
-      )}
-    </div>
+      </Tooltip>
+      <Popover.Popup
+        side="bottom"
+        align="start"
+        initialFocus
+        className="w-[280px] p-1.5"
+      >
+        <div className="px-2 py-1.5 text-meta font-medium text-faint">
+          Review target
+        </div>
+        <div className="flex flex-col gap-0.5">
+          {targets.map((target) => {
+            const selected = target.key === active?.key;
+            const detail = target.linked
+              ? "Linked pull request"
+              : target.discovered
+                ? "Opened by this session"
+                : target.primary
+                  ? "Primary repo"
+                  : "Attached repo";
+            return (
+              <button
+                key={target.key}
+                type="button"
+                className={`flex min-h-10 w-full items-center gap-2 rounded-md border-0 px-2 text-left hover:bg-hover phone:min-h-11 ${selected ? "bg-active" : "bg-transparent"}`}
+                aria-current={selected ? "page" : undefined}
+                onClick={() => {
+                  setTargetPickerOpen(false);
+                  setActiveKey(target.key);
+                }}
+              >
+                <IconBranches size={17} className="shrink-0 text-dim" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-label font-medium text-fg">
+                    {target.label}
+                  </span>
+                  <span className="block truncate text-meta text-faint">
+                    {detail}
+                  </span>
+                </span>
+                {selected && (
+                  <IconCheck size={16} className="shrink-0 text-fg" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+        {linkable && (
+          <div className="mt-1.5 border-t border-divider-soft px-1 pt-1.5">
+            <LinkPrControl
+              sessionId={sessionId}
+              variant="action"
+              onLinked={handleLinked}
+            />
+          </div>
+        )}
+      </Popover.Popup>
+    </Popover.Root>
   ) : null;
+  const switcher = showBar ? (
+    <div className={PR_REPO_TABS}>{targetPicker}</div>
+  ) : null;
+
+  const reviewStateClass = `flex-1 ${compactToolbar ? WS_SUMMARY_REVIEW_CANVAS_CLEARANCE : ""}`;
 
   if (loading)
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         {switcher}
-        <LoadingState className="flex-1">Loading pull request…</LoadingState>
+        <LoadingState className={`${reviewStateClass} -translate-y-5`}>
+          <span className="text-control-label font-medium text-fg">
+            Loading pull request…
+          </span>
+        </LoadingState>
       </div>
     );
 
@@ -1489,48 +1497,124 @@ export function PrPanel({
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         {switcher}
-        <InlineAlert
-          className="m-4"
-          retryLabel="Retry"
-          onRetry={() => {
-            setLoading(true);
-            setLoadError(null);
-            void load(true);
-          }}
-        >
-          {loadError}
-        </InlineAlert>
+        <EmptyState
+          className={reviewStateClass}
+          role="alert"
+          icon={<IconX size={22} className="text-red" />}
+          title="Couldn’t load pull request"
+          action={
+            <Button
+              size="sm"
+              onClick={() => {
+                setLoading(true);
+                setLoadError(null);
+                void load(true);
+              }}
+            >
+              Try again
+            </Button>
+          }
+        />
       </div>
     );
 
-  if (!pr)
+  if (!pr) {
+    const showWorktreeDiff =
+      !!sessionId && !previewTarget && !active?.linked && !active?.discovered;
+    // The branch's own changes are the review here, so they lead. Opening the
+    // PR is the one action this state offers, and it sits in the bar rather
+    // than inside a card below the diff.
+    const createPr = () => {
+      if (!send || !sessionId) return;
+      send({
+        type: "prompt",
+        sessionId,
+        user: getCurrentUser(),
+        content:
+          "Commit any remaining work, push the branch, and open a PR for it.",
+      });
+      setPrRequested(true);
+      toast(`Asked ${AGENT_NAME} to open a pull request`);
+    };
     return (
-        <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto">
-          {switcher}
-          <div className="mx-auto flex w-full max-w-[760px] flex-col gap-4 px-4 py-4 sm:px-5">
-            {walkthrough && <WalkthroughCard walkthrough={walkthrough} />}
-            <PrCard title="Git status">
-              <GitStatusRows
-                git={git}
-                pr={null}
-                sessionId={sessionId}
-                repo={active?.repo}
-                send={send}
-                onRefresh={load}
-              />
-            </PrCard>
-            {linkable && !showBar && (
-              <div className="flex flex-wrap items-center gap-2">
+      <div
+        className={`selectable relative flex h-full min-h-0 flex-col bg-surface ${compactToolbar ? "overflow-x-hidden overflow-y-auto" : "overflow-hidden"}`}
+        data-review-canvas="true"
+      >
+        <ReviewToolbar compact={compactToolbar}>
+          <div className={PR_NO_PR_BAR}>
+            {targetPicker}
+            {/* Opening the PR is what this state is for, so its action leads
+                before the shared diff controls. */}
+            {showWorktreeDiff && !!send && (
+              <Button
+                variant="primary"
+                size="sm"
+                className="phone:min-h-11"
+                icon={<IconPullRequest size={20} />}
+                disabled={prRequested}
+                onClick={createPr}
+              >
+                {prRequested ? "Opening…" : "Create PR"}
+              </Button>
+            )}
+            {linkable && (
               <LinkPrControl
                 sessionId={sessionId}
                 variant="action"
                 onLinked={handleLinked}
               />
-              </div>
             )}
-        </div>
+            {showWorktreeDiff && (
+              <div
+                ref={setWorktreeToolbarTarget}
+                className="ml-auto flex shrink-0 items-center gap-2.5 text-label"
+              />
+            )}
+          </div>
+        </ReviewToolbar>
+        {/* Match the PR-backed canvas: without a standing summary, content
+            owns the scrollport and the toolbar stays outside it. With the
+            summary, the shared outer scrollport lets its toolbar stick. */}
+        <main
+          className={`min-h-0 flex-1 bg-surface ${compactToolbar ? "overflow-y-visible" : "overflow-y-auto"}`}
+        >
+          {walkthrough && (
+            <div className="mx-auto w-full max-w-[760px] px-4 pt-4 sm:px-5">
+              <WalkthroughCard walkthrough={walkthrough} />
+            </div>
+          )}
+          {showWorktreeDiff ? (
+            <div
+              className={`max-w-[1500px] px-2 pb-2 phone:w-full phone:px-1 ${compactToolbar ? `w-auto pt-0 ${WS_SUMMARY_REVIEW_CANVAS_CLEARANCE}` : "mx-auto w-full pt-2"}`}
+              data-no-pr-worktree-diff
+            >
+              <DiffPanel
+                sessionId={sessionId}
+                isRunning={sessionRunning}
+                canSend={!!send && !!editGate}
+                send={send ?? NOOP_SEND}
+                toolbarTarget={worktreeToolbarTarget}
+              />
+            </div>
+          ) : (
+            <div className="mx-auto flex w-full max-w-[760px] flex-col gap-4 px-4 py-4 sm:px-5">
+              <PrCard title="Git status">
+                <GitStatusRows
+                  git={git}
+                  pr={null}
+                  sessionId={sessionId}
+                  repo={active?.repo}
+                  send={send}
+                  onRefresh={load}
+                />
+              </PrCard>
+            </div>
+          )}
+        </main>
       </div>
     );
+  }
 
   // Bot bookkeeping comments are pure HTML markers — hide them, and strip
   // leading markers from real comments' previews.
@@ -1579,7 +1663,7 @@ export function PrPanel({
       onRefresh={load}
       onMerge={handleMerge}
       merging={merging}
-      confirmMerge={confirmMerge}
+      mergeScheduled={mergeScheduled}
       mergeError={mergeError}
       onOpenFile={scrollToFile}
       onOpenFiles={() => setPage("files")}
@@ -1598,190 +1682,89 @@ export function PrPanel({
             <Button
               variant="ghost"
               size="sm"
+              className="desktop:-mr-1.5"
               aria-label="Code view settings"
               icon={<IconSliders size={18} />}
             />
           }
         />
       </Tooltip>
+      {/* The content lens stands alone. File filtering and organization come
+          next; lower-frequency rendering preferences come last. Every setting
+          remains one row wearing the shape of its answer, which is the
+          vocabulary in `ui/setting-row`. */}
       <Popover.Popup
         side="bottom"
         align="end"
         initialFocus
-        className="w-[340px] p-2"
+        className="flex w-[340px] flex-col gap-0.5 p-3"
       >
-        <Segmented
-          label="Diff layout"
-          value={diffStyle}
-          onValueChange={(next) => changeDiffStyle(next as "unified" | "split")}
-          className="grid w-full grid-cols-2"
-        >
-          <SegmentedOption value="split" className="justify-center py-1.5">
-            <IconDiffSplit size={18} />
-            Split
-          </SegmentedOption>
-          <SegmentedOption value="unified" className="justify-center py-1.5">
-            <IconDiffUnified size={18} />
-            Unified
-          </SegmentedOption>
-        </Segmented>
-
-        <div className="mt-2 border-t border-divider py-1">
-          <label className="flex min-h-10 items-center justify-between gap-4 px-2 text-label text-fg">
-            <span>Structural highlighting</span>
-            <Switch
-              size="sm"
-              checked={structuralSetting === "1"}
-              onCheckedChange={(checked) =>
-                changeStructuralSetting(checked ? "1" : "0")
-              }
-            />
-          </label>
-          <label className="flex min-h-10 items-center justify-between gap-4 px-2 text-label text-fg">
-            <span>Wrap lines</span>
-            <Switch
-              size="sm"
-              checked={wrapLines}
-              onCheckedChange={changeWrapLines}
-            />
-          </label>
-          <label className="flex min-h-10 items-center justify-between gap-4 px-2 text-label text-fg">
-            <span>Show changed lines per file</span>
-            <Switch
-              size="sm"
-              checked={fileStatsSetting === "1"}
-              onCheckedChange={(checked) =>
-                changeFileStatsSetting(checked ? "1" : "0")
-              }
-            />
-          </label>
-        </div>
-
-        <div className="border-t border-divider py-1">
-          <div className="flex min-h-10 items-center justify-between gap-4 px-2 text-label text-fg">
-            <span className="shrink-0 whitespace-nowrap">Grouping</span>
-            <OptionSelect
-              label="Grouping"
-              value={grouping}
-              onChange={changeGrouping}
-              size="sm"
-              options={[
-                { value: "none", label: "No grouping" },
-                { value: "ai", label: "By purpose" },
-              ]}
-            />
-          </div>
-          <div className="flex min-h-10 items-center justify-between gap-4 px-2 text-label text-fg">
-            <span className="shrink-0 whitespace-nowrap">File list</span>
-            <OptionSelect
-              label="File list"
-              value={fileListMode}
-              onChange={changeFileListMode}
-              size="sm"
-              options={[
-                { value: "flat", label: "Flat" },
-                { value: "tree", label: "Tree" },
-                { value: "hidden", label: "Hidden" },
-              ]}
-            />
-          </div>
-          <div className="flex min-h-10 items-center justify-between gap-4 px-2 text-label text-fg">
-            <span className="shrink-0 whitespace-nowrap">Order by</span>
-            <span className="flex items-center gap-1">
-              <Tooltip
-                label={sortDirection === "asc" ? "Ascending" : "Descending"}
-              >
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  aria-label={
-                    sortDirection === "asc"
-                      ? "Sort descending"
-                      : "Sort ascending"
-                  }
-                  icon={
-                    sortDirection === "asc" ? (
-                      <IconArrowUp size={17} />
-                    ) : (
-                      <IconArrowDown size={17} />
-                    )
-                  }
-                  onClick={() =>
-                    changeSortDirection(
-                      sortDirection === "asc" ? "desc" : "asc",
-                    )
-                  }
-                />
-              </Tooltip>
-              <OptionSelect
-                label="File order"
-                value={fileOrder}
-                onChange={changeFileOrder}
-                size="sm"
-                options={[
-                  { value: "path", label: "Path" },
-                  { value: "changes", label: "Changed lines" },
-                  { value: "pull-request", label: "Pull request" },
-                ]}
-              />
-            </span>
-          </div>
-          <label className="flex min-h-10 items-center justify-between gap-4 px-2 text-label text-fg">
-            <span className="shrink-0 whitespace-nowrap">Hide reviewed</span>
-            <Switch
-              size="sm"
-              checked={hideReviewed}
-              disabled={!reviewedFiles}
-              onCheckedChange={(checked) =>
-                changeHideReviewedSetting(checked ? "1" : "0")
-              }
-            />
-          </label>
-        </div>
-
-        <div className="flex min-h-11 items-center justify-between gap-4 border-t border-divider px-2 pt-1 text-label text-fg">
-          <span className="shrink-0 whitespace-nowrap">Code theme</span>
-          <OptionSelect
-            label="Code theme"
-            value={codeTheme}
-            onChange={changeCodeTheme}
+        {worktreeAvailable && (
+          <>
+            <DiffSourceSetting value={diffSource} onValueChange={setDiffSource} />
+            <div aria-hidden className="mx-2 my-1.5 h-px bg-line" />
+          </>
+        )}
+        <SettingRow label="Code view">
+          <Segmented
+            label="Code view"
             size="sm"
-            options={[
-              { value: "system", label: "Match app" },
-              { value: "light", label: "Light" },
-              { value: "dark", label: "Dark" },
-            ]}
-          />
-        </div>
+            value={codeView}
+            onValueChange={(next) => {
+              const key = next as CodeView;
+              if (key === "flow" && codeView !== "flow" && codeFlowError) {
+                setCodeFlow(null);
+                setCodeFlowError(null);
+              }
+              setCodeView(key);
+            }}
+          >
+            <SegmentedOption value="all">Changes</SegmentedOption>
+            <SegmentedOption value="guide">Guide</SegmentedOption>
+            <SegmentedOption
+              value="flow"
+              disabled={
+                (!diff?.patch && !diff?.skippedFiles) || !prPatchVersion
+              }
+            >
+              Flow
+            </SegmentedOption>
+          </Segmented>
+        </SettingRow>
+
+        <div aria-hidden className="mx-2 my-1.5 h-px bg-line" />
+
+        <CodeOrganizationSettings
+          settings={organizationSettings}
+          reviewedFilesAvailable={!!reviewedFiles}
+          defaultOrderLabel="Pull request"
+        />
+
+        <div aria-hidden className="mx-2 my-1.5 h-px bg-line" />
+
+        <CodeDisplaySettings {...codeDisplaySettings} />
       </Popover.Popup>
     </Popover.Root>
   );
 
-  /* The review has two pages, kept beside each other in the sticky bar so the
-     navigation stays visible without taking width from the review canvas. */
+  /* The review has two pages. Without the workspace summary they sit in a
+     small floating switcher, leaving the identity and file controls in the
+     same toolbar positions used while the summary is open. */
   const pageTabs = (
     [
       ["overview", "Overview", comments.length || undefined],
-      ["files", "Files changed", files.length || undefined],
+      ["files", "Files", files.length || undefined],
     ] as const
   ).map(([key, label, count]) => (
     <button
       key={key}
       role="tab"
       aria-selected={page === key}
-      className={`relative flex h-11 shrink-0 items-center gap-1.5 border-0 bg-transparent px-3 text-control-label font-medium transition-colors ${
+      className={`flex h-8 shrink-0 items-center gap-1.5 border-0 bg-transparent px-3 text-label font-medium transition-colors phone:h-11 phone:text-control-label ${
         page === key ? "text-fg" : "text-dim hover:text-fg"
       }`}
       onClick={() => setPage(key)}
     >
-      {page === key && (
-        <motion.span
-          layoutId={tabUnderlineId}
-          aria-hidden
-          className="absolute inset-x-0 bottom-0 h-0.5 bg-accent"
-          transition={{ type: "tween", duration: duration.base, ease }}
-        />
-      )}
       {label}
       {count !== undefined && (
         <span
@@ -1795,18 +1778,17 @@ export function PrPanel({
     </button>
   ));
 
-  const reviewBar = (
-    <div className="flex h-11 shrink-0 items-center gap-2 overflow-x-auto overflow-y-hidden bg-surface px-6 shadow-[inset_0_-1px_0_var(--border)] [scrollbar-width:none] phone:px-2 [&::-webkit-scrollbar]:hidden">
-      <div
-        className="flex shrink-0 items-center gap-0.5 self-stretch"
-        role="tablist"
-        aria-orientation="horizontal"
-        aria-label="Pull request pages"
-      >
-        {pageTabs}
-      </div>
-      {page === "files" && (
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+  const fileControls = page === "files" && (
+    <div
+      className={`flex shrink-0 items-center gap-1.5 phone:gap-2 ${compactToolbar ? "" : "ml-auto"}`}
+    >
+      {diffSource === "worktree" ? (
+        <div
+          ref={setWorktreeToolbarTarget}
+          className="flex shrink-0 items-center gap-2.5 text-label"
+        />
+      ) : (
+        <>
           {handEdited.length > 0 && send && (
             <Button
               variant="default"
@@ -1818,79 +1800,48 @@ export function PrPanel({
               {handEdited.length === 1 ? "" : "s"}
             </Button>
           )}
-          <span className="flex shrink-0 items-center gap-1.5 text-label tabular-nums">
-            <span className="text-green">+{pr.additions}</span>
-            <span className="text-red">−{pr.deletions}</span>
-          </span>
-          <Menu.Root>
-            <Tooltip label="Change the view">
-              <Menu.Trigger
-                render={
-                  <Button variant="default" size="sm" className="text-fg" caret>
-                    {CODE_VIEWS[codeView].label}
-                  </Button>
-                }
-              />
-            </Tooltip>
-            <Menu.Popup align="end" className="min-w-[210px]">
-              <Menu.RadioGroup
-                value={codeView}
-                onValueChange={(next) => {
-                  const key = String(next) as CodeView;
-                  if (key === "flow" && codeView !== "flow" && codeFlowError) {
-                    setCodeFlow(null);
-                    setCodeFlowError(null);
-                  }
-                  setCodeView(key);
-                }}
-              >
-                {(Object.keys(CODE_VIEWS) as CodeView[]).map((key) => {
-                  const { label, Icon } = CODE_VIEWS[key];
-                  return (
-                    <Menu.RadioItem
-                      key={key}
-                      value={key}
-                      closeOnClick
-                      disabled={
-                        key === "flow" &&
-                        ((!diff?.patch && !diff?.skippedFiles) || !prPatchVersion)
-                      }
-                    >
-                      <Icon size={18} className={MENU_ICON} />
-                      <span className="min-w-0 flex-1 truncate">{label}</span>
-                      <Menu.Check on={codeView === key} />
-                    </Menu.RadioItem>
-                  );
-                })}
-              </Menu.RadioGroup>
-            </Menu.Popup>
-          </Menu.Root>
+          <div
+            ref={setDiffControlsTarget}
+            className="flex shrink-0 items-center gap-1.5 phone:gap-2"
+          />
           {codeSettings}
-        </div>
+        </>
       )}
+    </div>
+  );
+
+  const reviewBar = !compactToolbar && (
+    <div className="flex h-8 shrink-0 items-center gap-1.5 overflow-x-auto overflow-y-hidden bg-surface [scrollbar-width:none] desktop:absolute desktop:left-2 desktop:top-[calc(100%+8px)] desktop:z-20 desktop:rounded-lg desktop:border desktop:border-line phone:h-11 phone:gap-2 phone:px-2 phone:shadow-[inset_0_-1px_0_var(--border)] [&::-webkit-scrollbar]:hidden">
+      <div
+        className="flex shrink-0 items-center gap-0.5 self-stretch"
+        role="tablist"
+        aria-orientation="horizontal"
+        aria-label="Pull request pages"
+      >
+        {pageTabs}
+      </div>
+      {phoneLayout && fileControls}
     </div>
   );
 
   return (
     <div
-      className="selectable relative flex h-full min-h-0 flex-col overflow-hidden bg-surface"
+      className={`selectable relative flex h-full min-h-0 flex-col bg-surface ${compactToolbar ? "overflow-x-hidden overflow-y-auto" : "overflow-hidden"}`}
       data-review-canvas="true"
       ref={setRoot}
     >
-      {switcher}
-
-      {/* The PR identity names the canvas, so it stays edge to edge above the
-          navigation and review content. */}
-      <header
-        className={`flex h-10 shrink-0 items-center gap-2.5 px-6 shadow-[inset_0_-1px_0_var(--border)] phone:px-3 ${statusMark.bgClassName}`}
-      >
+      {/* Desktop always keeps file controls in the identity row, so opening
+          the summary only relocates page navigation. Phone keeps one
+          edge-to-edge navigation and controls row below the identity. */}
+      <ReviewToolbar compact={compactToolbar}>
+      <TopBar as="header" className="h-10 shrink-0 gap-2.5 px-4 phone:px-3">
         {/* State, in the app's own PR language, filled rather than drawn: the
             tone washes the whole chip and the glyph and word share its ink.
             It is its own object, so it gets more air than the pieces of the
             identity line it precedes. */}
         <Tooltip label={statusMark.label}>
           <span
-            className={`mr-1.5 flex h-6 shrink-0 items-center gap-1.5 ${statusMark.className}`}
+            className={`mr-1.5 flex h-6 shrink-0 items-center gap-1.5 rounded-control px-2 ${statusMark.bgClassName} ${statusMark.className}`}
           >
             <PrStateIcon state={pr.state} isDraft={pr.isDraft} />
             {!headerCompact && (
@@ -1898,24 +1849,25 @@ export function PrPanel({
             )}
           </span>
         </Tooltip>
+        {targetPicker}
         {/* Author and title in the session header's own breadcrumb shape: a
             tight picture-and-name pill, a chevron, then the name of the thing
             you are looking at. Same spacing and weights as RepoBar's
             `[icon] repo › title`, so the two headers read as one bar. */}
-        <span className="flex shrink-0 items-center gap-[7px] text-item-title font-medium text-fg">
-          <UserAvatar
-            name={pr.author}
-            login={provider.key === "github" ? pr.author : null}
-            size={18}
-            edge={false}
-            title={pr.author}
-          />
-          {!headerCompact && (
-            <span className="max-w-[180px] truncate">{pr.author}</span>
-          )}
-        </span>
         {!headerCompact && (
-          <IconChevronRight size={18} className="shrink-0 text-faint" />
+          <>
+            <span className="flex shrink-0 items-center gap-[7px] text-item-title font-medium text-fg">
+              <UserAvatar
+                name={pr.author}
+                login={provider.key === "github" ? pr.author : null}
+                size={18}
+                edge={false}
+                title={pr.author}
+              />
+              <span className="max-w-[180px] truncate">{pr.author}</span>
+            </span>
+            <IconChevronRight size={18} className="shrink-0 text-faint" />
+          </>
         )}
         {/* Title only. Counts, commits and the sessions on this PR are the
             rail's job, so the bar stays one line of identity.
@@ -1939,7 +1891,21 @@ export function PrPanel({
             </a>
           </Tooltip>
         </h1>
-        {pr.staging?.url && (
+        {(compactToolbar || !phoneLayout) && fileControls}
+        {/* A stack is secondary navigation, not page content. Keep its compact
+            position/size chip in the identity bar and reveal the full rail in
+            the shared popover instead of spending permanent canvas height. */}
+        {caps.stacks && pr.stack && (
+          <PrStackChip
+            pr={pr}
+            tone={statusMark.tone}
+            size="bar"
+            headline={statusMark.label}
+            repo={active?.repo}
+            onOpenPr={onOpenPr}
+          />
+        )}
+        {pr.staging?.url && !headerCompact && (
           <Tooltip label="Open the preview environment">
             <a
               /* An icon-only control carries its glyph ~6px inside its box,
@@ -1959,47 +1925,24 @@ export function PrPanel({
         {pr.state === "OPEN" &&
           !pr.isDraft &&
           caps.reviewComments &&
-          !reviewing && (
-          /* The one call to action on this canvas, so it takes the accent
-             plate. Green is the app's affirmative tone (approve, merge) and
-             the state glyph beside it is already wearing it; a green Review
-             button next to a green Open glyph made two different things
-             claim the same colour. */
-          <Button
-            variant="primary"
-            size="sm"
-            className={pr.staging?.url ? undefined : "ml-auto"}
-            onClick={() => {
-              setReviewing(true);
-              setPage("files");
-            }}
-          >
-            Review
-          </Button>
-        )}
-        {canMergeAfterReview && (
-          <Button
-            variant="success-strong"
-            size="sm"
-            className={
-              !pr.staging?.url && !(caps.reviewComments && !reviewing)
-                ? "ml-auto"
-                : undefined
-            }
-            icon={!merging && !confirmMerge ? <IconGitMerge size={18} /> : undefined}
-            disabled={merging}
-            onClick={handleMerge}
-            title="Squash and merge this pull request"
-          >
-            {merging
-              ? "Merging…"
-              : confirmMerge
-                ? "Confirm merge"
-                : headerCompact
-                  ? "Merge"
-                  : "Squash and merge"}
-          </Button>
-        )}
+          !reviewing &&
+          !headerCompact && (
+            /* The one call to action on a wide canvas, so it takes the accent
+               plate. Compact canvases move it into the actions menu instead
+               of squeezing the repository and pull request identity. */
+            <Button
+              variant="primary"
+              size="sm"
+              className={pr.staging?.url ? undefined : "ml-auto"}
+              onClick={() => {
+                setDiffSource("pull-request");
+                setReviewing(true);
+                setPage("files");
+              }}
+            >
+              Review
+            </Button>
+          )}
         <Menu.Root>
           <Tooltip label="Pull request actions">
             <Menu.Trigger
@@ -2015,10 +1958,26 @@ export function PrPanel({
             />
           </Tooltip>
           <Menu.Popup align="end">
+            {headerCompact &&
+              pr.state === "OPEN" &&
+              !pr.isDraft &&
+              caps.reviewComments &&
+              !reviewing && (
+                <Menu.Item
+                  onClick={() => {
+                    setDiffSource("pull-request");
+                    setReviewing(true);
+                    setPage("files");
+                  }}
+                >
+                  <IconMessage size={18} className={MENU_ICON} />
+                  <span className="min-w-0 flex-1 truncate">Start review</span>
+                </Menu.Item>
+              )}
             <Menu.Item
               render={<a href={pr.url} target="_blank" rel="noopener" />}
             >
-              <BrandMark name={provider.key} size={18} className={MENU_ICON} />
+              <BrandMark name={provider.key} size={16} className={MENU_ICON} />
               <span className="min-w-0 flex-1 truncate">
                 Open on {provider.name}
               </span>
@@ -2049,16 +2008,16 @@ export function PrPanel({
               <>
                 <Menu.Separator />
                 {canMergeAfterReview && (
-                  <Menu.Item
-                    onClick={handleMerge}
-                    closeOnClick={confirmMerge}
-                    disabled={merging}
-                  >
-                    <IconGitMerge size={18} className={MENU_ICON} />
+                  <Menu.Item onClick={handleMerge} disabled={merging}>
+                    {mergeScheduled ? (
+                      <IconUndo size={18} className={MENU_ICON} />
+                    ) : (
+                      <IconGitMerge size={18} className={MENU_ICON} />
+                    )}
                     {merging
                       ? "Merging…"
-                      : confirmMerge
-                        ? "Confirm squash and merge"
+                      : mergeScheduled
+                        ? "Undo"
                         : "Squash and merge"}
                   </Menu.Item>
                 )}
@@ -2079,31 +2038,34 @@ export function PrPanel({
             )}
           </Menu.Popup>
         </Menu.Root>
-      </header>
-
-      {caps.stacks && (
-        <StackSection
-          pr={pr}
-          sessionId={sessionId}
-          repo={active?.repo}
-          onOpenPr={onOpenPr}
-          onLinked={load}
-        />
-      )}
+      </TopBar>
       {reviewBar}
+      </ReviewToolbar>
 
-      <div className="flex min-h-0 flex-1">
-        {page === "files" && fileListMode !== "hidden" && files.length > 0 && (
-          <PrFileTree
-            files={reviewFiles}
-            mode={fileListMode}
-            showFileStats={fileStatsSetting === "1"}
-            onOpenFile={scrollToFile}
-          />
-        )}
+      {caps.stacks && !pr.stack && (
+        <StackLinkSection pr={pr} sessionId={sessionId} onLinked={load} />
+      )}
+
+      <div
+        className={`flex min-h-0 flex-1 ${compactToolbar ? `${WS_SUMMARY_REVIEW_CANVAS_CLEARANCE} desktop:flex-none desktop:[--review-file-tree-gap:0px] desktop:[--review-file-tree-top:60px]` : "desktop:pt-12"}`}
+      >
+        {page === "files" &&
+          diffSource === "pull-request" &&
+          fileListMode !== "hidden" &&
+          files.length > 0 && (
+            <PrFileTree
+              files={reviewFiles}
+              mode={fileListMode}
+              showFileStats={showFileStats}
+              onOpenFile={scrollToFile}
+            />
+          )}
 
         <main
-          className={`min-w-0 flex-1 overflow-y-auto bg-surface [--review-file-header-top:0px] ${reviewing ? "pb-24 phone:pb-36" : "pb-4"}`}
+          // Wide review scrolls the toolbar and canvas in one container. Once
+          // the toolbar sticks, file titles clear its 10px inset, 40px row,
+          // 2px border, 8px section gap, and the file card's own 1px border.
+          className={`min-w-0 flex-1 bg-surface [--review-file-header-top:0px] ${compactToolbar ? "overflow-y-visible desktop:[--review-file-header-top:61px]" : "overflow-y-auto"} ${reviewing ? "pb-24 phone:pb-36" : "pb-4"}`}
         >
           {page === "overview" ? (
             <SelectionToSession
@@ -2126,15 +2088,28 @@ export function PrPanel({
                     pr={pr}
                   />
                 </div>
-                {!railStacked && rail}
+                {!railStacked && !hideWideOverviewRail && rail}
               </div>
             </SelectionToSession>
           ) : (
-            // The same 24px inset the chrome rows above use, so a file card's
-            // edges land under the tab strip's first tab and the view control's
-            // right edge rather than 4px inside them.
-            <div className="mx-auto max-w-[1500px] px-6 py-6 phone:px-2">
-              {codeView === "flow" ? (
+            // Keep the review canvas close to the viewport edge. The file
+            // section's own border now carries the shape instead of a wide
+            // gray gutter around it.
+            <div
+              className={`mx-auto max-w-[1500px] px-2 pb-2 phone:px-1 ${compactToolbar ? "pt-0" : "pt-2"}`}
+            >
+              {diffSource === "worktree" ? (
+                <DiffPanel
+                  sessionId={sessionId}
+                  isRunning={sessionRunning}
+                  canSend={!!send && !!editGate}
+                  send={send ?? NOOP_SEND}
+                  repo={activeRepoId}
+                  toolbarTarget={worktreeToolbarTarget}
+                  source="worktree"
+                  onSourceChange={setDiffSource}
+                />
+              ) : codeView === "flow" ? (
                 <CodeFlow
                   data={codeFlow?.key === codeFlowKey ? codeFlow.data : null}
                   loading={
@@ -2221,7 +2196,7 @@ export function PrPanel({
                             <div className="text-item-title font-semibold text-fg">
                               {section.title}
                             </div>
-                            <div className="mt-1 text-meta leading-relaxed text-dim">
+                            <div className="mt-1 text-supporting leading-relaxed text-dim">
                               {section.explanation}
                             </div>
                           </div>
@@ -2310,7 +2285,7 @@ export function PrPanel({
                       : "No pending comments"}
             </div>
             <div
-              className={`mt-0.5 truncate text-meta ${closeError ? "text-red" : "text-faint"}`}
+              className={`mt-0.5 truncate text-supporting ${closeError ? "text-red" : "text-faint"}`}
               title={closeError || undefined}
             >
               {closeError ||
@@ -2357,6 +2332,9 @@ export function PrPanel({
           onEventChange={setReviewEvent}
           defaultSummary={summaryDraft}
           canMerge={canMergeAfterReview}
+          onFixChecks={
+            checkSummary.failed > 0 && send ? handleFixChecks : undefined
+          }
           mergeAfterReview={mergeAfterReview}
           onMergeAfterReviewChange={setMergeAfterReview}
           error={reviewError || mergeError}
@@ -2393,6 +2371,7 @@ function FinishReviewDialog({
   onEventChange,
   defaultSummary,
   canMerge,
+  onFixChecks,
   mergeAfterReview,
   onMergeAfterReviewChange,
   error,
@@ -2407,6 +2386,7 @@ function FinishReviewDialog({
   onEventChange: (event: ReviewEvent) => void;
   defaultSummary: string;
   canMerge: boolean;
+  onFixChecks?: (summary: string) => void;
   mergeAfterReview: boolean;
   onMergeAfterReviewChange: (merge: boolean) => void;
   error: string | null;
@@ -2436,7 +2416,11 @@ function FinishReviewDialog({
   ];
   return (
     <Modal.Root open={open} onOpenChange={(next) => !next && onClose(summary)}>
-      <Modal.Content widthClassName="max-w-[30rem]" initialFocus={summaryRef}>
+      <Modal.Content
+        widthClassName="max-w-[30rem]"
+        className="bottom-[max(1rem,env(safe-area-inset-bottom))] left-auto right-4 top-auto translate-x-0 translate-y-0 origin-bottom-right phone:left-1/2 phone:right-auto phone:-translate-x-1/2 phone:origin-bottom"
+        initialFocus={summaryRef}
+      >
         <Modal.Header
           title="Finish review"
           description={
@@ -2467,7 +2451,7 @@ function FinishReviewDialog({
                 <span className="text-label font-semibold text-fg">
                   {verdict.label}
                 </span>
-                <span className="text-meta text-dim">{verdict.hint}</span>
+                <span className="text-supporting text-dim">{verdict.hint}</span>
               </span>
             </button>
           ))}
@@ -2496,6 +2480,21 @@ function FinishReviewDialog({
               Squash and merge as well
             </span>
           </label>
+        )}
+        {event === "APPROVE" && !canMerge && onFixChecks && (
+          <div className="flex items-center justify-between gap-3 rounded-row bg-red-soft px-3 py-2">
+            <span className="text-supporting text-red">
+              Checks must pass before you can merge.
+            </span>
+            <Button
+              variant="danger"
+              size="sm"
+              className="shrink-0"
+              onClick={() => onFixChecks(summary)}
+            >
+              Fix checks
+            </Button>
+          </div>
         )}
         {error && <div className="text-supporting text-red">{error}</div>}
         <Modal.Footer>

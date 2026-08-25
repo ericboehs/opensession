@@ -1,0 +1,88 @@
+html,
+html * {
+  scrollbar-width: none;
+}
+
+html ::-webkit-scrollbar {
+  display: none;
+}
+
+html [class*="z-[9500]"] {
+  display: none;
+}
+
+html [aria-label="Open settings"],
+html [aria-label="Dictate"],
+html [title="View archived sessions"],
+html a[href^="/pr/"] {
+  cursor: default;
+}
+
+html [aria-label="Open the Desk"] {
+  display: none;
+}
+
+.sidebar-independent-section:has(.sidebar-people-row) {
+  display: none;
+}
+
+.sidebar-container .repo-tile {
+  display: none;
+}
+
+.demo-status-bar {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .demo-status-bar {
+    position: fixed;
+    z-index: 40;
+    top: 0;
+    right: 0;
+    left: 0;
+    display: flex;
+    height: env(safe-area-inset-top, 0px);
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 22px 0 26px;
+    color: var(--text);
+    pointer-events: none;
+  }
+
+  .demo-status-bar time {
+    font-size: 15px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.01em;
+  }
+
+  .demo-status-icons {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .demo-status-icons svg {
+    display: block;
+  }
+}
+
+html.wco .sidebar-brand {
+  position: relative;
+}
+
+html.wco .sidebar-brand::before {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  left: 20px;
+  width: 12px;
+  height: 12px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: #ff5f57;
+  box-shadow: 20px 0 #febc2e, 40px 0 #28c840;
+  content: "";
+  pointer-events: none;
+}

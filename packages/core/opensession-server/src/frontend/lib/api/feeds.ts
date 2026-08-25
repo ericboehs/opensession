@@ -4,7 +4,7 @@ import type {
 	FeedItem,
 } from "../types";
 
-/** The sidebar's generic feed bands (Tella videos, … — the feeds design). */
+/** The sidebar's generic feed bands (videos, … — the feeds design). */
 export async function fetchFeeds(): Promise<FeedDescriptor[]> {
 	const body = await request<{ feeds?: FeedDescriptor[] }>("/feeds", {
 		label: "Failed to fetch feeds",

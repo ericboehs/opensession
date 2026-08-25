@@ -3,7 +3,7 @@
  *
  * handleMessageEvent  — DM messages
  * handleMentionEvent  — @mention in channels
- * processMessage      — runs a queued message through runAgent (opencode engine)
+ * processMessage      — runs a queued message through runAgent (pi engine)
  */
 
 import { copyFileSync, existsSync } from "fs";
@@ -66,7 +66,11 @@ import { tryGetSessionControl } from "../../server/session-control";
 import { pinForUser } from "../../server/pins";
 import { getUiPrefs } from "../../server/ui-prefs";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
-import { runAgent, cancelAgentRun } from "../../server/agent-runner";
+import {
+  runAgent,
+  cancelAgentRun,
+  restartContinuationPrompt,
+} from "../../server/agent-runner";
 import { shouldPersistModelSwitch, type ImageInput } from "../../server/run-events";
 import {
   registerSessionMcpServers,
@@ -78,7 +82,7 @@ import { ensureGeneratedTitle } from "../../server/generated-titles";
 import { invalidateSessionsCache } from "../../server/session-cache";
 import {
   getDefaultModel,
-  toOpencodeModel,
+  toPiModel,
   interactiveFallbackModel,
   providerFor,
   resolveModel,
@@ -154,6 +158,7 @@ async function activateLinkedSession(
   text: string,
   channel: string,
   threadTs: string,
+  messageTs: string,
   slackUserId: string,
 ): Promise<{ status: string; message: string }> {
   const control = tryGetSessionControl();
@@ -162,7 +167,11 @@ async function activateLinkedSession(
     sessionId,
     text,
     slackIdToFirstName(slackUserId) || slackUserId,
-    { busy: "queue", slackReplyTo: { channel, threadTs } },
+    {
+      busy: "queue",
+      slackReplyTo: { channel, threadTs },
+      deliveryId: `slack:${channel}:${messageTs}`,
+    },
   );
   if (res.status !== "error") {
     pinSlackSession(sessionId, slackUserId);
@@ -588,7 +597,7 @@ export async function handleModelCommand(
 // Tool-name normalization + post-push format pass
 // ---------------------------------------------------------------------------
 
-/** OpenCode emits lowercase tool names ("bash", "todowrite"); the streamer
+/** Pi emits lowercase tool names ("bash", "todowrite"); the streamer
  *  helpers (buildToolStatus / isSilentTool) key on the Claude-style names. */
 const TOOL_NAME_MAP: Record<string, string> = {
   bash: "Bash",
@@ -612,10 +621,10 @@ function normalizeToolName(name: string): string {
   return TOOL_NAME_MAP[name.toLowerCase()] || name;
 }
 
-// The old Claude PostToolUse "just format after git push" hook is gone from
-// here: that's tella-fusion repo policy, not agent code — it now lives in
-// tella-fusion's own .opencode/plugin (OpenCode tool.execute.after hook), so
-// every opencode run in that repo gets it regardless of which loop drove it.
+// Formatting hooks are repository policy, not agent code: a repo that wants
+// one carries it in its own .pi/plugin (Pi tool.execute.after
+// hook), so every pi run in that repo gets it regardless of which loop
+// drove it.
 
 // ---------------------------------------------------------------------------
 // processMessage — core: runs a queued message through runAgent
@@ -875,7 +884,7 @@ export async function processMessage(
       isDM: kind.isDM,
       isPrivate: kind.isPrivate,
     };
-    memoryAppend = await renderMemoryForPrompt(memCtx);
+    memoryAppend = await renderMemoryForPrompt(memCtx, msg.prompt);
     const memoryHash = `${channel}:${msg.userId}:${memoryAppend}`.substring(0, 40); // Simple hash
 
     // Check cache: reuse admin tools if memory hasn't changed
@@ -937,7 +946,7 @@ export async function processMessage(
     "When the user says things like \"ask Grant for X\", \"get John to review when I'm done\", or \"check with Jaap before shipping\", use ask_human rather than just telling them to do it.";
 
   // In-process MCP for this run: the slack-context server set (channel memory,
-  // github report-back, slack ask handler). OpenCode reaches these through the
+  // github report-back, slack ask handler). Pi reaches these through the
   // run-rpc stdio proxies, which execute against the per-session override
   // registered below — NOT the generic interactive builder.
   const bksId = `slack-${sessionKey}`;
@@ -959,9 +968,20 @@ export async function processMessage(
   // Attachments: download the message/thread images now (refs were captured at
   // event intake) so they reach the engine as native image parts on the opening
   // prompt, instead of the agent having to fetch them afterwards.
-  let runPrompt = prompt;
+  // A durable Slack queue item may return after a service restart. Resume the
+  // existing engine turn with hidden harness context instead of submitting the
+  // person's original Slack message as a second visible user turn.
+  const continuingAfterRestart =
+    msg.restartRecovery && !!session.claudeSessionId;
+  let runPrompt = continuingAfterRestart
+    ? restartContinuationPrompt(prompt)
+    : prompt;
+  if (memoryAppend) runPrompt = `${memoryAppend}\n\n${runPrompt}`;
   let images: ImageInput[] | undefined;
-  if (msg.files?.length) {
+  // A resumed engine already has its opening attachments in history. Sending
+  // them again would create another image-bearing user turn. If no engine id
+  // was ever established, this is a true rerun and must download them again.
+  if (msg.files?.length && !continuingAfterRestart) {
     try {
       const res = await downloadSlackImages(msg.files);
       if (res.images.length) images = res.images;
@@ -980,11 +1000,12 @@ export async function processMessage(
       // Interactive Slack runs get the full connector set, as before.
       mcpServers: "all",
       prompt: runPrompt,
+      promptEntryId: msg.promptEntryId,
       images,
       sessionId: session.claudeSessionId || undefined,
       cwd,
       mode: "code",
-      model: toOpencodeModel(session.model || getDefaultModel()),
+      model: toPiModel(session.model || getDefaultModel()),
       // Interactive Slack runs are as interactive as the web UI: when the
       // primary model exhausts (e.g. the small Fable weekly bucket), let
       // runAgent's tier graph carry the turn onto Sol/Opus instead of
@@ -996,10 +1017,10 @@ export async function processMessage(
       user: msg.userId,
       author: gitIdentityFor(msg.userId),
       // Interactive Slack runs keep AWS read access via the injected
-      // short-lived creds (restores a2655fc9, lost in the opencode cutover).
+      // short-lived creds (restores a2655fc9, lost in the pi cutover).
       aws: true,
       inProcessMcp,
-      reposNote: SLACK_SYSTEM_PROMPT_APPEND + ADMIN_TOOLS_PROMPT + memoryAppend,
+      reposNote: SLACK_SYSTEM_PROMPT_APPEND + ADMIN_TOOLS_PROMPT,
       // osSessionId feeds the in-process MCP proxy path; resume-on-boot
       // skips "slack" kinds (the queue re-delivers interrupted messages).
       journal: { osSessionId: bksId, kind: "slack" },
@@ -1223,6 +1244,7 @@ export async function handleMessageEvent(event: any): Promise<void> {
           text,
           channel,
           thread_ts,
+          ts,
           user,
         );
         if (res.status !== "error")
@@ -1469,6 +1491,7 @@ export async function handleMentionEvent(event: any): Promise<void> {
         cleanText,
         channel,
         thread_ts,
+        ts,
         user,
       );
       // A stale link (session deleted since the index was built) falls through

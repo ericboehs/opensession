@@ -6,32 +6,32 @@ import {
 
 describe("suggestedShippedChangeMessage", () => {
 	test("turns an imperative PR title into a short team update", () => {
-		expect(
-			suggestedShippedChangeMessage("Adopt the OpenSession toggle style", "tella-fusion"),
-		).toBe("The toggle style is now updated in Tella.");
+		expect(suggestedShippedChangeMessage("Adopt the new toggle style")).toBe(
+			"The new toggle style is now updated.",
+		);
 	});
 
-	test("does not repeat the product name", () => {
-		expect(suggestedShippedChangeMessage("Update Tella's toggle style", "tella-fusion")).toBe(
-			"Tella's toggle style is now updated.",
+	test("keeps a title that already reads as an outcome", () => {
+		expect(suggestedShippedChangeMessage("Toggles now match the design")).toBe(
+			"Toggles now match the design.",
 		);
 	});
 
 	test("turns a visibility title into an outcome", () => {
-		expect(suggestedShippedChangeMessage("Show background names via tooltips", "tella-fusion")).toBe(
-			"Background names are now visible via tooltips in Tella.",
+		expect(suggestedShippedChangeMessage("Show background names via tooltips")).toBe(
+			"Background names are now visible via tooltips.",
 		);
 	});
 
 	test("turns a naming title into a product outcome", () => {
-		expect(suggestedShippedChangeMessage("Name built-in video backgrounds", "tella-fusion")).toBe(
-			"Built-in video backgrounds now have names in Tella.",
+		expect(suggestedShippedChangeMessage("Name built-in video backgrounds")).toBe(
+			"Built-in video backgrounds now have names.",
 		);
 	});
 
 	test("keeps an unfamiliar title declarative and editable", () => {
-		expect(suggestedShippedChangeMessage("Toggle polish", "tella-fusion")).toBe(
-			"Toggle polish is now available in Tella.",
+		expect(suggestedShippedChangeMessage("Toggle polish")).toBe(
+			"Toggle polish is now available.",
 		);
 	});
 
@@ -39,7 +39,6 @@ describe("suggestedShippedChangeMessage", () => {
 		expect(
 			suggestedShippedChangeMessage(
 				"Update backgrounds",
-				"tella-fusion",
 				"Backgrounds now have names that are visible via tooltips.\n\nVerified on mobile.",
 			),
 		).toBe("Backgrounds now have names that are visible via tooltips.");
@@ -51,7 +50,6 @@ describe("suggestedShippedChangeMessage", () => {
 		expect(
 			suggestedShippedChangeMessage(
 				"Name built-in video backgrounds",
-				"tella-fusion",
 				"Updated all 40 to their real macOS release names and variants, including:\n\n- Mac Tahoe Beach Dawn",
 			),
 		).toBe(

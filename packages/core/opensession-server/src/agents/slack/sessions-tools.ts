@@ -18,6 +18,12 @@
  */
 import { audit } from "../../server/audit";
 import {
+  cancelAgentWait,
+  getAgentWait,
+  registerPrChecksAgentWait,
+  registerTimerAgentWait,
+} from "../../server/agent-waits";
+import {
   configuredServer,
   defaultRepo,
   personaName,
@@ -36,10 +42,9 @@ import { OPENSESSION_SESSIONS_DIR } from "../../server/paths";
 import { agentActor, isWorkerActor, workerActor } from "../../server/session-actors";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { userMatchesAny } from "../../server/shared/user-mappings";
-import { migrateSessionEngine } from "../../server/migrate-engine";
+import { migrateSessionEngine } from "../../server/session-model-migration";
 import { resolveSessionRepoContext } from "../../server/session-repos";
 import { transferSessionFile } from "../../server/session-file-transfer";
-import { branchNameFromPrompt } from "../../server/suggest-branch";
 import type { NativeSessionFile, TranscriptEntry } from "../../server/types";
 
 export interface SessionsToolContext {
@@ -61,6 +66,36 @@ export interface SessionsToolContext {
 
 function text(s: string) {
   return { content: [{ type: "text" as const, text: s }] };
+}
+
+function durableToolRequestId(
+  ctx: SessionsToolContext,
+  toolName: string,
+  extra:
+    | {
+        requestId?: string | number;
+        _meta?: { opensessionToolCallId?: unknown };
+      }
+    | undefined,
+  args?: unknown,
+): string {
+  const durableCallId =
+    typeof extra?._meta?.opensessionToolCallId === "string"
+      ? extra._meta.opensessionToolCallId
+      : undefined;
+  // The JSON-RPC requestId restarts from 1 on every MCP connection, so on
+  // its own it is not unique across callers. Mix the tool arguments into
+  // the fallback id: two different calls that happen to share a requestId
+  // can no longer collide ("command id was reused with another payload"),
+  // while true retries (same requestId, same payload) still deduplicate.
+  const stableCallId =
+    durableCallId ??
+    (extra?.requestId != null
+      ? `${String(extra.requestId)}:${new Bun.CryptoHasher("sha256").update(JSON.stringify(args) ?? "null").digest("hex")}`
+      : crypto.randomUUID());
+  const raw = `${ctx.currentSessionId || ctx.createdBy}:${toolName}:${stableCallId}`;
+  const digest = new Bun.CryptoHasher("sha256").update(raw).digest("hex");
+  return `mcp-${digest}`;
 }
 
 const STATE_ICON: Record<SessionState, string> = {
@@ -189,13 +224,11 @@ const WORKER_REPORT_SENTINEL = "<!--os:worker-report-->";
 
 const SESSION_NOTICE_SENTINEL = "<!--os:session-notice-->";
 
-/** Mark an explicitly informational cross-session heads-up. Other messages sent
- * through send_to_session remain ordinary user turns that drive the target. */
-export function sessionNoticePayload(message: string): string {
-  const body = message.trim();
-  return /^Heads-up from another session(?:\s|\(|:)/i.test(body)
-    ? `${SESSION_NOTICE_SENTINEL}\n${body}`
-    : message;
+/** Mark an agent-authored cross-session message for notice rendering. The
+ * payload still drives the target's next turn, but it must never read as words
+ * the session owner typed. */
+export function sessionMessagePayload(message: string): string {
+  return `${SESSION_NOTICE_SENTINEL}\n${message}`;
 }
 
 /**
@@ -397,6 +430,7 @@ export async function spawnTaskImpl(
   args: SpawnTaskArgs,
   ctx: SessionsToolContext,
   deps: SpawnTaskDeps = defaultSpawnDeps(),
+  requestId?: string,
 ): Promise<SpawnTaskResult> {
   if (!args.prompt?.trim()) return { ok: false, error: "Need a prompt to spawn a task." };
   const mode = args.mode || "code";
@@ -444,6 +478,8 @@ export async function spawnTaskImpl(
     reportBack: Boolean(caller),
   });
   const { id, createdBy, createdAt } = await deps.control.createSession({
+    requestId,
+    requestScope: caller || ctx.createdBy,
     prompt,
     repo: args.repo,
     mode,
@@ -510,11 +546,12 @@ export async function taskStatusImpl(
   return parts.join("\n");
 }
 
-export function cancelTaskImpl(
+export async function cancelTaskImpl(
   args: { taskId: string },
   deps: SpawnTaskDeps = defaultSpawnDeps(),
-): string {
-  const ok = deps.control.cancelSession(args.taskId);
+  requestId?: string,
+): Promise<string> {
+  const ok = await deps.control.cancelSession(args.taskId, { requestId });
   return ok
     ? `Cancelled task \`${args.taskId}\`.`
     : `Nothing to cancel on \`${args.taskId}\` (idle, done, or an external run this server doesn't own).`;
@@ -598,6 +635,120 @@ export function createSessionsMcpServer(
       // Control (trusted user only)
       // ---------------------------------------------------------------------
       tool(
+        "wait_for",
+        "End this turn cleanly and wake this same session later without sleeping in a tool call. Register the wait, then write the human a normal status/final message and STOP the turn. A timer wakes after the requested delay. A pr_checks wait polls durably outside the model turn, waits for the check set to remain settled, then starts a new turn with the result; it also wakes on PR close/merge or timeout. One wait may be active per session, and a new one replaces it. Never call sleep after this tool succeeds.",
+        {
+          kind: z
+            .enum(["timer", "pr_checks"])
+            .describe("timer for a one-shot delay, or pr_checks to wake when this branch's PR checks settle."),
+          seconds: z
+            .number()
+            .optional()
+            .describe("Timer delay in seconds, required for kind=timer. Minimum 10 seconds, maximum 24 hours."),
+          repo: z
+            .string()
+            .optional()
+            .describe("Registered repo id for kind=pr_checks. Defaults to this session's primary repo."),
+          branch: z
+            .string()
+            .optional()
+            .describe("PR branch for kind=pr_checks. Defaults to this session's primary branch."),
+          timeout_seconds: z
+            .number()
+            .optional()
+            .describe("Maximum PR wait before waking anyway. Defaults to 2 hours, maximum 24 hours."),
+          prompt: z
+            .string()
+            .optional()
+            .describe("Instructions for the new turn after wake-up. Keep them self-contained. A sensible continuation is supplied by default."),
+        },
+        async (
+          args: {
+            kind: "timer" | "pr_checks";
+            seconds?: number;
+            repo?: string;
+            branch?: string;
+            timeout_seconds?: number;
+            prompt?: string;
+          },
+          extra: any,
+        ) => {
+          const sessionId = ctx.currentSessionId;
+          if (!sessionId)
+            return text("This run has no Open Session id, so it cannot register a background wait.");
+          const waitId = durableToolRequestId(ctx, "wait_for", extra, args);
+          const current = getSessionControl().getSession(sessionId);
+          const result =
+            args.kind === "timer"
+              ? registerTimerAgentWait({
+                  sessionId,
+                  user: ctx.createdBy,
+                  seconds: args.seconds ?? Number.NaN,
+                  prompt: args.prompt,
+                  waitId,
+                })
+              : registerPrChecksAgentWait({
+                  sessionId,
+                  user: ctx.createdBy,
+                  repo: args.repo || current?.repo || "",
+                  branch: args.branch || current?.branch || "",
+                  timeoutSeconds: args.timeout_seconds,
+                  prompt: args.prompt,
+                  waitId,
+                });
+          if (!result.ok) return text(result.error);
+          audit({
+            msg: "agent_wait_registered",
+            session_id: sessionId,
+            wait_id: result.wait.id,
+            wait_kind: result.wait.kind,
+            replaced: result.replaced,
+          });
+          const when =
+            result.wait.kind === "timer"
+              ? new Date(result.wait.dueAt).toISOString()
+              : `when ${result.wait.repo}/${result.wait.branch} checks settle (timeout ${new Date(result.wait.deadlineAt).toISOString()})`;
+          return text(
+            `Background wait \`${result.wait.id}\` registered for ${when}. ` +
+              `${result.replaced ? "It replaced the previous wait. " : ""}` +
+              "Now write the human a concise status message and end this turn. Do not poll or sleep; this session will be triggered automatically.",
+          );
+        },
+      ),
+      tool(
+        "wait_status",
+        "Inspect the background wait registered by this session.",
+        {},
+        async () => {
+          const sessionId = ctx.currentSessionId;
+          if (!sessionId) return text("This run has no Open Session id.");
+          const wait = getAgentWait(sessionId);
+          if (!wait) return text("No background wait is registered for this session.");
+          if (wait.kind === "timer")
+            return text(`Timer wait \`${wait.id}\` wakes at ${new Date(wait.dueAt).toISOString()}.`);
+          return text(
+            `PR wait \`${wait.id}\` watches ${wait.repo}/${wait.branch}; timeout ${new Date(wait.deadlineAt).toISOString()}.`,
+          );
+        },
+      ),
+      tool(
+        "cancel_wait",
+        "Cancel this session's registered background wait. This does not stop a currently running turn.",
+        {},
+        async () => {
+          const sessionId = ctx.currentSessionId;
+          if (!sessionId) return text("This run has no Open Session id.");
+          const cancelled = cancelAgentWait(sessionId);
+          if (cancelled)
+            audit({ msg: "agent_wait_cancelled", session_id: sessionId });
+          return text(
+            cancelled
+              ? "Background wait cancelled."
+              : "No background wait was registered.",
+          );
+        },
+      ),
+      tool(
         "answer_session_question",
         "Answer a session that's paused on a question (state 'waiting_question'). Provide answers as a map from each question's header to the chosen option label (see get_session for the headers and options). This unblocks the run so it continues.",
         {
@@ -606,8 +757,13 @@ export function createSessionsMcpServer(
             .record(z.string(), z.string())
             .describe("Map of question header → chosen option label, e.g. { \"Auth method\": \"OAuth\" }."),
         },
-        async (args: { id: string; answers: Record<string, string> }) => {
-          const ok = getSessionControl().answerQuestion(args.id, args.answers);
+        async (
+          args: { id: string; answers: Record<string, string> },
+          extra: any,
+        ) => {
+          const ok = await getSessionControl().answerQuestion(args.id, args.answers, {
+            requestId: durableToolRequestId(ctx, "answer_question", extra, args),
+          });
           return text(
             ok
               ? `Answered \`${args.id}\` — the run continues with your choice.`
@@ -627,16 +783,20 @@ export function createSessionsMcpServer(
             .optional()
             .describe("Optional caller-generated correlation id. Omit to receive a generated delivery receipt."),
         },
-        async (args: { id: string; message: string; delivery_id?: string }) => {
+        async (
+          args: { id: string; message: string; delivery_id?: string },
+          extra: any,
+        ) => {
           if (!args.message?.trim()) return text("Nothing to send (empty message).");
-          // Reporting to my own parent → prose + server-computed evidence,
-          // attributed as a worker. Explicit heads-ups get a UI-only notice
-          // marker; every other cross-session prompt is delivered as-is.
+          // Reporting to my own parent gets a worker card with server-computed
+          // evidence. Every other agent-authored delivery gets a session notice.
+          // Both still drive the target's next turn; neither is human prose.
           const payload = await workerReportPayload(args.id, args.message, ctx);
           const content = isWorkerActor(payload.user)
             ? payload.content
-            : sessionNoticePayload(payload.content);
-          const deliveryId = args.delivery_id?.trim() || crypto.randomUUID();
+            : sessionMessagePayload(payload.content);
+          const deliveryId =
+            args.delivery_id?.trim() || durableToolRequestId(ctx, "send_to_session", extra, args);
           const res = await getSessionControl().deliverToSession(
             args.id,
             content,
@@ -683,7 +843,7 @@ export function createSessionsMcpServer(
           source?: "workspace" | "assets";
           destination?: string;
           message?: string;
-        }) => {
+        }, extra: any) => {
           const fromId = ctx.currentSessionId;
           if (!fromId)
             return text("File sending needs a current Open Session session id.");
@@ -708,7 +868,7 @@ export function createSessionsMcpServer(
               args.message?.trim() || `Session ${fromId} sent you a file.`,
               `Received asset: \`${file.path}\` (${file.size} bytes). Read it with the opensession-assets tools or open ${download}.`,
             ].join("\n\n");
-            const deliveryId = crypto.randomUUID();
+            const deliveryId = durableToolRequestId(ctx, "send_file_to_session", extra, args);
             const delivered = await ctrl.deliverToSession(
               to.id,
               notification,
@@ -740,8 +900,10 @@ export function createSessionsMcpServer(
         "cancel_session",
         "Cancel a session's in-flight run and drop any queued messages. Only works for runs this server owns (web UI / Slack / automation sessions) — external CLI/tmux sessions are observe-only.",
         { id: z.string().describe("The session id to cancel.") },
-        async (args: { id: string }) => {
-          const ok = getSessionControl().cancelSession(args.id);
+        async (args: { id: string }, extra: any) => {
+          const ok = await getSessionControl().cancelSession(args.id, {
+            requestId: durableToolRequestId(ctx, "cancel_session", extra, args),
+          });
           if (ok) {
             audit({
               msg: "run_cancelled",
@@ -775,7 +937,10 @@ export function createSessionsMcpServer(
             .string()
             .optional()
             .describe("Optional fallback branch for code mode. When the worker can't share the parent workspace's worktree, an omitted branch is generated from the prompt. Ignored for ask."),
-          model: z.string().optional().describe("Optional model id (e.g. 'claude-opus-5')."),
+          model: z
+            .string()
+            .optional()
+            .describe("Optional model id or unambiguous visible slug (e.g. 'claude-opus-5' or 'ox-alpha')."),
           mcpServers: z
             .array(z.string())
             .optional()
@@ -821,7 +986,7 @@ export function createSessionsMcpServer(
           sandbox?: boolean | "docker" | "daytona" | "e2b" | "box" | "modal" | "microvm" | "lambda-microvm";
           accountId?: string;
           forkFrom?: { sourceId: string; messageId?: string };
-        }) => {
+        }, extra: any) => {
           if (!args.prompt?.trim()) return text("Need a prompt to start a session.");
           const parentSessionId = args.standalone
             ? undefined
@@ -834,11 +999,10 @@ export function createSessionsMcpServer(
                 reportBack: shouldReportBack,
               })
             : args.prompt;
-          const branch =
-            args.mode === "code" && !args.branch?.trim()
-              ? await (deps.branchNameFromPrompt ?? branchNameFromPrompt)(args.prompt)
-              : args.branch;
+          const branch = args.branch;
           const { id, createdBy, createdAt } = await getSessionControl().createSession({
+            requestId: durableToolRequestId(ctx, "create_session", extra, args),
+            requestScope: ctx.currentSessionId || ctx.createdBy,
             prompt,
             repo: args.repo,
             mode: args.mode,
@@ -854,7 +1018,7 @@ export function createSessionsMcpServer(
           });
           return text(
             [
-              `Started session \`${id}\` (${args.mode === "code" ? `code on ${branch}` : "ask"}). Metadata: createdBy=${JSON.stringify(createdBy)} · createdAt=${createdAt}. It'll appear in list_sessions as it boots.`,
+              `Started session \`${id}\` (${args.mode === "code" ? (branch ? `code on ${branch}` : "code session") : "ask"}). Metadata: createdBy=${JSON.stringify(createdBy)} · createdAt=${createdAt}. It'll appear in list_sessions as it boots.`,
               parentSessionId && shouldReportBack
                 ? `It is linked to \`${parentSessionId}\` and has instructions to report back there.`
                 : "",
@@ -864,12 +1028,12 @@ export function createSessionsMcpServer(
       ),
       tool(
         "migrate_session_engine",
-        "Migrate an existing session onto the OpenCode engine by flipping its model to an opencode/* id (e.g. opencode/anthropic/claude-sonnet-5). Does NOT start a run: the session's NEXT prompt builds a transcript handoff from its claude/codex history and continues on a fresh OpenCode session — file, workspace, branch, title and UI history all stay. Refuses automation-owned sessions (the opencode engine hard-gates automations off) and sessions that are mid-run.",
+        "Migrate an existing session onto the Pi engine by flipping its model to an pi/* id (e.g. pi/anthropic/claude-sonnet-5). Does NOT start a run: the session's NEXT prompt builds a transcript handoff from its claude/codex history and continues on a fresh Pi session — file, workspace, branch, title and UI history all stay. Refuses automation-owned sessions (the pi engine hard-gates automations off) and sessions that are mid-run.",
         {
           sessionId: z.string().describe("The opensession session id to migrate, e.g. 'bks-…'."),
           model: z
             .string()
-            .describe("Target opencode model id: opencode/<provider>/<model>, e.g. opencode/anthropic/claude-sonnet-5."),
+            .describe("Target pi model id: pi/<provider>/<model>, e.g. pi/anthropic/claude-sonnet-5."),
         },
         async (args: { sessionId: string; model: string }) => {
           // Belt-and-braces busy check through the live registry (the helper
@@ -888,7 +1052,7 @@ export function createSessionsMcpServer(
           return text(
             `Migrated \`${res.sessionId}\` to ${res.to}` +
               (res.from ? ` (was ${res.from})` : "") +
-              ". The next prompt hands its history to the OpenCode engine and continues there."
+              ". The next prompt hands its history to the Pi engine and continues there."
           );
         }
       ),
@@ -911,12 +1075,17 @@ export function createSessionsMcpServer(
           prompt: z.string().describe("Self-contained task prompt: scope, relevant files, constraints, acceptance criteria, and what to report."),
           repo: z.string().optional().describe("Registered repo id. Defaults to this session's repo."),
           branch: z.string().optional().describe("Branch for code mode when the child can't share this session's worktree (standalone or different repo)."),
-          model: z.string().optional().describe("Optional model id (e.g. 'gpt-5.5' for a Codex worker, or a Claude model id)."),
+          model: z.string().optional().describe("Optional model id or unambiguous visible slug (e.g. 'gpt-5.6-sol', 'claude-opus-5', or 'ox-alpha')."),
           mode: z.enum(["ask", "code", "scratch"]).optional().describe("'code' (default) can edit files / open PRs; 'ask' is read-only."),
           sandbox: z.union([z.boolean(), z.enum(["docker", "daytona", "e2b", "box", "modal", "microvm", "lambda-microvm"])]).optional().describe("Run the child in an isolated sandbox: true = the server's default provider, or an explicit configured provider id."),
         },
-        async (args: SpawnTaskArgs) => {
-          const res = await spawnTaskImpl(args, ctx);
+        async (args: SpawnTaskArgs, extra: any) => {
+          const res = await spawnTaskImpl(
+            args,
+            ctx,
+            undefined,
+            durableToolRequestId(ctx, "spawn_task", extra, args),
+          );
           if (!res.ok) return text(res.error);
           return text(
             `Spawned task \`${res.taskId}\` — ${res.url}\nMetadata: createdBy=${JSON.stringify(res.createdBy)} · createdAt=${res.createdAt}. It runs in the background; poll with task_status(taskId)${ctx.isAdmin ? ", answer questions with answer_session_question," : ""} and stop with cancel_task.`
@@ -937,7 +1106,14 @@ export function createSessionsMcpServer(
         "cancel_task",
         "Cancel a spawned task's in-flight run (drops queued messages too). Only runs this server owns.",
         { taskId: z.string().describe("The task/session id returned by spawn_task.") },
-        async (args: { taskId: string }) => text(cancelTaskImpl(args))
+        async (args: { taskId: string }, extra: any) =>
+          text(
+            await cancelTaskImpl(
+              args,
+              undefined,
+              durableToolRequestId(ctx, "cancel_task", extra, args),
+            ),
+          )
       )
     );
   }

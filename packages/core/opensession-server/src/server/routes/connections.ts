@@ -9,9 +9,146 @@
 import type { RouteContext } from "./context";
 import { getAgents } from "../agents-registry";
 import { addMcpServer, getConnections, readMcpConfig, removeMcpServer, setMcpAllowedUsers } from "../connections";
-import { refreshOpencodePickerModels } from "../models";
-import { BRIDGE_PROVIDER_IDS, PROVIDER_ID_RE, addPickerModel, defaultPickerModelsForProvider, maskProviderKey, opencodeProviders, readOpencodeBridgeConfig, removeOpencodeProvider, removePickerModel, setBridgeEnabled, setOpencodeProvider } from "../opencode-config";
+import { refreshPickerModels } from "../models";
+import { BRIDGE_PROVIDER_IDS, PROVIDER_ID_RE, addPickerModel, defaultPickerModelsForProvider, maskProviderKey, modelProviders, readModelProviderConfig, removeModelProvider, removePickerModel, setModelProvider } from "../model-providers";
 import { isPiModelId, piEngineEnabled, readPiEngineConfig, setPiEnabled, setPiPickerModels } from "../pi-config";
+
+/** Navigate `integrations.github` in a raw parsed config object so the App
+ *  routes can set or drop its keys without disturbing anything else the file
+ *  holds. `create` mints the objects on the way down; otherwise a missing
+ *  section returns undefined. */
+function githubIntegrationSection(
+	config: Record<string, unknown>,
+	create: boolean,
+): Record<string, unknown> | undefined {
+	const asObj = (v: unknown): Record<string, unknown> | undefined =>
+		v && typeof v === "object" && !Array.isArray(v)
+			? (v as Record<string, unknown>)
+			: undefined;
+	let integrations = asObj(config.integrations);
+	if (!integrations) {
+		if (!create) return undefined;
+		integrations = {};
+		config.integrations = integrations;
+	}
+	let github = asObj(integrations.github);
+	if (!github) {
+		if (!create) return undefined;
+		github = {};
+		integrations.github = github;
+	}
+	return github;
+}
+
+/**
+ * Turn a simple-mode device connect into operator mode, inside the ONE request,
+ * when the install or app-setup recorded that intent
+ * (integrations.github.authOnConnect). Ordering is the whole safety property:
+ * the just-authorized GitHub login is rostered as the first admin BEFORE
+ * userPrAuth is flipped, and both land in a single atomic config write, so no
+ * persisted state ever has the sign-in gate on with nobody able to pass it. A
+ * web session for that login is then minted and returned as the auth cookie
+ * (mirrors routes/auth.ts), and the intent is cleared so it never re-runs.
+ *
+ * `login`/`name` are GitHub ground truth from the device-flow poll
+ * (github-auth.ts GET /user), never client-supplied. The token itself is already
+ * stored by pollGithubDeviceFlow, so after the flip soleGithubAccount() returns
+ * null and githubCredentialForLogin(login) — the same store, keyed by login —
+ * silently becomes this person's per-user credential; nothing is deleted.
+ *
+ * The break-glass recovery is untouched: editing config `userPrAuth:false` on the
+ * box restores access (opensession.ts), because webAuthRequired() keys on it.
+ */
+export async function bootstrapUserAuthOnConnect(
+	login: string,
+	name: string | undefined,
+): Promise<{ token: string; cookie: string; name: string } | { error: string }> {
+	const { rawTeam } = await import("./setup-team");
+	const { rawConfig, persistRawConfig, withConfigMutationLock } = await import(
+		"../config-mutation"
+	);
+	const { createWebSession, webAuthSetCookie } = await import("../web-auth");
+	const key = login.trim().toLowerCase();
+
+	const flip = await withConfigMutationLock(
+		async (): Promise<{ ok: true } | { error: string }> => {
+			const config = rawConfig();
+			// (a) Re-check the intent INSIDE the lock. The route checked
+			// githubAuthOnConnect() before acquiring it, but a concurrent device
+			// poll may have already consumed authOnConnect (rostered its own admin,
+			// flipped the gate). Without this the queued second poll would roster a
+			// second admin and mint a session against an already-enabled instance.
+			const github = githubIntegrationSection(config, true)!;
+			if (github.authOnConnect !== true)
+				return {
+					error: "GitHub sign-in was already enabled by another connection",
+				};
+			// The token was stored by pollGithubDeviceFlow BEFORE this lock, and
+			// simple mode keeps only one account. A concurrent poll that authorized
+			// a DIFFERENT account would have replaced the store, so flipping sign-in
+			// for `login` now would roster an admin whose token is gone
+			// (githubCredentialForLogin(login) would be null). Confirm the stored
+			// sole identity still matches before enabling the gate.
+			const { soleGithubLogin } = await import("../github-auth");
+			if (soleGithubLogin()?.toLowerCase() !== key)
+				return {
+					error:
+						"A different GitHub account connected before setup finished; reconnect to enable sign-in",
+				};
+			const team = rawTeam(config);
+			// (b) roster-upsert the login as admin, matched by github login.
+			const existing = team.find(
+				(m) => typeof m.github === "string" && m.github.toLowerCase() === key,
+			);
+			if (existing) {
+				existing.github = login;
+				existing.admin = true;
+				if (typeof existing.name !== "string" || !existing.name.trim())
+					existing.name = name?.trim() || login;
+			} else {
+				team.push({ name: name?.trim() || login, github: login, admin: true });
+			}
+			(config.identity as Record<string, unknown>).team = team;
+			// Preflight: refuse to flip the gate unless a rostered admin github
+			// login now exists. Ground-truth login is non-empty so this should
+			// always hold — it is the guarantee that step (c) never runs without
+			// step (b) having produced a sign-in-capable admin, and it fails closed
+			// (no persist) on an empty/unusable login rather than gating the app
+			// on a member nobody can sign in as.
+			const rostered =
+				!!key &&
+				team.some(
+					(m) =>
+						m.admin === true &&
+						typeof m.github === "string" &&
+						m.github.trim().toLowerCase() === key,
+				);
+			if (!rostered)
+				return {
+					error: "Could not roster the connected GitHub account as admin",
+				};
+			// (c) flip the sign-in gate — atomically with the roster write above.
+			github.userPrAuth = true;
+			// Consumed — clear the intent so a later connect is a plain reconnect.
+			delete github.authOnConnect;
+			persistRawConfig(config);
+			return { ok: true };
+		},
+	);
+	if ("error" in flip) return flip;
+
+	// (d) mint the session for the just-rostered login. getConfig() re-reads on
+	// the file change (mtime+size guard), so teamMemberForLogin inside
+	// createWebSession sees the fresh roster.
+	const session = createWebSession(login);
+	if (!session)
+		return { error: "Signed in with GitHub but could not create a session" };
+	return {
+		token: session.token,
+		cookie: webAuthSetCookie(session.token),
+		name: session.name,
+	};
+}
 
 export async function handleConnectionsRoutes(
 	ctx: RouteContext,
@@ -27,7 +164,7 @@ export async function handleConnectionsRoutes(
 		return Response.json({
 			mcpServers,
 			agents: agentHealth,
-			engines: ["opencode", ...(piEngineEnabled() ? ["pi"] : [])],
+			engines: piEngineEnabled() ? ["pi"] : [],
 		});
 	}
 
@@ -83,9 +220,12 @@ export async function handleConnectionsRoutes(
 	// has probed yet comes back null, and `pending` is the client's cue to ask
 	// again once the background probe lands.
 	if (path === "/api/connections/mcp-oauth" && req.method === "GET") {
-		const { cachedOauthCapable, mcpOauthStatus, oauthPresetFor } = await import(
-			"../mcp-oauth"
-		);
+		const {
+			cachedOauthCapable,
+			mcpOauthStatus,
+			oauthPresetFor,
+			supportsManualToken,
+		} = await import("../mcp-oauth");
 		const servers = Object.entries(readMcpConfig().mcpServers).map(
 			([name, cfg]: [string, any]) => {
 				const status = mcpOauthStatus(name);
@@ -102,7 +242,12 @@ export async function handleConnectionsRoutes(
 						: oauthTarget
 							? cachedOauthCapable(oauthTarget)
 							: false;
-				return { name, capable: capable ?? null, ...status };
+				return {
+					name,
+					capable: capable ?? null,
+					manualToken: supportsManualToken(name) && !!cfg?.url,
+					...status,
+				};
 			},
 		);
 		return Response.json({
@@ -135,9 +280,12 @@ export async function handleConnectionsRoutes(
 		/^\/api\/connections\/mcp\/([^/]+)\/oauth$/,
 	);
 	if (mcpOauthMatch && req.method === "GET") {
-		const { mcpOauthStatus, isOauthCapable, oauthPresetFor } = await import(
-			"../mcp-oauth"
-		);
+		const {
+			mcpOauthStatus,
+			isOauthCapable,
+			oauthPresetFor,
+			supportsManualToken,
+		} = await import("../mcp-oauth");
 		const name = decodeURIComponent(mcpOauthMatch[1]);
 		const status = mcpOauthStatus(name);
 		const cfg = (await import("../connections")).readMcpConfig().mcpServers[
@@ -149,7 +297,11 @@ export async function handleConnectionsRoutes(
 		const capable =
 			!!oauthPresetFor(name) ||
 			(oauthTarget ? await isOauthCapable(oauthTarget) : false);
-		return Response.json({ ...status, capable });
+		return Response.json({
+			...status,
+			capable,
+			manualToken: supportsManualToken(name) && !!cfg?.url,
+		});
 	}
 	if (mcpOauthMatch && req.method === "DELETE") {
 		const { removeMcpOauthGrant } = await import("../mcp-oauth");
@@ -181,7 +333,8 @@ export async function handleConnectionsRoutes(
 		try {
 			const initiatedBy =
 				ctx.authUser?.login || ctx.authUser?.name || undefined;
-			if (!initiatedBy)
+			const { webAuthRequired } = await import("../web-auth");
+			if (webAuthRequired() && !initiatedBy)
 				return Response.json(
 					{ error: "Sign in before connecting a personal tool" },
 					{ status: 401 },
@@ -210,6 +363,52 @@ export async function handleConnectionsRoutes(
 		}
 	}
 
+	// Connect by pasting a personal API token (providers that gate OAuth
+	// client registration but let any user mint a token, e.g. Vercel).
+	const mcpTokenMatch = path.match(
+		/^\/api\/connections\/mcp\/([^/]+)\/token$/,
+	);
+	if (mcpTokenMatch && req.method === "POST") {
+		const name = decodeURIComponent(mcpTokenMatch[1]);
+		const body = (await req.json().catch(() => ({}))) as {
+			token?: string;
+			scope?: string;
+		};
+		const token = typeof body.token === "string" ? body.token.trim() : "";
+		if (!token) return Response.json({ error: "Paste an API token" }, { status: 400 });
+		const cfg = readMcpConfig().mcpServers[name] as
+			| { url?: string; oauthUrl?: string }
+			| undefined;
+		const target = cfg?.url || cfg?.oauthUrl;
+		if (!target)
+			return Response.json(
+				{ error: "Not a remote MCP server" },
+				{ status: 400 },
+			);
+		const forUser =
+			body.scope === "me"
+				? ctx.authUser?.login || ctx.authUser?.name || undefined
+				: undefined;
+		if (body.scope === "me" && !forUser)
+			return Response.json(
+				{ error: "Sign in to connect your own account" },
+				{ status: 401 },
+			);
+		try {
+			const { saveManualMcpGrant } = await import("../mcp-oauth");
+			await saveManualMcpGrant(name, target, token, {
+				connectedBy: ctx.authUser?.login || ctx.authUser?.name,
+				...(forUser ? { forUser } : {}),
+			});
+		} catch (e: any) {
+			return Response.json(
+				{ error: e?.message || String(e) },
+				{ status: 400 },
+			);
+		}
+		return Response.json({ ok: true });
+	}
+
 	const mcpDelMatch = path.match(
 		/^\/api\/connections\/mcp\/([^/]+)$/,
 	);
@@ -235,22 +434,22 @@ export async function handleConnectionsRoutes(
 	}
 
 	// ── Model providers (Settings → Model providers) ──
-	// Third-party OpenCode providers (xai, openrouter, groq, …): API key +
-	// optional baseURL in ~/.opensession-opencode.json (0600, keys only ever
+	// Third-party Pi providers (xai, openrouter, groq, …): API key +
+	// optional baseURL in ~/.opensession-pi.json (0600, keys only ever
 	// returned masked), plus their picker model ids. anthropic/openai are
 	// rejected — they run on the subscription bridges, not raw keys.
 	if (
 		path === "/api/settings/model-providers" &&
 		req.method === "GET"
 	) {
-		const pickerModels = readOpencodeBridgeConfig()?.pickerModels || [];
+		const pickerModels = readModelProviderConfig()?.pickerModels || [];
 		return Response.json({
-			providers: Object.entries(opencodeProviders()).map(([id, p]) => ({
+			providers: Object.entries(modelProviders()).map(([id, p]) => ({
 				id,
 				apiKeyMasked: maskProviderKey(p.apiKey),
 				...(p.baseURL ? { baseURL: p.baseURL } : {}),
 				models: pickerModels.filter((m) =>
-					m.startsWith(`opencode/${id}/`),
+					m.startsWith(`pi/${id}/`),
 				),
 			})),
 			pickerModels,
@@ -274,7 +473,7 @@ export async function handleConnectionsRoutes(
 		if (BRIDGE_PROVIDER_IDS.has(id)) {
 			return Response.json(
 				{
-					error: `"${id}" runs on the subscription bridges (Settings → Usage), not a raw API key`,
+					error: `"${id}" runs on the subscription bridges (Settings → Providers), not a raw API key`,
 				},
 				{ status: 400 },
 			);
@@ -296,38 +495,38 @@ export async function handleConnectionsRoutes(
 				)
 			: undefined;
 		try {
-			setOpencodeProvider(id, { apiKey, baseURL });
-			const pickerModels = readOpencodeBridgeConfig()?.pickerModels || [];
+			setModelProvider(id, { apiKey, baseURL });
+			const pickerModels = readModelProviderConfig()?.pickerModels || [];
 			const providerModels =
 				models ??
-				(pickerModels.some((m) => m.startsWith(`opencode/${id}/`))
+				(pickerModels.some((m) => m.startsWith(`pi/${id}/`))
 					? undefined
 					: [...defaultPickerModelsForProvider(id)]);
 			if (providerModels) {
 				// `models` replaces this provider's picker entries wholesale.
-				const prefix = `opencode/${id}/`;
+				const prefix = `pi/${id}/`;
 				for (const m of pickerModels) {
 					if (m.startsWith(prefix)) removePickerModel(m);
 				}
 				for (const m of providerModels) {
-					// Accept "grok-4", "xai/grok-4" or "opencode/xai/grok-4".
+					// Accept "grok-4", "xai/grok-4" or "pi/xai/grok-4".
 					let tail = m.trim();
-					if (tail.startsWith("opencode/"))
-						tail = tail.slice("opencode/".length);
+					if (tail.startsWith("pi/"))
+						tail = tail.slice("pi/".length);
 					if (tail.startsWith(`${id}/`)) tail = tail.slice(id.length + 1);
 					if (tail) addPickerModel(`${prefix}${tail}`);
 				}
 			}
-			refreshOpencodePickerModels();
-			const stored = opencodeProviders()[id] || {};
-			const savedPickerModels = readOpencodeBridgeConfig()?.pickerModels || [];
+			refreshPickerModels();
+			const stored = modelProviders()[id] || {};
+			const savedPickerModels = readModelProviderConfig()?.pickerModels || [];
 			return Response.json({
 				provider: {
 					id,
 					apiKeyMasked: maskProviderKey(stored.apiKey),
 					...(stored.baseURL ? { baseURL: stored.baseURL } : {}),
 					models: savedPickerModels.filter((m) =>
-						m.startsWith(`opencode/${id}/`),
+						m.startsWith(`pi/${id}/`),
 					),
 				},
 			});
@@ -342,16 +541,16 @@ export async function handleConnectionsRoutes(
 	if (modelProviderMatch && req.method === "DELETE") {
 		const id = decodeURIComponent(modelProviderMatch[1]);
 		try {
-			const removed = removeOpencodeProvider(id);
-			const prefix = `opencode/${id}/`;
+			const removed = removeModelProvider(id);
+			const prefix = `pi/${id}/`;
 			let cleared = 0;
-			for (const m of readOpencodeBridgeConfig()?.pickerModels || []) {
+			for (const m of readModelProviderConfig()?.pickerModels || []) {
 				if (m.startsWith(prefix)) {
 					removePickerModel(m);
 					cleared++;
 				}
 			}
-			refreshOpencodePickerModels();
+			refreshPickerModels();
 			if (!removed && !cleared) {
 				return Response.json({ error: "Not found" }, { status: 404 });
 			}
@@ -364,73 +563,8 @@ export async function handleConnectionsRoutes(
 		}
 	}
 
-	// ── OpenCode engine on/off (Settings → Setup "Engine" checklist row) ──
-	// The `enabled` flag in ~/.opensession-opencode.json gates the Anthropic
-	// bridge AND whether third-party provider models reach the picker. Nothing
-	// wrote it before this route, so a fresh install had it absent and every
-	// default-model turn failed pointing at a file the operator had never seen.
-	if (path === "/api/settings/opencode-engine" && req.method === "GET") {
-		const { engineStatus } = await import("../engine-status");
-		return Response.json(engineStatus());
-	}
+	// ── Pi engine settings ──
 
-	if (path === "/api/settings/opencode-engine" && req.method === "PUT") {
-		const body = await req.json().catch(() => null);
-		if (!body || typeof body !== "object" || typeof body.enabled !== "boolean") {
-			return Response.json(
-				{ error: "enabled must be a boolean" },
-				{ status: 400 },
-			);
-		}
-		try {
-			const { setBridgeEnabled } = await import("../opencode-config");
-			const { engineStatus } = await import("../engine-status");
-			setBridgeEnabled(body.enabled);
-			// Enabling is what makes a configured provider's models resolvable,
-			// so refresh the picker rather than making the user re-save a provider.
-			refreshOpencodePickerModels();
-			return Response.json(engineStatus());
-		} catch (e: any) {
-			return Response.json(
-				{ error: e?.message || "Failed to update the engine config" },
-				{ status: 500 },
-			);
-		}
-	}
-
-	// ── Pi engine (Settings → Accounts "Pi engine" card) ──
-	// The pi engine's on/off switch, picker model ids and designated bridge
-	// accounts in ~/.opensession-pi.json. GET returns the raw-file view (not the
-	// enabled-gated getters — an editor needs to see the ids while the engine is
-	// off); no secrets in this file, so nothing to mask.
-	// ── OpenCode engine (the default engine's on/off switch) ──
-	if (path === "/api/settings/opencode-engine" && req.method === "GET") {
-		return Response.json({
-			enabled: readOpencodeBridgeConfig()?.enabled === true,
-		});
-	}
-	if (path === "/api/settings/opencode-engine" && req.method === "PUT") {
-		const body = await req.json().catch(() => null);
-		if (!body || typeof body.enabled !== "boolean") {
-			return Response.json(
-				{ error: "enabled must be a boolean" },
-				{ status: 400 },
-			);
-		}
-		try {
-			setBridgeEnabled(body.enabled);
-			// The picker fold gates opencode/* entries on `enabled`.
-			refreshOpencodePickerModels();
-			return Response.json({
-				enabled: readOpencodeBridgeConfig()?.enabled === true,
-			});
-		} catch (e: any) {
-			return Response.json(
-				{ error: e?.message || "Failed to save opencode engine config" },
-				{ status: 400 },
-			);
-		}
-	}
 
 	if (path === "/api/settings/pi-engine" && req.method === "GET") {
 		return Response.json(
@@ -493,7 +627,7 @@ export async function handleConnectionsRoutes(
 			);
 		} catch (e: any) {
 			return Response.json(
-				{ error: e?.message || "Failed to save pi engine config" },
+				{ error: e?.message || "Failed to save Pi engine config" },
 				{ status: 400 },
 			);
 		}
@@ -503,9 +637,18 @@ export async function handleConnectionsRoutes(
 	// Device-flow connect per teammate; tokens live server-side (0600) and are
 	// never returned here. See src/server/github-auth.ts.
 	if (path === "/api/connections/github" && req.method === "GET") {
-		const { githubUserAuthSettings, connectedGithubAccount, connectedGithubAccounts } = await import(
-			"../github-auth"
-		);
+		const {
+			githubUserAuthSettings,
+			connectedGithubAccount,
+			connectedGithubAccounts,
+			githubConnectAvailable,
+			githubAppConfigSource,
+			githubAppInstallUrl,
+			githubAppOrg,
+			githubAuthOnConnect,
+			soleGithubLogin,
+		} = await import("../github-auth");
+		const { webAuthRequired } = await import("../web-auth");
 		const { configuredIdentity } = await import("../config");
 		const settings = githubUserAuthSettings();
 		const all = connectedGithubAccounts();
@@ -515,10 +658,24 @@ export async function handleConnectionsRoutes(
 		);
 		const ownLogin = ctx.authUser?.login || "";
 		const ownAccount = ownLogin ? connectedGithubAccount(ownLogin) : null;
+		// Simple mode (no web sign-in): there is no authUser to scope by, so the
+		// card shows the single connected account directly and drives connect off
+		// githubConnectAvailable() rather than the userPrAuth switch.
+		const simpleMode = !webAuthRequired();
 		return Response.json({
 			enabled: settings.enabled,
 			clientIdConfigured: !!settings.clientId,
-			accounts: ownAccount ? [ownAccount] : [],
+			connectAvailable: githubConnectAvailable(),
+			appConfigSource: githubAppConfigSource(),
+			webAuthRequired: !simpleMode,
+			appInstallUrl: githubAppInstallUrl(),
+			// Captured install/app-setup intent, so the wizard can prefill the org
+			// owner and show it is finishing sign-in setup. Inert until a connect
+			// consumes authOnConnect.
+			appOrg: githubAppOrg(),
+			authOnConnect: githubAuthOnConnect(),
+			soleLogin: simpleMode ? soleGithubLogin() : null,
+			accounts: simpleMode ? all : ownAccount ? [ownAccount] : [],
 			team: configuredIdentity()
 				.team.filter((m) => m.github)
 				.map((m) => ({
@@ -536,9 +693,18 @@ export async function handleConnectionsRoutes(
 		path === "/api/connections/github/device" &&
 		req.method === "POST"
 	) {
-		if (!ctx.authUser?.login)
+		const { startGithubDeviceFlow, githubConnectAvailable } = await import(
+			"../github-auth"
+		);
+		const { webAuthRequired } = await import("../web-auth");
+		if (!githubConnectAvailable())
+			return Response.json({ error: "GitHub connect is not configured" }, { status: 400 });
+		// Operator mode stores the token under the signed-in identity, so it
+		// still needs a session. Simple mode has neither session nor authUser —
+		// the sole install user connects the one account, and GitHub's /user tells
+		// us who that is (identifyAndStoreToken), never the client.
+		if (webAuthRequired() && !ctx.authUser?.login)
 			return Response.json({ error: "Sign in to connect GitHub" }, { status: 403 });
-		const { startGithubDeviceFlow } = await import("../github-auth");
 		const result = await startGithubDeviceFlow();
 		if ("error" in result) return Response.json(result, { status: 400 });
 		return Response.json(result);
@@ -548,17 +714,71 @@ export async function handleConnectionsRoutes(
 		path === "/api/connections/github/device/poll" &&
 		req.method === "POST"
 	) {
-		if (!ctx.authUser?.login)
+		const { pollGithubDeviceFlow, githubConnectAvailable } = await import(
+			"../github-auth"
+		);
+		const { webAuthRequired } = await import("../web-auth");
+		const simpleMode = !webAuthRequired();
+		if (!githubConnectAvailable())
+			return Response.json({ error: "GitHub connect is not configured" }, { status: 400 });
+		if (webAuthRequired() && !ctx.authUser?.login)
 			return Response.json({ error: "Sign in to connect GitHub" }, { status: 403 });
 		const body = await req.json().catch(() => null);
 		const deviceCode =
 			typeof body?.deviceCode === "string" ? body.deviceCode : "";
 		if (!deviceCode)
 			return Response.json({ error: "deviceCode required" }, { status: 400 });
-		const { pollGithubDeviceFlow } = await import("../github-auth");
-		return Response.json(
-			await pollGithubDeviceFlow(deviceCode, ctx.authUser.login),
+		// Simple mode passes no expected login (authUser is null): the token is
+		// stored under whichever login GitHub reports authorized it.
+		const result = await pollGithubDeviceFlow(
+			deviceCode,
+			ctx.authUser?.login ?? undefined,
 		);
+		// The auth bootstrap: a simple-mode connect the install/app-setup marked
+		// as also turning on sign-in (authOnConnect). This is the first moment a
+		// real GitHub login exists to become the admin and hold a session, so it
+		// is the only safe moment to flip the gate — never at install, where doing
+		// so would lock the operator out. webAuthRequired() is still false here
+		// (userPrAuth not yet set); once this runs, later connects are operator
+		// mode and take the branch above. authOnConnect absent ⇒ this is skipped
+		// and the simple-mode path is byte-identical.
+		if (result.status === "ok" && !webAuthRequired()) {
+			// A personal App has no organization owner to capture in its wizard. The
+			// verified device-flow login is its installation owner, so persist it
+			// before service traffic is allowed to mint tokens.
+			const { rawConfig, persistRawConfig, withConfigMutationLock } =
+				await import("../config-mutation");
+			await withConfigMutationLock(async () => {
+				const config = rawConfig();
+				const github = githubIntegrationSection(config, true)!;
+				if (!github.installationOwner && !github.appOrg) {
+					github.installationOwner = result.login;
+					await persistRawConfig(config);
+				}
+			});
+			const { githubAuthOnConnect } = await import("../github-auth");
+			if (githubAuthOnConnect()) {
+				const boot = await bootstrapUserAuthOnConnect(result.login, result.name);
+				if ("error" in boot) {
+					return Response.json({ status: "error", error: boot.error });
+				}
+				// Native clients can't hold the HttpOnly cookie — they ask for the
+				// token in the body (native:true) and send it back as Bearer.
+				const native = body?.native === true;
+				return Response.json(
+					{
+						...result,
+						// The workspace is now behind sign-in and the browser holds the
+						// session cookie; the client reloads to reflect operator mode.
+						authEnabled: true,
+						admin: true,
+						...(native ? { token: boot.token } : {}),
+					},
+					{ headers: { "Set-Cookie": boot.cookie } },
+				);
+			}
+		}
+		return Response.json(result);
 	}
 
 	const ghAccountMatch = path.match(
@@ -566,17 +786,211 @@ export async function handleConnectionsRoutes(
 	);
 	if (ghAccountMatch && req.method === "DELETE") {
 		const login = decodeURIComponent(ghAccountMatch[1]);
-		if (!ctx.authUser?.login || ctx.authUser.login.toLowerCase() !== login.toLowerCase()) {
-			return Response.json(
-				{ error: "You can only disconnect your own GitHub account" },
-				{ status: 403 },
-			);
+		const { removeGithubAccount, soleGithubLogin } = await import("../github-auth");
+		const { webAuthRequired } = await import("../web-auth");
+		const simpleMode = !webAuthRequired();
+		if (!simpleMode) {
+			// Operator mode: you manage only your own signed-in account.
+			if (!ctx.authUser?.login || ctx.authUser.login.toLowerCase() !== login.toLowerCase()) {
+				return Response.json(
+					{ error: "You can only disconnect your own GitHub account" },
+					{ status: 403 },
+				);
+			}
+		} else {
+			// Simple mode: the only manageable account is the single connected one.
+			const sole = soleGithubLogin();
+			if (!sole || sole.toLowerCase() !== login.toLowerCase()) {
+				return Response.json(
+					{ error: "You can only disconnect the connected GitHub account" },
+					{ status: 403 },
+				);
+			}
 		}
-		const { removeGithubAccount } = await import("../github-auth");
 		const removed = removeGithubAccount(login);
 		if (!removed)
 			return Response.json({ error: "Not connected" }, { status: 404 });
+		// The child keeps a copied process environment. Stop it immediately
+		// after every removal so a deleted operator credential cannot keep
+		// receiving deliveries until restart or process exit.
 		return Response.json({ ok: true });
+	}
+
+	// ── Bring-your-own GitHub App (simple mode) ──────────────────────────────
+	// Persist the App's public client id + slug to config.json so the device
+	// flow lights up with no env var and no restart: githubAppIdentity() reads
+	// getConfig() per call, and getConfig() re-reads on the file's mtime change.
+	// Deliberately never writes userPrAuth — configuring the repo App must not
+	// flip the sign-in gate. Gated to simple mode; an env-set App can't be
+	// overridden here (env wins), so it is refused with the reason.
+	if (path === "/api/connections/github/app" && req.method === "POST") {
+		const { webAuthRequired } = await import("../web-auth");
+		if (webAuthRequired())
+			return Response.json(
+				{ error: "Not available while GitHub sign-in is on" },
+				{ status: 403 },
+			);
+		const { githubAppConfigSource } = await import("../github-auth");
+		if (githubAppConfigSource() === "env")
+			return Response.json(
+				{
+					error:
+						"A GitHub App is set via OPENSESSION_GITHUB_CLIENT_ID; unset it to configure one here",
+				},
+				{ status: 409 },
+			);
+		const body = (await req.json().catch(() => null)) as {
+			clientId?: unknown;
+			slug?: unknown;
+			secret?: unknown;
+			appOrg?: unknown;
+			privateKey?: unknown;
+		} | null;
+		const clientId =
+			typeof body?.clientId === "string" ? body.clientId.trim() : "";
+		const slug = typeof body?.slug === "string" ? body.slug.trim() : "";
+		const secret = typeof body?.secret === "string" ? body.secret.trim() : "";
+		// Present ⇒ the App is owned by an org (owner=Organization); empty/absent ⇒
+		// a personal App (single-user).
+		const appOrg = typeof body?.appOrg === "string" ? body.appOrg.trim() : "";
+		// The App's private key (PEM), generated once in the App's settings UI.
+		// Existing Apps may keep their current key while public fields change. A new
+		// App must include its key because installation tokens are the only service
+		// credential.
+		const privateKey =
+			typeof body?.privateKey === "string" ? body.privateKey.trim() : "";
+		// The secret is required on the UI config path: the device-flow token
+		// expires and Open Session refreshes it with the secret, so without one
+		// the connection would silently stop working after ~8h. (Env-configured
+		// Apps are governed separately and may omit it — an ops choice.)
+		if (!clientId || !slug || !secret)
+			return Response.json(
+				{ error: "clientId, slug and secret are required" },
+				{ status: 400 },
+			);
+		if (privateKey) {
+			// A complete PEM block, and it must actually parse — a header-only or
+			// truncated value would otherwise overwrite a working key on disk.
+			const wellFormed =
+				/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]+-----END [A-Z ]*PRIVATE KEY-----/.test(
+					privateKey,
+				);
+			let parses = false;
+			if (wellFormed) {
+				try {
+					const { createPrivateKey } = await import("node:crypto");
+					createPrivateKey(privateKey);
+					parses = true;
+				} catch {
+					parses = false;
+				}
+			}
+			if (!parses)
+				return Response.json(
+					{ error: "privateKey must be a valid PEM private key" },
+					{ status: 400 },
+				);
+		}
+		const { rawConfig, persistRawConfig, withConfigMutationLock } =
+			await import("../config-mutation");
+		return withConfigMutationLock(async () => {
+			const config = rawConfig();
+			const github = githubIntegrationSection(config, true)!;
+			const keyMutation = privateKey ||
+				(github.oauthClientId !== clientId ? null : undefined);
+			if (keyMutation === null) {
+				return Response.json(
+					{ error: "Changing the GitHub App client id requires its replacement private key" },
+					{ status: 409 },
+				);
+			}
+			github.oauthClientId = clientId;
+			github.appSlug = slug;
+			github.oauthClientSecret = secret;
+			// An org-owned App also records the intent to turn on per-user sign-in
+			// at the first connect; a personal App is single-user, so any stale
+			// intent is cleared. Deliberately never writes userPrAuth — the gate is
+			// flipped only when someone actually connects (device/poll below), so a
+			// box carrying authOnConnect set-but-unconsumed still behaves as simple
+			// mode.
+			if (appOrg) {
+				github.appOrg = appOrg;
+				github.installationOwner = appOrg;
+				github.authOnConnect = true;
+			} else {
+				delete github.appOrg;
+				delete github.installationOwner;
+				delete github.authOnConnect;
+			}
+			try {
+				const { commitGithubAppKeyMutation } = await import("../github-app");
+				await commitGithubAppKeyMutation(
+					keyMutation,
+					() => persistRawConfig(config),
+				);
+			} catch (e) {
+				return Response.json(
+					{ error: String((e as Error)?.message || e) },
+					{ status: 409 },
+				);
+			}
+			return Response.json({ ok: true });
+		});
+	}
+
+	if (path === "/api/connections/github/app" && req.method === "DELETE") {
+		const { webAuthRequired } = await import("../web-auth");
+		if (webAuthRequired())
+			return Response.json(
+				{ error: "Not available while GitHub sign-in is on" },
+				{ status: 403 },
+			);
+		const { githubAppConfigSource } = await import("../github-auth");
+		if (githubAppConfigSource() === "env")
+			return Response.json(
+				{
+					error:
+						"The GitHub App is set via OPENSESSION_GITHUB_CLIENT_ID; unset the variable and restart to remove it",
+				},
+				{ status: 409 },
+			);
+		const { rawConfig, persistRawConfig, withConfigMutationLock } =
+			await import("../config-mutation");
+		return withConfigMutationLock(async () => {
+			const config = rawConfig();
+			const github = githubIntegrationSection(config, false);
+			if (
+				github &&
+				(github.enabled === true || process.env.ENABLE_GITHUB_AGENT === "true")
+			) {
+				return Response.json(
+					{ error: "Disable the GitHub integration before removing its App" },
+					{ status: 409 },
+				);
+			}
+			if (github) {
+				// Drop the repo-App keys and the captured sign-in intent
+				// (appOrg/authOnConnect) — removing the App is also how the wizard
+				// clears the org intent when the owner is switched back to "You".
+				// userPrAuth and anything else the github integration holds survive.
+				delete github.oauthClientId;
+				delete github.appSlug;
+				delete github.oauthClientSecret;
+				delete github.appOrg;
+				delete github.installationOwner;
+				delete github.authOnConnect;
+			}
+			try {
+				const { commitGithubAppKeyMutation } = await import("../github-app");
+				await commitGithubAppKeyMutation(null, () => persistRawConfig(config));
+			} catch (e) {
+				return Response.json(
+					{ error: String((e as Error)?.message || e) },
+					{ status: 409 },
+				);
+			}
+			return Response.json({ ok: true });
+		});
 	}
 
 	// ── Plain triage router (spam gate + model routing for new tickets) ──

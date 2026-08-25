@@ -1,7 +1,7 @@
 import React from "react";
 
 /**
- * Icon set lifted from tella-fusion's `iconic-pro` library
+ * Icon set lifted from an `iconic-pro` library
  * (packages/core/webapp/src/frontend/assets/icons/iconic-pro) so Open Session's
  * session UI uses the same quality stroke icons as the product instead of emoji.
  * All are 24×24, `currentColor`, stroke-width 1.5 — size via the `size` prop.
@@ -113,15 +113,33 @@ export function IconMic(p: IconProps) {
   );
 }
 
+const SLIDERS_PATHS = [
+  "M4.75 8h6",
+  "M15.25 8h4",
+  "M4.75 16h3",
+  "M12.25 16h7",
+];
+const SLIDERS_CIRCLES = [
+  { cx: 13, cy: 8 },
+  { cx: 10, cy: 16 },
+];
+
 export function IconSliders(p: IconProps) {
   return (
     <Svg {...p}>
-      <path {...stroke} d="M4.75 8h6" />
-      <path {...stroke} d="M15.25 8h4" />
-      <circle {...stroke} cx="13" cy="8" r="2.25" fill="none" />
-      <path {...stroke} d="M4.75 16h3" />
-      <path {...stroke} d="M12.25 16h7" />
-      <circle {...stroke} cx="10" cy="16" r="2.25" fill="none" />
+      {SLIDERS_PATHS.map((d) => (
+        <path key={d} {...stroke} d={d} />
+      ))}
+      {SLIDERS_CIRCLES.map(({ cx, cy }) => (
+        <circle
+          key={`${cx}-${cy}`}
+          {...stroke}
+          cx={cx}
+          cy={cy}
+          r="2.25"
+          fill="none"
+        />
+      ))}
     </Svg>
   );
 }
@@ -214,10 +232,21 @@ export function IconChevronRight(p: IconProps) {
   );
 }
 
+export function IconArrowRight(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M5.25 12H18.75" />
+      <path {...stroke} d="M13.5 6.75L18.75 12L13.5 17.25" />
+    </Svg>
+  );
+}
+
+const CHECK_PATH = "M5.75 12.75L9.5 16.25L18.25 7.75";
+
 export function IconCheck(p: IconProps) {
   return (
     <Svg {...p}>
-      <path {...stroke} d="M5.75 12.75L9.5 16.25L18.25 7.75" />
+      <path {...stroke} d={CHECK_PATH} />
     </Svg>
   );
 }
@@ -379,6 +408,14 @@ export function IconPlus(p: IconProps) {
     <Svg {...p}>
       <path {...stroke} d="M12 4.75V19.25" />
       <path {...stroke} d="M19.25 12L4.75 12" />
+    </Svg>
+  );
+}
+
+export function IconMinus(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M19.25 12H4.75" />
     </Svg>
   );
 }
@@ -861,22 +898,58 @@ export function IconExpand(p: IconProps) {
   );
 }
 
-/**
- * The same glyph as markup, for the one control that is built as an innerHTML
- * string rather than as JSX: the expand button on a rendered mermaid diagram,
- * which MarkdownBody creates in the DOM (see there). Shares EXPAND_PATHS with
- * <IconExpand> so there is still one drawing.
- */
-export function expandIconMarkup(size = MIN_ICON_SIZE): string {
-  const paths = EXPAND_PATHS.map(
-    (d) =>
-      `<path d="${d}" stroke="currentColor" stroke-width="${stroke.strokeWidth}"` +
-      ` stroke-linecap="${stroke.strokeLinecap}" stroke-linejoin="${stroke.strokeLinejoin}"/>`,
-  ).join("");
+// ── Glyphs as markup ───────────────────────────────────────────────────────
+// A few controls are built as an innerHTML string rather than as JSX, because
+// the surface they sit on is itself injected HTML with no element for React to
+// own: the expand button on a rendered mermaid diagram and the copy button on
+// a code fence, both created by MarkdownBody (see there, and lib/code-copy.ts).
+// Each shares its path data with the JSX icon above it, so there is still one
+// drawing per glyph.
+
+const STROKE_MARKUP =
+  `stroke="currentColor" stroke-width="${stroke.strokeWidth}"` +
+  ` stroke-linecap="${stroke.strokeLinecap}" stroke-linejoin="${stroke.strokeLinejoin}"`;
+
+function iconMarkup(inner: string, size: number): string {
   return (
     `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"` +
-    ` aria-hidden="true">${paths}</svg>`
+    ` aria-hidden="true">${inner}</svg>`
   );
+}
+
+function pathsMarkup(paths: readonly string[]): string {
+  return paths.map((d) => `<path d="${d}" ${STROKE_MARKUP}/>`).join("");
+}
+
+/** <IconExpand> as markup. */
+export function expandIconMarkup(size = MIN_ICON_SIZE): string {
+  return iconMarkup(pathsMarkup(EXPAND_PATHS), size);
+}
+
+/** <IconCopy> as markup. */
+export function copyIconMarkup(size = MIN_ICON_SIZE): string {
+  return iconMarkup(
+    `<rect x="8.75" y="8.75" width="10.5" height="10.5" rx="2" ${STROKE_MARKUP}/>` +
+      pathsMarkup([COPY_SHEET_PATH]),
+    size,
+  );
+}
+
+/** <IconSliders> as markup. */
+export function slidersIconMarkup(size = MIN_ICON_SIZE): string {
+  return iconMarkup(
+    pathsMarkup(SLIDERS_PATHS) +
+      SLIDERS_CIRCLES.map(
+        ({ cx, cy }) =>
+          `<circle cx="${cx}" cy="${cy}" r="2.25" fill="none" ${STROKE_MARKUP}/>`,
+      ).join(""),
+    size,
+  );
+}
+
+/** <IconCheck> as markup. */
+export function checkIconMarkup(size = MIN_ICON_SIZE): string {
+  return iconMarkup(pathsMarkup([CHECK_PATH]), size);
 }
 
 export function IconTrash(p: IconProps) {
@@ -1089,6 +1162,30 @@ export function IconBox(p: IconProps) {
   );
 }
 
+// A drawn region, which is what the screenshot markup tool makes. IconBox is
+// a 3D carton and reads as a package; this is the rectangle you drag around
+// the thing that is wrong. Corners span the set's 4.75 → 19.25 on the wide
+// axis, with the shorter axis inset so it reads as a frame rather than a
+// square button.
+export function IconRectangle(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect {...stroke} x="4.75" y="6.75" width="14.5" height="10.5" rx="2" />
+    </Svg>
+  );
+}
+
+// A handset for mobile experiences. Narrow body plus a home indicator, so it
+// reads as a phone rather than as a card or a vertical panel.
+export function IconPhone(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect {...stroke} x="8.25" y="4.75" width="7.5" height="14.5" rx="2" />
+      <path {...stroke} d="M10.75 16.75H13.25" />
+    </Svg>
+  );
+}
+
 // Friendly machine face for automation-owned sessions. Kept geometric and
 // neutral so it reads as origin, not as a chat persona or assistant avatar.
 export function IconRobot(p: IconProps) {
@@ -1233,14 +1330,14 @@ export function IconEyeOff(p: IconProps) {
   );
 }
 
+const COPY_SHEET_PATH =
+  "M15.25 4.75H6.75C5.64543 4.75 4.75 5.64543 4.75 6.75V15.25";
+
 export function IconCopy(p: IconProps) {
   return (
     <Svg {...p}>
       <rect {...stroke} x="8.75" y="8.75" width="10.5" height="10.5" rx="2" />
-      <path
-        {...stroke}
-        d="M15.25 4.75H6.75C5.64543 4.75 4.75 5.64543 4.75 6.75V15.25"
-      />
+      <path {...stroke} d={COPY_SHEET_PATH} />
     </Svg>
   );
 }
@@ -1424,6 +1521,34 @@ export function IconDiffSplit(p: IconProps) {
       <path {...stroke} d="M7.25 9H9.5M14.5 9H16.75" />
       <path {...stroke} d="M7.25 12H9.5M14.5 12H16.75" />
       <path {...stroke} d="M7.25 15H9.5M14.5 15H16.75" />
+    </Svg>
+  );
+}
+
+// Asset layouts: four tiles for the pictures, named rows for the list. Both
+// draw the SAME set, so the pair has to differ in shape rather than in count:
+// the grid is all tile, the list is a small tile with its name beside it,
+// which is what each mode actually puts on screen.
+export function IconViewGrid(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect {...stroke} x="4.75" y="4.75" width="6" height="6" rx="1.5" />
+      <rect {...stroke} x="13.25" y="4.75" width="6" height="6" rx="1.5" />
+      <rect {...stroke} x="4.75" y="13.25" width="6" height="6" rx="1.5" />
+      <rect {...stroke} x="13.25" y="13.25" width="6" height="6" rx="1.5" />
+    </Svg>
+  );
+}
+
+export function IconViewList(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect {...stroke} x="4.75" y="5.25" width="3.5" height="3.5" rx="1" />
+      <path {...stroke} d="M11.25 7H19.25" />
+      <rect {...stroke} x="4.75" y="10.25" width="3.5" height="3.5" rx="1" />
+      <path {...stroke} d="M11.25 12H19.25" />
+      <rect {...stroke} x="4.75" y="15.25" width="3.5" height="3.5" rx="1" />
+      <path {...stroke} d="M11.25 17H19.25" />
     </Svg>
   );
 }

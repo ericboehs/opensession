@@ -79,6 +79,34 @@
 	   composer's case at chip scale, so it takes the composer's answer; see the
 	   light block. */
 	--button-surface: var(--control-surface);
+	/* Phone navigation controls float over live content, the way an iOS toolbar
+	   item does: a translucent plate that takes its colour from whatever passes
+	   underneath it, rather than a paper sticker laid on top. The fill used to be
+	   `--bg`, the same colour as the page it floats over, so nothing but the cast
+	   shadow said the control was there at all, and the bar read as stickers on a
+	   page instead of glass over one.
+
+	   Dark mode keeps a defined edge, because even thinned the fill lands close
+	   to the page; light mode takes the native toolbar treatment below, where an
+	   even cast around the control replaces that edge. The inset line leading
+	   each shadow is the specular top edge every glass control on iOS carries. It
+	   is what gives the plate a thickness, and it is the one part of the look a
+	   blur alone cannot produce. */
+	--mobile-header-control-border: var(--border);
+	--mobile-header-control-surface: color-mix(in srgb, var(--bg) 68%, transparent);
+	--mobile-header-control-blur: blur(20px) saturate(1.7);
+	/* The docked tab strip follows iOS: the selected tab is the bright plate and
+	   the rest sit a step under it. Both are OPAQUE on purpose. iOS paints its
+	   pills over a thick material, so the transcript passing behind them is a
+	   change in tone, never legible text; a thinned fill here put running code
+	   through the tab labels. The blur stays for the pill's edge, not to see
+	   through it. */
+	--mobile-tab-surface-selected: var(--bg-hover);
+	--mobile-tab-surface: var(--bg-raised);
+	--mobile-header-control-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.07),
+		0 1px 3px -1px rgba(0, 0, 0, 0.06),
+		0 4px 10px -4px rgba(0, 0, 0, 0.09);
 	/* The segmented control's knob: the one plate that sits in a WELL rather
 	   than on the page, so it gets its own pair of tokens.
 
@@ -223,11 +251,17 @@
 	   quietly. Keep --border itself for the edge of a control, where the line
 	   IS the shape. */
 	--divider: color-mix(in srgb, var(--border) 55%, transparent);
+	/* A block's own outline, where the fill under it already says where the
+	   block is and the line only has to close its shape: the settings plate.
+	   Lighter than --divider, which still has to read as a separation between
+	   two surfaces. Anything that has to be seen as a rule takes --divider or
+	   --border; this one is meant to be felt and not looked at. */
+	--divider-soft: color-mix(in srgb, var(--border) 34%, transparent);
 	/* The scrollbar thumb, on the platforms that draw a permanent one (see the
 	   scrollbar block further down). Translucent rather than a picked grey: the
 	   scrollers sit on four different fills, and an alpha keeps the thumb in the
 	   same relationship to each of them. */
-	--scrollbar-thumb: rgba(255, 255, 255, 0.2);
+	--scrollbar-thumb: rgba(255, 255, 255, 0.13);
 	--text: #e9e9e9;
 	--text-dim: #a2a2a2;
 	--text-faint: #767676;
@@ -331,6 +365,22 @@
 	--chip-ask-fg: #e3b341;
 	--mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
 	--sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+	/* The web keeps desktop's compact metrics, while a phone promotes every role
+	   one rung. These are real custom properties, rather than values written
+	   directly into Tailwind's @theme block, so the same utility can follow the
+	   viewport without a `phone:` override at every call site. Raw markdown and
+	   inherited UI text read these too, which keeps the whole scale together. */
+	--type-root: 14px;
+	--type-meta: 11px;
+	--type-label: 13px;
+	--type-item-title: 14px;
+	--type-body: 15px;
+	--type-dialog-title: 17px;
+	--type-section-title: 19px;
+	--type-page-title: 24px;
+	--type-stat: 28px;
+	--type-stat-line: 32px;
+	--type-input-phone: 16px;
 	/* The weight a title takes: a page's own name, and the headings under it.
 	   It is a token rather than a fixed utility because the right weight is not
 	   the same in both themes. Light text on a dark page blooms, putting more
@@ -355,7 +405,7 @@
 	   corner: a circular arc removes 0.215r² of its corner square against a
 	   squircle's 0.073r², about three times as much, so it has to be 1.75x
 	   smaller to read at the same weight. 1.35 / 1.75 is the 0.771 here, and
-	   1.75 is the ratio tella-fusion authors its own squircle classes with
+	   1.75 is the ratio commonly used for squircle classes
 	   (8px round against 14px squircle).
 
 	   This was 1, the radius each corner is authored with, and that is what
@@ -380,8 +430,10 @@
 	/* Shared height for the desktop sidebar, session header and PR strip. */
 	--desktop-header-h: 48px;
 	/* Header height grows by the iOS status-bar inset when installed as a PWA
-     (black-translucent draws the webview under the clock/notch) */
-	--header-h: calc(52px + env(safe-area-inset-top, 0px));
+     (black-translucent draws the webview under the clock/notch). The bar spends
+     8px on its own top pad, leaving 40px for MOBILE_BAR_SEGMENT and the settings
+     mark in lib/app-header-classes.ts. Move the two together. */
+	--header-h: calc(48px + env(safe-area-inset-top, 0px));
 }
 
 /* Above the phone breakpoint the top bar isn't rendered at all, so nothing is
@@ -444,6 +496,21 @@ html[data-theme="light"] {
 	   which is the disabled signal again. So it goes paper and lets the shadow
 	   do the lifting, exactly as the composer and the popups below do. */
 	--button-surface: #ffffff;
+	/* Native light toolbar controls do not draw a dark outline around their
+	   glass. A zero-offset cast with a little spread lifts the whole silhouette
+	   evenly, including its top edge, without turning that edge into a border. */
+	--mobile-header-control-border: transparent;
+	/* Thinner than dark's, because what shows through here is a bright page and
+	   the plate has to stay lighter than it to keep reading as glass rather than
+	   as a grey wash over the words underneath. */
+	--mobile-header-control-surface: color-mix(in srgb, var(--bg) 62%, transparent);
+	/* Light mode reaches the same two weights from the other side: the selected
+	   tab is pure white, the rest the grey a step under it. */
+	--mobile-tab-surface-selected: var(--bg);
+	--mobile-tab-surface: var(--bg-hover);
+	--mobile-header-control-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.6),
+		0 0 14px 1px rgba(0, 0, 0, 0.1);
 	/* The segmented knob goes paper here, like every other raised control, and
 	   wears no edge at all. A --border hairline is darker than the --bg-hover
 	   track it lies on, so it reads as an outline drawn around the option
@@ -519,7 +586,7 @@ html[data-theme="light"] {
 	/* See the note on the dark token. A touch more ink for the same reason the
 	   greys above carry it: black on white reads lighter than the same alpha of
 	   white on charcoal. */
-	--scrollbar-thumb: rgba(0, 0, 0, 0.22);
+	--scrollbar-thumb: rgba(0, 0, 0, 0.15);
 	--text: #1a1a1a;
 	--text-dim: #646464;
 	--text-faint: #949494;
@@ -581,6 +648,10 @@ html[data-theme="light"] {
 	:root {
 		--popup-glass: var(--popup-surface);
 		--palette-glass: var(--popup-surface);
+		/* The page colour, which is what these controls were painted in before
+		   they became glass: without a blur behind it a thinned fill is just a
+		   window onto whatever is scrolling past. */
+		--mobile-header-control-surface: var(--bg);
 	}
 }
 
@@ -588,6 +659,7 @@ html[data-theme="light"] {
 	:root {
 		--popup-glass: var(--popup-surface);
 		--palette-glass: var(--popup-surface);
+		--mobile-header-control-surface: var(--bg);
 	}
 }
 
@@ -625,8 +697,8 @@ html[data-accent="sky"] {
 }
 
 html[data-accent="indigo"] {
-	--accent-light: #6361f5;
-	--accent-dark: #767bf6;
+	--accent-light: #366ef5;
+	--accent-dark: #5386f6;
 }
 
 html[data-accent="coral"] {
@@ -840,6 +912,27 @@ html[data-accent="green"] {
 			0 4px 20px rgba(0, 0, 0, 0.08);
 	}
 }
+
+/* The native iPhone UI reads transcript prose at 17pt. At phone width the PWA
+   promotes every semantic role to the next rung of its existing scale, so its
+   15px body does not look like a shrunken desktop UI beside the native app.
+   Inputs join the body at 17px, still above Safari's 16px zoom threshold. */
+@media (max-width: 720px) {
+	:root {
+		--type-root: 15px;
+		--type-meta: 13px;
+		--type-label: 14px;
+		--type-item-title: 15px;
+		--type-body: 17px;
+		--type-dialog-title: 19px;
+		--type-section-title: 24px;
+		--type-page-title: 28px;
+		--type-stat: 34px;
+		--type-stat-line: 38px;
+		--type-input-phone: 17px;
+	}
+}
+
 html[data-theme="light"] .markdown code {
 	background: rgba(149, 59, 57, 0.09);
 	color: #953b39;
@@ -917,7 +1010,7 @@ body {
 	background: var(--bg);
 	color: var(--text);
 	font-family: var(--sans);
-	font-size: 14px;
+	font-size: var(--type-root);
 	/* Medium is the app's regular. Metadata and supporting copy are the
 	   exceptions: they render at 400 so their secondary text stays quiet and
 	   their smaller strokes do not close up. Bold accents stay 600/700. */
@@ -981,6 +1074,22 @@ body {
 html:has(body.kb-open),
 body.kb-open {
 	height: 100% !important;
+}
+
+/* A palette is a surface you type into, so the page behind it must hold still.
+   Base UI's `trap-focus` mode deliberately neither inerts nor scroll-locks the
+   page (the "@"-mention popup portals to <body> and inerting would kill it), so
+   on a phone the transcript or list underneath still panned under the sheet and
+   took the composer with it. `touch-action` is the smallest lever that stops
+   it: it blocks the pan without touching overflow, so no scroller loses its
+   position and nothing reflows. Effective touch-action is the intersection down
+   the ancestor chain, so one declaration on the app root covers every scroller
+   inside it, and the palette itself is portaled outside .app and keeps
+   scrolling its own prompt. `:not([hidden])` is load-bearing: a keepMounted
+   palette (the Desk) is in the DOM from boot and would otherwise lock the page
+   forever. */
+body:has(.palette-backdrop:not([hidden])) .app {
+	touch-action: none;
 }
 
 /* ── Native feel: UI chrome isn't text-selectable ────────────────
@@ -1139,51 +1248,41 @@ a {
 	height: 100%;
 }
 
-/* Installed PWA has no browser chrome, so the top bar bleeds straight into the
-   OS title/status bar with nothing separating them. Add a hairline divider along
-   the very top edge so the top bar reads as a defined bar. Browser tabs already
-   get this separation from the chrome above, so scope it to standalone. */
-@media (display-mode: standalone) {
-	.app {
-		border-top: 1px solid var(--border);
-	}
-}
-
 /* The installed phone composer is a native-feeling capsule rather than the
    desktop squircle. Safari already falls back to circular corners because it
-   does not support corner-shape; this keeps Chromium PWAs consistent. */
+   does not support corner-shape; this keeps Chromium PWAs consistent. Its edge,
+   attached flaps, and Slack share card use the desktop ring's 35% strength. */
 @media (display-mode: standalone) and (max-width: 720px) {
-	.composer {
+	.app .composer {
 		corner-shape: round;
 	}
-}
+	.app .composer,
+	.app .pwa-composer-edge {
+		border-color: color-mix(in srgb, var(--composer-border) 35%, transparent);
+	}
 
-/* The composer column publishes an anchor, so the Desk trigger floating in the
-   window's bottom-right corner can tell whether that corner is still free (see
-   lib/fab-classes.ts).
+	/* Keep the installed phone composer focused on drafting and sending. The
+	   add menu remains available for images and session options; only model
+	   selection and dictation stay in the browser view. */
+	.app .pwa-composer-auxiliary {
+		display: none;
+	}
 
-   The anchor is the COLUMN rather than the box: the queue flap tucks in above
-   the box as a sibling, and a button clearing the composer has to clear the
-   flap too. The column is not a component of its own, it is exactly "the
-   element a .composer is a direct child of", which is what this matches.
-
-   Scoped to the pane because the pane's composer is the only one that can take
-   that corner: every view that has one — a session, a workspace, the catch-up
-   deck — parks it at the foot of the pane. A split gives the pane two, and the
-   later one in the DOM wins, which is the right-hand column: the one the
-   button actually sits over. */
-.detail-pane div:has(> .composer) {
-	anchor-name: --composer-col;
-}
-
-/* Where the Desk trigger goes once that corner is taken: directly above the
-   composer, right edge flush with the column's. Chrome switches to it the
-   moment the preferred corner position overflows the window, which is what
-   DESK_FAB's `left` arranges. */
-@position-try --desk-fab-above {
-	left: auto;
-	right: anchor(right);
-	bottom: calc(anchor(top) + 10px);
+	/* Installed navigation uses the foreground colour instead of the custom
+	   accent. Slightly larger glyphs make the two edge controls easier to read
+	   without changing their 44px touch targets. */
+	.app .pwa-header-back,
+	.app .pwa-header-actions button {
+		color: var(--text);
+	}
+	.app .pwa-header-back svg {
+		width: 34px;
+		height: 34px;
+	}
+	.app .pwa-header-actions button svg {
+		width: 25px;
+		height: 25px;
+	}
 }
 
 /* A drag in progress owns the cursor for the whole document, not just the
@@ -1214,11 +1313,8 @@ body:is(.resizing-sidebar, .resizing-panel, .resizing-tab-split) {
 
    Keyed off `html.wco` (set by the detection script in index.html), NOT the
    `(display-mode: window-controls-overlay)` media query: Electron (the Open Session
-   desktop shell, tellahq/os1-mac) exposes the WCO geometry and env() vars but
+   desktop shell, packages/clients/mac) exposes the WCO geometry and env() vars but
    keeps display-mode at "browser", so the media query never matches there. */
-html.wco .app {
-	border-top: none;
-}
 /* Updated macOS shell builds supply one native visual-effect surface beneath
    Chromium. Reveal it only through the structural chrome: the sidebar, the one
    region left beside the opaque workspace. The shell capability flag keeps
@@ -1326,26 +1422,31 @@ html.wco {
    pages had two such rows, and the window could only be dragged by the
    sidebar. Rows: the sidebar brand row, the session header, the plain pane
    title, the PR bar, the analytics bar, and both report headers. */
-html.wco .wco-chrome {
+/* `desktop-shell` is the durable Electron capability. `wco` still drives the
+   geometry and spacing, but Chromium can transiently report its overlay as
+   hidden while the BrowserWindow still has no native titlebar. Dragging must
+   survive that report or the window has no way to move. */
+html:is(.wco, .desktop-shell) .wco-chrome {
 	-webkit-app-region: drag;
 	app-region: drag;
 }
-html.wco .wco-chrome
+html:is(.wco, .desktop-shell) .wco-chrome
 	:is(button, a, input, select, textarea, [role="button"], [tabindex]) {
 	-webkit-app-region: no-drag;
 	app-region: no-drag;
 }
-/* Chromium withholds pointer events from native drag regions. While a menu is
-   mounted, temporarily return the chrome to the page so its outside press can
-   dismiss the menu; native dragging resumes as soon as the popup unmounts. */
-html.wco:has(.app-menu-popup) .wco-chrome {
+/* Chromium withholds pointer events from native drag regions. While a visible
+   menu is mounted, temporarily return the chrome to the page so its outside
+   press can dismiss the menu. A hidden keep-mounted popup must not disable
+   window dragging indefinitely. */
+html:is(.wco, .desktop-shell):has(.app-menu-popup:not([hidden])) .wco-chrome {
 	-webkit-app-region: no-drag;
 	app-region: no-drag;
 }
 /* The media lightbox floats over the draggable first row. Electron does not
    reliably let an overlapping sibling carve clickable links out of that row,
    so suspend the underlying drag region while the lightbox is mounted. */
-html.wco:has([data-media-lightbox]) .wco-chrome {
+html:is(.wco, .desktop-shell):has([data-media-lightbox]) .wco-chrome {
 	-webkit-app-region: no-drag;
 	app-region: no-drag;
 }
@@ -1374,12 +1475,12 @@ html.wco:has([data-media-lightbox]) .wco-chrome {
    of it, so the generic header no-drag rule above does not reach them. Mark the
    floating cluster itself as interactive or the desktop shell consumes clicks
    as window drags while the sidebar is collapsed. */
-html.wco .sidebar-reopen,
-html.wco .wco-nav-pane {
+html:is(.wco, .desktop-shell) .sidebar-reopen,
+html:is(.wco, .desktop-shell) .wco-nav-pane {
 	-webkit-app-region: no-drag;
 	app-region: no-drag;
 }
-.app-body.sidebar-collapsed .detail-pane .wco-nav-pane {
+html:is(.wco, .desktop-shell) .app-body.sidebar-collapsed .detail-pane .wco-nav-pane {
 	display: flex;
 	align-items: center;
 	gap: 2px;
@@ -1400,9 +1501,29 @@ html.wco .app-body.sidebar-collapsed .detail-topbar-title {
    overlapping sibling of the draggable header. The collapsed controls float
    above that header, so make the underlying row non-draggable in this state;
    otherwise it intercepts sidebar/back/forward clicks before they reach DOM. */
-html.wco .app-body.sidebar-collapsed .wco-chrome {
+html:is(.wco, .desktop-shell) .app-body.sidebar-collapsed .wco-chrome {
 	-webkit-app-region: no-drag;
 	app-region: no-drag;
+}
+/* The collapsed pane's floating controls occupy the traffic-light inset and
+   the next 104px. Its header stays no-drag because Electron does not reliably
+   subtract those overlapping siblings. This empty slot directly after the
+   controls restores a safe native grip without covering titlebar actions. */
+.wco-collapsed-drag-handle {
+	display: none;
+}
+html:is(.wco, .desktop-shell)
+	.app-body.sidebar-collapsed
+	.wco-collapsed-drag-handle {
+	position: absolute;
+	top: calc((var(--desktop-header-h) - 34px) / 2);
+	left: calc(env(titlebar-area-x, 78px) + 112px);
+	z-index: 20;
+	display: block;
+	width: 36px;
+	height: 34px;
+	-webkit-app-region: drag;
+	app-region: drag;
 }
 
 
@@ -1418,13 +1539,13 @@ html.wco .app-body.sidebar-collapsed .wco-chrome {
 /* Full automated-review preview: a readable long-form scale, bounded by the
    popover rather than the viewport, with the same theme tokens as markdown. */
 .review-preview-markdown.markdown {
-	font-size: 15px;
+	font-size: var(--type-body);
 	line-height: 1.5;
 	color: var(--text-dim);
 }
 .review-preview-markdown.markdown > h3:first-child {
 	margin: 0 0 12px;
-	font-size: 19px;
+	font-size: var(--type-section-title);
 	font-weight: 600;
 	line-height: 1.25;
 	letter-spacing: -0.015em;
@@ -1488,9 +1609,15 @@ html.wco .app-body.sidebar-collapsed .wco-chrome {
 .markdown pre {
 	background: #0c0c10;
 	border: 1px solid var(--border);
-	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
+	border-radius: calc(18px * var(--rf)); corner-shape: var(--cs);
 	padding: 10px 12px;
 	margin: 2px 0 8px;
+	/* Preserve authored indentation and line breaks, but soft-wrap long lines so
+	   a fence reads at the conversation width instead of becoming a scroller.
+	   `anywhere` also catches URLs, hashes, and generated identifiers that have
+	   no natural wrap point. */
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
 	overflow-x: auto;
 	font-family: var(--mono);
 	/* The same ratio the inline chip below uses, so a block and an inline run
@@ -1673,6 +1800,11 @@ html.wco .app-body.sidebar-collapsed .wco-chrome {
 	-webkit-box-decoration-break: clone;
 	box-decoration-break: clone;
 }
+/* Once an omitted archived reference resolves, the archive crate replaces the
+   conversation glyph without changing the mirror's metrics. */
+.composer-hl .cmp-session.cmp-archived {
+	--cmp-session-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='4.75' width='16' height='4' rx='1'/%3E%3Cpath d='M5.5 8.75V17.25C5.5 18.3546 6.39543 19.25 7.5 19.25H16.5C17.6046 19.25 18.5 18.3546 18.5 17.25V8.75'/%3E%3Cpath d='M10 12.25H14'/%3E%3C/svg%3E");
+}
 .composer-hl .cmp-session[data-hover] {
 	background: var(--hover-strong);
 	box-shadow:
@@ -1771,19 +1903,19 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	color: var(--text);
 }
 .markdown h1 {
-	font-size: 19px;
+	font-size: var(--type-section-title);
 	letter-spacing: -0.018em;
 }
 .markdown h2 {
-	font-size: 17px;
+	font-size: var(--type-dialog-title);
 	letter-spacing: -0.016em;
 }
 /* The deepest two levels share the body size and are told apart by weight and
-   the space above them, which is what the scale has: 19 / 17 / body. A step of
-   its own for h4 only bought a size nobody could see. */
+   the space above them, which is what the scale has: section / dialog / body.
+   A step of its own for h4 only bought a size nobody could see. */
 .markdown h3,
 .markdown h4 {
-	font-size: 15px;
+	font-size: var(--type-body);
 }
 
 .markdown > :first-child {
@@ -1810,14 +1942,14 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .markdown table {
 	border-collapse: collapse;
 	margin: 2px 0 10px;
-	font-size: 13px;
+	font-size: var(--type-label);
 	display: block;
 	overflow-x: auto;
 	max-width: 100%;
 }
 .markdown th {
 	text-align: left;
-	font-size: 11px;
+	font-size: var(--type-meta);
 	font-weight: 600;
 	letter-spacing: -0.01em;
 	color: var(--text-faint);
@@ -1983,6 +2115,203 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .md-diagram-expand:hover {
 	opacity: 1;
 	background: rgba(0, 0, 0, 0.75);
+}
+
+/* ── Controls on a rendered code fence ─────────────────────────
+   Copy and per-block wrapping are built by lib/code-copy.ts as siblings of
+   the <pre>. They therefore stay fixed while an unwrapped block scrolls, and
+   never become part of selected or copied code. Renderer-emitted markup is
+   also why these styles live here rather than in a component utility. */
+.md-code-wrap {
+	position: relative;
+}
+.md-code-wrap[data-wrapped="false"] > pre {
+	white-space: pre;
+	overflow-wrap: normal;
+}
+/* Keep the first line clear of both visible icon controls. */
+.md-code-wrap > pre {
+	padding-right: 80px;
+}
+.md-code-controls {
+	position: absolute;
+	top: 6px;
+	right: 6px;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+.md-code-copy,
+.md-code-settings-trigger {
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border: 0;
+	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
+	background: transparent;
+	color: var(--text-faint);
+	cursor: pointer;
+}
+.md-code-settings-trigger {
+	position: relative;
+}
+.md-code-settings-trigger::before {
+	content: "";
+	position: absolute;
+	inset: 4px;
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
+	background: transparent;
+	pointer-events: none;
+}
+.md-code-settings-trigger > svg {
+	position: relative;
+}
+.md-code-copy:hover {
+	background: var(--hover);
+	color: var(--text-dim);
+}
+.md-code-settings-trigger:hover,
+.md-code-settings-trigger[data-open] {
+	color: var(--text-dim);
+}
+.md-code-settings-trigger:hover::before,
+.md-code-settings-trigger[data-open]::before {
+	background: var(--hover);
+}
+.md-code-copy:focus-visible,
+.md-code-settings-trigger:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+/* Both glyphs share one cell, so the swap to the check carries no layout and
+   the button cannot shift under the pointer mid-click. */
+.md-code-copy-glyph {
+	grid-area: 1 / 1;
+	display: grid;
+	place-items: center;
+}
+.md-code-copy-glyph[data-state="done"] {
+	opacity: 0;
+	color: var(--green);
+}
+.md-code-copy[data-copied] .md-code-copy-glyph[data-state="idle"] {
+	opacity: 0;
+}
+.md-code-copy[data-copied] .md-code-copy-glyph[data-state="done"] {
+	opacity: 1;
+}
+
+/* This popup cannot use the Base UI primitive because MarkdownBody owns the
+   fence as injected HTML rather than JSX. Its material, edge, radius and type
+   are the same tokens as ui/popover. */
+.md-code-settings {
+	position: absolute;
+	top: 40px;
+	right: 0;
+	z-index: 2;
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	width: min(280px, calc(100vw - 24px));
+	box-sizing: border-box;
+	padding: 12px;
+	border-radius: calc(16px * var(--rf)); corner-shape: var(--cs);
+	background: var(--popup-surface);
+	box-shadow:
+		0 2px 6px -2px color-mix(in srgb, black 5%, transparent),
+		0 10px 28px -8px color-mix(in srgb, black 10%, transparent),
+		0 0 0 1px color-mix(in srgb, var(--popup-ring) 65%, transparent);
+	color: var(--text);
+}
+.md-code-settings[hidden] {
+	display: none;
+}
+.md-code-settings-copy {
+	min-width: 0;
+	flex: 1;
+}
+.md-code-settings-title {
+	font-size: var(--type-label);
+	font-weight: 600;
+	line-height: 1.35;
+}
+.md-code-settings-description {
+	margin-top: 2px;
+	font-size: var(--type-meta);
+	line-height: 1.4;
+	color: var(--text-dim);
+}
+
+/* A compact version of the shared switch shape. role=switch and aria-checked
+   are set in lib/code-copy.ts. The 44px button is its hit target; the 44×20
+   track remains the same compact macOS shape as ui/switch. */
+.md-code-wrap-toggle {
+	position: relative;
+	flex: none;
+	width: 44px;
+	height: 44px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	cursor: pointer;
+}
+.md-code-wrap-toggle::before,
+.md-code-wrap-toggle::after {
+	content: "";
+	position: absolute;
+	left: 0;
+	top: 12px;
+	height: 20px;
+	border-radius: 999px;
+}
+.md-code-wrap-toggle::before {
+	width: 44px;
+	background: var(--bg-active);
+}
+.md-code-wrap-toggle::after {
+	left: 2px;
+	top: 14px;
+	width: 26px;
+	height: 16px;
+	background: var(--on-accent-control, var(--on-accent));
+	box-shadow:
+		0 1px 3px color-mix(in srgb, var(--text) 22%, transparent),
+		0 0 0 1px color-mix(in srgb, var(--text) 7%, transparent);
+	transition: translate var(--dur-micro) var(--ease);
+}
+.md-code-wrap[data-wrapped="true"] .md-code-wrap-toggle::before {
+	background: var(--accent-control, var(--accent));
+}
+.md-code-wrap[data-wrapped="true"] .md-code-wrap-toggle::after {
+	translate: 14px 0;
+}
+.md-code-wrap-toggle:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+	border-radius: 999px;
+}
+
+/* Both icon controls remain visible: code wrapping moved behind settings, so
+   copy immediately to its left also needs to read as a stable paired action.
+   Touch keeps a 44px target for both. */
+@media (hover: none) and (pointer: coarse) {
+	.md-code-controls {
+		top: 4px;
+		right: 4px;
+	}
+	.md-code-copy,
+	.md-code-settings-trigger {
+		width: 44px;
+		height: 44px;
+	}
+	.md-code-settings {
+		top: 52px;
+	}
+	.md-code-wrap > pre {
+		padding-right: 104px;
+	}
 }
 
 /* ── Chips inside rendered markdown ──────────────────────────
@@ -2455,21 +2784,21 @@ html[data-theme="light"] span.commit-ref:hover {
    sitting later — keep them below that block. */
 .wiki-doc {
 	max-width: 780px;
-	font-size: 15px;
+	font-size: var(--type-body);
 	line-height: 1.65;
 }
 .wiki-doc h1 {
-	font-size: 19px;
+	font-size: var(--type-section-title);
 	margin: 0 0 14px;
 }
 .wiki-doc h2 {
-	font-size: 17px;
+	font-size: var(--type-dialog-title);
 	margin: 22px 0 10px;
 }
 .wiki-doc h3 {
 	/* Body size, the same as `.markdown h3`: weight and the space above carry
 	   it. Restated here only because this block re-declares its own margins. */
-	font-size: 15px;
+	font-size: var(--type-body);
 	margin: 18px 0 8px;
 }
 .wiki-doc img {
@@ -2552,20 +2881,6 @@ html[data-theme="light"] span.commit-ref:hover {
 @keyframes ghost-in {
 	from { opacity: 0; }
 	to { opacity: 1; }
-}
-
-/* The page loader's wave (ui/page-loader), referenced from the longhand
-   `[animation-name:page-loader-bar]` in lib/page-loader-classes.
-
-   It restates index.html's `splash-bar` on purpose. The launch splash has to
-   paint before the bundle has parsed, so the shell carries its own copy of both
-   the keyframe and the bar geometry; this is the same wave, for regions inside
-   the app that are still empty. If one moves, move the other — a launch screen
-   and a loading page that breathe at different rates is exactly the kind of
-   drift nobody sees in review and everybody feels. */
-@keyframes page-loader-bar {
-	0%, 100% { transform: scaleY(0.6); }
-	50% { transform: scaleY(1); }
 }
 
 /* The pixel spinner's wave. Referenced from the longhand

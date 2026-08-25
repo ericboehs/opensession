@@ -40,7 +40,7 @@ jobs:
       OS1_DERIVED_DATA: ${{ github.workspace }}/.xcode-derived-data/ios
       OS1_COMPILATION_CACHE: ${{ github.workspace }}/.xcode-compilation-cache/ios
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -56,7 +56,7 @@ jobs:
 
       - name: Restore Swift packages
         id: package-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ env.OS1_DERIVED_DATA }}/SourcePackages
           key: os1-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/clients/ios/project.yml') }}
@@ -67,7 +67,7 @@ jobs:
       # is specifically designed to reuse compiler outputs across clean builds.
       - name: Restore Xcode compilation cache
         id: compilation-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ env.OS1_COMPILATION_CACHE }}
           key: os1-cas-v1-ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('packages/clients/ios/project.yml') }}-${{ github.sha }}
@@ -205,20 +205,20 @@ jobs:
 
       - name: Save Swift packages
         if: steps.package-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ env.OS1_DERIVED_DATA }}/SourcePackages
           key: os1-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/clients/ios/project.yml') }}
 
       - name: Save Xcode compilation cache
         if: steps.compilation-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ env.OS1_COMPILATION_CACHE }}
           key: os1-cas-v1-ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('packages/clients/ios/project.yml') }}-${{ github.sha }}
 
       - name: Store signed IPA
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: os1-ios-${{ github.run_id }}
           path: ${{ runner.temp }}/export/OS1.ipa
@@ -235,7 +235,7 @@ jobs:
         working-directory: .
     steps:
       - name: Download signed IPA
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: os1-ios-${{ github.run_id }}
           path: dist

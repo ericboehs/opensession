@@ -36,19 +36,19 @@ export function AddRepoDialog({
 		if (!input || adding) return;
 		setAdding(true);
 		setError(null);
-		try {
-			const repo = await registerRepoApi(
+		await (async () => {
+const repo = await registerRepoApi(
 				mode === "clone" ? { url: input } : { path: input },
 			);
 			onAdded(repo);
 			if (mode === "clone") setCloneUrl("");
 			else setFolderPath("");
 			onOpenChange(false);
-		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : String(cause));
-		} finally {
-			setAdding(false);
-		}
+})().catch(async (cause) => {
+setError(cause instanceof Error ? cause.message : String(cause));
+}).finally(async () => {
+setAdding(false);
+});
 	}
 
 	return (

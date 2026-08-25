@@ -21,8 +21,9 @@ WS protocol notes) — keep it updated alongside changes.
   Finder, in Spotlight, Siri, Shortcuts, and on the Settings screens that list
   installed apps. Its **full name** is **Open Session**, which the App Store
   record keeps and which prose the app writes uses. Four places carry the label
-  and have to move together: `INFOPLIST_KEY_CFBundleDisplayName` in
-  `project.yml` (both targets), `PRODUCT_NAME` on the Mac target (the app menu
+  and have to move together: `CFBundleDisplayName` in the iOS target's `info`
+  plus `INFOPLIST_KEY_CFBundleDisplayName` on the Mac target in `project.yml`,
+  `PRODUCT_NAME` on the Mac target (the app menu
   is `CFBundleName`, and only `PRODUCT_NAME` can set it, so it also renames the
   `.app` and executable — keep `TEST_HOST` in step), `CFBundleDisplayName` in
   `OS1Widgets/Info.plist`, and `AppBrand.appName`. The full name lives once, in

@@ -134,6 +134,9 @@ describe("starting a session per task", () => {
 			// the one live checkout, which is the mingled diff the fan-out exists
 			// to avoid.
 			expect(opts.isolatedWorktree).toBe(true);
+			// Clicking Fix starts the opening turn without a composer. Preserve that
+			// origin so clients can mark it without classifying it as an automation run.
+			expect(opts.agentStarted).toBe(true);
 			expect(opts.branch).toMatch(/^report-fix-thing-[13]/);
 		}
 		expect(created[0].prompt.startsWith("Do thing 1.")).toBe(true);

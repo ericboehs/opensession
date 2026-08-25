@@ -1,3 +1,4 @@
+import { executeSessionProjection } from "./session-projection-executor";
 import { readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { opendir } from "fs/promises";
 import { OPENSESSION_SESSIONS_DIR } from "./paths";
@@ -18,16 +19,17 @@ import { providerFor } from "./models";
 import { parseTranscript, parseTranscriptAsync } from "./jsonl-parser";
 import { type SeqEntry, type TranscriptStore, transcriptStore } from "./transcript-store";
 import {
-  isOpencodeSessionId,
-  readOpencodeTranscript,
-  existingOpencodeTranscriptPath,
   isTranscriptStoreDegraded,
   clearTranscriptStoreDegraded,
-  bksSessionFor,
-} from "./opencode-transcript";
+  sessionForEngineId,
+} from "./transcript-persistence";
 import { activeRunRecords } from "./run-journal";
 import { configuredRepos, defaultRepo } from "./config";
-import { prWorkspaceReader, sessionPrBranch } from "./session-pr-target";
+import {
+  prWorkspaceReader,
+  sessionPrBranch,
+  shareWorkspacePrRefs,
+} from "./session-pr-target";
 import { readPrState } from "../agents/github/state";
 import {
   getPrsByRepo,
@@ -45,6 +47,7 @@ import type {
   SessionPrRef,
   TranscriptEntry,
 } from "./types";
+import { removeIndexedSession } from "./session-list-store";
 
 // The GitHub PR bulk cache lives in pr-cache.ts (extracted from this module);
 // re-export its public surface so existing consumers keep importing from here.
@@ -117,16 +120,11 @@ export function getTranscriptPath(
 export function getEngineTranscriptPath(
   worktreeDir: string,
   engineSessionId: string,
-  provider: "claude" | "codex" | "opencode" | "pi"
+  provider: "claude" | "codex" | "pi"
 ): string | null {
   if (provider === "codex") {
     return findCodexRollout(engineSessionId)?.path || null;
   }
-  // OpenCode's own storage is SQLite (no tailable file), but the opencode
-  // runner persists a claude-shape jsonl per session precisely so the watcher
-  // and reload paths work unchanged. Null until the session's first persisted
-  // run (the runner creates the file before yielding init).
-  if (provider === "opencode") return existingOpencodeTranscriptPath(engineSessionId);
   // Pi has no per-session file at all: the pi runner persists every turn
   // straight into the owned transcript store (viewers stream over the store
   // bus, readers go through readEngineTranscript's pi branch below).
@@ -138,17 +136,16 @@ export function getEngineTranscriptPath(
 
 /**
  * A session's engine transcript as entries, whatever the engine: claude jsonl
- * and codex rollouts parse from their transcript file; opencode reads straight
- * out of OpenCode's SQLite store. This is the source for cross-engine handoff
+ * and codex rollouts parse from their transcript file; pi reads straight
+ * out of Pi's SQLite store. This is the source for cross-engine handoff
  * notes (buildEngineSwitchHandoffNote) in BOTH directions — including the
- * previously-stubbed opencode→claude/codex direction.
+ * previously-stubbed pi→claude/codex direction.
  */
 export function readEngineTranscript(
   worktreeDir: string,
   engineSessionId: string,
-  provider: "claude" | "codex" | "opencode" | "pi"
+  provider: "claude" | "codex" | "pi"
 ): TranscriptEntry[] {
-  if (provider === "opencode") return readOpencodeTranscript(engineSessionId);
   if (provider === "pi") return engineStoreTranscript(engineSessionId);
   const path = getEngineTranscriptPath(worktreeDir, engineSessionId, provider);
   if (!path || !existsSync(path)) return engineStoreTranscript(engineSessionId);
@@ -156,14 +153,13 @@ export function readEngineTranscript(
 }
 
 /** readEngineTranscript with the file parse yielding to the event loop —
- *  identical output. The opencode SQLite read stays sync (bounded pages),
+ *  identical output. The pi SQLite read stays sync (bounded pages),
  *  and so does the pi store read (same bounded store pages). */
 export async function readEngineTranscriptAsync(
   worktreeDir: string,
   engineSessionId: string,
-  provider: "claude" | "codex" | "opencode" | "pi"
+  provider: "claude" | "codex" | "pi"
 ): Promise<TranscriptEntry[]> {
-  if (provider === "opencode") return readOpencodeTranscript(engineSessionId);
   if (provider === "pi") return engineStoreTranscript(engineSessionId);
   const path = getEngineTranscriptPath(worktreeDir, engineSessionId, provider);
   if (!path || !existsSync(path)) return engineStoreTranscript(engineSessionId);
@@ -191,7 +187,7 @@ export async function readEngineTranscriptAsync(
  *  1. the run journal — live for the whole turn (these engines journal their
  *     engine id in the claudeSessionId slot, legacy name, with the owning
  *     osSessionId);
- *  2. the persisted engine→unified map (bksSessionFor — recorded before the
+ *  2. the persisted engine→unified map (sessionForEngineId — recorded before the
  *     runner ever yields init, and never cleared on run end);
  *  3. the session scan — every engine slot, including a claude-slot match for
  *     slack/linear files whose pi id predates the pi slot there (equality on
@@ -205,7 +201,7 @@ function engineStoreTranscript(engineSessionId: string): TranscriptEntry[] {
     // module (getAllSessions), so the static edge must stay one-directional.
     // By the time a transcript is read the cache module is long-loaded —
     // this is a module-cache hit (the importLegacyIntoStore pattern in
-    // opencode-transcript.ts).
+    // pi-transcript.ts).
     const cacheMod = require("./session-cache") as typeof import("./session-cache");
     const sessions = cacheMod.getCachedSessions();
     const byUnifiedId = (unifiedId: string | undefined) =>
@@ -219,7 +215,7 @@ function engineStoreTranscript(engineSessionId: string): TranscriptEntry[] {
     );
     const owner =
       byUnifiedId(journaled?.osSessionId) ??
-      byUnifiedId(bksSessionFor(engineSessionId)) ??
+      byUnifiedId(sessionForEngineId(engineSessionId)) ??
       sessions.find(
         (s) =>
           s.piSessionId === engineSessionId ||
@@ -236,169 +232,61 @@ function engineStoreTranscript(engineSessionId: string): TranscriptEntry[] {
   }
 }
 
-/** What mergedSessionTranscript needs from a session. `id` (the unified
- *  session id) is optional and only consulted by the flag-gated transcript v2
- *  read path — callers passing a full UnifiedSession opt in automatically;
- *  id-less refs (the import routines' deliberately id-less ones) always take
- *  the legacy merge. */
-type TranscriptSessionRef = Pick<
-  UnifiedSession,
-  "transcriptPath" | "opencodeSessionId" | "claudeSessionId"
-> & { id?: string };
+type TranscriptSessionRef = Pick<UnifiedSession, "transcriptPath"> & {
+  id?: string;
+};
 
-/**
- * Full UI transcript for a session that may span engines: the claude/codex
- * transcript file (turns before a migration to opencode, or the whole history
- * for single-engine sessions) merged with the opencode store's entries (turns
- * after), ordered by timestamp. Also covers legacy session files where the
- * opencode id rides the claude slot (pre-`opencodeSessionId` runs) — those
- * previously rendered as an empty transcript after a reload.
- *
- * Transcript v2 (docs/transcripts.md §8): when the session's history
- * has been imported into the owned transcript store and the legacy files show
- * no unexplained growth beyond the import watermark, this serves the store's
- * entries (bounded wire forms — the /entry/:id route resolves full content).
- * On drift it triggers a re-import (upserts make that idempotent) and serves
- * legacy for that call. Id-less refs (the import routines') and any store
- * failure take the legacy merge below — the code-level fallback that replaced
- * the retired env kill switch.
- */
+/** Full UI transcript, preferring the owned store and falling back to an
+ * external engine transcript file while legacy imports finish. */
 export function mergedSessionTranscript(
-  session: TranscriptSessionRef
+  session: TranscriptSessionRef,
 ): TranscriptEntry[] {
-  if (
-    session.id &&
-    // Plain loop runs don't thread a unified session id to the runner (§3) —
-    // their store rows would be forever partial; they stay fully legacy.
-    // (Linear runs thread transcriptSessionId, so linear- sessions are
-    // v2-eligible like everything else.)
-    !session.id.startsWith("plain-")
-  ) {
+  if (session.id && !session.id.startsWith("plain-")) {
     try {
       const served = v2StoreTranscript(session.id, session);
       if (served) return served;
-    } catch (e) {
+    } catch (error) {
       console.warn(
-        `[sessions] transcript v2 read failed for ${session.id} — legacy path:`,
-        e instanceof Error ? e.message : e
+        `[sessions] transcript store read failed for ${session.id}:`,
+        error instanceof Error ? error.message : error,
       );
     }
   }
-  return legacyMergedSessionTranscript(session);
+  return session.transcriptPath ? parseTranscript(session.transcriptPath) : [];
 }
 
-/**
- * mergedSessionTranscript for bulk/background paths (legacy v2 imports, the
- * session-index sweep): identical output, but the big JSONL parses go through
- * parseTranscriptAsync so a fat transcript yields to the event loop instead
- * of wedging it. The v2 store read stays sync (bounded SQLite pages).
- */
 export async function mergedSessionTranscriptAsync(
-  session: TranscriptSessionRef
+  session: TranscriptSessionRef,
 ): Promise<TranscriptEntry[]> {
   if (session.id && !session.id.startsWith("plain-")) {
     try {
       const served = v2StoreTranscript(session.id, session);
       if (served) return served;
-    } catch (e) {
+    } catch (error) {
       console.warn(
-        `[sessions] transcript v2 read failed for ${session.id} — legacy path:`,
-        e instanceof Error ? e.message : e
+        `[sessions] transcript store read failed for ${session.id}:`,
+        error instanceof Error ? error.message : error,
       );
     }
   }
-  const fileEntries = session.transcriptPath
+  return session.transcriptPath
     ? await parseTranscriptAsync(session.transcriptPath)
     : [];
-  const ocId = legacyOcId(session);
-  if (!ocId) return fileEntries;
-  const ocPath = existingOpencodeTranscriptPath(ocId);
-  if (ocPath && ocPath === session.transcriptPath) return fileEntries;
-  const ocEntries = ocPath
-    ? await parseTranscriptAsync(ocPath)
-    : readOpencodeTranscript(ocId);
-  return mergeLegacyEntries(fileEntries, ocEntries);
 }
 
-/** The pre-v2 merge (transcript file(s) + opencode store), unchanged. */
-function legacyMergedSessionTranscript(
-  session: TranscriptSessionRef
-): TranscriptEntry[] {
-  const fileEntries = session.transcriptPath
-    ? parseTranscript(session.transcriptPath)
-    : [];
-  const ocId = legacyOcId(session);
-  if (!ocId) return fileEntries;
-  // Prefer the persisted claude-shape file (it is seeded/backfilled to be
-  // self-contained); fall back to reading OpenCode's SQLite store for legacy
-  // sessions whose next run hasn't backfilled a file yet.
-  const ocPath = existingOpencodeTranscriptPath(ocId);
-  if (ocPath && ocPath === session.transcriptPath) return fileEntries;
-  const ocEntries = ocPath ? parseTranscript(ocPath) : readOpencodeTranscript(ocId);
-  return mergeLegacyEntries(fileEntries, ocEntries);
-}
-
-function legacyOcId(session: TranscriptSessionRef): string | null {
-  return (
-    session.opencodeSessionId ||
-    (isOpencodeSessionId(session.claudeSessionId) ? session.claudeSessionId : null)
-  );
-}
-
-function mergeLegacyEntries(
-  fileEntries: TranscriptEntry[],
-  ocEntries: TranscriptEntry[]
-): TranscriptEntry[] {
-  if (!ocEntries.length) return fileEntries;
-  if (!fileEntries.length) return ocEntries;
-  // A seeded opencode file repeats the prior engine's entries (same ids) —
-  // dedupe by id, keeping the first occurrence, then order by time.
-  const seen = new Set<string>();
-  const merged = [...fileEntries, ...ocEntries].filter((e) => {
-    if (seen.has(e.id)) return false;
-    seen.add(e.id);
-    return true;
-  });
-  return merged.sort((a, b) =>
-    (a.timestamp || "").localeCompare(b.timestamp || "")
-  );
-}
-
-// ── Transcript v2 read path (docs/transcripts.md §8) ───────────────
-// Only reached when the caller passed a session id; transcriptStore() is
-// never touched otherwise (its DB open is lazy).
-
-/** The legacy transcript files for this session (same candidate set as the
- *  import watermark: the session transcript file + the oc mirror). Since the
- *  2026-07-23 mirror retirement only EXTERNAL-writer files (claude/codex CLI
- *  transcriptPath) still grow — oc mirrors are a frozen archive whose
- *  constant size keeps pre-retirement watermarks coherent, which is why they
- *  stay in the set. Exported for the sibling §8 consumers — ws-handlers'
- *  serveTranscriptV2 (sync-import ceiling + import watermark) and
- *  opencode-transcript's importLegacyIntoStore (import watermark) — so every
- *  watermark covers the exact set this module drifts against. */
+/** External transcript files whose growth can require a store re-import. */
 export function v2MirrorFiles(
-  session: TranscriptSessionRef
+  session: TranscriptSessionRef,
 ): { path: string; size: number }[] {
-  const candidates: string[] = [];
-  if (session.transcriptPath) candidates.push(session.transcriptPath);
-  const ocId =
-    session.opencodeSessionId ||
-    (isOpencodeSessionId(session.claudeSessionId) ? session.claudeSessionId : null);
-  if (ocId) {
-    const ocPath = existingOpencodeTranscriptPath(ocId);
-    if (ocPath && !candidates.includes(ocPath)) candidates.push(ocPath);
+  if (!session.transcriptPath) return [];
+  try {
+    return [{ path: session.transcriptPath, size: statSync(session.transcriptPath).size }];
+  } catch {
+    return [];
   }
-  const files: { path: string; size: number }[] = [];
-  for (const path of candidates) {
-    try {
-      files.push({ path, size: statSync(path).size });
-    } catch {
-      // missing candidate — nothing to drift against from it
-    }
-  }
-  return files;
 }
+
+// ── Transcript store read path ───────────────────────────────────────────────
 
 /**
  * Every stored entry for the session, ascending seq (paged readSince),
@@ -448,11 +336,7 @@ export function v2TranscriptHasDrift(
   session: TranscriptSessionRef
 ): boolean {
   if (
-    isTranscriptStoreDegraded(
-      sessionId,
-      session.opencodeSessionId,
-      session.claudeSessionId
-    )
+    isTranscriptStoreDegraded(sessionId)
   )
     return true;
   const files = v2MirrorFiles(session);
@@ -482,7 +366,7 @@ function v2StoreTranscript(
   // measured BEFORE the legacy parse — lines appended during the parse then
   // read as growth next time instead of being silently covered.
   const totalSize = v2MirrorFiles(session).reduce((sum, f) => sum + f.size, 0);
-  const legacy = legacyMergedSessionTranscript(session);
+  const legacy = session.transcriptPath ? parseTranscript(session.transcriptPath) : [];
   try {
     store.importLegacyTranscript(
       sessionId,
@@ -492,11 +376,7 @@ function v2StoreTranscript(
     );
     // The full re-import restored every entry the store had missed — release
     // the failure-side marker (no-op for ids that never carried it).
-    clearTranscriptStoreDegraded(
-      sessionId,
-      session.opencodeSessionId,
-      session.claudeSessionId
-    );
+    clearTranscriptStoreDegraded(sessionId);
   } catch (e) {
     console.warn(
       `[sessions] transcript v2 drift re-import failed for ${sessionId}:`,
@@ -524,15 +404,12 @@ function v2StoreTranscript(
 export function engineUserTexts(session: {
 	id?: string;
 	transcriptPath?: string | null;
-	opencodeSessionId?: string | null;
 	claudeSessionId?: string | null;
 }): string[] {
 	try {
 		return mergedSessionTranscript({
 			id: session.id,
 			transcriptPath: session.transcriptPath ?? null,
-			opencodeSessionId: session.opencodeSessionId ?? undefined,
-			claudeSessionId: session.claudeSessionId ?? null,
 		})
 			.filter((e) => e.type === "user")
 			.map((e) => e.content.trim());
@@ -553,15 +430,12 @@ export function engineUserTexts(session: {
 export function trailingUserTexts(session: {
 	id?: string;
 	transcriptPath?: string | null;
-	opencodeSessionId?: string | null;
 	claudeSessionId?: string | null;
 }): string[] {
 	try {
 		const entries = mergedSessionTranscript({
 			id: session.id,
 			transcriptPath: session.transcriptPath ?? null,
-			opencodeSessionId: session.opencodeSessionId ?? undefined,
-			claudeSessionId: session.claudeSessionId ?? null,
 		});
 		let lastResponse = -1;
 		for (let i = entries.length - 1; i >= 0; i--) {
@@ -582,70 +456,31 @@ export function trailingUserTexts(session: {
 }
 
 export function engineSessionPatch(
-  provider: "claude" | "codex" | "opencode" | "pi",
-  engineSessionId: string
+  provider: "claude" | "codex" | "pi",
+  engineSessionId: string,
 ): Partial<NativeSessionFile> {
   if (provider === "codex") return { codexThreadId: engineSessionId || undefined };
-  // OpenCode ids get their own slot (readers prefer it) AND still mirror into
-  // the claude slot, the historical ride every pre-existing code path — and
-  // any not-yet-reloaded closure during a hot-reload window — reads and
-  // writes. Readers recognize the ride by the `ses_` id shape. The mirror is
-  // transitional: dropping it requires no `ses_…`-riding session files and no
-  // pre-opencodeSessionId code paths left.
-  if (provider === "opencode")
-    return {
-      opencodeSessionId: engineSessionId || undefined,
-      claudeSessionId: engineSessionId || undefined,
-    };
-  // Pi gets its own slot with NO claude-slot mirror: the mirror exists only
-  // for pre-opencodeSessionId readers, and nothing pre-pi ever read a pi id.
   if (provider === "pi") return { piSessionId: engineSessionId || undefined };
   return { claudeSessionId: engineSessionId || undefined };
 }
 
-/**
- * Inverse of engineSessionPatch: which id a run on `provider` resumes. Keep the
- * two together — a read rule that drifts from the write rule yields undefined,
- * which is indistinguishable from "first run on this provider", so the caller
- * mints a fresh engine session and the conversation silently loses its history.
- *
- * The slots follow the writer's table, plus the fallbacks that table's
- * transitional mirror implies:
- * - opencode reads its own slot, then a `ses_`-shaped claude-slot ride (the
- *   mirror engineSessionPatch still writes, and all a pre-slot file has).
- * - pi reads its own slot, then a NON-`ses_` claude slot for files from before
- *   the pi slot existed. A genuine claude uuid riding there just misses the pi
- *   session dir and starts fresh, same as no id.
- * - claude never resumes a `ses_`-shaped id: that ride was written by an
- *   opencode run, and handing it to the Claude SDK would fail the resume.
- */
 export function engineSessionIdFor(
   session: {
     claudeSessionId?: string | null;
     codexThreadId?: string | null;
-    opencodeSessionId?: string | null;
     piSessionId?: string | null;
   },
-  provider: "claude" | "codex" | "opencode" | "pi"
+  provider: "claude" | "codex" | "pi",
 ): string | undefined {
-  const claudeSlot = session.claudeSessionId || undefined;
-  const riddenByOpencode = isOpencodeSessionId(claudeSlot);
   if (provider === "codex") return session.codexThreadId || undefined;
-  if (provider === "opencode")
-    return (
-      session.opencodeSessionId ||
-      (riddenByOpencode ? claudeSlot : undefined)
-    );
-  if (provider === "pi")
-    return session.piSessionId || (riddenByOpencode ? undefined : claudeSlot);
-  return riddenByOpencode ? undefined : claudeSlot;
+  if (provider === "pi") return session.piSessionId || session.claudeSessionId || undefined;
+  return session.claudeSessionId || undefined;
 }
 
 function sessionEngineKeys(session: UnifiedSession): string[] {
   return [
     session.claudeSessionId ? `claude:${session.claudeSessionId}` : null,
     session.codexThreadId ? `codex:${session.codexThreadId}` : null,
-    session.opencodeSessionId ? `opencode:${session.opencodeSessionId}` : null,
     session.piSessionId ? `pi:${session.piSessionId}` : null,
   ].filter((key): key is string => !!key);
 }
@@ -655,9 +490,6 @@ function findTranscriptPath(
   sessionId: string | null
 ): string | null {
   if (!sessionId) return null;
-  // Legacy files where an opencode id rides the claude slot: there is no
-  // claude jsonl for a `ses_…` id — skip the (project-dir-wide) scan.
-  if (isOpencodeSessionId(sessionId)) return null;
   if (worktreeDir) {
     const path = getTranscriptPath(worktreeDir, sessionId);
     if (existsSync(path)) return path;
@@ -775,28 +607,19 @@ function findTranscriptBySessionId(sessionId: string): string | null {
   return transcriptIndex().get(sessionId) ?? null;
 }
 
-/**
- * Transcript for a session that may have run on either engine: codex-model
- * sessions prefer their rollout jsonl; Claude-model sessions prefer their
- * Claude jsonl. If the preferred provider has not produced a transcript yet,
- * fall back to the other engine so mixed sessions don't appear blank after a
- * provider switch.
- */
+/** External transcript path for legacy Claude/Codex sessions. Pi writes to
+ * the owned transcript store and therefore has no transcript file. */
 function resolveTranscriptPath(
   claudePath: string | null,
   codexThreadId: string | null | undefined,
   model: string | null | undefined,
-  opencodeSessionId?: string | null
 ): string | null {
-  const codexPath = codexThreadId ? findCodexRollout(codexThreadId)?.path || null : null;
-  const ocPath = existingOpencodeTranscriptPath(opencodeSessionId);
-  // An opencode-model session's persisted file is self-contained (seeded with
-  // any pre-migration history), so it wins while the session runs on opencode.
-  if (ocPath && providerFor(model) === "opencode") return ocPath;
-  if (codexThreadId && providerFor(model) === "codex") {
-    return codexPath || claudePath || ocPath;
-  }
-  return claudePath || codexPath || ocPath;
+  const codexPath = codexThreadId
+    ? findCodexRollout(codexThreadId)?.path || null
+    : null;
+  return codexThreadId && providerFor(model) === "codex"
+    ? codexPath || claudePath
+    : claudePath || codexPath;
 }
 
 function readJsonSafe<T>(path: string): T | null {
@@ -837,7 +660,6 @@ const SIDECAR_SOURCE_OWNED = new Set<string>([
   // resolution at a dead engine session.
   "claudeSessionId",
   "codexThreadId",
-  "opencodeSessionId",
   "piSessionId",
   "model",
   // Where the session runs. The owning store decides that; a stale sidecar
@@ -864,7 +686,7 @@ const SIDECAR_SOURCE_OWNED = new Set<string>([
  * that sidecar has no `id` field, so scanNativeSessions skips it and the
  * fields silently vanished from the unified view (publish_walkthrough on a
  * Slack session kept answering "no walkthrough on session" right after
- * persisting one — tellahq/tella-mac#71, 2026-07-26).
+ * persisting one).
  *
  * Carry-by-default: everything in the sidecar lands on the row except the
  * fields the scanned source owns (SIDECAR_SOURCE_OWNED, justified above). The
@@ -931,9 +753,6 @@ function* slackSessionRows(): Generator<UnifiedSession> {
         data.createdAt || getFileMtime(`${SLACK_SESSIONS_DIR}/${file}`),
       isRunning: false,
       transcriptPath: null,
-      opencodeSessionId: isOpencodeSessionId(data.claudeSessionId)
-        ? data.claudeSessionId || undefined
-        : undefined,
       slackThread: data.channel
         ? { channel: data.channel, threadTs: data.threadTs || "" }
         : undefined,
@@ -993,9 +812,6 @@ function* linearSessionRows(): Generator<UnifiedSession> {
       createdAt: getFileMtime(`${LINEAR_SESSIONS_DIR}/${file}`),
       isRunning: false,
       transcriptPath: null,
-      opencodeSessionId: isOpencodeSessionId(data.claudeSessionId)
-        ? data.claudeSessionId || undefined
-        : undefined,
       linearIssue: data.issueIdentifier
         ? {
             identifier: data.issueIdentifier,
@@ -1016,6 +832,118 @@ function scanLinearSessions(): UnifiedSession[] {
   return [...linearSessionRows()];
 }
 
+function nativeSessionRow(data: NativeSessionFile): UnifiedSession {
+  const archived = !!data.archived || isArchivedId(data.id);
+  return {
+    id: data.id,
+    claudeSessionId: data.claudeSessionId,
+    source: "opensession",
+    branch: data.branch || null,
+    worktreeDir: data.worktreeDir || null,
+    createdBy: data.createdBy || null,
+    createdByLogin: data.createdByLogin,
+    startedBy: data.createdBy,
+    title: data.title || data.branch || "Ask session",
+    mode: data.mode,
+    // Back-compat: older session files stored the repo under `project`.
+    repo: data.repo ?? (data as { project?: string }).project,
+    // Scratch has always been repo-less; newer repo-less Ask sessions say
+    // so outright. Both are surfaced as one flag so clients never have to
+    // read a missing `repo` as a decision (it usually isn't).
+    repoLess: data.repoLess || data.mode === "scratch" || undefined,
+    workspaceId: data.workspaceId ?? null,
+    parentSessionId: data.parentSessionId,
+    agentStarted: data.agentStarted,
+    spawnedBy: data.spawnedBy,
+    desk: data.desk,
+    spawnDepth: data.spawnDepth,
+    attachedRepos: data.attachedRepos,
+    stackedOn: data.stackedOn,
+    linkedPrs: data.linkedPrs,
+    previewPath: data.previewPath,
+    walkthrough: data.walkthrough,
+    slackShares: data.slackShares,
+    automation:
+      data.automation ||
+      (data.createdBy?.endsWith(" (automation)")
+        ? data.createdBy.slice(0, -" (automation)".length)
+        : undefined),
+    automationId: data.automationId,
+    archived: archived || undefined,
+    archivedReason:
+      data.archivedReason ||
+      (archived ? getArchiveReason(data.id) || "manual" : undefined),
+    plainThreadId: data.plainThreadId,
+    externalRefs: data.externalRefs,
+    // The MCP allowlist the session was created with. Dropping it here left
+    // `sessionMcpScopeSource`'s "session" branch unreachable, so a session
+    // created with a picked set of servers ran its first turn scoped (the
+    // create path passes the picked list straight to the run) and every turn
+    // after it against all of them.
+    mcpServers: data.mcpServers,
+    model: data.model,
+    effort: data.effort,
+    fastMode: data.fastMode,
+    accountId: data.accountId,
+    codexThreadId: data.codexThreadId,
+    piSessionId: data.piSessionId,
+    lastEngineProvider: data.lastEngineProvider,
+    lastEngineModel: data.lastEngineModel,
+    modelHistory: data.modelHistory,
+    usage: data.usage,
+    goal: data.goal,
+    goalId: data.goalId,
+    lastRunError: data.lastRunError,
+    loop: data.loop,
+    slackThreads: data.slackThreads,
+    sandbox: data.sandbox,
+    lastActivity: data.lastActivity,
+    createdAt: data.createdAt,
+    isRunning: false,
+    transcriptPath: null,
+  };
+}
+
+/**
+ * Read the list projection source for one native session without resolving a
+ * transcript. Native writes use this to update the SQLite list index in O(1):
+ * opening a session still performs the richer direct read below, while a list
+ * update never warms or scans transcript directories.
+ */
+export function readNativeSessionListRow(
+  sessionId: string,
+): UnifiedSession | undefined {
+  if (!/^[A-Za-z0-9_-]{1,160}$/.test(sessionId)) return undefined;
+  const data = readJsonSafe<NativeSessionFile>(`${SESSIONS_DIR}/${sessionId}.json`);
+  if (!data?.id || data.id !== sessionId) return undefined;
+  const session = nativeSessionRow(data);
+  const generated = getGeneratedTitle(session.id);
+  if (generated) session.title = generated;
+  const title = getTitleOverride(session.id);
+  if (title) {
+    session.title = title;
+    session.titleOverridden = true;
+  }
+  const status = getStatusOverride(session.id);
+  if (status) session.manualStatus = status;
+  const review = getReviewRequest(session.id);
+  if (review) session.reviewRequest = review;
+  return session;
+}
+
+/** Read one native session directly. Opening a known session must not wait for
+ * the multi-thousand-file list scan that populates the sidebar. */
+export function readNativeSession(sessionId: string): UnifiedSession | undefined {
+  const session = readNativeSessionListRow(sessionId);
+  if (!session) return undefined;
+  session.transcriptPath = resolveTranscriptPath(
+    findTranscriptPath(session.worktreeDir, session.claudeSessionId),
+    session.codexThreadId,
+    session.model,
+  );
+  return session;
+}
+
 function* nativeSessionRows(): Generator<UnifiedSession> {
   if (!existsSync(SESSIONS_DIR)) return [];
 
@@ -1028,76 +956,7 @@ function* nativeSessionRows(): Generator<UnifiedSession> {
     // prompt-queues.json, active-at-shutdown.json, …) — a real session always
     // has an id, these don't, so they'd otherwise become bogus id:undefined rows.
     if (!data || !data.id) continue;
-    const archived = !!data.archived || isArchivedId(data.id);
-
-    yield {
-      id: data.id,
-      claudeSessionId: data.claudeSessionId,
-      source: "opensession",
-      branch: data.branch || null,
-      worktreeDir: data.worktreeDir || null,
-      createdBy: data.createdBy || null,
-      createdByLogin: data.createdByLogin,
-      startedBy: data.createdBy,
-      title: data.title || data.branch || "Ask session",
-      mode: data.mode,
-      // Back-compat: older session files stored the repo under `project`.
-      repo: data.repo ?? (data as { project?: string }).project,
-      // Scratch has always been repo-less; newer repo-less Ask sessions say
-      // so outright. Both are surfaced as one flag so clients never have to
-      // read a missing `repo` as a decision (it usually isn't).
-      repoLess: data.repoLess || data.mode === "scratch" || undefined,
-      workspaceId: data.workspaceId ?? null,
-      parentSessionId: data.parentSessionId,
-      spawnedBy: data.spawnedBy,
-      desk: data.desk,
-      spawnDepth: data.spawnDepth,
-      attachedRepos: data.attachedRepos,
-      stackedOn: data.stackedOn,
-      linkedPrs: data.linkedPrs,
-      previewPath: data.previewPath,
-      walkthrough: data.walkthrough,
-      slackShares: data.slackShares,
-      automation:
-        data.automation ||
-        (data.createdBy?.endsWith(" (automation)")
-          ? data.createdBy.slice(0, -" (automation)".length)
-          : undefined),
-      automationId: data.automationId,
-      archived: archived || undefined,
-      archivedReason:
-        data.archivedReason ||
-        (archived ? getArchiveReason(data.id) || "manual" : undefined),
-      plainThreadId: data.plainThreadId,
-      externalRefs: data.externalRefs,
-      // The MCP allowlist the session was created with. Dropping it here left
-      // `sessionMcpScopeSource`'s "session" branch unreachable, so a session
-      // created with a picked set of servers ran its first turn scoped (the
-      // create path passes the picked list straight to the run) and every turn
-      // after it against all of them.
-      mcpServers: data.mcpServers,
-      model: data.model,
-      effort: data.effort,
-      fastMode: data.fastMode,
-      accountId: data.accountId,
-      codexThreadId: data.codexThreadId,
-      opencodeSessionId: data.opencodeSessionId,
-      piSessionId: data.piSessionId,
-      lastEngineProvider: data.lastEngineProvider,
-      lastEngineModel: data.lastEngineModel,
-      modelHistory: data.modelHistory,
-      usage: data.usage,
-      goal: data.goal,
-      goalId: data.goalId,
-      lastRunError: data.lastRunError,
-      loop: data.loop,
-      slackThreads: data.slackThreads,
-      sandbox: data.sandbox,
-      lastActivity: data.lastActivity,
-      createdAt: data.createdAt,
-      isRunning: false,
-      transcriptPath: null,
-    };
+    yield nativeSessionRow(data);
   }
 }
 
@@ -1120,7 +979,7 @@ async function collectSessionRows(
   const sessions: UnifiedSession[] = [];
   for (const session of rows) {
     sessions.push(session);
-    if (sessions.length % 32 === 0) await Bun.sleep(0);
+    if (sessions.length % 8 === 0) await Bun.sleep(0);
   }
   return sessions;
 }
@@ -1259,10 +1118,6 @@ function* assembleSessionSteps(
       findTranscriptPath(session.worktreeDir, session.claudeSessionId),
       session.codexThreadId,
       session.model,
-      session.opencodeSessionId ||
-        (isOpencodeSessionId(session.claudeSessionId)
-          ? session.claudeSessionId
-          : null),
     );
   }
   for (const session of selectedSessions) {
@@ -1347,6 +1202,7 @@ function* assembleSessionSteps(
           title: pr.title,
           isDraft: pr.isDraft,
           reviewDecision: pr.reviewDecision,
+          mergeable: pr.mergeable,
           additions: pr.additions,
           deletions: pr.deletions,
           checks: pr.checks,
@@ -1366,6 +1222,11 @@ function* assembleSessionSteps(
     }
     if (refs.length > 0) session.prs = refs;
   }
+
+  // PR lookup starts from each session's branches and attribution footers, but
+  // Review and the summary belong to the workspace. Project the resulting set
+  // back onto every live tab so switching chats cannot hide a sibling's PR.
+  shareWorkspacePrRefs(selectedSessions);
 
   // Apply auto-generated summary titles (the short Conductor-style name),
   // keyed by unified id or merged alias id. Sits UNDER a manual rename (applied
@@ -1460,7 +1321,7 @@ async function assembleSessionsAsync(
   while (true) {
     const step = steps.next();
     if (step.done) return step.value;
-    if (++batch % 32 === 0) await Bun.sleep(0);
+    if (++batch % 8 === 0) await Bun.sleep(0);
   }
 }
 
@@ -1496,8 +1357,8 @@ export async function getAllSessionsAsync(
   );
 }
 
-export function deleteSession(session: UnifiedSession): void {
-  // Delete the session JSON file based on source
+function removeSessionArtifacts(session: UnifiedSession): void {
+  // Delete the session JSON file based on source.
   switch (session.source) {
     case "slack": {
       // ID format: slack-{filename}
@@ -1519,10 +1380,27 @@ export function deleteSession(session: UnifiedSession): void {
       break;
     }
   }
+  removeIndexedSession(session.id);
   // Nobody's unsent draft should outlive the session it was typed into.
   purgeDraftsForSessions([session.id, ...(session.aliasIds || [])]);
   // Neither should its scratch dir (session-scratch.ts). Best-effort and
   // async: a scratch hiccup must never block deletion.
   for (const id of [session.id, ...(session.aliasIds || [])])
     void removeSessionScratch(id);
+}
+
+export function deleteSession(session: UnifiedSession): void {
+  executeSessionProjection(session.id, "session_delete", () => {
+    removeSessionArtifacts(session);
+  });
+}
+
+/**
+ * Finish a deletion whose permanent tombstone was written before its session
+ * file was removed. The tombstone already fences every writer, so re-entering
+ * the mailbox is both impossible and unnecessary. Callers must verify the
+ * tombstone before using this recovery path.
+ */
+export function removeTombstonedSessionArtifacts(session: UnifiedSession): void {
+  removeSessionArtifacts(session);
 }

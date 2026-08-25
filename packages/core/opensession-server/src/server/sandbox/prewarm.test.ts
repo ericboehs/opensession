@@ -35,6 +35,8 @@ import {
   discardClaimedPrewarm,
   prewarmRateLimited,
   requestPrewarm,
+  sessionOwnedSandboxIds,
+  startPrewarmPool,
   sweepPrewarms,
   _prewarmPoolForTest,
   _resetPrewarmForTest,
@@ -120,12 +122,14 @@ function writeConfig(overrides: Record<string, unknown>): void {
  *  probes. `gate` (when provided) holds create() open so bootstrapping-state
  *  concurrency can be asserted. */
 function makeFakeAdapter(
-  opts: { markerAnswer?: string; gate?: Promise<void>; destroyGate?: Promise<void> } = {},
+  opts: { markerAnswer?: string; gate?: Promise<void>; destroyGate?: Promise<void>; transientMarkerFailures?: number } = {},
 ) {
   const created: string[] = [];
   const destroyed: string[] = [];
+  const keptAlive: string[] = [];
   const resources: Array<{ cpu?: number; memoryMb?: number; diskGb?: number } | undefined> = [];
   let n = 0;
+  let transientMarkerFailures = opts.transientMarkerFailures || 0;
   const adapter: PrewarmAdapter = {
     async create(_labels, createOptions) {
       if (opts.gate) await opts.gate;
@@ -137,6 +141,10 @@ function makeFakeAdapter(
         driver: {
           async exec(cmd: string) {
             if (cmd.includes(".bks-bootstrapped")) {
+              if (transientMarkerFailures > 0) {
+                transientMarkerFailures -= 1;
+                throw new Error("box API POST /commands failed: HTTP 502");
+              }
               return { exitCode: 0, stdout: opts.markerAnswer ?? "sha-A", stderr: "" };
             }
             return { exitCode: 0, stdout: "__OPENSESSION_NO_CURL__", stderr: "" };
@@ -154,9 +162,12 @@ function makeFakeAdapter(
     async listPrewarmed() {
       return [];
     },
+    async keepAlive(id: string) {
+      keptAlive.push(id);
+    },
   };
   _setPrewarmAdapterForTest("daytona", adapter);
-  return { adapter, created, destroyed, resources };
+  return { adapter, created, destroyed, keptAlive, resources };
 }
 
 async function until(cond: () => boolean, ms = 5_000): Promise<void> {
@@ -190,6 +201,32 @@ describe("requestPrewarm", () => {
     expect(done.sandboxId).toBe(fake.created[0]);
     // State file persisted for restart reaping.
     expect(existsSync(join(prewarmDir(), "daytona-tella-fusion.json"))).toBe(true);
+  });
+
+  test.skipIf(killSwitch)("retains and replenishes a parked zero-compute standby", async () => {
+    const fake = makeFakeAdapter();
+    fake.adapter.publishTemplate = async () => {};
+    fake.adapter.park = async () => {};
+
+    expect(
+      (await requestPrewarm("daytona", "tella-fusion", "environment", { standby: true })).state,
+    ).toBe("bootstrapping");
+    await until(() => readyEntry()?.state === "ready");
+    expect(readyEntry()).toMatchObject({ standby: true, parked: true });
+
+    await sweepPrewarms(Date.now() + 24 * 60 * 60_000);
+    expect(fake.destroyed).toEqual([]);
+    expect(claimPrewarm("daytona", "tella-fusion", "session-1")).toEqual({
+      sandboxId: "pw-1",
+    });
+    await until(() => fake.created.length === 2);
+  });
+
+  test.skipIf(killSwitch)("retries transient bootstrap transport failures", async () => {
+    const fake = makeFakeAdapter({ transientMarkerFailures: 2 });
+    expect((await requestPrewarm("daytona", "tella-fusion")).state).toBe("bootstrapping");
+    await until(() => readyEntry()?.state === "ready");
+    expect(fake.created).toHaveLength(1);
   });
 
   test.skipIf(killSwitch)("passes the opted-in project's machine settings to the provider", async () => {
@@ -236,18 +273,19 @@ describe("requestPrewarm", () => {
     expect((await requestPrewarm("daytona", "tella-fusion")).state).toBe("disabled");
   });
 
-  test.skipIf(killSwitch)("caps: only one bootstrap in flight; maxLive total", async () => {
+  test.skipIf(killSwitch)("runs up to maxLive bootstraps concurrently", async () => {
     let open!: () => void;
     const gate = new Promise<void>((r) => (open = r));
     makeFakeAdapter({ gate });
     expect((await requestPrewarm("daytona", "tella-fusion")).state).toBe("bootstrapping");
-    // A different key while the first is still creating: at-capacity.
-    expect((await requestPrewarm("daytona", "gitops")).state).toBe("at-capacity");
+    expect((await requestPrewarm("daytona", "gitops")).state).toBe("bootstrapping");
+    expect((await requestPrewarm("daytona", "infra")).state).toBe("at-capacity");
     open();
-    await until(() => readyEntry()?.state === "ready");
-    // maxLive=1: the ready one occupies the whole pool.
-    writeConfig({ prewarm: { ttlMinutes: 10, maxLive: 1 } });
-    expect((await requestPrewarm("daytona", "gitops")).state).toBe("at-capacity");
+    await until(
+      () =>
+        readyEntry()?.state === "ready" &&
+        _prewarmPoolForTest().get("daytona:gitops")?.state === "ready",
+    );
   });
 });
 
@@ -316,6 +354,44 @@ describe("claimPrewarm (adoption)", () => {
   });
 });
 
+describe("keep-ready prewarms", () => {
+  test.skipIf(killSwitch)("starts eagerly, replenishes after claim, and survives TTL", async () => {
+    writeConfig({
+      prewarm: {
+        enabled: true,
+        ttlMinutes: 10,
+        maxLive: 2,
+        keepReady: [{ provider: "daytona", repoId: "tella-fusion" }],
+      },
+    });
+    const fake = makeFakeAdapter();
+    let parks = 0;
+    let publications = 0;
+    fake.adapter.park = async () => {
+      parks++;
+    };
+    fake.adapter.publishTemplate = async () => {
+      publications++;
+    };
+
+    await startPrewarmPool();
+    await until(() => readyEntry()?.state === "ready");
+    expect(parks).toBe(1);
+    expect(publications).toBe(0);
+    expect(readyEntry()?.parked).toBe(true);
+    const first = readyEntry()!.sandboxId!;
+    expect(claimPrewarm("daytona", "tella-fusion", "bks-first")?.sandboxId).toBe(first);
+
+    await until(
+      () => fake.created.length === 2 && readyEntry()?.sandboxId === fake.created[1],
+    );
+    await sweepPrewarms(Date.now() + 11 * 60_000);
+    expect(readyEntry()?.sandboxId).toBe(fake.created[1]);
+    expect(fake.destroyed).not.toContain(fake.created[1]);
+    expect(fake.keptAlive).toContain(fake.created[1]);
+  });
+});
+
 describe("claimPrewarmOrWait (adopt a mid-bootstrap prewarm)", () => {
   test.skipIf(killSwitch)("waits for a young in-flight bootstrap, then adopts", async () => {
     let release!: () => void;
@@ -353,6 +429,52 @@ describe("claimPrewarmOrWait (adopt a mid-bootstrap prewarm)", () => {
     expect(winners[0]!.sandboxId).toBe(fake.created[0]);
   });
 
+  test.skipIf(killSwitch)("hands a prepared workspace to its waiter before sealing", async () => {
+    let finishPrepare!: () => void;
+    const prepareGate = new Promise<void>((resolve) => (finishPrepare = resolve));
+    const fake = makeFakeAdapter();
+    let publications = 0;
+    let parks = 0;
+    fake.adapter.prepare = async () => {
+      await prepareGate;
+    };
+    fake.adapter.publishTemplate = async () => {
+      publications++;
+    };
+    fake.adapter.park = async () => {
+      parks++;
+    };
+
+    await requestPrewarm("daytona", "tella-fusion");
+    await until(() => fake.created.length === 1);
+    const waiting = claimPrewarmOrWait("daytona", "tella-fusion", "bks-waiter");
+    finishPrepare();
+
+    expect((await waiting)?.sandboxId).toBe(fake.created[0]);
+    expect(publications).toBe(0);
+    expect(parks).toBe(0);
+  });
+
+  test.skipIf(killSwitch)("cold-starts immediately once template sealing has begun", async () => {
+    let finishSeal!: () => void;
+    const sealGate = new Promise<void>((resolve) => (finishSeal = resolve));
+    const fake = makeFakeAdapter();
+    fake.adapter.prepare = async () => {};
+    fake.adapter.publishTemplate = async () => {
+      await sealGate;
+    };
+
+    await requestPrewarm("daytona", "tella-fusion");
+    await until(() => readyEntry()?.stage === "Sealing reusable template");
+    const startedAt = Date.now();
+    const claim = await claimPrewarmOrWait("daytona", "tella-fusion", "bks-late");
+
+    expect(claim).toBeNull();
+    expect(Date.now() - startedAt).toBeLessThan(500);
+    finishSeal();
+    await until(() => readyEntry()?.state === "ready");
+  });
+
   test.skipIf(killSwitch)("does not wait on an old bootstrapping entry", async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
@@ -363,6 +485,23 @@ describe("claimPrewarmOrWait (adopt a mid-bootstrap prewarm)", () => {
     const claim = await claimPrewarmOrWait("daytona", "tella-fusion", "bks-s");
     expect(claim).toBeNull(); // returned immediately — caller cold-creates
     release();
+  });
+
+  test.skipIf(killSwitch)("waits for an old project standby instead of racing a cold restore", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const fake = makeFakeAdapter({ gate });
+    fake.adapter.park = async () => {};
+    await requestPrewarm("daytona", "tella-fusion", undefined, { standby: true });
+    const entry = readyEntry()!;
+    entry.createdAt = new Date(Date.now() - 15 * 60_000).toISOString();
+    const waiting = claimPrewarmOrWait("daytona", "tella-fusion", "bks-standby");
+    let settled = false;
+    void waiting.then(() => (settled = true));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(settled).toBe(false);
+    release();
+    expect((await waiting)?.sandboxId).toBe(fake.created[0]);
   });
 
   test.skipIf(killSwitch)("ready entry claims without waiting", async () => {
@@ -401,7 +540,24 @@ describe("sweepPrewarms", () => {
     expect(readyEntry()?.state).toBe("ready");
   });
 
-  test.skipIf(killSwitch)("restart-orphaned state files are destroyed, not adopted", async () => {
+  test.skipIf(killSwitch)("restores a current ready prewarm after restart", async () => {
+    const fake = makeFakeAdapter();
+    await requestPrewarm("daytona", "tella-fusion");
+    await until(() => readyEntry()?.state === "ready");
+    const sandboxId = readyEntry()!.sandboxId;
+
+    // Simulate a fresh coordinator process while preserving the durable file.
+    _resetPrewarmForTest();
+    _setPrewarmAdapterForTest("daytona", fake.adapter);
+    await sweepPrewarms();
+
+    expect(readyEntry()?.sandboxId).toBe(sandboxId);
+    expect(fake.destroyed).toEqual([]);
+    expect(claimPrewarm("daytona", "tella-fusion", "bks-after-restart")?.sandboxId)
+      .toBe(sandboxId);
+  });
+
+  test.skipIf(killSwitch)("restart still reaps an interrupted bootstrap", async () => {
     const fake = makeFakeAdapter();
     mkdirSync(prewarmDir(), { recursive: true });
     writeFileSync(
@@ -410,15 +566,15 @@ describe("sweepPrewarms", () => {
         key: "daytona:tella-fusion",
         provider: "daytona",
         repoId: "tella-fusion",
-        state: "ready",
-        signature: "sha-A|snap-A",
-        sandboxId: "pw-orphan",
+        state: "bootstrapping",
+        signature: "sha-A|snap-A|{}",
+        sandboxId: "pw-interrupted",
         createdAt: new Date().toISOString(),
         lastTouchedAt: new Date().toISOString(),
       }),
     );
     await sweepPrewarms();
-    await until(() => fake.destroyed.includes("pw-orphan"));
+    await until(() => fake.destroyed.includes("pw-interrupted"));
     expect(existsSync(join(prewarmDir(), "daytona-tella-fusion.json"))).toBe(false);
   });
 
@@ -467,6 +623,15 @@ describe("sweepPrewarms", () => {
     await sweepPrewarms();
     await until(() => destroyed.includes("pw-untracked"));
     expect(destroyed).not.toContain("pw-foreign");
+  });
+});
+
+describe("provider orphan protection", () => {
+  test("treats durable session mappings as stronger than stale prewarm labels", () => {
+    expect(sessionOwnedSandboxIds([
+      { sessionId: "os-live", sandboxId: "sandbox-adopted" },
+      { sessionId: "__prewarm__:daytona:tella-fusion", sandboxId: "sandbox-warm" },
+    ])).toEqual(new Set(["sandbox-adopted"]));
   });
 });
 

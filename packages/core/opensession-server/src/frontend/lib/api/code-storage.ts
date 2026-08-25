@@ -1,6 +1,6 @@
 import { request } from "./request";
 
-// ── code.storage connection (Settings → Connections card) ────────────────────
+// ── code.storage connection (Settings → Integrations modal) ─────────────────
 
 export interface CodeStorageDelivery {
 	at: string;

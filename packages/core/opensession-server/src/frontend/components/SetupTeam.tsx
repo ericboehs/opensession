@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { githubLoginFromInput } from "../lib/github-login";
 import { Button } from "../ui/button";
 import { Field, FieldGrid, Input } from "../ui/input";
 import { MENU_ICON, Menu } from "../ui/menu";
@@ -29,29 +30,64 @@ import { UserAvatar } from "./UserAvatar";
 export function TeamSection({
 	onChanged,
 	title,
+	addLabel = "Add member",
+	githubOnly = false,
+	compact = false,
+	showCount = false,
 }: {
 	onChanged: () => void | Promise<void>;
 	/** Optional label above the roster. Defaults to the roster name and count. */
 	title?: React.ReactNode;
+	/** Action copy for the add flow. */
+	addLabel?: string;
+	/** Keep onboarding focused on the GitHub identity used for sign-in. */
+	githubOnly?: boolean;
+	compact?: boolean;
+	/** Append the loaded roster size to an explicit title. */
+	showCount?: boolean;
 }) {
 	const [members, setMembers] = useState<TeamMember[] | null>(null);
 	const [loadFailed, setLoadFailed] = useState(false);
 	const [dialogOpen, setDialogOpen] = useState(false);
 	const [editing, setEditing] = useState<TeamMember | null>(null);
+	const [githubOrganization, setGithubOrganization] = useState<string | null>(null);
+	const [githubSyncError, setGithubSyncError] = useState<string | null>(null);
 
+	// Stable identity: only setters and module functions are captured.
 	const load = useCallback(async () => {
-		try {
-			const body = await setupRequest<{ members: TeamMember[] }>("/api/setup/team");
+		await (async () => {
+const body = await setupRequest<{ members: TeamMember[] }>("/api/setup/team");
 			setMembers(body.members);
 			setLoadFailed(false);
-		} catch {
-			setLoadFailed(true);
-		}
+})().catch(async () => {
+setLoadFailed(true);
+});
 	}, []);
 
-	useEffect(() => {
-		load();
+	const syncGithubMembers = useCallback(async () => {
+		setGithubSyncError(null);
+		await (async () => {
+const body = await setupRequest<{
+				organization: string | null;
+				synced: boolean;
+				added: number;
+				members: TeamMember[];
+				error?: string;
+			}>("/api/setup/team/sync-github", { method: "POST" });
+			setMembers(body.members);
+			setLoadFailed(false);
+			setGithubOrganization(body.synced ? body.organization : null);
+			setGithubSyncError(body.error ?? null);
+})().catch(async () => {
+await load();
+			setGithubSyncError("GitHub members weren’t added. Add them manually.");
+});
 	}, [load]);
+
+	useEffect(() => {
+		if (githubOnly) void syncGithubMembers();
+		else void load();
+	}, [githubOnly, load, syncGithubMembers]);
 
 	async function handleMutated() {
 		await load();
@@ -71,12 +107,22 @@ export function TeamSection({
 							setDialogOpen(true);
 						}}
 					>
-						Add member
+						{addLabel}
 					</Button>
 				}
 			>
-				{title ?? `Team members${members ? ` · ${members.length}` : ""}`}
+				{title ?? "Team members"}
+				{members && (showCount || !title) ? ` · ${members.length}` : ""}
 			</SettingsGroupLabel>
+			{githubSyncError && (
+				<InlineAlert
+					variant="warn"
+					onDismiss={() => setGithubSyncError(null)}
+					onRetry={() => void syncGithubMembers()}
+				>
+					{githubSyncError}
+				</InlineAlert>
+			)}
 			{!members && !loadFailed ? (
 				// The card itself is the ghost, so the roster lands in the block it
 				// was already occupying. Rendering the real card around a loading
@@ -97,6 +143,7 @@ export function TeamSection({
 							<MemberRow
 								key={m.name}
 								member={m}
+								compact={compact}
 								onEdit={() => {
 									setEditing(m);
 									setDialogOpen(true);
@@ -108,28 +155,45 @@ export function TeamSection({
 				</SettingCard>
 			)}
 			<SettingsHint>
-				Names, emails, GitHub logins and Slack ids all resolve through the same
-				identity table, so a session user given as any of them matches the member.
+				{githubOnly
+					? githubOrganization
+						? `Members were imported from the ${githubOrganization} GitHub organization. You can add profile details later in Settings.`
+						: "Members sign in with their GitHub account. You can add profile details later in Settings."
+					: "Names, emails, GitHub logins and Slack ids all resolve through the same identity table, so a session user given as any of them matches the member."}
 			</SettingsHint>
-			<MemberDialog
-				open={dialogOpen}
-				member={editing}
-				onOpenChange={setDialogOpen}
-				onSaved={async () => {
-					setDialogOpen(false);
-					await handleMutated();
-				}}
-			/>
+			{githubOnly && !editing ? (
+				<GithubMemberDialog
+					open={dialogOpen}
+					onOpenChange={setDialogOpen}
+					onSaved={async () => {
+						setDialogOpen(false);
+						await handleMutated();
+					}}
+				/>
+			) : (
+				<MemberDialog
+					open={dialogOpen}
+					member={editing}
+					addLabel={addLabel}
+					onOpenChange={setDialogOpen}
+					onSaved={async () => {
+						setDialogOpen(false);
+						await handleMutated();
+					}}
+				/>
+			)}
 		</>
 	);
 }
 
 function MemberRow({
 	member,
+	compact,
 	onEdit,
 	onRemoved,
 }: {
 	member: TeamMember;
+	compact: boolean;
 	onEdit: () => void;
 	onRemoved: () => void | Promise<void>;
 }) {
@@ -142,7 +206,7 @@ function MemberRow({
 			<UserAvatar name={member.name} login={member.github} size={28} />
 			<SettingRowText>
 				<SettingRowTitle>{member.name}</SettingRowTitle>
-				{details.length > 0 && (
+				{!compact && details.length > 0 && (
 					<SettingRowDescription className="truncate">
 						{details.join(" · ")}
 					</SettingRowDescription>
@@ -170,16 +234,16 @@ function MemberActions({
 
 	async function remove() {
 		setBusy(true);
-		try {
-			await setupRequest(`/api/setup/team/${encodeURIComponent(member.name)}/remove`, {
+		await (async () => {
+await setupRequest(`/api/setup/team/${encodeURIComponent(member.name)}/remove`, {
 				method: "POST",
 			});
 			toast(`${member.name} removed`);
 			await onRemoved();
-		} catch (e: any) {
-			toast(e.message, { variant: "error" });
+})().catch(async (e: any) => {
+toast(e.message, { variant: "error" });
 			setBusy(false);
-		}
+});
 	}
 
 	return (
@@ -236,15 +300,111 @@ function MemberActions({
 	);
 }
 
+export function GithubMemberDialog({
+	open,
+	onOpenChange,
+	onSaved,
+	title = "Add member",
+	actionLabel = "Add member",
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	onSaved: (github: string) => void | Promise<void>;
+	title?: string;
+	actionLabel?: string;
+}) {
+	const [github, setGithub] = useState("");
+	const [saving, setSaving] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const githubRef = useRef<HTMLInputElement>(null);
+
+	useEffect(() => {
+		if (!open) return;
+		setGithub("");
+		setError(null);
+	}, [open]);
+
+	async function submit(event: React.FormEvent) {
+		event.preventDefault();
+		const login = githubLoginFromInput(github);
+		if (saving) return;
+		if (!login) {
+			setError("Enter a GitHub username or profile link.");
+			return;
+		}
+		setSaving(true);
+		setError(null);
+		await (async () => {
+await setupRequest("/api/setup/team", {
+				method: "POST",
+				json: { name: login, github: login },
+			});
+			toast(`@${login} added`);
+			await onSaved(login);
+})().catch(async (cause: any) => {
+setError(cause?.message || "Could not add member");
+}).finally(async () => {
+setSaving(false);
+});
+	}
+
+	return (
+		<Modal.Root
+			open={open}
+			onOpenChange={(next) => {
+				if (!saving) onOpenChange(next);
+			}}
+			disablePointerDismissal={saving}
+		>
+			<Modal.Content initialFocus={githubRef}>
+				<Modal.Header
+					title={title}
+					description="They can sign in with this GitHub account."
+				/>
+				<form className="flex flex-col gap-3" onSubmit={submit}>
+					<Field label="GitHub username or profile link">
+						<Input
+							ref={githubRef}
+							value={github}
+							onChange={(event) => setGithub(event.target.value)}
+							placeholder="monalisa or github.com/monalisa"
+							autoCapitalize="none"
+							autoComplete="off"
+							spellCheck={false}
+							required
+						/>
+					</Field>
+					{error && <InlineAlert>{error}</InlineAlert>}
+					<Modal.Footer>
+						<Button
+							variant="ghost"
+							type="button"
+							disabled={saving}
+							onClick={() => onOpenChange(false)}
+						>
+							Cancel
+						</Button>
+						<Button variant="primary" type="submit" disabled={!github.trim() || saving}>
+							{saving ? "Adding…" : actionLabel}
+						</Button>
+					</Modal.Footer>
+				</form>
+			</Modal.Content>
+		</Modal.Root>
+	);
+}
+
 function MemberDialog({
 	open,
 	member,
+	addLabel,
 	onOpenChange,
 	onSaved,
 }: {
 	open: boolean;
 	/** null → add; a member → edit that member. */
 	member: TeamMember | null;
+	addLabel: string;
 	onOpenChange: (open: boolean) => void;
 	onSaved: () => void | Promise<void>;
 }) {
@@ -278,8 +438,8 @@ function MemberDialog({
 		if (!trimmed || saving) return;
 		setSaving(true);
 		setError(null);
-		try {
-			if (!member) {
+		await (async () => {
+if (!member) {
 				const body: Record<string, unknown> = { name: trimmed };
 				if (email.trim()) body.email = email.trim();
 				if (github.trim()) body.github = github.trim();
@@ -317,10 +477,10 @@ function MemberDialog({
 			}
 			setSaving(false);
 			await onSaved();
-		} catch (e: any) {
-			setError(e.message);
+})().catch(async (e: any) => {
+setError(e.message);
 			setSaving(false);
-		}
+});
 	}
 
 	return (
@@ -333,8 +493,8 @@ function MemberDialog({
 		>
 			<Modal.Content initialFocus={nameRef}>
 				<Modal.Header
-					title={member ? `Edit ${member.name}` : "Add member"}
-					description="Identity table entry. Commits, sessions and access grants resolve through it."
+					title={member ? `Edit ${member.name}` : addLabel}
+					description="Commits, sessions, and access grants resolve through this person."
 				/>
 				<form className="flex flex-col gap-3" onSubmit={submit}>
 					<Field label="Full name">
@@ -394,7 +554,7 @@ function MemberDialog({
 							Cancel
 						</Button>
 						<Button variant="primary" type="submit" disabled={!name.trim() || saving}>
-							{saving ? "Saving…" : member ? "Save changes" : "Add member"}
+							{saving ? "Saving…" : member ? "Save changes" : addLabel}
 						</Button>
 					</Modal.Footer>
 				</form>

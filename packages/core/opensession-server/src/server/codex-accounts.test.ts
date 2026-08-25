@@ -1,15 +1,17 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
   __setCodexAccountsPathForTest,
+  addCodexAccount,
   clearCodexWedge,
   hrwScore,
+  listCodexAccountsPublic,
   markCodexExhausted,
   markCodexWedged,
 } from "./codex-accounts";
-import { pickOpenaiAccount } from "./opencode-openai-auth";
+import { pickOpenaiAccount } from "./openai-auth";
 
 // PINNED-HASH tests (pattern from meridian PR #615): session→account affinity
 // is a pure function of these scores. If any assertion here fails, the change
@@ -40,10 +42,17 @@ describe("hrwScore (rendezvous affinity)", () => {
 describe("pickOpenaiAccount pins", () => {
   const dir = mkdtempSync(join(tmpdir(), "codex-pins-"));
   const store = join(dir, "accounts.json");
+  const chatgptHome = join(dir, "chatgpt-home");
   let previousStore: string;
 
   beforeAll(() => {
     previousStore = __setCodexAccountsPathForTest(store);
+    mkdirSync(chatgptHome, { recursive: true });
+    const claims = Buffer.from(JSON.stringify({ email: "person@example.com" })).toString("base64url");
+    writeFileSync(
+      join(chatgptHome, "auth.json"),
+      JSON.stringify({ tokens: { id_token: `header.${claims}.signature` } }),
+    );
     writeFileSync(
       store,
       JSON.stringify({
@@ -51,6 +60,7 @@ describe("pickOpenaiAccount pins", () => {
           { id: "shared", name: "Shared", kind: "api_key", value: "sk-shared-value", createdAt: "2026-01-01T00:00:00Z" },
           { id: "mine", name: "Mine", kind: "api_key", value: "sk-mine-value", owner: "Alex", createdAt: "2026-01-01T00:00:00Z" },
           { id: "theirs", name: "Theirs", kind: "api_key", value: "sk-theirs-value", owner: "Grant", createdAt: "2026-01-01T00:00:00Z" },
+          { id: "chatgpt", name: "Legacy label", kind: "home", value: chatgptHome, owner: "Grant", createdAt: "2026-01-01T00:00:00Z" },
         ],
       }),
     );
@@ -59,6 +69,12 @@ describe("pickOpenaiAccount pins", () => {
   afterAll(() => {
     __setCodexAccountsPathForTest(previousStore);
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("exposes the ChatGPT email from existing auth files", () => {
+    expect(listCodexAccountsPublic().find((account) => account.id === "chatgpt")?.email).toBe(
+      "person@example.com",
+    );
   });
 
   test("prefers an eligible conversation pin", () => {
@@ -106,5 +122,19 @@ describe("pickOpenaiAccount pins", () => {
     expect(markCodexWedged("shared")).toBe(false);
     const picked = pickOpenaiAccount("gpt-5.5", undefined, "session", {}, undefined, undefined);
     expect("error" in picked).toBe(true);
+  });
+
+  test("registers a ChatGPT login by email without a supplied name", () => {
+    const home = join(dir, "new-chatgpt-home");
+    mkdirSync(home, { recursive: true });
+    const claims = Buffer.from(JSON.stringify({ email: "new@example.com" })).toString("base64url");
+    writeFileSync(
+      join(home, "auth.json"),
+      JSON.stringify({ tokens: { id_token: `header.${claims}.signature` } }),
+    );
+    expect(addCodexAccount("", "home", home)).toMatchObject({
+      name: "new@example.com",
+      email: "new@example.com",
+    });
   });
 });

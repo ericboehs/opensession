@@ -40,7 +40,9 @@ enum AssetLinks {
     static func path(forMediaSource source: String, sessionId: String) -> String? {
         guard let mediaPath = URLComponents(string: source)?.queryItems?
             .first(where: { $0.name == "path" })?.value,
-              let root = mediaPath.range(of: "/.opensession-assets/")
+              let root = ["/.opensession/assets/", "/.opensession-assets/"]
+                .compactMap({ mediaPath.range(of: $0) })
+                .min(by: { $0.lowerBound < $1.lowerBound })
         else { return nil }
 
         let afterRoot = mediaPath[root.upperBound...]

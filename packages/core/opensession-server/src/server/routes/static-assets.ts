@@ -6,10 +6,10 @@
  * next handler (see routes/index.ts for the dispatch order).
  */
 
-import { existsSync, readFileSync, statSync } from "fs";
+import { existsSync, statSync } from "fs";
 import type { RouteContext } from "./context";
 import { configuredIntegration, configuredRepos, productMark, productName } from "../config";
-import { FRONTEND_DIST, FRONTEND_SRC, REPO_ROOT, devTailwindCss, frontend } from "../frontend-build";
+import { FRONTEND_SRC, REPO_ROOT, devTailwindCss, frontend, frontendDistFile, frontendStaticFile } from "../frontend-build";
 import { trimIconMargin } from "../png-trim";
 import { resolveRepoIcon } from "../repo-appearance";
 import { organizationIconBytes } from "../organization-settings";
@@ -32,6 +32,12 @@ export function pwaManifest(publicPrefix: string) {
 		start_url: `${publicPrefix}/`,
 		display: "standalone",
 		display_override: ["window-controls-overlay"],
+		// A link into the app from outside it (a Plain card, a Slack message)
+		// navigates the installed window to that link. Without this the default
+		// is to focus the existing window and ignore the URL, so the deep link
+		// silently lands on whatever was already open — and there is no history
+		// entry behind it, so Back does nothing either.
+		launch_handler: { client_mode: "navigate-existing" },
 		// Match the current dark page and chrome surfaces. WebKit exposes the
 		// manifest background if its standalone window is briefly letterboxed.
 		background_color: "#1c1c1c",
@@ -59,14 +65,21 @@ export function pwaManifest(publicPrefix: string) {
  * a letter tile fills its square, so untouched art reads visibly smaller than
  * the tiles beside it.
  */
-function localIcon(iconPath: string): Response | undefined {
-	if (!existsSync(iconPath)) return undefined;
-	const mtimeMs = statSync(iconPath).mtimeMs;
-	let entry = trimmedIcons.get(iconPath);
+async function localIcon(
+	iconPath: string,
+	staticName?: string,
+): Promise<Response | undefined> {
+	const file = staticName
+		? frontendStaticFile(staticName, iconPath)
+		: Bun.file(iconPath);
+	if (!file || !(await file.exists())) return undefined;
+	const mtimeMs = existsSync(iconPath) ? statSync(iconPath).mtimeMs : 0;
+	const cacheKey = staticName ? `static:${staticName}` : iconPath;
+	let entry = trimmedIcons.get(cacheKey);
 	if (!entry || entry.mtimeMs !== mtimeMs) {
-		const raw = new Uint8Array(readFileSync(iconPath));
+		const raw = new Uint8Array(await file.arrayBuffer());
 		entry = { mtimeMs, bytes: trimIconMargin(raw) ?? raw };
-		trimmedIcons.set(iconPath, entry);
+		trimmedIcons.set(cacheKey, entry);
 	}
 	// A fresh view each time: a Response takes ownership of the buffer it is
 	// handed, and this one is cached for the next request.
@@ -106,22 +119,25 @@ export async function handleStaticAssetsRoutes(
 	// App icons (approved native artwork, gen by scripts/gen-icons.py) — real PNGs so iOS home-screen and PWA installs
 	// pick them up; data-URI apple-touch-icons don't work on iOS. Short cache
 	// + must-revalidate so a refreshed design isn't pinned by a stale copy.
-	const iconFiles: Record<string, string> = {
-		"/apple-touch-icon.png": `${FRONTEND_SRC}/apple-touch-icon.png`, // 180×180
-		"/icon-192.png": `${FRONTEND_SRC}/icon-192.png`,
-		"/icon.png": `${FRONTEND_SRC}/icon.png`, // 512×512
-		"/mac-app-icon.png": `${REPO_ROOT}/packages/clients/mac/build/icon-512.png`,
+	const iconFiles: Record<string, { name: string; sourcePath?: string }> = {
+		"/apple-touch-icon.png": { name: "apple-touch-icon.png" }, // 180×180
+		"/icon-192.png": { name: "icon-192.png" },
+		"/icon.png": { name: "icon.png" }, // 512×512
+		"/mac-app-icon.png": {
+			name: "mac-app-icon.png",
+			sourcePath: `${REPO_ROOT}/packages/clients/mac/build/icon-512.png`,
+		},
 	};
-	if (iconFiles[path]) {
-		return new Response(
-			Bun.file(iconFiles[path]),
-			{
-				headers: {
-					"Content-Type": "image/png",
-					"Cache-Control": "public, max-age=3600, must-revalidate",
-				},
+	const iconAsset = iconFiles[path];
+	if (iconAsset) {
+		const file = frontendStaticFile(iconAsset.name, iconAsset.sourcePath);
+		if (!file || !(await file.exists())) return new Response("Not found", { status: 404 });
+		return new Response(file, {
+			headers: {
+				"Content-Type": "image/png",
+				"Cache-Control": "public, max-age=3600, must-revalidate",
 			},
-		);
+		});
 	}
 
 	if (path === "/organization-icon.png" && req.method === "GET") {
@@ -147,13 +163,15 @@ export async function handleStaticAssetsRoutes(
 	// and it is the whole picture for a reduced-motion visitor.
 	// scripts/signin-bg.sh regenerates all four from the master.
 	const mediaFiles: Record<string, string> = {
-		"/signin-bg.mp4": `${FRONTEND_SRC}/signin-bg.mp4`,
-		"/signin-bg.webp": `${FRONTEND_SRC}/signin-bg.webp`,
-		"/signin-bg-dark.mp4": `${FRONTEND_SRC}/signin-bg-dark.mp4`,
-		"/signin-bg-dark.webp": `${FRONTEND_SRC}/signin-bg-dark.webp`,
+		"/signin-bg.mp4": "signin-bg.mp4",
+		"/signin-bg.webp": "signin-bg.webp",
+		"/signin-bg-dark.mp4": "signin-bg-dark.mp4",
+		"/signin-bg-dark.webp": "signin-bg-dark.webp",
 	};
 	if (mediaFiles[path] && req.method === "GET") {
-		return new Response(Bun.file(mediaFiles[path]), {
+		const file = frontendStaticFile(mediaFiles[path]);
+		if (!file || !(await file.exists())) return new Response("Not found", { status: 404 });
+		return new Response(file, {
 			headers: {
 				"Content-Type": path.endsWith(".mp4") ? "video/mp4" : "image/webp",
 				"Cache-Control": "public, max-age=86400, must-revalidate",
@@ -188,7 +206,10 @@ export async function handleStaticAssetsRoutes(
 		// same tile pipeline: any `<id>-icon.png` dropped in src/frontend
 		// serves generically.
 		if (/^[a-z0-9][a-z0-9_-]{0,40}$/i.test(id)) {
-			const generic = localIcon(`${FRONTEND_SRC}/${id}-icon.png`);
+			const generic = await localIcon(
+				`${FRONTEND_SRC}/${id}-icon.png`,
+				`${id}-icon.png`,
+			);
 			if (generic) return generic;
 		}
 		// A repo's optional `icon` — art someone chose for it, either a path in
@@ -197,7 +218,7 @@ export async function handleStaticAssetsRoutes(
 		const repo = configuredRepos()[id];
 		const configured = resolveRepoIcon(repo?.icon, repo?.repo);
 		if (configured) {
-			const served = localIcon(configured);
+			const served = await localIcon(configured);
 			if (served) return served;
 		}
 		return new Response("Not found", { status: 404 });
@@ -207,7 +228,9 @@ export async function handleStaticAssetsRoutes(
 	// matcher — sw.js is served from source, never cached hard (the browser
 	// refetches it on its own schedule and applies updates).
 	if (path === "/sw.js") {
-		return new Response(Bun.file(`${FRONTEND_SRC}/sw.js`), {
+		const file = frontendStaticFile("sw.js");
+		if (!file || !(await file.exists())) return new Response("Not found", { status: 404 });
+		return new Response(file, {
 			headers: {
 				"Content-Type": "text/javascript; charset=utf-8",
 				"Cache-Control": "no-cache",
@@ -224,15 +247,14 @@ export async function handleStaticAssetsRoutes(
 		/^\/splash\/(apple-splash-\d+-\d+\.png)$/,
 	);
 	if (splashMatch) {
-		return new Response(
-			Bun.file(`${FRONTEND_SRC}/splash/${splashMatch[1]}`),
-			{
-				headers: {
-					"Content-Type": "image/png",
-					"Cache-Control": "public, max-age=86400",
-				},
+		const file = frontendStaticFile(`splash/${splashMatch[1]}`);
+		if (!file || !(await file.exists())) return new Response("Not found", { status: 404 });
+		return new Response(file, {
+			headers: {
+				"Content-Type": "image/png",
+				"Cache-Control": "public, max-age=86400",
 			},
-		);
+		});
 	}
 
 	// ghostty-web's WASM VT engine (the Shell tab's terminal). buildFrontend
@@ -240,8 +262,8 @@ export async function handleStaticAssetsRoutes(
 	// WebAssembly.instantiateStreaming happy. Stable (unhashed) name — the
 	// shell requests a fixed path — so revalidate instead of immutable.
 	if (path === "/ghostty-vt.wasm") {
-		const wasm = Bun.file(`${FRONTEND_DIST}/ghostty-vt.wasm`);
-		if (await wasm.exists()) {
+		const wasm = frontendDistFile("ghostty-vt.wasm");
+		if (wasm && await wasm.exists()) {
 			return new Response(wasm, {
 				headers: {
 					"Content-Type": "application/wasm",
@@ -257,8 +279,8 @@ export async function handleStaticAssetsRoutes(
 		frontend && path.match(/^\/([\w.-]+\.(?:js|css|map))$/);
 	if (assetMatch && frontend) {
 		const name = assetMatch[1];
-		const file = Bun.file(`${FRONTEND_DIST}/${name}`);
-		if (await file.exists()) {
+		const file = frontendDistFile(name);
+		if (file && await file.exists()) {
 			const type = name.endsWith(".css")
 				? "text/css"
 				: name.endsWith(".map")
@@ -290,12 +312,12 @@ export async function handleStaticAssetsRoutes(
 		);
 	}
 
-	// Universal links for the Open Session desktop app (tellahq/os1-mac): lets plain
-	// https://os.tella.dev/… links open the app once it's signed with the
+	// Universal links for the desktop app (packages/clients/mac): lets plain
+	// https://<instance-host>/… links open the app once it's signed with the
 	// associated-domains entitlement. Both spec locations, since Apple has
-	// probed the bare path historically. Caveat: os.tella.dev resolves to a
-	// tailnet IP, so Apple's AASA CDN can't fetch this — team devices need the
-	// entitlement's `?mode=developer` alternate (direct fetch) for links to
+	// probed the bare path historically. Caveat: a private host (tailnet-only,
+	// behind a VPN) can't be fetched by Apple's AASA CDN, so team devices need
+	// the entitlement's `?mode=developer` alternate (direct fetch) for links to
 	// activate; harmless for everyone else.
 	if (
 		path === "/.well-known/apple-app-site-association" ||

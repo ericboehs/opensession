@@ -88,7 +88,7 @@ Anything that breaks that is in scope, especially:
   chose (on your tailnet, signed in, or with shell on the host).
 - Denial of service by an authorised user. An agent can spend your money and fill
   your disk; that is inherent to running one.
-- Vulnerabilities in a model provider, in OpenCode, or in an MCP server you
+- Vulnerabilities in a model provider, in Pi, or in an MCP server you
   configured — report those upstream, though do tell us if our integration makes
   them materially worse.
 - Missing hardening headers on a server documented as private-network-only.

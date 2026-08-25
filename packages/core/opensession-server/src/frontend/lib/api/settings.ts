@@ -256,7 +256,27 @@ export async function deleteDeployApp(name: string): Promise<{ ok: true }> {
 	return request(`/deploys/${encodeURIComponent(name)}`, { method: "DELETE" });
 }
 
-// ── Personal system prompt (Settings → Personal prompt) ──
+// ── Personal output style and system prompt (Settings → Preferences) ──
+
+export type PersonalOutputStyle = "default" | "concise";
+
+export async function fetchPersonalOutputStyle(
+	user: string,
+): Promise<{ outputStyle: PersonalOutputStyle }> {
+	return request(`/personal-output-style?user=${encodeURIComponent(user)}`, {
+		label: "Failed to fetch output style",
+	});
+}
+
+export async function savePersonalOutputStyle(
+	user: string,
+	outputStyle: PersonalOutputStyle,
+): Promise<{ outputStyle: PersonalOutputStyle }> {
+	return request("/personal-output-style", {
+		method: "PUT",
+		body: { user, outputStyle },
+	});
+}
 
 export async function fetchPersonalPrompt(
 	user: string,
@@ -321,6 +341,69 @@ export async function uploadOrganizationIcon(
 
 export async function removeOrganizationIcon(): Promise<OrganizationSettingsDto> {
 	return request("/settings/general/icon", { method: "DELETE" });
+}
+
+/** The connected GitHub organization's public profile, read server-side so the
+ *  token stays there. Empty strings when GitHub had nothing to say. */
+export interface GithubOrganizationProfileDto {
+	login: string;
+	name: string;
+	avatarUrl: string;
+}
+
+/** Never throws: onboarding fills what it can and leaves the rest editable, so
+ *  a rate limit or a private org must not stop the step. */
+export async function fetchGithubOrganizationProfile(
+	login: string,
+): Promise<GithubOrganizationProfileDto | null> {
+	try {
+		return await request(
+			`/settings/general/github-organization?login=${encodeURIComponent(login)}`,
+			{ label: "Failed to read the GitHub organization" },
+		);
+	} catch {
+		return null;
+	}
+}
+
+export interface AssetStorageSettingsDto {
+	provider: "local" | "s3";
+	bucket: string;
+	region: string;
+	endpoint: string;
+	prefix: string;
+	accessKeyId: string;
+	secretAccessKeySet: boolean;
+	forcePathStyle: boolean;
+}
+
+export interface AssetStorageSettingsInput {
+	provider: "local" | "s3";
+	bucket?: string;
+	region?: string;
+	endpoint?: string;
+	prefix?: string;
+	accessKeyId?: string;
+	secretAccessKey?: string;
+	forcePathStyle?: boolean;
+}
+
+export async function fetchAssetStorageSettings(): Promise<AssetStorageSettingsDto> {
+	return request("/settings/asset-storage", {
+		label: "Failed to fetch asset storage settings",
+	});
+}
+
+export async function testAssetStorageSettings(
+	input: AssetStorageSettingsInput,
+): Promise<{ ok: true }> {
+	return request("/settings/asset-storage/test", { method: "POST", body: input });
+}
+
+export async function saveAssetStorageSettings(
+	input: AssetStorageSettingsInput,
+): Promise<AssetStorageSettingsDto> {
+	return request("/settings/asset-storage", { method: "PUT", body: input });
 }
 
 // ── Instance identity (Settings → Workspace → Identity) ──

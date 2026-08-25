@@ -114,6 +114,19 @@ export function refLabel(ref: SessionPrRef): string {
 }
 
 /**
+ * The one ref to show where there is only room for one. Worst state first, so
+ * a failing PR is never hidden behind a green sibling. Used by the phone top
+ * bar, which has a single slot and no strip to fall back to.
+ */
+export function worstPrRef<T extends PrStateFacts>(refs: T[]): T | undefined {
+	return refs.reduce<T | undefined>(
+		(worst, ref) =>
+			!worst || TONE_RANK[refTone(ref)] < TONE_RANK[refTone(worst)] ? ref : worst,
+		undefined,
+	);
+}
+
+/**
  * One headline for a set of refs, used when the session owns no PR on its own
  * branch: the strip has no primary status to show, and a bare count in the
  * neutral tone hides a failing PR sitting right underneath it.

@@ -10,7 +10,7 @@
 #   2. Dockerfile.runner    — the full opensession runner payload on top,
 #      laid out exactly like `bootstrapRemoteSandbox` would install it
 #      (docs/self-hosting-sandboxes.md, Slice A). The payload pins
-#      (runnerSha, opencode version, bootstrap signature) are computed from
+#      (runnerSha, runner version, bootstrap signature) are computed from
 #      the live sandbox config via bootstrap.ts, so the baked marker is
 #      byte-identical to what ensure() expects and the bootstrap
 #      short-circuits to a no-op.
@@ -19,7 +19,7 @@
 # skips both builds.
 #
 # The resulting store contains golden.{ext4,mem,vmstate} plus golden.json
-# ({ signature, builtAt, opencode, runnerSha } — the store's build metadata,
+# ({ signature, builtAt, runner, runnerSha } — the store's build metadata,
 # for staleness reporting; the in-VM marker stays the source of truth) and can
 # be selected with:
 #   {"firecrackerMicrovm":{"enabled":true,"storeDir":"/opt/firecracker/sandbox-store"}}
@@ -60,7 +60,7 @@ compute_pins() {
   (
   cd "$ROOT"
   # Server-env parity: the systemd unit loads ~/.opensession.env
-  # (EnvironmentFile=), and injectToken prefers a live GITHUB_API_TOKEN from
+  # (EnvironmentFile=), and injectCloneCredential resolves the selected live GitHub credential from
   # the environment over persisted config tokens. Load the same file here so
   # the pin computation resolves the clone URL exactly like the server would
   # (a real env var also outranks the repo-local .env bun auto-loads).
@@ -68,7 +68,7 @@ compute_pins() {
     set -a; . "$CFG_HOME/.opensession.env"; set +a
   fi
   HOME="$CFG_HOME" GOLDEN_WANT_CLONE_URL="${1:-}" "$BUN_BIN" -e '
-import { bootstrapSignature, remoteCloneUrl } from "./src/server/sandbox/adapters/bootstrap.ts";
+import { bootstrapSignature, injectCloneCredential, remoteCloneUrl } from "./src/server/sandbox/adapters/bootstrap.ts";
 import { sandboxConfig } from "./src/server/sandbox/config.ts";
 import { REPO_ROOT } from "./src/runner-host/protocol.ts";
 const cfg = sandboxConfig();
@@ -77,7 +77,7 @@ console.log(cfg.runnerSha || "");
 if (process.env.GOLDEN_WANT_CLONE_URL) {
   let url;
   if (cfg.runnerRepoUrl) {
-    // Mirror bootstrap.ts toHttpsUrl+injectToken for the explicit-URL case.
+    // Mirror bootstrap.ts toHttpsUrl+injectCloneCredential for the explicit-URL case.
     let https = cfg.runnerRepoUrl;
     const scp = https.match(/^git@([^:]+):(.+?)(\.git)?$/);
     const ssh = https.match(/^ssh:\/\/git@([^/]+)\/(.+?)(\.git)?$/);
@@ -86,13 +86,7 @@ if (process.env.GOLDEN_WANT_CLONE_URL) {
     if (!/^https:\/\//.test(https)) {
       throw new Error(`runnerRepoUrl is not https-reachable: ${cfg.runnerRepoUrl}`);
     }
-    const cred = cfg.cloneCredential;
-    if (cred?.type === "https-token") {
-      const live = /^https:\/\/github\.com\//i.test(https) ? process.env.GITHUB_API_TOKEN : undefined;
-      const token = live || cred.token;
-      if (token) https = https.replace(/^https:\/\//, `https://x-access-token:${token}@`);
-    }
-    url = https;
+    url = await injectCloneCredential(https);
   } else {
     url = await remoteCloneUrl({ id: "opensession", repo: REPO_ROOT });
   }
@@ -154,7 +148,6 @@ if [ "$#" -lt 2 ]; then
     --build-arg "BASE_IMAGE=$WORKSPACE_IMAGE" \
     --build-arg "RUNNER_SHA=$RUNNER_SHA" \
     --build-arg "BOOTSTRAP_SIGNATURE=$SIGNATURE" \
-    --build-arg "OPENCODE_VERSION=${SIGNATURE##*+opencode@}" \
     --secret "id=runner_clone_url,src=$SECRET_FILE" \
     --tag "$IMAGE" \
     "$HERE"
@@ -165,10 +158,9 @@ else
   SIGNATURE="$(sed -n 1p <<<"$PINS")"
 fi
 
-# Metadata for golden.json: the opencode pin rides in the signature
-# ("<base>+opencode@<ver>"); the runnerSha is whatever the exported image
+# Metadata for golden.json: the runner pin rides in the signature
+# ("<base>+runner@<ver>"); the runnerSha is whatever the exported image
 # actually has checked out (authoritative even for explicit images).
-OPENCODE_PIN="${SIGNATURE##*+opencode@}"
 BAKED_SHA="$(docker run --rm "$IMAGE" git -C /home/ubuntu/projects/opensession rev-parse HEAD 2>/dev/null || true)"
 [ -n "$BAKED_SHA" ] || BAKED_SHA="unknown"
 
@@ -218,8 +210,8 @@ fc PUT /snapshot/create \
   >/dev/null
 mv -f "$STORE/golden.next.mem" "$STORE/golden.mem"
 mv -f "$STORE/golden.next.vmstate" "$STORE/golden.vmstate"
-printf '{\n  "signature": "%s",\n  "builtAt": "%s",\n  "opencode": "%s",\n  "runnerSha": "%s"\n}\n' \
-  "$SIGNATURE" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$OPENCODE_PIN" "$BAKED_SHA" \
+printf '{\n  "signature": "%s",\n  "builtAt": "%s",\n  "runner": "%s",\n  "runnerSha": "%s"\n}\n' \
+  "$SIGNATURE" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$RUNNER_PIN" "$BAKED_SHA" \
   > "$STORE/golden.next.json"
 mv -f "$STORE/golden.next.json" "$STORE/golden.json"
 cat "$STORE/golden.mem" >/dev/null

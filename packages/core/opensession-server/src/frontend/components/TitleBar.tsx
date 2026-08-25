@@ -53,7 +53,7 @@ export function TitleBar({
 	}, [pane]);
 
 	return (
-		<div className={pane ? "wco-nav wco-nav-pane" : "wco-nav"}>
+		<div className={`${pane ? "wco-nav wco-nav-pane" : "wco-nav"} phone:hidden`}>
 			<Tooltip label="Back" side="bottom" shortcut={backKeys ?? undefined}>
 				<button
 					className="inline-flex size-[30px] cursor-pointer items-center justify-center rounded-md border-none bg-transparent p-0 text-dim hover:bg-hover hover:text-fg [-webkit-app-region:no-drag] [app-region:no-drag]"

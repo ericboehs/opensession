@@ -17,11 +17,12 @@ import { cn } from "./cn";
  * class picks the hue, and base.css keeps `animate-spin` turning under
  * prefers-reduced-motion.
  */
-export type SpinnerSize = "sm" | "md";
+export type SpinnerSize = "sm" | "md" | "lg";
 
 const sizes: Record<SpinnerSize, string> = {
 	sm: "size-3 border",
 	md: "size-4 border-2",
+	lg: "size-5 border-2",
 };
 
 export function Spinner({

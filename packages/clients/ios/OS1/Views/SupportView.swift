@@ -545,7 +545,11 @@ private struct SupportComposer: View {
                             .foregroundStyle(OS1VisualStyle.onAccent)
                     }
                 }
+                #if os(iOS)
+                .frame(width: 44, height: 44)
+                #else
                 .frame(width: 34, height: 34)
+                #endif
                 .background(
                     model.canSend ? OS1VisualStyle.accent : OS1VisualStyle.hover,
                     in: Circle()
@@ -559,7 +563,7 @@ private struct SupportComposer: View {
             }
 
             Text(footnote)
-                .font(.caption2)
+                .font(.footnote)
                 .foregroundStyle(footnoteColor)
         }
         .padding(.horizontal, 14)

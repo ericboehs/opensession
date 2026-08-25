@@ -56,8 +56,6 @@ enum SupportLocation: String, CaseIterable, Identifiable {
 
 @MainActor
 extension SupportLocation {
-    private static var saveTask: Task<Void, Never>?
-
     static func set(_ location: Self) {
         let defaults = UserDefaults.standard
         let currentTools = defaults.string(forKey: SidebarTools.storageKey)
@@ -70,14 +68,10 @@ extension SupportLocation {
         )
         guard next.hiddenTools != currentTools || next.hiddenFeeds != currentFeeds else { return }
 
-        NativePreferences.beginLocalWrite()
         defaults.set(next.hiddenTools, forKey: SidebarTools.storageKey)
         defaults.set(next.hiddenFeeds, forKey: SidebarFeeds.storageKey)
         let user = ServerConfig.shared.userName
-        let previousSave = saveTask
-        saveTask = Task {
-            defer { NativePreferences.endLocalWrite() }
-            await previousSave?.value
+        Task {
             _ = try? await SettingsAPI.updateUiPrefs(
                 user: user,
                 prefs: [

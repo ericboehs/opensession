@@ -62,28 +62,28 @@ export function NoteBubble({
 			return;
 		}
 		setBusy(true);
-		try {
-			// The broadcast puts the stored note back into the transcript, so
+		await (async () => {
+// The broadcast puts the stored note back into the transcript, so
 			// there's nothing to write locally.
 			await editSessionNoteApi(sessionId, note.id, text, getCurrentUser());
 			setEditing(false);
-		} catch (e: any) {
-			toast(e?.message || "Failed to edit note");
-		} finally {
-			setBusy(false);
-		}
+})().catch(async (e: any) => {
+toast(e?.message || "Failed to edit note");
+}).finally(async () => {
+setBusy(false);
+});
 	}
 
 	async function remove() {
 		if (!sessionId || busy) return;
 		setBusy(true);
-		try {
-			await deleteSessionNoteApi(sessionId, note.id, getCurrentUser());
-		} catch (e: any) {
-			toast(e?.message || "Failed to delete note");
-		} finally {
-			setBusy(false);
-		}
+		await (async () => {
+await deleteSessionNoteApi(sessionId, note.id, getCurrentUser());
+})().catch(async (e: any) => {
+toast(e?.message || "Failed to delete note");
+}).finally(async () => {
+setBusy(false);
+});
 	}
 
 	return (

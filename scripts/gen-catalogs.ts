@@ -134,7 +134,6 @@ async function renderMcpTools(): Promise<string> {
     `${REPO_ROOT}/packages/core/opensession-server/src/server/automation-denied-tools.ts`
   );
   const { STRIPE_CONFIRM_TOOLS } = await import(`${REPO_ROOT}/packages/core/opensession-server/src/server/runner-shared.ts`);
-  const { SHARED_INPROCESS_SERVERS } = await import(`${REPO_ROOT}/packages/core/opensession-server/src/server/opencode-policy.ts`);
 
   const out: string[] = [
     header(
@@ -177,8 +176,8 @@ async function renderMcpTools(): Promise<string> {
 
   // Summary table.
   out.push("## Servers", "");
-  out.push("| Server | Tools | Runs | Shared server | Condition |");
-  out.push("| --- | --- | --- | --- | --- |");
+  out.push("| Server | Tools | Runs | Condition |");
+  out.push("| --- | --- | --- | --- |");
   const built: Array<{ entry: any; tools: ListedTool[]; variants: Array<{ label: string; tools: ListedTool[]; runClasses: string[] }> }> = [];
   for (const entry of MCP_SERVER_CATALOG) {
     const tools = await listTools(entry.build());
@@ -190,7 +189,7 @@ async function renderMcpTools(): Promise<string> {
     out.push(
       `| [\`${entry.name}\`](#${entry.name}) | ${tools.length} | ${entry.runClasses
         .map((r: string) => RUN_CLASS_LABEL[r] || r)
-        .join(", ")} | ${SHARED_INPROCESS_SERVERS.includes(entry.name) ? "yes" : "no"} | ${
+        .join(", ")} | ${
         entry.condition ? entry.condition.replace(/\|/g, "\\|") : "–"
       } |`,
     );
@@ -198,9 +197,7 @@ async function renderMcpTools(): Promise<string> {
   const total = built.reduce((n, b) => n + b.tools.length, 0);
   out.push(
     "",
-    `${built.length} servers, ${total} tools. "Shared server" is membership of`,
-    "`SHARED_INPROCESS_SERVERS` (`packages/core/opensession-server/src/server/opencode-policy.ts`): a run carrying",
-    "any server outside that list falls back to a per-session engine server.",
+    `${built.length} servers, ${total} tools.`,
     "",
   );
 
@@ -257,18 +254,6 @@ export const ENGINE_NOTES: Record<
   string,
   { title: string; adapter: string; prefix: string; gate: string; note: string }
 > = {
-  opencode: {
-    title: "opencode",
-    adapter: "packages/core/opensession-server/src/server/opencode-runner.ts (policy in packages/core/opensession-server/src/server/opencode-policy.ts)",
-    prefix: "`opencode/<provider>/<model>`",
-    gate:
-      "Always available; the Anthropic side additionally needs the Meridian bridge enabled " +
-      "(`bridgeEnabled()`, `~/.opensession-opencode.json`).",
-    note:
-      "The default engine and the only one eligible for the shared always-warm servers " +
-      "(`SHARED_INPROCESS_SERVERS` / `sharedOpencodeEligible`). Unattended runs are gated " +
-      "deny-by-default on journal kind (`opencodeGateReason`) and get the tool-strip policy.",
-  },
   pi: {
     title: "pi",
     adapter: "packages/core/opensession-server/src/server/pi-runner.ts",
@@ -293,10 +278,10 @@ export const ENGINE_NOTES: Record<
 
 async function renderEngines(): Promise<string> {
   const models = await import(`${REPO_ROOT}/packages/core/opensession-server/src/server/models.ts`);
-  const { ENGINE_IDS } = await import(`${REPO_ROOT}/packages/core/opensession-server/src/server/engine/engines-config.ts`);
+  const ENGINE_IDS = ["pi"] as const;
   // Read the ids from the engine registry so a new one cannot be missed, but
   // lead with the default engine rather than the union's alphabetical order.
-  const lead = ["opencode", "pi"];
+  const lead = ["pi"];
   const ids: string[] = [
     ...lead.filter((id) => (ENGINE_IDS as readonly string[]).includes(id)),
     ...[...ENGINE_IDS].filter((id: string) => !lead.includes(id)).sort(),
@@ -312,19 +297,8 @@ async function renderEngines(): Promise<string> {
         "(`packages/core/opensession-server/src/server/models.ts`) against a clean instance — no per-model engine",
         "overrides configured — so it shows the shipped defaults.",
         "",
-        "`routeModel()` resolves in one order, and this is the only place that",
-        "order lives:",
-        "",
-        "1. an explicit engine prefix on the id (`pi/…`);",
-        "   a leading `opencode/` is the picker's own id shape, not a choice;",
-        "2. the per-model default engine — `modelEngines` in",
-        "   `~/.opensession-engines.json`, keyed by the base model id, and applied",
-        "   to INTERACTIVE runs only;",
-        "3. opencode.",
-        "",
-        "A default naming a disabled or un-routable engine is ignored and the run",
-        "stays on opencode; an explicit choice is never softened — it routes, and",
-        "that engine's own gate reports why it cannot run.",
+        "`routeModel()` sends every accepted model and preset to Pi.",
+        "Native ids and provider/model paths normalize to `pi/<provider>/<model>`.",
       ].join("\n"),
     ),
   ];
@@ -363,19 +337,15 @@ async function renderEngines(): Promise<string> {
   }
   out.push(
     "",
-    "Prefixing any of those ids routes it to another engine, subject to that",
-    "engine's gate and vendor scope — `toEngineModel()` returns nothing when an",
-    "engine cannot serve a model, and the run stays where it was.",
+    "Every accepted id resolves to Pi before dispatch.",
     "",
     "| Example id | Routes to |",
     "| --- | --- |",
   );
   for (const example of [
     "pi/anthropic/claude-opus-5",
-    // Legacy ids of the removed direct engines normalize onto opencode.
-    "claude/anthropic/claude-opus-5",
-    "codex/openai/gpt-5.6-sol",
-    "opencode/anthropic/claude-opus-5",
+    "anthropic/claude-opus-5",
+    "openai/gpt-5.6-sol",
   ]) {
     const route = models.routeModel(example);
     out.push(`| \`${example}\` | ${route.engine} |`);
@@ -387,7 +357,6 @@ async function renderEngines(): Promise<string> {
 function steerLabel(models: any, id: string): string {
   if (id === "fake") return "n/a";
   const probe: Record<string, string> = {
-    opencode: "opencode/anthropic/claude-opus-5",
     pi: "pi/anthropic/claude-opus-5",
   };
   return models.modelSupportsSteer(probe[id]) ? "yes" : "no";

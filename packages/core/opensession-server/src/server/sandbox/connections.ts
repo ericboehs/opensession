@@ -16,8 +16,6 @@ import {
   resolveWorkspaceSecret,
   workspaceSecretExists,
 } from "../workspace-secrets";
-import { bootstrapSignature } from "./adapters/bootstrap";
-
 export const WORKSPACE_SANDBOX_PROVIDERS = [
   "docker",
   "daytona",
@@ -196,8 +194,21 @@ export function getSandboxConnection(
 }
 
 export function sandboxAdapterSignature(provider: WorkspaceSandboxProvider): string {
-  const version = provider === "box" ? "connection-v2" : "connection-v1";
-  return `${provider}:${version}:${bootstrapSignature()}`;
+  const version = provider === "box" ? "connection-v4" : "connection-v1";
+  return `${provider}:${version}`;
+}
+
+/** Connection qualification proves provider credentials and control-plane
+ * semantics. Runner pins and remote bootstrap revisions have their own
+ * re-bootstrap lifecycle and must not make a healthy connection disappear
+ * after every deploy. Accept the previous signature shape once so existing
+ * qualified connections migrate without another destructive provider test. */
+function sandboxAdapterSignatureCurrent(
+  provider: WorkspaceSandboxProvider,
+  stored: string | undefined,
+): boolean {
+  const current = sandboxAdapterSignature(provider);
+  return stored === current || stored?.startsWith(`${current}:`) === true;
 }
 
 export function safeSandboxConnections(): SafeSandboxConnection[] {
@@ -218,8 +229,10 @@ export function safeSandboxConnections(): SafeSandboxConnection[] {
     const hasCredentials = connection.credentialRef
       ? workspaceSecretExists(connection.credentialRef)
       : provider === "docker" || provider === "microvm";
-    const signatureCurrent =
-      connection.qualification?.adapterSignature === sandboxAdapterSignature(provider);
+    const signatureCurrent = sandboxAdapterSignatureCurrent(
+      provider,
+      connection.qualification?.adapterSignature,
+    );
     const state: SafeSandboxConnection["state"] = !connection.enabled
       ? "disabled"
       : connection.qualification?.status === "checking"
@@ -371,7 +384,7 @@ export function disconnectSandboxProvider(provider: WorkspaceSandboxProvider): b
 export function sandboxConnectionReady(provider: WorkspaceSandboxProvider): boolean {
   const connection = getSandboxConnection(provider);
   if (!connection?.enabled || connection.qualification?.status !== "ready") return false;
-  if (connection.qualification.adapterSignature !== sandboxAdapterSignature(provider)) return false;
+  if (!sandboxAdapterSignatureCurrent(provider, connection.qualification.adapterSignature)) return false;
   if (provider === "daytona" || provider === "box" || provider === "modal") {
     return Boolean(connection.credentialRef && workspaceSecretExists(connection.credentialRef));
   }

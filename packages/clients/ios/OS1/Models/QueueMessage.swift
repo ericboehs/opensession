@@ -21,15 +21,24 @@ struct QueueMessagePresentation: Equatable {
     let isGitHub: Bool
     /// A review handoff is automated work waiting behind the current turn.
     let isReviewHandoff: Bool
+    /// A peer session's agent-authored coordination message, not human prose.
+    let isSessionMessage: Bool
 
     init(content: String, user: String?) {
         isGitHub = user == "GitHub" || user == "GitHub (automation)"
         isReviewHandoff = isGitHub && Self.reviewHandoffSentinel.match(content) != nil
+        let agentPrefixed = Self.agentAttribution.match(content)
+        let routingStripped = agentPrefixed?.rest
+            ?? Self.attributionPrefix.match(content)?.rest
+            ?? content
+        isSessionMessage = Self.agentActor.match(user ?? "") != nil
+            || agentPrefixed != nil
+            || Self.sessionNoticeSentinel.match(routingStripped) != nil
 
         // Every marker starts the message, so a couple of prefix tests settle
-        // the ordinary case without touching a regex — this runs for each
+        // the ordinary case without touching a regex. This runs for each
         // visible chip on every composer keystroke.
-        if !isGitHub, !Self.mayCarryMarker(content) {
+        if !isGitHub, !isSessionMessage, !Self.mayCarryMarker(content) {
             label = nil
             body = content
             return
@@ -51,16 +60,15 @@ struct QueueMessagePresentation: Equatable {
         }
 
         // The routing prefix a named teammate's message carries. Stripped only
-        // when a sentinel behind it proves this is a delivery rather than
-        // something typed — an ordinary prompt is allowed to open with
-        // "[WIP] …" and must survive intact.
-        let unprefixed = Self.attributionPrefix.match(content)?.rest ?? content
+        // when a sentinel or machine actor proves this is a delivery rather
+        // than something typed. An ordinary prompt may open with "[WIP] …".
+        let unprefixed = routingStripped
         if Self.workerSentinel.match(unprefixed) != nil {
             label = "Worker report"
         } else if Self.workflowSentinel.match(unprefixed) != nil {
             label = "Workflow"
-        } else if Self.sessionNoticeSentinel.match(unprefixed) != nil {
-            label = "Heads-up from another session"
+        } else if isSessionMessage {
+            label = "Message from another session"
         } else if isReviewHandoff {
             label = nil
             let clean = Self.stripLeadingSentinels(content)
@@ -107,6 +115,9 @@ struct QueueMessagePresentation: Equatable {
     /// prompt opening with "[WIP] …" isn't mistaken for an attribution.
     private static let attributionPrefix = Pattern("^\\[([^\\]\\n{}]{1,40})\\]\\s+")
     private static let workerAttribution = Pattern("^\\[worker\\s+([^\\]\\s]+)\\]\\s*")
+    private static let agentAttribution =
+        Pattern("^\\[agent\\s+((?:os|bks)-[a-z0-9-]+)\\]\\s*")
+    private static let agentActor = Pattern("^agent\\s+(?:os|bks)-[a-z0-9-]+$")
     private static let workerSentinel =
         Pattern("^<!--os:worker-report(?::[^\\s>]+)?-->\\s*")
     private static let workflowSentinel =

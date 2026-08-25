@@ -27,7 +27,7 @@
  * registry only (spec.wsToken, minted at launch and registered by the
  * provider's launcher keyed by hostId). rpc-ws used to accept ANY registered
  * run-rpc token, which exposed the interactive-MCP RPC to the whole tailnet
- * for every proxied run — systemd hosts, codex, opencode — even on a
+ * for every proxied run — systemd hosts, codex, pi — even on a
  * sandbox-less deployment where nothing should dial back at all. Now the
  * upgrade requires the run's hostId + wsToken (only ws-transport launches
  * register one; the global run-rpc token set stays unix-socket-local), while
@@ -48,6 +48,7 @@ import { cpus, loadavg } from "node:os";
 import { audit } from "./audit";
 import { dispatchRunRpc, timingSafeEqStr } from "./run-rpc";
 import type { HostConnection, HostConnectionHandlers, HostConnector } from "./host-client";
+import { stateDir } from "./paths";
 
 const g = globalThis as any;
 
@@ -623,7 +624,7 @@ function escalateTimerPoison(staleMs: number): void {
   // too, so unbounded auto-exits would flap forever. Track recent auto-exits
   // in a state file; after 3 in 30 minutes stop exiting and just scream — at
   // that point the tree needs a human (or a fixing agent), not a restart.
-  const guardPath = `${process.env.HOME}/.opensession-timer-poison.json`;
+  const guardPath = stateDir("timer-poison.json");
   let exits: string[] = [];
   try {
     exits = (JSON.parse(readFileSync(guardPath, "utf8")).exits ?? []) as string[];

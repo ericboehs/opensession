@@ -1,6 +1,6 @@
 /**
  * One per-user flat-file store, spelled once. Pins, read marks, lanes,
- * snoozes, hides, tab colors, UI prefs and personal prompts are the same
+ * snoozes, hides, settlements, tab colors, UI prefs and personal run preferences are the same
  * thing: one JSON file per person under `~/.opensession-<name>/`, holding a
  * single field. They used to be seven copies of that code, and the copies
  * disagreed about the two things that matter, so one person's pins and drafts
@@ -18,16 +18,15 @@
  * - READING THE LOSING SPELLINGS. Every one of these stores holds live state
  *   written under an older filename, so a read that finds no canonical file
  *   falls back to the legacy names before giving up: the plain sanitized slug
- *   (pins, reads, lanes, snoozes, hides, tab colors, UI prefs) and the
- *   identity verbatim (personal prompts' `user-<slackId>`). The first write
+ *   (pins, reads, lanes, snoozes, hides, settlements, tab colors, UI prefs) and the
+ *   identity verbatim (personal run preferences' `user-<slackId>`). The first write
  *   after this lands on the canonical name and wins from then on; the legacy
  *   file is left in place rather than deleted, so nothing is lost if the
  *   change is rolled back.
  *
  * WHO the identity is stays per store, because that is a real difference and
- * not an accident: most key on the self-selected display name, personal
- * prompts resolves the teammate first so a person's prompt follows them
- * across surfaces.
+ * not an accident: most key on the self-selected display name, while personal
+ * run preferences resolve the teammate first so they follow across surfaces.
  */
 
 import { createHash } from "crypto";
@@ -80,9 +79,9 @@ export interface UserStore<T> {
  * though drafts.ts predates this module: it writes the same filename scheme,
  * which is where the scheme came from.
  *
- * personal-prompts is deliberately absent. It keys on the resolved teammate,
- * so it already follows a person through a rename and copying it would write
- * a second file under a key nothing reads.
+ * Personal prompts and output styles are deliberately absent. They key on the
+ * resolved teammate, so they already follow a person through a rename and
+ * copying one would write a second file under a key nothing reads.
  *
  * A store missing from this list is not an error the type system can catch, so
  * user-store.test.ts asserts the list against the repo's own `userStore(`
@@ -94,6 +93,7 @@ export const NAME_KEYED_STORES = [
 	"lanes",
 	"pins",
 	"reads",
+	"settlements",
 	"snoozes",
 	"tab-colors",
 	"ui-prefs",
@@ -104,7 +104,8 @@ export const NAME_KEYED_STORES = [
  *
  * The display name is the filename, so a rename would otherwise orphan someone
  * quietly: their pins, read marks, lanes, snoozes, hides, tab colors, drafts
- * and UI prefs would all still be on disk under a name nothing looks up, and
+ * settlements and UI prefs would all still be on disk under a name nothing
+ * looks up, and
  * the app would show them a factory-fresh sidebar. Nothing errors, which is
  * what makes it worth handling here rather than leaving to the caller.
  *

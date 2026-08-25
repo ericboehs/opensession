@@ -107,14 +107,21 @@ function guardedSessionNotificationIds(
   return null;
 }
 
-async function deliver(control: SessionControl, sessionIds: string[], message: string): Promise<void> {
+async function deliver(
+  control: SessionControl,
+  sessionIds: string[],
+  message: string,
+  deliveryKey: string,
+): Promise<void> {
   for (const id of sessionIds) {
     try {
       // Default busy behavior: fold into the running turn as a steer. Steering
       // is a non-interrupting history append the turn picks up at its next
-      // stopping point (steerOpencodeRun) — exactly right for an FYI; it only
+      // stopping point (steerPiRun) — exactly right for an FYI; it only
       // falls back to the queue when nothing is steerable (external run).
-      const res = await control.deliverToSession(id, message, "GitHub");
+      const res = await control.deliverToSession(id, message, "GitHub", {
+        deliveryId: `${deliveryKey}:${id}`,
+      });
       console.log(`[github] session notify → ${id}: ${res.status}`);
     } catch (e) {
       console.error(`[github] session notify → ${id} failed:`, e);
@@ -161,7 +168,12 @@ export async function notifyMergedPrSessions(payload: any): Promise<void> {
   if (!sessionIds) return;
 
   console.log(`[github] PR #${prNumber} merged → notifying ${sessionIds.length} session(s) on ${workspaceId}:${headRef}`);
-  await deliver(control, sessionIds, message);
+  await deliver(
+    control,
+    sessionIds,
+    message,
+    `github-merge:${payload?.repository?.full_name || workspaceId}:${prNumber}:${pr.merge_commit_sha || headRef}`,
+  );
 
   if (trackDeploy) {
     const pending = readPending();
@@ -204,5 +216,10 @@ export async function handleDeployWorkflowRun(payload: any): Promise<void> {
   if (!sessionIds) return;
 
   console.log(`[github] Deploy ${run.conclusion} for ${run.head_sha} → notifying ${sessionIds.length} session(s)`);
-  await deliver(control, sessionIds, message);
+  await deliver(
+    control,
+    sessionIds,
+    message,
+    `github-deploy:${run.id || run.head_sha}:${run.conclusion || "unknown"}`,
+  );
 }

@@ -311,7 +311,7 @@ export function SidebarCtxMenu({
 							key={p.label}
 							label={p.label}
 							onClick={() => {
-								snoozeEntry.onPick(p.until.toISOString());
+								snoozeEntry.onPick(p.until);
 								onClose();
 							}}
 						/>

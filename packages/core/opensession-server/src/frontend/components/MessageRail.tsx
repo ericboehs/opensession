@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { SentMessage } from "../lib/sent-messages";
 import { RAIL_EDGE, RAIL_GUTTER, RAIL_W } from "../lib/message-rail";
 import { relativeTime } from "../lib/api";
 import { IconGitCommit, IconPencil, IconPullRequest } from "./icons";
 import { Popover } from "../ui/popover";
 import { cn } from "../ui/cn";
+import { scrollToVirtualTranscriptEntry } from "../lib/transcript-virtual-navigation";
 
 /**
  * Your own messages, as a rail of ticks down the left edge of the transcript.
@@ -148,6 +149,7 @@ export function MessageRail({ messages, containerRef, leaveLatest }: Props) {
 
 	/* -- where the rail can sit ---------------------------------------- */
 
+	// Stable identity: only the container ref and setters are captured.
 	const measure = useCallback(() => {
 		const el = containerRef.current;
 		if (!el) return;
@@ -204,8 +206,7 @@ export function MessageRail({ messages, containerRef, leaveLatest }: Props) {
 	// The card hangs off the tick under the pointer, not off the rail, so it
 	// tracks the scrub. A fresh object per position is what re-registers it
 	// with the positioner; a stable function would be memoized and never move.
-	const tickAnchor = useMemo(
-		() => ({
+	const tickAnchor = (({
 			getBoundingClientRect: () => {
 				const rail = railRef.current?.getBoundingClientRect();
 				const left = rail?.left ?? 0;
@@ -221,13 +222,12 @@ export function MessageRail({ messages, containerRef, leaveLatest }: Props) {
 					height: TICK_MAX_H,
 				};
 			},
-		}),
-		// `tickY` is this render's, and reads nothing but `pitch`.
-		[active, pitch],
-	);
+		}));
 
 	/* -- which message the reader is on -------------------------------- */
 
+	// Stable identity: only refs and setters are captured; `count` in the
+	// scroll effect below re-runs it when history prepends.
 	const trackCurrent = useCallback(() => {
 		const el = containerRef.current;
 		if (!el) return;
@@ -244,7 +244,7 @@ export function MessageRail({ messages, containerRef, leaveLatest }: Props) {
 			index = order.get(node.dataset.eid ?? "") ?? index;
 		}
 		setCurrent((prev) => (prev === index ? prev : index));
-	}, [containerRef]);
+	}, [containerRef, latest]);
 
 	// Tracked here rather than in the transcript's own scroll handler: that one
 	// is the hot path the scroll-FPS counter watches, and this is a decoration
@@ -279,15 +279,19 @@ export function MessageRail({ messages, containerRef, leaveLatest }: Props) {
 		// be mistaken for the reader drifting back to the live edge.
 		leaveLatest();
 
+		// Ask the virtual list to mount an offscreen destination first. A recent
+		// message is already in ordinary DOM and skips this path.
+		const selector = `[data-eid="${CSS.escape(message.id)}"]`;
+		if (!el.querySelector(selector))
+			scrollToVirtualTranscriptEntry(el, message.id);
+
 		// Instant, never smooth: an animated scroll across hundreds of
 		// virtualized blocks mounts and unmounts them mid-flight, and the
 		// destination moves out from under the animation.
 		const settle = () => {
 			// Re-query every pass: the block may have been a measured
 			// placeholder a moment ago.
-			const target = el.querySelector<HTMLElement>(
-				`[data-eid="${CSS.escape(message.id)}"]`,
-			);
+			const target = el.querySelector<HTMLElement>(selector);
 			if (!target) return false;
 			const delta =
 				target.getBoundingClientRect().top -
@@ -304,7 +308,8 @@ export function MessageRail({ messages, containerRef, leaveLatest }: Props) {
 		let settled = 0;
 		const correct = () => {
 			settled = settle() ? settled + 1 : 0;
-			if (settled >= 2 || ++frames >= SETTLE_FRAMES) return;
+			frames += 1;
+			if (settled >= 2 || frames >= SETTLE_FRAMES) return;
 			requestAnimationFrame(correct);
 		};
 		correct();

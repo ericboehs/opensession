@@ -24,7 +24,7 @@ import {
   postSlackFiles,
   sendSlackMessage,
   slackPermalink,
-  slackUploadPermalink,
+  slackUploadTs,
 } from "../slack/slack-api";
 import { shippedChangesChannel } from "./constants";
 
@@ -107,6 +107,17 @@ export function settleShippedChangeAnnouncement(
   } else {
     rmSync(receiptPath, { force: true });
   }
+}
+
+/**
+ * Drop a receipt so the same update can be shared again. Undo removes the
+ * message from Slack, so the claim that stopped a second send is stale.
+ */
+export function forgetShippedChangeAnnouncement(
+  key: string,
+  root = ANNOUNCEMENT_STATE_ROOT,
+): void {
+  rmSync(announcementReceiptPath(key, root), { force: true });
 }
 
 export function validWalkthroughScreenshot(
@@ -227,6 +238,9 @@ export async function shareShippedVisualChange(opts: {
   status: "shared" | "already_shared";
   channel?: ShippedChangeChannel;
   permalink?: string;
+  /** Message timestamp, so the sender can undo the post. */
+  ts?: string;
+  announcementKey?: string;
 }> {
   const channels = shippedChangeChannels();
   const channel = opts.channel || shippedChangesChannel();
@@ -257,20 +271,20 @@ export async function shareShippedVisualChange(opts: {
   const claimId = claimShippedChangeAnnouncement(announcementKey);
   if (!claimId) return { status: "already_shared" };
   let permalink: string | undefined;
+  let ts: string | undefined;
   try {
     if (visual) {
       const completed = await postSlackFiles(channel, visual.screenshots, comment, {
         title: `${title} · shipped`,
         altText: `Screenshot of the shipped visual change: ${title}`,
       }, opts.slackToken);
-      permalink = await slackUploadPermalink(completed, channel, opts.slackToken);
+      ts = await slackUploadTs(completed, channel, opts.slackToken);
     } else {
       const posted = await sendSlackMessage(channel, comment, undefined, opts.slackToken);
       if (!posted?.ok) throw new Error(`Slack message failed: ${posted?.error || "invalid response"}`);
-      permalink = typeof posted.ts === "string"
-        ? await slackPermalink(channel, posted.ts, opts.slackToken)
-        : undefined;
+      ts = typeof posted.ts === "string" ? posted.ts : undefined;
     }
+    permalink = ts ? await slackPermalink(channel, ts, opts.slackToken) : undefined;
     settleShippedChangeAnnouncement(
       announcementKey,
       claimId,
@@ -296,5 +310,7 @@ export async function shareShippedVisualChange(opts: {
     status: "shared",
     channel: channels.find((candidate) => candidate.id === channel),
     permalink,
+    ts,
+    announcementKey,
   };
 }

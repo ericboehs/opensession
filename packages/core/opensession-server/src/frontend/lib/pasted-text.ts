@@ -1,3 +1,5 @@
+import { randomUUID } from "./random-uuid";
+
 export const PASTED_TEXT_THRESHOLD = 2_500;
 
 export interface PastedTextAttachment {
@@ -10,7 +12,7 @@ export function shouldCollapsePastedText(text: string): boolean {
 }
 
 export function createPastedTextAttachment(text: string): PastedTextAttachment {
-  return { id: crypto.randomUUID(), text };
+  return { id: randomUUID(), text };
 }
 
 export function pastedTextLineLabel(text: string): string {

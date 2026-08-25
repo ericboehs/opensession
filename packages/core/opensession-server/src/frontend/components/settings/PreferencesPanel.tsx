@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
 	fetchModels,
+	fetchPersonalOutputStyle,
 	fetchPersonalPrompt,
 	fetchRepos,
+	savePersonalOutputStyle,
 	savePersonalPrompt,
 	type ModelOption,
+	type PersonalOutputStyle,
 	type RepoInfo,
 } from "../../lib/api";
-import { useAvailableEngines } from "../../hooks/useEngines";
 import { BASE_PATH } from "../../lib/base";
 import {
 	getBusySendPrefs,
@@ -17,11 +19,6 @@ import {
 	type BusySendPref,
 	type BusySendPrefs,
 } from "../../lib/busy-send-pref";
-import {
-	getDefaultEnginePref,
-	onDefaultEnginePrefChanged,
-	setDefaultEnginePref,
-} from "../../lib/default-engine-pref";
 import {
 	getDefaultModelPref,
 	onDefaultModelPrefChanged,
@@ -74,6 +71,11 @@ import {
 	setReplySuggestionsPref,
 } from "../../lib/reply-suggestions";
 import {
+	getNextChatButtonPref,
+	onNextChatButtonChanged,
+	setNextChatButtonPref,
+} from "../../lib/next-chat-pref";
+import {
 	getVimModePref,
 	onVimModeChanged,
 	setVimModePref,
@@ -82,6 +84,7 @@ import { Input, Textarea } from "../../ui/input";
 import { Button } from "../../ui/button";
 import {
 	SettingCard,
+	SettingGroup,
 	SettingsGroupLabel,
 	SettingsHeader,
 	SettingsHint,
@@ -93,7 +96,14 @@ import { Switch } from "../../ui/switch";
 import { toast } from "../../ui/toast";
 import { getCurrentUser } from "../UserPicker";
 import { Select, SettingRow } from "./shared";
+import {
+	AppearanceSection,
+	SidebarDisplayRows,
+	SidebarItemsSection,
+} from "./AppearancePanel";
 import { PersonalSandboxDefaultRow } from "./SandboxDefaults";
+import { RepoTile } from "../RepoTile";
+import { IconRepo, IconSparkle } from "../icons";
 
 // ── Desk voice ─────────────────────────────────────────────────────────────
 
@@ -108,19 +118,19 @@ function DeskVoiceApiKeyRow() {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	const load = useCallback(() => {
+	const load = () => {
 		fetch(`${BASE_PATH}/api/desk/voice/status`)
 			.then((r) => r.json())
 			.then(setStatus)
 			.catch((e) => setError(e.message));
-	}, []);
+	};
 	useEffect(load, [load]);
 
 	async function put(value: string) {
 		setBusy(true);
 		setError(null);
-		try {
-			const res = await fetch(`${BASE_PATH}/api/desk/voice/key`, {
+		await (async () => {
+const res = await fetch(`${BASE_PATH}/api/desk/voice/key`, {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ apiKey: value }),
@@ -129,11 +139,11 @@ function DeskVoiceApiKeyRow() {
 			if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
 			setStatus(body);
 			setApiKey("");
-		} catch (e: any) {
-			setError(e.message || "Failed to save the API key");
-		} finally {
-			setBusy(false);
-		}
+})().catch(async (e: any) => {
+setError(e.message || "Failed to save the API key");
+}).finally(async () => {
+setBusy(false);
+});
 	}
 
 	return (
@@ -191,13 +201,19 @@ function DeskVoicePanel() {
 		<>
 			<SettingsGroupLabel>Desk voice</SettingsGroupLabel>
 			<SettingCard>
-				<SettingRow
-					title="Voice mode"
-					control={
-						<Switch aria-label="Voice mode" checked={on} onCheckedChange={setDeskVoicePref} />
-					}
-				/>
-				<DeskVoiceApiKeyRow />
+				<SettingGroup>
+					<SettingRow
+						title="Voice mode"
+						control={
+							<Switch
+								aria-label="Voice mode"
+								checked={on}
+								onCheckedChange={setDeskVoicePref}
+							/>
+						}
+					/>
+					<DeskVoiceApiKeyRow />
+				</SettingGroup>
 			</SettingCard>
 			<SettingsHint>
 				Talk to your Desk, the standing session you summon with ⌘J, instead of
@@ -205,6 +221,68 @@ function DeskVoicePanel() {
 				key is shared by everyone on this instance.
 			</SettingsHint>
 		</>
+	);
+}
+
+/** A server-backed personal choice, rather than localStorage: sessions started
+ * from the web, native app, Slack, and GitHub all report work the same way. */
+function PersonalOutputStyleRow() {
+	const user = getCurrentUser();
+	const [style, setStyle] = useState<PersonalOutputStyle | null>(null);
+	const [saving, setSaving] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	useEffect(() => {
+		let alive = true;
+		fetchPersonalOutputStyle(user)
+			.then((r) => {
+				if (!alive) return;
+				setStyle(r.outputStyle);
+				setError(null);
+			})
+			.catch((e) => alive && setError(e.message));
+		return () => {
+			alive = false;
+		};
+	}, [user]);
+
+	async function change(next: PersonalOutputStyle) {
+		const previous = style ?? "default";
+		setStyle(next);
+		setSaving(true);
+		setError(null);
+		await (async () => {
+const saved = await savePersonalOutputStyle(user, next);
+			setStyle(saved.outputStyle);
+})().catch(async (e: any) => {
+setStyle(previous);
+			setError(e?.message || "Failed to save output style");
+			toast(e?.message || "Failed to save output style", { variant: "error" });
+}).finally(async () => {
+setSaving(false);
+});
+	}
+
+	return (
+		<SettingRow
+			title="Output style"
+			desc={
+				error ||
+				"Concise leads with the result and skips preamble and narration without reducing the work."
+			}
+			control={
+				<Select
+					label="Output style"
+					value={style ?? "default"}
+					options={[
+						{ value: "default", label: "Default" },
+						{ value: "concise", label: "Concise" },
+					]}
+					disabled={style === null || saving}
+					onChange={change}
+				/>
+			}
+		/>
 	);
 }
 
@@ -237,22 +315,26 @@ function PersonalPromptPanel() {
 	// latest values live in a ref because the unmount effect must run once (a
 	// dependency on `prompt` would re-fire the cleanup on every keystroke).
 	const latest = useRef({ prompt, savedPrompt, user });
-	latest.current = { prompt, savedPrompt, user };
+	useLayoutEffect(() => {
+		latest.current = { prompt, savedPrompt, user };
+	});
 
+	// Stable identity: reads the latest-values ref, so the unmount effect can
+	// list it and still only run its cleanup once.
 	const commit = useCallback(async () => {
 		const { prompt: draft, savedPrompt: saved, user: who } = latest.current;
 		if (draft === null || draft === saved) return;
 		setStatus("saving");
-		try {
-			const r = await savePersonalPrompt(who, draft);
+		await (async () => {
+const r = await savePersonalPrompt(who, draft);
 			setSavedPrompt(r.prompt);
 			setStatus("saved");
-		} catch (e: any) {
-			setStatus("idle");
+})().catch(async (e: any) => {
+setStatus("idle");
 			toast(e?.message || "Failed to save personal prompt", {
 				variant: "error",
 			});
-		}
+});
 	}, []);
 
 	useEffect(() => {
@@ -349,10 +431,10 @@ function BusyGestureSelect({
 }
 
 /**
- * How working with a session behaves for you: the composer keys, what a
- * follow-up does mid-run, and how much of a turn's work the transcript shows.
- * Everything here is per user (ui-prefs), so it follows you across devices —
- * purely visual choices (theme, sidebar) live in Appearance instead.
+ * How the app looks and behaves for you: theme and accent, the composer keys,
+ * what a follow-up does mid-run, and how much of a turn's work the transcript
+ * shows. Everything here is yours alone, and the prefs backed by ui-prefs
+ * follow you across devices.
  */
 export function PreferencesPanel() {
 	const [sendKey, setSendKey] = useState<SendKeyPref>(getSendKeyPref);
@@ -360,6 +442,9 @@ export function PreferencesPanel() {
 	const [vimMode, setVimMode] = useState<boolean>(getVimModePref);
 	const [quickReplies, setQuickReplies] = useState<boolean>(
 		getReplySuggestionsPref,
+	);
+	const [nextChatButton, setNextChatButton] = useState<boolean>(
+		getNextChatButtonPref,
 	);
 	const [pinNew, setPinNew] = useState<boolean>(getPinNewSessions);
 	const [pinNewWs, setPinNewWs] = useState<boolean>(getPinNewWorkspaces);
@@ -370,6 +455,13 @@ export function PreferencesPanel() {
 		() =>
 			onReplySuggestionsChanged(() =>
 				setQuickReplies(getReplySuggestionsPref()),
+			),
+		[],
+	);
+	useEffect(
+		() =>
+			onNextChatButtonChanged(() =>
+				setNextChatButton(getNextChatButtonPref()),
 			),
 		[],
 	);
@@ -387,17 +479,6 @@ export function PreferencesPanel() {
 	const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
 	useEffect(
 		() => onDefaultModelPrefChanged(() => setModelPref(getDefaultModelPref())),
-		[],
-	);
-	// Per-user default engine for NEW sessions ("" = no preference — the
-	// instance decides, which today means the per-model default engine map,
-	// else OpenCode). Hidden on an instance with one engine: there is nothing
-	// to choose, and useAvailableEngines reports the same empty list for a
-	// server too old to answer.
-	const engineOptions = useAvailableEngines();
-	const [enginePref, setEnginePref] = useState<string>(getDefaultEnginePref);
-	useEffect(
-		() => onDefaultEnginePrefChanged(() => setEnginePref(getDefaultEnginePref())),
 		[],
 	);
 	// Per-user default repo for NEW sessions ("" = no preference — the
@@ -435,117 +516,110 @@ export function PreferencesPanel() {
 			<SettingsHeader title="Preferences" />
 			<SettingsGroupLabel className="mt-0">Messages</SettingsGroupLabel>
 			<SettingCard>
-				<SettingRow
-					title="Default model"
-					control={
-						<Select
-							label="Default model"
-							value={
-								modelPref &&
-								modelOptions.some((m) => m.id === modelPref)
-									? modelPref
-									: ""
-							}
-							options={[
-								{ value: "", label: "No preference" },
-								...modelOptions.map((m) => ({
-									value: m.id,
-									label: m.label,
-								})),
-							]}
-							onChange={setDefaultModelPref}
-						/>
-					}
-				/>
-				{engineOptions.length > 1 && (
+				{/* These four choices become one starting state for every new session. */}
+				<SettingGroup>
 					<SettingRow
-						title="Default engine"
+						title="Default model"
 						control={
 							<Select
-								label="Default engine"
+								label="Default model"
 								value={
-									engineOptions.some((e) => e.id === enginePref)
-										? enginePref
+									modelPref && modelOptions.some((m) => m.id === modelPref)
+										? modelPref
 										: ""
 								}
 								options={[
 									{ value: "", label: "No preference" },
-									...engineOptions.map((e) => ({
-										value: e.id,
-										label: e.label,
+									...modelOptions.map((m) => ({
+										value: m.id,
+										label: m.label,
 									})),
 								]}
-								onChange={setDefaultEnginePref}
+								onChange={setDefaultModelPref}
 							/>
 						}
 					/>
-				)}
-				<SettingRow
-					title="Default repository"
-					desc="Where a new session starts. On Auto it reads your prompt and picks."
-					control={
-						<Select
-							label="Default repository"
-							value={
-								repoPref === AUTO_REPO ||
-								repoOptions.some((r) => r.id === repoPref)
-									? repoPref
-									: ""
-							}
-							options={[
-								{ value: "", label: "Use the workspace default" },
-								{ value: AUTO_REPO, label: "Auto" },
-								...repoOptions.map((r) => ({
-									value: r.id,
-									label: r.label || r.id,
-								})),
-							]}
-							onChange={setDefaultRepoPref}
-						/>
-					}
-				/>
-				<PersonalSandboxDefaultRow />
-				<SettingRow
-					title="Send messages with"
-					desc={
-						sendKey === "mod-enter"
-							? "↵ makes a new line."
-							: "⇧↵ makes a new line. On a phone ↵ always makes one, so send with the button."
-					}
-					control={
-						<Select
-							label="Send messages with"
-							value={sendKey}
-							options={[
-								{ value: "enter", label: "Enter" },
-								{ value: "mod-enter", label: MOD_ENTER_LABEL },
-							]}
-							onChange={setSendKeyPref}
-						/>
-					}
-				/>
-				<SettingRow
-					title="Follow-up while busy"
-					desc="Queue waits until the run fully finishes; steer folds your message into the running turn without stopping it."
-					control={
-						<div className="flex flex-wrap items-end justify-end gap-x-3 gap-y-2">
-							<BusyGestureSelect
-								gesture="enter"
-								glyph={sendKey === "enter" ? "↩" : MOD_ENTER_GLYPH}
-								value={busySend.enter}
+
+					<SettingRow
+						title="Default repository"
+						desc="Where a new session starts. On Auto it reads your prompt and picks."
+						control={
+							<Select
+								label="Default repository"
+								value={
+									repoPref === AUTO_REPO ||
+									repoOptions.some((r) => r.id === repoPref)
+										? repoPref
+										: ""
+								}
+								options={[
+									{
+										value: "",
+										label: "Use the workspace default",
+										icon: <IconRepo size={16} />,
+									},
+									{
+										value: AUTO_REPO,
+										label: "Auto",
+										icon: <IconSparkle size={16} />,
+									},
+									...repoOptions.map((r) => ({
+										value: r.id,
+										label: r.label || r.id,
+										icon: <RepoTile name={r.id} size={16} />,
+									})),
+								]}
+								onChange={setDefaultRepoPref}
 							/>
-							{/* The modifier only has its own answer while plain Enter is
-							    the send key; otherwise ⌘↵ IS sending, set just above. */}
-							{sendKey === "enter" && (
+						}
+					/>
+					<PersonalSandboxDefaultRow />
+					<PersonalOutputStyleRow />
+				</SettingGroup>
+				{/* The send key also determines which busy-turn gesture is available. */}
+				<SettingGroup>
+					<SettingRow
+						title="Send messages with"
+						desc={
+							sendKey === "mod-enter"
+								? "↵ makes a new line."
+								: "⇧↵ makes a new line. On a phone ↵ always makes one, so send with the button."
+						}
+						control={
+							<Select
+								label="Send messages with"
+								value={sendKey}
+								options={[
+									{ value: "enter", label: "Enter" },
+									{ value: "mod-enter", label: MOD_ENTER_LABEL },
+								]}
+								onChange={setSendKeyPref}
+							/>
+						}
+					/>
+					<SettingRow
+						title="Follow-up while busy"
+						desc="Queue waits until the run fully finishes; steer folds your message into the running turn without stopping it."
+						control={
+							<div className="flex flex-wrap items-end justify-end gap-x-3 gap-y-2">
 								<BusyGestureSelect
-									gesture="mod"
-									glyph={MOD_ENTER_GLYPH}
-									value={busySend.mod}
+									gesture="enter"
+									glyph={sendKey === "enter" ? "↩" : MOD_ENTER_GLYPH}
+									value={busySend.enter}
 								/>
-							)}
-						</div>
-					}
-				/>
+								{/* The modifier only has its own answer while plain Enter is
+							    the send key; otherwise ⌘↵ IS sending, set just above. */}
+								{sendKey === "enter" && (
+									<BusyGestureSelect
+										gesture="mod"
+										glyph={MOD_ENTER_GLYPH}
+										value={busySend.mod}
+									/>
+								)}
+							</div>
+						}
+					/>
+				</SettingGroup>
 				<SettingRow
 					title="Quick replies"
 					desc="Suggest short follow-ups above the composer when a turn ends on a choice. Picking one fills the draft."
@@ -558,66 +632,91 @@ export function PreferencesPanel() {
 					}
 				/>
 				<SettingRow
-					title="Vim mode"
-					desc="Modal editing in the composer. Esc for normal mode, i to type. Enter still sends."
-					control={
-						<Switch aria-label="Vim mode" checked={vimMode} onCheckedChange={setVimModePref} />
-					}
-				/>
-				<SettingRow
-					title="Pin new sessions"
+					title="Next button"
+					desc="Show the Next button above the composer."
 					control={
 						<Switch
-							aria-label="Pin new sessions"
-							checked={pinNew}
-							onCheckedChange={setPinNewSessions}
+							aria-label="Next button"
+							checked={nextChatButton}
+							onCheckedChange={setNextChatButtonPref}
 						/>
 					}
 				/>
 				<SettingRow
-					title="Pin new workspaces"
+					title="Vim mode"
+					desc="Modal editing in the composer. Esc for normal mode, i to type. Enter still sends."
 					control={
 						<Switch
-							aria-label="Pin new workspaces"
-							checked={pinNewWs}
-							onCheckedChange={setPinNewWorkspaces}
+							aria-label="Vim mode"
+							checked={vimMode}
+							onCheckedChange={setVimModePref}
 						/>
 					}
 				/>
 			</SettingCard>
+			<AppearanceSection />
+			<SettingsGroupLabel>Sidebar</SettingsGroupLabel>
+			<SettingCard>
+				<SidebarDisplayRows repos={repoOptions} />
+				<SettingGroup>
+					<SettingRow
+						title="Pin new sessions"
+						control={
+							<Switch
+								aria-label="Pin new sessions"
+								checked={pinNew}
+								onCheckedChange={setPinNewSessions}
+							/>
+						}
+					/>
+					<SettingRow
+						title="Pin new workspaces"
+						control={
+							<Switch
+								aria-label="Pin new workspaces"
+								checked={pinNewWs}
+								onCheckedChange={setPinNewWorkspaces}
+							/>
+						}
+					/>
+				</SettingGroup>
+			</SettingCard>
+			<SidebarItemsSection />
 			<SettingsGroupLabel>Transcript</SettingsGroupLabel>
 			<SettingCard>
-				<SettingRow
-					title="Steps"
-					desc="Choose whether a turn’s steps stay closed, open only while it runs, or remain open."
-					control={
-						<Select
-							label="Steps"
-							value={turnActivity.work}
-							options={[
-								{ value: "folded", label: "Closed" },
-								{ value: "running", label: "While running" },
-								{ value: "open", label: "Open" },
-							]}
-							onChange={setTurnWorkPref}
-						/>
-					}
-				/>
-				<SettingRow
-					title="Tool calls"
-					desc="Choose whether tool calls start open or stay folded into a single step."
-					control={
-						<Select
-							label="Tool calls"
-							value={turnActivity.tools}
-							options={[
-								{ value: "folded", label: "Closed" },
-								{ value: "open", label: "Open" },
-							]}
-							onChange={setToolCallsPref}
-						/>
-					}
-				/>
+				<SettingGroup>
+					<SettingRow
+						title="Steps"
+						desc="Choose whether steps stay closed, open when the agent writes updates, or remain open."
+						control={
+							<Select
+								label="Steps"
+								value={turnActivity.work}
+								options={[
+									{ value: "folded", label: "Closed" },
+									{ value: "running", label: "With updates" },
+									{ value: "open", label: "Open" },
+								]}
+								onChange={setTurnWorkPref}
+							/>
+						}
+					/>
+					<SettingRow
+						title="Tool calls"
+						desc="Choose whether tool calls start open or stay folded into a single step."
+						control={
+							<Select
+								label="Tool calls"
+								value={turnActivity.tools}
+								options={[
+									{ value: "folded", label: "Closed" },
+									{ value: "open", label: "Open" },
+								]}
+								onChange={setToolCallsPref}
+							/>
+						}
+					/>
+				</SettingGroup>
 				<SettingRow
 					title="Live typing"
 					desc="Type the reply out as the model writes it. Off, each part appears when it is finished."

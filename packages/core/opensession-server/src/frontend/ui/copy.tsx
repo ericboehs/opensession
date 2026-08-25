@@ -11,7 +11,7 @@
  */
 
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MIN_ICON_SIZE } from "../components/icons";
 import { copyToClipboard, shareOrCopyLink } from "../lib/share-link";
 import { cn } from "./cn";
@@ -143,34 +143,25 @@ export function useCopy(opts: UseCopyOptions = {}) {
 		[],
 	);
 
-	const flash = useCallback(
-		(o: { toast?: string | boolean } = {}) => {
+	const flash = (o: { toast?: string | boolean } = {}) => {
 			setCopied(true);
 			if (timer.current) clearTimeout(timer.current);
 			timer.current = setTimeout(() => setCopied(false), resetMs);
 			if (o.toast) fireToast(o.toast === true ? "Link copied" : o.toast);
-		},
-		[resetMs],
-	);
+		};
 
-	const copy = useCallback(
-		(text: string, o: { toast?: string | boolean } = {}) => {
+	const copy = (text: string, o: { toast?: string | boolean } = {}) => {
 			copyToClipboard(text, () => flash(o));
-		},
-		[flash],
-	);
+		};
 
 	/**
 	 * Share-button behavior: native share sheet on touch devices, copy (with
 	 * the usual feedback) everywhere else. The `copied` flash only fires on
 	 * the copy path — the sheet is its own confirmation.
 	 */
-	const share = useCallback(
-		(link: string, o: { toast?: string | boolean; title?: string } = {}) => {
+	const share = (link: string, o: { toast?: string | boolean; title?: string } = {}) => {
 			shareOrCopyLink(link, { title: o.title, onCopied: () => flash(o) });
-		},
-		[flash],
-	);
+		};
 
 	return { copied, copy, share };
 }

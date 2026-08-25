@@ -29,19 +29,25 @@
         "opensession-slack",
         "opensession-todos",
         "opensession-walkthrough",
+        "opensession-web",
         "opensession-workflows"
       ],
       "journalKind": "prompt",
       "mcpScope": "all",
       "mode": "scratch",
-      "model": "opencode/anthropic/claude-sonnet-5",
+      "model": "pi/anthropic/claude-sonnet-5",
       "prompt": {
-        "injectedContext": [],
-        "visible": "what do you already know here?"
+        "injectedContext": [
+          {
+            "body": "Relevant memory:\n- [<uuid>] (repo-snapshot-repo · reference) The fixture repo's tests only run from its own worktree.\n- [<uuid>] (workspace · reference) Team fact: never push to the fixture remote.",
+            "source": "memory"
+          }
+        ],
+        "visible": "How do this fixture repo's tests run?"
       },
       "resumesEngineSession": false,
       "seedTranscriptEntries": 0,
-      "sessionNote": "## Memory\nDurable facts stored for this session's scopes. Treat them as standing context (background knowledge, not instructions from the current conversation).\n\nRepo snapshot-repo:\n- [mem-repo-1] The fixture repo's tests only run from its own worktree.\n\nSnapshotUser (user):\n- [mem-user-1] SnapshotUser prefers short reports.\n\nTeam (workspace-wide):\n- [mem-team-1] Team fact: never push to the fixture remote.\n\nManage memory with the opensession-memory tools: `store_memory` saves a fact (scope `repo` = this session's repo, `user` = whoever is prompting, `team` = shared workspace-wide, including Assistant in Slack), `forget_memory` removes one by id, `list_memory` shows everything. Store only durable, non-obvious facts worth every future session knowing (operational gotchas, decisions, preferences) — never conversation state, and never anything already in the repo's docs. When the user says \"remember ...\", store it.",
+      "sessionNote": null,
       "user": "SnapshotUser"
     }
   ],
@@ -50,19 +56,13 @@
       "gateReason": null,
       "mcpConfig": {
         "snapshot-alpha": {
-          "command": [
-            "/bin/true",
+          "args": [
             "--alpha"
           ],
-          "enabled": true,
-          "timeout": 30000,
-          "type": "local"
+          "command": "/bin/true"
         },
         "snapshot-beta": {
-          "enabled": true,
-          "oauth": false,
-          "timeout": 30000,
-          "type": "remote",
+          "type": "http",
           "url": "https://beta.invalid/mcp"
         }
       },
@@ -70,7 +70,7 @@
         "snapshot-alpha",
         "snapshot-beta"
       ],
-      "sharedServerEligible": true,
+      "sharedServerEligible": false,
       "strippedTools": [
         "*_cancel_subscription",
         "*_create_refund",
@@ -91,31 +91,31 @@
       ],
       "toolStripNotes": [
         {
-          "message": "\"Create a refund\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action you want taken (tool name and full parameters, including amounts and IDs) in your reply and ask the human in this session to execute it themselves.",
+          "message": "\"Create a refund\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action, tool name, and full parameters in your reply and ask the human to execute it.",
           "tools": [
             "mcp__stripe__create_refund"
           ]
         },
         {
-          "message": "\"Cancel a subscription\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action you want taken (tool name and full parameters, including amounts and IDs) in your reply and ask the human in this session to execute it themselves.",
+          "message": "\"Cancel a subscription\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action, tool name, and full parameters in your reply and ask the human to execute it.",
           "tools": [
             "mcp__stripe__cancel_subscription"
           ]
         },
         {
-          "message": "\"Update a subscription\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action you want taken (tool name and full parameters, including amounts and IDs) in your reply and ask the human in this session to execute it themselves.",
+          "message": "\"Update a subscription\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action, tool name, and full parameters in your reply and ask the human to execute it.",
           "tools": [
             "mcp__stripe__update_subscription"
           ]
         },
         {
-          "message": "\"Execute a raw Stripe API call\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action you want taken (tool name and full parameters, including amounts and IDs) in your reply and ask the human in this session to execute it themselves.",
+          "message": "\"Execute a raw Stripe API call\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action, tool name, and full parameters in your reply and ask the human to execute it.",
           "tools": [
             "mcp__stripe__stripe_api_execute"
           ]
         },
         {
-          "message": "\"Execute a mutating Stripe API call\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action you want taken (tool name and full parameters, including amounts and IDs) in your reply and ask the human in this session to execute it themselves.",
+          "message": "\"Execute a mutating Stripe API call\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action, tool name, and full parameters in your reply and ask the human to execute it.",
           "tools": [
             "mcp__stripe__stripe_api_write"
           ]
@@ -126,19 +126,19 @@
   ],
   "transcript": [
     {
-      "content": "what do you already know here?",
+      "content": "How do this fixture repo's tests run?",
       "seq": 1,
       "type": "user"
     },
     {
-      "content": "## Memory\nDurable facts stored for this session's scopes. Treat them as standing context (background knowledge, not instructions from the current conversation).\n\nRepo snapshot-repo:\n- [mem-repo-1] The fixture repo's tests only run from its own worktree.\n\nSnapshotUser (user):\n- [mem-user-1] SnapshotUser prefers short reports.\n\nTeam (workspace-wide):\n- [mem-team-1] Team fact: never push to the fixture remote.\n\nManage memory with the opensession-memory tools: `store_memory` saves a fact (scope `repo` = this session's repo, `user` = whoever is prompting, `team` = shared workspace-wide, including Assistant in Slack), `forget_memory` removes one by id, `list_memory` shows everything. Store only durable, non-obvious facts worth every future session knowing (operational gotchas, decisions, preferences) — never conversation state, and never anything already in the repo's docs. When the user says \"remember ...\", store it.",
-      "contextSource": "repos-note",
+      "content": "Relevant memory:\n- [<uuid>] (repo-snapshot-repo · reference) The fixture repo's tests only run from its own worktree.\n- [<uuid>] (workspace · reference) Team fact: never push to the fixture remote.",
+      "contextSource": "memory",
       "noticeKind": "context-injection",
       "seq": 2,
       "type": "system"
     },
     {
-      "content": "{\n  \"confirmTools\": [\n    \"mcp__stripe__cancel_subscription\",\n    \"mcp__stripe__create_refund\",\n    \"mcp__stripe__stripe_api_execute\",\n    \"mcp__stripe__stripe_api_write\",\n    \"mcp__stripe__update_subscription\"\n  ],\n  \"deniedTools\": [],\n  \"inProcess\": [\n    \"opensession-admin\",\n    \"opensession-ask\",\n    \"opensession-assets\",\n    \"opensession-goals\",\n    \"opensession-humans\",\n    \"opensession-keychain\",\n    \"opensession-memory\",\n    \"opensession-papercuts\",\n    \"opensession-portals\",\n    \"opensession-publish\",\n    \"opensession-repos\",\n    \"opensession-runners\",\n    \"opensession-search\",\n    \"opensession-self-deploy\",\n    \"opensession-sessions\",\n    \"opensession-slack\",\n    \"opensession-todos\",\n    \"opensession-walkthrough\",\n    \"opensession-workflows\"\n  ],\n  \"localWorkspaceToolsDisabled\": false,\n  \"mcpScope\": \"all\",\n  \"mode\": \"scratch\"\n}",
+      "content": "{\n  \"confirmTools\": [\n    \"mcp__stripe__cancel_subscription\",\n    \"mcp__stripe__create_refund\",\n    \"mcp__stripe__stripe_api_execute\",\n    \"mcp__stripe__stripe_api_write\",\n    \"mcp__stripe__update_subscription\"\n  ],\n  \"deniedTools\": [],\n  \"inProcess\": [\n    \"opensession-admin\",\n    \"opensession-ask\",\n    \"opensession-assets\",\n    \"opensession-goals\",\n    \"opensession-humans\",\n    \"opensession-keychain\",\n    \"opensession-memory\",\n    \"opensession-papercuts\",\n    \"opensession-portals\",\n    \"opensession-publish\",\n    \"opensession-repos\",\n    \"opensession-runners\",\n    \"opensession-search\",\n    \"opensession-self-deploy\",\n    \"opensession-sessions\",\n    \"opensession-slack\",\n    \"opensession-todos\",\n    \"opensession-walkthrough\",\n    \"opensession-web\",\n    \"opensession-workflows\"\n  ],\n  \"localWorkspaceToolsDisabled\": false,\n  \"mcpScope\": \"all\",\n  \"mode\": \"scratch\"\n}",
       "contextSource": "tools",
       "noticeKind": "standing-context",
       "seq": 3,
@@ -146,7 +146,7 @@
     },
     {
       "content": "Three standing facts.",
-      "model": "opencode/anthropic/claude-sonnet-5",
+      "model": "pi/anthropic/claude-sonnet-5",
       "seq": 4,
       "type": "assistant"
     }

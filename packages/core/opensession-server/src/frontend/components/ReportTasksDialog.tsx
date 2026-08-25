@@ -46,8 +46,8 @@ export function ReportTasksDialog({
 	async function start() {
 		setStarting(true);
 		setFailed([]);
-		try {
-			const results = await startReportSessions(
+		await (async () => {
+const results = await startReportSessions(
 				report.automationId,
 				report.id,
 				[...picked].sort((a, b) => a - b),
@@ -64,11 +64,11 @@ export function ReportTasksDialog({
 			if (!errors.length) return onClose();
 			setFailed(errors);
 			setPicked(new Set(errors.map((result) => result.task)));
-		} catch (e: any) {
-			setFailed([{ task: -1, title: "", error: e?.message || "Failed to start sessions" }]);
-		} finally {
-			setStarting(false);
-		}
+})().catch(async (e: any) => {
+setFailed([{ task: -1, title: "", error: e?.message || "Failed to start sessions" }]);
+}).finally(async () => {
+setStarting(false);
+});
 	}
 
 	return (
@@ -105,7 +105,7 @@ export function ReportTasksDialog({
 								</span>
 								{/* No `block` beside the clamp: both set `display`, and the
 								    plain one wins, which silently unclamps the preview. */}
-								<span className="mt-0.5 line-clamp-2 text-meta leading-normal text-faint">
+								<span className="mt-0.5 line-clamp-2 text-supporting leading-normal text-faint">
 									{task.prompt}
 								</span>
 							</span>

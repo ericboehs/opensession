@@ -5,8 +5,11 @@ import { sessionSourceLabel } from "../lib/brand";
 import { SOURCE_CHIP, sourceChipTone } from "../lib/source-chip-classes";
 import {
 	ARCHIVED_LIST,
+	ARCHIVED_PHONE_SEARCH_DOCK,
 	ARCHIVED_ROW,
 	ARCHIVED_ROW_ACTION,
+	ARCHIVED_SWIPE_ACTION,
+	ARCHIVED_SWIPE_ROW,
 	ARCHIVED_ROW_META,
 	ARCHIVED_ROW_OPEN,
 	ARCHIVED_ROW_TRAIL,
@@ -15,18 +18,19 @@ import {
 	ARCHIVED_SECTION_LABEL,
 	ARCHIVED_SECTION_ROWS,
 } from "../lib/archived-classes";
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import type { UnifiedSession } from "../lib/types";
 import { relativeTime, archiveSessionApi } from "../lib/api";
 import { useCurrentUser } from "./UserPicker";
 import { usePeople } from "../lib/people";
-import { archivedOwners, canonicalNames, sessionHasOwner } from "../lib/archived-owner";
+import { canonicalNames, sessionHasOwner, sessionOwners } from "../lib/session-owner";
 import { docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
-import { PageLayout } from "../ui/page";
+import { useIsPhone } from "../hooks/useIsPhone";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Input } from "../ui/input";
-import { Menu } from "../ui/menu";
+import { ContextMenu, Menu, MENU_ICON } from "../ui/menu";
 import { EmptyState, ListSkeleton } from "../ui/state";
 import { IconChevronRight, IconFilter, IconUnarchive } from "./icons";
 import { RepoTile } from "./RepoTile";
@@ -43,6 +47,10 @@ interface Props {
 	loaded: boolean;
 	onSelect: (session: UnifiedSession) => void;
 	onChanged: () => void;
+	/** The desktop pane's top bar, where this page's controls go. */
+	topbarActionsEl?: HTMLElement | null;
+	/** The phone header's trailing slot, where Filters goes. */
+	mobileActionsEl?: HTMLElement | null;
 }
 
 // Same key the sidebar persists its group/repo/sort choices under, so the
@@ -51,6 +59,20 @@ const SIDEBAR_FILTER_KEY = "opensession-sidebar-filter";
 
 /** How many rows the list draws before asking for a narrower search. */
 const PAGE_SIZE = 200;
+
+const RESTORE_SWIPE_PX = 82;
+const RESTORE_SWIPE_THRESHOLD = 36;
+const RESTORE_SWIPE_AXIS_LOCK = 8;
+
+type RestoreSwipe = { id: string; offset: number };
+type RestoreSwipeOrigin = { id: string; x: number; y: number; allowRight: boolean };
+
+/** Follow the finger 1:1, then add light resistance past the revealed action. */
+function restoreSwipeOffset(dx: number): number {
+	if (dx >= 0) return 0;
+	if (dx >= -RESTORE_SWIPE_PX) return dx;
+	return Math.max(-104, -RESTORE_SWIPE_PX + (dx + RESTORE_SWIPE_PX) * 0.18);
+}
 
 /**
  * `"mine"`, `"everyone"`, or one teammate's lowercased `startedBy` name — the
@@ -137,8 +159,16 @@ function originChip(s: UnifiedSession): { label: string; tone: string } | null {
 	return null;
 }
 
-export function Archived({ sessions, loaded, onSelect, onChanged }: Props) {
+export function Archived({
+	sessions,
+	loaded,
+	onSelect,
+	onChanged,
+	topbarActionsEl,
+	mobileActionsEl,
+}: Props) {
 	const currentUser = useCurrentUser();
+	const isPhone = useIsPhone();
 	const roster = usePeople();
 	const [search, setSearch] = useState("");
 	const [busy, setBusy] = useState<string | null>(null);
@@ -147,6 +177,17 @@ export function Archived({ sessions, loaded, onSelect, onChanged }: Props) {
 	const [owner, setOwner] = useState<OwnerFilter>("mine");
 	const [repo, setRepo] = useState<string>(sidebarRepo);
 	const [reason, setReason] = useState<ReasonFilter>("all");
+	const [restoreSwipe, setRestoreSwipe] = useState<RestoreSwipe | null>(null);
+	const [draggingRestoreId, setDraggingRestoreId] = useState<string | null>(null);
+	const restoreSwipeOrigin = useRef<RestoreSwipeOrigin | null>(null);
+	const restoreSwiping = useRef(false);
+	const restoreSwipeOffsetRef = useRef(0);
+
+	useEffect(() => {
+		if (isPhone) return;
+		setRestoreSwipe(null);
+		restoreSwipeOffsetRef.current = 0;
+	}, [isPhone]);
 
 	useEffect(() => {
 		document.title = docTitle("Archived");
@@ -155,10 +196,7 @@ export function Archived({ sessions, loaded, onSelect, onChanged }: Props) {
 		};
 	}, []);
 
-	const allArchived = useMemo(
-		() => sessions.filter((s) => s.archived),
-		[sessions],
-	);
+	const allArchived = (sessions.filter((s) => s.archived));
 	const hasAutoArchived = allArchived.some(isAutoReason);
 	const activeFilterCount =
 		(owner !== "everyone" ? 1 : 0) + (repo !== "all" ? 1 : 0) + (reason !== "all" ? 1 : 0);
@@ -167,14 +205,11 @@ export function Archived({ sessions, loaded, onSelect, onChanged }: Props) {
 	// beyond you. Built from the whole archived set, not the filtered one, so
 	// choosing a person doesn't empty the list you chose them from.
 	const meKey = currentUser.toLowerCase();
-	const canonical = useMemo(() => canonicalNames(roster), [roster]);
-	const people = useMemo(
-		() => archivedOwners(allArchived, canonical, meKey),
-		[allArchived, canonical, meKey],
-	);
+	const canonical = (canonicalNames(roster));
+	const people = (sessionOwners(allArchived, canonical, meKey));
 
 	// Repos present in the archived set, most-used first — the repo dropdown options.
-	const repos = useMemo(() => {
+	const repos = (() => {
 		const counts = new Map<string, number>();
 		for (const s of allArchived) {
 			const p = sessionRepo(s);
@@ -183,7 +218,7 @@ export function Archived({ sessions, loaded, onSelect, onChanged }: Props) {
 		return Array.from(counts.entries())
 			.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
 			.map(([name]) => name);
-	}, [allArchived]);
+	})();
 
 	// If the inherited repo isn't among the archived sessions, fall back to "all"
 	// so the list isn't mysteriously empty on open.
@@ -203,7 +238,7 @@ export function Archived({ sessions, loaded, onSelect, onChanged }: Props) {
 			setOwner("everyone");
 	}, [owner, people]);
 
-	const archived = useMemo(() => {
+	const archived = (() => {
 		let list = allArchived;
 		if (owner !== "everyone") {
 			const user = owner === "mine" ? meKey : owner;
@@ -226,127 +261,231 @@ export function Archived({ sessions, loaded, onSelect, onChanged }: Props) {
 			);
 		}
 		return list;
-	}, [allArchived, owner, repo, reason, search, meKey, canonical]);
+	})();
 	const visibleArchived = archived.slice(0, PAGE_SIZE);
 	const sections = archiveSections(visibleArchived);
 
 	async function handleUnarchive(e: React.MouseEvent, id: string) {
 		e.stopPropagation();
 		setBusy(id);
-		try {
-			await archiveSessionApi(id, false);
+		await (async () => {
+await archiveSessionApi(id, false);
 			onChanged();
-		} finally {
-			setBusy(null);
+})().finally(async () => {
+setBusy(null);
+});
+	}
+
+	function closeRestoreSwipe() {
+		setRestoreSwipe(null);
+		restoreSwipeOffsetRef.current = 0;
+	}
+
+	function restoreTouchStart(id: string, e: React.TouchEvent<HTMLElement>) {
+		if (!isPhone || e.touches.length !== 1) return;
+		const touch = e.touches[0];
+		const existingOffset = restoreSwipe?.id === id ? restoreSwipe.offset : 0;
+		if (restoreSwipe?.id && restoreSwipe.id !== id) closeRestoreSwipe();
+		restoreSwiping.current = false;
+		restoreSwipeOffsetRef.current = existingOffset;
+		restoreSwipeOrigin.current = {
+			id,
+			x: touch.clientX - existingOffset,
+			y: touch.clientY,
+			allowRight: existingOffset < 0,
+		};
+	}
+
+	function restoreTouchMove(id: string, e: React.TouchEvent<HTMLElement>) {
+		if (!isPhone || e.touches.length !== 1) return;
+		const origin = restoreSwipeOrigin.current;
+		if (!origin || origin.id !== id) return;
+		const touch = e.touches[0];
+		const dx = touch.clientX - origin.x;
+		const dy = touch.clientY - origin.y;
+		if (!restoreSwiping.current) {
+			const horizontal =
+				Math.abs(dx) > RESTORE_SWIPE_AXIS_LOCK && Math.abs(dx) > Math.abs(dy);
+			if (!horizontal || (dx > 0 && !origin.allowRight)) return;
+			restoreSwiping.current = true;
+			setDraggingRestoreId(id);
+		}
+		e.preventDefault();
+		const offset = restoreSwipeOffset(dx);
+		restoreSwipeOffsetRef.current = offset;
+		const row = e.currentTarget;
+		row.style.setProperty("--swipe-x", `${offset}px`);
+		row.parentElement?.style.setProperty(
+			"--swipe-action-w",
+			`${Math.max(RESTORE_SWIPE_PX, Math.abs(offset))}px`,
+		);
+	}
+
+	function restoreTouchEnd(id: string, e: React.TouchEvent<HTMLElement>) {
+		const wasSwiping = restoreSwiping.current;
+		restoreSwipeOrigin.current = null;
+		restoreSwiping.current = false;
+		setDraggingRestoreId(null);
+		const row = e.currentTarget;
+		row.style.removeProperty("--swipe-x");
+		row.parentElement?.style.removeProperty("--swipe-action-w");
+		if (wasSwiping) {
+			e.preventDefault();
+			const snapped =
+				restoreSwipeOffsetRef.current < -RESTORE_SWIPE_THRESHOLD
+					? -RESTORE_SWIPE_PX
+					: 0;
+			restoreSwipeOffsetRef.current = snapped;
+			setRestoreSwipe(snapped ? { id, offset: snapped } : null);
+			return;
+		}
+		if (restoreSwipe?.id === id) {
+			e.preventDefault();
+			closeRestoreSwipe();
 		}
 	}
 
-	return (
-		<PageLayout
-			title="Archived"
-			description={
-				loaded
-					? archived.length === allArchived.length
-						? `${archived.length} archived session${archived.length === 1 ? "" : "s"}`
-						: `${archived.length} of ${allArchived.length} archived sessions`
-					: "Loading archived sessions"
-			}
-			actions={
-				<div className="flex items-center gap-2 phone:w-full">
-					<Input
-						className="w-[240px] phone:min-w-0 phone:flex-1"
-						type="search"
-						aria-label="Search archived sessions"
-						placeholder="Search archived…"
-						value={search}
-						onChange={(e) => setSearch(e.target.value)}
-					/>
-					<Menu.Root>
-						<Menu.Trigger
-							render={
-								<Button
-									icon={<IconFilter size={18} />}
-									aria-label={`Filters, ${activeFilterCount} active`}
-									className={activeFilterCount > 0 ? "text-fg" : undefined}
-								>
-									Filters{activeFilterCount > 0 ? ` ${activeFilterCount}` : ""}
-								</Button>
-							}
-						/>
-						<Menu.Popup align="end" className="min-w-[220px]">
+	function restoreTouchCancel(e: React.TouchEvent<HTMLElement>) {
+		restoreSwipeOrigin.current = null;
+		restoreSwiping.current = false;
+		setDraggingRestoreId(null);
+		const row = e.currentTarget;
+		row.style.removeProperty("--swipe-x");
+		row.parentElement?.style.removeProperty("--swipe-action-w");
+		closeRestoreSwipe();
+	}
+
+	// Match Pull requests on desktop. On a phone the title and filter share the
+	// top bar, while Search floats at the thumb edge below the list.
+	const searchAction = (
+		<Input
+			className="w-[200px] min-w-[90px] shrink-[100] phone:min-h-11 phone:w-full phone:px-3.5 phone:text-input-phone"
+			type="search"
+			aria-label="Search archived sessions"
+			placeholder="Search archived…"
+			value={search}
+			onChange={(e) => setSearch(e.target.value)}
+			spellCheck={false}
+		/>
+	);
+	const filterAction = (
+		<>
+			<Menu.Root>
+				<Menu.Trigger
+					render={
+						<Button
+							variant="ghost"
+							icon={<IconFilter size={18} />}
+							aria-label={`Filters, ${activeFilterCount} active`}
+							className={activeFilterCount > 0 ? "shrink-0 text-fg" : "shrink-0"}
+						>
+							Filters{activeFilterCount > 0 ? ` ${activeFilterCount}` : ""}
+						</Button>
+					}
+				/>
+				<Menu.Popup align="end" className="min-w-[220px]">
+					<Menu.Group>
+						<Menu.GroupLabel>Owner</Menu.GroupLabel>
+						<Menu.RadioGroup value={owner} onValueChange={(value) => setOwner(String(value))}>
+							<Menu.RadioItem value="mine" closeOnClick>
+								<UserAvatar name={currentUser} size={18} />
+								<span className="min-w-0 flex-1">My archived</span>
+								<Menu.Check on={owner === "mine"} />
+							</Menu.RadioItem>
+							{people.map(({ key, label }) => (
+								<Menu.RadioItem key={key} value={key} closeOnClick>
+									<UserAvatar name={label} size={18} />
+									<span className="min-w-0 flex-1 truncate">{label}</span>
+									<Menu.Check on={owner === key} />
+								</Menu.RadioItem>
+							))}
+							<Menu.RadioItem value="everyone" closeOnClick>
+								<span className="size-[18px] shrink-0" />
+								<span className="min-w-0 flex-1">Everyone</span>
+								<Menu.Check on={owner === "everyone"} />
+							</Menu.RadioItem>
+						</Menu.RadioGroup>
+					</Menu.Group>
+					{repos.length > 1 && (
+						<>
+							<Menu.Separator />
 							<Menu.Group>
-								<Menu.GroupLabel>Owner</Menu.GroupLabel>
-								<Menu.RadioGroup value={owner} onValueChange={(value) => setOwner(String(value))}>
-									<Menu.RadioItem value="mine" closeOnClick>
-										<UserAvatar name={currentUser} size={18} />
-										<span className="min-w-0 flex-1">My archived</span>
-										<Menu.Check on={owner === "mine"} />
+								<Menu.GroupLabel>Repository</Menu.GroupLabel>
+								<Menu.RadioGroup value={repo} onValueChange={(value) => setRepo(String(value))}>
+									<Menu.RadioItem value="all" closeOnClick>
+										<span className="size-[18px] shrink-0" />
+										<span className="min-w-0 flex-1">All repos</span>
+										<Menu.Check on={repo === "all"} />
 									</Menu.RadioItem>
-									{people.map(({ key, label }) => (
-										<Menu.RadioItem key={key} value={key} closeOnClick>
-											<UserAvatar name={label} size={18} />
-											<span className="min-w-0 flex-1 truncate">{label}</span>
-											<Menu.Check on={owner === key} />
+									{repos.map((name) => (
+										<Menu.RadioItem key={name} value={name} closeOnClick>
+											<RepoTile name={name} size={18} />
+											<span className="min-w-0 flex-1 truncate">{repoLabel(name)}</span>
+											<Menu.Check on={repo === name} />
 										</Menu.RadioItem>
 									))}
-									<Menu.RadioItem value="everyone" closeOnClick>
-										<span className="size-[18px] shrink-0" />
-										<span className="min-w-0 flex-1">Everyone</span>
-										<Menu.Check on={owner === "everyone"} />
-									</Menu.RadioItem>
 								</Menu.RadioGroup>
 							</Menu.Group>
-							{repos.length > 1 && (
-								<>
-									<Menu.Separator />
-									<Menu.Group>
-										<Menu.GroupLabel>Repository</Menu.GroupLabel>
-										<Menu.RadioGroup value={repo} onValueChange={(value) => setRepo(String(value))}>
-											<Menu.RadioItem value="all" closeOnClick>
-												<span className="size-[18px] shrink-0" />
-												<span className="min-w-0 flex-1">All repos</span>
-												<Menu.Check on={repo === "all"} />
-											</Menu.RadioItem>
-											{repos.map((name) => (
-												<Menu.RadioItem key={name} value={name} closeOnClick>
-													<RepoTile name={name} size={18} />
-													<span className="min-w-0 flex-1 truncate">{repoLabel(name)}</span>
-													<Menu.Check on={repo === name} />
-												</Menu.RadioItem>
-											))}
-										</Menu.RadioGroup>
-									</Menu.Group>
-								</>
-							)}
-							{hasAutoArchived && (
-								<>
-									<Menu.Separator />
-									<Menu.Group>
-										<Menu.GroupLabel>Reason</Menu.GroupLabel>
-										<Menu.RadioGroup value={reason} onValueChange={(value) => setReason(value as ReasonFilter)}>
-											{(["all", "auto", "manual"] as const).map((value) => (
-												<Menu.RadioItem key={value} value={value} closeOnClick>
-													<span className="min-w-0 flex-1">{{ all: "All", auto: "Auto-archived", manual: "Manual" }[value]}</span>
-													<Menu.Check on={reason === value} />
-												</Menu.RadioItem>
-											))}
-										</Menu.RadioGroup>
-									</Menu.Group>
-								</>
-							)}
-							{activeFilterCount > 0 && (
-								<>
-									<Menu.Separator />
-									<Menu.Item onClick={() => { setOwner("everyone"); setRepo("all"); setReason("all"); }}>
-										Clear filters
-									</Menu.Item>
-								</>
-							)}
-						</Menu.Popup>
-					</Menu.Root>
-				</div>
-			}
+						</>
+					)}
+					{hasAutoArchived && (
+						<>
+							<Menu.Separator />
+							<Menu.Group>
+								<Menu.GroupLabel>Reason</Menu.GroupLabel>
+								<Menu.RadioGroup value={reason} onValueChange={(value) => setReason(value as ReasonFilter)}>
+									{(["all", "auto", "manual"] as const).map((value) => (
+										<Menu.RadioItem key={value} value={value} closeOnClick>
+											<span className="min-w-0 flex-1">{{ all: "All", auto: "Auto-archived", manual: "Manual" }[value]}</span>
+											<Menu.Check on={reason === value} />
+										</Menu.RadioItem>
+									))}
+								</Menu.RadioGroup>
+							</Menu.Group>
+						</>
+					)}
+					{activeFilterCount > 0 && (
+						<>
+							<Menu.Separator />
+							<Menu.Item onClick={() => { setOwner("everyone"); setRepo("all"); setReason("all"); }}>
+								Clear filters
+							</Menu.Item>
+						</>
+					)}
+				</Menu.Popup>
+			</Menu.Root>
+		</>
+	);
+	const actions = (
+		<>
+			{searchAction}
+			{filterAction}
+		</>
+	);
+
+	const count = loaded
+		? archived.length === allArchived.length
+			? `${archived.length} archived session${archived.length === 1 ? "" : "s"}`
+			: `${archived.length} of ${allArchived.length} archived sessions`
+		: "Loading archived sessions";
+
+	const desktopPortaled = !!topbarActionsEl && !isPhone;
+	const mobileFilterPortaled = !!mobileActionsEl && isPhone;
+
+	return (
+		<div
+			data-page-scroll
+			className="min-h-0 w-full flex-1 overflow-y-auto"
 		>
+			{desktopPortaled ? createPortal(actions, topbarActionsEl) : null}
+			{mobileFilterPortaled ? createPortal(filterAction, mobileActionsEl) : null}
+			<div className="mx-auto w-full max-w-[860px] px-6 pb-[60px] pt-7 phone:px-3.5 phone:pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] phone:pt-2 phone:[body.kb-open_&]:pb-[5rem] phone:[body.kb-open_&]:pt-[max(env(safe-area-inset-top,0px),8px)]">
+				{!isPhone && !desktopPortaled ? (
+					<div className="mb-3 flex items-center gap-2">{actions}</div>
+				) : null}
+				<p className="m-0 mb-[18px] text-supporting text-dim phone:mb-3.5">
+					{count}
+				</p>
 			{archived.length === 0 && !loaded ? (
 				// Not "nothing archived" — nothing YET. Claiming the list is empty
 				// while it is still in flight is what makes a slow load read as data
@@ -399,44 +538,112 @@ export function Archived({ sessions, loaded, onSelect, onChanged }: Props) {
 											</span>
 										),
 									].filter(Boolean);
+									const swipeOffset =
+										restoreSwipe?.id === s.id ? restoreSwipe.offset : 0;
+									const dragging = draggingRestoreId === s.id;
 									return (
-										<li key={s.id} className={ARCHIVED_ROW}>
-											<RepoTile name={sessionRepo(s)} />
+										<li
+											key={s.id}
+											className={ARCHIVED_SWIPE_ROW}
+											data-swipe-row=""
+											style={
+												swipeOffset
+													? ({
+															"--swipe-action-w": `${Math.max(
+																RESTORE_SWIPE_PX,
+																Math.abs(swipeOffset),
+															)}px`,
+														} as React.CSSProperties)
+													: undefined
+											}
+										>
 											<button
 												type="button"
-												className={ARCHIVED_ROW_OPEN}
-												onClick={() => onSelect(s)}
+												className={ARCHIVED_SWIPE_ACTION}
+												data-open={dragging || swipeOffset ? "" : undefined}
+												disabled={busy === s.id}
+												onClick={(e) => {
+													closeRestoreSwipe();
+													void handleUnarchive(e, s.id);
+												}}
 											>
-												<span className={ARCHIVED_ROW_TITLE}>{s.title}</span>
-												{meta.length > 0 ? (
-													<span className={ARCHIVED_ROW_META}>
-														{meta}
-														<span className="hidden shrink-0 phone:inline">
+												<IconUnarchive size={20} />
+												<span>Restore</span>
+											</button>
+											<ContextMenu.Root>
+												<ContextMenu.Trigger
+													render={
+														<div
+															className={cn(
+																ARCHIVED_ROW,
+																dragging && "phone:transition-none phone:will-change-transform",
+																swipeOffset && "phone:will-change-transform",
+															)}
+															style={
+																swipeOffset
+																	? ({ "--swipe-x": `${swipeOffset}px` } as React.CSSProperties)
+																	: undefined
+															}
+															onTouchStart={(e) => restoreTouchStart(s.id, e)}
+															onTouchMove={(e) => restoreTouchMove(s.id, e)}
+															onTouchEnd={(e) => restoreTouchEnd(s.id, e)}
+															onTouchCancel={restoreTouchCancel}
+														/>
+													}
+												>
+													<RepoTile name={sessionRepo(s)} />
+													<button
+														type="button"
+														className={ARCHIVED_ROW_OPEN}
+														onClick={() => {
+															if (restoreSwipe?.id === s.id) {
+																closeRestoreSwipe();
+																return;
+															}
+															onSelect(s);
+														}}
+													>
+														<span className={ARCHIVED_ROW_TITLE}>{s.title}</span>
+														{meta.length > 0 ? (
+															<span className={ARCHIVED_ROW_META}>
+																{meta}
+																<span className="hidden shrink-0 phone:inline">
+																	{relativeTime(s.lastActivity)}
+																</span>
+															</span>
+														) : (
+															<span className="mt-1 hidden text-meta text-faint phone:block">
+																{relativeTime(s.lastActivity)}
+															</span>
+														)}
+													</button>
+													<span className={ARCHIVED_ROW_TRAIL}>
+														<span className={ARCHIVED_ROW_TIME}>
 															{relativeTime(s.lastActivity)}
 														</span>
+														<IconChevronRight size={16} className="shrink-0" />
 													</span>
-												) : (
-													<span className="mt-1 hidden text-meta text-faint phone:block">
-														{relativeTime(s.lastActivity)}
-													</span>
-												)}
-											</button>
-											<span className={ARCHIVED_ROW_TRAIL}>
-												<span className={ARCHIVED_ROW_TIME}>
-													{relativeTime(s.lastActivity)}
-												</span>
-												<IconChevronRight size={16} className="shrink-0" />
-											</span>
-											<Button
-												size="sm"
-												className={ARCHIVED_ROW_ACTION}
-												icon={<IconUnarchive size={15} className="phone:size-[17px]" />}
-												aria-label="Restore session"
-												disabled={busy === s.id}
-												onClick={(e) => handleUnarchive(e, s.id)}
-											>
-												<span className="phone:hidden">Restore</span>
-											</Button>
+													<Button
+														size="sm"
+														className={ARCHIVED_ROW_ACTION}
+														icon={<IconUnarchive size={15} />}
+														aria-label="Restore session"
+														disabled={busy === s.id}
+														onClick={(e) => void handleUnarchive(e, s.id)}
+													>
+														Restore
+													</Button>
+												</ContextMenu.Trigger>
+												<ContextMenu.Popup>
+													<ContextMenu.Item
+														disabled={busy === s.id}
+														onClick={(e) => void handleUnarchive(e, s.id)}
+													>
+														<IconUnarchive size={18} className={MENU_ICON} />
+														<span>Restore</span>
+													</ContextMenu.Item>
+												</ContextMenu.Popup>
+											</ContextMenu.Root>
 										</li>
 									);
 								})}
@@ -451,6 +658,8 @@ export function Archived({ sessions, loaded, onSelect, onChanged }: Props) {
 					)}
 				</div>
 			)}
-		</PageLayout>
+			</div>
+			{isPhone ? <div className={ARCHIVED_PHONE_SEARCH_DOCK}>{searchAction}</div> : null}
+		</div>
 	);
 }

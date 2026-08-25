@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Popover as BasePopover } from "@base-ui/react/popover";
 import { cn } from "./cn";
+import { FLOATING_OVERLAY_LAYER } from "./popup-classes";
 import {
 	useExclusivePopup,
 	useExclusivePopupDelay,
@@ -39,13 +40,15 @@ function Trigger({
 function Root<Payload = unknown>({
 	actionsRef,
 	onOpenChange,
+	exclusive = true,
 	...props
-}: BasePopover.Root.Props<Payload>) {
+}: BasePopover.Root.Props<Payload> & {
+	/** Keep false for a popover nested inside another popup. Opening a child
+	 * should not dismiss the parent that owns its trigger. */
+	exclusive?: boolean;
+}) {
 	const internalActionsRef = React.useRef<BasePopover.Root.Actions | null>(null);
-	const entry = React.useMemo(
-		() => ({ close: () => internalActionsRef.current?.close() }),
-		[],
-	);
+	const entry = (({ close: () => internalActionsRef.current?.close() }));
 	const group = useExclusivePopup(entry);
 
 	React.useImperativeHandle(
@@ -59,8 +62,10 @@ function Root<Payload = unknown>({
 			{...props}
 			actionsRef={internalActionsRef}
 			onOpenChange={(open, eventDetails) => {
-				if (open) group?.activate(entry);
-				else group?.deactivate(entry);
+				if (exclusive) {
+					if (open) group?.activate(entry);
+					else group?.deactivate(entry);
+				}
 				onOpenChange?.(open, eventDetails);
 			}}
 		/>
@@ -69,25 +74,54 @@ function Root<Payload = unknown>({
 
 function Popup({
 	className,
+	positionerClassName,
+	portalContainer,
+	positionMethod,
 	side,
 	align,
 	sideOffset = 8,
+	alignOffset = 0,
+	collisionPadding = 8,
 	arrow = false,
 	elevation = "md",
+	ring = "default",
 	anchor,
 	initialFocus = false,
 	children,
 }: {
 	className?: string;
+	/** Override the portal layer for standing page-level surfaces that should
+	 * sit behind modal and palette backdrops. */
+	positionerClassName?: string;
+	/** Render the positioner inside a moving layout ancestor. This keeps a popup
+	 * attached by normal browser layout when that whole ancestor moves. */
+	portalContainer?: React.ComponentProps<typeof BasePopover.Portal>["container"];
+	positionMethod?: React.ComponentProps<
+		typeof BasePopover.Positioner
+	>["positionMethod"];
 	side?: React.ComponentProps<typeof BasePopover.Positioner>["side"];
 	align?: React.ComponentProps<typeof BasePopover.Positioner>["align"];
 	sideOffset?: number;
+	/** Shift the popup along its alignment axis. */
+	alignOffset?: React.ComponentProps<typeof BasePopover.Positioner>["alignOffset"];
+	/** Space kept between the popup and viewport clipping edges. Increase this
+	 * when a wide shadow needs more room than the compact-popover default. */
+	collisionPadding?: React.ComponentProps<
+		typeof BasePopover.Positioner
+	>["collisionPadding"];
 	/** Draw a callout diamond pointing back at the anchor, bridging
 	 * `sideOffset`. Matches the sidebar's legacy hover card, so a popup that
 	 * sits beside one of those reads as the same object. */
 	arrow?: boolean;
-	/** Large preview cards need a wider cast shadow than compact popovers. */
-	elevation?: "md" | "lg";
+	/** Choose a quieter or wider cast shadow for the popup's visual weight. */
+	elevation?: "sm" | "md" | "lg";
+	/** How firm the popup's hairline is. `soft` walks the ring toward the
+	 * popup's own surface, for a big card of quiet rows where the default edge
+	 * draws a box around them. Mixed toward the surface rather than faded to
+	 * transparent, so the edge keeps its direction in both themes: in light the
+	 * line lightens toward the paper, and in dark it stays brighter than the
+	 * fill it lifts off instead of falling under it into a seam. */
+	ring?: "default" | "soft";
 	/** Position against something other than the Trigger — pass the wrapper of a
 	 * control cluster whose popup opens from several places (a caret, a
 	 * right-click, a disabled button), so the popup keeps one anchor no matter
@@ -100,16 +134,18 @@ function Popup({
 	children: React.ReactNode;
 }) {
 	return (
-		<BasePopover.Portal>
+		<BasePopover.Portal container={portalContainer}>
 			<BasePopover.Positioner
+				positionMethod={positionMethod}
 				side={side}
 				align={align}
 				sideOffset={sideOffset}
+				alignOffset={alignOffset}
 				anchor={anchor}
-				collisionPadding={8}
+				collisionPadding={collisionPadding}
 				// Keep the diamond clear of the popup's rounded corners.
 				arrowPadding={14}
-				className="z-[10001] outline-none"
+				className={cn(FLOATING_OVERLAY_LAYER, "outline-none", positionerClassName)}
 			>
 				<BasePopover.Popup
 					initialFocus={initialFocus}
@@ -117,10 +153,15 @@ function Popup({
 						// The ring override rides on the popup so the arrow, which
 						// continues that hairline, inherits the same value.
 						"rounded-popup [corner-shape:squircle] outline-none",
-						"bg-popup-glass [backdrop-filter:var(--popup-blur)] [--smooth-ring-color:var(--popup-ring)]",
+						"bg-popup-glass [backdrop-filter:var(--popup-blur)]",
+						ring === "soft"
+							? "[--smooth-ring-color:color-mix(in_srgb,var(--popup-ring)_65%,var(--popup-surface))]"
+							: "[--smooth-ring-color:var(--popup-ring)]",
 						elevation === "lg"
 							? "smooth-shadow-ring-lg"
-							: "smooth-shadow-ring-md",
+							: elevation === "sm"
+								? "smooth-shadow-ring-sm"
+								: "smooth-shadow-ring-md",
 						"origin-[var(--transform-origin)] transition-[transform,opacity] duration-[120ms] ease-out",
 						"data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0",
 						"data-[ending-style]:opacity-0 data-[ending-style]:transition-none",
@@ -168,5 +209,6 @@ function Popup({
 export const Popover = {
 	Root,
 	Trigger,
+	Close: BasePopover.Close,
 	Popup,
 };

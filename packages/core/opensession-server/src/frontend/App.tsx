@@ -1,16 +1,32 @@
-import "./lib/storage-migrate"; // must run before any lib reads its pref keys
 import { BASE_PATH, stripBasePath } from "./lib/base";
 import { DEFAULT_REPO_ID, PRODUCT_NAME } from "./lib/brand";
 import {
+	onSessionTitleResolutionRequested,
+	retrySessionTitleResolution,
 	setKnownRepos,
 	setKnownPrStates,
+	setResolvedSessionTitles,
 	setSessionTitles,
+	setWorkspaceTitles,
 } from "./lib/markdown";
 import { reviewRequestTargetsPerson } from "./lib/review-queue";
 import { repoLabel } from "./lib/repo-label";
 import { NO_REPO } from "./lib/session-repo";
 import { ASK_BAND } from "./lib/sidebar-workspaces";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+	sidebarStartsCollapsed,
+	storeSidebarCollapsed,
+} from "./lib/sidebar-collapse";
+import { openWorkspaceSummary } from "./lib/workspace-summary-open";
+import React, {
+	useCallback,
+	useEffect,
+	useEffectEvent,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
+import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { MotionConfig } from "motion/react";
 import { MarkdownRepoProvider } from "./components/MarkdownBody";
@@ -25,25 +41,23 @@ import {
 	DETAIL_TOPBAR_TITLE,
 	DETAIL_TOPBAR_TITLE_TEXT,
 	RIGHT_PANEL_SLOT,
-	SCROLL_EDGE_DIVIDER,
 	tabSplitDropPreviewClass,
 	WORKSPACE_SHELL,
 } from "./lib/app-shell-classes";
 import {
 	appHeader,
-	APP_BRAND,
 	APP_HEADER_ACTIONS,
 	APP_HEADER_ACTIONS_DETAIL,
-	APP_HEADER_LEFT,
+	ARCHIVED_SEARCH_HEADER,
 	HEADER_TITLE_COL,
 	HEADER_TITLE_MODEL,
 	HEADER_TITLE_PILL,
+	HEADER_TITLE_PILL_CENTERED,
 	HEADER_TITLE_PILL_FADE,
 	HEADER_TITLE_PILL_TAPPABLE,
 	HEADER_TITLE_REPO,
 	HEADER_TITLE_ROW,
 	HEADER_TITLE_TEXT,
-	MOBILE_BACK,
 	MOBILE_SEARCH_BTN,
 } from "./lib/app-header-classes";
 import { DESK_FAB, MOBILE_FAB } from "./lib/fab-classes";
@@ -51,14 +65,33 @@ import { SIDEBAR_CHROME_BTN } from "./lib/sidebar-classes";
 import { ToastHost, toast } from "./ui/toast";
 import { Modal } from "./ui/modal";
 import { Button } from "./ui/button";
+import {
+	TopBar,
+	TopBarActions,
+	TopBarBack,
+	TopBarLeading,
+	TopBarTitle,
+} from "./ui/top-bar";
 import { suppressLayoutAnimations } from "./ui/motion";
+import { OverflowFadeText } from "./ui/overflow-fade-text";
 import { SessionViewer } from "./components/SessionViewer";
+import { AgentationFeedback } from "./components/AgentationFeedback";
 import type { PortalTarget } from "./lib/portals";
-import { NewSession } from "./components/NewSession";
+import {
+	NewSession,
+	type NewSessionCreateDraft,
+} from "./components/NewSession";
+import { clearDraft, saveDraft, NEW_SESSION_DRAFT_KEY } from "./lib/drafts";
+import { dropStagingAttachments } from "./lib/attachments";
 import { IconTile } from "./components/BrandTile";
 import { displayName } from "./brand-logos";
 import type { NewSessionPrefill } from "./lib/new-session-link";
-import { shouldOpenCreatedSession } from "./lib/new-session-navigation";
+import {
+	shouldApplyCreatedSessionReply,
+	shouldOpenCreatedSession,
+} from "./lib/new-session-navigation";
+import { primeSoftKeyboard } from "./lib/soft-keyboard";
+import { trackKeyboardInset } from "./lib/keyboard-inset";
 import {
 	SessionSearch,
 	type CommandPaletteAction,
@@ -81,14 +114,22 @@ import { Analytics } from "./components/Analytics";
 import { Tasks } from "./components/Tasks";
 import { UserGate, getCurrentUser, useAuthStatus, useCurrentUser } from "./components/UserPicker";
 import { PreviewWait, matchPreviewWaitRoute } from "./components/PreviewWait";
-import { SettingsButton } from "./components/SettingsButton";
 import { TitleBar } from "./components/TitleBar";
-import { Settings } from "./components/Settings";
+import { FirstMile } from "./components/FirstMile";
+import { useOnboarding } from "./hooks/useOnboarding";
 import {
 	settingsPaletteActions,
 	type SettingsSectionKey,
 } from "./lib/settings-sections";
-import { SessionTabs, type ViewTab } from "./components/SessionTabs";
+import {
+	settingsReturnForNavigation,
+	type SettingsReturn,
+} from "./lib/settings-navigation";
+import {
+	SessionTabs,
+	type NewTabMorphOrigin,
+	type ViewTab,
+} from "./components/SessionTabs";
 import type { SubagentRef } from "./components/SubagentPane";
 import { SessionSplit, type SplitSide } from "./components/SessionSplit";
 import { RestartOverlay } from "./components/RestartOverlay";
@@ -96,12 +137,15 @@ import { MediaLightboxHost } from "./components/MediaLightbox";
 import { ChipHoverCards } from "./components/ChipHoverCard";
 import { ShortcutCheatSheet } from "./components/ShortcutCheatSheet";
 import { UpdatePill } from "./components/UpdatePill";
+import { OrganizationSwitcher } from "./components/OrganizationSwitcher";
 import { DesktopLinkToast } from "./components/DesktopLinkToast";
+import { PERSISTENT_NOTICE_SHELF } from "./lib/notification-classes";
 import {
 	IconArchive,
 	IconUnarchive,
 	IconBook,
 	IconChart,
+	IconChevronRight,
 	IconCopy,
 	IconDesk,
 	IconFile,
@@ -115,17 +159,22 @@ import {
 	IconFeed,
 	IconPlus,
 	IconPullRequest,
+	IconRobot,
 	IconSearch,
 	IconSidebarLeft,
 	IconStack,
 	IconWrench,
 } from "./components/icons";
 import { DeskOverlay } from "./components/DeskOverlay";
-import { useSessions } from "./hooks/useSessions";
+import { sidebarSessionsQuery, useSessions } from "./hooks/useSessions";
+import { useGithubConnectionState } from "./hooks/useGithubConnectionState";
 import { useHydratedSession } from "./hooks/useHydratedSession";
+import { hasDraft } from "./lib/drafts";
+import { sessionWasAgentStarted } from "./lib/sidebar-placement";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useBackSwipe } from "./hooks/useBackSwipe";
 import { useIsPhone } from "./hooks/useIsPhone";
+import { useDeskFabPosition } from "./hooks/useDeskFabPosition";
 import { useShortcutKeys } from "./hooks/useShortcutBindings";
 import { useInputAlerts } from "./hooks/useInputAlerts";
 import { useScrollEdge } from "./hooks/useScrollEdge";
@@ -135,13 +184,16 @@ import { onPushNavigate, registerServiceWorker } from "./lib/push";
 import {
 	archiveSessionApi,
 	deleteSessionApi,
+	fetchSession,
 	renameSessionApi,
 	setSessionStatusApi,
 	newSessionApi,
+	fetchWorkspaceArchivedSessions,
 	fetchWorkspaces,
 	updateWorkspaceApi,
 	deleteWorkspaceApi,
 	fetchRepos,
+	cachedRepos,
 	fetchToolAccounts,
 	knownToolAccounts,
 	REPOS_CHANGED_EVENT,
@@ -151,13 +203,19 @@ import {
 import {
 	defaultSessionWorkspaceView,
 	mainSession,
+	newSessionSource,
+	workspaceLandingReady,
+	workspaceSessionSeed,
 	pickLandingSession,
+	sessionNeverRan,
 } from "./lib/landing-session";
 import {
 	getWorkspaceLastSession,
 	saveWorkspaceLastSession,
 } from "./lib/workspace-last-session";
 import { sessionCarriesPr, sessionHasPr } from "./lib/session-prs";
+import { newClientSessionId } from "./lib/session-id";
+import { findPrWorkspaceId } from "./lib/pr-workspace";
 import { sessionHasWorkspace } from "./lib/session-workspace";
 import type {
 	Workspace,
@@ -171,6 +229,11 @@ import type { ReviewQueueItem } from "./lib/review-queue";
 import { pushRecent } from "./lib/recents";
 import { setLane, type Lane } from "./lib/lanes";
 import { markRead } from "./lib/reads";
+import { resolveAnonymousUserPath } from "./lib/auth-ready";
+import {
+	nextRenderedSidebarChat,
+	nextUnreadRenderedWorkspaceItem,
+} from "./lib/sidebar-next";
 import {
 	sessionPath,
 	prPath,
@@ -192,8 +255,17 @@ import {
 	receivePins,
 } from "./lib/pins";
 import { receiveMention, receiveMentionsCleared } from "./lib/mentions";
-import { personFilterFor, setFilter } from "./lib/sidebar-filter";
-import { applyTabOrder, saveTabOrder, onTabOrderChanged } from "./lib/tab-order";
+import {
+	personFilterFor,
+	setFilter,
+	useSidebarFilter,
+} from "./lib/sidebar-filter";
+import {
+	appendNewTabs,
+	applyTabOrder,
+	saveTabOrder,
+	onTabOrderChanged,
+} from "./lib/tab-order";
 import { workspaceArchivedSessions } from "./lib/workspace-archive";
 import { useWorkspaceArchive } from "./hooks/useWorkspaceArchive";
 import {
@@ -202,6 +274,7 @@ import {
 	onTabSplitChanged,
 	saveTabSplit,
 	resolveSplit,
+	shouldShowTabStrip,
 	type ResolvedSplit,
 	type TabSplit,
 } from "./lib/split-tabs";
@@ -220,6 +293,7 @@ import { PR_DOT_TONE } from "./lib/session-tab-classes";
 import { dedupeViewers, otherViewers } from "./lib/presence";
 import { copySessionTranscript } from "./lib/transcript-copy";
 import { effectiveTheme, setThemePref } from "./lib/theme";
+import { blockingOverlayOpen } from "./lib/blocking-overlay";
 import { matchesShortcut, shortcutPrimaryKeys } from "./lib/shortcuts";
 import type { UnifiedSession } from "./lib/types";
 // Order matters: base.css (tokens, reset, platform chrome) then legacy.css,
@@ -228,6 +302,23 @@ import type { UnifiedSession } from "./lib/types";
 import "./styles/base.css";
 import "./styles/legacy.css";
 import { EmptyState, LoadingState } from "./ui/state";
+
+function deferred<T extends React.ComponentType<any>>(
+	load: () => Promise<{ default: T }>,
+	fallback: React.ReactNode = null,
+): T {
+	const Component = React.lazy(load);
+	const Deferred = (props: React.ComponentProps<T>) => (
+		<React.Suspense fallback={fallback}>
+			<Component {...(props as any)} />
+		</React.Suspense>
+	);
+	return Deferred as T;
+}
+
+const Settings = deferred(() =>
+	import("./components/Settings").then((module) => ({ default: module.Settings })),
+);
 
 type Route =
 	// The app's root. There is no home: `/` lands on the pull request list,
@@ -274,6 +365,9 @@ type Route =
 // Stable empty stack, so a session with no sub-agent open hands the same array
 // identity down every render (the transcript memo compares props by identity).
 const NO_SUBAGENTS: SubagentRef[] = [];
+// An optimistic session must not consume transcript frames from the socket that
+// is still watching the tab it replaced. It starts listening after persistence.
+const IGNORE_WS_MESSAGES = () => () => {};
 
 // A link into a sub-agent carries agent ids, never their labels. The pane reads
 // the real one off the sub-agent's own transcript and reports it back, so the
@@ -303,25 +397,30 @@ function isToolView(view: string): view is ToolView {
 	return (TOOL_VIEWS as readonly string[]).includes(view);
 }
 
+function isSettingsRoute(route: Route): boolean {
+	return route.view === "settings" || isToolView(route.view);
+}
+
 // Non-tool settings sections, addressable as <base>/settings/<section>.
 const SETTINGS_SECTIONS = new Set<SettingsSectionKey>([
 	"myAccounts",
 	"preferences",
 	"notifications",
-	"appearance",
 	"shortcuts",
 	"general",
 	"setup",
 	"repos",
 	"members",
-	"models",
-	"usage",
+	"authentication",
+	"providers",
 	"sandboxes",
 	"runners",
 	"library",
 	"integrations",
 	"connections",
 	"memory",
+	"ingress",
+	"storage",
 	"prewarming",
 	"deploys",
 	"papercuts",
@@ -330,8 +429,11 @@ const SETTINGS_SECTIONS = new Set<SettingsSectionKey>([
 
 // Sections that were merged into another one — old links keep working.
 const LEGACY_SETTINGS_SECTIONS: Record<string, SettingsSectionKey> = {
-	model: "models",
-	modelProviders: "models",
+	appearance: "preferences",
+	model: "providers",
+	models: "providers",
+	modelProviders: "providers",
+	usage: "providers",
 	warmPreviews: "prewarming",
 	previewPool: "prewarming",
 	workspace: "setup",
@@ -350,6 +452,33 @@ function sessionRoute(rest: string): Route {
 	return subagent.length
 		? { view: "session", id, subagent }
 		: { view: "session", id };
+}
+
+/**
+ * The URL this document loaded at, captured before anything can rewrite it.
+ *
+ * The route initializer below pushes the last open session over a cold load
+ * that lands on home, so by the time the component body runs, `location` may
+ * already describe a session rather than the link the person followed. Any
+ * question of the form "how did we get here" has to read this instead.
+ */
+const LANDING_PATH = stripBasePath(location.pathname);
+const LANDING_SEARCH = location.search;
+
+/**
+ * Did this load ask for the first-run flow? `/welcome` (or `?firstmile=1` on
+ * any route) forces it open on an instance that is already set up, so the
+ * setup walkthrough can be reviewed without emptying the instance first.
+ */
+function firstMileRequested(pathname: string, search: string): boolean {
+	return (
+		stripBasePath(pathname) === "/welcome" ||
+		new URLSearchParams(search).get("firstmile") === "1"
+	);
+}
+
+function landedOnFirstMile(): boolean {
+	return firstMileRequested(LANDING_PATH, LANDING_SEARCH);
 }
 
 function parseRoute(pathname: string): Route {
@@ -525,13 +654,29 @@ function routePath(route: Route): string {
 // popstate — so after a Back/Forward we still know where the root is. `null`
 // means no root beneath us at all (cold-loaded straight into a panel), where
 // Back synthesizes home instead of popping.
-type NavState = { d: number } | null;
-function entryDepth(): number | null {
-	const s = history.state as NavState;
-	return s && typeof s.d === "number" ? s.d : null;
+type NavState = {
+	d: number | null;
+	settingsReturn?: SettingsReturn;
+	/** A PWA cold-launch restore, so an archived remembered session can yield
+	 * back to home without breaking explicit deep links to archived work. */
+	restoredSession?: string;
+} | null;
+function currentNavState(): NavState {
+	const state = history.state as NavState;
+	return state && (typeof state.d === "number" || state.d === null)
+		? state
+		: null;
 }
-function navState(depth: number | null): NavState {
-	return depth === null ? null : { d: depth };
+function entryDepth(): number | null {
+	return currentNavState()?.d ?? null;
+}
+function navState(
+	depth: number | null,
+	settingsReturn?: SettingsReturn,
+): NavState {
+	return depth === null && !settingsReturn
+		? null
+		: { d: depth, ...(settingsReturn ? { settingsReturn } : {}) };
 }
 
 // Pop `steps` entries, or synthesize the destination when the browser can't.
@@ -566,6 +711,8 @@ function samePanel(a: Route, b: Route): boolean {
 	return id(a) !== undefined && id(a) === id(b);
 }
 
+class MissingWorkspaceSessionSourceError extends Error {}
+
 export function App(
 	{
 		serviceWorker = true,
@@ -582,7 +729,10 @@ export function App(
 	// pushState), so tapping the logo to go home still works.
 	const [route, setRoute] = useState<Route>(() => {
 		const parsed = parseRoute(location.pathname);
-		if (parsed.view === "prs") {
+		// `/welcome` and `?firstmile=1` parse as home (they name no view of their
+		// own), so without this guard the restore below pushes the last session
+		// over them and the first-run flow never renders for anyone who has one.
+		if (parsed.view === "prs" && !landedOnFirstMile()) {
 			// Landing on the root: stamp it as the base of the page stack so panels
 			// pushed over it can count their way back down.
 			history.replaceState(navState(0), "", location.pathname);
@@ -595,11 +745,27 @@ export function App(
 				const restored: Route = { view: "session", id: lastId };
 				// Push rather than replace: the home entry we actually landed on stays
 				// beneath as the root, so Back returns to it instead of out of the app.
-				history.pushState(navState(1), "", routePath(restored));
+				// Mark this as an automatic restore. Explicit deep links intentionally
+				// keep opening archived sessions, but a stale PWA memory should not.
+				history.pushState(
+					{ d: 1, restoredSession: lastId } satisfies NonNullable<NavState>,
+					"",
+					routePath(restored),
+				);
 				return restored;
 			}
 		}
 		return parsed;
+	});
+	const currentUser = useCurrentUser();
+	const sidebarFilter = useSidebarFilter();
+	const liveSessionsQuery = sidebarSessionsQuery({
+		user: currentUser,
+		person: sidebarFilter.person,
+		repo: sidebarFilter.repo,
+		autoCreated: sidebarFilter.autoCreated,
+		...(route.view === "session" ? { selectedSessionId: route.id } : {}),
+		...(route.view === "workspace" ? { selectedWorkspaceId: route.id } : {}),
 	});
 	const {
 		sessions,
@@ -608,31 +774,41 @@ export function App(
 		archivedLoaded,
 		refreshArchived,
 		refresh,
+		refreshInvalidated,
 		inject,
 		unstick,
 		patch,
 		remove,
-	} = useSessions({ loadArchived: route.view === "archived" });
+	} = useSessions({
+		loadArchived: route.view === "archived",
+		liveQuery: liveSessionsQuery,
+	});
 	const [launchComplete, setLaunchComplete] = useState(false);
-	const [registeredRepos, setRegisteredRepos] = useState<string[]>([]);
+	// Seeded from the repos this browser saw last (lib/repo-cache): PR-mention
+	// chips need the registered set to resolve, so without it the first paint of
+	// a transcript renders `opensession#128` as plain text and relinks a beat later.
+	const [registeredRepoInfo, setRegisteredRepoInfo] = useState(cachedRepos);
+	const onboarding = useOnboarding();
+	const [forceFirstMile, setForceFirstMile] = useState(landedOnFirstMile);
 	const auth = useAuthStatus();
-	const currentUser = useCurrentUser();
-	const { connected, send, addHandler } = useWebSocket();
+	const githubConnectionState = useGithubConnectionState(route.view);
+	const { connected, send, setTyping, addHandler } = useWebSocket();
+	// A disconnected socket may miss list invalidations. The first connection
+	// races the initial list load and needs no extra fetch; later reconnects do.
+	const webSocketConnectedOnceRef = useRef(false);
+	useEffect(() => {
+		if (!connected) return;
+		if (webSocketConnectedOnceRef.current) refresh();
+		else webSocketConnectedOnceRef.current = true;
+	}, [connected, refresh]);
 	const sessionsRef = useRef(sessions);
+	useLayoutEffect(() => {
 	sessionsRef.current = sessions;
-	type PendingCreateDraft = {
-		prompt: string;
-		mode: "ask" | "code" | "scratch";
-		repo: string;
-		branch: string | null;
-		workspaceId?: string;
-		model?: string;
-		images?: string[];
+	});
+	type PendingCreateDraft = NewSessionCreateDraft & {
 		startedAt: string;
 		user: string;
 		originPath: string;
-		/** "Create in background": start the session, stay in the current view. */
-		background?: boolean;
 	};
 	const pendingCreateDraftRef = useRef<PendingCreateDraft | null>(null);
 	const [pendingInitialPrompts, setPendingInitialPrompts] = useState<
@@ -666,7 +842,13 @@ export function App(
 		setSessionTitles(
 			sessions.map(
 				(s) =>
-					[s.id, s.workspaceName || s.title, s.isRunning, s.title] as const,
+					[
+						s.id,
+						s.workspaceName || s.title,
+						s.isRunning,
+						s.title,
+						s.aliasIds,
+					] as const,
 			),
 		);
 		setKnownPrStates(
@@ -688,6 +870,35 @@ export function App(
 			]),
 		);
 	}, [sessions]);
+	// The live list intentionally omits archived history. Resolve only archived
+	// sessions that a visible transcript or draft actually references, rather
+	// than restoring the several-thousand-row archived payload to cold start.
+	useEffect(
+		() =>
+			onSessionTitleResolutionRequested((ids) => {
+				for (const requestedId of ids) {
+					void fetchSession(requestedId)
+						.then((session) => {
+							setResolvedSessionTitles([
+								{
+									requestedId,
+									...(session
+										? {
+												id: session.id,
+												title: session.workspaceName || session.title,
+												tabTitle: session.title,
+												aliases: session.aliasIds,
+												archived: session.archived === true,
+											}
+										: { title: null }),
+								},
+							]);
+						})
+						.catch(() => retrySessionTitleResolution(requestedId));
+				}
+			}),
+		[],
+	);
 	// Same deal for PR-mention chips (`opensession#128`): markdown.ts only links
 	// a qualified mention it can place, so it needs the repos this instance
 	// serves — their ids to match on, their GitHub names for the cmd-click
@@ -696,11 +907,13 @@ export function App(
 	// (MarkdownRepoProvider).
 	useEffect(() => {
 		let live = true;
+		const seeded = cachedRepos();
+		if (seeded.length) setKnownRepos(seeded);
 		const loadRepos = () => fetchRepos()
 			.then((repos) => {
 				if (live) {
 					setKnownRepos(repos);
-					setRegisteredRepos(repos.map((repo) => repo.id));
+					setRegisteredRepoInfo(repos);
 				}
 			})
 			.catch(() => {});
@@ -722,23 +935,35 @@ export function App(
 	// that (see the `.mobile-detail` CSS and the back button below). It's inert on
 	// desktop, where the sidebar + detail are a static split.
 	const detailPaneRef = useRef<HTMLElement | null>(null);
-	// Desktop-only: collapse the left sidebar entirely (persisted per browser). On
-	// mobile the page-stack (mobileDetail) governs the sidebar instead; this hides
-	// the static desktop column and swaps in a floating re-open control.
-	const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(
-		() => localStorage.getItem("opensession-sidebar-collapsed") === "1",
-	);
+	const [detailPaneEl, setDetailPaneEl] = useState<HTMLElement | null>(null);
+	const captureDetailPane = (node: HTMLElement | null) => {
+		detailPaneRef.current = node;
+		setDetailPaneEl(node);
+	};
+	// Desktop-only: collapse the left sidebar entirely (persisted per browser). A
+	// new browser starts collapsed so the workspace summary and conversation lead;
+	// opening it once remains an explicit preference. On mobile the page-stack
+	// (mobileDetail) governs the sidebar instead; this hides the static desktop
+	// column and swaps in a floating re-open control.
+	const [sidebarCollapsed, setSidebarCollapsed] =
+		useState<boolean>(sidebarStartsCollapsed);
 	function toggleSidebarCollapsed() {
+		// The sidebar changes the tab strip's available width in one frame. Reorder
+		// items otherwise treat that shell resize as a layout move and glide every
+		// tab sideways, even though no tab was reordered.
+		const restoreMotion = suppressLayoutAnimations();
 		setSidebarCollapsed((v) => {
 			const next = !v;
-			localStorage.setItem("opensession-sidebar-collapsed", next ? "1" : "0");
+			storeSidebarCollapsed(next);
+			if (next) openWorkspaceSummary();
 			return next;
 		});
+		restoreMotion();
 	}
 	// The top bar above the tab strip. The session viewer portals its header
 	// (session name + actions, incl. the workspace-panel toggle) into this slot so
 	// the layout reads name-on-top / tabs-below; other views render a plain title.
-	const [topbarEl, setTopbarEl] = useState<HTMLDivElement | null>(null);
+	const [topbarEl, setTopbarEl] = useState<HTMLElement | null>(null);
 	// Trailing slot of that same bar, for a page whose controls belong in the
 	// window's chrome rather than in a strip above its own list. Pull requests
 	// portals its search, filters and CTA here, so the bar holds the page's
@@ -751,20 +976,18 @@ export function App(
 	// falls is this row's own bottom, which on the routes whose header floats
 	// over the content is not where the pane starts.
 	const [appHeaderEl, setAppHeaderEl] = useState<HTMLElement | null>(null);
-	// The sidebar's chrome strip, held for the same reason: the hairline it grows
-	// once its list has scrolled under it is driven from here (useScrollEdge).
-	const [sidebarBrandEl, setSidebarBrandEl] = useState<HTMLDivElement | null>(
-		null,
-	);
-	// Each half of the top row answers its own scroller: the pane's bar to the
-	// transcript beneath it, the sidebar's strip to the list. Both scrollers
-	// belong to other components, so they are found by their own hooks.
+	// Only the pane's bar answers a scroller now. The sidebar's chrome strip used
+	// to as well, but nothing passes beneath it any more: the organization row and
+	// the tools are fixed chrome under it and only the workspace list scrolls, so
+	// there is no edge for a hairline to mark and no state to track.
 	// Either scroller can be the one under the bar: a session's transcript, or
 	// a page's own list. Only one of the two is ever in the pane, and the bar
 	// no longer carries a line of its own, so a page that failed to answer here
 	// would leave content vanishing at an unmarked edge.
-	useScrollEdge(topbarEl, ".viewer-messages, [data-page-scroll]");
-	useScrollEdge(sidebarBrandEl, "[data-sidebar-scroll]");
+	useScrollEdge(
+		topbarEl,
+		".viewer-messages, [data-page-scroll], [data-review-canvas]",
+	);
 	// Centered under the mobile top-bar title: the composer's model pill is hidden
 	// on phones, so the session viewer portals a compact tap-to-switch model
 	// selector into this slot — the only place a session's model surfaces there.
@@ -789,7 +1012,9 @@ export function App(
 		return v >= 200 && v <= 480 ? v : 280;
 	});
 	const sidebarWidthRef = useRef(sidebarWidth);
+	useLayoutEffect(() => {
 	sidebarWidthRef.current = sidebarWidth;
+	});
 	// The column the width lands on, so a drag can write it without a render.
 	const sidebarColRef = useRef<HTMLDivElement>(null);
 	function startSidebarResize(e: React.MouseEvent) {
@@ -833,6 +1058,29 @@ export function App(
 	// "Session not found". pendingNewWorkspace words it for a brand-new
 	// workspace vs. a session added to an existing one.
 	const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
+	const [newTabMorph, setNewTabMorph] = useState<{
+		id: string;
+		origin: NewTabMorphOrigin;
+	} | null>(null);
+	const newTabMorphTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+		undefined,
+	);
+	useEffect(
+		() => () => {
+			if (newTabMorphTimer.current) clearTimeout(newTabMorphTimer.current);
+		},
+		[],
+	);
+	// Keep the complete local shell beside the route until persistence lands.
+	// The session list and detail fetches are independent, so neither should be
+	// allowed to substitute the previous session while this id is still local.
+	const [optimisticSession, setOptimisticSession] =
+		useState<UnifiedSession | null>(null);
+	// A deleted blank can reappear in a sessions poll that started before its
+	// DELETE finished. Hide it for this page's lifetime so leaving stays final.
+	const [hiddenEmptySessionIds, setHiddenEmptySessionIds] = useState<Set<string>>(
+		() => new Set(),
+	);
 	const [pendingNewWorkspace, setPendingNewWorkspace] = useState(false);
 	// Who's viewing what, app-wide (from global_presence).
 	const [teamViewing, setTeamViewing] = useState<
@@ -849,17 +1097,34 @@ export function App(
 	// change (a new PR session can auto-create a workspace server-side).
 	const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
 	const [workspacesLoaded, setWorkspacesLoaded] = useState(false);
+	// Workspace mentions keep stable ids in the prompt while the composer shows
+	// the same human name as the sidebar and workspace route.
+	useEffect(() => {
+		setWorkspaceTitles(
+			workspaces.map((workspace) => [workspace.id, workspace.name] as const),
+		);
+	}, [workspaces]);
+	// Read by the PR-link opener, which runs from a document-level listener and
+	// therefore can't close over the render's value.
+	const workspacesRef = useRef(workspaces);
+	useLayoutEffect(() => {
+	workspacesRef.current = workspaces;
+	});
 	const productEmpty =
 		!loading &&
 		workspacesLoaded &&
 		sessions.length === 0 &&
 		workspaces.length === 0;
-	const refreshWorkspaces = React.useCallback(() => {
-		fetchWorkspaces()
+	const firstMileActive = forceFirstMile || onboarding.state === "required";
+	// This identity is observable: both subscriptions below depend on it. Keep it
+	// stable even if the compiler bails out on this large component, otherwise a
+	// completed fetch updates state, retriggers the effect, and starts another fetch.
+	const [refreshWorkspaces] = useState(() => () => {
+		return fetchWorkspaces()
 			.then(setWorkspaces)
 			.catch(() => {})
 			.finally(() => setWorkspacesLoaded(true));
-	}, []);
+	});
 	useEffect(() => {
 		refreshWorkspaces();
 		const onFocus = () => refreshWorkspaces();
@@ -871,6 +1136,47 @@ export function App(
 		window.addEventListener("opensession:workspaces-changed", onWorkspaceSettingsChanged);
 		return () => window.removeEventListener("opensession:workspaces-changed", onWorkspaceSettingsChanged);
 	}, [refreshWorkspaces]);
+	useEffect(() => {
+		if (onboarding.state !== "required" || forceFirstMile) return;
+		// The onboarding gate owns the first incomplete load, including deep links.
+		// Replace rather than push so Back cannot escape a required walkthrough.
+		history.replaceState(history.state ?? navState(0), "", `${BASE_PATH}/welcome`);
+		setForceFirstMile(true);
+	}, [onboarding.state, forceFirstMile]);
+
+	function openFirstMile() {
+		// Keep the settings entry below the walkthrough so browser Back returns to
+		// the button that opened it. The walkthrough is app state, not a document
+		// reload, which also works inside the phone settings sheet.
+		history.pushState(history.state, "", `${BASE_PATH}/welcome`);
+		setForceFirstMile(true);
+	}
+
+	async function finishFirstMile() {
+		try {
+			await onboarding.complete();
+		} catch (cause) {
+			toast(cause instanceof Error ? cause.message : "Could not finish onboarding", {
+				variant: "error",
+			});
+			return;
+		}
+		if (forceFirstMile) {
+			const url = new URL(location.href);
+			url.searchParams.delete("firstmile");
+			const leavingWelcome = stripBasePath(url.pathname) === "/welcome";
+			const path = leavingWelcome ? routePath({ view: "prs" }) : url.pathname;
+			// A `/welcome` load skips the home entry's navState stamp above, so give
+			// this entry a root depth on the way out or Back has nothing to count from.
+			history.replaceState(
+				history.state ?? navState(0),
+				"",
+				`${path}${url.search}${url.hash}`,
+			);
+			setForceFirstMile(false);
+			if (leavingWelcome) setRoute({ view: "prs" });
+		}
+	}
 
 	// Subscribe to the per-user pin/color stores. Both hydrate async at module
 	// load, and on a fast localhost that load() can resolve (and emit) before
@@ -888,7 +1194,7 @@ export function App(
 	// The server already does this, but our pin cache is optimistic and never
 	// hears about that write — without this a later savePinsApi re-uploads the
 	// stale list and resurrects the archived pin as an unreachable ghost row.
-	const dropStalePins = React.useCallback((justArchived: UnifiedSession[]) => {
+	const dropStalePins = (justArchived: UnifiedSession[]) => {
 		if (!justArchived.length) return;
 		const archivedIds = new Set(justArchived.map((s) => s.id));
 		const all = sessionsRef.current;
@@ -905,7 +1211,7 @@ export function App(
 			if (!hasLive) keys.push(`workspace:${pid}`);
 		}
 		setPins(unpin(keys));
-	}, []);
+	};
 
 	// Track the on-screen keyboard via input focus. It's the only reliable iOS
 	// signal: in a standalone PWA visualViewport doesn't shrink, and
@@ -913,7 +1219,13 @@ export function App(
 	// while the keyboard covers that area. A `kb-open` body class lets the
 	// composer drop its safe-area bottom padding so it sits snug above the
 	// keyboard instead of floating ~34px above it.
+	//
+	// The same focus is what starts measuring HOW MUCH the keyboard covers
+	// (`--kb-inset`, lib/keyboard-inset): the class says a keyboard is up, the
+	// variable says how tall it is, and a surface resting on the bottom edge
+	// needs both.
 	useEffect(() => {
+		let releaseInset: (() => void) | null = null;
 		const isText = (el: Element | null) =>
 			!!el &&
 			(el.tagName === "TEXTAREA" ||
@@ -923,13 +1235,18 @@ export function App(
 					)) ||
 				(el as HTMLElement).isContentEditable);
 		const onIn = (e: FocusEvent) => {
-			if (isText(e.target as Element)) document.body.classList.add("kb-open");
+			if (!isText(e.target as Element)) return;
+			document.body.classList.add("kb-open");
+			if (releaseInset === null) releaseInset = trackKeyboardInset();
 		};
 		const onOut = () => {
 			// activeElement updates a tick after focusout; defer so moving between
 			// fields doesn't flicker the class off and back on.
 			setTimeout(() => {
-				if (!isText(document.activeElement)) document.body.classList.remove("kb-open");
+				if (isText(document.activeElement)) return;
+				document.body.classList.remove("kb-open");
+				releaseInset?.();
+				releaseInset = null;
 			}, 0);
 		};
 		document.addEventListener("focusin", onIn);
@@ -937,6 +1254,7 @@ export function App(
 		return () => {
 			document.removeEventListener("focusin", onIn);
 			document.removeEventListener("focusout", onOut);
+			releaseInset?.();
 		};
 	}, []);
 	useEffect(() => {
@@ -947,8 +1265,9 @@ export function App(
 
 	// Settings (and the tool surfaces it hosts) render as a full page on
 	// desktop, but as a bottom sheet over the root list on phones.
-	const settingsActive = route.view === "settings" || isToolView(route.view);
+	const settingsActive = isSettingsRoute(route);
 	const isPhone = useIsPhone();
+	const borrowedSidebar = sidebarFilter.person !== "me";
 
 	// A pushed detail page is showing (anything but the sidebar-root home view).
 	// On phones, Settings is a sheet floating over the root page rather than a
@@ -959,7 +1278,11 @@ export function App(
 	// recreated each render, but effects/handlers can capture an older copy.
 	const routeRef = useRef(route);
 	const sidebarRef = useRef<SidebarHandle>(null);
+	const nextChatRef = useRef<() => void>(() => {});
+	const [nextChatAvailable, setNextChatAvailable] = useState(false);
+	useLayoutEffect(() => {
 	routeRef.current = route;
+	});
 	// The mobile layout is an iOS-style navigation stack: the sidebar is the root
 	// (depth 0) and each panel is pushed over it. Every entry carries its own
 	// depth (see `entryDepth`), so opening one panel from another stacks a real
@@ -984,13 +1307,33 @@ export function App(
 			samePanel(cur, next);
 		const replace = opts?.replace ?? samePath;
 		const depth = entryDepth();
-		if (replace) history.replaceState(navState(toRoot ? 0 : depth), "", path);
-		else if (toRoot) history.pushState(navState(0), "", path);
-		else history.pushState(navState(depth === null ? null : depth + 1), "", path);
+		const settingsReturn = settingsReturnForNavigation({
+			currentIsSettings: isSettingsRoute(cur),
+			nextIsSettings: isSettingsRoute(next),
+			currentReturn: currentNavState()?.settingsReturn,
+			currentPath: `${location.pathname}${location.search}${location.hash}`,
+			currentDepth: depth,
+			replace,
+		});
+		const nextState = (nextDepth: number | null) =>
+			navState(nextDepth, settingsReturn);
+		if (replace)
+			history.replaceState(nextState(toRoot ? 0 : depth), "", path);
+		else if (toRoot) history.pushState(nextState(0), "", path);
+		else
+			history.pushState(
+				nextState(depth === null ? null : depth + 1),
+				"",
+				path,
+			);
 		setRoute(next);
 	}
 	const navigateRef = useRef(navigate);
+	useLayoutEffect(() => {
 	navigateRef.current = navigate;
+	});
+	// Set below, once the review-focus callback it needs exists.
+	const openPrRef = useRef<(repo: string, number: number) => void>(() => {});
 
 	// PR-mention chips (markdown.ts) are anchors inside
 	// dangerouslySetInnerHTML, so they can't carry a React handler — and they
@@ -1035,7 +1378,7 @@ export function App(
 			// gestures on the href — leave them to it.
 			if (e.shiftKey || e.altKey) return;
 			e.preventDefault();
-			navigateRef.current({ view: "pr", repo: chip.repo, number: chip.number });
+			openPrRef.current(chip.repo, chip.number);
 		};
 		const onAuxClick = (e: MouseEvent) => {
 			if (e.button !== 1) return;
@@ -1113,17 +1456,34 @@ export function App(
 		};
 	}, []);
 
+	// The current session is declared before the navigation callbacks that read
+	// it. A layout effect below keeps it synchronized once session data resolves.
+	const currentSessionRef = useRef<UnifiedSession | null>(null);
+
 	// Pop back to the sidebar root. With the root beneath us, one `history.go`
 	// lands on it directly — keeping the browser/OS back button in lockstep
 	// without walking back through every panel we pushed on the way. Cold-loaded
 	// into a panel there is no root to pop to, so replace to home instead and the
 	// stack never grows.
-	function goBack() {
+	const goBack = () => {
+		// A worker session sits a level below the session that spawned it, and it
+		// has no tab to leave by. Back therefore goes UP one level rather than out
+		// to the sidebar: it is the phone's spelling of the header breadcrumb, and
+		// the edge swipe gets it for free.
+		// Reads through the ref: this closure initializes before `currentSession`
+		// does, and the compiler rejects a direct read of a later binding.
+		const live = currentSessionRef.current;
+		const parentId =
+			route.view === "session" ? live?.parentSessionId : undefined;
+		if (parentId) {
+			navigate({ view: "session", id: parentId });
+			return;
+		};
 		const depth = entryDepth();
 		if (depth !== null && depth > 0)
 			popOr(depth, () => navigate({ view: "prs" }, { replace: true }));
 		else navigate({ view: "prs" }, { replace: true });
-	}
+	};
 
 	// Leave a full-page deck (catch-up, PR, support) for wherever you came from,
 	// rather than popping to the root the way `goBack` does. The root is the
@@ -1136,6 +1496,37 @@ export function App(
 			popOr(1, () => navigate({ view: "prs" }, { replace: true }));
 		else navigate({ view: "prs" }, { replace: true });
 	}
+
+	// Settings is a temporary surface over whatever the person was doing. Its
+	// sections may add history entries of their own, so closing skips the whole
+	// Settings run and restores the exact route that opened it. This also works
+	// after a cold deep link, where there is no sidebar-root depth to count from.
+	function leaveSettings() {
+		const settingsReturn = currentNavState()?.settingsReturn;
+		if (!settingsReturn) {
+			goBack();
+			return;
+		}
+		const restore = () => {
+			const url = new URL(settingsReturn.path, location.origin);
+			history.replaceState(
+				navState(settingsReturn.depth),
+				"",
+				`${url.pathname}${url.search}${url.hash}`,
+			);
+			setRoute(parseRoute(url.pathname));
+		};
+		if (settingsReturn.steps > 0) popOr(settingsReturn.steps, restore);
+		else restore();
+	}
+
+	// Escape leaves Settings, the same way its Back control does. The window-level
+	// handler below is installed once, so it reads the current closer through a
+	// ref; null when Settings is not the open surface.
+	const leaveSettingsRef = useRef<(() => void) | null>(null);
+	useLayoutEffect(() => {
+	leaveSettingsRef.current = settingsActive ? leaveSettings : null;
+	});
 
 	// Edge-swipe-from-left pops the pushed page back to the sidebar on phones.
 	useBackSwipe({
@@ -1181,7 +1572,7 @@ export function App(
 	// The "new session" ⌘K palette. It's an overlay driven by its own state (not a
 	// route), so it can open over any view; the <base>/new route still opens it
 	// so old links keep working.
-	const [palette, setPalette] = useState<{
+	const [palette, setPaletteState] = useState<{
 		open: boolean;
 		prompt?: string;
 		// When starting a session inside a workspace, prefill it + its shared repo
@@ -1197,13 +1588,23 @@ export function App(
 	}>(() =>
 		route.view === "new" ? { open: true, prompt: route.prompt } : { open: false },
 	);
+	// Every direct action that opens the palette goes through here, so the phone
+	// keyboard is raised from inside the tap rather than a frame later, when iOS
+	// no longer grants it (lib/soft-keyboard). The prompt takes the keyboard over
+	// as soon as it mounts.
+	const setPalette = (next: typeof palette) => {
+		if (next.open) primeSoftKeyboard();
+		setPaletteState(next);
+	};
 	// Bumped by the sidebar's draft row to put the caret back in the empty
 	// state's session input. The row and that card are the same unstarted
 	// session seen from two places.
 	const [draftFocusSeq, setDraftFocusSeq] = useState(0);
 	const paletteOpenRef = useRef(palette.open);
+	useLayoutEffect(() => {
 	paletteOpenRef.current = palette.open;
-	const openPalette = React.useCallback((prompt?: string, mcpServers?: string[]) => {
+	});
+	const openPalette = (prompt?: string, mcpServers?: string[]) => {
 		// This is the global new-session action. It must not inherit the workspace
 		// behind it: without workspaceId, NewSession creates a workspace with its
 		// first session. Its model combinations are safe to use as a picker source,
@@ -1219,10 +1620,10 @@ export function App(
 			...(mcpServers?.length ? { mcpServers } : {}),
 			...(modelWorkspaceId ? { modelWorkspaceId } : {}),
 		});
-	}, [route, sessions]);
-	const openPrefilledSession = React.useCallback((prefill: NewSessionPrefill) => {
+	};
+	const openPrefilledSession = (prefill: NewSessionPrefill) => {
 		setPalette({ open: true, ...prefill });
-	}, []);
+	};
 
 	// A "new tab" while a session is open is a *new session in that same session*, not
 	// a whole new session — so it must NOT pop the new-session palette. It's a
@@ -1266,7 +1667,7 @@ export function App(
 		() => new Set(),
 	);
 	// The Video (feed web-panel) tab is likewise default-PRESENT on workspaces
-	// carrying a web-panel ExternalRef (Tella videos) — track explicit closes.
+	// carrying a web-panel ExternalRef (a linked video, dashboard, …): track explicit closes.
 	const [videoClosed, setVideoClosed] = useState<Set<string>>(() => new Set());
 	const [stagingOpen, setStagingOpen] = useState<Set<string>>(
 		() => new Set(getActiveViewTabKeys("staging")),
@@ -1349,22 +1750,66 @@ export function App(
 		seq: number;
 	} | null>(null);
 	const reviewFocusPrRef = useRef(reviewFocusPr);
+	useLayoutEffect(() => {
 	reviewFocusPrRef.current = reviewFocusPr;
+	});
 	// The `seq` the workspace landing effect has already used to pick a session
 	// (below). Without it a stale request would keep redirecting every later
 	// visit to this workspace's Review.
 	const landedFocusSeq = useRef<number | null>(null);
-	const focusReviewPr = React.useCallback(
-		(pr: {
+	const focusReviewPr = (pr: {
 			repo: string;
 			branch?: string;
 			number?: number;
 			workspaceId?: string;
 		}) => {
 			setReviewFocusPr((prev) => ({ ...pr, seq: (prev?.seq ?? 0) + 1 }));
-		},
-		[],
-	);
+		};
+	// Open a PR named in prose (a `repo#123` chip) where it belongs: a Review tab
+	// in its workspace. The standalone /pr/ route is a page, so routing through it
+	// took the whole detail pane, title and tab strip included, for as long as the
+	// resolve took, even when the PR's workspace was the one already on screen.
+	// Most clicks need no server at all (the workspace and session lists already
+	// say where the PR lives), and the ones that do keep the current view up while
+	// they wait rather than blanking it. Only an unresolvable PR falls through to
+	// the standalone route, which is what says there is no such pull request.
+	const openPrByRef = (repo: string, number: number) => {
+			const open = (
+				workspaceId: string,
+				pr: { repo: string; branch?: string; number?: number },
+			) => {
+				focusReviewPr({ ...pr, workspaceId });
+				navigateRef.current({
+					view: "workspace",
+					id: workspaceId,
+					tab: "review",
+				});
+			};
+			const known = findPrWorkspaceId(
+				workspacesRef.current,
+				sessionsRef.current,
+				{ repo, number },
+			);
+			if (known) {
+				open(known, { repo, number });
+				return;
+			}
+			resolveWorkspaceApi({ pr: { repo, number } })
+				.then(({ workspaceId, pr }) => {
+					refreshWorkspaces();
+					open(workspaceId, {
+						repo: pr?.repo ?? repo,
+						branch: pr?.branch,
+						number: pr?.number ?? number,
+					});
+				})
+				.catch(() => {
+					navigateRef.current({ view: "pr", repo, number });
+				});
+		};
+	useLayoutEffect(() => {
+	openPrRef.current = openPrByRef;
+	});
 	// One-shot guard consumed by the workspace default-pane seeding effect (set
 	// when closing a view tab replaces the workspace URL — see onCloseView).
 	const suppressWsSeedRef = useRef(false);
@@ -1377,14 +1822,14 @@ export function App(
 	const [sessionComposerPrefills, setSessionComposerPrefills] = useState<
 		Record<string, { seq: number; text: string }>
 	>({});
-	const addToSessionInput = React.useCallback((sessionId: string, text: string) => {
+	const addToSessionInput = (sessionId: string, text: string) => {
 		setSessionComposerPrefills((prev) => ({
 			...prev,
 			[sessionId]: { seq: (prev[sessionId]?.seq ?? 0) + 1, text },
 		}));
 		setFocusComposerOnOpen(true);
 		navigate({ view: "session", id: sessionId });
-	}, []);
+	};
 	useEffect(() => {
 		if (focusComposerOnOpen) setFocusComposerOnOpen(false);
 	}, [focusComposerOnOpen]);
@@ -1408,8 +1853,12 @@ export function App(
 		};
 	}, [searchOpen]);
 	// The Desk overlay (⌘J / the floating desk button): a standing concierge
-	// session on top of whatever view is open.
-	const [deskOpen, setDeskOpen] = useState(false);
+	// session on top of whatever view is open. Its entrance origin follows the
+	// invocation: the corner launcher is spatial, while the shortcut is not.
+	const [deskOverlay, setDeskOverlay] = useState<{
+		open: boolean;
+		origin: "center" | "bottom-right";
+	}>({ open: false, origin: "bottom-right" });
 	// The shortcut cheat sheet (⌘/): every chord on one card, over any view.
 	const [shortcutsOpen, setShortcutsOpen] = useState(false);
 	// Open-task count for the Tasks toolbar entry — refreshed on every
@@ -1418,13 +1867,16 @@ export function App(
 	useEffect(() => {
 		let stale = false;
 		const load = async () => {
-			try {
-				const res = await fetch(
+			await (async () => {
+const path = await resolveAnonymousUserPath(
 					`${BASE_PATH}/api/todos?user=${encodeURIComponent(getCurrentUser())}`,
 				);
+				const res = await fetch(path);
 				const data = (await res.json()) as { todos?: unknown[] };
 				if (!stale) setTaskCount(data.todos?.length ?? 0);
-			} catch {}
+})().catch(async () => {
+
+});
 		};
 		void load();
 		const unsub = addHandler((msg) => {
@@ -1436,17 +1888,85 @@ export function App(
 		};
 	}, [addHandler]);
 	const searchOpenRef = useRef(searchOpen);
+	useLayoutEffect(() => {
 	searchOpenRef.current = searchOpen;
-	const closePalette = React.useCallback(() => {
+	});
+	const closePalette = () => {
 		setPalette({ open: false });
 		// A deep link left the URL on <base>/new — return home on close.
 		if (stripBasePath(location.pathname) === "/new") goBack();
-	}, []);
+	};
+
+	const startNewSessionCreate = (started: NewSessionCreateDraft) => {
+			const startedAt = new Date().toISOString();
+			const user = getCurrentUser();
+			const draft: PendingCreateDraft = {
+				...started,
+				startedAt,
+				user,
+				originPath: routePath(routeRef.current),
+			};
+			pendingCreateDraftRef.current = draft;
+			if (!started.openImmediately) return;
+
+			const shell: UnifiedSession = {
+				id: started.id,
+				claudeSessionId: null,
+				source: "opensession",
+				branch: started.branch,
+				worktreeDir: null,
+				startedBy: user,
+				title: started.workspaceId ? "New session" : "New workspace",
+				lastActivity: startedAt,
+				createdAt: startedAt,
+				isRunning: true,
+				runStartedAt: startedAt,
+				transcriptPath: null,
+				mode: started.mode,
+				repo: started.repo,
+				workspaceId: started.workspaceId || null,
+				model: started.model,
+				archived: false,
+				// The server replaces this conservative starting state as soon as
+				// session_created confirms whether environment setup is needed.
+				workspacePreparing: true,
+			};
+			flushSync(() => {
+				inject(shell, { sticky: true });
+				setOptimisticSession(shell);
+				setPalette({ open: false });
+			});
+			if (started.prompt || started.images?.length) {
+				setPendingInitialPrompts((current) => ({
+					...current,
+					[started.id]: {
+						content: started.prompt,
+						user,
+						sentAt: new Date(startedAt).getTime(),
+						...(started.images?.length ? { images: started.images } : {}),
+					},
+				}));
+			}
+			setPendingSessionId(started.id);
+			setPendingNewWorkspace(!started.workspaceId);
+			clearTimeout(pendingTimer.current);
+			pendingTimer.current = setTimeout(() => {
+				setPendingSessionId((pending) =>
+					pending === started.id ? null : pending,
+				);
+				setOptimisticSession((pending) =>
+					pending?.id === started.id ? null : pending,
+				);
+				unstick(started.id);
+			}, 120_000);
+			navigate({ view: "session", id: started.id });
+		};
 
 	useEffect(() => {
 		const onPop = () => {
 			// Depth travels with the entry (history.state), so there is nothing to
-			// recompute here — just follow the URL we landed on.
+			// recompute here. Follow the URL we landed on.
+			setForceFirstMile(firstMileRequested(location.pathname, location.search));
 			setRoute(parseRoute(location.pathname));
 		};
 		window.addEventListener("popstate", onPop);
@@ -1463,6 +1983,11 @@ export function App(
 	// Esc closes whichever palette is open (search's
 	// own input also handles Esc, but this covers the case where focus has left
 	// it).
+	// The three component handlers are read through effect events, so the
+	// listener subscribes once and still reaches the latest closures.
+	const hotkeyOpenPalette = useEffectEvent(() => openPalette());
+	const hotkeyClosePalette = useEffectEvent(() => closePalette());
+	const hotkeyToast = useEffectEvent((message: string) => showToast(message));
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			if (matchesShortcut(e, "command-menu")) {
@@ -1471,10 +1996,14 @@ export function App(
 				return;
 			}
 			if (matchesShortcut(e, "desk")) {
-				// Summon/dismiss the Desk overlay. Esc-close is handled by the
-				// overlay itself (Base UI dialog / the bottom sheet).
+				// Summon/dismiss the Desk overlay. A keyboard summon grows from
+				// the center because there is no spatial trigger to connect it to.
 				e.preventDefault();
-				setDeskOpen((o) => !o);
+				setDeskOverlay((desk) =>
+					desk.open
+						? { ...desk, open: false }
+						: { open: true, origin: "center" },
+				);
 				return;
 			}
 			if (matchesShortcut(e, "shortcuts-help")) {
@@ -1498,7 +2027,7 @@ export function App(
 				// are already in. ⌘S is free to take because there is no document
 				// here to save, so the browser's Save does nothing worth keeping.
 				e.preventDefault();
-				openPalette();
+				hotkeyOpenPalette();
 				return;
 			}
 			if (matchesShortcut(e, "session-copy-link")) {
@@ -1509,17 +2038,31 @@ export function App(
 				const path = copyLinkPathRef.current;
 				if (!path) return;
 				e.preventDefault();
-				copyToClipboard(absoluteLink(path), () => showToast("Link copied"));
+				copyToClipboard(absoluteLink(path), () => hotkeyToast("Link copied"));
 				return;
 			}
 			if (e.key === "Escape") {
 				if (searchOpenRef.current) setSearchOpen(false);
-				else if (paletteOpenRef.current) closePalette();
+				else if (paletteOpenRef.current) hotkeyClosePalette();
+				else if (leaveSettingsRef.current) {
+					// A field, a menu or a modal inside Settings owns the keystroke
+					// first: only an unclaimed Escape closes the whole surface.
+					if (e.defaultPrevented || blockingOverlayOpen()) return;
+					const target = e.target as HTMLElement | null;
+					if (
+						target &&
+						(target.tagName === "INPUT" ||
+							target.tagName === "TEXTAREA" ||
+							target.isContentEditable)
+					)
+						return;
+					leaveSettingsRef.current();
+				}
 			}
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [openPalette, closePalette, showToast]);
+	}, []);
 
 	// Remember the last session so a cold relaunch can restore it (see above);
 	// clear it when the user deliberately goes home so we don't force them back in.
@@ -1534,6 +2077,40 @@ export function App(
 			localStorage.removeItem("opensession-last-session-user");
 		}
 	}, [route]);
+
+	// The list is the live slice, and archived sessions arrive as summaries, so
+	// the row it finds may be missing or partial. Hydrate the route directly,
+	// before the list finishes, so a deep link can hand off from the launch
+	// splash as soon as its one session is ready.
+	const listedSession: UnifiedSession | null =
+		route.view === "session"
+			? optimisticSession?.id === route.id
+				? optimisticSession
+				: sessions.find(
+						(s) => s.id === route.id || s.aliasIds?.includes(route.id),
+					) || null
+			: null;
+	const currentSession = useHydratedSession(
+		route.view === "session" ? route.id : null,
+		listedSession,
+	);
+	// iOS can kill a standalone PWA before the archive navigation commits. Its
+	// next cold launch then restores the stale last-session id from localStorage.
+	// Once hydration proves that an automatic restore is archived, return to the
+	// home entry beneath it. A real URL/deep link has no restoredSession marker
+	// and remains openable, which is the Archived screen's contract.
+	useEffect(() => {
+		if (
+			route.view !== "session" ||
+			!currentSession?.archived ||
+			currentNavState()?.restoredSession !== route.id
+		)
+			return;
+		localStorage.removeItem("opensession-last-session");
+		localStorage.removeItem("opensession-last-session-user");
+		navigate({ view: "prs" }, { replace: true });
+	}, [currentSession?.archived, route]);
+	const shellLoading = loading && !currentSession;
 
 	// Tear down the launch splash (rendered in index.html) once there is
 	// something to draw. Mounting is not that moment: React mounts as soon as the
@@ -1552,7 +2129,7 @@ export function App(
 			splash.classList.add("splash-hide");
 			removal = setTimeout(() => splash.remove(), SPLASH_EXIT_MS);
 		};
-		if (!loading) {
+		if (!shellLoading) {
 			// The window is only handed over when there is something in it: the
 			// desktop shell's vibrancy is gated on this class, and a transparent
 			// window with an empty app in it reads as no window at all. The cap
@@ -1567,17 +2144,66 @@ export function App(
 			clearTimeout(cap);
 			clearTimeout(removal);
 		};
-	}, [loading]);
+	}, [shellLoading]);
 
 	useEffect(() => {
-		if (loading) return;
+		if (shellLoading) return;
 		const timer = setTimeout(() => setLaunchComplete(true), SPLASH_EXIT_MS);
 		return () => clearTimeout(timer);
-	}, [loading]);
+	}, [shellLoading]);
 
 	// When a session is created from the New Session form or Ask box, jump straight into it
+	// The handler reads `inject`/`navigate` through effect events, so the
+	// subscription doesn't re-arm just because their closures moved.
+	const socketInject = useEffectEvent(inject);
+	const socketNavigate = useEffectEvent(navigate);
 	useEffect(() => {
 		return addHandler((msg) => {
+			if (msg.type === "sessions_invalidated") {
+				refreshInvalidated();
+				return;
+			}
+			if (msg.type === "error") {
+				const draft = pendingCreateDraftRef.current;
+				const errorSessionId = "sessionId" in msg ? msg.sessionId : undefined;
+				if (
+					draft?.openImmediately &&
+					(!errorSessionId || errorSessionId === draft.id)
+				) {
+					pendingCreateDraftRef.current = null;
+					clearTimeout(pendingTimer.current);
+					setPendingSessionId((pending) =>
+						pending === draft.id ? null : pending,
+					);
+					setOptimisticSession((pending) =>
+						pending?.id === draft.id ? null : pending,
+					);
+					setPendingInitialPrompts((current) => {
+						if (!current[draft.id]) return current;
+						const next = { ...current };
+						delete next[draft.id];
+						return next;
+					});
+					unstick(draft.id);
+					remove(draft.id);
+					// The accepted send cleared the global composer immediately. Put
+					// its submitted payload back before reopening only when creation
+					// itself fails, so recovery never holds the normal path hostage.
+					saveDraft(NEW_SESSION_DRAFT_KEY, {
+						text: draft.prompt,
+						images: draft.images ?? [],
+						files: draft.files ?? [],
+					});
+					if (
+						routeRef.current.view === "session" &&
+						routeRef.current.id === draft.id
+					) navigate(parseRoute(draft.originPath));
+					primeSoftKeyboard();
+					setPaletteState((current) => ({ ...current, open: true }));
+					toast(msg.message || "Couldn't create the session.");
+					return;
+				}
+			}
 			if (msg.type === "pins_changed") {
 				receivePins(msg.user, msg.pins);
 				return;
@@ -1595,12 +2221,45 @@ export function App(
 				return;
 			}
 			if (msg.type === "session_created") {
-				const draft = pendingCreateDraftRef.current;
-				pendingCreateDraftRef.current = null;
+				const pendingDraft = pendingCreateDraftRef.current;
+				// A session-room announcement can arrive from restart recovery through
+				// a watch that was in flight while the person changed routes. It is not
+				// the reply to this browser's create, so it neither consumes that draft
+				// nor gets to take the foreground.
+				const roomScoped = "sessionId" in msg;
+				const draft = pendingDraft?.id === msg.id ? pendingDraft : null;
+				if (draft) pendingCreateDraftRef.current = null;
+				if (!shouldApplyCreatedSessionReply(msg.replayed, !!draft)) {
+					// The durable command outbox replayed a create that this page already
+					// finished. Its real row may be live or archived; either way the lists,
+					// not a repo-less optimistic shell, are the authority now.
+					refresh();
+					refreshWorkspaces();
+					return;
+				}
+				const openedOptimistically =
+					draft?.openImmediately === true && draft.id === msg.id;
+				if (openedOptimistically) {
+					clearDraft(NEW_SESSION_DRAFT_KEY);
+					dropStagingAttachments(NEW_SESSION_DRAFT_KEY);
+					clearTimeout(pendingTimer.current);
+					setPendingSessionId((pending) =>
+						pending === msg.id ? null : pending,
+					);
+					setPendingNewWorkspace(false);
+					setOptimisticSession((pending) =>
+						pending?.id === msg.id ? null : pending,
+					);
+					patch(msg.id, {
+						workspaceId: msg.workspaceId || draft.workspaceId || null,
+						workspacePreparing: !!msg.preparingWorkspace,
+					});
+				}
 				const stillOwnsForeground = shouldOpenCreatedSession(
 					draft,
 					routePath(routeRef.current),
 					paletteOpenRef.current,
+					roomScoped,
 				);
 				// Pin the just-created session for its creator (this WS reply is
 				// creator-only, so it never pins a teammate's new session onto my bar).
@@ -1615,7 +2274,7 @@ export function App(
 					const now = new Date().toISOString();
 					const user = draft?.user || getCurrentUser();
 					const createdAt = draft?.startedAt || now;
-					inject({
+					socketInject({
 						id: msg.id,
 						claudeSessionId: null,
 						source: "opensession",
@@ -1666,22 +2325,32 @@ export function App(
 						});
 					}, 120_000);
 				}
-				// Mark it pending so the viewer shows "Starting…" until the poll
-				// catches up; a fallback timeout clears it so a failed create can't
-				// stick — including dropping the sticky optimistic copy above.
-				setPendingSessionId(msg.id);
-				setPendingNewWorkspace(!!msg.newWorkspace);
-				clearTimeout(pendingTimer.current);
-				pendingTimer.current = setTimeout(() => {
-					setPendingSessionId(null);
-					unstick(msg.id);
-				}, 30000);
+				if (!openedOptimistically) {
+					// Mark it pending so the viewer shows "Starting…" until the poll
+					// catches up; a fallback timeout clears it so a failed create can't
+					// stick — including dropping the sticky optimistic copy above.
+					setPendingSessionId(msg.id);
+					setPendingNewWorkspace(!!msg.newWorkspace);
+					clearTimeout(pendingTimer.current);
+					pendingTimer.current = setTimeout(() => {
+						setPendingSessionId(null);
+						unstick(msg.id);
+					}, 30000);
+				}
 				refresh();
 				refreshWorkspaces();
-				if (stillOwnsForeground) navigate({ view: "session", id: msg.id });
+				if (stillOwnsForeground) socketNavigate({ view: "session", id: msg.id });
 			}
 		});
-	}, [addHandler, refresh, refreshWorkspaces, unstick]);
+	}, [
+		addHandler,
+		patch,
+		refresh,
+		refreshInvalidated,
+		refreshWorkspaces,
+		remove,
+		unstick,
+	]);
 
 	// Drop the pending flag once we've navigated away from the pending session (its
 	// fallback timeout clears it otherwise). We deliberately DON'T clear it the
@@ -1701,25 +2370,12 @@ export function App(
 			// fallback). A real session is retained by the next poll; a phantom
 			// from a failed create is reconciled away instead of lingering.
 			unstick(pendingSessionId);
+			setOptimisticSession((pending) =>
+				pending?.id === pendingSessionId ? null : pending,
+			);
 		}
 	}, [route, pendingSessionId, unstick]);
 
-	// The list is the live slice, and archived sessions arrive as summaries, so
-	// the row it finds may be missing or partial — see useHydratedSession.
-	const listedSession: UnifiedSession | null =
-		route.view === "session"
-			? sessions.find(
-					(s) => s.id === route.id || s.aliasIds?.includes(route.id),
-				) || null
-			: null;
-	const currentSession = useHydratedSession(
-		route.view === "session" ? route.id : null,
-		listedSession,
-	);
-
-	// The open session, read by the mount-once tab-shortcut handler (⌘⌥C / ⌘W —
-	// see the effect next to closeSession below).
-	const currentSessionRef = useRef<UnifiedSession | null>(null);
 	// Stable key the view-tab state (Review/Preview/Assets panes) is stored
 	// under: the workspace id, the shared isolated worktree, or the lone session
 	// id — the same grouping rule as the tab strip (tabOrderKey below), so a
@@ -1756,10 +2412,10 @@ export function App(
 		reviewDismissed,
 		wsHasLiveSession,
 	);
-	function setActiveViewTab(tab: ActiveViewTab) {
+	const setActiveViewTab = useCallback((tab: ActiveViewTab) => {
 		setActiveViewTabState(tab);
 		if (wsKey) saveActiveViewTab(wsKey, tab);
-	}
+	}, [wsKey]);
 	// Return each workspace to its last foregrounded tab. A workspace without a
 	// saved selection still starts on its normal default surface. Switching sessions
 	// within a workspace records session as the selection via the tab-strip handler.
@@ -1775,7 +2431,7 @@ export function App(
 					? defaultSessionView
 					: remembered,
 		);
-	}, [wsKey, defaultSessionView]);
+	}, [wsKey, defaultSessionView, routeSubagentStack.length]);
 	// ...unless we just opened Review for that workspace from the sidebar: once
 	// it lands (this render or the one after navigation), foreground Review and
 	// consume the pulse. Runs after the reset effect above, so it wins.
@@ -1784,7 +2440,7 @@ export function App(
 			setActiveViewTab("review");
 			setPendingReviewOpen(null);
 		}
-	}, [wsKey, pendingReviewOpen]);
+	}, [wsKey, pendingReviewOpen, setActiveViewTab]);
 	// Add the Review view-tab for a workspace. Presence is the OR of reviewOpen
 	// and "PR-backed and not in reviewClosed", but reviewClosed alone feeds
 	// reviewDismissed (and through it defaultSessionWorkspaceView) — so adding
@@ -1804,8 +2460,17 @@ export function App(
 	// session (or the main session on first visit). A session-less PR workspace still
 	// opens Review. Declared after the wsKey reset effect above so the landing
 	// choice wins the same commit.
+	// Scalars derived from the route so the effect keys on exactly the values
+	// it reacts to (workspace id + explicit tab), not every route object.
+	const landingWsKey = route.view === "workspace" ? route.id : null;
+	const landingExplicitTab =
+		route.view === "workspace" ? (route.tab ?? null) : null;
 	useEffect(() => {
-		if (route.view !== "workspace" || !workspacesLoaded) return;
+		if (
+			landingWsKey === null ||
+			!workspaceLandingReady(workspacesLoaded, loading)
+		)
+			return;
 		// One-shot: closing the Review tab replaces the URL (dropping /review),
 		// which re-runs this effect — without the suppress it would immediately
 		// re-seed the default pane and reopen the tab just closed.
@@ -1813,7 +2478,9 @@ export function App(
 			suppressWsSeedRef.current = false;
 			return;
 		}
-		const p = workspaces.find((x) => x.id === route.id) || null;
+		// Ref read: the trigger set is the route + readiness, and the freshest
+		// committed list is what a landing decision wants anyway.
+		const p = workspacesRef.current.find((x) => x.id === landingWsKey) || null;
 		// Default pane by workspace shape: ticket workspaces open on the
 		// Conversation; everything else — PR-backed included — lands in its
 		// main/last-open session. A PR workspace only defaults to Review when it
@@ -1824,11 +2491,11 @@ export function App(
 		// no session to land in. Explicit /conversation-/video URLs still win.
 		const hasSession = !!pickLandingSession(
 			sessionsRef.current,
-			route.id,
-			getWorkspaceLastSession(route.id),
+			landingWsKey,
+			getWorkspaceLastSession(landingWsKey),
 		);
 		const tab =
-			route.tab ??
+			landingExplicitTab ??
 			(hasSession
 				? null
 				: p?.plainThreadId
@@ -1836,7 +2503,7 @@ export function App(
 					: p?.externalRefs?.some((r) => refWebPanel(r))
 						? "video"
 						: null);
-		const key = route.id;
+		const key = landingWsKey;
 		// Landing in the workspace's first session keeps the full session chrome —
 		// including the right sidebar — around the foregrounded pane (wsKey is
 		// unchanged, so the view-tab reset effect doesn't fire). Session-less
@@ -1910,10 +2577,12 @@ export function App(
 				setActiveViewTab("review");
 			}
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [
-		route.view === "workspace" ? `${route.id}:${route.tab ?? ""}` : null,
+		landingWsKey,
+		landingExplicitTab,
 		workspacesLoaded,
+		loading,
+		setActiveViewTab,
 	]);
 	// A PR reference (`/pr/<repo>/<number>`) that GitHub doesn't know: the
 	// number came out of prose, so it can be a typo or an invention.
@@ -1923,6 +2592,9 @@ export function App(
 	// The old components keep rendering as the in-flight/failure fallback, so
 	// a failed resolve degrades to the previous behavior instead of a dead
 	// link. Bare /reviews goes home — the sidebar bands are the inbox now.
+	// Read through an effect event so the redirect doesn't re-run when the
+	// refresh closure moves.
+	const redirectRefreshWorkspaces = useEffectEvent(refreshWorkspaces);
 	useEffect(() => {
 		let stale = false;
 		const toWorkspace = (
@@ -1930,11 +2602,35 @@ export function App(
 			tab: "review" | "conversation",
 		) => {
 			if (stale) return;
-			refreshWorkspaces();
+			redirectRefreshWorkspaces();
 			navigate({ view: "workspace", id: workspaceId, tab }, { replace: true });
 		};
 		if (route.view === "pr") {
 			setPrRefMissing(false);
+			// A deep link (or a fallback that landed here) whose workspace this
+			// client already knows resolves without the round-trip, so the review
+			// opens rather than the page spending the wait as a spinner.
+			const known = findPrWorkspaceId(
+				workspacesRef.current,
+				sessionsRef.current,
+				{
+					repo: route.repo,
+					...(route.number !== undefined ? { number: route.number } : {}),
+					...(route.branch !== undefined ? { branch: route.branch } : {}),
+				},
+			);
+			if (known) {
+				focusReviewPr({
+					repo: route.repo,
+					branch: route.branch,
+					number: route.number,
+					workspaceId: known,
+				});
+				toWorkspace(known, "review");
+				return () => {
+					stale = true;
+				};
+			}
 			resolveWorkspaceApi({
 				pr: {
 					repo: route.repo,
@@ -1988,7 +2684,6 @@ export function App(
 		return () => {
 			stale = true;
 		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [route, loading]);
 	// The current code session's Review pane, surfaced as a leftmost view-tab in
 	// the top strip (siblings share the worktree/PR, so one Review tab suffices).
@@ -2053,7 +2748,7 @@ export function App(
 		void ensureFeedMeta().then(() => setFeedMetaTick((t) => t + 1));
 	}, []);
 	// The Video view-tab: the web panel of the workspace's (or open session's)
-	// feed-item ExternalRef — e.g. the Tella video embed (the feeds design).
+	// feed-item ExternalRef, e.g. a video embed (the feeds design).
 	// On a session route routeWorkspace is null, so fall back to the open session's
 	// workspace record — otherwise the tab vanishes as soon as a session exists.
 	const videoWorkspace =
@@ -2167,9 +2862,8 @@ export function App(
 					},
 				]
 			: [];
-	// Review leftmost, then Conversation, Preview environment, Preview, Portal,
-	// Assets, Terminal, and the sub-agent drill-in last (it comes and goes with
-	// the session).
+	// This list is only the fallback for tabs with no saved position. Once a tab
+	// opens, the mixed session-and-pane order below keeps it at the right edge.
 	// The workspace home joins these once the strip would otherwise be empty —
 	// see `homeViewTabs`, which needs the session tabs to know that.
 	const paneViewTabs: ViewTab[] = [
@@ -2419,18 +3113,15 @@ export function App(
 	// same tab's breadcrumb instead of opening a second one. Stable identity:
 	// it reaches the memoized transcript as a prop, and the tab is never
 	// persisted, so it needs nothing from the render scope.
-	const openSubagent = React.useCallback(
-		(sessionId: string, agentId: string, label: string) => {
+	const openSubagent = (sessionId: string, agentId: string, label: string) => {
 			setSubagentTabs((prev) => {
 				const stack = prev[sessionId] ?? NO_SUBAGENTS;
 				if (stack.some((s) => s.agentId === agentId)) return prev;
 				return { ...prev, [sessionId]: [...stack, { agentId, label }] };
 			});
 			setActiveViewTabState("subagent");
-		},
-		[],
-	);
-	const popSubagent = React.useCallback((sessionId: string) => {
+		};
+	const popSubagent = (sessionId: string) => {
 		setSubagentTabs((prev) => {
 			const stack = prev[sessionId];
 			if (!stack?.length) return prev;
@@ -2439,8 +3130,8 @@ export function App(
 			else next[sessionId] = stack.slice(0, -1);
 			return next;
 		});
-	}, []);
-	const closeSubagentTab = React.useCallback((sessionId: string) => {
+	};
+	const closeSubagentTab = (sessionId: string) => {
 		setSubagentTabs((prev) => {
 			if (!prev[sessionId]) return prev;
 			const next = { ...prev };
@@ -2450,14 +3141,13 @@ export function App(
 		// Same commit as the close, like every other closeXTab — the effect
 		// below only has to catch the session-switch case.
 		setActiveViewTabState((cur) => (cur === "subagent" ? null : cur));
-	}, []);
+	};
 	// The pane read the sub-agent's own name off its transcript — a link carries
 	// ids only, so this is what turns "Sub-agent" into a real label. It fills in
 	// the placeholder and nothing else: a drill-in arrives already named by the
 	// Task call it came from, and that name shouldn't change under the reader a
 	// second after they opened it.
-	const nameSubagent = React.useCallback(
-		(sessionId: string, agentId: string, label: string) => {
+	const nameSubagent = (sessionId: string, agentId: string, label: string) => {
 			setSubagentTabs((prev) => {
 				const stack = prev[sessionId];
 				const at = stack?.findIndex((s) => s.agentId === agentId) ?? -1;
@@ -2467,9 +3157,7 @@ export function App(
 				next[at] = { agentId, label };
 				return { ...prev, [sessionId]: next };
 			});
-		},
-		[],
-	);
+		};
 	// A sub-agent named in the URL after the first load — a Back/Forward across a
 	// drill-in, or an in-app link into one. The initial load is seeded with the
 	// state itself, so this only has to catch the later arrivals.
@@ -2477,7 +3165,9 @@ export function App(
 		route.view === "session" && route.subagent?.length
 			? `${route.id}${subagentSuffix(route.subagent)}`
 			: null;
-	useEffect(() => {
+	// The sync reads the live route through an effect event, so the trigger
+	// stays the derived sub-agent key rather than every route field.
+	const syncRouteSubagents = useEffectEvent(() => {
 		if (route.view !== "session" || !route.subagent?.length) return;
 		const ids = route.subagent;
 		setSubagentTabs((prev) => {
@@ -2499,6 +3189,10 @@ export function App(
 			};
 		});
 		setActiveViewTabState("subagent");
+	});
+	useEffect(() => {
+		if (!routeSubagentKey) return;
+		syncRouteSubagents();
 	}, [routeSubagentKey]);
 	// Dropping the last breadcrumb (or switching to a session with no sub-agent
 	// open) leaves nothing to show — fall back to the session itself. Read from
@@ -2515,10 +3209,9 @@ export function App(
 	// the workspace carries several PRs — each has its own row, and without it
 	// they'd all land on the primary. Falls back to the legacy preview routes if
 	// the resolve fails, so a click is never dead.
-	const openPrWorkspace = React.useCallback(
-		async (item: ReviewQueueItem) => {
-			try {
-				const { workspaceId } = await resolveWorkspaceApi({
+	const openPrWorkspace = async (item: ReviewQueueItem) => {
+			await (async () => {
+const { workspaceId } = await resolveWorkspaceApi({
 					pr: {
 						repo: item.pr.repo,
 						number: item.pr.number,
@@ -2526,7 +3219,9 @@ export function App(
 						title: item.pr.title,
 					},
 				});
-				refreshWorkspaces();
+				// The resolved workspace can be session-less, so wait for the active
+				// workspace payload to carry it before routing to its Review pane.
+				await refreshWorkspaces();
 				focusReviewPr({
 					repo: item.pr.repo,
 					branch: item.pr.branch,
@@ -2534,18 +3229,15 @@ export function App(
 					workspaceId,
 				});
 				navigate({ view: "workspace", id: workspaceId, tab: "review" });
-			} catch {
-				if (item.sessionId) navigate({ view: "reviews", id: item.sessionId });
+})().catch(async () => {
+if (item.sessionId) navigate({ view: "reviews", id: item.sessionId });
 				else
 					navigate({ view: "pr", repo: item.pr.repo, branch: item.pr.branch });
-			}
-		},
-		[refreshWorkspaces, focusReviewPr],
-	);
-	const openPrReview = React.useCallback(
-		async (pr: OpenPr) => {
-			try {
-				const { workspaceId } = await resolveWorkspaceApi({
+});
+		};
+	const openPrReview = async (pr: OpenPr) => {
+			await (async () => {
+const { workspaceId } = await resolveWorkspaceApi({
 					pr: {
 						repo: pr.repo,
 						number: pr.number,
@@ -2553,7 +3245,7 @@ export function App(
 						title: pr.title,
 					},
 				});
-				refreshWorkspaces();
+				await refreshWorkspaces();
 				focusReviewPr({
 					repo: pr.repo,
 					branch: pr.branch,
@@ -2561,18 +3253,15 @@ export function App(
 					workspaceId,
 				});
 				navigate({ view: "workspace", id: workspaceId, tab: "review" });
-			} catch {
-				navigate({ view: "pr", repo: pr.repo, branch: pr.branch });
-			}
-		},
-		[refreshWorkspaces, focusReviewPr],
-	);
-	// Sidebar feed row (Tella video, …) → the item's ONE workspace, its web
+})().catch(async () => {
+navigate({ view: "pr", repo: pr.repo, branch: pr.branch });
+});
+		};
+	// Sidebar feed row (a video, a dashboard, …) to the item's ONE workspace, its web
 	// panel foregrounded (the feeds design).
-	const openFeedItemWorkspace = React.useCallback(
-		async (feed: FeedDescriptor, item: FeedItem) => {
-			try {
-				const { workspaceId } = await resolveWorkspaceApi({
+	const openFeedItemWorkspace = async (feed: FeedDescriptor, item: FeedItem) => {
+			await (async () => {
+const { workspaceId } = await resolveWorkspaceApi({
 					externalRef: {
 						kind: feed.refKind,
 						id: item.id,
@@ -2583,49 +3272,48 @@ export function App(
 				});
 				refreshWorkspaces();
 				navigate({ view: "workspace", id: workspaceId, tab: "video" });
-			} catch (e) {
-				console.error("Feed item open failed:", e);
-			}
-		},
-		[refreshWorkspaces],
-	);
+})().catch(async (e) => {
+console.error("Feed item open failed:", e);
+});
+		};
 	// Sidebar Support row → the ticket's ONE workspace, Conversation tab. The
 	// row's title rides along as the workspace-name hint (no Plain round-trip).
-	const openTicketWorkspace = React.useCallback(
-		async (t: SupportThread) => {
-			try {
-				const { workspaceId } = await resolveWorkspaceApi({
+	const openTicketWorkspace = async (t: SupportThread) => {
+			await (async () => {
+const { workspaceId } = await resolveWorkspaceApi({
 					plainThreadId: t.id,
 					name:
 						t.title || t.customer.name || t.customer.email || undefined,
 				});
 				refreshWorkspaces();
 				navigate({ view: "workspace", id: workspaceId, tab: "conversation" });
-			} catch {
-				navigate({ view: "support", threadId: t.id });
-			}
-		},
-		[refreshWorkspaces],
-	);
+})().catch(async () => {
+navigate({ view: "support", threadId: t.id });
+});
+		};
 	// Open a session's Review tab from the sidebar: select it and foreground its
 	// workspace's Review once it lands (pendingReviewOpen survives the
 	// workspace-change reset).
-	const openReviewForSession = React.useCallback((session: UnifiedSession) => {
+	const openReviewForSession = (session: UnifiedSession) => {
 		const key = wsKeyFor(session);
 		if (!key) return;
 		setReviewOpen((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
 		setPendingReviewOpen(key);
 		navigate({ view: "session", id: session.id });
-	}, []);
+	};
+	useLayoutEffect(() => {
 	currentSessionRef.current = currentSession;
+	});
 
 	// Mark the open session read up to its latest activity — both when it's first
 	// opened and as new activity streams in while it stays open — so the sidebar's
 	// unread flag clears for whatever you're currently looking at.
+	const currentSessionId = currentSession?.id;
+	const currentSessionActivity = currentSession?.lastActivity;
 	useEffect(() => {
-		if (currentSession)
-			markRead(currentSession.id, currentSession.lastActivity);
-	}, [currentSession?.id, currentSession?.lastActivity]);
+		if (currentSessionId && currentSessionActivity !== undefined)
+			markRead(currentSessionId, currentSessionActivity);
+	}, [currentSessionId, currentSessionActivity]);
 
 	// The tab strip is scoped to the open session's workspace: its sibling sessions
 	// (same workspaceId), oldest first. Sessions with no workspace (slack/linear
@@ -2649,15 +3337,16 @@ export function App(
 			activeViewTab === "video")
 			? workspacePanePath(activeWorkspaceId, activeViewTab)
 			: null;
-	copyLinkPathRef.current =
+	const copyLinkPath =
 		activeWorkspacePane ??
 		(route.view === "session" && currentSession
 			? sessionPath(currentSession) + openSubagentPath
-			: route.view === "workspace"
+			: route.view === "workspace" || route.view === "pr"
 				? routePath(route)
-				: route.view === "pr"
-					? routePath(route)
-					: null);
+				: null);
+	useLayoutEffect(() => {
+		copyLinkPathRef.current = copyLinkPath;
+	});
 
 	// Canonicalize the open session's URL to /workspace/<wsId>/session/<sessionId> once
 	// its workspace is known (replaceState: same history depth, so Back and the
@@ -2669,8 +3358,11 @@ export function App(
 	useEffect(() => {
 		if (route.view !== "session" || !currentSession) return;
 		// Remember the open session as its workspace's landing tab, so re-entering
-		// the workspace (sidebar, bare /workspace/<id> URL) returns here.
-		if (activeWorkspaceId) saveWorkspaceLastSession(activeWorkspaceId, route.id);
+		// the workspace (sidebar, bare /workspace/<id> URL) returns here. A worker
+		// session is not a tab (see `viewingWorker`), so it never becomes the
+		// workspace's landing spot — re-entering lands on the session that spawned it.
+		if (activeWorkspaceId && !currentSession.parentSessionId)
+			saveWorkspaceLastSession(activeWorkspaceId, route.id);
 		const canonical =
 			activeWorkspacePane ??
 			((activeWorkspaceId
@@ -2688,16 +3380,27 @@ export function App(
 	// viewing (e.g. opened from Archived), which keeps its tab.
 	const liveTab = (s: UnifiedSession) =>
 		!s.archived || s.id === currentSession?.id;
+	/**
+	 * A worker session (one another session spawned through create_session) is a
+	 * drill-in, not a tab. Tabs are what a person opened; nobody opened this one.
+	 * It used to claim a temporary tab while you were inside it, so the strip grew
+	 * a tab on the way in and lost it on the way out, and what it showed was no
+	 * longer the workspace. While a worker is open the strip stays out of the way
+	 * entirely and the header breadcrumb (repo > session > worker) is what says
+	 * where you are and how to get back up.
+	 */
+	const viewingWorker = !!currentSession?.parentSessionId;
 	// The strip's natural order (createdAt asc), before any user reordering.
 	const naturalSessions: UnifiedSession[] = activeWorkspaceId
 		? sessions
 				.filter(
 					(s) =>
 						liveTab(s) &&
+						!hiddenEmptySessionIds.has(s.id) &&
 						s.workspaceId === activeWorkspaceId &&
-						// Workers stay behind their parent until explicitly opened from the
-						// header's worker menu. The selected worker then gets a temporary tab.
-						(!s.parentSessionId || s.id === currentSession?.id),
+						// Workers never take a tab — they are reached from the header's
+						// worker menu and read as a level below their parent.
+						!s.parentSessionId,
 				)
 				.sort(byCreated)
 		: currentSession?.worktreeDir?.includes("/worktrees/")
@@ -2705,8 +3408,8 @@ export function App(
 					.filter(
 						(s) =>
 							liveTab(s) &&
-							s.worktreeDir === currentSession.worktreeDir &&
-								(!s.parentSessionId || s.id === currentSession?.id),
+							!hiddenEmptySessionIds.has(s.id) &&
+							s.worktreeDir === currentSession.worktreeDir && !s.parentSessionId,
 					)
 					.sort(byCreated)
 			: currentSession
@@ -2732,6 +3435,11 @@ export function App(
 			.map((id) => byId.get(id))
 			.filter((s): s is UnifiedSession => !!s);
 	})();
+	// An untouched session is the workspace's reusable draft tab. While it
+	// exists the + disappears, and shortcut/menu creates focus this tab instead.
+	const emptyWorkspaceSession = workspaceSessions.find(
+		(session) => session.source === "opensession" && sessionNeverRan(session),
+	);
 	// This workspace's closed sessions, fetched scoped rather than pulled out of
 	// the whole archived index (which the app doesn't hold outside Archived).
 	// The live tab count is the refetch trigger: an archive, a restore and a new
@@ -2781,6 +3489,18 @@ export function App(
 	const stripTabIds = tabOrderKey
 		? applyTabOrder(tabOrderKey, naturalStripTabIds)
 		: naturalStripTabIds;
+	const previousStripRef = useRef<{ key: string; ids: string[] } | null>(null);
+	useLayoutEffect(() => {
+		const previous = previousStripRef.current;
+		if (!tabOrderKey || previous?.key !== tabOrderKey) {
+			previousStripRef.current = { key: tabOrderKey, ids: stripTabIds };
+			return;
+		}
+		const appended = appendNewTabs(previous.ids, stripTabIds);
+		previousStripRef.current = { key: tabOrderKey, ids: appended };
+		if (appended.some((id, index) => id !== stripTabIds[index]))
+			saveTabOrder(tabOrderKey, appended);
+	}, [tabOrderKey, stripTabIds]);
 	// Teammates per tab, your own devices removed and one entry per person, so
 	// the strip can say WHICH session someone is in — the sidebar's workspace
 	// faces only say they are in this workspace somewhere.
@@ -2798,7 +3518,19 @@ export function App(
 	// The split projected onto the tabs that exist right now. Null once either
 	// bar runs out of tabs — that's what collapses the strip back to one bar.
 	const tabSplit = isPhone ? null : resolveSplit(storedTabSplit, stripTabIds);
-	const activeTabSplit = currentSession ? tabSplit : null;
+	// A worker fills the pane on its own: it is not in the strip, so it is not in
+	// either column of a split either. The split is kept, not cleared — going back
+	// up to the parent restores it.
+	const activeTabSplit = currentSession && !viewingWorker ? tabSplit : null;
+	const tabStripVisible = shouldShowTabStrip(
+		stripTabIds.length,
+		!!activeTabSplit,
+		!!viewingWorker,
+	);
+	const deskFabPosition = useDeskFabPosition(
+		!isPhone && !activeViewTabShown,
+		`${focusedTopTabId ?? ""}:${activeTabSplit?.rightActive ?? ""}:${activeTabSplit?.ratio ?? ""}`,
+	);
 	const toStoredSplit = (split: ResolvedSplit): TabSplit => ({
 		right: split.right,
 		leftActive: split.leftActive,
@@ -2967,10 +3699,7 @@ export function App(
 				showHistory={side !== "left"}
 				colors={tabColors}
 				viewers={tabViewers}
-				onSelect={(s) => {
-					setActiveViewTab(null);
-					navigate({ view: "session", id: s.id });
-				}}
+				onSelect={selectSessionTab}
 				onSetColor={(key, color) => setTabColors(setTabColor(key, color))}
 				tabOrder={stripTabIds}
 				onReorderTabs={(ids) => saveTabOrder(tabOrderKey, mergeBarOrder(ids))}
@@ -3012,13 +3741,20 @@ export function App(
 							dropPaneUrlSuffix(closingTab);
 					}
 				}}
-				onNewSession={(mode) => handleNewSession(mode, side)}
+				onNewSession={
+					barSessions.some((session) => session.desk) || emptyWorkspaceSession
+						? undefined
+						: (mode, origin) => handleNewSession(mode, side, origin)
+				}
+				emptySessionId={emptyWorkspaceSession?.id}
+				morphingSessionId={newTabMorph?.id}
+				morphOrigin={newTabMorph?.origin}
 				onRename={async (id, title) => {
-					try {
-						await renameSessionApi(id, title);
-					} catch (e) {
-						console.error("Rename failed:", e);
-					}
+					await (async () => {
+await renameSessionApi(id, title);
+})().catch(async (e) => {
+console.error("Rename failed:", e);
+});
 					refresh();
 				}}
 				onClose={closeSession}
@@ -3034,11 +3770,11 @@ export function App(
 	/** Un-archive a closed session, back among the workspace's tabs. Shared by
 	 *  the strip's history button and the header ⋯ menu that stands in for it. */
 	async function restoreSession(s: UnifiedSession) {
-		try {
-			await archiveSessionApi(s.id, false);
-		} catch (e) {
-			console.error("Restore failed:", e);
-		}
+		await (async () => {
+await archiveSessionApi(s.id, false);
+})().catch(async (e) => {
+console.error("Restore failed:", e);
+});
 		refresh();
 	}
 	const archivedSessions: UnifiedSession[] = workspaceArchivedSessions({
@@ -3049,56 +3785,131 @@ export function App(
 		excludeId: currentSession?.id,
 	});
 
+	// A create can still be in flight when its blank tab is left. Remember that
+	// local id so the response is discarded and its just-created file removed.
+	const abandonedSessionCreatesRef = useRef<Set<string>>(new Set());
+
 	async function createNewSessionFrom(
 		src: UnifiedSession,
 		mode: "share" | "stack" | "ask",
+		id: string,
+		morphOrigin?: NewTabMorphOrigin,
+		persistedSource: Promise<UnifiedSession> = Promise.resolve(src),
 	): Promise<string> {
-		const { id, session } = await newSessionApi(src.id, getCurrentUser(), mode);
 		const now = new Date().toISOString();
-		// Render the real tab from the endpoint response immediately. The fallback
-		// keeps the interaction working against a server that returns only the id.
-		inject(
-			session ?? {
-				...src,
-				id,
-				source: "opensession",
-				claudeSessionId: null,
-				codexThreadId: undefined,
-				title: "New session",
-				createdAt: now,
-				lastActivity: now,
-				isRunning: false,
-				transcriptPath: null,
-				startedBy: getCurrentUser(),
-				archived: false,
-				waitingForInput: false,
-				queuedCount: 0,
-				prUrl: undefined,
-				prState: undefined,
-				automation: undefined,
-				plainThreadId: undefined,
-				goal: undefined,
-				loop: undefined,
-				...(mode === "ask"
-					? {
-							branch: null,
-							worktreeDir: null,
-							mode: "ask" as const,
-						}
-					: {}),
-			},
-			{ sticky: true },
-		);
-		setPendingSessionId(id);
-		setPendingNewWorkspace(false);
+		const user = getCurrentUser();
+		const draft: UnifiedSession = {
+			...src,
+			id,
+			source: "opensession",
+			claudeSessionId: null,
+			codexThreadId: undefined,
+			title: "New session",
+			createdAt: now,
+			lastActivity: now,
+			isRunning: false,
+			// This is a blank local shell, regardless of whether the source tab ran.
+			// Inheriting `ran` makes the viewer hydrate a transcript that cannot exist.
+			ran: false,
+			transcriptPath: null,
+			startedBy: user,
+			archived: false,
+			waitingForInput: false,
+			queuedCount: 0,
+			prUrl: undefined,
+			prState: undefined,
+			automation: undefined,
+			plainThreadId: undefined,
+			goal: undefined,
+			loop: undefined,
+			// This sibling reuses an already-ready workspace. The disconnected pane
+			// holds messages locally until the server has persisted the session.
+			workspacePreparing: false,
+			...(mode === "ask"
+				? {
+						branch: null,
+						worktreeDir: null,
+						mode: "ask" as const,
+					}
+				: {}),
+		};
+		// Commit the local shell before changing the route. Without this boundary,
+		// the route can render against the previous list and keep the old session's
+		// conversation visible until the create response arrives.
+		if (newTabMorphTimer.current) clearTimeout(newTabMorphTimer.current);
+		flushSync(() => {
+			inject(draft, { sticky: true });
+			setOptimisticSession(draft);
+			setPendingSessionId(id);
+			setPendingNewWorkspace(false);
+			setNewTabMorph(morphOrigin ? { id, origin: morphOrigin } : null);
+		});
+		if (morphOrigin)
+			newTabMorphTimer.current = setTimeout(() => {
+				setNewTabMorph((current) => (current?.id === id ? null : current));
+				newTabMorphTimer.current = undefined;
+			}, 260);
 		clearTimeout(pendingTimer.current);
 		pendingTimer.current = setTimeout(() => {
 			setPendingSessionId(null);
+			setOptimisticSession((pending) => (pending?.id === id ? null : pending));
 			unstick(id);
 		}, 30_000);
-		refresh();
 		navigate({ view: "session", id });
-		return id;
+
+		return await (async () => {
+const source = await persistedSource;
+			const created = await newSessionApi(source.id, user, mode, id);
+			const createdId = created.id;
+			if (abandonedSessionCreatesRef.current.delete(id)) {
+				unstick(id);
+				remove(id);
+				setPendingSessionId((pending) => (pending === id ? null : pending));
+				setOptimisticSession((pending) => (pending?.id === id ? null : pending));
+				// A different id belongs to another window's reusable tab. Only delete
+				// the session this request actually created.
+				if (createdId === id)
+					await deleteSessionApi(createdId, false).catch((error) =>
+						console.error("Abandoned empty session cleanup failed:", error),
+					);
+				refresh();
+				return createdId;
+			}
+			if (createdId !== id) {
+				// Another window won the one-empty-tab race. Drop this optimistic
+				// shell and focus the reusable tab the server returned.
+				unstick(id);
+				remove(id);
+			}
+			inject(
+				created.session ?? {
+					...draft,
+					id: createdId,
+					workspacePreparing: false,
+				},
+				{ sticky: true },
+			);
+			clearTimeout(pendingTimer.current);
+			setPendingSessionId((pending) => (pending === id ? null : pending));
+			setOptimisticSession((pending) => (pending?.id === id ? null : pending));
+			if (createdId !== id) navigate({ view: "session", id: createdId });
+			refresh();
+			return createdId;
+})().catch(async (error) => {
+clearTimeout(pendingTimer.current);
+			setPendingSessionId((pending) => (pending === id ? null : pending));
+			setOptimisticSession((pending) => (pending?.id === id ? null : pending));
+			unstick(id);
+			remove(id);
+			if (routeRef.current.view === "session" && routeRef.current.id === id) {
+				if (src.id.startsWith("workspace:") && src.workspaceId) {
+					navigate({ view: "workspace", id: src.workspaceId, tab: "review" });
+				} else {
+					navigate({ view: "session", id: src.id });
+				}
+			}
+			throw error;
+});
 	}
 
 	function openNewSessionInWorkspace(
@@ -3131,44 +3942,94 @@ export function App(
 
 	// Open a real sibling tab immediately. Its first prompt starts the engine, so
 	// the lightweight create does no model work and keeps the interaction quick.
+	const siblingCreateRef = useRef<string | null>(null);
 	const handleNewSession = async (
 		mode: "share" | "stack" | "ask",
 		side: SplitSide | null = null,
+		morphOrigin?: NewTabMorphOrigin,
 	) => {
-		const src = currentSession || mainSession(naturalSessions);
-		if (!src) {
-			// "+" on an empty workspace (session-less route): no sibling to clone —
-			// open the new-session palette scoped to it, same as onOpenWorkspace.
-			if (route.view === "workspace") {
-				const p = workspaces.find((x) => x.id === route.id);
-				setPalette({
-					open: true,
-					workspaceId: route.id,
-					repo: p?.repo,
-					branch: p?.branch,
-					// Feed workspaces (externalRefs, no repo) default new sessions
-					// to Scratch — repo-less, like their existing sessions.
-					...(p?.externalRefs?.length && !p?.repo
-						? { mode: "scratch" as const }
-						: {}),
-				});
-			}
+		if (emptyWorkspaceSession) {
+			setActiveViewTab(null);
+			navigate({ view: "session", id: emptyWorkspaceSession.id });
 			return;
 		}
-		try {
-			const id = await createNewSessionFrom(src, mode);
+
+		const openSessionlessWorkspaceComposer = () => {
+			if (route.view !== "workspace") return;
+			const workspace = workspaces.find((item) => item.id === route.id);
+			setPalette({
+				open: true,
+				workspaceId: route.id,
+				repo: workspace?.repo,
+				branch: workspace?.branch,
+				// Feed workspaces without a repo start in Scratch.
+				...(workspace?.externalRefs?.length && !workspace.repo
+					? { mode: "scratch" as const }
+					: {}),
+			});
+		};
+
+		let src = newSessionSource(
+			currentSession,
+			naturalSessions,
+			archivedSessions,
+		);
+		let persistedSource: Promise<UnifiedSession> | undefined;
+		if (!src && activeWorkspaceId && wsRecord) {
+			// Paint and route the local tab now. The cold archived-session lookup can
+			// take several seconds, but it is needed only when the server persists it.
+			src = workspaceSessionSeed(wsRecord, getCurrentUser());
+			persistedSource = (async () => {
+				await (async () => {
+const archived = await fetchWorkspaceArchivedSessions(activeWorkspaceId);
+					const source = newSessionSource(null, [], archived);
+					if (source) return source;
+})().catch(async () => {
+// Fall through to the existing session-less composer below.
+});
+				throw new MissingWorkspaceSessionSourceError();
+			})();
+		}
+		if (!src) {
+			openSessionlessWorkspaceComposer();
+			return;
+		}
+		if (siblingCreateRef.current) return;
+		// The new session is the tab the + opens. Clear Review (or any other pane)
+		// before routing so its persisted workspace suffix cannot keep winning.
+		setActiveViewTab(null);
+		const optimisticId = newClientSessionId();
+		siblingCreateRef.current = optimisticId;
+		await (async () => {
+const id = await createNewSessionFrom(
+				src,
+				mode,
+				optimisticId,
+				morphOrigin,
+				persistedSource,
+			);
 			if (side === "right" && tabOrderKey && activeTabSplit)
 				saveTabSplit(tabOrderKey, {
 					...toStoredSplit(activeTabSplit),
 					right: [...activeTabSplit.right, id],
 					rightActive: id,
 				});
-		} catch (e) {
-			console.error("New session failed:", e);
-		}
+})().catch(async (error) => {
+if (error instanceof MissingWorkspaceSessionSourceError) {
+				openSessionlessWorkspaceComposer();
+			} else {
+				console.error("New session failed:", error);
+				showToast("Couldn't create a new tab.");
+			}
+}).finally(async () => {
+if (siblingCreateRef.current === optimisticId)
+				siblingCreateRef.current = null;
+});
 	};
 	const handleNewSessionRef = useRef(handleNewSession);
+	useLayoutEffect(() => {
 	handleNewSessionRef.current = handleNewSession;
+	});
 
 	// Lanes are per-user (lib/lanes.ts): setting one moves the row in YOUR
 	// sidebar only, so teammates can hold the same workspace in their own
@@ -3211,8 +4072,15 @@ export function App(
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [runningCloseConfirmation]);
-	const rememberArchived = useCallback((ids: string[]) => {
+	const rememberArchived = (ids: string[]) => {
 		if (!ids.length) return;
+		// Do not let a successful archive remain the PWA's cold-launch target if
+		// iOS suspends it before the route change paints. A navigation to another
+		// session writes that newer id back through the route effect above.
+		if (ids.includes(localStorage.getItem("opensession-last-session") || "")) {
+			localStorage.removeItem("opensession-last-session");
+			localStorage.removeItem("opensession-last-session-user");
+		}
 		setArchiveUndo((prev) =>
 			[
 				// An id lives in one entry only: archiving a session again moves it to
@@ -3225,25 +4093,28 @@ export function App(
 				// An undo affordance, not a history.
 				.slice(-10),
 		);
-	}, []);
+	};
 
 	// Close a tab = archive the session: it leaves the strip and the active list,
 	// but stays recoverable from Archived. An empty session that never ran has
 	// nothing to recover, so it's deleted outright instead of cluttering
 	// Archived. The local list updates before the request returns so closing
 	// feels instant. Shared by the tab ×, the tab context menu, and ⌘W.
-	const closeSessionNow = async (s: UnifiedSession) => {
+	const closeSessionNow = async (
+		s: UnifiedSession,
+		preferredNext?: UnifiedSession,
+	) => {
 		const neverRan =
-			s.source === "opensession" &&
-			!s.ran &&
-			!s.isRunning &&
-			!s.queuedCount;
+			s.source === "opensession" && sessionNeverRan(s);
+		const pendingCreate = neverRan && s.id === pendingSessionId;
 		const wasOpen = currentSession?.id === s.id;
 		// No split bookkeeping here: a closed tab stops being live, so the split
 		// resolves without it, and collapses on its own once a bar is emptied.
 		// Leaving the id in the record means restoring the session later puts it
 		// back in the bar it was closed from.
-		const next = wasOpen ? workspaceSessions.find((c) => c.id !== s.id) : null;
+		const next = wasOpen
+			? preferredNext ?? workspaceSessions.find((c) => c.id !== s.id)
+			: null;
 		// Closing the last session doesn't have to conjure a new one: a workspace
 		// pane (Review, Conversation, Video) renders without a session, so the
 		// strip is left holding just that tab. The foregrounded pane wins, so
@@ -3255,6 +4126,15 @@ export function App(
 					null)
 				: null;
 		const needsNewSessionComposer = wasOpen && !next && !survivingPane;
+		if (pendingCreate) {
+			// The create response owns cleanup from here. Mark it abandoned before
+			// removing the optimistic shell so a late response cannot resurrect it.
+			abandonedSessionCreatesRef.current.add(s.id);
+			clearTimeout(pendingTimer.current);
+			setPendingSessionId(null);
+			setOptimisticSession(null);
+			unstick(s.id);
+		}
 		if (neverRan) {
 			remove(s.id);
 		} else {
@@ -3271,15 +4151,20 @@ export function App(
 			}
 		}
 		try {
-			if (neverRan) await deleteSessionApi(s.id, false);
-			else {
-				const { stoppedRun } = await archiveSessionApi(s.id, true);
-				if (stoppedRun) showToast("Archived · stopped the running turn");
+			if (neverRan && !pendingCreate) await deleteSessionApi(s.id, false);
+			else if (!neverRan) {
+				await archiveSessionApi(s.id, true);
 				rememberArchived([s.id]);
 			}
 		} catch (e) {
 			console.error("Close failed:", e);
 			if (neverRan) {
+				setHiddenEmptySessionIds((hidden) => {
+					if (!hidden.has(s.id)) return hidden;
+					const next = new Set(hidden);
+					next.delete(s.id);
+					return next;
+				});
 				inject(s);
 			} else {
 				patch(s.id, { archived: false, archivedReason: undefined });
@@ -3308,8 +4193,27 @@ export function App(
 		confirmRunningCloses([session], onConfirm);
 	const closeSession = (s: UnifiedSession) =>
 		confirmRunningClose(s, () => void closeSessionNow(s));
+	const selectSessionTab = (next: UnifiedSession) => {
+		const empty =
+			currentSession &&
+			currentSession.id !== next.id &&
+			currentSession.source === "opensession" &&
+			sessionNeverRan(currentSession) &&
+			!hasDraft(`session:${currentSession.id}`)
+				? currentSession
+				: null;
+		setActiveViewTab(null);
+		if (!empty) {
+			navigate({ view: "session", id: next.id });
+			return;
+		}
+		setHiddenEmptySessionIds((hidden) => new Set(hidden).add(empty.id));
+		void closeSessionNow(empty, next);
+	};
 	const closeSessionRef = useRef(closeSession);
+	useLayoutEffect(() => {
 	closeSessionRef.current = closeSession;
+	});
 	// Bring archived sessions back. Optimistic like the archive paths: the local
 	// list flips first so it feels instant, and rolls back if the server refuses.
 	const unarchiveSessions = async (sessions: UnifiedSession[]): Promise<boolean> => {
@@ -3332,6 +4236,9 @@ export function App(
 	};
 	const unarchiveSession = (session: UnifiedSession) => unarchiveSessions([session]);
 
+	// Archiving stays quiet. The row disappearing confirms the action, and the
+	// app-wide undo shortcut restores the latest archived session or workspace.
+
 	// The newest undo entry that's still restorable, resolved against the live
 	// list: an entry whose sessions were unarchived elsewhere (or deleted) falls
 	// through to the one below it, so ⌘Z never no-ops on a ghost.
@@ -3351,7 +4258,9 @@ export function App(
 		return [];
 	})();
 	const restorableArchivedRef = useRef(restorableArchived);
+	useLayoutEffect(() => {
 	restorableArchivedRef.current = restorableArchived;
+	});
 
 	// ⌘Z (and the palette's "Reopen closed session"): undo the last archive and
 	// land on what came back. The entry is only dropped once the server agrees,
@@ -3372,7 +4281,9 @@ export function App(
 		navigate({ view: "session", id: sessions[0].id });
 	};
 	const reopenLastArchivedRef = useRef(reopenLastArchived);
+	useLayoutEffect(() => {
 	reopenLastArchivedRef.current = reopenLastArchived;
+	});
 
 	/**
 	 * Foreground a tab by its strip id — a session or a pane, since the strip
@@ -3412,7 +4323,9 @@ export function App(
 		return activateStripTab(id);
 	}
 	const tabNavRef = useRef({ stepStripTab, jumpStripTab });
+	useLayoutEffect(() => {
 	tabNavRef.current = { stepStripTab, jumpStripTab };
+	});
 
 	// ⌘⌥←/→ walk the workspace's tab strip (⌃⌥ on Chromium, which takes the ⌘⌥
 	// pair for its own tabs), and ⌥1…⌥9 jump straight to one. Both read the
@@ -3446,12 +4359,7 @@ export function App(
 					? Number(e.code.slice(5))
 					: 0;
 			if (!dir && !digit) return;
-			if (
-				document.querySelector(
-					".palette-backdrop, .composer-schedule-modal-backdrop, .session-delete-overlay",
-				)
-			)
-				return;
+			if (blockingOverlayOpen()) return;
 			// Only claim the keystroke once there is a tab to move to, so a
 			// workspace with no strip leaves the chord to whatever wants it.
 			const acted = dir
@@ -3497,7 +4405,7 @@ export function App(
 			} else if (matchesShortcut(e, "session-close")) {
 				e.preventDefault();
 				void closeSessionRef.current(s);
-			} else if (matchesShortcut(e, "session-new-sibling")) {
+			} else if (!s.desk && matchesShortcut(e, "session-new-sibling")) {
 				e.preventDefault();
 				void handleNewSessionRef.current("share");
 			}
@@ -3511,6 +4419,13 @@ export function App(
 		// the viewer relays a session_status on every (re)open, and re-stamping
 		// here reset the sidebar's elapsed ticker to zero on each session switch.
 		const prev = sessionsRef.current.find((s) => s.id === id);
+		// The watch handshake repeats the current state on every open. Avoid
+		// replacing a list row, and re-rendering its workspace, when it agrees.
+		if (
+			prev?.isRunning === isRunning &&
+			(isRunning ? !!prev.runStartedAt : !prev.runStartedAt)
+		)
+			return;
 		patch(id, {
 			isRunning,
 			runStartedAt: isRunning
@@ -3538,8 +4453,22 @@ export function App(
 					? "Pull requests"
 				: route.view === "new"
 					? "New session"
+					// A PR opened by number is on its way to a workspace. It brings no
+					// bar of its own while it resolves, so name it here instead of
+					// leaving the window with nothing to drag by.
+					: route.view === "pr" && route.number !== undefined
+						? `${repoLabel(route.repo)} #${route.number}`
 					: route.view === "workspace"
-						? routeWorkspace?.name || "Workspace"
+						? routeWorkspace
+							? [
+									routeWorkspace.repo
+										? repoLabel(routeWorkspace.repo)
+										: null,
+									routeWorkspace.name,
+								]
+									.filter(Boolean)
+									.join(" › ")
+							: "Workspace"
 						: "";
 
 	// Whether the bar is holding that name yet. It stays quiet while the page
@@ -3549,19 +4478,6 @@ export function App(
 	// open) reads true from the start and is labelled as it always was.
 	const titleHandedOver = useLargeTitleHandoff(topbarEl, topbarTitle);
 	const phoneTitleHandedOver = useLargeTitleHandoff(appHeaderEl, topbarTitle);
-
-	// Mobile top-bar brand: logo only, as the settings trigger. On desktop the
-	// avatar in the chrome row plays that part instead, so the top stays just
-	// the title + the collapse toggle.
-	const brand = (
-		<div className={APP_BRAND}>
-			<SettingsButton
-				variant="brand"
-				onOpenSettings={() => navigate({ view: "settings" })}
-				connected={connected}
-			/>
-		</div>
-	);
 
 	// The "toggle left sidebar" panel glyph — a framed rectangle with a divider
 	// marking the collapsible left column. Reused by the brand-row collapse button
@@ -3585,16 +4501,36 @@ export function App(
 		},
 		...(currentSession
 			? [
-					{
-						id: "new-session-workspace",
-						label: "New session in this workspace",
-						description: "Share the current workspace and worktree",
-						category: "Actions" as const,
-						keywords: ["tab", "conversation", "sibling"],
-						shortcut: shortcutPrimaryKeys("session-new-sibling") ?? undefined,
-						icon: <IconPlus size={18} />,
-						run: () => void handleNewSession("share"),
-					},
+					...(!currentSession.desk
+						? [
+								{
+									id: "new-session-workspace",
+									label: "New session in this workspace",
+									description: "Share the current workspace and worktree",
+									category: "Actions" as const,
+									keywords: ["tab", "conversation", "sibling"],
+									shortcut:
+										shortcutPrimaryKeys("session-new-sibling") ?? undefined,
+									icon: <IconPlus size={18} />,
+									run: () => void handleNewSession("share"),
+								},
+							]
+						: []),
+					...(nextChatAvailable
+						? [
+								{
+									id: "next-unread-workspace",
+									label: "Next chat",
+									description: "Open the next chat, prioritizing work that needs attention",
+									category: "Navigate" as const,
+									keywords: ["next", "unread", "ready", "attention"],
+									shortcut:
+										shortcutPrimaryKeys("workspace-next-unread") ?? undefined,
+									icon: <IconChevronRight size={18} />,
+									run: () => nextChatRef.current(),
+								},
+							]
+						: []),
 					{
 						id: "copy-transcript",
 						label: "Copy conversation",
@@ -3644,7 +4580,7 @@ export function App(
 					},
 				]
 			: []),
-		...(copyLinkPathRef.current
+		...(copyLinkPath
 			? [
 					{
 						id: "copy-link",
@@ -3654,11 +4590,8 @@ export function App(
 						keywords: ["url", "share", "clipboard"],
 						shortcut: shortcutPrimaryKeys("session-copy-link") ?? undefined,
 						icon: <IconCopy size={18} />,
-						run: () => {
-							const path = copyLinkPathRef.current;
-							if (path)
-								copyToClipboard(absoluteLink(path), () => showToast("Link copied"));
-						},
+						run: () =>
+							copyToClipboard(absoluteLink(copyLinkPath), () => showToast("Link copied")),
 					},
 				]
 			: []),
@@ -3679,7 +4612,7 @@ export function App(
 			keywords: ["concierge", "assistant"],
 			shortcut: shortcutPrimaryKeys("desk") ?? undefined,
 			icon: <IconDesk size={18} />,
-			run: () => setDeskOpen(true),
+			run: () => setDeskOverlay({ open: true, origin: "center" }),
 		},
 		{
 			id: "toggle-sidebar",
@@ -3699,6 +4632,15 @@ export function App(
 			keywords: ["toggle", "theme", "appearance", "dark", "light"],
 			icon: <IconMoon size={18} />,
 			run: () => setThemePref(currentTheme === "dark" ? "light" : "dark"),
+		},
+		{
+			id: "system-theme",
+			label: "Use system appearance",
+			description: "Match your device's light or dark mode",
+			category: "Actions",
+			keywords: ["system", "automatic", "theme", "appearance"],
+			icon: <IconMoon size={18} />,
+			run: () => setThemePref("system"),
 		},
 		{
 			id: "prs",
@@ -3870,13 +4812,38 @@ export function App(
 		}
 		navigate({ view: "session", id });
 	};
+	// Rendered rows are the navigation order. Filters, grouping and collapsed
+	// sections all change that order, so backing session arrays cannot answer
+	// which chat is actually next on screen. Ready unread work stays the priority;
+	// when none exists, continue from the selected chat instead.
+	const openNextChat = () => {
+		const sidebar = document.querySelector("[data-sidebar-list]");
+		const workspaceItems = Array.from(
+			sidebar?.querySelectorAll<HTMLButtonElement>("button[data-ws-row]") ?? [],
+		);
+		const renderedItems = Array.from(
+			sidebar?.querySelectorAll<HTMLButtonElement>("button[data-sidebar-row]") ??
+				[],
+		);
+		const next =
+			nextUnreadRenderedWorkspaceItem(workspaceItems) ??
+			nextRenderedSidebarChat(renderedItems);
+		if (!next) return;
+		next.scrollIntoView({ block: "nearest" });
+		next.click();
+	};
+	useLayoutEffect(() => {
+	nextChatRef.current = openNextChat;
+	});
 	const renderSessionPane = (
 		viewerSession: UnifiedSession,
 		socket: ReturnType<typeof useWebSocket>,
 		focused: boolean,
 		splitMode: boolean,
-		surfaceId = viewerSession.id,
-	) => (
+		requestedSurfaceId?: string,
+	) => {
+		const surfaceId = requestedSurfaceId ?? viewerSession.id;
+		return (
 		// A `#5528` written anywhere in this pane's transcript means a PR in the
 		// pane's OWN repo — which is why the context is per pane rather than
 		// app-wide: a split view can hold two sessions on two different repos.
@@ -3889,21 +4856,32 @@ export function App(
 				hideHeader={splitMode && !focused}
 				hideRightPanel={splitMode && !focused}
 				onBack={goBack}
-				onArchive={() =>
-					focused
-						? sidebarRef.current?.archiveSelected()
-						: closeSession(viewerSession)
-				}
-				onArchived={(stoppedRun) => {
-					if (stoppedRun) showToast("Archived · stopped the running turn");
+				onNextChat={focused && nextChatAvailable ? openNextChat : undefined}
+				onArchive={() => {
+					if (focused) sidebarRef.current?.archiveSelected();
+					else closeSession(viewerSession);
+				}}
+				onArchived={() => {
 					// Only fires when the viewer archived on its own — with onArchive
 					// passed (a focused pane) it defers to the sidebar path instead, so
 					// this can't double-record.
 					rememberArchived([viewerSession.id]);
 				}}
 				send={socket.send}
+				setTyping={socket.setTyping}
 				addHandler={socket.addHandler}
 				connected={socket.connected}
+				pendingCreation={
+					focused &&
+					route.view === "session" &&
+					route.id === pendingSessionId
+				}
+				optimisticEmpty={
+					!pendingNewWorkspace &&
+					focused &&
+					route.view === "session" &&
+					route.id === pendingSessionId
+				}
 				initialPending={pendingInitialPrompts[viewerSession.id]}
 				topbarEl={focused ? topbarEl : null}
 				headerActionsEl={focused ? headerActionsEl : null}
@@ -3984,22 +4962,23 @@ export function App(
 				onCloseTerminal={closeTerminalTab}
 				onOpenWorkspace={() => setActiveViewTab(null)}
 				allSessions={sessions}
-				onNewSession={handleNewSession}
+				onNewSession={
+					viewerSession.desk || emptyWorkspaceSession
+						? undefined
+						: (mode, origin) => handleNewSession(mode, null, origin)
+				}
+				onNewWorkspace={() => openPalette()}
 				onStartNewChat={(prompt) =>
 					openNewSessionInWorkspace(viewerSession, "share", prompt)
 				}
 				// Mirrors SessionTabs' own "render nothing" rule so the header's
-				// lone-session + never doubles up with the strip's — and, just as
+				// lone-tab + never doubles up with the strip's — and, just as
 				// important, so it APPEARS whenever the strip doesn't. Closed
 				// sessions are not part of the rule: they live in the strip's
 				// history button when there is a strip and in the header's ⋯ menu
 				// when there isn't, so counting them here would leave a lone
 				// session with neither + .
-				tabStripVisible={
-					!!activeTabSplit ||
-					workspaceSessions.length > 1 ||
-					viewTabs.length > 0
-				}
+				tabStripVisible={tabStripVisible}
 				archivedSessions={archivedSessions}
 				onRestoreSession={restoreSession}
 				parentSession={
@@ -4029,11 +5008,11 @@ export function App(
 					patch(id, { reviewRequest: request ?? undefined })
 				}
 				onRename={async (id, title) => {
-					try {
-						await renameSessionApi(id, title);
-					} catch (error) {
-						console.error("Rename failed:", error);
-					}
+					await (async () => {
+await renameSessionApi(id, title);
+})().catch(async (error) => {
+console.error("Rename failed:", error);
+});
 					refresh();
 				}}
 				workspaceName={
@@ -4044,24 +5023,25 @@ export function App(
 				onRenameWorkspace={
 					activeWorkspaceId
 						? async (name) => {
-								try {
-									await updateWorkspaceApi(activeWorkspaceId, { name });
-								} catch (error) {
-									console.error("Rename workspace failed:", error);
-								}
+								await (async () => {
+await updateWorkspaceApi(activeWorkspaceId, { name });
+})().catch(async (error) => {
+console.error("Rename workspace failed:", error);
+});
 								refreshWorkspaces();
 							}
 						: undefined
 				}
 			/>
 		</MarkdownRepoProvider>
-	);
+		);
+	};
 
 	return (
 		<UserGate>
 			<RestartOverlay connected={connected} addHandler={addHandler} />
 			<MediaLightboxHost />
-			<ToastHost />
+			<ToastHost container={settingsActive ? null : detailPaneEl} />
 			<Modal.Root
 				open={runningCloseConfirmation !== null}
 				onOpenChange={(open) => {
@@ -4096,46 +5076,63 @@ export function App(
 				</Modal.Content>
 			</Modal.Root>
 			<div className="app">
-				{/* Mobile-only top bar. On the sidebar-root page it shows the brand;
-				    on a pushed page (a session or other view) the brand is replaced by
-				    a Back chevron that pops back to the root, iOS-style. On desktop the
-				    brand/user live in the sidebar and this bar is hidden. The catch-up
-				    deck renders its own header (back + "N Left" + new-workspace), so we
+				{!forceFirstMile && onboarding.state === "loading" ? (
+					<div className="flex h-[100dvh] items-center justify-center bg-bg">
+						<LoadingState>Preparing Open Session…</LoadingState>
+					</div>
+				) : !forceFirstMile && onboarding.state === "failed" ? (
+					<div className="flex h-[100dvh] flex-col items-center justify-center gap-4 bg-bg px-6 text-center">
+						<LoadingState>Couldn&rsquo;t check onboarding.</LoadingState>
+						<Button onClick={() => void onboarding.refetch()}>Try again</Button>
+					</div>
+				) : firstMileActive ? (
+					<FirstMile onDone={finishFirstMile} />
+				) : (
+				<>
+				{/* Mobile-only top bar. On the sidebar-root page the organization icon
+				    opens the same switcher as the full sidebar row; on a pushed page a Back
+				    chevron pops back to the root, iOS-style. On desktop this bar is hidden.
+				    The catch-up deck renders its own header (back + "N Left" + new-workspace), so we
 				    suppress this one there to avoid a duplicate back bar. */}
 				{route.view !== "catchup" && (
-				<header
+				<TopBar
+					as="header"
 					ref={setAppHeaderEl}
-					className={appHeader({
-						detail: mobileDetail,
-						floating: route.view === "prs" || route.view === "session",
-					})}
+					className={cn(
+						appHeader({
+							detail: mobileDetail,
+							floating:
+								route.view === "prs" ||
+								route.view === "feed" ||
+								route.view === "session",
+						}),
+						route.view === "archived" && ARCHIVED_SEARCH_HEADER,
+					)}
 				>
-					<div className={APP_HEADER_LEFT}>
+					<TopBarLeading className="shrink-0">
 						{mobileDetail ? (
-							<button
-								className={MOBILE_BACK}
+							<TopBarBack
+								floating
 								onClick={goBack}
-								aria-label="Back to sidebar"
-							>
-								<svg width="11" height="18" viewBox="0 0 11 18" fill="none">
-									<path
-										d="M9 1.5L2 9l7 7.5"
-										stroke="currentColor"
-										strokeWidth="2.25"
-										strokeLinecap="round"
-										strokeLinejoin="round"
-									/>
-								</svg>
-							</button>
+								aria-label={
+									route.view === "session" && currentSession?.parentSessionId
+										? "Back to the session that started this one"
+										: "Back to sidebar"
+								}
+							/>
 						) : (
 							<>
-								{brand}
-								{/* Update nudge lives in the top bar on phones, right after
-								    the brand logo (desktop keeps the sidebar-bottom toast). */}
+								<OrganizationSwitcher
+									variant="topbar"
+									connected={connected}
+									onOpenSettings={(section) =>
+										navigate({ view: "settings", section })
+									}
+								/>
 								<UpdatePill addHandler={addHandler} variant="pill" />
 							</>
 						)}
-					</div>
+					</TopBarLeading>
 					{/* Centered page title on pushed pages, iOS-sheet style. Sessions
 					    show the workspace name (per-session titles live on the tabs) plus a
 					    working dot while the engine runs; other views show their plain
@@ -4158,6 +5155,7 @@ export function App(
 									? `${HEADER_TITLE_PILL_TAPPABLE} session-settings-trigger`
 									: HEADER_TITLE_PILL,
 								route.view !== "session" && HEADER_TITLE_PILL_FADE,
+								route.view === "archived" && HEADER_TITLE_PILL_CENTERED,
 							)}
 								{...(route.view === "session" && currentSession
 									? {
@@ -4171,23 +5169,36 @@ export function App(
 									: {})}
 						>
 							{/* Slack-header layout: the repo tile leads the pill (portaled in
-							    by SessionViewer), with the name on top and the model · cost
-							    metadata below it in a stacked column. The whole pill is one
+							    by SessionViewer), or the archive mark replaces it for archived
+							    sessions. The name sits over model · cost. The whole pill is one
 							    tap target that opens the session's deeper info page. */}
 							{route.view === "session" && currentSession && (
 								<span className={HEADER_TITLE_REPO} ref={setHeaderRepoEl} />
 							)}
 							<span className={HEADER_TITLE_COL}>
 								<span className={HEADER_TITLE_ROW}>
-									<span className={HEADER_TITLE_TEXT}>
+									<OverflowFadeText className={HEADER_TITLE_TEXT}>
 										{route.view === "session"
-											? (activeWorkspaceId
-												? workspaces.find((p) => p.id === activeWorkspaceId)?.name
-												: undefined) ||
-											currentSession?.title ||
-											""
-										: topbarTitle}
-									</span>
+											? // A worker names ITSELF here. The workspace name is what
+												// its parent shows, so borrowing it would leave the two
+												// reading identically with nothing to say you had gone a
+												// level down. Desktop says the same thing as a crumb.
+												currentSession?.parentSessionId
+												? currentSession.title
+												: (activeWorkspaceId
+														? workspaces.find((p) => p.id === activeWorkspaceId)?.name
+														: undefined) ||
+													currentSession?.title ||
+													""
+											: topbarTitle}
+									</OverflowFadeText>
+									{currentSession && sessionWasAgentStarted(currentSession) && (
+										<IconRobot
+											size={16}
+											className="shrink-0 text-faint"
+											aria-label="Started by an agent"
+										/>
+									)}
 								</span>
 								{route.view === "session" && currentSession && (
 									// Filled by SessionViewer's portal (compact model selector).
@@ -4196,7 +5207,7 @@ export function App(
 							</span>
 						</span>
 					)}
-					<div
+					<TopBarActions
 						className={
 							mobileDetail ? APP_HEADER_ACTIONS_DETAIL : APP_HEADER_ACTIONS
 						}
@@ -4215,13 +5226,14 @@ export function App(
 								<IconSearch size={22} />
 							</button>
 						)}
-					</div>
-				</header>
+					</TopBarActions>
+				</TopBar>
 				)}
 
 				{settingsActive && (
 					<Settings
-						onBack={goBack}
+						onBack={leaveSettings}
+						onOpenOnboarding={openFirstMile}
 						workspace={settingsWorkspaceId ? workspaces.find((workspace) => workspace.id === settingsWorkspaceId) : undefined}
 						section={
 							route.view === "settings"
@@ -4306,10 +5318,10 @@ export function App(
 					>
 						{/* Desktop chrome row — identical on web and in the desktop shell
 						    (the shell additionally insets it past the traffic lights and
-						    makes it a drag region): collapse toggle + the avatar settings
-						    trigger on the left, back/forward + search at the right edge.
-						    No app brand inside the app. Hidden on mobile, where the top
-						    bar carries the brand instead. */}
+						    makes it a drag region): collapse toggle on the left,
+						    back/forward + search at the right edge. Organization identity
+						    now leads the sidebar itself, above Feed. Hidden on mobile,
+						    where navigation uses the floating top bar instead. */}
 						{/* `sidebar-brand` / `sidebar-brand-actions` stay as hooks: base.css
 						    drives the WCO/desktop-shell chrome off them (traffic-light
 						    inset). `wco-chrome` is what makes the row a window drag
@@ -4318,12 +5330,10 @@ export function App(
 						    row pulls its own in to keep the logo on the list icons'
 						    --sidebar-icon-left column. */}
 						<div
-							ref={setSidebarBrandEl}
 							className={cn(
 								"sidebar-brand wco-chrome h-[var(--desktop-header-h)] min-w-0 shrink-0 items-center justify-start gap-2 py-0 pr-3 pl-[calc(var(--sidebar-icon-left)-8px)]",
-								// Closes the strip off while the list runs underneath it,
-								// alongside the pane's bar doing the same on its own scroller.
-								SCROLL_EDGE_DIVIDER,
+								// No scroll hairline: the tools sit fixed below this row and
+								// only the workspace list scrolls, so nothing passes under it.
 								// The brand row (and its account menu) is a desktop
 								// affordance; on phones the top bar carries the brand
 								// instead. Gated in JS rather than at `phone:` because
@@ -4353,17 +5363,17 @@ export function App(
 									</button>
 								</Tooltip>
 							</div>
-							<SettingsButton
-								variant="user"
-								onOpenSettings={() => navigate({ view: "settings" })}
-								connected={connected}
-							/>
 							<TitleBar onSearch={() => setSearchOpen(true)} />
 						</div>
 						<Sidebar
 							ref={sidebarRef}
 							sessions={sessions}
-							registeredRepos={registeredRepos}
+							registeredRepos={registeredRepoInfo.map((repo) => repo.id)}
+							directToMainBranches={Object.fromEntries(
+								registeredRepoInfo
+									.filter((repo) => repo.sharedCheckout)
+									.map((repo) => [repo.id, repo.defaultBranch]),
+							)}
 							sessionsError={sessionsError}
 							sessionsLoading={loading}
 							onRetrySessions={() => void refresh()}
@@ -4375,6 +5385,8 @@ export function App(
 							onOpenPrs={() => navigate({ view: "prs" })}
 							feedActive={route.view === "feed"}
 							onOpenFeed={() => navigate({ view: "feed" })}
+							connected={connected}
+							onOpenSettings={(section) => navigate({ view: "settings", section })}
 							tasksActive={route.view === "tasks"}
 							onOpenTasks={() => navigate({ view: "tasks" })}
 							taskCount={taskCount}
@@ -4396,9 +5408,11 @@ export function App(
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onOpenReview={openReviewForSession}
 							onOpenTicket={openTicketWorkspace}
-						onOpenFeedItem={openFeedItemWorkspace}
+							onOpenFeedItem={openFeedItemWorkspace}
 							onNewSession={() => openPalette()}
-							showDraftRow={productEmpty}
+							showDraftRow={
+								productEmpty && githubConnectionState !== "loading"
+							}
 							draftRowActive={productEmpty && route.view === "prs"}
 							onOpenDraft={() => {
 								// The row and the panel's card are one unstarted session, so
@@ -4416,14 +5430,15 @@ export function App(
 										: { open: true, repo },
 								)
 							}
-							onOpenWorkspace={(id) => {
-								// Sidebar selection navigates directly to a session rather than via
-								// /workspace/<id>, so restore the same remembered tab here too.
+							onOpenWorkspace={(id, preferredSessionId) => {
+								// A bold workspace row names the unread session explicitly. Otherwise
+								// restore the session tab that was last active in this workspace.
 								const session = pickLandingSession(
 									sessions,
 									id,
-									getWorkspaceLastSession(id),
+									preferredSessionId ?? getWorkspaceLastSession(id),
 								);
+								const opensPreferredSession = session?.id === preferredSessionId;
 								// Every session closed but a pane still open: land on the
 								// pane rather than resurrecting the newest archived session
 								// (pickLandingSession's history fallback).
@@ -4436,13 +5451,16 @@ export function App(
 								const remembered = getActiveViewTab(id);
 								const pane =
 									panes.find((p) => p === remembered) ?? panes[0] ?? null;
-								if (pane) {
+								if (pane && !opensPreferredSession) {
 									setActiveViewTabState(pane);
 									setFocusComposerOnOpen(false);
 									navigate({ view: "workspace", id, tab: pane });
 								} else if (session) {
-									const rememberedTab = getActiveViewTab(id) ?? null;
+									const rememberedTab = opensPreferredSession
+										? null
+										: (getActiveViewTab(id) ?? null);
 									setActiveViewTabState(rememberedTab);
+									if (opensPreferredSession) saveActiveViewTab(id, null);
 									setFocusComposerOnOpen(rememberedTab === null);
 									navigate({ view: "session", id: session.id });
 								} else {
@@ -4468,21 +5486,21 @@ export function App(
 								}
 							}}
 							onRenameWorkspace={async (id, name) => {
-								try {
-									await updateWorkspaceApi(id, { name });
+								await (async () => {
+await updateWorkspaceApi(id, { name });
 									refreshWorkspaces();
-								} catch (e) {
-									console.error("Rename workspace failed:", e);
-								}
+})().catch(async (e) => {
+console.error("Rename workspace failed:", e);
+});
 							}}
 							onDeleteWorkspace={async (id) => {
 								const wasOpen = route.view === "workspace" && route.id === id;
-								try {
-									await deleteWorkspaceApi(id);
-								} catch (e) {
-									console.error("Delete workspace failed:", e);
+								await (async () => {
+await deleteWorkspaceApi(id);
+})().catch(async (e) => {
+console.error("Delete workspace failed:", e);
 									throw e;
-								}
+});
 								refreshWorkspaces();
 								refresh();
 								if (wasOpen) navigate({ view: "prs" });
@@ -4496,19 +5514,15 @@ export function App(
 							onOpenArchived={() => navigate({ view: "archived" })}
 							onOpenCatchUp={() => navigate({ view: "catchup" })}
 							catchUpActive={route.view === "catchup"}
+							onNextChatAvailableChange={setNextChatAvailable}
 							archivedActive={route.view === "archived"}
-							onArchive={(s, next) => {
+							onArchive={(s, openNext) => {
 								const archive = async () => {
-									patch(s.id, { archived: true, archivedReason: "manual" });
 									const wasOpen = route.view === "session" && route.id === s.id;
-									if (wasOpen) {
-										if (next) navigate({ view: "session", id: next.id });
-										else goBack();
-									}
+									if (wasOpen && !openNext?.()) goBack();
+									patch(s.id, { archived: true, archivedReason: "manual" });
 									try {
-										const { stoppedRun } = await archiveSessionApi(s.id, true);
-										if (stoppedRun)
-											showToast("Archived · stopped the running turn");
+										await archiveSessionApi(s.id, true);
 										rememberArchived([s.id]);
 									} catch (e) {
 										console.error("Archive failed:", e);
@@ -4521,32 +5535,24 @@ export function App(
 								};
 								confirmRunningClose(s, () => void archive());
 							}}
-							onArchiveWorkspace={(sessions, next) => {
+							onArchiveWorkspace={(sessions, openNext) => {
 								const archive = async () => {
+									const openSessionId =
+										route.view === "session" &&
+										sessions.some((c) => c.id === route.id)
+											? route.id
+											: null;
+									if (openSessionId && !openNext?.()) goBack();
 									// Archive a whole workspace = archive every member session (the
 									// archive registry is per-session; the workspace row disappears
 									// once no live sessions remain).
 									for (const session of sessions) {
 										patch(session.id, { archived: true, archivedReason: "manual" });
 									}
-									const openSessionId =
-										route.view === "session" &&
-										sessions.some((c) => c.id === route.id)
-											? route.id
-											: null;
-									if (openSessionId) {
-										if (next) navigate({ view: "session", id: next.id });
-										else goBack();
-									}
 									try {
-										const results = await Promise.all(
+										await Promise.all(
 											sessions.map((c) => archiveSessionApi(c.id, true)),
 										);
-										const stopped = results.filter((r) => r.stoppedRun).length;
-										if (stopped > 0)
-											showToast(
-												`Archived · stopped ${stopped} running turn${stopped === 1 ? "" : "s"}`,
-											);
 										// One entry for the whole row, so ⌘Z brings the
 										// workspace back in a single press.
 										rememberArchived(sessions.map((c) => c.id));
@@ -4567,11 +5573,11 @@ export function App(
 								confirmRunningCloses(sessions, () => void archive());
 							}}
 							onRename={async (s, title) => {
-								try {
-									await renameSessionApi(s.id, title);
-								} catch (e) {
-									console.error("Rename failed:", e);
-								}
+								await (async () => {
+await renameSessionApi(s.id, title);
+})().catch(async (e) => {
+console.error("Rename failed:", e);
+});
 								refresh();
 							}}
 							onSetStatus={setSessionLanes}
@@ -4592,11 +5598,15 @@ export function App(
 					</div>
 
 					<div className={WORKSPACE_SHELL}>
-						<main className={DETAIL_PANE} ref={detailPaneRef}>
+						<main className={DETAIL_PANE} ref={captureDetailPane}>
 						{/* WCO back/forward fallback: the primary cluster lives in the
 						    sidebar's top chrome row, which vanishes when the sidebar is
 						    collapsed — this floating copy shows only then (CSS-gated). */}
 						<TitleBar pane />
+						{/* The overlapping collapsed controls require the pane's header to
+						    opt out of native dragging. Keep one empty grip beside them so the
+						    window can still move without stealing any control's clicks. */}
+						<div className="wco-collapsed-drag-handle" aria-hidden="true" />
 						{/* Floating re-open control, shown only while the desktop sidebar
 						    is collapsed (CSS-gated). Mirrors the brand-row toggle so the
 						    sidebar can always be brought back. */}
@@ -4621,7 +5631,7 @@ export function App(
 						{/* Top bar: session name + actions (portaled in by SessionViewer)
 						    on session routes, a plain title otherwise. Sits above the tab
 						    strip so the session identity reads first, tabs below it. */}
-						<div className={DETAIL_TOPBAR} ref={setTopbarEl}>
+						<TopBar className={DETAIL_TOPBAR} ref={setTopbarEl}>
 							{route.view !== "session" &&
 								// A workspace portals in the same header row a session
 								// does (WorkspacePane) rather than taking the plain title.
@@ -4631,7 +5641,7 @@ export function App(
 								// pages, and a page keeps its name in its body. The bar picks
 								// that name up once it has scrolled out of sight, the way the
 								// chat header names the session. See hooks/useLargeTitle.ts.
-								<span className={DETAIL_TOPBAR_TITLE}>
+								<TopBarTitle className={DETAIL_TOPBAR_TITLE}>
 									<span
 										className={DETAIL_TOPBAR_TITLE_TEXT}
 										data-shown={titleHandedOver || undefined}
@@ -4639,14 +5649,14 @@ export function App(
 										{topbarTitle}
 									</span>
 									{/* Filled by the page, if it has controls to put here. */}
-									<span
+									<TopBarActions
 										className={DETAIL_TOPBAR_ACTIONS}
 										ref={setTopbarActionsEl}
 									/>
-								</span>
+								</TopBarTitle>
 							)}
-						</div>
-						{!activeTabSplit && renderTabBar(null)}
+						</TopBar>
+						{!activeTabSplit && tabStripVisible && renderTabBar(null)}
 						{splitDropSide && (
 							<div
 								className={tabSplitDropPreviewClass(splitDropSide)}
@@ -4676,6 +5686,13 @@ export function App(
 									workspace={routeWorkspace}
 									workspaceSessions={workspaceSessions}
 									sessions={sessions}
+									tabStripVisible={tabStripVisible}
+									onNewSession={
+										workspaceSessions.some((session) => session.desk) ||
+										emptyWorkspaceSession
+											? undefined
+											: (origin) => void handleNewSession("share", null, origin)
+									}
 									tab={
 										reviewActive
 											? "review"
@@ -4690,6 +5707,25 @@ export function App(
 									addHandler={addHandler}
 									onOpenSession={openSession}
 									topbarEl={topbarEl}
+									headerActionsEl={headerActionsEl}
+									onRenameWorkspace={async (name) => {
+										await (async () => {
+await updateWorkspaceApi(routeWorkspace.id, { name });
+})().catch(async (error) => {
+console.error("Rename workspace failed:", error);
+});
+										refreshWorkspaces();
+									}}
+									onArchiveSession={(session, archived) => {
+										if (archived) closeSession(session);
+										else void unarchiveSessions([session]);
+									}}
+									onDeleteSession={async (session, cleanWorktree) => {
+										await deleteSessionApi(session.id, cleanWorktree);
+										remove(session.id);
+										refresh();
+									}}
+									onOpenNewSession={openPrefilledSession}
 									rightPanelEl={rightPanelEl}
 								/>
 							) : workspacesLoaded ? (
@@ -4781,6 +5817,8 @@ export function App(
 								loaded={archivedLoaded}
 								onSelect={(s) => navigate({ view: "session", id: s.id })}
 								onChanged={refresh}
+								topbarActionsEl={topbarActionsEl}
+								mobileActionsEl={headerActionsEl}
 							/>
 						) : route.view === "supporttinder" ? (
 							<SupportTinder
@@ -4795,17 +5833,17 @@ export function App(
 								connected={connected}
 								onArchive={(sessions) => {
 									const archive = async () => {
-										try {
-											await Promise.all(
+										await (async () => {
+await Promise.all(
 												sessions.map((c) => archiveSessionApi(c.id, true)),
 											);
 											// Swiping through the deck archives fast — one entry per
 											// card keeps ⌘Z an undo of the last swipe, not of the
 											// whole session.
 											rememberArchived(sessions.map((c) => c.id));
-										} catch (e) {
-											console.error("Archive failed:", e);
-										}
+})().catch(async (e) => {
+console.error("Archive failed:", e);
+});
 										refresh();
 									};
 									confirmRunningCloses(sessions, () => void archive());
@@ -4841,10 +5879,24 @@ export function App(
 											const session =
 												sessions.find((candidate) => candidate.id === id) ??
 												currentSession;
+											const paneSocket =
+												id === pendingSessionId
+													? {
+															...socket,
+															connected: false,
+															addHandler: IGNORE_WS_MESSAGES,
+														}
+													: socket;
 											return (
 												<>
 													{renderTabBar(side)}
-													{renderSessionPane(session, socket, focused, true, id ?? session.id)}
+													{renderSessionPane(
+														session,
+														paneSocket,
+														focused,
+														true,
+														id ?? session.id,
+													)}
 												</>
 											);
 										}}
@@ -4852,7 +5904,16 @@ export function App(
 								) : (
 									renderSessionPane(
 										currentSession,
-										{ connected, send, addHandler },
+										{
+											connected:
+												connected && currentSession.id !== pendingSessionId,
+											send,
+											setTyping,
+											addHandler:
+												currentSession.id === pendingSessionId
+													? IGNORE_WS_MESSAGES
+													: addHandler,
+										},
 										true,
 										false,
 									)
@@ -4903,6 +5964,8 @@ export function App(
 							>
 								Check the connection to this server.
 							</EmptyState>
+						) : productEmpty && githubConnectionState === "loading" ? (
+							<LoadingState className="min-h-0 flex-1">Checking GitHub…</LoadingState>
 						) : productEmpty ? (
 							/* With nothing to open, the page IS the new-session card: the
 							   same palette rendered in place, so the empty state is
@@ -4924,18 +5987,7 @@ export function App(
 											send={send}
 											addHandler={addHandler}
 											connected={connected}
-											onCreateStarted={(draft) => {
-												pendingCreateDraftRef.current = {
-													...draft,
-													startedAt: new Date().toISOString(),
-													user: getCurrentUser(),
-													originPath: routePath(routeRef.current),
-												};
-											}}
-											onDraftSaved={(ws) => {
-												refreshWorkspaces();
-												navigate({ view: "workspace", id: ws.id });
-											}}
+											onCreateStarted={startNewSessionCreate}
 										/>
 									)}
 								</div>
@@ -4952,6 +6004,27 @@ export function App(
 								onNewSession={() => openPalette()}
 								onShowArchived={refreshArchived}
 								onOpenAnalytics={() => navigate({ view: "analytics" })}
+								onAddToSidebar={async (pr) => {
+									const { workspaceId } = await resolveWorkspaceApi({
+										pr: {
+											repo: pr.repo,
+											branch: pr.branch,
+											number: pr.number,
+											title: pr.title,
+										},
+									});
+									refreshWorkspaces();
+									return workspaceId;
+								}}
+								onOpenWorkspace={(workspaceId, pr) => {
+									focusReviewPr({
+										repo: pr.repo,
+										branch: pr.branch,
+										number: pr.number,
+										workspaceId,
+									});
+									navigate({ view: "workspace", id: workspaceId, tab: "review" });
+								}}
 								topbarActionsEl={topbarActionsEl}
 							/>
 						) : null}
@@ -4965,20 +6038,18 @@ export function App(
 				</div>
 				)}
 
-				{/* Desktop notifications float over the sidebar rather than living inside
-				    it. Their readable width and interactions therefore survive a narrow or
-				    collapsed sidebar. Phones keep the compact update pill in the top bar. */}
+				{/* Durable prompts use a separate shelf from transient feedback. The
+				    desktop shelf stays clear of the composer; phones put the compact
+				    equivalent in the app header instead. */}
 				{!isPhone && (
-					<div className="pointer-events-none fixed bottom-2 left-2 z-[9500] flex w-fit max-w-[calc(100vw-16px)] flex-col gap-2">
+					<div className={PERSISTENT_NOTICE_SHELF}>
 						{launchComplete && <DesktopLinkToast />}
 						<UpdatePill addHandler={addHandler} />
 					</div>
 				)}
 
-				{/* Mobile-only floating + on the root list page — thumb-reach shortcut
-				    to the new-session palette (desktop hides it via CSS; the sidebar's
-				    own + covers that layout). */}
-				{!mobileDetail && (
+				{/* Mobile-only floating + on your root list page. */}
+				{!mobileDetail && !borrowedSidebar && (
 					<button
 						className={MOBILE_FAB}
 						onClick={() => openPalette()}
@@ -5009,7 +6080,18 @@ export function App(
 					<Tooltip label="Desk" side="left" shortcut={["⌘", "J"]}>
 						<button
 							className={DESK_FAB}
-							onClick={() => setDeskOpen(true)}
+							style={
+								deskFabPosition
+									? {
+											left: deskFabPosition.left,
+											right: "auto",
+											bottom: deskFabPosition.bottom,
+										}
+									: undefined
+							}
+							onClick={() =>
+								setDeskOverlay({ open: true, origin: "bottom-right" })
+							}
 							aria-label="Open the Desk"
 						>
 							<IconDesk size={24} />
@@ -5019,8 +6101,11 @@ export function App(
 
 				{/* ⌘J Desk overlay — standing concierge session. */}
 				<DeskOverlay
-					open={deskOpen}
-					onClose={() => setDeskOpen(false)}
+					open={deskOverlay.open}
+					openOrigin={deskOverlay.origin}
+					onClose={() =>
+						setDeskOverlay((desk) => ({ ...desk, open: false }))
+					}
 					phone={isPhone}
 					onOpenSession={(id) => navigate({ view: "session", id })}
 				/>
@@ -5050,19 +6135,7 @@ export function App(
 						forceBranch={palette.branch}
 						forceMode={palette.mode}
 						initialMcpServers={palette.mcpServers}
-						onCreateStarted={(draft) => {
-							pendingCreateDraftRef.current = {
-								...draft,
-								startedAt: new Date().toISOString(),
-								user: getCurrentUser(),
-								originPath: routePath(routeRef.current),
-							};
-						}}
-						onDraftSaved={(ws) => {
-							closePalette();
-							refreshWorkspaces();
-							navigate({ view: "workspace", id: ws.id });
-						}}
+						onCreateStarted={startNewSessionCreate}
 					/>
 				)}
 
@@ -5080,6 +6153,8 @@ export function App(
 				    markdown. One watcher for the whole app: the chips are HTML
 				    strings, so they can't each own a popover. */}
 				<ChipHoverCards sessions={sessions} />
+				</>
+				)}
 			</div>
 		</UserGate>
 	);
@@ -5107,7 +6182,10 @@ if (!embeddedDemo) {
 				<PreviewWait sessionId={previewWaitSessionId} />
 			) : (
 				<TooltipProvider>
-					<App />
+					<>
+						<App />
+						<AgentationFeedback />
+					</>
 				</TooltipProvider>
 			)}
 		</MotionConfig>,

@@ -14,9 +14,34 @@ import { SETTINGS_KEYWORDS } from "./settings-search";
 const navSections = SECTIONS.filter((s) => !TOOL_SECTIONS.has(s.key));
 
 describe("settingsPaletteActions", () => {
+	test("groups settings by personal and organization ownership", () => {
+		expect(SECTIONS.find((section) => section.key === "myAccounts")?.group).toBe(
+			"Personal",
+		);
+		expect(SECTIONS.find((section) => section.key === "general")?.group).toBe(
+			"Organization",
+		);
+		expect(SECTIONS.find((section) => section.key === "memory")?.label).toBe(
+			"Memories",
+		);
+	});
+
 	test("keeps identity settings inside General", () => {
 		expect(SECTIONS.map((section) => String(section.key))).not.toContain("identity");
 		expect(SETTINGS_KEYWORDS.general).toContain("identity");
+	});
+
+	test("combines model and usage settings under Providers", () => {
+		const sections = SECTIONS.map((section) => ({
+			key: String(section.key),
+			label: section.label,
+		}));
+		expect(sections).toContainEqual({ key: "providers", label: "Providers" });
+		expect(sections.map((section) => section.key)).not.toContain("models");
+		expect(sections.map((section) => section.key)).not.toContain("usage");
+		expect(SETTINGS_KEYWORDS.providers).toEqual(
+			expect.arrayContaining(["models", "usage", "quota"]),
+		);
 	});
 
 	test("covers every non-tool section for an admin", () => {

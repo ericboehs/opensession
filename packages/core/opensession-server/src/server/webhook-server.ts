@@ -1,44 +1,35 @@
 /**
- * Second Bun.serve() instance for webhook routes (port 3848).
- * Bound to loopback; a TLS-terminating reverse proxy on a public hostname puts
- * it where providers can reach it.
- * Agents register their routes via the AgentModule interface.
+ * Public webhook route registry.
+ *
+ * Webhooks no longer bind their own socket. The isolated public-ingress
+ * listener owns the only internet-facing local endpoint and dispatches exact
+ * registered methods and paths here after handling its sandbox/OIDC routes.
+ * Keeping registration separate from Bun.serve makes the application route
+ * table the fail-closed allowlist for Caddy, Funnel and Cloudflare Tunnel.
  */
 import type { AgentModule } from "../agents/types";
-import { configuredServer } from "./config";
 
-// Env WEBHOOK_PORT wins, then config server.webhookPort, then 3848 —
-// configuredServer() already resolves that precedence.
-const WEBHOOK_PORT = configuredServer().webhookPort;
-const WEBHOOK_HOST = "127.0.0.1";
+export type PublicWebhookHandler = (
+  req: Request,
+  url: URL,
+) => Promise<Response>;
 
-/** Combined route table: "POST /slack/events" → handler */
-let routeTable = new Map<string, (req: Request, url: URL) => Promise<Response>>();
+/** Combined route table: "POST /slack/events" → handler. */
+let routeTable = new Map<string, PublicWebhookHandler>();
 
 /**
- * Register a route after boot — for an integration configured live from the
- * web UI, whose AgentModule (and getRoutes()) only loads on the next restart
- * (e.g. code.storage connected via /api/setup/codestorage/connect). Existing
- * keys win: boot-time registration is authoritative, so calling this for an
- * already-served route is a no-op.
+ * Register a route after boot for an integration configured live from the UI.
+ * Existing keys win because boot-time registration is authoritative.
  */
-export function addWebhookRoute(
-  key: string,
-  handler: (req: Request, url: URL) => Promise<Response>,
-): void {
+export function addWebhookRoute(key: string, handler: PublicWebhookHandler): void {
   if (!routeTable.has(key)) routeTable.set(key, handler);
 }
 
-/** Active agent modules for health reporting */
-let activeAgents: AgentModule[] = [];
-
-export function startWebhookServer(
+/** Build the complete public webhook allowlist before ingress starts. */
+export function configureWebhookRoutes(
   agents: AgentModule[],
-  extraRoutes?: Map<string, (req: Request, url: URL) => Promise<Response>>
-) {
-  activeAgents = agents;
-
-  // Build combined route table from all agents
+  extraRoutes?: Map<string, PublicWebhookHandler>,
+): void {
   routeTable = new Map();
   for (const agent of agents) {
     for (const [key, handler] of agent.getRoutes()) {
@@ -49,63 +40,57 @@ export function startWebhookServer(
     }
   }
   for (const [key, handler] of extraRoutes || []) {
-    if (routeTable.has(key)) {
-      console.warn(`[webhook] Route collision: ${key} (extra)`);
-    }
+    if (routeTable.has(key)) console.warn(`[webhook] Route collision: ${key} (extra)`);
     routeTable.set(key, handler);
   }
-
-  const server = Bun.serve({
-    port: WEBHOOK_PORT,
-    hostname: WEBHOOK_HOST,
-
-    async fetch(req) {
-      const url = new URL(req.url);
-      const path = url.pathname;
-
-      // Look up route: "POST /slack/events"
-      const routeKey = `${req.method} ${path}`;
-      const handler = routeTable.get(routeKey);
-      if (handler) {
-        try {
-          return await handler(req, url);
-        } catch (e: any) {
-          console.error(`[webhook] Error handling ${routeKey}:`, e);
-          return Response.json(
-            { error: "Internal server error" },
-            { status: 500 }
-          );
-        }
-      }
-
-      // Fallback: try wildcard matching for paths with dynamic segments
-      for (const [key, wildcardHandler] of routeTable) {
-        if (key.endsWith("/*")) {
-          const prefix = key.slice(0, -1); // "POST /some/path/"  → "POST /some/path"
-          const [method, pathPrefix] = prefix.split(" ", 2);
-          // Fix: the prefix includes method, so split properly
-          if (req.method === method && path.startsWith(pathPrefix!)) {
-            try {
-              return await wildcardHandler(req, url);
-            } catch (e: any) {
-              console.error(`[webhook] Error handling ${key}:`, e);
-              return Response.json(
-                { error: "Internal server error" },
-                { status: 500 }
-              );
-            }
-          }
-        }
-      }
-
-      return Response.json({ error: "Not found" }, { status: 404 });
-    },
-  });
-
   console.log(
-    `[webhook] Webhook server running on ${WEBHOOK_HOST}:${WEBHOOK_PORT} ` +
-      `(agents: ${agents.map((a) => a.name).join(", ") || "none"})`
+    `[public-ingress] registered ${routeTable.size} webhook routes ` +
+      `(agents: ${agents.map((agent) => agent.name).join(", ") || "none"})`,
   );
+}
 
-  return server;
+/**
+ * Dispatch one request through the exact public webhook registry. Undefined
+ * means the ingress listener must answer with its bodyless 404.
+ */
+export async function handleWebhookRequest(req: Request): Promise<Response | undefined> {
+  let url: URL;
+  try {
+    url = new URL(req.url);
+  } catch {
+    return undefined;
+  }
+  const routeKey = `${req.method} ${url.pathname}`;
+  const exact = routeTable.get(routeKey);
+  if (exact) return invoke(exact, req, url, routeKey);
+
+  for (const [key, handler] of routeTable) {
+    if (!key.endsWith("/*")) continue;
+    const space = key.indexOf(" ");
+    const method = key.slice(0, space);
+    const prefix = key.slice(space + 1, -1);
+    if (req.method === method && url.pathname.startsWith(prefix)) {
+      return invoke(handler, req, url, key);
+    }
+  }
+  return undefined;
+}
+
+async function invoke(
+  handler: PublicWebhookHandler,
+  req: Request,
+  url: URL,
+  key: string,
+): Promise<Response> {
+  try {
+    return await handler(req, url);
+  } catch (error) {
+    console.error(`[webhook] Error handling ${key}:`, error);
+    return Response.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+/** Test/status surface. It intentionally returns keys only inside the process. */
+export function registeredWebhookRouteCount(): number {
+  return routeTable.size;
 }

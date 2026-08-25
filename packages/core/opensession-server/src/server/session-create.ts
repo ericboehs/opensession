@@ -21,26 +21,39 @@
 
 import type { ServerWebSocket } from "bun";
 import { randomUUIDv7 } from "bun";
-import { type StreamEvent, markSessionStarting, runAgent, unmarkSessionStarting } from "./agent-runner";
+import { existsSync } from "node:fs";
+import { currentAgentRunToken, isAgentSessionCancelled, type StreamEvent, markSessionStarting, runAgent, unmarkSessionStarting, } from "./agent-runner";
+import {
+	activeRunRecords,
+	journalClearIfLineage,
+	journalRecordAbnormalCompletion,
+} from "./run-journal";
 import { makeAskHandler } from "./asks";
 import { getAccountById } from "./claude-accounts";
 import { getCodexAccountById } from "./codex-accounts";
 import { buildForkHandoffNote } from "./fork-handoff";
 import { ensureGeneratedTitle } from "./generated-titles";
+import { nameKnownSessionReferencesForTitle } from "./session-reference-title";
 import { onSessionIdle as onHumanAsksSessionIdle } from "./human-asks";
 import { interactiveMcpServers } from "./interactive-mcp";
 import { parseTranscriptAsync } from "./jsonl-parser";
-import { accountProviderForModel, interactiveDefaultModel, interactiveFallbackModel, modelLabel, providerFor, resolveModel } from "./models";
+import { accountProviderForModel, interactiveFallbackModel, modelLabel, providerFor, resolveModel, } from "./models";
+import { configuredInteractiveDefaultModel } from "./model-catalog";
 import { notifyMentions } from "./mentions";
 import { newSessionId } from "./paths";
 import { wrapContext } from "./prompt-context";
-import { promptQueues } from "./queue-state";
+import {
+	acknowledgePromptDispatch,
+	beginPromptDispatch,
+	promptDispatches,
+	promptQueues,
+} from "./queue-state";
 import { type ImageInput, shouldPersistModelSwitch } from "./run-events";
-import { attachSessionWatchersToEngineTranscript, drainQueue, foldSessionUsage, maybeLaunchSandboxedRun, maybeQueueAutoContinue, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
+import { attachSessionWatchersToEngineTranscript, drainQueue, foldSessionUsage, maybeLaunchSandboxedRun, maybeQueueAutoContinue, sessionMentionsNote, watchExternalRunAndDrain, } from "./run-session";
 import { type McpScope, STRIPE_CONFIRM_TOOLS } from "./runner-shared";
-import { isRemoteSandboxProvider, resolveRequestedSandbox, sandboxConfig, sandboxesEnabled } from "./sandbox/config";
+import { isRemoteSandboxProvider, resolveRequestedSandbox, sandboxConfig, sandboxesEnabled, } from "./sandbox/config";
 import { resolveInteractiveSandbox } from "./sandbox/defaults";
-import { getRunner, runnerAvailableForSession, runnerWorkspacePath } from "./runners";
+import { getRunner, runnerAvailableForSession, runnerWorkspacePath, } from "./runners";
 import { isRunnerConnected, prepareRunnerWorkspace } from "./runner-ws";
 import { maybeLaunchRunnerRun } from "./runner-session";
 import { githubAppRepositoryToken } from "./github-app";
@@ -50,19 +63,67 @@ type ResolvedSandboxProvider = Extract<
 	ReturnType<typeof resolveRequestedSandbox>,
 	{ ok: true }
 >["provider"];
-import { SESSION_EFFORTS, findSession, invalidateSessionsCache, recordRunOutcome, touchNativeSession, updateSessionFile } from "./session-cache";
-import { attachRepo, buildBranchNote, buildReposNote, memoryNoteFor, planCreateAttachRepos, workspaceOwningWorktree } from "./session-repos";
+
+import { SESSION_EFFORTS, findSession, findSessionAsync, invalidateSessionsCache, recordRunOutcome, touchNativeSession, updateSessionFile } from "./session-cache";
+import {
+	attachRepo,
+	buildBranchNote,
+	buildReposNote,
+	memoryNoteFor,
+	planCreateAttachRepos,
+	retrievedMemoryNoteFor,
+	workspaceOwningWorktree,
+} from "./session-repos";
+
 import { ownedWorktree } from "./session-workspace";
 import { engineSessionPatch } from "./sessions";
 import { commitAuthorFor, userMatchesAny } from "./shared/user-mappings";
 import { sanitizeBranchSlug } from "./suggest-branch";
-import { type NativeSessionFile, type SessionUsage, type UnifiedSession } from "./types";
-import { parseImageDataUrls, stageFileAttachments, withUploadsNote } from "./uploads";
+import { type NativeSessionFile, type SessionUsage, type UnifiedSession, } from "./types";
+import { storeAppendUserLineEarly, transcriptLineUser } from "./transcript-persistence";
+import { creationAttachmentPath, parseImageDataUrls, prepareCreationAttachmentSources, withUploadsNote, } from "./uploads";
 import { resolvePlainWorkspace } from "./workspace-resolve";
 import { resolveWorkspaceModelPreset } from "./workspace-model-presets";
-import { type Workspace, createWorkspace, getWorkspace, updateWorkspace } from "./workspaces";
-import { AUTO_REPO, createWorktree, createWorktreeForExistingBranch, ensureAskCheckout, ensureScratchDir, getRepo, listWorktrees, NO_REPO, repoForPath, repoForPathOrNull, resolveUniqueBranch, sharedCheckoutForNewSessions, worktreeHeadBranch, worktreePathFor } from "./worktree";
-import { type WSClientData, broadcastToSession, preparingWorkspaces } from "./ws-hub";
+import { type Workspace, getWorkspace, updateWorkspace, } from "./workspaces";
+import {
+	type CreationOpeningEffectItem,
+	type CreationSetupPlan,
+	SESSION_KERNEL_MAX_OPENING_PLAN_BYTES,
+	ensureCreationPlanned,
+	requestCreationAttachment,
+	requestCreationBranch,
+	requestCreationCredential,
+	requestCreationOpening,
+	patchCreationSetupPlan,
+	requestCreationWorkspace,
+	settleCreationCancelled,
+	settleCreationFailed,
+	settleCreationSucceeded,
+	sessionKernel,
+	sessionTurn,
+} from "./session-kernel";
+import { AUTO_REPO, ensureAskCheckout, ensureScratchDir, getRepo, isRegisteredWorktree, listWorktrees, NO_REPO, repoForPath, repoForPathOrNull, resolveUniqueBranch, sharedCheckoutForNewSessions, worktreeHeadBranch, worktreePathFor, } from "./worktree";
+import { type WSClientData, broadcastToSession, preparingWorkspaces, } from "./ws-hub";
+import {
+	markReplayedCommandResult,
+	replayedSessionCreatedResult,
+} from "./command-replay";
+import { sessionIdForRequest } from "./session-request-id";
+import { isClientSessionId } from "./paths";
+import {
+	clearCreatePlan,
+	createPlanWorkspaceId,
+	readCreatePlan,
+	readCreatePlanForRecovery,
+	restoreResolvedCreate,
+	snapshotOpeningCreate,
+} from "./session-create-plan";
+import {
+	githubCredentialForLogin,
+	githubCredentialForPrincipal,
+	soleGithubAccount,
+} from "./github-auth";
+
 
 /**
  * The `create_session` client message fields the flow reads. Fields typed
@@ -70,7 +131,11 @@ import { type WSClientData, broadcastToSession, preparingWorkspaces } from "./ws
  * arrives as parsed JSON and was previously read off an `any`).
  */
 export interface CreateSessionMessage {
+	/** Client-minted native id used to replay this create safely after reconnect. */
+	clientSessionId?: unknown;
 	prompt: string;
+	titlePrompt?: unknown;
+	requestId?: string;
 	user?: string;
 	mode?: string;
 	branch: string;
@@ -80,6 +145,7 @@ export interface CreateSessionMessage {
 	forkFrom?: unknown;
 	model?: unknown;
 	effort?: unknown;
+	fastMode?: unknown;
 	accountId?: string;
 	mcpServers?: unknown;
 	repo?: unknown;
@@ -182,6 +248,8 @@ export interface ResolvedCreate {
 	title: string;
 	/** The raw prompt the background title/summary is generated from. */
 	titlePrompt: string;
+	/** The person's visible message, before internal context is appended. */
+	displayPrompt: string;
 	/** The fully assembled opening prompt (uploads note, contexts, handoffs). */
 	openingPrompt: string;
 	user?: string;
@@ -200,11 +268,15 @@ export interface ResolvedCreate {
 	/** Repos whose memory notes ride the opening prompt. */
 	memoryRepoIds: string[];
 	/**
-	 * Repos to work in beside the session's own: an isolated worktree each, on
-	 * one shared branch, prepared after the announce and BEFORE the opening run
-	 * so its system note and any sandbox mounts already know about them.
-	 */
+   * Repos to work in beside the session's own: an isolated worktree each, on
+   * one shared branch, prepared after the announce and BEFORE the opening run
+   * so its system note and any sandbox mounts already know about them.
+   */
 	attachRepos?: { repos: string[]; branch: string };
+	/** Durable, non-secret selector for trusted server-owned worktree fetches. */
+	gitPrincipal?: string;
+	/** Ephemeral capability. Durable create snapshots always strip this field. */
+	gitEnv?: Record<string, string>;
 	stackedOn?: { repo: string; branch: string };
 	/** Workspace recorded on the session file. */
 	workspaceId?: string;
@@ -215,6 +287,8 @@ export interface ResolvedCreate {
 	/** Workspace to rename once the generated title lands (minted by THIS create). */
 	autoNameWorkspace?: Workspace | null;
 	parentSessionId?: string;
+	/** Started by a server-side agent action rather than a person's composer. */
+	agentStarted?: boolean;
 	/** Agent that created this session (SessionData.spawnedBy). */
 	spawnedBy?: string;
 	reportBack?: boolean;
@@ -231,38 +305,43 @@ export interface ResolvedCreate {
 	/** MCP allowlist persisted on the session file (non-empty lists only). */
 	persistMcpServers?: string[];
 	/**
-	 * MCP scope for the opening run. May be undefined at runtime (historic
-	 * web-palette behavior — read as "all" downstream); the sandbox launcher
-	 * defaults it to [] (fail-closed) instead.
-	 */
+   * MCP scope for the opening run. May be undefined at runtime (historic
+   * web-palette behavior — read as "all" downstream); the sandbox launcher
+   * defaults it to [] (fail-closed) instead.
+   */
 	runMcpServers?: McpScope;
 	sandboxProvider: ResolvedSandboxProvider;
 	/** Explicit persistent-machine target. Mutually exclusive with Sandbox. */
-	runnerTarget?: { id: string; name: string; workspacePath: string; repositoryUrl: string };
+	runnerTarget?: { id: string; name: string; workspacePath: string; repositoryUrl: string; };
 	/** Sandbox volume workspace: no host worktree, provider clones in-container. */
 	volumeWorkspace: boolean;
 	remoteSandbox: boolean;
+	/** Stable intake id shared by create retry and queue recovery. */
+	openingPromptEntryId: string;
 	/** Worktree creation deferred until after the announce (web creates). */
 	needsWorktree: boolean;
+	/** How a recovered create rebuilds the deferred worktree. */
+	worktreeKind?: "new" | "existing";
+	worktreeIsolated?: boolean;
 	/** Materializes the deferred worktree (present iff needsWorktree). */
 	materializeWorktree?: () => Promise<unknown>;
 	/** Engine-level fork (Claude SDK forkSession) of the source conversation. */
 	fork?: { engineSessionId: string; resumeAt?: string };
 	/**
-	 * How the opening run hands off at the end: "drain" delivers any queued
-	 * prompts right away (web creates); "auto-continue-guard" runs the shared
-	 * announce-then-stop guard first (MCP creates, which nothing wraps in
-	 * runSessionPromptAndDrain).
-	 */
+   * How the opening run hands off at the end: "drain" delivers any queued
+   * prompts right away (web creates); "auto-continue-guard" runs the shared
+   * announce-then-stop guard first (MCP creates, which nothing wraps in
+   * runSessionPromptAndDrain).
+   */
 	finish: "drain" | "auto-continue-guard";
 }
 
 /** Per-path transport for a create: who hears the announce/stream/failures. */
 export interface CreateSessionIO {
 	/**
-	 * The session file exists and the id is resolvable — the web adapter sends
-	 * session_created, the MCP adapter resolves the tool call.
-	 */
+   * The session file exists and the id is resolvable — the web adapter sends
+   * session_created, the MCP adapter resolves the tool call.
+   */
 	announce(info: {
 		id: string;
 		workspaceId?: string;
@@ -297,27 +376,473 @@ async function attachCreateRepos(
 	sessionId: string,
 	plan: { repos: string[]; branch: string },
 	io: CreateSessionIO,
+	gitEnv?: Record<string, string>,
 ): Promise<string[]> {
 	const attached: string[] = [];
 	for (const repoId of plan.repos) {
 		try {
-			await attachRepo(sessionId, repoId, plan.branch);
+			await attachRepo(sessionId, repoId, plan.branch, gitEnv);
 			attached.push(repoId);
 		} catch (e) {
 			io.emit({
 				type: "notice",
 				message: `Couldn't add ${repoId} to this session: ${
-					e instanceof Error ? e.message : String(e)
-				}. The other repos are ready; add this one from the repo menu when it is.`,
+          e instanceof Error ? e.message : String(e)
+        }. The other repos are ready; add this one from the repo menu when it is.`,
 			});
 		}
 	}
 	return attached;
 }
 
+function runnerOpeningHostId(runId: string, generation: number): string {
+	const digest = new Bun.CryptoHasher("sha256")
+		.update(`${runId}:${generation}`)
+		.digest("hex");
+	return `rh-opening-${digest.slice(0, 32)}`;
+}
+
+const activeOpeningCreates = new Map<
+	string,
+	{
+		identity: string;
+		spec: ResolvedCreate;
+		io: CreateSessionIO;
+		done: Promise<void>;
+	}
+>();
+
+const OPENING_TURN_CONCURRENCY = 8;
+type OpeningTurnGate = {
+	active: number;
+	waiters: Array<(release: () => void) => void>;
+};
+const creationRuntimeGlobal = globalThis as typeof globalThis & {
+	__opensessionOpeningTurnGate?: OpeningTurnGate;
+};
+const openingTurnGate = (creationRuntimeGlobal.__opensessionOpeningTurnGate ??= {
+	active: 0,
+	waiters: [],
+});
+
+function openingTurnRelease(): () => void {
+	let released = false;
+	return () => {
+		if (released) return;
+		released = true;
+		const next = openingTurnGate.waiters.shift();
+		if (next) next(openingTurnRelease());
+		else openingTurnGate.active = Math.max(0, openingTurnGate.active - 1);
+	};
+}
+
+function acquireOpeningTurn(): Promise<() => void> {
+	if (openingTurnGate.active < OPENING_TURN_CONCURRENCY) {
+		openingTurnGate.active += 1;
+		return Promise.resolve(openingTurnRelease());
+	}
+	return new Promise((resolve) => openingTurnGate.waiters.push(resolve));
+}
+
+export async function waitForCreatedSessionProjection(
+	sessionId: string,
+	identity: string,
+	timeoutMs = 24 * 60 * 60_000,
+): Promise<UnifiedSession> {
+	const deadline = Date.now() + timeoutMs;
+	while (true) {
+		const state = sessionKernel(sessionId).creationState();
+		if (!state || state.identity !== identity)
+			throw new Error("Create request identity crossed durable session ownership");
+		const projected = findSession(sessionId);
+		if (projected) return projected;
+		if (state.state === "failed")
+			throw new Error("Session creation failed before it was persisted");
+		if (state.state === "cancelled")
+			throw new Error("Session creation was cancelled before it was persisted");
+		if (Date.now() >= deadline)
+			throw new Error("Session creation remains durably pending");
+		await Bun.sleep(25);
+	}
+}
+
+export function actorCreationSetupPlan(
+	sessionId: string,
+	identity: string,
+): CreationSetupPlan {
+	const state = ensureCreationPlanned(sessionId, identity);
+	if (state.setupPlan || !["planned", "preparing"].includes(state.state))
+		return (state.setupPlan ?? {}) as CreationSetupPlan;
+	const legacy = readCreatePlan(sessionId, identity);
+	if (!legacy) return {};
+	return patchCreationSetupPlan(sessionId, identity, {
+		...(legacy.branch ? { branch: legacy.branch } : {}),
+		...(legacy.workspaceId ? { workspaceId: legacy.workspaceId } : {}),
+		...(legacy.attachments ? { attachments: legacy.attachments } : {}),
+		...(legacy.resolved
+			? { resolved: snapshotOpeningCreate(legacy.resolved) }
+			: {}),
+	});
+}
+
+function snapshotOpeningPlan(spec: ResolvedCreate): Record<string, unknown> {
+	const plan = snapshotOpeningCreate(spec);
+	if (Buffer.byteLength(JSON.stringify(plan)) > SESSION_KERNEL_MAX_OPENING_PLAN_BYTES)
+		throw new Error(
+			`Opening recovery input exceeds ${SESSION_KERNEL_MAX_OPENING_PLAN_BYTES} bytes`,
+		);
+	return plan;
+}
+
+export function runOpeningCreateOnce(
+	spec: ResolvedCreate,
+	io: CreateSessionIO,
+	creationIdentity: string,
+): { owner: boolean; done: Promise<void> } {
+	const existing = activeOpeningCreates.get(spec.id);
+	if (existing) {
+		if (existing.identity !== creationIdentity)
+			throw new Error("Create request identity crossed active opening ownership");
+		return { owner: false, done: existing.done };
+	}
+	// Validate and bound actor recovery input before accepting the prompt dispatch.
+	const openingPlan = snapshotOpeningPlan(spec);
+	const openingPromptEntryId = beginPromptDispatch(
+		spec.id,
+		[
+			{
+				content: spec.openingPrompt,
+				user: spec.user,
+				...(spec.images?.length
+					? {
+							images: spec.images.map(
+								(image) => `data:${image.mediaType};base64,${image.data}`,
+							),
+						}
+					: {}),
+			},
+		],
+		spec.openingPromptEntryId,
+		true,
+		"create",
+	);
+	if (openingPromptEntryId !== spec.openingPromptEntryId)
+		throw new Error("Opening prompt identity changed before actor dispatch");
+	const done = (async () => {
+		// The creation actor owns one physical effect at a time. Materialize the
+		// primary worktree before dispatching the long-running opening effect;
+		// otherwise openCreatedSession would try to emit a branch effect while the
+		// opening already held the creation fence. The later call inside
+		// openCreatedSession adopts this completed receipt and remains restart-safe.
+		if (spec.needsWorktree && spec.materializeWorktree) {
+			try {
+				await spec.materializeWorktree();
+			} catch (error) {
+				io.fail(error instanceof Error ? error.message : String(error));
+				throw error;
+			}
+		}
+		await requestCreationOpening({
+			sessionId: spec.id,
+			identity: creationIdentity,
+			openingPromptEntryId,
+			runId: `opening:${spec.id}:${openingPromptEntryId}`,
+			runGeneration: 1,
+			openingPlan,
+		});
+	})().finally(() => {
+		if (activeOpeningCreates.get(spec.id)?.done === done)
+			activeOpeningCreates.delete(spec.id);
+	});
+	activeOpeningCreates.set(spec.id, {
+		identity: creationIdentity,
+		spec,
+		io,
+		done,
+	});
+	return { owner: true, done };
+}
+
+function actorWorktreeMaterializer(input: {
+	sessionId: string;
+	identity: string;
+	project: string;
+	branch: string;
+	worktreePath: string;
+	baseBranch?: string;
+	isolated: boolean;
+	existingBranch?: boolean;
+	credentialPrincipal?: string;
+}): () => Promise<string> {
+	return async () => {
+		if (input.credentialPrincipal) {
+			await requestCreationCredential({
+				sessionId: input.sessionId,
+				identity: input.identity,
+				principal: input.credentialPrincipal,
+				scope: `git:${input.project}`,
+			});
+		}
+		await requestCreationBranch({
+			sessionId: input.sessionId,
+			identity: input.identity,
+			project: input.project,
+			branch: input.branch,
+			worktreePath: input.worktreePath,
+			baseBranch: input.baseBranch || getRepo(input.project).defaultBranch,
+			isolated: input.isolated,
+			existingBranch: input.existingBranch,
+			credentialPrincipal: input.credentialPrincipal,
+		});
+		return input.worktreePath;
+	};
+}
+
+async function restorePlannedOpening(sessionId: string): Promise<{
+	spec: ResolvedCreate;
+	io: CreateSessionIO;
+	identity: string;
+} | null> {
+	const creation = sessionKernel(sessionId).creationState();
+	const actorPlan =
+		creation?.openingPlan ??
+		(creation?.setupPlan?.resolved as Record<string, unknown> | undefined);
+	const legacyPlan = actorPlan ? undefined : readCreatePlanForRecovery(sessionId);
+	const openingPlan = actorPlan ?? legacyPlan?.resolved;
+	const identity = actorPlan ? creation!.identity : legacyPlan?.identity;
+	const dispatch = promptDispatches.get(sessionId);
+	if (!openingPlan || !identity || dispatch?.kind !== "create") return null;
+	const restored = restoreResolvedCreate<ResolvedCreate>(openingPlan);
+	const restoredGitEnv = githubCredentialForPrincipal(restored.gitPrincipal)?.env;
+	if (
+		typeof restored.wtPath !== "string" ||
+		typeof restored.branch !== "string" ||
+		(restored.needsWorktree && typeof restored.repoId !== "string")
+	) return null;
+	const ready = restored.needsWorktree
+		? await isRegisteredWorktree(restored.wtPath, restored.repoId!, restored.branch)
+		: true;
+	const materializeWorktree = restored.needsWorktree && !ready
+		? actorWorktreeMaterializer({
+				sessionId,
+				identity,
+				project: restored.repoId!,
+				branch: restored.branch,
+				worktreePath: restored.wtPath,
+				baseBranch: restored.stackedOn?.branch,
+				isolated: restored.worktreeIsolated === true,
+				existingBranch: restored.worktreeKind === "existing",
+				credentialPrincipal: restored.gitPrincipal,
+			})
+		: undefined;
+	const imageUrls = dispatch.items.flatMap((item) => item.images || []);
+	return {
+		identity,
+		spec: {
+			...(restored as ResolvedCreate),
+			id: sessionId,
+			openingPromptEntryId: dispatch.promptEntryId,
+			images: parseImageDataUrls(imageUrls),
+			gitEnv: restoredGitEnv,
+			materializeWorktree,
+			needsWorktree: !!materializeWorktree,
+		},
+		io: {
+			// Recovery has no creator socket, so the announce goes to the session
+			// room: any client already watching (or the sessions poll within 5s)
+			// learns the session exists even while the opening effect is still
+			// queued behind other outbox work. A no-op here left restart-recovered
+			// creates invisible until the slow opening turn finished.
+			announce: (info) => {
+				broadcastToSession(sessionId, {
+					type: "session_created",
+					sessionId,
+					id: info.id,
+					...(info.workspaceId ? { workspaceId: info.workspaceId } : {}),
+				});
+				broadcastToSession(sessionId, { type: "stream_start", sessionId });
+			},
+			emit: (message) =>
+				broadcastToSession(sessionId, { ...message, sessionId }),
+			fail: (message) =>
+				broadcastToSession(sessionId, {
+					type: "notice",
+					sessionId,
+					message,
+				}),
+		},
+	};
+}
+
+export function settleStoppedCreationOpening(item: CreationOpeningEffectItem): boolean {
+	const kernel = sessionKernel(item.sessionId);
+	const turn = sessionTurn({ op: "snapshot", sessionId: item.sessionId });
+	// Exact cancel identity, matching openingTurnWasCancelled(): a retained
+	// receipt fences only the exact run it cancelled. The receipt records the
+	// admitted physical token derived from the effect payload, so recompute it
+	// here. `stopped` alone still fences because creation is single-shot —
+	// while it is opening_dispatched the opening turn is the only run Stop
+	// could have targeted.
+	const cancel = turn.cancel;
+	const exactCancel =
+		cancel != null &&
+		cancel.runId ===
+			runnerOpeningHostId(item.payload.runId, item.payload.runGeneration) &&
+		cancel.runGeneration === item.payload.runGeneration;
+	if (kernel.runState().state !== "stopped" && !exactCancel) return false;
+	settleCreationCancelled(
+		item.sessionId,
+		item.payload.creationIdentity,
+		kernel,
+		item.effectKey,
+	);
+	acknowledgePromptDispatch(
+		item.sessionId,
+		item.payload.openingPromptEntryId,
+	);
+	clearCreatePlan(item.sessionId);
+	return true;
+}
+
+export async function executeCreationOpeningEffect(
+	item: CreationOpeningEffectItem,
+): Promise<void> {
+	const state = sessionKernel(item.sessionId).creationState();
+	if (!state || state.identity !== item.payload.creationIdentity)
+		throw new Error("Opening effect crossed durable creation ownership");
+	if (state.generation !== item.payload.creationGeneration)
+		throw new Error("Opening effect used a stale creation generation");
+	if (
+		(state.state === "ready" ||
+			state.state === "failed" ||
+			state.state === "cancelled") &&
+		state.completedEffectIds.includes(item.effectKey)
+	) {
+		acknowledgePromptDispatch(
+			item.sessionId,
+			item.payload.openingPromptEntryId,
+		);
+		if (state.state === "ready" || state.state === "cancelled")
+			clearCreatePlan(item.sessionId);
+		return;
+	}
+	if (settleStoppedCreationOpening(item)) return;
+	if (
+		state.state !== "opening_dispatched" ||
+		state.currentEffectId !== item.effectKey
+	)
+		throw new Error("Opening effect no longer owns the creation lifecycle");
+	const openingJournal = activeRunRecords().find(
+		(run) =>
+			run.osSessionId === item.sessionId &&
+			run.promptEntryId === item.payload.openingPromptEntryId,
+	);
+	if (openingJournal?.terminalFailure) {
+		settleCreationFailed(
+			item.sessionId,
+			item.payload.creationIdentity,
+			new Error(openingJournal.terminalFailure.content),
+			sessionKernel(item.sessionId),
+			item.effectKey,
+		);
+		acknowledgePromptDispatch(
+			item.sessionId,
+			item.payload.openingPromptEntryId,
+		);
+		journalClearIfLineage(openingJournal);
+		return;
+	}
+	const localRecovery =
+		!!openingJournal && !openingJournal.runnerId && !openingJournal.sandboxId;
+	if (localRecovery) {
+		// Boot's generic local-run adopter owns the exact journal. It settles the
+		// actor from its terminal callback; waiting here keeps the durable effect
+		// pending without launching a second engine turn.
+		while (true) {
+			const recovered = sessionKernel(item.sessionId).creationState();
+			if (
+				(recovered?.state === "ready" ||
+					recovered?.state === "failed" ||
+					recovered?.state === "cancelled") &&
+				recovered.completedEffectIds.includes(item.effectKey)
+			) {
+				acknowledgePromptDispatch(
+					item.sessionId,
+					item.payload.openingPromptEntryId,
+				);
+				if (recovered.state === "ready" || recovered.state === "cancelled")
+					clearCreatePlan(item.sessionId);
+				return;
+			}
+			if (settleStoppedCreationOpening(item)) return;
+			if (
+				!recovered ||
+				recovered.identity !== item.payload.creationIdentity ||
+				recovered.generation !== item.payload.creationGeneration ||
+				recovered.currentEffectId !== item.effectKey
+			)
+				throw new Error("Recovered local opening lost durable ownership");
+			await Bun.sleep(100);
+		}
+	}
+	const active = activeOpeningCreates.get(item.sessionId);
+	if (active && active.identity !== item.payload.creationIdentity)
+		throw new Error("Opening effect crossed active creation ownership");
+	const restored = active
+		? { spec: active.spec, io: active.io, identity: active.identity }
+		: await restorePlannedOpening(item.sessionId);
+	if (!restored)
+		throw new Error("Opening effect has no durable actor plan to recover");
+	if (restored.identity !== item.payload.creationIdentity)
+		throw new Error("Opening effect actor-plan identity changed during recovery");
+	if (restored.spec.openingPromptEntryId !== item.payload.openingPromptEntryId)
+		throw new Error("Opening effect prompt identity changed during recovery");
+	if (settleStoppedCreationOpening(item)) return;
+	await openCreatedSession(
+		restored.spec,
+		restored.io,
+		restored.identity,
+		item.effectKey,
+		{
+			runId: item.payload.runId,
+			generation: item.payload.runGeneration,
+		},
+	);
+	const settled = sessionKernel(item.sessionId).creationState();
+	if (settled?.state === "ready" || settled?.state === "cancelled")
+		clearCreatePlan(item.sessionId);
+	else if (settled?.state !== "failed")
+		throw new Error("Opening effect returned without terminal actor settlement");
+}
+
+export async function resumePlannedCreate(sessionId: string): Promise<boolean> {
+	const state = sessionKernel(sessionId).creationState();
+	if (state?.state === "ready" || state?.state === "cancelled") {
+		clearCreatePlan(sessionId);
+		return true;
+	}
+	if (
+		state?.state === "failed" ||
+		state?.currentEffectId?.startsWith("opening:")
+	)
+		return true;
+	const restored = await restorePlannedOpening(sessionId);
+	if (!restored) return false;
+	const opening = runOpeningCreateOnce(
+		restored.spec,
+		restored.io,
+		restored.identity,
+	);
+	if (opening.owner) await opening.done;
+	return true;
+}
+
 export async function openCreatedSession(
 	spec: ResolvedCreate,
 	io: CreateSessionIO,
+	creationIdentity: string,
+	creationEffectId?: string,
+	openingRun?: { runId: string; generation: number },
 ): Promise<void> {
 	const bksId = spec.id;
 	// Replace the raw first-line title with a short summary in the background;
@@ -326,31 +851,50 @@ export async function openCreatedSession(
 	// wore the raw first line) and keeps that name for life — later sessions
 	// never rename it, and a manual rename in the meantime wins.
 	const wsToName = spec.autoNameWorkspace;
-	void ensureGeneratedTitle(bksId, spec.titlePrompt, spec.user, spec.model).then(
-		(t) => {
+	void nameKnownSessionReferencesForTitle(spec.titlePrompt)
+		.then((titlePrompt) =>
+			ensureGeneratedTitle(bksId, titlePrompt, spec.user, spec.model),
+		)
+		.then((t) => {
 			if (!t) return;
 			invalidateSessionsCache();
 			if (!wsToName) return;
 			const cur = getWorkspace(wsToName.id);
 			if (cur && cur.name === wsToName.name)
 				updateWorkspace(wsToName.id, { name: t });
-		},
-	);
+		})
+		.catch(() => {});
 
 	// Set once the session has been announced — a later failure must then
 	// close out the stream instead of leaving the just-opened viewer spinning.
 	let announced = false;
+	let creationSettled = false;
 	let engineSessionId = "";
 	let effectiveModel = spec.model;
 	let selectedModel = spec.model;
 	let effectiveProvider = providerFor(effectiveModel);
 	const modelHistory: NonNullable<NativeSessionFile["modelHistory"]> = [];
 	let persisted = false;
+	let releaseOpeningTurn: (() => void) | undefined;
+	let startToken = "";
+	let startGeneration = 0;
+	const openingTurnWasCancelled = (): boolean => {
+		if (!startToken || startGeneration < 1) return false;
+		const cancel = sessionTurn({ op: "snapshot", sessionId: bksId }).cancel;
+		return (
+			cancel?.runId === startToken &&
+			cancel.runGeneration === startGeneration
+		);
+	};
 	// Cumulative token/cost for this new session's opening run.
 	let latestUsage: SessionUsage | undefined;
 	// Extra repos that actually got a worktree (see attachCreateRepos) — what
 	// the opening run's repos note and memory scopes are built from.
 	let attachedRepoIds: string[] = [];
+	// A sandbox opening turn can spend minutes provisioning before its run
+	// journal exists. Keep that prompt in the durable intake dispatch until the
+	// sandbox host journals it, so a service restart requeues rather than loses it.
+	let openingPromptEntryId: string | undefined;
 	// Terminal failure the opening run died on — recorded after the loop so
 	// the fresh session surfaces as "Needs input".
 	let runFailure: string | null = null;
@@ -388,6 +932,7 @@ export async function openCreatedSession(
 				...(spec.parentSessionId
 					? { parentSessionId: spec.parentSessionId }
 					: {}),
+				...(spec.agentStarted ? { agentStarted: true } : {}),
 				...(spec.spawnedBy ? { spawnedBy: spec.spawnedBy } : {}),
 				// Persisted so the failure beacon (handoff-evidence.ts) can tell
 				// a worker that owes its parent a report from a child session
@@ -430,7 +975,8 @@ export async function openCreatedSession(
 						}
 					: {}),
 				...(spec.runnerTarget
-					? { runner: { id: spec.runnerTarget.id, name: spec.runnerTarget.name, workspacePath: spec.runnerTarget.workspacePath, lifecycle: "preparing" as const } }
+					? { runner: { id: spec.runnerTarget.id, name: spec.runnerTarget.name, workspacePath: spec.runnerTarget.workspacePath, lifecycle: "preparing" as const,
+							}, }
 					: {}),
 				...existing,
 				...(engineSessionId
@@ -459,14 +1005,59 @@ export async function openCreatedSession(
 		// engine is up. The starting mark keeps a prompt typed in that
 		// window from double-starting a run (same race as
 		// runSessionPrompt).
-		const startToken = markSessionStarting(bksId);
+		startToken = markSessionStarting(
+			bksId,
+			openingRun
+				? runnerOpeningHostId(openingRun.runId, openingRun.generation)
+				: undefined,
+		);
+    if (currentAgentRunToken(bksId) !== startToken) {
+      unmarkSessionStarting(bksId, startToken);
+      throw new Error("Opening turn is already owned by another preparation");
+    }
+		const admittedRun = sessionKernel(bksId).runState();
+		if (admittedRun.currentRunId !== startToken) {
+			// Release the process reservation before failing: this throw lands
+			// outside the inner try/finally that would otherwise unmark it.
+			unmarkSessionStarting(bksId, startToken);
+			throw new Error("Opening turn lost actor admission before preparation");
+		}
+		startGeneration = admittedRun.generation;
 		const pendingAttach = spec.attachRepos?.repos.length
 			? spec.attachRepos
 			: null;
 		const preparingEnvironment = spec.needsWorktree || Boolean(pendingAttach) || Boolean(spec.sandboxProvider) || Boolean(spec.runnerTarget);
 		if (preparingEnvironment) preparingWorkspaces.add(bksId);
 		try {
+			openingPromptEntryId = beginPromptDispatch(bksId, [
+				{
+					content: spec.openingPrompt,
+					user: spec.user,
+					...(spec.images?.length
+						? {
+							images: spec.images.map(
+								(image) => `data:${image.mediaType};base64,${image.data}`,
+							),
+						}
+						: {}),
+				},
+			], spec.openingPromptEntryId, true, "create");
 			await persist();
+			// The opening prompt is accepted before slow workspace setup. Persist
+			// its visible row at the same boundary so a setup failure cannot leave
+			// a titled but empty session. The runner later upserts this stable id.
+			const displayPrompt = spec.displayPrompt ?? spec.titlePrompt;
+			if (displayPrompt.trim() || spec.images?.length) {
+				storeAppendUserLineEarly(
+					bksId,
+					transcriptLineUser(
+						displayPrompt,
+						openingPromptEntryId,
+						spec.createdAt,
+						spec.images,
+					),
+				);
+			}
 			// A session starting in a workspace consumes its draft. The
 			// composer prompt it held is now this session's opening prompt.
 			// After persist() so this never races the create with a client
@@ -495,6 +1086,11 @@ export async function openCreatedSession(
 				"prompt",
 				spec.title || "a session",
 			);
+			// Projection is latency-sensitive; the agent turn is capacity-sensitive.
+			// Persist and announce every accepted session first, then wait for one of
+			// the bounded opening-run slots. Keeping the gate here prevents eight long
+			// turns from hiding every later session behind "Setting up workspace".
+			releaseOpeningTurn = await acquireOpeningTurn();
 
 			// Every worktree this session works in, its own first. The extra
 			// repos are cut inside the same gate: they are git work of the same
@@ -517,6 +1113,7 @@ export async function openCreatedSession(
 							bksId,
 							pendingAttach,
 							io,
+							spec.gitEnv,
 						);
 				} finally {
 					// Ready (or failed — the error surfaces separately): flip the
@@ -525,6 +1122,15 @@ export async function openCreatedSession(
 					io.emit({ type: "workspace_status", ready: true });
 				}
 			}
+
+			const retrievedMemory = await retrievedMemoryNoteFor(
+				spec.openingPrompt,
+				spec.user,
+				[...spec.memoryRepoIds, ...attachedRepoIds],
+			);
+			const openingPromptForRun = retrievedMemory
+				? `${retrievedMemory}\n\n${spec.openingPrompt}`
+				: spec.openingPrompt;
 
 			// Sandbox session: route the OPENING turn through the same
 			// launcher the prompt path uses (the session file was persisted
@@ -539,16 +1145,22 @@ export async function openCreatedSession(
 			let sandboxOpeningRun: AsyncGenerator<StreamEvent> | null = null;
 			let runnerOpeningRun: AsyncGenerator<StreamEvent> | null = null;
 			if (spec.sandboxProvider) {
+				// The opening effect holds the creation actor's single-effect
+				// fence, so a second durable prepare intent cannot run here.
+				// Provisioning rides maybeLaunchSandboxedRun's idempotent,
+				// per-session-locked provider.ensure instead: a crash replays the
+				// opening effect and adopts the same canonical session sandbox.
 				const created = findSession(bksId);
 				sandboxOpeningRun = created
 					? await maybeLaunchSandboxedRun(created, {
-							prompt: spec.openingPrompt,
+							prompt: openingPromptForRun,
 							cwd: spec.wtPath,
 							user: spec.user,
 							images: spec.images,
 							mcpServers: spec.runMcpServers ?? [],
 							isAutomationSession: false,
 							startToken,
+							promptEntryId: openingPromptEntryId,
 						})
 					: null;
 				if (!sandboxOpeningRun) {
@@ -572,23 +1184,27 @@ export async function openCreatedSession(
 					...(cloneToken ? { cloneToken } : {}),
 					user: spec.user,
 				});
-				touchNativeSession(bksId, {
-					runner: { id: spec.runnerTarget.id, name: spec.runnerTarget.name, workspacePath: spec.runnerTarget.workspacePath, lifecycle: "awake" },
+				await touchNativeSession(bksId, {
+					runner: { id: spec.runnerTarget.id, name: spec.runnerTarget.name, workspacePath: spec.runnerTarget.workspacePath, lifecycle: "awake", },
 				});
 				const created = findSession(bksId);
 				runnerOpeningRun = created
 					? await maybeLaunchRunnerRun(created, {
-						prompt: spec.openingPrompt,
+						prompt: openingPromptForRun,
+						promptEntryId: openingPromptEntryId,
+						hostId: startToken,
+						shouldCancel: () =>
+							isAgentSessionCancelled(bksId, startToken),
 						images: spec.images,
 						mcpServers: spec.runMcpServers ?? [],
 						user: spec.user,
 						reposNote: [
-							buildBranchNote({ mode: spec.mode, branch: spec.branch, worktreeDir: spec.wtPath }),
+							buildBranchNote({ mode: spec.mode, branch: spec.branch, worktreeDir: spec.wtPath, }),
 							await memoryNoteFor(spec.user, spec.memoryRepoIds),
 						].filter(Boolean).join("\n\n") || undefined,
 					})
 					: null;
-				if (!runnerOpeningRun) throw new Error("Runner unavailable. Check its connection and retry.");
+				if (!runnerOpeningRun) throw new Error("Runner unavailable. Check its connection and retry.",);
 				preparingWorkspaces.delete(bksId);
 				io.emit({ type: "workspace_status", ready: true });
 			}
@@ -597,8 +1213,60 @@ export async function openCreatedSession(
 			// gets is read back rather than reassembled, so it can only name
 			// worktrees that were actually cut.
 			const spanning = attachedRepoIds.length ? findSession(bksId) : null;
+			const settlePhysicalCompletion = async (): Promise<void> => {
+				if (creationSettled) return;
+				if (!persisted) await persist();
+				else
+					await touchNativeSession(
+						bksId,
+						{
+							...engineSessionPatch(
+								effectiveProvider,
+								engineSessionId
+							),
+							...(engineSessionId
+								? { lastEngineProvider: effectiveProvider }
+								: {}),
+							...(effectiveModel ? { lastEngineModel: effectiveModel } : {}),
+							...(modelHistory.length ? { modelHistory } : {}),
+							...headBranchPatch(),
+						}
+					);
+				if (latestUsage)
+					await touchNativeSession(bksId, { usage: latestUsage });
+				recordRunOutcome(bksId, runFailure, {
+					engineSessionId,
+					noticePersisted: failureNoticePersisted,
+					runId: startToken,
+					runGeneration: startGeneration,
+					projectionId: `outcome:${startToken}`,
+				});
+				// This runs in the terminal event's consumer body, before requesting
+				// the generator's next item. Backend generator finally blocks may now
+				// retire their journal/host only after the actor has the receipt.
+				if (openingTurnWasCancelled())
+					settleCreationCancelled(
+						bksId,
+						creationIdentity,
+						undefined,
+						creationEffectId,
+					);
+				else
+					settleCreationSucceeded(
+						bksId,
+						creationIdentity,
+						undefined,
+						creationEffectId,
+					);
+				creationSettled = true;
+				acknowledgePromptDispatch(bksId, openingPromptEntryId);
+			};
 			for await (const event of sandboxOpeningRun ?? runnerOpeningRun ?? runAgent({
-				prompt: spec.openingPrompt,
+				prompt: openingPromptForRun,
+				// A recovered create is the same logical turn. Reuse the durable
+				// intake id so Pi and the context log upsert the original rows
+				// instead of rendering the opening message again after each restart.
+				promptEntryId: openingPromptEntryId,
 				cwd: spec.wtPath,
 				mode: spec.mode,
 				model: spec.model,
@@ -666,18 +1334,18 @@ export async function openCreatedSession(
 					if (event.model) effectiveModel = event.model;
 					// Session was persisted/announced before setup — just record
 					// the engine id so the run is resumable while it streams.
-					touchNativeSession(
+					await touchNativeSession(
 						bksId,
 						{
 							...engineSessionPatch(
 								effectiveProvider,
-								engineSessionId,
+								engineSessionId
 							),
 							...(engineSessionId
 								? { lastEngineProvider: effectiveProvider }
 								: {}),
 							...(effectiveModel ? { lastEngineModel: effectiveModel } : {}),
-						},
+						}
 					);
 					// The transcript file didn't exist when viewers sent their
 					// watch (fresh session) — attach them now so this first turn
@@ -705,7 +1373,7 @@ export async function openCreatedSession(
 								at: new Date().toISOString(),
 								by: reason,
 							});
-							touchNativeSession(bksId, {
+							await touchNativeSession(bksId, {
 								model: selectedModel,
 								modelHistory,
 							});
@@ -798,38 +1466,27 @@ export async function openCreatedSession(
 					if (event.noticePersisted) failureNoticePersisted = true;
 					io.emit({ type: "error", message: event.content });
 				}
+				if (event.type === "done" || event.type === "error")
+					await settlePhysicalCompletion();
 			}
-
-			if (!persisted) await persist();
-			else
-				touchNativeSession(
-					bksId,
-					{
-						...engineSessionPatch(
-							effectiveProvider,
-							engineSessionId,
-						),
-						...(engineSessionId
-							? { lastEngineProvider: effectiveProvider }
-							: {}),
-						...(effectiveModel ? { lastEngineModel: effectiveModel } : {}),
-						...(modelHistory.length ? { modelHistory } : {}),
-						// The opening turn may have switched branches in the
-						// worktree (same sync as runSessionPromptInner's run-end
-						// patch) — keep the record on the actual HEAD.
-						...headBranchPatch(),
-					},
-				);
-			// Persist opening-run usage regardless of which branch ran
-			// above (persist() writes the base file without it).
-			if (latestUsage)
-				touchNativeSession(bksId, { usage: latestUsage });
-			recordRunOutcome(bksId, runFailure, {
-				engineSessionId,
-				noticePersisted: failureNoticePersisted,
-			});
+			if (!creationSettled) {
+				for (const record of activeRunRecords()) {
+					if (
+						record.osSessionId === bksId &&
+						record.promptEntryId === openingPromptEntryId &&
+						!record.terminalFailure
+					)
+						journalRecordAbnormalCompletion(record);
+				}
+				throw new Error("Opening run ended without a terminal event");
+			}
 		} finally {
+			// Terminal-event handling settles the actor before backend generators may
+			// retire their physical-owner journal. This finally only releases the
+			// in-process admission marker.
 			unmarkSessionStarting(bksId, startToken);
+			releaseOpeningTurn?.();
+			releaseOpeningTurn = undefined;
 			// Safety net for throws before the worktree block's own finally
 			// (persist/announce failures) — must never leak a session stuck
 			// in "Waiting for workspace".
@@ -864,13 +1521,31 @@ export async function openCreatedSession(
 				onHumanAsksSessionIdle(bksId);
 		}
 	} catch (e: any) {
+		if (creationSettled) {
+			console.error(`[create] Post-opening follow-up failed for ${bksId}:`, e);
+			return;
+		}
+		if (openingTurnWasCancelled()) {
+			settleCreationCancelled(
+				bksId,
+				creationIdentity,
+				undefined,
+				creationEffectId,
+			);
+			acknowledgePromptDispatch(bksId, openingPromptEntryId);
+			if (announced) {
+				io.emit({ type: "stream_done" });
+				io.emit({ type: "session_status", isRunning: false });
+			}
+			return;
+		}
 		// Failure after the early announce: the client is already in the
 		// session — close out the stream and surface the failure there
 		// instead of leaving the viewer spinning. Before the announce there's
 		// no session to scope to, so the raw error goes back to the caller.
 		if (announced) {
 			if (spec.runnerTarget) {
-				touchNativeSession(bksId, {
+				await touchNativeSession(bksId, {
 					runner: {
 						id: spec.runnerTarget.id,
 						name: spec.runnerTarget.name,
@@ -899,22 +1574,162 @@ export async function openCreatedSession(
 		} else {
 			io.fail(e.message || String(e));
 		}
+		settleCreationFailed(
+			bksId,
+			creationIdentity,
+			e,
+			undefined,
+			creationEffectId,
+		);
+		acknowledgePromptDispatch(bksId, openingPromptEntryId);
+		for (const record of activeRunRecords()) {
+			if (
+				record.osSessionId === bksId &&
+				record.promptEntryId === openingPromptEntryId &&
+				record.terminalFailure
+			)
+				journalClearIfLineage(record);
+		}
+	}
+}
+
+type WebCreateSocket = ServerWebSocket<WSClientData>;
+interface PendingWebCreate {
+	sockets: Set<WebCreateSocket>;
+	/** Sockets that joined by replaying an already-admitted create command. */
+	replayedSockets?: Set<WebCreateSocket>;
+}
+
+const pendingWebCreates: Map<string, PendingWebCreate> =
+	((globalThis as any).__pendingWebCreates ??= new Map());
+
+function sendCreateFrame(
+	attempt: PendingWebCreate,
+	frame: Record<string, unknown>,
+): void {
+	for (const socket of attempt.sockets) {
+		try {
+			const payload = attempt.replayedSockets?.has(socket)
+				? markReplayedCommandResult(frame)
+				: frame;
+			socket.send(JSON.stringify(payload));
+		} catch {}
 	}
 }
 
 /**
  * Create a session from a UI WebSocket `create_session` message and drive its
  * opening run, streaming events back to the creating socket / session room.
+ * A clientSessionId claims one in-flight operation, so reconnect replay either
+ * joins that operation or returns the session it already persisted.
  */
 export async function handleCreateSessionMessage(
 	ws: ServerWebSocket<WSClientData>,
 	msg: CreateSessionMessage,
-): Promise<void> {
+): Promise<Record<string, unknown> | undefined> {
+	const rawClientSessionId = msg.clientSessionId;
+	if (rawClientSessionId !== undefined && !isClientSessionId(rawClientSessionId)) {
+		sendCreateFrame(
+			{ sockets: new Set([ws]) },
+			{ type: "error", message: "Invalid session create id" },
+		);
+		return;
+	}
+	const clientSessionId = rawClientSessionId as string | undefined;
+	if (clientSessionId) {
+		const pending = pendingWebCreates.get(clientSessionId);
+		if (pending) {
+			pending.sockets.add(ws);
+			(pending.replayedSockets ??= new Set()).add(ws);
+			return;
+		}
+	}
+	const attempt: PendingWebCreate = { sockets: new Set([ws]) };
+	if (clientSessionId) pendingWebCreates.set(clientSessionId, attempt);
+	const finishCreate = () => {
+		if (
+			clientSessionId &&
+			pendingWebCreates.get(clientSessionId) === attempt
+		) pendingWebCreates.delete(clientSessionId);
+	};
+	const failCreate = (message: string) => {
+		sendCreateFrame(attempt, { type: "error", message });
+		finishCreate();
+	};
+
 	const { prompt, user, mode } = msg;
+	const titlePrompt =
+		typeof msg.titlePrompt === "string" ? msg.titlePrompt.slice(0, 2000) : prompt;
+	const requestId =
+		typeof msg.requestId === "string" && msg.requestId
+			? msg.requestId
+			: undefined;
+	const bksId =
+		clientSessionId ||
+		(requestId
+			? sessionIdForRequest(ws.data?.authLogin || user || "anonymous", requestId)
+			: newSessionId());
+	const createIdentity = requestId || clientSessionId || bksId;
+	const durableCreation = sessionKernel(bksId).creationState();
+	if (durableCreation && durableCreation.identity !== createIdentity) {
+		failCreate("Create request identity crossed durable session ownership");
+		return;
+	}
+	let recoveringSession = findSession(bksId);
+	if (
+		durableCreation?.state === "opening_dispatched" ||
+		durableCreation?.state === "ready" ||
+		durableCreation?.state === "failed" ||
+		durableCreation?.state === "cancelled"
+	) {
+		try {
+			recoveringSession = await waitForCreatedSessionProjection(
+				bksId,
+				createIdentity,
+			);
+		} catch (error) {
+			failCreate(error instanceof Error ? error.message : String(error));
+			throw error;
+		}
+		if (
+			durableCreation.state === "ready" ||
+			durableCreation.state === "cancelled"
+		)
+			clearCreatePlan(bksId);
+		const response = replayedSessionCreatedResult(
+			bksId,
+			recoveringSession.workspaceId,
+		);
+		sendCreateFrame(attempt, response);
+		finishCreate();
+		return response;
+	}
+	let createPlan = actorCreationSetupPlan(bksId, createIdentity);
+	if (
+		recoveringSession?.claudeSessionId ||
+		recoveringSession?.codexThreadId
+	) {
+		clearCreatePlan(bksId);
+		const response = replayedSessionCreatedResult(
+			recoveringSession.id,
+			recoveringSession.workspaceId,
+		);
+		sendCreateFrame(attempt, response);
+		finishCreate();
+		return response;
+	}
+	// This WebSocket create is interactive. The raw credential reaches only the
+	// server-owned materializer; recovery persists and resolves its principal.
+	const githubCredential = ws.data.authLogin
+		? githubCredentialForLogin(ws.data.authLogin)
+		: ws.data.authAutomation
+			? null
+			: soleGithubAccount();
+	const githubGitEnv = githubCredential?.env;
 	// Mutable: a brand-new code branch is made collision-free below (a
 	// name clashing with an existing `name/...` ref — or vice versa —
 	// makes `git worktree add -b` fail, killing the session).
-	let branch = msg.branch;
+	let branch = recoveringSession?.branch || createPlan.branch || msg.branch;
 	const images = parseImageDataUrls(msg.images);
 	// Session opened from a PR row (sidebar): `branch` is the PR's
 	// EXISTING head branch — check it out instead of creating a new
@@ -925,26 +1740,20 @@ export async function handleCreateSessionMessage(
 	// Fork: branch a new session off an existing one. Claude can clone the
 	// real engine conversation via SDK forkSession; backends without clone
 	// support get a transcript handoff in the opening prompt instead.
-	const forkFrom = msg.forkFrom as
-		| { sourceId?: string; messageId?: string }
+	const forkFrom = msg.forkFrom as { sourceId?: string; messageId?: string }
 		| undefined;
 	let fork: ForkContext | undefined;
 	try {
 		fork = resolveForkContext(forkFrom);
 	} catch {
-		ws.send(
-			JSON.stringify({
-				type: "error",
-				message: "Fork source session not found",
-			}),
-		);
+		failCreate("Fork source session not found");
 		return;
 	}
 	const forkSource = fork?.source;
 	const canFork = !!fork?.canFork;
 	const needsForkHandoff = !!fork?.needsHandoff;
 
-	// Scratch: repo-less sessions for feed-item workspaces (Tella videos —
+	// Scratch: repo-less sessions for feed-item workspaces (videos —
 	// the feeds design). Full write + bash in a per-workspace scratch
 	// dir, MCP tools as usual; no repo, branch, or PR flow.
 	const isScratch = forkSource
@@ -974,11 +1783,11 @@ export async function handleCreateSessionMessage(
 	// disengage the dial (the preset id must be what the session stores).
 	const workspacePreset = forkSource
 		? undefined
-		: resolveWorkspaceModelPreset(msg.model, msg.workspaceId ?? msg.modelWorkspaceId);
+		: resolveWorkspaceModelPreset(msg.model, msg.workspaceId ?? msg.modelWorkspaceId,);
 	const model = forkSource
 		? forkSource.model
 		: workspacePreset?.id || (msg.model ? resolveModel(String(msg.model))?.id : undefined) ||
-			interactiveDefaultModel();
+			configuredInteractiveDefaultModel();
 	// Reasoning effort from the New-session palette (forks inherit).
 	const createEffort = forkSource
 		? forkSource.effort
@@ -986,15 +1795,17 @@ export async function handleCreateSessionMessage(
 				SESSION_EFFORTS.has(msg.effort.trim().toLowerCase())
 			? msg.effort.trim().toLowerCase()
 			: undefined);
-	const createFastMode = forkSource?.fastMode;
+	const createFastMode = forkSource
+		? forkSource.fastMode
+		: msg.fastMode === true;
 	// Pinned provider account from the palette (forks inherit).
 	const createAccountId = forkSource
 		? forkSource.accountId
-		: resolvePinnedAccountId(workspacePreset?.model || model, msg.accountId, user);
+		: resolvePinnedAccountId(workspacePreset?.model || model, msg.accountId, user,);
 	const createMcpServers = Array.isArray(msg.mcpServers)
 		? msg.mcpServers.map(String)
 		: undefined;
-	// Which repo this session works in (tella-fusion by default). A repo-less
+	// Which repo this session works in (the instance default). A repo-less
 	// session still resolves one here — sandbox selection and memory scopes
 	// are repo-keyed — but never records it (see `repoId` on the spec below).
 	const repo = getRepo(
@@ -1014,34 +1825,38 @@ export async function handleCreateSessionMessage(
 				model,
 			);
 	if (!sandboxResolved.ok) {
-		ws.send(
-			JSON.stringify({ type: "error", message: sandboxResolved.error }),
-		);
+
+		failCreate(sandboxResolved.error);
+
 		return;
 	}
 	// null = host (no sandbox recorded on the session).
 	const createSandboxProvider = sandboxResolved.provider;
 	const requestedRunnerId = typeof msg.runner === "string" && msg.runner.trim() ? msg.runner.trim() : undefined;
 	if (requestedRunnerId) {
-		ws.send(JSON.stringify({ type: "error", message: "Runner full sessions are not available. Use Runner command delegation from a standard session." }));
+
+		failCreate("Runner full sessions are not available. Use Runner command delegation from a standard session.");
 		return;
 	}
 	if (requestedRunnerId && createSandboxProvider) {
-		ws.send(JSON.stringify({ type: "error", message: "Choose either Sandbox or a Runner for this session." }));
+		failCreate("Choose either Sandbox or a Runner for this session.");
+
 		return;
 	}
 	const selectedRunner = requestedRunnerId ? getRunner(requestedRunnerId) : undefined;
 	if (requestedRunnerId) {
 		if (!selectedRunner || !isRunnerConnected(selectedRunner.id)) {
-			ws.send(JSON.stringify({ type: "error", message: "That Runner is offline." }));
+
+			failCreate("That Runner is offline.");
 			return;
 		}
 		if (!runnerAvailableForSession(selectedRunner, { user, repo: repo.id, sessionId: "new" }) || !selectedRunner.workspaceRoots.length) {
-			ws.send(JSON.stringify({ type: "error", message: "That Runner is not available for this repository." }));
+			failCreate("That Runner is not available for this repository.");
 			return;
 		}
 		if (forkSource || fromPr || isScratch || isAsk) {
-			ws.send(JSON.stringify({ type: "error", message: "Runner sessions require a new code workspace." }));
+			failCreate("Runner sessions require a new code workspace.");
+
 			return;
 		}
 	}
@@ -1056,8 +1871,9 @@ export async function handleCreateSessionMessage(
 		: msg.worktreeMode === "stack"
 			? "stack"
 			: "share";
-	let workspace =
-		typeof msg.workspaceId === "string" && msg.workspaceId
+	let workspace = recoveringSession?.workspaceId
+		? getWorkspace(recoveringSession.workspaceId)
+		: typeof msg.workspaceId === "string" && msg.workspaceId
 			? getWorkspace(msg.workspaceId)
 			: null;
 	// A ticket-linked create always lands in the ticket's ONE workspace
@@ -1086,6 +1902,12 @@ export async function handleCreateSessionMessage(
 	// word its brief pending state accordingly.
 	let createdWorkspaceNow = false;
 	if (!workspace && msg.createWorkspace) {
+		const plannedWorkspaceId =
+			createPlan.workspaceId || createPlanWorkspaceId(bksId);
+		if (!createPlan.workspaceId)
+			createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+				workspaceId: plannedWorkspaceId,
+			});
 		// A code create landing on a branch whose worktree an existing
 		// workspace already owns joins that workspace (the worktree
 		// lookup below would silently reuse the worktree anyway —
@@ -1099,21 +1921,31 @@ export async function handleCreateSessionMessage(
 		}
 		if (!workspace) {
 			createdWorkspaceNow = true;
-			workspace = createWorkspace({
+			await requestCreationWorkspace({
+				sessionId: bksId,
+				identity: createIdentity,
+				workspaceId: plannedWorkspaceId,
+				dedupeKey: `session-create:${createIdentity}`,
 				name:
 					(typeof msg.createWorkspace.name === "string" &&
 						msg.createWorkspace.name) ||
-					prompt.trim().split("\n")[0].slice(0, 80) ||
+					titlePrompt.trim().split("\n")[0].slice(0, 80) ||
 					"Workspace",
-				...(isRepoLess ? {} : { repo: repo.id }),
+				...(isRepoLess ? {} : { project: repo.id }),
 				createdBy: user || "Anonymous",
 			});
+			workspace = getWorkspace(plannedWorkspaceId);
+			if (!workspace)
+				throw new Error(
+					`Workspace ${plannedWorkspaceId} projection is missing after actor receipt`,
+				);
 		}
 	}
 	// Set once the session has been announced to the client (early
 	// session_created) — a later failure must then close out the
 	// stream instead of leaving the just-opened viewer spinning.
 	let announcedId: string | null = null;
+	let createResponse: Record<string, unknown> | undefined;
 
 	// One outlet for this run's stream events (usable only after the
 	// announce sets announcedId). Everything is stamped with sessionId
@@ -1137,7 +1969,8 @@ export async function handleCreateSessionMessage(
 	};
 	let spec: ResolvedCreate;
 	try {
-		const bksId = newSessionId();
+
+
 		let wtPath: string;
 		// Deferred worktree setup: the git fetch + worktree add +
 		// bun install can take tens of seconds, so the session is
@@ -1149,7 +1982,15 @@ export async function handleCreateSessionMessage(
 		// all - the sandbox provider clones it in-container on the
 		// opening run below.
 		let volumeWorkspace = false;
-		if (selectedRunner) {
+		if (recoveringSession) {
+			wtPath = recoveringSession.worktreeDir || repo.repo;
+			needsWorktree =
+				!createSandboxProvider &&
+				!selectedRunner &&
+				!isAsk &&
+				!isScratch &&
+				!existsSync(wtPath);
+		} else if (selectedRunner) {
 			if (!branch)
 				branch = sanitizeBranchSlug(prompt.trim().split("\n")[0]) || `session-${Date.now().toString(36)}`;
 			wtPath = runnerWorkspacePath(selectedRunner, bksId);
@@ -1174,7 +2015,7 @@ export async function handleCreateSessionMessage(
 			// workspace's sessions so downloads persist across them); a
 			// repo-less ask session only needs somewhere for bash to stand,
 			// and carries no tool that can write to it.
-			wtPath = ensureScratchDir(workspace?.id || randomUUIDv7());
+			wtPath = ensureScratchDir(workspace?.id || createPlanWorkspaceId(bksId));
 		} else if (isAsk) {
 			// Ask sessions read the repo's pinned ask checkout (default
 			// branch, detached) — never the mutable main checkout, whose
@@ -1234,8 +2075,8 @@ export async function handleCreateSessionMessage(
 		// to base on itself.
 		const stackBase =
 			worktreeMode === "stack" && !isAsk && !isScratch
-				? workspace?.branch || ""
-				: "";
+				? workspace?.branch || undefined
+				: undefined;
 		// First code session materializes the workspace's owned worktree so
 		// later share-mode sessions inherit it. Stacked sessions keep their own —
 		// except a "stack" in a workspace with no branch yet, which has no
@@ -1299,7 +2140,10 @@ export async function handleCreateSessionMessage(
 			attachBranch,
 		);
 
-		const title = prompt.trim().split("\n")[0].slice(0, 80);
+		const title = (await nameKnownSessionReferencesForTitle(titlePrompt))
+			.trim()
+			.split("\n")[0]
+			.slice(0, 80);
 		// Every session lives in a workspace (session-workspace.ts). A create
 		// that resolved none — no picker choice, no fork parent, no
 		// explicit id — mints its own here rather than surfacing as an
@@ -1312,15 +2156,30 @@ export async function handleCreateSessionMessage(
 			!forkSource?.workspaceId &&
 			!(typeof msg.workspaceId === "string" && msg.workspaceId)
 		) {
-			workspace = createWorkspace({
+			const plannedWorkspaceId =
+				createPlan.workspaceId || createPlanWorkspaceId(bksId);
+			if (!createPlan.workspaceId)
+				createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+					workspaceId: plannedWorkspaceId,
+				});
+			await requestCreationWorkspace({
+				sessionId: bksId,
+				identity: createIdentity,
+				workspaceId: plannedWorkspaceId,
+				dedupeKey: `session-create:${createIdentity}`,
 				name: title || "Workspace",
-				...(isRepoLess ? {} : { repo: repo.id }),
+				...(isRepoLess ? {} : { project: repo.id }),
 				createdBy: user || "Anonymous",
 				...(sessionBranch ? { branch: sessionBranch } : {}),
-				// Only an isolated worktree is owned — a shared main/ask
+				// Only an isolated worktree is owned. A shared main or ask
 				// checkout is used by every other session there too.
 				...(ownedWorktree(wtPath) ? { worktreeDir: wtPath } : {}),
 			});
+			workspace = getWorkspace(plannedWorkspaceId);
+			if (!workspace)
+				throw new Error(
+					`Workspace ${plannedWorkspaceId} projection is missing after actor receipt`,
+				);
 			mintedForSession = true;
 		}
 		// An auto-created workspace is renamed ONCE from the generated
@@ -1337,18 +2196,38 @@ export async function handleCreateSessionMessage(
 				!!msg.createWorkspace &&
 				!msg.createWorkspace.name) ||
 			(!mintedForSession && !!workspace?.draft && workspace.draft.autoName !== false);
-		// Non-image attachments: stage to disk, hand the agent the paths.
+		// Non-image attachment bodies are reduced to durable source refs at
+		// intake; only the actor can materialize their session-owned paths.
+		const attachmentSources =
+			createPlan.attachments ?? prepareCreationAttachmentSources(bksId, msg.files);
+		if (!createPlan.attachments && attachmentSources.length)
+			createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+				attachments: attachmentSources,
+			});
+		for (const attachment of attachmentSources)
+			await requestCreationAttachment({
+				sessionId: bksId,
+				identity: createIdentity,
+				...attachment,
+			});
 		let openingPrompt = withUploadsNote(
 			prompt,
-			stageFileAttachments(bksId, msg.files),
+			attachmentSources.map((attachment) => ({
+				name: attachment.name,
+				path: creationAttachmentPath(
+					bksId,
+					attachment.attachmentId,
+					attachment.name,
+				),
+			})),
 		);
 		if (deferredAutoRepo) {
 			openingPrompt += `\n\n${wrapContext(
-				isAsk
-					? `Repository selection was left on Auto and session creation did not wait for the preview. Decide whether this question belongs to a registered repository. If another repository is a better fit, use opensession-repos list_repos and read it from the checkout path returned there.`
-					: `Repository selection was left on Auto and session creation did not wait for the preview. Decide whether this task belongs in the current repository before editing. If another registered repository is a better fit, use the opensession-repos tools to switch this session or attach that repository first.`,
-				"repos-note",
-			)}`;
+        isAsk
+          ? `Repository selection was left on Auto and session creation did not wait for the preview. Decide whether this question belongs to a registered repository. If another repository is a better fit, use opensession-repos list_repos and read it from the checkout path returned there.`
+          : `Repository selection was left on Auto and session creation did not wait for the preview. Decide whether this task belongs in the current repository before editing. If another registered repository is a better fit, use the opensession-repos tools to switch this session or attach that repository first.`,
+        "repos-note",
+      )}`;
 		}
 		// @session:<id> mentions from the New-session box get the same
 		// resolving footer as prompts on existing sessions (see
@@ -1383,7 +2262,7 @@ export async function handleCreateSessionMessage(
 			).externalRefsOpeningContext(inheritedRefs, {
 				scratch: isScratch,
 				// The creator's MCP grant fetches the object context
-				// (e.g. the Tella video via their account).
+				// (e.g. a linked video via their account).
 				user,
 			});
 			if (refsContext)
@@ -1396,28 +2275,31 @@ export async function handleCreateSessionMessage(
 					await import("../agents/plain/api");
 				const thread = await getThreadWithMessages(plainThreadId);
 				openingPrompt += `\n\n${wrapContext(
-					`This session was opened from a Plain support ticket. Ticket context:\n\n${formatThreadContext(thread, true)}`,
-					"ticket",
-				)}`;
+          `This session was opened from a Plain support ticket. Ticket context:\n\n${formatThreadContext(thread, true)}`,
+          "ticket",
+        )}`;
 			} catch (e) {
 				console.error(
 					`[create_session] Plain thread lookup failed for ${plainThreadId}:`,
 					e,
 				);
 				openingPrompt += `\n\n${wrapContext(
-					`This session was opened from Plain support ticket ${plainThreadId} (the context lookup failed — use the plain MCP tools to fetch the thread).`,
-					"ticket",
-				)}`;
+          `This session was opened from Plain support ticket ${plainThreadId} (the context lookup failed — use the plain MCP tools to fetch the thread).`,
+          "ticket",
+        )}`;
 			}
 		}
 		if (needsForkHandoff && fork) {
 			openingPrompt += `\n\n${await forkHandoffContext(fork)}`;
 		}
 
-		spec = {
+		if (branch && branch !== createPlan.branch)
+			createPlan = patchCreationSetupPlan(bksId, createIdentity, { branch });
+		const computedSpec: ResolvedCreate = {
 			id: bksId,
 			title,
-			titlePrompt: prompt,
+			titlePrompt,
+			displayPrompt: prompt,
 			openingPrompt,
 			user,
 			createdBy: user || "Anonymous",
@@ -1483,16 +2365,24 @@ export async function handleCreateSessionMessage(
 			} : undefined,
 			volumeWorkspace,
 			remoteSandbox,
+			openingPromptEntryId: `create-${requestId || bksId}`,
+			gitPrincipal: githubCredential?.principal,
+			gitEnv: githubGitEnv,
 			needsWorktree,
+			worktreeKind: fromPr ? "existing" : "new",
+			worktreeIsolated: false,
 			materializeWorktree: needsWorktree
-				? () =>
-						fromPr
-							? createWorktreeForExistingBranch(branch, repo.id)
-							: createWorktree(
-									branch,
-									repo.id,
-									stackBase ? { base: stackBase } : undefined,
-								)
+				? actorWorktreeMaterializer({
+						sessionId: bksId,
+						identity: createIdentity,
+						project: repo.id,
+						branch,
+						worktreePath: wtPath,
+						baseBranch: stackBase,
+						isolated: false,
+						existingBranch: fromPr,
+						credentialPrincipal: githubCredential?.principal,
+					})
 				: undefined,
 			fork: canFork
 				? {
@@ -1502,35 +2392,111 @@ export async function handleCreateSessionMessage(
 				: undefined,
 			finish: "drain",
 		};
+		const restoredSpec = createPlan.resolved
+			? restoreResolvedCreate<ResolvedCreate>(createPlan.resolved)
+			: undefined;
+		const restoredGitEnv = githubCredentialForPrincipal(
+			restoredSpec?.gitPrincipal,
+		)?.env;
+		const restoredWorktreeReady =
+			restoredSpec?.needsWorktree &&
+			typeof restoredSpec.wtPath === "string" &&
+			typeof restoredSpec.repoId === "string" &&
+			typeof restoredSpec.branch === "string"
+				? await isRegisteredWorktree(
+					restoredSpec.wtPath,
+					restoredSpec.repoId,
+					restoredSpec.branch,
+				)
+				: false;
+		const restoredMaterializer =
+			restoredSpec?.needsWorktree &&
+			!restoredWorktreeReady &&
+			typeof restoredSpec.wtPath === "string" &&
+			typeof restoredSpec.branch === "string" &&
+			typeof restoredSpec.repoId === "string"
+				? actorWorktreeMaterializer({
+						sessionId: bksId,
+						identity: createIdentity,
+						project: restoredSpec.repoId,
+						branch: restoredSpec.branch,
+						worktreePath: restoredSpec.wtPath,
+						baseBranch: restoredSpec.stackedOn?.branch,
+						isolated: restoredSpec.worktreeIsolated === true,
+						existingBranch: restoredSpec.worktreeKind === "existing",
+						credentialPrincipal: restoredSpec.gitPrincipal,
+					})
+				: undefined;
+		spec = restoredSpec
+			? {
+					...computedSpec,
+					...restoredSpec,
+					images: computedSpec.images,
+					gitEnv: restoredGitEnv,
+					materializeWorktree: restoredMaterializer,
+					needsWorktree: !!restoredMaterializer,
+				}
+			: computedSpec;
+		if (!createPlan.resolved) {
+			createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+				resolved: snapshotOpeningCreate(computedSpec),
+			});
+		}
 	} catch (e: any) {
-		// Setup failed before anything was persisted or announced — the raw
-		// error goes straight back to the sender (same as before extraction).
-		ws.send(
-			JSON.stringify({
-				type: "error",
-				message: e.message || String(e),
-			}),
-		);
+		// Setup failed before anything was persisted or announced. Every socket
+		// that replayed this create receives the same terminal response.
+		clearCreatePlan(bksId);
+		failCreate(e.message || String(e));
 		return;
 	}
 
-	await openCreatedSession(spec, {
+	let releaseAdmission!: () => void;
+	const admitted = new Promise<void>((resolve) => {
+		releaseAdmission = resolve;
+	});
+	const opening = runOpeningCreateOnce(spec, {
 		announce: (info) => {
-			ws.send(
-				JSON.stringify({
-					type: "session_created",
-					id: info.id,
-					...(info.workspaceId ? { workspaceId: info.workspaceId } : {}),
-					...(info.newWorkspace ? { newWorkspace: true } : {}),
-					...(info.preparingWorkspace ? { preparingWorkspace: true } : {}),
-				}),
-			);
+			createResponse = {
+				type: "session_created",
+				id: info.id,
+				...(info.workspaceId ? { workspaceId: info.workspaceId } : {}),
+				...(info.newWorkspace ? { newWorkspace: true } : {}),
+				...(info.preparingWorkspace ? { preparingWorkspace: true } : {}),
+			};
+			sendCreateFrame(attempt, createResponse);
+			finishCreate();
 			announcedId = info.id;
 			emit({ type: "stream_start" });
+			releaseAdmission();
 		},
 		emit,
 		fail: (message) => {
-			ws.send(JSON.stringify({ type: "error", message }));
+			failCreate(message);
+			releaseAdmission();
 		},
-	});
+	}, createIdentity);
+	if (!opening.owner) {
+		createResponse = {
+			type: "session_created",
+			id: bksId,
+			...(recoveringSession?.workspaceId
+				? { workspaceId: recoveringSession.workspaceId }
+				: {}),
+		};
+		sendCreateFrame(attempt, createResponse);
+		finishCreate();
+		return createResponse;
+	}
+	void opening.done
+		.then(
+			() => clearCreatePlan(bksId),
+			(error) =>
+				console.error(`[create_session] opening run ${bksId} failed:`, error),
+		)
+		.finally(releaseAdmission);
+	// Command ownership ends once the session and opening dispatch are durable.
+	// The target session can now accept Stop or another control while its opening
+	// run continues under generation fencing.
+	await admitted;
+	return createResponse;
 }

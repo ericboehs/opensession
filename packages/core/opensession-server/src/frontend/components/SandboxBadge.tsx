@@ -42,12 +42,12 @@ export function SandboxBadge({
 	const [working, setWorking] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const load = useCallback(async () => {
-		try {
-			setStatus(await fetchSessionSandbox(sessionId));
+		await (async () => {
+setStatus(await fetchSessionSandbox(sessionId));
 			setError(null);
-		} catch (cause: any) {
-			setError(cause?.message || "Sandbox status unavailable");
-		}
+})().catch(async (cause: any) => {
+setError(cause?.message || "Sandbox status unavailable");
+});
 	}, [sessionId]);
 
 	useEffect(() => {
@@ -95,13 +95,13 @@ export function SandboxBadge({
 			return;
 		setWorking(action);
 		setError(null);
-		try {
-			setStatus(await sandboxAction(sessionId, action));
-		} catch (cause: any) {
-			setError(cause?.message || `Could not ${action} sandbox`);
-		} finally {
-			setWorking(null);
-		}
+		await (async () => {
+setStatus(await sandboxAction(sessionId, action));
+})().catch(async (cause: any) => {
+setError(cause?.message || `Could not ${action} sandbox`);
+}).finally(async () => {
+setWorking(null);
+});
 	}
 
 	return (

@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { } from "react";
 import type { UnifiedSession, WSServerMessage } from "../lib/types";
 import { PrPanel } from "./PrPanel";
 
@@ -27,18 +27,14 @@ export function PrQueuePreview({
 	send,
 	addHandler,
 }: Props) {
-	const session = useMemo(
-		() =>
-			[...sessions]
+	const session = ([...sessions]
 				.filter(
 					(item) =>
 						item.repo === repo && item.branch === branch,
 				)
 				.sort((a, b) =>
 					(b.lastActivity || "").localeCompare(a.lastActivity || ""),
-				)[0] || null,
-		[sessions, repo, branch],
-	);
+				)[0] || null);
 
 	return (
 		<div className="h-full min-h-0 bg-surface">

@@ -7,48 +7,65 @@
 
 import type { WebSocketHandler } from "bun";
 import type { WSClientData } from "./ws-hub";
-import { cancelAgentRun, interruptAndSteerAgentRun, isAgentSessionBusy, steerAgentRun, stopAgentRunTurn } from "./agent-runner";
+
+import { currentAgentRunToken, interruptAndSteerAgentRun, isAgentSessionBusy, retractAgentSteer, steerAgentRun } from "./agent-runner";
+
 import { audit } from "./audit";
-import { pendingAsks } from "./asks";
+import { pendingAskAwaitingAnswer } from "./asks";
 import { resendPendingSlackComposer } from "./slack-compose";
 import { notifyMentions } from "./mentions";
-import { startWatching, stopAllWatchesForClient, transcriptRev } from "./file-watcher";
-import { INIT_WIRE_CLAMP_BYTES, entriesForWire, parseTranscriptAsync, parseTranscriptTail, parseTranscriptWindow } from "./jsonl-parser";
+import { startWatching, stopAllWatchesForClient, transcriptRev, } from "./file-watcher";
+import { INIT_WIRE_CLAMP_BYTES, entriesForWire, parseTranscriptAsync, parseTranscriptTail, parseTranscriptWindow, prepareEntriesForWire, } from "./jsonl-parser";
 import { providerFor } from "./models";
-import { appendOpencodeTranscript, clearTranscriptStoreDegraded, transcriptLineRunnerNotice } from "./opencode-transcript";
-import { deleteQueuedPrompt, liftUserStop, persistQueues, promptQueues, queueDisplayState, recordSteer, reorderQueuedPrompt, requeueSteerReceipts, steeredReceipts, stoppedSessions, takeQueuedPrompt, updateQueuedPrompt } from "./queue-state";
-import { transitionRunState } from "./run-state";
-import { abortTurnAndDrain, drainQueue, enqueuePrompt, interruptQueuedPrompt, runSessionPrompt, runSessionPromptAndDrain, steerQueuedPrompt, watchExternalRunAndDrain } from "./run-session";
+
+import { appendTranscriptEntries, clearTranscriptStoreDegraded, transcriptLineRunnerNotice } from "./transcript-persistence";
+import { deleteQueuedPrompt, editableSteerReceipt, liftUserStop, persistQueues, promptQueues, queueDisplayState, durableQueueItem, queueItem, acceptQueuedSteer, prepareQueuedSteer, rejectQueuedSteer, reorderQueuedPrompt, steeredReceipts, stoppedSessions, takeQueuedPrompt, takeSteeredPrompt, updateQueuedPrompt } from "./queue-state";
+
+import { abortTurnAndDrain, drainQueue, enqueuePrompt, interruptQueuedPrompt, requestTurnCancel, runSessionPrompt, runSessionPromptAndDrain, steerQueuedPrompt, watchExternalRunAndDrain, } from "./run-session";
 import { sandboxWsClose, sandboxWsMessage, sandboxWsOpen } from "./run-ws";
 import { handleCreateSessionMessage } from "./session-create";
+import { markReplayedCommandResult } from "./command-replay";
+import { sessionIdForRequest } from "./session-request-id";
 import { runnerWsClose, runnerWsMessage, runnerWsOpen } from "./runner-ws";
-import { sandboxPortalRelayClose, sandboxPortalRelayMessage, sandboxPortalRelayOpen } from "./sandbox-portal-relay";
+import { sandboxPortalRelayClose, sandboxPortalRelayMessage, sandboxPortalRelayOpen, } from "./sandbox-portal-relay";
 import { type Sandbox } from "./sandbox";
 import {
-	findSession,
 	findSessionAsync,
 	invalidateSessionsCache,
 	maybePersistEffort,
 	maybePersistFastMode,
 } from "./session-cache";
-import { engineUserTexts, mergedSessionTranscript, mergedSessionTranscriptAsync, v2MirrorFiles, v2TranscriptHasDrift } from "./sessions";
+import { mergedSessionTranscript, mergedSessionTranscriptAsync, v2MirrorFiles, v2TranscriptHasDrift, } from "./sessions";
 import { handleSlashCommand } from "./slash-commands";
 import { maybeRecapOnReturn } from "./recap";
-import { maybeSuggestRepliesOnReturn, resendReplySuggestions } from "./reply-suggestions";
-import { resizeTerminal, startSessionTerminal, stopAllTerminals, stopTerminal, writeTerminal } from "./terminals";
-import { classifyEntries, dropContextInjections } from "@tellahq/opensession-protocol/notices";
-import { withToolPresentations } from "@tellahq/opensession-protocol/tool-presentation";
+import { maybeSuggestRepliesOnReturn, resendReplySuggestions, } from "./reply-suggestions";
+import { unarchiveForHumanTurn } from "./session-unarchive";
+import { resizeTerminal, startSessionTerminal, stopAllTerminals, stopTerminal, writeTerminal, } from "./terminals";
 import { subscribeTranscript } from "./transcript-bus";
 import { resumeSessionFeed } from "./session-feed";
 import { type SeqEntry, transcriptStore } from "./transcript-store";
 import { startTranscriptWatch } from "./transcript-watch";
-import { MAX_UPLOAD_BYTES, WS_MAX_PAYLOAD_BYTES, asDataUrlList, parseImageDataUrls } from "./uploads";
+import { clampV2InitEntries } from "./transcript-wire";
+import { MAX_UPLOAD_BYTES, WS_MAX_PAYLOAD_BYTES, asDataUrlList, parseImageDataUrls, } from "./uploads";
 import { githubReconnectRequired } from "./github-auth";
 import { refreshWebIdentity } from "./web-auth";
-import { BOOT_ID, allClients, broadcastToAll, broadcastToSession, globalPresenceFrame, joinSession, leaveSession, markClientSeen, setClientAway } from "./ws-hub";
+import { BOOT_ID, allClients, broadcastToAll, broadcastToSession, globalPresenceFrame, joinSession, leaveSession, markClientSeen, setClientAway, setClientTyping, } from "./ws-hub";
 import { existsSync, readFileSync, statSync, watch } from "fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { stateDir } from "./paths";
+import { isInternalKernelDispatch } from "./session-kernel/ws-command-bridge";
+import { withSessionMutationLock } from "./session-mutation-lock";
+import {
+	acknowledgeSessionCommand,
+  deliveryInterruptForAnchor,
+  durableSessionCommand,
+	isRetryableSessionCommandError,
+  sessionGatewayCommand,
+  sessionDelivery,
+	sessionKernel,
+  sessionTurn,
+  targetForDeliveryInterrupt,
+  targetForTurnCancel,
+} from "./session-kernel";
 
 // Who likely triggered the restart that booted THIS process — read once from
 // the marker the previous process wrote in gracefulShutdown, and only trusted
@@ -60,7 +77,7 @@ function lastRestartBy(): string {
 		g.__lastRestartBy = "";
 		try {
 			const d = JSON.parse(
-				readFileSync(join(homedir(), ".opensession-last-restart.json"), "utf8"),
+				readFileSync(stateDir("last-restart.json"), "utf8"),
 			);
 			if (d?.by && Date.now() - Date.parse(d.at) < 10 * 60_000)
 				g.__lastRestartBy = String(d.by);
@@ -78,9 +95,9 @@ function lastRestartBy(): string {
 function sendWatchExtras(
 	ws: any,
 	sessionId: string,
-	session: NonNullable<ReturnType<typeof findSession>>,
+	session: NonNullable<Awaited<ReturnType<typeof findSessionAsync>>>,
 ): void {
-	const pendingAsk = pendingAsks.get(sessionId);
+	const pendingAsk = pendingAskAwaitingAnswer(sessionId);
 	if (pendingAsk) {
 		ws.send(
 			JSON.stringify({
@@ -91,8 +108,8 @@ function sendWatchExtras(
 			}),
 		);
 	}
-	resendPendingSlackComposer(sessionId, (message) => ws.send(JSON.stringify(message)));
-	resendReplySuggestions(sessionId, (message) => ws.send(JSON.stringify(message)));
+	resendPendingSlackComposer(sessionId, (message) => ws.send(JSON.stringify(message)),);
+	resendReplySuggestions(sessionId, (message) => ws.send(JSON.stringify(message)),);
 
 	// Older in-memory rows may lack ids; assign and persist them before
 	// sending so edit/delete/steer actions can address the same row.
@@ -177,10 +194,11 @@ const v2BgImports: Set<string> = ((globalThis as any).__osTranscriptV2BgImports 
 	new Set());
 
 /**
- * What `entriesForWire` does for every legacy send site, for the v2 store
- * path: classify how each entry reads and say what each tool call is. Store
- * rows are RAW — the marker-derived `noticeKind` is on them, but the `notice`
- * a client renders from is not, and delivery plumbing ("[Name] " prefixes,
+ * What `prepareEntriesForWire` does for every legacy send site, for the v2
+ * store path: strip injected context, classify how each entry reads, and say
+ * what each tool call is. Store rows are RAW — the marker-derived
+ * `noticeKind` is on them, but the `notice` a client renders from is not, and
+ * delivery plumbing ("[Name] " prefixes,
  * worker/session sentinels, the "💬 X answered" header) is still in `content`.
  * The web re-classifies client-side, so this went unnoticed until the native
  * apps moved onto seq paging: they read `notice`/`sender` only, so a recap
@@ -192,55 +210,48 @@ const v2BgImports: Set<string> = ((globalThis as any).__osTranscriptV2BgImports 
  * measures the text a reader actually sees.
  */
 function classifyV2Entries(entries: SeqEntry[]): SeqEntry[] {
-	return withToolPresentations(
-		classifyEntries(dropContextInjections(entries)),
-	) as SeqEntry[];
+	return prepareEntriesForWire(entries) as SeqEntry[];
+}
+
+async function sendTranscriptIndex(
+	ws: any,
+	sessionId: string,
+	isCurrent: () => boolean,
+): Promise<void> {
+	const store = transcriptStore();
+	await store.ensureTranscriptOutline(sessionId);
+	if (!isCurrent()) return;
+	const index = store.readTranscriptIndex(sessionId);
+	ws.send(
+		JSON.stringify({
+			type: "transcript_index",
+			sessionId,
+			...index,
+		}),
+	);
 }
 
 /**
- * §4 snapshot clamp: v2 store rows are wire-bounded at 32KB, but the legacy
- * transcript-open payload clamps entries to INIT_WIRE_CLAMP_BYTES (8KB — the
- * e4e2340a slow-transcript fix; the UI eagerly renders ~6KB per bubble and
- * fetches the full entry on "Show more" anyway), so v2 init/history/backlog
- * pages go through the same budget. Same markers as entriesForWire,
- * except an already-store-stripped entry keeps its original contentLength
- * (the true pre-strip length) instead of the 32KB form's. Live
- * transcript_append frames keep the fatter store forms, same as legacy
- * appends.
+ * V2 snapshot/history pages use the same bounded previews as the legacy
+ * transcript path. Live transcript_append frames keep the larger store form.
  */
-function clampV2InitEntries(entries: SeqEntry[]): SeqEntry[] {
-	if (!entries.some((e) => (e.content?.length ?? 0) > INIT_WIRE_CLAMP_BYTES))
-		return entries;
-	return entries.map((e) =>
-		(e.content?.length ?? 0) <= INIT_WIRE_CLAMP_BYTES
-			? e
-			: {
-					...e,
-					content: e.content.slice(0, INIT_WIRE_CLAMP_BYTES),
-					contentClamped: true,
-					contentLength: e.contentLength ?? e.content.length,
-				},
-	);
-}
 
 /** Legacy (re-)import for a session (same routine as §3's import-first
  *  gate): merged cross-engine history → importLegacyTranscript (which marks
  *  the session imported; empty history marks 'live-only'). Watermark = the
  *  TOTAL size of the §8 drift candidate set (session transcript file + oc
  *  mirror — the exact set v2TranscriptHasDrift compares against; measuring
- *  only transcriptPath would leave opencode sessions permanently
+ *  only transcriptPath would leave pi sessions permanently
  *  grown-beyond-watermark). Also the drift RE-import: idempotent upserts, and
  *  a completed import releases the failure-side store-degraded marker. */
 function v2ImportSession(
-	session: NonNullable<ReturnType<typeof findSession>>,
+	session: NonNullable<Awaited<ReturnType<typeof findSessionAsync>>>,
 ): void {
 	// Deliberately id-less ref: guarantees the legacy merge — an id-carrying
 	// ref would route mergedSessionTranscript back into the v2 store path,
 	// which on a drift re-import is exactly what we're refreshing.
 	const entries = mergedSessionTranscript({
 		transcriptPath: session.transcriptPath ?? null,
-		opencodeSessionId: session.opencodeSessionId,
-		claudeSessionId: session.claudeSessionId ?? null,
 	});
 	v2FinishImport(session, entries);
 }
@@ -250,18 +261,16 @@ function v2ImportSession(
  *  — exactly what gets routed here by the sync-import size ceiling — no
  *  longer wedges the server for the duration of the parse. */
 async function v2ImportSessionAsync(
-	session: NonNullable<ReturnType<typeof findSession>>,
+	session: NonNullable<Awaited<ReturnType<typeof findSessionAsync>>>,
 ): Promise<void> {
 	const entries = await mergedSessionTranscriptAsync({
 		transcriptPath: session.transcriptPath ?? null,
-		opencodeSessionId: session.opencodeSessionId,
-		claudeSessionId: session.claudeSessionId ?? null,
 	});
 	v2FinishImport(session, entries);
 }
 
 function v2FinishImport(
-	session: NonNullable<ReturnType<typeof findSession>>,
+	session: NonNullable<Awaited<ReturnType<typeof findSessionAsync>>>,
 	entries: ReturnType<typeof mergedSessionTranscript>,
 ): void {
 	let watermark: number | null = null;
@@ -277,8 +286,7 @@ function v2FinishImport(
 	);
 	clearTranscriptStoreDegraded(
 		session.id,
-		session.opencodeSessionId,
-		session.claudeSessionId,
+		session.claudeSessionId
 	);
 }
 
@@ -290,7 +298,7 @@ function v2QueueBackgroundImport(sessionId: string, reimport = false): void {
 	v2BgImports.add(sessionId);
 	setTimeout(async () => {
 		try {
-			const session = findSession(sessionId);
+			const session = await findSessionAsync(sessionId);
 			if (session && (reimport || transcriptStore().needsImport(sessionId)))
 				await v2ImportSessionAsync(session);
 		} catch (e) {
@@ -310,7 +318,7 @@ function v2QueueBackgroundImport(sessionId: string, reimport = false): void {
 function serveTranscriptV2(
 	ws: any,
 	sessionId: string,
-	session: NonNullable<ReturnType<typeof findSession>>,
+	session: NonNullable<Awaited<ReturnType<typeof findSessionAsync>>>,
 	msg: any,
 ): boolean {
 	if (msg.supportsSeq !== true) return false;
@@ -330,7 +338,7 @@ function serveTranscriptV2(
 	// mirror retirement (design doc §11); mirror writes themselves are gone.
 	if (
 		session.isRunning &&
-		!isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id)
+		!isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id,)
 	)
 		return false;
 
@@ -342,7 +350,7 @@ function serveTranscriptV2(
 			// the watch; big ones import in the background and THIS watch serves
 			// legacy (the next one upgrades). The ceiling measures the WHOLE §8
 			// candidate set (session transcript file + oc mirror) — transcriptPath
-			// alone undercounts opencode sessions, whose history mostly lives in
+			// alone undercounts pi sessions, whose history mostly lives in
 			// the mirror.
 			let mirrorSize = 0;
 			try {
@@ -375,6 +383,27 @@ function serveTranscriptV2(
 	// durable changeSeq reconciliation, closing both handshake and reconnect
 	// rewrite gaps.
 	ws.data.transcriptV2 = true;
+	const scheduleTranscriptIndex = () => {
+		if (msg.supportsTranscriptIndex !== true) return;
+		setTimeout(async () => {
+			if (
+				ws.data?.watchingSessionId !== sessionId ||
+				!ws.data?.transcriptV2
+			)
+				return;
+			try {
+				await sendTranscriptIndex(
+					ws,
+					sessionId,
+					() =>
+						ws.data?.watchingSessionId === sessionId &&
+						!!ws.data?.transcriptV2,
+				);
+			} catch (error) {
+				console.warn(`[ws] transcript index failed for ${sessionId}:`, error);
+			}
+		}, 0);
+	};
 	try {
 		const watch = startTranscriptWatch({
 			sessionId,
@@ -392,14 +421,22 @@ function serveTranscriptV2(
 				ws.data?.supportsFeed && event?.feed
 					? { ...event.feed, event: frame }
 					: frame,
+			afterResetSnapshot: scheduleTranscriptIndex,
 		});
 		v2Unsubs.set(ws, () => watch.unsubscribe());
+		// Let the bounded tail frame flush first. The complete outline is a
+		// content-free follow-up and may lazily backfill this one session.
+		scheduleTranscriptIndex();
 	} catch (error) {
 		ws.data.transcriptV2 = false;
 		throw error;
 	}
 	return true;
 }
+
+const kernelDispatchTokens = new Set<string>();
+const kernelDispatchResults = new Map<string, unknown>();
+const kernelDispatchErrors = new Map<string, Error>();
 
 export const websocketHandlers: WebSocketHandler<WSClientData> = {
 	// Default is 16 MB — too small for a base64'd attachment near MAX_UPLOAD_BYTES,
@@ -425,6 +462,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				JSON.stringify({
 					type: "hello",
 					bootId: BOOT_ID,
+					capabilities: { commandResults: true },
+					...(ws.data?.authLogin
+						? { commandScope: `github:${ws.data.authLogin.toLowerCase()}` }
+						: {}),
 					...(lastRestartBy() ? { restartBy: lastRestartBy() } : {}),
 				}),
 			);
@@ -470,7 +511,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				!identity ||
 				(!identity.automation && githubReconnectRequired(identity.login))
 			) {
-				ws.close(4001, identity ? "GitHub reconnect required" : "Roster membership changed");
+				ws.close(4001, identity ? "GitHub reconnect required" : "Roster membership changed",);
 				return;
 			}
 			const firstName = identity.name.split(" ")[0] || identity.name;
@@ -483,12 +524,274 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 		// "here now"). `away` carries its own stamp.
 		markClientSeen(ws, msg.type !== "ping" && msg.type !== "away");
 
+		// Every session mutation enters one per-session mailbox. The recursive
+		// call carries the private marker and executes the existing handler only
+		// after earlier commands for this session have committed. Read/watch and
+		// terminal frames stay outside the kernel because they do not own session
+		// lifecycle state.
+		const kernelCommands = new Set([
+			"prompt",
+			"interrupt_prompt",
+			"delete_queued_prompt",
+			"take_queued_prompt",
+			"take_steered_prompt",
+			"update_queued_prompt",
+			"steer_queued_prompt",
+			"interrupt_queued_prompt",
+			"reorder_queued_prompt",
+			"cancel",
+			"answer_question",
+		]);
+		// Creation already has its own durable FSM and outbox. Wrapping it in a
+		// websocket_command holds the per-session mailbox while the opening effect
+		// tries to enter session_file_updated, so neither command can finish.
+		const requestId =
+				typeof msg.requestId === "string" && msg.requestId
+					? msg.requestId.slice(0, 200)
+					: crypto.randomUUID();
+			const commandSessionId =
+				msg.type === "create_session"
+					? typeof msg.clientSessionId === "string"
+						? msg.clientSessionId
+						: sessionIdForRequest(
+								ws.data?.authLogin || msg.user || "anonymous",
+								requestId,
+							)
+					: typeof msg.sessionId === "string"
+						? msg.sessionId
+						:
+			msg.type === "cancel" && typeof ws.data?.watchingSessionId === "string"
+				? ws.data.watchingSessionId
+				: typeof ws.data?.watchingSessionId === "string"
+					? ws.data.watchingSessionId
+					: undefined;
+		const internalKernelToken = isInternalKernelDispatch(
+			kernelDispatchTokens,
+			msg.__sessionKernelToken,
+		);
+		if (
+			!internalKernelToken &&
+			commandSessionId &&
+			kernelCommands.has(msg.type)
+		) {
+			const messageHash = new Bun.CryptoHasher("sha256")
+				.update(String(message))
+				.digest("hex");
+			// Cancel and interrupt target the run that existed when the command was
+			// first admitted. Replaying after a successor starts must fail payload
+			// identity instead of stopping the successor.
+      const targetsRun =
+        msg.type === "cancel" || msg.type === "interrupt_prompt";
+      const targetRun = targetsRun
+        ? sessionKernel(commandSessionId).runState()
+        : undefined;
+      const persistedCancel =
+        msg.type === "cancel"
+          ? sessionTurn({ op: "snapshot", sessionId: commandSessionId }).cancel
+          : undefined;
+      const persistedInterrupt =
+        msg.type === "interrupt_prompt"
+          ? deliveryInterruptForAnchor(
+              sessionDelivery({
+                op: "snapshot",
+                sessionId: commandSessionId,
+              }),
+              requestId,
+            )
+          : undefined;
+      const priorCommandPayload = durableSessionCommand(
+        commandSessionId,
+        requestId,
+      )?.payload as
+        | {
+            command?: string;
+            targetRunId?: string | null;
+            targetRunGeneration?: number;
+          }
+        | undefined;
+      const commandTarget =
+        !!priorCommandPayload &&
+        priorCommandPayload.command === msg.type &&
+        priorCommandPayload.targetRunId !== undefined &&
+        priorCommandPayload.targetRunGeneration !== undefined
+          ? {
+              runId: priorCommandPayload.targetRunId,
+              generation: priorCommandPayload.targetRunGeneration,
+            }
+          : undefined;
+      const replayedTarget =
+        commandTarget ||
+        targetForTurnCancel(persistedCancel, `stop:${requestId}`) ||
+        targetForDeliveryInterrupt(persistedInterrupt, requestId);
+      const targetRunId = targetRun
+        ? replayedTarget
+          ? replayedTarget.runId
+          : targetRun.currentRunId ||
+          (targetRun.state === "starting" || targetRun.state === "preparing"
+            ? currentAgentRunToken(commandSessionId)
+              : undefined) ||
+            null
+        : undefined;
+      const targetRunGeneration =
+        replayedTarget?.generation ?? targetRun?.generation;
+			const kernelToken = crypto.randomUUID();
+			kernelDispatchTokens.add(kernelToken);
+      let gatewayCommandExecuting = false;
+      let gatewayPhysicalFinished = false;
+				try {
+          const plan = sessionGatewayCommand({
+            op: "request",
+            sessionId: commandSessionId,
+            requestId,
+            operation: "websocket_command",
+            identity: {
+              command: msg.type,
+              messageHash,
+              ...(targetRunId !== undefined
+                ? { targetRunId, targetRunGeneration }
+                : {}),
+            },
+          });
+          if (plan.status === "in_progress")
+            throw Object.assign(new Error("Session command is already in progress"), {
+              retryable: true,
+            });
+          gatewayCommandExecuting = plan.status === "execute";
+          const accepted = plan.status === "completed"
+            ? { result: plan.result, duplicate: true }
+            : await withSessionMutationLock(commandSessionId, async () => {
+          if (targetRunId !== undefined) {
+            const current = sessionKernel(commandSessionId).runState();
+            const currentTargetId =
+              current.currentRunId ||
+              (current.state === "starting" || current.state === "preparing"
+                ? currentAgentRunToken(commandSessionId)
+                : undefined) ||
+              null;
+            if (
+              currentTargetId !== targetRunId ||
+              current.generation !== targetRunGeneration
+            ) {
+              const cancelReplayMatches =
+                persistedCancel?.cancelId === `stop:${requestId}` &&
+                persistedCancel.runId === targetRunId &&
+                persistedCancel.runGeneration === targetRunGeneration;
+              const interruptReplayMatches =
+                !!persistedInterrupt &&
+                persistedInterrupt.anchorId === requestId &&
+                persistedInterrupt.dispatchId === targetRunId &&
+                persistedInterrupt.runGeneration === targetRunGeneration;
+              if (!cancelReplayMatches && !interruptReplayMatches)
+                throw new Error(
+                  "The run targeted by this command has already changed",
+                );
+            }
+          }
+					await websocketHandlers.message?.(
+						ws,
+						JSON.stringify({
+							...msg,
+							sessionId: commandSessionId,
+              requestId,
+              ...(targetRunId !== undefined
+                ? {
+                    __targetRunId: targetRunId,
+                    __targetRunGeneration: targetRunGeneration,
+                  }
+                : {}),
+              __sessionKernelToken: kernelToken,
+						}),
+					);
+					const dispatchError = kernelDispatchErrors.get(kernelToken);
+					if (dispatchError) throw dispatchError;
+					const result = kernelDispatchResults.get(kernelToken);
+            gatewayPhysicalFinished = true;
+            sessionGatewayCommand({
+              op: "complete",
+              sessionId: commandSessionId,
+              requestId,
+              operation: "websocket_command",
+              result,
+            });
+            return { result, duplicate: false };
+				});
+					if (
+						accepted.duplicate &&
+						accepted.result &&
+						typeof accepted.result === "object"
+					)
+						ws.send(
+							JSON.stringify(markReplayedCommandResult(accepted.result)),
+						);
+					ws.send(
+						JSON.stringify({
+							type: "command_result",
+							sessionId: commandSessionId,
+							requestId,
+							status: "completed",
+							result: accepted.result,
+						}),
+					);
+				} catch (error) {
+					const message =
+						error instanceof Error ? error.message : String(error);
+					const retryable = isRetryableSessionCommandError(error);
+          if (gatewayCommandExecuting && !gatewayPhysicalFinished)
+            sessionGatewayCommand({
+              op: "fail",
+              sessionId: commandSessionId,
+              requestId,
+              operation: "websocket_command",
+              error: message,
+              retryable,
+            });
+					ws.send(
+						JSON.stringify({
+							type: "command_result",
+							sessionId: commandSessionId,
+							requestId,
+							status: "failed",
+							error: message,
+							terminal: !retryable,
+						}),
+					);
+					ws.send(
+						JSON.stringify({
+							type: "error",
+							sessionId: commandSessionId,
+							message,
+						}),
+					);
+					if (retryable)
+						setTimeout(() => ws.close(1012, "Retry session command"), 50).unref?.();
+				} finally {
+			kernelDispatchTokens.delete(kernelToken);
+					kernelDispatchResults.delete(kernelToken);
+					kernelDispatchErrors.delete(kernelToken);
+				}
+			return;
+		}
+
 		switch (msg.type) {
 			case "ping": {
 				// App-level liveness probe (browsers can't send WS protocol pings).
 				// The client closes + reconnects a socket whose ping goes unanswered
 				// — how a half-open iOS/Safari socket gets detected.
 				ws.send('{"type":"pong"}');
+				break;
+			}
+
+			case "command_ack": {
+				if (msg.sessionId && msg.requestId) {
+					await acknowledgeSessionCommand(msg.sessionId, msg.requestId);
+					ws.send(
+						JSON.stringify({
+							type: "command_ack_result",
+							sessionId: msg.sessionId,
+							requestId: msg.requestId,
+						}),
+					);
+				}
 				break;
 			}
 
@@ -508,6 +811,12 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					// ended one while nobody was here (reply-suggestions.ts).
 					maybeSuggestRepliesOnReturn(returnedTo, ws.data?.user || undefined);
 				}
+				break;
+			}
+
+			case "typing": {
+				if (typeof msg.sessionId !== "string") break;
+				setClientTyping(ws, msg.sessionId, msg.typing === true);
 				break;
 			}
 
@@ -615,7 +924,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					// whose next run hasn't seeded the new id's file. Without this the
 					// thread renders blank until the next send (which seeds the file);
 					// serve history via the cross-engine fallback (old transcript file
-					// merged with OpenCode's SQLite store) instead. No byte cursor into
+					// merged with Pi's SQLite store) instead. No byte cursor into
 					// a file here, so no "load earlier" paging — the next run's seeded
 					// file restores it.
 					const merged = await mergedSessionTranscriptAsync(session);
@@ -663,6 +972,75 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				break;
 			}
 
+			case "load_transcript_index": {
+				if (
+					ws.data?.transcriptV2 &&
+					ws.data?.watchingSessionId === msg.sessionId
+				) {
+					try {
+						await sendTranscriptIndex(
+							ws,
+							msg.sessionId,
+							() =>
+								ws.data?.watchingSessionId === msg.sessionId &&
+								!!ws.data?.transcriptV2,
+						);
+					} catch (error) {
+						console.warn(
+							`[ws] transcript index refresh failed for ${msg.sessionId}:`,
+							error,
+						);
+					}
+				}
+				break;
+			}
+
+			case "load_transcript_range": {
+				if (
+					!ws.data?.transcriptV2 ||
+					ws.data?.watchingSessionId !== msg.sessionId
+				)
+					break;
+				const firstSeq = Math.max(1, Math.floor(msg.firstSeq));
+				const lastSeq = Math.max(firstSeq, Math.floor(msg.lastSeq));
+				const afterSeq =
+					typeof msg.afterSeq === "number"
+						? Math.floor(msg.afterSeq)
+						: firstSeq - 1;
+				try {
+					const store = transcriptStore();
+					const page = store.readRange(
+						msg.sessionId,
+						firstSeq,
+						lastSeq,
+						afterSeq,
+						500,
+					);
+					ws.send(
+						JSON.stringify({
+							type: "transcript_range",
+							sessionId: msg.sessionId,
+							requestId: msg.requestId,
+							entries: clampV2InitEntries(
+								classifyV2Entries(page.entries),
+							),
+							firstSeq: page.firstSeq,
+							lastSeq: page.lastSeq,
+							coveredThroughSeq: page.coveredThroughSeq,
+							complete: page.complete,
+							epoch: store.getLastResetChangeSeq(msg.sessionId),
+							lastChangeSeq: store.getLastChangeSeq(msg.sessionId),
+						}),
+					);
+				} catch (error) {
+					console.warn(
+						`[ws] transcript range failed for ${msg.sessionId}:`,
+						error,
+					);
+				}
+				break;
+			}
+
 			case "load_history": {
 				// "Load earlier history": one PAGE of history — the byte window just
 				// before the client's earliest offset (`beforeOffset`, threaded from
@@ -701,10 +1079,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						);
 						break;
 					} catch (e) {
-						console.warn(`[ws] v2 load_history failed for ${msg.sessionId}:`, e);
+						console.warn(`[ws] v2 load_history failed for ${msg.sessionId}:`, e,);
 					}
 				}
-				const session = findSession(msg.sessionId);
+				const session = await findSessionAsync(msg.sessionId);
 				if (!session?.transcriptPath) {
 					// Same no-mirror-file state as the watch fallback: serve the merged
 					// cross-engine history rather than blanking the client's view.
@@ -714,7 +1092,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							sessionId: msg.sessionId,
 							entries: session
 								? entriesForWire(
-										await mergedSessionTranscriptAsync(session),
+										await mergedSessionTranscriptAsync(session)
 									)
 								: [],
 							truncated: false,
@@ -825,11 +1203,11 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					!(Array.isArray(msg.files) && msg.files.length)
 				) {
 					ws.send(
-						JSON.stringify({ type: "error", message: "Empty prompt (no content/images/files)" }),
+						JSON.stringify({ type: "error", message: "Empty prompt (no content/images/files)", }),
 					);
 					return;
 				}
-				const session = findSession(sessionId);
+				const session = await findSessionAsync(sessionId);
 				if (!session) {
 					ws.send(
 						JSON.stringify({ type: "error", message: "Session not found" }),
@@ -853,6 +1231,28 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					invalidateSessionsCache();
 					break;
 				}
+
+				// Codex sessions start a fresh thread on first prompt. Open Session
+				// sessions with no engine id are *fresh* sessions (a new sibling from the
+				// tab strip's +): runSessionPrompt starts a new conversation. Only
+				// non-opensession sources genuinely need an id to resume.
+				if (
+					providerFor(session.model) === "claude" &&
+					!session.claudeSessionId &&
+					session.source !== "opensession"
+				) {
+					ws.send(
+						JSON.stringify({
+							type: "error",
+							message: "No Claude session to resume",
+						}),
+					);
+					return;
+				}
+
+				// Sending a new human turn makes archived work active again. Do this
+				// only after validation and slash-command handling have accepted the turn.
+				unarchiveForHumanTurn(session);
 
 				// @People-mentions in a prompt ping the tagged teammates (roster
 				// from the identity config, never the sender). Fires at send time
@@ -883,6 +1283,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				) {
 					if (msg.busyMode === "queue") {
 						enqueuePrompt(sessionId, {
+							id: msg.requestId,
 							content,
 							user,
 							images: imageUrls,
@@ -897,6 +1298,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						break;
 					}
 					const attributed = user ? `[${user}] ${content}` : content;
+					const steerItem = durableQueueItem(
+						sessionId,
+						queueItem({ id: msg.requestId, content, user, images: imageUrls }),
+					);
 					// Images fold into the live run as content blocks; disk-staged
 					// files can't ride the steer channel, so a send carrying files
 					// falls through to the queue (its drain delivers images + files
@@ -907,20 +1312,27 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						msg.busyMode === "steer" &&
 						!hasFiles &&
 						!hasContext &&
-						steerAgentRun(
-							[session.claudeSessionId, session.codexThreadId, session.id],
-							attributed,
-							images,
-						)
+						steerItem.id &&
+						prepareQueuedSteer(sessionId, steerItem.id, steerItem)
 					) {
-						// The message lands in the transcript when its turn starts. Until
-						// then a steer receipt is the durable visible record (survives
-						// reload/leave); kept out of promptQueues so the drain never
-						// re-delivers it, and cleared when the run finishes.
-						recordSteer(sessionId, { content, user, images: imageUrls });
+						if (
+							steerAgentRun(
+								[session.claudeSessionId, session.codexThreadId, session.id],
+								attributed,
+								images,
+								steerItem.id,
+							)
+						) {
+							if (!acceptQueuedSteer(sessionId, steerItem.id))
+								throw new Error("Pending steer changed before runner acceptance");
+						} else {
+							rejectQueuedSteer(sessionId, steerItem.id);
+							watchExternalRunAndDrain(sessionId);
+						}
 						break;
 					}
 					enqueuePrompt(sessionId, {
+						id: msg.requestId,
 						content,
 						user,
 						images: imageUrls,
@@ -931,33 +1343,16 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					break;
 				}
 
-				// Codex sessions start a fresh thread on first prompt. Open Session
-				// sessions with no engine id are *fresh* sessions (a new sibling from the
-				// tab strip's +): runSessionPrompt starts a new conversation. Only
-				// non-opensession sources genuinely need an id to resume.
-				if (
-					providerFor(session.model) === "claude" &&
-					!session.claudeSessionId &&
-					session.source !== "opensession"
-				) {
-					ws.send(
-						JSON.stringify({
-							type: "error",
-							message: "No Claude session to resume",
-						}),
-					);
-					return;
-				}
-
 				// A Sandbox send is durable before it can wake compute. The drain has
 				// a per-session single-flight lock, so the first queued message owns
 				// the wake and later messages remain FIFO behind it.
 				if (session.sandbox?.sandboxId && session.sandbox.provider !== "local") {
 					enqueuePrompt(sessionId, {
+						id: msg.requestId,
 						content, user, images: imageUrls, files: msg.files, contextSessions,
 					});
 					void drainQueue(sessionId).catch((error) =>
-						console.error(`[queue] Sandbox wake drain failed for ${sessionId}:`, error),
+						console.error(`[queue] Sandbox wake drain failed for ${sessionId}:`, error,),
 					);
 					break;
 				}
@@ -966,90 +1361,53 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				// it into a dispatch record that survives a restart until the engine has
 				// written its own active-run journal.
 				enqueuePrompt(sessionId, {
+					id: msg.requestId,
 					content,
 					user,
 					images: imageUrls,
 					files: msg.files,
 					contextSessions,
 				});
-				await drainQueue(sessionId);
+				void drainQueue(sessionId).catch((error) =>
+					console.error(`[queue] Prompt drain failed for ${sessionId}:`, error,),
+				);
 				break;
 			}
 
 			case "interrupt_prompt": {
-				// Esc-style redirect: stop the current turn, keep the session, and
-				// continue right away with this message. Falls back to a normal
-				// prompt (steer/queue/run) when there's nothing to interrupt.
 				const { sessionId, content, user } = msg;
 				const images = parseImageDataUrls(msg.images);
 				const imageUrls = asDataUrlList(msg.images);
-				const session = findSession(sessionId);
+				const session = await findSessionAsync(sessionId);
 				if (!session) {
-					ws.send(
-						JSON.stringify({ type: "error", message: "Session not found" }),
-					);
+					ws.send(JSON.stringify({ type: "error", message: "Session not found" }),);
 					return;
 				}
+				unarchiveForHumanTurn(session);
 				maybePersistEffort(session, msg.effort);
 				maybePersistFastMode(session, msg.fastMode);
 				liftUserStop(sessionId);
-				const attributed = user ? `[${user}] ${content}` : content;
-				// Files can't ride the interrupt/steer content-block channel — a send
-				// carrying files falls through to the queue (drain delivers images +
-				// files together), so it isn't interrupted here.
-				const hasFiles = Array.isArray(msg.files) && msg.files.length > 0;
-				if (
-					!hasFiles &&
-					isAgentSessionBusy(
-						session.claudeSessionId,
-						session.codexThreadId,
-						session.id,
-					) &&
-					interruptAndSteerAgentRun(
-						[session.claudeSessionId, session.codexThreadId, session.id],
-						attributed,
-						images,
-					)
-				) {
-					// Interrupt aborts the current turn and continues immediately, so
-					// the message lands in the transcript almost at once — no steer
-					// receipt ("folded in" would be wrong for an interrupt) and no system
-					// notice. The sender's optimistic bubble reconciles when its real
-					// turn appears; the SDK's "[Request interrupted by user]" marker is
-					// filtered out in jsonl-parser.
-					break;
-				}
-				// No in-band interrupt-and-steer (opencode runs, or a send carrying
-				// files): queue the message durably, then abort the current turn so
-				// the drain delivers it as the immediate next turn — esc+enter
-				// semantics. If nothing is abortable either (external CLI/tmux run),
-				// it stays queued for the natural stopping point, so nothing — text
-				// or attachment — is lost.
-				if (
-					isAgentSessionBusy(
-						session.claudeSessionId,
-						session.codexThreadId,
-						session.id,
-					)
-				) {
-					enqueuePrompt(sessionId, {
-						content,
-						user,
-						images: imageUrls,
-						files: msg.files,
-					});
-					if (!abortTurnAndDrain(sessionId, session)) {
-						watchExternalRunAndDrain(sessionId);
-					}
-					break;
-				}
-				await runSessionPromptAndDrain(
-					sessionId,
+				enqueuePrompt(sessionId, {
+					id: msg.requestId,
 					content,
 					user,
-					images,
-					msg.files,
-				);
+					images: imageUrls,
+					files: msg.files,
+				});
+				if (
+					isAgentSessionBusy(
+						session.claudeSessionId,
+						session.codexThreadId,
+						session.id,
+					)
+				) {
+					if (!abortTurnAndDrain(sessionId, session, undefined, msg.requestId))
+						watchExternalRunAndDrain(sessionId);
+				} else {
+					void drainQueue(sessionId).catch((error) =>
+						console.error(`[queue] Interrupt prompt failed for ${sessionId}:`, error,),
+					);
+				}
 				break;
 			}
 
@@ -1066,15 +1424,44 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					queueId,
 					ws.data.authUser || ws.data.user || undefined,
 				);
-				ws.send(JSON.stringify({
+					const response ={
 					type: "queued_prompt_taken",
 					sessionId,
 					queueId,
 					...(item
 						? { item }
 						: { message: "That queued message could not be edited." }),
-				}));
+				};
+					if (typeof msg.__sessionKernelToken === "string")
+						kernelDispatchResults.set(msg.__sessionKernelToken, response);
+					ws.send(JSON.stringify(response));
 				if (item) watchExternalRunAndDrain(sessionId);
+				break;
+			}
+
+			case "take_steered_prompt": {
+				const { sessionId, queueId } = msg;
+				const actor = ws.data.authUser || ws.data.user || undefined;
+				const session = await findSessionAsync(sessionId);
+				const receipt = editableSteerReceipt(sessionId, queueId, actor);
+				const retracted = !!session && !!receipt && await retractAgentSteer(
+					[session.claudeSessionId, session.codexThreadId, session.id],
+					queueId,
+				);
+				const item = retracted
+					? takeSteeredPrompt(sessionId, queueId, actor) ?? receipt
+					: undefined;
+				const response = {
+					type: "queued_prompt_taken",
+					sessionId,
+					queueId,
+					...(item
+						? { item }
+						: { message: "That steering message has already been sent." }),
+				};
+				if (typeof msg.__sessionKernelToken === "string")
+					kernelDispatchResults.set(msg.__sessionKernelToken, response);
+				ws.send(JSON.stringify(response));
 				break;
 			}
 
@@ -1133,67 +1520,50 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 
 			case "cancel": {
 				const data = ws.data;
-				if (data.watchingSessionId) {
-					const sessionId = data.watchingSessionId;
-					const session = findSession(sessionId);
-					// Park the queue until the user's next explicit action —
-					// otherwise the drain would deliver the requeued steers into a
-					// fresh run the moment the stopped one winds down.
-					stoppedSessions.add(sessionId);
-					if (session) {
-						// Esc-style: gracefully interrupt the current turn (the run
-						// winds down at the forced boundary with a clean transcript).
-						// Hard cancel only for runs with no interrupt support (codex,
-						// external processes); the full kill lives on session delete.
-						const stopped = stopAgentRunTurn([
-							session.claudeSessionId,
-							session.codexThreadId,
-							session.id,
-						]);
-						if (!stopped) {
-							cancelAgentRun(
-								session.claudeSessionId,
-								session.codexThreadId,
-								session.id,
-							);
-						}
-						// A stopped run's only trace is the runner's anonymous
-						// "cancelled" turn event — record who pulled the plug (stop
-						// button / Esc), or diagnosing "why did it go silent?" means
-						// inferring the gesture by elimination.
-						console.log(
-							`[ws] run stopped on ${sessionId} by ${data.user || "unknown"} (${stopped ? "graceful" : "hard-cancel"})`,
-						);
-						audit({
-							msg: "run_cancelled",
-							session_id: sessionId,
-							source: "ui_stop",
-							user: data.user,
-							graceful: stopped,
-						});
-						transitionRunState(sessionId, "cancel", {
-							source: "ui_stop",
-							user: data.user,
-						});
-						// Durable trace in the transcript too: a stopped turn otherwise
-						// just goes silent mid-tool-call, and readers can't tell a
-						// deliberate stop from a crash (the audit line answers it for
-						// the agent, this chip answers it for everyone reading the UI).
-						if (session.claudeSessionId) {
-							try {
-								appendOpencodeTranscript(session.claudeSessionId, [
-									transcriptLineRunnerNotice(
-										`Stopped by ${data.user || "someone"}.`,
-									),
-								]);
-							} catch {}
-						}
-					}
-					const requeued = requeueSteerReceipts(
-						sessionId,
-						session ? engineUserTexts(session) : undefined,
-					);
-					if (requeued > 0) {
+				const sessionId = msg.sessionId || data.watchingSessionId;
+        if (sessionId) {
+          const session = await findSessionAsync(sessionId);
+          const target = msg as typeof msg & {
+            __targetRunId?: string | null;
+            __targetRunGeneration?: number;
+          };
+          const expectedRunId = target.__targetRunId;
+          const expectedGeneration = target.__targetRunGeneration;
+          let requeued = 0;
+          if (
+            session &&
+            expectedRunId &&
+            expectedGeneration !== undefined
+          ) {
+            ({ requeued } = requestTurnCancel(sessionId, session, {
+              cancelId: `stop:${msg.requestId}`,
+              expectedRunId,
+              expectedGeneration,
+              source: "ui_stop",
+              user: data.user || undefined,
+            }));
+            console.log(
+              `[ws] run stop prepared on ${sessionId} by ${data.user || "unknown"}`,
+            );
+            audit({
+              msg: "run_cancelled",
+              session_id: sessionId,
+              source: "ui_stop",
+              user: data.user,
+            });
+            // Projection remains idempotent by its stable request-derived id.
+            if (session.claudeSessionId) {
+              try {
+                appendTranscriptEntries(session.claudeSessionId, [
+                  transcriptLineRunnerNotice(
+                    `Stopped by ${data.user || "someone"}.`,
+                    `stop-${msg.requestId}`,
+                  ),
+                ]);
+              } catch {}
+            }
+          }
+          if (requeued > 0) {
 						broadcastToSession(sessionId, {
 							type: "notice",
 							message: `Stopped — ${requeued} steered message${requeued === 1 ? "" : "s"} returned to the queue.`,
@@ -1205,7 +1575,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 
 			case "answer_question": {
 				const { sessionId, questionId, answers } = msg;
-				const pending = pendingAsks.get(sessionId);
+				const pending = pendingAskAwaitingAnswer(sessionId);
 				if (pending && pending.questionId === questionId) {
 					pending.resolve(
 						answers && typeof answers === "object" ? answers : null,
@@ -1222,7 +1592,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				const termId = typeof msg.termId === "string" ? msg.termId : "0";
 				// Sandbox-aware: docker/daytona sessions get the shell INSIDE
 				// their sandbox; host worktree shell otherwise (terminals.ts).
-				void startSessionTerminal(ws, termId, findSession(msg.sessionId), {
+				void startSessionTerminal(ws, termId, await findSessionAsync(msg.sessionId), {
 					cols: Number(msg.cols) || undefined,
 					rows: Number(msg.rows) || undefined,
 					send: (m) => {
@@ -1257,20 +1627,36 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 			}
 
 			case "create_session": {
+					const response =
 				await handleCreateSessionMessage(ws, msg);
+					if (typeof msg.__sessionKernelToken === "string" && response)
+						kernelDispatchResults.set(msg.__sessionKernelToken, response);
 				break;
 			}
 		}
 		} catch (e) {
 			console.error(`[ws] ${msg?.type || "unknown"} handler failed:`, e);
-			try {
-				ws.send(
-					JSON.stringify({
-						type: "error",
-						message: `Internal error handling "${msg?.type || "message"}" — see server log`,
-					}),
+			const kernelToken = isInternalKernelDispatch(
+				kernelDispatchTokens,
+				msg?.__sessionKernelToken,
+			)
+				? msg.__sessionKernelToken
+				: undefined;
+			if (kernelToken) {
+				kernelDispatchErrors.set(
+					kernelToken,
+					e instanceof Error ? e : new Error(String(e)),
 				);
-			} catch {}
+			} else {
+				try {
+					ws.send(
+						JSON.stringify({
+							type: "error",
+							message: `Internal error handling "${msg?.type || "message"}" — see server log`,
+						}),
+					);
+				} catch {}
+			}
 		}
 	},
 

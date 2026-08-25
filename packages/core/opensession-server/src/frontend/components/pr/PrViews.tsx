@@ -11,12 +11,12 @@ function PrDescriptionCard({
 }) {
   if (!descriptionHtml)
     return (
-      <div className="rounded-md border border-dashed border-line px-4 py-10 text-center text-xs text-faint">
+      <div className="rounded-xl border border-dashed border-line px-4 py-10 text-center text-xs text-faint">
         This pull request has no description.
       </div>
     );
   return (
-    <article className="min-w-0 rounded-md border border-line bg-panel">
+    <article className="min-w-0 rounded-xl border border-line/60 bg-surface smooth-shadow-sm">
       <div className="flex items-center gap-2 border-b border-divider px-4 py-3">
         <span className="flex size-7 items-center justify-center rounded-full bg-active text-meta font-semibold text-fg">
           {author.slice(0, 1).toUpperCase()}
@@ -66,7 +66,7 @@ export function ConversationView({
       <PrDescriptionCard author={author} descriptionHtml={descriptionHtml} />
 
       {comments.length === 0 ? (
-        <div className="rounded-md border border-dashed border-line px-4 py-10 text-center text-xs text-faint">
+        <div className="rounded-xl border border-dashed border-line px-4 py-10 text-center text-xs text-faint">
           No comments yet.
         </div>
       ) : (
@@ -80,7 +80,7 @@ export function ConversationView({
               /* A grid item's automatic minimum size is its min-content
                  width, so a wide comment (a deploy table, a long path) would
                  otherwise stretch the track past the viewport. */
-              className="group min-w-0 rounded-md border border-line bg-panel"
+              className="group min-w-0 rounded-xl border border-line/60 bg-surface smooth-shadow-sm"
               key={`${comment.url || comment.createdAt || index}`}
             >
               <div className="flex items-center gap-2 border-b border-divider px-4 py-3">

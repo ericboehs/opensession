@@ -32,6 +32,18 @@ final class WorkspaceDraftTests: XCTestCase {
         )
     }
 
+    func testBlankWorkspaceDraftBecomesADeletion() {
+        XCTAssertNil(OS1API.workspaceDraftPayload(text: "  \n\t", autoName: true))
+    }
+
+    func testWorkspaceDraftPayloadKeepsTextAndNamingState() throws {
+        let payload = try XCTUnwrap(
+            OS1API.workspaceDraftPayload(text: "  Keep this  ", autoName: false)
+        )
+        XCTAssertEqual(payload["text"] as? String, "Keep this")
+        XCTAssertEqual(payload["autoName"] as? Bool, false)
+    }
+
     func testOnlySessionlessDraftWorkspacesGainRows() throws {
         let workspaceList = try workspaces(
             #"{"workspaces":[{"id":"ws-draft","name":"Parked work","repo":"opensession","createdBy":"Michiel","createdAt":"2026-08-17T09:00:00Z","draft":{"text":"Parked work","updatedAt":"2026-08-17T10:00:00Z"}},{"id":"ws-empty","name":"Empty","createdBy":"Michiel","createdAt":"2026-08-17T08:00:00Z"},{"id":"ws-occupied","name":"Occupied","createdBy":"Michiel","createdAt":"2026-08-17T07:00:00Z","draft":{"text":"Stale","updatedAt":"2026-08-17T07:30:00Z"}}]}"#

@@ -51,8 +51,7 @@ export const CANCELLED_ANSWER = "__CANCELLED__";
 // instances) this store isolates like every other one, so a second instance
 // can neither read nor patch the live loop's session files. Unset ⇒ $HOME.
 export const SESSION_DIR = statePath(".slack-sessions");
-// Config-driven (repos registry / paths in ~/.backstage/config.json); the
-// zero-config values are the historical tella-fusion literals.
+// Config-driven: the repos registry and paths in the instance config file.
 export const DEFAULT_CWD = defaultRepo().repo;
 export const MCP_CONFIG_PATH = configuredPaths().mcpConfig;
 export const GITHUB_REPO = defaultRepo().ghRepo;
@@ -78,74 +77,6 @@ export const pendingAnswers = new Map<string, PendingAnswer>();
 const PROCESSED_EVENTS_STORE = `${SESSION_DIR}/processed-events.json`;
 const PROCESSED_EVENT_TTL_MS = 5 * 60 * 1000;
 const processedEventExpiry = new Map<string, number>();
-
-// GitHub signs the request body but has no timestamp tolerance. Keep delivery
-// ids long enough to reject automatic and manual redeliveries, including after
-// a restart, while bounding both the file and memory used for replay defense.
-const GITHUB_DELIVERIES_STORE = `${SESSION_DIR}/github-deliveries.json`;
-const GITHUB_DELIVERY_TTL_MS = 24 * 60 * 60 * 1000;
-const MAX_GITHUB_DELIVERIES = 500;
-const githubDeliveryExpiry: Map<string, number> = ((globalThis as any).__githubDeliveryExpiry ??=
-  new Map<string, number>());
-
-function pruneGithubDeliveries(now = Date.now()): void {
-  for (const [id, expiresAt] of githubDeliveryExpiry) {
-    if (expiresAt <= now) githubDeliveryExpiry.delete(id);
-  }
-  // Map iteration is insertion ordered, so evict the oldest delivery first.
-  while (githubDeliveryExpiry.size > MAX_GITHUB_DELIVERIES) {
-    const oldest = githubDeliveryExpiry.keys().next().value;
-    if (oldest === undefined) break;
-    githubDeliveryExpiry.delete(oldest);
-  }
-}
-
-function persistGithubDeliveries(): void {
-  try {
-    writeJsonAtomic(GITHUB_DELIVERIES_STORE, [...githubDeliveryExpiry], false);
-  } catch (e) {
-    console.error("[slack] Failed to persist GitHub deliveries:", e);
-  }
-}
-
-/** Restore replay protection after a full process restart. */
-export function loadGithubDeliveries(): void {
-  githubDeliveryExpiry.clear();
-  try {
-    if (existsSync(GITHUB_DELIVERIES_STORE)) {
-      const entries = JSON.parse(readFileSync(GITHUB_DELIVERIES_STORE, "utf-8")) as [string, number][];
-      const now = Date.now();
-      for (const [id, expiresAt] of entries) {
-        if (typeof id === "string" && Number.isFinite(expiresAt) && expiresAt > now) {
-          githubDeliveryExpiry.set(id, expiresAt);
-        }
-      }
-      pruneGithubDeliveries(now);
-      persistGithubDeliveries();
-    }
-  } catch (e) {
-    console.error("[slack] Failed to load GitHub deliveries:", e);
-  }
-}
-
-/** True if this signed GitHub delivery was already accepted within its TTL. */
-export function isGithubDeliveryProcessed(id: string): boolean {
-  const expiresAt = githubDeliveryExpiry.get(id);
-  if (expiresAt === undefined) return false;
-  if (expiresAt <= Date.now()) {
-    githubDeliveryExpiry.delete(id);
-    persistGithubDeliveries();
-    return false;
-  }
-  return true;
-}
-
-/** Record a signed GitHub delivery before dispatching its side effects. */
-export function markGithubDeliveryProcessed(id: string): void {
-  githubDeliveryExpiry.set(id, Date.now() + GITHUB_DELIVERY_TTL_MS);
-  pruneGithubDeliveries();
-  persistGithubDeliveries();
-}
 
 function persistProcessedEvents(): void {
   try {
@@ -188,16 +119,12 @@ export function markEventProcessed(id: string): void {
 
 export let slackTeamId = "";
 export let slackBotUserId = "";
-export let githubWebhooksReceived = 0;
 
 export function setSlackTeamId(id: string) {
   slackTeamId = id;
 }
 export function setSlackBotUserId(id: string) {
   slackBotUserId = id;
-}
-export function incrementGithubWebhooks() {
-  githubWebhooksReceived++;
 }
 
 // ---------------------------------------------------------------------------

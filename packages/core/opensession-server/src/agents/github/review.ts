@@ -5,21 +5,44 @@
  * review carrying inline comments (GitHub auto-outdates stale ones across commits).
  * Deduped on head SHA so the same commit isn't reviewed twice.
  */
-import { personaName } from "../../server/config";
-import { getPrDetails, getPrDiff, type PrDetails } from "../../server/pr-info";
-import { claimLock, releaseLock, getOrInitPrState, updatePrState, recordReviewed, clearActiveRun } from "./state";
-import { announceGithubRun, runGithubAgent, sessionUrl } from "./run";
+import { isGithubBotLogin, personaName } from "../../server/config";
+import { isShuttingDown } from "../../server/shutdown-state";
+import {
+  getPrAutomationDetails,
+  getPrDiff,
+  type PrAutomationDetails,
+} from "../../server/pr-info";
+import {
+  activeRunCancellationRequested,
+  claimLock,
+  releaseLock,
+  getOrInitPrState,
+  updatePrState,
+  recordReviewed,
+  clearActiveRun,
+} from "./state";
+import {
+  announceGithubRun,
+  discardRecoverableGithubRun,
+  GithubRunRecoveryUncertainError,
+  runGithubAgent,
+  sessionUrl,
+  type GithubRunResult,
+} from "./run";
 import { buildReviewPrompt, DEFAULT_REVIEW_PROMPT } from "./prompts";
 import {
+  getComment,
   postIssueComment,
+  postOrEditComment,
   editIssueComment,
   supersedeReviewComment,
   findActiveReviewComment,
+  findReviewProgressComment,
+  isReviewProgressForHead,
   submitReview,
   listReviewThreads,
   resolveReviewThread,
   REVIEW_MARKER,
-  BOT_LOGIN,
   type ReviewInlineComment,
 } from "./github-rest";
 import { defaultRepo } from "../../server/config";
@@ -90,6 +113,40 @@ interface ReviewOutput {
   findings?: Finding[];
 }
 
+/**
+ * Derive the contract's 1-5 merge-safety score when a model returns a usable
+ * review in another schema. Codex's `overall_confidence_score` is a 0-1 measure
+ * of certainty, not merge safety, so severity + verdict are the honest fallback.
+ */
+function deriveMergeSafetyScore(verdict: string | undefined, findings: Finding[]): number | undefined {
+  if (!verdict) return undefined;
+
+  let score = verdict === "approve" ? 5 : verdict === "comment" ? 4 : 2;
+  for (const finding of findings) {
+    switch ((finding.severity || "").toLowerCase()) {
+      case "p0":
+        score = Math.min(score, 1);
+        break;
+      case "p1":
+      case "high":
+        score = Math.min(score, 2);
+        break;
+      case "p2":
+      case "medium":
+        score = Math.min(score, 3);
+        break;
+      case "p3":
+      case "low":
+        score = Math.min(score, 4);
+        break;
+      default:
+        // A structured finding with unknown severity is still an unresolved risk.
+        score = Math.min(score, 3);
+    }
+  }
+  return score;
+}
+
 /** What a review concluded, so callers (e.g. auto-fix) can gate on it. */
 export interface ReviewResult {
   verdict?: string;
@@ -124,15 +181,25 @@ export async function runReview(
   force = false,
   steer?: string,
 ): Promise<ReviewResult | null> {
+  if (isShuttingDown()) {
+    console.log(`[github] PR #${pr.number} review parked during shutdown`);
+    return null;
+  }
   if (!claimLock("review", pr.number, pr.ghRepo)) {
     console.log(`[github] review already running for PR #${pr.number}, skipping`);
     return null;
   }
+  let preserveRecovery = false;
   try {
     const prRepo = pr.ghRepo ? repoForFullName(pr.ghRepo) : null;
     const state = getOrInitPrState(pr.number, pr.headRef, pr.ghRepo);
-    // `force` (manual Slack trigger) reviews even an already-reviewed SHA.
-    if (!force && pr.headSha && state.reviewedShas.includes(pr.headSha)) {
+    const priorRun = state.activeRun?.kind === "review" ? state.activeRun : undefined;
+    const recovering = Boolean(priorRun);
+    // Manual triggers review an already-reviewed SHA. Restart recovery does not:
+    // if the prior run completed its durable commit point before the process died,
+    // its leftover marker only needs clearing.
+    const forceFreshReview = force && !recovering;
+    if (!forceFreshReview && pr.headSha && state.reviewedShas.includes(pr.headSha)) {
       console.log(`[github] PR #${pr.number} @ ${pr.headSha.slice(0, 7)} already reviewed`);
       return null;
     }
@@ -142,22 +209,55 @@ export async function runReview(
     // `state` stays a read-only snapshot of what the PREVIOUS review left behind
     // (lastReview / lastReviewedSha below); every mutation goes through updatePrState.
     const isUpdate = state.reviewedShas.length > 0;
+    const startedAt = new Date().toISOString();
+    const sameHeadRecovery = Boolean(
+      priorRun?.headSha && pr.headSha && priorRun.headSha === pr.headSha,
+    );
+    const legacyRecovery = recovering && !priorRun?.headSha;
+    const recoveredReviewResult = sameHeadRecovery
+      ? priorRun?.reviewResult
+      : undefined;
     updatePrState(
       pr.number,
       pr.headRef,
       (s) => {
-        s.activeRun = { kind: "review", requestedBy: "", startedAt: new Date().toISOString(), steer };
+        s.activeRun = {
+          kind: "review",
+          requestedBy: "",
+          startedAt,
+          headSha: pr.headSha || priorRun?.headSha,
+          progressCommentId: sameHeadRecovery ? priorRun?.progressCommentId : undefined,
+          reviewResult: recoveredReviewResult,
+          steer,
+        };
       },
       pr.ghRepo,
     );
+    const cancellationRequested = () =>
+      activeRunCancellationRequested(pr.number, "review", pr.ghRepo);
+    const finishCancelled = async (commentId?: number): Promise<null> => {
+      if (commentId)
+        await editIssueComment(
+          commentId,
+          `${REVIEW_MARKER}\n### 🤖 ${personaName()} review\n\nReview cancelled.`,
+          pr.ghRepo,
+        ).catch(() => {});
+      audit({
+        msg: "review_cancelled",
+        pr_number: pr.number,
+        repo: pr.ghRepo || defaultRepo().ghRepo,
+      });
+      return null;
+    };
 
     // Look up by number before publishing the session link. If details are
     // unavailable, no worker exists and the next delivery remains retryable.
-    const details = await getPrDetails(pr.number ? String(pr.number) : pr.headRef, pr.ghRepo || undefined);
+    const details = await getPrAutomationDetails(pr.number ? String(pr.number) : pr.headRef, pr.ghRepo || undefined);
     if (!details) {
       console.warn(`[github] no PR details for #${pr.number} (${pr.headRef}); review not started`);
       return null;
     }
+    if (cancellationRequested()) return finishCancelled();
     const title = `Review · PR #${pr.number} ${details.title}`.slice(0, 100);
     const bksId = await announceGithubRun({
       prNumber: pr.number,
@@ -169,28 +269,48 @@ export async function runReview(
     });
     onSessionCreated?.(bksId);
 
-    // Post a fresh "reviewing…" comment immediately (progress ASAP), then collapse
-    // the previous review under an "Outdated review" <details>. Each review is its
-    // own comment; postReview edits this placeholder with the result.
+    // A fresh review posts a new placeholder and collapses the previous summary.
+    // Restart recovery edits the interrupted run's placeholder instead, so every
+    // server restart does not manufacture another "Outdated review" comment for
+    // the same head. Old state files only have summaryCommentId, so adopt it when
+    // its live body proves it is this head's unfinished placeholder.
+    let reuseId = sameHeadRecovery ? priorRun?.progressCommentId : undefined;
+    if (!reuseId && (sameHeadRecovery || legacyRecovery)) {
+      const candidateId = priorRun?.progressCommentId ?? state.summaryCommentId;
+      const candidate = candidateId ? await getComment(candidateId, pr.ghRepo) : null;
+      if (candidate && isReviewProgressForHead(candidate.body, pr.headSha)) {
+        reuseId = candidateId;
+      } else {
+        reuseId = (await findReviewProgressComment(pr.number, pr.headSha, pr.ghRepo)) ?? undefined;
+      }
+    }
     const prevId = state.summaryCommentId ?? (await findActiveReviewComment(pr.number, pr.ghRepo)) ?? undefined;
     const shortSha0 = (pr.headSha || "").slice(0, 7);
-    const placeholderId = await postIssueComment(
+    const placeholderId = await postOrEditComment(
       pr.number,
+      reuseId,
       `${REVIEW_MARKER}\n### 🤖 ${personaName()} review\n\n🔄 Reviewing${shortSha0 ? ` \`${shortSha0}\`` : ""}… · [📺 open session](${sessionUrl(pr.number, "review", pr.ghRepo)})`,
       pr.ghRepo,
     );
     if (placeholderId) {
+      let ownsRun = false;
       updatePrState(
         pr.number,
         pr.headRef,
         (s) => {
+          if (s.activeRun?.kind !== "review" || s.activeRun.startedAt !== startedAt) return;
+          ownsRun = true;
           s.summaryCommentId = placeholderId;
+          s.activeRun.progressCommentId = placeholderId;
         },
         pr.ghRepo,
       );
-      if (prevId && prevId !== placeholderId) await supersedeReviewComment(prevId, pr.ghRepo).catch(() => {});
+      if (ownsRun && prevId && prevId !== placeholderId) {
+        await supersedeReviewComment(prevId, pr.ghRepo).catch(() => {});
+      }
     }
     // If the placeholder failed, summaryCommentId keeps prevId and postReview edits it.
+    if (cancellationRequested()) return finishCancelled(placeholderId || undefined);
 
     // Pin a read-only worktree to the PR head so the files the agent Reads are
     // the exact tree the local git diff describes. Without that guarantee, fail
@@ -203,11 +323,12 @@ export async function runReview(
       if (placeholderId)
         await editIssueComment(
           placeholderId,
-          `${REVIEW_MARKER}\n### 🤖 ${personaName()} review\n\n⚠️ Couldn't prepare the PR checkout to review the diff — it will retry on the next push, or ask ${personaName()} to review manually.`,
+          `${REVIEW_MARKER}\n### 🤖 ${personaName()} review\n\n⚠️ Couldn't prepare the PR checkout to review the diff. It will retry on the next push, or ask ${personaName()} to review manually.`,
           pr.ghRepo,
         ).catch(() => {});
       return { findings: 0, blocking: 0, error: "Could not prepare the PR review worktree" };
     }
+    if (cancellationRequested()) return finishCancelled(placeholderId || undefined);
 
     // Per-repo knobs from the PR-head worktree (.os-review.json), the author's
     // model family for the targeted sweep, and the giant-PR summary-only mode.
@@ -257,8 +378,8 @@ export async function runReview(
     const priorReview = isUpdate
       ? priorReviewSection({
           lastReview: state.lastReview,
-          priorFindings: classifyPriorFindings(readFeedback(pr.ghRepo), pr.number, preThreads, BOT_LOGIN),
-          humanThreadLines: openHumanThreadLines(preThreads, BOT_LOGIN),
+          priorFindings: classifyPriorFindings(readFeedback(pr.ghRepo), pr.number, preThreads, isGithubBotLogin),
+          humanThreadLines: openHumanThreadLines(preThreads, isGithubBotLogin),
         })
       : "";
 
@@ -268,7 +389,7 @@ export async function runReview(
       ignoreGlobs: reviewOpts.ignoreGlobs,
       summaryOnly,
       intent: prIntentSection(details),
-      discussion: prDiscussionSection(details, BOT_LOGIN, REVIEW_MARKER),
+      discussion: prDiscussionSection(details, isGithubBotLogin, REVIEW_MARKER),
       priorReview,
       learnedRules: learnedRulesSection(pr.ghRepo),
       lastReviewedSha:
@@ -297,35 +418,80 @@ export async function runReview(
       });
     }
 
-    console.log(`[github] Reviewing PR #${pr.number} @ ${pr.headSha.slice(0, 7)} (${isUpdate ? "update" : "initial"})`);
-    const result = await runGithubAgent({
-      prNumber: pr.number,
-      ghRepo: pr.ghRepo,
-      kind: "review",
-      prompt,
-      cwd,
-      mode: "ask",
-      model: reviewModel,
-      branch: pr.headRef,
-      title,
-      // Each review is self-contained: it reads the CURRENT full diff from the
-      // pinned worktree and posts a fresh full assessment, so
-      // we do NOT resume the prior engine session. Resuming accumulated the whole
-      // transcript across every push, and on actively-updated PRs the context grew
-      // past the engine's 1M-token limit — the run then hard-failed with "Prompt is
-      // too long" and could not be compacted (a single over-limit exchange has
-      // nothing to drop). See the 2026-07-11 dream: 12 such failures, all
-      // github-review, e.g. PR #4638 (15 errors / 0 turns). `isUpdate` still drives
-      // the "re-review the current diff" prompt framing above.
-      resume: false,
-    });
+    const persistReviewResult = (result: GithubRunResult) => {
+      updatePrState(
+        pr.number,
+        pr.headRef,
+        (s) => {
+          if (
+            s.activeRun?.kind !== "review" ||
+            s.activeRun.startedAt !== startedAt
+          ) return;
+          s.activeRun.reviewResult = {
+            text: result.text,
+            error: result.error,
+            model: result.model,
+          };
+        },
+        pr.ghRepo,
+      );
+    };
 
-    let finalResult = result;
-    let parsed = parseReviewOutput(finalResult.text);
+    if (cancellationRequested()) return finishCancelled(placeholderId || undefined);
+    if (isShuttingDown()) {
+      preserveRecovery = true;
+      console.log(`[github] PR #${pr.number} review parked for restart`);
+      return null;
+    }
+    console.log(`[github] Reviewing PR #${pr.number} @ ${pr.headSha.slice(0, 7)} (${isUpdate ? "update" : "initial"})`);
+    let finalResult: GithubRunResult;
+    if (recoveredReviewResult) {
+      finalResult = { bksId, ...recoveredReviewResult };
+      console.log(
+        `[github] Reusing the durable model result for PR #${pr.number} after restart`,
+      );
+    } else {
+      finalResult = await runGithubAgent({
+        prNumber: pr.number,
+        ghRepo: pr.ghRepo,
+        kind: "review",
+        prompt,
+        cwd,
+        mode: "ask",
+        model: reviewModel,
+        branch: pr.headRef,
+        title,
+        // Each review is self-contained: it reads the CURRENT full diff from the
+        // pinned worktree and posts a fresh full assessment, so
+        // we do NOT resume the prior engine session. Resuming accumulated the whole
+        // transcript across every push, and on actively-updated PRs the context grew
+        // past the engine's 1M-token limit. The run then hard-failed with "Prompt is
+        // too long" and could not be compacted because a single over-limit exchange
+        // has nothing to drop. See the 2026-07-11 dream: 12 such failures, all
+        // github-review, e.g. PR #4638 (15 errors / 0 turns). `isUpdate` still drives
+        // the "re-review the current diff" prompt framing above.
+        resume: false,
+        detached: true,
+        recoverDetached: sameHeadRecovery || legacyRecovery,
+      });
+      if (finalResult.uncertain) {
+        preserveRecovery = true;
+        throw new Error(finalResult.error || "Detached review ownership is uncertain");
+      }
+      persistReviewResult(finalResult);
+    }
+
+    if (cancellationRequested()) return finishCancelled(placeholderId || undefined);
+    let parsed = parseReviewOutput(finalResult.text, cwd);
     // Fable occasionally declares a progress narration complete before it emits
     // the review contract. Give the same engine session one bounded chance to
     // turn its completed inspection into a postable verdict.
     if (!finalResult.error && !isCompleteReviewOutput(parsed)) {
+      if (isShuttingDown()) {
+        preserveRecovery = true;
+        console.log(`[github] PR #${pr.number} review repair parked for restart`);
+        return null;
+      }
       console.warn(`[github] PR #${pr.number} review ended without structured output; repairing once`);
       finalResult = await runGithubAgent({
         prNumber: pr.number,
@@ -338,8 +504,18 @@ export async function runReview(
         branch: pr.headRef,
         title,
         resume: true,
+        detached: true,
+        // If the process died during this bounded repair turn, the initial
+        // result above is durable and the surviving host belongs to the repair.
+        recoverDetached: recovering,
       });
-      parsed = parseReviewOutput(finalResult.text);
+      if (finalResult.uncertain) {
+        preserveRecovery = true;
+        throw new Error(finalResult.error || "Detached review ownership is uncertain");
+      }
+      persistReviewResult(finalResult);
+      if (cancellationRequested()) return finishCancelled(placeholderId || undefined);
+      parsed = parseReviewOutput(finalResult.text, cwd);
     }
     const reviewError =
       finalResult.error ||
@@ -348,6 +524,40 @@ export async function runReview(
         : "The review did not produce the required structured verdict after one continuation.");
     const tob = await testOnBase;
     const secrets = await secretScan;
+    if (cancellationRequested()) return finishCancelled(placeholderId || undefined);
+
+    // Never publish an assessment against a different commit from the one the
+    // worktree and prompt were pinned to. A push while the review was running
+    // gets its own webhook/reconcile review; this result is now stale.
+    const latestPr = await getPrAutomationDetails(
+      pr.number ? String(pr.number) : pr.headRef,
+      pr.ghRepo || undefined,
+    );
+    if (
+      pr.headSha &&
+      latestPr?.headRefOid &&
+      latestPr.headRefOid !== pr.headSha
+    ) {
+      console.log(
+        `[github] PR #${pr.number} moved from ${pr.headSha.slice(0, 7)} to ${latestPr.headRefOid.slice(0, 7)} during review; discarding the stale result`,
+      );
+      if (placeholderId) {
+        await editIssueComment(
+          placeholderId,
+          `${REVIEW_MARKER}\n### 🤖 ${personaName()} review\n\nNew commits arrived before this review finished. Waiting for the updated review.`,
+          pr.ghRepo,
+        ).catch(() => {});
+      }
+      audit({
+        msg: "review_superseded_during_run",
+        pr_number: pr.number,
+        repo: pr.ghRepo || defaultRepo().ghRepo,
+        reviewed_sha: pr.headSha,
+        current_sha: latestPr.headRefOid,
+      });
+      return null;
+    }
+
     // A leaked credential blocks regardless of what the model concluded: the
     // verdict drops to request_changes and confidence caps at 2/5. (Not counted
     // as a "blocking finding" for the auto-fix gate — rotation is human work a
@@ -356,7 +566,7 @@ export async function runReview(
       parsed.verdict = "request_changes";
       parsed.confidence = Math.min(typeof parsed.confidence === "number" ? parsed.confidence : 2, 2);
     }
-    await postReview(pr, details, parsed, finalResult.text, reviewError, force, finalResult.model, reviewOpts, summaryOnly, testOnBaseSection(tob) + secretScanSection(secrets));
+    await postReview(pr, details, parsed, finalResult.text, reviewError, forceFreshReview, finalResult.model, reviewOpts, summaryOnly, testOnBaseSection(tob) + secretScanSection(secrets));
 
     const outcome: ReviewResult = {
       verdict: parsed?.verdict,
@@ -407,9 +617,23 @@ export async function runReview(
     console.error(`[github] review failed for PR #${pr.number}:`, e);
     return null;
   } finally {
-    // Clear the recovery flag on completion; a killed process leaves it set so the
-    // github agent re-runs the review on startup.
-    clearActiveRun(pr.number, pr.headRef, "review", pr.ghRepo);
+    if (!preserveRecovery) {
+      // Any detached host still present here belongs to a workflow that returned
+      // before consuming it. Clear the marker only after absence is proven.
+      try {
+        await discardRecoverableGithubRun(pr.number, "review", pr.ghRepo);
+      } catch (error) {
+        if (error instanceof GithubRunRecoveryUncertainError)
+          preserveRecovery = true;
+        else
+          console.warn(
+            `[github] failed to stop orphaned review host for PR #${pr.number}:`,
+            error,
+          );
+      }
+      if (!preserveRecovery)
+        clearActiveRun(pr.number, pr.headRef, "review", pr.ghRepo);
+    }
     releaseLock("review", pr.number, pr.ghRepo);
   }
 }
@@ -428,7 +652,7 @@ function composeInlineBody(f: Finding): string {
 
 async function postReview(
   pr: PrRef,
-  details: PrDetails,
+  details: PrAutomationDetails,
   parsed: ReviewOutput | null,
   rawText: string,
   runError?: string,
@@ -544,7 +768,7 @@ async function postReview(
   const openBotAnchors = new Set<string>();
   if (!force) {
     for (const t of existingThreads) {
-      if (t.rootAuthor === BOT_LOGIN && !t.isResolved && !t.isOutdated && t.path && t.line != null) {
+      if (isGithubBotLogin(t.rootAuthor) && !t.isResolved && !t.isOutdated && t.path && t.line != null) {
         openBotAnchors.add(`${t.path}:${t.line}`);
       }
     }
@@ -589,7 +813,7 @@ async function postReview(
   // useful. Collapsing them keeps the PR clean without a human resolving by hand.
   // Only ever touches bot-rooted threads; human threads are never resolved here.
   for (const t of existingThreads) {
-    if (!t.isResolved && t.isOutdated && t.rootAuthor === BOT_LOGIN) {
+    if (!t.isResolved && t.isOutdated && isGithubBotLogin(t.rootAuthor)) {
       await resolveReviewThread(t.id).catch(() => {});
     }
   }
@@ -637,32 +861,55 @@ export function extractBalancedJson(s: string): string | null {
  * cuts the block at that inner fence — that's exactly what dumped raw narration
  * onto PR #4388.
  */
-export function parseReviewOutput(text: string): ReviewOutput | null {
+export function parseReviewOutput(text: string, cwd?: string): ReviewOutput | null {
   if (!text) return null;
   const opener = text.lastIndexOf("```json");
   const candidate = extractBalancedJson(opener === -1 ? text : text.slice(opener)) ?? text;
   try {
     const obj = JSON.parse(candidate.trim());
     if (obj && typeof obj === "object") {
-      // Models drift from the contract's exact field names (Sol on PR #5286
-      // returned file/details/summary and a 0-1 confidence) — accept the common
-      // aliases rather than dropping the whole review into the raw-text fallback.
+      // Models drift from the contract's exact field names. Sol has emitted both
+      // summary/file/details aliases and its native code-review shape
+      // (overall_correctness, overall_explanation, priority, code_location).
+      // Normalize those known structured forms instead of discarding a usable
+      // verdict and spending a continuation that may contradict the first pass.
+      const findingPath = (f: any): string | undefined => {
+        const raw =
+          typeof f.path === "string"
+            ? f.path
+            : typeof f.file === "string"
+              ? f.file
+              : typeof f.code_location?.absolute_file_path === "string"
+                ? f.code_location.absolute_file_path
+                : undefined;
+        if (!raw || !raw.startsWith("/")) return raw;
+        const root = cwd?.replace(/\/+$/, "");
+        return root && raw.startsWith(`${root}/`) ? raw.slice(root.length + 1) : undefined;
+      };
       const findings: Finding[] = Array.isArray(obj.findings)
         ? obj.findings
-            .map((f: any) =>
-              f && typeof f === "object"
-                ? {
-                    ...f,
-                    path: typeof f.path === "string" ? f.path : f.file,
-                    body:
-                      typeof f.body === "string"
-                        ? f.body
-                        : typeof f.details === "string"
-                          ? f.details
-                          : f.description,
-                  }
-                : f,
-            )
+            .map((f: any) => {
+              if (!f || typeof f !== "object") return f;
+              const priority = Number.isInteger(f.priority) && f.priority >= 0 && f.priority <= 3
+                ? `P${f.priority}`
+                : undefined;
+              const title = typeof f.title === "string"
+                ? f.title.replace(/^\[P[0-3]\]\s*/, "")
+                : undefined;
+              return {
+                ...f,
+                path: findingPath(f),
+                line: Number.isFinite(f.line) ? f.line : f.code_location?.line_range?.start,
+                severity: typeof f.severity === "string" ? f.severity : priority,
+                title,
+                body:
+                  typeof f.body === "string"
+                    ? f.body
+                    : typeof f.details === "string"
+                      ? f.details
+                      : f.description,
+              };
+            })
             .filter((f: any) => f && typeof f.path === "string" && Number.isFinite(f.line) && typeof f.body === "string")
             .map((f: any) => ({
               path: f.path,
@@ -674,20 +921,34 @@ export function parseReviewOutput(text: string): ReviewOutput | null {
               suggestion: typeof f.suggestion === "string" && f.suggestion.trim() ? f.suggestion : undefined,
             }))
         : [];
-      // Contract confidence is merge-safety on a 1-5 scale. An out-of-range value
-      // (typically a 0-1 self-certainty probability) measures a different quantity
-      // — drop it instead of rendering "0.98/5" or letting a scaled-up fraction
-      // satisfy the ≥4/5 "safe to merge" gates on a request_changes review.
+      // Contract confidence is integer merge-safety on a 1-5 scale. An invalid
+      // value (typically Codex's 0-1 self-certainty probability) measures a
+      // different quantity. Derive merge safety from the normalized verdict and
+      // finding severities instead, so every postable review still has a score.
       const rawConfidence = typeof obj.confidence === "number" ? obj.confidence : undefined;
+      const verdict =
+        typeof obj.verdict === "string"
+          ? obj.verdict
+          : obj.overall_correctness === "patch is correct"
+            ? "approve"
+            : obj.overall_correctness === "patch is incorrect"
+              ? "request_changes"
+              : undefined;
+      const confidence =
+        rawConfidence !== undefined && Number.isInteger(rawConfidence) && rawConfidence >= 1 && rawConfidence <= 5
+          ? rawConfidence
+          : deriveMergeSafetyScore(verdict, findings);
       return {
-        verdict: obj.verdict,
-        confidence: rawConfidence !== undefined && rawConfidence >= 1 && rawConfidence <= 5 ? rawConfidence : undefined,
+        verdict,
+        confidence,
         summary_markdown:
           typeof obj.summary_markdown === "string"
             ? obj.summary_markdown
             : typeof obj.summary === "string"
               ? obj.summary
-              : undefined,
+              : typeof obj.overall_explanation === "string"
+                ? obj.overall_explanation
+                : undefined,
         diagram:
           obj.diagram && typeof obj.diagram === "object" && typeof obj.diagram.mermaid === "string"
             ? { type: typeof obj.diagram.type === "string" ? obj.diagram.type : undefined, mermaid: obj.diagram.mermaid }

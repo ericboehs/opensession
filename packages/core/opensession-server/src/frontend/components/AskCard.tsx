@@ -7,6 +7,7 @@ import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { IconCheck, IconReturn } from "./icons";
 import { useMarkdownRepo } from "./MarkdownBody";
+import { ASK_CARD_SHELL, ASK_CHOICE_ROW } from "../lib/ask-card-classes";
 
 interface Props {
 	questions: AskQuestion[];
@@ -27,10 +28,6 @@ const itemName = (index: number) => `q${index}`;
  * Preflight. A class plus an attribute outranks the class on its own.
  */
 const HIDE_WHEN_INERT = "[&[hidden]]:hidden";
-
-/** One option row: the whole row is the label for a hidden native radio. */
-const CHOICE_ROW =
-	"group relative flex min-h-11 w-full cursor-pointer select-none items-start gap-3 rounded-[calc(12px*var(--rf))] bg-control px-3 py-2.5 text-left transition-[background-color] hover:bg-hover [corner-shape:var(--cs)] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[var(--accent-ink)]";
 
 /**
  * Interactive AskUserQuestion card — the agent is waiting on these answers.
@@ -84,15 +81,11 @@ export function AskCard({ questions, onAnswer }: Props) {
 	// Mirrors what we render below. Handing the collection to the root is what
 	// gets item order and answer shortcuts into the first paint, rather than
 	// waiting for each part to register itself.
-	const items = React.useMemo(
-		() =>
-			questions.map((q, i) => ({
+	const items = (questions.map((q, i) => ({
 				name: itemName(i),
 				required: true,
 				choices: (q.options ?? []).map((o) => ({ value: o.label })),
-			})),
-		[questions],
-	);
+			})));
 
 	// A card asking one thing: its header belongs on the status row (below).
 	const lone = questions.length === 1 ? questions[0] : undefined;
@@ -149,6 +142,22 @@ export function AskCard({ questions, onAnswer }: Props) {
 		}
 	}
 
+	// Send is offered only when the whole ask can actually be sent. The
+	// primitive shows the action on the last question and leaves it live there
+	// whether or not anything has been answered, so an unanswered question got a
+	// button that refuses: pressing it validates, blocks, and jumps focus back
+	// with an error. A button that is visibly not ready yet says the same thing
+	// before you spend a click on it.
+	//
+	// The condition is every question, not just the active one. Required items
+	// mean Next already validates on the way forward, so in practice the earlier
+	// ones are answered by the time send appears, but this is the honest reading
+	// of "ready to send" and it survives a skipped or controlled jump.
+	//
+	// Cmd/Ctrl+Enter is unaffected and still routes through the primitive's own
+	// validation, so a keyboard user gets the spoken error rather than silence.
+	const allAnswered = questions.every((_, i) => answerFor(i) !== "");
+
 	// Only reached once every item validates — the root holds the submit back
 	// and focuses the first unanswered question otherwise.
 	function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -167,7 +176,7 @@ export function AskCard({ questions, onAnswer }: Props) {
 			items={items}
 			shortcuts="letters"
 			onSubmit={handleSubmit}
-			className="mx-auto mb-6 mt-2 flex w-full max-w-[var(--session-col)] flex-col gap-5 rounded-xl bg-raised p-4 [corner-shape:var(--cs)]"
+			className={ASK_CARD_SHELL}
 		>
 			<div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
 				<span
@@ -189,15 +198,6 @@ export function AskCard({ questions, onAnswer }: Props) {
 							·
 						</span>
 						<span className="text-label font-semibold text-faint">{lone.header}</span>
-					</>
-				)}
-				{/* Several questions step one at a time, so the row says where you are. */}
-				{questions.length > 1 && (
-					<>
-						<span aria-hidden="true" className="text-label text-faint">
-							·
-						</span>
-						<Questionnaire.Progress className="text-label font-semibold text-faint" />
 					</>
 				)}
 			</div>
@@ -262,9 +262,23 @@ export function AskCard({ questions, onAnswer }: Props) {
 									// indicator says it. Washing the row grey made the chosen
 									// option look dimmed, not chosen, and collided with the
 									// hover wash on its neighbours.
-									className={CHOICE_ROW}
+									className={ASK_CHOICE_ROW}
 								>
 									<Questionnaire.ChoiceInput className="sr-only" />
+									{/* The letter leads the row, the way a lettered list does. It is
+									    how the options are named (in the transcript above, in Slack,
+									    and out loud), so it belongs where a marker goes rather than
+									    trailing the description as a key hint. Fixed width so the
+									    labels start on one line; still the quiet weight a menu row's
+									    shortcut wears (MenuShortcut).
+
+									    It sits on the option's own line: same 13px/20px line box as
+									    the label beside it, so their cap-heights meet, and flush
+									    left in its column rather than centred in it, so the three
+									    letters share an edge with each other and with the text in
+									    the free-text row below. Pulling only its trailing margin
+									    keeps the answer close without tightening the indicator. */}
+									<Questionnaire.ChoiceShortcut className="-mr-2 w-3.5 shrink-0 text-label leading-5 text-faint" />
 									<Questionnaire.ChoiceLabel className="min-w-0 flex-1">
 										<span className="block text-control-label font-semibold leading-5 text-fg">
 											{opt.label}
@@ -275,8 +289,6 @@ export function AskCard({ questions, onAnswer }: Props) {
 											</span>
 										)}
 									</Questionnaire.ChoiceLabel>
-									{/* Same quiet key hint a menu row wears (MenuShortcut). */}
-									<Questionnaire.ChoiceShortcut className="mt-px shrink-0 text-label leading-5 text-faint" />
 									<span
 										aria-hidden="true"
 										className={cn(
@@ -326,6 +338,45 @@ export function AskCard({ questions, onAnswer }: Props) {
 			    item does. Without this, every single-question ask (almost all of
 			    them) wears a dead Previous and Next. */}
 			<div className="flex items-center justify-end gap-2">
+				{/* Where you are in a stepped ask, as page dots on the action bar:
+				    beside the button you press to move, rather than up on the status
+				    row where it read as one more label in the header. `mr-auto` parks
+				    them left without making the row justify-between, so a lone
+				    question's actions stay right-aligned with nothing to balance.
+
+				    The dots are the visual half only: the primitive's own
+				    `role="progressbar"` and `aria-valuetext` ("Question 1 of 2") ride
+				    along in `props`, so a screen reader still hears the count that the
+				    dots show. Count and position come from the primitive's state, not
+				    from indexing `questions` here, so they cannot drift from the item
+				    it is actually stepping through. */}
+				{questions.length > 1 && (
+					<Questionnaire.Progress
+						render={(props, state) => (
+							<div {...props} className="mr-auto flex items-center gap-1.5 pl-1">
+								{Array.from({ length: state.total }, (_, i) => (
+									<span
+										key={i}
+										aria-hidden="true"
+										className={cn(
+											"h-1.5 w-1.5 rounded-full transition-[background-color]",
+											// Two states, the way page dots work: here, and not
+											// here. Marking answered ones a third way would put
+											// three greys in a 6px dot, which nobody can read.
+											//
+											// 30% rather than the 20% a resting dot would take:
+											// the dots exist to say HOW MANY questions there are,
+											// so an unreachable inactive dot leaves you looking at
+											// one dot and none the wiser. Measured on the card's
+											// own surface, 20% resolved to #c9c9c9 on #f6f6f6.
+											i + 1 === state.current ? "bg-fg" : "bg-fg/30",
+										)}
+									/>
+								))}
+							</div>
+						)}
+					/>
+				)}
 				<Questionnaire.Previous
 					render={<Button variant="ghost" size="lg" className={HIDE_WHEN_INERT} />}
 				>
@@ -344,14 +395,22 @@ export function AskCard({ questions, onAnswer }: Props) {
 					Next
 				</Questionnaire.Next>
 				{/* The glyph reports the state the label also names: an answer on its
-				    way out before you press, a tick once it has gone. */}
+				    way out before you press, a tick once it has gone.
+
+				    It needs HIDE_WHEN_INERT for the same reason the other two do, and
+				    it is the one that hurts: send is the LAST question's action, so on
+				    a multi-question ask it arrives hidden and `inert` beside Next.
+				    Without the class it still paints, and inert means it ignores the
+				    click — a live-looking primary button that does nothing, which is
+				    the one people reach for. */}
 				<Questionnaire.Submit
-					disabled={submitted}
+					disabled={submitted || !allAnswered}
 					render={
 						<Button
 							variant="primary"
 							size="lg"
 							icon={submitted ? <IconCheck size={20} /> : <IconReturn size={20} />}
+							className={HIDE_WHEN_INERT}
 						/>
 					}
 				>

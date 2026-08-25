@@ -13,7 +13,7 @@
 
 import { requestUser, type RouteContext } from "./context";
 import { buildSessionEffectiveConfig } from "../effective-config";
-import { findSession } from "../session-cache";
+import { findSessionAsync } from "../session-cache";
 
 export async function handleEffectiveConfigRoutes(
 	ctx: RouteContext,
@@ -23,7 +23,7 @@ export async function handleEffectiveConfigRoutes(
 	if (!match || req.method !== "GET") return undefined;
 
 	const sessionId = decodeURIComponent(match[1]!);
-	const session = findSession(sessionId);
+	const session = await findSessionAsync(sessionId);
 	if (!session)
 		return Response.json({ error: "session not found" }, { status: 404 });
 

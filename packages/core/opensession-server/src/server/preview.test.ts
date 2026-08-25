@@ -4,9 +4,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   getPreviewStatus,
+  listenerLinesForPort,
   parsePreviewPortalRecipes,
+  recipeStartOptions,
   repoLifecycle,
   resolvePreviewBoot,
+  sandboxPreviewIdentityContext,
+  seedSandboxPortsConf,
   startPreview,
 } from "./preview";
 
@@ -21,6 +25,47 @@ const PREVIEW_COMMAND = "/srv/opensession/bin/start-widget-preview";
 function existsIn(paths: string[]) {
   return (p: string) => paths.includes(p);
 }
+
+
+describe("sandbox preview identity", () => {
+  test("carries the sandbox trust profile into the preview grant", () => {
+    expect(
+      sandboxPreviewIdentityContext(
+        {id: "sandbox-1", provider: "daytona"},
+        "tella-fusion",
+        "interactive",
+      ),
+    ).toEqual({
+      sandboxId: "sandbox-1",
+      provider: "daytona",
+      lifecycle: "preview",
+      repoId: "tella-fusion",
+      trustProfile: "interactive",
+    });
+  });
+
+  test("adds WEBAPP_PORT when Portal records created the registry first", async () => {
+    const scratch = mkdtempSync(join(tmpdir(), "sandbox-preview-ports-"));
+    const conf = join(scratch, ".ports.conf");
+    writeFileSync(conf, "# opensession-portal {}\nPORTAL_RELAY_SMOKE_PORT=4000\n");
+    const sandbox = {
+      async exec(command: string[]) {
+        const proc = Bun.spawn(command, { cwd: scratch, stdout: "pipe", stderr: "pipe" });
+        const [stdout, stderr, exitCode] = await Promise.all([
+          new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited,
+        ]);
+        return { stdout, stderr, exitCode };
+      },
+    } as any;
+    try {
+      await seedSandboxPortsConf(sandbox, scratch, 3300);
+      expect(await Bun.file(conf).text()).toContain("WEBAPP_PORT=3300");
+      expect(await Bun.file(conf).text()).toContain("PORTAL_RELAY_SMOKE_PORT=4000");
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("resolvePreviewBoot", () => {
   test("repo-committed .agents/start.sh wins over previewCommand", async () => {
@@ -88,6 +133,19 @@ describe("resolvePreviewBoot", () => {
   test("no mechanism at all resolves to null (UI: disabled Start)", async () => {
     const boot = await resolvePreviewBoot(WT, { id: "widget" }, existsIn([]));
     expect(boot).toBeNull();
+  });
+});
+
+describe("listenerLinesForPort", () => {
+  test("matches only the local listening port across IPv4 and IPv6", () => {
+    const raw = [
+      'LISTEN 0 512 127.0.0.1:3850 0.0.0.0:* users:(("bun",pid=42,fd=20))',
+      'LISTEN 0 512 [::]:3850 [::]:*',
+      'LISTEN 0 512 127.0.0.1:13850 0.0.0.0:* users:(("bun",pid=43,fd=20))',
+      'LISTEN 0 512 127.0.0.1:4000 127.0.0.1:3850',
+    ].join("\n");
+
+    expect(listenerLinesForPort(raw, 3850)).toEqual(raw.split("\n").slice(0, 2));
   });
 });
 
@@ -165,29 +223,51 @@ describe("repoLifecycle", () => {
 });
 
 describe("preview portal recipes", () => {
-  test("reads skill-backed starters from portals.json", () => {
+  test("reads direct supervised starters from portals.json", () => {
     expect(
       parsePreviewPortalRecipes(
         JSON.stringify({
-          warmRoutes: ["/"],
           portals: [
             {
+              id: "tella-local",
               name: "Tella local",
               description: "Authenticated local webapp",
-              skill: "tella-local",
+              command: "./.agents/start.sh",
               serviceKey: "WEBAPP_PORT",
+              port: 3300,
+              readyTimeoutSeconds: 180,
             },
           ],
         }),
       ),
     ).toEqual([
       {
+        id: "tella-local",
         name: "Tella local",
         description: "Authenticated local webapp",
-        skill: "tella-local",
+        command: "./.agents/start.sh",
         serviceKey: "WEBAPP_PORT",
+        port: 3300,
+        readyTimeoutSeconds: 180,
       },
     ]);
+  });
+
+  test("turns a declared service into trusted supervisor options", () => {
+    expect(
+      recipeStartOptions({
+        id: "tella-local",
+        name: "Tella local",
+        command: "./.agents/start.sh",
+        serviceKey: "WEBAPP_PORT",
+        readyTimeoutSeconds: 180,
+      }),
+    ).toEqual({
+      name: "tella-local",
+      command: expect.stringContaining('export WEBAPP_PORT="$PORT"'),
+      key: "WEBAPP_PORT",
+      readyTimeoutMs: 180_000,
+    });
   });
 
   test("drops recipes that could inject a prompt or invalid port key", () => {
@@ -200,6 +280,6 @@ describe("preview portal recipes", () => {
           ],
         }),
       ),
-    ).toEqual([{ name: "Safe", skill: "docs" }]);
+    ).toEqual([{ id: "docs", name: "Safe", skill: "docs" }]);
   });
 });

@@ -2,7 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { defaultSlackChannel } from "./slack-channels";
 
 describe("Slack channel selection", () => {
-	test("prefers engineering regardless of configured order or case", () => {
+	test("prefers os regardless of configured order or case", () => {
+		expect(defaultSlackChannel([
+			{ id: "C1", name: "product" },
+			{ id: "C2", name: "Engineering" },
+			{ id: "C3", name: "OS" },
+		])).toBe("C3");
+	});
+
+	test("falls back to engineering when os is not configured", () => {
 		expect(defaultSlackChannel([
 			{ id: "C1", name: "product" },
 			{ id: "C2", name: "Engineering" },

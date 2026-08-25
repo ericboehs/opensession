@@ -2,7 +2,7 @@
  * Workflow agent executor — the real WorkflowExecutor behind workflow-runner.
  *
  * Each `agent()` call inside a workflow script becomes one lightweight
- * opencode run (journal kind "workflow", cwd = the session's worktree) driven
+ * pi run (journal kind "workflow", cwd = the session's worktree) driven
  * to completion here. Deliberately minimal RunAgentOpts: no mcpServers, no
  * inProcessMcp, no deniedTools — kind "workflow" is interactive-trusted (the
  * opensession-workflows MCP that launches these is interactive-only).
@@ -25,12 +25,12 @@
  */
 
 import { $ } from "bun";
-import { runAgent, type RunAgentOpts, type StreamEvent } from "./agent-runner";
-import { cancelOpencodeRun } from "./opencode-runner";
+import { cancelAgentRun, runAgent, type RunAgentOpts, type StreamEvent } from "./agent-runner";
 import {
 	DEFAULT_FALLBACK_MODEL,
 	getDefaultModel,
 	modelEfforts,
+	resolveModel,
 	type SessionEffort,
 } from "./models";
 import { createWorktree, getRepo, removeWorktree } from "./worktree";
@@ -132,7 +132,7 @@ export async function runAgentCollect(
 			if (next === "aborted") {
 				if (engineSessionId) {
 					try {
-						cancelOpencodeRun(engineSessionId);
+						cancelAgentRun(engineSessionId);
 					} catch {}
 				}
 				void it.return?.(undefined)?.catch?.(() => {});
@@ -470,7 +470,8 @@ function agentEffort(model: string, requested?: string): string | undefined {
 
 export const workflowExecutor: WorkflowExecutor = {
 	async execute(req: WorkflowAgentRequest, ctx: WorkflowExecCtx): Promise<WorkflowAgentOutcome> {
-		const model = req.opts.model || ctx.defaultModel || getDefaultModel();
+		const requestedModel = req.opts.model || ctx.defaultModel || getDefaultModel();
+		const model = resolveModel(requestedModel)?.id || requestedModel;
 		const effort = agentEffort(model, req.opts.effort);
 		const write = req.opts.write === true;
 

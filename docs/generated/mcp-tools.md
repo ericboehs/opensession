@@ -37,37 +37,36 @@ in-process tool (both name external MCP tools):
 
 ## Servers
 
-| Server | Tools | Runs | Shared server | Condition |
-| --- | --- | --- | --- | --- |
-| [`opensession-sessions`](#opensession-sessions) | 11 | interactive, Slack loop, automation | yes | Automation runs get it ONLY with the human-set `selfImprove` flag, and then in the `automationSelf` build below. |
-| [`opensession-admin`](#opensession-admin) | 13 | interactive, Slack loop | yes | – |
-| [`opensession-runners`](#opensession-runners) | 5 | interactive | yes | – |
-| [`opensession-goals`](#opensession-goals) | 8 | interactive | yes | – |
-| [`opensession-search`](#opensession-search) | 2 | interactive | yes | – |
-| [`opensession-self-deploy`](#opensession-self-deploy) | 2 | interactive | yes | Withheld from dev instances (isDevInstance()) — the script targets the production service and state. |
-| [`opensession-humans`](#opensession-humans) | 3 | interactive, Slack loop, goal wake | yes | Interactive runs need a session id (the answer routes back to it). |
-| [`opensession-keychain`](#opensession-keychain) | 3 | interactive | yes | Needs a session id. |
-| [`opensession-publish`](#opensession-publish) | 4 | interactive | yes | Needs a session id. |
-| [`opensession-repos`](#opensession-repos) | 4 | interactive | yes | Needs a session id. |
-| [`opensession-memory`](#opensession-memory) | 5 | interactive | yes | Needs a session id. |
-| [`opensession-web`](#opensession-web) | 3 | interactive | yes | Needs a session id. |
-| [`opensession-portals`](#opensession-portals) | 5 | interactive | yes | Needs a session id. |
-| [`opensession-walkthrough`](#opensession-walkthrough) | 2 | interactive | yes | Needs a session id. |
-| [`opensession-slack`](#opensession-slack) | 1 | interactive | yes | Needs a session id. |
-| [`opensession-ask`](#opensession-ask) | 1 | interactive, Slack loop | yes | Needs a session id. claude-runner strips it so Claude keeps its native AskUserQuestion. |
-| [`opensession-workflows`](#opensession-workflows) | 5 | interactive, automation | yes | Automation runs get it ONLY with the human-set `workflows` flag. |
-| [`opensession-assets`](#opensession-assets) | 4 | interactive | yes | Needs a session id. Works in read-only Ask mode — assets land outside the checkout. |
-| [`opensession-todos`](#opensession-todos) | 5 | interactive | yes | Needs a session id. |
-| [`opensession-papercuts`](#opensession-papercuts) | 2 | interactive, automation | yes | Dropped when the session's repo opted out (Settings → Papercuts). |
-| [`opensession-report`](#opensession-report) | 1 | automation | no | – |
-| [`opensession-turn`](#opensession-turn) | 2 | automation | no | – |
-| [`opensession-self`](#opensession-self) | 2 | automation | no | Only with the human-set `selfImprove` flag on that automation. |
-| [`opensession-github`](#opensession-github) | 4 | Slack loop | yes | – |
-| [`opensession-goal-self`](#opensession-goal-self) | 6 | goal wake | no | Only on a session that carries a goalId. |
+| Server | Tools | Runs | Condition |
+| --- | --- | --- | --- |
+| [`opensession-sessions`](#opensession-sessions) | 14 | interactive, Slack loop, automation | Automation runs get it ONLY with the human-set `selfImprove` flag, and then in the `automationSelf` build below. |
+| [`opensession-admin`](#opensession-admin) | 13 | interactive, Slack loop | – |
+| [`opensession-runners`](#opensession-runners) | 5 | interactive | – |
+| [`opensession-goals`](#opensession-goals) | 8 | interactive | – |
+| [`opensession-search`](#opensession-search) | 2 | interactive | – |
+| [`opensession-self-deploy`](#opensession-self-deploy) | 2 | interactive | Withheld from dev instances (isDevInstance()) — the script targets the production service and state. |
+| [`opensession-humans`](#opensession-humans) | 3 | interactive, Slack loop, goal wake | Interactive runs need a session id (the answer routes back to it). |
+| [`opensession-keychain`](#opensession-keychain) | 3 | interactive | Needs a session id. |
+| [`opensession-publish`](#opensession-publish) | 4 | interactive | Needs a session id. |
+| [`opensession-repos`](#opensession-repos) | 4 | interactive | Needs a session id. |
+| [`opensession-memory`](#opensession-memory) | 9 | interactive | Needs a session id. |
+| [`opensession-web`](#opensession-web) | 3 | interactive | Needs a session id. |
+| [`opensession-portals`](#opensession-portals) | 5 | interactive | Needs a session id. |
+| [`opensession-walkthrough`](#opensession-walkthrough) | 2 | interactive | Needs a session id. |
+| [`opensession-slack`](#opensession-slack) | 1 | interactive | Needs a session id. |
+| [`opensession-ask`](#opensession-ask) | 1 | interactive, Slack loop | Needs a session id. claude-runner strips it so Claude keeps its native AskUserQuestion. |
+| [`opensession-workflows`](#opensession-workflows) | 5 | interactive, automation | Automation runs get it ONLY with the human-set `workflows` flag. |
+| [`opensession-assets`](#opensession-assets) | 4 | interactive | Needs a session id. Works in read-only Ask mode — assets land outside the checkout. |
+| [`opensession-todos`](#opensession-todos) | 5 | interactive | Needs a session id. |
+| [`opensession-papercuts`](#opensession-papercuts) | 2 | interactive, automation | Dropped when the session's repo opted out (Settings → Papercuts). |
+| [`opensession-report`](#opensession-report) | 1 | automation | – |
+| [`opensession-turn`](#opensession-turn) | 2 | automation | – |
+| [`opensession-health`](#opensession-health) | 1 | automation | – |
+| [`opensession-self`](#opensession-self) | 2 | automation | Only with the human-set `selfImprove` flag on that automation. |
+| [`opensession-github`](#opensession-github) | 4 | Slack loop | – |
+| [`opensession-goal-self`](#opensession-goal-self) | 6 | goal wake | Only on a session that carries a goalId. |
 
-25 servers, 103 tools. "Shared server" is membership of
-`SHARED_INPROCESS_SERVERS` (`packages/core/opensession-server/src/server/opencode-policy.ts`): a run carrying
-any server outside that list falls back to a per-session engine server.
+26 servers, 111 tools.
 
 ## opensession-sessions
 
@@ -90,6 +89,24 @@ List Open Session sessions with their live state and explicit creator metadata. 
 `mcp__opensession-sessions__get_session` · input: `id` (string, required), `transcript_lines` (number)
 
 Get detail on one session by id, including explicit createdBy and createdAt metadata (createdBy is null when the origin did not record identity), state, any pending question, queue depth, and transcript tail.
+
+### `wait_for`
+
+`mcp__opensession-sessions__wait_for` · input: `kind` ("timer" | "pr_checks", required), `seconds` (number), `repo` (string), `branch` (string), `timeout_seconds` (number), `prompt` (string)
+
+End this turn cleanly and wake this same session later without sleeping in a tool call. Register the wait, then write the human a normal status/final message and STOP the turn. A timer wakes after the requested delay. A pr_checks wait polls durably outside the model turn, waits for the check set to remain settled, then starts a new turn with the result; it also wakes on PR close/merge or timeout. One wait may be active per session, and a new one replaces it. Never call sleep after this tool succeeds.
+
+### `wait_status`
+
+`mcp__opensession-sessions__wait_status` · input: none
+
+Inspect the background wait registered by this session.
+
+### `cancel_wait`
+
+`mcp__opensession-sessions__cancel_wait` · input: none
+
+Cancel this session's registered background wait. This does not stop a currently running turn.
 
 ### `answer_session_question`
 
@@ -125,7 +142,7 @@ Spin up a visible Open Session session and start it on a prompt. Use this as the
 
 `mcp__opensession-sessions__migrate_session_engine` · input: `sessionId` (string, required), `model` (string, required)
 
-Migrate an existing session onto the OpenCode engine by flipping its model to an opencode/* id (e.g. opencode/anthropic/claude-sonnet-5). Does NOT start a run: the session's NEXT prompt builds a transcript handoff from its claude/codex history and continues on a fresh OpenCode session — file, workspace, branch, title and UI history all stay. Refuses automation-owned sessions (the opencode engine hard-gates automations off) and sessions that are mid-run.
+Migrate an existing session onto the Pi engine by flipping its model to an pi/* id (e.g. pi/anthropic/claude-sonnet-5). Does NOT start a run: the session's NEXT prompt builds a transcript handoff from its claude/codex history and continues on a fresh Pi session — file, workspace, branch, title and UI history all stay. Refuses automation-owned sessions (the pi engine hard-gates automations off) and sessions that are mid-run.
 
 ### `spawn_task`
 
@@ -147,7 +164,7 @@ Cancel a spawned task's in-flight run (drops queued messages too). Only runs thi
 
 ### Variant · selfImprove automation (isAdmin: false, automationSelf: true)
 
-Built for: automation. 5 tools, without `answer_session_question`, `send_to_session`, `send_file_to_session`, `cancel_session`, `create_session`, `migrate_session_engine`.
+Built for: automation. 5 tools, without `wait_for`, `wait_status`, `cancel_wait`, `answer_session_question`, `send_to_session`, `send_file_to_session`, `cancel_session`, `create_session`, `migrate_session_engine`.
 
 ## opensession-admin
 
@@ -504,33 +521,57 @@ Durable repo / user / team memory, shared with Slack channel memory.
 
 ### `store_memory`
 
-`mcp__opensession-memory__store_memory` · input: `text` (string, required), `scope` ("repo" | "user" | "team"), `repo` (string), `supersedes` (string[])
+`mcp__opensession-memory__store_memory` · input: `summary` (string, required), `kind` ("preference" | "constraint" | "decision" | "gotcha" | "reference" | "status", required), `scope` ("repo" | "user" | "team", required), `repo` (string), `details` (string), `tags` (string[]), `expiresAt` (string), `supersedes` (string[])
 
-Store a durable fact in memory so future sessions know it without being told. Scopes: 'repo' (default) = facts about this session's codebase (gotchas, operational quirks, decisions — things that don't belong in checked-in docs); 'user' = facts about the person prompting (preferences, context); 'team' = workspace-wide facts everyone (including Assistant in Slack) should know. Store only durable, non-obvious facts — never conversation state, never things already in the repo's docs.
+Store one durable, non-obvious fact. The summary is compact and retrieval-only by default; supporting evidence belongs in details. Do not store task progress, completion reports, PR history, incident narration, or facts already documented in the repo. Status requires expiry. Team writes require a separately verified privilege.
 
 ### `search_memory`
 
-`mcp__opensession-memory__search_memory` · input: `query` (string, required), `limit` (number), `includeArchived` (boolean)
+`mcp__opensession-memory__search_memory` · input: `query` (string, required), `kind` ("preference" | "constraint" | "decision" | "gotcha" | "reference" | "status"), `scope` ("repo" | "user" | "team"), `state` ("active" | "archived" | "expired" | "superseded"), `cursor` (string), `limit` (integer)
 
-Search everything ever remembered for this session's scopes, including entries that are no longer injected — older facts held back to keep the Memory section a sane size, and entries superseded by a later correction. Reach for this before re-deriving something that smells familiar, or when the Memory section says entries were held back. Exact tokens work best: file names, error strings, flag names.
+Search this session's memory scopes. Returns compact summaries only; use read_memory for details.
 
-### `supersede_memory`
+### `read_memory`
 
-`mcp__opensession-memory__supersede_memory` · input: `ids` (string[], required)
+`mcp__opensession-memory__read_memory` · input: `ids` (string[], required)
 
-Archive memory entries that are wrong or obsolete, without storing a replacement. They stop being injected but stay reachable through search_memory. Use forget_memory only when an entry should not have been recorded at all.
+Read full supporting details for selected memory ids returned by search_memory or list_memory.
 
 ### `list_memory`
 
-`mcp__opensession-memory__list_memory` · input: none
+`mcp__opensession-memory__list_memory` · input: `query` (string), `kind` ("preference" | "constraint" | "decision" | "gotcha" | "reference" | "status"), `scope` ("repo" | "user" | "team"), `state` ("active" | "archived" | "expired" | "all"), `review` ("needs_review" | "confirmed" | "all"), `cursor` (string), `limit` (integer)
 
-List everything in this session's memory scopes (repo(s), user, team) with the ids needed to forget entries.
+List a bounded page of compact memory summaries. Details are omitted.
+
+### `update_memory`
+
+`mcp__opensession-memory__update_memory` · input: `id` (string, required), `summary` (string), `kind` ("preference" | "constraint" | "decision" | "gotcha" | "reference" | "status"), `details` (string | null), `tags` (string[]), `expiresAt` (string | null)
+
+Update one memory in place. Keep the summary atomic and put evidence in details.
+
+### `archive_memory`
+
+`mcp__opensession-memory__archive_memory` · input: `ids` (string[], required)
+
+Archive memories without deleting them. Archived records stop appearing in active retrieval.
+
+### `restore_memory`
+
+`mcp__opensession-memory__restore_memory` · input: `ids` (string[], required)
+
+Restore archived memories to active or expired state.
+
+### `confirm_memory`
+
+`mcp__opensession-memory__confirm_memory` · input: `ids` (string[], required)
+
+Confirm that memories remain accurate, refreshing their verification timestamp.
 
 ### `forget_memory`
 
-`mcp__opensession-memory__forget_memory` · input: `id` (string, required)
+`mcp__opensession-memory__forget_memory` · input: `id` (string, required), `confirm` (boolean, required)
 
-Remove a memory entry by id (see list_memory or the [id] tags in the Memory section). Works on any of this session's scopes.
+Permanently delete one memory. Prefer archive_memory because deletion cannot be recovered.
 
 ## opensession-web
 
@@ -621,7 +662,7 @@ Post a comment on this session's PR (or an explicit PR) with screenshots that RE
 
 ## opensession-slack
 
-Open an editable Slack composer — the human still presses Send.
+Open an editable Slack composer. The human still presses Send.
 
 - **Source** `packages/core/opensession-server/src/agents/slack/slack-compose-tools.ts`
 - **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`
@@ -663,7 +704,7 @@ Deterministic agent fan-out from a model-authored script.
 
 `mcp__opensession-workflows__run_workflow` · input: `script` (string, required), `args_json` (string), `budget_tokens` (number), `repo` (string)
 
-Run a dynamic workflow: a JS script YOU author that fans out many lightweight read/analyze agents deterministically and combines their results — map-reduce over a codebase, N-way file audits, comparative research. Progress streams live to this session's Agents panel; poll workflow_status for the outcome. Script shape — plain JavaScript (NOT TypeScript), no imports; the API below is injected as globals. A meta export is required, then the async body follows (top-level await AND top-level return are allowed): export const meta = { name: "route-audit", // required, short slug description: "Audit every route for auth checks", // optional phases: [{ title: "List" }, { title: "Audit" }], // optional, pre-seeds the progress UI }; Injected globals: - agent(prompt, opts?) → Promise — run one focused agent (ask mode: reads files / runs read-only commands in this session's worktree; its final message is the return value). Resolves to the final text; with opts.schema (a JSON Schema) resolves to the parsed, validated object instead; resolves to null when the agent errored — filter with .filter(Boolean). opts: { label, phase, schema, model, effort, write }. - parallel([...thunks]) → Promise — run zero-arg thunks concurrently and wait for all; a thrown thunk becomes null, never rejects the batch. E.g. await parallel(files.map(f => () => agent("Audit " + f))) - pipeline(items, ...stages) → Promise — per-item stage chain with NO barrier between stages (item B can run stage 1 while item A is in stage 2). Each stage gets (prevResult, originalItem, index); a throwing stage drops that item to null and skips its remaining stages. - mcp.<server>.<tool>(args) → Promise — call an MCP tool DIRECTLY from the script (no model turn: one round trip). Resolves to the tool's structured result, or its text auto-parsed as JSON when it parses. REJECTS on failure (unlike agent(), which resolves null) — try/catch it, or let parallel() degrade the throw to null. Also: mcp.call(server, tool, args) (same thing, dynamic names), mcp.servers() → string[], mcp.tools(server) → [{name, description, inputSchema}]. - phase(title) — set the current progress group for subsequent agent calls. - log(message) — narrator line in the progress feed. - args — your args_json, parsed, verbatim. - budget — { total, spent(), remaining() } in output tokens. AGENT OR TOOL? An agent() is a model turn — use it when the work needs judgement (reading code, summarizing, ranking, deciding). An mcp.* call is a function call — use it whenever you just need DATA from a connected server. Don't spend an agent on "query Prometheus for X" or "fetch that Linear issue": call the tool, filter the rows in the script, and spend agents only on the parts that need thinking. Tool names and argument shapes are the same ones in your own tool list; mcp.servers() / mcp.tools(server) enumerate them at runtime. The surface is exactly what YOUR runs may use (per-user restrictions apply, confirm-gated servers like stripe are never reachable from a script). MODEL: pick whichever model fits each agent — pass opts.model with any of the currently available ids: claude-fable-5 (Claude Fable 5), claude-opus-5 (Claude Opus 5), claude-opus-4-8 (Claude Opus 4.8), claude-sonnet-5 (Claude Sonnet 5), claude-sonnet-4-6 (Claude Sonnet 4.6), claude-haiku-4-5 (Claude Haiku 4.5), codex-best-available (Best available (Codex)), gpt-5.6-sol (GPT-5.6 Sol), gpt-5.6-terra (GPT-5.6 Terra), gpt-5.6-luna (GPT-5.6 Luna), gpt-5.5 (GPT-5.5 (Codex)), gpt-5.4 (GPT-5.4 (Codex)), gpt-5.4-mini (GPT-5.4 mini (Codex)), gpt-5.3-codex-spark (GPT-5.3 Codex Spark). Agents default to claude-opus-5 when you don't set one. Choose per task — intelligence and taste first. EFFORT: pass opts.effort to set one agent's reasoning level. The values are low, medium, high, xhigh and max; each model offers its own ladder, and unset means that model's default. Spend it where judgement lives (a verifier, a ranker, a synthesis step); mechanical extraction and classification do not need it. A level the chosen model does not offer is ignored rather than an error. Rules: - Date.now(), argless new Date(), and Math.random() THROW inside scripts (they break resume replay determinism) — pass timestamps/seeds via args. - Agents start fresh with ZERO context from this session — make every prompt self-contained (paths, constraints, what to return). - Agents are read-only by default (ask mode). Pass opts.write to let one edit code (see below). - Limits: 8 agents run concurrently (extras queue), 200 agent() calls per run lifetime, 15min per agent, 60min per workflow. mcp.* is cheaper and its own lane: 16 concurrent, 2000 per run, 60s per call. - Both agent() and mcp.* calls are journaled, so resume_workflow REPLAYS them instead of re-firing — a resumed script won't create the same Linear issue twice. Example (no opts.model set → agents run on the default): export const meta = { name: "route-audit", phases: [{ title: "List" }, { title: "Audit" }, { title: "Rank" }] }; phase("List"); const files = await agent( "List every .ts file in packages/core/opensession-server/src/server/routes of this repo. Reply with ONLY the basenames.", { schema: { type: "array", items: { type: "string" } } }, ); if (!files) return "listing failed"; phase("Audit"); const findings = await pipeline( files, (f) => agent("Read packages/core/opensession-server/src/server/routes/" + f + " and report missing auth/validation checks. Reply 'none' if clean.", { label: f }), (prev, f) => (prev && prev !== "none" ? f + ": " + prev : null), ); log(findings.filter(Boolean).length + " files with findings"); phase("Rank"); const real = findings.filter(Boolean); if (!real.length) return "all clean"; return await agent( "Rank these route-audit findings by real-world severity and drop the false positives:\n" + real.join("\n"), { label: "rank findings" }, ); Example of mixing tools and agents (data by tool, judgement by agent): export const meta = { name: "alert-triage" }; const alerts = await mcp.grafana.list_alert_groups({ state: "new" }); const issues = await mcp.linear.list_issues({ team: "ENG", state: "started" }); // Reduce HERE — every row dropped in the script is a model turn not spent. const unclaimed = alerts.filter((a) => !issues.some((i) => i.title.includes(a.title))); log(unclaimed.length + " unclaimed of " + alerts.length); return await parallel( unclaimed.map((a) => () => agent("Assess this alert and say who should own it: " + JSON.stringify(a), { label: a.id })), );
+Run a dynamic workflow: a JS script YOU author that fans out many lightweight read/analyze agents deterministically and combines their results — map-reduce over a codebase, N-way file audits, comparative research. Progress streams live to this session's Agents panel; poll workflow_status for the outcome. Script shape — plain JavaScript (NOT TypeScript), no imports; the API below is injected as globals. A meta export is required, then the async body follows (top-level await AND top-level return are allowed): export const meta = { name: "route-audit", // required, short slug description: "Audit every route for auth checks", // optional phases: [{ title: "List" }, { title: "Audit" }], // optional, pre-seeds the progress UI }; Injected globals: - agent(prompt, opts?) → Promise — run one focused agent (ask mode: reads files / runs read-only commands in this session's worktree; its final message is the return value). Resolves to the final text; with opts.schema (a JSON Schema) resolves to the parsed, validated object instead; resolves to null when the agent errored — filter with .filter(Boolean). opts: { label, phase, schema, model, effort, write }. - parallel([...thunks]) → Promise — run zero-arg thunks concurrently and wait for all; a thrown thunk becomes null, never rejects the batch. E.g. await parallel(files.map(f => () => agent("Audit " + f))) - pipeline(items, ...stages) → Promise — per-item stage chain with NO barrier between stages (item B can run stage 1 while item A is in stage 2). Each stage gets (prevResult, originalItem, index); a throwing stage drops that item to null and skips its remaining stages. - mcp.<server>.<tool>(args) → Promise — call an MCP tool DIRECTLY from the script (no model turn: one round trip). Resolves to the tool's structured result, or its text auto-parsed as JSON when it parses. REJECTS on failure (unlike agent(), which resolves null) — try/catch it, or let parallel() degrade the throw to null. Also: mcp.call(server, tool, args) (same thing, dynamic names), mcp.servers() → string[], mcp.tools(server) → [{name, description, inputSchema}]. - phase(title) — set the current progress group for subsequent agent calls. - log(message) — narrator line in the progress feed. - args — your args_json, parsed, verbatim. - budget — { total, spent(), remaining() } in output tokens. AGENT OR TOOL? An agent() is a model turn — use it when the work needs judgement (reading code, summarizing, ranking, deciding). An mcp.* call is a function call — use it whenever you just need DATA from a connected server. Don't spend an agent on "query Prometheus for X" or "fetch that Linear issue": call the tool, filter the rows in the script, and spend agents only on the parts that need thinking. Tool names and argument shapes are the same ones in your own tool list; mcp.servers() / mcp.tools(server) enumerate them at runtime. The surface is exactly what YOUR runs may use (per-user restrictions apply, confirm-gated servers like stripe are never reachable from a script). MODEL: agents default to pi/anthropic/claude-opus-5; pass opts.model to pick another available model per agent. EFFORT: pass opts.effort to set one agent's reasoning level. The values are low, medium, high, xhigh and max; each model offers its own ladder, and unset means that model's default. Spend it where judgement lives (a verifier, a ranker, a synthesis step); mechanical extraction and classification do not need it. A level the chosen model does not offer is ignored rather than an error. Rules: - Date.now(), argless new Date(), and Math.random() THROW inside scripts (they break resume replay determinism) — pass timestamps/seeds via args. - Agents start fresh with ZERO context from this session — make every prompt self-contained (paths, constraints, what to return). - Agents are read-only by default (ask mode). Pass opts.write to let one edit code (see below). - Limits: 8 agents run concurrently (extras queue), 200 agent() calls per run lifetime, 15min per agent, 60min per workflow. mcp.* is cheaper and its own lane: 16 concurrent, 2000 per run, 60s per call. - Both agent() and mcp.* calls are journaled, so resume_workflow REPLAYS them instead of re-firing — a resumed script won't create the same Linear issue twice. Example (no opts.model set → agents run on the default): export const meta = { name: "route-audit", phases: [{ title: "List" }, { title: "Audit" }, { title: "Rank" }] }; phase("List"); const files = await agent( "List every .ts file in packages/core/opensession-server/src/server/routes of this repo. Reply with ONLY the basenames.", { schema: { type: "array", items: { type: "string" } } }, ); if (!files) return "listing failed"; phase("Audit"); const findings = await pipeline( files, (f) => agent("Read packages/core/opensession-server/src/server/routes/" + f + " and report missing auth/validation checks. Reply 'none' if clean.", { label: f }), (prev, f) => (prev && prev !== "none" ? f + ": " + prev : null), ); log(findings.filter(Boolean).length + " files with findings"); phase("Rank"); const real = findings.filter(Boolean); if (!real.length) return "all clean"; return await agent( "Rank these route-audit findings by real-world severity and drop the false positives:\n" + real.join("\n"), { label: "rank findings" }, ); Example of mixing tools and agents (data by tool, judgement by agent): export const meta = { name: "alert-triage" }; const alerts = await mcp.grafana.list_alert_groups({ state: "new" }); const issues = await mcp.linear.list_issues({ team: "ENG", state: "started" }); // Reduce HERE — every row dropped in the script is a model turn not spent. const unclaimed = alerts.filter((a) => !issues.some((i) => i.title.includes(a.title))); log(unclaimed.length + " unclaimed of " + alerts.length); return await parallel( unclaimed.map((a) => () => agent("Assess this alert and say who should own it: " + JSON.stringify(a), { label: a.id })), );
 
 ### `workflow_status`
 
@@ -702,25 +743,25 @@ Per-session scratch assets, previewed in the Assets tab.
 
 `mcp__opensession-assets__write_asset` · input: `path` (string, required), `content` (string, required), `description` (string), `encoding` ("utf8" | "base64")
 
-Save a file into this session's assets folder — scratch space for helper artifacts the human can preview in the session's Assets tab or open directly from its path in chat: interactive HTML/JS visualizations, generated reports, diagrams, sample data. Add a short description so the viewer explains what the asset shows. Assets are NOT part of any repo and are never committed (if something turns out PR-worthy, copy it into the worktree explicitly). HTML previews live in the UI and relative references between assets resolve, so multi-file pages (index.html + style.css + data.json) work. Overwrites silently — iterating on the same file is the normal flow. Works in read-only Ask sessions too: the assets folder is session scratch, not the checkout.
+Save a file into this session's asset storage for preview in the Assets tab or a direct link in chat: interactive HTML/JS visualizations, generated reports, diagrams, and sample data. Add a short description so the viewer explains what the asset shows. Assets are outside every repo and never committed. HTML previews live in the UI and relative references resolve, so multi-file pages work. Overwrites silently. Works in read-only Ask sessions too.
 
 ### `list_assets`
 
 `mcp__opensession-assets__list_assets` · input: none
 
-List this session's assets folder (path, size, modified time), plus its on-disk location. In code mode you can also write into that directory directly with shell tools — useful for binary files or anything over the write_asset size cap.
+List this session's assets (path, size, modified time) and the configured storage location.
 
 ### `read_asset`
 
 `mcp__opensession-assets__read_asset` · input: `path` (string, required)
 
-Read back a text asset from this session's assets folder (capped at 256 KB).
+Read back a text asset from this session's asset storage (capped at 256 KB).
 
 ### `delete_asset`
 
 `mcp__opensession-assets__delete_asset` · input: `path` (string, required)
 
-Delete a file (or a whole subfolder) from this session's assets folder.
+Delete a file or virtual folder from this session's asset storage.
 
 ## opensession-todos
 
@@ -818,6 +859,21 @@ End this run without reporting anything. ONLY for a scheduled or event-driven ru
 `mcp__opensession-turn__stay_silent` · input: `reason` (string, required)
 
 End this turn without replying, when you were addressed directly and have decided not to answer. Give a one-line reason: it is logged, never shown to anyone. Use it sparingly — the ordinary response to being asked something is to reply.
+
+## opensession-health
+
+Read this instance's own disk, memory, load, process fleets and agent status.
+
+- **Source** `packages/core/opensession-server/src/server/health-mcp.ts`
+- **Wired in** `packages/core/opensession-server/src/server/automations.ts`
+- **Runs** automation
+- **Note** The only way a monitor can see its own host: loopback fetches are refused and unattended ask runs have no shell. One argument-less read, no writes.
+
+### `read_host_metrics`
+
+`mcp__opensession-health__read_host_metrics` · input: none
+
+Read this instance's health: disk usage on /, memory and swap, load averages against core count, counts of the process fleets that have leaked before (detached run hosts, MCP proxies, headless Chrome, dev stacks, git operations), cgroup memory accounting, and each agent's status. Returns the same fields as the health endpoint. Use it for a health check instead of trying to fetch the server over HTTP, which is refused for loopback addresses.
 
 ## opensession-self
 

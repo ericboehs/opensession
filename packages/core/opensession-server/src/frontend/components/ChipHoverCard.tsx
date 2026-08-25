@@ -1,11 +1,19 @@
-import React, { useEffect, useRef, useState } from "react";
-import { relativeTime } from "../lib/api";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+	fetchRecentPrs,
+	relativeTime,
+	type OpenPr,
+	type RecentPr,
+} from "../lib/api";
 import {
 	CHIP_SELECTOR,
 	applyChipCommit,
 	cachedChipCommit,
 	cachedChipSession,
 	cachedOpenPrs,
+	cachedRecentPr,
+	cachedRecentPrs,
+	cacheRecentPrs,
 	chipCommitResolved,
 	chipPr,
 	chipPrIsWorthShowing,
@@ -13,11 +21,13 @@ import {
 	loadChipCommit,
 	loadChipSession,
 	loadOpenPrs,
+	loadRecentPr,
 	type ChipPr,
 	type ChipTarget,
 } from "../lib/chip-hover";
 import type { CommitDetails } from "../lib/api";
-import { refState, refTone } from "../lib/pr-refs";
+import { setKnownRepoPrStates } from "../lib/markdown";
+import { prStatusDisplay } from "../lib/pr-status";
 import { PR_STATE_TEXT } from "../lib/pr-tone-classes";
 import { providerFromUrl } from "../lib/provider";
 import { repoLabel } from "../lib/repo-label";
@@ -50,7 +60,7 @@ import { IconGitCommit, IconGitMerge, IconPullRequest } from "./icons";
  * cards) rather than only the transcript it was asked for.
  *
  * A chip whose subject this client can't name keeps its own tooltip and gets
- * no card: "Open the review for tella-fusion #3662" is what the chip already
+ * no card: "Open the review for webapp #3662" is what the chip already
  * promises, and a card that repeats it is a card that got in the way.
  */
 
@@ -66,6 +76,15 @@ const CLOSE_MS = 140;
 
 /** Marks the card's own subtree, so hovering it holds it open. */
 const CARD_ATTR = "data-chip-card";
+const PR_STATES_REFRESH_MS = 60_000;
+
+function syncRepoPrStates(open: OpenPr[], recent: RecentPr[]): void {
+	cacheRecentPrs(recent);
+	setKnownRepoPrStates([
+		...cachedRecentPrs(),
+		...open.map((pr) => ({ ...pr, state: "OPEN" as const })),
+	]);
+}
 
 type ChipCard =
 	| { key: string; kind: "session"; session: UnifiedSession }
@@ -85,7 +104,9 @@ export function ChipHoverCards({ sessions }: { sessions: UnifiedSession[] }) {
 	const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	// The listeners below are bound once; this is how they read current state.
 	const hoverRef = useRef(hover);
-	hoverRef.current = hover;
+	useLayoutEffect(() => {
+		hoverRef.current = hover;
+	});
 
 	function cancelTimers() {
 		if (openTimer.current) clearTimeout(openTimer.current);
@@ -117,8 +138,34 @@ export function ChipHoverCards({ sessions }: { sessions: UnifiedSession[] }) {
 		openTimer.current = setTimeout(() => setHover({ el, target }), delay);
 	}
 	const api = useRef({ enter, scheduleClose, close, cancelTimers });
-	api.current = { enter, scheduleClose, close, cancelTimers };
+	useLayoutEffect(() => {
+		api.current = { enter, scheduleClose, close, cancelTimers };
+	});
 	useEffect(() => cancelTimers, []);
+
+	// A PR mention should carry state before someone has to hover it. Sessions
+	// only cover PRs opened by loaded workspaces, so fold in the repo-wide open
+	// and recent PR caches as a second source for standalone references.
+	useEffect(() => {
+		let alive = true;
+		const refresh = () => {
+			void Promise.all([
+				loadOpenPrs(),
+				fetchRecentPrs(undefined, { days: 7, limit: 500 }),
+			])
+				.then(([open, recent]) => {
+					if (alive) syncRepoPrStates(open, recent);
+				})
+				.catch(() => {});
+		};
+		refresh();
+		const timer = setInterval(refresh, PR_STATES_REFRESH_MS);
+		return () => {
+			alive = false;
+			clearInterval(timer);
+			setKnownRepoPrStates([]);
+		};
+	}, []);
 
 	// Resolve what the dwelled-on chip is about. The session list answers most
 	// chips outright; the rest fall back to a cached fetch (an archived session,
@@ -167,16 +214,40 @@ export function ChipHoverCards({ sessions }: { sessions: UnifiedSession[] }) {
 				alive = false;
 			};
 		}
-		const known = chipPr(target.repo, target.number, sessions, cachedOpenPrs());
-		if (chipPrIsWorthShowing(known)) {
+		const recent = cachedRecentPr(target.repo, target.number);
+		const known = chipPr(
+			target.repo,
+			target.number,
+			sessions,
+			cachedOpenPrs(),
+			recent ? [recent] : [],
+		);
+		if (chipPrIsWorthShowing(known))
 			setCard({ key: target.key, kind: "pr", pr: known });
-			return;
-		}
-		void loadOpenPrs().then((prs) => {
-			const filled = chipPr(target.repo, target.number, sessions, prs);
-			if (alive && chipPrIsWorthShowing(filled))
-				setCard({ key: target.key, kind: "pr", pr: filled });
-		});
+		// Revalidate even when the synchronous sources can name it. The old path
+		// returned above and froze the first open-PR snapshot forever, which is how
+		// a merged PR kept an Open card and then lost its card once archived.
+		void Promise.all([
+			loadOpenPrs(),
+			loadRecentPr(target.repo, target.number),
+		])
+			.then(([openPrs, recentPr]) => {
+				if (!alive) return;
+				syncRepoPrStates(openPrs, recentPr ? [recentPr] : []);
+				const filled = chipPr(
+					target.repo,
+					target.number,
+					sessions,
+					openPrs,
+					recentPr ? [recentPr] : [],
+				);
+				if (chipPrIsWorthShowing(filled)) {
+					setCard({ key: target.key, kind: "pr", pr: filled });
+				} else {
+					setCard((current) => (current?.key === target.key ? null : current));
+				}
+			})
+			.catch(() => {});
 		return () => {
 			alive = false;
 		};
@@ -324,7 +395,7 @@ function CommitChipCardBody({ commit }: { commit: CommitDetails }) {
 			</div>
 
 			{lede && (
-				<div className="mt-[3px] line-clamp-3 text-meta leading-[1.4] text-dim">
+				<div className="mt-[3px] line-clamp-3 text-supporting leading-[1.4] text-dim">
 					{lede}
 				</div>
 			)}
@@ -364,7 +435,8 @@ function CommitChipCardBody({ commit }: { commit: CommitDetails }) {
  * takes the row the queue would have spent on why it is waiting.
  */
 function PrChipCardBody({ pr }: { pr: ChipPr }) {
-	const tone = refTone(pr);
+	const status = prStatusDisplay(pr);
+	const tone = status.tone;
 	const rows: Array<[string, React.ReactNode]> = [];
 	if (pr.author) rows.push(["Author", pr.author]);
 	rows.push(["Repo", repoLabel(pr.repo)]);
@@ -409,7 +481,7 @@ function PrChipCardBody({ pr }: { pr: ChipPr }) {
 			</div>
 
 			<div className={`mt-[3px] text-meta font-medium ${PR_STATE_TEXT[tone]}`}>
-				{refState(pr)}
+				{status.label}
 			</div>
 
 			<CardRows rows={rows} />

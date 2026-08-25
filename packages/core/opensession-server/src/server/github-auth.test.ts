@@ -13,16 +13,26 @@ import { tmpdir } from "os";
 import { join } from "path";
 import {
   connectedGithubAccounts,
+  GITHUB_RUN_AUTH_FILE_ENV,
   githubAuthEnv,
+  githubRunEnv,
   githubCredentialForLogin,
+  githubCredentialForPrincipal,
   githubReconnectRequired,
   githubUserAuthActive,
   githubUserAuthSettings,
   githubUserLoginForRun,
+  pollGithubDeviceFlow,
+  refreshExpiringGithubTokens,
   removeGithubAccount,
+  resolveGithubCredential,
+  serviceGithubCredential,
+  soleGithubAccount,
+  soleGithubLogin,
   startGithubDeviceFlow,
   validateGithubTokenLogin,
 } from "./github-auth";
+import { botGhToken } from "./github-limit";
 import {
 	ensureAutomationWebSession,
   keypadBearerAuthorized,
@@ -37,6 +47,7 @@ const ENV_KEYS = [
   "OPENSESSION_CONFIG",
   "OPENSESSION_GITHUB_CLIENT_ID",
   "OPENSESSION_GITHUB_AUTH_STORE",
+  GITHUB_RUN_AUTH_FILE_ENV,
   "OPENSESSION_WEB_SESSIONS_STORE",
   "KEYPAD_TOKEN",
 ] as const;
@@ -97,12 +108,29 @@ function seedToken(login = "alice", token = "gho_test123"): void {
         [login.toLowerCase()]: {
           login,
           token,
+          source: "device",
           connectedAt: "2026-07-18T00:00:00.000Z",
         },
       },
     }),
   );
 }
+
+
+describe("service credential boundary", () => {
+  test("the App does not fall back to ambient gh login", async () => {
+    const path = join(dir, "config.json");
+    writeFileSync(
+      path,
+      JSON.stringify({ integrations: { github: {} } }),
+    );
+    process.env.OPENSESSION_CONFIG = path;
+    expect(await botGhToken()).toBeNull();
+    await expect(resolveGithubCredential(serviceGithubCredential)).rejects.toThrow(
+      "selected GitHub bot credential is unavailable",
+    );
+  });
+});
 
 describe("githubUserAuthSettings", () => {
   test("off by default (no config)", () => {
@@ -151,14 +179,64 @@ describe("token lookups + runner env", () => {
     }
   });
 
-  test("empty when the feature is off, the user is unknown, or not connected", () => {
+  test("simple mode uses the sole account; operator mode empty for unknown/unconnected", () => {
     seedToken();
-    expect(githubAuthEnv("Alice")).toEqual({}); // feature off
+    // Feature off (simple mode): the single connected account is the identity
+    // for every interactive run, regardless of the passed user.
+    expect(githubAuthEnv("Alice")).toEqual({
+      GH_TOKEN: "gho_test123",
+      GITHUB_TOKEN: "gho_test123",
+    });
+    // The caller may pass a null or unmatched user (simple mode has no per-user
+    // login); the sole account is still returned, so an interactive run gets
+    // GH_TOKEN. The pi-runner gate keys on interactivity, not on a non-null
+    // login — see the githubInteractive boolean.
+    expect(githubAuthEnv(null)).toEqual({
+      GH_TOKEN: "gho_test123",
+      GITHUB_TOKEN: "gho_test123",
+    });
+    expect(githubAuthEnv("Some Randomer")).toEqual({
+      GH_TOKEN: "gho_test123",
+      GITHUB_TOKEN: "gho_test123",
+    });
     enableFeature();
     expect(githubAuthEnv("Some Randomer")).toEqual({}); // unknown user
     expect(githubAuthEnv(null)).toEqual({});
     expect(githubAuthEnv("Bob")).toEqual({}); // unknown, never connected
     expect(githubUserLoginForRun("Bob")).toBeNull();
+  });
+
+  test("run env gives HTTPS git and gh the connected user's token", () => {
+    enableFeature();
+    seedToken();
+    expect(githubRunEnv("Alice")).toMatchObject({
+      GH_TOKEN: "gho_test123",
+      GITHUB_TOKEN: "gho_test123",
+      GIT_TERMINAL_PROMPT: "0",
+      GIT_CONFIG_COUNT: "4",
+      GIT_CONFIG_VALUE_0: "",
+      GIT_CONFIG_VALUE_2: "git@github.com:",
+      GIT_CONFIG_VALUE_3: "ssh://git@github.com/",
+    });
+  });
+
+  test("remote run env reads only its projected access-token file", () => {
+    const projected = join(dir, "run-github-auth.json");
+    writeFileSync(
+      projected,
+      JSON.stringify({
+        GH_TOKEN: "ghu_remote123",
+        GITHUB_TOKEN: "ghu_remote123",
+        refreshToken: "must-not-be-read",
+      }),
+    );
+    process.env[GITHUB_RUN_AUTH_FILE_ENV] = projected;
+    expect(githubRunEnv("Alice")).toMatchObject({
+      GH_TOKEN: "ghu_remote123",
+      GITHUB_TOKEN: "ghu_remote123",
+      GIT_CONFIG_VALUE_2: "git@github.com:",
+    });
+    expect(JSON.stringify(githubRunEnv("Alice"))).not.toContain("must-not-be-read");
   });
 
   test("connectedGithubAccounts never exposes tokens", () => {
@@ -176,7 +254,8 @@ describe("token lookups + runner env", () => {
             refreshToken: "ghr_secret",
             refreshTokenExpiresAt: "2027-01-01T00:00:00.000Z",
             expiresAt: "2026-07-18T08:00:00.000Z",
-            connectedAt: "2026-07-18T00:00:00.000Z",
+            source: "device",
+          connectedAt: "2026-07-18T00:00:00.000Z",
           },
         },
       }),
@@ -201,7 +280,8 @@ describe("token lookups + runner env", () => {
             token: "gho_test123",
             refreshToken: "ghr_dead",
             refreshFailedAt: "2026-08-04T10:00:00.000Z",
-            connectedAt: "2026-07-18T00:00:00.000Z",
+            source: "device",
+          connectedAt: "2026-07-18T00:00:00.000Z",
           },
         },
       }),
@@ -231,7 +311,8 @@ describe("token lookups + runner env", () => {
             token: "gho_test123",
             refreshToken: "ghr_dead",
             refreshFailedAt: "2026-08-04T10:00:00.000Z",
-            connectedAt: "2026-07-18T00:00:00.000Z",
+            source: "device",
+          connectedAt: "2026-07-18T00:00:00.000Z",
           },
         },
       }),
@@ -266,15 +347,62 @@ describe("token lookups + runner env", () => {
     expect(githubReconnectRequired("alice")).toBe(false);
   });
 
+  test("accepts pre-source App grants but rejects old static bearer records", () => {
+    enableFeature();
+    writeFileSync(
+      process.env.OPENSESSION_GITHUB_AUTH_STORE!,
+      JSON.stringify({
+        users: {
+          appuser: {
+            login: "appuser",
+            token: "app-user-token",
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            refreshToken: "refresh-token",
+            connectedAt: "2026-01-01T00:00:00.000Z",
+          },
+          staticuser: {
+            login: "staticuser",
+            token: "old-static-token",
+            connectedAt: "2026-01-01T00:00:00.000Z",
+          },
+        },
+      }),
+    );
+    expect(githubCredentialForLogin("appuser")?.principal).toBe("user:appuser");
+    expect(githubCredentialForLogin("staticuser")).toBeNull();
+  });
+
   test("builds a credential only for the exact connected login", () => {
     enableFeature();
     seedToken("Alice");
-    expect(githubCredentialForLogin("alice")).toEqual({
+    const credential = githubCredentialForLogin("alice");
+    expect(credential).toMatchObject({
       kind: "user",
       principal: "user:alice",
-      env: { GH_TOKEN: "gho_test123", GITHUB_TOKEN: "gho_test123" },
+      env: {
+        GH_TOKEN: "gho_test123",
+        GITHUB_TOKEN: "gho_test123",
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_CONFIG_COUNT: "4",
+        GIT_CONFIG_VALUE_0: "",
+      },
     });
+    expect(credential?.env.GIT_CONFIG_VALUE_1).toContain("credential");
+    expect(credential?.env.GIT_CONFIG_VALUE_1).not.toContain("gho_test123");
     expect(githubCredentialForLogin("bob")).toBeNull();
+  });
+
+  test("durable principals resolve the current token without changing identity", () => {
+    enableFeature();
+    seedToken("Alice", "gho_old");
+    expect(githubCredentialForPrincipal("user:alice")?.env.GH_TOKEN).toBe("gho_old");
+
+    seedToken("Alice", "gho_refreshed");
+    const recovered = githubCredentialForPrincipal("user:alice");
+    expect(recovered?.principal).toBe("user:alice");
+    expect(recovered?.env.GH_TOKEN).toBe("gho_refreshed");
+    expect(JSON.stringify(recovered)).not.toContain("gho_old");
+    expect(githubCredentialForPrincipal("user:bob")).toBeNull();
   });
 
   test("rejects a device-flow login that differs from the signed-in user", () => {
@@ -325,15 +453,20 @@ describe("starting the device flow", () => {
     expect(await startGithubDeviceFlow()).toEqual({ error: "Not Found" });
   });
 
-  test("a configured app gets its code back", async () => {
+  test("a configured app gets its code back with organization read access", async () => {
     enableFeature();
-    githubAnswers(200, {
-      device_code: "dev-code",
-      user_code: "ABCD-1234",
-      verification_uri: "https://github.com/login/device",
-      interval: 5,
-      expires_in: 900,
-    });
+    let requestedScope = "";
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      requestedScope = body.scope;
+      return Response.json({
+        device_code: "dev-code",
+        user_code: "ABCD-1234",
+        verification_uri: "https://github.com/login/device",
+        interval: 5,
+        expires_in: 900,
+      });
+    }) as unknown as typeof fetch;
     expect(await startGithubDeviceFlow()).toEqual({
       deviceCode: "dev-code",
       userCode: "ABCD-1234",
@@ -341,6 +474,7 @@ describe("starting the device flow", () => {
       interval: 5,
       expiresIn: 900,
     });
+    expect(requestedScope).toBe("repo read:org");
   });
 });
 
@@ -547,5 +681,97 @@ describe("keypad bearer auth", () => {
     expect(keypadBearerAuthorized(request("bearer keypad-test-secret"))).toBe(true);
     expect(keypadBearerAuthorized(request("Bearer wrong-secret"))).toBe(false);
     expect(keypadBearerAuthorized(request())).toBe(false);
+  });
+});
+
+describe("simple-mode credential (App connected, sign-in off)", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  // A personal App: client id + secret configured, but userPrAuth stays off, so
+  // githubUserAuthActive()/webAuthRequired() are both false.
+  function simpleModeApp(): void {
+    const path = join(dir, "config.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        integrations: {
+          github: { oauthClientId: "cid", oauthClientSecret: "csecret" },
+        },
+      }),
+    );
+    process.env.OPENSESSION_CONFIG = path;
+  }
+
+  function writeStore(users: Record<string, unknown>): void {
+    writeFileSync(
+      process.env.OPENSESSION_GITHUB_AUTH_STORE!,
+      JSON.stringify({ users }),
+    );
+  }
+
+  test("refreshes a personal-app token even with sign-in off", async () => {
+    simpleModeApp();
+    expect(githubUserAuthActive()).toBe(false);
+    const soon = new Date(Date.now() + 60_000).toISOString(); // inside the skew window
+    writeStore({
+      alice: {
+        login: "alice",
+        token: "old-token",
+        refreshToken: "rt-1",
+        expiresAt: soon,
+        connectedAt: "2026-07-18T00:00:00.000Z",
+      },
+    });
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.includes("login/oauth/access_token"))
+        return new Response(
+          JSON.stringify({
+            access_token: "new-token",
+            refresh_token: "rt-2",
+            expires_in: 28800,
+            refresh_token_expires_in: 15552000,
+            token_type: "bearer",
+          }),
+          { status: 200 },
+        );
+      return new Response("{}", { status: 404 });
+    }) as unknown as typeof fetch;
+    await refreshExpiringGithubTokens();
+    const after = JSON.parse(
+      readFileSync(process.env.OPENSESSION_GITHUB_AUTH_STORE!, "utf-8"),
+    );
+    expect(after.users.alice.token).toBe("new-token");
+    expect(after.users.alice.refreshToken).toBe("rt-2");
+  });
+
+  test("reconnect authorizing a different account replaces, never strands two", async () => {
+    simpleModeApp();
+    writeStore({
+      alice: { login: "alice", token: "tok-alice", connectedAt: "2026-07-18T00:00:00.000Z" },
+    });
+    // Simple-mode reconnect passes no expected login; GitHub reports @bob.
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.includes("login/oauth/access_token"))
+        return new Response(
+          JSON.stringify({ access_token: "tok-bob", token_type: "bearer" }),
+          { status: 200 },
+        );
+      if (url.includes("api.github.com/user"))
+        return new Response(JSON.stringify({ login: "bob", name: "Bob" }), { status: 200 });
+      return new Response("{}", { status: 404 });
+    }) as unknown as typeof fetch;
+    const res = await pollGithubDeviceFlow("device-code");
+    expect(res.status).toBe("ok");
+    const after = JSON.parse(
+      readFileSync(process.env.OPENSESSION_GITHUB_AUTH_STORE!, "utf-8"),
+    );
+    expect(Object.keys(after.users)).toEqual(["bob"]); // one account, not two
+    expect(soleGithubLogin()).toBe("bob"); // recoverable: DELETE can find it
+    expect(soleGithubAccount()).not.toBeNull(); // repo ops resolve, no fallback to bot
   });
 });

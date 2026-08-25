@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { IconCheck } from "../icons";
-import { fetchFeeds } from "../../lib/api";
+import { fetchFeeds, type RepoInfo } from "../../lib/api";
 import {
 	ACCENT_THEME_OPTIONS,
 	getAccentTheme,
@@ -33,11 +33,10 @@ import {
 } from "../../lib/theme";
 import type { FeedDescriptor } from "../../lib/types";
 import {
-	getWsTimePref,
-	onWsTimeChanged,
-	setWsTimePref,
-	type WsTimePref,
-} from "../../lib/workspace-time";
+	setFilter,
+	useSidebarFilter,
+	type SortBy,
+} from "../../lib/sidebar-filter";
 import {
 	DENSITY_OPTIONS,
 	getSidebarDensity,
@@ -45,7 +44,12 @@ import {
 	setSidebarDensity,
 	type SidebarDensity,
 } from "../../lib/sidebar-density";
-import { Segmented, SegmentedOption } from "../../ui/segmented";
+import {
+	getWsTimePref,
+	onWsTimeChanged,
+	setWsTimePref,
+	type WsTimePref,
+} from "../../lib/workspace-time";
 import {
 	PLAIN_ID,
 	SUPPORT_SURFACE_OPTIONS,
@@ -55,15 +59,31 @@ import {
 } from "../../lib/support-surface";
 import {
 	SettingCard,
+	SettingGroup,
 	SettingsGroupLabel,
-	SettingsHeader,
-	SettingsPanel,
 	SettingsSection,
 } from "../../ui/settings";
+import { Segmented, SegmentedOption } from "../../ui/segmented";
 import { Switch } from "../../ui/switch";
+import { usePeople } from "../../lib/people";
+import { useCurrentUser } from "../UserPicker";
+import { useAutomationOverview } from "../../lib/automation-overview";
+import { AGENT_NAME } from "../../lib/brand";
+import { AGENT_PERSON_KEY } from "../../lib/automation-audience";
+import {
+	GROUP_BY_OPTIONS,
+	LAST_USED_TIME_OPTIONS,
+	personFilterOptions,
+	PR_FILTER_OPTIONS,
+	repoFilterOptions,
+} from "../sidebar/filter-options";
+import { Tooltip } from "../../ui/tooltip";
 import { Select, SettingRow } from "./shared";
 
-// ── Appearance ─────────────────────────────────────────────────────────────
+// The look of the app, as it appears inside Settings → Preferences. These used
+// to be their own Appearance section; they are per-device choices about the
+// same surfaces Preferences already covers, so they sit here rather than one
+// nav row away.
 
 const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
 	{ value: "system", label: "System" },
@@ -72,7 +92,7 @@ const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
 ];
 
 /**
- * Fixed palettes for the miniature mockup below — deliberately raw values
+ * Fixed palettes for the miniature mockup below, deliberately raw values
  * rather than theme tokens, because each swatch has to keep showing its own
  * tone no matter which theme is active. Applied as custom properties so the
  * mock's parts can stay plain utilities.
@@ -93,7 +113,7 @@ const MOCK_PALETTE: Record<"light" | "dark", React.CSSProperties> = {
 };
 
 // A miniature app mockup used inside the theme swatches. Its proportions are
-// percentages of the swatch rather than scale steps — it is an illustration
+// percentages of the swatch rather than scale steps: it is an illustration
 // that has to rescale with the card, not a piece of chrome on the grid.
 function ThemeMock({ tone }: { tone: "light" | "dark" }) {
 	return (
@@ -128,10 +148,10 @@ function ThemeCard({
 		// Selection reads off `data-active` rather than an `.active` class so the
 		// swatch and label can style themselves with group-data-* variants. The
 		// old rules were compound selectors (`.theme-card.active .theme-swatch`),
-		// which outrank a single utility — leaving the class here would have let
+		// which outrank a single utility: leaving the class here would have let
 		// it keep winning against everything below.
 		<button
-			className="group flex cursor-pointer flex-col items-center gap-2.5 border-none bg-transparent p-0"
+			className="group flex w-20 cursor-pointer flex-col items-center gap-2.5 border-none bg-transparent p-0 desktop:w-28"
 			role="radio"
 			aria-checked={active}
 			data-active={active || undefined}
@@ -173,40 +193,34 @@ function AccentSwatch({
 	} as React.CSSProperties;
 
 	return (
-		<label
-			className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md p-1"
-			title={option.label}
-			style={style}
-		>
-			<input
-				type="radio"
-				name="accent-theme"
-				value={theme}
-				checked={active}
-				onChange={onClick}
-				aria-label={option.label}
-				className="peer sr-only"
-			/>
-			<span className="flex size-8 items-center justify-center rounded-full border border-line bg-[linear-gradient(135deg,color-mix(in_srgb,var(--swatch)_97%,white),color-mix(in_srgb,var(--swatch)_94%,black))] text-(--swatch-ink) outline-offset-4 transition-[scale,box-shadow] duration-150 active:scale-[0.96] peer-checked:shadow-[0_0_0_2px_var(--bg-raised),0_0_0_4px_var(--swatch)] peer-focus-visible:outline-2 peer-focus-visible:outline-accent-ink">
-				{active && <IconCheck size={16} strokeWidth={2.4} />}
-			</span>
-		</label>
+		<Tooltip label={option.label}>
+			<label
+				className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md p-1"
+				style={style}
+			>
+				<input
+					type="radio"
+					name="accent-theme"
+					value={theme}
+					checked={active}
+					onChange={onClick}
+					aria-label={option.label}
+					className="peer sr-only"
+				/>
+				<span className="flex size-8 items-center justify-center rounded-full border border-line bg-[linear-gradient(135deg,color-mix(in_srgb,var(--swatch)_97%,white),color-mix(in_srgb,var(--swatch)_94%,black))] text-(--swatch-ink) outline-offset-4 transition-[scale,box-shadow] duration-150 active:scale-[0.96] peer-checked:shadow-[0_0_0_2px_var(--bg-raised),0_0_0_4px_var(--swatch)] peer-focus-visible:outline-2 peer-focus-visible:outline-accent-ink">
+					{active && <IconCheck size={16} strokeWidth={2.4} />}
+				</span>
+			</label>
+		</Tooltip>
 	);
 }
 
-// ── Workspace · General ─────────────────────────────────────────────────────
-
-/** Text field that commits on blur/Enter (Esc reverts), for the identity
- *  settings backed by the config file rather than local prefs. */
 /**
- * Instance identity. The source of truth is ~/.opensession/config.json
- * (persona.name / branding.productName) on the server, read and written
- * through /api/settings/identity. A save applies to new runs immediately and
- * schedules a frontend rebuild, so open tabs get the update-pill nudge once
- * the re-branded bundle is live.
+ * Theme and accent, in one card. They are the same decision taken twice, how
+ * the app looks, so they share a heading instead of standing as two sections
+ * a scroll apart.
  */
-export function AppearancePanel() {
-	const isPhone = useIsPhone();
+export function AppearanceSection() {
 	const [pref, setPref] = useState<ThemePref>(getThemePref);
 	const [tone, setTone] = useState(effectiveTheme);
 	useEffect(
@@ -218,17 +232,241 @@ export function AppearancePanel() {
 		[],
 	);
 	const [accent, setAccent] = useState<AccentTheme>(getAccentTheme);
-	useEffect(
-		() => onAccentThemeChanged(() => setAccent(getAccentTheme())),
-		[],
+	useEffect(() => onAccentThemeChanged(() => setAccent(getAccentTheme())), []);
+
+	return (
+		<>
+			<SettingsGroupLabel>Appearance</SettingsGroupLabel>
+			<SettingsSection>
+				<div
+					className="flex justify-start gap-3 desktop:gap-4"
+					role="radiogroup"
+					aria-label="Theme"
+				>
+					{THEME_OPTIONS.map((o) => (
+						<ThemeCard
+							key={o.value}
+							option={o.value}
+							active={pref === o.value}
+							onClick={() => {
+								setThemePref(o.value);
+								setPref(o.value);
+							}}
+						/>
+					))}
+				</div>
+				<div className="mt-5">
+					<div className="mb-2 text-control-label font-medium text-faint">
+						Accent
+					</div>
+					<div
+						// Keep the seven 44px targets together instead of stretching them
+						// across the plate. They wrap only when the viewport cannot hold
+						// the full group without shrinking its touch targets.
+						className="flex w-fit max-w-full flex-wrap gap-y-1"
+						role="radiogroup"
+						aria-label="Accent colour"
+					>
+						{ACCENT_THEME_OPTIONS.map((option) => (
+							<AccentSwatch
+								key={option.value}
+								theme={option.value}
+								active={accent === option.value}
+								tone={tone}
+								onClick={() => {
+									setAccentTheme(option.value);
+									setAccent(option.value);
+								}}
+							/>
+						))}
+					</div>
+				</div>
+			</SettingsSection>
+		</>
 	);
-	const [wsTime, setWsTime] = useState<WsTimePref>(getWsTimePref);
-	useEffect(() => onWsTimeChanged(() => setWsTime(getWsTimePref())), []);
+}
+
+/** The same sidebar filter controls, shown as Settings rows. */
+export function SidebarDisplayRows({ repos }: { repos: RepoInfo[] }) {
+	const filter = useSidebarFilter();
+	const currentUser = useCurrentUser();
+	const roster = usePeople();
+	const automationOverview = useAutomationOverview("settings");
+	const hasUnownedAutomation = Array.from(automationOverview.values()).some(
+		(automation) => !automation.owner,
+	);
+	const people = roster.map((person) => ({
+		key:
+			person.name.trim().split(/\s+/)[0]?.toLowerCase() ||
+			person.name.toLowerCase(),
+		label: person.name,
+	}));
+	if (
+		(hasUnownedAutomation || filter.person === AGENT_PERSON_KEY) &&
+		!people.some(({ key }) => key === AGENT_PERSON_KEY)
+	)
+		people.push({ key: AGENT_PERSON_KEY, label: AGENT_NAME });
+	if (
+		!["me", "everyone", "unassigned"].includes(filter.person) &&
+		!people.some(({ key }) => key === filter.person)
+	)
+		people.push({ key: filter.person, label: filter.person });
+
+	const availableRepos = repos.map(({ id }) => ({ id }));
+	if (
+		filter.repo !== "all" &&
+		!availableRepos.some(({ id }) => id === filter.repo)
+	)
+		availableRepos.push({ id: filter.repo });
+	const repoOptions = repoFilterOptions(availableRepos);
+	const personOptions = personFilterOptions({ people, currentUser });
+
 	const [density, setDensity] = useState<SidebarDensity>(getSidebarDensity);
 	useEffect(
 		() => onSidebarDensityChanged(() => setDensity(getSidebarDensity())),
 		[],
 	);
+	const [wsTime, setWsTime] = useState<WsTimePref>(getWsTimePref);
+	useEffect(() => onWsTimeChanged(() => setWsTime(getWsTimePref())), []);
+
+	return (
+		<>
+			{/* These rows describe one default view of the sidebar. */}
+			<SettingGroup>
+				<SettingRow
+					title="Group by"
+					control={
+						<Select
+							label="Group by"
+							value={filter.groupBy}
+							options={GROUP_BY_OPTIONS}
+							onChange={(groupBy) => setFilter({ groupBy })}
+						/>
+					}
+				/>
+				<SettingRow
+					title="Group by project"
+					control={
+						<Switch
+							aria-label="Group by project"
+							checked={filter.byProject}
+							onCheckedChange={(byProject) => setFilter({ byProject })}
+						/>
+					}
+				/>
+				<SettingRow
+					title="Repo"
+					control={
+						<Select
+							label="Repo"
+							value={filter.repo}
+							options={repoOptions}
+							onChange={(repo) => setFilter({ repo })}
+						/>
+					}
+				/>
+				<SettingRow
+					title="Person"
+					control={
+						<Select
+							label="Person"
+							value={filter.person}
+							options={personOptions}
+							onChange={(person) => setFilter({ person })}
+						/>
+					}
+				/>
+				{filter.groupBy === "status" && (
+					<SettingRow
+						title="Sort by"
+						control={
+							<Select
+								label="Sort by"
+								value={filter.sort}
+								options={[
+									{ value: "updated", label: "Updated" },
+									{ value: "created", label: "Created" },
+								]}
+								onChange={(sort) => setFilter({ sort: sort as SortBy })}
+							/>
+						}
+					/>
+				)}
+				<SettingRow
+					title="Pull requests"
+					control={
+						<Select
+							label="Pull requests"
+							value={filter.prs}
+							options={PR_FILTER_OPTIONS}
+							onChange={(prs) => setFilter({ prs })}
+						/>
+					}
+				/>
+				<SettingRow
+					title="Show auto created"
+					control={
+						<Switch
+							aria-label="Show auto created"
+							checked={filter.autoCreated === "show"}
+							onCheckedChange={(shown) =>
+								setFilter({ autoCreated: shown ? "show" : "hide" })
+							}
+						/>
+					}
+				/>
+				<SettingRow
+					title="Hide empty projects"
+					control={
+						<Switch
+							aria-label="Hide empty projects"
+							checked={filter.emptyProjects === "hide"}
+							onCheckedChange={(hide) =>
+								setFilter({ emptyProjects: hide ? "hide" : "show" })
+							}
+						/>
+					}
+				/>
+			</SettingGroup>
+			<SettingGroup>
+				<SettingRow
+					title="Row density"
+					control={
+						<Segmented
+							label="Sidebar row density"
+							value={density}
+							onValueChange={(value) =>
+								setSidebarDensity(value as SidebarDensity)
+							}
+						>
+							{DENSITY_OPTIONS.map(({ value, label, Icon }) => (
+								<SegmentedOption key={value} value={value}>
+									<Icon size={20} />
+									{label}
+								</SegmentedOption>
+							))}
+						</Segmented>
+					}
+				/>
+				<SettingRow
+					title="Show last used time"
+					control={
+						<Select
+							label="Show last used time"
+							value={wsTime}
+							options={LAST_USED_TIME_OPTIONS}
+							onChange={setWsTimePref}
+						/>
+					}
+				/>
+			</SettingGroup>
+		</>
+	);
+}
+
+/** Which tools and sources the sidebar carries, as its own card. */
+export function SidebarItemsSection() {
+	const isPhone = useIsPhone();
 	const [hiddenSidebarTools, setHiddenSidebarTools] = useState(
 		readHiddenSidebarTools,
 	);
@@ -263,93 +501,9 @@ export function AppearancePanel() {
 	);
 
 	return (
-		<SettingsPanel>
-			<SettingsHeader title="Appearance" />
-			<SettingsGroupLabel className="mt-0">Theme</SettingsGroupLabel>
-			<SettingsSection>
-				<div
-					className="grid grid-cols-3 gap-3.5"
-					role="radiogroup"
-					aria-label="Theme"
-				>
-					{THEME_OPTIONS.map((o) => (
-						<ThemeCard
-							key={o.value}
-							option={o.value}
-							active={pref === o.value}
-							onClick={() => {
-								setThemePref(o.value);
-								setPref(o.value);
-							}}
-						/>
-					))}
-				</div>
-			</SettingsSection>
-
-			<SettingsGroupLabel>Accent</SettingsGroupLabel>
-			<SettingsSection>
-				<div
-					// One row per breakpoint, so the column count tracks
-					// ACCENT_THEME_OPTIONS.length. A single swatch wrapping onto its
-					// own line reads as a mistake; accent-theme.test.ts guards it.
-					className="grid grid-cols-4 gap-2 desktop:grid-cols-7"
-					role="radiogroup"
-					aria-label="Accent colour"
-				>
-					{ACCENT_THEME_OPTIONS.map((option) => (
-						<AccentSwatch
-							key={option.value}
-							theme={option.value}
-							active={accent === option.value}
-							tone={tone}
-							onClick={() => {
-								setAccentTheme(option.value);
-								setAccent(option.value);
-							}}
-						/>
-					))}
-				</div>
-			</SettingsSection>
-
-			<SettingsGroupLabel>
-				Sidebar
-			</SettingsGroupLabel>
+		<>
+			<SettingsGroupLabel>Show in sidebar</SettingsGroupLabel>
 			<SettingCard>
-				<SettingRow
-					title="Row density"
-					control={
-						// Two named choices rather than a switch: the same pair the
-						// sidebar's filter menu offers, in the same control, wearing the
-						// same marks, so the two ways in read as one setting.
-						<Segmented
-							label="Sidebar row density"
-							value={density}
-							onValueChange={(v) => setSidebarDensity(v as SidebarDensity)}
-						>
-							{DENSITY_OPTIONS.map(({ value, label, Icon }) => (
-								<SegmentedOption key={value} value={value}>
-									<Icon size={20} />
-									{label}
-								</SegmentedOption>
-							))}
-						</Segmented>
-					}
-				/>
-				<SettingRow
-					title="Show last used time"
-					control={
-						<Select
-							label="Show last used time"
-							value={wsTime}
-							options={[
-								{ value: "off", label: "Off" },
-								{ value: "always", label: "Always" },
-								{ value: "hover", label: "On hover" },
-							]}
-							onChange={setWsTimePref}
-						/>
-					}
-				/>
 				{/* Support is one decision, not two switches. Its tool and its
 				    sidebar band are the same queue reached two ways, so they are
 				    set together here and left out of the lists below. Only
@@ -367,16 +521,13 @@ export function AppearancePanel() {
 									!hiddenSidebarFeeds.has(PLAIN_ID),
 								)}
 								options={SUPPORT_SURFACE_OPTIONS}
-								onChange={(value) =>
-									setSupportSurface(value as SupportSurface)
-								}
+								onChange={(value) => setSupportSurface(value as SupportSurface)}
 							/>
 						}
 					/>
 				)}
 				{SIDEBAR_TOOL_IDS.filter(
-					(toolId) =>
-						toolFitsViewport(toolId, isPhone) && toolId !== PLAIN_ID,
+					(toolId) => toolFitsViewport(toolId, isPhone) && toolId !== PLAIN_ID,
 				).map((toolId) => (
 					<SettingRow
 						key={toolId}
@@ -411,6 +562,6 @@ export function AppearancePanel() {
 						/>
 					))}
 			</SettingCard>
-		</SettingsPanel>
+		</>
 	);
 }

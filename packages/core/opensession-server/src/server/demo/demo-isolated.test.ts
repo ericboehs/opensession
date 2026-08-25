@@ -21,7 +21,6 @@ const CHILD = process.env.OS_DEMO_TEST_CHILD === "1";
 let home: string;
 let priorHome: string | undefined;
 let priorSessionsDir: string | undefined;
-let priorOcDir: string | undefined;
 let priorConfig: string | undefined;
 let priorGhBackoff: number | undefined;
 
@@ -38,8 +37,6 @@ beforeAll(async () => {
   // for the real HOME by other test files.
   const paths = await import("../paths");
   priorSessionsDir = paths.__setSessionsDirForTest(join(home, "sessions"));
-  const oc = await import("../opencode-transcript");
-  priorOcDir = oc.__setOpencodeTranscriptsDirForTest(join(home, "oc-transcripts"));
   // Close the GitHub gate: getAllSessions' PR enrichment must serve the
   // seeded snapshot, not fire a real `gh` refresh from a unit test.
   priorGhBackoff = (await import("../github-limit")).__setGhBackoffForTest(
@@ -59,11 +56,6 @@ afterAll(async () => {
   }
   if (priorSessionsDir !== undefined) {
     (await import("../paths")).__setSessionsDirForTest(priorSessionsDir);
-  }
-  if (priorOcDir !== undefined) {
-    (await import("../opencode-transcript")).__setOpencodeTranscriptsDirForTest(
-      priorOcDir,
-    );
   }
   // Drop the session cache built against the scratch dirs: bun test runs every
   // file in ONE process, and a later file's getAllSessions within the cache
@@ -139,9 +131,9 @@ describe.skipIf(!CHILD)("demo dataset generator", () => {
   });
 
   it("writes transcripts that parse line-by-line and cover every rendered kind", async () => {
-    const { OPENCODE_TRANSCRIPTS_DIR } = await import("../opencode-transcript");
+    const transcriptDir = join(home, ".claude/projects/-demo-engine");
     const { parseJsonlLines } = await import("../jsonl-parser");
-    const files = readdirSync(OPENCODE_TRANSCRIPTS_DIR).filter((f) =>
+    const files = readdirSync(transcriptDir).filter((f) =>
       f.endsWith(".jsonl"),
     );
     expect(files.length).toBeGreaterThanOrEqual(7);
@@ -151,7 +143,7 @@ describe.skipIf(!CHILD)("demo dataset generator", () => {
     let sawCompaction = false;
     let sawBigOutput = false;
     for (const file of files) {
-      const raw = readFileSync(join(OPENCODE_TRANSCRIPTS_DIR, file), "utf-8");
+      const raw = readFileSync(join(transcriptDir, file), "utf-8");
       const lines = raw.split("\n").filter((l) => l.trim());
       for (const line of lines) JSON.parse(line); // every line is valid JSON
       const entries = parseJsonlLines(lines);
@@ -177,7 +169,7 @@ describe.skipIf(!CHILD)("demo dataset generator", () => {
 
     // The steered turn splits into two attributed bubbles.
     const steered = parseJsonlLines(
-      readFileSync(join(OPENCODE_TRANSCRIPTS_DIR, "ses_demo05.jsonl"), "utf-8")
+      readFileSync(join(transcriptDir, "ses_demo05.jsonl"), "utf-8")
         .split("\n")
         .filter((l) => l.trim()),
     );

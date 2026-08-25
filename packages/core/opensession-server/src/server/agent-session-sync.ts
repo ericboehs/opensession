@@ -16,7 +16,7 @@
  *
  * Writes are surgical: only existing files are patched (never created), only
  * the engine-session fields are touched, and the shape matches what the
- * owners write (atomic JSON; slack/linear files carry the opencode id in the
+ * owners write (atomic JSON; slack/linear files carry the pi id in the
  * claude slot). Pi engine ids get their own `piSessionId` slot — pi uuids are
  * shape-indistinguishable from claude ids, so the claude slot alone can't
  * say which engine owns the id (the run-start arm in run-session resolved

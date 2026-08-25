@@ -1,8 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import posterUrl from "./demo-poster.webp";
-import posterDarkUrl from "./demo-poster-dark.webp";
-import phoneUrl from "./demo-phone.webp";
-import phoneDarkUrl from "./demo-phone-dark.webp";
+import posterAsset from "./demo-poster.webp";
+import posterDarkAsset from "./demo-poster-dark.webp";
+import phoneAsset from "./demo-phone.webp";
+import phoneDarkAsset from "./demo-phone-dark.webp";
+import { assetUrl } from "./asset-url";
+
+const posterUrl = assetUrl(posterAsset);
+const posterDarkUrl = assetUrl(posterDarkAsset);
+const phoneUrl = assetUrl(phoneAsset);
+const phoneDarkUrl = assetUrl(phoneDarkAsset);
 
 /* The width the app is laid out at before it is scaled to fit the window, and
    so what decides how large the product reads. The window stands for a
@@ -62,7 +68,7 @@ export function ProductDemo() {
 					title="Interactive Open Session product preview"
 					aria-hidden={!ready}
 					tabIndex={ready ? undefined : -1}
-					src="/product-demo.html"
+					src="product-demo.html"
 					loading="eager"
 					referrerPolicy="no-referrer"
 					sandbox="allow-scripts allow-same-origin"

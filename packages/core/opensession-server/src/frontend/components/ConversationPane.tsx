@@ -142,7 +142,6 @@ export function ConversationPane({
 		}, 20000);
 		return () => clearInterval(poll);
 	}, [load]);
-
 	// The triage automation reuses a live session for this thread when one
 	// exists, else boots a fresh run — that takes tens of seconds, so keep the
 	// button in a visible in-progress state the whole way.
@@ -150,15 +149,15 @@ export function ConversationPane({
 		if (triaging) return;
 		setTriaging(true);
 		setTriageError(null);
-		try {
-			const sessionId = await startPlainTriageApi(threadId);
+		await (async () => {
+const sessionId = await startPlainTriageApi(threadId);
 			if (aliveRef.current) onOpenSession(sessionId);
-		} catch (e: any) {
-			if (aliveRef.current)
+})().catch(async (e: any) => {
+if (aliveRef.current)
 				setTriageError(e?.message || "Failed to start the triage run.");
-		} finally {
-			if (aliveRef.current) setTriaging(false);
-		}
+}).finally(async () => {
+if (aliveRef.current) setTriaging(false);
+});
 	}
 
 	const status = thread?.status;

@@ -9,11 +9,11 @@ import {
 } from "../sandbox/adapters/bootstrap";
 import type { SandboxSessionSpec } from "../sandbox/provider";
 import { dropSandboxPreviewRoutes } from "../preview";
-import { findSession, touchNativeSession } from "../session-cache";
+import { findSessionAsync, touchNativeSession } from "../session-cache";
 import type { RouteContext } from "./context";
 
 type RecreateSession = Pick<
-	NonNullable<ReturnType<typeof findSession>>,
+	NonNullable<Awaited<ReturnType<typeof findSessionAsync>>>,
 	"id" | "repo" | "branch" | "mode" | "worktreeDir" | "automation" | "automationId"
 >;
 
@@ -43,7 +43,9 @@ export function recreateSandboxSpec(
 	};
 }
 
-async function sandboxView(session: NonNullable<ReturnType<typeof findSession>>) {
+async function sandboxView(
+	session: NonNullable<Awaited<ReturnType<typeof findSessionAsync>>>,
+) {
 	const recorded = session.sandbox;
 	if (!recorded?.provider)
 		return { enabled: false, status: "none" as const };
@@ -96,7 +98,7 @@ export async function handleSandboxRoutes(
 		/^\/api\/sessions\/([^/]+)\/sandbox(?:\/(pause|resume|recreate))?$/,
 	);
 	if (!match) return undefined;
-	const session = findSession(decodeURIComponent(match[1]!));
+	const session = await findSessionAsync(decodeURIComponent(match[1]!));
 	if (!session)
 		return Response.json({ error: "Session not found" }, { status: 404 });
 	const action = match[2];
@@ -175,7 +177,7 @@ export async function handleSandboxRoutes(
 			sandbox_id: recorded.sandboxId,
 			provider: recorded.provider,
 		});
-		return Response.json(await sandboxView(findSession(session.id) || session));
+		return Response.json(await sandboxView(await findSessionAsync(session.id) || session));
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		touchNativeSession(session.id, { sandbox: { ...recorded, lifecycle: "needs_attention", lastLifecycleError: message.slice(0, 240) } });

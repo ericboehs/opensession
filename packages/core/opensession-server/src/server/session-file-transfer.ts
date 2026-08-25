@@ -8,14 +8,13 @@
  * arbitrary host paths cross sessions.
  */
 
-import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import {
-	findAssetPath,
 	MAX_WRITE_BYTES,
+	readAssetAcross,
 	writeAsset,
 } from "./session-assets";
-import { sessionIdsFor } from "./session-cache";
+import { sessionIdsForAsync } from "./session-cache";
 import type { SessionSummary } from "./session-control";
 import { workspaceExecFor } from "./sandbox";
 
@@ -36,15 +35,17 @@ export interface TransferSessionFileResult {
 	source: SessionFileSource;
 }
 
+type MaybePromise<T> = T | Promise<T>;
+
 interface TransferDeps {
-	readAsset?: (sessionId: string, rel: string) => Buffer;
+	readAsset?: (sessionId: string, rel: string) => MaybePromise<Buffer>;
 	readWorkspace?: (session: SessionSummary, rel: string) => Promise<Buffer>;
 	write?: (
 		sessionId: string,
 		rel: string,
 		data: Buffer,
 		description?: string,
-	) => { path: string; size: number };
+	) => MaybePromise<{ path: string; size: number }>;
 }
 
 export function safeTransferPath(path: string): string {
@@ -86,15 +87,14 @@ async function readWorkspaceFile(
 	return data;
 }
 
-function readSessionAsset(sessionId: string, rel: string): Buffer {
-	const found = findAssetPath(sessionIdsFor(sessionId), rel);
+async function readSessionAsset(sessionId: string, rel: string): Promise<Buffer> {
+	const found = await readAssetAcross(await sessionIdsForAsync(sessionId), rel);
 	if (!found) throw new Error(`no asset at ${rel}`);
-	const data = readFileSync(found.abs);
-	if (data.byteLength > MAX_WRITE_BYTES)
+	if (found.data.byteLength > MAX_WRITE_BYTES)
 		throw new Error(
-			`file is too large to send (${data.byteLength} bytes > ${MAX_WRITE_BYTES})`,
+			`file is too large to send (${found.data.byteLength} bytes > ${MAX_WRITE_BYTES})`,
 		);
-	return data;
+	return found.data;
 }
 
 export async function transferSessionFile(
@@ -107,7 +107,7 @@ export async function transferSessionFile(
 	const rel = safeTransferPath(input.path);
 	const data =
 		source === "assets"
-			? (deps.readAsset || readSessionAsset)(input.fromSession.id, rel)
+			? await (deps.readAsset || readSessionAsset)(input.fromSession.id, rel)
 			: await (deps.readWorkspace || readWorkspaceFile)(input.fromSession, rel);
 	const destination = safeTransferPath(
 		input.destination ||
@@ -116,7 +116,7 @@ export async function transferSessionFile(
 	const description =
 		input.description ||
 		`Sent from session ${input.fromSession.id} (${source}:${rel})`;
-	const written = (deps.write || writeAsset)(
+	const written = await (deps.write || writeAsset)(
 		input.toSession.id,
 		destination,
 		data,

@@ -1,4 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+	useCallback,
+	useEffect,
+	useEffectEvent,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { AnimatePresence } from "motion/react";
 import type {
 	UnifiedSession,
@@ -26,6 +33,12 @@ import { useCurrentUser } from "./UserPicker";
 import { shortTime, elapsedSince } from "../lib/time";
 import { SwipeCard } from "../ui/swipe-deck";
 import { PulseDot } from "../ui/status";
+import {
+	PhoneTopBar,
+	PhoneTopBarAction,
+	PhoneTopBarTitle,
+} from "../ui/top-bar";
+import { IconChevronLeft, IconPlus } from "./icons";
 
 /**
  * Catch-up deck — a Slack-style "swipe through your unread" card stack. Each
@@ -86,6 +99,7 @@ export function CatchUpDeck({
 	onNewWorkspace,
 	onExit,
 }: Props) {
+
 	const currentUser = useCurrentUser();
 
 	// Model / subscription options for the reply composer (fetched once, shared
@@ -111,9 +125,8 @@ export function CatchUpDeck({
 	// session list has actually loaded, NOT on the very first mount: a deep-link
 	// to <base>/catchup mounts before `sessions` arrives, and freezing []
 	// there would strand the deck on "All caught up" forever.
-	const frozen = useRef<CatchupCard[] | null>(null);
-	const cards = useMemo<CatchupCard[]>(() => {
-		if (frozen.current) return frozen.current;
+	const [frozen, setFrozen] = useState<CatchupCard[] | null>(null);
+	const live = useMemo(() => {
 		const reads = getReads();
 		const me = currentUser.toLowerCase();
 		const unread = sessions.filter(
@@ -168,11 +181,14 @@ export function CatchUpDeck({
 			};
 		});
 		out.sort((a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || ""));
-		// Freeze once the list has loaded (even to an empty queue — that's a
-		// genuine "all caught up"). While it's still empty we keep recomputing.
-		if (sessions.length > 0) frozen.current = out;
 		return out;
 	}, [sessions, currentUser, workspaces]);
+	const cards = frozen ?? live;
+	// Freeze once the list has loaded (even to an empty queue — that's a
+	// genuine "all caught up"). While it's still empty we keep recomputing.
+	useEffect(() => {
+		if (frozen === null && sessions.length > 0) setFrozen(live);
+	}, [frozen, sessions.length, live]);
 
 	const [index, setIndex] = useState(0);
 	const [dir, setDir] = useState<Action | null>(null);
@@ -198,27 +214,30 @@ export function CatchUpDeck({
 	}
 
 	// Keyboard: ←/→ act, ↑ skip, esc leaves. (Space is left for the composer.)
-	useEffect(() => {
-		function onKey(e: KeyboardEvent) {
-			if (e.key === "Escape") return onExit();
-			if (!card) return;
-			// Don't hijack arrows while typing a reply.
-			const el = e.target as HTMLElement | null;
-			if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")) return;
-			if (e.key === "ArrowLeft") {
-				e.preventDefault();
-				act("archive");
-			} else if (e.key === "ArrowRight") {
-				e.preventDefault();
-				act("read");
-			} else if (e.key === "ArrowUp") {
-				e.preventDefault();
-				act("keep");
-			}
+	// The subscription is stable; the Effect Event reads the current card and
+	// callbacks without tearing down the window listener on every swipe.
+	const handleDeckKey = useEffectEvent((e: KeyboardEvent) => {
+		if (e.key === "Escape") return onExit();
+		if (!card) return;
+		// Don't hijack arrows while typing a reply.
+		const el = e.target as HTMLElement | null;
+		if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")) return;
+		if (e.key === "ArrowLeft") {
+			e.preventDefault();
+			act("archive");
+		} else if (e.key === "ArrowRight") {
+			e.preventDefault();
+			act("read");
+		} else if (e.key === "ArrowUp") {
+			e.preventDefault();
+			act("keep");
 		}
+	});
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => handleDeckKey(e);
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [card, index]);
+	}, []);
 
 	const done = index >= total;
 	const next = cards[index + 1];
@@ -240,46 +259,27 @@ export function CatchUpDeck({
 			    a desktop-width card), and the up-fling of Keep Unread crosses the
 			    whole row. Cards pass UNDER the bar instead of over it, so the
 			    counter stays readable through every swipe. */}
-			<div className="relative z-10 flex w-full shrink-0 items-center justify-between bg-surface px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
-				<button
-					className="hidden h-10 w-10 items-center justify-center rounded-control bg-transparent text-dim hover:bg-panel hover:text-fg phone:flex"
+			<PhoneTopBar className="relative z-10 w-full bg-surface px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))] phone:h-auto">
+				<PhoneTopBarAction
+					className="hidden phone:inline-flex"
 					onClick={onExit}
 					title="Back"
 					aria-label="Back"
-				>
-					<svg width="26" height="26" viewBox="0 0 16 16" fill="none">
-						<path
-							d="M10 3.5 5.5 8l4.5 4.5"
-							stroke="currentColor"
-							strokeWidth="1.6"
-							strokeLinecap="round"
-							strokeLinejoin="round"
-						/>
-					</svg>
-				</button>
-				<div className="absolute left-1/2 -translate-x-1/2 text-sm font-semibold text-fg">
+					icon={<IconChevronLeft size={24} />}
+				/>
+				<PhoneTopBarTitle className="absolute left-1/2 -translate-x-1/2 text-sm font-semibold">
 					{done ? "All caught up" : `${remaining} Left`}
-				</div>
-				{/* ml-auto, not just justify-between: with the chevron hidden this is
-				    the row's only in-flow child (the counter is absolutely centered),
-				    and justify-between would pack it against the left edge. */}
-				<button
-					className="ml-auto flex h-10 w-10 items-center justify-center rounded-control bg-transparent text-dim hover:bg-panel hover:text-fg"
+				</PhoneTopBarTitle>
+				{/* ml-auto, not just justify-between: with Back hidden this is the
+				    row's only in-flow child on desktop. */}
+				<PhoneTopBarAction
+					className="ml-auto"
 					onClick={onNewWorkspace}
 					title="New workspace"
 					aria-label="New workspace"
-				>
-					<svg width="26" height="26" viewBox="0 0 24 24" fill="none">
-						<path
-							d="M12 5.75V18.25M18.25 12H5.75"
-							stroke="currentColor"
-							strokeWidth="1.6"
-							strokeLinecap="round"
-							strokeLinejoin="round"
-						/>
-					</svg>
-				</button>
-			</div>
+					icon={<IconPlus size={24} />}
+				/>
+			</PhoneTopBar>
 
 			{done ? (
 				<CaughtUp total={total} onExit={onExit} />
@@ -401,10 +401,21 @@ function CardBody({
 }) {
 	const target = replyTarget(card);
 	const [entries, setEntries] = useState<TranscriptEntry[] | null>(null);
-	// Held in state, not a ref, so the pinning effect below runs once the nodes
-	// actually exist rather than on a null ref.
-	const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
-	const [contentEl, setContentEl] = useState<HTMLDivElement | null>(null);
+	const scrollElRef = useRef<HTMLDivElement | null>(null);
+	const contentElRef = useRef<HTMLDivElement | null>(null);
+	const [nodesVersion, setNodesVersion] = useState(0);
+	// These callback refs update state, so their identities must remain stable:
+	// React detaches an old callback ref with null before attaching a new one.
+	const setScrollEl = useCallback((node: HTMLDivElement | null) => {
+		if (scrollElRef.current === node) return;
+		scrollElRef.current = node;
+		setNodesVersion((version) => version + 1);
+	}, []);
+	const setContentEl = useCallback((node: HTMLDivElement | null) => {
+		if (contentElRef.current === node) return;
+		contentElRef.current = node;
+		setNodesVersion((version) => version + 1);
+	}, []);
 	const pinned = useRef(true);
 
 	useEffect(() => {
@@ -431,11 +442,15 @@ function CardBody({
 	// leaving the last message below the fold. Follow the content until the
 	// reader scrolls away from the bottom themselves.
 	useEffect(() => {
+		const scrollEl = scrollElRef.current;
+		const contentEl = contentElRef.current;
 		if (!scrollEl || !contentEl) return;
-		let last = scrollEl.scrollTop;
+		// Wrapped in an object so the closures below mutate a property, not a
+		// captured binding (which the compiler rejects).
+		const pos = { last: scrollEl.scrollTop };
 		const toBottom = () => {
 			scrollEl.scrollTop = scrollEl.scrollHeight;
-			last = scrollEl.scrollTop;
+			pos.last = scrollEl.scrollTop;
 		};
 		toBottom();
 		// Unpin on the reader moving UP, never on distance alone. A running
@@ -444,10 +459,10 @@ function CardBody({
 		// reader walking away, and the card stops following after one tick.
 		const onScroll = () => {
 			const top = scrollEl.scrollTop;
-			if (top < last - 1) pinned.current = false;
+			if (top < pos.last - 1) pinned.current = false;
 			else if (scrollEl.scrollHeight - scrollEl.clientHeight - top <= 24)
 				pinned.current = true;
-			last = top;
+			pos.last = top;
 		};
 		scrollEl.addEventListener("scroll", onScroll, { passive: true });
 		const observer = new ResizeObserver(() => {
@@ -459,7 +474,7 @@ function CardBody({
 			observer.disconnect();
 			scrollEl.removeEventListener("scroll", onScroll);
 		};
-	}, [scrollEl, contentEl]);
+	}, [nodesVersion]);
 
 	const meta = [
 		card.repo,
@@ -691,11 +706,9 @@ function CatchUpComposer({
  * falling back to lastActivity for external runs that never stamped one.
  */
 function CatchupWorking({ target }: { target: UnifiedSession }) {
-	const since = useMemo(() => {
-		const raw = target.runStartedAt || target.lastActivity;
-		const t = raw ? Date.parse(raw) : NaN;
-		return Number.isNaN(t) ? Date.now() : t;
-	}, [target.runStartedAt, target.lastActivity]);
+	const raw = target.runStartedAt || target.lastActivity;
+const t = raw ? Date.parse(raw) : NaN;
+const since = Number.isNaN(t) ? Date.now() : t;
 	const [now, setNow] = useState(() => Date.now());
 	useEffect(() => {
 		const id = setInterval(() => setNow(Date.now()), 1000);

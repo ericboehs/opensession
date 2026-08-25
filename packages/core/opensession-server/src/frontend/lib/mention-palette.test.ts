@@ -7,11 +7,16 @@ import {
 } from "./mention-palette";
 
 describe("mention palette", () => {
-	test("keeps people, tools, sessions, actions, and files in palette order", () => {
+	test("keeps people, tools, workspaces, sessions, actions, and files in palette order", () => {
 		const rows = mergeMentionSuggestions(
 			[
 				{ display: "README.md", insert: "README.md" },
 				{ display: "Slack", insert: "slack", kind: "tool" },
+				{
+					display: "Release work",
+					insert: "workspace:ws-release",
+					kind: "workspace",
+				},
 				{
 					display: "Release follow-up",
 					insert: "session:os-1",
@@ -27,6 +32,7 @@ describe("mention palette", () => {
 		expect(rows.map(mentionCategory)).toEqual([
 			"People",
 			"Tools",
+			"Workspaces",
 			"Sessions",
 			"Actions",
 			"Files",

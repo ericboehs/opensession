@@ -16,15 +16,12 @@
 
 import { randomUUID } from "crypto";
 import { existsSync } from "fs";
-import { writeJsonAtomic } from "../../server/shared/atomic-write";
+import { writeFileAtomic, writeJsonAtomic } from "../../server/shared/atomic-write";
+import { join } from "path";
+import { unlinkSync } from "fs";
+import { stateDir } from "../../server/paths";
 
-/** Former name of the store, from when the agent was called Michael. Read
- *  when it exists and the current one does not: the store holds hundreds of
- *  entries, and renaming a state directory without accepting the old name is
- *  how the sessions-dir rename silently orphaned 459 stored media paths. */
-const LEGACY_MEMORY_DIR = `${process.env.HOME}/.michael-memory`;
-
-export const MEMORY_DIR = `${process.env.HOME}/.opensession-memory`;
+export const MEMORY_DIR = stateDir("memory");
 
 // Test seam: the snapshot harness (src/server/testing/) redirects the store so
 // a recorded fixture can never embed the team's real memories, and so a run's
@@ -35,20 +32,34 @@ let memoryDirOverride: string | null = null;
 /**
  * Directory backing the scope stores.
  *
- * Resolution order: a test override, then the current name, then the legacy
- * name when it is the only one that exists. An instance that never migrates
- * keeps working; `bun scripts/migrate-memory-dir.ts` moves it for real.
+ * Resolution order: a test override, isolated state, then the live store.
  */
 export function memoryDir(): string {
   if (memoryDirOverride) return memoryDirOverride;
-  if (existsSync(MEMORY_DIR)) return MEMORY_DIR;
-  if (existsSync(LEGACY_MEMORY_DIR)) return LEGACY_MEMORY_DIR;
-  return MEMORY_DIR;
+  return process.env.OPENSESSION_STATE_DIR ? stateDir("memory") : MEMORY_DIR;
 }
 
-/** The legacy path, for the migration script and its test. */
-export function legacyMemoryDir(): string {
-  return LEGACY_MEMORY_DIR;
+/** JSON roots eligible for a v2 import. */
+export function memoryImportDirs(): string[] {
+  return [memoryDir()];
+}
+
+const MEMORY_V2_DIRTY_MARKER = ".memory-v2-dirty";
+
+export function markMemoryImportDirty(): void {
+  writeFileAtomic(join(memoryDir(), MEMORY_V2_DIRTY_MARKER), new Date().toISOString());
+}
+
+export function memoryImportIsDirty(sourceDirs: string[]): boolean {
+  return sourceDirs.some((directory) => existsSync(join(directory, MEMORY_V2_DIRTY_MARKER)));
+}
+
+export function clearMemoryImportDirty(sourceDirs: string[]): void {
+  for (const directory of sourceDirs) {
+    try {
+      unlinkSync(join(directory, MEMORY_V2_DIRTY_MARKER));
+    } catch {}
+  }
 }
 
 /** Point the memory store at another directory; returns the previous value. */
@@ -126,7 +137,11 @@ export async function loadScope(scope: string): Promise<MemoryEntry[]> {
 }
 
 export async function saveScope(scope: string, entries: MemoryEntry[]): Promise<void> {
+  const runtime = await import("../../server/memory-v2/runtime");
+  const mode = runtime.memoryRolloutMode();
+  if (mode === "legacy" || mode === "shadow") markMemoryImportDirty();
   writeJsonAtomic(scopeFile(scope), { entries });
+  if (mode === "shadow") await runtime.refreshMemoryV2Shadow();
 }
 
 /** Save a new fact to the writable store for this context. */
@@ -136,6 +151,27 @@ export async function addMemory(
   by: string
 ): Promise<MemoryEntry> {
   const { writable } = resolveScopes(ctx);
+  const { memoryRolloutMode } = await import("../../server/memory-v2/runtime");
+  if (memoryRolloutMode() === "v2") {
+    const { ensureMemoryV2Ready, legacySummary } = await import("../../server/memory-v2");
+    const { store } = await ensureMemoryV2Ready();
+    const summary = legacySummary(text);
+    const record = store.create({
+      scopeKey: writable,
+      summary,
+      ...(summary === text.trim() ? {} : { details: text }),
+      kind: "reference",
+      tier: "retrievable",
+      source: { type: "slack", actor: by || undefined, channelId: ctx.channel },
+      tags: ["slack"],
+    });
+    return {
+      id: record.id,
+      text: record.summary,
+      by: by || "someone",
+      at: record.createdAt,
+    };
+  }
   const entries = await loadScope(writable);
   const entry: MemoryEntry = {
     id: randomUUID().slice(0, 8),
@@ -159,6 +195,34 @@ export interface MemoryView {
 
 export async function listMemory(ctx: MemoryContext): Promise<MemoryView> {
   const { writable, sharedReadonly } = resolveScopes(ctx);
+  const { memoryRolloutMode } = await import("../../server/memory-v2/runtime");
+  if (memoryRolloutMode() === "v2") {
+    const { ensureMemoryV2Ready } = await import("../../server/memory-v2");
+    const { store } = await ensureMemoryV2Ready();
+    const read = (scopeKey: string): MemoryEntry[] => {
+      const out: MemoryEntry[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = store.list(
+          { scopeKeys: [scopeKey], states: ["active"] },
+          { cursor, limit: 100 },
+        );
+        out.push(...page.items.map((record) => ({
+          id: record.id,
+          text: record.summary,
+          by: record.source.type,
+          at: record.createdAt,
+        })));
+        cursor = page.nextCursor;
+      } while (cursor && out.length < 50);
+      return out.slice(0, 50);
+    };
+    return {
+      local: read(writable),
+      shared: sharedReadonly ? read(sharedReadonly) : [],
+      localIsWorkspace: writable === "workspace",
+    };
+  }
   // Archived entries are excluded everywhere a human or a prompt reads memory;
   // only the maintenance surfaces ask for them explicitly.
   const local = activeMemories(await loadScope(writable));
@@ -176,6 +240,32 @@ export async function forgetMemory(
   id: string
 ): Promise<ForgetResult> {
   const { writable, sharedReadonly } = resolveScopes(ctx);
+  const { memoryRolloutMode } = await import("../../server/memory-v2/runtime");
+  if (memoryRolloutMode() === "v2") {
+    const { ensureMemoryV2Ready } = await import("../../server/memory-v2");
+    const { store } = await ensureMemoryV2Ready();
+    const record = store.get(id);
+    if (!record || record.scopeKey !== writable) {
+      if (record && sharedReadonly && record.scopeKey === sharedReadonly) {
+        return {
+          ok: false,
+          error:
+            "That entry is workspace memory and is read-only here. Change it from a public channel or Memory settings.",
+        };
+      }
+      return { ok: false, error: `No memory entry with id "${id}" in this scope.` };
+    }
+    store.delete(id);
+    return {
+      ok: true,
+      removed: {
+        id: record.id,
+        text: record.summary,
+        by: record.source.type,
+        at: record.createdAt,
+      },
+    };
+  }
   const entries = await loadScope(writable);
   const idx = entries.findIndex((e) => e.id === id);
   if (idx === -1) {
@@ -198,8 +288,29 @@ export async function forgetMemory(
   return { ok: true, removed };
 }
 
-/** Render this context's memory for injection into the system prompt. */
-export async function renderMemoryForPrompt(ctx: MemoryContext): Promise<string> {
+/** Render prompt-matched memory as fenced turn context. */
+export async function renderMemoryForPrompt(
+  ctx: MemoryContext,
+  query = "",
+): Promise<string> {
+  const { memoryRolloutMode } = await import("../../server/memory-v2/runtime");
+  const mode = memoryRolloutMode();
+  if (mode === "v2") {
+    const { writable, sharedReadonly } = resolveScopes(ctx);
+    const { retrieveMemoryForPrompt } = await import("../../server/memory-v2");
+    return (
+      await retrieveMemoryForPrompt(query, {
+        scopeKeys: [writable, ...(sharedReadonly ? [sharedReadonly] : [])],
+      })
+    ).text;
+  }
+  if (mode === "shadow") {
+    const { writable, sharedReadonly } = resolveScopes(ctx);
+    const { retrieveMemoryForPrompt } = await import("../../server/memory-v2");
+    void retrieveMemoryForPrompt(query, {
+      scopeKeys: [writable, ...(sharedReadonly ? [sharedReadonly] : [])],
+    }).catch(() => {});
+  }
   const { local, shared, localIsWorkspace } = await listMemory(ctx);
   if (local.length === 0 && shared.length === 0) return "";
 

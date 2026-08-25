@@ -232,8 +232,8 @@ export async function handleProfileRoutes(
 			identity.team = team;
 			persistRawConfig(config);
 
-			// Per-user state (pins, read marks, lanes, snoozes, hides, tab colors,
-			// drafts, UI prefs) is filed under the short name, so carry it across
+			// Per-user state (pins, read marks, lanes, snoozes, hides, settlements,
+			// tab colors, drafts, UI prefs) is filed under the short name, so carry it across
 			// or the rename hands the person a factory-fresh sidebar.
 			const carried = shortNameChanged
 				? renameUserState(previousShort, nextShort)

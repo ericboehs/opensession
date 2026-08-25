@@ -105,6 +105,10 @@ describe("shortcut registry", () => {
 	test("bindings fall back to the defaults with nothing stored", () => {
 		expect(mod.shortcutBindings("command-menu")).toEqual(["mod+k"]);
 		expect(mod.shortcutBindings("composer-attach")).toEqual(["mod+u"]);
+		expect(mod.shortcutBindings("composer-dictate")).toEqual(["mod+d"]);
+		expect(mod.shortcutBindings("workspace-next-unread")).toEqual([
+			"alt+shift+arrowdown",
+		]);
 		expect(mod.shortcutBindings("session-archive")).toEqual([
 			"mod+e",
 			"mod+shift+a",

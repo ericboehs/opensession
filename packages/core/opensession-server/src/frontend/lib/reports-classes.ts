@@ -56,15 +56,15 @@ export const REPORTS_COLUMN =
  * `--desktop-header-h` is the app's own bar height, the one DETAIL_TOPBAR_TITLE
  * takes, and the chat header, and the sidebar's brand row. Taking it lines this
  * bar up with them across the top of the window and gives the title its air
- * from a number the app already agrees on rather than from a guess. The
- * hairline is always on for the same reason the app's bar keeps one: a bar has
- * an edge.
+ * from a number the app already agrees on rather than from a guess. Desktop
+ * keeps its pane divider. On a phone this is the full page surface, so a rule
+ * underneath it only cuts the page into two grey bands.
  */
 export const REPORTS_COLUMN_HEADER =
 	// `wco-chrome`: a row across the top of a pane is where the desktop shell
 	// expects to drag the window from, and base.css hangs that off this one name.
 	"wco-chrome flex h-[var(--desktop-header-h)] shrink-0 items-center gap-2 " +
-	"border-b border-divider bg-surface px-4";
+	"bg-surface px-4 desktop:border-b desktop:border-divider";
 
 /**
  * What the column can say about itself, on the heading's right. `text-meta` is

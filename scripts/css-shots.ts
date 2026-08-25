@@ -37,8 +37,12 @@ const APP = process.env.OPENSESSION_URL ?? "http://127.0.0.1:3850";
 
 const ROUTES: [string, string][] = [
 	["home", "/"],
+	// The new-session palette. It is the densest cluster of controls in the app
+	// and the surface whose phone layout was retrofitted after it shipped, so
+	// it is the one most worth pinning at both widths.
+	["new", "/new"],
 	["settings", "/settings"],
-	["appearance", "/settings/appearance"],
+	["preferences", "/settings/preferences"],
 	["reviews", "/reviews"],
 	["automations", "/automations"],
 ];

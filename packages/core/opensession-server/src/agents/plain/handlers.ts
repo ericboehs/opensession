@@ -12,7 +12,7 @@ import {
   plain,
 } from "./api";
 import { buildMentionPrompt, buildWorkPrompt, buildRefundExecutionPrompt } from "./prompts";
-import { getDefaultModel, toOpencodeModel } from "../../server/models";
+import { getDefaultModel, toPiModel } from "../../server/models";
 import { runAgent } from "../../server/agent-runner";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
 import { classifyRefundApproval } from "./refund-intent";
@@ -103,10 +103,10 @@ export interface PlainWebhookPayload {
   };
 }
 
-// --- Agent runner (opencode engine) ---
+// --- Agent runner (pi engine) ---
 
 /** Deny message for the money-moving Stripe tools on unattended Plain runs —
- *  stripped from the tool list at the engine layer (opencodeRunPolicy). */
+ *  stripped from the tool list at the engine layer (runToolPolicy). */
 const MONEY_TOOLS_DENY_MSG =
   `Money-moving Stripe actions (refunds/cancellations) can't run from a normal ${PLAIN_MENTION} note. ` +
   `They must be proposed by triage and then approved with an explicit '${PLAIN_MENTION} go ahead' on that proposal. ` +
@@ -132,13 +132,13 @@ async function runWorkTurn(
       sessionId: resumeSessionId || undefined,
       cwd,
       mode: "code",
-      model: toOpencodeModel(getDefaultModel()),
+      model: toPiModel(getDefaultModel()),
       // Every configured connector, as this loop has always run. Untrusted
       // ticket text reaches it, so the containment is the deny-set below +
       // per-server allowedUsers — not the mount list. Narrow this to the
       // servers triage actually calls if that stops feeling like enough.
       mcpServers: "all",
-      // Kind "plain" = unattended on the opencode engine: untrusted customer
+      // Kind "plain" = unattended on the pi engine: untrusted customer
       // ticket text, so the deny-set below is stripped at the tool-list layer.
       // Kind-only journal (no osSessionId) — this loop tracks its own engine
       // session ids and must not be generically resumed after a restart.
@@ -628,7 +628,8 @@ async function deliverNoteToLinkedSession(
     const result = await control.deliverToSession(
       session.id,
       `Internal note from a teammate on this ticket's Plain thread (${threadId}):\n\n${request}\n\nAct on it. If a reply is useful, post it as an internal note on the thread.`,
-      "Plain"
+      "Plain",
+      { deliveryId: `plain-note:${noteId}` },
     );
     if (result.status === "error") {
       console.error(

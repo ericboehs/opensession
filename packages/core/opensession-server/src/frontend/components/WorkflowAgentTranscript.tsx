@@ -12,7 +12,7 @@ import { TranscriptBlocks } from "./TranscriptBlocks";
  * breadcrumb-back header (mirrors SubagentPane's pattern).
  *
  * Source: GET /api/workflows/:runId/agents/:seq/transcript →
- * { entries: TranscriptEntry[] }, read off the agent's opencode session
+ * { entries: TranscriptEntry[] }, read off the agent's pi session
  * (outcome.engineSessionId). While the agent is running we poll every 2s so you
  * watch it work live; once it terminates the transcript is final and polling
  * stops. A 404 means the agent has no engine session yet (it hasn't started, or
@@ -50,8 +50,8 @@ export function WorkflowAgentTranscript({ runId, agent, onBack }: Props) {
 
 		async function poll(initial: boolean) {
 			if (initial) setLoad({ kind: "loading" });
-			try {
-				const res = await fetch(
+			await (async () => {
+const res = await fetch(
 					`${BASE_PATH}/api/workflows/${encodeURIComponent(runId)}/agents/${agent.seq}/transcript`,
 				);
 				if (cancelled) return;
@@ -64,8 +64,8 @@ export function WorkflowAgentTranscript({ runId, agent, onBack }: Props) {
 					if (cancelled) return;
 					setLoad({ kind: "ready", entries: data?.entries ?? [] });
 				}
-			} catch (e) {
-				if (cancelled) return;
+})().catch(async (e) => {
+if (cancelled) return;
 				// A transient miss on a live agent just retries on the next tick.
 				if (initial || !running)
 					setLoad({
@@ -73,7 +73,7 @@ export function WorkflowAgentTranscript({ runId, agent, onBack }: Props) {
 						message:
 							e instanceof Error ? e.message : "Failed to load the transcript",
 					});
-			}
+});
 			// Keep watching only while the agent is still working.
 			if (!cancelled && running)
 				timer = setTimeout(() => poll(false), POLL_MS);

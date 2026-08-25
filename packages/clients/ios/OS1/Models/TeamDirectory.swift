@@ -31,6 +31,7 @@ final class TeamDirectory {
     /// name, so no second map is needed the way the web needs one.
     private(set) var displayNames: [String: String] = [:]
     private var fullNames: [String: String] = [:]
+    private var accountID: String?
     private var loading = false
     private var lastFailureAt: Date?
 
@@ -73,14 +74,31 @@ final class TeamDirectory {
     /// retry after a cooldown instead of hammering a server that is down —
     /// a missing directory only costs initials.
     func ensureLoaded() async {
+        let currentAccountID = ServerConfig.shared.activeId
+        if accountID != currentAccountID {
+            accountID = currentAccountID
+            githubLogins = [:]
+            profileImages = [:]
+            names = []
+            reviewTeams = []
+            displayNames = [:]
+            fullNames = [:]
+            loading = false
+            lastFailureAt = nil
+        }
         guard names.isEmpty, !loading else { return }
         if let lastFailureAt, Date().timeIntervalSince(lastFailureAt) < 30 { return }
         loading = true
-        defer { loading = false }
+        defer {
+            if accountID == currentAccountID { loading = false }
+        }
         guard let roster = try? await OS1API.people() else {
-            lastFailureAt = Date()
+            if accountID == currentAccountID { lastFailureAt = Date() }
             return
         }
+        guard accountID == currentAccountID,
+              ServerConfig.shared.activeId == currentAccountID
+        else { return }
         let people = roster.people ?? []
         names = people.map(\.name)
         reviewTeams = roster.reviewTeams ?? []

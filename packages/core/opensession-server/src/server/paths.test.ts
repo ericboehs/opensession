@@ -1,11 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { __setSessionsDirForTest, resolveLegacySessionsPath } from "./paths";
+import {
+  __setSessionsDirForTest,
+  isClientSessionId,
+  resolveLegacySessionsPath,
+} from "./paths";
 
 /**
- * The store has been ~/.backstage-chats, then ~/.opensession-chats, and is now
- * ~/.opensession-sessions. Absolute paths under it were persisted verbatim
+ * The store has been ~/.backstage-chats, ~/.opensession-chats, and
+ * ~/.opensession-sessions. It now lives at ~/.opensession/sessions. Absolute
+ * paths under it were persisted verbatim
  * (walkthrough stills, staged uploads, media links already spliced into PR
  * bodies), so a rename orphans records that are otherwise perfectly intact.
  */
@@ -17,7 +22,7 @@ describe("resolveLegacySessionsPath", () => {
 
   beforeAll(() => {
     home = mkdtempSync(`${tmpdir()}/os-paths-`);
-    sessions = `${home}/.opensession-sessions`;
+    sessions = `${home}/.opensession/sessions`;
     mkdirSync(`${sessions}/uploads/walkthrough/os-1`, { recursive: true });
     writeFileSync(`${sessions}/uploads/walkthrough/os-1/after.png`, "png");
     prevHome = process.env.HOME;
@@ -30,6 +35,13 @@ describe("resolveLegacySessionsPath", () => {
     if (prevHome === undefined) delete process.env.HOME;
     else process.env.HOME = prevHome;
     rmSync(home, { recursive: true, force: true });
+  });
+
+  it("remaps the previous Open Session path onto the active store", () => {
+    const stored = `${home}/.opensession-sessions/uploads/walkthrough/os-1/after.png`;
+    expect(resolveLegacySessionsPath(stored)).toBe(
+      `${sessions}/uploads/walkthrough/os-1/after.png`,
+    );
   });
 
   it("remaps a path under a former store name onto the active store", () => {
@@ -72,6 +84,21 @@ describe("resolveLegacySessionsPath", () => {
   it("keeps traversal segments in the path for the caller to reject", () => {
     const stored = `${home}/.opensession-chats/uploads/../../etc/passwd`;
     expect(resolveLegacySessionsPath(stored)).toContain("..");
+  });
+});
+
+describe("isClientSessionId", () => {
+  it("accepts only client-minted os uuidv7 ids", () => {
+    expect(
+      isClientSessionId("os-019f0000-0000-7000-8000-000000000001"),
+    ).toBe(true);
+    expect(
+      isClientSessionId("bks-019f0000-0000-7000-8000-000000000001"),
+    ).toBe(false);
+    expect(
+      isClientSessionId("os-019f0000-0000-4000-8000-000000000001"),
+    ).toBe(false);
+    expect(isClientSessionId("os-release-2026")).toBe(false);
   });
 });
 

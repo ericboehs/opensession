@@ -26,10 +26,17 @@ enum CommitLinks {
     }
 
     private static var repos: [String: String?] = [:]
+    private static var sessionRepos: [String: String] = [:]
 
     static func register(repos next: [String: String?]) {
         guard next != repos else { return }
         repos = next
+        TranscriptLinks.shared.invalidate()
+    }
+
+    static func register(sessionRepos next: [String: String]) {
+        guard next != sessionRepos else { return }
+        sessionRepos = next
         TranscriptLinks.shared.invalidate()
     }
 
@@ -45,7 +52,8 @@ enum CommitLinks {
         return Reference(repo: repo, sha: sha)
     }
 
-    static func linkify(_ markdown: String, repo: String?) -> String {
+    static func linkify(_ markdown: String, sessionId: String?) -> String {
+        let repo = sessionId.flatMap { sessionRepos[$0] }
         guard markdown.contains("`")
                 || markdown.localizedCaseInsensitiveContains("commit")
                 || markdown.localizedCaseInsensitiveContains("sha")
@@ -63,9 +71,9 @@ enum CommitLinks {
     private static let pattern = try! NSRegularExpression(
         pattern:
             "(?<![\\w`-])`(?<coded>\(shaSource))`"
-            + "|(?<skip>`{2,}[^\\r\\n]*?`{2,}|`[^`]*`|!?\\[[^\\]]*\\]\\([^)]*\\))"
+            + "|(?<skip>`[^`]*`|!?\\[[^\\]]*\\]\\([^)]*\\))"
             + "|(?<angle><\(githubURLSource)>)"
-            + "|(?<url>\(githubURLSource))(?![\\w/?#-]|\\.(?=[\\w-]))"
+            + "|(?<url>\(githubURLSource))(?![\\w/])"
             + "|(?<![\\w`-])(?<cue>(?:commits?|sha)[ \\t]+)"
             + "(?<cued>\(shaSource))(?![\\w-])",
         options: [.caseInsensitive]

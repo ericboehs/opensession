@@ -8,8 +8,11 @@ import {
 } from "../../lib/api/profile";
 import { useIsPhone } from "../../hooks/useIsPhone";
 import { refreshPeople } from "../../lib/people";
+import { isTouchPrimary } from "../../lib/platform";
 import { Button } from "../../ui/button";
+import { cn } from "../../ui/cn";
 import { Field, FieldGrid, Input } from "../../ui/input";
+import { OverlayAction } from "../../ui/overlay-action";
 import { SettingsForm, SettingsGroupLabel } from "../../ui/settings";
 import { ResponsiveDialog } from "../../ui/sheet";
 import { Spinner } from "../../ui/spinner";
@@ -149,33 +152,33 @@ function ProfileCard({
 			return;
 		}
 		setBusy("picture");
-		try {
-			const { image } = await uploadProfileImage(file, profile.user);
+		await (async () => {
+const { image } = await uploadProfileImage(file, profile.user);
 			onChange({ ...profile, image });
 			await refreshPeople();
 			toast("Picture updated");
-		} catch (e: any) {
-			setError(e.message);
-		} finally {
-			setBusy(null);
+})().catch(async (e: any) => {
+setError(e.message);
+}).finally(async () => {
+setBusy(null);
 			// Clear the input or picking the same file twice does nothing.
 			if (fileRef.current) fileRef.current.value = "";
-		}
+});
 	}
 
 	async function removePicture() {
 		setBusy("picture");
 		setError(null);
-		try {
-			await removeProfileImage(profile.user);
+		await (async () => {
+await removeProfileImage(profile.user);
 			onChange({ ...profile, image: "" });
 			await refreshPeople();
 			toast("Picture removed");
-		} catch (e: any) {
-			setError(e.message);
-		} finally {
-			setBusy(null);
-		}
+})().catch(async (e: any) => {
+setError(e.message);
+}).finally(async () => {
+setBusy(null);
+});
 	}
 
 	async function submit(event: React.FormEvent) {
@@ -183,8 +186,8 @@ function ProfileCard({
 		if (!name.trim() || busy || !dirty) return;
 		setBusy("fields");
 		setError(null);
-		try {
-			const saved = await saveProfile(
+		await (async () => {
+const saved = await saveProfile(
 				{ name: name.trim(), email: email.trim(), timezone: timezone.trim() },
 				profile.user,
 			);
@@ -196,11 +199,11 @@ function ProfileCard({
 					: "Profile saved",
 			);
 			setEditing(false);
-		} catch (e: any) {
-			setError(e.message);
-		} finally {
-			setBusy(null);
-		}
+})().catch(async (e: any) => {
+setError(e.message);
+}).finally(async () => {
+setBusy(null);
+});
 	}
 
 	return (
@@ -270,45 +273,75 @@ function ProfileCard({
 						<div className="text-item-title font-semibold text-fg">
 							Edit profile
 						</div>
-						{/* Picture actions are badges on the picture itself, both
-						    always visible: hover cannot be the way in on a phone, and
-						    a row of two labelled buttons under a portrait is more
-						    furniture than a rarely-used action deserves. Change is a
-						    picture glyph rather than a camera, because this replaces a
-						    FILE rather than taking a shot; remove is a trash, because
-						    it deletes one and you can put another back. */}
-						<div className="relative mx-auto mb-1 mt-1 flex">
-							<UserAvatar
-								name={name || profile.name}
-								login={profile.github}
-								image={profile.image}
-								size={72}
-							/>
+						{/* The picture is the control: the whole square picks a file,
+						    and the glyph arrives over the middle of it on hover rather
+						    than riding a corner all the time. A picture glyph rather
+						    than a camera, because this replaces a FILE rather than
+						    taking a shot, and a word under the glyph because a glyph
+						    alone says "picture" without saying which way it goes.
+
+						    Left rather than centered, so it starts on the same x as
+						    the fields under it and the dialog reads as one column.
+
+						    Removing rides the opposite corner of the same picture: it
+						    acts on that picture, so it belongs on it, and the far
+						    corner keeps a destructive click away from the target you
+						    reach for. It is a sibling of the picture button and never
+						    a child, since a button inside a button is invalid.
+
+						    A touch client has no hover, so there the overlay stays
+						    on. */}
+						<div className="group/overlay-action relative mb-1 mt-1 w-max">
 							<button
 								type="button"
 								disabled={busy !== null}
 								onClick={() => fileRef.current?.click()}
 								aria-label={pictureAction}
 								title={pictureAction}
-								className="focus-ring absolute -bottom-0.5 -right-0.5 grid size-7 place-items-center rounded-full bg-white text-black shadow-sm transition-colors hover:text-accent disabled:pointer-events-none"
+								className="focus-ring group relative flex rounded-avatar disabled:pointer-events-none"
 							>
-								{busy === "picture" ? (
-									<Spinner size="sm" />
-								) : (
-									<IconImage size={15} dense />
-								)}
+								<UserAvatar
+									name={name || profile.name}
+									login={profile.github}
+									image={profile.image}
+									size={72}
+								/>
+								{/* Hard black and white rather than themed tokens: this
+								    lies on whatever photo a person uploaded, so it has
+								    to hold its own contrast instead of following the
+								    page. */}
+								<span
+									className={cn(
+										"absolute inset-0 flex flex-col items-center justify-center gap-1 rounded-avatar bg-black/45 text-white transition-opacity",
+										busy === "picture" || isTouchPrimary
+											? "opacity-100"
+											: "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100",
+									)}
+									aria-hidden
+								>
+									{busy === "picture" ? (
+										<Spinner size="md" />
+									) : (
+										<>
+											<IconImage size={18} dense />
+											{/* One word: the button already carries the whole
+											    sentence as its accessible name, and 72px of
+											    picture cannot hold two. */}
+											<span className="text-[10px] font-medium leading-none">
+												{profile.image ? "Change" : "Upload"}
+											</span>
+										</>
+									)}
+								</span>
 							</button>
 							{profile.image && (
-								<button
-									type="button"
+								<OverlayAction
 									disabled={busy !== null}
 									onClick={() => void removePicture()}
 									aria-label="Remove picture"
 									title="Remove picture"
-									className="focus-ring absolute -right-0.5 -top-0.5 grid size-7 place-items-center rounded-full bg-white text-black shadow-sm transition-colors hover:text-red disabled:pointer-events-none"
-								>
-									<IconTrash size={15} dense />
-								</button>
+									icon={<IconTrash className="text-red" size={16} />}
+								/>
 							)}
 						</div>
 						{/* The note is a sibling of the Field, not a child: `Field` is
@@ -330,7 +363,7 @@ function ProfileCard({
 							    All they need is which name their teammates will see, and
 							    that the old one still finds them. */}
 							{shortNameChanging && (
-								<p className="m-0 text-meta text-dim">
+								<p className="m-0 text-supporting text-dim">
 									{profile.shortName} becomes {nextShort} in mentions and
 									attribution. {profile.shortName} keeps working.
 								</p>
@@ -360,11 +393,16 @@ function ProfileCard({
 							<InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
 						)}
 						<div className="mt-1 flex justify-end gap-2">
-							<Button variant="ghost" onClick={dismiss}>
+							<Button
+								variant="ghost"
+								className={isPhone ? "min-h-11" : undefined}
+								onClick={dismiss}
+							>
 								Cancel
 							</Button>
 							<Button
 								variant="primary"
+								className={isPhone ? "min-h-11" : undefined}
 								type="submit"
 								disabled={!name.trim() || !dirty || busy !== null}
 							>

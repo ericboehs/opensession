@@ -22,14 +22,14 @@
 	-moz-osx-font-smoothing: grayscale;
 	/* Neutral greys, not blue-black ink on a warm card: text is near-black,
 	   everything secondary is one flat mid grey, and the hairline is plain
-	   black at 9%. A single hue family is what keeps the page quiet. */
+	   black at 6%. A single hue family is what keeps the page quiet. */
 	--ink: #0a0a0a;
 	--page: #fff;
 	/* One quiet card fill and one hairline, used by every section in the feed.
 	   The page is white and the cards are a step off it, so a section reads as
 	   a panel without a shadow or a second colour doing the work. */
 	--card: #fafafb;
-	--line: rgba(var(--ink-rgb), 0.09);
+	--line: rgba(var(--ink-rgb), 0.06);
 	--muted: #787878;
 	/* The product's accent with more chroma, so the one filled control on the
 	   page carries some voltage: the app's own #1f82bb reads muted at this size
@@ -184,22 +184,6 @@ summary:focus-visible {
 	line-height: 1.5;
 }
 
-.rail-setup-link {
-	display: flex;
-	width: fit-content;
-	min-height: 40px;
-	align-items: center;
-	gap: 5px;
-	margin-top: 10px;
-	color: var(--muted);
-	font-size: 14px;
-	font-weight: 600;
-	transition: color 160ms ease;
-}
-
-.rail-setup-link:hover {
-	color: var(--ink);
-}
 
 .feed {
 	display: flex;
@@ -213,7 +197,7 @@ summary:focus-visible {
 .card {
 	padding: 34px;
 	border: 1px solid var(--line);
-	border-radius: calc(24px * var(--rf));
+	border-radius: calc(28px * var(--rf));
 	corner-shape: var(--cs);
 	background: var(--card);
 }
@@ -233,11 +217,372 @@ summary:focus-visible {
 	line-height: 1.42;
 }
 
+/* ── Setup overview ─────────────────────────────────────────────────── */
+
+.landing-setup-steps {
+	display: grid;
+	margin: 30px 0 0;
+	padding: 0;
+	gap: 16px;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	list-style: none;
+}
+
+.landing-setup-steps > li {
+	display: flex;
+	min-width: 0;
+	flex-direction: column;
+	align-items: stretch;
+	padding: 22px;
+	border-radius: calc(18px * var(--rf));
+	corner-shape: var(--cs);
+	background: rgba(var(--ink-rgb), 0.04);
+}
+
+.landing-setup-step-icon,
+.landing-setup-app-mark {
+	display: grid;
+	width: 40px;
+	height: 40px;
+	border-radius: calc(12px * var(--rf));
+	corner-shape: var(--cs);
+	background: rgba(var(--ink-rgb), 0.055);
+	color: rgba(var(--ink-rgb), 0.62);
+	place-items: center;
+}
+
+.landing-setup-step-copy {
+	display: flex;
+	min-width: 0;
+	flex-direction: column;
+	gap: 5px;
+	margin-top: 18px;
+}
+
+.landing-setup-step-copy strong,
+.landing-setup-app-copy strong {
+	font-size: 15px;
+	font-weight: 600;
+	line-height: 1.3;
+}
+
+.landing-setup-step-copy > span {
+	color: var(--muted);
+	font-size: 13px;
+	line-height: 1.42;
+}
+
+.landing-setup-step-action {
+	display: inline-flex;
+	min-height: 44px;
+	align-items: center;
+	align-self: flex-start;
+	justify-content: center;
+	margin-top: 18px;
+	padding: 0 14px;
+	border: 0;
+	border-radius: calc(11px * var(--rf));
+	corner-shape: var(--cs);
+	background: var(--ink);
+	color: var(--surface);
+	cursor: pointer;
+	font-size: 13px;
+	font-weight: 600;
+	white-space: nowrap;
+	transition: background-color 160ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.landing-setup-step-action:hover {
+	background: rgba(var(--ink-rgb), 0.82);
+}
+
+.landing-setup-step-action-secondary {
+	background: rgba(var(--ink-rgb), 0.075);
+	color: var(--ink);
+}
+
+.landing-setup-step-action-secondary:hover {
+	background: rgba(var(--ink-rgb), 0.12);
+}
+
+.landing-setup-step-action:active {
+	transform: scale(0.96);
+}
+
+.landing-setup-app-action {
+	color: var(--accent-blue);
+	font-size: 12px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.landing-setup-app-download {
+	display: inline-flex;
+	min-height: 40px;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	padding: 0 12px;
+	border-radius: calc(10px * var(--rf));
+	corner-shape: var(--cs);
+	background: #0a0a0a;
+	color: #fff;
+}
+
+.landing-setup-app-download svg {
+	flex: none;
+}
+
+.landing-setup-apps {
+	display: grid;
+	min-width: 0;
+	gap: 8px;
+	margin-top: 18px;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.landing-setup-app {
+	display: grid;
+	width: 100%;
+	min-height: 60px;
+	align-items: center;
+	gap: 12px;
+	padding: 8px 12px 8px 10px;
+	border: 0;
+	border-radius: calc(15px * var(--rf));
+	corner-shape: var(--cs);
+	background: transparent;
+	color: var(--ink);
+	cursor: pointer;
+	text-align: left;
+	grid-template-columns: 40px minmax(0, 1fr) auto;
+	transition: background-color 160ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.landing-setup-app:hover {
+	background: rgba(var(--ink-rgb), 0.075);
+}
+
+.landing-setup-app:active {
+	transform: scale(0.98);
+}
+
+.landing-setup-app[aria-disabled="true"] {
+	cursor: default;
+	opacity: 0.58;
+}
+
+.landing-setup-app[aria-disabled="true"]:hover {
+	background: transparent;
+}
+
+.landing-setup-app[aria-disabled="true"]:active {
+	transform: none;
+}
+
+.landing-setup-app > img {
+	display: block;
+	width: 40px;
+	height: 40px;
+	border-radius: calc(10px * var(--rf));
+	corner-shape: var(--cs);
+}
+
+.landing-setup-app-mark-web {
+	background: #fff;
+	color: #111;
+	box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.landing-setup-app-copy {
+	display: flex;
+	min-width: 0;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.landing-setup-app-copy small {
+	overflow: hidden;
+	color: var(--muted);
+	font-size: 12px;
+	font-weight: 500;
+	line-height: 1.35;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.landing-install-command {
+	display: grid;
+	min-width: 0;
+	min-height: 56px;
+	align-items: center;
+	gap: 10px;
+	padding: 7px 7px 7px 13px;
+	border-radius: calc(15px * var(--rf));
+	corner-shape: var(--cs);
+	background: #161719;
+	box-shadow: 0 8px 22px rgba(10, 11, 13, 0.09);
+	grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.landing-install-command code {
+	display: block;
+	width: 100%;
+	min-width: 0;
+	max-width: 100%;
+	color: #ededed;
+	font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+	font-size: 11.5px;
+	line-height: 1.4;
+	overflow-wrap: anywhere;
+}
+
+.landing-install-command button {
+	display: inline-flex;
+	min-width: 74px;
+	height: 42px;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	padding: 0 11px;
+	border: 0;
+	border-radius: calc(10px * var(--rf));
+	corner-shape: var(--cs);
+	background: #2a2c30;
+	color: #fff;
+	cursor: pointer;
+	font-size: 12px;
+	font-weight: 600;
+	transition: background-color 160ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.landing-install-command button:hover {
+	background: #36383d;
+}
+
+.landing-install-command button:active {
+	transform: scale(0.96);
+}
+
+/* The browser supplies focus trapping, Escape handling and top-layer
+   placement. The panel is separate so clicking the backdrop can dismiss it. */
+.pwa-guide {
+	width: min(520px, calc(100% - 32px));
+	max-height: calc(100dvh - 32px);
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--ink);
+	overflow: visible;
+}
+
+.pwa-guide::backdrop {
+	background: var(--scrim);
+	backdrop-filter: blur(8px);
+}
+
+.pwa-guide-panel {
+	position: relative;
+	padding: 30px;
+	border-radius: calc(24px * var(--rf));
+	corner-shape: var(--cs);
+	background: var(--surface);
+	box-shadow: 0 24px 70px var(--surface-shadow);
+}
+
+.pwa-guide-close {
+	display: grid;
+	position: absolute;
+	top: 14px;
+	right: 14px;
+	width: 44px;
+	height: 44px;
+	padding: 0;
+	border: 0;
+	border-radius: calc(12px * var(--rf));
+	corner-shape: var(--cs);
+	background: transparent;
+	color: var(--muted);
+	cursor: pointer;
+	place-items: center;
+}
+
+.pwa-guide-close:hover {
+	background: rgba(var(--ink-rgb), 0.06);
+	color: var(--ink);
+}
+
+.pwa-guide-mark {
+	display: grid;
+	width: 46px;
+	height: 46px;
+	margin-bottom: 20px;
+	border-radius: calc(14px * var(--rf));
+	corner-shape: var(--cs);
+	background: rgba(var(--ink-rgb), 0.055);
+	color: rgba(var(--ink-rgb), 0.68);
+	place-items: center;
+}
+
+.pwa-guide h2 {
+	margin: 0;
+	font-size: 24px;
+	font-weight: 600;
+	letter-spacing: -0.012em;
+	line-height: 1.15;
+}
+
+.pwa-guide h2 + p {
+	margin: 9px 0 20px;
+	color: var(--muted);
+	font-size: 14px;
+	line-height: 1.45;
+}
+
+.setup-guide .landing-setup-apps {
+	margin-top: 0;
+	grid-template-columns: minmax(0, 1fr);
+}
+
+.pwa-guide-options {
+	overflow: hidden;
+	border-radius: calc(16px * var(--rf));
+	corner-shape: var(--cs);
+	background: rgba(var(--ink-rgb), 0.045);
+}
+
+.pwa-guide-options > div {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	padding: 16px;
+}
+
+.pwa-guide-options > div + div {
+	border-top: 1px solid var(--line);
+}
+
+.pwa-guide-options strong {
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.pwa-guide-options span,
+.pwa-guide-note {
+	color: var(--muted);
+	font-size: 13px;
+	line-height: 1.48;
+}
+
+.pwa-guide-note {
+	margin: 18px 2px 0;
+}
+
 /* ── The product, on its own background ──────────────────────────────── */
 
-/* The one loud surface on the page. The window is inset on three sides and
-   runs past the bottom edge, so it reads as an app that carries on rather
-   than a screenshot centred in a frame. */
+/* The one loud surface on the page. Both devices grow out of its bottom-right
+   corner: the background gives them air above and to the left, while the crop
+   makes the product feel larger than a screenshot centred in a frame. */
 .stage {
 	position: relative;
 	overflow: hidden;
@@ -249,7 +594,7 @@ summary:focus-visible {
 	container-type: size;
 	aspect-ratio: 3 / 2;
 	border: 1px solid var(--line);
-	border-radius: calc(24px * var(--rf));
+	border-radius: calc(28px * var(--rf));
 	corner-shape: var(--cs);
 	background: var(--stage-bg);
 }
@@ -277,20 +622,23 @@ summary:focus-visible {
 .preview-wrap {
 	--demo-scale: 1;
 	position: absolute;
-	/* Sat on the background rather than bleeding off it: the app's composer is
-	   14px above its own bottom edge, so any overshoot cuts the one control a
-	   visitor is meant to recognise. One value, in container-width units, so
-	   the frame reads as an even margin rather than a window pushed off
-	   centre. */
-	inset: 5.6cqw;
+	/* Keep one quiet inset above and to the left, then let the window continue
+	   through the stage's bottom-right corner. This enlarges the product without
+	   shrinking its fixed app layout, and the stage itself supplies the crop. */
+	top: 5.6cqw;
+	right: -1px;
+	bottom: -1px;
+	left: 5.6cqw;
 	overflow: hidden;
 	/* It is a <figure>, and a figure's UA margin offsets an absolutely
 	   positioned box even with all four insets set. */
 	margin: 0;
 	border: 1px solid rgba(var(--ink-rgb), 0.1);
-	/* A macOS 26 window corner, measured off Finder and Safari at 2x: a 26.7pt
-	   radius that fits a plain circle to within half a pixel. */
-	border-radius: calc(15px * var(--rf));
+	/* A macOS 26 window corner, measured off Finder and Safari at 2x. Only the
+	   corner contained by the stage is rounded; the other three carry through
+	   an edge, so rounding them would make the window look finished just where
+	   it is meant to continue. */
+	border-radius: calc(15px * var(--rf)) 0 0 0;
 	corner-shape: var(--cs);
 	background: var(--window);
 	box-shadow: 0 22px 54px var(--window-shadow);
@@ -337,25 +685,35 @@ summary:focus-visible {
 	pointer-events: auto;
 }
 
-/* The phone, in front of the window at the corner it overlaps.
-   Everything here is in cqw, a percentage of the stage's own width, so the
-   pair keeps its composition at every size the stage takes.
+/* The phone, in front of the window near their shared bottom-right origin.
+   A small right inset keeps the whole phone edge visible, while its bottom
+   runs well past the stage: the device is a supporting object, so less of it
+   is in frame than the window beside it. Everything here is in cqw, a
+   percentage of the stage's own width, so the pair keeps its composition at
+   every size the stage takes, and the amount cut off never changes.
 
    The size is not a taste: the window stands for a 14-inch MacBook Pro's
-   screen, 302mm across its 88.8cqw, which puts 1mm at 0.294cqw. An iPhone 17
-   Pro is 71.9 by 150mm, so it is 21.1 by 44.1cqw and the two objects are
-   drawn at one physical scale. The corner is the device's own, about 12% of
-   its width, authored circular and multiplied by --rf like every other corner
-   here so the squircle browsers land on the shape the phone really has. */
+   screen, 302mm across its 94.4cqw, which puts 1mm at 0.313cqw. An iPhone 17
+   Pro is 71.9 by 150mm, so it is 22.5 by 46.9cqw and the two objects are
+   drawn at one physical scale.
+
+   The corner runs past the device's own 15.6%, deliberately. A squircle hugs
+   its corner far tighter than a circular arc of the same radius, so drawing
+   the measured number reads squarer than the phone in your hand: the shape is
+   right, the amount of it is not. 20.4% of the width is where the curve
+   matches, and the object is small enough on the page that the extra is read
+   as the device's own softness rather than as a rounder rectangle. Authored
+   circular and multiplied by --rf like every other corner here, so Safari
+   reaches the same visual weight with a plain arc. */
 .demo-phone {
 	position: absolute;
 	right: 2.5cqw;
-	bottom: 2.5cqw;
-	width: 21.1cqw;
-	height: 44.1cqw;
+	bottom: -4cqw;
+	width: 22.5cqw;
+	height: 46.9cqw;
 	object-fit: cover;
 	object-position: top center;
-	border-radius: calc(1.87cqw * var(--rf));
+	border-radius: calc(3.4cqw * var(--rf)) calc(3.4cqw * var(--rf)) 0 0;
 	corner-shape: var(--cs);
 	background: var(--window);
 	/* A hairline for the device's own edge, and a shadow deeper than the
@@ -377,6 +735,30 @@ summary:focus-visible {
 	display: block;
 	margin-bottom: 16px;
 	color: rgba(var(--ink-rgb), 0.62);
+}
+
+/* The name shares its line with the availability tag when there is one, so the
+   caveat cannot be read separately from the capability it qualifies. Baseline
+   alignment keeps the smaller tag sitting on the name's line, not floating. */
+.feature-head {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 4px 8px;
+}
+
+/* Quieter than the name and quieter than the sentence: a caveat, not a badge
+   asking to be noticed first. */
+.feature-soon {
+	border: 1px solid rgba(var(--ink-rgb), 0.16);
+	border-radius: 999px;
+	color: var(--muted);
+	font-size: 11px;
+	font-weight: 500;
+	letter-spacing: 0.01em;
+	line-height: 1.55;
+	padding: 0 7px;
+	white-space: nowrap;
 }
 
 /* A name on its own line, then what it means: the capability is the thing you
@@ -498,14 +880,11 @@ summary:focus-visible {
 	transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), filter 160ms ease;
 }
 
-/* The filled control, shared by the rail CTA and the modal's submit: the
-   product's blue at the top edge, shading one step deeper at the foot. Still
-   no cast shadow, which is what used to make it read as a marketing badge;
-   the relief comes from the fill itself plus the lit top edge. The shade runs
-   downward, so the deeper foot lifts white text to 5.5:1 instead of pushing
-   it below the top stop's 4.2. */
-.button-primary,
-.waitlist-form button {
+/* The filled control uses the product's blue at the top edge, shading one
+   step deeper at the foot. Still no cast shadow, which is what used to make it
+   read as a marketing badge; the relief comes from the fill itself plus the
+   lit top edge. */
+.button-primary {
 	border: 0;
 	background-color: var(--accent-blue);
 	background-image: linear-gradient(
@@ -517,155 +896,12 @@ summary:focus-visible {
 	color: #fff;
 }
 
-.button-primary:hover,
-.waitlist-form button:hover {
+.button-primary:hover {
 	filter: brightness(1.06);
 }
 
-.button:active,
-.waitlist-form button:active {
+.button:active {
 	transform: scale(0.96);
-}
-
-/* ── Waitlist ─────────────────────────────────────────────────────────── */
-
-.waitlist-form {
-	display: flex;
-	position: relative;
-	min-height: 60px;
-	align-items: center;
-	gap: 8px;
-	margin-top: 20px;
-	padding: 7px 7px 7px 14px;
-	border: 1px solid rgba(var(--ink-rgb), 0.14);
-	border-radius: calc(14px * var(--rf));
-	corner-shape: var(--cs);
-	background: var(--field);
-}
-
-.waitlist-form:focus-within {
-	border-color: rgba(31, 130, 187, 0.55);
-	box-shadow: 0 0 0 3px rgba(31, 130, 187, 0.14);
-}
-
-.waitlist-form input {
-	min-width: 0;
-	flex: 1;
-	padding: 0 4px;
-	border: 0;
-	background: none;
-	color: var(--ink);
-	font-size: 15px;
-	outline: none;
-}
-
-.waitlist-form input::placeholder {
-	color: rgba(var(--ink-rgb), 0.4);
-}
-
-.waitlist-form button {
-	display: inline-flex;
-	height: 44px;
-	align-items: center;
-	justify-content: center;
-	padding: 0 18px;
-	border-radius: calc(12px * var(--rf));
-	corner-shape: var(--cs);
-	letter-spacing: -0.012em;
-	cursor: pointer;
-	font-size: 14px;
-	font-weight: 600;
-	white-space: nowrap;
-	transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), filter 160ms ease;
-}
-
-.waitlist-form button:disabled {
-	background-image: none;
-	background-color: #83858b;
-	box-shadow: none;
-	cursor: default;
-}
-
-.waitlist-error {
-	position: absolute;
-	top: calc(100% + 10px);
-	left: 2px;
-	margin: 0;
-	color: var(--err);
-	font-size: 13px;
-}
-
-.waitlist-done {
-	display: flex;
-	min-height: 72px;
-	align-items: center;
-	gap: 8px;
-	margin: 20px 0 0;
-	color: var(--ok);
-	font-size: 16px;
-	font-weight: 600;
-}
-
-.waitlist-dialog {
-	width: min(100% - 32px, 440px);
-	padding: clamp(26px, 4vw, 34px);
-	border: 0;
-	border-radius: calc(22px * var(--rf));
-	corner-shape: var(--cs);
-	background: var(--surface);
-	box-shadow: 0 24px 60px var(--surface-shadow);
-	color: var(--ink);
-}
-
-.waitlist-dialog::backdrop {
-	background: var(--scrim);
-	backdrop-filter: blur(4px);
-}
-
-.waitlist-dialog h2 {
-	margin: 0;
-	font-size: 21px;
-	font-weight: 600;
-	letter-spacing: -0.02em;
-	line-height: 1.2;
-}
-
-.waitlist-dialog-body {
-	margin: 8px 0 0;
-	color: rgba(var(--ink-rgb), 0.6);
-	font-size: 15px;
-	line-height: 1.42;
-}
-
-/* The heading and its dismiss share a row, so the × sits on the title's line
-   rather than floating in the corner above it. */
-.waitlist-dialog-head {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 12px;
-}
-
-.waitlist-dialog-close {
-	display: grid;
-	width: 30px;
-	height: 30px;
-	flex: none;
-	margin-right: -6px;
-	border: 0;
-	border-radius: 50%;
-	background: none;
-	color: rgba(var(--ink-rgb), 0.45);
-	cursor: pointer;
-	font-size: 22px;
-	line-height: 1;
-	place-items: center;
-	transition: background-color 160ms ease, color 160ms ease;
-}
-
-.waitlist-dialog-close:hover {
-	background: rgba(var(--ink-rgb), 0.06);
-	color: var(--ink);
 }
 
 /* ── Narrower ────────────────────────────────────────────────────────── */
@@ -723,6 +959,13 @@ summary:focus-visible {
 	}
 }
 
+@media (max-width: 720px) {
+	.landing-setup-steps {
+		gap: 12px;
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
 @media (max-width: 560px) {
 	.shell {
 		width: min(100% - 32px, 1400px);
@@ -730,11 +973,63 @@ summary:focus-visible {
 
 	.card {
 		padding: 22px;
-		border-radius: calc(19px * var(--rf));
+		border-radius: calc(22px * var(--rf));
 		corner-shape: var(--cs);
 	}
 
 	.card h2 {
+		font-size: 22px;
+	}
+
+	.landing-setup-steps > li {
+		padding: 18px;
+	}
+
+	.landing-setup-step-action {
+		margin-top: 16px;
+	}
+
+	.landing-setup-apps {
+		margin-top: 16px;
+	}
+
+	.landing-setup-app {
+		padding-right: 10px;
+	}
+
+	.landing-setup-app-action {
+		font-size: 11px;
+	}
+
+	.landing-install-command {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.landing-install-command code {
+		font-size: 11px;
+	}
+
+	.landing-install-command button {
+		height: 44px;
+		justify-self: end;
+	}
+
+	.pwa-guide {
+		width: calc(100% - 24px);
+		max-height: calc(100dvh - 24px);
+	}
+
+	.pwa-guide-panel {
+		padding: 24px;
+		border-radius: calc(22px * var(--rf));
+	}
+
+	.pwa-guide-close {
+		top: 10px;
+		right: 10px;
+	}
+
+	.pwa-guide h2 {
 		font-size: 22px;
 	}
 
@@ -744,7 +1039,7 @@ summary:focus-visible {
 
 	.stage {
 		aspect-ratio: 5 / 4;
-		border-radius: calc(19px * var(--rf));
+		border-radius: calc(22px * var(--rf));
 		corner-shape: var(--cs);
 	}
 
@@ -771,31 +1066,16 @@ summary:focus-visible {
 	.feed-foot {
 		justify-content: flex-start;
 	}
-
-	.waitlist-form {
-		align-items: stretch;
-		flex-direction: column;
-		padding: 10px;
-	}
-
-	.waitlist-form input {
-		height: 44px;
-		padding: 0 8px;
-	}
 }
 
 @media (prefers-reduced-motion: no-preference) {
-	.waitlist-dialog[open] {
-		animation: dialog-enter 240ms cubic-bezier(0.23, 1, 0.32, 1);
-	}
-
-	.waitlist-dialog[open]::backdrop {
-		animation: backdrop-enter 240ms ease;
-	}
-
 	.rail > *,
 	.stage {
 		animation: enter 700ms cubic-bezier(0.23, 1, 0.32, 1) both;
+	}
+
+	.pwa-guide[open] .pwa-guide-panel {
+		animation: dialog-enter 220ms cubic-bezier(0.23, 1, 0.32, 1) both;
 	}
 
 	.rail > :nth-child(2) { animation-delay: 60ms; }
@@ -809,10 +1089,6 @@ summary:focus-visible {
 
 @keyframes dialog-enter {
 	from { opacity: 0; transform: translateY(10px) scale(0.98); }
-}
-
-@keyframes backdrop-enter {
-	from { opacity: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -838,7 +1114,7 @@ summary:focus-visible {
 		--ink: #f4f4f5;
 		--page: #0c0c0d;
 		--card: #141416;
-		--line: rgba(255, 255, 255, 0.1);
+		--line: rgba(255, 255, 255, 0.07);
 		--muted: #939397;
 		--ink-rgb: 255, 255, 255;
 		--stage-bg: #14171d;

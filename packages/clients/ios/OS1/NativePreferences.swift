@@ -155,6 +155,13 @@ enum NativePreferences {
             in: defaults
         )
         setBool(
+            nextChatButtonEnabled(prefs["next-chat-button"]),
+            default: true,
+            key: "os1.composer.nextChatButton",
+            resetMissing: changedIdentity,
+            in: defaults
+        )
+        setBool(
             liveTypingEnabled(prefs["live-typing"]),
             default: false,
             key: "os1.transcript.liveTyping",
@@ -225,6 +232,16 @@ enum NativePreferences {
     /// The web stores this boolean as "on"/"off" in ui-prefs. Unknown values
     /// are ignored so a newer client cannot accidentally disable the feature.
     static func replySuggestionsEnabled(_ value: String?) -> Bool? {
+        switch value {
+        case "on": true
+        case "off": false
+        default: nil
+        }
+    }
+
+    /// Whether the Next chat button appears above the composer. The keyboard
+    /// shortcut remains available when the button is hidden.
+    static func nextChatButtonEnabled(_ value: String?) -> Bool? {
         switch value {
         case "on": true
         case "off": false

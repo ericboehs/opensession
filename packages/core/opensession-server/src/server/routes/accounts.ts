@@ -63,14 +63,14 @@ export async function handleAccountsRoutes(
 		return Response.json({ accounts: listAccountsPublic() });
 	}
 
-	// ── "Sign in with Claude" (PKCE) — attaches usage OAuth to an account ──
-	// Keep these ahead of the generic /claude-accounts/:id matchers.
+	// "Sign in with Claude" attaches usage OAuth to an existing setup-token
+	// account. Keep this ahead of the generic /claude-accounts/:id matchers.
 	if (path === "/api/claude-accounts/oauth-login" && req.method === "POST") {
 		const body = await req.json().catch(() => null);
-		if (!body?.accountId) {
+		if (typeof body?.accountId !== "string" || !body.accountId) {
 			return Response.json({ error: "accountId is required" }, { status: 400 });
 		}
-		const result = await startClaudeLogin(String(body.accountId));
+		const result = await startClaudeLogin(body.accountId);
 		if ("error" in result) return Response.json(result, { status: 400 });
 		return Response.json(result);
 	}
@@ -134,12 +134,12 @@ export async function handleAccountsRoutes(
 	if (path === "/api/codex-accounts" && req.method === "POST") {
 		const body = await req.json().catch(() => null);
 		if (
-			!body?.name ||
+			(!body?.name && body?.kind === "api_key") ||
 			!body?.value ||
 			!["api_key", "home"].includes(body?.kind)
 		) {
 			return Response.json(
-				{ error: "name, kind (api_key|home) and value are required" },
+				{ error: "kind (api_key|home) and value are required; API keys also need a name" },
 				{ status: 400 },
 			);
 		}
@@ -157,12 +157,9 @@ export async function handleAccountsRoutes(
 	// Keep these ahead of the generic /codex-accounts/:id matchers.
 	if (path === "/api/codex-accounts/oauth-login" && req.method === "POST") {
 		const body = await req.json().catch(() => null);
-		if (!body?.name) {
-			return Response.json({ error: "name is required" }, { status: 400 });
-		}
 		const result = await startCodexOauthLogin(
-			String(body.name),
-			typeof body.owner === "string" ? body.owner : undefined,
+			typeof body?.name === "string" ? body.name : "",
+			typeof body?.owner === "string" ? body.owner : undefined,
 		);
 		if ("error" in result) return Response.json(result, { status: 400 });
 		return Response.json(result);
@@ -194,12 +191,9 @@ export async function handleAccountsRoutes(
 		req.method === "POST"
 	) {
 		const body = await req.json().catch(() => null);
-		if (!body?.name) {
-			return Response.json({ error: "name is required" }, { status: 400 });
-		}
 		let result = startDeviceLogin(
-			body.name,
-			typeof body.owner === "string" ? body.owner : undefined,
+			typeof body?.name === "string" ? body.name : "",
+			typeof body?.owner === "string" ? body.owner : undefined,
 		);
 		// A failed start has no id — a started login may carry a (later) error
 		// field too, so keying the status on "error" alone 400s successes.

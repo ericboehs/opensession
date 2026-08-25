@@ -6,231 +6,132 @@
  * next handler (see routes/index.ts for the dispatch order).
  */
 
-import { readFileSync, readdirSync, statfsSync } from "node:fs";
-import { cpus, loadavg } from "node:os";
 import { type RouteContext, requestUser } from "./context";
 import { activeAgentRunCount } from "../agent-runner";
 import { getAgents } from "../agents-registry";
 import { configuredServer } from "../config";
-import { IS_DEV, buildFrontend, frontend, sharedCheckoutEditors } from "../frontend-build";
+import { IS_DEV, buildFrontend, frontend, isPrebuiltFrontend, sharedCheckoutEditors } from "../frontend-build";
 import { getPins } from "../pins";
 import { getReads, isUnread } from "../reads";
 import { runErrors } from "../session-cache";
 import { getSessionControl } from "../session-control";
 import { MAX_UPLOAD_BYTES, stageHttpUpload } from "../uploads";
+import { systemStats } from "../system-stats";
 import { BOOT_ID, broadcastToAll } from "../ws-hub";
-
-/** Host metrics for the health endpoint. The health-monitor automation runs
- *  in ask mode on the opencode engine, where the bash tool is unavailable to
- *  unattended runs — webfetching this endpoint is its only way to see disk/
- *  memory/CPU, so keep these fields stable. */
-function systemStats(): Record<string, unknown> {
-	try {
-		const mem: Record<string, number> = {};
-		for (const line of readFileSync("/proc/meminfo", "utf-8").split("\n")) {
-			const m = line.match(/^(\w+):\s+(\d+) kB/);
-			if (m) mem[m[1]] = Number(m[2]) * 1024;
-		}
-		const s = statfsSync("/");
-		const totalBytes = s.blocks * s.bsize;
-		const availBytes = s.bavail * s.bsize;
-		const [load1, load5, load15] = loadavg();
-		return {
-			disk: {
-				mount: "/",
-				totalGb: +(totalBytes / 1e9).toFixed(1),
-				availGb: +(availBytes / 1e9).toFixed(1),
-				usedPct: +((1 - availBytes / totalBytes) * 100).toFixed(1),
-			},
-			memory: {
-				totalGb: +((mem.MemTotal || 0) / 1e9).toFixed(2),
-				availableGb: +((mem.MemAvailable || 0) / 1e9).toFixed(2),
-				availablePct: mem.MemTotal
-					? +(((mem.MemAvailable || 0) / mem.MemTotal) * 100).toFixed(1)
-					: null,
-				swapUsedGb: +(((mem.SwapTotal || 0) - (mem.SwapFree || 0)) / 1e9).toFixed(2),
-			},
-			load: { "1m": load1, "5m": load5, "15m": load15, cores: cpus().length },
-			processes: processCensus(),
-			cgroups: cgroupCensus(),
-		};
-	} catch (e) {
-		return { error: String((e as Error)?.message || e) };
-	}
-}
-
-interface CgroupMemorySnapshot {
-	unit: string;
-	currentGb: number;
-	peakGb: number | null;
-	anonGb: number;
-	fileGb: number;
-	highGb: number | null;
-	maxGb: number | null;
-	tasks: number | null;
-	oom: number;
-	oomKill: number;
-}
-
-const gb = (bytes: number): number => +(bytes / 1e9).toFixed(2);
-
-function readCgroupNumber(path: string): number | null {
-	try {
-		const value = readFileSync(path, "utf8").trim();
-		if (!value || value === "max") return null;
-		const parsed = Number(value);
-		return Number.isFinite(parsed) ? parsed : null;
-	} catch {
-		return null;
-	}
-}
-
-function readCgroupMap(path: string): Record<string, number> {
-	const values: Record<string, number> = {};
-	try {
-		for (const line of readFileSync(path, "utf8").split("\n")) {
-			const [key, raw] = line.trim().split(/\s+/, 2);
-			const parsed = Number(raw);
-			if (key && Number.isFinite(parsed)) values[key] = parsed;
-		}
-	} catch {}
-	return values;
-}
-
-function cgroupSnapshot(dir: string): CgroupMemorySnapshot | null {
-	const current = readCgroupNumber(`${dir}/memory.current`);
-	if (current == null) return null;
-	const peak = readCgroupNumber(`${dir}/memory.peak`);
-	const high = readCgroupNumber(`${dir}/memory.high`);
-	const max = readCgroupNumber(`${dir}/memory.max`);
-	const tasks = readCgroupNumber(`${dir}/pids.current`);
-	const stat = readCgroupMap(`${dir}/memory.stat`);
-	const events = readCgroupMap(`${dir}/memory.events`);
-	return {
-		unit: dir.slice(dir.lastIndexOf("/") + 1),
-		currentGb: gb(current),
-		peakGb: peak == null ? null : gb(peak),
-		anonGb: gb(stat.anon || 0),
-		fileGb: gb(stat.file || 0),
-		highGb: high == null ? null : gb(high),
-		maxGb: max == null ? null : gb(max),
-		tasks,
-		oom: events.oom || 0,
-		oomKill: events.oom_kill || 0,
-	};
-}
-
-function collectScopeDirs(root: string, out: string[], depth = 0): void {
-	if (depth > 5) return;
-	try {
-		for (const entry of readdirSync(root, { withFileTypes: true })) {
-			if (!entry.isDirectory()) continue;
-			const path = `${root}/${entry.name}`;
-			if (/^opensession-(?:oc|preview)-.*\.scope$/.test(entry.name)) {
-				out.push(path);
-				continue;
-			}
-			collectScopeDirs(path, out, depth + 1);
-		}
-	} catch {}
-}
-
-function summarizeScopes(scopes: CgroupMemorySnapshot[]): Record<string, unknown> {
-	const sorted = scopes.sort((a, b) => b.currentGb - a.currentGb);
-	return {
-		count: sorted.length,
-		currentGb: +sorted.reduce((sum, scope) => sum + scope.currentGb, 0).toFixed(2),
-		anonGb: +sorted.reduce((sum, scope) => sum + scope.anonGb, 0).toFixed(2),
-		fileGb: +sorted.reduce((sum, scope) => sum + scope.fileGb, 0).toFixed(2),
-		oomKills: sorted.reduce((sum, scope) => sum + scope.oomKill, 0),
-		top: sorted.slice(0, 5),
-	};
-}
-
-let cgroupCache: { at: number; data: Record<string, unknown> } | null = null;
-
-/** cgroup v2 resource accounting for the coordinator and detached fleets.
- * Includes anon vs file cache so a reclaimable compiler cache is not mistaken
- * for the anonymous-memory exhaustion that wedged the host on 2026-07-31. */
-function cgroupCensus(): Record<string, unknown> {
-	if (cgroupCache && Date.now() - cgroupCache.at < 60_000) return cgroupCache.data;
-	try {
-		const uid = typeof process.getuid === "function" ? process.getuid() : 1000;
-		const userRoot = `/sys/fs/cgroup/user.slice/user-${uid}.slice/user@${uid}.service`;
-		const dirs: string[] = [];
-		collectScopeDirs(userRoot, dirs);
-		const snapshots = dirs
-			.map(cgroupSnapshot)
-			.filter((snapshot): snapshot is CgroupMemorySnapshot => snapshot != null);
-		const selfRelative = readFileSync("/proc/self/cgroup", "utf8")
-			.split("\n")
-			.find((line) => line.startsWith("0::"))
-			?.slice(3);
-		const data = {
-			coordinator: selfRelative ? cgroupSnapshot(`/sys/fs/cgroup${selfRelative}`) : null,
-			user: cgroupSnapshot(userRoot),
-			engines: summarizeScopes(snapshots.filter((scope) => scope.unit.startsWith("opensession-oc-"))),
-			previews: summarizeScopes(
-				snapshots.filter((scope) => scope.unit.startsWith("opensession-preview-")),
-			),
-		};
-		cgroupCache = { at: Date.now(), data };
-		return data;
-	} catch (e) {
-		return { error: String((e as Error)?.message || e) };
-	}
-}
-
-/** Counts of the process fleets that have historically leaked or ballooned
- *  (2026-07-27: 664 mcp-proxies / 42GB RSS, 26 orphaned opencode scopes, a
- *  3-day goldenbuild dev stack). Surfacing them here lets the health-monitor
- *  automation name the offender in an alert instead of just "high load".
- *  /proc scan, 60s-cached — RestartOverlay polls this endpoint at 1.5s during
- *  incidents. */
-let censusCache: { at: number; data: Record<string, number> } | null = null;
-function processCensus(): Record<string, number> {
-	if (censusCache && Date.now() - censusCache.at < 60_000) return censusCache.data;
-	const counts = {
-		opencodeServers: 0,
-		mcpProxies: 0,
-		chrome: 0,
-		nextDev: 0,
-		gitOps: 0,
-		total: 0,
-	};
-	try {
-		for (const pid of readdirSync("/proc")) {
-			if (!/^\d+$/.test(pid)) continue;
-			counts.total++;
-			let cmd = "";
-			try {
-				cmd = readFileSync(`/proc/${pid}/cmdline`, "utf-8").replaceAll("\0", " ");
-			} catch {
-				continue; // process exited mid-scan
-			}
-			if (cmd.includes("opencode serve")) counts.opencodeServers++;
-			else if (cmd.includes("mcp-proxy.")) counts.mcpProxies++;
-			else if (cmd.includes("/chrome") && cmd.includes("--headless")) counts.chrome++;
-			// One per dev stack: a `just dev-next` stack spawns ~6 processes whose
-			// cmdline mentions "next dev" (bunx/concurrently/sh/bun/node), so count
-			// only the next-server root or 2 healthy stacks read as 12 "leaks".
-			else if (cmd.startsWith("next-server")) counts.nextDev++;
-			else if (/(^|\/)git(-lfs)? /.test(cmd)) counts.gitOps++;
-		}
-	} catch {}
-	censusCache = { at: Date.now(), data: counts };
-	return counts;
-}
+import { executorClientHealth, executorClientReady } from "../executor-client";
+import { sessionKernelHealth, sessionKernelStore } from "../session-kernel";
+import { requireWorkspaceAdmin } from "../workspace-auth";
+import { audit } from "../audit";
+import { serviceReadiness } from "../service-readiness";
 
 export async function handleSystemRoutes(
 	ctx: RouteContext,
 ): Promise<Response | undefined> {
 	const { req, url, path, publicPrefix } = ctx;
 
+	if (path === "/api/system/session-kernel/dead-letters") {
+		const forbidden = requireWorkspaceAdmin(ctx);
+		if (forbidden) return forbidden;
+		if (req.method === "GET") {
+			const limit = Math.max(
+				1,
+				Math.min(100, Math.trunc(Number(url.searchParams.get("limit"))) || 100),
+			);
+			const offset = Math.max(
+				0,
+				Math.trunc(Number(url.searchParams.get("offset"))) || 0,
+			);
+			return Response.json(sessionKernelStore().deadLetters(limit, offset));
+		}
+		if (req.method === "POST") {
+			const body = (await req.json().catch(() => null)) as {
+				type?: unknown;
+				sessionId?: unknown;
+				timerId?: unknown;
+				id?: unknown;
+				action?: unknown;
+			} | null;
+			const validDeadLetterAction = body?.action === "retry" || body?.action === "discard";
+			const validTimer =
+				validDeadLetterAction && body?.type === "timer" &&
+				typeof body.sessionId === "string" && body.sessionId.trim().length > 0 &&
+				typeof body.timerId === "string" && body.timerId.trim().length > 0 &&
+				body.id === undefined;
+			const validOutbox =
+				validDeadLetterAction && body?.type === "outbox" &&
+				Number.isSafeInteger(body.id) && Number(body.id) > 0 &&
+				body.sessionId === undefined && body.timerId === undefined;
+			const validQuarantine =
+				body?.type === "quarantine" && body.action === "release" &&
+				typeof body.sessionId === "string" && body.sessionId.trim().length > 0 &&
+				body.timerId === undefined && body.id === undefined;
+			if (!validTimer && !validOutbox && !validQuarantine)
+				return Response.json(
+					{ error: "invalid_dead_letter_action" },
+					{ status: 400 },
+				);
+			const discard = body.action === "discard";
+			const changed = validQuarantine
+				? sessionKernelStore().releaseQuarantine(body.sessionId as string)
+				: validTimer
+					? discard
+						? sessionKernelStore().discardDeadTimer(body.sessionId as string, body.timerId as string)
+						: sessionKernelStore().retryDeadTimer(body.sessionId as string, body.timerId as string)
+					: discard
+						? sessionKernelStore().discardDeadOutbox(Number(body.id))
+						: sessionKernelStore().retryDeadOutbox(Number(body.id));
+			audit({
+				msg: "session_kernel_dead_letter_changed",
+				user: requestUser(ctx),
+				action: validQuarantine ? "release" : discard ? "discard" : "retry",
+				kind: body?.type,
+				session_id:
+					typeof body?.sessionId === "string" ? body.sessionId : undefined,
+				timer_id: typeof body?.timerId === "string" ? body.timerId : undefined,
+				outbox_id: Number.isSafeInteger(body?.id) ? Number(body?.id) : undefined,
+				changed,
+			});
+			return Response.json(
+				{ changed, action: validQuarantine ? "release" : discard ? "discard" : "retry" },
+				{ status: changed ? 200 : 404 },
+			);
+		}
+		return new Response("Method not allowed", { status: 405, headers: { Allow: "GET, POST" } });
+	}
+
+	if (path === "/live" && req.method === "GET")
+		return Response.json({ ok: true, bootId: BOOT_ID, uptime: process.uptime() });
+
+	if (path === "/ready" && req.method === "GET") {
+		try {
+			const kernel = await sessionKernelHealth();
+			const executor = executorClientHealth();
+			const executorReadiness = await executorClientReady();
+			const readiness = serviceReadiness();
+			const ready = executorReadiness.ready && readiness.phase === "ready";
+			return Response.json(
+				{ ok: ready, ready, phase: readiness.phase, bootId: BOOT_ID, activeRuns: activeAgentRunCount(), executor: { ...executor, ...executorReadiness }, sessionKernel: kernel },
+				{ status: ready ? 200 : 503 },
+			);
+		} catch (error) {
+			return Response.json(
+				{ ok: false, ready: false, error: error instanceof Error ? error.message : String(error) },
+				{ status: 503 },
+			);
+		}
+	}
+
 	// Health check (includes agent health — Tailscale-only, not public).
 	// frontendVersion lets clients detect a frontend-only rebuild (no bootId
 	// change) and refresh.
 	if (path === "/api/health") {
+		if (url.searchParams.get("brief") === "1") {
+			return Response.json({
+				ok: true,
+				bootId: BOOT_ID,
+				frontendVersion: frontend?.version ?? null,
+			});
+		}
 		const agentHealth: Record<string, unknown> = {};
 		for (const a of getAgents()) {
 			agentHealth[a.name] = a.health();
@@ -244,6 +145,8 @@ export async function handleSystemRoutes(
 			// polls this to restart only when the service is idle (or near it), so a
 			// restart kills as few in-flight runs/background tasks as possible.
 			activeRuns: activeAgentRunCount(),
+			executor: executorClientHealth(),
+			sessionKernel: await sessionKernelHealth(),
 			agents: agentHealth,
 			system: systemStats(),
 		});
@@ -318,6 +221,12 @@ export async function handleSystemRoutes(
 		if (IS_DEV || !frontend) {
 			return Response.json(
 				{ ok: false, error: "not available in dev mode" },
+				{ status: 400 },
+			);
+		}
+		if (isPrebuiltFrontend()) {
+			return Response.json(
+				{ ok: false, error: "not available for a prebuilt release" },
 				{ status: 400 },
 			);
 		}
@@ -437,7 +346,7 @@ export async function handleSystemRoutes(
 			`[pi-smoke] admin trigger${by ? ` by ${by}` : ""}${dryRun ? " (dry-run)" : ""}`,
 		);
 		try {
-			// Dynamic import: the pi runner's module graph (opencode-runner and
+			// Dynamic import: the pi runner's module graph (pi-runner and
 			// friends) stays out of this hot route file; the heavy pi SDK import
 			// is itself dynamic inside the runner.
 			const { runPiSmokeTurn } = await import("../pi-runner");

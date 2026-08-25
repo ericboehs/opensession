@@ -30,6 +30,28 @@ const solShaped = `I'll map the full diff first, then trace callers.
 }
 \`\`\``;
 
+// The native Codex code-review schema Sol emitted on PR #5891. It is fully
+// structured, but uses a different top-level verdict and nested locations.
+const codexReviewShaped = `\`\`\`json
+{
+  "findings": [
+    {
+      "title": "[P2] Verify the original video stream duration",
+      "body": "The container duration can reflect a longer audio stream.",
+      "confidence_score": 0.97,
+      "priority": 2,
+      "code_location": {
+        "absolute_file_path": "/home/ubuntu/worktrees/pr-review/packages/core/render_engine/src/engine.rs",
+        "line_range": { "start": 1816, "end": 1818 }
+      }
+    }
+  ],
+  "overall_correctness": "patch is incorrect",
+  "overall_explanation": "The verification can extend a visual clip beyond video EOF.",
+  "overall_confidence_score": 0.95
+}
+\`\`\``;
+
 describe("parseReviewOutput", () => {
   test("parses the canonical contract", () => {
     const out = parseReviewOutput(canonical);
@@ -53,11 +75,58 @@ describe("parseReviewOutput", () => {
     });
   });
 
-  test("drops out-of-range confidence instead of rendering it on the 1-5 scale", () => {
-    expect(parseReviewOutput(solShaped)?.confidence).toBeUndefined();
+  test("accepts the native Codex code-review schema", () => {
+    const out = parseReviewOutput(codexReviewShaped, "/home/ubuntu/worktrees/pr-review");
+    expect(isCompleteReviewOutput(out)).toBe(true);
+    expect(out).toMatchObject({
+      verdict: "request_changes",
+      summary_markdown: "The verification can extend a visual clip beyond video EOF.",
+      findings: [
+        {
+          path: "packages/core/render_engine/src/engine.rs",
+          line: 1816,
+          severity: "P2",
+          title: "Verify the original video stream duration",
+          body: "The container duration can reflect a longer audio stream.",
+        },
+      ],
+    });
+    expect(out?.confidence).toBe(2);
+  });
+
+  test("accepts a clean native Codex verdict without findings", () => {
+    const clean = `\`\`\`json
+{
+  "findings": [],
+  "overall_correctness": "patch is correct",
+  "overall_explanation": "The duration correction is safe.",
+  "overall_confidence_score": 0.95
+}
+\`\`\``;
+    const out = parseReviewOutput(clean, "/home/ubuntu/worktrees/pr-review");
+    expect(isCompleteReviewOutput(out)).toBe(true);
+    expect(out?.verdict).toBe("approve");
+    expect(out?.confidence).toBe(5);
+    expect(out?.findings).toEqual([]);
+  });
+
+  test("drops absolute finding paths outside the pinned checkout", () => {
+    const out = parseReviewOutput(codexReviewShaped, "/different/checkout");
+    expect(isCompleteReviewOutput(out)).toBe(true);
+    expect(out?.findings).toEqual([]);
+  });
+
+  test("derives merge safety when confidence is missing or uses another scale", () => {
+    expect(parseReviewOutput(solShaped)?.confidence).toBe(2);
     const percent = canonical.replace('"confidence": 2', '"confidence": 98');
-    expect(parseReviewOutput(percent)?.confidence).toBeUndefined();
+    expect(parseReviewOutput(percent)?.confidence).toBe(2);
     expect(parseReviewOutput(percent)?.findings).toHaveLength(1);
+
+    const advisory = canonical
+      .replace('"verdict": "request_changes"', '"verdict": "approve"')
+      .replace('"confidence": 2,', "")
+      .replace('"severity": "P1"', '"severity": "P3"');
+    expect(parseReviewOutput(advisory)?.confidence).toBe(4);
   });
 
   test("canonical names win over aliases when both are present", () => {

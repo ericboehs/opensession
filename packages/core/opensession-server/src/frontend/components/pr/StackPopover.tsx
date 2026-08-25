@@ -11,6 +11,7 @@ import type { PrDetails, PrStackLayer } from "../../lib/types";
 import { cn } from "../../ui/cn";
 import { Popover } from "../../ui/popover";
 import { IconArrowUpRight, IconStack } from "../icons";
+import { StackNode, StackRail } from "./StackRail";
 
 /**
  * The stack, from the status strip: a chip reading `position/size` that opens
@@ -23,79 +24,8 @@ import { IconArrowUpRight, IconStack } from "../icons";
  * with the trunk as the last node, the way github.com draws a stack.
  */
 
-/** A node on the rail: the layer's state, as a ring rather than a filled dot —
- *  filled circles read as check results, and these are places in a chain. */
-function StackNode({ state, isDraft }: { state?: string; isDraft?: boolean }) {
-	if (state === "MERGED")
-		return (
-			<svg className="block size-4 text-purple" viewBox="0 0 16 16" aria-hidden>
-				<circle cx="8" cy="8" r="7" fill="currentColor" />
-				<path
-					d="M4.6 8.2l2.2 2.2 4.6-4.6"
-					fill="none"
-					stroke="var(--bg-panel)"
-					strokeWidth="1.7"
-					strokeLinecap="round"
-					strokeLinejoin="round"
-				/>
-			</svg>
-		);
-	if (state === "CLOSED")
-		return (
-			<svg className="block size-4 text-red" viewBox="0 0 16 16" aria-hidden>
-				<circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" strokeWidth="1.4" />
-				<path
-					d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8"
-					stroke="currentColor"
-					strokeWidth="1.5"
-					strokeLinecap="round"
-				/>
-			</svg>
-		);
-	// A draft can't merge, so it gets no check — and neither does the trunk,
-	// which is a destination rather than a layer.
-	if (isDraft || !state)
-		return (
-			<svg className="block size-4 text-faint" viewBox="0 0 16 16" aria-hidden>
-				<circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" strokeWidth="1.4" />
-			</svg>
-		);
-	return (
-		<svg className="block size-4 text-green" viewBox="0 0 16 16" aria-hidden>
-			<circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" strokeWidth="1.4" />
-			<path
-				d="M4.9 8.2l2.1 2.1 4.2-4.2"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.6"
-				strokeLinecap="round"
-				strokeLinejoin="round"
-			/>
-		</svg>
-	);
-}
-
-/** The vertical line through the nodes, drawn as a segment above and below
- *  each one so it breaks cleanly around the glyph instead of running behind it
- *  (a node punched through with its own background can't sit on a row that
- *  changes colour on hover). */
-function Rail({
-	first,
-	last,
-	children,
-}: {
-	first?: boolean;
-	last?: boolean;
-	children: React.ReactNode;
-}) {
-	return (
-		<span className="flex w-4 shrink-0 flex-col items-center self-stretch">
-			<span className={cn("w-px flex-1 bg-line", first && "invisible")} />
-			<span className="my-[3px] shrink-0">{children}</span>
-			<span className={cn("w-px flex-1 bg-line", last && "invisible")} />
-		</span>
-	);
-}
+/* The rail and its nodes live in ./StackRail so this component stays focused
+   on the popup and its navigation rows. */
 
 const ROW = "flex items-stretch gap-2.5 pr-1.5 pl-3";
 
@@ -122,9 +52,9 @@ function StackRow({
 	// absolute colour and lands *lighter* than the popup's panel in light mode.
 	return (
 		<li className={cn(ROW, current ? "bg-hover" : "hover:bg-hover")}>
-			<Rail first={first}>
+			<StackRail first={first}>
 				<StackNode state={layer.state} isDraft={layer.isDraft} />
-			</Rail>
+			</StackRail>
 			<a
 				className="min-w-0 flex-1 py-2 no-underline"
 				href={inApp || layer.url}
@@ -152,7 +82,7 @@ function StackRow({
 				</span>
 			</a>
 			<a
-				className={cn(PR_ROW_OUT, "self-center")}
+				className={cn(PR_ROW_OUT, "self-center phone:size-11")}
 				href={layer.url}
 				target="_blank"
 				rel="noopener"
@@ -237,9 +167,9 @@ export function PrStackChip({
 					))}
 					{/* The trunk: not a layer, just where the bottom one lands. */}
 					<li className={cn(ROW, "py-2")}>
-						<Rail last>
+						<StackRail last>
 							<StackNode />
-						</Rail>
+						</StackRail>
 						<span className="min-w-0 flex-1 truncate font-mono text-label text-faint">
 							{stack.baseRefName}
 						</span>

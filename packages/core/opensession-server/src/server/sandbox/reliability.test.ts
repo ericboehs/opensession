@@ -11,9 +11,17 @@ describe("sandbox start reliability", () => {
     expect(isTransientSandboxStartError(new Error("request timed out"))).toBe(true);
   });
 
-  test("does not retry credential, quota, or configuration failures", () => {
+  test("does not retry credential, quota, rate-limit, or configuration failures", () => {
     expect(isTransientSandboxStartError(Object.assign(new Error("credential rejected with 503"), { status: 503 }))).toBe(false);
     expect(isTransientSandboxStartError(new Error("quota exceeded"))).toBe(false);
+    expect(
+      isTransientSandboxStartError(
+        Object.assign(
+          new Error("Rate limit hit: 150 box starts per day. Your plan allows 150/day."),
+          { status: 429, code: "rate_limited" },
+        ),
+      ),
+    ).toBe(false);
     expect(isTransientSandboxStartError(new Error("provider is not configured"))).toBe(false);
   });
 

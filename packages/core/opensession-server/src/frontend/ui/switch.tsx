@@ -32,18 +32,51 @@ const trackClasses = (size: SwitchSize) =>
  *  and the capsule, at 26×16. */
 const thumbClasses = (size: SwitchSize) =>
 	cn(
-		"absolute left-0.5 top-0.5 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.22),0_0_0_1px_rgba(0,0,0,0.07)] transition-[transform,background-color] duration-[var(--dur-micro)] ease-[var(--ease)] data-[checked]:bg-on-accent-control",
+		"absolute left-0.5 top-0.5 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.22),0_0_0_1px_rgba(0,0,0,0.07)] transition-[translate,background-color] duration-[var(--dur-micro)] ease-[var(--ease)] data-[checked]:bg-on-accent-control",
 		size === "sm"
 			? "h-4 w-[26px] data-[checked]:translate-x-[14px]"
 			: "h-5 w-8 data-[checked]:translate-x-[18px]",
 	);
+
+const STRETCH_ANIMATION_ID = "switch-thumb-stretch";
+
+/** Stretch only while the thumb travels, anchored toward its destination. */
+function animateThumbTravel(thumb: HTMLElement, checked: boolean) {
+	if (
+		!thumb.animate ||
+		window.matchMedia("(prefers-reduced-motion: reduce)").matches
+	)
+		return;
+	thumb
+		.getAnimations()
+		.find((animation) => animation.id === STRETCH_ANIMATION_ID)
+		?.cancel();
+	const origin = checked ? "left center" : "right center";
+	const easing =
+		getComputedStyle(thumb).getPropertyValue("--ease").trim() || "ease-out";
+	const animation = thumb.animate(
+		[
+			{ scale: "1 1", transformOrigin: origin, easing },
+			{ scale: "1.12 1", transformOrigin: origin, easing, offset: 0.4 },
+			{ scale: "1 1", transformOrigin: origin },
+		],
+		{ duration: 150 },
+	);
+	animation.id = STRETCH_ANIMATION_ID;
+}
 
 type SwitchProps = Omit<React.ComponentProps<typeof BaseSwitch.Root>, "size"> & {
 	className?: string;
 	size?: SwitchSize;
 };
 
-export function Switch({ className, size = "md", ...props }: SwitchProps) {
+export function Switch({
+	className,
+	size = "md",
+	onCheckedChange,
+	...props
+}: SwitchProps) {
+	const thumbRef = React.useRef<HTMLSpanElement>(null);
 	return (
 		<BaseSwitch.Root
 			className={cn(
@@ -53,9 +86,13 @@ export function Switch({ className, size = "md", ...props }: SwitchProps) {
 				"data-[disabled]:cursor-default data-[disabled]:opacity-40",
 				className,
 			)}
+			onCheckedChange={(checked, eventDetails) => {
+				if (thumbRef.current) animateThumbTravel(thumbRef.current, checked);
+				onCheckedChange?.(checked, eventDetails);
+			}}
 			{...props}
 		>
-			<BaseSwitch.Thumb className={thumbClasses(size)} />
+			<BaseSwitch.Thumb ref={thumbRef} className={thumbClasses(size)} />
 		</BaseSwitch.Root>
 	);
 }

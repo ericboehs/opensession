@@ -140,6 +140,7 @@ export function sendPendingSlackComposer(
 	requestId: string,
 	channel: SlackChannelOption,
 	permalink?: string,
+	ts?: string,
 ): boolean {
 	const pending = pendingSlackComposers.get(sessionId);
 	if (!pending || pending.request.id !== requestId || pending.status !== "sending") return false;
@@ -155,6 +156,7 @@ export function sendPendingSlackComposer(
 		status: "sent",
 		channel,
 		permalink,
+		ts,
 	});
 	return true;
 }

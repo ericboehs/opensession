@@ -33,11 +33,11 @@ function mockRunAgent(scripts: Array<StreamEvent[] | ((opts: RunAgentOpts) => St
 
 function reply(text: string, extra: Partial<StreamEvent> = {}): StreamEvent[] {
 	return [
-		{ type: "init", sessionId: "oc-1", model: "opencode/anthropic/claude-sonnet-5" },
+		{ type: "init", sessionId: "oc-1", model: "pi/anthropic/claude-sonnet-5" },
 		{ type: "text_chunk", text },
 		{
 			type: "done",
-			model: "opencode/anthropic/claude-sonnet-5",
+			model: "pi/anthropic/claude-sonnet-5",
 			usage: {
 				inputTokens: 10,
 				outputTokens: 5,
@@ -228,12 +228,12 @@ describe("runAgentCollect", () => {
 	test("accumulates text, captures session id, model, tokens", async () => {
 		mockRunAgent([
 			[
-				{ type: "init", sessionId: "oc-abc", model: "opencode/openai/gpt-5.5" },
+				{ type: "init", sessionId: "oc-abc", model: "pi/openai/gpt-5.5" },
 				{ type: "text_chunk", text: "hello " },
 				{ type: "text_chunk", text: "world" },
 				{
 					type: "done",
-					model: "opencode/openai/gpt-5.5",
+					model: "pi/openai/gpt-5.5",
 					usage: {
 						inputTokens: 100,
 						outputTokens: 20,
@@ -247,7 +247,7 @@ describe("runAgentCollect", () => {
 		const res = await runAgentCollect({ prompt: "p", cwd: "/tmp", mcpServers: [] });
 		expect(res.text).toBe("hello world");
 		expect(res.engineSessionId).toBe("oc-abc");
-		expect(res.model).toBe("opencode/openai/gpt-5.5");
+		expect(res.model).toBe("pi/openai/gpt-5.5");
 		expect(res.tokens).toEqual({ input: 100, output: 20 });
 		expect(res.error).toBeUndefined();
 	});
@@ -278,23 +278,23 @@ describe("runAgentCollect", () => {
 		// complete reply on the fallback model → done.
 		mockRunAgent([
 			[
-				{ type: "init", sessionId: "oc-a", model: "opencode/anthropic/claude-fable-5" },
+				{ type: "init", sessionId: "oc-a", model: "pi/anthropic/claude-fable-5" },
 				{ type: "text_chunk", text: "I started answering but " },
 				{
 					type: "model_switch",
-					fromModel: "opencode/anthropic/claude-fable-5",
-					toModel: "opencode/anthropic/claude-sonnet-5",
+					fromModel: "pi/anthropic/claude-fable-5",
+					toModel: "pi/anthropic/claude-sonnet-5",
 				},
 				{
 					type: "text_chunk",
-					text: "\n\n[runner] opencode/anthropic/claude-fable-5 usage exhausted on all accounts; falling back to opencode/anthropic/claude-sonnet-5.\n\n",
+					text: "\n\n[runner] pi/anthropic/claude-fable-5 usage exhausted on all accounts; falling back to pi/anthropic/claude-sonnet-5.\n\n",
 				},
-				{ type: "init", sessionId: "oc-b", model: "opencode/anthropic/claude-sonnet-5" },
+				{ type: "init", sessionId: "oc-b", model: "pi/anthropic/claude-sonnet-5" },
 				{ type: "text_chunk", text: "the complete " },
 				{ type: "text_chunk", text: "fresh reply" },
 				{
 					type: "done",
-					model: "opencode/anthropic/claude-sonnet-5",
+					model: "pi/anthropic/claude-sonnet-5",
 					usage: {
 						inputTokens: 7,
 						outputTokens: 3,
@@ -307,7 +307,7 @@ describe("runAgentCollect", () => {
 		]);
 		const res = await runAgentCollect({ prompt: "p", cwd: "/tmp", mcpServers: [] });
 		expect(res.text).toBe("the complete fresh reply");
-		expect(res.model).toBe("opencode/anthropic/claude-sonnet-5");
+		expect(res.model).toBe("pi/anthropic/claude-sonnet-5");
 		expect(res.engineSessionId).toBe("oc-b");
 		expect(res.error).toBeUndefined();
 	});
@@ -389,7 +389,7 @@ describe("workflowExecutor", () => {
 		);
 		await workflowExecutor.execute({ prompt: "b", opts: {}, seq: 1 }, makeCtx({ defaultModel: "gpt-5.5" }));
 		expect(calls[0].model).toBe("claude-opus-4-8");
-		expect(calls[1].model).toBe("gpt-5.5");
+		expect(calls[1].model).toBe("gpt-5.6-sol");
 	});
 
 	test("effort: sent when the model offers the level, dropped when it doesn't", async () => {

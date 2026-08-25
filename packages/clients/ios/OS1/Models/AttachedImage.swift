@@ -6,7 +6,11 @@ import UniformTypeIdentifiers
 /// One image attached to a message or new-session prompt, normalized at pick
 /// time: downscaled to the vision path's useful size and re-encoded as JPEG so
 /// a 12 MP camera photo doesn't ride the WebSocket at 40 MB of base64.
-struct AttachedImage: Identifiable, Equatable {
+struct AttachedImage: Identifiable, Equatable, Sendable {
+    private static let serverMediaTypes = [
+        "image/png", "image/jpeg", "image/gif", "image/webp",
+    ]
+
     let id: String
     let jpegData: Data
     /// What the bytes actually are. Anything this app encodes itself is JPEG,
@@ -28,10 +32,27 @@ struct AttachedImage: Identifiable, Equatable {
         self.mediaType = mediaType
     }
 
+    /// Return a data URL the server can stage. Ordinary JPEG/PNG/GIF/WebP
+    /// images stay byte-for-byte identical; older HEIC/other image messages
+    /// are converted once at the transport boundary.
+    static func serverDataURL(_ dataURL: String) -> String? {
+        guard let comma = dataURL.firstIndex(of: ","), dataURL.hasPrefix("data:")
+        else { return nil }
+        let header = dataURL[dataURL.index(dataURL.startIndex, offsetBy: 5)..<comma]
+        let parts = header.split(separator: ";")
+        guard parts.count == 2, parts[1] == "base64",
+              dataURL.index(after: comma) < dataURL.endIndex
+        else { return nil }
+        let declared = String(parts[0])
+        if serverMediaTypes.contains(declared) { return dataURL }
+        return AttachedImage(dataURL: dataURL)?.dataURL
+    }
+
     /// The inverse of `dataURL` — re-stage an image that has already been
     /// normalized (an unsent outbox message pulled back into the composer, a
-    /// queued message reopened for editing), without paying for a
-    /// decode/re-encode round trip.
+    /// queued message reopened for editing). Formats the server can stage keep
+    /// their original bytes; older HEIC/other image messages are converted to
+    /// JPEG so retrying one cannot wedge the durable outbox forever.
     init?(dataURL: String) {
         guard dataURL.hasPrefix("data:"),
               let comma = dataURL.firstIndex(of: ","),
@@ -42,8 +63,16 @@ struct AttachedImage: Identifiable, Equatable {
         let header = dataURL[dataURL.index(dataURL.startIndex, offsetBy: 5)..<comma]
         let declared = header.split(separator: ";").first.map(String.init) ?? ""
         self.id = UUID().uuidString
-        self.jpegData = data
-        self.mediaType = declared.hasPrefix("image/") ? declared : "image/jpeg"
+        if Self.serverMediaTypes.contains(declared) {
+            self.jpegData = data
+            self.mediaType = declared
+        } else {
+            guard declared.hasPrefix("image/"),
+                  let jpeg = Self.normalizedJPEG(from: data)
+            else { return nil }
+            self.jpegData = jpeg
+            self.mediaType = "image/jpeg"
+        }
     }
 
     init?(rawData: Data) {

@@ -17,7 +17,7 @@
  * `sandbox` field keep the unchanged in-process host path.
  */
 
-import type { StreamEvent } from "../run-events";
+import type { StreamEvent, ImageInput } from "../run-events";
 import type { RunAgentOpts } from "../agent-runner";
 import type { RunHostSpec } from "../../runner-host/protocol";
 
@@ -48,7 +48,7 @@ export type SandboxProviderUsability =
 export interface SandboxSessionSpec {
   /** Open Session session id (bks-…). Container providers name resources by it. */
   sessionId: string;
-  /** Registered repo id (worktree.ts REPOS). Defaults to tella-fusion. */
+  /** Registered repo id (worktree.ts REPOS). Defaults to the instance default repo. */
   repo?: string;
   /** Branch for code-mode worktrees. Required unless ask/sharedCheckout/cwd. */
   branch?: string;
@@ -151,8 +151,8 @@ export interface RunHandle {
   events(): AsyncGenerator<StreamEvent>;
   /** Whether the run's backend supports mid-run steering (claude yes, exec-codex no). */
   steerable: boolean;
-  steer(text: string): boolean;
-  interruptSteer(text: string): boolean;
+  steer(text: string, images?: ImageInput[]): boolean;
+  interruptSteer(text: string, images?: ImageInput[]): boolean;
   cancel(): boolean;
 }
 
@@ -206,6 +206,9 @@ export interface SandboxProvider {
   pause?(sandboxId: string): Promise<void>;
   /** Wake a paused sandbox and return its live handle. */
   resume?(sandboxId: string): Promise<Sandbox | null>;
+  /** Persist a session-owned filesystem checkpoint after a clean turn.
+   * Providers whose stopped sandboxes retain disk do not need this hook. */
+  checkpoint?(sandboxId: string): Promise<void>;
   /** Tear the sandbox down (session delete/archive). Workspace data outlives
    *  it where the provider stores it on the host (local worktrees always do). */
   destroy(sandboxId: string): Promise<void>;

@@ -15,7 +15,7 @@
  * null and the caller proceeds with full triage — a real ticket must never
  * be dropped or downgraded because the router hiccuped.
  *
- * The routing prompt is editable from the Connections UI (stored in
+ * The routing prompt is editable from the Plain integration modal (stored in
  * ~/.opensession-plain-router.json); the JSON output contract is appended by
  * code so prompt tweaks can't break parsing.
  */

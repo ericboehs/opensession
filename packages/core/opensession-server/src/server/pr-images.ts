@@ -4,15 +4,15 @@
  * origin, so GitHub's camo proxy can fetch them and they render inline in
  * PR/issue markdown everywhere — private repos included.
  *
- * Why this mechanism (empirical, 2026-07-26, probes on tellahq/backstage):
+ * Why this mechanism (empirical, measured against a private repo):
  * - GitHub's own attachment CDN (what the web UI uses — POST
  *   /upload/policies/assets) is a cookie-session form endpoint: it 422s under
- *   a PAT/Bearer token and has no documented API. Not usable for a bot.
+ *   an API bearer token and has no documented API. Not usable for a bot.
  * - Committed blob `?raw=true` URLs on a private repo do NOT render inline in
  *   comments: GitHub leaves them un-proxied in body_html, but the browser's
  *   <img> subresource fetch is not the top-level navigation the
  *   cookie→signed-redirect dance needs — human-verified broken image icon on
- *   tellahq/backstage#78 (the click-through link works, the inline img 404s).
+ *   a private repo's PR (the click-through link works, the inline img 404s).
  * - raw.githubusercontent.com / release-asset URLs fail the same way or
  *   worse (raw.githubusercontent never sees github.com cookies at all).
  * - Tailnet-hosted media URLs get camo-rewritten but camo can't reach the
@@ -29,8 +29,8 @@
  * listing endpoint. Anyone with the URL (including GitHub's camo cache) can
  * fetch the image, so don't attach anything that must stay repo-member-only.
  *
- * The GET /pr-images/* route registers on the webhook server (port 3848,
- * public via Caddy) — see prImagePublicRoutes(), wired in opensession.ts.
+ * The GET /pr-images/* route registers on the fail-closed public ingress
+ * gateway — see prImagePublicRoutes(), wired in opensession.ts.
  * Webhook routes bind at boot: changes here need a real restart.
  */
 
@@ -142,8 +142,8 @@ export function prImageMarkdown(img: UploadedPrImage): string {
 // Capability URLs are unlisted, not access-controlled: once one is posted on
 // a PUBLIC repo, GitHub's camo proxy caches the image and anyone reading the
 // thread sees it — equivalent to publishing the screenshot (PR #78 review
-// P1). The registry contains public tellahq repos (gst-plugins-rs, …), and
-// the tellahq-scoped credential can post to them, so callers MUST gate image
+// P1). The registry can contain PUBLIC repos, and the instance credential
+// can post to them, so callers MUST gate image
 // comments on visibility. Fail-closed: unknown visibility refuses.
 const repoVisibilityCache = new Map<string, boolean>();
 
@@ -152,7 +152,8 @@ const repoVisibilityCache = new Map<string, boolean>();
 export async function repoIsPrivate(ghRepo: string): Promise<boolean | null> {
   const cached = repoVisibilityCache.get(ghRepo);
   if (cached !== undefined) return cached;
-  const token = process.env.GITHUB_API_TOKEN || process.env.GH_TOKEN;
+  const { botGhToken } = await import("./github-limit");
+  const token = await botGhToken();
   if (!token) return null;
   try {
     const res = await fetch(`https://api.github.com/repos/${ghRepo}`, {

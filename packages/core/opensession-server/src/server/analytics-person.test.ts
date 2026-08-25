@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { TeamMember } from "./config";
 import { __setIdentitiesForTest } from "./shared/user-mappings";
-import { analyticsPersonName, analyticsRepo, attributedSessionOutput } from "./analytics";
+import { analyticsPersonName, analyticsRepo } from "./analytics";
 
 const TEAM: TeamMember[] = [
 	{
@@ -50,15 +50,5 @@ describe("Analytics repo attribution", () => {
 	test("falls back to worktree inference for sessions without a repo ID", () => {
 		expect(analyticsRepo("", "/home/example/projects/opensession", repos)).toBe("opensession");
 		expect(analyticsRepo("", "/home/example/projects/unknown", repos)).toBeNull();
-	});
-});
-
-describe("Analytics output attribution", () => {
-	test("uses audit output when engine attribution is unavailable", () => {
-		expect(attributedSessionOutput(90, 20, undefined)).toBe(90);
-	});
-
-	test("adds direct-engine audit output without duplicating OpenCode output", () => {
-		expect(attributedSessionOutput(90, 20, 100)).toBe(120);
 	});
 });

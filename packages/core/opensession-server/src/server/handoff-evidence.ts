@@ -17,7 +17,7 @@
  *
  * Honesty about what we can know: `isError` is reliable for tool-level failures
  * (a failed edit, a tool that threw) on every engine, but a bash command that
- * exits non-zero does NOT set it on the opencode engine — the output comes back
+ * exits non-zero does NOT set it on the pi engine — the output comes back
  * as an ordinary result. So this block reports "failures the tool reported" and
  * a bare list of commands run; it never claims a command passed. Inferring
  * failure from the word "error" in output would mislabel every successful
@@ -378,14 +378,19 @@ const BEACON_THROTTLE_MS = 10 * 60_000;
 
 export interface BeaconDeps {
 	readSessionFile: (id: string) => Record<string, unknown> | null;
-	stamp: (id: string, at: string) => void;
-	deliver: (parentId: string, content: string) => Promise<unknown>;
+	stamp: (id: string, at: string) => void | Promise<void>;
+	deliver: (parentId: string, content: string, deliveryId: string) => Promise<unknown>;
 	evidence: (id: string) => Promise<HandoffEvidence | null>;
 	now?: () => number;
 }
 
 async function defaultBeaconDeps(): Promise<BeaconDeps> {
-	const [{ OPENSESSION_SESSIONS_DIR }, { getSessionControl }, { touchNativeSession }, fs] =
+	const [
+		{ OPENSESSION_SESSIONS_DIR },
+		{ getSessionControl },
+		{ touchNativeSessionStrict },
+		fs,
+	] =
 		await Promise.all([
 			import("./paths"),
 			import("./session-control"),
@@ -402,11 +407,13 @@ async function defaultBeaconDeps(): Promise<BeaconDeps> {
 				return null;
 			}
 		},
-		stamp: (id, at) => touchNativeSession(id, { parentNotifiedAt: at }),
-		deliver: (parentId, content) =>
-			// No user → deliverToSession leaves off the "[name]" prefix: this is
-			// the server speaking, not a person and not the worker.
-			getSessionControl().deliverToSession(parentId, content, undefined),
+		stamp: (id, at) =>
+			touchNativeSessionStrict(id, { parentNotifiedAt: at }),
+		deliver: (parentId, content, deliveryId) =>
+			// No user means the server is speaking, not a person or worker.
+			getSessionControl().deliverToSession(parentId, content, undefined, {
+				deliveryId,
+			}),
 		evidence: (id) => collectHandoffEvidence(id),
 	};
 }
@@ -426,6 +433,7 @@ export async function notifyParentOfFailedRun(
 	sessionId: string,
 	errorMessage: string,
 	deps?: BeaconDeps,
+	projectionId?: string,
 ): Promise<BeaconOutcome> {
 	try {
 		const d = deps ?? (await defaultBeaconDeps());
@@ -442,18 +450,30 @@ export async function notifyParentOfFailedRun(
 		if (since(file.parentNotifiedAt) < BEACON_THROTTLE_MS) return "throttled";
 
 		let block = "";
-		try {
-			const ev = await d.evidence(sessionId);
-			if (ev) block = `\n\n${formatHandoffEvidence(ev)}`;
-		} catch {}
+		// Actor projections retry one permanent destination identity. Keep that
+		// destination's payload immutable across a crash after delivery: live Git,
+		// transcript, and tool evidence can change before the retry. Compatibility
+		// beacons without a projection fence retain the richer current evidence.
+		if (!projectionId) {
+			try {
+				const ev = await d.evidence(sessionId);
+				if (ev) block = `\n\n${formatHandoffEvidence(ev)}`;
+			} catch {}
+		}
 		const content =
 			`Server notice: worker task \`${sessionId}\` ended in error without reporting back.\n` +
 			`error: ${String(errorMessage).slice(0, 300)}\n` +
 			`Inspect with task_status("${sessionId}"), or resume it with send_to_session.` +
 			block;
 
-		d.stamp(sessionId, new Date(now).toISOString());
-		await d.deliver(parentId, content);
+		await d.deliver(
+			parentId,
+			content,
+			projectionId
+				? `worker-failure:${sessionId}:${projectionId}`
+				: `worker-failure:${sessionId}`,
+		);
+		await d.stamp(sessionId, new Date(now).toISOString());
 		return "sent";
 	} catch {
 		return "failed";

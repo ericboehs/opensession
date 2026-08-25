@@ -24,6 +24,7 @@ artifactName: OpenSession-${version}-${arch}.${ext}
 directories:
   buildResources: build
   output: dist
+beforePack: scripts/before-pack.js
 files:
   - src/**/*
 # macOS 26 (Tahoe) renders apps that only ship a legacy .icns on a system
@@ -36,6 +37,8 @@ files:
 extraResources:
   - from: build/Assets.car
     to: Assets.car
+  - from: build/vendor/os1-dictation
+    to: os1-dictation
 mac:
   category: public.app-category.developer-tools
   icon: build/icon.icns
@@ -66,6 +69,7 @@ mac:
     # system prompt shows. Pairs with com.apple.security.device.audio-input in
     # the entitlements.
     NSMicrophoneUsageDescription: Dictate prompts into the composer.
+    NSSpeechRecognitionUsageDescription: Transcribe prompts while you speak.
     CFBundleURLTypes:
       - CFBundleURLName: Open Session deep link
         CFBundleURLSchemes: [os1]

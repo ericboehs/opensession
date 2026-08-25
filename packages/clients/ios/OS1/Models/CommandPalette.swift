@@ -55,7 +55,8 @@ enum CommandPaletteRanking {
     static func results(
         _ entries: [CommandPaletteEntry],
         query: String,
-        sessionLimit: Int = 40
+        sessionLimit: Int = 40,
+        contentMatches: Set<String> = []
     ) -> [CommandPaletteEntry] {
         let tokens = fold(query).split(separator: " ").map(String.init)
         var matched: [Candidate] = []
@@ -78,8 +79,15 @@ enum CommandPaletteRanking {
                 }
                 total += score
             }
-            guard matchedEveryToken else { continue }
-            candidate.score = total
+            if matchedEveryToken {
+                candidate.score = total
+            } else if entry.kind == .session, contentMatches.contains(entry.id) {
+                // A backend transcript hit ranks after every metadata match,
+                // whose weakest score is still at least one.
+                candidate.score = 0
+            } else {
+                continue
+            }
             matched.append(candidate)
         }
 

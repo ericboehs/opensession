@@ -16,11 +16,13 @@ import {
 	__setEngineForTest,
 	__setModelAvailabilityForTest,
 	engineFamily,
+	fallbackContinuationPrompt,
 	runAgent,
 } from "./agent-runner";
 import { __setActiveRunsPathForTest, activeRunRecords } from "./run-journal";
 import type { StreamEvent } from "./run-events";
 import { makeFakeEngine } from "./testing/fake-engine";
+import { stripContext } from "./prompt-context";
 
 const journalTmp = `${mkdtempSync(`${tmpdir()}/fake-engine-test-`)}/active-runs.json`;
 const prevJournal = __setActiveRunsPathForTest(journalTmp);
@@ -69,7 +71,7 @@ describe("fake engine through runAgent", () => {
 			"done",
 		]);
 		expect(fake.calls).toHaveLength(1);
-		expect(fake.calls[0].model).toBe("opencode/anthropic/claude-sonnet-5");
+		expect(fake.calls[0].model).toBe("pi/anthropic/claude-sonnet-5");
 		expect(fake.calls[0].prompt).toBe("do the thing");
 		const done = events.at(-1)!;
 		expect(done.sessionId).toBe("ses_fake1");
@@ -124,19 +126,46 @@ describe("fake engine through runAgent", () => {
 		]);
 		const sw = events[1];
 		// fromModel is the picker-form id (resolveConcreteModel keeps native ids
-		// native); toModel is the opencode-mapped hop target.
+		// native); toModel is the pi-mapped hop target.
 		expect(sw.fromModel).toBe("claude-sonnet-5");
-		expect(sw.toModel).toBe("opencode/openai/gpt-5.6-sol");
+		expect(sw.toModel).toBe("pi/openai/gpt-5.6-sol");
 		expect(sw.switchReason).toBe("out of credits");
 		expect(fake.calls).toHaveLength(2);
-		expect(fake.calls[1].model).toBe("opencode/openai/gpt-5.6-sol");
-		// Cross-family hop: no engine-session resume — a fresh session, with the
-		// empty-handoff note telling the model prior partial work may exist.
+		expect(fake.calls[1].model).toBe("pi/openai/gpt-5.6-sol");
+		// A direct runAgent caller may have no early transcript row to name.
+		// runAgent assigns one stable id to the logical turn so both model attempts
+		// upsert the same user entry instead of rendering the prompt twice.
+		expect(fake.calls[0].opts.promptEntryId).toBeTruthy();
+		expect(fake.calls[1].opts.promptEntryId).toBe(
+			fake.calls[0].opts.promptEntryId,
+		);
+		expect(fake.calls[0].opts.promptEntryId).toBe(
+			fake.calls[0].opts.startToken,
+		);
+		// Cross-family hop: no engine-session resume, just a fresh session with
+		// the empty-handoff note telling the model prior partial work may exist.
 		expect(fake.calls[1].sessionId).toBeUndefined();
 		expect(fake.calls[1].prompt).toContain("previous attempt");
 		expect(fake.calls[1].journalKind).toBe("prompt-fallback");
 		expect(fake.calls[0].firstJournaledAt).toBeTruthy();
 		expect(fake.calls[1].firstJournaledAt).toBe(fake.calls[0].firstJournaledAt);
+	});
+
+	test("a provider handoff continues without another visible user turn", () => {
+		const handoff = [
+			"## Engine handoff",
+			"Conversation transcript:",
+			"- User: keep going",
+			"- Assistant: partial work",
+		].join("\n");
+		const continued = fallbackContinuationPrompt(handoff, "keep going", false);
+		expect(continued).toContain("partial work");
+		expect(stripContext(continued)).toBe("");
+		// A fresh provider still needs an image-bearing prompt. Its stable entry
+		// id makes this an upsert rather than another transcript row.
+		expect(stripContext(fallbackContinuationPrompt(handoff, "inspect this", true))).toBe(
+			"inspect this",
+		);
 	});
 
 	test("Pi exhaustion stays on Pi while continuing through the model fallback walk", async () => {
@@ -190,11 +219,11 @@ describe("fake engine through runAgent", () => {
 		);
 		expect(types(events)).toEqual(["model_switch", "init", "text_chunk", "done"]);
 		expect(fake.calls).toHaveLength(1);
-		expect(fake.calls[0].model).toBe("opencode/openai/gpt-5.6-sol");
+		expect(fake.calls[0].model).toBe("pi/openai/gpt-5.6-sol");
 		expect(events[0]).toMatchObject({
 			type: "model_switch",
 			fromModel: "claude-sonnet-5",
-			toModel: "opencode/openai/gpt-5.6-sol",
+			toModel: "pi/openai/gpt-5.6-sol",
 		});
 	});
 
@@ -272,46 +301,12 @@ describe("fake engine through runAgent", () => {
 		expect(fake.calls).toHaveLength(2);
 		expect(events.find((event) => event.type === "model_switch")).toMatchObject({
 			fromModel: "claude-sonnet-5",
-			toModel: "opencode/openai/gpt-5.6-sol",
+			toModel: "pi/openai/gpt-5.6-sol",
 			temporaryFallback: true,
 		});
 		expect(events.find((event) => event.type === "text_chunk")).toMatchObject({
 			type: "text_chunk",
 			text: "recovered",
-		});
-		expect(events.at(-1)).toMatchObject({ type: "done" });
-	});
-
-	test("recovers when the status-poll watchdog loses an engine server", async () => {
-		const fake = makeFakeEngine([
-			{
-				kind: "error",
-				content:
-					"opencode server stopped answering status polls and refused a health probe — ending the turn " +
-					"(engine state preserved; send again to continue)",
-			},
-			{ kind: "clean", text: ["continued automatically"] },
-		]);
-		__setEngineForTest(fake.engine);
-		const events = await collect(
-			runAgent({
-				prompt: "p",
-				cwd: "/tmp",
-				mcpServers: [],
-				model: "claude-sonnet-5",
-				fallbackModel: "claude-opus-5",
-				journal: { osSessionId: "bks-test-status-poll-watchdog", kind: "prompt" },
-			}),
-		);
-		expect(fake.calls).toHaveLength(2);
-		expect(events.find((event) => event.type === "model_switch")).toMatchObject({
-			fromModel: "claude-sonnet-5",
-			toModel: "opencode/openai/gpt-5.6-sol",
-			temporaryFallback: true,
-		});
-		expect(events.find((event) => event.type === "text_chunk")).toMatchObject({
-			type: "text_chunk",
-			text: "continued automatically",
 		});
 		expect(events.at(-1)).toMatchObject({ type: "done" });
 	});
@@ -365,16 +360,16 @@ describe("fake engine through runAgent", () => {
 		release();
 		const events = await collecting;
 
-		expect(run?.model).toBe("opencode/anthropic/claude-opus-5");
+		expect(run?.model).toBe("pi/anthropic/claude-opus-5");
 		expect(run?.selectedModel).toBe("dial/medium");
 		expect(run?.transientFallback).toBe(true);
 		const switchEvent = events.find((event) => event.type === "model_switch");
 		expect(switchEvent?.temporaryFallback).toBe(true);
 	});
 
-	test("pi model ids reach the engine seam unmapped (no opencode rewrite)", async () => {
-		// The seam sits AFTER model mapping and BEFORE the pi/opencode branch,
-		// so this asserts both halves of the pi dispatch contract: toOpencodeModel
+	test("pi model ids reach the engine seam unmapped (no pi rewrite)", async () => {
+		// The seam sits AFTER model mapping and BEFORE the pi/pi branch,
+		// so this asserts both halves of the pi dispatch contract: toPiModel
 		// leaves pi/<provider>/<model> ids untouched, and a fake engine still
 		// intercepts pi-model turns.
 		const fake = makeFakeEngine([
@@ -393,20 +388,6 @@ describe("fake engine through runAgent", () => {
 		expect(types(events)).toEqual(["init", "text_chunk", "done"]);
 		expect(fake.calls).toHaveLength(1);
 		expect(fake.calls[0].model).toBe("pi/anthropic/claude-opus-5");
-	});
-
-	test("engineFamily scopes pi ids to the pi engine (never resumable cross-engine)", () => {
-		// Same upstream provider, different engine ⇒ different family: a fallback
-		// hop pi→opencode must start fresh with a transcript handoff, never hand
-		// a pi session uuid to opencode as a resume target.
-		expect(engineFamily("pi/anthropic/claude-opus-5")).toBe("pi-anthropic");
-		expect(engineFamily("pi/anthropic/claude-opus-5")).not.toBe(
-			engineFamily("opencode/anthropic/claude-opus-5"),
-		);
-		// Pi→pi stays same-family, so a pi run CAN resume its own session.
-		expect(engineFamily("pi/anthropic/claude-sonnet-5")).toBe(
-			engineFamily("pi/anthropic/claude-opus-5"),
-		);
 	});
 
 	test("script exhaustion fails loud instead of hanging", async () => {

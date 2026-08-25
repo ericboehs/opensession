@@ -242,7 +242,7 @@ fi
 # path), detached into its own transient systemd scope — clone VMs must
 # OUTLIVE whoever spawned them (previews died on every opensession restart
 # while FCs were children of the service cgroup; same fix as the detached
-# opencode servers).
+# engine servers).
 systemd-run --collect --unit "os-fc-clone$IDX" \
   --property=NoNewPrivileges=yes \
   --property=PrivateTmp=yes \

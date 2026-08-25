@@ -26,14 +26,21 @@ const tmp = mkdtempSync(`${tmpdir()}/zz-fake-run-`);
 let runSession: typeof import("./run-session");
 let agentRunner: typeof import("./agent-runner");
 let sessionCache: typeof import("./session-cache");
+let slashCommands: typeof import("./slash-commands");
 let runState: typeof import("./run-state");
 let queueState: typeof import("./queue-state");
 let fakeEngineMod: typeof import("./testing/fake-engine");
-let ocTranscript: typeof import("./opencode-transcript");
+let ocTranscript: typeof import("./transcript-persistence");
 let transcriptStoreMod: typeof import("./transcript-store");
+let memoryV2: typeof import("./memory-v2/runtime");
+let testSessionListStore: import("./session-list-store").SessionListStore | null =
+	null;
+let restoreSessionListStore: (() => void) | null = null;
 let restoreSessionsDir: (() => void) | null = null;
 let restoreJournal: (() => void) | null = null;
 let redirected = false;
+const previousPiDetach = process.env.OPENSESSION_PI_DETACH;
+const previousMemoryDb = process.env.OPENSESSION_MEMORY_DB;
 
 function writeSessionFile(id: string, extra: Record<string, unknown> = {}) {
 	writeFileSync(
@@ -51,10 +58,20 @@ function writeSessionFile(id: string, extra: Record<string, unknown> = {}) {
 }
 
 beforeAll(async () => {
+	process.env.OPENSESSION_PI_DETACH = "0";
+	process.env.OPENSESSION_MEMORY_DB = `${tmp}/memory-v2.sqlite`;
 	(globalThis as any).__opensessionBooted = true;
 	const paths = await import("./paths");
 	const prevDir = paths.__setSessionsDirForTest(tmp);
 	restoreSessionsDir = () => paths.__setSessionsDirForTest(prevDir);
+	const sessionListStoreMod = await import("./session-list-store");
+	testSessionListStore = new sessionListStoreMod.SessionListStore(
+		`${tmp}/session-list.sqlite`,
+	);
+	const previousSessionListStore =
+		sessionListStoreMod.__setSessionListStoreForTest(testSessionListStore);
+	restoreSessionListStore = () =>
+		sessionListStoreMod.__setSessionListStoreForTest(previousSessionListStore);
 	const runJournal = await import("./run-journal");
 	const prevJournal = runJournal.__setActiveRunsPathForTest(
 		`${tmp}/active-runs.json`,
@@ -64,11 +81,14 @@ beforeAll(async () => {
 	runSession = await import("./run-session");
 	agentRunner = await import("./agent-runner");
 	sessionCache = await import("./session-cache");
+	slashCommands = await import("./slash-commands");
 	runState = await import("./run-state");
 	queueState = await import("./queue-state");
 	fakeEngineMod = await import("./testing/fake-engine");
-	ocTranscript = await import("./opencode-transcript");
+	ocTranscript = await import("./transcript-persistence");
 	transcriptStoreMod = await import("./transcript-store");
+	memoryV2 = await import("./memory-v2/runtime");
+	memoryV2.closeMemoryRuntime();
 
 	// Redirect probe: a session file written to our temp dir must be visible
 	// through findSession, or earlier suite files froze the store elsewhere.
@@ -84,9 +104,16 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+	if (previousPiDetach === undefined) delete process.env.OPENSESSION_PI_DETACH;
+	else process.env.OPENSESSION_PI_DETACH = previousPiDetach;
+	memoryV2?.closeMemoryRuntime();
+	if (previousMemoryDb === undefined) delete process.env.OPENSESSION_MEMORY_DB;
+	else process.env.OPENSESSION_MEMORY_DB = previousMemoryDb;
 	agentRunner?.__setEngineForTest(null);
 	restoreJournal?.();
 	restoreSessionsDir?.();
+	restoreSessionListStore?.();
+	testSessionListStore?.close();
 	sessionCache?.invalidateSessionsCache();
 });
 
@@ -114,12 +141,9 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		expect(fake.calls).toHaveLength(1);
 		expect(fake.calls[0].prompt).toContain("do the thing");
 		const data = sessionJson(sid);
-		// engineSessionPatch persisted the fake engine session for later resumes.
-		expect(
-			data.opencodeSessionId === "ses_zz_clean" ||
-				data.claudeSessionId === "ses_zz_clean",
-		).toBe(true);
-		expect(data.lastEngineProvider).toBe("opencode");
+		// engineSessionPatch persisted the fake Pi session for later resumes.
+		expect(data.piSessionId).toBe("ses_zz_clean");
+		expect(data.lastEngineProvider).toBe("pi");
 		expect(data.usage?.inputTokens).toBe(100);
 		expect(data.lastRunError).toBeUndefined();
 		// Lifecycle fully settled: FSM at rest, engine not busy, queue empty.
@@ -133,7 +157,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 	test("failed run: lastRunError recorded, FSM failed (still settled)", async () => {
 		if (!redirected) return;
 		const sid = "bks-zz-error";
-		writeSessionFile(sid);
+		writeSessionFile(sid, { automation: "test-fixture" });
 		sessionCache.invalidateSessionsCache();
 		const fake = fakeEngineMod.makeFakeEngine([
 			// Non-transient, non-usage error: surfaces directly (no fallback walk).
@@ -142,7 +166,6 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		agentRunner.__setEngineForTest(fake.engine);
 
 		await runSession.runSessionPromptAndDrain(sid, "explode please", "Test");
-
 		expect(fake.calls).toHaveLength(1);
 		expect(sessionJson(sid).lastRunError?.message).toContain("boom");
 		expect(runState.getRunState(sid)).toBe("failed");
@@ -160,7 +183,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 	// that centralization only runSessionPromptInner wrote it, and a resumed
 	// run's death left the conversation ending mid-turn with no explanation
 	// (bks-019fb757, 2026-07-31).
-	test("failed run: the failure lands in the transcript as a system chip", () => {
+	test("failed opening run: the failure lands in the transcript before an engine session exists", () => {
 		if (!redirected) return;
 		// The store is a globalThis singleton — if an earlier suite file opened
 		// it against the real sessions dir, skip rather than write to it.
@@ -168,14 +191,10 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		if (!store.dbPath.startsWith(tmp)) return;
 
 		const sid = "bks-zz-error-chip";
-		const engineId = "ses_zz_error_chip";
 		writeSessionFile(sid);
 		sessionCache.invalidateSessionsCache();
-		ocTranscript.recordBksSessionFor(engineId, sid);
 
-		sessionCache.recordRunOutcome(sid, "boom: unrecoverable test failure", {
-			engineSessionId: engineId,
-		});
+		sessionCache.recordRunOutcome(sid, "boom: unrecoverable test failure");
 
 		const chip = store
 			.readTail(sid, 50)
@@ -192,7 +211,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		const engineId = "ses_zz_stop_chip";
 		writeSessionFile(sid);
 		sessionCache.invalidateSessionsCache();
-		ocTranscript.recordBksSessionFor(engineId, sid);
+		ocTranscript.recordEngineSessionOwner(engineId, sid);
 
 		sessionCache.recordRunOutcome(sid, "Usage limit reached on every account", {
 			engineSessionId: engineId,
@@ -214,26 +233,55 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		);
 	});
 
+	test("a recovered Pi run falls back to the Pi transcript for its failure chip", () => {
+		if (!redirected) return;
+		const store = transcriptStoreMod.transcriptStore();
+		if (!store.dbPath.startsWith(tmp)) return;
+
+		const sid = "bks-zz-pi-recovery-chip";
+		const engineId = "pi_zz_recovery_chip";
+		writeSessionFile(sid, {
+			claudeSessionId: "",
+			piSessionId: engineId,
+			lastEngineProvider: "pi",
+		});
+		sessionCache.invalidateSessionsCache();
+		ocTranscript.recordEngineSessionOwner(engineId, sid);
+
+		// Boot recovery failures do not always carry a terminal event session id.
+		// recordRunOutcome must resolve the active engine slot from the session.
+		sessionCache.recordRunOutcome(
+			sid,
+			"Restart recovery stopped unexpectedly. Send the prompt again to continue.",
+		);
+
+		const chip = store
+			.readTail(sid, 50)
+			.entries.find((entry) => entry.type === "system");
+		expect(chip?.content).toBe(
+			"Run failed: Restart recovery stopped unexpectedly. Send the prompt again to continue.",
+		);
+	});
+
 	test("transient fallback does not replace the selected Dial preset", async () => {
 		if (!redirected) return;
 		const sid = "bks-zz-transient-fallback";
 		writeSessionFile(sid, { model: "dial/medium" });
 		sessionCache.invalidateSessionsCache();
 		const fake = fakeEngineMod.makeFakeEngine([
-			{ kind: "error", content: "Our servers are currently overloaded" },
-			{ kind: "clean", engineSessionId: "ses_zz_terra", text: ["recovered"] },
+			{ kind: "error", content: "fetch failed (socket hang up)" },
+			{ kind: "clean", engineSessionId: "ses_zz_opus", text: ["recovered"] },
 		]);
 		agentRunner.__setEngineForTest(fake.engine);
 
 		await runSession.runSessionPromptAndDrain(sid, "keep going", "Test");
-
 		const data = sessionJson(sid);
 		expect(fake.calls.map((call) => call.model)).toEqual([
-			"opencode/openai/gpt-5.6-sol",
-			"opencode/openai/gpt-5.6-terra",
+			"pi/openai/gpt-5.6-sol",
+			"pi/anthropic/claude-opus-5",
 		]);
 		expect(data.model).toBe("dial/medium");
-		expect(data.lastEngineModel).toBe("opencode/openai/gpt-5.6-terra");
+		expect(data.lastEngineModel).toBe("pi/anthropic/claude-opus-5");
 		expect(data.modelHistory).toBeUndefined();
 	});
 
@@ -243,8 +291,8 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		writeSessionFile(sid, { model: "gpt-5.6-sol" });
 		sessionCache.invalidateSessionsCache();
 		const fake = fakeEngineMod.makeFakeEngine([
-			{ kind: "error", content: "Our servers are currently overloaded" },
-			{ kind: "clean", engineSessionId: "ses_zz_terra_direct", text: ["recovered"] },
+			{ kind: "error", content: "fetch failed (socket hang up)" },
+			{ kind: "clean", engineSessionId: "ses_zz_opus_direct", text: ["recovered"] },
 		]);
 		agentRunner.__setEngineForTest(fake.engine);
 
@@ -252,7 +300,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 
 		const data = sessionJson(sid);
 		expect(data.model).toBe("gpt-5.6-sol");
-		expect(data.lastEngineModel).toBe("opencode/openai/gpt-5.6-terra");
+		expect(data.lastEngineModel).toBe("pi/anthropic/claude-opus-5");
 		expect(data.modelHistory).toBeUndefined();
 	});
 
@@ -270,9 +318,78 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		await runSession.runSessionPromptAndDrain(sid, "keep going", "Test");
 
 		const data = sessionJson(sid);
-		expect(data.model).toBe("opencode/openai/gpt-5.6-terra");
+		expect(data.model).toBe("pi/anthropic/claude-opus-5");
 		expect(data.modelHistory).toHaveLength(1);
 		expect(data.modelHistory[0].by).toContain("out of credits");
+	});
+
+	test("the next prompt retries the model selected before a usage fallback", async () => {
+		if (!redirected) return;
+		const sid = "bks-zz-retry-selected-model";
+		writeSessionFile(sid, { model: "dial/medium" });
+		sessionCache.invalidateSessionsCache();
+		const fake = fakeEngineMod.makeFakeEngine([
+			{ kind: "usage_exhausted" },
+			{ kind: "usage_exhausted" },
+			{ kind: "clean", engineSessionId: "ses_zz_fallback", text: ["recovered"] },
+			{ kind: "clean", engineSessionId: "ses_zz_retry", text: ["preferred model is back"] },
+		]);
+		agentRunner.__setEngineForTest(fake.engine);
+
+		await runSession.runSessionPromptAndDrain(sid, "first turn", "Test");
+
+		const fallback = sessionJson(sid);
+		expect(fallback.model).toBe(fake.calls[2].model);
+		expect(fallback.autoFallbackModel).toBe("dial/medium");
+
+		await runSession.runSessionPromptAndDrain(sid, "second turn", "Test");
+
+		expect(fake.calls[3].model).toBe(fake.calls[0].model);
+		const retried = sessionJson(sid);
+		expect(retried.model).toBe("dial/medium");
+		expect(retried.autoFallbackModel).toBeUndefined();
+	});
+
+	test("retrying an implicit selection keeps the instance default implicit", async () => {
+		if (!redirected) return;
+		const sid = "bks-zz-retry-default-model";
+		writeSessionFile(sid, { model: undefined });
+		sessionCache.invalidateSessionsCache();
+		const fake = fakeEngineMod.makeFakeEngine([
+			{ kind: "usage_exhausted" },
+			{ kind: "clean", engineSessionId: "ses_zz_default_fallback", text: ["recovered"] },
+			{ kind: "clean", engineSessionId: "ses_zz_default_retry", text: ["default is back"] },
+		]);
+		agentRunner.__setEngineForTest(fake.engine);
+
+		await runSession.runSessionPromptAndDrain(sid, "first turn", "Test");
+
+		expect(sessionJson(sid).autoFallbackModel).toBeNull();
+
+		await runSession.runSessionPromptAndDrain(sid, "second turn", "Test");
+
+		expect(fake.calls[2].model).toBe(fake.calls[0].model);
+		const retried = sessionJson(sid);
+		expect(retried.model).toBeUndefined();
+		expect(retried.autoFallbackModel).toBeUndefined();
+	});
+
+	test("an explicit model choice cancels the automatic retry", () => {
+		if (!redirected) return;
+		const sid = "bks-zz-cancel-model-retry";
+		writeSessionFile(sid, {
+			model: "claude-sonnet-4-6",
+			autoFallbackModel: "gpt-5.6-luna",
+		});
+		sessionCache.invalidateSessionsCache();
+		const session = sessionCache.findSession(sid);
+		expect(session).toBeDefined();
+
+		slashCommands.handleSlashCommand(session!, "/model gpt-5.6-terra", "Test");
+
+		const data = sessionJson(sid);
+		expect(data.model).toBe("gpt-5.6-terra");
+		expect(data.autoFallbackModel).toBeUndefined();
 	});
 
 	test("usage exhaustion on a temporary fallback does not replace the viable selection", async () => {
@@ -281,7 +398,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		writeSessionFile(sid, { model: "dial/medium" });
 		sessionCache.invalidateSessionsCache();
 		const fake = fakeEngineMod.makeFakeEngine([
-			{ kind: "error", content: "Our servers are currently overloaded" },
+			{ kind: "error", content: "fetch failed (socket hang up)" },
 			{ kind: "usage_exhausted" },
 			{ kind: "clean", engineSessionId: "ses_zz_luna", text: ["recovered"] },
 		]);
@@ -291,7 +408,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 
 		const data = sessionJson(sid);
 		expect(data.model).toBe("dial/medium");
-		expect(data.lastEngineModel).toBe("opencode/openai/gpt-5.6-luna");
+		expect(data.lastEngineModel).toBe("pi/openai/gpt-5.6-terra");
 		expect(data.modelHistory).toBeUndefined();
 	});
 
@@ -336,7 +453,15 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		]);
 		agentRunner.__setEngineForTest(fake.engine);
 
-		// The user pressed Stop: the latch parks the queue (ws-handlers "cancel").
+		// The user pressed Stop: both the durable actor state and the hot-path
+		// latch park the queue (ws-handlers "cancel"). This actor state is
+		// load-bearing: advancing it to `starting` during intake makes the drain
+		// mistake the new message for an already-owned run and park forever.
+		runState.transitionRunState(sid, "prompt", { run_key: "stopped-run" });
+		runState.transitionRunState(sid, "run_registered", {
+			run_key: "stopped-run",
+		});
+		runState.transitionRunState(sid, "cancel", { run_key: "stopped-run" });
 		queueState.stoppedSessions.add(sid);
 		runSession.enqueuePrompt(
 			sid,

@@ -21,11 +21,10 @@ import SwiftUI
 /// write agent in 2 — reference detail on the rare run that has it, and a
 /// column of empty space on the rest.
 struct WorkflowRunsView: View {
-    let sessionId: String
+    let viewModel: SessionViewModel
 
-    @State private var runs: [WorkflowRun] = []
-    @State private var loading = true
-    @State private var loadFailed = false
+    private var sessionId: String { viewModel.session.id }
+    private var runs: [WorkflowRun] { viewModel.workflowRuns }
     /// A run waiting for a yes before it is stopped.
     @State private var confirmingCancel: WorkflowRun?
     @State private var failure: String?
@@ -37,11 +36,11 @@ struct WorkflowRunsView: View {
 
     var body: some View {
         Group {
-            if loading && runs.isEmpty {
+            if !viewModel.workflowRunsLoaded && runs.isEmpty {
                 ProgressView()
                     .controlSize(.large)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if loadFailed && runs.isEmpty {
+            } else if viewModel.workflowLoadFailed && runs.isEmpty {
                 failedPlaceholder
             } else if runs.isEmpty {
                 emptyPlaceholder
@@ -180,15 +179,7 @@ struct WorkflowRunsView: View {
     }
 
     private func load() async {
-        do {
-            let next = try await OS1API.workflowRuns(sessionId: sessionId)
-            guard !Task.isCancelled else { return }
-            runs = next
-            loadFailed = false
-        } catch {
-            if runs.isEmpty { loadFailed = true }
-        }
-        loading = false
+        await viewModel.refreshWorkflowRuns()
     }
 
     private func cancel(_ run: WorkflowRun) async {

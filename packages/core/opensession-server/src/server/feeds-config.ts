@@ -5,7 +5,7 @@
  * which tool lists its items and how fields map onto FeedItem, and (optional)
  * a web-panel template for the workspace tab. Stored in
  * ~/.opensession-feeds.json; the feeds registry overlays these beside the
- * code feeds (tella stays the code-feed reference implementation until it,
+ * code feeds (the video feed stays the code-feed reference implementation until it,
  * too, migrates to an entry here).
  *
  * Example entry:

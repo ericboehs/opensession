@@ -67,6 +67,8 @@ export interface CodexAccount {
 export interface CodexAccountPublic {
   id: string;
   name: string;
+  /** ChatGPT identity read from the login's ID token. API-key accounts have none. */
+  email?: string;
   kind: "api_key" | "home";
   valueMasked: string;
   owner?: string;
@@ -159,6 +161,31 @@ function maskValue(account: CodexAccount): string {
   return `${v.slice(0, 8)}…${v.slice(-4)}`;
 }
 
+/** Read the signed-in ChatGPT identity without persisting another copy of it.
+ * Existing accounts pick this up immediately, and token refreshes can replace
+ * auth.json without leaving stale account metadata behind. */
+function emailFromAuthPath(path: string): string | undefined {
+  try {
+    const auth = JSON.parse(readFileSync(path, "utf-8"));
+    const token = auth?.tokens?.id_token;
+    if (typeof token !== "string") return undefined;
+    const payload = token.split(".")[1];
+    if (!payload) return undefined;
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf-8"));
+    return typeof claims?.email === "string" && claims.email.trim()
+      ? claims.email.trim()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function accountEmail(account: CodexAccount): string | undefined {
+  return account.kind === "home"
+    ? emailFromAuthPath(`${account.value}/auth.json`)
+    : undefined;
+}
+
 function exhaustionKey(id: string, model?: string): string {
   return model ? `${id}:${model}` : id;
 }
@@ -185,6 +212,7 @@ function toPublic(a: CodexAccount): CodexAccountPublic {
   return {
     id: a.id,
     name: a.name,
+    email: accountEmail(a),
     kind: a.kind,
     valueMasked: maskValue(a),
     owner: a.owner,
@@ -217,14 +245,12 @@ export function hasCodexAccounts(): boolean {
 }
 
 export function addCodexAccount(
-  name: string,
+  name = "",
   kind: "api_key" | "home",
   value: string,
   owner?: string
 ): CodexAccountPublic | { error: string } {
-  const trimmedName = name.trim();
   const trimmedValue = value.trim();
-  if (!trimmedName) return { error: "Name is required" };
   if (!trimmedValue) return { error: "Value is required" };
 
   if (kind === "api_key" && !/^sk-/.test(trimmedValue)) {
@@ -238,6 +264,18 @@ export function addCodexAccount(
           "on the VPS first (or copy an existing ~/.codex/auth.json into it).",
       };
     }
+  }
+
+  const trimmedName =
+    (kind === "home" ? emailFromAuthPath(`${trimmedValue}/auth.json`) : undefined) ||
+    name.trim();
+  if (!trimmedName) {
+    return {
+      error:
+        kind === "home"
+          ? "Could not read an email address from this ChatGPT login"
+          : "Name is required",
+    };
   }
 
   const accounts = readStore();

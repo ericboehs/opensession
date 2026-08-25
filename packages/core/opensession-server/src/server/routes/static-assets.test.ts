@@ -1,5 +1,27 @@
 import { expect, test } from "bun:test";
-import { pwaManifest } from "./static-assets";
+import { handleStaticAssetsRoutes, pwaManifest } from "./static-assets";
+
+test("serves every stable shell asset family", async () => {
+	for (const [path, contentType] of [
+		["/mac-app-icon.png", "image/png"],
+		["/icon.png", "image/png"],
+		["/signin-bg.webp", "image/webp"],
+		["/signin-bg.mp4", "video/mp4"],
+		["/sw.js", "text/javascript; charset=utf-8"],
+		["/splash/apple-splash-1206-2622.png", "image/png"],
+	] as const) {
+		const url = new URL(`http://127.0.0.1${path}`);
+		const response = await handleStaticAssetsRoutes({
+			req: new Request(url),
+			url,
+			path,
+			publicPrefix: "",
+		});
+		expect(response?.status).toBe(200);
+		expect(response?.headers.get("content-type")).toBe(contentType);
+		expect((await response?.arrayBuffer())?.byteLength).toBeGreaterThan(0);
+	}
+});
 
 test("PWA manifest includes a new-agent shortcut under the active prefix", () => {
 	const manifest = pwaManifest("/backstage");

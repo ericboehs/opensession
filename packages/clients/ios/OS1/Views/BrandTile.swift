@@ -10,7 +10,7 @@ struct BrandTile: View {
 
     var body: some View {
         let brand = Brand.colors(for: name)
-        let logoScale = ["tella", "tellainternalsupportmcp"].contains(name.lowercased()) ? 1.0 : 0.56
+        let logoScale = name.lowercased() == "tella" ? 1.0 : 0.56
         RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
             .fill(brand?.background ?? Color.secondary.opacity(0.16))
             .frame(width: size, height: size)

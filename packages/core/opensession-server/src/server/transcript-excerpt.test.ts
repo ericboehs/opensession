@@ -52,7 +52,7 @@ describe("excerptTerms", () => {
 describe("transcriptExcerpt", () => {
 	const rows = [
 		...Array.from({ length: 40 }, (_, i) => entry(i + 1)),
-		entry(41, { content: "the culprit was a stale opencode shard db" }),
+		entry(41, { content: "the culprit was a stale pi shard db" }),
 		...Array.from({ length: 40 }, (_, i) => entry(i + 42)),
 	];
 

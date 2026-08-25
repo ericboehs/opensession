@@ -11,17 +11,20 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
 
 ## Features (v0.1)
 
-- **Sessions list** — polls `GET /api/sessions` every 5s (matching the web UI);
+- **Sessions list:** polls `GET /api/sessions` every 5s (matching the web UI);
   flat single-line workspace rows with live/PR status marks and a running-time
-  ticker, larger mobile type, and the web client's warm dark palette, plus
-  grouping with the web sidebar's shared, drag-to-reorder repository order,
-  compact toolbar search/filter, iOS long-press worktree actions (details,
-  rename, sharing, pull request, pin, hide from my sidebar, and archive),
-  swipe right to pin and left to archive, restore from the archived list, a
-  floating create button, and pull to refresh. Pinned rows are lifted into a
-  Pinned band at the top of the list in the user's own pin order, sharing
-  `/api/pins` with the web sidebar; pinning is quick access rather than a
-  status, so a pinned row also stays in its normal band below, and archiving
+  ticker, larger mobile type, and the web client's warm dark palette. Inbox
+  keeps Active work in stable creation order with a nearby Snoozed shelf,
+  sharing `/api/snoozes` with the web sidebar. Activity restores Needs action,
+  Recent, Yesterday, and Earlier; Status remains the dynamic lane view. Group
+  by project is an independent switch for all three modes. The
+  compact toolbar search/filter finds session metadata
+  and conversation text through `/api/sessions/search`. iOS long-press actions
+  include details, rename, sharing, pull request, pin, hide, Snooze/Unsnooze,
+  and Archive. Swipe right pins; swipe left offers Snooze and Archive.
+  Pinned rows are lifted into a Pinned band at the top in the user's own order,
+  sharing `/api/pins` with the web sidebar. Pinning is quick access rather than
+  a status, so a pinned row also stays in its normal band below, and archiving
   a row drops its pin. Hiding is the personal counterpart to archiving (which
   is global): it drops the row from THIS user's sidebar — here and in the web
   one, sharing `/api/hides` — while the session keeps running for everyone else.
@@ -68,14 +71,15 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   value means the shared defaults. Ids this app has no screen for ride the
   value untouched so a change here never disturbs the browser. Long-press a
   visible row to hide it; Appearance restores it.
-- **Session view** — live transcript over the `/ws` WebSocket, grouped into
+- **Session view:** live transcript over the `/ws` WebSocket, grouped into
   turns the way the web viewer groups them: **question → folded work → answer →
   footer**. A turn's tool calls and the narration between them collapse behind
-  one header (`Worked · 4m 42s · 40 steps`, a fingerprint of the tool families
-  used, failure count, edited files and ±lines); the turn's final answer escapes
-  the fold and renders as a normal message; a footer closes it with the
-   duration, the model that wrote it, and chips for every file it touched.
-   Team notes sit in that timeline without entering the agent context. The
+  one header. Phones keep that header to outcome, duration and failure count;
+  opening it reveals steps, tool families and changed files. Wider layouts also
+  show the richer fingerprint inline. The turn's final answer escapes the fold
+  and renders as a normal message. On phones, one changed-files summary
+  replaces the footer chip cloud while opening the same Changes panel. Team
+  notes sit in that timeline without entering the agent context. The
    yellow composer mode posts them directly to the team and offers only the
    author edit and delete actions.
   Tool rows use the server's presentation metadata for canonical names,
@@ -114,13 +118,14 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
    queries only that workspace's closed siblings and restores one directly into
    the strip. A workspace down to one session draws no strip, so that history
    moves to the Closed sessions submenu of the session's overflow menu, which
-   reopens a row the same way. On macOS, where the sidebar is the live-session switcher, the
-   same scoped history lives in the selected session's toolbar instead. On iOS the
-   trailing nav-bar control is a native overflow menu carrying this worktree's
-   actions — new session, worktree details, its pull request panel, rename,
-   share link, hide/restore, and archive (which pops back to the list) — the same
-   set the sidebar row offers under long press. A
-  bounded cache keeps recently visited conversations loaded while their
+   reopens a row the same way. On macOS, where the sidebar is the live-session
+   switcher, the same scoped history lives in the selected session's toolbar
+   instead. On iOS, the PWA-style Liquid Glass action bar floats above the
+   composer with Archive, session actions, New session, and Next chat. It stays
+   directly above the composer when the keyboard opens. The actions menu carries
+   worktree details, the pull request panel, rename, share, hide or restore, and
+   archive, matching the sidebar row's long-press menu. A bounded cache keeps
+   recently visited conversations loaded while their
   off-screen sockets remain disconnected, so returning to a page does not show
   a loading screen. Fenced Markdown, expanded tool inputs and code assets use
   the PWA's GitHub light/dark syntax palette. Native-owned code surfaces show
@@ -145,6 +150,9 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   `openPanel` environment action from the transcript and the overflow menu,
   and directly by the workspace sheet's own rows — which push within the
   sheet, so that page stays where it was.
+- **Agent runs**: the Agents panel reads every workflow a session started and
+  updates each run immediately from `workflow_update` socket frames. A 3-second
+  poll remains while a run is live for compatibility with older servers.
 - **Changes** — every file the worktree has touched, and the diff of any one of
   them, reached from the overflow menu or the workspace sheet (whose file rows
   open that file directly, and whose "Show all N files" replaces what used to
@@ -176,9 +184,13 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   session token rides in as a cookie scoped to that session's assets path, so
   relative references between assets resolve — while markdown and code render
   natively.
-- **Prompting** — WS `prompt` frames (the server has no REST prompt endpoint).
-  Sending while a run is active queues, exactly like the web UI. Stop button
-  sends `cancel` for the watched session. The floating glass composer uses a
+- **Prompting** — durable sends enter the on-device `Outbox` before the
+  composer clears, then use the idempotent REST prompt route so delivery has an
+  acknowledgement. The local message appears in the transcript immediately;
+  offline retries and refusals keep their status and actions attached to that
+  bubble, including across relaunches. Server-accepted busy sends move into the
+  queue, exactly like the web UI. Stop sends `cancel` for the watched session.
+  The floating glass composer uses a
   progressive material fade so transcript content recedes cleanly beneath it;
   its full surface focuses the field and keeps a comfortable keyboard gap.
 - **Dictation** — the composer's mic (first of the trailing controls, ahead of
@@ -190,10 +202,16 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   The recognizer object is owned by `SessionInputBar`, not the button: a long
   dictation wraps the composer to its two-row layout, which swaps the branch
   the button renders in and would otherwise destroy its state mid-sentence.
-- **Session creation** — a full-height prompt editor with image attachments and
-  a compact single-row iOS toolbar for repository, mode, and model settings.
-- **AskUserQuestion** — blocking questions render as an inline card with option
-  buttons + free-text answer, wired to `answer_question`.
+- **Session creation** — a full-height prompt editor with attachments and a
+  compact single-row iOS toolbar for repository, mode, and model settings. The
+  same controls move into the keyboard accessory while the prompt is focused,
+  so attachments, options, model, and dictation remain reachable while typing.
+  Opening a file with OS from Files or another app starts a fresh composer with
+  that file attached. Images use the vision channel; other files upload to the
+  session's staged file channel before Start becomes available.
+- **AskUserQuestion:** blocking questions render as an inline card with option
+  buttons + free-text answer, wired to `answer_question`. After you submit, the
+  card becomes a read-only receipt showing the question and your answer.
 - **PR panel** — sessions with a pull request expose a row in the title-opened
   workspace sheet and the overflow menu; it opens a panel with state, review
   decision, conflicts, every check with its status, and reviewers, via
@@ -216,20 +234,22 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   long-press menu also rolls the
   cached PR state into one next action: merge when ready, fix failed checks,
   resolve conflicts, address feedback, view running checks, or archive after it
-  lands. Each action needs a GitHub credential server-side,
+  lands. `git_pushed` and matching `pr_updated` socket frames re-fetch these
+  PR surfaces immediately, including attached, linked, and discovered branches.
+  Each action needs a GitHub credential server-side,
   which with web sign-in on is the signed-in person's own token,
   so an unconnected account gets the server's "connect your GitHub account"
   sentence in the panel rather than a status code. It is
   pushed as a panel (`PrPanelView(chrome: .pushed)` drops its own navigation
   stack and Done button); the sheet form is what the Mac still uses.
-- **New session** (`NewSessionView.swift`) — the desktop palette's shape: repo
-  and what it is created from across the top, the prompt in the middle, and how
-  it runs in the footer. A **sandbox chip** joins that footer only on instances
-  that offer somewhere other than the host to run — the choices are the ready
-  sandbox connections from `GET /api/sandbox/status`, named exactly as the web
-  palette names them, and the host is sent as an explicit `local` so the chip
-  and the session always agree. Choosing a Runner is deliberately not offered:
-  the web palette dropped runner-at-create, and native matches by not having it.
+- **New session** (`NewSessionView.swift`): the repo sits across the top, the
+  prompt fills the middle, and run controls sit in the footer. On iOS, Code is
+  the quiet default, so there is no default New branch chip. Ask and Sandbox
+  choices from `GET /api/sandbox/status` sit under More options, while dictation
+  stays at the trailing edge. Sandbox names match the web palette, and the host
+  is sent as an explicit `local` so the menu and session always agree. The Mac
+  keeps its mode and Sandbox chips where the wider footer has room. Choosing a
+  Runner is not offered because the web palette also dropped runner-at-create.
 - **Action Button / Siri / Spotlight — "Start an Agent"** — one App Intent
   (`Intents/StartAgentIntent.swift`), and it deliberately OPENS the app
   (`openAppWhenRun = true`) rather than collecting the idea in the system's
@@ -260,17 +280,25 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   Store"), which CI fetches from App Store Connect at build time
   (`ci/fetch-provisioning-profile.mjs`) rather than carrying as a secret.
 - **Live Activities** — an optional, device-local switch under Settings →
-  Notifications shows one aggregate of the signed-in person's running sessions
-  on the Lock Screen and Dynamic Island. It renders at most three privacy-
-  sensitive titles plus the total count, opens an individual session through
-  `OpenSessionIntent`, and ends when the last run finishes. Foreground state is
-  reconciled from the existing sessions poll; background starts and updates use
-  ActivityKit push tokens registered with `/api/live-activities/*`.
+  Notifications shows one aggregate of the signed-in person's running and
+  unread sessions on the Lock Screen and Dynamic Island. It renders at most
+  three privacy-sensitive active titles plus the active and unread counts,
+  opens an individual session through `OpenSessionIntent`, and stays visible
+  after the last run finishes while work remains unread. Foreground state is
+  reconciled from the existing sessions poll and shared `/api/reads` marks;
+  background starts and updates use ActivityKit push tokens registered with
+  `/api/live-activities/*`. A separate device-local switch can put that same
+  unread session count on the iPhone Home Screen and Dock icon without enabling
+  alert banners or sounds.
 - **Connection care** — client-initiated pings every 20s (the server never
   pings; required against half-open iOS sockets), auto-reconnect with a banner,
   optimistic local echo of your prompts until the server's copy arrives.
 - **Settings** — native SwiftUI Tools, Personal, and Workspace administration,
-  plus server/GitHub/token configuration and a connection test. Cross-device
+  plus multi-organization server/GitHub/token configuration and a connection
+  test. The top-bar logo on iOS and the row above Feed on macOS switch servers
+  and show the active connection; each account keeps its own keychain token, and
+  passive WebSockets remain connected for inactive accounts
+  while the app is active so mentions can badge the picker. Cross-device
   composer and session preferences refresh at launch and when the app foregrounds.
   On macOS, custom account keyboard bindings drive the supported app commands and
   their command-menu hints; iOS keeps its system shortcut and widget guide.
@@ -362,9 +390,10 @@ page down and the snapshot loses the bottom of the diagram.
 
 Settings has in-app GitHub device-flow sign-in (`GitHubAuth.swift` —
 `POST /api/auth/device`, then `/api/auth/device/poll` with `native: true`;
-the server mints a web-session token and returns it in the poll body). The
-token is kept in the keychain and rides as `Authorization: Bearer <token>`
-everywhere, including the WebSocket upgrade. Pasting a token manually still
+the server mints a web-session token and returns it in the poll body). Each
+organization's token is kept in a separately keyed keychain item and rides as
+`Authorization: Bearer <token>` everywhere, including its WebSocket upgrade.
+Pasting a token manually still
 works as a fallback: tokens are the `opensession_auth` cookie values minted
 at web sign-in, stored server-side in `~/.opensession-web-sessions.json`.
 
@@ -387,13 +416,14 @@ Then run the `OS1` scheme on iOS 26+.
 OS1/
   OS1App.swift               App entry; forces Settings on first run
   NativePreferences.swift    Cross-device preference hydration/cache
-  NativeNotifications.swift  Local notifications for finished/blocked runs
+  NativeNotifications.swift  Local notifications and the iOS unread icon badge
   PlatformCompat.swift       iOS/macOS API bridging shims
   Models/
     Session.swift            Tolerant subset of the server's UnifiedSession
     TranscriptEntry.swift    Transcript entry (REST + WS frames)
     AskQuestion.swift        Pending AskUserQuestion
     AttachedImage.swift      Composer image attachments
+    AttachedFile.swift       Open-in and staged file attachments
     ModelCatalog.swift       Workspace model catalog + engine routing
     ToolPresentation.swift   Canonical tool names, families, summaries, ±lines
     SubagentTranscript.swift A Task call's sub-agent conversation payload
@@ -461,6 +491,9 @@ OS1/
   sends `watch` only after that, so it can't race the upgrade.
 - `transcript_init` replaces the tail, `transcript_history` prepends,
   `transcript_append` upserts by entry id (overlap expected, ~1s cadence).
+  The app advertises seq and change-seq support, retains each frame's resume
+  watermark, and includes it on every re-watch. Reconnects therefore replay
+  only the missed gap instead of replacing history pages already on screen.
 - `stream_text` deltas render immediately; the durable assistant entry arrives
   via `transcript_append` after `stream_done`, at which point the live bubble
   is dropped.

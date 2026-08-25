@@ -24,9 +24,11 @@ type InstanceBrand = {
 	productMark?: string;
 	personaName?: string;
 	publicBaseUrl?: string;
+	webhookBaseUrl?: string;
 	githubBotLogins?: string[];
 	defaultRepoId?: string;
 	plainWorkspaceId?: string;
+	agentationEnabled?: boolean;
 };
 
 const INSTANCE: InstanceBrand =
@@ -47,6 +49,7 @@ export const AGENT_NAME = INSTANCE.personaName || "Assistant";
 export const PUBLIC_BASE_URL =
 	INSTANCE.publicBaseUrl ||
 	(typeof location === "undefined" ? "http://127.0.0.1:3850" : location.origin);
+export const WEBHOOK_BASE_URL = INSTANCE.webhookBaseUrl || PUBLIC_BASE_URL;
 export const GITHUB_BOT_LOGINS = new Set(
 	(INSTANCE.githubBotLogins || []).map((login) => login.toLowerCase()),
 );
@@ -59,6 +62,9 @@ export const DEFAULT_REPO_ID = INSTANCE.defaultRepoId || "opensession";
  *  `integrations.plain.workspaceId`). Null when the instance has none —
  *  consumers hide their "open in Plain" affordances. */
 export const PLAIN_WORKSPACE_ID = INSTANCE.plainWorkspaceId || null;
+
+/** Visual page feedback is an operator-only tool, opt-in at server startup. */
+export const AGENTATION_ENABLED = INSTANCE.agentationEnabled === true;
 
 /**
  * A session's origin as shown in the UI. `opensession` — and `backstage`, the

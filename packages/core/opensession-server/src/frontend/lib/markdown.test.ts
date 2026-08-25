@@ -2,16 +2,22 @@ import { afterEach, beforeAll, describe, expect, it } from "bun:test";
 import {
   renderMarkdown,
   renderPrCommentMarkdown,
+  onSessionTitleResolutionRequested,
+  resetResolvedSessionTitles,
   setKnownPeople,
+  setKnownRepoPrStates,
   setKnownRepos,
   setKnownPrStates,
+  setResolvedSessionTitles,
   setSessionTitles,
 } from "./markdown";
 
 afterEach(() => {
   setSessionTitles([]);
+  resetResolvedSessionTitles();
   setKnownRepos([]);
   setKnownPrStates([]);
+  setKnownRepoPrStates([]);
 });
 
 describe("renderMarkdown session links", () => {
@@ -136,6 +142,14 @@ describe("renderMarkdown session links", () => {
     const html = renderMarkdown("See [GitHub](https://github.com/tella/x).");
     expect(html).toContain('target="_blank"');
   });
+
+  it("opens a portal on the app hostname but another port in a new tab", () => {
+    const html = renderMarkdown(
+      "[Open Tella local preview](http://127.0.0.1:25779/videos)",
+    );
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noopener noreferrer"');
+  });
 });
 
 describe("renderMarkdown automation links", () => {
@@ -183,6 +197,87 @@ describe("session chip labels", () => {
     // the full id stays reachable in the tooltip
     expect(html).toContain(`title="Open Fix the sidebar hover states (${id})"`);
     expect(html).not.toContain("data-session-label");
+  });
+
+  it("labels an alias with the canonical session's title", () => {
+    const canonical = "os-019f24b5-f31d-7000-a48f-31a9e829c4ae";
+    setSessionTitles([
+      [canonical, "Fix the sidebar hover states", false, null, [id]],
+    ]);
+    expect(renderMarkdown(`Delegated to \`${id}\`.`)).toContain(
+      '<span class="session-link-label">Fix the sidebar hover states</span>',
+    );
+  });
+
+  it("requests an unknown reference for on-demand resolution", async () => {
+    const requested: string[][] = [];
+    const unsubscribe = onSessionTitleResolutionRequested((ids) =>
+      requested.push(ids),
+    );
+    try {
+      renderMarkdown(`Delegated to \`${id}\`.`);
+      await Promise.resolve();
+      expect(requested).toEqual([[id]]);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("names archived references and replaces the conversation glyph", () => {
+    setResolvedSessionTitles([
+      {
+        requestedId: id,
+        title: "Fix the sidebar hover states",
+        archived: true,
+      },
+    ]);
+    const html = renderMarkdown(`Delegated to \`${id}\`.`);
+    expect(html).toContain(
+      '<span class="session-link-label">Fix the sidebar hover states</span>',
+    );
+    expect(html).toContain("data-session-archived");
+    expect(html).toContain('<rect x="4" y="4.75" width="16" height="4"');
+    expect(html).toContain(`(${id}) · archived`);
+  });
+
+  it("keeps the id fallback when the referenced session was deleted", async () => {
+    setResolvedSessionTitles([{ requestedId: id, title: null }]);
+    const requested: string[][] = [];
+    const unsubscribe = onSessionTitleResolutionRequested((ids) =>
+      requested.push(ids),
+    );
+    try {
+      const html = renderMarkdown(`Delegated to \`${id}\`.`);
+      await Promise.resolve();
+      expect(html).toContain(
+        '<span class="session-link-label">bks-019f24b5…</span>',
+      );
+      expect(requested).toEqual([]);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("corrects an id chip that mounted before titles arrived", () => {
+    const label = { textContent: "bks-019f24b5…" };
+    const anchor = {
+      dataset: { sessionId: id, sessionLabel: "id" },
+      title: `Open session ${id}`,
+      querySelector: () => label,
+    };
+    const previousDocument = globalThis.document;
+    (globalThis as any).document = {
+      querySelectorAll: () => [anchor],
+    };
+    try {
+      setSessionTitles([[id, "Fix the sidebar hover states"]]);
+      expect(label.textContent).toBe("Fix the sidebar hover states");
+      expect(anchor.dataset.sessionLabel).toBeUndefined();
+      expect(anchor.title).toBe(`Open Fix the sidebar hover states (${id})`);
+    } finally {
+      if (previousDocument === undefined) delete (globalThis as any).document;
+      else (globalThis as any).document = previousDocument;
+    }
   });
 
   it("keeps the session's own title in the tooltip when it differs", () => {
@@ -260,6 +355,26 @@ describe("session chip labels", () => {
     const running = renderMarkdown(`Worker \`${id}\` is up.`);
     expect(running).toContain("data-session-running");
     expect(running).toContain("· running");
+  });
+
+  it("names a link whose label is only the session id", () => {
+    setSessionTitles([[id, "Move shared sessions into PR branches"]]);
+    const url = `http://127.0.0.1:3850/session/${id}`;
+    // A label that repeats the id says nothing the chip does not already say,
+    // at 39 characters. Both spellings agents write get the name instead.
+    expect(renderMarkdown(`Session: [${id}](${url})`)).toContain(
+      '<span class="session-link-label">Move shared sessions into PR branches</span>',
+    );
+    expect(renderMarkdown(`Session: [\`${id}\`](${url}) is done.`)).toContain(
+      '<span class="session-link-label">Move shared sessions into PR branches</span>',
+    );
+  });
+
+  it("shortens an id-only link label when no title is known", () => {
+    const url = `http://127.0.0.1:3850/session/${id}`;
+    const html = renderMarkdown(`Session: [${id}](${url})`);
+    expect(html).toContain('<span class="session-link-label">bks-019f24b5…</span>');
+    expect(html).toContain('data-session-label="id"');
   });
 
   it("ignores blank titles and unrelated sessions", () => {
@@ -458,6 +573,92 @@ describe("renderMarkdown PR mentions", () => {
     }
   });
 
+  it("shows open state for a PR no loaded session owns", () => {
+    setKnownRepoPrStates([
+      {
+        repo: "tella-fusion",
+        number: 5528,
+        state: "OPEN",
+        checks: { failed: 0, pending: 0 },
+      },
+    ]);
+    const html = renderMarkdown("Fixed in #5528.", fusion);
+    expect(html).toContain('data-pr-state="open"');
+    expect(html).toContain('data-pr-tone="green"');
+  });
+
+  it("repairs a bare cross-repo number when exactly one known PR matches", () => {
+    setKnownRepos([
+      { id: "opensession", ghRepo: "tellahq/opensession" },
+      { id: "tella-fusion", ghRepo: "tellahq/tella-fusion" },
+    ]);
+    setKnownRepoPrStates([
+      {
+        repo: "tella-fusion",
+        number: 5596,
+        state: "OPEN",
+        mergeable: "CONFLICTING",
+      },
+    ]);
+    const html = renderMarkdown("PR #5596 has conflicts.", {
+      repo: "opensession",
+    });
+    expect(html).toContain('href="/pr/tella-fusion/5596"');
+    expect(html).toContain('data-pr-repo="tella-fusion"');
+    expect(html).toContain('data-pr-context-repo="opensession"');
+    expect(html).toContain('data-pr-state="conflicts"');
+  });
+
+  it("does not guess a cross-repo number when several known PRs match", () => {
+    setKnownRepoPrStates([
+      { repo: "tella-fusion", number: 5596, state: "OPEN" },
+      { repo: "tella-web", number: 5596, state: "MERGED" },
+    ]);
+    const html = renderMarkdown("PR #5596 changed.", { repo: "opensession" });
+    expect(html).toContain('href="/pr/opensession/5596"');
+    expect(html).toContain('data-pr-repo="opensession"');
+    expect(html).not.toContain("data-pr-tone");
+  });
+
+  it("never rewrites an explicitly qualified PR", () => {
+    setKnownRepos([
+      { id: "opensession", ghRepo: "tellahq/opensession" },
+      { id: "tella-fusion", ghRepo: "tellahq/tella-fusion" },
+    ]);
+    setKnownRepoPrStates([
+      { repo: "tella-fusion", number: 5596, state: "OPEN" },
+    ]);
+    const html = renderMarkdown("opensession#5596 changed.", {
+      repo: "opensession",
+    });
+    expect(html).toContain('href="/pr/opensession/5596"');
+    expect(html).not.toContain("data-pr-context-repo");
+  });
+
+  it("prefers richer session state over the repo-wide open list", () => {
+    setKnownRepoPrStates([
+      { repo: "tella-fusion", number: 5528, state: "OPEN" },
+    ]);
+    setKnownPrStates([
+      { repo: "tella-fusion", number: 5528, state: "MERGED" },
+    ]);
+    const html = renderMarkdown("Fixed in #5528.", fusion);
+    expect(html).toContain('data-pr-state="merged"');
+    expect(html).toContain('data-pr-tone="purple"');
+  });
+
+  it("does not let stale session state resurrect an archived PR", () => {
+    setKnownPrStates([
+      { repo: "tella-fusion", number: 5528, state: "OPEN" },
+    ]);
+    setKnownRepoPrStates([
+      { repo: "tella-fusion", number: 5528, state: "MERGED" },
+    ]);
+    const html = renderMarkdown("Fixed in #5528.", fusion);
+    expect(html).toContain('data-pr-state="merged"');
+    expect(html).toContain('data-pr-tone="purple"');
+  });
+
   it("drops stale state when the PR cache no longer contains the reference", () => {
     setKnownPrStates([
       { repo: "tella-fusion", number: 5528, state: "OPEN" },
@@ -616,6 +817,62 @@ describe("renderMarkdown PR mentions", () => {
     expect(html).toContain('href="/pr/tella-fusion/5528"');
     expect(html).toContain('<span class="pr-ref-label">PR #5528</span>');
     expect(html).not.toContain(`>${url}</a>`);
+  });
+
+  it("collapses a qualified mention and its own pasted URL to one chip", () => {
+    setKnownRepos([{ id: "tella-fusion", ghRepo: "tellahq/tella-fusion" }]);
+    const sources = [
+      "## PR **tella-fusion#5832** — https://github.com/tellahq/tella-fusion/pull/5832",
+      "tella-fusion#5832 https://github.com/tellahq/tella-fusion/pull/5832",
+      "tella-fusion#5832 (https://github.com/tellahq/tella-fusion/pull/5832)",
+      "PR #5832: https://github.com/tellahq/tella-fusion/pull/5832",
+    ];
+    for (const src of sources) {
+      const html = renderMarkdown(src, fusion);
+      expect(html.match(/class="pr-ref"/g)?.length).toBe(1);
+      expect(html).toContain('data-pr-number="5832"');
+      expect(html).not.toContain("github.com/tellahq/tella-fusion/pull");
+    }
+  });
+
+  it("keeps two different pull requests as two chips", () => {
+    setKnownRepos([{ id: "tella-fusion", ghRepo: "tellahq/tella-fusion" }]);
+    const html = renderMarkdown(
+      "tella-fusion#5832 — https://github.com/tellahq/tella-fusion/pull/5528",
+      fusion,
+    );
+    expect(html.match(/class="pr-ref"/g)?.length).toBe(2);
+  });
+
+  it("leaves a mention alone when the URL is a different repo", () => {
+    setKnownRepos([{ id: "tella-fusion", ghRepo: "tellahq/tella-fusion" }]);
+    const html = renderMarkdown(
+      "tella-fusion#5832 — https://github.com/vercel/next.js/pull/5832",
+      fusion,
+    );
+    expect(html.match(/class="pr-ref"/g)?.length).toBe(1);
+    expect(html).toContain("vercel/next.js/pull/5832");
+  });
+
+  it("leaves a code-span mention and its URL alone", () => {
+    setKnownRepos([{ id: "tella-fusion", ghRepo: "tellahq/tella-fusion" }]);
+    const html = renderMarkdown(
+      "`tella-fusion#5832`: https://github.com/tellahq/tella-fusion/pull/5832",
+      fusion,
+    );
+    // The code span never chips, so the URL is the only reference that can
+    // open anything and has to survive.
+    expect(html).toContain("<code>tella-fusion#5832</code>");
+    expect(html.match(/class="pr-ref"/g)?.length).toBe(1);
+  });
+
+  it("leaves a duplicate inside a code fence verbatim", () => {
+    setKnownRepos([{ id: "tella-fusion", ghRepo: "tellahq/tella-fusion" }]);
+    const html = renderMarkdown(
+      "```\ntella-fusion#5832 — https://github.com/tellahq/tella-fusion/pull/5832\n```",
+      fusion,
+    );
+    expect(html).toContain("github.com/tellahq/tella-fusion/pull/5832");
   });
 
   it("keeps links to unregistered GitHub PRs external", () => {

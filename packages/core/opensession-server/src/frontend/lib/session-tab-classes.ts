@@ -1,41 +1,28 @@
+import { MOBILE_CONTROL_GLASS_EFFECTS } from "./app-header-classes";
+
 /**
- * The session tab strip's vocabulary, as finished utility classes — what used
+ * The session tab strip's vocabulary, as finished utility classes. This used
  * to be the `session-tab*` family in legacy.css.
  *
  * Two things shape everything here.
  *
- * 1. The strip has TWO complete looks, not one look with tweaks. On desktop it
- *    is a flat band in flow: plain-text tabs on the transcript's own
- *    background, closed off by a bottom hairline that the active tab's underline
- *    rests on. On phones it is a solid bar docked under the floating header pills,
- *    and its tabs are floating pills with a fill, a ring and a shadow. The old
- *    sheet wrote the pill unconditionally and then had `@media (min-width:
- *    721px)` undo every paint property of it, and that shape is kept: the pill
- *    is unprefixed and the flat band overrides it at `desktop:`. Tailwind
- *    emits every breakpoint variant after every unprefixed and pseudo-class
- *    utility (verified in the compiled sheet: `hover:bg-hover` at ~93k,
- *    the first `desktop:` rule at ~119k), which is what makes a responsive
- *    override reliable at all. Note that Tailwind's `phone:` is
- *    `width < 720px`, NOT the `max-width: 720px` the old sheet and
- *    `useIsPhone` mean — so phone-only rules are written as overrides on a
- *    base that already reads correctly, never as one half of a split.
+ * 1. Desktop keeps quiet labels separated by short rules. On the phone PWA,
+ *    every tab uses the same glass capsule as the top bar, while the active tab
+ *    keeps a stronger filled surface.
  *
- * 2. For the same reason, each tab state carries its WHOLE colour set. A
- *    colored tab does not layer a fill over the plain tab's fill; `tabClass`
- *    returns exactly one background, one border colour and one box-shadow per
- *    state. That is also why the states are resolved in JS: the old cascade
- *    picked a winner by rule order (colored beats waiting beats active), and a
- *    stack of utilities cannot reproduce "later rule wins" reliably.
+ * 2. Each tab state carries its whole colour set. A colored tab does not layer
+ *    a fill over the plain tab's fill; `tabClass` returns exactly one background
+ *    per state. The states stay resolved in JS because the old cascade picked a
+ *    winner by rule order, and a stack of utilities cannot reproduce that
+ *    reliably.
  *
  * A few class names survive on the markup as bare hooks with no styling of
  * their own, because things OUTSIDE this file name them:
  *
- *   · `session-tabs`   — legacy.css keys a structural rule off the strip's
- *     presence from an ancestor this file can't reach
- *     (`.detail-topbar:has(+ .session-tabs) .detail-topbar-title` drops the
- *     top bar's border, because the strip carries both dividers itself), and
- *     SessionSplit sizes the bar with `[&>.session-tabs]:shrink-0`;
- *   · `session-tab-view` / `session-tab-reorder` — `.app:has(.session-tab-view)
+ *   · `session-tabs`: app-shell-classes.ts suppresses the top bar's scroll
+ *     divider while the strip overlaps that edge, and SessionSplit sizes the
+ *     bar with `[&>.session-tabs]:shrink-0`;
+ *   · `session-tab-view` / `session-tab-reorder`: `.app:has(.session-tab-view)
  *     .app-header-overlay` and `.detail-pane:has(.session-tab-reorder ~
  *     .session-tab-reorder)` set the phone header's fill and
  *     `--strip-clearance` on elements that belong to other components.
@@ -44,15 +31,17 @@
  * exception list; they now carry that exception themselves — see `tabDotClass`.
  */
 
-/** 8px, the tab pill's corner. Authored the way base.css authors every corner
- *  so it tracks the squircle bump; there is no 8px step in the radius scale. */
+/** 8px, the compact trailing controls' corner. Authored the way base.css
+ * authors every corner; there is no 8px step in the radius scale. */
 const PILL = "rounded-[calc(8px*var(--rf))]";
+/** Desktop tabs use the standard medium squircle; phones become round pills. */
+const TAB_SHAPE = "desktop:rounded-md desktop:[corner-shape:squircle]";
 
 /* ── The strip ──────────────────────────────────────────────────────────── */
 
 /**
- * The bar itself. `group/strip` is what reveals the trailing +/history
- * controls, which are quiet chrome until the strip is pointed at.
+ * The bar itself. `group/strip` reveals history, which stays quiet until the
+ * strip is pointed at. The new-tab + remains visible whenever the strip exists.
  *
  * The old rule painted a `linear-gradient(var(--topbar-bg), var(--bg))` here,
  * but BOTH breakpoints set `background: var(--bg)` over it, so the gradient
@@ -60,30 +49,39 @@ const PILL = "rounded-[calc(8px*var(--rf))]";
  * carried over.
  */
 export const TAB_STRIP =
-	"session-tabs group/strip flex min-w-0 shrink-0 items-center gap-[3px] bg-surface px-2 " +
-	// Desktop: a compact flat band, closed off by the one rule the active tab's
-	// underline rests on. Only the bottom edge is drawn. The session header
-	// above carries no border of its own, and a top inset here would put a
-	// second line across a top region meant to read as one surface.
+	"session-tabs group/strip relative flex min-w-0 shrink-0 items-center gap-[3px] px-2 " +
+	"desktop:bg-surface phone:bg-transparent " +
+	"phone:pointer-events-none phone:*:pointer-events-auto " +
+	// Every desktop tab bar has one closing hairline. A pseudo-element avoids
+	// changing its height. Phones stay borderless so fixed chrome never becomes
+	// a grey rule across the screen.
+	"desktop:after:pointer-events-none desktop:after:absolute desktop:after:inset-x-0 " +
+	"desktop:after:bottom-0 desktop:after:h-px desktop:after:bg-divider desktop:after:content-[''] " +
+	// Desktop: a compact band. The active tab's own surface supplies the
+	// selection boundary, so the line closes the bar rather than underlining it.
 	//
-	// The non-split bar takes its 5px header overlap at the call site. Split bars
-	// start at the top of an overflow-clipped column, so their full box stays in
-	// flow instead of losing its top edge outside that column.
-	"desktop:h-10 desktop:items-stretch desktop:py-0 " +
-	"desktop:shadow-[inset_0_-1px_0_var(--border)] " +
+	// The non-split bar takes its 11px header overlap at the call site. The
+	// session header above is a fixed 48px row whose title is centred in it, and
+	// the tab labels are centred in this 40px band, so the two words sit far
+	// apart while neither box looks generous. Neither row can be trimmed on its
+	// own because the header's height lines it up with the sidebar's brand row.
+	// The strip closes the distance by climbing into the header's slack. Split
+	// bars start at the top of an overflow-clipped column, so their full box stays
+	// in flow instead of losing its top edge outside that column.
+	"desktop:h-10 desktop:py-0 " +
+	// When overflowing tabs pass under the pinned +, pointing at the control
+	// softens enough of the edge to reach the adjacent label. TAB_SCROLL gates
+	// the mask itself on data-overflow, so tabs that fit never fade.
+	"desktop:[&:has(.session-tab-new:hover)]:[--tabs-control-fade-end:64px] " +
 	// Phone: pulled out of flow and pinned flush under the header's bottom edge,
 	// so it reads as fixed chrome rather than a strip the transcript scrolls by.
+	// The header's scroll-edge blur continues behind these glass controls.
 	"phone:absolute phone:inset-x-0 phone:top-[var(--pane-header-h)] phone:z-[6] " +
-	"phone:m-0 phone:border-b phone:border-line phone:py-[5px] " +
-	"phone:shadow-[0_6px_12px_-8px_rgba(0,0,0,0.22)] " +
-	// Mobile Safari can rasterize two composited layers that merely touch with a
-	// hairline seam: overlap the header by 2px and add those 2px back as padding.
-	"phone:[.app:has(.app-header-overlay)_&]:top-[calc(var(--pane-header-h)_-_2px)] " +
-	"phone:[.app:has(.app-header-overlay)_&]:pt-[7px] " +
+	"phone:m-0 phone:py-[5px] " +
 	// Immersive reading: SessionViewer sets body.chrome-collapsed from the
-	// transcript's scroll direction and the bar slides off with the top bar.
-	// `transform`, not the `translate` property, because that is what the
-	// transition names — and what .app-header-overlay animates beside it.
+	// transcript's scroll direction and this secondary strip slides away while
+	// the navigation bar remains pinned. `transform`, not the `translate`
+	// property, because that is what the transition names.
 	"phone:[transition:transform_var(--dur-lg)_var(--ease)] " +
 	"phone:[body.chrome-collapsed_&]:[transform:translateY(calc(-100%_-_var(--pane-header-h)_-_8px))] " +
 	// A lone session with no view tabs has nothing to switch between, so the
@@ -103,13 +101,13 @@ export const TAB_SCROLL =
 	"flex min-w-0 flex-[1_1_auto] items-center gap-[3px] overflow-x-auto overscroll-x-contain " +
 	"[scrollbar-width:none] [&::-webkit-scrollbar]:hidden " +
 	// Hug the content on desktop so the pinned "+" sits right after the last tab
-	// rather than being pushed to the far right; full-height so its tabs can
-	// stretch down to the band's baseline hairline.
-	"desktop:flex-[0_1_auto] desktop:items-stretch " +
+	// rather than being pushed to the far right. The group keeps its intrinsic
+	// height so the selected tab floats vertically inside the 40px band.
+	"desktop:flex-[0_1_auto] " +
 	"supports-[animation-timeline:scroll()]:[animation:session-tabs-fade-start_1ms_both,session-tabs-fade-end_1ms_both] " +
 	"supports-[animation-timeline:scroll()]:[animation-timeline:scroll(self_inline),scroll(self_inline)] " +
 	"supports-[animation-timeline:scroll()]:[animation-range:0_24px,calc(100%_-_24px)_100%] " +
-	"supports-[animation-timeline:scroll()]:data-[overflow]:[mask-image:linear-gradient(to_right,transparent_0,#000_var(--tabs-fade-start),#000_calc(100%_-_var(--tabs-fade-end)),transparent_100%)]";
+	"supports-[animation-timeline:scroll()]:data-[overflow]:[mask-image:linear-gradient(to_right,transparent_0,#000_var(--tabs-fade-start),#000_calc(100%_-_max(var(--tabs-fade-end),var(--tabs-control-fade-end,0px))),transparent_100%)]";
 
 /**
  * The drag-to-reorder group wraps EVERY tab — sessions and view panes alike —
@@ -119,20 +117,24 @@ export const TAB_SCROLL =
  * out after the shrunken box. Sizing to content pushes the overflow out to the
  * scroll, which is the thing that scrolls.
  */
-export const TAB_GROUP =
-	"relative inline-flex flex-none items-center gap-[3px] " +
-	"desktop:self-stretch desktop:items-stretch";
+export const TAB_GROUP = "relative inline-flex flex-none items-center gap-[3px]";
 
 /** Each tab's Reorder.Item wrapper. `relative` lets whileDrag's z-index lift
- *  the dragged tab over its siblings. */
+ *  the dragged tab over its siblings. Desktop uses a short rule between quiet
+ *  inactive tabs. Phone capsules separate themselves. */
 export const TAB_ITEM =
 	"session-tab-reorder relative inline-flex shrink-0 items-center " +
-	"desktop:self-stretch desktop:items-stretch";
+	"after:pointer-events-none after:absolute after:top-1/2 " +
+	"after:-right-0.5 after:h-3 after:w-px after:-translate-y-1/2 " +
+	"after:bg-divider after:content-[''] last:after:hidden phone:after:hidden " +
+	// The active surface supplies both edges. Hide the trailing divider when
+	// either this item or its next sibling is active.
+	"[&:has(>[aria-selected=true])]:after:hidden data-[next-active]:after:hidden";
 
-/** Picked up: desktop tabs are flat labels on the strip's own background, so a
- *  dragged one has no surface of its own and smears over every tab it passes.
- *  It lifts into an opaque chip instead. */
-export const TAB_ITEM_DRAGGING = `${PILL} cursor-grabbing bg-panel smooth-shadow-ring-sm`;
+/** Picked up: an inactive desktop tab has no surface of its own and would smear
+ *  over every label it passes. It lifts into an opaque chip while dragging. */
+export const TAB_ITEM_DRAGGING =
+	`${TAB_SHAPE} cursor-grabbing bg-panel smooth-shadow-ring-sm`;
 
 /**
  * Where the dragged tab will land. Reorder already opens the gap live, but an
@@ -161,27 +163,11 @@ export const TAB_ACTIONS = "ml-auto flex flex-none items-center gap-[3px]";
  * instead of differing by a pixel.
  */
 const TAB_BASE =
-	"inline-flex max-w-[200px] shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap " +
-	"px-2.5 py-1.5 text-label transition-[background-color,color] " +
-	// A floating pill with a solid fill, so the transcript scrolling underneath
-	// never shows through it. (`--tab-stroke`, the ring's colour in the old
-	// sheet, was never set anywhere — it always resolved to transparent.)
-	`border ${PILL} smooth-shadow-sm ` +
-	// Desktop: no fill, ring, lift or rounding — just the label.
-	"desktop:relative desktop:rounded-none desktop:border-0 desktop:bg-transparent " +
-	"desktop:shadow-none desktop:hover:bg-transparent " +
-	// …and the underline, which every state paints by naming a colour in
-	// `--tab-line` (see `tabClass`) rather than by writing a rule of its own.
-	// It is a pseudo-element and not the inset box-shadow it used to be
-	// because a shadow can only trace the whole box, and this line is 6px
-	// shorter than that at each end: full width, it ran within 3px of the next
-	// tab's, which is what made two tabs read as one rule. 6px and not the
-	// 10px padding, so the line still overhangs the content it marks — cut to
-	// the content box it looked like a text decoration, and stopping it before
-	// the close × (which it did briefly) left it visibly short of the tab.
-	"desktop:after:absolute desktop:after:inset-x-1.5 desktop:after:bottom-0 " +
-	"desktop:after:h-0.5 desktop:after:rounded-[1px] desktop:after:content-[''] " +
-	"desktop:after:bg-[var(--tab-line,transparent)]";
+	"relative inline-flex max-w-[200px] shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap " +
+	`${TAB_SHAPE} border-0 px-2.5 py-1.5 text-label shadow-none ` +
+	"transition-[background-color,color] " +
+	`phone:rounded-full phone:border phone:border-[color:var(--mobile-header-control-border)] ` +
+	`phone:shadow-[var(--mobile-header-control-shadow)] ${MOBILE_CONTROL_GLASS_EFFECTS}`;
 
 export type TabState = {
 	active: boolean;
@@ -191,74 +177,51 @@ export type TabState = {
 };
 
 /**
- * One tab, painted for exactly one state.
- *
- * The order of the branches below is the order the old stylesheet resolved:
- * colored beats waiting beats active beats plain, because equal-specificity
- * rules were written in that order. Desktop moves the whole cue to the
- * underline, since a flat tab has no pill to tint.
+ * The selected tab is the only ordinary desktop tab with a surface. Phone tabs
+ * are all glass: the selected one is the bright plate, the rest a dimmer wash.
+ * Custom colours stay visible as an explicit exception, but use a quieter mix
+ * while inactive.
  */
 export function tabClass(state: TabState): string {
 	const { active, waiting, colored } = state;
 	const ink = active || waiting ? "text-fg" : "text-dim hover:text-fg";
+	const surface = colored
+		? active
+			? "bg-[color-mix(in_srgb,var(--tab-color)_22%,var(--bg-panel))] " +
+				"hover:bg-[color-mix(in_srgb,var(--tab-color)_28%,var(--bg-panel))] " +
+				"phone:bg-[color-mix(in_srgb,var(--tab-color)_22%,var(--mobile-tab-surface-selected))]"
+			: "bg-[color-mix(in_srgb,var(--tab-color)_9%,transparent)] " +
+				"hover:bg-[color-mix(in_srgb,var(--tab-color)_16%,transparent)] " +
+				"phone:bg-[color-mix(in_srgb,var(--tab-color)_9%,var(--mobile-tab-surface))]"
+		: active
+			? "bg-panel hover:bg-hover phone:bg-[var(--mobile-tab-surface-selected)]"
+			: "bg-transparent hover:bg-hover phone:bg-[var(--mobile-tab-surface)]";
 
-	// Desktop: one — and only one — underline, drawn by TAB_BASE from the colour
-	// named here. 2px, which is the weight every other tab strip in the app
-	// selects with (Reviews writes the same cue as `border-b-2 border-b-accent`);
-	// at 3px the bar was a slab of full-strength ink next to a hairline band.
-	// That leaves active and waiting on the same weight, so waiting carries the
-	// colour instead: blue, the same "needs you" the tab's own dot and the
-	// sidebar row already speak.
-	//
-	// Ink rather than --accent for the plain active tab. The accent is a chosen
-	// hue, and a strip of tabs is the app's own chrome: which tab you are on is
-	// structure, not a status worth spending the one saturated colour on, and
-	// at full strength beside a hairline band it was the loudest thing in the
-	// header. --text also inverts with the theme for free, which is what keeps
-	// the mark reading as "this one" on paper as well as on ink.
-	const underline = active
-		? "[--tab-line:var(--text)]"
-		: waiting
-			? "[--tab-line:var(--blue)]"
-			: colored
-				? "[--tab-line:color-mix(in_srgb,var(--tab-color)_70%,transparent)]"
-				: "";
-
-	// One fill + one ring per state, hover included: a second background
-	// utility in the same variant bucket would be resolved by Tailwind's output
-	// order rather than by which state is meant to win.
-	const pill =
-		colored && active
-			? "border-[color-mix(in_srgb,var(--tab-color)_60%,transparent)] " +
-				"bg-[color-mix(in_srgb,var(--tab-color)_26%,var(--bg-active))] " +
-				"hover:bg-[color-mix(in_srgb,var(--tab-color)_26%,var(--bg-active))]"
-			: colored
-				? "border-[color-mix(in_srgb,var(--tab-color)_50%,transparent)] " +
-					"bg-[color-mix(in_srgb,var(--tab-color)_14%,var(--bg-panel))] " +
-					"hover:bg-[color-mix(in_srgb,var(--tab-color)_22%,var(--bg-panel))]"
-				: waiting
-					? // Same hue as the sidebar's "needs you" row and the Needs
-						// action band: blocked-on-you is urgent, not informational.
-						"border-red bg-red-soft hover:bg-red-soft"
-					: active
-						? // The pointed-at wash beats the selected fill here, exactly as
-							// `.session-tab:hover` (0,2,0) beat `.session-tab-active` (0,1,0).
-							"border-transparent bg-[color-mix(in_srgb,var(--bg-active)_94%,var(--text))] hover:bg-hover"
-						: "border-transparent bg-panel hover:bg-hover";
-
-	return `${TAB_BASE} ${ink} ${underline} ${pill}`;
+	return `${TAB_BASE} ${ink} ${surface}`;
 }
 
-/** The label. Gives up its width first so a long title truncates instead of
- *  pushing the close × out of the pill. */
-export const TAB_TITLE = "max-w-[150px] overflow-hidden text-ellipsis";
+/** The label uses the close control's space while the tab is idle. Hovering
+ *  reveals close over the title, with a wider fade keeping both legible. */
+export const TAB_TITLE =
+	"session-tab-title block min-w-0 max-w-[150px] overflow-hidden " +
+	"data-[overflow]:[mask-image:linear-gradient(to_right,#000_0,#000_calc(100%_-_10px),transparent_100%)] " +
+	"desktop:max-w-[166px] " +
+	"desktop:group-hover/tab:[mask-image:linear-gradient(to_right,#000_0,#000_calc(100%_-_36px),transparent_100%)] " +
+	"desktop:group-focus-within/tab:[mask-image:linear-gradient(to_right,#000_0,#000_calc(100%_-_36px),transparent_100%)]";
 
 /** An icon-only view tab (Staging → a globe): drop the label's text metrics so
  *  the tab sizes to the glyph. */
 export const TAB_VICON = "inline-flex items-center justify-center leading-none";
 
-/** Unsent draft in a sibling session. */
-export const TAB_DRAFT = "inline-flex flex-none items-center text-dim";
+/** Unsent draft in a sibling session. The title already reserves 14px for the
+ * close control, so the pencil uses that room on hover instead of sitting
+ * underneath the control as it appears. */
+export const TAB_DRAFT =
+	"inline-flex flex-none items-center text-dim " +
+	"[@media_(hover:hover)_and_(pointer:fine)]:transition-transform " +
+	"[@media_(hover:hover)_and_(pointer:fine)]:group-hover/tab:-translate-x-3.5 " +
+	"[@media_(hover:hover)_and_(pointer:fine)]:group-focus-within/tab:-translate-x-3.5 " +
+	"motion-reduce:transition-none";
 
 /**
  * Teammates who have THIS tab open. The sidebar answers "someone is in this
@@ -339,27 +302,35 @@ export const PR_DOT_TONE: Record<string, string> = {
 
 const CLOSE_BASE =
 	"-my-0.5 -mr-[3px] inline-flex size-4 shrink-0 cursor-pointer items-center justify-center " +
-	"rounded-sm border-0 bg-transparent p-0 font-[inherit] text-[15px] leading-none text-dim " +
-	"hover:bg-pressed hover:text-fg " +
-	// Touch screens can't hover, so the × is always there — with a finger-sized
-	// hit area, while the glyph stays small.
-	"[@media_(hover:none)]:size-[26px] [@media_(hover:none)]:-mr-1";
+	"rounded-sm border-0 bg-transparent p-0 text-dim " +
+	"hover:bg-pressed hover:text-fg [@media_(hover:none)]:size-[26px] [@media_(hover:none)]:-mr-1";
 
-/** Revealed with the tab on pointer devices; an active tab keeps its × on. */
-const CLOSE_REVEAL =
+/** Desktop close controls share one absolute position, so revealing one never
+ * changes its width and never asks Motion to shuffle every sibling. */
+const CLOSE_OVERLAY_POSITION =
+	"[@media_(hover:hover)_and_(pointer:fine)]:absolute " +
+	"[@media_(hover:hover)_and_(pointer:fine)]:right-1 [@media_(hover:hover)_and_(pointer:fine)]:top-1/2 " +
+	"[@media_(hover:hover)_and_(pointer:fine)]:z-[1] [@media_(hover:hover)_and_(pointer:fine)]:m-0 " +
+	"[@media_(hover:hover)_and_(pointer:fine)]:-translate-y-1/2 " +
+	"[@media_(hover:hover)_and_(pointer:fine)]:transition-opacity";
+
+const CLOSE_OVERLAY_HIDDEN =
 	"[@media_(hover:hover)_and_(pointer:fine)]:pointer-events-none " +
 	"[@media_(hover:hover)_and_(pointer:fine)]:opacity-0 " +
-	"[@media_(hover:hover)_and_(pointer:fine)]:transition-opacity " +
 	"[@media_(hover:hover)_and_(pointer:fine)]:group-hover/tab:pointer-events-auto " +
-	"[@media_(hover:hover)_and_(pointer:fine)]:group-hover/tab:opacity-100";
+	"[@media_(hover:hover)_and_(pointer:fine)]:group-hover/tab:opacity-100 " +
+	"[@media_(hover:hover)_and_(pointer:fine)]:focus-visible:pointer-events-auto " +
+	"[@media_(hover:hover)_and_(pointer:fine)]:focus-visible:opacity-100";
 
-export const tabCloseClass = (active: boolean) =>
-	active ? CLOSE_BASE : `${CLOSE_BASE} ${CLOSE_REVEAL}`;
+/** Phones have no hover, so close stays in flow with a finger-sized hit area. */
+const CLOSE_TOUCH = "size-[26px] -mr-1";
+
+export const tabCloseClass = (phone: boolean) =>
+	`${CLOSE_BASE} ${phone ? CLOSE_TOUCH : `${CLOSE_OVERLAY_POSITION} ${CLOSE_OVERLAY_HIDDEN}`}`;
 
 /**
- * The trailing "+" and history controls. They are quiet chrome — no pill fill
- * or shadow — and they light up on hover of the strip, on focus (hover cannot
- * be the only way to reach a control) and while their menu is open.
+ * The trailing controls use quiet chrome with no pill fill or shadow. History
+ * reveals with the strip, on focus, and while its menu is open.
  */
 const CTRL_REVEAL =
 	"[@media_(hover:hover)_and_(pointer:fine)]:pointer-events-none " +
@@ -380,41 +351,27 @@ const CTRL_BASE =
 	"font-[inherit] leading-none text-dim transition-[background-color,color] " +
 	"hover:bg-hover hover:text-fg";
 
+/** Desktop trailing controls match the tabs' 28px box and medium radius. */
+const CTRL_DESKTOP =
+	"desktop:size-7 desktop:min-h-auto desktop:self-center desktop:rounded-md desktop:p-0";
+
 /**
- * New-tab "+". A comfortable square hit area on touch; on desktop a real
- * control on the same footprint and weight as the header's ⋯ menu, centered
- * on the same line as the tab labels.
+ * New-tab "+". Always visible once there is a strip, so adding a sibling does
+ * not depend on discovering a hover state. It keeps a comfortable square hit
+ * area on touch and matches the tabs on desktop.
  */
 export const TAB_NEW =
-	`${CTRL_BASE} justify-center text-[15px] ` +
-	"desktop:min-h-auto desktop:self-center desktop:rounded-control " +
-	"desktop:px-[5px] desktop:py-[3px] desktop:text-[22px] " +
-	CTRL_REVEAL;
+	`session-tab-new ${CTRL_BASE} ${CTRL_DESKTOP} justify-center text-[15px] desktop:text-[22px]`;
 
 /**
  * Archived-sessions menu. Same desktop footprint as the "+" it sits beside:
- * the two are one pair of quiet square controls after the last tab, and a
- * taller plate here read as a control stretched to fill the 40px band. Stays
- * lit while its menu is open (`data-popup-open`).
+ * the two are one pair of quiet square controls after the last tab. Stays lit
+ * while its menu is open (`data-popup-open`).
  */
 export const TAB_HISTORY =
-	`${CTRL_BASE} justify-center ` +
-	"desktop:min-h-auto desktop:self-center desktop:rounded-control " +
-	"desktop:px-[5px] desktop:py-[3px] " +
+	`${CTRL_BASE} ${CTRL_DESKTOP} justify-center ` +
 	"data-[popup-open]:bg-hover data-[popup-open]:text-fg " +
 	CTRL_REVEAL;
-
-/** The + tab's right-click mode menu (share / stacked / ask): a fixed popup
- *  anchored at the cursor, so it escapes the tab strip's overflow clipping.
- *  This carries the surface too — it used to come from `.tab-color-menu`, a
- *  rule named after the swatch row it no longer dresses (those chips live in the
- *  tab context menu now). Above every other popup on the pane at z-1000. */
-export const NEW_MENU =
-	"fixed z-[1000] flex min-w-[250px] flex-col gap-px rounded-popup bg-popup-glass [backdrop-filter:var(--popup-blur)] [--smooth-ring-color:var(--popup-ring)] p-1 " +
-	"smooth-shadow-ring-md";
-export const NEW_MENU_ITEM =
-	"block w-full cursor-pointer whitespace-nowrap rounded-[calc(6px*var(--rf))] border-0 " +
-	"bg-transparent px-2 py-1.5 text-left text-label text-fg hover:bg-hover";
 
 /* ── Tab colour swatches ─────────────────────────────────────────────────────
    The row of colour chips in a tab's context menu. Each chip carries its colour

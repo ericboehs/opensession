@@ -11,7 +11,7 @@
  * run; engine drivers consult it per append and hand the batch to the host,
  * which relays it to the server over the run-host protocol's `transcript`
  * frame. The server applies it via applyForwardedTranscript
- * (opencode-transcript.ts): one writer, full fidelity.
+ * (pi-transcript.ts): one writer, full fidelity.
  *
  * Registration is process-local state parked on globalThis (hot-reload safe,
  * import side-effect free). No forwarder registered (the normal server

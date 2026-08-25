@@ -25,7 +25,7 @@ final class HideStore {
     /// Sidebar row key → ISO timestamp of when this user hid it.
     private(set) var hides: [String: String] = [:]
 
-    private enum Change {
+    private enum Change: Equatable {
         case set(String)
         case remove
     }
@@ -33,9 +33,9 @@ final class HideStore {
     /// Local intent survives the first remote response. Without tombstones, a
     /// pre-hydration restore could be undone by an older server hide.
     private var pendingChanges: [String: Change] = [:]
-    private var mutationRevision = 0
     private var hydratedContext: NativePreferences.Context?
     private(set) var hasHydrated = false
+    private var isSaving = false
 
     init() {}
 
@@ -60,7 +60,7 @@ final class HideStore {
         hides = [:]
         pendingChanges.removeAll()
         hasHydrated = false
-        mutationRevision += 1
+        isSaving = false
     }
 
     /// Kept internal so the local-before-remote merge can be covered in tests.
@@ -112,22 +112,40 @@ final class HideStore {
 
     private func record(_ change: Change, for key: String) {
         pendingChanges[key] = change
-        mutationRevision += 1
     }
 
     private func save() {
-        guard hasHydrated else { return }
-        let user = ServerConfig.shared.userName
-        let snapshot = hides
-        let revision = mutationRevision
-        // Fire-and-forget, like the web: the map is local truth and a failed
-        // PUT costs nothing worth an error banner.
+        guard hasHydrated,
+              !isSaving,
+              !pendingChanges.isEmpty,
+              let requestContext = hydratedContext,
+              NativePreferences.context() == requestContext else { return }
+        let captured = pendingChanges
+        let set = captured.compactMapValues { change -> String? in
+            if case .set(let value) = change { return value }
+            return nil
+        }
+        let remove = captured.compactMap { key, change in
+            if case .remove = change { return key }
+            return nil
+        }
+        isSaving = true
         Task { [weak self] in
-            guard (try? await SettingsAPI.saveHides(user: user, hides: snapshot)) != nil,
-                  let self,
-                  self.mutationRevision == revision
-            else { return }
-            self.pendingChanges.removeAll()
+            let saved = try? await SettingsAPI.saveHides(
+                user: requestContext.user,
+                set: set,
+                remove: remove
+            )
+            guard let self,
+                  self.hydratedContext == requestContext,
+                  NativePreferences.context() == requestContext else { return }
+            self.isSaving = false
+            guard let saved else { return }
+            for (key, change) in captured where self.pendingChanges[key] == change {
+                self.pendingChanges.removeValue(forKey: key)
+            }
+            self.applyHydrated(saved, persist: false)
+            self.save()
         }
     }
 

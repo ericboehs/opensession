@@ -5,8 +5,8 @@
  *
  * The hand-written `description` in config.json is the only thing we had, and
  * it is thin exactly where the choice is hard: it says what a repo IS, never
- * what lives INSIDE it. "Tella's product monorepo" does not tell anyone that
- * the render engine is in there rather than in the GStreamer fork, and three
+ * what lives INSIDE it. "The product monorepo" does not tell anyone that
+ * the render engine is in there rather than in a sibling fork, and three
  * infrastructure repos described as "Kubernetes manifests", "cloud resources"
  * and "shared organization infrastructure" are indistinguishable to a reader
  * who only has those words.
@@ -50,10 +50,10 @@ const MAX_DOC = 1200;
  * only that (first-hit-wins, AGENTS first) is why "the repository picker
  * should remember what I picked" used to route anywhere but here.
  *
- * Both are still read: tella-fusion's AGENTS.md names its stack outright
- * (ReScript, Rust, Next.js, DynamoDB, Temporal) where its README says
- * "a Rust monorepo", and between them they identify it better than either
- * alone. Only 3 of 9 repos have an AGENTS.md, so most are unaffected either
+ * Both are still read: a repo's AGENTS.md often names its stack outright
+ * where its README says only "a Rust monorepo", and between them they
+ * identify it better than either alone. Most repos have no AGENTS.md at all,
+ * so most are unaffected either
  * way, and prompt size is very nearly free here — 24x the tokens measured
  * about 1s.
  */

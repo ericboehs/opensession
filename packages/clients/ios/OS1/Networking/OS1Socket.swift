@@ -6,10 +6,12 @@ import Foundation
 protocol SessionSocket: AnyObject {
     var onEvent: ((ServerEvent) -> Void)? { get set }
     var onClose: ((String?) -> Void)? { get set }
+    func setMutationRejectedHandler(_ handler: @escaping (String) -> Void)
     func connect()
     func disconnect()
-    func watch(sessionId: String)
+    func watch(sessionId: String, resume: TranscriptResumeCursor?)
     func setAway(_ away: Bool)
+    func setTyping(sessionId: String, typing: Bool)
     func loadHistory(sessionId: String, beforeOffset: Int, beforeRev: String?)
     func loadHistory(sessionId: String, beforeSeq: Int, limit: Int?)
     func loadWholeHistory(sessionId: String)
@@ -19,13 +21,20 @@ protocol SessionSocket: AnyObject {
     )
     func steerQueued(sessionId: String, queueId: String)
     func deleteQueued(sessionId: String, queueId: String)
+    func interruptQueued(sessionId: String, queueId: String)
     func takeQueued(sessionId: String, queueId: String)
+    func takeSteered(sessionId: String, queueId: String)
     func reorderQueued(sessionId: String, order: [String])
     func cancelWatchedRun()
     func answer(sessionId: String, questionId: String, answers: [String: String]?)
 }
 
 extension SessionSocket {
+    func setMutationRejectedHandler(_ handler: @escaping (String) -> Void) {}
+    func watch(sessionId: String) {
+        watch(sessionId: sessionId, resume: nil)
+    }
+
     /// Text-only convenience (slash commands and the like) — protocols can't
     /// carry default arguments, so the concrete method's defaults live here.
     func prompt(sessionId: String, content: String, user: String) {
@@ -47,21 +56,44 @@ extension SessionSocket {
 final class OS1Socket: SessionSocket {
     var onEvent: ((ServerEvent) -> Void)?
     var onClose: ((String?) -> Void)?
+    private var onMutationRejected: ((String) -> Void)?
+    private let connection: ServerConnection?
+
+    init(connection: ServerConnection? = ServerConfig.shared.connection) {
+        self.connection = connection
+    }
+
+    func setMutationRejectedHandler(_ handler: @escaping (String) -> Void) {
+        onMutationRejected = handler
+    }
 
     private var task: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var pingTask: Task<Void, Never>?
     private var lastPong = Date()
     private var closed = false
+    private var watchedSessionId: String?
+    private var supportsCommandResults = false
+    private var commandNegotiated = false
+    private lazy var mutationOutbox = SocketMutationOutbox(
+        key: SocketMutationOutbox.storageKey(
+            server: connection?.baseURL.absoluteString ?? "",
+            user: ServerConfig.shared.githubLogin.isEmpty
+                ? ServerConfig.shared.userName
+                : ServerConfig.shared.githubLogin
+        )
+    )
 
     func connect() {
-        guard let url = ServerConfig.shared.wsURL else {
+        guard let connection, let url = connection.wsURL else {
             onClose?("Server URL not set")
             return
         }
         closed = false
+        supportsCommandResults = false
+        commandNegotiated = false
         lastPong = Date()
-        let request = ServerConfig.shared.authorizedRequest(url)
+        let request = connection.authorizedRequest(url)
         let task = URLSession.shared.webSocketTask(with: request)
         // Default cap is 1 MB — a heavy session's transcript_init chunk (up
         // to ~120 entries × 32 KB wire clamp) blows past it, receive() throws,
@@ -89,11 +121,28 @@ final class OS1Socket: SessionSocket {
     /// capability the web viewer sends: eligible watches are then served from
     /// the server's own transcript store, whose backward pages reach the first
     /// message. Without it the watch is served from the legacy mirror JSONL —
-    /// and sessions whose mirror file no longer exists (every opencode-engine
+    /// and sessions whose mirror file no longer exists (every owned-store
     /// session now) answer with a 120-entry tail, `truncated: true` and NO byte
     /// cursor, which left the reader unable to page past the last 120 entries.
-    func watch(sessionId: String) {
-        send(["type": "watch", "sessionId": sessionId, "supportsSeq": true])
+    func watch(sessionId: String, resume: TranscriptResumeCursor?) {
+        watchedSessionId = sessionId
+        var frame: [String: Any] = [
+            "type": "watch",
+            "sessionId": sessionId,
+            "supportsSeq": true,
+            "supportsChangeSeq": true,
+        ]
+        switch resume {
+        case .seq(let lastSeq, let lastChangeSeq):
+            frame["sinceSeq"] = lastSeq
+            frame["sinceChangeSeq"] = lastChangeSeq
+        case .offset(let endOffset, let rev):
+            frame["sinceOffset"] = endOffset
+            frame["sinceRev"] = rev
+        case nil:
+            break
+        }
+        send(frame)
     }
 
     /// Presence, not subscription: backgrounding the app keeps the watch (the
@@ -103,6 +152,11 @@ final class OS1Socket: SessionSocket {
     /// expires, which is too long for a normal focus transition.
     func setAway(_ away: Bool) {
         send(["type": "away", "away": away])
+    }
+
+    /// Short-lived composer activity. The server expires it unless refreshed.
+    func setTyping(sessionId: String, typing: Bool) {
+        send(["type": "typing", "sessionId": sessionId, "typing": typing])
     }
 
     /// Page one window of earlier history (arrives as transcript_history).
@@ -169,8 +223,20 @@ final class OS1Socket: SessionSocket {
         send(["type": "delete_queued_prompt", "sessionId": sessionId, "queueId": queueId])
     }
 
+    /// Deliver a steered message immediately: the server ends the run's
+    /// current step and re-delivers this one message as the next turn, so it
+    /// stops waiting out a long tool call. The agent resumes its work with
+    /// the message in hand.
+    func interruptQueued(sessionId: String, queueId: String) {
+        send(["type": "interrupt_queued_prompt", "sessionId": sessionId, "queueId": queueId])
+    }
+
     func takeQueued(sessionId: String, queueId: String) {
         send(["type": "take_queued_prompt", "sessionId": sessionId, "queueId": queueId])
+    }
+
+    func takeSteered(sessionId: String, queueId: String) {
+        send(["type": "take_steered_prompt", "sessionId": sessionId, "queueId": queueId])
     }
 
     func reorderQueued(sessionId: String, order: [String]) {
@@ -179,7 +245,9 @@ final class OS1Socket: SessionSocket {
 
     func cancelWatchedRun() {
         // The server stops the run of the session this socket is watching.
-        send(["type": "cancel"])
+        var frame: [String: Any] = ["type": "cancel"]
+        if let watchedSessionId { frame["sessionId"] = watchedSessionId }
+        send(frame)
     }
 
 
@@ -189,12 +257,40 @@ final class OS1Socket: SessionSocket {
         send(frame)
     }
 
-    private func send(_ frame: [String: Any]) {
-        guard let task,
-              let data = try? JSONSerialization.data(withJSONObject: frame),
-              let text = String(data: data, encoding: .utf8)
+    private func finishCommandNegotiation(
+        on task: URLSessionWebSocketTask,
+        supported: Bool
+    ) {
+        guard self.task === task, !commandNegotiated else { return }
+        commandNegotiated = true
+        supportsCommandResults = supported
+        for text in mutationOutbox.pendingTexts() {
+            task.send(.string(text)) { _ in }
+            if !supported, let data = text.data(using: .utf8),
+               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let requestId = object["requestId"] as? String {
+                mutationOutbox.retireLegacy(id: requestId)
+            }
+        }
+        if supported {
+            for text in mutationOutbox.pendingAckTexts() {
+                task.send(.string(text)) { _ in }
+            }
+        }
+    }
+
+    private func send(_ input: [String: Any]) {
+        guard let prepared = mutationOutbox.prepare(
+            input,
+            persistMutation: !commandNegotiated || supportsCommandResults
+        ) else {
+            onMutationRejected?("Pending sends are using local storage. Reconnect or clear one before sending more.")
+            return
+        }
+        if prepared.frame["requestId"] != nil, !commandNegotiated { return }
+        guard let task
         else { return }
-        task.send(.string(text)) { [weak self] error in
+        task.send(.string(prepared.text)) { [weak self] error in
             if error != nil {
                 Task { @MainActor in self?.finish(reason: "Send failed") }
             }
@@ -213,6 +309,41 @@ final class OS1Socket: SessionSocket {
                 @unknown default: nil
                 }
                 guard let data else { continue }
+                if !commandNegotiated,
+                   let first = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    if first["type"] as? String == "hello" {
+                        let capabilities = first["capabilities"] as? [String: Any]
+                        finishCommandNegotiation(
+                            on: task,
+                            supported: capabilities?["commandResults"] as? Bool == true
+                        )
+                    } else {
+                        finishCommandNegotiation(on: task, supported: false)
+                    }
+                }
+                if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   object["type"] as? String == "command_result",
+                   let requestId = object["requestId"] as? String {
+                    let completed = object["status"] as? String == "completed"
+                    let terminal = object["terminal"] as? Bool == true
+                    if completed || terminal {
+                        if let sessionId = object["sessionId"] as? String,
+                           mutationOutbox.acknowledge(id: requestId, sessionId: sessionId),
+                           let ack = mutationOutbox.pendingAckTexts().first(where: {
+                               guard let data = $0.data(using: .utf8),
+                                     let frame = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                               else { return false }
+                               return frame["requestId"] as? String == requestId
+                           }) {
+                            task.send(.string(ack)) { _ in }
+                        }
+                    }
+                }
+                if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   object["type"] as? String == "command_ack_result",
+                   let requestId = object["requestId"] as? String {
+                    mutationOutbox.confirmAcknowledgement(id: requestId)
+                }
                 // A heavy session's transcript_init frame can be multiple
                 // megabytes; decoding it on the main actor froze the UI for
                 // the whole JSONDecoder pass (opening a session, resyncing

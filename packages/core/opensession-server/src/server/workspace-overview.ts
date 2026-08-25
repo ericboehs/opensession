@@ -15,6 +15,7 @@
 
 import { existsSync } from "fs";
 import { parseTranscriptAsync } from "./jsonl-parser";
+import { getRecentCommitsForSessions } from "./recent-commits";
 import { mergedSessionTranscriptAsync } from "./sessions";
 import type { TranscriptEntry, UnifiedSession } from "./types";
 
@@ -29,10 +30,7 @@ export type OverviewSession = {
   id: string;
   title?: string;
   createdAt?: string;
-} & Pick<
-  UnifiedSession,
-  "transcriptPath" | "opencodeSessionId" | "claudeSessionId"
->;
+} & Pick<UnifiedSession, "transcriptPath">;
 
 export interface WorkspaceMediaItem {
   kind: "image" | "video";
@@ -42,11 +40,25 @@ export interface WorkspaceMediaItem {
   at: string;
 }
 
+export interface WorkspaceCommit {
+  repo: string;
+  sha: string;
+  title: string;
+  url?: string;
+  committedAt: string;
+  filesChanged: number;
+  additions: number;
+  deletions: number;
+}
+
 export interface WorkspaceOverview {
   prompt: { content: string; sessionId: string; at: string } | null;
   /** Latest assistant text across all member sessions — the "where things stand"
    *  one-liner for the sidebar hover card. */
   lastMessage: { content: string; sessionId: string; at: string } | null;
+  /** Commits attributed to these sessions after they landed on a shared
+   *  checkout's default branch. A branch diff can no longer see them then. */
+  commits: WorkspaceCommit[];
   media: WorkspaceMediaItem[];
 }
 
@@ -159,7 +171,26 @@ export async function buildWorkspaceOverview(
   }
 
   media.sort((a, b) => (b.at || "").localeCompare(a.at || ""));
-  return { prompt, lastMessage, media: media.slice(0, MEDIA_CAP) };
+  const commits = await getRecentCommitsForSessions(
+    new Set(sessions.map((session) => session.id)),
+  );
+  return {
+    prompt,
+    lastMessage,
+    commits: commits.map(
+      ({ repo, sha, title, url, committedAt, filesChanged, additions, deletions }) => ({
+        repo,
+        sha,
+        title,
+        ...(url ? { url } : {}),
+        committedAt,
+        filesChanged,
+        additions,
+        deletions,
+      }),
+    ),
+    media: media.slice(0, MEDIA_CAP),
+  };
 }
 
 /**

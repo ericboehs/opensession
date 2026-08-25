@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { mkdtempSync, writeFileSync, rmSync, existsSync } from "fs";
+import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync, utimesSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { $ } from "bun";
@@ -184,5 +184,57 @@ describe("review worktree reuse", () => {
       "review-head-os-review",
     );
     expect(await Bun.file(join(wtPath, "a.txt")).text()).toBe("hello\n");
+  });
+
+  test("recovers an unheld stale index lock before resetting the review checkout", async () => {
+    const { createReviewWorktreeForPrHead } = await import("./worktree");
+    await git(repoDir, "checkout", "main");
+    await git(repoDir, "checkout", "-b", "review-stale-lock", "origin/main");
+    await git(repoDir, "push", "origin", "review-stale-lock");
+    await git(repoDir, "checkout", "main");
+
+    const wtPath = await createReviewWorktreeForPrHead("review-stale-lock", "scratch", "main");
+    const gitdir = readFileSync(join(wtPath, ".git"), "utf8").replace(/^gitdir:\s*/, "").trim();
+    const lockPath = join(gitdir, "index.lock");
+    writeFileSync(lockPath, "");
+    const staleAt = new Date(Date.now() - 10 * 60_000);
+    utimesSync(lockPath, staleAt, staleAt);
+
+    await createReviewWorktreeForPrHead("review-stale-lock", "scratch", "main");
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  test("recreates a half-initialized review checkout left by a killed Git process", async () => {
+    const { createReviewWorktreeForPrHead } = await import("./worktree");
+    await git(repoDir, "checkout", "main");
+    await git(repoDir, "checkout", "-b", "review-half-initialized", "origin/main");
+    await git(repoDir, "push", "origin", "review-half-initialized");
+    await git(repoDir, "checkout", "main");
+
+    const wtPath = await createReviewWorktreeForPrHead("review-half-initialized", "scratch", "main");
+    const gitdir = readFileSync(join(wtPath, ".git"), "utf8").replace(/^gitdir:\s*/, "").trim();
+    await git(wtPath, "read-tree", "--empty");
+    await git(repoDir, "checkout", "review-half-initialized");
+    writeFileSync(join(repoDir, "a.txt"), "updated\n");
+    await git(repoDir, "add", "a.txt");
+    await git(repoDir, "commit", "-m", "update review head");
+    await git(repoDir, "push", "origin", "review-half-initialized");
+    await git(repoDir, "checkout", "main");
+    await git(repoDir, "worktree", "lock", "--reason", "initializing", wtPath);
+    const lockPath = join(gitdir, "index.lock");
+    writeFileSync(lockPath, "");
+    const staleAt = new Date(Date.now() - 10 * 60_000);
+    utimesSync(lockPath, staleAt, staleAt);
+
+    await createReviewWorktreeForPrHead("review-half-initialized", "scratch", "main");
+
+    expect((await $`git -C ${wtPath} status --porcelain`.text()).trim()).toBe("");
+    expect((await $`git -C ${wtPath} branch --show-current`.text()).trim()).toBe(
+      "review-half-initialized-os-review",
+    );
+    expect(await Bun.file(join(wtPath, "a.txt")).text()).toBe("updated\n");
+    expect((await $`git -C ${repoDir} worktree list --porcelain`.text())).not.toContain(
+      `worktree ${wtPath}\nlocked`,
+    );
   });
 });

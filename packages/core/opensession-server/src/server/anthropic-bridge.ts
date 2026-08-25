@@ -2,23 +2,23 @@
  * Anthropic bridge: a loopback HTTP endpoint that speaks the Anthropic
  * Messages API (`POST /v1/messages`, streaming included) but is served by the
  * official Claude Agent SDK running on designated Max-subscription accounts
- * from the claude-accounts layer. It exists so the OpenCode engine
- * (opencode-runner.ts) can run `opencode/anthropic/*` models on subscription
+ * from the claude-accounts layer. It exists so the Pi engine
+ * (pi-runner.ts) can run `pi/anthropic/*` models on subscription
  * capacity instead of raw API keys (docs/self-hosting-sandboxes.md).
  *
  * This is OUR reimplementation of the mapping pioneered by
- * github.com/ianjwhite99/opencode-with-claude + @rynfar/meridian (both MIT —
+ * github.com/ianjwhite99/Pi-with-claude + @rynfar/meridian (both MIT —
  * studied, not copied). The core trick, same as theirs:
  *
- *  - The client's `tools` (opencode's bash/edit/etc.) are registered as an
+ *  - The client's `tools` (Pi's bash/edit/etc.) are registered as an
  *    in-process SDK MCP server with no-op handlers, so the model emits real
  *    tool_use blocks for them.
  *  - A PreToolUse hook BLOCKS every tool call and captures {id, name, input};
  *    the captured calls are returned to the HTTP client as Anthropic
  *    `tool_use` content blocks with stop_reason "tool_use" — the client
- *    (opencode) executes the tool itself.
- *  - Statelessness is bridged with an SDK-session store: each opencode
- *    session maps to one SDK session (keyed by the `x-opencode-session`
+ *    (Pi) executes the tool itself.
+ *  - Statelessness is bridged with an SDK-session store: each Pi
+ *    session maps to one SDK session (keyed by the `x-opensession-session`
  *    header the reference plugin also uses, else a fingerprint of the first
  *    message). A follow-up request resumes that session and delivers only the
  *    NEW tail (tool results flattened to plain text — the model reads them as
@@ -26,16 +26,16 @@
  *    starts a fresh SDK session with a full flat-text replay.
  *
  * Containment (all enforced here, not in prompts):
- *  - Never starts unless an engine that uses it is enabled (opencode's
- *    ~/.opensession-opencode.json or pi's ~/.opensession-pi.json) and at
+ *  - Never starts unless an engine that uses it is enabled (Pi's
+ *    ~/.opensession-model-providers.json or pi's ~/.opensession-pi.json) and at
  *    least one Claude account exists to serve on.
- *  - Account pick per request (pickBridgeAccount): when opencode's
+ *  - Account pick per request (pickBridgeAccount): when Pi's
  *    `bridgeAccountIds` designates accounts, ONLY those serve (legacy
  *    containment override); otherwise the general claude-accounts pool
- *    serves, picked exactly like opencode/meridian runs (personal-first by
+ *    serves, picked exactly like subscription bridge runs (personal-first by
  *    user, utilization-gated).
  *  - Binds 127.0.0.1 only, and every request must present the per-boot bridge
- *    key (x-api-key) that only the opencode-runner hands out — so another
+ *    key (x-api-key) that only the Pi-runner hands out — so another
  *    local process can't quietly burn subscription capacity through it.
  *  - Every request lands in the audit log (audit.ts): accepted ones with
  *    session attribution (`anthropic_bridge_request` in/out), rejected ones
@@ -44,7 +44,7 @@
  *    key — so local probing/hammering always leaves a trail.
  *  - Request hygiene: bodies over 10MB are refused (413), and a per-boot
  *    rolling per-account counter caps requests/hour (`bridgeMaxRequestsPerHour`
- *    in ~/.opensession-opencode.json, default 300 → 429 past it; estimated
+ *    in ~/.opensession-model-providers.json, default 300 → 429 past it; estimated
  *    tokens are tracked alongside for the audit trail). The ultimate backstop
  *    is Anthropic's own per-account extra-usage credit ceiling: bridge traffic
  *    bills to the designated account's extra-usage credits (see below), so
@@ -52,7 +52,7 @@
  *    enabled at claude.ai/settings/usage.
  *
  * Billing reality (verified live, 2026-07-08): Anthropic's server classifies
- * these requests as third-party-app traffic (it fingerprints the opencode
+ * these requests as third-party-app traffic (it fingerprints the Pi
  * system prompt content — a claude_code preset wrapper does NOT change the
  * verdict) and answers `400 "Third-party apps now draw from your extra
  * usage, not your plan limits"` unless the account has extra-usage credits
@@ -90,14 +90,21 @@ import {
   type ClaudeAccount,
 } from "./claude-accounts";
 import { CLAUDE_CODE_BIN } from "./runner-shared";
-import { bridgePort, bridgeMaxRequestsPerHour, readOpencodeBridgeConfig } from "./opencode-config";
+import { bridgePort, bridgeMaxRequestsPerHour, readModelProviderConfig } from "./model-providers";
 import { readPiEngineConfig } from "./pi-config";
 import { mkdirSync } from "fs";
 
 const HOME = homeDir();
 // Empty, dedicated cwd for the SDK subprocess: the bridge never touches files
 // (every tool is a blocked passthrough), so no worktree must ever be visible.
-export const BRIDGE_CWD = `${stateDir("opencode")}/bridge-cwd`;
+export const BRIDGE_CWD = `${stateDir("anthropic-bridge")}/bridge-cwd`;
+
+/** Create the SDK cwd on the call path. The in-process provider uses the same
+ * directory without starting the HTTP bridge, so bridge startup cannot own it. */
+export function ensureAnthropicBridgeCwd(dir = BRIDGE_CWD): string {
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
 
 const g = globalThis as any;
 
@@ -108,12 +115,12 @@ interface StoredBridgeSession {
   lastUsedAt: number;
 }
 
-// opencode-session key → SDK session mapping. In-memory (parked on globalThis
+// Pi-session key → SDK session mapping. In-memory (parked on globalThis
 // for hot reloads); a real restart just means the next request replays the
 // conversation into a fresh SDK session — correct, only slower.
 const sessions: Map<string, StoredBridgeSession> = (g.__anthropicBridgeSessions ??= new Map());
 
-/** Per-boot shared secret between opencode-runner and this bridge. */
+/** Per-boot shared secret between Pi-runner and this bridge. */
 export function bridgeKey(): string {
   return (g.__anthropicBridgeKey ??= crypto.randomUUID());
 }
@@ -126,23 +133,23 @@ export interface BridgeInfo {
 /** Non-null = the reason no config designates serving accounts right now —
  *  the same gate ensureAnthropicBridge throws on, exported so the in-process
  *  pi provider can refuse with the identical message without starting the
- *  HTTP listener. Serving is allowed when EITHER opencode is enabled with
+ *  HTTP listener. Serving is allowed when EITHER Pi is enabled with
  *  bridgeAccountIds OR the pi engine is enabled with bridgeAccounts. */
 export function bridgeDesignationError(): string | null {
-  const cfg = readOpencodeBridgeConfig();
+  const cfg = readModelProviderConfig();
   const piCfg = readPiEngineConfig();
   if (!cfg?.enabled && !piCfg?.enabled) {
     return (
-      "The Anthropic bridge is disabled. Enable it in ~/.opensession-opencode.json " +
+      "The Anthropic bridge is disabled. Enable it in ~/.opensession-model-providers.json " +
       '({"enabled": true}) or, for pi/anthropic/* models, in ~/.opensession-pi.json ' +
-      '({"enabled": true}) — or use an API-key provider configured via `opencode auth login` instead.'
+      '({"enabled": true}) — or use an API-key provider configured via `Pi auth login` instead.'
     );
   }
   const ocIds = cfg?.enabled ? cfg.bridgeAccountIds || [] : [];
   if (ocIds.length || hasAccounts()) return null;
   return (
     "The Anthropic bridge has no accounts to serve on: add a Claude account in " +
-    "Settings → Usage (or designate bridgeAccountIds in ~/.opensession-opencode.json)."
+    "Settings → Providers (or designate bridgeAccountIds in ~/.opensession-model-providers.json)."
   );
 }
 
@@ -159,7 +166,7 @@ export function ensureAnthropicBridge(): BridgeInfo {
   if (g.__anthropicBridgeServer) {
     return { url: `http://127.0.0.1:${g.__anthropicBridgeServer.port}`, key: bridgeKey() };
   }
-  mkdirSync(BRIDGE_CWD, { recursive: true });
+  ensureAnthropicBridgeCwd();
   g.__anthropicBridgeHandler = handleBridgeRequest;
   g.__anthropicBridgeServer = Bun.serve({
     hostname: "127.0.0.1",
@@ -194,10 +201,10 @@ export interface BridgeAccountPin {
 /** Pick the account to serve a bridge/pi request (utilization-gated).
  *
  *  Two modes:
- *  - Designated: when opencode's `bridgeAccountIds` names accounts, ONLY
+ *  - Designated: when Pi's `bridgeAccountIds` names accounts, ONLY
  *    those may serve (walked in order) — the legacy containment for the
  *    loopback bridge era, kept as an explicit override.
- *  - Pool (the default, matching how opencode/meridian picks): no
+ *  - Pool (the default, matching how subscription bridge picks): no
  *    designation → pickAccount over the general claude-accounts pool, with
  *    the same personal-first/user routing as every other run. Pi traffic is
  *    first-party Claude Agent SDK traffic billed to plan limits (verified
@@ -214,7 +221,7 @@ export function pickBridgeAccount(
   model: string | undefined,
   pin?: BridgeAccountPin
 ): ClaudeAccount | { error: string } {
-  const cfg = readOpencodeBridgeConfig();
+  const cfg = readModelProviderConfig();
   const ids = cfg?.enabled ? cfg.bridgeAccountIds || [] : [];
   const resolved = resolveAccount({
     user: pin?.user,
@@ -233,7 +240,7 @@ export function pickBridgeAccount(
     return {
       error:
         `pinned account "${refusal.pinName}" is not a designated bridge account ` +
-        "(opencode bridgeAccountIds is set, so only those ids may serve bridge traffic) — " +
+        "(bridgeAccountIds is set, so only those ids may serve bridge traffic) — " +
         "strict pin, refusing to widen",
     };
   }
@@ -256,7 +263,7 @@ export function pickBridgeAccount(
   if (refusal.kind === "none-configured") {
     // Deliberately NOT usage-limit-shaped: an empty pool is a config problem,
     // and hopping models would not fix it.
-    return { error: "no Claude accounts configured (add one in Settings → Usage)" };
+    return { error: "no Claude accounts configured (add one in Settings → Providers)" };
   }
   return { error: "no usable Claude account in the pool (all exhausted or sidelined)" };
 }
@@ -304,7 +311,7 @@ export function replayConversation(messages: AnthropicMessage[]): string {
 }
 
 /** Minimal JSON Schema → zod conversion for client tool registration. The
- *  schema only shapes what the model emits — opencode revalidates on its side,
+ *  schema only shapes what the model emits — Pi revalidates on its side,
  *  so unknown constructs safely degrade to z.any(). */
 export function jsonSchemaToZodShape(schema: any): Record<string, z.ZodTypeAny> {
   if (!schema || typeof schema !== "object" || !schema.properties) return {};
@@ -414,11 +421,11 @@ export function admitBridgeRequest(
   };
 }
 
-/** Session key: the reference plugin sends x-opencode-session; otherwise
+/** Session key: the reference plugin sends x-opensession-session; otherwise
  *  fingerprint the first message so retries of the same conversation reuse
  *  the SDK session. */
 function sessionKeyFor(req: Request, messages: AnthropicMessage[]): string {
-  const header = req.headers.get("x-opencode-session");
+  const header = req.headers.get("x-opensession-session");
   if (header) return `oc:${header}`;
   const first = messages[0] ? flattenMessageText(messages[0].content) : "";
   return `fp:${Bun.hash(first).toString(16)}`;
@@ -428,7 +435,7 @@ async function handleBridgeRequest(req: Request): Promise<Response> {
   const url = new URL(req.url);
   if (url.pathname === "/health") return Response.json({ ok: true });
   const requestId = crypto.randomUUID();
-  const ocSessionHeader = req.headers.get("x-opencode-session") || undefined;
+  const engineSessionHeader = req.headers.get("x-opensession-session") || undefined;
   if (req.method !== "POST" || url.pathname !== "/v1/messages") {
     return anthropicError(404, "not_found_error", `no such endpoint: ${req.method} ${url.pathname}`);
   }
@@ -436,7 +443,7 @@ async function handleBridgeRequest(req: Request): Promise<Response> {
   if (presented !== bridgeKey()) {
     auditReject(requestId, 401, "invalid_bridge_key", {
       key_presented: !!presented,
-      opencode_session: ocSessionHeader,
+      engine_session: engineSessionHeader,
     });
     return anthropicError(401, "authentication_error", "invalid bridge key");
   }
@@ -451,7 +458,7 @@ async function handleBridgeRequest(req: Request): Promise<Response> {
   } catch (e) {
     const tooLarge = e instanceof RangeError;
     auditReject(requestId, tooLarge ? 413 : 400, tooLarge ? "body_too_large" : "unreadable_body", {
-      opencode_session: ocSessionHeader,
+      engine_session: engineSessionHeader,
     });
     return tooLarge
       ? anthropicError(413, "request_too_large", `request body exceeds ${BRIDGE_MAX_BODY_BYTES} bytes`)
@@ -460,13 +467,13 @@ async function handleBridgeRequest(req: Request): Promise<Response> {
   try {
     body = JSON.parse(rawBody);
   } catch {
-    auditReject(requestId, 400, "invalid_json", { opencode_session: ocSessionHeader });
+    auditReject(requestId, 400, "invalid_json", { engine_session: engineSessionHeader });
     return anthropicError(400, "invalid_request_error", "invalid JSON body");
   }
   const messages: AnthropicMessage[] = Array.isArray(body?.messages) ? body.messages : [];
   if (!messages.length) {
     auditReject(requestId, 400, "empty_messages", {
-      opencode_session: ocSessionHeader,
+      engine_session: engineSessionHeader,
       model: typeof body?.model === "string" ? body.model : undefined,
     });
     return anthropicError(400, "invalid_request_error", "messages[] is required");
@@ -485,7 +492,7 @@ async function handleBridgeRequest(req: Request): Promise<Response> {
   const account = pickBridgeAccount(model);
   if ("error" in account) {
     auditReject(requestId, 529, "no_usable_account", {
-      opencode_session: ocSessionHeader,
+      engine_session: engineSessionHeader,
       model,
       detail: account.error,
     });
@@ -508,7 +515,7 @@ async function handleBridgeRequest(req: Request): Promise<Response> {
   const rate = admitBridgeRequest(account.id, estTokens);
   if (!rate.allowed) {
     auditReject(requestId, 429, "rate_limited", {
-      opencode_session: ocSessionHeader,
+      engine_session: engineSessionHeader,
       model,
       account: account.name,
       requests_last_hour: rate.requests,
@@ -538,7 +545,7 @@ async function handleBridgeRequest(req: Request): Promise<Response> {
     msg: "anthropic_bridge_request",
     request_id: requestId,
     session_key: key,
-    opencode_session: ocSessionHeader,
+    engine_session: engineSessionHeader,
     model,
     stream: wantsStream,
     tools: requestTools.length,
@@ -555,7 +562,7 @@ async function handleBridgeRequest(req: Request): Promise<Response> {
     const q = query({
       prompt,
       options: {
-        cwd: BRIDGE_CWD,
+        cwd: ensureAnthropicBridgeCwd(),
         model: model || undefined,
         resume: sdkSessionId,
         // Turn 1 is the real answer; turn 2 exists because blocked tool calls
@@ -631,7 +638,7 @@ async function handleBridgeRequest(req: Request): Promise<Response> {
           rm.subtype === "error_max_turns" && captured.length > 0;
         // Surface SDK/API failures as provider errors, not assistant text —
         // the CLI narrates errors (e.g. "API Error: 400 …") as a message,
-        // which would otherwise read as a normal model reply in opencode.
+        // which would otherwise read as a normal model reply in Pi.
         if ((rm.is_error || rm.subtype !== "success") && !maxTurnsWithCaptures) {
           const detail =
             (typeof rm.result === "string" && rm.result) ||

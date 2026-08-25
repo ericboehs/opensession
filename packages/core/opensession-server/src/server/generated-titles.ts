@@ -140,7 +140,7 @@ export async function ensureGeneratedTitle(
  * for a session the user never prompts again. Two real triggers, both measured
  * over the week of 2026-07-24..31: 228 service restarts (every backend edit
  * needs one, and a session created within ~15s of one loses its call), and a
- * 40-minute window on 07-27 10:17-10:57 where no opencode server would spawn
+ * 40-minute window on 07-27 10:17-10:57 where no model turn would start
  * at all, so every queued one-shot parked until the restart killed it.
  *
  * This sweep closes that hole: anything still wearing its raw first-line

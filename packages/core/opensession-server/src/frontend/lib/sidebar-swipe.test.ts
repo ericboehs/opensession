@@ -11,6 +11,8 @@ import { describe, expect, test } from "bun:test";
 import {
 	editableOwnsCaretChord,
 	editableSwallowsArchiveChord,
+	swipeActionForOffset,
+	swipeCommitOffset,
 } from "./sidebar-swipe";
 
 function target(
@@ -32,6 +34,16 @@ const nothing = target(null);
 const renameField = target({ value: "" });
 const emptyComposer = target({ composer: true, value: "" });
 const draftComposer = target({ composer: true, value: "half a prompt" });
+
+describe("mobile sidebar swipe", () => {
+	test("left archives and right pins", () => {
+		expect(swipeActionForOffset(-1)).toBe("archive");
+		expect(swipeActionForOffset(1)).toBe("star");
+		expect(swipeActionForOffset(0)).toBeNull();
+		expect(swipeCommitOffset("archive", 320)).toBe(-320);
+		expect(swipeCommitOffset("star", 320)).toBe(320);
+	});
+});
 
 describe("editableOwnsCaretChord", () => {
 	test("a transcript or a row leaves ⌘↑/⌘↓ to the sidebar", () => {

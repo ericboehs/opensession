@@ -10,10 +10,13 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import { audit } from "./audit";
 import { configuredPaths, configuredServer } from "./config";
-import { ensureSandboxPortalRelay, mintSandboxPortalGrant, revokeSandboxPortalRelay } from "./sandbox-portal-relay";
+import { ensureSandboxPortalRelay, mintSandboxPortalGrant, revokeSandboxPortalRelay, sandboxPortalRelayConnected, waitForSandboxPortalRelay } from "./sandbox-portal-relay";
 import { remoteSandboxCallbackBaseUrl, usesOutboundSandboxPortalRelay } from "./sandbox/config";
 import { shellQuoteWord } from "./sandbox/adapters/bootstrap";
 import { sandboxHttpsPortFor } from "./sandbox/preview-ports";
+import { cacheSandboxPortalRecords } from "./sandbox-portals";
+import { REPO_ROOT } from "../runner-host/protocol";
+import { sessionScratchRoot } from "./session-scratch";
 import type { Sandbox } from "./sandbox/provider";
 import type { UnifiedSession } from "./types";
 
@@ -37,8 +40,11 @@ const PREFIX = "# opensession-portal ";
 const NAME = /^[a-z][a-z0-9-]{0,62}$/;
 const MIN_PORT = 1024;
 const MAX_PORT = 19_000;
+const SANDBOX_PORTAL_PATH = "/home/ubuntu/.bun/bin:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 const remoteRelayAgents: Map<string, { expiresAt: number }> = ((globalThis as Record<string, unknown>).__opensessionSandboxPortalAgents ??= new Map()) as Map<string, { expiresAt: number }>;
+const remoteRelayAgentStarts: Map<string, Promise<string | null>> = ((globalThis as Record<string, unknown>).__opensessionSandboxPortalAgentStarts ??= new Map()) as Map<string, Promise<string | null>>;
 const PORTAL_REAP_INTERVAL_MS = 5 * 60_000;
+export const SANDBOX_PORTAL_AGENT_ENTRY = `${REPO_ROOT}/packages/core/opensession-server/src/runner-host/sandbox-portal-agent.ts`;
 
 function portalKey(name: string): string {
 	return `PORTAL_${name.toUpperCase().replace(/-/g, "_")}_PORT`;
@@ -55,16 +61,35 @@ function validatePort(port: number): number {
 	return port;
 }
 
+function validateKey(key?: string): string | undefined {
+	if (key == null) return undefined;
+	if (!/^[A-Z][A-Z0-9_]*_PORT$/.test(key)) throw new Error("Portal service keys must be uppercase *_PORT names.");
+	return key;
+}
+
 function registryPath(worktreeDir: string): string { return join(worktreeDir, ".ports.conf"); }
+
+/**
+ * Provider command transports must return byte-clean stdout, but keep the
+ * registry safe if one accidentally wraps output in terminal title/prompt
+ * sequences. Persisting those bytes turns `.ports.conf` into executable junk
+ * when a repository sources it during startup.
+ */
+function sanitizePortalRegistryText(contents: string): string {
+	return contents
+		.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
+		.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+		.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
+}
 
 function parsePortalRegistry(contents: string): PortalRecord[] {
 	const records: PortalRecord[] = [];
-	for (const line of contents.split("\n")) {
+	for (const line of sanitizePortalRegistryText(contents).split("\n")) {
 		if (!line.startsWith(PREFIX)) continue;
 		try {
 			const value = JSON.parse(line.slice(PREFIX.length)) as PortalRecord;
 			if (!value || typeof value !== "object" || !NAME.test(value.name) || !Number.isInteger(value.port) || typeof value.command !== "string") continue;
-			records.push({ ...value, key: portalKey(value.name), port: validatePort(value.port) });
+			records.push({ ...value, key: validateKey(value.key) ?? portalKey(value.name), port: validatePort(value.port) });
 		} catch {}
 	}
 	return records;
@@ -76,7 +101,7 @@ export function readPortalRegistry(worktreeDir: string): PortalRecord[] {
 }
 
 function serializedPortalRegistry(previousText: string, records: PortalRecord[]): string {
-	const previous = previousText.split("\n");
+	const previous = sanitizePortalRegistryText(previousText).split("\n");
 	const generatedKeys = new Set(records.map((record) => record.key));
 	const kept = previous.filter((line) => {
 		if (line.startsWith(PREFIX)) return false;
@@ -142,13 +167,19 @@ function hostPortalOps(worktreeDir: string): PortalOps {
 	};
 }
 
-async function waitForPortalPort(ops: PortalOps, port: number, timeoutMs = 15_000): Promise<boolean> {
+async function waitForPortalPort(
+	ops: PortalOps,
+	port: number,
+	pid: number,
+	timeoutMs = 15_000,
+): Promise<"ready" | "exited" | "timeout"> {
 	const until = Date.now() + timeoutMs;
 	while (Date.now() < until) {
-		if (await ops.probePort(port)) return true;
+		if (await ops.probePort(port)) return "ready";
+		if (!(await ops.pidAlive(pid))) return "exited";
 		await Bun.sleep(200);
 	}
-	return false;
+	return "timeout";
 }
 
 async function allocatePort(worktreeDir: string): Promise<number> {
@@ -199,7 +230,16 @@ async function listPortals(ops: PortalOps): Promise<PortalRecord[]> {
 		if (record.state === "stopped" || record.state === "failed") return record;
 		const listening = await ops.probePort(record.port);
 		const alive = await ops.pidAlive(record.pid);
-		const state: PortalState = listening ? "awake" : alive ? "starting" : "failed";
+		// "pid alive but not listening" only means starting while the Portal has
+		// never been awake. Once it WAS awake, losing the listener is a crash even
+		// when a wrapper (just/concurrently) survives its dead dev server —
+		// otherwise the record ghosts as an eternal "starting" stub: invisible as
+		// a live Portal, yet blocking every new start with "already exists".
+		// Records poisoned before this rule existed lost their awake history, so
+		// also fail a "starting" record stuck past the maximum readiness window.
+		const startedMs = record.startedAt ? Date.now() - Date.parse(record.startedAt) : 0;
+		const stuckStarting = record.state === "starting" && startedMs > 300_000;
+		const state: PortalState = listening ? "awake" : alive && record.state !== "awake" && !stuckStarting ? "starting" : "failed";
 		if (state === record.state) return record;
 		changed = true;
 		return { ...record, state, ...(state === "failed" ? { lastError: "The service is no longer listening." } : {}) };
@@ -218,7 +258,9 @@ async function startPortal(ops: PortalOps, input: {
 	name: string;
 	command: string;
 	port?: number;
+	key?: string;
 	description?: string;
+	readyTimeoutMs?: number;
 	/** Host Portals record their owner so a restarted server can reap them; Sandbox Portals die with the Sandbox. */
 	ownsProcess: boolean;
 	allocatePort: (records: PortalRecord[]) => Promise<number>;
@@ -232,13 +274,22 @@ async function startPortal(ops: PortalOps, input: {
 	if (!command || command.length > 8_000) throw new Error("Portal command is required.");
 	const records = await listPortals(ops);
 	const current = records.find((record) => record.name === name);
-	if (current && current.state !== "stopped" && current.state !== "failed") throw new Error(`Portal '${name}' already exists. Restart it instead.`);
+	if (current && current.state !== "stopped" && current.state !== "failed") {
+		const key = validateKey(input.key) ?? portalKey(name);
+		const sameService = current.command === command && current.key === key && (input.port == null || current.port === input.port);
+		if (current.state === "awake" && sameService) return { ...current, url: input.urlFor(current.port) };
+		throw new Error(`Portal '${name}' already exists. Restart it instead.`);
+	}
+	// A dead record can leave its process group behind (a crashed dev server's
+	// wrapper, watchers, lock holders). Reap it before starting anew so the
+	// fresh start does not collide with orphaned ReScript/Next processes.
+	if (current) await terminatePortalProcess(ops, current.pid);
 	const port = input.port == null ? await input.allocatePort(records) : validatePort(input.port);
 	if (records.some((record) => record.name !== name && record.port === port) || await ops.probePort(port)) throw new Error(`Port ${port} is already in use.`);
 	await input.qualifyPort?.(port, records);
 	const url = input.urlFor(port);
 	const base: PortalRecord = {
-		name, key: portalKey(name), command, port,
+		name, key: validateKey(input.key) ?? portalKey(name), command, port,
 		...(input.ownsProcess ? { sessionId: input.sessionId } : {}),
 		...(input.description?.trim() ? { description: input.description.trim().slice(0, 240) } : {}),
 		state: "starting", startedAt: new Date().toISOString(),
@@ -254,25 +305,37 @@ async function startPortal(ops: PortalOps, input: {
 	}
 	const record = { ...base, pid };
 	await ops.writeRegistry(upsert(records, record));
-	if (!(await waitForPortalPort(ops, port))) {
-		const failed = { ...record, state: "failed" as const, lastError: `Nothing listened on port ${port} within 15 seconds.` };
+	const readyTimeoutMs = Math.min(300_000, Math.max(5_000, input.readyTimeoutMs ?? 15_000));
+	const readiness = await waitForPortalPort(ops, port, pid, readyTimeoutMs);
+	if (readiness !== "ready") {
+		const lastError = readiness === "exited"
+			? "The Portal process exited before it started listening."
+			: `Nothing listened on port ${port} within ${Math.round(readyTimeoutMs / 1_000)} seconds.`;
+		// A timed-out process may still be compiling and can leave watchers or
+		// lock files behind. Never lose its PID by overwriting the failed record
+		// before the complete process group has been terminated.
+		await terminatePortalProcess(ops, pid);
+		const failed = { ...record, pid: undefined, state: "failed" as const, lastError };
 		await ops.writeRegistry(upsert(records, failed));
-		throw new Error(failed.lastError);
+		throw new Error(lastError);
 	}
 	const awake = { ...record, state: "awake" as const };
 	await ops.writeRegistry(upsert(records, awake));
 	return { ...awake, url };
 }
 
+async function terminatePortalProcess(ops: PortalOps, pid?: number): Promise<void> {
+	if (!pid || pid < 2 || !(await ops.pidAlive(pid))) return;
+	await ops.signalGroup(pid, "SIGTERM");
+	await Bun.sleep(1_500);
+	if (await ops.pidAlive(pid)) await ops.signalGroup(pid, "SIGKILL");
+}
+
 async function stopPortal(ops: PortalOps, name: string): Promise<PortalRecord> {
 	const records = await ops.readRegistry();
 	const current = records.find((record) => record.name === name);
 	if (!current) throw new Error(`Portal '${name}' does not exist.`);
-	if (current.pid && current.pid > 1) {
-		await ops.signalGroup(current.pid, "SIGTERM");
-		await Bun.sleep(1_500);
-		await ops.signalGroup(current.pid, "SIGKILL");
-	}
+	await terminatePortalProcess(ops, current.pid);
 	const stopped = { ...current, state: "stopped" as const, pid: undefined };
 	await ops.writeRegistry(upsert(records, stopped));
 	return stopped;
@@ -295,7 +358,11 @@ export async function startPortalService(input: {
 	name: string;
 	command: string;
 	port?: number;
+	key?: string;
 	description?: string;
+	readyTimeoutMs?: number;
+	/** Narrow, caller-owned additions for a trusted declared recipe. */
+	env?: Record<string, string>;
 }): Promise<PortalRecord & { url: string }> {
 	const started = await startPortal(hostPortalOps(input.worktreeDir), {
 		...input,
@@ -310,6 +377,7 @@ export async function startPortalService(input: {
 				env: {
 					PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
 					HOME: process.env.HOME || "/tmp",
+					...input.env,
 					PORT: String(port), PORTAL_URL: url, OPENSESSION_PORTAL: name,
 					// Next's detached telemetry flusher escapes the Portal process group
 					// during shutdown. Portals do not need telemetry, so never create it.
@@ -422,12 +490,12 @@ export function startPortalReaper(
 	console.log(`[portals] orphan reaper started (every ${PORTAL_REAP_INTERVAL_MS / 60_000}m)`);
 }
 
-export async function restartPortalService(input: { sessionId: string; worktreeDir: string; name: string }): Promise<PortalRecord & { url: string }> {
+export async function restartPortalService(input: { sessionId: string; worktreeDir: string; name: string; env?: Record<string, string>; readyTimeoutMs?: number }): Promise<PortalRecord & { url: string }> {
 	const name = validateName(input.name);
 	const current = readPortalRegistry(input.worktreeDir).find((record) => record.name === name);
 	if (!current) throw new Error(`Portal '${name}' does not exist.`);
 	await stopPortalService(input);
-	return startPortalService({ sessionId: input.sessionId, worktreeDir: input.worktreeDir, name, command: current.command, port: current.port, description: current.description });
+	return startPortalService({ ...input, name, key: current.key, command: current.command, port: current.port, description: current.description });
 }
 
 export function setPortalPath(worktreeDir: string, path: string, name?: string): PortalRecord[] {
@@ -443,21 +511,24 @@ export function setPortalPath(worktreeDir: string, path: string, name?: string):
  * qualified by `getSandboxPreviewStatus` before Caddy exposes them.
  */
 async function readSandboxPortalRegistry(sandbox: Sandbox): Promise<{ text: string; records: PortalRecord[] }> {
-	const response = await sandbox.exec(["bash", "-lc", "cat .ports.conf 2>/dev/null || true"]);
+	const response = await sandbox.exec(["bash", "-c", "cat .ports.conf 2>/dev/null || true"]);
 	return { text: response.stdout, records: parsePortalRegistry(response.stdout) };
 }
 
 async function writeSandboxPortalRegistry(sandbox: Sandbox, records: PortalRecord[]): Promise<void> {
 	const { text } = await readSandboxPortalRegistry(sandbox);
 	const data = Buffer.from(serializedPortalRegistry(text, records)).toString("base64");
-	const response = await sandbox.exec(["bash", "-lc", `printf %s ${shellQuoteWord(data)} | base64 -d > .ports.conf`]);
+	const response = await sandbox.exec(["bash", "-c", `printf %s ${shellQuoteWord(data)} | base64 -d > .ports.conf`]);
 	if (response.exitCode !== 0) throw new Error(response.stderr.trim() || "Could not update the Sandbox Portal registry.");
 }
 
-function sandboxPortalOps(sandbox: Sandbox): PortalOps {
+function sandboxPortalOps(sandbox: Sandbox, sessionId?: string): PortalOps {
 	return {
 		readRegistry: async () => (await readSandboxPortalRegistry(sandbox)).records,
-		writeRegistry: (records) => writeSandboxPortalRegistry(sandbox, records),
+		writeRegistry: async (records) => {
+			await writeSandboxPortalRegistry(sandbox, records);
+			if (sessionId) cacheSandboxPortalRecords(sessionId, sandbox.id, records);
+		},
 		probePort: async (port) => (await sandbox.exec(["timeout", "2", "bash", "-c", `exec 3<>/dev/tcp/127.0.0.1/${port}`])).exitCode === 0,
 		pidAlive: async (pid) => {
 			if (!pid || pid < 2) return false;
@@ -465,7 +536,7 @@ function sandboxPortalOps(sandbox: Sandbox): PortalOps {
 		},
 		signalGroup: async (pid, signal) => {
 			const flag = signal === "SIGKILL" ? "-KILL" : "-TERM";
-			await sandbox.exec(["bash", "-lc", `kill ${flag} -- -${pid} 2>/dev/null || kill ${flag} ${pid} 2>/dev/null || true`]);
+			await sandbox.exec(["bash", "-c", `kill ${flag} -- -${pid} 2>/dev/null || kill ${flag} ${pid} 2>/dev/null || true`]);
 		},
 	};
 }
@@ -486,19 +557,33 @@ export async function ensureRemoteSandboxPortalAgent(input: {
 }): Promise<string | null> {
 	if (!usesOutboundSandboxPortalRelay(input.sandbox.provider)) return null;
 	const agentKey = `${input.sessionId}:${input.sandbox.id}:${input.port}`;
+	const relayIdentity = { sessionId: input.sessionId, sandboxId: input.sandbox.id, port: input.port };
 	const current = remoteRelayAgents.get(agentKey);
-	if (current && current.expiresAt > Date.now() + 30_000) {
-		return ensureSandboxPortalRelay({ sessionId: input.sessionId, sandboxId: input.sandbox.id, port: input.port });
+	if (current && current.expiresAt > Date.now() + 30_000 && sandboxPortalRelayConnected(relayIdentity)) {
+		return ensureSandboxPortalRelay(relayIdentity);
 	}
-	const grant = mintSandboxPortalGrant({ sessionId: input.sessionId, sandboxId: input.sandbox.id, port: input.port });
-	const callbackBase = remoteSandboxCallbackBaseUrl().replace(/\/$/, "");
-	const endpoint = `${callbackBase}/sandbox-portal-ws?session=${encodeURIComponent(input.sessionId)}&sandbox=${encodeURIComponent(input.sandbox.id)}&port=${input.port}`;
-	const agent = "/home/ubuntu/projects/opensession/src/runner-host/sandbox-portal-agent.ts";
-	const relayLaunch = `OPENSESSION_SANDBOX_PORTAL_WS_URL=${shellQuoteWord(endpoint)} OPENSESSION_SANDBOX_PORTAL_TOKEN=${shellQuoteWord(grant.token)} OPENSESSION_SANDBOX_PORTAL_PORT=${shellQuoteWord(String(input.port))} setsid /home/ubuntu/.bun/bin/bun run ${shellQuoteWord(agent)} >/dev/null 2>&1 &`;
-	const started = await input.sandbox.exec(["bash", "-lc", relayLaunch]);
-	if (started.exitCode !== 0) throw new Error(started.stderr.trim() || "Could not start the Sandbox Portal relay.");
-	remoteRelayAgents.set(agentKey, { expiresAt: grant.expiresAt });
-	return ensureSandboxPortalRelay({ sessionId: input.sessionId, sandboxId: input.sandbox.id, port: input.port });
+	const existingStart = remoteRelayAgentStarts.get(agentKey);
+	if (existingStart) return existingStart;
+	const start = (async () => {
+		const grant = mintSandboxPortalGrant(relayIdentity);
+		const callbackBase = remoteSandboxCallbackBaseUrl().replace(/\/$/, "");
+		const endpoint = `${callbackBase}/sandbox-portal-ws?session=${encodeURIComponent(input.sessionId)}&sandbox=${encodeURIComponent(input.sandbox.id)}&port=${input.port}`;
+		const logDir = join(sessionScratchRoot(), input.sessionId);
+		const logPath = `${logDir}/sandbox-portal-${input.port}.log`;
+		// Portal transport fixes must not wait for a repository image refresh or
+		// mutate the prepared project. Copy this small, self-contained sidecar
+		// into session scratch on every launch; the app workspace stays untouched.
+		const agentPath = `${logDir}/sandbox-portal-agent.ts`;
+		const agentPayload = Buffer.from(readFileSync(SANDBOX_PORTAL_AGENT_ENTRY, "utf8")).toString("base64");
+		const relayLaunch = `mkdir -p ${shellQuoteWord(logDir)} && printf %s ${shellQuoteWord(agentPayload)} | base64 -d > ${shellQuoteWord(agentPath)} && OPENSESSION_SANDBOX_PORTAL_WS_URL=${shellQuoteWord(endpoint)} OPENSESSION_SANDBOX_PORTAL_TOKEN=${shellQuoteWord(grant.token)} OPENSESSION_SANDBOX_PORTAL_PORT=${shellQuoteWord(String(input.port))} OPENSESSION_SANDBOX_PORTAL_EXPIRES_AT=${shellQuoteWord(String(grant.expiresAt))} exec /home/ubuntu/.bun/bin/bun run ${shellQuoteWord(agentPath)} </dev/null >${shellQuoteWord(logPath)} 2>&1`;
+		const started = await input.sandbox.exec(["bash", "-c", relayLaunch], { background: true, timeoutMs: 15_000 });
+		if (started.exitCode !== 0) throw new Error(started.stderr.trim() || "Could not start the Sandbox Portal relay.");
+		remoteRelayAgents.set(agentKey, { expiresAt: grant.expiresAt });
+		return ensureSandboxPortalRelay(relayIdentity);
+	})();
+	remoteRelayAgentStarts.set(agentKey, start);
+	try { return await start; }
+	finally { if (remoteRelayAgentStarts.get(agentKey) === start) remoteRelayAgentStarts.delete(agentKey); }
 }
 
 export function forgetRemoteSandboxPortalAgents(sandboxId: string, port?: number): void {
@@ -512,15 +597,38 @@ export async function listSandboxPortalServices(sandbox: Sandbox): Promise<Porta
 	return listPortals(sandboxPortalOps(sandbox));
 }
 
-export async function startSandboxPortalService(input: {
+type SandboxPortalStartInput = {
 	sessionId: string;
 	sandbox: Sandbox;
 	name: string;
 	command: string;
 	port?: number;
+	key?: string;
 	description?: string;
-}): Promise<PortalRecord> {
-	const awake = await startPortal(sandboxPortalOps(input.sandbox), {
+	readyTimeoutMs?: number;
+	/** Short-lived workload identity for a trusted declared recipe. */
+	env?: Record<string, string>;
+};
+
+function sandboxPortalOperations(): Map<string, Promise<PortalRecord>> {
+	const global = globalThis as typeof globalThis & { __opensessionSandboxPortalOperations?: Map<string, Promise<PortalRecord>> };
+	return (global.__opensessionSandboxPortalOperations ??= new Map());
+}
+
+function withSandboxPortalOperation(input: Pick<SandboxPortalStartInput, "sandbox" | "name">, operation: () => Promise<PortalRecord>): Promise<PortalRecord> {
+	const operations = sandboxPortalOperations();
+	const key = `${input.sandbox.id}:${validateName(input.name)}`;
+	const current = operations.get(key);
+	if (current) return current;
+	const task = operation().finally(() => {
+		if (operations.get(key) === task) operations.delete(key);
+	});
+	operations.set(key, task);
+	return task;
+}
+
+async function startSandboxPortalServiceInner(input: SandboxPortalStartInput): Promise<PortalRecord> {
+	const awake = await startPortal(sandboxPortalOps(input.sandbox, input.sessionId), {
 		...input,
 		ownsProcess: false,
 		allocatePort: (records) => allocateSandboxPort(input.sandbox, records),
@@ -530,15 +638,41 @@ export async function startSandboxPortalService(input: {
 		},
 		urlFor: (port) => `https://${configuredServer().previewHost}:${sandboxHttpsPortFor(input.sandbox.id, port)}`,
 		launch: async ({ name, command, port, url }) => {
-			const logPath = `.opensession-portal-${name}.log`;
-			const launch = `PORT=${shellQuoteWord(String(port))} PORTAL_URL=${shellQuoteWord(url)} OPENSESSION_PORTAL=${shellQuoteWord(name)} setsid bash -lc ${shellQuoteWord(`exec ${command}`)} >${shellQuoteWord(logPath)} 2>&1 & echo $!`;
-			const launched = await input.sandbox.exec(["bash", "-lc", launch]);
-			const pid = Number(launched.stdout.trim().split(/\s+/).at(-1));
-			if (launched.exitCode !== 0 || !Number.isInteger(pid) || pid < 2) throw new Error(launched.stderr.trim() || "Could not start the Portal process.");
-			return pid;
+			const runtimeDir = join(sessionScratchRoot(), input.sessionId, "portals");
+			const legacyLogPath = `.opensession-portal-${name}.log`;
+			const legacyPidPath = `.opensession-portal-${name}.pid`;
+			const logPath = `${runtimeDir}/${name}.log`;
+			const pidPath = `${runtimeDir}/${name}.pid`;
+			// Provider command endpoints are allowed to reap children when a
+			// synchronous shell returns. Start the service through the provider's
+			// native detached lane. Logs and the short-lived PID marker live in
+			// session scratch, never in the user's Git workspace.
+			const launch = `rm -f ${shellQuoteWord(legacyLogPath)} ${shellQuoteWord(legacyPidPath)} && mkdir -p ${shellQuoteWord(runtimeDir)} && printf '%s\\n' $$ > ${shellQuoteWord(pidPath)} && HOME=/home/ubuntu PATH=${shellQuoteWord(SANDBOX_PORTAL_PATH)} PORT=${shellQuoteWord(String(port))} PORTAL_URL=${shellQuoteWord(url)} OPENSESSION_PORTAL=${shellQuoteWord(name)} exec setsid bash -c ${shellQuoteWord(`exec ${command}`)} >${shellQuoteWord(logPath)} 2>&1`;
+			const launched = await input.sandbox.exec(["bash", "-c", launch], {
+				env: input.env,
+				background: true,
+				timeoutMs: 15_000,
+			});
+			if (launched.exitCode !== 0) throw new Error(launched.stderr.trim() || "Could not start the Portal process.");
+			for (let attempt = 0; attempt < 20; attempt++) {
+				const marker = await input.sandbox.exec(["bash", "-c", `cat ${shellQuoteWord(pidPath)} 2>/dev/null || true`]);
+				const pid = Number(marker.stdout.trim());
+				if (Number.isInteger(pid) && pid >= 2) {
+					await input.sandbox.exec(["rm", "-f", pidPath]);
+					return pid;
+				}
+				await Bun.sleep(250);
+			}
+			throw new Error("The detached Portal process did not publish its process id.");
 		},
 	});
 	await ensureRemoteSandboxPortalAgent({ sessionId: input.sessionId, sandbox: input.sandbox, port: awake.port });
+	if (usesOutboundSandboxPortalRelay(input.sandbox.provider) && !(await waitForSandboxPortalRelay({ sessionId: input.sessionId, sandboxId: input.sandbox.id, port: awake.port }, 15_000))) {
+		await stopPortal(sandboxPortalOps(input.sandbox, input.sessionId), awake.name);
+		revokeSandboxPortalRelay(input.sandbox.id, awake.port);
+		forgetRemoteSandboxPortalAgents(input.sandbox.id, awake.port);
+		throw new Error(`Portal relay did not connect within 15 seconds. See sandbox-portal-${awake.port}.log in this session's scratch directory.`);
+	}
 	audit({ msg: "sandbox_portal_started", session_id: input.sessionId, sandbox_id: input.sandbox.id, portal: awake.name, port: awake.port });
 	// The Sandbox preview URL is derived per request from the published port,
 	// so the record stays url-free the way its callers persist it.
@@ -546,20 +680,43 @@ export async function startSandboxPortalService(input: {
 	return record;
 }
 
+export function startSandboxPortalService(input: SandboxPortalStartInput): Promise<PortalRecord> {
+	return withSandboxPortalOperation(input, () => startSandboxPortalServiceInner(input));
+}
+
 export async function stopSandboxPortalService(input: { sessionId: string; sandbox: Sandbox; name: string }): Promise<PortalRecord> {
-	const stopped = await stopPortal(sandboxPortalOps(input.sandbox), validateName(input.name));
+	const stopped = await stopPortal(sandboxPortalOps(input.sandbox, input.sessionId), validateName(input.name));
 	revokeSandboxPortalRelay(input.sandbox.id, stopped.port);
 	forgetRemoteSandboxPortalAgents(input.sandbox.id, stopped.port);
 	audit({ msg: "sandbox_portal_stopped", session_id: input.sessionId, sandbox_id: input.sandbox.id, portal: stopped.name, port: stopped.port });
 	return stopped;
 }
 
-export async function restartSandboxPortalService(input: { sessionId: string; sandbox: Sandbox; name: string }): Promise<PortalRecord> {
-	const name = validateName(input.name);
-	const current = (await sandboxPortalOps(input.sandbox).readRegistry()).find((record) => record.name === name);
-	if (!current) throw new Error(`Portal '${name}' does not exist.`);
-	await stopSandboxPortalService(input);
-	return startSandboxPortalService({ sessionId: input.sessionId, sandbox: input.sandbox, name, command: current.command, port: current.port, description: current.description });
+export function restartSandboxPortalService(input: {
+	sessionId: string;
+	sandbox: Sandbox;
+	name: string;
+	command?: string;
+	port?: number;
+	key?: string;
+	description?: string;
+	env?: Record<string, string>;
+	readyTimeoutMs?: number;
+}): Promise<PortalRecord> {
+	return withSandboxPortalOperation(input, async () => {
+		const name = validateName(input.name);
+		const current = (await sandboxPortalOps(input.sandbox).readRegistry()).find((record) => record.name === name);
+		if (!current) throw new Error(`Portal '${name}' does not exist.`);
+		await stopSandboxPortalService(input);
+		return startSandboxPortalServiceInner({
+			...input,
+			name,
+			key: input.key ?? current.key,
+			command: input.command ?? current.command,
+			port: input.port ?? current.port,
+			description: input.description ?? current.description,
+		});
+	});
 }
 
 export async function setSandboxPortalPath(sandbox: Sandbox, path: string, name?: string): Promise<PortalRecord[]> {

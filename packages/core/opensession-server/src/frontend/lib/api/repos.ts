@@ -1,6 +1,7 @@
 import { API_BASE, ApiError, request } from "./request";
 import { rememberRepoColors } from "../repo-colors";
 import { rememberRepoCount } from "../repo-count";
+import { cachedNewSessionRepo, cachedRepos, rememberRepos } from "../repo-cache";
 
 export const REPOS_CHANGED_EVENT = "opensession:repos-changed";
 
@@ -32,6 +33,29 @@ export interface RepoInfo {
 	iconRev?: number | null;
 }
 
+export type SharedCheckoutMode = "shared" | "worktree";
+
+export interface WorktreeSettings {
+	mode: SharedCheckoutMode;
+	repos: Array<{ id: string; label: string }>;
+}
+
+export function fetchWorktreeSettings(): Promise<WorktreeSettings> {
+	return request("/settings/worktrees", {
+		label: "Failed to load worktree settings",
+	});
+}
+
+export function setSharedCheckoutMode(
+	mode: SharedCheckoutMode,
+): Promise<WorktreeSettings> {
+	return request("/settings/worktrees", {
+		method: "PUT",
+		body: { mode },
+		label: "Failed to save worktree settings",
+	});
+}
+
 /**
  * Set the workspace's default repository for new sessions — a repo id, "auto",
  * or "" to clear it back to the fallback. Admin-facing (Settings →
@@ -47,6 +71,11 @@ export async function setNewSessionRepoApi(repo: string): Promise<string> {
 		},
 	);
 	workspaceNewSessionRepo = data?.newSessionRepo ?? repo;
+	workspaceRepoLive = true;
+	// Keep the remembered copy honest, so the palette that opens next doesn't
+	// start on the default this call just replaced.
+	const known = cachedRepos();
+	if (known.length) rememberRepos(known, workspaceNewSessionRepo);
 	return workspaceNewSessionRepo;
 }
 
@@ -106,21 +135,49 @@ const REPO_FETCH_RETRY_DELAYS_MS = [250, 750, 1_500];
  * reads it in the same `.then()` that sets the repo list.
  */
 let workspaceNewSessionRepo = "";
+/** Whether that came from this load rather than from the remembered copy. */
+let workspaceRepoLive = false;
 
-/** The workspace default seen on the last /repos fetch ("" before one lands). */
+/**
+ * The workspace default as of the last /repos answer — this load's, or the one
+ * remembered from the previous load until it arrives ("" the first time).
+ * Once a live answer lands it wins outright, including when it is empty: a
+ * default someone cleared must not come back from the cache.
+ */
 export function configuredNewSessionRepo(): string {
-	return workspaceNewSessionRepo;
+	return workspaceRepoLive ? workspaceNewSessionRepo : cachedNewSessionRepo();
 }
 
-export async function fetchRepos(): Promise<RepoInfo[]> {
+/** The repos as of the last load, for a picker that would rather not open empty. */
+export { cachedRepos };
+
+/**
+ * In flight right now. Several surfaces ask for the list at once (the app
+ * shell, the /new palette, whichever picker just opened), and they all want
+ * the same answer, so they share one request rather than racing three.
+ */
+let reposInFlight: Promise<RepoInfo[]> | null = null;
+
+export function fetchRepos(): Promise<RepoInfo[]> {
+	if (!reposInFlight) {
+		reposInFlight = loadRepos().finally(() => {
+			reposInFlight = null;
+		});
+	}
+	return reposInFlight;
+}
+
+async function loadRepos(): Promise<RepoInfo[]> {
 	for (let attempt = 0; ; attempt++) {
 		try {
 			const data = await request<{ repos?: RepoInfo[]; newSessionRepo?: string }>(
 				"/repos",
 				{ label: "Failed to load repositories" },
 			);
-			if (typeof data?.newSessionRepo === "string")
+			if (typeof data?.newSessionRepo === "string") {
 				workspaceNewSessionRepo = data.newSessionRepo;
+				workspaceRepoLive = true;
+			}
 			// Recorded here rather than at the call sites: every tile reads the
 			// assignment, and the tile takes a repo id, not a RepoInfo.
 			rememberRepoColors(data?.repos ?? []);
@@ -128,6 +185,9 @@ export async function fetchRepos(): Promise<RepoInfo[]> {
 			// are, and has to resolve before this request can answer — so the
 			// size of the registered set is cached for the next load.
 			rememberRepoCount((data?.repos ?? []).length);
+			// Kept for the next load, so the pickers open on this list instead of
+			// on a spinner.
+			rememberRepos(data?.repos ?? [], workspaceNewSessionRepo);
 			return data?.repos ?? [];
 		} catch (error) {
 			const retryDelay = REPO_FETCH_RETRY_DELAYS_MS[attempt];

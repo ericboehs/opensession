@@ -2,7 +2,7 @@
  * Synthetic demo dataset generator — pure disk writes, no server graph, no
  * network. Everything resolves through the SAME resolvers the server reads
  * with (paths.ts OPENSESSION_SESSIONS_DIR live binding, rename-compat stateDir(),
- * opencode-transcript OPENCODE_TRANSCRIPTS_DIR live binding, statePath() for the
+ * pi-transcript PI_TRANSCRIPTS_DIR live binding, statePath() for the
  * PR snapshot caches), so the dataset lands in whatever scratch state the
  * instance is pointed at — never a hardcoded home path.
  *
@@ -10,7 +10,7 @@
  * partial run regenerates on the next attempt). Callers: startDemo() at boot
  * under OPENSESSION_DEMO=1, and scripts/demo-data.ts standalone.
  *
- * Import discipline: only leaf modules (paths/rename-compat/opencode-transcript
+ * Import discipline: only leaf modules (paths/rename-compat/pi-transcript
  * line builders). Never import sessions/agent-runner/automations here — the
  * standalone CLI must not drag in modules with tickers or socket binds.
  */
@@ -19,7 +19,6 @@ import { mkdirSync, existsSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { OPENSESSION_SESSIONS_DIR } from "../paths";
 import { stateDir, statePath } from "../paths";
-import { OPENCODE_TRANSCRIPTS_DIR, getOpencodeTranscriptPath } from "../opencode-transcript";
 import { configPath } from "../config";
 import {
   DEMO_BRANCH,
@@ -183,7 +182,7 @@ export function generateDemoData(
 ): DemoGenerateResult {
   const homeStores = opts.homeStores !== false;
   const sessionsDir = OPENSESSION_SESSIONS_DIR;
-  const transcriptsDir = OPENCODE_TRANSCRIPTS_DIR;
+  const transcriptsDir = statePath(".claude/projects/-demo-engine");
   const markerPath = demoMarkerPath();
   const demoRoot = join(sessionsDir, "demo");
   const repoDir = join(demoRoot, "repo");
@@ -215,9 +214,9 @@ export function generateDemoData(
   const sessions = demoSessions({ now, worktreeDir, repoDir });
   for (const s of sessions) {
     writeJson(join(sessionsDir, `${s.id}.json`), s.file);
-    if (s.ocSessionId && s.lines.length) {
+    if (s.engineSessionId && s.lines.length) {
       writeText(
-        getOpencodeTranscriptPath(s.ocSessionId),
+        join(transcriptsDir, `${s.engineSessionId}.jsonl`),
         `${s.lines.map((l) => JSON.stringify(l)).join("\n")}\n`,
       );
     }

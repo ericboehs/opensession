@@ -47,8 +47,8 @@ describe("buildFeedRows", () => {
 		expect(prRow.ref).toBe("#12");
 	});
 
-	it("keeps the workspace behind a merge so the row can open it", () => {
-		const [row] = buildFeedRows([pr({ session: { id: "os-1" } as any })], []);
+	it("opens the attributed session behind a merge after it is archived", () => {
+		const [row] = buildFeedRows([pr({ sessionId: "os-1" })], []);
 		expect(row.sessionId).toBe("os-1");
 	});
 

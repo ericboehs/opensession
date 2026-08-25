@@ -27,7 +27,7 @@ final class WorkflowRunTests: XCTestCase {
           "endedAt":"2026-08-13T06:24:02.000Z",
           "agents":[
             {"seq":0,"label":"classify 1/5","phase":"Classify","status":"done",
-             "model":"opencode/anthropic/claude-haiku-4-5",
+             "model":"pi/anthropic/claude-haiku-4-5",
              "promptPreview":"Classify EVERY support ticket below…",
              "resultPreview":"[{\\"id\\":\\"th_01\\"}]",
              "cached":false,"structured":true,

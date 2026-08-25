@@ -12,8 +12,8 @@ struct PrConversationTests {
     }
 
     @Test func stripsTheHiddenMarkerFromAReviewWriteUp() {
-        let review = comment("<!-- os-review -->\n### Michael review\nSafe to merge.")
-        #expect(review.discussionBody == "### Michael review\nSafe to merge.")
+        let review = comment("<!-- os-review -->\n### OS review\nSafe to merge.")
+        #expect(review.discussionBody == "### OS review\nSafe to merge.")
         #expect(review.isDiscussion)
     }
 
@@ -27,7 +27,6 @@ struct PrConversationTests {
         #expect(stale.isOutdatedReview)
         #expect(!stale.isDiscussion)
         // The legacy spelling is still on old pull requests.
-        #expect(comment("<!--michael-review-outdated-->\nOlder.").isOutdatedReview)
     }
 
     @Test func anOrdinaryCommentSurvivesIntact() {

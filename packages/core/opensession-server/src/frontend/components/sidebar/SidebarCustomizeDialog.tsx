@@ -1,9 +1,11 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Reorder } from "motion/react";
+import { useIsPhone } from "../../hooks/useIsPhone";
 import type { SidebarToolId } from "../../lib/sidebar-tools";
 import { Modal } from "../../ui/modal";
+import { ResponsiveDialog, SheetBody, SheetIconButton } from "../../ui/sheet";
 import { Switch } from "../../ui/switch";
-import { IconGripVertical } from "../icons";
+import { IconGripVertical, IconX } from "../icons";
 import { RepoTile, repoLabel } from "../RepoTile";
 
 type OrderItem<T extends string> = {
@@ -28,11 +30,14 @@ function OrderSection<T extends string>({
 	const committedRef = useRef(signature);
 	const [announcement, setAnnouncement] = useState("");
 
-	useEffect(() => {
+	const resyncFromItems = useEffectEvent(() => {
 		const next = items.map((item) => item.id);
 		setOrder(next);
 		orderRef.current = next;
 		committedRef.current = signature;
+	});
+	useEffect(() => {
+		resyncFromItems();
 	}, [signature]);
 
 	const byId = new Map(items.map((item) => [item.id, item]));
@@ -64,15 +69,19 @@ function OrderSection<T extends string>({
 	}
 
 	return (
-		<section aria-labelledby={`sidebar-order-${label.toLowerCase()}`}>
+		<section
+			className="-mx-2"
+			aria-labelledby={`sidebar-order-${label.toLowerCase()}`}
+		>
 			<h3
 				id={`sidebar-order-${label.toLowerCase()}`}
-				className="m-0 mb-2 px-3 text-section-title font-semibold text-fg"
+				className="m-0 mb-1.5 px-2 text-label font-semibold text-faint"
 			>
 				{label}
 			</h3>
 			{order.length === 0 ? (
-				<p className="m-0 rounded-xl bg-panel px-4 py-5 text-center text-label text-faint">
+				// Left-aligned like the rows it stands in for.
+				<p className="m-0 rounded-lg bg-panel px-2 py-4 text-label text-faint phone:bg-settings-plate">
 					No {label.toLowerCase()} available.
 				</p>
 			) : (
@@ -81,7 +90,7 @@ function OrderSection<T extends string>({
 					axis="y"
 					values={order}
 					onReorder={setDraft}
-					className="rounded-xl bg-panel p-1.5"
+					className="rounded-lg bg-panel p-0.5 phone:bg-settings-plate"
 					role="list"
 				>
 					{order.map((id, index) => {
@@ -94,7 +103,7 @@ function OrderSection<T extends string>({
 								value={id}
 								onDragEnd={commit}
 								whileDrag={{ scale: 1.015, zIndex: 2 }}
-								className="focus-ring group flex min-h-11 cursor-grab select-none items-center gap-3 rounded-control bg-panel px-2.5 py-2 text-item-title text-fg active:cursor-grabbing hover:bg-hover"
+								className="focus-ring group flex min-h-9 cursor-grab select-none items-center gap-2 rounded-control bg-panel px-1.5 py-1.5 text-item-title text-fg active:cursor-grabbing hover:bg-hover phone:min-h-11 phone:bg-settings-plate"
 								role="listitem"
 								tabIndex={0}
 								aria-label={`${item.label}, position ${index + 1} of ${order.length}. Use the up and down arrow keys to move it.`}
@@ -106,9 +115,11 @@ function OrderSection<T extends string>({
 								}}
 							>
 								<span className="flex size-5 shrink-0 items-center justify-center text-faint group-hover:text-dim">
-									<IconGripVertical size={20} />
+									<IconGripVertical size={18} />
 								</span>
-								<span className="flex size-6 shrink-0 items-center justify-center text-dim [&_svg]:size-[22px]">
+								{/* Shared geometry keeps every tool and repository label
+								    on the same vertical line. */}
+								<span className="flex size-5 shrink-0 items-center justify-center text-dim [&_svg]:size-[20px]">
 									{item.icon}
 								</span>
 								<span className="min-w-0 flex-1 truncate">{item.label}</span>
@@ -152,40 +163,72 @@ export function SidebarCustomizeDialog({
 	onToolOrderChange: (order: SidebarToolId[]) => void;
 	onRepositoryOrderChange: (order: string[]) => void;
 }) {
+	const isPhone = useIsPhone();
+	const sections = (
+		<>
+			<OrderSection
+				label="Tools"
+				items={tools.map((tool) => ({
+					...tool,
+					action: (
+						<Switch
+							size="sm"
+							className="phone:after:absolute phone:after:inset-x-0 phone:after:-inset-y-3 phone:after:content-['']"
+							checked={tool.shown}
+							onCheckedChange={tool.onShownChange}
+							aria-label={`${tool.shown ? "Hide" : "Show"} ${tool.label} in sidebar`}
+						/>
+					),
+				}))}
+				onCommit={onToolOrderChange}
+			/>
+			<OrderSection
+				label="Repositories"
+				items={repositories.map((repo) => ({
+					id: repo,
+					label: repoLabel(repo),
+					icon: <RepoTile name={repo} size={20} />,
+				}))}
+				onCommit={onRepositoryOrderChange}
+			/>
+		</>
+	);
+
+	if (isPhone) {
+		return (
+			<ResponsiveDialog
+				open={open}
+				onClose={() => onOpenChange(false)}
+				phone
+				label="Customize sidebar"
+				sheetClassName="max-h-[88dvh]"
+			>
+				<div className="flex shrink-0 items-center gap-3 px-6 pb-4 pt-0.5">
+					<h2 className="m-0 min-w-0 flex-1 text-dialog-title font-semibold leading-tight tracking-[-0.01em] text-fg">
+						Customize sidebar
+					</h2>
+					<SheetIconButton
+						aria-label="Close"
+						onClick={() => onOpenChange(false)}
+					>
+						<IconX />
+					</SheetIconButton>
+				</div>
+				<SheetBody className="flex flex-1 flex-col gap-5 px-6 pb-6">
+					{sections}
+				</SheetBody>
+			</ResponsiveDialog>
+		);
+	}
+
 	return (
 		<Modal.Root open={open} onOpenChange={onOpenChange}>
 			<Modal.Content
-				widthClassName="max-w-[34rem]"
-				className="max-h-[90dvh] gap-5 phone:p-4"
+				widthClassName="max-w-[32rem]"
+				className="max-h-[80dvh] gap-3"
 			>
-				<Modal.Header
-					title="Customize sidebar"
-					description="Drag tools and repositories into the order you want."
-				/>
-				<OrderSection
-					label="Tools"
-					items={tools.map((tool) => ({
-						...tool,
-						action: (
-							<Switch
-								size="sm"
-								checked={tool.shown}
-								onCheckedChange={tool.onShownChange}
-								aria-label={`${tool.shown ? "Hide" : "Show"} ${tool.label} in sidebar`}
-							/>
-						),
-					}))}
-					onCommit={onToolOrderChange}
-				/>
-				<OrderSection
-					label="Repositories"
-					items={repositories.map((repo) => ({
-						id: repo,
-						label: repoLabel(repo),
-						icon: <RepoTile name={repo} size={22} />,
-					}))}
-					onCommit={onRepositoryOrderChange}
-				/>
+				<Modal.Header title="Customize sidebar" />
+				{sections}
 			</Modal.Content>
 		</Modal.Root>
 	);

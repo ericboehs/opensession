@@ -9,15 +9,23 @@
  * up as blank text in the UI, not as a type error.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import {
+	type CreateSessionOpts,
+	type SessionControl,
+	registerSessionControl,
+	tryGetSessionControl,
+} from "../session-control";
 import type { UnifiedSession } from "../types";
 import {
 	archivedScope,
 	archivedIndexRow,
+	handleSessionsRoutes,
 	nativeCreateRepoOptions,
 	sessionListRow,
 	sessionRan,
 	sessionsVariant,
+	sidebarLiveSessions,
 } from "./sessions";
 
 function paramsOf(query: string) {
@@ -112,6 +120,40 @@ describe("archivedScope", () => {
 	});
 });
 
+describe("sidebarLiveSessions", () => {
+	test("keeps ordinary sessions and only recent automation history", () => {
+		const ordinary = archivedSession({ id: "ordinary", archived: false });
+		const runs = Array.from({ length: 8 }, (_, index) =>
+			archivedSession({
+				id: `run-${index}`,
+				archived: false,
+				automation: "nightly",
+				lastActivity: `2026-08-${String(index + 1).padStart(2, "0")}T10:00:00.000Z`,
+				...(index === 0 ? { isRunning: true } : {}),
+				...(index === 1 ? { manualStatus: "pending" } : {}),
+			}),
+		);
+
+		const result = sidebarLiveSessions([ordinary, ...runs]);
+		expect(result.map((session) => session.id)).toEqual([
+			"ordinary",
+			"run-0",
+			"run-1",
+			"run-3",
+			"run-4",
+			"run-5",
+			"run-6",
+			"run-7",
+		]);
+		expect(result[0].automationRunCount).toBeUndefined();
+		expect(
+			result
+				.filter((session) => session.automation)
+				.every((session) => session.automationRunCount === 8),
+		).toBe(true);
+	});
+});
+
 describe("archivedIndexRow", () => {
 	test("keeps the positive repo-less marker", () => {
 		expect(archivedIndexRow(archivedSession({ repoLess: true }))).toMatchObject({
@@ -136,6 +178,15 @@ describe("archivedIndexRow", () => {
 			workspaceId: "ws-1",
 			worktreeDir: "/home/ubuntu/worktrees/thing",
 		});
+	});
+
+	test("keeps the agent-started marker the history and sidebar rows read", () => {
+		expect(
+			archivedIndexRow(archivedSession({ agentStarted: true })).agentStarted,
+		).toBe(true);
+		expect(archivedIndexRow(archivedSession())).not.toHaveProperty(
+			"agentStarted",
+		);
 	});
 
 	test("keeps the worker marker the history menu reads", () => {
@@ -261,8 +312,8 @@ describe("sessionListRow", () => {
 	test("drops run-resume fields no list client reads", () => {
 		const row = sessionListRow(
 			archivedSession({
-				lastEngineModel: "opencode/anthropic/claude-opus-5",
-				lastEngineProvider: "opencode",
+				lastEngineModel: "pi/anthropic/claude-opus-5",
+				lastEngineProvider: "pi",
 				mcpServers: ["github", "linear"],
 				piSessionId: "pi-session",
 				presetNote: "Long workspace preset instructions",
@@ -292,7 +343,6 @@ describe("sessionListRow", () => {
 			archivedSession({
 				claudeSessionId: "ses_1",
 				codexThreadId: "thread_1",
-				opencodeSessionId: "ses_opencode",
 				piSessionId: "pi-session",
 				modelHistory: [{ model: "claude-opus-5", at: "2026-08-09" }],
 				transcriptPath: "/transcripts/ses_1.jsonl",
@@ -301,7 +351,6 @@ describe("sessionListRow", () => {
 		for (const detail of [
 			"claudeSessionId",
 			"codexThreadId",
-			"opencodeSessionId",
 			"piSessionId",
 			"modelHistory",
 			"transcriptPath",
@@ -324,6 +373,17 @@ describe("sessionListRow", () => {
 		// abandoned "New session" shell.
 		expect(sessionListRow(archivedSession({ ran: true })).ran).toBe(true);
 		expect(sessionListRow(archivedSession())).not.toHaveProperty("ran");
+	});
+
+	test("drops malformed automation ids at the list boundary", () => {
+		const malformed = archivedSession({
+			automation: true as unknown as string,
+		});
+		expect(sessionListRow(malformed)).not.toHaveProperty("automation");
+		expect(
+			sessionListRow(archivedSession({ automation: "  daily scan  " }))
+				.automation,
+		).toBe("daily scan");
 	});
 
 	test("omits defaults while preserving values that change list UI", () => {
@@ -402,7 +462,6 @@ describe("sessionRan", () => {
 		for (const id of [
 			"claudeSessionId",
 			"codexThreadId",
-			"opencodeSessionId",
 			"piSessionId",
 		] as const)
 			expect(sessionRan(archivedSession({ [id]: "x" } as never))).toBe(true);
@@ -414,7 +473,6 @@ describe("sessionRan", () => {
 				archivedSession({
 					claudeSessionId: null,
 					codexThreadId: undefined,
-					opencodeSessionId: undefined,
 					piSessionId: undefined,
 				}),
 			),
@@ -429,5 +487,41 @@ describe("nativeCreateRepoOptions", () => {
 		expect(nativeCreateRepoOptions("ask", "opensession")).toEqual({
 			repo: "opensession",
 		});
+	});
+});
+
+describe("native session create attachments", () => {
+	const previousControl = tryGetSessionControl();
+	afterEach(() => registerSessionControl(previousControl as SessionControl));
+
+	test("accepts a file-only composer and carries its staged ref", async () => {
+		const created: CreateSessionOpts[] = [];
+		registerSessionControl({
+			createSession: async (input: CreateSessionOpts) => {
+				created.push(input);
+				return { id: "os-file", createdBy: "Ada", createdAt: "now" };
+			},
+		} as unknown as SessionControl);
+		const path = "/api/sessions";
+		const url = new URL(`http://localhost${path}`);
+		const files = [{
+			name: "incident.pdf",
+			type: "application/pdf",
+			path: "/uploads/incident.pdf",
+		}];
+		const response = await handleSessionsRoutes({
+			req: new Request(url, {
+				method: "POST",
+				body: JSON.stringify({ prompt: "", mode: "ask", files, user: "Ada" }),
+			}),
+			url,
+			path,
+			publicPrefix: "",
+		});
+
+		expect(response?.status).toBe(200);
+		expect(created).toHaveLength(1);
+		expect(created[0]?.prompt).toBe("");
+		expect(created[0]?.files).toEqual(files);
 	});
 });

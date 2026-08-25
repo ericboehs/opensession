@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type { SessionWalkthrough } from "../lib/types";
 import { renderMarkdown } from "../lib/markdown";
@@ -70,14 +70,11 @@ export function WalkthroughCard({
 	const [ownRatio, setOwnRatio] = useState<Record<string, number>>({});
 	const reduceMotion = useReducedMotion();
 	const repo = useMarkdownRepo();
-	const summaryHtml = useMemo(
-		() => renderMarkdown(walkthrough.summary, { repo }),
-		[walkthrough.summary, repo],
-	);
+	const summaryHtml = (renderMarkdown(walkthrough.summary, { repo }));
 	// Every piece of media in the card, in render order, so clicking one opens
 	// the shared lightbox (Escape/arrows/pinch-zoom/download) browsing
 	// demo→before→after across all the pairs.
-	const gallery = useMemo(() => {
+	const gallery = (() => {
 		const items: LightboxItem[] = [];
 		const at = new Map<string, number>();
 		if (walkthrough.video) {
@@ -105,7 +102,7 @@ export function WalkthroughCard({
 			}
 		});
 		return { items, at, stillCount };
-	}, [walkthrough.shots, walkthrough.video, walkthrough.videoTitle]);
+	})();
 
 	// What the card holds, for the folded header — the one thing a reader needs
 	// to decide whether to open it. Open, they can see that for themselves, so

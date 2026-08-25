@@ -3,6 +3,7 @@ import {
 	fetchRepos,
 	fetchReads,
 	fetchSessionsSnapshot,
+	fetchWorkspaceArchivedSessions,
 	newSessionApi,
 } from "./api";
 
@@ -93,6 +94,33 @@ test("session snapshots retain response validators on changed data", async () =>
 	});
 });
 
+test("workspace archive fetches stay scoped and slim", async () => {
+	let url = "";
+	const archived = {
+		id: "archived-1",
+		source: "opensession" as const,
+		branch: "main",
+		worktreeDir: "/tmp/worktree",
+		startedBy: "Kent",
+		title: "Archived session",
+		lastActivity: "2026-08-22T10:00:00.000Z",
+		createdAt: "2026-08-22T09:00:00.000Z",
+		isRunning: false,
+		archived: true,
+	};
+	globalThis.fetch = (async (input: string | URL | Request) => {
+		url = String(input);
+		return Response.json([archived]);
+	}) as unknown as typeof fetch;
+
+	await expect(fetchWorkspaceArchivedSessions("ws / one")).resolves.toEqual([
+		archived,
+	]);
+	expect(url).toBe(
+		"/api/sessions?archived=only&slim=1&workspace=ws%20%2F%20one",
+	);
+});
+
 test("new workspace tabs create an idle sibling session", async () => {
 	let url = "";
 	let init: RequestInit | undefined;
@@ -105,10 +133,20 @@ test("new workspace tabs create an idle sibling session", async () => {
 		return Response.json({ id: "bks-new", session: { id: "bks-new" } });
 	}) as unknown as typeof fetch;
 
-	const created = await newSessionApi("bks-source", "Kent", "share");
+	const clientSessionId = "os-019f0000-0000-7000-8000-000000000001";
+	const created = await newSessionApi(
+		"bks-source",
+		"Kent",
+		"share",
+		clientSessionId,
+	);
 	expect(created.id).toBe("bks-new");
 	expect(created.session?.id).toBe("bks-new");
 	expect(url).toBe("/api/sessions/bks-source/new-session");
 	expect(init?.method).toBe("POST");
-	expect(JSON.parse(String(init?.body))).toEqual({ user: "Kent", mode: "share" });
+	expect(JSON.parse(String(init?.body))).toEqual({
+		user: "Kent",
+		mode: "share",
+		clientSessionId,
+	});
 });

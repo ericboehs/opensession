@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
-import heroPosterUrl from "./hero-poster.webp";
-import heroPosterDarkUrl from "./hero-poster-dark.webp";
+import heroPosterAsset from "./hero-poster.webp";
+import heroPosterDarkAsset from "./hero-poster-dark.webp";
+import { assetUrl } from "./asset-url";
+
+const heroPosterUrl = assetUrl(heroPosterAsset);
+const heroPosterDarkUrl = assetUrl(heroPosterDarkAsset);
 
 /**
  * Tella's own backgrounds behind the hero: "Silver Silk" in light, "Cobalt

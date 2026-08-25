@@ -1,18 +1,21 @@
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
 import { bootstrapRunner, createRunnerPairing, fetchRunnerBootstrapTargets, fetchRunners, revokeRunner, updateRunner, type RunnerBootstrapTarget, type RunnerInfo } from "../../lib/api/runners";
 import { Button } from "../../ui/button";
+import { cn } from "../../ui/cn";
 import { Field, Input } from "../../ui/input";
 import { Modal } from "../../ui/modal";
 import { OptionSelect } from "../../ui/select";
 import { Switch } from "../../ui/switch";
 import { toast } from "../../ui/toast";
-import { SettingCard, SettingCardSkeleton, SettingsGroupLabel, SettingsHeader, SettingsHint, SettingsPanel, SettingRow } from "../../ui/settings";
+import { SettingCard, SettingCardSkeleton, SettingsGroupLabel, SettingsHeader, SettingsHint, SettingsPanel } from "../../ui/settings";
+import { markTileClass, markTileGradient, markTileInk, markTileShadow } from "../../lib/mark-tile";
+import { IconServer } from "../icons";
 
 const stateStyle: Record<RunnerInfo["state"], string> = {
-	online: "text-green",
-	busy: "text-yellow",
-	offline: "text-faint",
-	maintenance: "text-dim",
+	online: "bg-green-soft text-green",
+	busy: "bg-yellow-soft text-yellow",
+	offline: "bg-hover text-dim",
+	maintenance: "bg-hover text-dim",
 };
 
 function resourceSummary(runner: RunnerInfo): string {
@@ -39,58 +42,80 @@ export function RunnersPanel() {
 	const [busyId, setBusyId] = useState<string | null>(null);
 
 	const load = async () => {
-		try {
-			const data = await fetchRunners();
+		await (async () => {
+const data = await fetchRunners();
 			setRunners(data.runners);
 			setAdmin(data.admin);
-		} catch (error) {
-			toast(error instanceof Error ? error.message : "Failed to load Runners", { variant: "error" });
-		} finally { setLoading(false); }
+})().catch(async (error) => {
+toast(error instanceof Error ? error.message : "Failed to load Runners", { variant: "error" });
+}).finally(async () => {
+setLoading(false);
+});
 	};
 
 	useEffect(() => { void load(); }, []);
 
 	const pair = async () => {
-		try { setPairing(await createRunnerPairing()); setConnectChoice(null); }
-		catch (error) { toast(error instanceof Error ? error.message : "Could not create pairing", { variant: "error" }); }
+		await (async () => {
+setPairing(await createRunnerPairing()); setConnectChoice(null);
+})().catch(async (error) => {
+toast(error instanceof Error ? error.message : "Could not create pairing", { variant: "error" });
+});
 	};
 	const chooseBootstrap = async (kind: "ssh" | "kubernetes") => {
-		try {
-			const targets = await fetchRunnerBootstrapTargets();
+		await (async () => {
+const targets = await fetchRunnerBootstrapTargets();
 			setBootstrapTargets(targets);
 			setBootstrapTargetId(targets[kind][0]?.id || "");
 			setConnectChoice(kind);
-		} catch (error) { toast(error instanceof Error ? error.message : "Could not load Runner connection options", { variant: "error" }); }
+})().catch(async (error) => {
+toast(error instanceof Error ? error.message : "Could not load Runner connection options", { variant: "error" });
+});
 	};
 	const startBootstrap = async () => {
 		if (!connectChoice || connectChoice === "choices" || !bootstrapTargetId) return;
-		try {
-			const result = await bootstrapRunner(connectChoice, bootstrapTargetId);
+		await (async () => {
+const result = await bootstrapRunner(connectChoice, bootstrapTargetId);
 			setConnectChoice(null);
 			toast(`${result.target} is connecting. It appears here when its Runner channel is online.`, { variant: "success" });
 			void load();
-		} catch (error) { toast(error instanceof Error ? error.message : "Could not start Runner migration", { variant: "error" }); }
+})().catch(async (error) => {
+toast(error instanceof Error ? error.message : "Could not start Runner migration", { variant: "error" });
+});
 	};
 	const copy = async () => {
 		if (!pairing) return;
-		try { await navigator.clipboard.writeText(pairingCommand(pairing.code)); toast("Pairing command copied", { variant: "success" }); }
-		catch { toast("Copy the command from this page", { variant: "error" }); }
+		await (async () => {
+await navigator.clipboard.writeText(pairingCommand(pairing.code)); toast("Pairing command copied", { variant: "success" });
+})().catch(async () => {
+toast("Copy the command from this page", { variant: "error" });
+});
 	};
 	const change = async (runner: RunnerInfo, patch: Parameters<typeof updateRunner>[1]) => {
 		setBusyId(runner.id);
-		try {
-			const next = await updateRunner(runner.id, patch);
-			setRunners((items) => items.map((item) => item.id === next.id ? next : item));
-			return true;
-		} catch (error) { toast(error instanceof Error ? error.message : "Could not update Runner", { variant: "error" }); return false; }
-		finally { setBusyId(null); }
+		setBusyId(runner.id);
+		const updated = await updateRunner(runner.id, patch)
+			.then((next) => {
+				setRunners((items) => items.map((item) => item.id === next.id ? next : item));
+				return true;
+			})
+			.catch((error: unknown) => {
+				toast(error instanceof Error ? error.message : "Could not update Runner", { variant: "error" });
+				return false;
+			})
+			.finally(() => setBusyId(null));
+		return updated;
 	};
 	const revoke = async (runner: RunnerInfo) => {
 		if (!confirm(`Revoke ${runner.label || runner.name}? It disconnects immediately.`)) return;
 		setBusyId(runner.id);
-		try { await revokeRunner(runner.id); setRunners((items) => items.filter((item) => item.id !== runner.id)); }
-		catch (error) { toast(error instanceof Error ? error.message : "Could not revoke Runner", { variant: "error" }); }
-		finally { setBusyId(null); }
+		await (async () => {
+await revokeRunner(runner.id); setRunners((items) => items.filter((item) => item.id !== runner.id));
+})().catch(async (error) => {
+toast(error instanceof Error ? error.message : "Could not revoke Runner", { variant: "error" });
+}).finally(async () => {
+setBusyId(null);
+});
 	};
 
 	return <SettingsPanel>
@@ -134,23 +159,46 @@ export function RunnersPanel() {
 				<Button size="sm" onClick={() => void copy()}>Copy</Button>
 				<Button size="sm" variant="ghost" onClick={() => setPairing(null)}>Done</Button>
 			</div>
-			<p className="mb-0 mt-2 text-meta text-faint">This one-time code expires at {new Date(pairing.expiresAt).toLocaleTimeString()}.</p>
-			<p className="mb-0 mt-1 text-meta text-faint">New machine? Install the command first: install.sh on macOS and Linux, install.ps1 on Windows.</p>
+			<p className="mb-0 mt-2 text-supporting text-faint">This one-time code expires at {new Date(pairing.expiresAt).toLocaleTimeString()}.</p>
+			<p className="mb-0 mt-1 text-supporting text-faint">New machine? Install the command first: install.sh on macOS and Linux, install.ps1 on Windows.</p>
 		</div>}
 
 		<SettingsGroupLabel actions={<Button size="sm" variant="ghost" onClick={() => void load()}>Refresh</Button>}>Workspace inventory</SettingsGroupLabel>
-		{loading ? <SettingCardSkeleton rows={3} label="Loading Runners" /> : <SettingCard>
-			{!runners.length && <div className="px-5 py-5">
-				<div className="text-item-title font-medium text-fg">No Runners connected</div>
-				<p className="mb-0 mt-1 text-supporting leading-relaxed text-dim">Choose a computer, connect it with a pairing command, then choose its permissions.</p>
-			</div>}
-			{runners.map((runner) => <RunnerRow key={runner.id} runner={runner} admin={admin} busy={busyId === runner.id} onChange={change} onRevoke={revoke} />)}
-		</SettingCard>}
+		{loading ? <SettingCardSkeleton rows={3} icon={40} label="Loading Runners" /> : !runners.length ? (
+			<SettingCard>
+				<div className="px-5 py-5">
+					<div className="text-item-title font-medium text-fg">No Runners connected</div>
+					<p className="mb-0 mt-1 text-supporting leading-relaxed text-dim">Choose a computer, connect it with a pairing command, then choose its permissions.</p>
+				</div>
+			</SettingCard>
+		) : (
+			<div className="grid gap-3">
+				{runners.map((runner) => <RunnerRow key={runner.id} runner={runner} admin={admin} busy={busyId === runner.id} onChange={change} onRevoke={revoke} />)}
+			</div>
+		)}
 		<SettingsHint>SSH and Kubernetes bootstrap remain operator-managed migration paths. They never give agents direct SSH or kubectl access.</SettingsHint>
 	</SettingsPanel>;
 }
 
 type RunnerChange = (runner: RunnerInfo, patch: Parameters<typeof updateRunner>[1]) => Promise<boolean>;
+
+function RunnerIcon() {
+	const size = 40;
+	return (
+		<span
+			className={markTileClass(size)}
+			style={{
+				width: size,
+				height: size,
+				backgroundImage: markTileGradient("indigo"),
+				color: "#fff",
+				boxShadow: markTileShadow(markTileInk("indigo")),
+			}}
+		>
+			<IconServer size={22} />
+		</span>
+	);
+}
 
 function RunnerRow({ runner, admin, busy, onChange, onRevoke }: { runner: RunnerInfo; admin: boolean; busy: boolean; onChange: RunnerChange; onRevoke: (runner: RunnerInfo) => void }) {
 	const [editing, setEditing] = useState(false);
@@ -158,19 +206,31 @@ function RunnerRow({ runner, admin, busy, onChange, onRevoke }: { runner: Runner
 	// opens the dialog with its close button ringed.
 	const labelRef = useRef<HTMLInputElement>(null);
 	return <>
-		<SettingRow className="items-start">
-			<div className="min-w-0">
-				<div className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><span className="text-item-title font-medium text-fg">{runner.label || runner.name}</span><span className={`text-meta capitalize ${stateStyle[runner.state]}`}>{runner.state}</span></div>
-				<div className="mt-0.5 text-supporting text-dim">{runner.platform} · {runner.arch} · {resourceSummary(runner)}</div>
-				{runner.capabilities.toolchains.length > 0 && <div className="mt-1 text-meta text-faint">{runner.capabilities.toolchains.join(" · ")}</div>}
-				{runner.resources?.localInference?.length ? <div className="mt-1 text-meta text-faint">Local inference reported: {runner.resources.localInference.map((runtime) => `${runtime.runtime}${runtime.models.length ? ` (${runtime.models.join(", ")})` : ""}`).join(" · ")}</div> : null}
-				{runner.migration?.kind === "kubernetes" && <div className="mt-1 text-meta text-faint">Kubernetes · {runner.migration.context} / {runner.migration.namespace} / {runner.migration.workload}</div>}
-				{runner.workload && <div className="mt-1 text-meta text-dim">Working: {runner.workload.operation || runner.workload.sessionId || "session work"}</div>}
+		<SettingCard>
+			<div className="grid grid-cols-[minmax(0,1fr)_5.75rem] gap-x-4 px-5 py-4 desktop:grid-cols-[minmax(0,1fr)_13rem]">
+				<div className="col-start-1 row-start-1 flex min-w-0 items-start gap-3">
+					<RunnerIcon />
+					<div className="min-w-0 flex-1">
+						<div className="flex flex-wrap items-center gap-2">
+							<span className="text-item-title font-semibold text-fg">{runner.label || runner.name}</span>
+							<span className={cn("rounded-full px-2 py-0.5 text-meta font-medium capitalize", stateStyle[runner.state])}>{runner.state}</span>
+						</div>
+						<div className="mt-1 text-supporting leading-relaxed text-dim">{runner.platform} · {runner.arch} · {resourceSummary(runner)}</div>
+						{runner.workload && <div className="mt-2 text-supporting text-dim">Working: {runner.workload.operation || runner.workload.sessionId || "session work"}</div>}
+						<div className="mt-2 grid gap-0.5 text-meta text-faint">
+							{runner.capabilities.toolchains.length > 0 && <div>{runner.capabilities.toolchains.join(" · ")}</div>}
+							{runner.resources?.localInference?.length ? <div>Local inference: {runner.resources.localInference.map((runtime) => `${runtime.runtime}${runtime.models.length ? ` (${runtime.models.join(", ")})` : ""}`).join(" · ")}</div> : null}
+							{runner.migration?.kind === "kubernetes" && <div>Kubernetes · {runner.migration.context} / {runner.migration.namespace} / {runner.migration.workload}</div>}
+						</div>
+					</div>
+				</div>
+				{admin && (
+					<div className="col-start-2 row-start-1 flex justify-end self-start">
+						<Button size="sm" onClick={() => setEditing(true)}>Configure</Button>
+					</div>
+				)}
 			</div>
-			<div className="flex shrink-0 items-center gap-2">
-				{admin && <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>Details</Button>}
-			</div>
-		</SettingRow>
+		</SettingCard>
 		{admin && <Modal.Root open={editing} onOpenChange={setEditing}>
 			{/* The form is a child so Base UI's portal remounts it on every open,
 			    which re-reads the current runner instead of showing edits staged

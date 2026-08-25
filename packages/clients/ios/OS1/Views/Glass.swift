@@ -22,14 +22,8 @@ extension View {
     /// transcript visible through both edges.
     ///
     /// The bottom edge only fades if the composer is attached as a *bar*
-    /// (`safeAreaBar`, not `safeAreaInset`) — that is what tells the scroll
-    /// view content travels behind it.
-    ///
-    /// The transcript then hides the TOP one again (`transcriptTopWash`): a
-    /// soft edge effect ends at a hard line, which is exactly the seam that
-    /// wash exists to remove. Both are set here so any other scroll view
-    /// adopting `softScrollEdges` still gets the system behaviour on both
-    /// edges.
+    /// (`safeAreaBar`, not `safeAreaInset`): that tells the scroll view its
+    /// content travels behind the floating chrome.
     func softScrollEdges() -> some View {
         scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
     }

@@ -16,8 +16,7 @@
  * Enumerating the layers takes two paths, because on preview day one
  * `PullRequestStack.entries` answers INTERNAL for EVERY selection on a real
  * stack — even `totalCount` — and being non-null it nulls the whole `stack`
- * object with it (verified 2026-07-30 against tellahq/tella-fusion stack
- * #5404). So the scalars are fetched WITHOUT `entries` and always resolve;
+ * object with it (verified against a real stack). So the scalars are fetched WITHOUT `entries` and always resolve;
  * `entries` is attempted separately and, when it fails, `walkStackChain`
  * enumerates the layers by following base/head branch links — `stackEntry`
  * resolves fine per PR inside a list query, so each hop can prove its stack
@@ -30,9 +29,14 @@
  * already own their branches and worktrees. There are no stack mutations in
  * the GraphQL schema, so the extension is the only write surface.
  */
-import { serviceGithubCredential, type GithubCredential } from "./github-auth";
+import {
+  resolveGithubCredential,
+  serviceGithubCredential,
+  type GithubCredential,
+} from "./github-auth";
 import { ghRateLimited, noteGhRateLimited, isGhRateLimitMsg } from "./github-limit";
 import { audited } from "./audit";
+import { noteGithubGraphqlCall } from "./github-budget";
 import type { PrStack, PrStackLayer } from "./pr-contract";
 export type { PrStack, PrStackLayer } from "./pr-contract";
 
@@ -134,6 +138,11 @@ export async function getPrStack(
   if (ghRateLimited()) return null;
   const repo = splitRepo(ghRepo);
   if (!repo) return null;
+  try {
+    credential = await resolveGithubCredential(credential);
+  } catch {
+    return null;
+  }
 
   const head = await graphql(
     STACK_QUERY,
@@ -203,7 +212,9 @@ async function graphql(
   const args = ["api", "graphql", "-f", `query=${query}`];
   for (const [k, v] of Object.entries(strings)) args.push("-f", `${k}=${v}`);
   for (const [k, v] of Object.entries(numbers)) args.push("-F", `${k}=${v}`);
+  const started = Date.now();
   const { code, out, err } = await runGh(args, credential);
+  noteGithubGraphqlCall("pr-stack", Date.now() - started, code === 0);
   if (code !== 0) {
     const msg = String(err || "gh api graphql failed").slice(0, 300);
     if (isUnknownFieldMsg(msg)) {
@@ -372,6 +383,7 @@ export async function linkPrStack(
   cwd: string,
   credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true } | { error: string }> {
+  credential = await resolveGithubCredential(credential, { write: true });
   if (prUrls.length < 2)
     return { error: "A stack needs at least two pull requests" };
 
@@ -420,6 +432,7 @@ export async function mergePrStack(
   opts: { method?: "merge" | "squash" | "rebase" } = {},
   credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true } | { error: string }> {
+  credential = await resolveGithubCredential(credential, { write: true });
   const method = opts.method || "squash";
   return audited(
     {

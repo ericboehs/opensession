@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// Compose a new session, laid out like the palette on the desktop: what the
-/// session IS — the repo, and what it's created from — reads across the top,
-/// the prompt fills the middle, and how it runs sits in the footer with the
-/// attach button. Only the controls this app actually carries appear; the rest
-/// of the palette's row (connected services) has no native equivalent yet, so
-/// it stays absent rather than half-present. Where the session runs is one
-/// chip, and only on instances that offer more than the host.
+/// Compose a new session, laid out like the palette on the desktop: the repo
+/// names the iOS title bar (and reads across the top on Mac), the prompt fills
+/// the middle, and how it runs sits in the footer with the attach button. Code
+/// is the quiet default. Ask and
+/// Sandbox sit behind More options, while dictation stays one tap away at the
+/// trailing edge. Connected services have no native equivalent yet, so they
+/// stay absent rather than half-present.
 /// Screenshots paste straight into the attachments (Cmd+V on the Mac,
 /// long-press Paste on iOS).
 ///
@@ -33,6 +33,10 @@ struct NewSessionView: View {
     /// before you have found the keyboard.
     var autoDictate = false
 
+    /// Attachments handed to the app by iOS before this composer opened.
+    var initialImages: [AttachedImage]
+    var initialFiles: [AttachedFile]
+
     /// Called the moment Start is tapped, with an optimistic session row
     /// (temporary `pending-` id) plus the prompt/images to seed the
     /// conversation view instantly.
@@ -50,6 +54,8 @@ struct NewSessionView: View {
         initialWorkspaceId: String? = nil,
         initialDraft: OS1API.WorkspaceDraft? = nil,
         autoDictate: Bool = false,
+        initialImages: [AttachedImage] = [],
+        initialFiles: [AttachedFile] = [],
         onCreated: @escaping (Session, SessionViewModel.OptimisticSeed) -> Void,
         onResolved: @escaping (String, Result<String, Error>) -> Void,
         onDraftSaved: @escaping (OS1API.WorkspaceSummary) -> Void = { _ in }
@@ -58,6 +64,10 @@ struct NewSessionView: View {
         self.initialWorkspaceId = initialWorkspaceId
         self.initialDraft = initialDraft
         self.autoDictate = autoDictate
+        self.initialImages = initialImages
+        self.initialFiles = initialFiles
+        _images = State(initialValue: initialImages)
+        _files = State(initialValue: initialFiles)
         self.onCreated = onCreated
         self.onResolved = onResolved
         self.onDraftSaved = onDraftSaved
@@ -71,7 +81,11 @@ struct NewSessionView: View {
     @State private var model = ""
     @State private var effort = ""
     @State private var fastMode = false
-    @State private var images: [AttachedImage] = []
+    @State private var images: [AttachedImage]
+    @State private var files: [AttachedFile]
+    @State private var stagingFileIDs: Set<String> = []
+    @State private var failedFileIDs: Set<String> = []
+    @State private var attachmentError: String?
     /// "" is the host. Never seeded from the instance's own default: the chip
     /// is what tells you where this session will run, so it starts on the one
     /// answer that is true everywhere.
@@ -79,6 +93,11 @@ struct NewSessionView: View {
     @State private var sandboxStatus: InstanceSandboxStatus?
     @State private var showLibrary = false
     @State private var savingDraft = false
+    /// Set before the save begins and kept through dismissal, so the sheet's
+    /// disappearance cannot park the same prompt twice.
+    @State private var draftSaveStarted = false
+    /// Starting a session also dismisses this sheet, but consumes the prompt.
+    @State private var sessionStarted = false
     @State private var draftSaveError: String?
     /// Owned here, like the session composer's: the button reads it, this view
     /// keeps it alive across the layout changes a long dictation causes.
@@ -94,23 +113,54 @@ struct NewSessionView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                #if os(macOS)
                 header
+                #endif
                 editor
-                if !images.isEmpty {
-                    AttachedImagesRow(images: images) { image in
-                        images.removeAll { $0.id == image.id }
+                if !images.isEmpty || !files.isEmpty {
+                    VStack(spacing: 6) {
+                        if !images.isEmpty {
+                            AttachedImagesRow(images: images) { image in
+                                images.removeAll { $0.id == image.id }
+                            }
+                        }
+                        if !files.isEmpty {
+                            AttachedFilesRow(
+                                files: files,
+                                staging: stagingFileIDs,
+                                failed: failedFileIDs,
+                                onRetry: { file in Task { await stage(file) } },
+                                onRemove: remove
+                            )
+                        }
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 6)
                 }
+                #if os(macOS)
                 Divider()
                 controls
+                #endif
             }
-            .background(OS1VisualStyle.background)
+            // Keep the sheet surface behind the translucent keyboard.
+            // Otherwise its background stops at the keyboard safe-area edge,
+            // leaving a hard full-width seam under the action row.
+            .background(
+                OS1VisualStyle.background.ignoresSafeArea(.keyboard, edges: .bottom)
+            )
+            #if os(iOS)
+            // The selected repository is the identity of this composer. Keep
+            // "New session" for the action that opened it rather than spending
+            // the title slot on a state every sheet here already implies.
+            .navigationTitle(repoLabel)
+            #else
             .navigationTitle("New session")
+            #endif
             .inlineTitleBarCompat()
             .toolbar {
                 #if os(iOS)
+                ToolbarItem(placement: .principal) { repoChip }
+
                 // Both ends draw their own circle, so both hide the toolbar's
                 // glass: a capsule around the send disc read as a white ring on
                 // the black accent, and the ✕'s glass — white on a white sheet —
@@ -121,12 +171,47 @@ struct NewSessionView: View {
                     .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .cancellationAction) { cancelButton }
                     .sharedBackgroundVisibility(.hidden)
+
+                // Two native Liquid Glass groups: attachment and session
+                // options on the left, model and voice on the right. The
+                // flexible toolbar spacer keeps their materials separate, and
+                // the system adds its scroll edge only while editor text moves
+                // underneath. There is deliberately no permanent divider.
+                ToolbarItem(placement: .bottomBar) {
+                    AttachImagesButton(images: $images, usesSystemButtonStyle: true)
+                }
+                ToolbarItem(placement: .bottomBar) { moreOptionsMenu }
+                ToolbarSpacer(.flexible, placement: .bottomBar)
+                ToolbarItem(placement: .bottomBar) { modelChip }
+                ToolbarItem(placement: .bottomBar) {
+                    ComposerDictationButton(
+                        dictation: dictation,
+                        draft: $prompt,
+                        usesSystemButtonStyle: true
+                    )
+                }
+
+                // iOS hides the bottom bar while the software keyboard is up.
+                // Repeat the same controls in its accessory so composing never
+                // makes attachments, run options, model, or dictation vanish.
+                ToolbarItemGroup(placement: .keyboard) {
+                    AttachImagesButton(images: $images, usesSystemButtonStyle: true)
+                    moreOptionsMenu
+                    Spacer()
+                    modelChip
+                    ComposerDictationButton(
+                        dictation: dictation,
+                        draft: $prompt,
+                        usesSystemButtonStyle: true
+                    )
+                }
                 #else
                 ToolbarItem(placement: .confirmationAction) { startButton }
                 ToolbarItem(placement: .cancellationAction) { cancelButton }
                 #endif
             }
             .task { await load() }
+            .task { await stagePendingFiles() }
             // The library is a detail of composing this session, so it pushes
             // onto the sheet's own stack: back is where you were, with the
             // prompt filled in.
@@ -153,7 +238,21 @@ struct NewSessionView: View {
             } message: {
                 Text(draftSaveError ?? "")
             }
+            .alert(
+                "Couldn't attach file",
+                isPresented: Binding(
+                    get: { attachmentError != nil },
+                    set: { if !$0 { attachmentError = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(attachmentError ?? "")
+            }
         }
+        // This belongs to the outer stack. The editor itself disappears when
+        // the recipe library is pushed, which is not an exit from the sheet.
+        .onDisappear { parkDraftAfterDismiss() }
         // The floor belongs to the stack, not to its first screen. A macOS
         // sheet sizes to its content, so applied inside, a push replaced it
         // with a view that asks for nothing and the sheet collapsed to its
@@ -168,7 +267,12 @@ struct NewSessionView: View {
 
     private var startDisabled: Bool {
         savingDraft
-            || (prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && images.isEmpty)
+            || !stagingFileIDs.isEmpty
+            || !failedFileIDs.isEmpty
+            || files.contains(where: { !$0.isStaged })
+            || (prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && images.isEmpty
+                && files.isEmpty)
     }
 
     /// Starting a session is the same gesture as sending a message, so on iOS
@@ -219,7 +323,7 @@ struct NewSessionView: View {
         // neutral fill the sheet's own chips wear. Only the role colour differs,
         // so the bar reads as a pair — a bare glyph opposite a solid accent disc
         // left the sheet lopsided.
-        Button { dismiss() } label: {
+        Button { exitComposer() } label: {
             Image(systemName: "xmark")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(OS1VisualStyle.text)
@@ -227,10 +331,12 @@ struct NewSessionView: View {
                 .background(OS1VisualStyle.hover, in: Circle())
         }
         .buttonStyle(.plain)
+        .disabled(savingDraft)
         .padding(.leading, -4)
-        .accessibilityLabel("Cancel")
+        .accessibilityLabel(savingDraft ? "Saving draft" : "Cancel")
         #else
-        Button("Cancel") { dismiss() }
+        Button(savingDraft ? "Saving…" : "Cancel") { exitComposer() }
+            .disabled(savingDraft)
         #endif
     }
 
@@ -255,7 +361,9 @@ struct NewSessionView: View {
                         .font(.body)
                         .foregroundStyle(.tertiary)
                         .allowsHitTesting(false)
+                    #if os(macOS)
                     recipeButton
+                    #endif
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, placeholderTopPadding)
@@ -318,14 +426,16 @@ struct NewSessionView: View {
 
     // ── Header: what the session is ───────────────────────────────────────
 
-    /// Repo left, what-it's-created-from right, as on the desktop. These two
-    /// decide what the session can touch, so they sit above the prompt rather
-    /// than among the run settings below it.
+    /// The repo decides what the session can touch, so it sits above the prompt
+    /// rather than among the run settings below it. Code is the default on iOS,
+    /// so its "New branch" label stays hidden like it does on the web.
     private var header: some View {
         HStack(spacing: 8) {
             repoChip
             Spacer(minLength: 8)
+            #if os(macOS)
             modeChip
+            #endif
         }
         // 16, the column the prompt below already uses (11 outer + the text
         // view's own 5pt fragment padding) and the toolbar circles now sit on.
@@ -402,7 +512,9 @@ struct NewSessionView: View {
             }
         }
         .menuStyle(.button)
+        #if os(macOS)
         .buttonStyle(.plain)
+        #endif
         .disabled(repos.isEmpty && mode != "ask")
     }
 
@@ -488,39 +600,28 @@ struct NewSessionView: View {
         return catalog?.label(for: id) ?? "Model"
     }
 
-    /// Attach on the left, model on the right — the palette's footer. iOS folds
-    /// reasoning effort and fast mode into the model menu, so the row stays two
-    /// controls wide and needs no sideways scrolling; the Mac has the width to
-    /// show them as their own chips.
+    /// Attach stays at the leading edge. iOS keeps mode and execution choices
+    /// behind one overflow button, with model and dictation on the right. The
+    /// Mac has room to keep every setting as its own chip.
     private var controls: some View {
         HStack(spacing: 8) {
             AttachImagesButton(images: $images)
-            ComposerDictationButton(dictation: dictation, draft: $prompt)
-            if !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                saveDraftButton
-            }
+            #if os(iOS)
+            moreOptionsMenu
             Spacer(minLength: 8)
-            #if os(macOS)
+            modelChip
+            ComposerDictationButton(dictation: dictation, draft: $prompt)
+            #else
+            ComposerDictationButton(dictation: dictation, draft: $prompt)
+            Spacer(minLength: 8)
             if !availableEfforts.isEmpty { effortChip }
             if fastSupported { fastChip }
-            #endif
             if !sandboxChoices.isEmpty { sandboxChip }
             modelChip
+            #endif
         }
         .padding(.horizontal, 12)
         .padding(.vertical, controlsVerticalPadding)
-    }
-
-    private var saveDraftButton: some View {
-        Button { saveDraft() } label: {
-            chipLabel(
-                icon: "square.and.arrow.down",
-                text: savingDraft ? "Saving" : "Save draft"
-            )
-        }
-        .buttonStyle(.plain)
-        .disabled(savingDraft)
-        .accessibilityLabel(savingDraft ? "Saving draft" : "Save as draft")
     }
 
     /// The iOS attach button carries its own 44pt tap target, so the row only
@@ -541,21 +642,81 @@ struct NewSessionView: View {
         return SandboxOffering.choices(sandboxStatus)
     }
 
-    /// Where the session runs. One chip, mirroring the server's own names for
-    /// the providers. Choosing a Runner is not offered here — the web palette
-    /// dropped that too, because a machine is picked for a piece of work, not
-    /// for a message you have not written yet.
+    private var askModeBinding: Binding<Bool> {
+        Binding(
+            get: { mode == "ask" },
+            set: { selectMode($0 ? "ask" : "code") }
+        )
+    }
+
+    /// iOS keeps mode and environment choices behind one control. Its active
+    /// state remains visible when either hidden choice differs from Code on the
+    /// host, with Ask using the same green as the session composer.
+    private var moreOptionsMenu: some View {
+        let customized = mode == "ask" || sandbox != SandboxOffering.host
+        return Menu {
+            Toggle(isOn: askModeBinding) {
+                Label {
+                    Text("Ask")
+                    Text("Read-only, no repo unless you pick one")
+                } icon: {
+                    Image(systemName: "eye")
+                }
+            }
+            if !sandboxChoices.isEmpty {
+                Divider()
+                Menu {
+                    sandboxOptions
+                } label: {
+                    Label {
+                        Text("Sandbox")
+                        Text(SandboxOffering.label(sandbox))
+                    } icon: {
+                        Image(systemName: "cube")
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(
+                    customized
+                        ? (mode == "ask" ? OS1VisualStyle.green : OS1VisualStyle.accentInk)
+                        : OS1VisualStyle.textDim
+                )
+                .frame(width: 44, height: 44)
+                .background(
+                    customized
+                        ? (mode == "ask"
+                            ? OS1VisualStyle.green.opacity(0.14)
+                            : OS1VisualStyle.accent.opacity(0.14))
+                        : Color.clear,
+                    in: Circle()
+                )
+                .contentShape(Circle())
+        }
+        .menuStyle(.button)
+        .accessibilityLabel("More options")
+        .accessibilityValue(mode == "ask" ? "Ask on" : "Code")
+    }
+
+    /// The Mac keeps Sandbox visible as a chip because it has the room.
     private var sandboxChip: some View {
         Menu {
-            sandboxOption(SandboxOffering.host)
-            ForEach(sandboxChoices, id: \.self) { provider in
-                sandboxOption(provider)
-            }
+            sandboxOptions
         } label: {
             chipLabel(icon: "cube", text: SandboxOffering.label(sandbox))
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var sandboxOptions: some View {
+        sandboxOption(SandboxOffering.host)
+        ForEach(sandboxChoices, id: \.self) { provider in
+            sandboxOption(provider)
+        }
     }
 
     private func sandboxOption(_ provider: String) -> some View {
@@ -628,7 +789,9 @@ struct NewSessionView: View {
             )
         }
         .menuStyle(.button)
+        #if os(macOS)
         .buttonStyle(.plain)
+        #endif
     }
 
     private func modelButton(_ option: ModelOption) -> some View {
@@ -746,12 +909,17 @@ struct NewSessionView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         #endif
+        #if os(iOS)
+        // The iOS labels live inside system toolbar glass. A second fill here
+        // would make the repository and model look like pills inside pills.
+        .frame(minHeight: 44)
+        #else
         .background(
             highlighted ? AnyShapeStyle(.tint.opacity(0.15)) : AnyShapeStyle(.fill.tertiary),
             in: Capsule()
         )
+        #endif
         #if os(iOS)
-        .frame(minHeight: 44)
         .contentShape(Rectangle())
         #else
         .contentShape(Capsule())
@@ -759,6 +927,34 @@ struct NewSessionView: View {
     }
 
     // ── Data ──────────────────────────────────────────────────────────────
+
+    private func stagePendingFiles() async {
+        for file in files where !file.isStaged {
+            await stage(file)
+        }
+    }
+
+    private func stage(_ file: AttachedFile) async {
+        guard !file.isStaged, !stagingFileIDs.contains(file.id) else { return }
+        stagingFileIDs.insert(file.id)
+        failedFileIDs.remove(file.id)
+        defer { stagingFileIDs.remove(file.id) }
+        do {
+            let staged = try await OS1API.uploadComposerFile(file)
+            guard let index = files.firstIndex(where: { $0.id == file.id }) else { return }
+            files[index] = staged
+        } catch {
+            guard files.contains(where: { $0.id == file.id }) else { return }
+            failedFileIDs.insert(file.id)
+            attachmentError = error.localizedDescription
+        }
+    }
+
+    private func remove(_ file: AttachedFile) {
+        files.removeAll { $0.id == file.id }
+        stagingFileIDs.remove(file.id)
+        failedFileIDs.remove(file.id)
+    }
 
     private func load() async {
         if prompt.isEmpty, let initialDraft { prompt = initialDraft.text }
@@ -867,13 +1063,33 @@ struct NewSessionView: View {
         return repos.first(where: { $0.isDefault == true })?.id ?? repos.first?.id ?? ""
     }
 
-    private func saveDraft() {
+    /// Closing persists the current text first. Clearing a resumed draft sends
+    /// the deletion before closing, while a fresh empty composer closes at once.
+    /// A failed explicit close stays open with the error.
+    private func exitComposer() {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !savingDraft else { return }
-        dictation.stop()
+        guard !text.isEmpty || initialDraft != nil else {
+            dictation.stop()
+            dismiss()
+            return
+        }
+        parkDraft(text, dismissWhenSaved: true)
+    }
+
+    /// Covers an interactive sheet dismissal. The outer NavigationStack owns
+    /// this callback, so opening the recipe library does not count as leaving.
+    private func parkDraftAfterDismiss() {
+        let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty || initialDraft != nil else { return }
+        parkDraft(text, dismissWhenSaved: false)
+    }
+
+    private func parkDraft(_ text: String, dismissWhenSaved: Bool) {
+        guard !draftSaveStarted, !sessionStarted else { return }
+        draftSaveStarted = true
         savingDraft = true
+        dictation.stop()
         Task {
-            defer { savingDraft = false }
             do {
                 let workspace = try await OS1API.saveWorkspaceDraft(
                     text: text,
@@ -882,9 +1098,12 @@ struct NewSessionView: View {
                     autoName: initialDraft?.autoName
                 )
                 onDraftSaved(workspace)
-                dismiss()
+                savingDraft = false
+                if dismissWhenSaved { dismiss() }
             } catch {
-                draftSaveError = error.localizedDescription
+                savingDraft = false
+                draftSaveStarted = false
+                if dismissWhenSaved { draftSaveError = error.localizedDescription }
             }
         }
     }
@@ -894,7 +1113,11 @@ struct NewSessionView: View {
     /// create (worktree prep — seconds) runs in the background. The list
     /// swaps the temp id for the server's when it resolves.
     private func create() {
-        guard !savingDraft else { return }
+        guard !savingDraft,
+              stagingFileIDs.isEmpty,
+              failedFileIDs.isEmpty,
+              files.allSatisfy(\.isStaged)
+        else { return }
         // Played here rather than from a trigger on the view: the sheet
         // dismisses two lines down, and a dismissed view never observes its
         // own state change. Starting a session is the same gesture as sending
@@ -904,9 +1127,12 @@ struct NewSessionView: View {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let imageURLs = images.map(\.dataURL)
         if repo != Session.noRepoID { lastRepo = repo }
+        let provisionalTitle = text.isEmpty
+            ? (files.first?.name ?? "New session")
+            : (text.components(separatedBy: "\n").first ?? text)
         let pending = Session.optimistic(
             id: "pending-\(UUID().uuidString)",
-            title: String((text.components(separatedBy: "\n").first ?? text).prefix(80)),
+            title: String(provisionalTitle.prefix(80)),
             repo: repo,
             repoLess: repo == Session.noRepoID,
             mode: mode,
@@ -916,6 +1142,7 @@ struct NewSessionView: View {
             startedBy: ServerConfig.shared.userName,
             workspaceId: initialWorkspaceId
         )
+        sessionStarted = true
         dismiss()
         onCreated(
             pending,
@@ -931,6 +1158,7 @@ struct NewSessionView: View {
                     effort: effort.isEmpty ? nil : effort,
                     fastMode: fastMode,
                     images: imageURLs,
+                    files: files,
                     workspaceId: initialWorkspaceId,
                     // Only when the chip was on screen. Where it wasn't, the
                     // instance keeps deciding, exactly as before.

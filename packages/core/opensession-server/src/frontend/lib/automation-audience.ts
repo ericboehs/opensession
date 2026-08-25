@@ -13,6 +13,9 @@
 
 import { AGENT_NAME, DEFAULT_REPO_ID } from "./brand";
 
+/** The anonymous browser identity used by visual probes and UI automation. */
+export const AUTOMATION_MACHINE_IDENTITY = "automation";
+
 /**
  * The person key the agent answers to. It is the agent's own name, so an
  * automation whose owner is set to the agent and one nobody has touched land

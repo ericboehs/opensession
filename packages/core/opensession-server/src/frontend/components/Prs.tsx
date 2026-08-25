@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Workspace, UnifiedSession } from "../lib/types";
 import { fetchHomeStats, fetchRecentPrs, type HomeStats, type RecentPr } from "../lib/api";
@@ -12,6 +12,10 @@ import {
   type WorktreeRow,
 } from "../lib/pr-rows";
 import { Button } from "../ui/button";
+import { useIsPhone } from "../hooks/useIsPhone";
+import { ResponsiveDialog } from "../ui/sheet";
+import { toast } from "../ui/toast";
+import { PrQueuePreview } from "./PrQueuePreview";
 import { useCurrentUser } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
 import { RepoTile, repoLabel } from "./RepoTile";
@@ -19,7 +23,6 @@ import { usePeople } from "../lib/people";
 import { Menu } from "../ui/menu";
 import { Tooltip } from "../ui/tooltip";
 import { Input } from "../ui/input";
-import { PageHeader, PageTitle } from "../ui/page-header";
 import { EmptyState } from "../ui/state";
 import {
   PR_GROUP_LABEL,
@@ -36,6 +39,8 @@ import {
   IconPlus,
   IconPullRequest,
   IconRepo,
+  IconSidebarLeft,
+  IconX,
 } from "./icons";
 
 interface Props {
@@ -45,9 +50,18 @@ interface Props {
   onNewSession: () => void;
   onShowArchived: () => void;
   onOpenAnalytics?: () => void;
+  /** Create or adopt the PR's workspace without leaving the preview. */
+  onAddToSidebar: (pr: PrPreviewTarget) => Promise<string>;
+  /** Open a PR workspace after it is already represented in the sidebar. */
+  onOpenWorkspace: (workspaceId: string, pr: PrPreviewTarget) => void;
   /** The pane's top bar, where this page's controls go. */
   topbarActionsEl?: HTMLElement | null;
 }
+
+type PrPreviewTarget = Pick<
+  WorktreeRow,
+  "repo" | "branch" | "title" | "number" | "workspaceId" | "state"
+>;
 
 const compactFmt = new Intl.NumberFormat("en", {
   notation: "compact",
@@ -149,7 +163,7 @@ function OverviewLine({
       // The clauses wrap rather than truncate: a narrow window should cost the
       // line a second row, not hide the trend behind an ellipsis that gives no
       // hint of what it swallowed.
-      className="focus-ring group -mx-1 mt-1 flex max-w-full cursor-pointer flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded-sm px-1 text-left text-supporting tabular-nums text-dim transition-colors hover:text-fg"
+      className="focus-ring group -mx-1 flex max-w-full cursor-pointer flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded-sm px-1 text-left text-supporting tabular-nums text-dim transition-colors hover:text-fg"
     >
       <span className="flex items-center gap-2">
         <span
@@ -203,9 +217,12 @@ export function Prs({
   onNewSession,
   onShowArchived,
   onOpenAnalytics,
+  onAddToSidebar,
+  onOpenWorkspace,
   topbarActionsEl,
 }: Props) {
   const currentUser = useCurrentUser();
+  const isPhone = useIsPhone();
   const [query, setQuery] = useState("");
   const [workspaceId, setWorkspaceId] = useState("all");
   const [repo, setRepo] = useState("all");
@@ -226,6 +243,31 @@ export function Prs({
   const [recentPrs, setRecentPrs] = useState<RecentPr[]>([]);
   const [personPrs, setPersonPrs] = useState<RecentPr[]>([]);
   const [stats, setStats] = useState<HomeStats | null>(readCachedHomeStats);
+  const [preview, setPreview] = useState<PrPreviewTarget | null>(null);
+  const [addingToSidebar, setAddingToSidebar] = useState(false);
+
+  function openPreviewTarget(repo: string, branch: string) {
+    setPreview({ repo, branch, title: repo, state: "OPEN", workspaceId: null });
+  }
+
+  async function addPreviewToSidebar() {
+    if (!preview || addingToSidebar) return;
+    const target = preview;
+    setAddingToSidebar(true);
+    await (async () => {
+const workspaceId = await onAddToSidebar(target);
+      setPreview((current) =>
+        current?.repo === target.repo && current.branch === target.branch
+          ? { ...current, workspaceId }
+          : current,
+      );
+      toast("Added to sidebar");
+})().catch(async () => {
+toast("Couldn't add to sidebar");
+}).finally(async () => {
+setAddingToSidebar(false);
+});
+  }
 
   useEffect(() => {
     let active = true;
@@ -245,20 +287,17 @@ export function Prs({
     };
   }, []);
 
-  const running = useMemo(
-    () => sessions.filter((s) => s.isRunning && !s.archived).length,
-    [sessions],
-  );
+  const running = (sessions.filter((s) => s.isRunning && !s.archived).length);
 
   useEffect(() => {
     let active = true;
-    fetchRecentPrs()
+    fetchRecentPrs(undefined, showArchived ? {} : { limit: 500 })
       .then((prs) => active && setRecentPrs(prs))
       .catch(() => {});
     return () => {
       active = false;
     };
-  }, []);
+  }, [showArchived]);
 
   useEffect(() => {
     if (person === "all") {
@@ -274,13 +313,13 @@ export function Prs({
     };
   }, [person]);
 
-  const allWorktrees = useMemo(() => {
+  const allWorktrees = (() => {
     const prs = new Map(recentPrs.map((pr) => [pr.url, pr]));
     for (const pr of personPrs) prs.set(pr.url, pr);
     return buildWorktreeRows([...prs.values()], sessions);
-  }, [personPrs, recentPrs, sessions]);
+  })();
 
-  const worktrees = useMemo(() => {
+  const worktrees = (() => {
     const needle = query.trim().toLowerCase();
     return allWorktrees
       .filter((row) => {
@@ -296,9 +335,9 @@ export function Prs({
           .toLowerCase()
           .includes(needle);
       });
-  }, [allWorktrees, person, workspaceId, query, repo, showArchived]);
+  })();
 
-  const sections = useMemo(() => {
+  const sections = (() => {
     const definitions: Array<{ state: WorktreeRow["state"]; label: string }> = [
       { state: "OPEN", label: "Open" },
       { state: "MERGED", label: "Merged" },
@@ -314,17 +353,14 @@ export function Prs({
       }
       return [{ ...definition, rows, groups: [...groups.entries()] }];
     });
-  }, [worktrees]);
+  })();
 
-  const workspaceOptions = useMemo(() => {
+  const workspaceOptions = (() => {
     const represented = new Set(sessions.filter((s) => s.prUrl || s.prs?.some((pr) => pr.url)).map((s) => s.workspaceId));
     return workspaces.filter((workspace) => represented.has(workspace.id));
-  }, [workspaces, sessions]);
+  })();
 
-  const repoOptions = useMemo(
-    () => [...new Set(allWorktrees.map((row) => row.repo).filter(Boolean))].sort(),
-    [allWorktrees],
-  );
+  const repoOptions = ([...new Set(allWorktrees.map((row) => row.repo).filter(Boolean))].sort());
 
   // The page's controls, in the window's top bar rather than in a strip of
   // their own. That bar spans the pane and was empty until the heading below
@@ -529,19 +565,22 @@ export function Prs({
     <div data-page-scroll className="min-h-0 w-full flex-1 overflow-y-auto bg-surface">
       {topbarActionsEl ? createPortal(actions, topbarActionsEl) : null}
       <div className="mx-auto w-full max-w-[920px] px-6 pb-15 pt-7 max-[560px]:px-4 max-[560px]:pb-12 max-[560px]:pt-[18px]">
-        <PageHeader>
-          {/* `flex-1` even as an only child: the day's line wraps, and a
-              wrapping flex box asked for its content size takes the width of
-              one clause rather than of the row. */}
-          <div className="min-w-0 flex-1">
-            <PageTitle>Pull requests</PageTitle>
-            <OverviewLine
-              running={running}
-              stats={stats}
-              onOpenAnalytics={onOpenAnalytics}
-            />
-          </div>
-        </PageHeader>
+        {/* The page's name is the top bar's now. With no `PageTitle` under it
+            the large-title handoff never has a heading to defer to, so the bar
+            holds "Pull requests" in its left corner for good rather than
+            fading it in on scroll (hooks/useLargeTitle.ts). That buys the body
+            its first screen back: the day's numbers take a row of their own,
+            and the list starts on Open instead of a third row of chrome.
+
+            `min-w-0` because the line wraps, and a flex child asked for its
+            content size takes the width of one clause rather than of the row. */}
+        <div className="mb-[18px] flex min-w-0 max-[560px]:mb-3.5">
+          <OverviewLine
+            running={running}
+            stats={stats}
+            onOpenAnalytics={onOpenAnalytics}
+          />
+        </div>
         {sections.length === 0 ? (
           <EmptyState
             title={
@@ -579,9 +618,7 @@ export function Prs({
                           <button
                             key={row.key}
                             className={PR_ROW}
-                            onClick={() =>
-                              row.session ? onSelect(row.session) : row.url && window.open(row.url, "_blank", "noopener")
-                            }
+                            onClick={() => setPreview(row)}
                             title={`${repoLabel(row.repo)} · ${row.branch}`}
                           >
                             {/* Hue is for the rows with something to say. A
@@ -640,6 +677,76 @@ export function Prs({
           </div>
         )}
       </div>
+
+      <ResponsiveDialog
+        open={Boolean(preview)}
+        onClose={() => setPreview(null)}
+        phone={isPhone}
+        label={preview ? `Pull request: ${preview.title}` : "Pull request"}
+        showPhoneGrabber={false}
+        modalClassName="h-[min(820px,85vh)] w-[min(1280px,92vw)] max-w-none bg-surface"
+        sheetClassName="top-0 h-[100dvh] max-h-none bg-surface [border-radius:0]! [box-shadow:none]!"
+      >
+        {preview && (
+          <>
+            <div className="flex min-h-13 shrink-0 items-center gap-2 border-b border-line bg-panel px-3 phone:min-h-14">
+              <div className="flex min-w-0 flex-1 items-center gap-2 px-1 text-item-title font-medium text-fg">
+                <IconPullRequest size={19} className="shrink-0 text-dim" />
+                <span className="truncate">{repoLabel(preview.repo)}</span>
+                {preview.number && (
+                  <span className="shrink-0 font-normal tabular-nums text-faint">
+                    #{preview.number}
+                  </span>
+                )}
+              </div>
+              {preview.workspaceId ? (
+                <Button
+                  variant="default"
+                  className="min-h-10 shrink-0 phone:min-h-11"
+                  icon={<IconSidebarLeft size={18} />}
+                  onClick={() => {
+                    onOpenWorkspace(preview.workspaceId!, preview);
+                    setPreview(null);
+                  }}
+                >
+                  Open workspace
+                </Button>
+              ) : preview.state === "OPEN" ? (
+                <Button
+                  variant="default"
+                  className="min-h-10 shrink-0 phone:min-h-11"
+                  icon={<IconSidebarLeft size={18} />}
+                  disabled={addingToSidebar}
+                  onClick={() => void addPreviewToSidebar()}
+                >
+                  {addingToSidebar ? "Adding…" : "Add to sidebar"}
+                </Button>
+              ) : null}
+              <Button
+                variant="ghost"
+                className="size-10 shrink-0 phone:size-11"
+                icon={<IconX size={20} />}
+                aria-label="Close pull request"
+                onClick={() => setPreview(null)}
+              />
+            </div>
+            <div className="min-h-0 flex-1">
+              <PrQueuePreview
+                key={`${preview.repo}:${preview.branch}`}
+                repo={preview.repo}
+                branch={preview.branch}
+                sessions={sessions}
+                onOpenSession={(id) => {
+                  const session = sessions.find((item) => item.id === id);
+                  if (session) onSelect(session);
+                  setPreview(null);
+                }}
+                onOpenPr={openPreviewTarget}
+              />
+            </div>
+          </>
+        )}
+      </ResponsiveDialog>
     </div>
   );
 }

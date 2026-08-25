@@ -1,6 +1,6 @@
 /**
- * GitHub webhook → PR-cache sync. The single GitHub webhook (the Slack
- * agent's signature-verified `POST /github/webhook`) forwards every delivery
+ * GitHub webhook → PR-cache sync. GithubAgent's signature-verified
+ * `POST /github/webhook` forwards every delivery
  * here so PR state in OS1 reacts to external events (a teammate's review, CI
  * finishing, a merge from github.com) instead of waiting out polling TTLs:
  *
@@ -11,7 +11,7 @@
  *  - a debounced `pr_updated` broadcast tells open tabs to refetch now,
  *    which is what turns the invalidation into a visible update.
  *
- * Events GitHub currently delivers (see the webhook config on the tellahq
+ * Events GitHub currently delivers (see the webhook config on your
  * GitHub App): pull_request, pull_request_review, issue_comment,
  * pull_request_review_comment, workflow_run. check_suite / check_run / status
  * are handled here too so subscribing to them GitHub-side needs no code.

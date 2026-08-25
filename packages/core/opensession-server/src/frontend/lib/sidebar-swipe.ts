@@ -50,6 +50,10 @@ export const SWIPE_AXIS_LOCK_PX = 8;
 export type SwipeAction = "archive" | "star";
 export type SwipeState = { key: string; offset: number; action?: SwipeAction };
 
+export function swipeActionForOffset(offset: number): SwipeAction | null {
+	return offset < 0 ? "archive" : offset > 0 ? "star" : null;
+}
+
 export function clampSwipe(dx: number, rowWidth: number): number {
 	const limit = Math.max(SWIPE_REVEAL_PX, rowWidth);
 	return Math.max(-limit, Math.min(limit, dx));
@@ -66,4 +70,3 @@ export function fullSwipeThreshold(rowWidth: number): number {
 export function swipeCommitOffset(action: SwipeAction, rowWidth: number): number {
 	return action === "archive" ? -rowWidth : rowWidth;
 }
-

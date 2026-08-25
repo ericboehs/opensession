@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Card, CardList } from "./card";
+import { Card } from "./card";
 import { cn } from "./cn";
 import { fieldClasses } from "./input";
 import { markTileClass } from "../lib/mark-tile";
@@ -77,12 +77,12 @@ export function SettingsGroupLabel({
 	);
 }
 
-/** The surface every settings group sits on: a soft fill, no border. The fill
- * alone separates a group from the page, so a page of settings reads as a few
- * quiet blocks rather than a stack of outlined boxes.
+/** The surface every settings group sits on: a soft fill and quiet outline.
+ * Together they separate a group from the page, so a page of settings reads as
+ * a few blocks rather than a stack of outlined boxes.
  *
- * Card supplies the borderless part now, so all this adds is the corner and the
- * fill. A settings group is a CONTAINER of rows rather than a single card, and
+ * Card supplies the borderless base, so this adds the corner, fill and outline.
+ * A settings group is a CONTAINER of rows rather than a single card, and
  * the scale gives a container the largest step: `rounded-2xl` (22px × --rf), the
  * same corner the phone sheet's section list already carries.
  *
@@ -98,20 +98,68 @@ export function SettingsGroupLabel({
  * not add the edge back to `Card`, which is borderless for the reason the rule
  * gives.
  *
- * It takes `divider`, the chrome seam, rather than the `line` the rows inside
- * take. Those are two different jobs at the same scale: a rule between rows
- * has content on both sides and has to be read as a separation, while this one
- * only has to close the block's shape, and the fill under it is already saying
- * where the block is. At the row weight the outline was the loudest thing on
- * the page. `divider` is `line` at 55%, so it lands under the rules it
+ * It takes `divider-soft` rather than the `line` the rules inside take. Those
+ * are two different jobs at the same scale: a rule between groups has content
+ * on both sides and has to be read as a separation, while this one only has to
+ * close the block's shape, and the fill under it is already saying where the
+ * block is. At the row weight the outline was the loudest thing on the page.
+ * `divider-soft` is `line` at a third, so it lands well under the rules it
  * contains and the block reads as one object rather than a frame. */
-const settingsSurface = "rounded-2xl border border-divider bg-settings-plate";
+const settingsSurface =
+	"rounded-2xl border border-divider-soft bg-settings-plate";
 
+/**
+ * The rule between two groups of rows: inset from the card's edges, so it
+ * separates the rows without cutting the block in half. An edge-to-edge rule
+ * makes every seam as strong as the card's own outline, and a card of eight of
+ * them reads as a table rather than a list of settings.
+ *
+ * It is drawn as a pseudo-element rather than a `border-t`, because a border
+ * cannot be inset: it would need padding on the row, which would move the
+ * text. `inset-x-5` matches `SettingRow`'s own `px-5`, so the rule starts where
+ * a title starts and ends where a control ends.
+ */
+const settingGroupRule =
+	"[&>*+*]:relative [&>*+*]:before:pointer-events-none [&>*+*]:before:absolute [&>*+*]:before:inset-x-5 [&>*+*]:before:top-0 [&>*+*]:before:h-px [&>*+*]:before:bg-line [&>*+*]:before:content-['']";
+
+/**
+ * A settings group's card. Its DIRECT children are separated by an inset rule,
+ * so what a rule means is "a different setting begins here." Put rows that
+ * answer one question inside a single `SettingGroup` and they sit together
+ * with no seam between them.
+ *
+ * A card whose children are all bare rows still divides every row, which is
+ * right for a list of like things (repos, accounts, tools) and wrong for a
+ * page of preferences, where consecutive rows are often facets of the same
+ * choice.
+ */
 export function SettingCard({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <CardList className={cn(settingsSurface, className)} {...props} />;
+	return (
+		<Card
+			className={cn(
+				settingsSurface,
+				"overflow-hidden",
+				settingGroupRule,
+				className,
+			)}
+			{...props}
+		/>
+	);
+}
+
+/**
+ * Rows that answer one question, carried as a single child of `SettingCard`:
+ * no rule between them, one rule above the group. "Group by" and "Group by
+ * project" are one setting asked twice, not two settings.
+ */
+export function SettingGroup({
+	className,
+	...props
+}: React.ComponentPropsWithoutRef<"div">) {
+	return <div className={cn("flex flex-col", className)} {...props} />;
 }
 
 /**
@@ -125,7 +173,7 @@ export function SettingCard({
  * shape, so the page arrives once.
  *
  * Built out of the real `SettingCard` and `SettingRow` rather than beside
- * them: the seams come from CardList's own divider rule and the padding from
+ * them: the seams come from SettingCard's own divider rule and the padding from
  * the row itself, so a change to either is inherited here instead of being
  * something to remember. That is what the hand-tuned `rowClassName` on the
  * one call site that nested `ListSkeleton` inside a card was already drifting
@@ -248,7 +296,13 @@ export function SettingRowDescription({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("mt-0.5 text-supporting text-dim", className)} {...props} />;
+	return (
+		<div
+			data-setting-description=""
+			className={cn("mt-1 text-supporting text-dim", className)}
+			{...props}
+		/>
+	);
 }
 
 export function SettingRowControl({
@@ -287,7 +341,13 @@ export function SettingsHint({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("mt-2 px-5 text-meta text-faint", className)} {...props} />;
+	return (
+		<div
+			data-settings-hint=""
+			className={cn("mt-2 px-5 text-supporting text-faint", className)}
+			{...props}
+		/>
+	);
 }
 
 /**

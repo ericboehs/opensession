@@ -46,9 +46,14 @@ function visibleOutcome(value: string): string {
 	return `${subject} ${verb} now visible${qualifier}`;
 }
 
+/**
+ * A first draft of the Slack message announcing a merged change, shown in the
+ * composer for the person to edit before sending. Repository-neutral: it reads
+ * the walkthrough summary when there is one, and otherwise turns the PR title
+ * from an instruction into an outcome.
+ */
 export function suggestedShippedChangeMessage(
 	title: string,
-	repo?: string,
 	context?: string,
 ): string {
 	const outcome = shippedChangeOutcome(context, title);
@@ -56,26 +61,23 @@ export function suggestedShippedChangeMessage(
 	const clean = title
 		.replace(/^\[[^\]]+\]\s*/, "")
 		.replace(/[.!?]+$/, "")
-		.replace(repo === "tella-fusion" ? /\bOpenSession\s+/gi : /$^/, "")
 		.trim();
 	if (!clean) return "The update is now available.";
 	if (/\b(now|is|are|has|have|can)\b/i.test(clean)) return sentence(clean);
 	const [verb, ...rest] = clean.split(/\s+/);
 	const object = rest.join(" ").trim();
-	const product = repo === "tella-fusion" && !/\btella\b/i.test(clean) ? " in Tella" : "";
 	const lower = verb.toLowerCase();
-	if (lower === "name" && object)
-		return sentence(`${object} now have names${product}`);
-	if (lower === "show" && object) return sentence(`${visibleOutcome(object)}${product}`);
+	if (lower === "name" && object) return sentence(`${object} now have names`);
+	if (lower === "show" && object) return sentence(visibleOutcome(object));
 	if (["add", "create"].includes(lower) && object)
-		return sentence(`${object} is now available${product}`);
+		return sentence(`${object} is now available`);
 	if (["fix"].includes(lower) && object)
-		return sentence(`${object} now works correctly${product}`);
+		return sentence(`${object} now works correctly`);
 	if (["remove"].includes(lower) && object)
-		return sentence(`${object} is now removed${product}`);
+		return sentence(`${object} is now removed`);
 	if (["adopt", "change", "make", "replace", "update", "use"].includes(lower) && object)
-		return sentence(`${object} is now updated${product}`);
+		return sentence(`${object} is now updated`);
 	if (["improve", "polish", "redesign", "simplify"].includes(lower) && object)
-		return sentence(`${object} is now improved${product}`);
-	return sentence(`${clean} is now available${product}`);
+		return sentence(`${object} is now improved`);
+	return sentence(`${clean} is now available`);
 }

@@ -20,7 +20,7 @@ a WebSocket transport.
 
 A conformant runner is anything that accepts a `RunHostSpec`, drives an agent
 with it, emits `StreamEvent`s, and persists the transcript. Engine neutrality
-is proven in-tree: the same contract drives Claude, Codex, and opencode runs.
+is proven in-tree: the same contract drives Claude, Codex, and pi runs.
 
 ## `./session` — bring your own UI
 

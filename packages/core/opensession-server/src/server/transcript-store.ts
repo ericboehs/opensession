@@ -46,6 +46,7 @@
  * TranscriptStore(tempPath)` directly and must never call transcriptStore().
  */
 
+import { executeSessionProjection } from "./session-projection-executor";
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync } from "fs";
 import { tmpdir } from "os";
@@ -58,6 +59,11 @@ import {
 } from "./transcript-bus";
 import type { TranscriptEntry } from "./types";
 import { sanitizeTranscriptMediaEntry } from "./transcript-media";
+import { classifyEntry, dropContextInjections } from "@tellahq/opensession-protocol/notices";
+import type {
+  TranscriptIndexEntry,
+  TranscriptIndexRole,
+} from "@tellahq/opensession-protocol/session";
 
 export type { SeqEntry, TranscriptBusEvent };
 
@@ -65,6 +71,20 @@ export type { SeqEntry, TranscriptBusEvent };
 export const TRANSCRIPT_DATA_MAX_BYTES = 32 * 1024;
 
 export type TranscriptImportSrc = "mirror" | "merged" | "live-only";
+
+export interface TranscriptOutline {
+  entries: TranscriptIndexEntry[];
+  firstSeq: number;
+  lastSeq: number;
+  lastChangeSeq: number;
+  epoch: number;
+}
+
+export interface TranscriptRangePage extends TranscriptPage {
+  /** Last raw seq covered, including a corrupt or hidden row. */
+  coveredThroughSeq: number;
+  complete: boolean;
+}
 
 export interface TranscriptPage {
   /** Entries in ascending seq order, each annotated with its seq. */
@@ -103,6 +123,34 @@ export interface TranscriptImportInfo {
   importedAt: number;
   src: TranscriptImportSrc | string;
   watermark: number | null;
+}
+
+/**
+ * What counts as CONVERSATION when sizing an opening window (readTailWindow).
+ *
+ * Deliberately not `system`: the biggest system rows are the per-turn context
+ * injections (memory, standing instructions), which every client drops on the
+ * way in (dropContextInjections), so counting them would satisfy the message
+ * floor with rows nobody ever sees.
+ */
+const TAIL_WINDOW_MESSAGE_KINDS = new Set(["user", "assistant"]);
+
+export interface TailWindowOpts {
+  /** Never fewer than this many entries, whatever the byte ceiling says. */
+  minEntries: number;
+  /** Reach back until the window holds this many user/assistant entries. */
+  minMessages: number;
+  /** Require this many user boundaries when the window contains tool work. */
+  minUserMessagesWithToolWork?: number;
+  /** Hard ceiling on rows read, and on the probe query itself. */
+  maxEntries: number;
+  /** Estimated transfer ceiling for the extension past `minEntries`. */
+  maxEstimatedBytes: number;
+  /**
+   * Estimate what one stored row costs after the caller's wire transforms.
+   * Defaults to its stored UTF-8 size.
+   */
+  weigh?: (kind: string, storedBytes: number) => number;
 }
 
 /** Same contract as file-watcher.ts's AppendListener (setTranscriptAppendListener):
@@ -190,6 +238,7 @@ export function __setTranscriptStoreForTest(
   return prev;
 }
 
+
 // ── Row shapes ───────────────────────────────────────────────────────────────
 
 interface EventRow {
@@ -220,6 +269,7 @@ export class TranscriptStore {
   private db: Database;
   /** Sessions known to have imported_at set — one-time PK lookup cache (§3). */
   private importedCache = new Set<string>();
+  private outlineBackfills = new Map<string, Promise<void>>();
   /** BEGIN IMMEDIATE write transaction (bun:sqlite transaction wrapper). */
   private txWrite: ((sessionId: string, entries: TranscriptEntry[]) => WriteOutcome) & {
     immediate: (sessionId: string, entries: TranscriptEntry[]) => WriteOutcome;
@@ -254,6 +304,19 @@ export class TranscriptStore {
       );
       CREATE UNIQUE INDEX IF NOT EXISTS idx_te_uuid
         ON transcript_events(session_id, uuid);
+      CREATE TABLE IF NOT EXISTS transcript_outline (
+        session_id       TEXT NOT NULL,
+        seq              INTEGER NOT NULL,
+        uuid             TEXT NOT NULL,
+        change_seq       INTEGER NOT NULL,
+        ts               INTEGER NOT NULL,
+        render_role      TEXT NOT NULL,
+        content_length   INTEGER NOT NULL,
+        review_pr_number INTEGER,
+        PRIMARY KEY (session_id, seq)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_to_uuid
+        ON transcript_outline(session_id, uuid);
       CREATE TABLE IF NOT EXISTS transcript_blobs (
         id INTEGER PRIMARY KEY,
         session_id TEXT NOT NULL,
@@ -281,12 +344,14 @@ export class TranscriptStore {
     ) as unknown as Tx;
     this.txDelete = this.db.transaction((sessionId: string) => {
       this.db.run("DELETE FROM transcript_events WHERE session_id = ?", [sessionId]);
+      this.db.run("DELETE FROM transcript_outline WHERE session_id = ?", [sessionId]);
       this.db.run("DELETE FROM transcript_blobs WHERE session_id = ?", [sessionId]);
       this.db.run("DELETE FROM transcript_sessions WHERE session_id = ?", [sessionId]);
     }) as unknown as typeof this.txDelete;
     this.txReplace = this.db.transaction(
       (sessionId: string, entries: TranscriptEntry[]) => {
         this.db.run("DELETE FROM transcript_events WHERE session_id = ?", [sessionId]);
+        this.db.run("DELETE FROM transcript_outline WHERE session_id = ?", [sessionId]);
         this.db.run("DELETE FROM transcript_blobs WHERE session_id = ?", [sessionId]);
         this.db.run(
           `INSERT INTO transcript_sessions (session_id, next_seq, next_change_seq)
@@ -313,6 +378,16 @@ export class TranscriptStore {
    * neither can throw into this path.
    */
   appendTranscriptEvents(
+    sessionId: string,
+    entries: TranscriptEntry[],
+    opts?: AppendOpts
+  ): AppendResult | null {
+    return executeSessionProjection(sessionId, "transcript_append", () =>
+      this.appendTranscriptEventsOwned(sessionId, entries, opts)
+    );
+  }
+
+  private appendTranscriptEventsOwned(
     sessionId: string,
     entries: TranscriptEntry[],
     opts?: AppendOpts
@@ -382,6 +457,17 @@ export class TranscriptStore {
     src: TranscriptImportSrc | string,
     watermark: number | null
   ): { inserted: number; updated: number } {
+    return executeSessionProjection(sessionId, "transcript_import", () =>
+      this.importLegacyTranscriptOwned(sessionId, entries, src, watermark)
+    );
+  }
+
+  private importLegacyTranscriptOwned(
+    sessionId: string,
+    entries: TranscriptEntry[],
+    src: TranscriptImportSrc | string,
+    watermark: number | null
+  ): { inserted: number; updated: number } {
     let inserted = 0;
     let updated = 0;
     for (let i = 0; i < entries.length; i += 500) {
@@ -407,6 +493,15 @@ export class TranscriptStore {
   /** Replace a file-backed transcript authoritatively while preserving the
    * monotonic change cursor. Used for truncation/atomic replacement only. */
   replaceTranscriptEvents(
+    sessionId: string,
+    entries: TranscriptEntry[]
+  ): { inserted: number; updated: number } {
+    return executeSessionProjection(sessionId, "transcript_replace", () =>
+      this.replaceTranscriptEventsOwned(sessionId, entries)
+    );
+  }
+
+  private replaceTranscriptEventsOwned(
     sessionId: string,
     entries: TranscriptEntry[]
   ): { inserted: number; updated: number } {
@@ -471,6 +566,85 @@ export class TranscriptStore {
 
   // ── Reads ──────────────────────────────────────────────────────────────────
 
+  /**
+   * The tail a reader should OPEN on: at least `minEntries` rows, extended
+   * back until the window holds enough conversation and user-message
+   * boundaries, and stopped by whichever ceiling comes first.
+   *
+   * Why this exists at all: a flat entry count is a bad proxy for how much
+   * conversation a snapshot contains. One turn can be a thousand tool rows,
+   * and the UI folds a run of consecutive tool/assistant entries into ONE
+   * collapsed "Worked · N steps" block, so a 132-entry tail of such a turn
+   * renders as a single fold and reads as an empty session (measured on a
+   * real session: 2,256 entries, of which the last 132 held one assistant
+   * message and no user message; 17 of the 60 largest sessions in the store
+   * had fewer than 8 messages in that window).
+   *
+   * Two queries, and the first decodes no JSON: a probe over (seq, kind,
+   * length(data)) walks the tail newest-first to pick the row count, then the
+   * ordinary tail read materializes exactly that many. The probe is bounded by
+   * `maxEntries` and rides the (session_id, seq) primary key, so it stays an
+   * index scan of at most that many rows rather than a table scan.
+   */
+  readTailWindow(sessionId: string, opts: TailWindowOpts): TranscriptPage {
+    const maxEntries = Math.max(1, Math.floor(opts.maxEntries));
+    const minEntries = Math.max(
+      1,
+      Math.min(Math.floor(opts.minEntries), maxEntries)
+    );
+    const minMessages = Math.max(0, Math.floor(opts.minMessages));
+    const minUserMessagesWithToolWork = Math.max(
+      0,
+      Math.floor(opts.minUserMessagesWithToolWork ?? 0)
+    );
+    const maxEstimatedBytes = Math.max(0, opts.maxEstimatedBytes);
+    const weigh = opts.weigh ?? ((_kind: string, bytes: number) => bytes);
+    const probe = this.db
+      .query(
+        `SELECT seq, kind, length(CAST(data AS BLOB)) AS bytes
+         FROM transcript_events
+         WHERE session_id = ? ORDER BY seq DESC LIMIT ?`
+      )
+      .all(sessionId, maxEntries) as Array<{
+      seq: number;
+      kind: string;
+      bytes: number;
+    }>;
+
+    let count = 0;
+    let estimatedBytes = 0;
+    let messages = 0;
+    let userMessages = 0;
+    let toolRows = 0;
+    for (const row of probe) {
+      // Tool-free assistant messages all render in place. A user boundary is
+      // needed only once tool work makes the renderer fold those messages.
+      const userBoundaryMet =
+        toolRows === 0 || userMessages >= minUserMessagesWithToolWork;
+      if (count >= minEntries && messages >= minMessages && userBoundaryMet) {
+        break;
+      }
+      const cost = weigh(row.kind, row.bytes ?? 0);
+      // The entry floor is unconditional. The byte ceiling only governs the
+      // message-seeking extension past it, so a session of enormous rows still
+      // opens on the same window it always did.
+      if (
+        count >= minEntries &&
+        estimatedBytes + cost > maxEstimatedBytes
+      ) {
+        break;
+      }
+      count++;
+      estimatedBytes += cost;
+      if (TAIL_WINDOW_MESSAGE_KINDS.has(row.kind)) messages++;
+      if (row.kind === "user") userMessages++;
+      if (row.kind === "tool_use" || row.kind === "tool_result") toolRows++;
+    }
+
+    if (count === 0) return { entries: [], firstSeq: 0, lastSeq: 0 };
+    return this.readTail(sessionId, count);
+  }
+
   /** Last `limit` entries in ascending seq order. */
   readTail(sessionId: string, limit: number = 50): TranscriptPage {
     const rows = this.db
@@ -522,6 +696,70 @@ export class TranscriptStore {
       .all(sessionId, beforeSeq, Math.max(1, limit)) as EventRow[];
     rows.reverse();
     return page(rows);
+  }
+
+  /** Complete content-free outline for virtual scrolling. Existing stores
+   * backfill only the session being opened, then every write maintains the
+   * projection in the same transaction as its canonical row. */
+  readTranscriptIndex(sessionId: string): TranscriptOutline {
+    const rows = this.db
+      .query(
+        `SELECT uuid, seq, change_seq, ts, render_role, content_length, review_pr_number
+         FROM transcript_outline WHERE session_id = ? ORDER BY seq`
+      )
+      .all(sessionId) as Array<{
+      uuid: string;
+      seq: number;
+      change_seq: number;
+      ts: number;
+      render_role: TranscriptIndexRole;
+      content_length: number;
+      review_pr_number: number | null;
+    }>;
+    const entries = rows.map((row) => ({
+      id: row.uuid,
+      seq: row.seq,
+      changeSeq: row.change_seq,
+      timestampMs: row.ts,
+      role: row.render_role,
+      contentLength: row.content_length,
+      ...(row.review_pr_number != null
+        ? { reviewPrNumber: row.review_pr_number }
+        : {}),
+    }));
+    return {
+      entries,
+      firstSeq: entries[0]?.seq ?? 0,
+      lastSeq: entries[entries.length - 1]?.seq ?? 0,
+      lastChangeSeq: this.getLastChangeSeq(sessionId),
+      epoch: this.getLastResetChangeSeq(sessionId),
+    };
+  }
+
+  /** One bounded chunk inside an inclusive indexed span. */
+  readRange(
+    sessionId: string,
+    firstSeq: number,
+    lastSeq: number,
+    afterSeq: number = firstSeq - 1,
+    limit: number = 500
+  ): TranscriptRangePage {
+    const boundedLimit = Math.max(1, limit);
+    const rows = this.db
+      .query(
+        `SELECT seq, change_seq, data, full_ref FROM transcript_events
+         WHERE session_id = ? AND seq >= ? AND seq <= ? AND seq > ?
+         ORDER BY seq ASC LIMIT ?`
+      )
+      .all(sessionId, firstSeq, lastSeq, afterSeq, boundedLimit + 1) as EventRow[];
+    const complete = rows.length <= boundedLimit;
+    const shipped = complete ? rows : rows.slice(0, boundedLimit);
+    const hydrated = page(shipped);
+    return {
+      ...hydrated,
+      coveredThroughSeq: shipped[shipped.length - 1]?.seq ?? Math.max(afterSeq, firstSeq - 1),
+      complete,
+    };
   }
 
   /**
@@ -578,8 +816,10 @@ export class TranscriptStore {
 
   /** Remove every trace of a session (events + blobs + session row). */
   deleteSessionTranscript(sessionId: string): void {
-    this.txDelete.immediate(sessionId);
-    this.importedCache.delete(sessionId);
+    executeSessionProjection(sessionId, "transcript_delete", () => {
+      this.txDelete.immediate(sessionId);
+      this.importedCache.delete(sessionId);
+    });
   }
 
   /**
@@ -709,9 +949,10 @@ export class TranscriptStore {
           );
         }
         this.db.run(
-          `UPDATE transcript_events SET data = ?, full_ref = ?, ts = ?, change_seq = ?
+          `UPDATE transcript_events
+           SET kind = ?, data = ?, full_ref = ?, ts = ?, change_seq = ?
            WHERE session_id = ? AND seq = ?`,
-          [bounded.data, fullRef, ts, changeSeq, sessionId, existing.seq]
+          [entry.type ?? "unknown", bounded.data, fullRef, ts, changeSeq, sessionId, existing.seq]
         );
         updated++;
         affected.push({ ...bounded.entry, seq: existing.seq, changeSeq });
@@ -735,6 +976,9 @@ export class TranscriptStore {
         inserted++;
         affected.push({ ...bounded.entry, seq, changeSeq });
       }
+
+      const seq = existing?.seq ?? nextSeq - 1;
+      this.writeOutlineRow(sessionId, seq, changeSeq, ts, entry);
     }
 
     this.db.run(
@@ -745,6 +989,124 @@ export class TranscriptStore {
     );
 
     return { affected, inserted, updated };
+  }
+
+  private writeOutlineRow(
+    sessionId: string,
+    seq: number,
+    changeSeq: number,
+    ts: number,
+    entry: TranscriptEntry
+  ): void {
+    const projection = transcriptOutlineProjection(entry);
+    this.db.run(
+      `INSERT INTO transcript_outline
+         (session_id, seq, uuid, change_seq, ts, render_role, content_length, review_pr_number)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(session_id, seq) DO UPDATE SET
+         uuid = excluded.uuid,
+         change_seq = excluded.change_seq,
+         ts = excluded.ts,
+         render_role = excluded.render_role,
+         content_length = excluded.content_length,
+         review_pr_number = excluded.review_pr_number`,
+      [
+        sessionId,
+        seq,
+        entry.id,
+        changeSeq,
+        ts,
+        projection.role,
+        projection.contentLength,
+        projection.reviewPrNumber ?? null,
+      ]
+    );
+  }
+
+  /** Backfill one session without monopolizing Bun's event loop or the sole
+   * writer transaction. Concurrent viewers share the same resumable walk. */
+  ensureTranscriptOutline(sessionId: string): Promise<void> {
+    const existing = this.outlineBackfills.get(sessionId);
+    if (existing) return existing;
+    const work = this.backfillTranscriptOutline(sessionId).finally(() => {
+      this.outlineBackfills.delete(sessionId);
+    });
+    this.outlineBackfills.set(sessionId, work);
+    return work;
+  }
+
+  private async backfillTranscriptOutline(sessionId: string): Promise<void> {
+    let afterSeq = 0;
+    let epoch = this.getLastResetChangeSeq(sessionId);
+    for (;;) {
+      // The canonical event row is write-bounded to 32 KB and retains the
+      // original contentLength marker plus notice/context metadata. Reading it
+      // caps one slice at 3.2 MB; fetching 100 unbounded blobs would not.
+      const rows = this.db
+        .query(
+          `SELECT e.seq, e.change_seq, e.ts, e.data, o.seq AS outline_seq
+           FROM transcript_events e
+           LEFT JOIN transcript_outline o
+             ON o.session_id = e.session_id AND o.seq = e.seq
+           WHERE e.session_id = ? AND e.seq > ?
+           ORDER BY e.seq LIMIT 100`
+        )
+        .all(sessionId, afterSeq) as Array<{
+        seq: number;
+        change_seq: number;
+        ts: number;
+        data: string;
+        outline_seq: number | null;
+      }>;
+      if (!rows.length) {
+        const currentEpoch = this.getLastResetChangeSeq(sessionId);
+        if (currentEpoch === epoch) return;
+        epoch = currentEpoch;
+        afterSeq = 0;
+        continue;
+      }
+      afterSeq = rows[rows.length - 1]!.seq;
+      const missing = rows.filter((row) => row.outline_seq == null);
+      const parsed = missing.map((row) => {
+        try {
+          return {
+            row,
+            entry: sanitizeTranscriptMediaEntry(
+              JSON.parse(row.data) as TranscriptEntry
+            ),
+          };
+        } catch {
+          return { row, entry: null };
+        }
+      });
+      this.db.transaction(() => {
+        for (const { row, entry } of parsed) {
+          if (entry) {
+            this.writeOutlineRow(
+              sessionId,
+              row.seq,
+              row.change_seq,
+              row.ts,
+              entry
+            );
+          } else {
+            this.db.run(
+              `INSERT OR REPLACE INTO transcript_outline
+                 (session_id, seq, uuid, change_seq, ts, render_role, content_length)
+               SELECT session_id, seq, uuid, change_seq, ts, 'hidden', 0
+               FROM transcript_events WHERE session_id = ? AND seq = ?`,
+              [sessionId, row.seq]
+            );
+          }
+        }
+      }).immediate();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      const currentEpoch = this.getLastResetChangeSeq(sessionId);
+      if (currentEpoch !== epoch) {
+        epoch = currentEpoch;
+        afterSeq = 0;
+      }
+    }
   }
 
   /** Additive migration from the original seq-only store. Existing rows form
@@ -799,7 +1161,44 @@ export class TranscriptStore {
   }
 }
 
-// ── Bounding ─────────────────────────────────────────────────────────────────
+// ── Outline projection ─────────────────────────────────────────────────────
+
+function transcriptOutlineProjection(entry: TranscriptEntry): {
+  role: TranscriptIndexRole;
+  contentLength: number;
+  reviewPrNumber?: number;
+} {
+  if (dropContextInjections([entry]).length === 0) {
+    return { role: "hidden", contentLength: 0 };
+  }
+  const classified = classifyEntry(entry);
+  let role: TranscriptIndexRole;
+  let reviewPrNumber: number | undefined;
+  if (classified.notice?.kind === "review-handoff") {
+    role = "review_handoff";
+    const match = classified.notice.title.match(/PR #(\d+)/);
+    if (match) reviewPrNumber = Number(match[1]);
+  } else if (classified.notice) {
+    role = "notice";
+  } else if (classified.type === "user") {
+    role = "user";
+  } else if (classified.type === "assistant") {
+    role = "assistant";
+  } else if (classified.type === "tool_use") {
+    role = "tool_use";
+  } else if (classified.type === "tool_result") {
+    role = "tool_result";
+  } else {
+    role = "system";
+  }
+  return {
+    role,
+    contentLength: entry.contentLength ?? entry.content?.length ?? 0,
+    ...(reviewPrNumber !== undefined ? { reviewPrNumber } : {}),
+  };
+}
+
+// ── Bounding ───────────────────────────────────────────────────────────────
 
 function entryTs(entry: TranscriptEntry): number {
   const t = Date.parse(entry.timestamp ?? "");

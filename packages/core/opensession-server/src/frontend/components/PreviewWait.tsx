@@ -67,8 +67,8 @@ export function PreviewWait({ sessionId }: { sessionId: string }) {
 		const previewPath = new URLSearchParams(location.search).get("path");
 
 		const tick = async () => {
-			try {
-				const s = await fetchPreview(sessionId);
+			await (async () => {
+const s = await fetchPreview(sessionId);
 				if (!alive) return;
 				const label = [s.sessionTitle, s.sessionBranch]
 					.filter(Boolean)
@@ -77,19 +77,21 @@ export function PreviewWait({ sessionId }: { sessionId: string }) {
 				if (s.running && s.previewUrl) {
 					// Sever the opener link before leaving — the preview is another
 					// origin and has no business scripting the tab that spawned us.
-					try {
-						window.opener = null;
-					} catch {}
+					await (async () => {
+window.opener = null;
+})().catch(async () => {
+
+});
 					location.replace(withPreviewPath(s.previewUrl, previewPath));
 					return; // keep showing the spinner while the browser navigates
 				}
-			} catch (e) {
-				if (e instanceof ApiError && e.status === 404) {
+})().catch(async (e) => {
+if (e instanceof ApiError && e.status === 404) {
 					if (alive) setState("gone");
 					return;
 				}
 				// Transient fetch errors (server restart blip) — just keep polling.
-			}
+});
 			if (!alive) return;
 			if (Date.now() >= deadline) {
 				setState("timeout");

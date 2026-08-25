@@ -41,51 +41,36 @@ export const MOBILE_FAB =
 	"phone:transition-transform phone:active:scale-[0.92]";
 
 /**
- * The ⌘J Desk trigger. Desktop lifts it a pixel and warms the glyph on hover;
- * phones cancel the lift (there is no pointer to lift under) and swap it for
- * the same press tick the + uses. `transition` lists the properties the states
- * actually move — `scale` and `translate` are their own properties in Tailwind
- * v4, so a bare `transform` in the list would animate neither.
+ * The ⌘J Desk trigger. Desktop uses the same resting shadow and border as the
+ * Next button, then lifts a pixel and warms the glyph on hover. Phones cancel
+ * the lift (there is no pointer to lift under) and swap it for the same press
+ * tick the + uses. `transition` lists the properties the states actually move.
+ * `scale` and `translate` are their own properties in Tailwind v4, so a bare
+ * `transform` in the list would animate neither.
  *
  * On phones it keeps its border, so it needs less shadow than the + to sit off
- * the page — a matched pair of deep shadows made the two read as one heavy
+ * the page. A matched pair of deep shadows made the two read as one heavy
  * slab. This is the desktop shadow's weight, spread for the bigger circle.
  *
  * It takes the composer's surface pair rather than --bg-panel for the same
- * reason the composer does: the ramp steps AWAY from the page, so a panel fill
- * put a grey disc on a white page — a hole rather than a lifted control. White
- * with a firmer edge (--composer-border, not --border) is how a raised surface
- * behaves in light; in dark the pair resolves to --control-surface, which is
- * lighter than the page and lifts on its own.
+ * reason the composer does: the ramp steps away from the page, so a panel fill
+ * put a grey disc on a white page, like a hole rather than a lifted control.
+ * White with a firmer edge (--composer-border, not --border) is how a raised
+ * surface behaves in light. In dark the pair resolves to --control-surface,
+ * which is lighter than the page and lifts on its own.
  *
- * That corner is only free while the composer leaves a gutter beside it. The
- * session column is centred and grows to fill the pane, so under a pane of
- * about 970px it reaches the window's edge padding and the button comes down
- * on the input's bottom-right corner. `left` is what notices: it reads the
- * composer column's own right edge through `anchor()` (published in
- * styles/base.css) and takes whichever is further right — the corner at
- * `100vw - 62px`, which is this button's 44px plus its 18px inset, or 12px
- * clear of the column. A pane with room to spare therefore resolves to the
- * corner it has always sat in, and a pane without one resolves PAST the
- * window's right edge. Overflowing is the point: it is what makes Chrome take
- * the `--desk-fab-above` fallback and park the button over the composer
- * instead of on it.
- *
- * With no composer on screen — settings, a PR, the sessions list — `anchor()`
- * has nothing to resolve against, `left` computes to `auto`, and the `right`
- * below places it in the corner as before. A browser without anchor
- * positioning drops the declaration and lands in exactly the same place, so
- * Safari keeps today's behaviour rather than losing the button. Phones cancel
- * `left` outright: there the pair is laid out from the right edge, and a
- * resolved `left` would win over the `right` that does it.
+ * On desktop, useDeskFabPosition supplies `left` and `bottom` while a composer
+ * is visible. It keeps this corner position while there is room and moves the
+ * trigger directly above the composer when the pane reaches the viewport edge.
+ * The default declarations below cover pages without a composer and browsers
+ * before the first measurement. Phones override them with the paired FAB
+ * layout from the right edge.
  */
 export const DESK_FAB =
 	"fixed right-[18px] bottom-[18px] z-500 flex size-11 items-center justify-center " +
-	"[position-anchor:--composer-col] [left:max(calc(anchor(right)+12px),calc(100vw-62px))] " +
-	"[position-try-fallbacks:--desk-fab-above] " +
-	"rounded-full border border-[color:var(--composer-border)] bg-[var(--composer-surface)] text-dim " +
-	"smooth-shadow-ring-sm " +
-	"transition-[color,translate,scale] hover:-translate-y-px hover:text-fg " +
+	"rounded-full border border-divider bg-[var(--composer-surface)] text-dim " +
+	"smooth-shadow-xs " +
+	"transition-[color,border-color,translate,scale] hover:-translate-y-px hover:border-line hover:text-fg " +
 	"phone:left-auto " +
 	"phone:right-[calc(12px+58px+12px)] phone:bottom-[calc(18px+env(safe-area-inset-bottom,0px))] " +
 	"phone:size-[58px] phone:text-fg " +

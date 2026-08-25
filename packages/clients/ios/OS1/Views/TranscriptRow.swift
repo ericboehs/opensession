@@ -19,7 +19,10 @@ struct TranscriptRow: View {
     /// Who started this session, for crediting turns that carry no explicit
     /// sender (see `UserBubble`). Nil for automations and sub-agents.
     var owner: String?
+    var outbox: Outbox?
     var onEditMessage: ((TranscriptEntry) -> Void)?
+    var onEditUnsent: ((Outbox.Item) -> Void)?
+    var onDeleteUnsent: ((Outbox.Item) -> Void)?
     var onEditNote: ((SessionNote, String) async throws -> Void)?
     var onDeleteNote: ((SessionNote) async throws -> Void)?
     var failureContinuation: FailureContinuationAction? = nil
@@ -30,18 +33,29 @@ struct TranscriptRow: View {
             // A notice is anything that isn't someone talking, whatever
             // produced it — the server already decided which.
             if let notice = entry.notice {
-                NoticeRow(
-                    entry: entry,
-                    notice: notice,
-                    state: expansionState("notice-\(entry.id)", false),
-                    failureContinuation: failureContinuation
-                )
+                // An answered question is history in the live card's own
+                // visual language, so the decision stays scannable. The
+                // entry-level `ask` is the compatibility spot for a server
+                // that predates `notice.ask`.
+                if notice.kind == "ask", let ask = notice.ask ?? entry.ask {
+                    AnsweredAskCard(ask: ask)
+                } else {
+                    NoticeRow(
+                        entry: entry,
+                        notice: notice,
+                        state: expansionState("notice-\(entry.id)", false),
+                        failureContinuation: failureContinuation
+                    )
+                }
             } else if entry.isUser {
                 UserBubble(
                     entry: entry,
                     sessionId: sessionId,
                     owner: owner,
-                    onEdit: onEditMessage
+                    outbox: outbox,
+                    onEdit: onEditMessage,
+                    onEditUnsent: onEditUnsent,
+                    onDeleteUnsent: onDeleteUnsent
                 )
             } else if entry.isAssistant {
                 AssistantMessage(
@@ -59,6 +73,7 @@ struct TranscriptRow: View {
                         tone: NoticeTone.derived(from: entry).rawValue,
                         body: nil,
                         link: nil,
+                        ask: nil,
                         icon: nil
                     ),
                     state: expansionState("notice-\(entry.id)", false)
@@ -307,7 +322,17 @@ struct UserBubble: View {
     /// sender. Nil for automations (whose turns aren't a person's words) and
     /// for sub-agent transcripts.
     var owner: String?
+    var outbox: Outbox?
     var onEdit: ((TranscriptEntry) -> Void)?
+    var onEditUnsent: ((Outbox.Item) -> Void)?
+    var onDeleteUnsent: ((Outbox.Item) -> Void)?
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var outboxItem: Outbox.Item? {
+        guard entry.id.hasPrefix("local-") else { return nil }
+        return outbox?.item(id: String(entry.id.dropFirst("local-".count)))
+    }
 
     /// The name to credit, and whether it came back through Slack. Nil when
     /// this turn is the viewer's own. The rule itself lives in
@@ -369,7 +394,9 @@ struct UserBubble: View {
                                 : nil
                         )
                         .overlay {
-                            shape.stroke(OS1VisualStyle.border, lineWidth: 0.5)
+                            if needsHairline {
+                                shape.stroke(OS1VisualStyle.border, lineWidth: 0.5)
+                            }
                         }
                         .textSelection(.enabled)
                         .contextMenu {
@@ -378,7 +405,13 @@ struct UserBubble: View {
                             } label: {
                                 Label("Copy message", systemImage: "doc.on.doc")
                             }
-                            if attribution == nil, let onEdit {
+                            if let item = outboxItem, let onEditUnsent {
+                                Button {
+                                    onEditUnsent(item)
+                                } label: {
+                                    Label("Edit message", systemImage: "square.and.pencil")
+                                }
+                            } else if attribution == nil, let onEdit {
                                 Button {
                                     onEdit(entry)
                                 } label: {
@@ -387,6 +420,15 @@ struct UserBubble: View {
                             }
                             TimestampLabel(date: entry.timestampDate)
                         }
+                }
+                if let item = outboxItem, let outbox {
+                    OutboxMessageStatus(
+                        item: item,
+                        isSending: outbox.sendingId == item.id,
+                        onEdit: onEditUnsent.map { edit in { edit(item) } },
+                        onRetry: item.failed ? { outbox.retry(id: item.id) } : nil,
+                        onDelete: { onDeleteUnsent?(item) }
+                    )
                 }
             }
             .frame(maxWidth: userMessageMaxWidth, alignment: .trailing)
@@ -400,6 +442,69 @@ struct UserBubble: View {
         #else
         .infinity
         #endif
+    }
+
+    /// Whether the bubble needs a drawn edge, or whether its fill already is
+    /// one. On iOS in light appearance the bubble sits a clear 14/255 under
+    /// `chatCanvas`, and a separator on top of that step reads as a box drawn
+    /// round the words rather than as a message. Everywhere else the step is
+    /// too small to carry the shape alone: dark puts the bubble a few points
+    /// over a near-black page, and on the Mac it is the LIFTED surface, about
+    /// 6/255 off the window background in light.
+    private var needsHairline: Bool {
+        #if os(macOS)
+        true
+        #else
+        colorScheme == .dark
+        #endif
+    }
+}
+
+/// Delivery state stays attached to the message it describes. A send can be
+/// retried for minutes or refused outright, and neither should turn the chat
+/// blank after the composer has already cleared.
+private struct OutboxMessageStatus: View {
+    let item: Outbox.Item
+    let isSending: Bool
+    var onEdit: (() -> Void)?
+    var onRetry: (() -> Void)?
+    let onDelete: () -> Void
+
+    private var isError: Bool { item.failed || item.attempts > 0 }
+
+    private var label: String {
+        if item.failed {
+            return item.lastError.map { "Couldn’t send: \($0)" } ?? "Couldn’t send"
+        }
+        if item.attempts > 0 {
+            return item.lastError.map { "Couldn’t send. Retrying: \($0)" }
+                ?? "Couldn’t send. Retrying…"
+        }
+        return isSending ? "Sending…" : "Waiting to send…"
+    }
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            Label(label, systemImage: isError ? "exclamationmark.circle.fill" : "arrow.up.circle")
+                .font(.caption)
+                .foregroundStyle(isError ? OS1VisualStyle.redInk : OS1VisualStyle.textFaint)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(3)
+            HStack(spacing: 16) {
+                if let onRetry {
+                    Button("Retry", action: onRetry)
+                        .foregroundStyle(OS1VisualStyle.redInk)
+                }
+                if let onEdit {
+                    Button("Edit", action: onEdit)
+                }
+                Button("Delete", role: .destructive, action: onDelete)
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(OS1VisualStyle.textDim)
+            .buttonStyle(.plain)
+            .frame(minHeight: 40)
+        }
     }
 }
 
@@ -561,6 +666,9 @@ struct NoticeRow: View {
     let state: TurnFoldState
     var failureContinuation: FailureContinuationAction? = nil
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openURL) private var openURL
+
     private var tone: NoticeTone { NoticeTone(rawValue: notice.tone) ?? .info }
     private var showsBody: Bool {
         notice.showsBodyInline || (notice.isCollapsible && state.expanded)
@@ -590,12 +698,10 @@ struct NoticeRow: View {
         )
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
-        .onTapGesture {
-            guard notice.isCollapsible else { return }
-            withAnimation(.snappy(duration: 0.2, extraBounce: 0)) { state.toggle() }
-        }
-        .accessibilityAddTraits(
-            tone == .error && failureContinuation == nil ? .isStaticText : []
+        .onTapGesture(perform: toggleNotice)
+        .accessibilityAddTraits(accessibilityTraits)
+        .accessibilityValue(
+            notice.isCollapsible ? (state.expanded ? "Expanded" : "Collapsed") : ""
         )
     }
 
@@ -607,12 +713,13 @@ struct NoticeRow: View {
     /// sentence.
     @ViewBuilder private var content: some View {
         if notice.showsBodyInline, !entry.text.isEmpty {
-            (Text("\(notice.title): ")
+            let title = Text("\(notice.title): ")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(tone.color)
-                + Text(entry.text)
+            let body = Text(entry.text)
                 .font(.footnote)
-                .foregroundStyle(OS1VisualStyle.textDim))
+                .foregroundStyle(OS1VisualStyle.textDim)
+            Text("\(title)\(body)")
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
@@ -637,17 +744,42 @@ struct NoticeRow: View {
                 .multilineTextAlignment(.center)
 
                 if showsBody, !entry.text.isEmpty {
-                    // `notice.link` (e.g. "Open worker") is deliberately not
-                    // rendered yet: this app routes to a session by pushing a
-                    // whole `Session`, and a transcript row has only an id.
-                    // The field is on the wire, so it costs one route to add.
                     Text(entry.text)
                         .font(.footnote)
                         .foregroundStyle(OS1VisualStyle.textDim)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                // At most one action ("Open worker"): routed through the
+                // same private-scheme link a transcript session chip uses,
+                // so the id resolves and pushes like any other session link.
+                if let link = notice.link,
+                   let url = SessionLinks.url(for: link.sessionId) {
+                    Button(link.label) { openURL(url) }
+                        .buttonStyle(.plain)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(OS1VisualStyle.link)
+                }
             }
+        }
+    }
+
+    private func toggleNotice() {
+        guard notice.isCollapsible else { return }
+        if reduceMotion {
+            state.toggle()
+        } else {
+            withAnimation(.snappy(duration: 0.2, extraBounce: 0)) { state.toggle() }
+        }
+    }
+
+    private var accessibilityTraits: AccessibilityTraits {
+        if notice.isCollapsible {
+            .isButton
+        } else if tone == .error && failureContinuation == nil {
+            .isStaticText
+        } else {
+            []
         }
     }
 }
@@ -667,6 +799,7 @@ private struct FailureContinuationButton: View {
     var body: some View {
         VStack(spacing: 5) {
             Button {
+                Haptics.play(.send)
                 action.viewModel.continueAfterFailure(noticeId: action.noticeId)
             } label: {
                 HStack(spacing: 6) {

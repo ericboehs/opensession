@@ -15,6 +15,13 @@ enum OS1VisualStyle {
     static let panel = Color(uiColor: .tertiarySystemBackground)
     static let hover = Color(uiColor: .quaternarySystemFill)
     static let border = Color(uiColor: .separator)
+    /// The chat composer keeps a white edge in light appearance so its solid
+    /// surface stays bright, then uses translucent white against the dark page.
+    static let composerBorder = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: 1, alpha: 0.20)
+            : UIColor(white: 1, alpha: 1)
+    })
     static let text = Color(uiColor: .label)
     static let textDim = Color(uiColor: .secondaryLabel)
     static let textFaint = Color(uiColor: .tertiaryLabel)
@@ -333,6 +340,23 @@ enum OS1VisualStyle {
     static let blue = Color(red: 0.345, green: 0.651, blue: 1.0)
     static let red = Color(red: 0.973, green: 0.318, blue: 0.286)
     static let purple = Color(red: 0.639, green: 0.443, blue: 0.969)
+    // The wash a borrowed sidebar's heading wears: the web's `--blue-soft`,
+    // which is the blue above at the alpha each theme mixes it for. Said as an
+    // alpha rather than a mixed hex because the surface under it is the
+    // system's own list background and moves with the appearance.
+    #if os(iOS)
+    static let blueSoft = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0.345, green: 0.651, blue: 1.0, alpha: 0.13)
+            : UIColor(red: 0.035, green: 0.412, blue: 0.855, alpha: 0.10)
+    })
+    #else
+    static let blueSoft = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.345, green: 0.651, blue: 1.0, alpha: 0.13)
+            : NSColor(red: 0.035, green: 0.412, blue: 0.855, alpha: 0.10)
+    })
+    #endif
     // A check row that wants something, on the PR panel's grouped list.
     //
     // The web tints one summary chip by the worst status it can see. A phone

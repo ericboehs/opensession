@@ -9,6 +9,7 @@ import { chmodSync, existsSync, readFileSync } from "fs";
 import { connect } from "node:http2";
 import { importPkcs8Pem } from "./codestorage/auth";
 import { stateDir } from "./paths";
+import { getReads, isUnread } from "./reads";
 import { getCachedSessions } from "./session-cache";
 import { onSessionStateChange } from "./session-state-events";
 import { writeJsonAtomic } from "./shared/atomic-write";
@@ -33,6 +34,7 @@ export interface LiveActivityItem {
 export interface LiveActivitySnapshot {
   sessions: LiveActivityItem[];
   totalCount: number;
+  unreadCount: number;
   updatedAt: number;
 }
 
@@ -175,6 +177,7 @@ export function liveActivitySnapshot(
   registration: Pick<LiveActivityRegistration, "user" | "login">,
   sessions: UnifiedSession[],
   now = Date.now(),
+  reads = getReads(registration.user),
 ): LiveActivitySnapshot {
   const active = sessions
     .filter((session) => {
@@ -215,6 +218,15 @@ export function liveActivitySnapshot(
       };
     }),
     totalCount: active.length,
+    unreadCount: sessions.filter(
+      (session) =>
+        !session.archived &&
+        !session.automation &&
+        !session.desk &&
+        !session.spawnedBy &&
+        ownsSession(registration, session) &&
+        isUnread(session.lastActivity, reads[session.id]),
+    ).length,
     updatedAt: now / 1000,
   };
 }
@@ -418,7 +430,11 @@ export function activityPushPayload(
       body:
         snapshot.totalCount === 1
           ? "A session is active"
-          : `${snapshot.totalCount} sessions are active`,
+          : snapshot.totalCount > 1
+            ? `${snapshot.totalCount} sessions are active`
+            : snapshot.unreadCount === 1
+              ? "A session is ready to review"
+              : `${snapshot.unreadCount} sessions are ready to review`,
     };
   }
   if (event === "end") aps["dismissal-date"] = Math.floor(now / 1000) + 30;
@@ -521,6 +537,7 @@ async function endRegistrationActivities(
   const snapshot: LiveActivitySnapshot = {
     sessions: [],
     totalCount: 0,
+    unreadCount: 0,
     updatedAt: Date.now() / 1000,
   };
   for (const activity of Object.values(registration.activities)) {
@@ -580,7 +597,7 @@ async function syncDevice(
       return null;
     }
   };
-  if (snapshot.totalCount > 0) {
+  if (snapshot.totalCount > 0 || snapshot.unreadCount > 0) {
     const activities = Object.entries(device.activities);
     if (activities.length === 0 && !device.remoteStarted) {
       const timestamp = nextPushTimestamp(device.lastStartTimestamp);

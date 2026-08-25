@@ -1,7 +1,17 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import type { WSServerMessage, WSClientMessage } from "../lib/types";
 import { API_BASE, getWebSocketUrl } from "../lib/api";
 import { countSessionPerf } from "../lib/session-performance";
+import { withMutationRequestId } from "../lib/ws-request-id";
+import { BASE_PATH } from "../lib/base";
+import { toast } from "../ui/toast";
+import { authGatesOut, whenCurrentUserReady } from "../lib/auth-ready";
+import { publishAuthStatus } from "../components/UserPicker";
+import {
+  localCommandScope,
+  shouldRetireCommandResult,
+  wsCommandOutboxForScope,
+} from "../lib/ws-command-outbox";
 
 // Liveness probe cadence. iOS/Safari kills backgrounded sockets without firing
 // onclose, leaving a half-open socket that reads as OPEN but delivers nothing —
@@ -24,6 +34,10 @@ const IDLE_MS = 8 * 60_000;
 // socket out, so a person reading and scrolling re-sends "still here" at this
 // cadence — comfortably inside the server's window, rare enough to be free.
 const ACTIVE_REFRESH_MS = 60_000;
+// Composer activity is a short lease, refreshed before the server's 4s expiry.
+// A pause retires it promptly even when the draft stays in the field.
+const TYPING_REFRESH_MS = 2_000;
+const TYPING_IDLE_MS = 3_000;
 // What proves a person is at the keyboard. Passive and cheap: the handler
 // throttles itself to one call a second.
 const ACTIVITY_EVENTS = [
@@ -40,6 +54,46 @@ const ACTIVITY_EVENTS = [
  * matters for persistent/background surfaces such as the unfocused half of a
  * split and the dismissed Desk overlay.
  */
+
+// Teardown helpers for the socket effect. They read the refs' LATEST values at
+// cleanup time on purpose — that is what "dispose whatever is live now" means —
+// and live at module scope so the effect-cleanup analysis sees plain calls.
+function clearSocketTimers(
+  reconnectTimer: { current: ReturnType<typeof setTimeout> | undefined },
+  idleTimer: { current: ReturnType<typeof setTimeout> | undefined },
+  typingRef: {
+    current: { timer?: ReturnType<typeof setTimeout> };
+  },
+  heartbeat: ReturnType<typeof setInterval> | undefined,
+) {
+  clearTimeout(reconnectTimer.current);
+  clearInterval(heartbeat);
+  clearTimeout(idleTimer.current);
+  clearTimeout(typingRef.current.timer);
+}
+
+function flushTypingOffSignal(
+  typingRef: {
+    current: { active: boolean; sessionId: string; lastSent: number };
+  },
+  wsRef: { current: WebSocket | null },
+) {
+  const typing = typingRef.current;
+  const ws = wsRef.current;
+  if (typing.active && ws?.readyState === WebSocket.OPEN) {
+    try {
+      ws.send(
+        JSON.stringify({
+          type: "typing",
+          sessionId: typing.sessionId,
+          typing: false,
+        }),
+      );
+    } catch {}
+  }
+  typing.active = false;
+}
+
 export function useWebSocket(presenceActive = true) {
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
@@ -59,16 +113,28 @@ export function useWebSocket(presenceActive = true) {
   // never opens and the upgrade 401s for ever. Reloading on that would be an
   // endless refresh of the sign-in card.
   const everOpenRef = useRef(false);
+  const commandResultsRef = useRef(false);
+  const commandOutboxRef = useRef(wsCommandOutboxForScope(localCommandScope()));
+  const commandNegotiatedRef = useRef(false);
+  const negotiatingCommandsRef = useRef(new Map<string, WSClientMessage>());
   // Presence, tracked separately from the watch: a hidden or unfocused tab keeps
   // streaming its session (unread counts, notifications) but must stop telling
   // teammates its owner is looking at that session.
   const awayRef = useRef(false);
   const presenceActiveRef = useRef(presenceActive);
-  presenceActiveRef.current = presenceActive;
+  useLayoutEffect(() => {
+    presenceActiveRef.current = presenceActive;
+  }, [presenceActive]);
   const syncPresenceRef = useRef<() => void>(() => {});
   const idleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
+  const typingRef = useRef<{
+    sessionId: string;
+    active: boolean;
+    lastSent: number;
+    timer?: ReturnType<typeof setTimeout>;
+  }>({ sessionId: "", active: false, lastSent: 0 });
   // Outbound messages issued while the socket wasn't OPEN (wifi switch, server
   // restart, PWA resume): held here and flushed in order on the next onopen, so
   // a transient drop doesn't silently swallow intent like create_session — the
@@ -80,15 +146,72 @@ export function useWebSocket(presenceActive = true) {
   );
   const OUTBOX_MAX = 50;
   const OUTBOX_TTL_MS = 30_000;
+  const connectRef = useRef<() => void>(() => {});
 
   const connect = useCallback(() => {
     // Already open OR mid-handshake — don't stack a second socket.
     const state = wsRef.current?.readyState;
     if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) return;
 
+    commandResultsRef.current = false;
+    commandNegotiatedRef.current = false;
     const ws = new WebSocket(getWebSocketUrl());
     wsRef.current = ws;
     aliveRef.current = true;
+
+    const finishCommandNegotiation = (supported: boolean, commandScope?: string) => {
+      if (wsRef.current !== ws || commandNegotiatedRef.current) return;
+      commandResultsRef.current = supported;
+      const commandOutbox = wsCommandOutboxForScope(commandScope || localCommandScope());
+      const provisional = wsCommandOutboxForScope(localCommandScope());
+      commandOutboxRef.current = commandOutbox;
+      try { localStorage.setItem("opensession-command-scope", commandScope || localCommandScope()); } catch {}
+      const inMemory = [...negotiatingCommandsRef.current.values()];
+      negotiatingCommandsRef.current.clear();
+      commandNegotiatedRef.current = true;
+      if (!supported) {
+        for (const command of inMemory) {
+          try {
+            ws.send(JSON.stringify(command));
+            if ("requestId" in command && command.requestId)
+              provisional.retireLegacy(command.requestId);
+          } catch {
+            if ("requestId" in command && typeof command.requestId === "string")
+              negotiatingCommandsRef.current.set(command.requestId, command);
+          }
+        }
+        return;
+      }
+      for (const ack of commandOutbox.pendingAcks()) {
+        try { ws.send(JSON.stringify(ack)); } catch {}
+      }
+      const existing = commandOutbox.pending();
+      const existingIds = new Set(existing.map((command) => command.requestId));
+      for (const command of existing) {
+        try { ws.send(JSON.stringify(command)); } catch {}
+      }
+      const candidates = new Map<string, WSClientMessage>();
+      for (const candidate of [...provisional.pending(), ...inMemory])
+        if ("requestId" in candidate && typeof candidate.requestId === "string")
+          candidates.set(candidate.requestId, candidate);
+      for (const [requestId, candidate] of candidates) {
+        if (existingIds.has(requestId)) {
+          if (provisional !== commandOutbox) provisional.forget(requestId);
+          continue;
+        }
+        if (!commandOutbox.put(candidate)) {
+          negotiatingCommandsRef.current.set(requestId, candidate);
+          toast("A pending send needs storage before it can continue.", {
+            variant: "error",
+          });
+          continue;
+        }
+        try {
+          ws.send(JSON.stringify(candidate));
+          if (provisional !== commandOutbox) provisional.forget(requestId);
+        } catch {}
+      }
+    };
 
     ws.onopen = () => {
       if (wsRef.current !== ws) return;
@@ -123,6 +246,44 @@ export function useWebSocket(presenceActive = true) {
       );
       try {
         const msg = JSON.parse(e.data) as WSServerMessage;
+        if (!commandNegotiatedRef.current) {
+          if (msg.type === "hello")
+            finishCommandNegotiation(
+              msg.capabilities?.commandResults === true,
+              msg.commandScope,
+            );
+          else finishCommandNegotiation(false);
+        }
+        if (
+          msg.type === "command_result" &&
+          shouldRetireCommandResult(msg)
+        ) {
+          const acknowledged = commandOutboxRef.current.ack(
+            msg.requestId,
+            msg.sessionId,
+          );
+          if (!acknowledged) return;
+          try {
+            ws.send(
+              JSON.stringify({
+                type: "command_ack",
+                sessionId: msg.sessionId,
+                requestId: msg.requestId,
+              } satisfies WSClientMessage),
+            );
+          } catch {}
+        }
+        if (msg.type === "command_ack_result") {
+          commandOutboxRef.current.confirmAck(msg.requestId);
+          for (const [requestId, command] of negotiatingCommandsRef.current) {
+            if (!commandOutboxRef.current.put(command)) continue;
+            negotiatingCommandsRef.current.delete(requestId);
+            try { ws.send(JSON.stringify(command)); } catch {}
+            const provisional = wsCommandOutboxForScope(localCommandScope());
+            if (provisional !== commandOutboxRef.current) provisional.forget(requestId);
+          }
+          return;
+        }
         if (msg.type === "pong") return; // liveness only, not for handlers
         let delivered: WSServerMessage | null = msg;
         if (msg.type === "session_feed") {
@@ -188,26 +349,38 @@ export function useWebSocket(presenceActive = true) {
           const response = await fetch(`${API_BASE}/auth/status`);
           const status = response.ok ? await response.json() : null;
           if (status?.local && !status.authenticated) return;
-          // The session stopped being accepted while this tab stayed open:
-          // it expired, or the GitHub grant behind it died. Retrying every 2s
-          // for ever leaves a live-looking app that can reach nothing, so
-          // reload into the gate, which asks for the sign-in that repairs it.
-          if (everOpenRef.current && status?.required && !status.authenticated) {
-            window.location.reload();
-            return;
+          if (authGatesOut(status)) {
+            if (everOpenRef.current) {
+              // The session stopped being accepted while this tab stayed open:
+              // it expired, or the GitHub grant behind it died. Retrying every
+              // 2s for ever leaves a live-looking app that can reach nothing, so
+              // reload into the gate, which asks for the sign-in that repairs it.
+              window.location.reload();
+              return;
+            }
+            // A socket that never opened means a fresh load into a gated
+            // instance (the upgrade 401s immediately). Reloading here would loop
+            // on the sign-in card, whose own socket also 401s, so publish the
+            // gated status instead: UserGate renders the sign-in card over the
+            // optimistically-painted app. Fall through to keep retrying, so a
+            // completed sign-in reconnects without a manual refresh.
+            publishAuthStatus(status);
           }
         } catch {}
       }
       if (disposedRef.current || wsRef.current !== ws) return;
-      reconnectTimer.current = setTimeout(connect, 2000);
+      reconnectTimer.current = setTimeout(() => connectRef.current(), 2000);
     };
 
     ws.onerror = () => ws.close();
   }, []);
+  useLayoutEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     disposedRef.current = false;
-    connect();
+    const cancelInitialConnect = whenCurrentUserReady(() => connect());
 
     // Steady-state heartbeat: ping every beat; a socket that answered nothing
     // since the previous ping is dead — close it so onclose reconnects.
@@ -298,6 +471,12 @@ export function useWebSocket(presenceActive = true) {
       idleTimer.current = setTimeout(() => sendAway(true), IDLE_MS);
     }
     syncPresenceRef.current = syncPresence;
+    // Disposal marks. Kept in a setup-scope helper so teardown reads/writes
+    // the latest refs without touching them directly in the cleanup body.
+    const stopPresence = () => {
+      disposedRef.current = true;
+      syncPresenceRef.current = () => {};
+    };
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
         resync();
@@ -318,11 +497,10 @@ export function useWebSocket(presenceActive = true) {
     window.addEventListener("pageshow", resync);
 
     return () => {
-      disposedRef.current = true;
-      syncPresenceRef.current = () => {};
-      clearTimeout(reconnectTimer.current);
-      clearInterval(heartbeat);
-      clearTimeout(idleTimer.current);
+      stopPresence();
+      cancelInitialConnect();
+      clearSocketTimers(reconnectTimer, idleTimer, typingRef, heartbeat);
+      flushTypingOffSignal(typingRef, wsRef);
       for (const type of ACTIVITY_EVENTS)
         window.removeEventListener(type, onActivity);
       document.removeEventListener("visibilitychange", onVisibility);
@@ -330,7 +508,8 @@ export function useWebSocket(presenceActive = true) {
       window.removeEventListener("blur", syncPresence);
       window.removeEventListener("online", resync);
       window.removeEventListener("pageshow", resync);
-      wsRef.current?.close();
+      const closeTarget = () => wsRef.current;
+      closeTarget()?.close();
     };
   }, [connect]);
 
@@ -341,8 +520,53 @@ export function useWebSocket(presenceActive = true) {
     syncPresenceRef.current();
   }, [presenceActive]);
 
+
+  useEffect(() => {
+    const reconnectForIdentity = () => {
+      commandNegotiatedRef.current = false;
+      commandResultsRef.current = false;
+      const oldSocket = wsRef.current;
+      wsRef.current = null;
+      oldSocket?.close();
+      connect();
+    };
+    window.addEventListener("opensession-user-changed", reconnectForIdentity);
+    window.addEventListener("opensession-command-outbox-retry", reconnectForIdentity);
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === "opensession-user") reconnectForIdentity();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("opensession-user-changed", reconnectForIdentity);
+      window.removeEventListener("opensession-command-outbox-retry", reconnectForIdentity);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [connect]);
+
   const send = useCallback(
     (msg: WSClientMessage) => {
+      msg = withMutationRequestId(msg);
+      const mutationRequestId =
+        "requestId" in msg && typeof msg.requestId === "string"
+          ? msg.requestId
+          : undefined;
+      if (mutationRequestId && !commandNegotiatedRef.current) {
+        const provisional = wsCommandOutboxForScope(localCommandScope());
+        if (!provisional.put(msg))
+          throw new Error("Pending sends are using local storage. Reconnect or forget one before sending more.");
+        negotiatingCommandsRef.current.set(mutationRequestId, msg);
+        const pendingSocket = wsRef.current;
+        if (!pendingSocket || pendingSocket.readyState === WebSocket.CLOSED) {
+          clearTimeout(reconnectTimer.current);
+          connect();
+        }
+        return;
+      }
+      const durableMutation = commandResultsRef.current
+        ? commandOutboxRef.current.put(msg)
+        : false;
+      if (mutationRequestId && commandResultsRef.current && !durableMutation)
+        throw new Error("Could not save this command for reconnect. It was not sent.");
       if (msg.type === "watch") {
         const cursor = feedCursorsRef.current.get(msg.sessionId);
         msg = {
@@ -365,6 +589,14 @@ export function useWebSocket(presenceActive = true) {
           // send threw mid-drop — fall through and queue it for the reconnect.
         }
       }
+      // Durable mutations replay from their receipt outbox after reconnect.
+      if (durableMutation) {
+        if (!ws || ws.readyState === WebSocket.CLOSED) {
+          clearTimeout(reconnectTimer.current);
+          connect();
+        }
+        return;
+      }
       // Liveness pings are worthless once stale — never queue them.
       if ((msg as { type?: string }).type === "ping") return;
       const box = outboxRef.current;
@@ -381,6 +613,51 @@ export function useWebSocket(presenceActive = true) {
     [connect],
   );
 
+  const setTyping = useCallback((sessionId: string, active: boolean) => {
+    const state = typingRef.current;
+    const ws = wsRef.current;
+    const emit = (id: string, typing: boolean) => {
+      if (ws?.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(JSON.stringify({ type: "typing", sessionId: id, typing }));
+      } catch {}
+    };
+
+    if (!active) {
+      clearTimeout(state.timer);
+      if (state.active) emit(state.sessionId, false);
+      state.active = false;
+      state.lastSent = 0;
+      return;
+    }
+
+    if (state.active && state.sessionId !== sessionId) {
+      emit(state.sessionId, false);
+      state.active = false;
+      state.lastSent = 0;
+    }
+    state.sessionId = sessionId;
+    const now = Date.now();
+    if (!state.active || now - state.lastSent >= TYPING_REFRESH_MS) {
+      emit(sessionId, true);
+      state.lastSent = now;
+    }
+    state.active = true;
+    clearTimeout(state.timer);
+    state.timer = setTimeout(() => {
+      const latest = typingRef.current;
+      if (!latest.active || latest.sessionId !== sessionId) return;
+      const socket = wsRef.current;
+      if (socket?.readyState === WebSocket.OPEN) {
+        try {
+          socket.send(JSON.stringify({ type: "typing", sessionId, typing: false }),);
+        } catch {}
+      }
+      latest.active = false;
+      latest.lastSent = 0;
+    }, TYPING_IDLE_MS);
+  }, []);
+
   const addHandler = useCallback((handler: (msg: WSServerMessage) => void) => {
     handlersRef.current.push(handler);
     return () => {
@@ -388,5 +665,5 @@ export function useWebSocket(presenceActive = true) {
     };
   }, []);
 
-  return { connected, send, addHandler };
+  return { connected, send, setTyping, addHandler };
 }

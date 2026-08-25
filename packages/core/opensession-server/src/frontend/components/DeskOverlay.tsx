@@ -3,14 +3,15 @@ import { BASE_PATH } from "../lib/base";
 import { getCurrentUser } from "./UserPicker";
 import { DeskConversation } from "./DeskConversation";
 import { DESK_SUGGESTIONS } from "../lib/desk-suggestions";
-import { ResponsiveDialog } from "../ui/sheet";
-import { IconDesk, IconExpand, IconMic, IconX } from "./icons";
+import { Modal } from "../ui/modal";
+import { IconDesk, IconExpand, IconMinus } from "./icons";
 import { Button } from "../ui/button";
 import {
 	DeskVoiceClient,
 	type DeskVoiceState,
 } from "../lib/desk-voice-client";
 import { getDeskVoicePref, onDeskVoiceChanged } from "../lib/desk-voice-pref";
+import { cn } from "../ui/cn";
 
 /**
  * The Desk — a summonable overlay (⌘J / the floating desk button) on top of
@@ -19,8 +20,8 @@ import { getDeskVoicePref, onDeskVoiceChanged } from "../lib/desk-voice-pref";
  *
  * Persistence is the point: after the first summon the body STAYS MOUNTED
  * (hidden, not unmounted) — the session's scoped socket keeps watching, so every
- * later ⌘J is instant with the transcript already in place. The desktop panel
- * uses the shared dialog's subtle scale transition when summoned.
+ * later ⌘J is instant with the transcript already in place. It uses the same
+ * palette modal as the command menu.
  *
  * The Desk is a normal durable session (desk: true, hidden from the session
  * lists) pinned to a fast model+effort server-side; "Clear" sets a display
@@ -30,6 +31,7 @@ import { getDeskVoicePref, onDeskVoiceChanged } from "../lib/desk-voice-pref";
 
 interface DeskOverlayProps {
 	open: boolean;
+	openOrigin: "center" | "bottom-right";
 	onClose: () => void;
 	phone: boolean;
 	/** Open the Desk session in the full viewer. */
@@ -41,11 +43,16 @@ function DeskBody({
 	phone,
 	onClose,
 	onOpenSession,
-}: Omit<DeskOverlayProps, "open"> & { active: boolean }) {
+}: Omit<DeskOverlayProps, "open" | "openOrigin"> & { active: boolean }) {
 	const user = getCurrentUser();
 	const [sessionId, setSessionId] = useState<string | null>(null);
 	const [clearedAt, setClearedAt] = useState<string | undefined>(undefined);
 	const [ensureError, setEnsureError] = useState<string | null>(null);
+	// The Desk session's stored model + effort, so the composer's pill opens on
+	// what this session actually runs rather than on the instance default.
+	const [settings, setSettings] = useState<{ model?: string; effort?: string }>(
+		{},
+	);
 
 	// Voice mode (Settings → Desk voice): a live GPT Realtime call layered on
 	// this same Desk session. The call mirrors its transcript into the session,
@@ -93,8 +100,8 @@ function DeskBody({
 	useEffect(() => {
 		let cancelled = false;
 		(async () => {
-			try {
-				const res = await fetch(`${BASE_PATH}/api/desk/ensure`, {
+			await (async () => {
+const res = await fetch(`${BASE_PATH}/api/desk/ensure`, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({ user }),
@@ -103,13 +110,18 @@ function DeskBody({
 				const data = (await res.json()) as {
 					sessionId: string;
 					clearedAt: string | null;
+					session: { model?: string; effort?: string } | null;
 				};
 				if (cancelled) return;
 				setSessionId(data.sessionId);
+				setSettings({
+					model: data.session?.model,
+					effort: data.session?.effort,
+				});
 				if (data.clearedAt) setClearedAt(data.clearedAt);
-			} catch (e: any) {
-				if (!cancelled) setEnsureError(e?.message || "Failed to open the Desk");
-			}
+})().catch(async (e: any) => {
+if (!cancelled) setEnsureError(e?.message || "Failed to open the Desk");
+});
 		})();
 		return () => {
 			cancelled = true;
@@ -117,20 +129,20 @@ function DeskBody({
 	}, [user]);
 
 	async function clearSession() {
-		try {
-			const res = await fetch(`${BASE_PATH}/api/desk/clear`, {
+		await (async () => {
+const res = await fetch(`${BASE_PATH}/api/desk/clear`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ user }),
 			});
 			const data = (await res.json()) as { clearedAt?: string };
 			if (data.clearedAt) setClearedAt(data.clearedAt);
-		} catch {}
+})().catch(async () => {
+
+});
 	}
 
 	return (
-		// flex-1 rather than h-full: on phone the sheet's drag grabber is a
-		// sibling above us, so we take the remainder instead of the whole panel.
 		<div className="flex min-h-0 flex-1 flex-col">
 			{/* Header */}
 			<div className="flex shrink-0 items-center gap-2.5 border-b border-divider px-4 py-2.5">
@@ -155,7 +167,7 @@ function DeskBody({
 					onClick={clearSession}
 					title="Clear the session here. The full transcript stays in the expanded session."
 				>
-					Clear
+					Clear chat
 				</Button>
 				{sessionId && (
 					<Button
@@ -175,9 +187,10 @@ function DeskBody({
 					variant="ghost"
 					size="sm"
 					className="shrink-0 text-faint"
-					icon={<IconX size={20} />}
+					icon={<IconMinus size={20} />}
 					onClick={onClose}
-					aria-label="Close"
+					title="Minimise Desk"
+					aria-label="Minimise Desk"
 				/>
 			</div>
 
@@ -192,26 +205,8 @@ function DeskBody({
 						sessionId={sessionId}
 						presenceActive={active}
 						autoFocus={active && !phone}
-						trailingActions={
-							voiceEnabled ? (
-								<Button
-									variant="ghost"
-									size="lg"
-									className={`shrink-0 ${voiceActive ? "text-fg" : "text-faint"}`}
-									icon={<IconMic size={20} />}
-									onClick={toggleVoice}
-									title={
-										voiceActive
-											? "End the voice call"
-											: "Talk to your Desk (GPT Realtime)"
-									}
-									aria-label={
-										voiceActive ? "End voice call" : "Start voice call"
-									}
-								/>
-							) : undefined
-						}
-						effort="low"
+						model={settings.model}
+						effort={settings.effort}
 						hideBefore={clearedAt}
 						voiceSend={(text) =>
 							voiceRef.current?.active
@@ -225,11 +220,7 @@ function DeskBody({
 							onClose();
 							onOpenSession(id);
 						}}
-						placeholder="Hand me something…"
-						// Two hours: long enough that stepping away mid-thought keeps
-						// the thread, short enough that yesterday's chat never owns the
-						// surface you summoned for today's work.
-						staleAfterMs={2 * 60 * 60 * 1000}
+						placeholder="Ask anything…"
 						suggestions={DESK_SUGGESTIONS}
 					/>
 				) : (
@@ -244,31 +235,50 @@ function DeskBody({
 
 export function DeskOverlay({
 	open,
+	openOrigin,
 	onClose,
 	phone,
 	onOpenSession,
 }: DeskOverlayProps) {
+	// Base UI's keepMounted preserves the Desk after its first summon, but it
+	// also mounts hidden content on a cold app load. Gate the body until then so
+	// a person who never opens Desk does not create its session, fetch its model
+	// catalog, or hold a second WebSocket all day.
+	const [opened, setOpened] = useState(open);
+	useEffect(() => {
+		if (open) setOpened(true);
+	}, [open]);
+
 	return (
-		<ResponsiveDialog
+		<Modal.Root
 			open={open}
-			onClose={onClose}
-			phone={phone}
-			label="Desk"
-			// The body stays mounted after the first summon — see the module doc.
-			keepMounted
-			desktopTransition="scale-drop"
-			// bg-raised on both breakpoints, overriding the sheet's bg-surface:
-			// the Desk's controls are recessed bg-surface inputs, which would
-			// dissolve into a bg-surface panel.
-			sheetClassName="h-[85dvh] bg-raised"
-			modalClassName="h-[540px] max-h-[80vh] max-w-[560px]"
+			onOpenChange={(next) => {
+				if (!next) onClose();
+			}}
+			modal="trap-focus"
 		>
-			<DeskBody
-				active={open}
-				phone={phone}
-				onClose={onClose}
-				onOpenSession={onOpenSession}
-			/>
-		</ResponsiveDialog>
+			<Modal.Content
+				variant="palette"
+				keepMounted
+				widthClassName="w-[min(650px,100%)]"
+				className={cn(
+					phone
+						? "h-[min(600px,85dvh)]"
+						: "h-[600px] max-h-[80dvh]",
+					openOrigin === "center" ? "origin-center" : "origin-bottom-right",
+					"rounded-b-[var(--composer-radius)] transition-[scale,translate,opacity]! duration-[100ms]! data-[starting-style]:translate-y-0! data-[starting-style]:scale-[0.9]!",
+				)}
+				aria-label="Desk"
+			>
+				{(open || opened) && (
+					<DeskBody
+						active={open}
+						phone={phone}
+						onClose={onClose}
+						onOpenSession={onOpenSession}
+					/>
+				)}
+			</Modal.Content>
+		</Modal.Root>
 	);
 }

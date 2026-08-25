@@ -58,7 +58,12 @@ struct UserAvatar: View {
             }
         }
         .frame(width: size, height: size)
-        .clipShape(Circle())
+        // A squircle, not a circle: the web draws every avatar with the
+        // `rounded-avatar` radius, which base.css gives a corner-shape (only
+        // `rounded-full` is left circular). A superellipse at half the side is
+        // that same shape. See `SquircleCapsule` for why SwiftUI's own
+        // continuous corners collapse to a circle here and it has to be drawn.
+        .clipShape(SquircleCapsule())
         .accessibilityLabel(name.isEmpty ? "You" : name)
         // Keyed on the URL, not the login: a picture that is uploaded, replaced
         // or cleared changes the URL while the login stays put, and keying on
@@ -80,7 +85,10 @@ struct UserAvatar: View {
 
     private var initialCircle: some View {
         ZStack {
-            Circle().fill(fallbackColor.gradient)
+            // The clip above already carries the shape; this fill matches it so
+            // a fallback tile reads as the same silhouette while it is the only
+            // thing drawn.
+            SquircleCapsule().fill(fallbackColor.gradient)
             Text(initial)
                 .font(.system(size: size * 0.45, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white)

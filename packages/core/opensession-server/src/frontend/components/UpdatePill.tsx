@@ -2,14 +2,14 @@ import React, { useEffect, useState } from "react";
 import type { WSServerMessage } from "../lib/types";
 import { PRODUCT_NAME } from "../lib/brand";
 import { subscribeFrontendVersion } from "../lib/frontend-version";
-import { SIDEBAR_TOAST_CARD } from "../lib/sidebar-toast-classes";
+import { PERSISTENT_NOTICE_CARD } from "../lib/notification-classes";
 import { Tooltip } from "../ui/tooltip";
 
 interface Props {
   addHandler: (handler: (msg: WSServerMessage) => void) => () => void;
-  // "toast" docks to the sidebar bottom (desktop). "pill" is the compact
+  // "card" lives in the persistent desktop shelf. "pill" is the compact
   // topbar variant that sits next to the brand logo on phones.
-  variant?: "toast" | "pill";
+  variant?: "card" | "pill";
 }
 
 /** Grace before a forced update reloads a VISIBLE tab (hidden tabs reload
@@ -58,7 +58,7 @@ function os1Updates():
  *
  * Acting is normally optional — new page loads already get the new build; this
  * just nudges already-open tabs — so it's non-blocking (it never covers the
- * composer). Desktop shows a toast docked to the sidebar bottom; phones show a
+ * composer). Desktop shows a toast over the sidebar bottom; phones show a
  * compact pill in the top bar, right after the brand logo.
  *
  * `force: true` broadcasts (POST /api/admin/frontend-reload — sent before a
@@ -66,7 +66,7 @@ function os1Updates():
  * instead: hidden tabs immediately, visible tabs after a counted-down grace
  * shown on the pill/toast, or the moment the tab is hidden mid-countdown.
  */
-export function UpdatePill({ addHandler, variant = "toast" }: Props) {
+export function UpdatePill({ addHandler, variant = "card" }: Props) {
   const [show, setShow] = useState(false);
   const [by, setBy] = useState<string | null>(null);
   const [forceAt, setForceAt] = useState<number | null>(null);
@@ -166,9 +166,13 @@ export function UpdatePill({ addHandler, variant = "toast" }: Props) {
           "inline-flex h-7 shrink-0 items-center rounded-full [corner-shape:squircle] px-[13px] " +
           "cursor-pointer border-none bg-red text-label font-semibold leading-none text-white transition-[background] duration-[var(--dur-micro)] ease-[var(--ease)] hover:bg-[color-mix(in_srgb,var(--red)_85%,black)] disabled:cursor-wait disabled:opacity-75 " +
           "animate-[update-toast-in_var(--dur-lg)_var(--ease)] motion-reduce:animate-none " +
-          // Phone: the pill sits last in the brand row and grows to a tap target.
-          "phone:[.app-brand_&]:order-3 phone:[.app-brand_&]:h-[34px] " +
-          "phone:[.app-brand_&]:px-[18px] phone:[.app-brand_&]:text-[15px]"
+          // Phone: keep the visible pill compact while a pseudo-element grows
+          // its tap target to the full 44px header row.
+          "phone:[.app-brand_&]:relative phone:[.app-brand_&]:order-3 " +
+          "phone:[.app-brand_&]:h-7 phone:[.app-brand_&]:px-3 phone:[.app-brand_&]:text-supporting " +
+          "phone:[.app-brand_&]:after:absolute phone:[.app-brand_&]:after:inset-x-0 " +
+          "phone:[.app-brand_&]:after:top-1/2 phone:[.app-brand_&]:after:h-11 " +
+          "phone:[.app-brand_&]:after:-translate-y-1/2 phone:[.app-brand_&]:after:content-['']"
         }
         onClick={refresh}
         disabled={refreshing}
@@ -195,12 +199,12 @@ export function UpdatePill({ addHandler, variant = "toast" }: Props) {
 
   return (
     <div
-      className={SIDEBAR_TOAST_CARD}
+      className={PERSISTENT_NOTICE_CARD}
       role="status"
       aria-live="polite"
     >
       <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
-        <span className="max-w-full truncate text-label font-medium leading-[1.3] text-fg">
+        <span className="max-w-full truncate text-supporting font-medium leading-[1.3] text-fg">
           {forced
             ? `Updating in ${secondsLeft}s…`
             : restart
@@ -215,7 +219,7 @@ export function UpdatePill({ addHandler, variant = "toast" }: Props) {
       </div>
       <div className="flex shrink-0 items-center gap-1">
         <button
-          className={"inline-flex h-[30px] items-center rounded-control px-3.5 cursor-pointer border-none bg-red text-label font-semibold leading-none text-white transition-[background] duration-[var(--dur-micro)] ease-[var(--ease)] hover:bg-[color-mix(in_srgb,var(--red)_85%,black)] disabled:cursor-wait disabled:opacity-75"}
+          className={"inline-flex h-7 items-center rounded-control px-3 cursor-pointer border-none bg-red text-supporting font-semibold leading-none text-white transition-[background] duration-[var(--dur-micro)] ease-[var(--ease)] hover:bg-[color-mix(in_srgb,var(--red)_85%,black)] disabled:cursor-wait disabled:opacity-75"}
           onClick={refresh}
           disabled={refreshing}
         >

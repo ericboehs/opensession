@@ -44,6 +44,7 @@ export type ShortcutId =
 	| "sidebar-toggle"
 	| "sidebar-next"
 	| "sidebar-prev"
+	| "workspace-next-unread"
 	| "tab-next"
 	| "tab-prev"
 	| "shortcuts-help"
@@ -59,6 +60,7 @@ export type ShortcutId =
 	| "session-copy-transcript"
 	| "composer-note"
 	| "composer-attach"
+	| "composer-dictate"
 	| "composer-focus"
 	| "transcript-up"
 	| "transcript-down"
@@ -135,6 +137,13 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
 		description: "Open the session above the current one",
 		group: "Navigation",
 		defaults: ["mod+arrowup"],
+	},
+	{
+		id: "workspace-next-unread",
+		title: "Next chat",
+		description: "Open the next chat, prioritizing work that needs attention",
+		group: "Navigation",
+		defaults: ["alt+shift+arrowdown"],
 	},
 	// The tab strip's horizontal answer to the sidebar's ⌘↑/⌘↓. ⌘⌥ arrows are
 	// the neighbouring family (⌘⌥↑/↓ already step the reasoning effort), which
@@ -252,6 +261,13 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
 		description: "Choose files to attach to the open session",
 		group: "Composer",
 		defaults: ["mod+u"],
+	},
+	{
+		id: "composer-dictate",
+		title: "Start dictation",
+		description: "Record a message in the active composer",
+		group: "Composer",
+		defaults: ["mod+d"],
 	},
 	{
 		id: "composer-focus",

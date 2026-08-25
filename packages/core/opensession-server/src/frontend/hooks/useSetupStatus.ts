@@ -1,8 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import {
 	setupRequest,
 	type SetupGithub,
 	type SetupIntegration,
+	type SetupRepo,
 	type SetupStatus,
 } from "../components/setup-shared";
 import { BASE_PATH } from "../lib/base";
@@ -32,6 +39,10 @@ export interface SetupController {
 	/** Fold a saved integration back into the cached status. */
 	applyIntegration: (updated: SetupIntegration, restartRequired: boolean) => void;
 	applyGithub: (updated: SetupGithub, restartRequired: boolean) => void;
+	applyRepo: (
+		updated: Pick<SetupRepo, "id"> &
+			Partial<Pick<SetupRepo, "defaultBranch" | "isolatedWorktrees">>,
+	) => void;
 }
 
 export function useSetupStatus(): SetupController {
@@ -40,26 +51,28 @@ export function useSetupStatus(): SetupController {
 	const [restartNeeded, setRestartNeeded] = useState(false);
 	const [restartState, setRestartState] = useState<RestartState>("idle");
 	const statusRef = useRef<SetupStatus | null>(null);
-	statusRef.current = status;
-
+	useLayoutEffect(() => {		statusRef.current = status;
+	});
+	// Stable identity: the body only reads refs and calls setters, so the
+	// mount effect can list it without ever refiring, and callers outside
+	// this hook can invoke the same fetch.
 	const refetch = useCallback(async () => {
-		try {
-			const body = await setupRequest<SetupStatus>("/api/setup/status");
+		await (async () => {
+const body = await setupRequest<SetupStatus>("/api/setup/status");
 			setStatus(body);
 			setFailed(false);
-		} catch {
-			// A refetch that fails while a status is already on screen keeps the
+})().catch(async () => {
+// A refetch that fails while a status is already on screen keeps the
 			// stale one: better a slightly old page than an empty one.
 			if (!statusRef.current) setFailed(true);
-		}
+});
 	}, []);
 
 	useEffect(() => {
 		refetch();
 	}, [refetch]);
 
-	const applyIntegration = useCallback(
-		(updated: SetupIntegration, restartRequired: boolean) => {
+	const applyIntegration = (updated: SetupIntegration, restartRequired: boolean) => {
 			setStatus((s) =>
 				s
 					? {
@@ -71,24 +84,34 @@ export function useSetupStatus(): SetupController {
 					: s,
 			);
 			if (restartRequired) setRestartNeeded(true);
-		},
-		[],
-	);
+		};
 
-	const applyGithub = useCallback(
-		(updated: SetupGithub, restartRequired: boolean) => {
+	const applyGithub = (updated: SetupGithub, restartRequired: boolean) => {
 			setStatus((s) => (s ? { ...s, github: updated } : s));
 			if (restartRequired) setRestartNeeded(true);
-		},
-		[],
-	);
+		};
 
-	const restartServer = useCallback(
-		async (post = true) => {
+	const applyRepo = (
+			updated: Pick<SetupRepo, "id"> &
+				Partial<Pick<SetupRepo, "defaultBranch" | "isolatedWorktrees">>,
+		) => {
+			setStatus((s) =>
+				s
+					? {
+							...s,
+							repos: s.repos.map((repo) =>
+								repo.id === updated.id ? { ...repo, ...updated } : repo,
+							),
+						}
+					: s,
+			);
+		};
+
+	const restartServer = async (post = true) => {
 			setRestartState("working");
 			if (post) {
-				try {
-					const res = await fetch(`${BASE_PATH}/api/setup/restart`, {
+				await (async () => {
+const res = await fetch(`${BASE_PATH}/api/setup/restart`, {
 						method: "POST",
 					});
 					// 409 = nothing would revive this process, so it refused. Say so
@@ -99,16 +122,16 @@ export function useSetupStatus(): SetupController {
 						toast(body?.error || "This server can't restart itself.");
 						return;
 					}
-				} catch {
-					// The connection can drop as the server goes down — that's fine,
+})().catch(async () => {
+// The connection can drop as the server goes down — that's fine,
 					// the health poll below is the real signal.
-				}
+});
 			}
 			const deadline = Date.now() + 30_000;
 			await sleep(1000);
 			while (Date.now() < deadline) {
-				try {
-					const res = await fetch(`${BASE_PATH}/api/health`, {
+				await (async () => {
+const res = await fetch(`${BASE_PATH}/api/health`, {
 						cache: "no-store",
 					});
 					if (res.ok) {
@@ -118,13 +141,13 @@ export function useSetupStatus(): SetupController {
 						toast("Server restarted. Changes applied.");
 						return;
 					}
-				} catch {}
+})().catch(async () => {
+
+});
 				await sleep(1000);
 			}
 			setRestartState("failed");
-		},
-		[refetch],
-	);
+		};
 
 	return {
 		status,
@@ -135,5 +158,6 @@ export function useSetupStatus(): SetupController {
 		restartServer,
 		applyIntegration,
 		applyGithub,
+		applyRepo,
 	};
 }

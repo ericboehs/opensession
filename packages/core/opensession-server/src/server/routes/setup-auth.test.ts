@@ -2,7 +2,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { handleSetupRoutes } from "./setup";
+import {
+	buildOnboardingGithubAppCreateUrl,
+	handleSetupRoutes,
+} from "./setup";
 import type { RouteContext } from "./context";
 
 const savedConfig = process.env.OPENSESSION_CONFIG;
@@ -53,5 +56,90 @@ describe("workspace setup authorization", () => {
 		expect(await response?.json()).toEqual({
 			error: "Workspace administrator access is required",
 		});
+	});
+});
+
+/** A simple-mode config carrying the captured org intent (userPrAuth absent, so
+ *  sign-in is off and any caller administers the workspace). */
+function orgIntentConfig(): void {
+	const dir = mkdtempSync(join(tmpdir(), "opensession-setup-intent-"));
+	dirs.push(dir);
+	const path = join(dir, "config.json");
+	writeFileSync(
+		path,
+		JSON.stringify({
+			integrations: {
+				github: { appOrg: "acme-inc", authOnConnect: true },
+			},
+		}),
+	);
+	process.env.OPENSESSION_CONFIG = path;
+	delete process.env.OPENSESSION_GITHUB_CLIENT_ID;
+}
+
+function singleUserConfig(): void {
+	const dir = mkdtempSync(join(tmpdir(), "opensession-setup-single-"));
+	dirs.push(dir);
+	const path = join(dir, "config.json");
+	writeFileSync(path, JSON.stringify({ integrations: {} }));
+	process.env.OPENSESSION_CONFIG = path;
+	delete process.env.OPENSESSION_GITHUB_CLIENT_ID;
+}
+
+describe("GitHub App onboarding link", () => {
+	test("prefills the new-App form while keeping personal fields editable", () => {
+		const url = new URL(
+			buildOnboardingGithubAppCreateUrl(
+				"acme inc",
+				"https://os.acme.test/",
+				"https://ingress.acme.test/",
+				"Acme Session App",
+			),
+		);
+
+		expect(url.origin).toBe("https://github.com");
+		expect(url.pathname).toBe("/organizations/acme%20inc/settings/apps/new");
+		expect(Object.fromEntries(url.searchParams)).toEqual({
+			name: "Acme Session App",
+			url: "https://os.acme.test/",
+			public: "false",
+			hook_url: "https://ingress.acme.test/github/webhook",
+			webhook_active: "true",
+			// The canonical grant set — checks + statuses (the App-only CI rollup)
+			// and issues (PR/issue comments) included, so a created App holds every
+			// scope the installation-token mints request.
+			actions: "read",
+			checks: "read",
+			statuses: "read",
+			contents: "write",
+			issues: "write",
+			pull_requests: "write",
+			members: "read",
+			deployments: "read",
+			metadata: "read",
+			device_flow_enabled: "true",
+		});
+	});
+});
+
+describe("setup status github snapshot exposes install intent", () => {
+	test("appOrg + authOnConnect ride the snapshot", async () => {
+		orgIntentConfig();
+		const response = await handleSetupRoutes(context("anyone"));
+		expect(response?.status).toBe(200);
+		const body = await response?.json();
+		expect(body.github.appOrg).toBe("acme-inc");
+		expect(body.github.authOnConnect).toBe(true);
+		// The intent is inert: it must not have flipped the sign-in gate.
+		expect(body.github.userPrAuth).toBe(false);
+	});
+
+	test("a single-user install exposes no intent", async () => {
+		singleUserConfig();
+		const response = await handleSetupRoutes(context("anyone"));
+		const body = await response?.json();
+		expect(body.github.appOrg).toBe(null);
+		expect(body.github.authOnConnect).toBe(false);
+		expect(body.github.userPrAuth).toBe(false);
 	});
 });

@@ -11,23 +11,12 @@ struct ConversationVideoStrip: View {
     var cornerRadius: CGFloat = 12
     var alignment: HorizontalAlignment = .leading
 
-    private struct Source: Identifiable {
-        let id: String
-        let value: String
-    }
-
-    private var identifiedSources: [Source] {
-        sources.enumerated().map { offset, source in
-            Source(id: "\(offset):\(source)", value: source)
-        }
-    }
-
     var body: some View {
         if !sources.isEmpty {
             VStack(alignment: alignment, spacing: 6) {
-                ForEach(identifiedSources) { source in
+                ForEach(Array(sources.enumerated()), id: \.offset) { _, source in
                     ConversationVideo(
-                        source: source.value,
+                        source: source,
                         sessionId: sessionId,
                         cornerRadius: cornerRadius
                     )
@@ -96,13 +85,9 @@ private struct ConversationVideo: View {
                 .stroke(.white.opacity(0.1), lineWidth: 0.5)
         }
         .task(id: source) {
-            player = nil
-            ratio = nil
             guard let url else { return }
             player = AVPlayer(url: url)
-            let loadedRatio = await Self.displayRatio(of: url)
-            guard !Task.isCancelled else { return }
-            ratio = loadedRatio
+            ratio = await Self.displayRatio(of: url)
         }
         .onDisappear { player?.pause() }
         .assetOverlayPreview($assetOverlay, openPanel: openPanel)

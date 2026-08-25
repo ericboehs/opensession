@@ -4,6 +4,7 @@ import { IconCheck, IconChevronDown } from "../components/icons";
 import { cn } from "./cn";
 import { fieldClasses } from "./input";
 import {
+	FLOATING_OVERLAY_LAYER,
 	POPUP_HOOK,
 	popupItemClasses,
 	popupScrollClasses,
@@ -28,7 +29,7 @@ import { restoreSelectFocusAfterClose } from "./select-focus";
  *
  * One thing to know: pass `items` to `Root`. The trigger's value text is
  * resolved from that list, so without it a closed select shows the raw value
- * (`opencode/anthropic/claude-opus-5`) instead of its label.
+ * (`pi/anthropic/claude-opus-5`) instead of its label.
  *
  * Reach for `ui/input`'s native `Select` only when you specifically want the
  * OS picker.
@@ -118,9 +119,9 @@ function Trigger(triggerProps: TriggerProps) {
 							: "grid-cols-[minmax(0,1fr)_auto]",
 					),
 				),
-				// Open reads like focus: the border carries the state, as it does
-				// on every other field.
-				"data-[popup-open]:border-accent",
+				// A select lifts slightly under the pointer; opening still reads like
+				// focus, with the border carrying that state as on every other field.
+				"transition-[border-color,box-shadow] hover:border-line-strong enabled:hover:smooth-shadow-xs data-[popup-open]:border-accent",
 				className,
 			)}
 		>
@@ -176,7 +177,7 @@ function Popup({
 				// would give this one popup two open behaviours and no
 				// animation. Anchor it below the trigger like every menu.
 				alignItemWithTrigger={false}
-				className="z-[10001] outline-none"
+				className={cn(FLOATING_OVERLAY_LAYER, "outline-none")}
 			>
 				<BaseSelect.Popup
 					finalFocus={() => restoreFocusRef?.current ?? true}
@@ -277,7 +278,10 @@ export function OptionSelect<T extends string>({
 	triggerRef,
 }: {
 	value: T;
-	options: { value: T; label: string; disabled?: boolean }[];
+	/** `icon` is optional per option, but the slot is all-or-nothing: as soon
+	 *  as one row carries a glyph, every row and the trigger reserve the
+	 *  column, so the labels stay on one x. */
+	options: { value: T; label: string; disabled?: boolean; icon?: React.ReactNode }[];
 	onChange: (value: T) => void;
 	label: string;
 	disabled?: boolean;
@@ -288,6 +292,8 @@ export function OptionSelect<T extends string>({
 	 *  field (`Modal.Content`'s `initialFocus`). */
 	triggerRef?: React.ComponentProps<typeof Trigger>["ref"];
 }) {
+	const hasIcons = options.some((option) => option.icon != null);
+	const selected = options.find((option) => option.value === value);
 	return (
 		<Select.Root
 			// The labels the trigger draws its value from, so a closed select
@@ -302,11 +308,17 @@ export function OptionSelect<T extends string>({
 				aria-label={label}
 				className={className}
 				size={size}
+				{...(hasIcons ? { icon: selected?.icon ?? null } : {})}
 				sizeTo={options.map((option) => option.label)}
 			/>
 			<Select.Popup align="end">
 				{options.map((option) => (
-					<Select.Item key={option.value} value={option.value} disabled={option.disabled}>
+					<Select.Item
+						key={option.value}
+						value={option.value}
+						disabled={option.disabled}
+						{...(hasIcons ? { icon: option.icon ?? null } : {})}
+					>
 						{option.label}
 					</Select.Item>
 				))}

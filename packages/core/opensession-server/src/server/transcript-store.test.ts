@@ -265,6 +265,132 @@ describe("paging: readSince / readBefore", () => {
   });
 });
 
+describe("message-aware tail windows", () => {
+  test("extends past the entry floor until it reaches conversation", () => {
+    const sid = "bks-tail-window-messages";
+    store.appendTranscriptEvents(sid, [
+      entry("tw-u", "question", { type: "user" }),
+      entry("tw-a", "answer"),
+      ...Array.from({ length: 10 }, (_, i) =>
+        entry(`tw-tool-${i}`, `step ${i}`, { type: "tool_use" })
+      ),
+    ]);
+
+    const page = store.readTailWindow(sid, {
+      minEntries: 4,
+      minMessages: 2,
+      maxEntries: 20,
+      maxEstimatedBytes: 100_000,
+    });
+
+    expect(page.entries).toHaveLength(12);
+    expect(page.entries[0]).toMatchObject({ id: "tw-u", seq: 1 });
+    expect(page.entries.at(-1)).toMatchObject({ id: "tw-tool-9", seq: 12 });
+  });
+
+  test("assistant rows alone do not satisfy a required user boundary", () => {
+    const sid = "bks-tail-window-user";
+    store.appendTranscriptEvents(sid, [
+      entry("tu-u", "question", { type: "user" }),
+      entry("tu-a0", "starting"),
+      entry("tu-a1", "still working"),
+      entry("tu-a2", "nearly done"),
+      ...Array.from({ length: 6 }, (_, i) =>
+        entry(`tu-tool-${i}`, `step ${i}`, { type: "tool_use" })
+      ),
+    ]);
+
+    const page = store.readTailWindow(sid, {
+      minEntries: 2,
+      minMessages: 2,
+      minUserMessagesWithToolWork: 1,
+      maxEntries: 20,
+      maxEstimatedBytes: 100_000,
+    });
+
+    expect(page.entries[0]).toMatchObject({ id: "tu-u", type: "user" });
+  });
+
+  test("the estimated byte ceiling bounds extension past the entry floor", () => {
+    const sid = "bks-tail-window-bytes";
+    store.appendTranscriptEvents(sid, [
+      entry("tb-u", "old question", { type: "user" }),
+      entry("tb-a", "old answer"),
+      ...Array.from({ length: 8 }, (_, i) =>
+        entry(`tb-tool-${i}`, `step ${i}`, { type: "tool_use" })
+      ),
+    ]);
+
+    const page = store.readTailWindow(sid, {
+      minEntries: 3,
+      minMessages: 2,
+      minUserMessagesWithToolWork: 1,
+      maxEntries: 20,
+      maxEstimatedBytes: 40,
+      weigh: () => 10,
+    });
+
+    expect(page.entries.map((row) => row.id)).toEqual([
+      "tb-tool-4",
+      "tb-tool-5",
+      "tb-tool-6",
+      "tb-tool-7",
+    ]);
+  });
+
+  test("the row ceiling bounds a message-poor tail", () => {
+    const sid = "bks-tail-window-rows";
+    store.appendTranscriptEvents(sid, [
+      entry("tr-u", "old question", { type: "user" }),
+      ...Array.from({ length: 10 }, (_, i) =>
+        entry(`tr-tool-${i}`, `step ${i}`, { type: "tool_use" })
+      ),
+    ]);
+
+    const page = store.readTailWindow(sid, {
+      minEntries: 2,
+      minMessages: 2,
+      minUserMessagesWithToolWork: 1,
+      maxEntries: 5,
+      maxEstimatedBytes: 100_000,
+    });
+
+    expect(page.entries).toHaveLength(5);
+    expect(page.firstSeq).toBe(7);
+    expect(page.lastSeq).toBe(11);
+  });
+
+  test("measures stored rows in UTF-8 bytes", () => {
+    const sid = "bks-tail-window-utf8";
+    store.appendTranscriptEvents(sid, [entry("utf8", "😀".repeat(20))]);
+    let measured = 0;
+
+    store.readTailWindow(sid, {
+      minEntries: 1,
+      minMessages: 2,
+      maxEntries: 2,
+      maxEstimatedBytes: 100_000,
+      weigh: (_kind, bytes) => {
+        measured = bytes;
+        return bytes;
+      },
+    });
+
+    const raw = new Database(dbPath, { readonly: true });
+    try {
+      const row = raw
+        .query(
+          "SELECT length(CAST(data AS BLOB)) AS bytes FROM transcript_events WHERE session_id = ?"
+        )
+        .get(sid) as { bytes: number };
+      expect(measured).toBe(row.bytes);
+      expect(measured).toBeGreaterThan(20);
+    } finally {
+      raw.close();
+    }
+  });
+});
+
 describe("import-first gate + legacy import", () => {
   test("import then live-append: history seqs precede live seqs", () => {
     const sid = "bks-import-order";
@@ -447,5 +573,141 @@ describe("deleteSessionTranscript", () => {
     // A later append starts a fresh dense sequence.
     store.appendTranscriptEvents(sid, [entry("d3", "fresh start")]);
     expect(store.readTail(sid).entries.map((e) => e.seq)).toEqual([1]);
+  });
+});
+
+describe("transcript outline and random-access ranges", () => {
+  test("indexes display roles without shipping content", () => {
+    const sid = "bks-outline";
+    store.appendTranscriptEvents(sid, [
+      entry("context", "private context", {
+        type: "system",
+        contextInjection: { source: "repos" },
+      }),
+      entry("human", "Please investigate", { type: "user" }),
+      entry("tool", "Using Read", {
+        type: "tool_use",
+        toolUseId: "call-1",
+        toolName: "Read",
+      }),
+      entry("result", "large result", {
+        type: "tool_result",
+        toolUseId: "call-1",
+      }),
+      entry("answer", "Done"),
+      entry(
+        "handoff",
+        "[GitHub] <!--os:review-handoff-->\nReview PR #42",
+        { type: "user" },
+      ),
+    ]);
+
+    const outline = store.readTranscriptIndex(sid);
+    expect(outline.entries.map((row) => row.role)).toEqual([
+      "hidden",
+      "user",
+      "tool_use",
+      "tool_result",
+      "assistant",
+      "review_handoff",
+    ]);
+    expect(outline.entries[5]).toMatchObject({ reviewPrNumber: 42 });
+    expect(outline.entries[1]).toMatchObject({
+      id: "human",
+      seq: 2,
+      contentLength: "Please investigate".length,
+    });
+    expect(JSON.stringify(outline)).not.toContain("large result");
+    expect(outline.firstSeq).toBe(1);
+    expect(outline.lastSeq).toBe(6);
+  });
+
+  test("updates an old outline row in place when its role changes", () => {
+    const sid = "bks-outline-upsert";
+    store.appendTranscriptEvents(sid, [entry("same", "draft")]);
+    const before = store.readTranscriptIndex(sid).entries[0];
+    store.appendTranscriptEvents(sid, [entry("same", "now a person", { type: "user" })]);
+    const after = store.readTranscriptIndex(sid).entries[0];
+    expect(after.seq).toBe(before.seq);
+    expect(after.changeSeq).toBeGreaterThan(before.changeSeq);
+    expect(after.role).toBe("user");
+  });
+
+  test("hydrates an inclusive span in bounded chunks", () => {
+    const sid = "bks-range";
+    store.appendTranscriptEvents(
+      sid,
+      Array.from({ length: 5 }, (_, index) => entry(`range-${index + 1}`, `row ${index + 1}`)),
+    );
+    const first = store.readRange(sid, 2, 5, 1, 2);
+    expect(first.entries.map((row) => row.seq)).toEqual([2, 3]);
+    expect(first.coveredThroughSeq).toBe(3);
+    expect(first.complete).toBe(false);
+    const second = store.readRange(sid, 2, 5, first.coveredThroughSeq, 2);
+    expect(second.entries.map((row) => row.seq)).toEqual([4, 5]);
+    expect(second.coveredThroughSeq).toBe(5);
+    expect(second.complete).toBe(true);
+  });
+
+  test("paginates a range larger than the wire cap", () => {
+    const sid = "bks-range-large";
+    store.appendTranscriptEvents(
+      sid,
+      Array.from({ length: 501 }, (_, index) =>
+        entry(`large-range-${index + 1}`, `row ${index + 1}`),
+      ),
+    );
+    const first = store.readRange(sid, 1, 501, 0, 500);
+    expect(first.entries).toHaveLength(500);
+    expect(first.coveredThroughSeq).toBe(500);
+    expect(first.complete).toBe(false);
+    const last = store.readRange(sid, 1, 501, 500, 500);
+    expect(last.entries.map((row) => row.seq)).toEqual([501]);
+    expect(last.complete).toBe(true);
+  });
+
+  test("backfills existing canonical rows in bounded async batches", async () => {
+    const sid = "bks-outline-backfill";
+    store.appendTranscriptEvents(
+      sid,
+      Array.from({ length: 250 }, (_, index) =>
+        entry(`backfill-${index}`, "hello", { type: "user" }),
+      ),
+    );
+    const raw = new Database(dbPath);
+    raw.run("DELETE FROM transcript_outline WHERE session_id = ?", [sid]);
+    raw.close();
+    let yielded = false;
+    setTimeout(() => {
+      yielded = true;
+    }, 0);
+    await store.ensureTranscriptOutline(sid);
+    const outline = store.readTranscriptIndex(sid);
+    expect(outline.entries).toHaveLength(250);
+    expect(outline.entries[0]).toMatchObject({
+      id: "backfill-0",
+      role: "user",
+    });
+    expect(yielded).toBe(true);
+  });
+
+  test("backfill preserves oversized row roles and original lengths", async () => {
+    const sid = "bks-outline-full-blob";
+    const content =
+      "[GitHub] <!--os:review-handoff-->\nReview PR #42\n" + "x".repeat(100_000);
+    store.appendTranscriptEvents(sid, [
+      entry("large-handoff", content, { type: "user" }),
+    ]);
+    const written = store.readTranscriptIndex(sid).entries[0];
+    const raw = new Database(dbPath);
+    raw.run("DELETE FROM transcript_outline WHERE session_id = ?", [sid]);
+    raw.close();
+    await store.ensureTranscriptOutline(sid);
+    expect(store.readTranscriptIndex(sid).entries[0]).toEqual(written);
+    expect(written).toMatchObject({
+      role: "review_handoff",
+      reviewPrNumber: 42,
+      contentLength: content.length,
+    });
   });
 });

@@ -20,11 +20,10 @@
 /* ── The composer box ──────────────────────────────────────────────
    `.composer` stays on the markup as a hook: legacy.css still reaches through
    it into controls this family does not own (`.composer.composer-min
-   .palette-icon-btn`, whose ::before wash is styled from the stylesheet, and
-   `body.kb-open .viewer-input:has(.composer:not(.composer-min))`). The
+   .palette-icon-btn`, whose ::before wash is styled from the stylesheet). The
    declarations below are what that rule used to paint. */
 export const composerBox =
-	"relative border border-[color:var(--composer-border)] bg-[var(--composer-surface)] shadow-[var(--composer-shadow)] transition-[border-color,box-shadow] " +
+	"relative border border-[color:color-mix(in_srgb,var(--composer-border)_35%,transparent)] bg-[var(--composer-surface)] shadow-[var(--composer-shadow)] transition-[border-color,box-shadow] " +
 	"desktop:border-transparent desktop:[--smooth-ring-color:var(--composer-border)] desktop:smooth-shadow-ring-soft";
 
 /** Resting/expanded box. `--composer-inset-left` is read by the "+" menu to
@@ -33,7 +32,14 @@ export const composerBox =
 export const composerBoxExpanded =
 	"rounded-[var(--composer-radius)] px-3.5 pt-3.5 pb-2.5 [--composer-inset-left:15px] phone:px-3 phone:pt-2.5 phone:pb-[9px] phone:[--composer-inset-left:13px]";
 
-/** Phone resting pill: one row, even 4px inset, clear of the screen edges.
+/** Phone resting pill: one row, even 4px inset, held well clear of the screen
+ *  edges. The inset is wider than the expanded box's on purpose: at rest the
+ *  composer is a short capsule floating over the transcript, and running it
+ *  edge to edge made it read as a bar rather than a pill. The internal padding
+ *  stays at 4px, so the pill gets smaller through width, not tighter spacing.
+ *  Matches the native iOS composer, which steps its resting pill in by the
+ *  same 8pt on each side.
+ *
  *  Motion animates the radius between this and the expanded box; the class is
  *  here so a first paint (and any non-animated host) lands on the same shape.
  *
@@ -46,7 +52,7 @@ export const composerBoxExpanded =
  *  way; only the corner curve differs. Installed phone PWAs override that
  *  curve to `round` in base.css, while keeping this same capsule geometry. */
 export const composerBoxMinimized =
-	"mx-1.5 flex items-center gap-1 rounded-[999px] p-1 [--composer-inset-left:5px]";
+	"mx-3.5 flex items-center gap-1 rounded-[999px] p-1 [--composer-inset-left:5px]";
 
 /* ── The draft field ──────────────────────────────────────────────
    `.composer-textarea` stays on the markup as a hook too: it is read as a
@@ -242,18 +248,12 @@ export const fileChipSub = "text-meta text-faint";
    the run-status flap in components/ComposerAgents.tsx). */
 /** The hairline a flap draws, matched to the edge the composer actually paints.
  *
- *  On desktop the composer carries NO border: `composerBox` makes it
- *  transparent and hands its edge to `smooth-shadow-ring-soft`, whose ring
- *  layer is `--composer-border` at 35%. A flap flush with that box, drawing the
- *  same token at full strength, is therefore about three times the ink —
- *  measured #dcdcdc against the composer's ~#ededed in light, which reads as
- *  the panel BEHIND having the harder edge. Match the ring's strength instead;
- *  the alpha composites over the flap's own fill (backgrounds paint under
- *  borders), so it lands within a couple of levels of the composer's ring.
- *
- *  Phones keep the solid border, because there the composer keeps one too. */
+ *  The composer carries the border token at 35% strength: through a smooth
+ *  ring on desktop and a solid hairline on phone. Drawing the flap at full
+ *  strength made the panel behind it about three times darker than the input
+ *  in front. Use the same mix everywhere so the two layers keep one edge. */
 export const composerFlapBorder =
-	"border-[color:var(--composer-border)] desktop:border-[color:color-mix(in_srgb,var(--composer-border)_35%,transparent)]";
+	"pwa-composer-edge border-[color:color-mix(in_srgb,var(--composer-border)_35%,transparent)]";
 
 /* ── The queue flap ───────────────────────────────────────────────
    The flap that folds out from behind the composer: a dimmer panel flush with

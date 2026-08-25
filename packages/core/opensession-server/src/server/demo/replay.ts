@@ -8,8 +8,8 @@
  *    isAgentSessionBusy → UnifiedSession.isRunning true, and the paired
  *    run-state transitions keep the FSM in `running` so the session-cache
  *    wedge detector never sees an FSM/engine divergence.
- *  - Entries go through recordBksSessionFor + appendOpencodeTranscript — the
- *    exact write path a live opencode run uses — so they land in
+ *  - Entries go through recordEngineSessionOwner + appendTranscriptEntries — the
+ *    exact write path a live pi run uses — so they land in
  *    transcripts.db and fan out to v2 watchers over the transcript bus with
  *    zero demo-specific serve code. Each loop restarts with
  *    replaceTranscriptEvents (an authoritative reset frame), keeping the
@@ -26,14 +26,14 @@ import {
 } from "../agent-runner";
 import { transitionRunState } from "../run-state";
 import {
-  appendOpencodeTranscript,
-  recordBksSessionFor,
-} from "../opencode-transcript";
+  appendTranscriptEntries,
+  recordEngineSessionOwner,
+} from "../transcript-persistence";
 import { parseJsonlLines } from "../jsonl-parser";
 import { transcriptStore } from "../transcript-store";
 import { touchNativeSession } from "../session-cache";
 import {
-  DEMO_LIVE_OC_SESSION_ID,
+  DEMO_LIVE_ENGINE_SESSION_ID,
   DEMO_LIVE_SESSION_ID,
   demoReplayScript,
 } from "./fixtures";
@@ -59,11 +59,11 @@ export function startDemoReplayer(): void {
   state.running = true;
 
   const sessionId = DEMO_LIVE_SESSION_ID;
-  const ocId = DEMO_LIVE_OC_SESSION_ID;
+  const ocId = DEMO_LIVE_ENGINE_SESSION_ID;
 
   // Fresh session: skip the legacy-import gate up front so the first append
   // never tries to merge nonexistent history.
-  recordBksSessionFor(ocId, sessionId);
+  recordEngineSessionOwner(ocId, sessionId);
   if (transcriptStore().needsImport(sessionId)) {
     transcriptStore().importLegacyTranscript(sessionId, [], "live-only", null);
   }
@@ -92,7 +92,7 @@ export function startDemoReplayer(): void {
           parseJsonlLines(lines.map((l) => JSON.stringify(l))),
         );
       } else {
-        appendOpencodeTranscript(ocId, lines);
+        appendTranscriptEntries(ocId, lines);
       }
       touchNativeSession(sessionId, {});
       step++;

@@ -1,20 +1,16 @@
 import React from "react";
-import { AGENT_NAME } from "./brand";
 import type { ReviewQueueItem } from "./review-queue";
+import type { SettingsSectionKey } from "./settings-sections";
 import type { FeedDescriptor, FeedItem, SupportThread, UnifiedSession, Workspace } from "./types";
-import { TEAM } from "../components/UserPicker";
 
-// Only recognized people get their own "people" section. Sessions whose
-// `startedBy` is something other than a real teammate — test labels
-// ("proof-test", "image-test"), action/integration names ("Slack",
-// "Make Alice editor (action)"), or empty — are hidden rather than shown as
-// stray sections. The agent persona counts as a person here.
-export const KNOWN_PEOPLE = new Set([...TEAM, AGENT_NAME].map((n) => n.toLowerCase()));
+export type OpenNextSidebarItem = () => boolean;
 
 export interface Props {
 	sessions: UnifiedSession[];
 	/** Repositories registered on this instance, including ones with no sessions yet. */
 	registeredRepos: string[];
+	/** Shared-checkout repos whose sessions ship on the default branch, keyed by repo id. */
+	directToMainBranches: Record<string, string>;
 	/** The initial/live session list request failed entirely. */
 	sessionsError: string | null;
 	/** True until the first session-list request settles. */
@@ -37,6 +33,10 @@ export interface Props {
 	feedActive: boolean;
 	/** Open the Feed page. */
 	onOpenFeed: () => void;
+	/** Whether the active server socket is connected. */
+	connected: boolean;
+	/** Open Settings from the organization menu. */
+	onOpenSettings: (section?: SettingsSectionKey) => void;
 	/** True while the Tasks tool is open. */
 	tasksActive: boolean;
 	/** Open the current user's task list. */
@@ -47,9 +47,9 @@ export interface Props {
 	    automation's NAME — session rows only carry the name, not the id. */
 	onOpenAutomation: (name: string) => void;
 	/**
-	 * Open a PR row's workspace (resolve-or-create), on that PR's Review tab —
-	 * the row is a pull request, and a workspace with several PRs has a row each,
-	 * so the one you clicked decides which the pane lands on.
+	 * Open a sessionless PR row's workspace (resolve-or-create), on that PR's
+	 * Review tab. Once the PR belongs to a visible workspace, that workspace is
+	 * its only sidebar row.
 	 */
 	onOpenPrItem: (item: ReviewQueueItem) => void;
 	/** The open workspace id (route or the open session's), for row selection. */
@@ -97,8 +97,8 @@ export interface Props {
 	draftRowActive?: boolean;
 	/** Put the caret back in it. */
 	onOpenDraft?: () => void;
-	/** Open a project — its sessions surface in the top tab strip. */
-	onOpenWorkspace: (id: string) => void;
+	/** Open a project. A preferred session targets the tab carrying unread activity. */
+	onOpenWorkspace: (id: string, preferredSessionId?: string) => void;
 	/** Rename a project folder. */
 	onRenameWorkspace: (id: string, name: string) => void;
 	/** Delete a project folder (its sessions become standalone, or for a
@@ -112,21 +112,23 @@ export interface Props {
 	onOpenCatchUp: () => void;
 	/** True while the catch-up deck is open — highlights its entry. */
 	catchUpActive: boolean;
+	/** Report whether Next can open attention work or another rendered chat. */
+	onNextChatAvailableChange?: (available: boolean) => void;
 	/**
-	 * Archive a session. `next` is the session that follows it in the sidebar's
-	 * visible order (or the previous one for the last row) — the caller uses it
-	 * to keep a live session open when the active one is archived.
+	 * Archive a session. `openNext` opens the rendered sidebar item after it, or
+	 * the previous item when it is last. It returns false when no item remains.
 	 */
-	onArchive: (session: UnifiedSession, next: UnifiedSession | null) => void;
+	onArchive: (
+		session: UnifiedSession,
+		openNext: OpenNextSidebarItem | null,
+	) => void;
 	/**
-	 * Archive every session in a workspace (the row's archive icon). `next` is the
-	 * first session of the workspace row that follows it in the sidebar's visible
-	 * order (or the previous one for the last row) — the caller opens it when
-	 * the active workspace is archived away.
+	 * Archive every session in a workspace. `openNext` follows the same rendered
+	 * order as the row the person archived.
 	 */
 	onArchiveWorkspace: (
 		sessions: UnifiedSession[],
-		next: UnifiedSession | null,
+		openNext: OpenNextSidebarItem | null,
 	) => void;
 	/** Rename a session (double-click its title); empty title resets it. */
 	onRename: (session: UnifiedSession, title: string) => void;
@@ -173,6 +175,8 @@ export interface Group {
 	dotColor: string | null;
 	band: GroupBand;
 	items: UnifiedSession[];
+	/** Complete count when `items` is a bounded recent window. */
+	totalItems?: number;
 }
 
 // "My sessions" is split, Conductor-style, into status buckets. Order + labels +

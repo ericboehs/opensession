@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type {
 	PlainEntryAttachment,
 	PlainLabelType,
@@ -125,8 +125,7 @@ export function PlainThreadPanel({ sessionId, threadId, plainUrl }: Props) {
 			aliveRef.current = false;
 		};
 	}, []);
-	const load = useCallback(
-		() =>
+	const load = useCallback(() =>
 			fetchPlainThreadApi(sessionId)
 				.then((t) => {
 					if (!aliveRef.current) return;
@@ -138,9 +137,7 @@ export function PlainThreadPanel({ sessionId, threadId, plainUrl }: Props) {
 				})
 				.finally(() => {
 					if (aliveRef.current) setLoading(false);
-				}),
-		[sessionId],
-	);
+				}), [sessionId]);
 	useEffect(() => {
 		setLoading(true);
 		setError(null);
@@ -307,14 +304,14 @@ export function PlainThreadActions({
 		if (busy) return;
 		setBusy(true);
 		setError(null);
-		try {
-			await fn();
+		await (async () => {
+await fn();
 			onChanged();
-		} catch (e: any) {
-			setError(e?.message || "Plain update failed");
-		} finally {
-			setBusy(false);
-		}
+})().catch(async (e: any) => {
+setError(e?.message || "Plain update failed");
+}).finally(async () => {
+setBusy(false);
+});
 	}
 
 	const status = thread.status;
@@ -734,8 +731,8 @@ export function PlainReplyBox({
 		}
 		setSending(true);
 		setError(null);
-		try {
-			const attachmentIds: string[] = [];
+		await (async () => {
+const attachmentIds: string[] = [];
 			for (const file of attachments) {
 				attachmentIds.push(await uploadPlainAttachmentApi(threadId, file, kind));
 			}
@@ -747,11 +744,11 @@ export function PlainReplyBox({
 			clearTimeout(sentTimer.current);
 			sentTimer.current = setTimeout(() => setSent(false), 3000);
 			onSent?.();
-		} catch (e: any) {
-			setError(e?.message || "Failed to send");
-		} finally {
-			setSending(false);
-		}
+})().catch(async (e: any) => {
+setError(e?.message || "Failed to send");
+}).finally(async () => {
+setSending(false);
+});
 	}
 
 	// The same wash a team note takes in a session transcript (lib/tinted-surface).
@@ -1027,7 +1024,7 @@ function PlainAttachments({
  * stays literal text, which is the renderer's default.
  */
 function PlainEntryText({ text }: { text: string }) {
-	const html = useMemo(() => renderMarkdown(text), [text]);
+	const html = (renderMarkdown(text));
 	return <MarkdownBody className={plainEntryBody} html={html} />;
 }
 

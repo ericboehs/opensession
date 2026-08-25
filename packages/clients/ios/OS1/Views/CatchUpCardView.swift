@@ -226,7 +226,6 @@ struct CatchUpCardView: View {
                             },
                             owner: card.target.isAutomation ? nil : card.target.startedBy
                         )
-                        .environment(\.transcriptRepo, card.target.effectiveRepo)
                         .id(block.id)
                         // The last row carries its own clearance: the stack's
                         // trailing padding does not travel with a scroll that

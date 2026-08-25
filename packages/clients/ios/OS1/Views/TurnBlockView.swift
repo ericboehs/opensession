@@ -13,8 +13,8 @@ struct TurnBlockView: View {
     let sessionId: String
     var worktreeDir: String?
     let state: TurnFoldState
-    /// The outer state owns this turn's steps. `activity.tools` owns the
-    /// grouped tool runs nested inside it.
+    /// The two transcript preferences. The outer state owns this turn's steps;
+    /// `activity.tools` owns the grouped tool runs nested inside it.
     var activity = TurnActivity.standard
     /// Resolves each nested tool row's own detail state, which must survive
     /// the row scrolling out of the lazy stack.
@@ -41,20 +41,28 @@ struct TurnBlockView: View {
             .accessibilityHint(state.expanded ? "Hide the work" : "Show the work")
 
             if state.expanded {
-                TurnStepsView(
-                    items: turn.items,
-                    sessionId: sessionId,
-                    worktreeDir: worktreeDir,
-                    isLive: turn.isLive,
-                    showsTools: true,
-                    expandsToolRuns: activity.expandsToolRuns,
-                    expansionState: expansionState
-                )
-                .padding(.leading, 6)
-                .padding(.top, 8)
-                .transition(.opacity)
+                VStack(alignment: .leading, spacing: 8) {
+                    TurnStepsView(
+                        items: turn.items,
+                        sessionId: sessionId,
+                        worktreeDir: worktreeDir,
+                        isLive: turn.isLive,
+                        showsTools: true,
+                        // The turn header already summarizes a tool-only run.
+                        // Opening it reveals calls directly instead of adding
+                        // a second row with the same step count.
+                        rendersToolCallsInPlace: turn.rendersToolCallsInPlace(
+                            preference: activity
+                        ),
+                        expansionState: expansionState
+                    )
 
-                touchedFileSummary
+                    touchedFileSummary
+                }
+                .padding(.leading, Self.foldContentInset)
+                .padding(.top, 8)
+                .overlay(alignment: .leading) { foldRail }
+                .transition(.opacity)
             }
 
             // A marked screenshot or recording is the result, not the work.
@@ -77,10 +85,35 @@ struct TurnBlockView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// Where the open fold's hairline sits: under the chevron it drops from.
+    private static let railInset: CGFloat = 5
+    /// Where the fold's rows start: under the header's own word, clear of the
+    /// rail rather than crowding it.
+    private static let foldContentInset: CGFloat = 16
+
+    /// The rail down an open fold. A turn can run for pages, and once the
+    /// header has scrolled away nothing said whether a paragraph was still
+    /// part of the work or already the answer. The answer sits back at the
+    /// column edge with no rail beside it, so the seam reads from any scroll
+    /// position. Mirrors the web viewer's turn fold.
+    private var foldRail: some View {
+        Rectangle()
+            .fill(OS1VisualStyle.border)
+            .frame(width: 1)
+            .offset(x: Self.railInset)
+            .accessibilityHidden(true)
+    }
+
     /// Files named in the open fold before the rest become one chip. A
     /// refactor can touch thirty, and thirty wrapped chips would bury the
-    /// steps they belong to.
+    /// steps they belong to. A phone chip carries a name and its ± counts, so
+    /// two rarely share a line: there the fold names one and counts the rest.
     private static let foldFileChips = 6
+    private static let phoneFoldFileChips = 1
+
+    private var foldFileChips: Int {
+        horizontalSizeClass == .compact ? Self.phoneFoldFileChips : Self.foldFileChips
+    }
 
     /// What the turn changed, by name, closing the open fold.
     ///
@@ -94,18 +127,16 @@ struct TurnBlockView: View {
     private var touchedFileSummary: some View {
         if !turn.touchedFiles.isEmpty {
             FlowLayout(spacing: 6) {
-                ForEach(turn.touchedFiles.prefix(Self.foldFileChips)) { file in
+                ForEach(turn.touchedFiles.prefix(foldFileChips)) { file in
                     FileChipView(file: file)
                 }
-                if turn.touchedFiles.count > Self.foldFileChips {
+                if turn.touchedFiles.count > foldFileChips {
                     MoreFilesChipView(
                         sessionId: sessionId,
-                        count: turn.touchedFiles.count - Self.foldFileChips
+                        count: turn.touchedFiles.count - foldFileChips
                     )
                 }
             }
-            .padding(.leading, 6)
-            .padding(.top, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -113,7 +144,9 @@ struct TurnBlockView: View {
     @ViewBuilder
     private var header: some View {
         Group {
-            if dynamicTypeSize.isAccessibilitySize {
+            if horizontalSizeClass == .compact {
+                compactHeader
+            } else if dynamicTypeSize.isAccessibilitySize {
                 wrappedHeader
             } else {
                 singleLineHeader
@@ -129,6 +162,31 @@ struct TurnBlockView: View {
         .padding(.vertical, 3)
         #endif
         .contentShape(Rectangle())
+    }
+
+    /// Phones keep the outcome, step count, and code totals visible. Tool
+    /// families and changed-file names remain one tap away inside the fold.
+    private var compactHeader: some View {
+        // “Worked” is subheadline-sized while its counts are footnotes. Align
+        // their baselines rather than the tops of two different font boxes.
+        FlowLayout(spacing: 6, alignment: .firstTextBaseline) {
+            HStack(spacing: 6) {
+                chevron
+                Text(turn.isLive ? "Working" : "Worked")
+                    .font(.subheadline.weight(.medium))
+            }
+            .fixedSize()
+
+            if !counters.isEmpty {
+                Text(counters)
+                    .font(.footnote)
+                    .fixedSize()
+            }
+
+            failureLabel
+            lineStats
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var singleLineHeader: some View {
@@ -187,7 +245,7 @@ struct TurnBlockView: View {
                     .fixedSize()
             }
 
-            if !state.expanded, !turn.lineStats.isEmpty {
+            if !turn.lineStats.isEmpty {
                 LineStatsView(stats: turn.lineStats)
             }
         }
@@ -279,25 +337,28 @@ struct TurnBlockView: View {
     /// truncate — a count is useless truncated, a filename still reads.
     @ViewBuilder
     private var trailingDetail: some View {
-        if !state.expanded {
-            if turn.isLive, let preview = turn.livePreview {
+        if state.expanded {
+            lineStats
+        } else if turn.isLive, turn.hasNarration, let preview = turn.livePreview {
+            HStack(spacing: 6) {
                 Text(preview)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(OS1VisualStyle.textFaint)
                     .lineLimit(1)
                     .truncationMode(.middle)
-            } else if turn.touchedFiles.isEmpty {
                 lineStats
-            } else {
-                // A name cut down to "….ts" is noise wearing a filename's
-                // clothes, and the footer's chips name every file anyway. So
-                // it shows whole, shows head-truncated while that still
-                // reads, or steps aside for the counts.
-                ViewThatFits(in: .horizontal) {
-                    editedFiles(width: nil)
-                    editedFiles(width: 72)
-                    lineStats
-                }
+            }
+        } else if turn.touchedFiles.isEmpty {
+            lineStats
+        } else {
+            // A name cut down to "….ts" is noise wearing a filename's
+            // clothes, and the footer's chips name every file anyway. So
+            // it shows whole, shows head-truncated while that still
+            // reads, or steps aside for the counts.
+            ViewThatFits(in: .horizontal) {
+                editedFiles(width: nil)
+                editedFiles(width: 72)
+                lineStats
             }
         }
     }
@@ -349,7 +410,11 @@ struct TurnStepsView: View {
     /// False under the "Fold tool calls" preference with the fold shut: the
     /// narration keeps reading as transcript while the tool runs stay away.
     var showsTools = true
-    var expandsToolRuns = false
+    /// The "Tool calls · Open" preference. It renders every call in place
+    /// instead of behind a grouped row. It does NOT open the calls
+    /// themselves: a tool's own body (a diff, a command's output, raw JSON)
+    /// stays behind its row's disclosure, the way the web reads.
+    var rendersToolCallsInPlace = false
     let expansionState: (String, Bool) -> TurnFoldState
 
     private enum TurnSection: Identifiable {
@@ -376,23 +441,29 @@ struct TurnStepsView: View {
                         .padding(.trailing, 16)
                 case .tools(let calls, let kind):
                     if showsTools {
-                        if case .edits = kind, calls.count > 1 {
-                            EditRunView(
-                                items: calls,
-                                sessionId: sessionId,
-                                worktreeDir: worktreeDir,
-                                state: expansionState("edits-\(calls[0].id)", expandsToolRuns),
-                                isLive: isLive,
-                                expansionState: expansionState
-                            )
+                        if rendersToolCallsInPlace {
+                            // Nothing left to disclose: a grouped row and its
+                            // indent would only wrap rows already on screen.
+                            // Each call still owns its own body.
+                            ForEach(calls) { item in
+                                ToolCallRow(
+                                    item: item,
+                                    sessionId: sessionId,
+                                    worktreeDir: worktreeDir,
+                                    state: expansionState(item.id, item.hasFeaturedMedia)
+                                )
+                            }
                         } else {
                             ToolRunView(
                                 items: calls,
                                 sessionId: sessionId,
                                 worktreeDir: worktreeDir,
-                                state: expansionState("run-\(calls[0].id)", expandsToolRuns),
+                                state: expansionState("run-\(calls[0].id)", false),
                                 isLive: isLive,
-                                isCompact: kind == .compact,
+                                // A run of one has nothing to fold: "1 step"
+                                // hides a call behind a tap and says less
+                                // than the call's own row does.
+                                isCompact: kind == .compact && calls.count > 1,
                                 expansionState: expansionState
                             )
                         }
@@ -425,38 +496,32 @@ struct TurnStepsView: View {
         return sections
     }
 
-    /// Which run, if any, a call joins. Routine calls share one compact run;
-    /// consecutive passes over one file share an edit run, keyed on the tool
-    /// and the file so a different file — or a read in between — starts a new
-    /// one. Everything else stands alone.
+    /// Which run, if any, a call joins. With tool calls folded, the step row
+    /// stands for the turn's work, so every call joins it — a spawned worker,
+    /// an MCP call and a shell command are all one step, and one tap puts
+    /// them back with their own glyphs and chips. A worker's transcript is
+    /// still a row away, where a row outside the run only made the count lie
+    /// and split one run into three. Edits join too, as they do on the web:
+    /// four passes over a file are as mechanical as the shell calls around
+    /// them, and giving them their own run left a turn as a ladder of
+    /// alternating rows. What an edit adds is its ± lines, which the run's
+    /// own counts carry for the whole stretch.
     private func runKind(_ item: ToolCallItem) -> ToolRunKind {
         guard item.assetPath == nil,
-              item.subagentId == nil,
               // Media the agent asked to show keeps its own row, as everywhere.
               item.result?.featuredMedia?.isEmpty != false
         else { return .single }
-        switch item.presentation.family {
-        case .run, .file, .find, .web:
-            return .compact
-        case .edit:
-            // One file, named by the same derivation the footer's chips use —
-            // a call whose input arrived clamped has none, and keeps its row.
-            guard item.presentation.touchedFiles.count == 1 else { return .single }
-            let file = item.presentation.touchedFiles[0].path
-            return .edits(key: "\(item.presentation.canonical)\u{0}\(file)")
-        default:
-            return .single
-        }
+        return .compact
     }
 }
 
 /// What kind of run a consecutive stretch of tool calls forms.
 private enum ToolRunKind: Equatable {
-    /// Routine calls — shell, reads, searches — behind one "N steps" line.
+    /// Routine calls — shell, reads, searches, edits — behind one "N steps"
+    /// line.
     case compact
-    /// Repeated passes over a single file, behind one edit row.
-    case edits(key: String)
-    /// Stands on its own: an asset write, a worker, anything with media.
+    /// Stands on its own: an asset write, anything with media — a row whose
+    /// content the fold would hide rather than summarize.
     case single
 
     /// Whether a neighbour of the same kind joins, or starts its own run.
@@ -497,6 +562,12 @@ private struct ToolRunView: View {
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(OS1VisualStyle.textDim)
                             .lineLimit(1)
+                        // What the count cannot say: a run that edited files
+                        // moved lines. Summed from the rows themselves, so
+                        // opening the run adds up to what was on it.
+                        if !stats.isEmpty {
+                            LineStatsView(stats: stats)
+                        }
                         Spacer(minLength: 4)
                         if mediaCount > 0 {
                             Text(mediaLabel)
@@ -533,7 +604,7 @@ private struct ToolRunView: View {
                                 item: item,
                                 sessionId: sessionId,
                                 worktreeDir: worktreeDir,
-                                state: expansionState(item.id, item.hasFeaturedMedia)
+                                state: expansionState(item.id, false)
                             )
                         }
                     }
@@ -566,138 +637,26 @@ private struct ToolRunView: View {
     }
 
     private var failureCount: Int { items.filter(\.isError).count }
-    private var mediaCount: Int { items.reduce(0) { $0 + $1.media.count } }
-    private var mediaLabel: String {
-        var media = TranscriptMedia()
-        for item in items {
-            media.images.append(contentsOf: item.media.images)
-            media.videos.append(contentsOf: item.media.videos)
-        }
-        return media.label
+    private var stats: ToolLineStats {
+        items.reduce(ToolLineStats()) { $0 + ($1.presentation.lineStats ?? ToolLineStats()) }
     }
+    private var media: TranscriptMedia {
+        items.reduce(into: TranscriptMedia()) {
+            $0.images.append(contentsOf: $1.media.images)
+            $0.videos.append(contentsOf: $1.media.videos)
+        }
+    }
+    private var mediaCount: Int { media.count }
+    private var mediaLabel: String { media.label }
     private var accessibilityLabel: String {
         var parts = ["\(items.count) grouped steps", label]
+        if !stats.isEmpty {
+            parts.append("plus \(stats.additions), minus \(stats.deletions)")
+        }
         if failureCount > 0 { parts.append("\(failureCount) failed") }
         if mediaCount > 0 { parts.append(mediaLabel) }
         if isLive, items.contains(where: \.isPending) { parts.append("running") }
         return parts.joined(separator: ", ")
-    }
-}
-
-/// Consecutive edits to one file, folded into a single row: the path once,
-/// the summed ± lines, and a count.
-///
-/// Four passes over the same file are one change to a reader, and four rows
-/// repeating the same path push the rest of the turn off a phone screen. The
-/// row keeps the shape of the single edit it stands in for — same glyph, same
-/// name, same dimmed path — so a folded run reads as one more edit rather
-/// than as a new kind of row. Every individual call, with its own diff, is
-/// one tap inside.
-private struct EditRunView: View {
-    let items: [ToolCallItem]
-    let sessionId: String
-    var worktreeDir: String?
-    let state: TurnFoldState
-    let isLive: Bool
-    let expansionState: (String, Bool) -> TurnFoldState
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Button {
-                withAnimation(.snappy(duration: 0.2, extraBounce: 0)) {
-                    state.toggle()
-                }
-            } label: {
-                header
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(accessibilityLabel)
-            .accessibilityHint(state.expanded ? "Hide the edits" : "Show the edits")
-
-            if state.expanded {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(items) { item in
-                        ToolCallRow(
-                            item: item,
-                            sessionId: sessionId,
-                            worktreeDir: worktreeDir,
-                            state: expansionState(item.id, item.hasFeaturedMedia)
-                        )
-                    }
-                }
-                .padding(.leading, 20)
-                .transition(.opacity)
-            }
-        }
-    }
-
-    private var header: some View {
-        HStack(spacing: 7) {
-            Image(systemName: state.expanded ? "chevron.down" : presentation.family.symbol)
-                .font(.system(size: 11))
-                .foregroundStyle(
-                    failureCount > 0 ? OS1VisualStyle.red : OS1VisualStyle.textFaint
-                )
-                .frame(width: 15)
-
-            // Ranked above the path beside it, but not rigid — see the note
-            // on the same line in `ToolCallRow`.
-            Text(presentation.label)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(OS1VisualStyle.textDim)
-                .lineLimit(1)
-                .layoutPriority(1)
-
-            ToolSummaryText(
-                summary: presentation.summary,
-                isPath: presentation.summaryIsPath
-            )
-
-            // The count belongs to the path it multiplies, so it travels with
-            // it rather than sitting out with the trailing meta.
-            Text("×\(items.count)")
-                .font(.caption2)
-                .foregroundStyle(OS1VisualStyle.textFaint)
-                .fixedSize()
-
-            Spacer(minLength: 4)
-
-            if !stats.isEmpty {
-                LineStatsView(stats: stats)
-            }
-            if failureCount > 0 {
-                Text("\(failureCount) failed")
-                    .font(.caption2)
-                    .foregroundStyle(OS1VisualStyle.redInk)
-                    .fixedSize()
-            }
-            if isLive, items.contains(where: \.isPending) {
-                ProgressView()
-                    .controlSize(.mini)
-            }
-        }
-        #if os(iOS)
-        .frame(minHeight: 44)
-        #else
-        .padding(.vertical, 2)
-        #endif
-        .contentShape(Rectangle())
-    }
-
-    private var presentation: ToolPresentation { items[0].presentation }
-
-    /// Summed from what the rows themselves show, so opening the run adds up
-    /// to the counts that were on it.
-    private var stats: ToolLineStats {
-        items.reduce(ToolLineStats()) { $0 + ($1.presentation.lineStats ?? ToolLineStats()) }
-    }
-
-    private var failureCount: Int { items.filter(\.isError).count }
-
-    private var accessibilityLabel: String {
-        var parts = ["\(items.count) \(presentation.label) steps", presentation.summary]
-        if failureCount > 0 { parts.append("\(failureCount) failed") }
-        return parts.filter { !$0.isEmpty }.joined(separator: ", ")
     }
 }
 
@@ -739,17 +698,28 @@ struct TurnFooterView: View {
     /// Whose scratch folder the asset chips open into.
     let sessionId: String
 
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
     /// How many chips a footer draws before it points at the whole list
     /// instead. A refactor can touch thirty files, and thirty wrapped chips
     /// would bury the answer they belong to.
     private static let chipLimit = 8
+
+    /// A phone chip carries a name and its ± counts, so two rarely share a
+    /// line and four became a column under every answer. One name plus the
+    /// count of the rest keeps the footer to a single row, matching the web.
+    private static let phoneChipLimit = 1
+
+    private var chipLimit: Int {
+        horizontalSizeClass == .compact ? Self.phoneChipLimit : Self.chipLimit
+    }
 
     /// Assets come first and are never cut. A touched file is named in the
     /// Changes list too, so the chip is a shortcut; a scratch file the turn
     /// wrote is named nowhere else in the transcript, so the chip is the
     /// only way to it.
     private var shownFiles: [TouchedFile] {
-        Array(footer.files.prefix(max(0, Self.chipLimit - footer.assets.count)))
+        Array(footer.files.prefix(max(0, chipLimit - footer.assets.count)))
     }
 
     private var hiddenFileCount: Int {
@@ -784,10 +754,10 @@ struct TurnFooterView: View {
                 // Wrapped, not scrolled: a strip inside the transcript fights
                 // the vertical drag for the same gesture and hides its
                 // overflow behind an edge with nothing to say it's there, so
-                // the third chip onward simply wasn't reachable. Assets and
-                // edits sit together because both are things the turn
-                // produced, and both open what they name rather than just
-                // labelling it.
+                // the third chip onward simply wasn't reachable. Assets stay
+                // individually named because the transcript has no other way
+                // into them. A phone names the first file and counts the rest,
+                // which opens the complete Changes panel.
                 FlowLayout(spacing: 6) {
                     ForEach(footer.assets, id: \.self) { path in
                         AssetChipView(sessionId: sessionId, path: path)

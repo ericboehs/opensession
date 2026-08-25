@@ -17,13 +17,16 @@ import {
   type PiMcpBridge,
 } from "./pi-mcp-bridge";
 
+let lastToolCallMeta: unknown;
+
 function makeServer(name = "alpha") {
   return createSdkMcpServer({
     name,
     tools: [
-      tool("echo", "Echo the text back", { text: z.string() }, async (args) => ({
-        content: [{ type: "text", text: `echo:${args.text}` }],
-      })),
+      tool("echo", "Echo the text back", { text: z.string() }, async (args, extra: any) => {
+        lastToolCallMeta = extra?._meta;
+        return { content: [{ type: "text", text: `echo:${args.text}` }] };
+      }),
       tool("picture", "Return text plus an image", {}, async () => ({
         content: [
           { type: "text", text: "here you go" },
@@ -182,6 +185,7 @@ describe("registration", () => {
       arguments: { text: "through dispatcher" },
     });
     expect(call.content).toEqual([{ type: "text", text: "echo:through dispatcher" }]);
+    expect(lastToolCallMeta).toMatchObject({ opensessionToolCallId: "call-1" });
   });
 
   test("non-sdk inProcessMcp values are skipped and an empty bridge is fine", async () => {
@@ -194,6 +198,33 @@ describe("registration", () => {
     expect(bridge.tools).toEqual([]);
     expect(bridge.discoveryTools).toEqual([]);
     await bridge.close();
+  });
+
+  test("defers an uncached proxy catalog until mcp_search", async () => {
+    const audits: Array<{ server: string; tool: string }> = [];
+    const bridge = await createPiMcpBridge({
+      mcpServers: [],
+      deniedToolIds: new Set(),
+      callTimeoutMs: 100,
+      inProcessMcp: {
+        deferred: { command: "/definitely/not/an-mcp-server" },
+      },
+      onAudit: (event) => audits.push({ server: event.server, tool: event.tool }),
+    });
+    openBridges.push(bridge);
+
+    expect(bridge.tools).toEqual([]);
+    expect(bridge.discoveryTools.map((tool) => tool.name)).toEqual(["mcp_search", "mcp_call"]);
+    expect(audits).toEqual([]);
+
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      await exec(discoveryToolByName(bridge, "mcp_search"), { query: "anything" });
+    } finally {
+      console.warn = warn;
+    }
+    expect(audits).toEqual([{ server: "deferred", tool: "tools/list" }]);
   });
 });
 

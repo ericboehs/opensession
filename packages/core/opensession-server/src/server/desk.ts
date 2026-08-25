@@ -41,12 +41,10 @@ function readStore(): DeskStore {
 /** Desk turns should feel instant: quick capture / list ops / delegation,
  *  not deep reasoning — so the session defaults to Sonnet on low effort
  *  rather than the interactive dial. /model in the expanded view overrides. */
-const DESK_MODEL = "opencode/anthropic/claude-sonnet-5";
+const DESK_MODEL = "pi/anthropic/claude-sonnet-5";
 const DESK_EFFORT = "low";
 
-/** Get-or-create the user's Desk session (same direct-mint shape as side
- *  sessions: ask mode, no worktree; repo opensession so it reads the Open Session
- *  checkout when it needs context). */
+/** Get or create the user's repo-less Desk session. */
 export function ensureDeskSession(user: string): {
 	sessionId: string;
 	clearedAt?: string;
@@ -55,13 +53,32 @@ export function ensureDeskSession(user: string): {
 	const st = store.users[user] ?? (store.users[user] = {});
 	const existing = st.sessionId ? findSession(st.sessionId) : undefined;
 	if (st.sessionId && existing) {
+		const patch: Partial<NativeSessionFile> = {};
 		// Backfill the fast-model default onto Desks minted before it existed —
 		// but never clobber a deliberate /model choice.
-		if (!existing.model)
-			touchNativeSession(st.sessionId, {
-				model: DESK_MODEL,
-				effort: DESK_EFFORT,
-			});
+		if (!existing.model) {
+			patch.model = DESK_MODEL;
+			patch.effort = DESK_EFFORT;
+		}
+		// A Desk is a standing scratch session, never a project workspace. Older
+		// Desks were stamped with the instance repo, which leaked into the expanded
+		// viewer's breadcrumb and offered sibling tabs that do not belong here.
+		if (
+			!existing.repoLess ||
+			existing.repo ||
+			existing.worktreeDir ||
+			existing.branch ||
+			existing.workspaceId ||
+			existing.attachedRepos?.length
+		) {
+			patch.repo = undefined;
+			patch.repoLess = true;
+			patch.worktreeDir = "";
+			patch.branch = "";
+			patch.workspaceId = null;
+			patch.attachedRepos = [];
+		}
+		if (Object.keys(patch).length > 0) touchNativeSession(st.sessionId, patch);
 		return { sessionId: st.sessionId, clearedAt: st.clearedAt };
 	}
 	const id = newSessionId();
@@ -79,7 +96,7 @@ export function ensureDeskSession(user: string): {
 			worktreeDir: "",
 			mode: "ask" as const,
 			desk: true,
-			repo: "opensession",
+			repoLess: true,
 			createdBy: user,
 			createdAt: now,
 			lastActivity: now,

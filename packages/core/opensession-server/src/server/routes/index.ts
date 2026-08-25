@@ -17,6 +17,7 @@ import { handleSlackComposeRoutes } from "./slack-compose";
 import { handleSystemRoutes } from "./system";
 import { handleSessionAssetsRoutes } from "./session-assets";
 import { handleSessionNotesRoutes } from "./session-notes";
+import { handleSessionContextRoutes } from "./session-context";
 import { handleEffectiveConfigRoutes } from "./effective-config";
 import { handleMentionsRoutes } from "./mentions";
 import { handleMentionPaletteRoutes } from "./mention-palette";
@@ -26,6 +27,7 @@ import { handleSessionsRoutes } from "./sessions";
 import { handleShippedChangeRoutes } from "./shipped-changes";
 import { handlePrRoutes } from "./pr";
 import { handleSessionGitRoutes } from "./session-git";
+import { handleSessionBranchRoutes } from "./session-branch";
 import { handlePreviewRoutes } from "./preview";
 import { handleWorkspaceRoutes } from "./workspace";
 import { handleAutomationsRoutes } from "./automations";
@@ -33,6 +35,7 @@ import { handleHumanAsksRoutes } from "./human-asks";
 import { handleKeychainRoutes } from "./keychain";
 import { handleDeployRoutes } from "./deploys";
 import { handlePeopleRoutes } from "./people";
+import { handleMemoryRoutes } from "./memory";
 import { handlePrefsRoutes } from "./prefs";
 import { handleProfileRoutes } from "./profile";
 import { handleSecurityRoutes } from "./security";
@@ -53,6 +56,7 @@ import { handleSetupRoutes } from "./setup";
 import { handleOs1UpdateRoutes } from "./os1-update";
 import { handleInstanceSettingsRoutes } from "./instance-settings";
 import { handleLiveActivityRoutes } from "./live-activities";
+import { handleIngressRoutes } from "./ingress";
 
 export type { RouteContext, RouteHandler } from "./context";
 
@@ -69,11 +73,13 @@ export const routeHandlers: RouteHandler[] = [
 	handleSystemRoutes,
 	handleOs1UpdateRoutes,
 	handleLiveActivityRoutes,
+	handleIngressRoutes,
 	// Before the generic session routes: /api/sessions/:id/assets* and
 	// /api/sessions/:id/notes are inside their path family and must not be
 	// swallowed by broader matches.
 	handleSessionAssetsRoutes,
 	handleSessionNotesRoutes,
+	handleSessionContextRoutes,
 	handleEffectiveConfigRoutes,
 	handleMentionsRoutes,
 	handleMentionPaletteRoutes,
@@ -83,6 +89,7 @@ export const routeHandlers: RouteHandler[] = [
 	handleSessionsRoutes,
 	handlePrRoutes,
 	handleSessionGitRoutes,
+	handleSessionBranchRoutes,
 	handlePreviewRoutes,
 	handleWorkspaceRoutes,
 	handleAutomationsRoutes,
@@ -90,6 +97,7 @@ export const routeHandlers: RouteHandler[] = [
 	handleKeychainRoutes,
 	handleDeployRoutes,
 	handlePeopleRoutes,
+	handleMemoryRoutes,
 	handlePrefsRoutes,
 	handleProfileRoutes,
 	handleSecurityRoutes,

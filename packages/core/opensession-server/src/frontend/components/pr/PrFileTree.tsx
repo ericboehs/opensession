@@ -1,5 +1,5 @@
 import { FileTree, useFileTree } from "@pierre/trees/react";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import type { PrFile } from "../../lib/types";
 
 const WIDTH_KEY = "opensession-pr-file-tree-width";
@@ -46,7 +46,9 @@ export function PrFileTree({
   const onOpenFileRef = useRef(onOpenFile);
   const rootRef = useRef<HTMLElement | null>(null);
   const stopResizeRef = useRef<(() => void) | null>(null);
-  onOpenFileRef.current = onOpenFile;
+	useLayoutEffect(() => {
+		onOpenFileRef.current = onOpenFile;
+	});
   const { model } = useFileTree({
     paths,
     initialExpandedPaths: allDirectories(paths),
@@ -56,9 +58,13 @@ export function PrFileTree({
     },
   });
 
-  useEffect(() => {
+  const pathsKey = paths.join("\0");
+  const syncPaths = useEffectEvent(() => {
     model.resetPaths(paths, { initialExpandedPaths: allDirectories(paths) });
-  }, [model, paths.join("\0")]);
+  });
+  useEffect(() => {
+    syncPaths();
+  }, [model, pathsKey]);
 
   useEffect(
     () => () => {
@@ -132,7 +138,7 @@ export function PrFileTree({
       ref={rootRef}
       id="pr-file-tree"
       aria-label="Changed files"
-      className="relative flex min-h-0 shrink-0 flex-col bg-raised"
+      className="sticky top-[var(--review-file-tree-top,0px)] mb-2 ml-2 mt-[var(--review-file-tree-gap,8px)] flex max-h-[calc(100dvh-var(--review-file-tree-top,0px)-16px)] min-h-0 shrink-0 flex-col rounded-lg border border-line bg-surface desktop:max-h-[calc(100dvh-var(--desktop-header-h)-var(--review-file-tree-top,0px)-16px)]"
       style={{
         width: renderedWidth,
         maxWidth: `calc(100% - ${MIN_DIFF_WIDTH}px)`,
@@ -200,7 +206,7 @@ export function PrFileTree({
         aria-valuemax={maxWidth}
         aria-valuenow={Math.round(renderedWidth)}
         tabIndex={0}
-        className="absolute inset-y-0 -right-1 z-10 w-[9px] cursor-col-resize touch-none after:absolute after:inset-y-0 after:left-1 after:w-px after:bg-line after:transition-[background-color] after:content-[''] hover:after:bg-accent focus-visible:outline-none focus-visible:after:bg-accent [body.resizing-pr-file-tree_&]:after:bg-accent"
+        className="absolute inset-y-0 -right-1 z-10 w-[9px] cursor-col-resize touch-none after:absolute after:inset-y-1 after:left-1 after:w-px after:bg-transparent after:transition-[background-color] after:content-[''] hover:after:bg-accent focus-visible:outline-none focus-visible:after:bg-accent [body.resizing-pr-file-tree_&]:after:bg-accent"
         onPointerDown={startResize}
         onDoubleClick={() => commitWidth(DEFAULT_WIDTH)}
         onKeyDown={(event) => {

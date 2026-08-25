@@ -62,6 +62,9 @@ export type ModalContentProps = Omit<
 	/** Palette only: adjust the viewport that positions the popup. Useful for a
 	 *  phone sheet that rests on the bottom edge instead of below the top bar. */
 	viewportClassName?: string;
+	/** Keep the dialog subtree mounted while closed. Use for live surfaces whose
+	 *  sockets and local state must survive dismissal. */
+	keepMounted?: boolean;
 	variant?: ModalVariant;
 };
 
@@ -77,6 +80,7 @@ function Content({
 	widthClassName,
 	initialFocus,
 	viewportClassName,
+	keepMounted = false,
 	variant = "centered",
 	...popupProps
 }: ModalContentProps) {
@@ -88,6 +92,9 @@ function Content({
 			// the dialog pinned to the middle while it pops. The palette variant
 			// is laid out by the Viewport instead, so it only owns its own size.
 			className={cn(
+				// Base UI's keepMounted popup receives `hidden` when closed. This
+				// explicit rule outranks display utilities such as `flex`.
+				"[&[hidden]]:hidden",
 				palette
 					? [
 							// `relative` anchors overlays a palette draws inside itself
@@ -121,7 +128,7 @@ function Content({
 							"fixed left-1/2 top-1/2 z-[10001] w-[90vw] -translate-x-1/2 -translate-y-1/2",
 							widthClassName ?? "max-w-[28rem]",
 							"max-h-[85dvh] overflow-y-auto overscroll-contain outline-none",
-							// Match Tella's restrained Dialog2 shell: lifted surface, soft edge,
+							// A restrained dialog shell: lifted surface, soft edge,
 							// and enough radius to read as a modal without becoming a card.
 							// The edge is --dialog-ring rather than the shared hairline: on
 							// a scrim the fill's step above the page all but disappears, so
@@ -143,7 +150,7 @@ function Content({
 		</BaseDialog.Popup>
 	);
 	return (
-		<BaseDialog.Portal>
+		<BaseDialog.Portal keepMounted={keepMounted}>
 			<BaseDialog.Backdrop
 				className={cn(
 					"fixed inset-0 transition-opacity ease-out",
@@ -159,10 +166,14 @@ function Content({
 						? "z-[6000] bg-black/22 backdrop-blur-[6px] duration-[var(--dur-micro)]"
 						: "z-[10000] bg-black/25 backdrop-blur-[1px] duration-[var(--dur)]",
 					// `palette-backdrop` rides along purely as a runtime marker, and
-					// nothing styles it any more: SessionViewer (⌘P) and Sidebar
-					// (archive chord) suppress their window-level shortcuts via
-					// `document.querySelector(".palette-backdrop, …)`, and a palette
-					// must keep matching it. The stylesheet rule it used to carry
+					// nothing styles it any more: the window-level chords (archive,
+					// pin, team note, tab switching, open pull request) decline a
+					// keystroke while one is open, via `blockingOverlayOpen()` in
+					// lib/blocking-overlay, and a palette must keep matching it.
+					// That helper qualifies every marker with `:not([hidden])`, which
+					// is load-bearing rather than tidy: a `keepMounted` palette (the
+					// Desk) is in the DOM from boot, so the unqualified selector read
+					// true forever and every one of those chords was dead. The stylesheet rule it used to carry
 					// said the same z-index/tint/blur written above, plus flex and
 					// padding that are inert on a childless backdrop, so deleting it
 					// changed nothing visually. The NAME is removable once those two
@@ -174,7 +185,7 @@ function Content({
 			{palette ? (
 				<BaseDialog.Viewport
 					className={cn(
-						"fixed inset-0 z-[6001] flex items-start justify-center px-4 pb-4 pt-[11vh] max-[560px]:pt-[7vh]",
+						"fixed inset-0 z-[6001] flex items-start justify-center px-4 pb-4 pt-[11vh] max-[560px]:pt-[7vh] [&[hidden]]:hidden",
 						viewportClassName,
 					)}
 				>
@@ -305,10 +316,12 @@ function Header({
 			{/* `font-normal` is load-bearing, not decoration: base.css runs the app
 			    at weight 500, so a description that merely drops `font-medium`
 			    still renders at the field labels' exact size, weight and colour.
-			    `-mt-2.5` is the shell's `gap-4` minus the 6px this line has always
-			    sat below the title. */}
+			    The header's -mb-3 already reclaims 12px of the shell's gap. Pulling
+			    this line back only 2px leaves it 2px below the sticky bar's painted
+			    edge; the old -mt-2.5 moved its first 6px behind that opaque bar and
+			    clipped the tops of every standard modal description. */}
 			{description && (
-				<BaseDialog.Description className="m-0 -mt-2.5 text-pretty text-supporting font-normal leading-relaxed text-dim">
+				<BaseDialog.Description className="m-0 -mt-0.5 text-pretty text-supporting font-normal leading-relaxed text-dim">
 					{description}
 				</BaseDialog.Description>
 			)}

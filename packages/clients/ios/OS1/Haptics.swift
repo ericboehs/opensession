@@ -61,7 +61,7 @@ enum Haptics {
     static func prepare() {
         guard isEnabled else { return }
         #if os(iOS)
-        impactGenerator(for: .soft).prepare()
+        impactGenerator(for: .medium).prepare()
         notificationGenerator.prepare()
         #endif
     }
@@ -72,7 +72,9 @@ enum Haptics {
         #if os(iOS)
         switch cue {
         case .send:
-            impact(.soft, intensity: 0.75)
+            // Firm enough to confirm the message left the composer, without
+            // feeling like the heavier stop action beside it.
+            impact(.medium, intensity: 0.9)
         case .commit:
             notificationGenerator.notificationOccurred(.success)
             notificationGenerator.prepare()
@@ -140,7 +142,7 @@ extension Haptics.Cue {
     /// which one a call site uses is a question of view lifetime, not of feel.
     var feedback: SensoryFeedback {
         switch self {
-        case .send: .impact(flexibility: .soft, intensity: 0.75)
+        case .send: .impact(weight: .medium, intensity: 0.9)
         case .commit: .success
         case .stop: .impact(weight: .heavy, intensity: 0.6)
         case .selection: .selection

@@ -2,9 +2,9 @@
  * Prompt templates for the github PR agent.
  *
  * IMPORTANT: the review prompt is hand-authored and must NEVER invoke the bare
- * `/code-review` slash command — inside a tella-fusion worktree that name resolves
- * to an interactive project skill that calls AskUserQuestion, which is hard-denied
- * in headless runs and would stall the run. `/simplify` is safe (resolves to the
+ * `/code-review` slash command. A repository can define a project skill of that
+ * name, and an interactive one calls AskUserQuestion, which is hard-denied in
+ * headless runs and would stall the run. `/simplify` is safe (resolves to the
  * built-in, which auto-applies) and is used directly by the simplify behavior.
  */
 import { defaultRepo, personaCompany, personaName } from "../../server/config";

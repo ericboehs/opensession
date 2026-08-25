@@ -278,6 +278,8 @@ async function resolveTarget(
         argv: [
           "ssh",
           "-tt",
+          "-p",
+          String(target.port),
           "-i",
           target.privateKeyPath,
           "-o",

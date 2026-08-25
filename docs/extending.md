@@ -143,10 +143,17 @@ code, no registration. This is the cheapest way to encode "how we do X here" —
 a review checklist, a deployment runbook, a design vocabulary.
 
 Generic skills shipped by Open Session live in this repository under
-`.agents/skills/`. The installer links them into
-`~/.config/opencode/skills/`, so every project can use them without keeping
-source files under `~/.claude/skills`. Product-specific workflows belong in
-that product's repository instead.
+`.agents/skills/`, and every run loads that directory whatever repo the
+session is working on. A session's own checkout adds to the set with its
+`.claude/skills/` or `.agents/skills/`, and a name the checkout defines beats
+the shipped one. Product-specific workflows belong in that product's
+repository instead.
+
+The list of directories is `src/server/skill-paths.ts`, read by both the runner
+and the composer's "/" menu so the menu cannot offer a skill a turn would not
+load. Start a message with a skill's name to run it: `/bro`, or `/skill:bro`
+if you prefer pi's own spelling. A skill with `disable-model-invocation: true`
+stays out of the system prompt and only runs when someone asks for it by name.
 
 If you catch yourself pasting the same three paragraphs into prompts, that is a
 skill.
@@ -162,7 +169,7 @@ publishable, and it deliberately carries no runtime code. See
 
 ## What not to extend
 
-**The runner.** `agent-runner.ts`, `opencode-runner.ts` and `host-client.ts` are
+**The runner.** `agent-runner.ts`, `pi-runner.ts` and `host-client.ts` are
 runner internals with a lot of load-bearing behaviour around restarts,
 reattachment and account rotation. Changes there need a real restart and are easy
 to get subtly wrong — a mistake usually shows up as sessions that look fine and

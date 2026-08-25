@@ -24,7 +24,7 @@ enum NoteText {
 
     /// Mirrors `NOTE_TOKEN_RE` on the web, with one deliberate change: the
     /// mention has to start the string or follow a character that isn't part
-    /// of a word. Without that guard `kent@tella.com` bolds `@tella.com`,
+    /// of a word. Without that guard `sam@example.com` bolds `@example.com`,
     /// which the web does today and which reads as a mention of a person who
     /// does not exist.
     ///

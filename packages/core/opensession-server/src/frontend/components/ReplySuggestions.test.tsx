@@ -4,9 +4,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { composerBoxExpanded } from "../lib/composer-classes";
 import type { ReplySuggestion } from "../lib/reply-suggestions";
 import {
+	ACTION_CLEARANCE,
+	ACTION_WITH_REPLIES_CLEARANCE,
+	SCROLL_ACTION_CLEARANCE,
 	SUGGESTIONS_CLEARANCE,
+	VIEWER_ACTION_ROW,
+	VIEWER_ACTION_ROW_WITH_SCROLL,
 	VIEWER_SUGGESTIONS,
 	VIEWER_SUGGESTIONS_ROW,
+	VIEWER_SUGGESTIONS_ROW_INLINE,
 } from "../lib/session-viewer-classes";
 
 const { ReplySuggestions } = await import("./ReplySuggestions");
@@ -41,6 +47,9 @@ describe("ReplySuggestions", () => {
 
 		expect(html).toContain("overflow-x-auto");
 		expect(html).toContain("whitespace-nowrap");
+		expect(html).toContain(
+			"data-[overflow-end]:[--reply-fade-end:transparent]",
+		);
 		expect(html).not.toContain("flex-wrap");
 	});
 
@@ -62,19 +71,63 @@ describe("ReplySuggestions", () => {
 		);
 	});
 
-	test("the transcript keeps clear of the pills, not just of the row", () => {
-		// The row floats on the transcript, so the only thing holding the last
+	test("the transcript keeps clear of whatever the band is carrying", () => {
+		// The band floats on the transcript, so the only thing holding the last
 		// line of an answer out from under it is this padding. It has to cover
-		// the pills' own height plus however far they stand off the composer, or
-		// the standoff eats into the 16px the reading is supposed to end on.
+		// the tallest thing in the band plus however far the band stands off the
+		// composer, or the standoff eats into the 16px the reading ends on.
 		const PILL_HEIGHT = 28; // `h-7` on the chip in ReplySuggestions.
+		const SCROLL_HEIGHT = 32; // `min-h-8` on the reading action.
+		const NEXT_HEIGHT = 40; // `min-h-10` on the Next button in SessionViewer.
+		const NEXT_HEIGHT_PHONE = 48; // `h-12` on the phone action bar.
+		const PHONE_ROW_GAP = 8;
 		const SPACING_STEP = 4; // Tailwind's px-anchored scale (styles/tailwind.css).
 		const standoff =
 			Number(/\spb-(\d+(?:\.\d+)?)\s/.exec(VIEWER_SUGGESTIONS)?.[1]) *
 			SPACING_STEP;
 
 		expect(standoff).toBeGreaterThan(0);
-		expect(SUGGESTIONS_CLEARANCE).toBe(`${PILL_HEIGHT + standoff}px`);
+		expect(SUGGESTIONS_CLEARANCE).toBe(
+			`[--suggestions-under:${PILL_HEIGHT + standoff}px]`,
+		);
+		expect(SCROLL_ACTION_CLEARANCE).toBe(
+			`[--suggestions-under:${SCROLL_HEIGHT + standoff}px]`,
+		);
+		expect(ACTION_CLEARANCE).toContain(
+			`[--suggestions-under:${NEXT_HEIGHT + standoff}px]`,
+		);
+		expect(ACTION_CLEARANCE).toContain(
+			`phone:[--suggestions-under:${NEXT_HEIGHT_PHONE + standoff}px]`,
+		);
+		expect(ACTION_WITH_REPLIES_CLEARANCE).toContain(
+			`phone:[--suggestions-under:${PILL_HEIGHT + PHONE_ROW_GAP + NEXT_HEIGHT_PHONE + standoff}px]`,
+		);
+		expect(ACTION_CLEARANCE).toContain(
+			"phone:[body.kb-open_&]:[--suggestions-under:0px]",
+		);
+		expect(ACTION_WITH_REPLIES_CLEARANCE).toContain(
+			`phone:[body.kb-open_&]:[--suggestions-under:${PILL_HEIGHT + standoff}px]`,
+		);
+	});
+
+	test("desktop keeps Next on the input's right edge", () => {
+		expect(VIEWER_ACTION_ROW).toContain("justify-end");
+	});
+
+	test("desktop centers the reading action between replies and Next", () => {
+		expect(VIEWER_ACTION_ROW_WITH_SCROLL).toContain("desktop:grid");
+		expect(VIEWER_ACTION_ROW_WITH_SCROLL).toContain(
+			"desktop:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]",
+		);
+	});
+
+	test("phone stacks chips above the centered action bar", () => {
+		expect(VIEWER_ACTION_ROW).toContain("phone:flex-col");
+		expect(VIEWER_ACTION_ROW).toContain("phone:gap-2");
+		expect(VIEWER_ACTION_ROW).toContain("phone:pr-0");
+
+		// Longer desktop choices still yield rather than push Next off the edge.
+		expect(VIEWER_SUGGESTIONS_ROW_INLINE).toContain("min-w-0");
 	});
 
 	test("renders nothing at all when there is nothing to suggest", () => {

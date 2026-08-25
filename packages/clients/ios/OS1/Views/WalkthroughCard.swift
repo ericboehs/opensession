@@ -150,7 +150,7 @@ struct WalkthroughCard: View {
     private var accessibilityLabel: String {
         var parts = ["Walkthrough"]
         let contents = contentsLabel
-        if !contents.isEmpty { parts.append(contents.replacingOccurrences(of: " · ", with: ", ")) }
+        if !contents.isEmpty { parts.append(contents.replacing(" · ", with: ", ")) }
         return parts.joined(separator: ", ")
     }
 }
@@ -167,7 +167,7 @@ private struct WalkthroughThumbnailStrip: View {
     private static let tile = CGSize(width: 168, height: 160)
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        ScrollView(.horizontal) {
             // Keep each pair tight and leave a larger gap between changes.
             HStack(alignment: .top, spacing: 14) {
                 ForEach(stills) { shot in
@@ -191,6 +191,7 @@ private struct WalkthroughThumbnailStrip: View {
             }
             .padding(.vertical, 1)
         }
+        .scrollIndicators(.hidden)
         // A clipped next tile communicates that the strip continues.
         .padding(.horizontal, -WalkthroughCard.padding)
         .contentMargins(.horizontal, WalkthroughCard.padding, for: .scrollContent)
@@ -354,6 +355,7 @@ private struct MediaImage: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!failed)
+                .accessibilityLabel(failed ? "Retry image" : "Loading image")
             }
         }
         .overlay(alignment: .topLeading) {

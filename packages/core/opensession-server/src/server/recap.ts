@@ -24,7 +24,7 @@
  */
 
 import { oneShot } from "./one-shot";
-import { storeAppendUserLineEarly, transcriptLineRecap } from "./opencode-transcript";
+import { storeAppendUserLineEarly, transcriptLineRecap } from "./transcript-persistence";
 import { getRunState } from "./run-state";
 import { findSession } from "./session-cache";
 import { formatExcerpt, transcriptExcerpt } from "./transcript-excerpt";

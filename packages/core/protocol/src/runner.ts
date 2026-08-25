@@ -128,6 +128,8 @@ export interface RunHostSpec {
 export interface RunHostMeta {
   hostId: string;
   pid: number;
+  bootId?: string;
+  startTicks?: string;
   osSessionId: string;
   startedAt: string;
   engineSessionId?: string;
@@ -179,6 +181,9 @@ type HostToClientPayload =
    * delivery after the run instead — never drop a user's message.
    */
   | { t: "steer_failed"; text: string }
+  /** Reply to a retract_steer request. False means the message already crossed
+   * the engine's step boundary, so the client must not restore it as a draft. */
+  | { t: "steer_retracted"; requestId: string; steerId: string; retracted: boolean }
   /** Run generator finished; meta.done is written. Client should ack with shutdown. */
   | { t: "end"; done?: StreamEvent }
   /**
@@ -211,8 +216,22 @@ type HostToClientPayload =
 
 export type ClientToHostMsg =
   | { t: "ask_answer"; askId: string; result: AskResult }
-  | { t: "steer"; text: string }
-  | { t: "interrupt_steer"; text: string }
+  /**
+   * Mid-run steer. `images` carries composer attachments the same way the
+   * opening prompt's `RunHostSpec.images` does, so a screenshot folds into
+   * the live turn instead of waiting for the run to end. It was text-only
+   * until 2026-08-19, which made every attachment unsteerable once local
+   * runs moved into detached hosts: the server declined the steer rather
+   * than send one that would silently drop the picture, and the message
+   * bounced back to the queue with a notice. Hosts built before that field
+   * existed ignore it, which degrades to the old behavior rather than
+   * breaking.
+   */
+  | { t: "steer"; text: string; images?: ImageInput[]; steerId?: string }
+  /** Remove one exact steer while it is still in the engine queue. The host
+   * acknowledges after the engine has either removed it or already delivered it. */
+  | { t: "retract_steer"; requestId: string; steerId: string }
+  | { t: "interrupt_steer"; text: string; images?: ImageInput[] }
   | { t: "cancel" }
   /** Ack of `end`: everything consumed, host may exit and the client cleans up the dir. */
   | { t: "shutdown" }
@@ -242,20 +261,36 @@ export type ClientToHostMsg =
  */
 export function ndjsonReader(
   onMsg: (msg: any) => void,
-  label: string
+  label: string,
+  options?: {
+    maxBufferedBytes?: number;
+    onInvalid?: () => void;
+  },
 ): (data: Buffer | string) => void {
   let fragments: Buffer[] = [];
   let fragmentBytes = 0;
-  const emit = (line: Buffer) => {
+  let invalid = false;
+  const fail = () => {
+    invalid = true;
+    options?.onInvalid?.();
+  };
+  const emit = (line: Buffer): boolean => {
     const text = line.toString();
-    if (!text.trim()) return;
+    if (!text.trim()) return true;
     try {
       onMsg(JSON.parse(text));
+      return true;
     } catch (e) {
+      if (options?.onInvalid) {
+        fail();
+        return false;
+      }
       console.error(`[${label}] dropping malformed NDJSON line:`, e);
+      return true;
     }
   };
   return (data) => {
+    if (invalid) return;
     const chunk = typeof data === "string" ? Buffer.from(data) : data;
     let start = 0;
     for (;;) {
@@ -263,19 +298,37 @@ export function ndjsonReader(
       if (newline < 0) {
         if (start < chunk.length) {
           const fragment = Buffer.from(chunk.subarray(start));
+          if (
+            options?.maxBufferedBytes !== undefined &&
+            fragmentBytes + fragment.length > options.maxBufferedBytes
+          ) {
+            fail();
+            fragments = [];
+            fragmentBytes = 0;
+            return;
+          }
           fragments.push(fragment);
           fragmentBytes += fragment.length;
         }
         return;
       }
       const tail = chunk.subarray(start, newline);
+      if (
+        options?.maxBufferedBytes !== undefined &&
+        fragmentBytes + tail.length > options.maxBufferedBytes
+      ) {
+        fail();
+        fragments = [];
+        fragmentBytes = 0;
+        return;
+      }
       if (fragments.length) {
         const line = Buffer.concat([...fragments, tail], fragmentBytes + tail.length);
         fragments = [];
         fragmentBytes = 0;
-        emit(line);
+        if (!emit(line)) return;
       } else {
-        emit(tail);
+        if (!emit(tail)) return;
       }
       start = newline + 1;
     }

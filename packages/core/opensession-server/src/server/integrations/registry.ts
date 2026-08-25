@@ -40,8 +40,18 @@ export type IntegrationEnv = {
   example?: string;
   /** Without this the integration cannot function at all. */
   required?: boolean;
+  /** Required only when another credential is absent. */
+  requiredWhen?: (present: (name: string) => boolean) => boolean;
   description: string;
 };
+
+/** Resolve conditional and unconditional credential requirements consistently. */
+export function envRequired(
+  env: IntegrationEnv,
+  present: (name: string) => boolean,
+): boolean {
+  return env.requiredWhen ? env.requiredWhen(present) : !!env.required;
+}
 
 export type IntegrationLink = {
   label: string;
@@ -119,9 +129,14 @@ export const INTEGRATIONS: IntegrationSpec[] = [
     env: [
       { name: "SLACK_BOT_TOKEN", example: "xoxb-", required: true, description: "bot user token" },
       {
+        name: "SLACK_APP_TOKEN",
+        example: "xapp-",
+        description: "app-level token with connections:write for Socket Mode",
+      },
+      {
         name: "SLACK_SIGNING_SECRET",
-        required: true,
-        description: "verifies inbound event signatures",
+        requiredWhen: (present) => !present("SLACK_APP_TOKEN"),
+        description: "signing secret for HTTP event requests",
       },
       { name: "ALLOWED_SLACK_USER_ID", description: "restricts admin tools to one user" },
       { name: "WORKTREE_HOOK_SECRET", description: "shared secret for worktree hooks" },
@@ -181,20 +196,8 @@ export const INTEGRATIONS: IntegrationSpec[] = [
     doc: "docs/setup/github.md",
     enableFlag: "ENABLE_GITHUB_AGENT",
     env: [
-      {
-        name: "GITHUB_API_TOKEN",
-        required: true,
-        description: "token for PR reads/writes via the gh CLI",
-      },
       { name: "GITHUB_WEBHOOK_SECRET", description: "verifies inbound webhook signatures" },
-      { name: "GITHUB_BOT_LOGIN", description: "login PRs are attributed to" },
-      { name: "GITHUB_MENTION_HANDLES", description: "handles that trigger the PR agent" },
-    ],
-    links: [
-      {
-        label: "Create fine-grained token",
-        url: "https://github.com/settings/personal-access-tokens/new",
-      },
+      { name: "GITHUB_MENTION_HANDLES", description: "additional handles that trigger the PR agent" },
     ],
     load: async (ctx) => {
       const { GithubAgent } = await import("../../agents/github/index");

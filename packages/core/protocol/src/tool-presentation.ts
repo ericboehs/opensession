@@ -28,7 +28,7 @@ import type { TranscriptEntry } from "./session";
 import { currentPlanItem, parsePlanItems, planDoneCount } from "./todo-plan";
 
 /**
- * Engine dialects for the same tool. Claude Code, opencode and codex all name
+ * Engine dialects for the same tool. Claude Code, pi and codex all name
  * the basics differently; folding them onto one canonical name is what lets
  * one set of summaries, icons and detail renderers cover all three.
  */
@@ -43,11 +43,17 @@ const TOOL_ALIASES: Record<string, string> = {
   bash: "Bash",
   shell: "Bash",
   exec_command: "Bash",
+  notebook_edit: "NotebookEdit",
+  str_replace_editor: "Edit",
   grep: "Grep",
+  find: "Find",
   glob: "Glob",
   list: "Glob",
+  ls: "Glob",
   webfetch: "WebFetch",
+  web_fetch: "WebFetch",
   websearch: "WebSearch",
+  web_search: "WebSearch",
   task: "Task",
   skill: "Skill",
   todowrite: "TodoWrite",
@@ -73,7 +79,7 @@ export function canonicalToolName(name?: string): string {
 }
 
 /**
- * "mcp__linear__list_issues" (Claude SDK) or "linear_list_issues" (opencode's
+ * "mcp__linear__list_issues" (Claude SDK) or "linear_list_issues" (pi's
  * flattened form) → { server: "linear", tool: "list_issues" }. Native tools are
  * excluded by name first, so "apply_patch" doesn't read as an "apply" server.
  */
@@ -119,6 +125,56 @@ export function mcpServerDisplayName(name: string): string {
     .join(" ");
 }
 
+/**
+ * Open Session's MCP servers form a real hierarchy: `opensession-workflows`
+ * is Workflows inside Open Session. Other hyphenated server ids are product
+ * names, not evidence of nesting, so `screen-studio` stays one part.
+ */
+function mcpServerParts(name: string): string[] {
+  const prefix = "opensession-";
+  return name.toLowerCase().startsWith(prefix) && name.length > prefix.length
+    ? ["Open Session", mcpServerDisplayName(name.slice(prefix.length))]
+    : [mcpServerDisplayName(name)];
+}
+
+function normalizedIdentifierWords(value: string): string[] {
+  return identifierWords(value).map((word) =>
+    word.toLowerCase().replace(/s$/, ""),
+  );
+}
+
+/**
+ * Drop a repeated scope from either side of a tool name. Open Session's tool
+ * ids use both noun-first (`workflow_status`) and verb-first (`get_session`)
+ * forms; in the hierarchy both become the useful leaf (`Status`, `Get`).
+ */
+function withoutRepeatedScope(words: string[], scope: string): string[] {
+  const normalized = words.map((word) => word.toLowerCase().replace(/s$/, ""));
+  const scopeWords = normalizedIdentifierWords(scope);
+  if (words.length <= scopeWords.length || !scopeWords.length) return words;
+  const sameAt = (offset: number) =>
+    scopeWords.every((word, index) => normalized[offset + index] === word);
+  if (sameAt(0)) return words.slice(scopeWords.length);
+  const tail = words.length - scopeWords.length;
+  return sameAt(tail) ? words.slice(0, tail) : words;
+}
+
+/**
+ * What a row calls an MCP tool, most general part first:
+ * `opensession-workflows` + `workflow_status` → ["Open Session", "Workflows",
+ * "Status"]. Parts rather than a string let clients quiet repeated context
+ * and keep the action at full strength.
+ */
+export function mcpLabelParts(server: string, tool: string): string[] {
+  const parts = mcpServerParts(server);
+  const scope = parts[parts.length - 1] ?? "";
+  const rawWords = identifierWords(tool);
+  const words = parts.length > 1
+    ? withoutRepeatedScope(rawWords, scope)
+    : rawWords;
+  return [...parts, mcpToolDisplayName(words.join("_") || tool)];
+}
+
 /** "start_preview" → "Start preview". */
 export function mcpToolDisplayName(name: string): string {
   const words = identifierWords(name).map(
@@ -134,9 +190,43 @@ export function mcpToolDisplayName(name: string): string {
 export function toolDisplayName(name?: string): string {
   if (!name) return "Tool";
   const mcp = parseMcpTool(name);
-  return mcp
-    ? `${mcpServerDisplayName(mcp.server)} · ${mcpToolDisplayName(mcp.tool)}`
-    : name;
+  return mcp ? mcpLabelParts(mcp.server, mcp.tool).join(" · ") : name;
+}
+
+/**
+ * The call a `tool_use` is really about, unwrapped from pi's dispatcher.
+ *
+ * Pi does not hand the model one tool per bridged MCP tool: the catalog stays
+ * server-side and is reached through `mcp_call` (createPiMcpBridge), so a
+ * workflow status arrives as `{name:"opensession-workflows_workflow_status",
+ * arguments:{…}}` and the tool that was called is a level down. A row that
+ * reads the envelope labels every MCP call in the transcript "MCP · Call" and
+ * spends its one summary line on `name:` and `arguments:`, which is the same
+ * row for a Slack post, a session lookup and a papercut.
+ *
+ * Unwrapping here means every derivation below (name, family, detail, asset
+ * path) sees the real call, on every client and retroactively on transcripts
+ * already stored. The server ledger unwraps the same shape for its own reasons
+ * (observedToolCall, turn-outcome.ts).
+ */
+export function unwrapMcpDispatcher(
+  toolName: string,
+  input: unknown,
+): { toolName: string; input: unknown } {
+  if (toolName.toLowerCase() !== "mcp_call") return { toolName, input };
+  const outer =
+    input && typeof input === "object" && !Array.isArray(input)
+      ? (input as Record<string, unknown>)
+      : {};
+  const inner = outer.name;
+  // A dispatcher call naming no tool is a malformed engine-side call; leave it
+  // as the envelope it is rather than invent a tool it never reached.
+  if (typeof inner !== "string" || !inner) return { toolName, input };
+  const args = outer.arguments;
+  return {
+    toolName: inner,
+    input: args && typeof args === "object" && !Array.isArray(args) ? args : {},
+  };
 }
 
 /**
@@ -171,6 +261,7 @@ export function toolFamily(toolName: string): ToolFamily {
     case "FileChange":
       return "edit";
     case "Grep":
+    case "Find":
     case "Glob":
     case "LSP":
     case "ToolSearch":
@@ -184,6 +275,10 @@ export function toolFamily(toolName: string): ToolFamily {
       return "agent";
     case "Skill":
       return "skill";
+    case "TaskCreate":
+    case "TaskUpdate":
+    case "TaskList":
+    case "TaskGet":
     case "TodoWrite":
       return "checklist";
     default:
@@ -238,7 +333,7 @@ export function toolInputString(inp: Record<string, unknown>, ...keys: string[])
 }
 
 export const toolFilePath = (inp: Record<string, unknown>) =>
-  toolInputString(inp, "file_path", "filePath");
+  toolInputString(inp, "file_path", "filePath", "path", "notebook_path", "notebookPath");
 export const toolCommand = (inp: Record<string, unknown>) =>
   toolInputString(inp, "command", "cmd");
 
@@ -251,7 +346,11 @@ export const toolCommand = (inp: Record<string, unknown>) =>
  * means, and the row that names an artifact is the only place a reader can be
  * offered a way into it.
  */
-export function assetToolPath(toolName: string, input: unknown): string {
+export function assetToolPath(rawName: string, rawInput: unknown): string {
+  // Unwrapped here as well as in `toolPresentation`, because the callers are a
+  // tool row and a turn footer that both read the entry's own toolName: an
+  // asset written through pi's dispatcher would otherwise offer no way in.
+  const { toolName, input } = unwrapMcpDispatcher(rawName, rawInput);
   if (!input || typeof input !== "object") return "";
   const mcp = parseMcpTool(toolName);
   if (mcp?.server !== "opensession-assets") return "";
@@ -364,6 +463,7 @@ export function toolDetail(toolName: string, input: unknown): ToolDetail {
       const path = toolInputString(inp, "path");
       return { kind: "text", text: `/${pattern}/`, ...(path ? { path } : {}) };
     }
+    case "Find":
     case "Glob": {
       const pattern = typeof inp.pattern === "string" ? inp.pattern : "";
       const path = toolInputString(inp, "path");
@@ -472,24 +572,29 @@ export function toolLineStats(
   for (const value of edits) {
     if (!value || typeof value !== "object") continue;
     const edit = value as Record<string, unknown>;
-    additions += lineCount(toolInputString(edit, "new_string", "newString", "content"));
-    deletions += lineCount(toolInputString(edit, "old_string", "oldString"));
+    additions += lineCount(
+      toolInputString(edit, "new_string", "newString", "newText", "content"),
+    );
+    deletions += lineCount(toolInputString(edit, "old_string", "oldString", "oldText"));
   }
   return additions || deletions ? { additions, deletions } : null;
 }
 
 /** Everything a client needs to draw a tool row, from the call alone. */
 export function toolPresentation(entry: TranscriptEntry): ToolPresentation {
-  const raw = entry.toolName || "";
+  const { toolName: raw, input } = unwrapMcpDispatcher(
+    entry.toolName || "",
+    entry.toolInput,
+  );
   const mcp = raw ? parseMcpTool(raw) : null;
   const canonical = canonicalToolName(raw);
-  const stats = toolLineStats(raw, entry.toolInput);
+  const stats = toolLineStats(raw, input);
   return {
     canonical,
     ...(mcp ? { mcpServer: mcp.server } : {}),
     name: mcp ? mcp.tool : canonical,
     family: toolFamily(raw),
-    detail: toolDetail(raw, entry.toolInput),
+    detail: toolDetail(raw, input),
     ...(stats ? { lineStats: stats } : {}),
   };
 }

@@ -10,7 +10,7 @@ import Foundation
 ///
 /// The directory is also what merges one person's spellings: chat integrations
 /// write a full name where the web writes a first name, and both must answer
-/// to the same option. Same rules as the web's `lib/archived-owner`, which is
+/// to the same option. Same rules as the web's `lib/session-owner`, which is
 /// why the two screens offer the same people.
 ///
 /// `roster` is `TeamDirectory.displayNames`: first name → that person's own

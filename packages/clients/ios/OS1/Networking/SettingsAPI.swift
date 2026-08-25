@@ -145,7 +145,7 @@ enum SettingsAPI {
     }
 
     /// Per-user sidebar hides, shared with the web sidebar (row key → ISO
-    /// hidden-at). PUT replaces the whole map, like pins and snoozes.
+    /// hidden-at). Writes send only the keys changed by this client.
     static func hides(user: String) async throws -> [String: String] {
         struct Response: Decodable, Sendable { var hides: [String: String]? }
         let response: Response = try await request("/api/hides", query: ["user": user])
@@ -153,11 +153,15 @@ enum SettingsAPI {
     }
 
     @discardableResult
-    static func saveHides(user: String, hides: [String: String]) async throws -> [String: String] {
+    static func saveHides(
+        user: String,
+        set: [String: String],
+        remove: [String]
+    ) async throws -> [String: String] {
         struct Response: Decodable, Sendable { var hides: [String: String]? }
-        let body: [String: Any] = ["user": user, "hides": hides]
+        let body: [String: Any] = ["user": user, "set": set, "remove": remove]
         let response: Response = try await request("/api/hides", method: "PUT", body: body)
-        return response.hides ?? hides
+        return response.hides ?? [:]
     }
 
     /// Per-user sidebar lanes, shared with the web sidebar (session id → the
@@ -205,6 +209,30 @@ enum SettingsAPI {
         let body: [String: Any] = ["user": user, "pins": pins]
         let response: Response = try await request("/api/pins", method: "PUT", body: body)
         return response.pins ?? pins
+    }
+
+    /// Per-user workspace snoozes, shared with the web sidebar. Values are an
+    /// ISO wake time or `someday`; writes contain only changed row keys.
+    static func snoozes(user: String) async throws -> [String: String] {
+        struct Response: Decodable, Sendable { var snoozes: [String: String]? }
+        let response: Response = try await request("/api/snoozes", query: ["user": user])
+        return response.snoozes ?? [:]
+    }
+
+    @discardableResult
+    static func saveSnoozes(
+        user: String,
+        set: [String: String],
+        remove: [String]
+    ) async throws -> [String: String] {
+        struct Response: Decodable, Sendable { var snoozes: [String: String]? }
+        let body: [String: Any] = ["user": user, "set": set, "remove": remove]
+        let response: Response = try await request(
+            "/api/snoozes",
+            method: "PUT",
+            body: body
+        )
+        return response.snoozes ?? [:]
     }
 
     /// Per-user read marks, shared with the web sidebar (session id → the ISO
@@ -255,6 +283,22 @@ enum SettingsAPI {
             body: body,
             connection: connection
         )
+    }
+
+    static func personalOutputStyle(user: String) async throws -> String {
+        struct Response: Decodable, Sendable { var outputStyle: String? }
+        let response: Response = try await request("/api/personal-output-style", query: ["user": user])
+        return response.outputStyle == "concise" ? "concise" : "default"
+    }
+
+    static func setPersonalOutputStyle(user: String, outputStyle: String) async throws -> String {
+        struct Response: Decodable, Sendable { var outputStyle: String? }
+        let response: Response = try await request(
+            "/api/personal-output-style",
+            method: "PUT",
+            body: ["user": user, "outputStyle": outputStyle]
+        )
+        return response.outputStyle == "concise" ? "concise" : "default"
     }
 
     static func personalPrompt(user: String) async throws -> String {
@@ -309,6 +353,11 @@ enum SettingsAPI {
 
     static func codexAccounts() async throws -> [ProviderAccount] {
         let response: ProviderAccountsResponse = try await request("/api/codex-accounts")
+        return response.accounts ?? []
+    }
+
+    static func refreshCodexAccounts() async throws -> [ProviderAccount] {
+        let response: ProviderAccountsResponse = try await request("/api/codex-accounts/refresh", method: "POST")
         return response.accounts ?? []
     }
 

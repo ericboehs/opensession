@@ -5,6 +5,11 @@ import { writeJsonAtomic } from "./shared/atomic-write";
 import { NAME_KEYED_STORES, renameUserState } from "./shared/user-store";
 import { getPins, setPins } from "./pins";
 import { getLanes, setLanes } from "./lanes";
+import {
+	getPersonalOutputStyle,
+	personalOutputStyleNoteFor,
+	setPersonalOutputStyle,
+} from "./personal-output-style";
 import { getPersonalPrompt, setPersonalPrompt } from "./personal-prompts";
 
 // Every per-user store resolves its dir per call, so pointing the state root
@@ -28,7 +33,12 @@ function seedLegacy(store: string, stem: string, value: unknown): void {
 
 describe("per-user flat-file stores", () => {
 	beforeEach(() => {
-		for (const store of ["pins", "lanes", "personal-prompts"]) {
+		for (const store of [
+			"pins",
+			"lanes",
+			"personal-prompts",
+			"personal-output-styles",
+		]) {
 			rmSync(`${root}/.opensession-${store}`, { recursive: true, force: true });
 		}
 	});
@@ -75,9 +85,22 @@ describe("per-user flat-file stores", () => {
 		expect(getPersonalPrompt("Kentaro")).toBe("be terser");
 	});
 
+	test("personal output styles are identity-keyed and fail closed", () => {
+		expect(getPersonalOutputStyle("Kentaro")).toBe("default");
+		expect(setPersonalOutputStyle("Kentaro", "concise")).toBe("concise");
+		expect(getPersonalOutputStyle("kentaro")).toBe("concise");
+		expect(personalOutputStyleNoteFor("Kentaro")).toContain(
+			"Lead with the result",
+		);
+		expect(setPersonalOutputStyle("Kentaro", "unknown")).toBe("default");
+		expect(personalOutputStyleNoteFor("Kentaro")).toBe("");
+	});
+
 	test("a nameless user stores nothing", () => {
 		expect(setPersonalPrompt("", "ignored")).toBe("");
 		expect(getPersonalPrompt("")).toBe("");
+		expect(setPersonalOutputStyle("", "concise")).toBe("default");
+		expect(getPersonalOutputStyle("")).toBe("default");
 	});
 
 	test("a missing store reads as empty", () => {
@@ -91,7 +114,11 @@ describe("per-user flat-file stores", () => {
 // these stores file people under, so the state has to travel with the person.
 describe("renameUserState", () => {
 	beforeEach(() => {
-		for (const store of [...NAME_KEYED_STORES, "personal-prompts"]) {
+		for (const store of [
+			...NAME_KEYED_STORES,
+			"personal-prompts",
+			"personal-output-styles",
+		]) {
 			rmSync(`${root}/.opensession-${store}`, { recursive: true, force: true });
 		}
 	});
@@ -140,10 +167,13 @@ describe("renameUserState", () => {
 		expect(getPins("Kentaro")).toEqual(["os-legacy"]);
 	});
 
-	// personal-prompts keys on the resolved teammate, so it already follows a
-	// person through a rename. Copying it would write a file nothing reads.
+	// Personal run preferences key on the resolved teammate, so they already
+	// follow a person through a rename. Copying one would write a file nothing reads.
 	test("skips the stores that key on the person rather than the name", () => {
 		expect(NAME_KEYED_STORES).not.toContain("personal-prompts" as never);
+		expect(NAME_KEYED_STORES).not.toContain(
+			"personal-output-styles" as never,
+		);
 	});
 
 	// The list is hand-maintained, so check it against the real call sites: a
@@ -151,9 +181,10 @@ describe("renameUserState", () => {
 	test("covers every name-keyed store in the codebase", async () => {
 		const { Glob } = await import("bun");
 		const declared = new Set<string>(NAME_KEYED_STORES);
-		// The deliberate exclusions: both key on the resolved person rather than
-		// on the display name, so a rename already carries them.
+		// Personal run preferences key on the resolved person rather than the
+		// display name, so a rename already carries them. Profiles are external.
 		declared.add("personal-prompts");
+		declared.add("personal-output-styles");
 		declared.add("profiles");
 		const missing: string[] = [];
 		for await (const file of new Glob("src/server/**/*.ts").scan(".")) {

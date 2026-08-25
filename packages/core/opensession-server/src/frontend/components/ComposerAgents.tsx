@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import type { WorkflowRunSnapshot } from "../../server/workflow-types";
 import type { SessionSubagentSnapshot } from "../lib/api";
 import { currentPlanItem, planDoneCount, type PlanItem } from "@tellahq/opensession-protocol/todo-plan";
@@ -74,7 +74,7 @@ export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 		});
 	}
 
-	const stats = useMemo(() => {
+	const stats = (() => {
 		const agents: GlanceAgent[] = [
 			...runs.flatMap((r) =>
 				r.agents.map((a) => ({
@@ -113,7 +113,7 @@ export function ComposerAgents({ runs, subagents, plan, onOpenPanel }: Props) {
 			curIdx,
 			phase: single?.currentPhase,
 		};
-	}, [runs, subagents]);
+	})();
 
 	const {
 		total,

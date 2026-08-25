@@ -6,7 +6,7 @@ import { noticeTone, stripNoticeGlyph } from "./notices";
 describe("noticeTone", () => {
 	test("terminal run failures read as errors", () => {
 		// run-session.ts, both choke points.
-		expect(noticeTone("Run failed: opencode prompt failed: rate limit")).toBe("error");
+		expect(noticeTone("Run failed: pi prompt failed: rate limit")).toBe("error");
 		expect(noticeTone("Run stopped: Usage limit reached on every account")).toBe("error");
 		// SessionViewer's live `error` event, which prefixes its own glyph.
 		expect(noticeTone("⚠ Run failed: Session is busy")).toBe("error");
@@ -22,7 +22,7 @@ describe("noticeTone", () => {
 		expect(
 			noticeTone(
 				"Turn stopped after 180 minutes — it hit the wall-clock limit " +
-					"(turnTimeoutMinutes in ~/.opensession-opencode.json). Work up to here is saved; " +
+					"(turnTimeoutMinutes in ~/.opensession-pi.json). Work up to here is saved; " +
 					"send a message to continue.",
 			),
 		).toBe("error");

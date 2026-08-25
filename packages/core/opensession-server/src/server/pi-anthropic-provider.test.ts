@@ -13,7 +13,7 @@
  * anthropicTransport left at its "inprocess" default.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
@@ -21,9 +21,14 @@ import {
   PI_PASSTHROUGH_BLOCK_REASON,
   buildPiAnthropicModels,
   buildPiAnthropicProvider,
+  IMAGE_ONLY_PROMPT,
+  MAX_TURN_IMAGES,
+  piImageBlockToAnthropic,
   piMessagesToAnthropic,
   piSdkSessionStore,
   planSdkTurn,
+  sdkPromptContent,
+  turnImages,
   rememberSdkTurn,
   shouldDeferClaudeText,
   usageFromSdkResult,
@@ -31,7 +36,14 @@ import {
   type PiWireMessage,
 } from "./pi-anthropic-provider";
 import {
+  createEarlyStopTracker,
+  noteAssistantMessage,
+  noteUserContent,
+  shouldEarlyStop,
+} from "./meridian-passthrough";
+import {
   admitBridgeRequest,
+  ensureAnthropicBridgeCwd,
   flattenMessageText,
   pickBridgeAccount,
   replayConversation,
@@ -45,24 +57,24 @@ import * as accounts from "./claude-accounts";
 // they are restored in afterAll so later test files see the originals.
 const dir = mkdtempSync(join(tmpdir(), "pi-anthropic-provider-"));
 const piConfigFile = join(dir, "pi.json");
-const ocConfigFile = join(dir, "opencode.json");
+const providerConfigFile = join(dir, "model-providers.json");
 const accountsFile = join(dir, "accounts.json");
 const savedEnv = {
   pi: process.env.OPENSESSION_PI_CONFIG,
-  oc: process.env.OPENSESSION_OPENCODE_CONFIG,
+  oc: process.env.OPENSESSION_MODEL_PROVIDERS_CONFIG,
   accounts: process.env.OPENSESSION_CLAUDE_ACCOUNTS_PATH,
 };
 
 beforeAll(() => {
   process.env.OPENSESSION_PI_CONFIG = piConfigFile;
-  process.env.OPENSESSION_OPENCODE_CONFIG = ocConfigFile;
+  process.env.OPENSESSION_MODEL_PROVIDERS_CONFIG = providerConfigFile;
   process.env.OPENSESSION_CLAUDE_ACCOUNTS_PATH = accountsFile;
 });
 
 afterAll(() => {
   for (const [envKey, value] of [
     ["OPENSESSION_PI_CONFIG", savedEnv.pi],
-    ["OPENSESSION_OPENCODE_CONFIG", savedEnv.oc],
+    ["OPENSESSION_MODEL_PROVIDERS_CONFIG", savedEnv.oc],
     ["OPENSESSION_CLAUDE_ACCOUNTS_PATH", savedEnv.accounts],
   ] as const) {
     if (value === undefined) delete process.env[envKey];
@@ -73,19 +85,19 @@ afterAll(() => {
 
 /** Configure the pick mode: null = everything disabled; [] = pi enabled with
  *  no designation (pool mode — the default in production); a non-empty list
- *  designates accounts through opencode's bridgeAccountIds, the only
+ *  designates accounts through pi's bridgeAccountIds, the only
  *  designation path left (pi's own bridgeAccounts field is retired). */
 function designate(bridgeAccountIds: string[] | null): void {
   if (bridgeAccountIds === null) {
     writeFileSync(piConfigFile, JSON.stringify({ enabled: false }));
-    rmSync(ocConfigFile, { force: true });
+    rmSync(providerConfigFile, { force: true });
     return;
   }
   writeFileSync(piConfigFile, JSON.stringify({ enabled: true }));
   if (bridgeAccountIds.length) {
-    writeFileSync(ocConfigFile, JSON.stringify({ enabled: true, bridgeAccountIds }));
+    writeFileSync(providerConfigFile, JSON.stringify({ enabled: true, bridgeAccountIds }));
   } else {
-    rmSync(ocConfigFile, { force: true });
+    rmSync(providerConfigFile, { force: true });
   }
 }
 
@@ -134,6 +146,45 @@ const model = {
 const wire = (m: Partial<AnthropicMessage> & { role: "user" | "assistant" }): AnthropicMessage =>
   ({ content: "", ...m }) as AnthropicMessage;
 
+describe("Meridian source dependency", () => {
+  test("tracks the same release as the published package", () => {
+    const dependencyRoot = join(import.meta.dir, "../../../../../node_modules/@rynfar");
+    const published = JSON.parse(readFileSync(join(dependencyRoot, "meridian/package.json"), "utf8"));
+    const source = JSON.parse(
+      readFileSync(join(dependencyRoot, "meridian-source/package.json"), "utf8")
+    );
+    expect(source.version).toBe(published.version);
+  });
+});
+
+describe("ensureAnthropicBridgeCwd", () => {
+  test("creates a missing SDK cwd and is idempotent", () => {
+    const cwd = join(dir, "missing-state", "bridge-cwd");
+    expect(existsSync(cwd)).toBe(false);
+
+    expect(ensureAnthropicBridgeCwd(cwd)).toBe(cwd);
+    expect(ensureAnthropicBridgeCwd(cwd)).toBe(cwd);
+    expect(statSync(cwd).isDirectory()).toBe(true);
+  });
+
+  test("recreates the SDK cwd after its state tree is removed", () => {
+    const root = join(dir, "removed-state");
+    const cwd = ensureAnthropicBridgeCwd(join(root, "bridge-cwd"));
+    rmSync(root, { recursive: true, force: true });
+
+    expect(existsSync(cwd)).toBe(false);
+    expect(ensureAnthropicBridgeCwd(cwd)).toBe(cwd);
+    expect(statSync(cwd).isDirectory()).toBe(true);
+  });
+
+  test("preserves the filesystem error when the cwd path is invalid", () => {
+    const cwd = join(dir, "cwd-is-a-file");
+    writeFileSync(cwd, "not a directory");
+
+    expect(() => ensureAnthropicBridgeCwd(cwd)).toThrow();
+  });
+});
+
 describe("planSdkTurn (continuation vs replay)", () => {
   const messages: AnthropicMessage[] = [
     wire({ role: "user", content: "first question" }),
@@ -179,17 +230,78 @@ describe("planSdkTurn (continuation vs replay)", () => {
     expect(plan.continuation).toBe(false);
     expect(plan.resume).toBeUndefined();
   });
+
+  test("checkpointed turn resumes at its assistant UUID with exact structured results", () => {
+    const tail: AnthropicMessage[] = [
+      wire({
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "tool-1", content: "A" }],
+      }),
+      wire({
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "tool-2", content: "B" }],
+      }),
+    ];
+    const plan = planSdkTurn(
+      {
+        sdkSessionId: "sdk-1",
+        messageCount: 2,
+        accountId: "acc-1",
+        passthroughToolCallAssistantUuid: "assistant-uuid",
+        passthroughToolCallIds: ["tool-1", "tool-2"],
+        lastUsedAt: Date.now(),
+      },
+      [messages[0], messages[1], ...tail]
+    );
+    expect(plan.continuation).toBe(true);
+    expect(plan.resume).toBe("sdk-1");
+    expect(plan.resumeSessionAt).toBe("assistant-uuid");
+    expect(plan.prompt).toBe("");
+    expect(plan.toolResults).toEqual([
+      { type: "tool_result", tool_use_id: "tool-1", content: "A" },
+      { type: "tool_result", tool_use_id: "tool-2", content: "B" },
+    ]);
+  });
+
+  test("checkpoint mismatch full-replays instead of resuming the hidden digest tail", () => {
+    const partial = [
+      wire({
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "tool-1", content: "A" }],
+      }),
+    ];
+    const plan = planSdkTurn(
+      {
+        sdkSessionId: "sdk-1",
+        messageCount: 2,
+        accountId: "acc-1",
+        passthroughToolCallAssistantUuid: "assistant-uuid",
+        passthroughToolCallIds: ["tool-1", "tool-2"],
+        lastUsedAt: Date.now(),
+      },
+      [messages[0], messages[1], ...partial]
+    );
+    expect(plan.continuation).toBe(false);
+    expect(plan.resume).toBeUndefined();
+    expect(plan.resumeSessionAt).toBeUndefined();
+    expect(plan.prompt).toContain("A");
+  });
 });
 
 describe("SDK session store", () => {
   afterEach(() => piSdkSessionStore().clear());
 
-  test("rememberSdkTurn stores messageCount + 1 (this turn's reply joins the history)", () => {
-    rememberSdkTurn("pi:s1", "sdk-abc", 4, "acc-1");
+  test("rememberSdkTurn stores messageCount + 1 and its durable checkpoint", () => {
+    rememberSdkTurn("pi:s1", "sdk-abc", 4, "acc-1", {
+      assistantUuid: "assistant-uuid",
+      toolCallIds: ["tool-1"],
+    });
     expect(piSdkSessionStore().get("pi:s1")).toMatchObject({
       sdkSessionId: "sdk-abc",
       messageCount: 5,
       accountId: "acc-1",
+      passthroughToolCallAssistantUuid: "assistant-uuid",
+      passthroughToolCallIds: ["tool-1"],
     });
   });
 
@@ -238,8 +350,18 @@ describe("piMessagesToAnthropic", () => {
     ];
     expect(piMessagesToAnthropic(messages)).toEqual([
       { role: "user", content: "plain string" },
-      // Images cannot round-trip through flat replay — dropped.
-      { role: "user", content: [{ type: "text", text: "with attachment" }] },
+      // Images are KEPT: planSdkTurn lifts them onto the turn as real content
+      // blocks. Dropping them here was silent data loss.
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "with attachment" },
+          {
+            type: "image",
+            source: { type: "base64", media_type: "image/png", data: "…base64…" },
+          },
+        ],
+      },
       {
         role: "assistant",
         content: [
@@ -283,16 +405,152 @@ describe("piMessagesToAnthropic", () => {
   });
 });
 
-describe("PI_PASSTHROUGH_BLOCK_REASON (the no-stop-nudging wording)", () => {
-  test("says the call is queued client-side with the result arriving next turn", () => {
-    expect(PI_PASSTHROUGH_BLOCK_REASON).toMatch(/queued for client-side execution/);
-    expect(PI_PASSTHROUGH_BLOCK_REASON).toMatch(/next turn/);
+describe("images survive the turn", () => {
+  const img = (mimeType: string, data = "AAAA") => ({ type: "image", data, mimeType });
+
+  test("piImageBlockToAnthropic converts the four media types the API reads", () => {
+    for (const mime of ["image/png", "image/jpeg", "image/gif", "image/webp"]) {
+      expect(piImageBlockToAnthropic(img(mime))).toEqual({
+        type: "image",
+        source: { type: "base64", media_type: mime, data: "AAAA" },
+      });
+    }
+    // Uppercase mimes are normalized rather than rejected.
+    expect(piImageBlockToAnthropic(img("IMAGE/PNG"))).toMatchObject({
+      source: { media_type: "image/png" },
+    });
   });
 
-  test("invites OTHER tool calls instead of forbidding them (unlike the bridge)", () => {
-    expect(PI_PASSTHROUGH_BLOCK_REASON).toMatch(/OTHER tool/);
-    expect(PI_PASSTHROUGH_BLOCK_REASON).not.toMatch(/do not call more tools/i);
-    expect(PI_PASSTHROUGH_BLOCK_REASON).not.toMatch(/do not add text/i);
+  test("drops what the API cannot read rather than poisoning the request", () => {
+    expect(piImageBlockToAnthropic(img("image/bmp"))).toBeNull();
+    expect(piImageBlockToAnthropic(img("image/svg+xml"))).toBeNull();
+    expect(piImageBlockToAnthropic({ type: "image", data: "AAAA" })).toBeNull();
+    expect(piImageBlockToAnthropic({ type: "image", mimeType: "image/png" })).toBeNull();
+    expect(piImageBlockToAnthropic({ type: "text", text: "hi" })).toBeNull();
+  });
+
+  test("turnImages collects user images and keeps the newest past the cap", () => {
+    expect(turnImages([wire({ role: "user", content: "no blocks" })])).toEqual([]);
+    const many: AnthropicMessage[] = Array.from({ length: MAX_TURN_IMAGES + 3 }, (_, i) =>
+      wire({
+        role: "user",
+        content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: `d${i}` } }],
+      })
+    );
+    const kept = turnImages(many);
+    expect(kept).toHaveLength(MAX_TURN_IMAGES);
+    // Newest kept: the last block in the slice is the last block kept.
+    expect(kept.at(-1)).toMatchObject({ source: { data: `d${MAX_TURN_IMAGES + 2}` } });
+  });
+
+  test("planSdkTurn carries only the DELIVERED slice's images on a continuation", () => {
+    const messages: AnthropicMessage[] = [
+      wire({
+        role: "user",
+        content: [
+          { type: "text", text: "old shot" },
+          { type: "image", source: { type: "base64", media_type: "image/png", data: "old" } },
+        ],
+      }),
+      wire({ role: "assistant", content: [{ type: "text", text: "seen it" }] }),
+      wire({
+        role: "user",
+        content: [
+          { type: "text", text: "new shot" },
+          { type: "image", source: { type: "base64", media_type: "image/png", data: "new" } },
+        ],
+      }),
+    ];
+    const cont = planSdkTurn(
+      { sdkSessionId: "sdk-1", messageCount: 2, accountId: "acc-1", lastUsedAt: Date.now() },
+      messages
+    );
+    expect(cont.continuation).toBe(true);
+    expect(cont.images).toHaveLength(1);
+    expect(cont.images[0]).toMatchObject({ source: { data: "new" } });
+    // A fresh replay re-delivers the whole conversation, images included.
+    expect(planSdkTurn(undefined, messages).images).toHaveLength(2);
+  });
+
+  test("sdkPromptContent puts images before the text, and only for image turns", () => {
+    const plain = planSdkTurn(undefined, [wire({ role: "user", content: "just words" })]);
+    expect(sdkPromptContent(plain)).toBeNull();
+
+    const withImage = planSdkTurn(undefined, [
+      wire({
+        role: "user",
+        content: [
+          { type: "text", text: "look at this" },
+          { type: "image", source: { type: "base64", media_type: "image/png", data: "d" } },
+        ],
+      }),
+    ]);
+    const content = sdkPromptContent(withImage)!;
+    expect(content).toHaveLength(2);
+    expect(content[0]).toMatchObject({ type: "image" });
+    expect(content[1]).toEqual({ type: "text", text: "look at this" });
+  });
+
+  test("an image-only turn still gets a text block (an empty prompt reads as an empty turn)", () => {
+    const plan = planSdkTurn(undefined, [
+      wire({
+        role: "user",
+        content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "d" } }],
+      }),
+    ]);
+    expect(plan.prompt.trim()).toBe("");
+    const content = sdkPromptContent(plan)!;
+    expect(content.at(-1)).toEqual({ type: "text", text: IMAGE_ONLY_PROMPT });
+  });
+});
+
+describe("Pi passthrough durable checkpoint", () => {
+  test("uses Meridian's explicit model-facing stop instruction", () => {
+    expect(PI_PASSTHROUGH_BLOCK_REASON).toContain(
+      "This tool call has been forwarded to the client for execution."
+    );
+    expect(PI_PASSTHROUGH_BLOCK_REASON).toContain("End your turn now.");
+  });
+
+  test("settles only after every parallel call and retains its assistant UUID", () => {
+    const tracker = createEarlyStopTracker();
+    noteAssistantMessage(tracker, {
+      type: "assistant",
+      uuid: "assistant-uuid",
+      message: {
+        content: [
+          { type: "text", text: "checking" },
+          { type: "tool_use", id: "tool-1", name: "read", input: {} },
+          { type: "tool_use", id: "tool-2", name: "grep", input: {} },
+        ],
+      },
+    });
+    noteUserContent(tracker, [
+      { type: "tool_result", tool_use_id: "tool-1", content: "blocked" },
+    ]);
+    expect(shouldEarlyStop(tracker)).toBe(false);
+    noteUserContent(tracker, [
+      { type: "tool_result", tool_use_id: "tool-2", content: "blocked" },
+    ]);
+    expect(shouldEarlyStop(tracker)).toBe(true);
+    expect(tracker.toolCallAssistantUuid).toBe("assistant-uuid");
+    expect(shouldEarlyStop(tracker)).toBe(false);
+  });
+
+  test("handles a blocked result arriving before its assistant envelope", () => {
+    const tracker = createEarlyStopTracker();
+    noteUserContent(tracker, [
+      { type: "tool_result", tool_use_id: "tool-1", content: "blocked" },
+    ]);
+    expect(shouldEarlyStop(tracker)).toBe(false);
+    noteAssistantMessage(tracker, {
+      type: "assistant",
+      uuid: "assistant-uuid",
+      message: {
+        content: [{ type: "tool_use", id: "tool-1", name: "read", input: {} }],
+      },
+    });
+    expect(shouldEarlyStop(tracker)).toBe(true);
   });
 });
 
@@ -371,8 +629,8 @@ describe("usageFromSdkResult", () => {
   });
 });
 
-describe("Claude limit notice probe", () => {
-  test("holds short output until it can rule out a synthetic limit notice", () => {
+describe("Claude account notice probe", () => {
+  test("holds short output until it can rule out a synthetic account notice", () => {
     expect(shouldDeferClaudeText("Replying normally")).toBe(true);
     expect(
       shouldDeferClaudeText(
@@ -388,6 +646,11 @@ describe("Claude limit notice probe", () => {
     expect(
       shouldDeferClaudeText(
         "You're out of usage credits. Run /usage-credits to keep using Fable 5 or /model to switch models."
+      )
+    ).toBe(true);
+    expect(
+      shouldDeferClaudeText(
+        "Your organization has disabled Claude subscription access for Claude Code · Use an Anthropic API key instead, or ask your admin to enable access"
       )
     ).toBe(true);
   });
@@ -460,7 +723,7 @@ describe("buildPiAnthropicProvider", () => {
     accounts.__setUsageCacheForTest("pi-cap-acc", freshUsage);
     // Trip the shared per-boot hourly counter (same map the bridge admits
     // against) so the stream's own admission refuses pre-SDK.
-    const limit = 300; // bridgeMaxRequestsPerHour default (no opencode config in this seam)
+    const limit = 300; // bridgeMaxRequestsPerHour default (no pi config in this seam)
     for (let i = 0; i < limit; i++) admitBridgeRequest("pi-cap-acc", 1);
     const provider = buildPiAnthropicProvider({
       unifiedSessionId: "os-cap",
@@ -479,7 +742,7 @@ describe("buildPiAnthropicProvider", () => {
     expect(isPiUsageLimitShape(message, "anthropic")).toBe(true);
     // …but the account is NOT markExhausted'd: the cap is local admission
     // control (frees within the hour) and the exhaustion sideline is shared
-    // with the opencode bridge — the account must stay pickable.
+    // with the pi bridge — the account must stay pickable.
     const stillUsable = pickBridgeAccount("claude-sonnet-5");
     expect((stillUsable as any).id).toBe("pi-cap-acc");
   });
@@ -491,7 +754,7 @@ describe("buildPiAnthropicProvider", () => {
     const ids = ["cap-a", "cap-b", "cap-c", "cap-d", "cap-e", "cap-f"];
     designate(ids);
     seedAccounts(ids);
-    const limit = 300; // bridgeMaxRequestsPerHour default (no opencode config in this seam)
+    const limit = 300; // bridgeMaxRequestsPerHour default (no pi config in this seam)
     for (const id of ids) {
       accounts.__setUsageCacheForTest(id, freshUsage);
       for (let i = 0; i < limit; i++) admitBridgeRequest(id, 1);
@@ -515,7 +778,7 @@ describe("buildPiAnthropicProvider", () => {
     expect(message).toContain("cap-f");
     expect(isPiUsageLimitShape(message, "anthropic")).toBe(true);
     // Neither account was sidelined on the way through: the rolling cap is
-    // local admission control, and the sideline map is shared with opencode.
+    // local admission control, and the sideline map is shared with pi.
     const stillPickable = pickBridgeAccount("claude-sonnet-5");
     expect((stillPickable as any).id).toBe("cap-a");
   });
@@ -664,7 +927,7 @@ describe("pickBridgeAccount pins (in-process runs only; designation is the ceili
   });
 });
 
-describe("pickBridgeAccount pool mode (no designation — picks like opencode)", () => {
+describe("pickBridgeAccount pool mode (no designation — picks like pi)", () => {
   test("picks the least-used usable account from the general pool", () => {
     designate([]);
     seedAccounts(["pool-a", "pool-b"]);

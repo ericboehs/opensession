@@ -17,12 +17,6 @@ import {
 	readWorkflowJournal,
 } from "../workflow-store";
 import { cancelWorkflow } from "../workflow-runner";
-import {
-	getOpencodeTranscriptPath,
-	readOpencodeTranscript,
-} from "../opencode-transcript";
-import { parseTranscriptAsync } from "../jsonl-parser";
-import { existsSync } from "fs";
 
 // Boot pass: flip any run.json still "running" with no live worker to
 // "interrupted" (the orchestration state died with the previous process).
@@ -63,46 +57,6 @@ export async function handleWorkflowsRoutes(
 		}
 	}
 
-	// One agent's full conversation (its opencode session transcript — tool
-	// calls and all) — the "go into the subagent" drill-in. Reads the live
-	// snapshot first (engineSessionId is set the moment the engine session
-	// exists, so this works WHILE the agent runs), falling back to the journal
-	// outcome for a finished agent. Capped so a chatty agent can't blow the
-	// payload.
-	{
-		const m = path.match(
-			/^\/api\/workflows\/([^/]+)\/agents\/(\d+)\/transcript$/,
-		);
-		if (m && req.method === "GET") {
-			const runId = decodeURIComponent(m[1]);
-			const seq = parseInt(m[2], 10);
-			const run = getWorkflowRun(runId);
-			if (!run)
-				return Response.json({ error: "Workflow not found" }, { status: 404 });
-			const snap = run.agents.find((a) => a.seq === seq);
-			// mcp.* records share journal.jsonl and number their own seq space,
-			// so an agent lookup MUST skip them or it can match the wrong record.
-			const journal = agentJournalEntries(runId).find((e) => e.seq === seq);
-			const engineSessionId =
-				snap?.engineSessionId || journal?.outcome.engineSessionId;
-			if (!engineSessionId)
-				return Response.json(
-					{ error: "Agent has not started a run yet", entries: [] },
-					{ status: 404 },
-				);
-			// Prefer the runner's mirror jsonl (keyed by the ocSessionId we
-			// captured), exactly like mergedSessionTranscript — opencode's own db
-			// keys the content under a directory-scoped id that differs from the
-			// init id on the shared server, so a raw db read misses. DB is the
-			// fallback for older sessions with no mirror file.
-			const mirror = getOpencodeTranscriptPath(engineSessionId);
-			let entries = existsSync(mirror)
-				? await parseTranscriptAsync(mirror)
-				: readOpencodeTranscript(engineSessionId);
-			if (entries.length > 500) entries = entries.slice(-500);
-			return Response.json({ entries });
-		}
-	}
 
 	// One agent call's journal entry (full prompt + outcome, not the snapshot
 	// previews) — the panel's drill-in.

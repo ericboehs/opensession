@@ -1,4 +1,10 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, {
+	useEffect,
+	useEffectEvent,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import { flushSync } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type WorkspaceMediaItem } from "../lib/api";
@@ -13,6 +19,7 @@ import {
 	saveFileWithNativeShare,
 	shareURL,
 } from "../lib/native-file-save";
+import { copyImageToClipboard } from "../lib/image-clipboard";
 import { copyToClipboard } from "../lib/share-link";
 import { fullTime } from "../lib/time";
 import {
@@ -21,15 +28,36 @@ import {
 	WALKTHROUGH_LABEL_TONE,
 	type WalkthroughMediaLabel,
 } from "../lib/walkthrough-label";
+import { useIsPhone } from "../hooks/useIsPhone";
+import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { toast } from "../ui/toast";
 import {
+	anchoredCommentPosition,
+	imageRegionBetween,
+	movedImageRegion,
+	regionHandleStep,
+	resizedImageRegion,
+	type ImageRegion,
+	type ImageRegionPoint,
+	type RegionHandle,
+	type ScreenRect,
+} from "../lib/image-region-comment";
+import {
+	canCommentOnImageRegion,
+	submitImageRegionComment,
+} from "../lib/image-region-comment-registry";
+import {
 	IconArrowDown,
+	IconArrowUp,
 	IconArrowUpRight,
 	IconCheck,
 	IconChevronLeft,
 	IconChevronRight,
+	IconCopy,
 	IconLink,
+	IconMessage,
+	IconShare,
 	IconX,
 } from "./icons";
 
@@ -65,6 +93,9 @@ export interface LightboxItem {
 	sessionTitle?: string;
 	description?: string;
 	at?: string;
+	/** Session that owns this transcript image. Only these images can send a
+	 *  selected region back into chat. */
+	commentSessionId?: string;
 }
 
 interface LightboxState {
@@ -74,12 +105,15 @@ interface LightboxState {
 	origin?: HTMLElement;
 	originIndex: number;
 	useHeroTransition: boolean;
+	startCommenting?: boolean;
 }
 
 interface LightboxRequest {
 	items: LightboxItem[];
 	index: number;
 	origin?: HTMLElement;
+	/** Enter image-region comment mode as soon as the lightbox opens. */
+	startCommenting?: boolean;
 }
 
 interface ViewTransitionHandle {
@@ -186,12 +220,36 @@ function supportsHeroTransition(): boolean {
 	);
 }
 
+function commentSessionIdFor(element?: Element | null): string | undefined {
+	return element
+		?.closest<HTMLElement>("[data-lightbox-session-id]")
+		?.dataset.lightboxSessionId;
+}
+
 export function openLightbox(
 	items: (LightboxItem | WorkspaceMediaItem)[],
 	index: number,
 	origin?: Element | null,
+	options: { startCommenting?: boolean } = {},
 ) {
-	host?.({ items, index, origin: mediaElement(origin) });
+	const source = mediaElement(origin);
+	const fromDom = commentSessionIdFor(source);
+	host?.({
+		// A workspace-media item names its own session, which is the only hint a
+		// gallery outside the transcript (the Shots panel, a hover card) has: the
+		// clicked thumbnail has no transcript ancestor to read the id off.
+		items: items.map((item) => {
+			if (item.kind !== "image") return item;
+			const commentSessionId =
+				("commentSessionId" in item ? item.commentSessionId : undefined) ||
+				("sessionId" in item ? item.sessionId : undefined) ||
+				fromDom;
+			return commentSessionId ? { ...item, commentSessionId } : item;
+		}),
+		index,
+		origin: source,
+		startCommenting: options.startCommenting,
+	});
 }
 
 /** Every piece of session media currently in the DOM, in document order —
@@ -202,9 +260,15 @@ const GALLERY_SELECTOR = "img.md-image, video.md-video, .md-mermaid > svg";
  * markup never says how big it is has nothing to letterbox. */
 function galleryItem(node: Element): LightboxItem | null {
 	if (node.tagName === "IMG" || node.tagName === "VIDEO") {
+		const media = node as HTMLImageElement | HTMLVideoElement;
 		return {
 			kind: node.tagName === "VIDEO" ? "video" : "image",
-			src: (node as HTMLImageElement | HTMLVideoElement).src,
+			src:
+				node.tagName === "IMG"
+					? (media as HTMLImageElement).currentSrc || media.src
+					: media.src,
+			commentSessionId:
+				node.tagName === "IMG" ? commentSessionIdFor(node) : undefined,
 			// Markdown alt text is the only description these carry; captioning the
 			// viewer with it beats a bare counter once you are paging through a
 			// dozen screenshots.
@@ -263,7 +327,8 @@ export function MediaLightboxHost() {
 	const activeSourceCleanup = useRef<(() => void) | null>(null);
 	useEffect(() => {
 		const open = (request: LightboxRequest) => {
-			const id = ++nextLightboxId;
+			nextLightboxId += 1;
+			const id = nextLightboxId;
 			const origin = mediaElement(request.origin);
 			const next: LightboxState = {
 				...request,
@@ -422,6 +487,7 @@ export function MediaLightboxHost() {
 			}
 			onClose={(allowHeroTransition) => close(state, allowHeroTransition)}
 			useHeroTransition={state.useHeroTransition}
+			startCommenting={state.startCommenting}
 			heroTransitionName={
 				state.useHeroTransition && state.index === state.originIndex
 					? HERO_TRANSITION_NAME
@@ -509,6 +575,10 @@ const DOUBLE_TAP_SCALE = 2.5;
  * the corner of the surface it sits on. */
 const DIAGRAM_PADDING = 16;
 
+/** How far a slow downward drag has to travel before letting go closes. A
+ * flick gets there sooner. */
+const DISMISS_DISTANCE = 120;
+
 /**
  * Pinch/pan/zoom surface for one image, or for one diagram — a mermaid chart
  * keeps its vector markup here rather than arriving as a picture, so the
@@ -524,27 +594,83 @@ const DIAGRAM_PADDING = 16;
  * arms once the drag is decidedly horizontal, so a pinch or a vertical flick
  * never steals a page turn, and zoomed in the same drag pans the photo.
  */
+/** Corners first, then edges: the corner is what the hand reaches for, and on
+ *  a short side it is the only handle that fits. `sx`/`sy` are the directions
+ *  the handle lies in from the region's middle, which is both where it sits and
+ *  which way it steps when the region is too small to hold it.
+ *
+ *  `mark` is what the handle draws, which is not the same thing as what it
+ *  catches. A corner is a bracket whose two bars run along the edges they
+ *  resize, meeting exactly on the corner; an edge is a short bar lying along
+ *  the line it moves. Both are white with a soft dark halo, because the picture
+ *  underneath is as likely to be a white settings pane as a dark one. */
+const REGION_HANDLES: {
+	id: RegionHandle;
+	/** The side whose length has to be long enough to hold this handle. */
+	axis?: "x" | "y";
+	position: string;
+	cursor: string;
+	mark: string;
+	sx: -1 | 0 | 1;
+	sy: -1 | 0 | 1;
+}[] = [
+	{ id: "nw", position: "left-0 top-0", sx: -1, sy: -1, cursor: "cursor-nwse-resize", mark: "absolute left-1/2 top-1/2 size-3.5 rounded-tl-[4px] border-l-[3px] border-t-[3px] phone:size-4" },
+	{ id: "ne", position: "left-full top-0", sx: 1, sy: -1, cursor: "cursor-nesw-resize", mark: "absolute right-1/2 top-1/2 size-3.5 rounded-tr-[4px] border-r-[3px] border-t-[3px] phone:size-4" },
+	{ id: "se", position: "left-full top-full", sx: 1, sy: 1, cursor: "cursor-nwse-resize", mark: "absolute right-1/2 bottom-1/2 size-3.5 rounded-br-[4px] border-r-[3px] border-b-[3px] phone:size-4" },
+	{ id: "sw", position: "left-0 top-full", sx: -1, sy: 1, cursor: "cursor-nesw-resize", mark: "absolute left-1/2 bottom-1/2 size-3.5 rounded-bl-[4px] border-l-[3px] border-b-[3px] phone:size-4" },
+	{ id: "n", axis: "x", position: "left-1/2 top-0", sx: 0, sy: -1, cursor: "cursor-ns-resize", mark: "h-[3px] w-5 rounded-full bg-white" },
+	{ id: "s", axis: "x", position: "left-1/2 top-full", sx: 0, sy: 1, cursor: "cursor-ns-resize", mark: "h-[3px] w-5 rounded-full bg-white" },
+	{ id: "w", axis: "y", position: "left-0 top-1/2", sx: -1, sy: 0, cursor: "cursor-ew-resize", mark: "h-5 w-[3px] rounded-full bg-white" },
+	{ id: "e", axis: "y", position: "left-full top-1/2", sx: 1, sy: 0, cursor: "cursor-ew-resize", mark: "h-5 w-[3px] rounded-full bg-white" },
+];
+
+/** Touch-sized on a phone, pointer-sized otherwise. */
+const REGION_HANDLE_HIT = { phone: 36, desktop: 24 };
+
 function ZoomableMedia({
 	src,
 	diagram,
 	onTapBackdrop,
+	onTapMedia,
 	onZoomChange,
 	onSwipe,
+	onDismiss,
+	onDragProgress,
 	enterFrom = 0,
 	viewTransitionName,
+	commentMode = false,
+	selection,
+	onSelection,
+	onSelectionRect,
 }: {
 	src: string;
 	/** Present for a diagram: draw this markup instead of loading `src`. */
 	diagram?: DiagramMedia;
 	onTapBackdrop: () => void;
+	/** A clean single tap on the media. Omitted on desktop, where a tap keeps
+	 * waiting for the existing double-tap zoom gesture. */
+	onTapMedia?: () => void;
 	onZoomChange: (zoomed: boolean) => void;
 	/** Page to the previous (-1) / next (+1) item; absent when there is one. */
 	onSwipe?: (direction: -1 | 1) => void;
+	/** A touch drag downwards past the threshold closes. Absent on desktop,
+	 *  where dragging a picture is not how anything is dismissed. */
+	onDismiss?: () => void;
+	/** How far that drag has got, 0 to 1, so the scrim can lift with it. */
+	onDragProgress?: (progress: number) => void;
 	/** Direction the previous item left in, so this one enters from the far
 	 * side; 0 for the first item shown. */
 	enterFrom?: -1 | 0 | 1;
 	viewTransitionName?: string;
+	/** Region-comment mode replaces pan/page gestures with a box selection. */
+	commentMode?: boolean;
+	selection?: ImageRegion | null;
+	onSelection?: (region: ImageRegion) => void;
+	/** Where the committed selection sits on screen, so the comment card can be
+	 *  placed against it. Viewport coordinates. */
+	onSelectionRect?: (rect: ScreenRect | null) => void;
 }) {
+	const isPhone = useIsPhone();
 	const wrapRef = useRef<HTMLDivElement>(null);
 	const imgRef = useRef<HTMLImageElement>(null);
 	const boxRef = useRef<HTMLDivElement>(null);
@@ -553,7 +679,9 @@ function ZoomableMedia({
 	/** Cached layoutOrigin(), see there. Null means "measure on next read". */
 	const layout = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
 	const t = useRef({ s: 1, tx: 0, ty: 0 });
-	const swipeX = useRef(0);
+	/** The in-progress drag written to the wrapper: sideways for a page turn,
+	 * downwards for a dismissal. */
+	const drag = useRef({ x: 0, y: 0 });
 	const pointers = useRef(new Map<number, { x: number; y: number }>());
 	const gesture = useRef<{
 		moved: boolean;
@@ -566,16 +694,60 @@ function ZoomableMedia({
 		pinched: boolean;
 		/** null while the drag's intent is still undecided. */
 		swiping: boolean | null;
+		/** Decided at the same moment as `swiping`, and never both. */
+		dismissing: boolean;
 	} | null>(null);
-	const lastTap = useRef<{ at: number; x: number; y: number } | null>(null);
+	const lastTap = useRef<{
+		at: number;
+		x: number;
+		y: number;
+		media: boolean;
+	} | null>(null);
+	const singleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [zoomed, setZoomed] = useState(false);
 	const zoomedRef = useRef(false);
+	const regionGesture = useRef<
+		| {
+				kind: "create";
+				pointerId: number;
+				start: ImageRegionPoint;
+				imageRect: DOMRect;
+		  }
+		| {
+				kind: "adjust";
+				handle: RegionHandle;
+				origin: ImageRegion;
+				pointerId: number;
+				start: ImageRegionPoint;
+				imageRect: DOMRect;
+		  }
+		| null
+	>(null);
+	const [draftRegion, setDraftRegion] = useState<ImageRegion | null>(null);
+	const [imageBox, setImageBox] = useState<{
+		left: number;
+		top: number;
+		width: number;
+		height: number;
+		/** The same box in viewport coordinates, for the fixed comment card. */
+		viewLeft: number;
+		viewTop: number;
+	} | null>(null);
 	/** A diagram's box, fitted to the surface. Unlike a photo, a chart has no
 	 * natural pixel size to hold it back — its viewBox is arbitrary units — so
 	 * it fills the room available rather than stopping at 1:1. Sized here in JS
 	 * rather than by CSS on the svg because the gesture code needs a real box
 	 * to measure the zoom and pan bounds against. */
 	const [fit, setFit] = useState<{ w: number; h: number } | null>(null);
+
+	function cancelSingleTap() {
+		if (singleTapTimer.current === null) return;
+		clearTimeout(singleTapTimer.current);
+		singleTapTimer.current = null;
+	}
+
+	useEffect(() => cancelSingleTap, [src, commentMode]);
+
 	useLayoutEffect(() => {
 		if (!diagram) return;
 		const measure = () => {
@@ -612,24 +784,37 @@ function ZoomableMedia({
 		}
 	}
 
-	/** The page-drag offset, written to the wrapper so it composes with the
-	 * img's own zoom transform instead of fighting it. */
-	function applySwipe(dx: number, animate = false) {
-		swipeX.current = dx;
+	/** The drag offset, written to the wrapper so it composes with the img's
+	 * own zoom transform instead of fighting it. A downward drag also shrinks
+	 * the picture, which is what makes it read as being put back rather than
+	 * slid aside. */
+	function applyDrag(dx: number, dy = 0, animate = false) {
+		drag.current = { x: dx, y: dy };
 		const wrap = wrapRef.current;
 		if (!wrap) return;
 		wrap.style.transition = animate
 			? "transform 0.24s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.24s ease-out"
 			: "none";
-		wrap.style.transform = dx ? `translateX(${dx}px)` : "";
+		const pull = Math.max(0, dy);
+		const scale = 1 - Math.min(pull / 1600, 0.12);
+		wrap.style.transform =
+			dx || dy ? `translate(${dx}px, ${dy}px) scale(${scale})` : "";
 		// A touch of fade sells the hand-off; the picture stays legible enough
-		// to see what you are dragging towards.
-		wrap.style.opacity = dx ? String(1 - Math.min(Math.abs(dx) / 900, 0.3)) : "1";
+		// to see what you are dragging towards, or away from.
+		const fade =
+			Math.min(Math.abs(dx) / 900, 0.3) + Math.min(pull / 700, 0.45);
+		wrap.style.opacity = dx || dy ? String(1 - fade) : "1";
+		onDragProgress?.(Math.min(pull / DISMISS_DISTANCE, 1));
 	}
 
 	// The item is keyed by src, so a page turn mounts a fresh surface: slide it
 	// in from the side the drag was heading, which is the only cue that the
 	// picture changed rather than reloaded.
+	// Interaction helpers are read through effect events so the effects that
+	// reach them keep their narrow triggers without listing unstable closures.
+	const effectApplyDrag = useEffectEvent(applyDrag);
+	const effectZoomAt = useEffectEvent(zoomAt);
+	const effectOnZoomChange = useEffectEvent(onZoomChange);
 	useEffect(() => {
 		const wrap = wrapRef.current;
 		if (!enterFrom || !wrap) return;
@@ -637,8 +822,8 @@ function ZoomableMedia({
 		// The wrapper is translated for the length of this, so the img's rect is
 		// in motion and must not be cached from it.
 		layout.current = null;
-		applySwipe(enterFrom * Math.min(140, window.innerWidth * 0.25));
-		const frame = requestAnimationFrame(() => applySwipe(0, true));
+		effectApplyDrag(enterFrom * Math.min(140, window.innerWidth * 0.25));
+		const frame = requestAnimationFrame(() => effectApplyDrag(0, 0, true));
 		return () => cancelAnimationFrame(frame);
 	}, [enterFrom, src]);
 
@@ -676,6 +861,93 @@ function ZoomableMedia({
 	useEffect(() => {
 		layout.current = null;
 	}, [src]);
+
+	// Chrome visibility changes the fitted room on a phone. Forget the old
+	// geometry throughout that refit so the next pan or zoom starts from what is
+	// actually on screen.
+	useLayoutEffect(() => {
+		const wrap = wrapRef.current;
+		if (!wrap) return;
+		const observer = new ResizeObserver(() => {
+			layout.current = null;
+		});
+		observer.observe(wrap);
+		return () => observer.disconnect();
+	}, []);
+
+	// A region is stored against the image, while its outline is painted against
+	// the lightbox wrapper. Keep that projection current when a phone keyboard,
+	// a rotation, or a decoded image changes the fitted box.
+	useLayoutEffect(() => {
+		if (!commentMode || diagram) {
+			setImageBox(null);
+			return;
+		}
+		// Reset before measuring. A transformed getBoundingClientRect would map
+		// the selection against the old zoom level until the next resize.
+		t.current = { s: 1, tx: 0, ty: 0 };
+		const media = diagram ? boxRef.current : imgRef.current;
+		if (media) {
+			media.style.transition = "none";
+			media.style.transform = "translate(0px, 0px) scale(1)";
+		}
+		if (zoomedRef.current) {
+			zoomedRef.current = false;
+			setZoomed(false);
+			effectOnZoomChange(false);
+		}
+		const measure = () => {
+			const wrap = wrapRef.current;
+			const image = imgRef.current;
+			if (!wrap || !image || !image.complete) return;
+			const wrapRect = wrap.getBoundingClientRect();
+			const imageRect = image.getBoundingClientRect();
+			const next = {
+				left: imageRect.left - wrapRect.left,
+				top: imageRect.top - wrapRect.top,
+				width: imageRect.width,
+				height: imageRect.height,
+				viewLeft: imageRect.left,
+				viewTop: imageRect.top,
+			};
+			setImageBox((current) =>
+				current &&
+				Math.abs(current.left - next.left) < 0.25 &&
+				Math.abs(current.top - next.top) < 0.25 &&
+				Math.abs(current.width - next.width) < 0.25 &&
+				Math.abs(current.height - next.height) < 0.25 &&
+				Math.abs(current.viewLeft - next.viewLeft) < 0.25 &&
+				Math.abs(current.viewTop - next.viewTop) < 0.25
+					? current
+					: next,
+			);
+		};
+		measure();
+		const observer = new ResizeObserver(measure);
+		if (wrapRef.current) observer.observe(wrapRef.current);
+		if (imgRef.current) observer.observe(imgRef.current);
+		window.addEventListener("resize", measure);
+		window.visualViewport?.addEventListener("resize", measure);
+		return () => {
+			observer.disconnect();
+			window.removeEventListener("resize", measure);
+			window.visualViewport?.removeEventListener("resize", measure);
+		};
+	}, [commentMode, diagram, src]);
+
+	// Selection needs the fitted, untransformed image. Entering comment mode
+	// returns a zoomed or panned image to fit before the first drag.
+	useEffect(() => {
+		if (!commentMode) {
+			regionGesture.current = null;
+			setDraftRegion(null);
+			return;
+		}
+		pointers.current.clear();
+		gesture.current = null;
+		lastTap.current = null;
+		cancelSingleTap();
+	}, [commentMode, src]);
 
 	/** Keep the scaled image covering the viewport (or centered when smaller).
 	 * Bounds are the full screen, not the letterboxed wrapper — a zoomed photo
@@ -716,7 +988,67 @@ function ZoomableMedia({
 		apply(animate);
 	}
 
+	function pointInRegionImage(
+		x: number,
+		y: number,
+		rect: DOMRect,
+	): ImageRegionPoint {
+		return {
+			x: Math.min(1, Math.max(0, (x - rect.left) / Math.max(1, rect.width))),
+			y: Math.min(1, Math.max(0, (y - rect.top) / Math.max(1, rect.height))),
+		};
+	}
+
 	function onPointerDown(e: React.PointerEvent) {
+		if (commentMode && !diagram) {
+			const image = imgRef.current;
+			if (!image || e.button !== 0 || !e.isPrimary || regionGesture.current)
+				return;
+			const rect = image.getBoundingClientRect();
+			// A press on the selection itself moves it, and one on a handle
+			// resizes it. Read from the target rather than from coordinates: the
+			// handles deliberately overhang the region so a thin selection still
+			// has something to take hold of.
+			const handle = (e.target as HTMLElement | null)
+				?.closest?.("[data-region-handle]")
+				?.getAttribute("data-region-handle") as RegionHandle | null;
+			// A corner handle sits half outside the picture, so only a fresh
+			// selection has to start inside it.
+			if (
+				!handle &&
+				(e.clientX < rect.left ||
+					e.clientX > rect.right ||
+					e.clientY < rect.top ||
+					e.clientY > rect.bottom)
+			)
+				return;
+			e.preventDefault();
+			wrapRef.current?.setPointerCapture(e.pointerId);
+			const start = pointInRegionImage(e.clientX, e.clientY, rect);
+			if (handle && selection) {
+				regionGesture.current = {
+					kind: "adjust",
+					handle,
+					origin: selection,
+					pointerId: e.pointerId,
+					start,
+					imageRect: rect,
+				};
+				setDraftRegion(selection);
+				return;
+			}
+			regionGesture.current = {
+				kind: "create",
+				pointerId: e.pointerId,
+				start,
+				imageRect: rect,
+			};
+			setDraftRegion(imageRegionBetween(start, start));
+			return;
+		}
+		// A second interaction cancels a pending single tap. If this press is the
+		// second half of a double tap, pointer-up below will zoom instead.
+		cancelSingleTap();
 		// One measurement per gesture: nothing that happens between here and the
 		// last finger up can move the picture's layout box.
 		layout.current = null;
@@ -739,9 +1071,10 @@ function ZoomableMedia({
 				m0: { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 },
 				pinched: true,
 				swiping: false,
+				dismissing: false,
 			};
-			// A second finger means this was never a page turn.
-			if (swipeX.current) applySwipe(0, true);
+			// A second finger means this was never a page turn or a dismissal.
+			if (drag.current.x || drag.current.y) applyDrag(0, 0, true);
 		} else if (pts.length === 1) {
 			gesture.current = {
 				moved: false,
@@ -753,11 +1086,44 @@ function ZoomableMedia({
 				m0: pts[0],
 				pinched: false,
 				swiping: null,
+				dismissing: false,
 			};
 		}
 	}
 
+	/** The region this gesture describes with the pointer where it now is. */
+	function regionForGesture(
+		selecting: NonNullable<typeof regionGesture.current>,
+		clientX: number,
+		clientY: number,
+	): ImageRegion {
+		const point = pointInRegionImage(clientX, clientY, selecting.imageRect);
+		if (selecting.kind === "create") {
+			return imageRegionBetween(selecting.start, point);
+		}
+		const dx = point.x - selecting.start.x;
+		const dy = point.y - selecting.start.y;
+		if (selecting.handle === "move") {
+			return movedImageRegion(selecting.origin, dx, dy);
+		}
+		// The same twelve display pixels a new selection has to clear, so a
+		// region cannot be resized into something too small to have drawn.
+		return resizedImageRegion(selecting.origin, selecting.handle, dx, dy, {
+			x: 12 / Math.max(1, selecting.imageRect.width),
+			y: 12 / Math.max(1, selecting.imageRect.height),
+		});
+	}
+
 	function onPointerMove(e: React.PointerEvent) {
+		const selecting = regionGesture.current;
+		if (selecting?.pointerId === e.pointerId) {
+			const next = regionForGesture(selecting, e.clientX, e.clientY);
+			setDraftRegion(next);
+			// An adjustment changes a region that already has a comment against
+			// it, so the card travels with the pixels it is about.
+			if (selecting.kind === "adjust") onSelection?.(next);
+			return;
+		}
 		if (!pointers.current.has(e.pointerId) || !gesture.current) return;
 		pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
 		const g = gesture.current;
@@ -778,24 +1144,70 @@ function ZoomableMedia({
 			const p = pts[0];
 			const dx = p.x - g.p0.x;
 			const dy = p.y - g.p0.y;
-			if (Math.hypot(dx, dy) > 6) g.moved = true;
+			if (Math.hypot(dx, dy) > 6) {
+				g.moved = true;
+				cancelSingleTap();
+			}
 			if (t.current.s > 1 && !g.pinched) {
 				t.current = clamp({ s: g.t0.s, tx: g.t0.tx + dx, ty: g.t0.ty + dy });
 				apply();
-			} else if (onSwipe && !g.pinched && t.current.s === 1) {
+			} else if ((onSwipe || onDismiss) && !g.pinched && t.current.s === 1) {
 				// Decide once, at the threshold: a drag that starts out mostly
-				// sideways pages, anything else is left alone (a vertical flick
-				// on the backdrop, a hesitant press) so the intent can't flip
-				// mid-gesture.
+				// sideways pages to the neighbouring item, one that starts out
+				// vertical puts the picture back. Deciding once means the intent
+				// can't flip mid-gesture.
 				if (g.swiping === null && Math.hypot(dx, dy) > 8) {
-					g.swiping = Math.abs(dx) > Math.abs(dy) * 1.2;
+					const sideways = Math.abs(dx) > Math.abs(dy) * 1.2;
+					g.swiping = !!onSwipe && sideways;
+					g.dismissing =
+						!!onDismiss && !sideways && e.pointerType !== "mouse";
 				}
-				if (g.swiping) applySwipe(dx);
+				if (g.swiping) applyDrag(dx);
+				// Up is not a dismissal, so it only rubber-bands.
+				else if (g.dismissing) applyDrag(dx, dy > 0 ? dy : dy / 3);
 			}
 		}
 	}
 
-	function onPointerEnd(e: React.PointerEvent) {
+	function clearRegionGesture(pointerId: number): boolean {
+		if (regionGesture.current?.pointerId !== pointerId) return false;
+		regionGesture.current = null;
+		setDraftRegion(null);
+		return true;
+	}
+
+	function onPointerCancel(e: React.PointerEvent) {
+		cancelSingleTap();
+		lastTap.current = null;
+		if (clearRegionGesture(e.pointerId)) return;
+		// Settle the transform without letting a canceled gesture page or count as
+		// a tap. A pointer capture can be canceled by app switching or a browser
+		// gesture even when the finger barely moved.
+		if (gesture.current) {
+			gesture.current.moved = true;
+			gesture.current.swiping = false;
+			gesture.current.dismissing = false;
+		}
+		if (drag.current.x || drag.current.y) applyDrag(0, 0, true);
+		onPointerEnd(e);
+	}
+
+	const onPointerEnd = (e: React.PointerEvent) => {
+		const selecting = regionGesture.current;
+		if (selecting?.pointerId === e.pointerId) {
+			const region = regionForGesture(selecting, e.clientX, e.clientY);
+			clearRegionGesture(e.pointerId);
+			// Twelve display pixels filters taps and shaky starts without making a
+			// small button impossible to select. An adjustment is already bounded.
+			if (
+				selecting.kind === "adjust" ||
+				(region.width * selecting.imageRect.width >= 12 &&
+					region.height * selecting.imageRect.height >= 12)
+			) {
+				onSelection?.(region);
+			}
+			return;
+		}
 		if (!pointers.current.has(e.pointerId)) return;
 		const p = { x: e.clientX, y: e.clientY };
 		pointers.current.delete(e.pointerId);
@@ -824,7 +1236,24 @@ function ZoomableMedia({
 			) {
 				onSwipe?.(dx < 0 ? 1 : -1);
 			} else {
-				applySwipe(0, true);
+				applyDrag(0, 0, true);
+			}
+			return;
+		}
+		// A drag downwards resolves on the same terms as a page turn: past a
+		// fifth of the screen, or a flick of any size, closes — otherwise the
+		// picture springs back and nothing changed.
+		if (g.dismissing) {
+			const dy = p.y - g.p0.y;
+			const speed = dy / Math.max(1, performance.now() - g.downAt);
+			gesture.current = null;
+			if (
+				dy > Math.min(DISMISS_DISTANCE, window.innerHeight * 0.2) ||
+				(speed > 0.5 && dy > 32)
+			) {
+				onDismiss?.();
+			} else {
+				applyDrag(0, 0, true);
 			}
 			return;
 		}
@@ -842,21 +1271,35 @@ function ZoomableMedia({
 				: !g.moved; // mouse: any clean click counts
 		gesture.current = null;
 		if (!isTap) return;
+		const mediaTap = g.downTarget === imgRef.current;
 		const prevTap = lastTap.current;
-		lastTap.current = { at: performance.now(), x: p.x, y: p.y };
+		lastTap.current = {
+			at: performance.now(),
+			x: p.x,
+			y: p.y,
+			media: mediaTap,
+		};
 		const isDouble =
-			prevTap &&
+			mediaTap &&
+			prevTap?.media &&
 			performance.now() - prevTap.at < 300 &&
 			Math.hypot(p.x - prevTap.x, p.y - prevTap.y) < 40;
 		if (isDouble) {
 			lastTap.current = null;
+			cancelSingleTap();
 			zoomAt(p, t.current.s > 1 ? 1 : DOUBLE_TAP_SCALE, true);
 			return;
 		}
-		// Single tap on the backdrop (not the photo itself) closes, like the
-		// rest of the modal chrome. On the photo it's a no-op (double-tap arms).
+		if (mediaTap && onTapMedia) {
+			singleTapTimer.current = setTimeout(() => {
+				singleTapTimer.current = null;
+				onTapMedia();
+			}, 300);
+			return;
+		}
+		// A clean tap beside the media keeps the existing backdrop behavior.
 		if (g.downTarget === wrapRef.current && t.current.s === 1) onTapBackdrop();
-	}
+	};
 
 	// Wheel/trackpad zoom. Native non-passive listener — React's onWheel can be
 	// passive, and preventDefault must win or the page behind rubber-bands.
@@ -869,22 +1312,63 @@ function ZoomableMedia({
 				MAX_SCALE,
 				Math.max(1, t.current.s * Math.exp(-e.deltaY * 0.0022)),
 			);
-			zoomAt({ x: e.clientX, y: e.clientY }, sNew);
+			effectZoomAt({ x: e.clientX, y: e.clientY }, sNew);
 		}
 		wrap.addEventListener("wheel", onWheel, { passive: false });
 		return () => wrap.removeEventListener("wheel", onWheel);
 	}, []);
 
+	// The comment belongs against the region it is about, so the viewer reports
+	// where that region landed. Viewport coordinates rather than wrapper ones:
+	// the wrapper carries the page-turn translation, and the card is fixed.
+	useEffect(() => {
+		if (!onSelectionRect) return;
+		if (!commentMode || !selection || !imageBox) {
+			onSelectionRect(null);
+			return;
+		}
+		onSelectionRect({
+			left: imageBox.viewLeft + selection.x * imageBox.width,
+			top: imageBox.viewTop + selection.y * imageBox.height,
+			width: selection.width * imageBox.width,
+			height: selection.height * imageBox.height,
+		});
+	}, [commentMode, selection, imageBox, onSelectionRect]);
+
+	const handleHit = isPhone ? REGION_HANDLE_HIT.phone : REGION_HANDLE_HIT.desktop;
+	const shownRegion = draftRegion ?? selection ?? null;
+	const shownRegionBox =
+		shownRegion && imageBox
+			? {
+					left: imageBox.left + shownRegion.x * imageBox.width,
+					top: imageBox.top + shownRegion.y * imageBox.height,
+					width: shownRegion.width * imageBox.width,
+					height: shownRegion.height * imageBox.height,
+				}
+			: null;
+
+	// A handle centred on the corner of a small region covers the region. Rather
+	// than shrink the target below what a finger can hit, step the handles
+	// outward so they frame the selection and leave its middle free to press.
+	// Large regions keep them on the corners, which is where the eye expects.
+	const handlesOutside =
+		!!shownRegionBox &&
+		Math.min(shownRegionBox.width, shownRegionBox.height) < handleHit * 2;
+	const handleStep = shownRegionBox
+		? regionHandleStep(handleHit, shownRegionBox.width, shownRegionBox.height)
+		: 0;
+
 	return (
 		<div
 			ref={wrapRef}
-			className={`flex min-h-0 min-w-0 flex-1 touch-none select-none items-center justify-center self-stretch ${
-				zoomed ? "cursor-grab" : "cursor-zoom-in"
+			className={`relative flex min-h-0 min-w-0 flex-1 touch-none select-none items-center justify-center self-stretch ${
+				commentMode ? "cursor-crosshair" : zoomed ? "cursor-grab" : "cursor-zoom-in"
 			}`}
 			onPointerDown={onPointerDown}
 			onPointerMove={onPointerMove}
 			onPointerUp={onPointerEnd}
-			onPointerCancel={onPointerEnd}
+			onPointerCancel={onPointerCancel}
+			onLostPointerCapture={(event) => clearRegionGesture(event.pointerId)}
 		>
 			{diagram ? (
 				<div
@@ -902,28 +1386,113 @@ function ZoomableMedia({
 					dangerouslySetInnerHTML={{ __html: diagram.svg }}
 				/>
 			) : (
-				<img
-					ref={imgRef}
-					src={src}
-					alt=""
-					draggable={false}
-					// object-contain sizes the box from the decoded picture, so the
-					// box before load is not the box after it.
-					onLoad={() => {
-						layout.current = null;
-					}}
-					// The scrim is near-black in both themes, so a dark screenshot
-					// opened full size has no edge of its own and bleeds into it.
-					// A white hairline rather than border-line-strong: this surface
-					// is always dark, like the rest of the lightbox chrome.
-					// The top of the radius scale, because this is the largest
-					// floating surface in the app and a card-sized corner on a
-					// screen-sized photo reads as a crop rather than a shape.
-					// Anything rounder would leave the scale, and it starts
-					// clipping content that sits in a screenshot's own corner.
-					className="min-h-0 min-w-0 max-h-full max-w-full rounded-2xl border border-white/20 object-contain [transform-origin:0_0]"
-					style={{ viewTransitionName }}
-				/>
+				<>
+					<img
+						ref={imgRef}
+						src={src}
+						alt=""
+						draggable={false}
+						// object-contain sizes the box from the decoded picture, so the
+						// box before load is not the box after it.
+						onLoad={() => {
+							layout.current = null;
+						}}
+						// The scrim is near-black in both themes, so a dark screenshot
+						// opened full size has no edge of its own and bleeds into it.
+						// A white hairline rather than border-line-strong: this surface
+						// is always dark, like the rest of the lightbox chrome.
+						// The top of the radius scale, because this is the largest
+						// floating surface in the app and a card-sized corner on a
+						// screen-sized photo reads as a crop rather than a shape.
+						// Anything rounder would leave the scale, and it starts
+						// clipping content that sits in a screenshot's own corner.
+						className="min-h-0 min-w-0 max-h-full max-w-full rounded-2xl border border-white/20 object-contain [transform-origin:0_0]"
+						style={{ viewTransitionName }}
+					/>
+					{commentMode && shownRegionBox && imageBox && (
+						/* What you chose stays at full brightness and everything else
+						   steps back, rather than the selection wearing a coloured wash.
+						   One spread shadow paints the whole surround; the wrapper clips
+						   it to the picture's own rounded box so it cannot leak over the
+						   scrim and the chrome. */
+						<div
+							className="pointer-events-none absolute overflow-hidden rounded-2xl"
+							style={{
+								left: imageBox.left,
+								top: imageBox.top,
+								width: imageBox.width,
+								height: imageBox.height,
+							}}
+							aria-hidden="true"
+						>
+							<div
+								className="absolute shadow-[0_0_0_9999px_rgb(0_0_0/0.5)]"
+								style={{
+									left: shownRegionBox.left - imageBox.left,
+									top: shownRegionBox.top - imageBox.top,
+									width: shownRegionBox.width,
+									height: shownRegionBox.height,
+								}}
+							/>
+						</div>
+					)}
+					{commentMode && shownRegionBox && (
+						<div
+							// The region is a thing you can take hold of, not a mark:
+							// press it to move it, press a handle to resize it.
+							// Dragging bare picture still starts a new one.
+							data-region-handle="move"
+							// A hairline, not a coloured frame: the dimmed surround is
+							// what says where the selection is, so the line only has to
+							// trace it. The dark hairline under it keeps the white edge
+							// legible on a white screenshot.
+							className="absolute cursor-move touch-none rounded-[3px] border border-white shadow-[0_0_0_1px_rgb(0_0_0/0.22)]"
+							style={shownRegionBox}
+							aria-hidden="true"
+						>
+							{REGION_HANDLES.filter(
+								(handle) =>
+									// An edge handle needs a side long enough to hold one
+									// without crowding the corners it sits between, and
+									// a framed region has no room for one at all.
+									!handlesOutside &&
+									(handle.axis !== "x" || shownRegionBox.width >= 56) &&
+									(handle.axis !== "y" || shownRegionBox.height >= 56),
+							)
+								.concat(
+									handlesOutside
+										? REGION_HANDLES.filter((handle) => !handle.axis)
+										: [],
+								)
+								.map((handle) => (
+									<span
+										key={handle.id}
+										data-region-handle={handle.id}
+										// The mark stays small so it cannot hide a small
+										// region; the square around it is what the finger
+										// gets.
+										className={cn(
+											"absolute grid touch-none place-items-center",
+											handle.position,
+											handle.cursor,
+										)}
+										style={{
+											width: handleHit,
+											height: handleHit,
+											transform: `translate(calc(-50% + ${handle.sx * handleStep}px), calc(-50% + ${handle.sy * handleStep}px))`,
+										}}
+									>
+										<span
+											className={cn(
+												"block border-white drop-shadow-[0_0_2px_rgb(0_0_0/0.5)]",
+												handle.mark,
+											)}
+										/>
+									</span>
+								))}
+						</div>
+					)}
+				</>
 			)}
 		</div>
 	);
@@ -933,10 +1502,9 @@ function ZoomableMedia({
 // of dropping the dots entirely. Edge dots shrink to hint that more lie beyond.
 const MAX_VISIBLE_DOTS = 7;
 
-// Download / Open: quiet pills in the top action cluster, matching the asset
+// Download / Open: quiet buttons in the top action cluster, matching the asset
 // preview's separation between actions above and descriptions below.
-const lightboxAction =
-	"inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-full border-0 bg-transparent px-2 py-1 text-xs text-white/60 no-underline transition-colors hover:bg-white/15 hover:text-white";
+const lightboxAction = "shrink-0 cursor-pointer";
 
 const PREVIEW_LABEL: Record<LightboxItem["kind"], string> = {
 	image: "Image preview",
@@ -950,6 +1518,7 @@ function MediaLightbox({
 	onIndex,
 	onClose,
 	useHeroTransition,
+	startCommenting = false,
 	heroTransitionName,
 }: {
 	items: LightboxItem[];
@@ -957,10 +1526,17 @@ function MediaLightbox({
 	onIndex: (i: number) => void;
 	onClose: (allowHeroTransition?: boolean) => void;
 	useHeroTransition: boolean;
+	startCommenting?: boolean;
 	heroTransitionName?: string;
 }) {
+	const isPhone = useIsPhone();
 	const item = items[index];
 	const many = items.length > 1;
+	const [chromeVisible, setChromeVisible] = useState(true);
+	const [phoneBottomHeight, setPhoneBottomHeight] = useState(0);
+	const phoneBottomRef = useRef<HTMLDivElement>(null);
+	const filmstripRef = useRef<HTMLDivElement>(null);
+	const filmstripIndexRef = useRef(index);
 	const dotStart = Math.min(
 		Math.max(0, index - Math.floor(MAX_VISIBLE_DOTS / 2)),
 		Math.max(0, items.length - MAX_VISIBLE_DOTS),
@@ -981,43 +1557,139 @@ function MediaLightbox({
 	// the side it came from — set by the arrows and the keyboard too, not just
 	// by the drag, so every route through the gallery reads the same.
 	const [direction, setDirection] = useState<-1 | 0 | 1>(0);
+	const [commenting, setCommenting] = useState(startCommenting);
+	const [selection, setSelection] = useState<ImageRegion | null>(null);
+	/** Where that selection sits on screen, reported by the viewer. */
+	const [selectionRect, setSelectionRect] = useState<ScreenRect | null>(null);
+	const [commentCardSize, setCommentCardSize] = useState<{
+		width: number;
+		height: number;
+	} | null>(null);
+	const [viewport, setViewport] = useState(() => ({
+		width: typeof window === "undefined" ? 0 : window.innerWidth,
+		height: typeof window === "undefined" ? 0 : window.innerHeight,
+	}));
+	const [commentText, setCommentText] = useState("");
+	const [commentError, setCommentError] = useState<string | null>(null);
+	const [sendingComment, setSendingComment] = useState(false);
+	const sendingCommentRef = useRef(false);
 	const dialogRef = useRef<HTMLDivElement>(null);
 	const closeRef = useRef<HTMLButtonElement>(null);
+	const commentInputRef = useRef<HTMLTextAreaElement>(null);
+	const commentCardRef = useRef<HTMLFormElement>(null);
+	/** The field is as tall as its own text, between one line and a bar that
+	 *  would start to cover the picture. Measured from scrollHeight, so it is
+	 *  the wrapped line count rather than the character count that decides. */
+	const fitCommentField = (field: HTMLTextAreaElement) => {
+		const min = isPhone ? 44 : 36;
+		// Zero, not "auto": a textarea's auto height is its `rows` height, so
+		// scrollHeight read against it never falls back below one row and the bar
+		// cannot shrink again when the text is deleted.
+		field.style.height = "0px";
+		field.style.height = `${Math.min(Math.max(field.scrollHeight, min), 132)}px`;
+	};
+	const effectFitCommentField = useEffectEvent(fitCommentField);
 	const reduceMotion = useReducedMotion();
+	const resetComment = () => {
+		setChromeVisible(true);
+		setCommenting(false);
+		setSelection(null);
+		setSelectionRect(null);
+		setCommentCardSize(null);
+		setCommentText("");
+		setCommentError(null);
+	};
 	const prev = () => {
 		setImageZoomed(false);
+		resetComment();
 		setDirection(-1);
 		onIndex((index - 1 + items.length) % items.length);
 	};
 	const next = () => {
 		setImageZoomed(false);
+		resetComment();
 		setDirection(1);
 		onIndex((index + 1) % items.length);
 	};
 	const go = (i: number) => {
 		if (i === index) return;
 		setImageZoomed(false);
+		resetComment();
 		setDirection(i > index ? 1 : -1);
 		onIndex(i);
 	};
 	const requestClose = () => onClose(!imageZoomed);
+	// The scrim lifts with a dismissal drag, so what is underneath is already
+	// showing through before the finger leaves the glass. Written straight to
+	// the element like the drag transform itself: a re-render per pointer move
+	// is what this whole surface is built to avoid. A rejected drag restores the
+	// scrim over the same quarter-second that returns the picture.
+	const dragScrim = (progress: number) => {
+		const el = dialogRef.current;
+		if (!el) return;
+		el.style.transition =
+			progress === 0 && !reduceMotion
+				? "background-color 0.24s ease-out"
+				: "none";
+		el.style.backgroundColor = progress
+			? `rgb(0 0 0 / ${(1 - progress * 0.55).toFixed(3)})`
+			: "";
+	};
+	const togglePhoneChrome = () => {
+		if (!isPhone || commenting) return;
+		setChromeVisible((visible) => !visible);
+	};
 	const saveItem = async () => {
 		if (saving) return;
 		setSavingSrc(item.src);
-		try {
-			await saveFileWithNativeShare(downloadHref(item), suggestedName(item));
-		} catch (error) {
-			if (!nativeShareWasCancelled(error)) toast("Could not save that file");
-		} finally {
-			setSavingSrc(null);
-		}
+		await (async () => {
+await saveFileWithNativeShare(downloadHref(item), suggestedName(item));
+})().catch(async (error) => {
+if (!nativeShareWasCancelled(error)) toast("Could not save that file");
+}).finally(async () => {
+setSavingSrc(null);
+});
 	};
 	const openItem = async () => {
-		try {
-			await shareURL(item.src);
-		} catch (error) {
-			if (!nativeShareWasCancelled(error)) toast("Could not share that link");
-		}
+		await (async () => {
+await shareURL(item.src);
+})().catch(async (error) => {
+if (!nativeShareWasCancelled(error)) toast("Could not share that link");
+});
+	};
+	const copyImage = () => {
+		void copyImageToClipboard(item.src).then(
+			() => setCopiedSrc(item.src),
+			() => toast("Could not copy that image"),
+		);
+	};
+	const commentable =
+		item.kind === "image" &&
+		canCommentOnImageRegion(item.commentSessionId);
+	const sendRegionComment = async () => {
+		const text = commentText.trim();
+		const { commentSessionId, src } = item;
+		if (!commentSessionId || !selection || !text || sendingCommentRef.current)
+			return;
+		sendingCommentRef.current = true;
+		setSendingComment(true);
+		setCommentError(null);
+		await (async () => {
+await submitImageRegionComment({
+				sessionId: commentSessionId,
+				src,
+				region: selection,
+				text,
+			});
+			onClose(false);
+})().catch(async (error) => {
+setCommentError(
+				error instanceof Error ? error.message : "Could not send this comment",
+			);
+}).finally(async () => {
+sendingCommentRef.current = false;
+			setSendingComment(false);
+});
 	};
 
 	useEffect(() => {
@@ -1025,6 +1697,107 @@ function MediaLightbox({
 		const t = setTimeout(() => setCopiedSrc(null), 1600);
 		return () => clearTimeout(t);
 	}, [copiedSrc]);
+
+	// The image fits above the phone bar, whose height changes with captions and
+	// the home indicator. Measure the rendered bar instead of assuming one size.
+	useLayoutEffect(() => {
+		if (!isPhone) return;
+		const bar = phoneBottomRef.current;
+		if (!bar) return;
+		const measure = () => {
+			const height = bar.getBoundingClientRect().height;
+			setPhoneBottomHeight((current) =>
+				Math.abs(current - height) < 0.5 ? current : height,
+			);
+		};
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(bar);
+		return () => observer.disconnect();
+	}, [isPhone]);
+
+	// Swiping the main image and tapping a thumbnail keep the active still in
+	// the middle of the strip. The first positioning is immediate.
+	useEffect(() => {
+		if (!isPhone) return;
+		const changed = filmstripIndexRef.current !== index;
+		filmstripIndexRef.current = index;
+		filmstripRef.current
+			?.querySelector<HTMLElement>(`[data-lightbox-thumb="${index}"]`)
+			?.scrollIntoView({
+				behavior: changed && !reduceMotion ? "smooth" : "auto",
+				block: "nearest",
+				inline: "center",
+			});
+	}, [index, isPhone, reduceMotion]);
+
+	// A hidden toolbar must not retain focus. Focus the dialog itself so Enter,
+	// Space, or a fresh tap can reveal the controls again.
+	useEffect(() => {
+		if (!isPhone || chromeVisible) return;
+		dialogRef.current?.focus({ preventScroll: true });
+	}, [chromeVisible, isPhone]);
+
+	// The card is placed against the selection, so it needs the room it is being
+	// placed in. visualViewport rather than innerHeight: an open phone keyboard
+	// shrinks the first and not the second, and a card measured against the
+	// second would sit under the keys the person is typing on.
+	useEffect(() => {
+		const measure = () =>
+			setViewport((current) => {
+				const next = {
+					width: window.visualViewport?.width ?? window.innerWidth,
+					height: window.visualViewport?.height ?? window.innerHeight,
+				};
+				return Math.abs(current.width - next.width) < 0.5 &&
+					Math.abs(current.height - next.height) < 0.5
+					? current
+					: next;
+			});
+		measure();
+		window.addEventListener("resize", measure);
+		window.visualViewport?.addEventListener("resize", measure);
+		return () => {
+			window.removeEventListener("resize", measure);
+			window.visualViewport?.removeEventListener("resize", measure);
+		};
+	}, []);
+
+	// Its own height decides whether it fits below the region, and that height
+	// changes as an error appears or the text wraps.
+	useLayoutEffect(() => {
+		const el = commentCardRef.current;
+		if (!el) return;
+		const measure = () => {
+			const rect = el.getBoundingClientRect();
+			setCommentCardSize((current) =>
+				current &&
+				Math.abs(current.width - rect.width) < 0.5 &&
+				Math.abs(current.height - rect.height) < 0.5
+					? current
+					: { width: rect.width, height: rect.height },
+			);
+		};
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(el);
+		return () => observer.disconnect();
+		// selectionRect too: the card only mounts once the viewer has reported
+		// where the region is, which is a render after the selection itself.
+	}, [commenting, selection, selectionRect]);
+
+	useEffect(() => {
+		if (!selection) return;
+		const frame = requestAnimationFrame(() => {
+			const field = commentInputRef.current;
+			if (!field) return;
+			// Before focus, so the bar is never one frame taller or shorter than
+			// the words already in it.
+			effectFitCommentField(field);
+			field.focus({ preventScroll: true });
+		});
+		return () => cancelAnimationFrame(frame);
+	}, [selection]);
 
 	useEffect(() => {
 		const previousFocus = document.activeElement as HTMLElement | null;
@@ -1048,23 +1821,40 @@ function MediaLightbox({
 	// the modal (composer, session viewer shortcuts).
 	useEffect(() => {
 		function onKey(e: KeyboardEvent) {
+			const target = e.target as HTMLElement | null;
+			const editingText = Boolean(
+				target?.matches("input, textarea, [contenteditable='true']"),
+			);
 			if (e.key === "Escape") {
+				e.preventDefault();
 				e.stopPropagation();
 				requestClose();
-			} else if (e.key === "ArrowLeft" && many) {
+			} else if (
+				isPhone &&
+				!chromeVisible &&
+				!editingText &&
+				(e.key === "Enter" || e.key === " ")
+			) {
+				e.preventDefault();
+				e.stopPropagation();
+				setChromeVisible(true);
+			} else if (!editingText && e.key === "ArrowLeft" && many) {
 				e.stopPropagation();
 				e.preventDefault();
 				prev();
-			} else if (e.key === "ArrowRight" && many) {
+			} else if (!editingText && e.key === "ArrowRight" && many) {
 				e.stopPropagation();
 				e.preventDefault();
 				next();
 			} else if (e.key === "Tab") {
 				const focusable = Array.from(
 					dialogRef.current?.querySelectorAll<HTMLElement>(
-						'a[href], button:not([disabled]), video[controls], [tabindex]:not([tabindex="-1"])',
+						'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), video[controls], [tabindex]:not([tabindex="-1"])',
 					) || [],
-				).filter((element) => element.getClientRects().length > 0);
+				).filter(
+					(element) =>
+						element.getClientRects().length > 0 && !element.closest("[inert]"),
+				);
 				if (focusable.length === 0) {
 					e.preventDefault();
 					return;
@@ -1096,14 +1886,33 @@ function MediaLightbox({
 	// spread under it across the whole viewport (z-index applies to flex items
 	// without needing position).
 	const navBtn =
-		"z-10 grid h-10 w-10 shrink-0 place-items-center rounded-full border-0 bg-white/10 p-0 text-white hover:bg-white/20";
+		"z-10 grid h-10 w-10 shrink-0 place-items-center rounded-full border-0 bg-white/10 p-0 text-white hover:bg-white/20 phone:h-11 phone:w-11";
+	// Wide enough for a sentence, never wider than the screen it floats on.
+	const commentCardWidth = Math.min(340, Math.max(220, viewport.width - 24));
+	const commentAnchor =
+		commenting && selection && selectionRect
+			? anchoredCommentPosition(
+					selectionRect,
+					{ width: commentCardWidth, height: commentCardSize?.height ?? 0 },
+					viewport,
+				)
+			: null;
+	const phoneStageInset = chromeVisible || imageZoomed || commenting;
+	// Photos keeps the still centered on the screen and floats its chrome over it.
+	// Using the full bottom bar as one-sided padding made tall images look pulled
+	// upward. Preserve the same fitted size, but share that clearance between the
+	// top and bottom so the image's center stays at the viewport's center.
+	const phoneStagePadding = (68 + phoneBottomHeight) / 2;
+	const phoneAction =
+		"grid size-11 shrink-0 place-items-center rounded-full border-0 bg-transparent p-0 text-white transition-[transform,background-color,opacity] duration-[var(--dur-micro)] ease-[var(--ease)] active:scale-[0.96] disabled:opacity-[0.35]";
 
 	return (
 		<motion.div
 			ref={dialogRef}
 			data-media-lightbox=""
-			className="fixed inset-0 z-[11000] flex flex-col bg-black/85"
+			className="fixed inset-0 z-[11000] flex flex-col bg-black/85 phone:h-[100dvh] phone:bg-black"
 			role="dialog"
+			tabIndex={-1}
 			aria-modal="true"
 			aria-label={PREVIEW_LABEL[item.kind]}
 			initial={useHeroTransition ? false : { opacity: 0 }}
@@ -1114,64 +1923,133 @@ function MediaLightbox({
 				if (e.target === e.currentTarget) requestClose();
 			}}
 		>
-			<div className="absolute right-[calc(12px+env(safe-area-inset-right))] top-[calc(12px+env(safe-area-inset-top))] z-10 flex items-center gap-1">
-				{nativeShare ? (
-					<button type="button" className={lightboxAction} onClick={saveItem} disabled={saving}>
-						<IconArrowDown size={14} />
-						{saving ? "Preparing…" : "Download"}
-					</button>
-				) : (
-					<a
-						href={downloadHref(item)}
-						download={
-							item.src.startsWith("data:") || item.src.startsWith("blob:")
-								? suggestedName(item)
-								: undefined
-						}
-						className={lightboxAction}
-					>
-						<IconArrowDown size={14} />
-						Download
-					</a>
+			<div
+				className={cn(
+					"pointer-events-none absolute left-[calc(12px+env(safe-area-inset-left))] right-[calc(12px+env(safe-area-inset-right))] top-[calc(12px+env(safe-area-inset-top))] z-10 flex items-center justify-center",
+					isPhone &&
+						"transition-[opacity,transform] duration-[var(--dur)] ease-[var(--ease)] motion-reduce:transition-none",
+					isPhone && !chromeVisible && "-translate-y-2 opacity-0",
 				)}
-				{!item.src.startsWith("data:") && (
-					<>
-						{/* The file's own URL — what you paste into a Tella upload, a
-						    ticket, or a message to someone else on the tailnet. */}
-						<button
-							type="button"
-							onClick={() =>
-								copyToClipboard(shareableSrc(item), () =>
-									setCopiedSrc(item.src),
-								)
-							}
-							className={lightboxAction}
+				inert={isPhone && !chromeVisible ? true : undefined}
+				aria-hidden={isPhone && !chromeVisible ? true : undefined}
+			>
+				{/* Keep the actions on the viewport's centerline while Close owns the
+				    right corner. Grouping both at the edge made the row read like loose
+				    header controls rather than one action bar. */}
+				<div
+					role="group"
+					aria-label="Media actions"
+					className={isPhone ? "hidden" : "pointer-events-auto flex items-center gap-1"}
+				>
+					{commentable && (
+						<Button
+							variant="overlay"
+							size="md"
+							icon={<IconMessage size={20} />}
+							className={cn(
+								lightboxAction,
+								commenting && "bg-white/15 text-white",
+							)}
+							onClick={() => {
+								if (commenting) resetComment();
+								else {
+									setCommenting(true);
+									setCommentError(null);
+								}
+							}}
+							aria-pressed={commenting}
+							aria-label={commenting ? "Cancel image comment" : "Comment on image"}
 						>
-							{copied ? <IconCheck size={14} /> : <IconLink size={14} />}
-							{copied ? "Copied" : "Copy link"}
-						</button>
-						{nativeShare ? (
-							<button type="button" onClick={openItem} className={lightboxAction}>
-								<IconArrowUpRight size={14} />
-								Open or share
-							</button>
-						) : (
-							<a
-								href={item.src}
-								target="_blank"
-								rel="noopener noreferrer"
+							Comment
+						</Button>
+					)}
+					{nativeShare ? (
+						<Button
+							variant="overlay"
+							size="md"
+							icon={<IconArrowDown size={20} />}
+							className={lightboxAction}
+							onClick={saveItem}
+							disabled={saving}
+							aria-label={saving ? "Preparing download" : "Download"}
+						>
+							{saving ? "Preparing…" : "Download"}
+						</Button>
+					) : (
+						<Button
+							variant="overlay"
+							size="md"
+							icon={<IconArrowDown size={20} />}
+							className={lightboxAction}
+							aria-label="Download"
+							render={
+								<a
+									href={downloadHref(item)}
+									download={
+										item.src.startsWith("data:") || item.src.startsWith("blob:")
+											? suggestedName(item)
+											: undefined
+									}
+								/>
+							}
+						>
+							Download
+						</Button>
+					)}
+					{!item.src.startsWith("data:") && (
+						<>
+							{/* The file's own URL: what you paste into an upload, a
+							    ticket, or a message to someone who can reach this instance. */}
+							<Button
+								variant="overlay"
+								size="md"
+								icon={copied ? <IconCheck size={20} /> : <IconLink size={20} />}
 								className={lightboxAction}
+								aria-label={copied ? "Link copied" : "Copy link"}
+								onClick={() =>
+									copyToClipboard(shareableSrc(item), () =>
+										setCopiedSrc(item.src),
+									)
+								}
 							>
-								<IconArrowUpRight size={14} />
-								Open
-							</a>
-						)}
-					</>
-				)}
+								{copied ? "Copied" : "Copy link"}
+							</Button>
+							{nativeShare ? (
+								<Button
+									variant="overlay"
+									size="md"
+									icon={<IconArrowUpRight size={20} />}
+									className={lightboxAction}
+									onClick={openItem}
+									aria-label="Open or share"
+								>
+									Open or share
+								</Button>
+							) : (
+								<Button
+									variant="overlay"
+									size="md"
+									icon={<IconArrowUpRight size={20} />}
+									className={lightboxAction}
+									aria-label="Open"
+									render={
+										<a
+											href={item.src}
+											target="_blank"
+											rel="noopener noreferrer"
+										/>
+									}
+								>
+									Open
+								</Button>
+							)}
+						</>
+					)}
+				</div>
 				<button
 					ref={closeRef}
 					type="button"
-					className={navBtn}
+					className={cn(navBtn, "pointer-events-auto absolute right-0")}
 					onClick={requestClose}
 					aria-label="Close"
 				>
@@ -1180,12 +2058,26 @@ function MediaLightbox({
 			</div>
 
 			<div
-				className="flex min-h-0 flex-1 items-center justify-center gap-3 px-3 pb-2 pt-[calc(56px+env(safe-area-inset-top))] sm:px-4"
+				className={cn(
+					"flex min-h-0 flex-1 items-center justify-center gap-3 px-3 pb-2 pt-[calc(56px+env(safe-area-inset-top))] sm:px-4",
+					isPhone && "gap-0 px-0",
+				)}
+				style={
+					isPhone
+						? {
+								paddingTop: phoneStageInset ? phoneStagePadding : 0,
+								paddingBottom: phoneStageInset ? phoneStagePadding : 0,
+								transition: reduceMotion
+									? "none"
+									: "padding 0.25s cubic-bezier(0.77, 0, 0.175, 1)",
+							}
+						: undefined
+				}
 				onMouseDown={(e) => {
 					if (e.target === e.currentTarget) requestClose();
 				}}
 			>
-				{many && (
+				{many && !isPhone && (
 					<button
 						type="button"
 						className={navBtn}
@@ -1221,14 +2113,49 @@ function MediaLightbox({
 							key={item.src}
 							src={item.src}
 							diagram={item.diagram}
-							onTapBackdrop={requestClose}
-							onZoomChange={setImageZoomed}
-							onSwipe={many ? (d) => (d === 1 ? next() : prev()) : undefined}
+							onTapBackdrop={isPhone ? togglePhoneChrome : requestClose}
+							onTapMedia={
+								isPhone && item.kind === "image" && !commenting
+									? togglePhoneChrome
+									: undefined
+							}
+							onZoomChange={(zoomed) => {
+								setImageZoomed(zoomed);
+								if (isPhone && zoomed) setChromeVisible(false);
+							}}
+							onSwipe={
+								many && !commenting
+									? (d) => (d === 1 ? next() : prev())
+									: undefined
+							}
+							// Drag down to close, the way every photo viewer on a
+							// phone does. The picture has already left its thumbnail
+							// behind by then, so it fades out from where the finger
+							// dropped it rather than flying back.
+							onDismiss={
+								isPhone && !commenting ? () => onClose(false) : undefined
+							}
+							onDragProgress={isPhone ? dragScrim : undefined}
 							enterFrom={direction}
 							viewTransitionName={heroTransitionName}
+							commentMode={commenting}
+							selection={selection}
+							onSelection={(region) => {
+								setSelection(region);
+								setCommentError(null);
+							}}
+							onSelectionRect={setSelectionRect}
 						/>
 					) : (
-						<div className="flex min-h-0 min-w-0 flex-1 items-center justify-center self-stretch">
+						// The video never fills the stage, so the space beside it has to
+						// close too. Without this, only the thin strip outside this
+						// wrapper was a backdrop and the lightbox felt stuck.
+						<div
+							className="flex min-h-0 min-w-0 flex-1 items-center justify-center self-stretch"
+							onMouseDown={(e) => {
+								if (e.target === e.currentTarget) requestClose();
+							}}
+						>
 							<video
 								key={item.src}
 								src={item.src}
@@ -1243,7 +2170,7 @@ function MediaLightbox({
 						</div>
 					)}
 				</motion.div>
-				{many && (
+				{many && !isPhone && (
 					<button
 						type="button"
 						className={navBtn}
@@ -1255,13 +2182,274 @@ function MediaLightbox({
 				)}
 			</div>
 
+			{isPhone && (
+				<div
+					ref={phoneBottomRef}
+					className={cn(
+						"absolute inset-x-0 bottom-0 z-10 flex flex-col gap-3 bg-linear-to-b from-transparent via-black/85 to-black px-0 pb-[max(14px,env(safe-area-inset-bottom))] pt-8 transition-[opacity,transform] duration-[var(--dur)] ease-[var(--ease)] motion-reduce:transition-none",
+						!chromeVisible && "pointer-events-none translate-y-3 opacity-0",
+					)}
+					inert={!chromeVisible ? true : undefined}
+					aria-hidden={!chromeVisible ? true : undefined}
+				>
+					{!commenting && (item.walkthroughLabel || caption || description) && (
+						<div className="flex max-w-full flex-col items-center gap-0.5 px-6 text-center">
+							<div className="flex max-w-full items-center justify-center gap-2">
+								{caption && (
+									<div className="line-clamp-2 min-w-0 max-w-full text-sm font-medium leading-snug text-white">
+										{caption}
+									</div>
+								)}
+								{item.walkthroughLabel && (
+									<span
+										className={cn(
+											WALKTHROUGH_LABEL_CLASS,
+											WALKTHROUGH_LABEL_TONE[item.walkthroughLabel],
+										)}
+									>
+										{WALKTHROUGH_LABEL_TEXT[item.walkthroughLabel]}
+									</span>
+								)}
+							</div>
+							{description && (
+								<div className="line-clamp-2 max-w-full text-sm leading-snug text-white/75">
+									{description}
+								</div>
+							)}
+						</div>
+					)}
+
+					{many && (
+						<div
+							ref={filmstripRef}
+							className="flex h-12 snap-x snap-mandatory items-center gap-1 overflow-x-auto px-[calc(50%_-_22px)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+							role="group"
+							aria-label="Media filmstrip"
+						>
+							{items.map((thumb, thumbIndex) => {
+								const active = thumbIndex === index;
+								return (
+									<button
+										key={`${thumb.src}-${thumbIndex}`}
+										type="button"
+										data-lightbox-thumb={thumbIndex}
+										className="grid size-11 shrink-0 snap-center place-items-center border-0 bg-transparent p-0"
+										onClick={() => go(thumbIndex)}
+										aria-label={`Show ${thumb.kind} ${thumbIndex + 1} of ${items.length}`}
+										aria-current={active ? "true" : undefined}
+									>
+										<span
+											className={cn(
+												"block overflow-hidden rounded-sm outline outline-1 outline-offset-1 transition-[width,height,opacity] duration-[var(--dur)] ease-[var(--ease)] motion-reduce:transition-none",
+												active
+													? "h-11 w-11 opacity-100 outline-white/85"
+													: "h-9 w-7 opacity-60 outline-transparent",
+											)}
+										>
+											{thumb.kind === "video" ? (
+												<video
+													src={thumb.src}
+													muted
+													playsInline
+													preload="metadata"
+													className="size-full object-cover"
+												/>
+											) : (
+												<img
+													src={thumb.src}
+													alt=""
+													loading="lazy"
+													className="size-full object-cover"
+												/>
+											)}
+										</span>
+									</button>
+								);
+							})}
+						</div>
+					)}
+
+					<div className="grid grid-cols-3 items-center px-5">
+						<div className="justify-self-start">
+							{nativeShare ? (
+								<button
+									type="button"
+									className={phoneAction}
+									onClick={saveItem}
+									disabled={saving}
+									aria-label={saving ? "Preparing image" : "Share image"}
+								>
+									<IconShare size={21} />
+								</button>
+							) : (
+								<a
+									href={downloadHref(item)}
+									download={
+										item.src.startsWith("data:") || item.src.startsWith("blob:")
+											? suggestedName(item)
+											: undefined
+									}
+									className={phoneAction}
+									aria-label="Download"
+								>
+									<IconArrowDown size={21} />
+								</a>
+							)}
+						</div>
+
+						{commentable && (
+							<button
+								type="button"
+								className={cn(phoneAction, "justify-self-center", commenting && "bg-white/15")}
+								onClick={() => {
+									if (commenting) resetComment();
+									else {
+										setChromeVisible(true);
+										setCommenting(true);
+										setCommentError(null);
+									}
+								}}
+								aria-pressed={commenting}
+								aria-label={commenting ? "Cancel image comment" : "Comment on image"}
+							>
+								<IconMessage size={21} />
+							</button>
+						)}
+
+						<button
+							type="button"
+							className={cn(phoneAction, "col-start-3 justify-self-end")}
+							onClick={copyImage}
+							disabled={item.kind === "video"}
+							aria-label={copied ? "Image copied" : "Copy image"}
+						>
+							{copied ? <IconCheck size={21} /> : <IconCopy size={21} />}
+						</button>
+					</div>
+				</div>
+			)}
+
+			{commenting && !selection && (
+				<div className="pointer-events-none absolute inset-x-0 bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 flex justify-center px-4">
+					<div className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/10 bg-black/55 py-1 pl-4 pr-1 shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_12px_44px_rgb(0_0_0/0.5)] backdrop-blur-2xl backdrop-saturate-150">
+						<span className="text-label font-medium text-white">
+							Drag over the part you mean
+						</span>
+						<button
+							type="button"
+							className="min-h-9 rounded-full px-3 text-label font-medium text-white/70 hover:bg-white/10 hover:text-white phone:min-h-11"
+							onClick={resetComment}
+						>
+							Cancel
+						</button>
+					</div>
+				</div>
+			)}
+
+			{commentAnchor && (
+				<motion.form
+					ref={commentCardRef}
+					/* Fixed and placed against the region: the remark and the pixels it
+					   is about read as one thing. Kept to a single row, because on a
+					   phone a taller card would cover the picture it is describing. */
+					className="fixed z-20 flex cursor-text flex-col gap-1 rounded-[22px] bg-black/55 p-1.5 shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_16px_50px_rgb(0_0_0/0.5)] backdrop-blur-2xl backdrop-saturate-150"
+					// It grows out of the corner of the region it belongs to, rather
+					// than fading in beside it.
+					initial={reduceMotion ? false : { opacity: 0, scale: 0.94 }}
+					animate={{ opacity: 1, scale: 1 }}
+					transition={{ type: "spring", duration: 0.3, bounce: 0.12 }}
+					style={{
+						left: commentAnchor.left,
+						top: commentAnchor.top,
+						width: commentCardWidth,
+						transformOrigin:
+							commentAnchor.placement === "above" ? "bottom left" : "top left",
+						// One frame of measurement before it knows which side of the
+						// region it fits on. Showing it first would place it, then move it.
+						visibility: commentCardSize ? undefined : "hidden",
+					}}
+					onSubmit={(event) => {
+						event.preventDefault();
+						void sendRegionComment();
+					}}
+					// The whole bar is the field, the way a text input is: pressing
+					// the padding beside the words puts the caret in them rather than
+					// doing nothing. The buttons keep their own presses.
+					onPointerDown={(event) => {
+						if ((event.target as HTMLElement).closest("button, textarea")) return;
+						event.preventDefault();
+						commentInputRef.current?.focus({ preventScroll: true });
+					}}
+				>
+					<div className="flex items-end gap-1">
+						<textarea
+							ref={commentInputRef}
+							value={commentText}
+							onChange={(event) => {
+								setCommentText(event.target.value);
+								fitCommentField(event.target);
+							}}
+							onKeyDown={(event) => {
+								if (
+									event.key === "Enter" &&
+									!event.shiftKey &&
+									!event.nativeEvent.isComposing &&
+									window.matchMedia("(hover: hover) and (pointer: fine)").matches
+								) {
+									event.preventDefault();
+									void sendRegionComment();
+								}
+							}}
+							rows={1}
+							placeholder="What should change here?"
+							// No surface of its own: the bar behind it is the input.
+							// border-0 explicitly, because this app leaves the browser's
+							// own control styling in place rather than importing a
+							// preflight, and a bare textarea draws a grey 1px frame.
+							// A long remark grows the bar rather than scrolling inside
+							// one line, up to the point where it would start covering
+							// the picture it is about.
+							className="block w-full flex-1 resize-none appearance-none border-0 bg-transparent px-2.5 py-2 text-body leading-snug text-white outline-none [scrollbar-width:none] placeholder:text-white/45 phone:text-input-phone [&::-webkit-scrollbar]:hidden"
+							disabled={sendingComment}
+						/>
+						<button
+							type="button"
+							className="grid size-9 shrink-0 place-items-center rounded-full border-0 bg-transparent p-0 text-white/60 hover:bg-white/10 hover:text-white phone:size-11"
+							onClick={resetComment}
+							disabled={sendingComment}
+							aria-label="Cancel comment"
+						>
+							<IconX size={16} />
+						</button>
+						<button
+							type="submit"
+							// The filled circle a message is sent with, in the app's own
+							// accent rather than a plain white chip.
+							className="grid size-9 shrink-0 place-items-center rounded-full border-0 bg-accent p-0 text-white transition-transform active:scale-[0.94] disabled:bg-white/15 disabled:text-white/40 phone:size-11"
+							disabled={!commentText.trim() || sendingComment}
+							aria-label={sendingComment ? "Sending comment" : "Send comment"}
+						>
+							<IconArrowUp size={17} />
+						</button>
+					</div>
+					{commentError && (
+						<div className="px-2.5 pb-1 text-label text-red" role="alert">
+							{commentError}
+						</div>
+					)}
+				</motion.form>
+			)}
+
 			{/* What you are looking at gets its own line directly under the
 			    picture, in plain white. Actions live above with Close, so a
 			    "Before"/"After" label cannot read as another link. */}
-			<div
-				className={cn(
-					"z-10 flex flex-col items-center gap-1.5 px-4 pb-4 pt-4",
-					!item.walkthroughLabel && !caption && !description && !many && "hidden",
+			{!isPhone && (
+				<div
+					className={cn(
+						"z-10 flex flex-col items-center gap-1.5 px-4 pb-4 pt-4",
+					(commenting ||
+						(!item.walkthroughLabel && !caption && !description && !many)) &&
+						"hidden",
 				)}
 				onMouseDown={(e) => {
 					if (e.target === e.currentTarget) requestClose();
@@ -1328,8 +2516,9 @@ function MediaLightbox({
 							{index + 1} of {items.length}
 						</span>
 					)}
+					</div>
 				</div>
-			</div>
+			)}
 		</motion.div>
 	);
 }

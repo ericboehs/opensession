@@ -12,7 +12,7 @@ import { defaultRepo, personaName } from "../config";
 import { hostRepoId, prHostFor } from "../pr-host";
 import { cachedPrDetailsForSession, reconcilePrDetails } from "../pr-info";
 import { getPrStack, linkPrStack, mergePrStack } from "../pr-stack";
-import { findSession, invalidateSessionsCache } from "../session-cache";
+import { findSessionAsync, invalidateSessionsCache } from "../session-cache";
 import { getSessionControl } from "../session-control";
 import { resolvePrTarget } from "../session-repos";
 import {
@@ -31,6 +31,7 @@ import {
 	githubCredentialRequiredResponse,
 	githubMutationCredential,
 } from "./github-credential";
+import { conditionalJsonResponse } from "../http-json";
 
 function validDiffGroupingInput(body: any): {
 	files: Array<{
@@ -100,7 +101,31 @@ export async function handlePrRoutes(
 	// identity table — the sidebar's Open PRs section (which must include
 	// PRs that have no Open Session session).
 	if (path === "/api/open-prs" && req.method === "GET") {
-		return Response.json({ prs: getOpenPrs() });
+		return conditionalJsonResponse(req, { prs: getOpenPrs() });
+	}
+
+	// Resolved review threads shown at the bottom of each file. GitHub's REST
+	// pull-request shape omits thread resolution, so this reads the GraphQL
+	// reviewThreads connection used by the review agent. The UI keeps these
+	// collapsed until someone asks to see the conversation.
+	if (path === "/api/pr-review-threads" && req.method === "GET") {
+		const number = parseInt(url.searchParams.get("number") || "", 10);
+		if (!Number.isFinite(number) || number < 1)
+			return Response.json({ error: "number required" }, { status: 400 });
+		const repo = getRepo(url.searchParams.get("repo") || undefined);
+		if (repo.host && repo.host !== "github")
+			return Response.json({ threads: [] });
+		const { listReviewThreads } = await import(
+			"../../agents/github/github-rest"
+		);
+		return prApiResponse(
+			async () => ({
+				threads: (await listReviewThreads(number, repo.ghRepo)).filter(
+					(thread) => thread.isResolved && thread.path,
+				),
+			}),
+			{ threads: [] },
+		);
 	}
 
 	// GitHub's per-viewer "Viewed" file state on a PR (the review canvas
@@ -157,7 +182,24 @@ export async function handlePrRoutes(
 	// Open Session workspace. Powers the root shipped-worktree index.
 	if (path === "/api/recent-prs" && req.method === "GET") {
 		const person = url.searchParams.get("person");
-		return Response.json({ prs: person ? await getRecentPrsForPerson(person) : getRecentPrs() });
+		let prs = person ? await getRecentPrsForPerson(person) : getRecentPrs();
+		const repo = url.searchParams.get("repo");
+		const number = Number(url.searchParams.get("number"));
+		if (repo) prs = prs.filter((pr) => pr.repo === repo);
+		if (Number.isInteger(number) && number > 0)
+			prs = prs.filter((pr) => pr.number === number);
+		const days = Math.min(3650, Math.max(0, Number(url.searchParams.get("days")) || 0));
+		if (days) {
+			const cutoff = Date.now() - days * 86_400_000;
+			const older = prs.find((pr) => (Date.parse(pr.updatedAt) || 0) < cutoff);
+			prs = prs.filter((pr) => (Date.parse(pr.updatedAt) || 0) >= cutoff);
+			// One marker beyond the requested window tells the feed that "Show
+			// more" has useful work without sending the whole older history.
+			if (older) prs.push(older);
+		}
+		const limit = Math.min(5000, Math.max(0, Number(url.searchParams.get("limit")) || 0));
+		if (limit) prs = prs.slice(0, limit);
+		return conditionalJsonResponse(req, { prs });
 	}
 
 	// The same window for repos that ship without pull requests: commits on
@@ -195,7 +237,7 @@ export async function handlePrRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)\/pr$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const target = resolvePrTarget(
@@ -255,7 +297,7 @@ export async function handlePrRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)\/pr-diff$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const target = resolvePrTarget(
@@ -278,7 +320,7 @@ export async function handlePrRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)\/pr-code-flow$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const target = resolvePrTarget(
@@ -300,7 +342,7 @@ export async function handlePrRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)\/pr-diff-groups$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const target = resolvePrTarget(
@@ -386,7 +428,7 @@ export async function handlePrRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)\/review-guide$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const target = resolvePrTarget(
@@ -611,7 +653,7 @@ export async function handlePrRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)\/pr-comment$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 
@@ -653,7 +695,7 @@ export async function handlePrRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)\/pr-review$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 
@@ -721,7 +763,7 @@ export async function handlePrRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)\/pr-merge$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 
@@ -771,7 +813,7 @@ export async function handlePrRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)\/pr-stack$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const stackedOn = session.stackedOn;
@@ -840,7 +882,7 @@ export async function handlePrRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)\/pr-stack-merge$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 
@@ -926,7 +968,7 @@ export async function handlePrRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)\/pr-close$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 
@@ -950,8 +992,8 @@ export async function handlePrRoutes(
 
 	// Fire a GitHub PR agent behavior straight from the info panel — the same
 	// actions the opensession-* PR labels / Slack @mentions kick off (review,
-	// auto-fix, simplify, adversarial). tella-fusion only (the agent is
-	// repo-scoped), and there must be an open PR for the branch.
+	// auto-fix, simplify, adversarial). The agent is repo-scoped, and there
+	// must be an open PR for the branch.
 	if (
 		path.match(/^\/api\/sessions\/(.+)\/pr-action$/) &&
 		req.method === "POST"
@@ -959,13 +1001,17 @@ export async function handlePrRoutes(
 		const sessionId = decodeURIComponent(
 			path.match(/^\/api\/sessions\/(.+)\/pr-action$/)![1],
 		);
-		const session = findSession(sessionId);
+		const session = await findSessionAsync(sessionId);
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 
 		const body = await req.json().catch(() => null);
 		const kind = body?.kind;
-		if (!["review", "autofix", "simplify", "adversarial"].includes(kind))
+		if (
+			!["review", "autofix", "simplify", "adversarial", "cancel-review"].includes(
+				kind,
+			)
+		)
 			return Response.json({ error: "Unknown action" }, { status: 400 });
 
 		const target = resolvePrTarget(session, body?.repo, body?.branch);
@@ -1000,6 +1046,48 @@ export async function handlePrRoutes(
 				{ status: 400 },
 			);
 
+		if (kind === "cancel-review") {
+      const [
+        { currentAgentRunToken },
+        { bksIdFor },
+        { requestActiveRunCancellation },
+        { requestTurnCancel },
+        { sessionKernel },
+      ] = await Promise.all([
+        import("../agent-runner"),
+        import("../../agents/github/run"),
+        import("../../agents/github/state"),
+        import("../run-session"),
+        import("../session-kernel"),
+      ]);
+			const bksId = bksIdFor(details.number, "review", target.ghRepo);
+			const reviewSession = await findSessionAsync(bksId);
+			const requested = requestActiveRunCancellation(
+				details.number,
+				target.branch,
+				"review",
+				target.ghRepo,
+			);
+      const runTarget = sessionKernel(bksId).runState();
+      const targetRunId =
+        runTarget.currentRunId ||
+        (runTarget.state === "starting" || runTarget.state === "preparing"
+          ? currentAgentRunToken(bksId)
+          : undefined);
+      let stopped = false;
+      if (reviewSession && targetRunId) {
+        requestTurnCancel(bksId, reviewSession, {
+          cancelId: `pr-review-stop:${runTarget.generation}:${targetRunId}`,
+          expectedRunId: targetRunId,
+          expectedGeneration: runTarget.generation,
+          source: "pr_cancel",
+        });
+        stopped = true;
+      }
+			invalidateSessionsCache();
+			return Response.json({ ok: true, cancelled: requested || stopped });
+		}
+
 		// Auto-fix is code-writing work, not a review pass to post on the PR —
 		// so it opens a live session right in this workspace (shares the worktree +
 		// branch) and fixes everything there, where you can watch and steer it,
@@ -1019,6 +1107,7 @@ export async function handlePrRoutes(
 				mode: "code",
 				branch: target.branch,
 				parentSessionId: session.id,
+				agentStarted: true,
 				reportBack: false,
 				user: requestUser(ctx, body?.user) || "Someone",
 			});
@@ -1030,7 +1119,7 @@ export async function handlePrRoutes(
 				ok: true,
 				bksId: id,
 				openSession: true,
-				session: findSession(id) ?? null,
+				session: await findSessionAsync(id) ?? null,
 			});
 		}
 
@@ -1047,7 +1136,7 @@ export async function handlePrRoutes(
 			message: result.message,
 			url: result.url,
 			bksId: result.bksId,
-			session: result.bksId ? findSession(result.bksId) ?? null : null,
+			session: result.bksId ? await findSessionAsync(result.bksId) ?? null : null,
 			...(result.ok ? {} : { error: result.message }),
 		});
 	}

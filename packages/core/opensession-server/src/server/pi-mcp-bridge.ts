@@ -13,9 +13,9 @@
  *    same helper every other runner enforces with.
  *  - `deniedToolIds` are dropped BEFORE a ToolDefinition is built, so the
  *    model never sees them. Ids follow the engine-neutral `<server>_<tool>`
- *    convention (opencodeDeniedToolIds); the broad forms `*_<tool>` and bare
+ *    convention (deniedToolIds); the broad forms `*_<tool>` and bare
  *    `<tool>` are honored too so the money-mover confirm set strips the same
- *    way it does on the opencode engine.
+ *    way it does on the pi engine.
  *
  * Wiring notes:
  *  - In-process servers (instances from inprocess-mcp.ts, built per-session
@@ -28,25 +28,24 @@
  *    in the host. Those mount through the ordinary external stdio path (see
  *    classifyInProcessMcp). Accepting only the instance shape is what silently
  *    stripped every opensession-* server from hosted pi runs until 2026-08-19.
- *  - OAuth-granted servers are omitted here and mounted as coordinator-side
- *    in-process proxies (mcp-oauth-proxy.ts), so provider tokens never enter
- *    Pi state or a model-controlled process.
+ *  - OAuth-granted HTTP servers are omitted here and mounted as coordinator-side
+ *    in-process proxies, so provider tokens never enter Pi state or a
+ *    model-controlled process.
  *  - stdio servers spawn with getDefaultEnvironment() + the server's own
  *    configured env — never this process's env (it holds Open Session tokens).
  *
  * Lifecycle: MCP has no offline tool discovery — `tools/list` needs a live
  * connection — so the catalog is cached per config entry (mcp-tools-cache.ts)
  * and a warm external server contributes its tools with NO connection at all.
- * Its connect then happens on first real use, because `ensure()` is called
- * inside each tool's `execute` rather than at build. A cold server (new,
- * changed config, or past the cache TTL) connects once at build and populates
- * the cache; in-process servers always list live, since an InMemoryTransport
- * hop in this process costs nothing to open. This is the "unused stdio servers
- * never spawn" case that v1 deferred. A server that fails to connect/list
- * degrades to absent tools (warn + audit), never a failed turn; a wedged call
- * times out and fails that call, not the turn; a cached tool that has since
- * vanished upstream fails that one call and the entry is rewritten next build.
- * `close()` tears down every client and connected in-process instance.
+ * Cold external and host-proxied servers are deferred until the model first
+ * uses `mcp_search`, then listed concurrently. SDK-backed in-process servers
+ * still list at creation because an InMemoryTransport hop in this process is
+ * cheap and Open Session's own tools must be searchable immediately. A server
+ * that fails to connect/list degrades to absent tools (warn + audit), never a
+ * failed turn; a wedged call times out and fails that call, not the turn; a
+ * cached tool that has since vanished upstream fails that one call and the
+ * entry is rewritten on its next discovery. `close()` tears down every client
+ * and connected in-process instance.
  *
  * The pi package is imported TYPE-ONLY here: the bridge must be importable
  * (tests, pi-runner module load) without triggering the pi dep tree's cold
@@ -64,7 +63,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { filterMcpServers, type McpScope } from "./runner-shared";
 import { readCachedTools, toolsCacheKey, writeCachedTools } from "./mcp-tools-cache";
-import { hasMcpOauthGrantForUsers } from "./mcp-oauth";
+import { hasMcpOauthProxyGrantForUsers } from "./mcp-oauth";
 import type { InProcessMcpServer } from "./inprocess-mcp";
 
 const DEFAULT_CALL_TIMEOUT_MS = 120_000;
@@ -96,7 +95,7 @@ interface ServerConn {
 }
 
 /** `<server>_<tool>` denied-set membership, exact + the broad forms the
- *  money-mover confirm set uses (see opencodeDeniedToolIds: `*_<tool>` and
+ *  money-mover confirm set uses (see deniedToolIds: `*_<tool>` and
  *  bare `<tool>` over-block same-named tools by design there — mirror it). */
 function isDeniedTool(
   server: string,
@@ -256,8 +255,8 @@ export async function createPiMcpBridge(opts: {
   /** Same as RunAgentOpts.mcpServers ("all" | string[]) — pass [] for none. */
   mcpServers: McpScope;
   user?: string;
-  /** OAuth grant identity override (session creator) — same priority order
-   *  as buildOpencodeMcpConfig: creator first, prompter second. */
+  /** Legacy session-owner identity retained on the runner protocol. Personal
+   *  grants deliberately resolve from `user` (the prompter), never this field. */
   mcpGrantUser?: string;
   /** `<server>_<tool>` ids (plus broad `*_<tool>`/bare forms) dropped BEFORE
    *  registration — the model never sees them. */
@@ -368,7 +367,7 @@ export async function createPiMcpBridge(opts: {
           : `${tool.name} (MCP tool from ${server})`,
       // MCP inputSchema is JSON Schema; TypeBox IS JSON Schema — passthrough.
       parameters: (tool.inputSchema ?? { type: "object", properties: {} }) as any,
-      execute: async (_toolCallId, params, signal) => {
+      execute: async (toolCallId, params, signal) => {
         const started = Date.now();
         try {
           if (closed) throw new Error("MCP bridge is closed");
@@ -378,7 +377,11 @@ export async function createPiMcpBridge(opts: {
             `MCP server "${server}" connect timed out`,
           );
           const res = (await conn.client.callTool(
-            { name: tool.name, arguments: (params ?? {}) as Record<string, unknown> },
+            {
+              name: tool.name,
+              arguments: (params ?? {}) as Record<string, unknown>,
+              _meta: { opensessionToolCallId: toolCallId },
+            },
             undefined,
             { timeout: timeoutMs, maxTotalTimeout: timeoutMs, signal },
           )) as Record<string, unknown>;
@@ -410,13 +413,12 @@ export async function createPiMcpBridge(opts: {
   const external = filterMcpServers(
     opts.mcpServers,
     opts.user,
-    opts.mcpGrantUser ? grantUsers : undefined,
+    grantUsers,
   ) as Record<string, Record<string, unknown>>;
   for (const [name, cfg] of Object.entries(external)) {
-    // Personal OAuth servers arrive below as coordinator-side in-process
-    // proxies. Do not build a second connection whose config could contain or
-    // fall back to a provider credential.
-    if (hasMcpOauthGrantForUsers(name, grantUsers)) continue;
+    // Personal HTTP OAuth servers arrive below as coordinator-side in-process
+    // proxies. Keep stdio servers on their configured workspace credential.
+    if (hasMcpOauthProxyGrantForUsers(name, grantUsers)) continue;
     entries.push({
       name,
       factory: () => connectExternal(name, cfg),
@@ -441,37 +443,96 @@ export async function createPiMcpBridge(opts: {
   // ── List + register (deny BEFORE defineTool; dead servers degrade) ─────────
   const tools: ToolDefinition<any, any, any>[] = [];
   const seen = new Set<string>();
-  for (const { name, factory, cacheKey } of entries) {
+  const byName = new Map<string, ToolDefinition<any, any, any>>();
+  const pending = new Map<string, (typeof entries)[number]>();
+
+  const registerTools = (
+    { name, factory }: (typeof entries)[number],
+    listed: Array<Record<string, any>>,
+  ) => {
+    for (const tool of listed) {
+      if (typeof tool?.name !== "string" || !tool.name) continue;
+      if (isDeniedTool(name, tool.name, opts.deniedToolIds)) continue;
+      const definition = bridgedTool(name, tool, () => ensure(name, factory));
+      if (seen.has(definition.name)) continue;
+      seen.add(definition.name);
+      tools.push(definition);
+      byName.set(definition.name, definition);
+    }
+  };
+
+  const listEntry = async ({
+    name,
+    factory,
+    cacheKey,
+  }: (typeof entries)[number]): Promise<Array<Record<string, any>>> => {
+    const conn = await withTimeout(
+      ensure(name, factory),
+      timeoutMs,
+      `MCP server "${name}" connect timed out`,
+    );
+    const listed = await listAllTools(conn.client);
+    if (cacheKey) writeCachedTools(name, cacheKey, listed);
+    return listed;
+  };
+
+  const reportUnavailable = (name: string, started: number, error: unknown) => {
+    console.warn(`[pi-mcp-bridge] server "${name}" unavailable, skipping:`, error);
+    opts.onAudit?.({ server: name, tool: "tools/list", ok: false, ms: Date.now() - started });
+  };
+
+  for (const entry of entries) {
+    const { name, cacheKey } = entry;
     const started = Date.now();
     // A cache hit is the whole point: no connect, no stdio child, no dial —
     // the server is only reached if the model actually calls one of its tools.
     let listed: Array<Record<string, any>> | undefined = cacheKey
       ? (readCachedTools(name, cacheKey) as Array<Record<string, any>> | undefined)
       : undefined;
-    if (!listed) {
-      try {
-        const conn = await withTimeout(
-          ensure(name, factory),
-          timeoutMs,
-          `MCP server "${name}" connect timed out`,
-        );
-        listed = await listAllTools(conn.client);
-        if (cacheKey) writeCachedTools(name, cacheKey, listed);
-      } catch (e) {
-        console.warn(`[pi-mcp-bridge] server "${name}" unavailable, skipping:`, e);
-        opts.onAudit?.({ server: name, tool: "tools/list", ok: false, ms: Date.now() - started });
-        continue;
-      }
+    if (listed) {
+      registerTools(entry, listed);
+      continue;
     }
-    for (const t of listed) {
-      if (typeof t?.name !== "string" || !t.name) continue;
-      if (isDeniedTool(name, t.name, opts.deniedToolIds)) continue;
-      const def = bridgedTool(name, t, () => ensure(name, factory));
-      if (seen.has(def.name)) continue;
-      seen.add(def.name);
-      tools.push(def);
+
+    // SDK instances are local and cheap to list. Every process or network
+    // connection waits for mcp_search, so session startup cannot fan out
+    // across every allowed external integration.
+    if (cacheKey) {
+      pending.set(name, entry);
+      continue;
+    }
+
+    try {
+      listed = await listEntry(entry);
+      registerTools(entry, listed);
+    } catch (e) {
+      reportUnavailable(name, started, e);
     }
   }
+
+  let hydration: Promise<void> | undefined;
+  const hydratePending = async (): Promise<void> => {
+    if (hydration) return hydration;
+    const deferred = [...pending.values()];
+    if (!deferred.length) return;
+    pending.clear();
+    hydration = Promise.all(
+      deferred.map(async (entry) => {
+        const started = Date.now();
+        try {
+          const listed = await listEntry(entry);
+          if (!closed) registerTools(entry, listed);
+        } catch (e) {
+          reportUnavailable(entry.name, started, e);
+        }
+      }),
+    ).then(() => {});
+    try {
+      await hydration;
+    } finally {
+      hydration = undefined;
+    }
+  };
 
   // Pi forwards every custom tool's JSON schema through the Agent SDK on
   // every model request. The full catalog is often hundreds of tools, which
@@ -479,7 +540,6 @@ export async function createPiMcpBridge(opts: {
   // healthy turn look wedged. Keep the catalog server-side and expose a
   // two-step surface instead. This is discovery, not an access grant: both
   // tools close over the already policy-filtered `tools` list above.
-  const byName = new Map(tools.map((definition) => [definition.name, definition]));
   // Fields are kept APART rather than concatenated into one haystack: a hit in
   // the tool's NAME is real evidence, a hit in a 20,000-character vendor
   // description is usually an accident. A flat substring count over a single
@@ -488,12 +548,6 @@ export async function createPiMcpBridge(opts: {
   // alphabetical tie-break then handed the results to whichever server sorts
   // first — so searching for a capability returned unrelated tools while the
   // tool literally named after it never surfaced.
-  const searchable = tools.map((definition) => ({
-    definition,
-    name: definition.name.toLowerCase(),
-    label: (definition.label || "").toLowerCase(),
-    description: (definition.description || "").toLowerCase(),
-  }));
   /** Description hits are damped by length, so a short precise description
    *  outweighs an encyclopaedic one that merely contains the word. */
   const describedWeight = (length: number) => Math.min(1, 400 / Math.max(length, 400));
@@ -514,11 +568,18 @@ export async function createPiMcpBridge(opts: {
     async execute(_toolCallId, params) {
       const query = String((params as { query?: unknown })?.query ?? "").trim().toLowerCase();
       if (!query) throw new Error("mcp_search requires a query");
+      await hydratePending();
       const requested = Number((params as { limit?: unknown })?.limit);
       const limit = Number.isFinite(requested) ? Math.max(1, Math.min(12, Math.floor(requested))) : 6;
       const terms = query.split(/\s+/).filter(Boolean);
       const compact = query.replace(/[\s_-]+/g, "");
-      const matches = searchable
+      const matches = tools
+        .map((definition) => ({
+          definition,
+          name: definition.name.toLowerCase(),
+          label: (definition.label || "").toLowerCase(),
+          description: (definition.description || "").toLowerCase(),
+        }))
         .map((entry) => {
           const weight = describedWeight(entry.description.length);
           let score = 0;
@@ -581,7 +642,7 @@ export async function createPiMcpBridge(opts: {
       return definition.execute(toolCallId, args as any, signal, onUpdate, ctx);
     },
   };
-  const discoveryTools = tools.length ? [searchCatalog, callCatalog] : [];
+  const discoveryTools = tools.length || pending.size ? [searchCatalog, callCatalog] : [];
 
   const close = async () => {
     if (closed) return;

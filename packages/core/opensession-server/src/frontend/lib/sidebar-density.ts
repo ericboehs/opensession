@@ -20,7 +20,7 @@ export type SidebarDensity = "default" | "compact";
 
 /**
  * The two settings as both surfaces offer them — the sidebar's filter menu and
- * Settings → Appearance. One list, so the label and the mark can't drift into
+ * Settings → Preferences. One list, so the label and the mark can't drift into
  * saying different things about the same preference in two places.
  *
  * The glyph is the thing the setting changes: rows in a list, the same band

@@ -9,8 +9,8 @@ export function FloatingStatus({
 	return (
 		<motion.div
 			className={cn(
-				"flex items-center gap-2.5 whitespace-nowrap rounded-[999px] bg-popup-glass",
-				"px-3.5 pt-2.5 pb-2 text-label font-medium leading-tight text-fg",
+				"flex items-center gap-2 whitespace-nowrap rounded-[999px] bg-popup-glass",
+				"px-3 py-1.5 text-supporting font-medium leading-tight text-fg",
 				"[backdrop-filter:var(--popup-blur)] [--smooth-ring-color:var(--popup-ring)] smooth-shadow-ring-sm",
 				className,
 			)}
