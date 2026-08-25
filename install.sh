@@ -818,7 +818,7 @@ add_to_path() {
 
   display_profile="$config_file"
   case "$display_profile" in
-    "$HOME"/*) display_profile="~/${display_profile#"$HOME"/}" ;;
+    "$HOME"/*) display_profile="$(printf '\176/%s' "${display_profile#"$HOME"/}")" ;;
   esac
   PATH_CONFIGURED_PROFILES="${PATH_CONFIGURED_PROFILES:+$PATH_CONFIGURED_PROFILES, }$display_profile"
 }
