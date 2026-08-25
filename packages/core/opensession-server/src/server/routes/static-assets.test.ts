@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { handleStaticAssetsRoutes, pwaManifest } from "./static-assets";
+import {
+	builtAssetContentType,
+	handleStaticAssetsRoutes,
+	pwaManifest,
+} from "./static-assets";
 
 test("serves every stable shell asset family", async () => {
 	for (const [path, contentType] of [
@@ -21,6 +25,12 @@ test("serves every stable shell asset family", async () => {
 		expect(response?.headers.get("content-type")).toBe(contentType);
 		expect((await response?.arrayBuffer())?.byteLength).toBeGreaterThan(0);
 	}
+});
+
+test("recognizes bundled image assets alongside scripts and styles", () => {
+	expect(builtAssetContentType("download-mac-abc123.webp")).toBe("image/webp");
+	expect(builtAssetContentType("App-abc123.js")).toBe("text/javascript");
+	expect(builtAssetContentType("notes.txt")).toBeNull();
 });
 
 test("PWA manifest includes a new-agent shortcut under the active prefix", () => {

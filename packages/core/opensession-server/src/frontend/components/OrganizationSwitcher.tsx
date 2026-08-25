@@ -12,7 +12,9 @@ import { toast } from "../ui/toast";
 import { IconTile } from "./BrandTile";
 import { setupRequest } from "./setup-shared";
 import { GithubMemberDialog } from "./SetupTeam";
+import { DownloadAppsDialog } from "./DownloadAppsDialog";
 import {
+	IconArrowDown,
 	IconChevronDown,
 	IconCopy,
 	IconGear,
@@ -79,6 +81,7 @@ export function OrganizationSwitcher({
 	const [canAddAnyway, setCanAddAnyway] = useState(false);
 	const [adding, setAdding] = useState(false);
 	const [inviteOpen, setInviteOpen] = useState(false);
+	const [downloadOpen, setDownloadOpen] = useState(false);
 	const [invitedLogin, setInvitedLogin] = useState<string | null>(null);
 	const [copied, setCopied] = useState(false);
 	const status = connected ? "Connected" : "Reconnecting…";
@@ -209,6 +212,10 @@ toast("Couldn’t copy the organization link", { variant: "error" });
 						<span className="text-label tabular-nums text-faint">{memberCount}</span>
 					)}
 				</Menu.Item>
+				<Menu.Item className={itemClass} onClick={() => setDownloadOpen(true)}>
+					<IconArrowDown size={19} className={MENU_ICON} />
+					<span className="min-w-0 flex-1 truncate">Download apps</span>
+				</Menu.Item>
 				<Menu.Item
 					className={`${itemClass} text-accent`}
 					onClick={() => setInviteOpen(true)}
@@ -275,6 +282,7 @@ toast("Couldn’t copy the organization link", { variant: "error" });
 				</Menu.Group>
 			</Menu.Popup>
 		</Menu.Root>
+		<DownloadAppsDialog open={downloadOpen} onOpenChange={setDownloadOpen} />
 		<Modal.Root
 			open={addOpen}
 			onOpenChange={(open) => {

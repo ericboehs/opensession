@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
 	chromeDownloadTag,
+	isMacInstallerAsset,
 	isMacReleaseAsset,
 	macDownloadTag,
 } from "./os1-update";
@@ -23,6 +24,15 @@ describe("isMacReleaseAsset", () => {
 		expect(isMacReleaseAsset("os1-chrome-v0.1.0.crx")).toBe(false);
 		expect(isMacReleaseAsset("OpenSession-0.3.12-x64.zip")).toBe(false);
 		expect(isMacReleaseAsset(undefined)).toBe(false);
+	});
+});
+
+describe("isMacInstallerAsset", () => {
+	test("accepts current and pre-rename disk images only", () => {
+		expect(isMacInstallerAsset("OpenSession-0.3.12-arm64.dmg")).toBe(true);
+		expect(isMacInstallerAsset("OS1-0.3.12-arm64.dmg")).toBe(true);
+		expect(isMacInstallerAsset("OpenSession-0.3.12-arm64.zip")).toBe(false);
+		expect(isMacInstallerAsset("OpenSession-0.3.12-x64.dmg")).toBe(false);
 	});
 });
 

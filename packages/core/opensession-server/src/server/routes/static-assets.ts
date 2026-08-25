@@ -19,6 +19,18 @@ import { organizationIconBytes } from "../organization-settings";
 // that hasn't changed since the last request.
 const trimmedIcons = new Map<string, { mtimeMs: number; bytes: Uint8Array }>();
 
+export function builtAssetContentType(name: string): string | null {
+	if (name.endsWith(".css")) return "text/css";
+	if (name.endsWith(".map")) return "application/json";
+	if (name.endsWith(".js")) return "text/javascript";
+	if (name.endsWith(".webp")) return "image/webp";
+	if (name.endsWith(".png")) return "image/png";
+	if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+	if (name.endsWith(".svg")) return "image/svg+xml";
+	if (name.endsWith(".woff2")) return "font/woff2";
+	return null;
+}
+
 // Per-prefix PWA identity keeps legacy /backstage installs distinct, while the
 // shortcut still opens the new-agent flow in that same deployed shell.
 export function pwaManifest(publicPrefix: string) {
@@ -274,23 +286,24 @@ export async function handleStaticAssetsRoutes(
 	}
 
 	// Built SPA assets (prod only). Content-hashed filenames → cache forever.
-	// Served gzipped (computed once, then memoised) since the JS is large.
+	// JS/CSS/maps are gzipped (computed once, then memoised); images and fonts
+	// already carry compact encodings and are served byte-for-byte.
 	const assetMatch =
-		frontend && path.match(/^\/([\w.-]+\.(?:js|css|map))$/);
+		frontend && path.match(/^\/([\w.-]+\.(?:js|css|map|webp|png|jpe?g|svg|woff2))$/);
 	if (assetMatch && frontend) {
 		const name = assetMatch[1];
 		const file = frontendDistFile(name);
-		if (file && await file.exists()) {
-			const type = name.endsWith(".css")
-				? "text/css"
-				: name.endsWith(".map")
-					? "application/json"
-					: "text/javascript";
+		const type = builtAssetContentType(name);
+		if (file && type && await file.exists()) {
+			const compress = /\.(?:js|css|map)$/.test(name);
 			const headers: Record<string, string> = {
-				"Content-Type": `${type}; charset=utf-8`,
+				"Content-Type": `${type}${compress ? "; charset=utf-8" : ""}`,
 				"Cache-Control": "public, max-age=31536000, immutable",
 			};
-			if ((req.headers.get("accept-encoding") || "").includes("gzip")) {
+			if (
+				compress &&
+				(req.headers.get("accept-encoding") || "").includes("gzip")
+			) {
 				let gz = frontend.gzip.get(name);
 				if (!gz) {
 					gz = new Blob([
