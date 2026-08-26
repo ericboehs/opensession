@@ -1426,7 +1426,18 @@ export class SessionKernelStore {
 		this.db = new Database(path);
 		this.closeable = true;
 		this.db.exec("PRAGMA journal_mode = WAL;");
-		this.db.exec("PRAGMA synchronous = FULL;");
+		// NORMAL, not FULL: with WAL, NORMAL still guarantees no corruption and
+		// no torn transactions — an OS crash or power loss can only drop the most
+		// recent commit(s) that had not yet reached the WAL fsync point; an
+		// application crash loses nothing. Every kernel command is designed for
+		// exactly that window: admissions replay by request id, effects are
+		// destination-idempotent at-least-once, and interrupted physical work
+		// fails closed. FULL cost ~3.3 ms of fsync per commit on this class of
+		// disk vs ~0.005 ms at NORMAL — with two kernel commits wrapping every
+		// transcript append, that fsync tax dominated the append path (measured
+		// p50 ~18 ms per append pair) and drove lane saturation at ~100
+		// concurrent sessions. Approved trade (Jaap, 2026-08-26).
+		this.db.exec("PRAGMA synchronous = NORMAL;");
 		this.db.exec(`PRAGMA busy_timeout = ${busyTimeoutMs};`);
 		this.db.exec(`
 			CREATE TABLE IF NOT EXISTS session_kernel_owner (
