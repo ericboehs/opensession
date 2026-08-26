@@ -1,7 +1,7 @@
 /**
  * Transcript v2 store (docs/transcripts.md §1, §1a) — the owned
- * per-session sequence-numbered event log in ONE SQLite (WAL) DB:
- * `<OPENSESSION_SESSIONS_DIR>/transcripts.db`.
+ * per-session sequence-numbered event log co-located with that session's
+ * kernel tables in its actor-owned SQLite (WAL) database.
  *
  * Row unit is the parsed TranscriptEntry; `uuid` = `entry.id` (§1a — NOT the
  * mirror line uuid). seq is 1-based and dense per session, assigned ONLY to
@@ -38,12 +38,9 @@
  * can never throw back into the append path. Imports publish one reconciliation
  * wake only after all chunks commit; authoritative replacements publish reset.
  *
- * Live-safety: nothing here opens the DB at import time — the singleton
- * (`transcriptStore()`) is lazy, and handle + prepared statements park on
- * `globalThis.__osTranscriptStore` (pattern: session-index.ts:58) so hot
- * reloads reuse the open connection. transcripts.db has exactly ONE writer:
- * the live server process (invariant 8) — tests construct `new
- * TranscriptStore(tempPath)` directly and must never call transcriptStore().
+ * Live-safety: nothing here opens a DB at import time. Production constructs
+ * stores only inside the session actor worker. The legacy lazy singleton is a
+ * test compatibility seam; the gateway never calls it in production.
  */
 
 import {
@@ -1024,6 +1021,14 @@ export class TranscriptStore {
     if (request.op === "last_reset_change_seq")
       return this.getLastResetChangeSeq(request.sessionId);
     if (request.op === "count") return this.countEvents(request.sessionId);
+    if (request.op === "summary") {
+      const row = this.db.query(`
+        SELECT last_ts, next_seq FROM transcript_sessions WHERE session_id = ?
+      `).get(request.sessionId) as { last_ts: number | null; next_seq: number } | null;
+      return row
+        ? { lastTs: row.last_ts, seqHighWater: Math.max(0, row.next_seq - 1) }
+        : null;
+    }
     if (request.op === "search") {
       const query = request.query.trim();
       if (query.length < 2 || query.length > 1_000) return null;
@@ -1096,7 +1101,8 @@ export class TranscriptStore {
         : appendResult(outcome);
     } else if (request.op === "import") {
       const outcome = this.writeEntriesInTx(request.sessionId, request.entries);
-      this.markImported(request.sessionId, request.src, request.watermark);
+      if (request.final !== false)
+        this.markImported(request.sessionId, request.src, request.watermark);
       result = { inserted: outcome.inserted, updated: outcome.updated };
     } else if (request.op === "replace") {
       this.db.run("DELETE FROM transcript_events WHERE session_id = ?", [request.sessionId]);

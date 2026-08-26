@@ -53,7 +53,35 @@ import { readdirSync } from "fs";
 import { isContextInjection } from "@tellahq/opensession-protocol/notices";
 import { audit } from "./audit";
 import { OPENSESSION_SESSIONS_DIR } from "./paths";
-import { transcriptStore, type TranscriptStore } from "./transcript-store";
+import { transcript } from "./actor-transcript";
+import type { TranscriptEntry } from "./types";
+
+
+interface OrphanStore {
+	listStoredSessions(): Array<{ sessionId: string; lastTs: number | null; seqHighWater: number }> | Promise<Array<{ sessionId: string; lastTs: number | null; seqHighWater: number }>>;
+	countEvents(sessionId: string): number | Promise<number>;
+	readTail(sessionId: string, limit: number): { entries: TranscriptEntry[] } | Promise<{ entries: TranscriptEntry[] }>;
+	deleteSessionTranscript(sessionId: string): void | Promise<void>;
+}
+
+const actorOrphanStore: OrphanStore = {
+	async listStoredSessions() {
+		const rows: Array<{ sessionId: string; lastTs: number | null; seqHighWater: number }> = [];
+		let after = "";
+		for (;;) {
+			const ids = await transcript.sessionIds(200, after);
+			for (const sessionId of ids) {
+				const summary = await transcript.summary(sessionId);
+				if (summary) rows.push({ sessionId, ...summary });
+			}
+			if (ids.length < 200) return rows;
+			after = ids.at(-1)!;
+		}
+	},
+	countEvents: transcript.countEvents,
+	readTail: transcript.readTail,
+	deleteSessionTranscript: transcript.deleteSessionTranscript,
+};
 
 /** A stored session younger than this is never a candidate, whatever it holds. */
 const MIN_AGE_MS = 60 * 60_000;
@@ -118,13 +146,13 @@ async function knownSessionIdsFromDisk(): Promise<Set<string>> {
 /** True when every stored entry is a context-log record — and only when all of
  *  them were read, so a short read keeps the session rather than condemning it
  *  on a partial view. */
-function onlyContextRecords(
-	store: TranscriptStore,
+async function onlyContextRecords(
+	store: OrphanStore,
 	sessionId: string,
 	events: number,
-): boolean {
+): Promise<boolean> {
 	if (events === 0) return true;
-	const entries = store.readTail(sessionId, events).entries;
+	const entries = (await store.readTail(sessionId, events)).entries;
 	return entries.length === events && entries.every(isContextInjection);
 }
 
@@ -136,14 +164,14 @@ export async function sweepOrphanTranscripts(
 	opts: {
 		dryRun?: boolean;
 		/** Test seams: which store to sweep, who counts as known, what time it is. */
-		store?: TranscriptStore;
+		store?: OrphanStore;
 		knownSessionIds?: () => Set<string> | Promise<Set<string>>;
 		now?: number;
 	} = {},
 ): Promise<OrphanSweepSummary> {
 	const started = Date.now();
 	const now = opts.now ?? started;
-	const store = opts.store ?? transcriptStore();
+	const store = opts.store ?? actorOrphanStore;
 	const summary: OrphanSweepSummary = {
 		stored: 0,
 		known: 0,
@@ -184,9 +212,9 @@ export async function sweepOrphanTranscripts(
 	}
 	summary.known = known.size;
 
-	let stored: ReturnType<TranscriptStore["listStoredSessions"]>;
+	let stored: Awaited<ReturnType<OrphanStore["listStoredSessions"]>>;
 	try {
-		stored = store.listStoredSessions();
+		stored = await store.listStoredSessions();
 	} catch (e) {
 		summary.refused = `could not read the store: ${message(e)}`;
 		return finish();
@@ -205,7 +233,7 @@ export async function sweepOrphanTranscripts(
 		summary.orphans++;
 		let events = row.seqHighWater;
 		try {
-			if (events <= MAX_RECORD_ENTRIES) events = store.countEvents(row.sessionId);
+			if (events <= MAX_RECORD_ENTRIES) events = await store.countEvents(row.sessionId);
 		} catch (e) {
 			console.warn(
 				`[transcript-orphan-sweep] ${row.sessionId}: count failed: ${message(e)}`,
@@ -215,7 +243,7 @@ export async function sweepOrphanTranscripts(
 		const keep =
 			tooNew ||
 			events > MAX_RECORD_ENTRIES ||
-			!onlyContextRecords(store, row.sessionId, events);
+			!(await onlyContextRecords(store, row.sessionId, events));
 		if (keep) {
 			summary.keptOrphans++;
 			summary.keptEvents += events;

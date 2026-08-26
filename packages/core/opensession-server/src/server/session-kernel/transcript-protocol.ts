@@ -42,6 +42,7 @@ export type TranscriptActorRequest =
       entries: TranscriptEntry[];
       src: string;
       watermark: number | null;
+      final?: boolean;
     })
   | (MutationRequest & { op: "replace"; entries: TranscriptEntry[] })
   | (MutationRequest & { op: "delete" })
@@ -65,6 +66,7 @@ export type TranscriptActorRequest =
   | (SessionRequest & { op: "last_change_seq" })
   | (SessionRequest & { op: "last_reset_change_seq" })
   | (SessionRequest & { op: "count" })
+  | (SessionRequest & { op: "summary" })
   | (SessionRequest & { op: "search"; query: string })
   | (SessionRequest & { op: "pending_wake" })
   | (SessionRequest & { op: "ack_wake"; cursor: number });
@@ -104,8 +106,10 @@ export type TranscriptActorResult<T extends TranscriptActorRequest> =
                     ? TranscriptOutline
                     : T extends { op: "full_entry" }
                       ? TranscriptEntry | null
-                      : T extends { op: "search" }
-                        ? string | null
+                      : T extends { op: "summary" }
+                        ? { lastTs: number | null; seqHighWater: number } | null
+                        : T extends { op: "search" }
+                          ? string | null
                         : T extends { op: "pending_wake" }
                           ? TranscriptWake | null
                         : T extends { op: "ack_wake" }

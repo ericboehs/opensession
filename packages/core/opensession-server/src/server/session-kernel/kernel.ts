@@ -210,6 +210,18 @@ export async function sessionTranscript<T extends TranscriptActorRequest>(
   throw new Error("Session transcript operation requires the authoritative actor");
 }
 
+export async function actorTranscriptSessionIds(
+  limit = 100,
+  afterSessionId = "",
+): Promise<string[]> {
+  if (!state.actor)
+    throw new Error("Transcript catalog access requires the authoritative actor");
+  return state.actor.callAsync<string[]>(
+    { t: "store", method: "actorTranscriptSessionIds", args: [limit, afterSessionId] },
+    "actor transcript catalog",
+  );
+}
+
 export async function sessionGatewayCommand<T extends GatewayCommandRequest>(
   request: T,
 ): Promise<GatewayCommandResult<T>> {

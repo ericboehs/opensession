@@ -12,22 +12,32 @@ import {
   type TranscriptRangePage,
 } from "./transcript-store";
 import {
+  actorTranscriptSessionIds,
   sessionTranscript,
   type TranscriptActorRequest,
   type TranscriptMutationResult,
 } from "./session-kernel";
+
+async function callTranscript<T extends TranscriptActorRequest>(
+  request: T,
+): Promise<import("./session-kernel").TranscriptActorResult<T>> {
+  if (process.env.NODE_ENV !== "test") return sessionTranscript(request);
+  const { transcriptStore } = await import("./transcript-store");
+  return transcriptStore().applyActorRequest(request) as
+    import("./session-kernel").TranscriptActorResult<T>;
+}
 
 async function reconcileMutation(
   sessionId: string,
   operation: "append" | "append_destination" | "import" | "replace" | "delete",
   mutation: TranscriptMutationResult<unknown>,
 ): Promise<void> {
-  const wake = await sessionTranscript({ op: "pending_wake", sessionId });
+  const wake = await callTranscript({ op: "pending_wake", sessionId });
   if (!wake || wake.cursor < mutation.wakeCursor) return;
   const reset = operation === "replace" || operation === "delete";
   const page = operation === "delete"
     ? { entries: [], firstSeq: 0, lastSeq: 0 }
-    : await sessionTranscript({
+    : await callTranscript({
         op: "changes_since",
         sessionId,
         changeSeq: Math.max(0, wake.firstChangeSeq - 1),
@@ -40,13 +50,13 @@ async function reconcileMutation(
     ...(reset ? { reset: true } : {}),
   });
   if (page.entries.length) notifyTranscriptAppendHook(sessionId, page.entries);
-  await sessionTranscript({ op: "ack_wake", sessionId, cursor: wake.cursor });
+  await callTranscript({ op: "ack_wake", sessionId, cursor: wake.cursor });
 }
 
 async function mutate<T>(
   request: Extract<TranscriptActorRequest, { requestId: string }>,
 ): Promise<T> {
-  const mutation = await sessionTranscript(request) as TranscriptMutationResult<T>;
+  const mutation = await callTranscript(request) as TranscriptMutationResult<T>;
   await reconcileMutation(request.sessionId, request.op, mutation);
   return mutation.result;
 }
@@ -84,14 +94,31 @@ export async function importLegacyTranscript(
   src: string,
   watermark: number | null,
 ): Promise<{ inserted: number; updated: number }> {
-  return mutate({
-    op: "import",
-    sessionId,
-    requestId: crypto.randomUUID(),
-    entries,
-    src,
-    watermark,
-  });
+  const importId = crypto.randomUUID();
+  let inserted = 0;
+  let updated = 0;
+  let finalMutation: TranscriptMutationResult<{ inserted: number; updated: number }> | null = null;
+  const chunks = entries.length
+    ? Array.from({ length: Math.ceil(entries.length / 500) }, (_, index) =>
+        entries.slice(index * 500, (index + 1) * 500))
+    : [[]];
+  for (let index = 0; index < chunks.length; index++) {
+    const final = index === chunks.length - 1;
+    const mutation = await callTranscript({
+      op: "import",
+      sessionId,
+      requestId: `import:${importId}:${index}`,
+      entries: chunks[index]!,
+      src,
+      watermark,
+      final,
+    }) as TranscriptMutationResult<{ inserted: number; updated: number }>;
+    inserted += mutation.result.inserted;
+    updated += mutation.result.updated;
+    finalMutation = mutation;
+  }
+  if (finalMutation) await reconcileMutation(sessionId, "import", finalMutation);
+  return { inserted, updated };
 }
 
 export async function replaceTranscriptEvents(
@@ -118,23 +145,23 @@ export async function deleteSessionTranscript(sessionId: string): Promise<void> 
 
 export const transcript = {
   needsImport: (sessionId: string): Promise<boolean> =>
-    sessionTranscript({ op: "needs_import", sessionId }),
+    callTranscript({ op: "needs_import", sessionId }),
   getImportInfo: (sessionId: string): Promise<TranscriptImportInfo | null> =>
-    sessionTranscript({ op: "import_info", sessionId }),
+    callTranscript({ op: "import_info", sessionId }),
   readTail: (sessionId: string, limit?: number): Promise<TranscriptPage> =>
-    sessionTranscript({ op: "tail", sessionId, limit }),
+    callTranscript({ op: "tail", sessionId, limit }),
   readTailWindow: (sessionId: string, options: TailWindowOpts): Promise<TranscriptPage> =>
-    sessionTranscript({ op: "tail_window", sessionId, options }),
+    callTranscript({ op: "tail_window", sessionId, options }),
   readSince: (sessionId: string, sinceSeq: number, limit?: number): Promise<TranscriptPage> =>
-    sessionTranscript({ op: "since", sessionId, sinceSeq, limit }),
+    callTranscript({ op: "since", sessionId, sinceSeq, limit }),
   readChangesSince: (
     sessionId: string,
     changeSeq: number,
     limit?: number,
   ): Promise<TranscriptPage> =>
-    sessionTranscript({ op: "changes_since", sessionId, changeSeq, limit }),
+    callTranscript({ op: "changes_since", sessionId, changeSeq, limit }),
   readBefore: (sessionId: string, beforeSeq: number, limit?: number): Promise<TranscriptPage> =>
-    sessionTranscript({ op: "before", sessionId, beforeSeq, limit }),
+    callTranscript({ op: "before", sessionId, beforeSeq, limit }),
   readRange: (
     sessionId: string,
     fromSeq: number,
@@ -142,7 +169,7 @@ export const transcript = {
     afterSeq?: number,
     limit?: number,
   ): Promise<TranscriptRangePage> =>
-    sessionTranscript({
+    callTranscript({
       op: "range",
       sessionId,
       fromSeq,
@@ -151,19 +178,24 @@ export const transcript = {
       limit,
     }),
   readTranscriptIndex: (sessionId: string): Promise<TranscriptOutline> =>
-    sessionTranscript({ op: "outline", sessionId }),
+    callTranscript({ op: "outline", sessionId }),
   getFullEntry: (sessionId: string, entryId: string): Promise<TranscriptEntry | null> =>
-    sessionTranscript({ op: "full_entry", sessionId, entryId }),
+    callTranscript({ op: "full_entry", sessionId, entryId }),
   getLastSeq: (sessionId: string): Promise<number> =>
-    sessionTranscript({ op: "last_seq", sessionId }),
+    callTranscript({ op: "last_seq", sessionId }),
   getLastChangeSeq: (sessionId: string): Promise<number> =>
-    sessionTranscript({ op: "last_change_seq", sessionId }),
+    callTranscript({ op: "last_change_seq", sessionId }),
   getLastResetChangeSeq: (sessionId: string): Promise<number> =>
-    sessionTranscript({ op: "last_reset_change_seq", sessionId }),
+    callTranscript({ op: "last_reset_change_seq", sessionId }),
   countEvents: (sessionId: string): Promise<number> =>
-    sessionTranscript({ op: "count", sessionId }),
+    callTranscript({ op: "count", sessionId }),
+  summary: (
+    sessionId: string,
+  ): Promise<{ lastTs: number | null; seqHighWater: number } | null> =>
+    callTranscript({ op: "summary", sessionId }),
+  sessionIds: actorTranscriptSessionIds,
   search: (sessionId: string, query: string): Promise<string | null> =>
-    sessionTranscript({ op: "search", sessionId, query }),
+    callTranscript({ op: "search", sessionId, query }),
   appendTranscriptEvents,
   appendTranscriptDestination,
   importLegacyTranscript,

@@ -271,6 +271,7 @@ export class SessionKernelStoreHost {
       case "last_change_seq": result = store.getLastChangeSeq(request.sessionId); break;
       case "last_reset_change_seq": result = store.getLastResetChangeSeq(request.sessionId); break;
       case "count": result = store.countEvents(request.sessionId); break;
+      case "summary": result = store.applyActorRequest(request); break;
       case "search": result = store.applyActorRequest(request); break;
       case "pending_wake": result = store.pendingActorWake(request.sessionId); break;
       case "ack_wake": result = store.ackActorWake(request.sessionId, request.cursor); break;
@@ -814,6 +815,11 @@ export class SessionKernelStoreHost {
   }
 
   private callGlobal(method: string, args: unknown[]): unknown {
+    if (method === "actorTranscriptSessionIds")
+      return this.central.actorTranscriptSessionIds(
+        Number(args[0] ?? 100),
+        String(args[1] ?? ""),
+      );
     if (method === "askMigrationComplete") return this.central.askMigrationComplete();
     if (method === "markAskMigrationComplete") return this.central.markAskMigrationComplete();
     if (method === "deliveryMigrationComplete") return this.central.deliveryMigrationComplete();

@@ -29,10 +29,9 @@ import { existsSync, statSync, writeFileSync } from "fs";
 import { OPENSESSION_SESSIONS_DIR } from "./paths";
 import { audit } from "./audit";
 import type { UnifiedSession } from "./types";
-// WP-A touchpoint (design §1) — the only store API this module uses:
-// transcriptStore().hasImported / .importLegacyTranscript (which marks the
-// session imported with src + watermark internally).
-import { transcriptStore } from "./transcript-store";
+// The async actor facade checks import state and confirms the final bounded
+// import chunk before the session is marked imported.
+import { importLegacyTranscript, transcript } from "./actor-transcript";
 
 /** One-shot boot marker — presence means the full backfill already completed. */
 const MARKER_PATH = `${OPENSESSION_SESSIONS_DIR}/.transcript-v2-backfill-done.json`;
@@ -100,7 +99,6 @@ export async function runTranscriptBackfill(
 	const { getAllSessions, mergedSessionTranscriptAsync } = await import(
 		"./sessions"
 	);
-	const store = transcriptStore();
 
 	let sessions = getAllSessions()
 		.slice()
@@ -126,7 +124,7 @@ export async function runTranscriptBackfill(
 			);
 		}
 		try {
-			if (!v2EligibleId(session.id) || store.hasImported(session.id)) {
+			if (!v2EligibleId(session.id) || !(await transcript.needsImport(session.id))) {
 				summary.skipped++;
 				continue;
 			}
@@ -140,7 +138,7 @@ export async function runTranscriptBackfill(
 				// WP-A touchpoint: chunked import (≤500 rows/tx, design §1);
 				// importLegacyTranscript marks the session imported with the
 				// src + mirror watermark internally.
-				await store.importLegacyTranscript(session.id, entries, "merged", watermark);
+				await importLegacyTranscript(session.id, entries, "merged", watermark);
 			}
 			summary.imported++;
 			summary.entries += entries.length;
