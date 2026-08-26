@@ -1024,7 +1024,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						firstSeq,
 						lastSeq,
 						afterSeq,
-						500,
+						200,
 					);
 					ws.send(
 						JSON.stringify({
@@ -1072,7 +1072,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						const page = await transcript.readBefore(
 							msg.sessionId,
 							Math.floor(msg.beforeSeq),
-							Math.min(Math.max(1, Math.floor(msg.limit ?? 40)), 500),
+							Math.min(Math.max(1, Math.floor(msg.limit ?? 40)), 200),
 						);
 						ws.send(
 							JSON.stringify({

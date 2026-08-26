@@ -11,9 +11,10 @@ import {
 } from "./store";
 import { sessionKernelStoreRoute } from "./store-routing";
 import { TranscriptStore } from "../transcript-store";
-import type {
-  TranscriptActorRequest,
-  TranscriptActorResult,
+import {
+  assertTranscriptActorRequest,
+  type TranscriptActorRequest,
+  type TranscriptActorResult,
 } from "./transcript-protocol";
 
 function minDefined(values: Array<number | undefined>): number | undefined {
@@ -228,8 +229,11 @@ export class SessionKernelStoreHost {
   transcript<T extends TranscriptActorRequest>(
     request: T,
   ): TranscriptActorResult<T> {
+    assertTranscriptActorRequest(request);
     const mutation = "requestId" in request || request.op === "ack_wake";
-    if (mutation) this.storeForSession(request.sessionId, true);
+    const kernelStore = mutation
+      ? this.storeForSession(request.sessionId, true)
+      : undefined;
     const placement = this.centralOperation(
       () => this.central.sessionPlacement(request.sessionId),
     );
@@ -238,48 +242,13 @@ export class SessionKernelStoreHost {
       throw new Error(
         `Session ${request.sessionId} has no isolated actor transcript placement`,
       );
-    const store = this.openTranscript(request.sessionId);
-    let result: unknown;
-    switch (request.op) {
-      case "append":
-      case "append_destination":
-      case "import":
-      case "replace":
-      case "delete":
-        result = store.applyActorRequest(request);
-        break;
-      case "needs_import": result = store.needsImport(request.sessionId); break;
-      case "import_info": result = store.getImportInfo(request.sessionId); break;
-      case "tail": result = store.readTail(request.sessionId, request.limit); break;
-      case "tail_window": result = store.readTailWindow(request.sessionId, request.options); break;
-      case "since": result = store.readSince(request.sessionId, request.sinceSeq, request.limit); break;
-      case "changes_since": result = store.readChangesSince(request.sessionId, request.changeSeq, request.limit); break;
-      case "before": result = store.readBefore(request.sessionId, request.beforeSeq, request.limit); break;
-      case "range":
-        result = store.readRange(
-          request.sessionId,
-          request.fromSeq,
-          request.toSeq,
-          request.afterSeq ?? request.fromSeq - 1,
-          request.limit,
-        );
-        break;
-      case "outline": result = store.readTranscriptIndex(request.sessionId); break;
-      case "full_entry": result = store.getFullEntry(request.sessionId, request.entryId); break;
-      case "last_seq": result = store.getLastSeq(request.sessionId); break;
-      case "last_change_seq": result = store.getLastChangeSeq(request.sessionId); break;
-      case "last_reset_change_seq": result = store.getLastResetChangeSeq(request.sessionId); break;
-      case "count": result = store.countEvents(request.sessionId); break;
-      case "summary": result = store.applyActorRequest(request); break;
-      case "search": result = store.applyActorRequest(request); break;
-      case "pending_wake": result = store.pendingActorWake(request.sessionId); break;
-      case "ack_wake": result = store.ackActorWake(request.sessionId, request.cursor); break;
-      default: {
-        const exhaustive: never = request;
-        throw new Error(`Unsupported transcript request ${(exhaustive as { op?: string }).op}`);
-      }
+    const transcriptStore = this.openTranscript(request.sessionId);
+    if (request.op === "append_destination") {
+      if (transcriptStore.replayActorRequest(request))
+        return transcriptStore.applyActorRequest(request) as TranscriptActorResult<T>;
+      kernelStore!.assertTranscriptDestinationFence(request);
     }
-    return result as TranscriptActorResult<T>;
+    return transcriptStore.applyActorRequest(request) as TranscriptActorResult<T>;
   }
 
   private outboxRoute(id: number): { central?: string; isolated?: string } {

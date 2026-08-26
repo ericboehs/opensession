@@ -16,6 +16,7 @@ import { isDeliveryReadRequest } from "./delivery-protocol";
 import type { SessionActorReducerCommand } from "./lifecycle-protocol";
 import { isReadReducer, sessionActorReducerRoute } from "./actor-routing";
 import { READ_METHODS, sessionKernelStoreRoute } from "./store-routing";
+import { assertTranscriptActorRequest } from "./transcript-protocol";
 
 class SessionQuarantinedError extends Error {
   readonly code = "session_quarantined";
@@ -79,6 +80,8 @@ export function startSessionKernelActorWorker(): void {
         const command = request.command;
         const sessionId = reducerSessionId(command, host);
         requestSessionId = sessionId;
+        if (command.kind === "transcript")
+          assertTranscriptActorRequest(command.request);
         if (!isReadReducer(command) && sessionId) {
           const quarantine = host.quarantinedSession(sessionId);
           if (quarantine) throw new SessionQuarantinedError(sessionId, quarantine.reason);

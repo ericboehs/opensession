@@ -63,6 +63,25 @@ describe("per-session session kernel storage", () => {
     isolated.close();
   });
 
+  test("rejects an oversized transcript before claiming placement", () => {
+    const path = paths();
+    const sessionId = "oversized-transcript";
+    const host = new SessionKernelStoreHost(path.central, path.isolated);
+    expect(() => host.transcript({
+      op: "append",
+      sessionId,
+      requestId: "oversized",
+      entries: Array.from({ length: 10_001 }, (_, index) => ({
+        id: String(index),
+        type: "user" as const,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        content: "x",
+      })),
+    })).toThrow("too many entries");
+    expect(host.central.sessionPlacement(sessionId)).toBeUndefined();
+    host.close();
+  });
+
   test("publishes isolated placement before a new session's first transcript write", () => {
     const path = paths();
     const sessionId = "transcript-first-session";
@@ -144,6 +163,58 @@ describe("per-session session kernel storage", () => {
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'transcript_events'",
     ).get()).toBeNull();
     catalog.close();
+  });
+
+  test("fences destination appends to the current run and Agent Host turn", () => {
+    const path = paths();
+    const sessionId = "destination-fence";
+    const host = new SessionKernelStoreHost(path.central, path.isolated);
+    const kernel = host.storeForSession(sessionId, true);
+    expect(kernel.applyRunEvent({
+      sessionId,
+      event: "prompt",
+      runKey: "run-current",
+    }).accepted).toBe(true);
+    expect(kernel.registerAgentHostPlan({
+      op: "register_plan",
+      registrationId: "registration-current",
+      sessionId,
+      runId: "run-current",
+      turnId: "turn-current",
+      generation: 1,
+      planHash: `sha256:${"a".repeat(64)}`,
+    }).accepted).toBe(true);
+    const request = {
+      op: "append_destination" as const,
+      sessionId,
+      requestId: "transcript-destination:append-current",
+      appendId: "append-current",
+      runId: "run-current",
+      turnId: "turn-current",
+      generation: 1,
+      entries: [{
+        id: "destination-entry",
+        type: "assistant" as const,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        content: "current",
+      }],
+    };
+    expect(host.transcript(request)).toMatchObject({
+      result: { firstSeq: 1, lastSeq: 1 },
+    });
+    expect(kernel.applyRunEvent({
+      sessionId,
+      event: "run_failed",
+      runKey: "run-current",
+    }).accepted).toBe(true);
+    expect(host.transcript(request)).toMatchObject({ replay: true });
+    for (const stale of [
+      { ...request, requestId: "stale-run", appendId: "stale-run", runId: "run-old" },
+      { ...request, requestId: "stale-turn", appendId: "stale-turn", turnId: "turn-old" },
+      { ...request, requestId: "stale-generation", appendId: "stale-generation", generation: 2 },
+    ]) expect(() => host.transcript(stale)).toThrow("fence rejected");
+    expect(host.transcript({ op: "count", sessionId })).toBe(1);
+    host.close();
   });
 
   test("keeps a legacy session on the central database without dual writing", () => {

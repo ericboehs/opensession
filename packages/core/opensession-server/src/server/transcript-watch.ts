@@ -58,7 +58,7 @@ export interface TranscriptWatchHandle {
   changeSeq(): number;
 }
 
-const RESUME_LIMIT = 500;
+const RESUME_LIMIT = 199;
 
 // The opening window. SNAPSHOT_TAIL_ENTRIES is the floor it has always had;
 // the rest let it reach further back when those entries hold no conversation.

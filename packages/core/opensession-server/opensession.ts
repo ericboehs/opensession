@@ -17,8 +17,10 @@ import { startRunnerPortalReaper } from "./src/server/runner-portals";
 import { startTodoReminderTicker } from "./src/server/todos";
 import { startGeneratedTitleSweep } from "./src/server/generated-titles";
 import { startLiveActivitySync } from "./src/server/live-activities";
-import { kickTranscriptBackfillOnce } from "./src/server/transcript-backfill";
-import { kickOrphanTranscriptSweep } from "./src/server/transcript-orphan-sweep";
+import {
+	drainPendingTranscriptWakeBatch,
+	drainPendingTranscriptWakesAfter,
+} from "./src/server/actor-transcript";
 import { makeAskHandler, restorePendingAsks } from "./src/server/asks";
 import { activeAutomationPreparationCount, automationResumeMcpForSession, ensureConfiguredAutomations, getWebhookRoutes, resumePendingAutomationRuns, setEventSessionCallback, settleResumedAutomationRun, startScheduler } from "./src/server/automations";
 import { startUsagePoller } from "./src/server/claude-accounts";
@@ -742,18 +744,6 @@ if (!g.__opensessionBooted) {
 		invalidateSessionsCache();
 	});
 
-	// Transcript v2 (docs/transcripts.md): one-time full backfill of
-	// legacy transcripts into transcripts.db. The helper self-gates (marker
-	// file once it completed — already done since 2026-07-23); the delay keeps
-	// its import chunks out of the restart-resume window below.
-	setTimeout(() => kickTranscriptBackfillOnce(), 15_000);
-
-	// Junk transcripts: rows written under session ids that never had a session
-	// behind them (test harnesses, before the store's per-pid scratch database).
-	// Deletes only what it can prove is bookkeeping — see the module doc — and
-	// is idempotent, so it runs every boot rather than once ever. Delayed past
-	// the restart-resume window so it never competes with a waking session.
-	setTimeout(() => kickOrphanTranscriptSweep(), 45_000);
 	} else {
 		agents = [];
 		g.__agents = agents;
@@ -933,6 +923,17 @@ if (!g.__opensessionBooted) {
 			console.warn(
 				`[session-kernel] Reconciled ${reconciledBranchEffects.length} compatible branch effect(s)`,
 			);
+		// Transcript mutations commit their durable wake before gateway bus
+		// delivery. Drain crash-window wakes before readiness so a replacement or
+		// deletion does not wait for another mutation to become visible.
+		const transcriptWakeBatch = await drainPendingTranscriptWakeBatch();
+		if (transcriptWakeBatch.drained > 0)
+			console.log(
+				`[transcript] Reconciled ${transcriptWakeBatch.drained} pending wake(s) before readiness`,
+			);
+		if (!transcriptWakeBatch.complete)
+			void drainPendingTranscriptWakesAfter(transcriptWakeBatch.nextAfter)
+				.catch((error) => console.error("[transcript] background wake drain failed:", error));
 		// Only now may durable timers and effects wake actors: every recovery
 		// stage above completed and ownership is established.
 		startSessionKernelRuntime();

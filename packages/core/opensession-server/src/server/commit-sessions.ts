@@ -194,7 +194,7 @@ async function sweep(
 		const rows: Array<{ seq: number; ts: number; data: string }> = [];
 		let pageCursor = cursor;
 		for (;;) {
-			const page = await transcript.readSince(session, pageCursor, 1000);
+			const page = await transcript.readSince(session, pageCursor, 200);
 			for (const entry of page.entries) {
 				rows.push({
 					seq: entry.seq,

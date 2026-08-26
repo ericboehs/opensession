@@ -59,7 +59,7 @@ import {
 } from "./transcript-bus";
 import type { TranscriptEntry } from "./types";
 import { sanitizeTranscriptMediaEntry } from "./transcript-media";
-import { transcriptEntryMatchSnippet } from "./transcript-search";
+import { v2SnapshotEntryWeight } from "./transcript-wire";
 import { classifyEntry, dropContextInjections } from "@tellahq/opensession-protocol/notices";
 import {
   decodeAgentTranscriptReceiptRefV1,
@@ -70,10 +70,12 @@ import type {
   TranscriptIndexEntry,
   TranscriptIndexRole,
 } from "@tellahq/opensession-protocol/session";
-import type {
-  TranscriptActorRequest,
-  TranscriptMutationResult,
-  TranscriptWake,
+import {
+  assertTranscriptActorRequest,
+  assertTranscriptActorResponse,
+  type TranscriptActorRequest,
+  type TranscriptMutationResult,
+  type TranscriptWake,
 } from "./session-kernel/transcript-protocol";
 
 export type { SeqEntry, TranscriptBusEvent };
@@ -93,6 +95,11 @@ export interface TranscriptOutline {
 
 export interface TranscriptRangePage extends TranscriptPage {
   /** Last raw seq covered, including a corrupt or hidden row. */
+  coveredThroughSeq: number;
+  complete: boolean;
+}
+
+export interface TranscriptHydratedPage extends TranscriptPage {
   coveredThroughSeq: number;
   complete: boolean;
 }
@@ -501,9 +508,18 @@ export class TranscriptStore {
         first_change_seq INTEGER NOT NULL DEFAULT 0,
         last_change_seq INTEGER NOT NULL DEFAULT 0,
         reset_epoch INTEGER NOT NULL DEFAULT 0,
+        acked_reset_epoch INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL
       );
     `);
+    const wakeColumns = new Set(
+      (this.db.query("PRAGMA table_info(session_kernel_transcript_wakes)").all() as Array<{ name: string }>)
+        .map(({ name }) => name),
+    );
+    if (!wakeColumns.has("acked_reset_epoch"))
+      this.db.exec(
+        "ALTER TABLE session_kernel_transcript_wakes ADD COLUMN acked_reset_epoch INTEGER NOT NULL DEFAULT 0",
+      );
     this.migrateChangeSequence();
     type Tx = typeof this.txWrite;
     this.txWrite = this.db.transaction(
@@ -987,34 +1003,51 @@ export class TranscriptStore {
   /** Actor-only request entrypoint. Mutations, immutable exact result receipts,
    * and replayable wake cursors settle in one SQLite transaction. */
   applyActorRequest(request: TranscriptActorRequest): unknown {
-    if (!request.sessionId || Buffer.byteLength(request.sessionId) > 1_024)
-      throw new TypeError("Transcript actor request has an invalid session ID");
-    if ("entries" in request && request.entries.length > 10_000)
-      throw new RangeError("Transcript actor request has too many entries");
-    if ("limit" in request && request.limit !== undefined &&
-      (!Number.isSafeInteger(request.limit) || request.limit < 1 || request.limit > 10_000))
-      throw new RangeError("Transcript actor read limit is invalid");
+    assertTranscriptActorRequest(request);
+    const result = this.applyActorRequestValidated(request);
+    assertTranscriptActorResponse(result);
+    return result;
+  }
 
+  private applyActorRequestValidated(request: TranscriptActorRequest): unknown {
     if ("requestId" in request) return this.txActorMutation.immediate(request);
     if (request.op === "needs_import") return this.needsImport(request.sessionId);
     if (request.op === "import_info") return this.getImportInfo(request.sessionId);
-    if (request.op === "tail") return this.readTail(request.sessionId, request.limit);
-    if (request.op === "tail_window") return this.readTailWindow(request.sessionId, request.options);
+    if (request.op === "tail") return this.readTail(request.sessionId, request.limit ?? 50);
+    if (request.op === "tail_window")
+      return this.readTailWindow(request.sessionId, {
+        ...request.options,
+        ...(request.options.weightProfile === "v2_snapshot"
+          ? { weigh: v2SnapshotEntryWeight }
+          : {}),
+      });
     if (request.op === "since")
-      return this.readSince(request.sessionId, request.sinceSeq, request.limit);
+      return this.readSince(request.sessionId, request.sinceSeq, request.limit ?? 200);
     if (request.op === "changes_since")
-      return this.readChangesSince(request.sessionId, request.changeSeq, request.limit);
+      return this.readChangesSince(request.sessionId, request.changeSeq, request.limit ?? 200);
+    if (request.op === "hydrated_since")
+      return this.readHydratedSince(
+        request.sessionId,
+        request.sinceSeq,
+        request.limit ?? 100,
+        request.maxBytes,
+      );
     if (request.op === "before")
-      return this.readBefore(request.sessionId, request.beforeSeq, request.limit);
+      return this.readBefore(request.sessionId, request.beforeSeq, request.limit ?? 40);
     if (request.op === "range")
       return this.readRange(
         request.sessionId,
         request.fromSeq,
         request.toSeq,
         request.afterSeq ?? request.fromSeq - 1,
-        request.limit,
+        request.limit ?? 200,
       );
-    if (request.op === "outline") return this.readTranscriptIndex(request.sessionId);
+    if (request.op === "outline")
+      return this.readTranscriptIndex(
+        request.sessionId,
+        request.afterSeq ?? 0,
+        request.limit ?? 2_000,
+      );
     if (request.op === "full_entry") return this.getFullEntry(request.sessionId, request.entryId);
     if (request.op === "last_seq") return this.getLastSeq(request.sessionId);
     if (request.op === "last_change_seq") return this.getLastChangeSeq(request.sessionId);
@@ -1029,41 +1062,23 @@ export class TranscriptStore {
         ? { lastTs: row.last_ts, seqHighWater: Math.max(0, row.next_seq - 1) }
         : null;
     }
-    if (request.op === "search") {
-      const query = request.query.trim();
-      if (query.length < 2 || query.length > 1_000) return null;
-      const rows = this.db.query(`
-        SELECT data FROM transcript_events
-        WHERE session_id = ? AND instr(lower(data), ?) > 0
-        ORDER BY seq DESC LIMIT 24
-      `).all(request.sessionId, query.toLowerCase()) as Array<{ data: string }>;
-      for (const row of rows) {
-        try {
-          const snippet = transcriptEntryMatchSnippet(
-            JSON.parse(row.data) as TranscriptEntry,
-            query,
-          );
-          if (snippet) return snippet;
-        } catch {}
-      }
-      return null;
-    }
     if (request.op === "pending_wake") return this.pendingActorWake(request.sessionId);
     return this.ackActorWake(request.sessionId, request.cursor);
   }
 
-  private applyActorMutationInTx(
+  private actorRequestDigest(
     request: Extract<TranscriptActorRequest, { requestId: string }>,
-  ): TranscriptMutationResult<unknown> {
-    if (!request.sessionId || !request.requestId)
-      throw new TypeError("Transcript actor mutation requires session and request IDs");
-    if (Buffer.byteLength(request.sessionId) > 1_024 || Buffer.byteLength(request.requestId) > 256)
-      throw new RangeError("Transcript actor mutation identity is too large");
-    const requestJson = canonicalDestinationJson(request);
-    const digest = new Bun.CryptoHasher("sha256")
+  ): string {
+    return new Bun.CryptoHasher("sha256")
       .update("opensession.transcript-actor-command.v1\0")
-      .update(requestJson)
+      .update(canonicalDestinationJson(request))
       .digest("hex");
+  }
+
+  replayActorRequest(
+    request: Extract<TranscriptActorRequest, { requestId: string }>,
+  ): TranscriptMutationResult<unknown> | undefined {
+    const digest = this.actorRequestDigest(request);
     const receipt = this.db.query(`
       SELECT request_digest, result_json FROM transcript_append_receipts
       WHERE session_id = ? AND append_id = ?
@@ -1071,14 +1086,21 @@ export class TranscriptStore {
       request_digest: string;
       result_json: string;
     } | null;
-    if (receipt) {
-      if (receipt.request_digest !== digest)
-        throw new TranscriptAppendConflictError(request.sessionId, request.requestId);
-      return {
-        ...(JSON.parse(receipt.result_json) as TranscriptMutationResult<unknown>),
-        replay: true,
-      };
-    }
+    if (!receipt) return undefined;
+    if (receipt.request_digest !== digest)
+      throw new TranscriptAppendConflictError(request.sessionId, request.requestId);
+    return {
+      ...(JSON.parse(receipt.result_json) as TranscriptMutationResult<unknown>),
+      replay: true,
+    };
+  }
+
+  private applyActorMutationInTx(
+    request: Extract<TranscriptActorRequest, { requestId: string }>,
+  ): TranscriptMutationResult<unknown> {
+    const replay = this.replayActorRequest(request);
+    if (replay) return replay;
+    const digest = this.actorRequestDigest(request);
 
     const currentEpoch = this.getLastResetChangeSeq(request.sessionId);
     const beforeChangeSeq = this.getLastChangeSeq(request.sessionId);
@@ -1148,7 +1170,11 @@ export class TranscriptStore {
           ELSE excluded.first_change_seq
         END,
         last_change_seq = excluded.last_change_seq,
-        reset_epoch = excluded.reset_epoch,
+        reset_epoch = CASE
+          WHEN session_kernel_transcript_wakes.cursor > session_kernel_transcript_wakes.acked_cursor
+          THEN MAX(session_kernel_transcript_wakes.reset_epoch, excluded.reset_epoch)
+          ELSE excluded.reset_epoch
+        END,
         updated_at = excluded.updated_at
     `, [
       request.sessionId,
@@ -1186,7 +1212,8 @@ export class TranscriptStore {
 
   pendingActorWake(sessionId: string, includeAcked = false): TranscriptWake | null {
     const row = this.db.query(`
-      SELECT cursor, acked_cursor, first_change_seq, last_change_seq, reset_epoch
+      SELECT cursor, acked_cursor, first_change_seq, last_change_seq, reset_epoch,
+        acked_reset_epoch
       FROM session_kernel_transcript_wakes WHERE session_id = ?
     `).get(sessionId) as {
       cursor: number;
@@ -1194,6 +1221,7 @@ export class TranscriptStore {
       first_change_seq: number;
       last_change_seq: number;
       reset_epoch: number;
+      acked_reset_epoch: number;
     } | null;
     if (!row || (!includeAcked && row.cursor <= row.acked_cursor)) return null;
     return {
@@ -1202,6 +1230,7 @@ export class TranscriptStore {
       firstChangeSeq: Number(row.first_change_seq),
       lastChangeSeq: Number(row.last_change_seq),
       resetEpoch: Number(row.reset_epoch),
+      ackedResetEpoch: Number(row.acked_reset_epoch),
     };
   }
 
@@ -1209,7 +1238,7 @@ export class TranscriptStore {
     if (!Number.isSafeInteger(cursor) || cursor < 0) return false;
     const result = this.db.run(`
       UPDATE session_kernel_transcript_wakes
-      SET acked_cursor = ?, updated_at = ?
+      SET acked_cursor = ?, acked_reset_epoch = reset_epoch, updated_at = ?
       WHERE session_id = ? AND cursor = ? AND acked_cursor < ?
     `, [cursor, Date.now(), sessionId, cursor, cursor]);
     return result.changes === 1;
@@ -1506,16 +1535,75 @@ export class TranscriptStore {
     return page(rows);
   }
 
+  /** Full-content page for bounded server-side consumers. Blob hydration and
+   * byte accounting happen inside one actor read instead of one RPC per row. */
+  readHydratedSince(
+    sessionId: string,
+    sinceSeq: number,
+    limit = 100,
+    maxBytes = 12 * 1024 * 1024,
+  ): TranscriptHydratedPage {
+    const rows = this.db.query(`
+      SELECT event.seq, event.change_seq,
+        COALESCE(blob.data, event.data) AS data
+      FROM transcript_events event
+      LEFT JOIN transcript_blobs blob
+        ON blob.id = event.full_ref
+       AND blob.session_id = event.session_id
+       AND blob.uuid = event.uuid
+      WHERE event.session_id = ? AND event.seq > ?
+      ORDER BY event.seq LIMIT ?
+    `).all(sessionId, sinceSeq, limit + 1) as Array<{
+      seq: number;
+      change_seq: number;
+      data: string;
+    }>;
+    const entries: SeqEntry[] = [];
+    let bytes = 0;
+    let coveredThroughSeq = sinceSeq;
+    let complete = rows.length <= limit;
+    for (const row of rows.slice(0, limit)) {
+      let entry: TranscriptEntry;
+      try {
+        entry = sanitizeTranscriptMediaEntry(JSON.parse(row.data) as TranscriptEntry);
+      } catch {
+        coveredThroughSeq = row.seq;
+        continue;
+      }
+      const hydrated = { ...entry, seq: row.seq, changeSeq: row.change_seq };
+      const cost = Buffer.byteLength(JSON.stringify(hydrated));
+      if (entries.length > 0 && bytes + cost > maxBytes) {
+        complete = false;
+        break;
+      }
+      entries.push(hydrated);
+      bytes += cost;
+      coveredThroughSeq = row.seq;
+    }
+    return {
+      entries,
+      firstSeq: entries[0]?.seq ?? 0,
+      lastSeq: entries[entries.length - 1]?.seq ?? 0,
+      coveredThroughSeq,
+      complete,
+    };
+  }
+
   /** Complete content-free outline for virtual scrolling. Existing stores
    * backfill only the session being opened, then every write maintains the
    * projection in the same transaction as its canonical row. */
-  readTranscriptIndex(sessionId: string): TranscriptOutline {
+  readTranscriptIndex(
+    sessionId: string,
+    afterSeq = 0,
+    limit = 1_000_000_000,
+  ): TranscriptOutline {
     const rows = this.db
       .query(
         `SELECT uuid, seq, change_seq, ts, render_role, content_length, review_pr_number
-         FROM transcript_outline WHERE session_id = ? ORDER BY seq`
+         FROM transcript_outline WHERE session_id = ? AND seq > ?
+         ORDER BY seq LIMIT ?`
       )
-      .all(sessionId) as Array<{
+      .all(sessionId, afterSeq, limit) as Array<{
       uuid: string;
       seq: number;
       change_seq: number;

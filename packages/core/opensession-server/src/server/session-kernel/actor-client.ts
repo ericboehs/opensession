@@ -32,9 +32,10 @@ import type { TurnActorRequest, TurnActorResult } from "./turn-protocol";
 import type { TimerActorRequest, TimerActorResult } from "./timer-protocol";
 import type { GatewayCommandRequest, GatewayCommandResult } from "./gateway-command-protocol";
 import type { CoreActorRequest, CoreActorResult } from "./core-protocol";
-import type {
-  TranscriptActorRequest,
-  TranscriptActorResult,
+import {
+  assertTranscriptActorRequest,
+  type TranscriptActorRequest,
+  type TranscriptActorResult,
 } from "./transcript-protocol";
 import {
   SESSION_KERNEL_ACTOR_VERSION,
@@ -411,6 +412,7 @@ export class SessionKernelActorClient {
   decideTranscriptAsync<T extends TranscriptActorRequest>(
     request: T,
   ): Promise<TranscriptActorResult<T>> {
+    assertTranscriptActorRequest(request);
     return this.callAsync<TranscriptActorResult<T>>(
       {
         t: "reduce",

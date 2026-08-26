@@ -1,11 +1,13 @@
 import type { TranscriptEntry } from "./types";
 import { publishTranscript } from "./transcript-bus";
+import { v2SnapshotEntryWeight } from "./transcript-wire";
 import {
   notifyTranscriptAppendHook,
   type AppendResult,
   type DestinationTranscriptAppendRequest,
   type DestinationTranscriptAppendResult,
   type TailWindowOpts,
+  type TranscriptHydratedPage,
   type TranscriptImportInfo,
   type TranscriptOutline,
   type TranscriptPage,
@@ -27,37 +29,93 @@ async function callTranscript<T extends TranscriptActorRequest>(
     import("./session-kernel").TranscriptActorResult<T>;
 }
 
-async function reconcileMutation(
+async function reconcilePendingWake(
   sessionId: string,
-  operation: "append" | "append_destination" | "import" | "replace" | "delete",
-  mutation: TranscriptMutationResult<unknown>,
+  minimumCursor = 0,
 ): Promise<void> {
   const wake = await callTranscript({ op: "pending_wake", sessionId });
-  if (!wake || wake.cursor < mutation.wakeCursor) return;
-  const reset = operation === "replace" || operation === "delete";
-  const page = operation === "delete"
-    ? { entries: [], firstSeq: 0, lastSeq: 0 }
-    : await callTranscript({
-        op: "changes_since",
-        sessionId,
-        changeSeq: Math.max(0, wake.firstChangeSeq - 1),
-        limit: 10_000,
-      });
-  publishTranscript(sessionId, {
-    entries: page.entries,
-    firstSeq: page.firstSeq,
-    lastSeq: page.lastSeq,
-    ...(reset ? { reset: true } : {}),
-  });
-  if (page.entries.length) notifyTranscriptAppendHook(sessionId, page.entries);
+  if (!wake || wake.cursor < minimumCursor) return;
+  const reset = wake.resetEpoch > wake.ackedResetEpoch;
+  let changeSeq = Math.max(0, wake.firstChangeSeq - 1);
+  let published = false;
+  while (changeSeq < wake.lastChangeSeq) {
+    const page = await callTranscript({
+      op: "changes_since",
+      sessionId,
+      changeSeq,
+      limit: 200,
+    });
+    if (page.entries.length === 0) break;
+    publishTranscript(sessionId, {
+      entries: page.entries,
+      firstSeq: page.firstSeq,
+      lastSeq: page.lastSeq,
+      ...(reset && !published ? { reset: true } : {}),
+    });
+    notifyTranscriptAppendHook(sessionId, page.entries);
+    published = true;
+    const next = Math.max(...page.entries.map((entry) => entry.changeSeq ?? 0));
+    if (next <= changeSeq) break;
+    changeSeq = next;
+  }
+  if (!published)
+    publishTranscript(sessionId, {
+      entries: [],
+      firstSeq: 0,
+      lastSeq: 0,
+      ...(reset ? { reset: true } : {}),
+    });
   await callTranscript({ op: "ack_wake", sessionId, cursor: wake.cursor });
+}
+
+export async function drainPendingTranscriptWakesForSessions(
+  sessionIds: Iterable<string>,
+): Promise<number> {
+  let drained = 0;
+  for (const sessionId of sessionIds) {
+    const pending = await callTranscript({ op: "pending_wake", sessionId });
+    if (pending) {
+      await reconcilePendingWake(sessionId, pending.cursor);
+      drained++;
+    }
+  }
+  return drained;
+}
+
+/** One bounded startup catalog page. Readiness never waits on an unbounded
+ * number of session mailboxes; later pages continue after readiness. */
+export async function drainPendingTranscriptWakeBatch(
+  afterSessionId = "",
+  limit = 100,
+): Promise<{ drained: number; nextAfter: string; complete: boolean }> {
+  const boundedLimit = Math.min(Math.max(1, limit), 100);
+  const ids = await actorTranscriptSessionIds(boundedLimit, afterSessionId);
+  return {
+    drained: await drainPendingTranscriptWakesForSessions(ids),
+    nextAfter: ids[ids.length - 1] ?? afterSessionId,
+    complete: ids.length < boundedLimit,
+  };
+}
+
+export async function drainPendingTranscriptWakesAfter(
+  afterSessionId: string,
+): Promise<number> {
+  let after = afterSessionId;
+  let drained = 0;
+  while (true) {
+    await Bun.sleep(0);
+    const batch = await drainPendingTranscriptWakeBatch(after);
+    drained += batch.drained;
+    if (batch.complete) return drained;
+    after = batch.nextAfter;
+  }
 }
 
 async function mutate<T>(
   request: Extract<TranscriptActorRequest, { requestId: string }>,
 ): Promise<T> {
   const mutation = await callTranscript(request) as TranscriptMutationResult<T>;
-  await reconcileMutation(request.sessionId, request.op, mutation);
+  await reconcilePendingWake(request.sessionId, mutation.wakeCursor);
   return mutation.result;
 }
 
@@ -117,7 +175,7 @@ export async function importLegacyTranscript(
     updated += mutation.result.updated;
     finalMutation = mutation;
   }
-  if (finalMutation) await reconcileMutation(sessionId, "import", finalMutation);
+  if (finalMutation) await reconcilePendingWake(sessionId, finalMutation.wakeCursor);
   return { inserted, updated };
 }
 
@@ -150,8 +208,22 @@ export const transcript = {
     callTranscript({ op: "import_info", sessionId }),
   readTail: (sessionId: string, limit?: number): Promise<TranscriptPage> =>
     callTranscript({ op: "tail", sessionId, limit }),
-  readTailWindow: (sessionId: string, options: TailWindowOpts): Promise<TranscriptPage> =>
-    callTranscript({ op: "tail_window", sessionId, options }),
+  readTailWindow: (
+    sessionId: string,
+    options: TailWindowOpts,
+  ): Promise<TranscriptPage> => {
+    const { weigh, ...bounded } = options;
+    if (weigh && weigh !== v2SnapshotEntryWeight)
+      return Promise.reject(new TypeError("Unsupported transcript tail weight profile"));
+    return callTranscript({
+      op: "tail_window",
+      sessionId,
+      options: {
+        ...bounded,
+        ...(weigh ? { weightProfile: "v2_snapshot" as const } : {}),
+      },
+    });
+  },
   readSince: (sessionId: string, sinceSeq: number, limit?: number): Promise<TranscriptPage> =>
     callTranscript({ op: "since", sessionId, sinceSeq, limit }),
   readChangesSince: (
@@ -160,6 +232,19 @@ export const transcript = {
     limit?: number,
   ): Promise<TranscriptPage> =>
     callTranscript({ op: "changes_since", sessionId, changeSeq, limit }),
+  readHydratedSince: (
+    sessionId: string,
+    sinceSeq: number,
+    limit = 100,
+    maxBytes = 12 * 1024 * 1024,
+  ): Promise<TranscriptHydratedPage> =>
+    callTranscript({
+      op: "hydrated_since",
+      sessionId,
+      sinceSeq,
+      limit,
+      maxBytes,
+    }),
   readBefore: (sessionId: string, beforeSeq: number, limit?: number): Promise<TranscriptPage> =>
     callTranscript({ op: "before", sessionId, beforeSeq, limit }),
   readRange: (
@@ -177,8 +262,34 @@ export const transcript = {
       afterSeq,
       limit,
     }),
-  readTranscriptIndex: (sessionId: string): Promise<TranscriptOutline> =>
-    callTranscript({ op: "outline", sessionId }),
+  readTranscriptIndex: async (sessionId: string): Promise<TranscriptOutline> => {
+    const entries: TranscriptOutline["entries"] = [];
+    let afterSeq = 0;
+    let lastChangeSeq = 0;
+    let epoch = 0;
+    while (true) {
+      const page = await callTranscript({
+        op: "outline",
+        sessionId,
+        afterSeq,
+        limit: 2_000,
+      });
+      entries.push(...page.entries);
+      lastChangeSeq = page.lastChangeSeq;
+      epoch = page.epoch;
+      if (page.entries.length < 2_000) break;
+      const next = page.entries[page.entries.length - 1]!.seq;
+      if (next <= afterSeq) break;
+      afterSeq = next;
+    }
+    return {
+      entries,
+      firstSeq: entries[0]?.seq ?? 0,
+      lastSeq: entries[entries.length - 1]?.seq ?? 0,
+      lastChangeSeq,
+      epoch,
+    };
+  },
   getFullEntry: (sessionId: string, entryId: string): Promise<TranscriptEntry | null> =>
     callTranscript({ op: "full_entry", sessionId, entryId }),
   getLastSeq: (sessionId: string): Promise<number> =>
@@ -194,8 +305,6 @@ export const transcript = {
   ): Promise<{ lastTs: number | null; seqHighWater: number } | null> =>
     callTranscript({ op: "summary", sessionId }),
   sessionIds: actorTranscriptSessionIds,
-  search: (sessionId: string, query: string): Promise<string | null> =>
-    callTranscript({ op: "search", sessionId, query }),
   appendTranscriptEvents,
   appendTranscriptDestination,
   importLegacyTranscript,
