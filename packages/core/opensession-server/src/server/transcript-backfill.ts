@@ -21,8 +21,8 @@
  * at call time — by then the live process has long since loaded it, and tests
  * importing this module never bind the live rpc socket.
  *
- * Wiring (W5, not done here): POST /api/admin/transcript-backfill →
- * runTranscriptBackfill; boot path calls kickTranscriptBackfillOnce().
+ * Legacy maintenance only: production boot must not schedule this after the
+ * offline authority cutover because the shared source is rollback evidence.
  */
 
 import { existsSync, statSync, writeFileSync } from "fs";
