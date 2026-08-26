@@ -243,6 +243,12 @@ export interface TranscriptImportInfo {
  */
 const TAIL_WINDOW_MESSAGE_KINDS = new Set(["user", "assistant"]);
 
+export function handoffTranscriptEntryWeight(kind: string, bytes: number): number {
+  return kind === "user" || kind === "assistant" || kind === "system"
+    ? Math.min(bytes, 8_000)
+    : 0;
+}
+
 export interface TailWindowOpts {
   /** Never fewer than this many entries, whatever the byte ceiling says. */
   minEntries: number;
@@ -1019,7 +1025,9 @@ export class TranscriptStore {
         ...request.options,
         ...(request.options.weightProfile === "v2_snapshot"
           ? { weigh: v2SnapshotEntryWeight }
-          : {}),
+          : request.options.weightProfile === "handoff"
+            ? { weigh: handoffTranscriptEntryWeight }
+            : {}),
       });
     if (request.op === "since")
       return this.readSince(request.sessionId, request.sinceSeq, request.limit ?? 200);
@@ -1476,10 +1484,7 @@ export class TranscriptStore {
       minUserMessagesWithToolWork: 4,
       maxEntries: 512,
       maxEstimatedBytes: 180_000,
-      weigh: (kind, bytes) =>
-        kind === "user" || kind === "assistant" || kind === "system"
-          ? Math.min(bytes, 8_000)
-          : 0,
+      weigh: handoffTranscriptEntryWeight,
     });
   }
 

@@ -272,13 +272,7 @@ async function engineStoreHandoffTranscriptAsync(
   const owner = engineStoreOwner(engineSessionId);
   if (!owner || owner.id.startsWith("plain-")) return [];
   try {
-    return (await transcript.readTailWindow(owner.id, {
-      minEntries: 32,
-      minMessages: 24,
-      minUserMessagesWithToolWork: 4,
-      maxEntries: 512,
-      maxEstimatedBytes: 180_000,
-    })).entries;
+    return (await transcript.readHandoffTail(owner.id)).entries;
   } catch (e) {
     console.warn(
       `[sessions] engine handoff transcript read failed for ${engineSessionId}:`,

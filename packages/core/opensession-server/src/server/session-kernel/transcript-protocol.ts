@@ -32,7 +32,7 @@ export type TranscriptMutationFence = {
 type SessionRequest = { sessionId: string };
 type MutationRequest = SessionRequest & TranscriptMutationFence;
 export type TranscriptTailWindowOptions = Omit<TailWindowOpts, "weigh"> & {
-  weightProfile?: "v2_snapshot";
+  weightProfile?: "v2_snapshot" | "handoff";
 };
 
 export type TranscriptActorRequest =
@@ -232,16 +232,20 @@ export function assertTranscriptActorRequest(request: TranscriptActorRequest): v
       throw new RangeError("Transcript actor read limit is invalid");
   }
   if (request.op === "tail_window") {
-    const options = request.options as TailWindowOpts;
+    const options = request.options as TranscriptTailWindowOptions;
     if (
       typeof options !== "object" || options === null || "weigh" in options ||
-      ("weightProfile" in options && options.weightProfile !== "v2_snapshot")
+      ("weightProfile" in options &&
+        options.weightProfile !== "v2_snapshot" &&
+        options.weightProfile !== "handoff")
     ) throw new TypeError("Transcript actor tail window options are invalid");
+    const maxEntriesCeiling =
+      options.weightProfile === "handoff" ? 512 : TRANSCRIPT_ACTOR_MAX_READ_LIMIT;
     for (const [name, value, ceiling] of [
       ["minEntries", options.minEntries, TRANSCRIPT_ACTOR_MAX_READ_LIMIT],
       ["minMessages", options.minMessages, TRANSCRIPT_ACTOR_MAX_READ_LIMIT],
       ["minUserMessagesWithToolWork", options.minUserMessagesWithToolWork ?? 0, TRANSCRIPT_ACTOR_MAX_READ_LIMIT],
-      ["maxEntries", options.maxEntries, TRANSCRIPT_ACTOR_MAX_READ_LIMIT],
+      ["maxEntries", options.maxEntries, maxEntriesCeiling],
       ["maxEstimatedBytes", options.maxEstimatedBytes, TRANSCRIPT_ACTOR_MAX_RESPONSE_BYTES],
     ] as const) {
       if (!Number.isSafeInteger(value) || value < 0 || value > ceiling)

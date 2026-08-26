@@ -224,6 +224,19 @@ export const transcript = {
       },
     });
   },
+  readHandoffTail: (sessionId: string): Promise<TranscriptPage> =>
+    callTranscript({
+      op: "tail_window",
+      sessionId,
+      options: {
+        minEntries: 32,
+        minMessages: 24,
+        minUserMessagesWithToolWork: 4,
+        maxEntries: 512,
+        maxEstimatedBytes: 180_000,
+        weightProfile: "handoff",
+      },
+    }),
   readSince: (sessionId: string, sinceSeq: number, limit?: number): Promise<TranscriptPage> =>
     callTranscript({ op: "since", sessionId, sinceSeq, limit }),
   readChangesSince: (

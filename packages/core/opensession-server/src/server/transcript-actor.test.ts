@@ -73,6 +73,30 @@ describe("actor transcript request bounds", () => {
         maxEstimatedBytes: 1_000,
       },
     })).toThrow("maxEntries");
+    expect(() => assertTranscriptActorRequest({
+      op: "tail_window",
+      sessionId: "bounded",
+      options: {
+        minEntries: 32,
+        minMessages: 24,
+        minUserMessagesWithToolWork: 4,
+        maxEntries: 512,
+        maxEstimatedBytes: 180_000,
+        weightProfile: "handoff",
+      },
+    })).not.toThrow();
+    expect(() => assertTranscriptActorRequest({
+      op: "tail_window",
+      sessionId: "bounded",
+      options: {
+        minEntries: 32,
+        minMessages: 24,
+        minUserMessagesWithToolWork: 4,
+        maxEntries: 513,
+        maxEstimatedBytes: 180_000,
+        weightProfile: "handoff",
+      },
+    })).toThrow("maxEntries");
   });
 
   test("pages outlines at the actor boundary", () => {
