@@ -462,8 +462,10 @@ describe("HostHandle model recovery", () => {
     const root = mkdtempSync(join(tmpdir(), "host-client-projection-failure-test-"));
     roots.push(root);
     const store = new TranscriptStore(join(root, "transcripts.db"), { actorOwned: true });
-    (store as any).appendTranscriptEvents = async () => {
-      throw new Error("projection rejected");
+    const applyActorRequest = store.applyActorRequest.bind(store);
+    (store as any).applyActorRequest = (request: { op?: string }) => {
+      if (request.op === "append") throw new Error("projection rejected");
+      return applyActorRequest(request as any);
     };
     const previous = __setTranscriptStoreForTest(store);
     const kernelStore = new SessionKernelStore(join(root, "kernel.db"));
