@@ -675,6 +675,11 @@ summary:focus-visible {
 	   it is meant to continue. */
 	border-radius: calc(15px * var(--rf)) 0 0 0;
 	corner-shape: var(--cs);
+	/* The iframe is a transformed composited surface, and its fixed backdrop
+	   layer can bypass overflow clipping. A border-box clip stays on this outer
+	   surface and follows its squircle exactly, without a circular inset that
+	   leaves a white crescent around the corner. */
+	clip-path: border-box;
 	background: var(--window);
 	box-shadow: 0 22px 54px var(--window-shadow);
 }
@@ -701,14 +706,6 @@ summary:focus-visible {
 	width: calc(100% / var(--demo-scale));
 	height: calc(100% / var(--demo-scale));
 	border: 0;
-	/* The transformed iframe is its own composited surface. Give that surface
-	   the window's corner too, so fixed, backdrop-filtered overlays inside it
-	   cannot paint square over the figure's rounded clip. Divide by the scale
-	   because the transform scales the radius along with the app. */
-	border-radius: calc((15px * var(--rf)) / var(--demo-scale)) 0 0 0;
-	corner-shape: var(--cs);
-	clip-path: inset(0 round calc((15px * var(--rf)) / var(--demo-scale)) 0 0 0);
-	overflow: hidden;
 	background: var(--window);
 	opacity: 0;
 	pointer-events: none;
