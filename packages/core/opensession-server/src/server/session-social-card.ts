@@ -34,14 +34,15 @@ import type { TranscriptEntry, UnifiedSession } from "./types";
  * degrades to a 501 and the Open Graph meta tags still emit, so the server
  * boots and serves the UI either way.
  */
-type SharpFactory = typeof import("sharp");
+type SharpFactory = (typeof import("sharp"))["default"];
 let sharpFactory: SharpFactory | null | undefined; // undefined = not tried yet
 
 async function loadSharp(): Promise<SharpFactory | null> {
 	if (sharpFactory !== undefined) return sharpFactory;
 	try {
 		const mod = await import("sharp");
-		sharpFactory = ((mod as { default?: SharpFactory }).default ?? mod) as SharpFactory;
+		sharpFactory = ((mod as { default?: SharpFactory }).default ??
+			mod) as unknown as SharpFactory;
 	} catch (e) {
 		console.warn(
 			"[social-card] sharp unavailable — PNG social cards disabled (Open Graph tags still emit):",

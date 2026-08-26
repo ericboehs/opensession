@@ -12,14 +12,14 @@ import { completeClaudeLogin, startClaudeLogin } from "./claude-oauth-login";
 
 const realFetch = globalThis.fetch;
 let dir = "";
-let accessToken = "sk-ant-oat01-usage-first";
+let accessToken = "test-access-token-usage-first";
 let usageConnected = false;
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "opensession-claude-oauth-"));
   process.env.OPENSESSION_STATE_DIR = dir;
   process.env.OPENSESSION_CLAUDE_ACCOUNTS_PATH = join(dir, "accounts.json");
-  accessToken = "sk-ant-oat01-usage-first";
+  accessToken = "test-access-token-usage-first";
   usageConnected = false;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -59,11 +59,11 @@ afterEach(() => {
 
 describe("Claude OAuth usage setup", () => {
   test("keeps the setup token for runs while OAuth credentials refresh usage", async () => {
-    const added = await addAccount("Alex", "sk-ant-oat01-setup");
+    const added = await addAccount("Alex", "sk-ant-test-placeholder");
     expect(added).not.toHaveProperty("error");
     if ("error" in added) throw new Error(added.error);
     expect(added.noUsageScope).toBe(true);
-    expect(pickAccount()?.token).toBe("sk-ant-oat01-setup");
+    expect(pickAccount()?.token).toBe("sk-ant-test-placeholder");
 
     const started = await startClaudeLogin(added.id);
     expect(started).not.toHaveProperty("error");
@@ -84,7 +84,7 @@ describe("Claude OAuth usage setup", () => {
       noUsageScope: false,
       usable: true,
     });
-    expect(pickAccount()?.token).toBe("sk-ant-oat01-setup");
+    expect(pickAccount()?.token).toBe("sk-ant-test-placeholder");
 
     const credentialsPath = completed.account.credentialsPath!;
     const credentials = JSON.parse(readFileSync(credentialsPath, "utf8"));
@@ -93,18 +93,18 @@ describe("Claude OAuth usage setup", () => {
     );
     credentials.claudeAiOauth.expiresAt = 0;
     writeFileSync(credentialsPath, JSON.stringify(credentials));
-    accessToken = "sk-ant-oat01-usage-refreshed";
+    accessToken = "test-access-token-usage-refreshed";
 
     await refreshAllUsage();
 
-    expect(pickAccount()?.token).toBe("sk-ant-oat01-setup");
+    expect(pickAccount()?.token).toBe("sk-ant-test-placeholder");
     expect(listAccountsPublic()[0]?.authKind).toBe("setup-token");
     expect(
       JSON.parse(
         readFileSync(process.env.OPENSESSION_CLAUDE_ACCOUNTS_PATH!, "utf8"),
       ),
     ).toMatchObject({
-      accounts: [{ token: "sk-ant-oat01-setup", credentialsPath }],
+      accounts: [{ token: "sk-ant-test-placeholder", credentialsPath }],
     });
   });
 });

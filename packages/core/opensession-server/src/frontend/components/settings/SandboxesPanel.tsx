@@ -324,7 +324,7 @@ setSaving(false);
 				{remote && (
 					<>
 						<p className="m-0 text-supporting text-dim">
-							Remote providers use the workspace’s Public ingress setting for callbacks and workload identity.
+							Remote providers use Public callbacks under Domains and ingress for callbacks and workload identity.
 						</p>
 						{connection.provider !== "box" && (
 							<details className="rounded-lg bg-surface p-3 text-supporting text-dim">

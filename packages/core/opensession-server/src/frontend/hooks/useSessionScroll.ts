@@ -36,7 +36,6 @@ const TOP_THRESHOLD = 600;
 // at an intermediate position.
 const COARSE_POINTER =
   typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
-
 export interface SessionScroll {
   /** Attach to the scrollable transcript container. */
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -187,8 +186,11 @@ export function useSessionScroll(initialFollowing = true): SessionScroll {
     needAnchorRef.current = false;
     pinTopRef.current = null;
     if (spacerRef.current) spacerRef.current.style.height = "0px";
-    // Hand scroll anchoring back to the browser (disabled while pinned).
-    if (containerRef.current) containerRef.current.style.overflowAnchor = "";
+    // NOTE: overflowAnchor is deliberately NOT restored here. This runs on
+    // turn end — exactly when the final-entry restructure lands — and
+    // re-enabling browser anchoring for that layout pass can move a following
+    // reader away from the edge before relayout runs. relayout owns the flag:
+    // "none" while following, back to the browser once the reader isn't.
   }, []);
 
   const setFollowing = useCallback((v: boolean) => {
@@ -368,17 +370,26 @@ export function useSessionScroll(initialFollowing = true): SessionScroll {
     // Stick to the bottom only while following — and never mid-selection, since a
     // selection is the reader actively working with the text (principle 3).
     if (followingRef.current && !selectionWithin(el)) {
+      // Own the scroll while following: browser scroll anchoring compensating
+      // for a block mounting above the edge can move the reader by the whole
+      // restructure (measured: 1138px at turn end). The glue IS the anchor
+      // while following; hand anchoring back when not.
+      el.style.overflowAnchor = "none";
       // A fold is settling: its height change IS this relayout's cause, and
       // gluing now would drag the reader off the block they just toggled.
-      if (!disclosureSettleRef.current) {
-        el.scrollTop = el.scrollHeight; // instant: a smooth animation per token janks
-      }
+      // Otherwise restore the live-edge invariant before paint. Animating this
+      // correction leaves a following reader visibly stranded above a newly
+      // mounted message, then scrolls the whole conversation under them.
+      if (!disclosureSettleRef.current) el.scrollTop = el.scrollHeight;
     } else if (
       hadLayout &&
       !followingRef.current &&
       !disclosureSettleRef.current &&
       distanceFromBottom() > STICK_THRESHOLD
     ) {
+      // Hand anchoring back to the browser: a reader in history deserves its
+      // protection against images and code blocks loading above them.
+      if (el.style.overflowAnchor) el.style.overflowAnchor = "";
       setNewBelow(true); // content arrived out of view, let the UI announce it
     }
     updateEdges();

@@ -35,11 +35,11 @@ function activePlainSessions(): Array<{ path: string; data: NativeSessionFile }>
  * "My sessions". No-op for non-opensession sessions (no session file). Returns true
  * if a flag was cleared.
  */
-export function clearSessionFileArchive(id: string): boolean {
+export async function clearSessionFileArchive(id: string): Promise<boolean> {
   const path = `${SESSIONS_DIR}/${id}.json`;
   if (!existsSync(path)) return false;
   try {
-    return executeSessionProjection(id, "plain_archive_clear", () => {
+    return await executeSessionProjection(id, "plain_archive_clear", () => {
       const data = JSON.parse(readFileSync(path, "utf-8")) as NativeSessionFile;
       if (!data.archived && !data.archivedAt) return false;
       const { archived, archivedAt, archivedReason, ...rest } = data;
@@ -52,11 +52,11 @@ export function clearSessionFileArchive(id: string): boolean {
 }
 
 /** Mark every session tied to this thread as archived. Returns count. */
-export function archiveSessionsForThread(threadId: string): number {
+export async function archiveSessionsForThread(threadId: string): Promise<number> {
   let archived = 0;
   for (const { path, data } of activePlainSessions()) {
     if (data.plainThreadId !== threadId) continue;
-    executeSessionProjection(data.id, "plain_archive_set", () =>
+    await executeSessionProjection(data.id, "plain_archive_set", () =>
       writeJsonAtomic(path, {
         ...data,
         archived: true,
@@ -104,7 +104,7 @@ export function startPlainArchiveSweep(onChange?: () => void): void {
     let archived = 0;
     for (const threadId of threadIds) {
       const status = await fetchThreadStatus(threadId);
-      if (status === "DONE") archived += archiveSessionsForThread(threadId);
+      if (status === "DONE") archived += await archiveSessionsForThread(threadId);
     }
     if (archived > 0) {
       console.log(`[plain-archive] Archived ${archived} session(s) for done tickets`);

@@ -50,7 +50,11 @@ const ICON_VERSION = 6;
 // out of the metadata line and into the title pill's own leading slot, and the
 // rule that held it there had been matching nothing since.
 const TILE =
-	"repo-tile inline-flex size-[18px] shrink-0 items-center justify-center rounded-sm text-meta font-bold";
+	// Settings applies body leading to every descendant, which makes the fallback
+	// letter's line box taller than the tile and leaves its cap height visibly
+	// high. A direct-child rule wins that page-level override; the one-pixel
+	// nudge then centers the glyph optically rather than its font metrics.
+	"repo-tile inline-flex size-[18px] shrink-0 items-center justify-center rounded-sm text-meta font-bold [&>span]:!leading-none";
 
 export function RepoTile({
 	name,
@@ -115,7 +119,7 @@ export function RepoTile({
 	const letter = repoLetter(name);
 	return (
 		<span className={cn(TILE, className)} style={style}>
-			{letter}
+			<span className="translate-y-px">{letter}</span>
 		</span>
 	);
 }

@@ -24,7 +24,7 @@ describe("parseMentions", () => {
 	test("an @word that is nobody stays plain text", () => {
 		// The case that makes a naive highlighter invent teammates: an email
 		// address, another service's handle, quoted CSS.
-		for (const text of ["mail me@tella.com", "@media (hover)", "@nobody"]) {
+		for (const text of ["mail me@example.com", "@media (hover)", "@nobody"]) {
 			expect(parseMentions(text, PEOPLE).every((t) => t.kind === "text")).toBe(
 				true,
 			);

@@ -479,8 +479,8 @@ export async function onboard(opts: OnboardOptions = {}): Promise<number> {
 
   console.log(
     yellow(
-      `\n  Open Session has no built-in authentication. It trusts everyone who can\n` +
-        `  reach ${answers.host}:${answers.port} — keep it on Tailscale or an equivalent private\n` +
+      `\n  Until GitHub authentication is set up, Open Session trusts everyone who can\n` +
+        `  reach ${answers.host}:${answers.port}. Keep it on Tailscale or an equivalent private\n` +
         `  network. See docs/setup/README.md#trust-model.\n`,
     ),
   );

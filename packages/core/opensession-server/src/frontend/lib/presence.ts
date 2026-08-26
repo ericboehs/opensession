@@ -34,3 +34,12 @@ export function dedupeViewers(
 	for (const v of viewers) counts.set(v, (counts.get(v) || 0) + 1);
 	return Array.from(counts, ([name, count]) => ({ name, count }));
 }
+
+/** Match Feed's pile: reading order is also front-to-back, and every squircle
+ * cuts a full ring in the surface beneath it. */
+export function facepileAvatarStyle(index: number, count: number, ring: string) {
+	return {
+		zIndex: count - index,
+		boxShadow: `var(--avatar-edge), 0 0 0 2px ${ring}`,
+	};
+}

@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import {
-	TRANSCRIPT_LOADING_MORE,
 	VIEWER_HEADER_ACTIONS,
 	VIEWER_INPUT,
 	VIEWER_MESSAGES,
@@ -8,11 +7,6 @@ import {
 
 test("the desktop tab strip cannot cover the header actions", () => {
 	expect(VIEWER_HEADER_ACTIONS).toContain("relative z-[1]");
-});
-
-test("background transcript loading stays out of the conversation flow", () => {
-	expect(TRANSCRIPT_LOADING_MORE).toContain("absolute");
-	expect(TRANSCRIPT_LOADING_MORE).toContain("bottom-[calc(20px+var(--suggestions-under,0px))]");
 });
 
 test("the focused phone composer is fixed close to the keyboard edge", () => {

@@ -26,11 +26,21 @@ curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh
 ```
 
 On Linux, `--tailscale` asks the installer to add Tailscale when passwordless
-`sudo` is available. If it reports that `sudo` is needed, run the manual command
-it prints. Without `TS_AUTHKEY`, installing the client does not join a tailnet.
+`sudo` is available. The recommended remote-access install also adds Caddy and
+the lego certificate helper so the private app can use HTTPS or a friendly
+custom domain. If it reports that `sudo` is needed, run the manual command it
+prints. Without `TS_AUTHKEY`, installing the client does not join a tailnet.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale --caddy
+```
+
+For public ingress through Cloudflare Tunnel, `--cloudflare` installs
+`cloudflared`. Finish configuring either option under Settings → Domains and
+ingress.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --cloudflare
 ```
 
 Already installed Open Session? You do not need to reinstall it. Follow [Add
@@ -60,6 +70,18 @@ opensession status     # is the service up?
 opensession update     # upgrade in place, health-gated
 opensession --help     # everything else
 ```
+
+The installer and updater verify each Open Session release archive against its
+published SHA-256 sidecar before extracting it. GitHub also signs keyless build
+provenance for every release archive, DMG, and ZIP. To verify a manually
+downloaded artifact:
+
+```sh
+gh attestation verify ./opensession-linux-x64.tar.gz --repo tellahq/opensession
+sha256sum --check ./opensession-linux-x64.tar.gz.sha256
+```
+
+Use `shasum -a 256 -c` instead of `sha256sum --check` on macOS.
 
 Or install from a source checkout instead. This is the path for
 self-development (sessions that modify Open Session itself) and for
@@ -99,8 +121,8 @@ requires Bun and git.
 - [docs/setup/](docs/setup/README.md) — overview, requirements, trust model
 - [docs/setup/install.md](docs/setup/install.md) — bare box → running service
 - [docs/setup/ec2.md](docs/setup/ec2.md) — provisioning a clean EC2 box
-- [docs/setup/networking.md](docs/setup/networking.md) — Tailscale, a custom
-  domain, and verifying you are not public
+- [docs/setup/networking.md](docs/setup/networking.md) — private team access,
+  public callbacks, domains, and TLS
 - [CLIENTS.md](CLIENTS.md) — web UI, PWA, desktop shell, native app, extension
 - [docs/worktrees.md](docs/worktrees.md) — how sessions map to git worktrees,
   and where the disk goes
@@ -157,10 +179,12 @@ manifest, and the lockfile stay at the root.
 ## Contributing
 
 We take contributions as human-written text, not code — see
-[CONTRIBUTING.md](CONTRIBUTING.md). Describe the change you'd like informally
-in a `.txt` or `.md` file in [`adrs/`](adrs/), and if we're aligned we'll
-handle the implementation. Report vulnerabilities privately — see
-[SECURITY.md](SECURITY.md), not a public issue.
+[CONTRIBUTING.md](CONTRIBUTING.md). Open a
+[GitHub issue](https://github.com/tellahq/opensession/issues) describing the
+change you'd like — a prompt or suggestion in plain language is exactly the
+right shape — and if we're aligned we'll handle the implementation. Report
+vulnerabilities privately — see [SECURITY.md](SECURITY.md), not a public
+issue.
 
 ## License
 

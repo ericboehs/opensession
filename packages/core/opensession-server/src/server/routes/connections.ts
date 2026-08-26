@@ -649,7 +649,7 @@ export async function handleConnectionsRoutes(
 			soleGithubLogin,
 		} = await import("../github-auth");
 		const { webAuthRequired } = await import("../web-auth");
-		const { configuredIdentity } = await import("../config");
+		const { configuredIdentity, configuredIngress } = await import("../config");
 		const settings = githubUserAuthSettings();
 		const all = connectedGithubAccounts();
 		const connected = new Set(all.map((a) => a.login.toLowerCase()));
@@ -669,6 +669,7 @@ export async function handleConnectionsRoutes(
 			appConfigSource: githubAppConfigSource(),
 			webAuthRequired: !simpleMode,
 			appInstallUrl: githubAppInstallUrl(),
+			webhookBaseUrl: configuredIngress().publicBaseUrl,
 			// Captured install/app-setup intent, so the wizard can prefill the org
 			// owner and show it is finishing sign-in setup. Inert until a connect
 			// consumes authOnConnect.

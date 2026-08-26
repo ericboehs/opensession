@@ -129,7 +129,7 @@ function setupOptionsFor(provider: Provider): Array<{
 }
 
 const macDownloadUrl =
-  "https://github.com/tellahq/opensession/releases/download/v0.4.0/OpenSession-0.4.0-arm64.dmg";
+  "https://github.com/tellahq/opensession/releases/latest/download/OpenSession-arm64.dmg";
 const tailscaleCommand =
   "curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up --ssh";
 const createUserCommand =

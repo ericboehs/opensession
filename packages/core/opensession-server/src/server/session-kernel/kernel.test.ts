@@ -35,7 +35,7 @@ afterEach(() => {
 	store.close();
 });
 
-test("tracked schema version matches the store reader", () => {
+test("tracked schema version matches the store reader", async () => {
 	expect(
 		Number(
 			readFileSync(join(import.meta.dir, "schema-version"), "utf8").trim(),
@@ -44,7 +44,7 @@ test("tracked schema version matches the store reader", () => {
 	expect(SESSION_KERNEL_ACTOR_VERSION).toBe(SESSION_KERNEL_SCHEMA_VERSION);
 });
 
-test("refuses an unsafe schema downgrade", () => {
+test("refuses an unsafe schema downgrade", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "session-kernel-newer-schema-"));
 	const path = join(dir, "kernel.sqlite");
 	const newer = new Database(path);
@@ -57,7 +57,7 @@ test("refuses an unsafe schema downgrade", () => {
 	}
 });
 
-test("read-only mirrors observe later WAL commits and cannot mutate", () => {
+test("read-only mirrors observe later WAL commits and cannot mutate", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "session-kernel-read-mirror-"));
 	const path = join(dir, "kernel.sqlite");
 	const writer = new SessionKernelStore(path);
@@ -78,7 +78,7 @@ test("read-only mirrors observe later WAL commits and cannot mutate", () => {
 	}
 });
 
-test("durable cancel and interrupt receipts restore their original command target", () => {
+test("durable cancel and interrupt receipts restore their original command target", async () => {
   expect(targetForTurnCancel({
     cancelId: "stop:request-one",
     phase: "settled",
@@ -118,7 +118,7 @@ test("durable cancel and interrupt receipts restore their original command targe
   });
 });
 
-test("boot maintenance compacts change history in bounded batches", () => {
+test("boot maintenance compacts change history in bounded batches", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "session-kernel-maintenance-"));
 	const path = join(dir, "kernel.sqlite");
 	const initial = new SessionKernelStore(path);
@@ -155,7 +155,7 @@ test("boot maintenance compacts change history in bounded batches", () => {
 	}
 });
 
-test("schema 6 upgrades create autonomous creation, delivery and ask state", () => {
+test("schema 6 upgrades create autonomous creation, delivery and ask state", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "session-kernel-schema-"));
 	const path = join(dir, "kernel.sqlite");
 	const legacy = new Database(path);
@@ -187,7 +187,7 @@ test("schema 6 upgrades create autonomous creation, delivery and ask state", () 
 });
 
 describe("SessionKernel", () => {
-	test("fails closed non-idempotent projection work after actor restart", () => {
+	test("fails closed non-idempotent projection work after actor restart", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "session-kernel-projection-crash-"));
 		const path = join(dir, "kernel.sqlite");
 		let durableStore = new SessionKernelStore(path);
@@ -214,7 +214,7 @@ describe("SessionKernel", () => {
 		}
 	});
 
-	test("re-admits only destination-idempotent gateway work after restart", () => {
+	test("re-admits only destination-idempotent gateway work after restart", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "session-kernel-gateway-replay-"));
 		const path = join(dir, "kernel.sqlite");
 		let durableStore = new SessionKernelStore(path);
@@ -235,7 +235,43 @@ describe("SessionKernel", () => {
 		}
 	});
 
-	test("deduplicates deletion before and after its permanent tombstone", () => {
+	test("re-admits only the narrow destination transcript operation after restart", () => {
+		const dir = mkdtempSync(join(tmpdir(), "session-kernel-transcript-destination-"));
+		const path = join(dir, "kernel.sqlite");
+		let durableStore = new SessionKernelStore(path);
+		const input = {
+			sessionId: "destination-replay",
+			requestId: "transcript-destination:append-one",
+			operation: "transcript_destination_append" as const,
+			identity: { digest: "digest-one", fence: { runId: "run", turnId: "turn", generation: 1 } },
+		};
+		try {
+			expect(durableStore.requestGatewayCommand(input)).toEqual({ status: "execute" });
+			durableStore.close();
+			durableStore = new SessionKernelStore(path);
+			expect(durableStore.requestGatewayCommand(input)).toEqual({ status: "execute" });
+			expect(() => durableStore.requestGatewayCommand({
+				...input,
+				identity: { ...input.identity, digest: "changed" },
+			})).toThrow("reused with another payload");
+		} finally {
+			durableStore.close();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("a session tombstone fences a stale destination append after receipt cleanup", () => {
+		const sessionId = "deleted-transcript-destination";
+		store.tombstoneSession(sessionId);
+		expect(() => store.requestGatewayCommand({
+			sessionId,
+			requestId: "transcript-destination:stale",
+			operation: "transcript_destination_append",
+			identity: { digest: "stale" },
+		})).toThrow(`Session ${sessionId} was deleted`);
+	});
+
+	test("deduplicates deletion before and after its permanent tombstone", async () => {
 		const input = {
 			sessionId: "delete-once",
 			requestId: "delete:delete-once",
@@ -252,7 +288,7 @@ describe("SessionKernel", () => {
 		});
 	});
 
-	test("replays typed submit-prompt results under one immutable identity", () => {
+	test("replays typed submit-prompt results under one immutable identity", async () => {
 		const input = {
 			sessionId: "typed-submit",
 			requestId: "delivery-one",
@@ -281,7 +317,7 @@ describe("SessionKernel", () => {
 		});
 	});
 
-	test("adopts a queued submit after a crash before command completion", () => {
+	test("adopts a queued submit after a crash before command completion", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "session-kernel-submit-replay-"));
 		const path = join(dir, "kernel.sqlite");
 		let durableStore = new SessionKernelStore(path);
@@ -326,7 +362,7 @@ describe("SessionKernel", () => {
 		}
 	});
 
-	test("turns pre-execution pending admission into a durable retry receipt", () => {
+	test("turns pre-execution pending admission into a durable retry receipt", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "session-kernel-pending-restart-"));
 		const path = join(dir, "kernel.sqlite");
 		const firstStore = new SessionKernelStore(path);
@@ -356,7 +392,7 @@ describe("SessionKernel", () => {
 		}
 	});
 
-	test("backfills pre-policy processing receipts as replay-safe", () => {
+	test("backfills pre-policy processing receipts as replay-safe", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "session-kernel-policy-migration-"));
 		const path = join(dir, "kernel.sqlite");
 		const db = new Database(path);
@@ -387,7 +423,7 @@ describe("SessionKernel", () => {
 		}
 	});
 
-	test("promotes replay policy without changing request identity", () => {
+	test("promotes replay policy without changing request identity", async () => {
 		store.acceptCommand({
 			sessionId: "promote",
 			requestId: "same",
@@ -404,7 +440,7 @@ describe("SessionKernel", () => {
 		expect(promoted.replaySafe).toBe(true);
 	});
 
-	test("fails closed on interrupted work that was not declared replay-safe", () => {
+	test("fails closed on interrupted work that was not declared replay-safe", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "session-kernel-indeterminate-"));
 		const path = join(dir, "kernel.sqlite");
 		const firstStore = new SessionKernelStore(path);
@@ -437,10 +473,10 @@ describe("SessionKernel", () => {
 		const { transitionRunState } = await import("../run-state");
 		const id = `fence-${crypto.randomUUID()}`;
 		try {
-			transitionRunState(id, "prompt");
-			transitionRunState(id, "run_registered", { run_key: "run-new" });
+			await transitionRunState(id, "prompt");
+			await transitionRunState(id, "run_registered", { run_key: "run-new" });
 			const generation = sessionKernel(id).runState().generation;
-			transitionRunState(id, "run_registered", { run_key: "run-old" });
+			await transitionRunState(id, "run_registered", { run_key: "run-old" });
 			expect(sessionKernel(id).runState()).toMatchObject({
 				state: "running",
 				currentRunId: "run-new",
@@ -451,7 +487,7 @@ describe("SessionKernel", () => {
 		}
 	});
 
-	test("keeps deletion tombstones permanent", () => {
+	test("keeps deletion tombstones permanent", async () => {
 		store.tombstoneSession("deleted-forever");
 		expect(
 			store.isTombstoned(
@@ -461,7 +497,16 @@ describe("SessionKernel", () => {
 		).toBe(true);
 	});
 
-	test("persists run state and monotonic change sequence", () => {
+  test("rejects a run event after a writable preflight races deletion", () => {
+    const sessionId = "deleted-before-run-event";
+    expect(store.isTombstoned(sessionId)).toBe(false);
+    store.tombstoneSession(sessionId);
+    expect(() => store.applyRunEvent({ sessionId, event: "prompt" }))
+      .toThrow(`Session ${sessionId} was deleted`);
+    expect(store.runState(sessionId).state).toBe("idle");
+  });
+
+	test("persists run state and monotonic change sequence", async () => {
 		const kernel = sessionKernel("s1");
 		expect(kernel.runState().state).toBe("idle");
 		expect(store.setRunState({ sessionId: "a", state: "starting", event: "prompt" }).changeSeq,).toBe(1);
@@ -480,7 +525,7 @@ describe("SessionKernel", () => {
 		});
 	});
 
-	test("reduces and fences run events in one actor-store transaction", () => {
+	test("reduces and fences run events in one actor-store transaction", async () => {
 		expect(store.applyRunEvent({ sessionId: "fsm", event: "prompt" })).toMatchObject({
 			accepted: true,
 			from: "idle",
@@ -506,7 +551,7 @@ describe("SessionKernel", () => {
 		expect(store.changesSince("fsm", 0)).toHaveLength(2);
 	});
 
-	test("owns creation transitions and rejects stale effect results", () => {
+	test("owns creation transitions and rejects stale effect results", async () => {
 		store.applyCreationEvent({
 			sessionId: "create-opening-requires-effect",
 			identity: "request-direct",
@@ -733,7 +778,7 @@ describe("SessionKernel", () => {
 		).toBe(true);
 		const { settleRecoveredCreationOpening } = await import("../run-session");
 		expect(
-			settleRecoveredCreationOpening(sessionId, promptEntryId),
+			await settleRecoveredCreationOpening(sessionId, promptEntryId),
 		).toBe(true);
 		const settled = store.creationState(sessionId);
 		expect(settled?.state).toBe("ready");
@@ -784,7 +829,7 @@ describe("SessionKernel", () => {
 		});
 		const { settleRecoveredCreationOpening } = await import("../run-session");
 		expect(
-			settleRecoveredCreationOpening(
+			await settleRecoveredCreationOpening(
 				sessionId,
 				promptEntryId,
 				undefined,
@@ -797,7 +842,7 @@ describe("SessionKernel", () => {
 		});
 	});
 
-	test("clears an accepted creation effect so replay is a stale no-op", () => {
+	test("clears an accepted creation effect so replay is a stale no-op", async () => {
 		const sessionId = "create-result-replay";
 		const identity = "request-result-replay";
 		expect(store.applyCreationEvent({ sessionId, identity, event: "plan" }).accepted).toBe(true);
@@ -863,7 +908,7 @@ describe("SessionKernel", () => {
 		expect(store.pendingOutbox()).toHaveLength(0);
 	});
 
-	test("persists completed creation effect receipts across actor-store restart", () => {
+	test("persists completed creation effect receipts across actor-store restart", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "session-kernel-create-receipt-"));
 		const path = join(dir, "kernel.sqlite");
 		let durableStore = new SessionKernelStore(path);
@@ -909,7 +954,7 @@ describe("SessionKernel", () => {
 		}
 	});
 
-	test("persists opening recovery input with its effect and clears it terminally", () => {
+	test("persists opening recovery input with its effect and clears it terminally", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "session-kernel-opening-plan-"));
 		const path = join(dir, "kernel.sqlite");
 		let durableStore = new SessionKernelStore(path);
@@ -975,7 +1020,7 @@ describe("SessionKernel", () => {
 		}
 	});
 
-	test("settles a cancelled opening effect and fences its late success", () => {
+	test("settles a cancelled opening effect and fences its late success", async () => {
 		const sessionId = "create-opening-cancelled";
 		const identity = "request-opening-cancelled";
 		const effectId = "opening:entry-cancelled";
@@ -1026,7 +1071,7 @@ describe("SessionKernel", () => {
 		})).toMatchObject({ accepted: false, reason: "stale_effect" });
 	});
 
-	test("rejects creation effect capacity before accepting more work", () => {
+	test("rejects creation effect capacity before accepting more work", async () => {
 		const sessionId = "create-receipt-capacity";
 		const identity = "request-receipt-capacity";
 		store.applyCreationEvent({ sessionId, identity, event: "plan" });
@@ -1084,7 +1129,7 @@ describe("SessionKernel", () => {
 		expect(store.pendingOutbox(Date.now(), 10_000)).toHaveLength(outboxBefore);
 	});
 
-	test("rolls creation state back when its durable effect cannot commit", () => {
+	test("rolls creation state back when its durable effect cannot commit", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "session-kernel-create-crash-"));
 		const path = join(dir, "kernel.sqlite");
 		const crashStore = new SessionKernelStore(path);
@@ -1131,7 +1176,7 @@ describe("SessionKernel", () => {
 		}
 	});
 
-	test("claims and restores a delivery batch atomically", () => {
+	test("claims and restores a delivery batch atomically", async () => {
 		store.setDeliverySlot("delivery", "queued", [
 			{ id: "one", content: "first" },
 			{ id: "two", content: "second" },
@@ -1161,7 +1206,7 @@ describe("SessionKernel", () => {
 		expect(store.deliverySnapshot("delivery").dispatch).toBeUndefined();
 	});
 
-	test("retires a terminal creation dispatch before a later prompt drains", () => {
+	test("retires a terminal creation dispatch before a later prompt drains", async () => {
 		const sessionId = "failed-opening-follow-up";
 		const identity = "failed-opening-request";
 		const promptEntryId = "failed-opening-prompt";
@@ -1213,8 +1258,19 @@ describe("SessionKernel", () => {
 			effectId,
 		})).toMatchObject({ accepted: true, to: "failed" });
 
-		// This is the first later send. Its queue mutation repairs the missed
-		// creation ack, so claiming the follow-up cannot remain parked forever.
+		// Explicit settlement must observe and clear its own completed creation
+		// dispatch instead of the generic stale-dispatch repair clearing it first.
+		expect(store.ackDeliveryDispatch(sessionId, promptEntryId)).toBe(true);
+		expect(store.deliverySnapshot(sessionId).dispatch).toBeUndefined();
+
+		// If the process died before that explicit ack, the first later send still
+		// repairs the retained dispatch so the follow-up cannot remain parked.
+		store.claimDeliveryDispatch({
+			sessionId,
+			items: [{ id: "opening", content: "start" }],
+			promptEntryId,
+			kind: "create",
+		});
 		store.setDeliverySlot(sessionId, "queued", [
 			{ id: "follow-up", content: "try again" },
 		]);
@@ -1228,7 +1284,7 @@ describe("SessionKernel", () => {
 		});
 	});
 
-	test("selects and claims the next queue batch in one actor transaction", () => {
+	test("selects and claims the next queue batch in one actor transaction", async () => {
 		store.setDeliverySlot("next-delivery", "queued", [
 			{ id: "held", content: "wait", hold: true },
 			{
@@ -1288,7 +1344,7 @@ describe("SessionKernel", () => {
 		});
 	});
 
-	test("rolls an unabortable steered receipt back to its durable slot", () => {
+	test("rolls an unabortable steered receipt back to its durable slot", async () => {
 		store.setDeliverySlot("steered-interrupt", "steered", [
 			{ id: "before", content: "before" },
 			{ id: "target", content: "accepted but unread" },
@@ -1320,7 +1376,7 @@ describe("SessionKernel", () => {
 		).toBeUndefined();
 	});
 
-	test("does not transfer an interrupt to an earlier retry group", () => {
+	test("does not transfer an interrupt to an earlier retry group", async () => {
 		store.setDeliverySlot("interrupt-behind-retry", "queued", [
 			{ id: "retry", retryDispatchId: "older-entry", content: "retry first" },
 			{ id: "anchor", content: "interrupt target", hold: true },
@@ -1362,7 +1418,7 @@ describe("SessionKernel", () => {
 		});
 	});
 
-	test("does not apply a solo interrupt after its target is removed", () => {
+	test("does not apply a solo interrupt after its target is removed", async () => {
 		store.setDeliverySlot("stale-solo-interrupt", "queued", [
 			{ id: "removed", content: "interrupt target", hold: true },
 			{ id: "other", content: "still held", hold: true },
@@ -1407,7 +1463,7 @@ describe("SessionKernel", () => {
     ]);
     const { isUserStopped, liftUserStop } = await import("../queue-state");
     expect(isUserStopped("cancel-starting")).toBe(true);
-    liftUserStop("cancel-starting");
+    await liftUserStop("cancel-starting");
     expect(store.runState("cancel-starting").state).toBe("idle");
     expect(isUserStopped("cancel-starting")).toBe(true);
     expect(store.applyRunEvent({
@@ -1448,7 +1504,7 @@ describe("SessionKernel", () => {
     });
   });
 
-  test("durably projects one exact terminal outcome through the actor outbox", () => {
+  test("durably projects one exact terminal outcome through the actor outbox", async () => {
     const dir = mkdtempSync(join(tmpdir(), "session-kernel-outcome-"));
     const path = join(dir, "kernel.sqlite");
     const first = new SessionKernelStore(path);
@@ -1751,7 +1807,7 @@ describe("SessionKernel", () => {
     }
   });
 
-  test("durably prepares, retries, and generation-fences explicit turn cancellation", () => {
+  test("durably prepares, retries, and generation-fences explicit turn cancellation", async () => {
     const dir = mkdtempSync(join(tmpdir(), "session-kernel-cancel-"));
     const path = join(dir, "kernel.sqlite");
     const first = new SessionKernelStore(path);
@@ -1903,7 +1959,7 @@ describe("SessionKernel", () => {
     }
   });
 
-	test("recovers prepared and claimed interrupts across crashes", () => {
+	test("recovers prepared and claimed interrupts across crashes", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "session-kernel-interrupt-"));
 		const path = join(dir, "kernel.sqlite");
 		const first = new SessionKernelStore(path);
@@ -2002,7 +2058,7 @@ describe("SessionKernel", () => {
 		}
 	});
 
-	test("reuses a failed multi-item dispatch identity", () => {
+	test("reuses a failed multi-item dispatch identity", async () => {
 		store.setDeliverySlot("failed-multi-dispatch", "queued", [
 			{ id: "one", content: "first" },
 			{ id: "two", content: "second" },
@@ -2092,12 +2148,20 @@ describe("SessionKernel", () => {
 		});
 	});
 
-	test("recovers an ambiguous prepared steer without duplicate queue delivery", () => {
+	test("recovers an ambiguous prepared steer without duplicate queue delivery", async () => {
+		store.setRunState({
+			sessionId: "steer-recovery",
+			state: "running",
+			event: "run_registered",
+			currentRunId: "run-one",
+			generation: 1,
+		});
+		const target = { token: "token-one", runId: "run-one", generation: 1 };
 		store.setDeliverySlot("steer-recovery", "queued", [
 			{ id: "steer-one", content: "fold me in" },
 		]);
 		expect(
-			store.prepareSteerDelivery("steer-recovery", "steer-one"),
+			store.prepareSteerDelivery("steer-recovery", "steer-one", target),
 		).toMatchObject({ id: "steer-one" });
 		expect(store.deliverySnapshot("steer-recovery")).toMatchObject({
 			queued: [],
@@ -2120,7 +2184,42 @@ describe("SessionKernel", () => {
 		});
 	});
 
-	test("batches compatibility effects in one store transaction", () => {
+	test("does not accept a prepared steer after run ownership changes", () => {
+		const sessionId = "steer-owner-swap";
+		const oldTarget = { token: "token-old", runId: "run-old", generation: 1 };
+		store.setRunState({
+			sessionId,
+			state: "running",
+			event: "run_registered",
+			currentRunId: oldTarget.runId,
+			generation: oldTarget.generation,
+		});
+		store.setDeliverySlot(sessionId, "queued", [{ id: "steer-one" }]);
+		expect(store.prepareSteerDelivery(sessionId, "steer-one", oldTarget))
+			.toMatchObject({ id: "steer-one" });
+		store.setRunState({
+			sessionId,
+			state: "running",
+			event: "run_registered",
+			currentRunId: "run-new",
+			generation: 2,
+		});
+
+		expect(store.acceptSteerDelivery(sessionId, "steer-one", oldTarget)).toBe(false);
+		expect(store.deliverySnapshot(sessionId)).toMatchObject({
+			queued: [],
+			steered: [],
+			pendingSteers: [{ target: oldTarget }],
+		});
+		expect(store.rejectSteerDelivery(sessionId, "steer-one", oldTarget)).toBe(true);
+		expect(store.deliverySnapshot(sessionId)).toMatchObject({
+			queued: [{ id: "steer-one" }],
+			steered: [],
+			pendingSteers: [],
+		});
+	});
+
+	test("batches compatibility effects in one store transaction", async () => {
 		expect(store.enqueueOutboxMany("compatibility", [
 			{ kind: "one", payload: { n: 1 }, effectKey: "a" },
 			{ kind: "two", payload: { n: 2 }, effectKey: "b" },
@@ -2128,17 +2227,17 @@ describe("SessionKernel", () => {
 		expect(store.pendingOutbox().map((effect) => effect.effectKey)).toEqual(["a", "b"]);
 	});
 
-	test("actor-owned delivery maps isolate nested mutable values", () => {
+	test("actor-owned delivery maps isolate nested mutable values", async () => {
 		const map = new DeliveryOwnedMap<Array<{ nested: { values: string[] } }>>("queued");
 		const source = [{ nested: { values: ["a"] } }];
-		map.set("nested-session", source);
+		await map.set("nested-session", source);
 		source[0].nested.values.push("source");
 		const read = map.get("nested-session")!;
 		read[0].nested.values.push("reader");
 		expect(map.get("nested-session")?.[0].nested.values).toEqual(["a"]);
 	});
 
-	test("read projections do not activate dormant sessions", () => {
+	test("read projections do not activate dormant sessions", async () => {
 		const projection = new DeliveryOwnedMap<string>("queued");
 		expect(projection.get("dormant")).toBeUndefined();
 		expect(activeSessionKernels()).toHaveLength(0);
@@ -2218,7 +2317,7 @@ describe("SessionKernel durable runtime", () => {
 		}
 	});
 
-	test("retires a timer without replay after actor completion survives a crash", () => {
+	test("retires a timer without replay after actor completion survives a crash", async () => {
 		store.scheduleTimer({
 			sessionId: "timer-complete-crash",
 			timerId: "wake",
@@ -2238,7 +2337,7 @@ describe("SessionKernel durable runtime", () => {
 		expect(store.timer(timer.sessionId, timer.timerId)).toBeUndefined();
 	});
 
-	test("replays a timer when the actor did not commit handler completion", () => {
+	test("replays a timer when the actor did not commit handler completion", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "session-kernel-timer-replay-"));
 		const path = join(dir, "kernel.sqlite");
 		let durableStore = new SessionKernelStore(path);
@@ -2261,7 +2360,7 @@ describe("SessionKernel durable runtime", () => {
 		}
 	});
 
-	test("accounts timer runtime failures once per observed attempt", () => {
+	test("accounts timer runtime failures once per observed attempt", async () => {
 		store.scheduleTimer({
 			sessionId: "timer-runtime-failure",
 			timerId: "wake",
@@ -2285,7 +2384,7 @@ describe("SessionKernel durable runtime", () => {
 		expect(store.timer(timer.sessionId, timer.timerId)?.attempts).toBe(1);
 	});
 
-	test("stale timer settlement cannot mutate a replacement generation", () => {
+	test("stale timer settlement cannot mutate a replacement generation", async () => {
 		const sessionId = "timer-stale-settlement";
 		store.scheduleTimer({
 			sessionId,
@@ -2336,7 +2435,7 @@ describe("SessionKernel durable runtime", () => {
 		} finally { unregister(); }
 	});
 
-	test("stale timer failure cannot back off a replacement generation", () => {
+	test("stale timer failure cannot back off a replacement generation", async () => {
 		store.scheduleTimer({ sessionId: "stale-failure", timerId: "same", kind: "test", dueAt: 1, payload: 1 });
 		const stale = store.timer("stale-failure", "same")!;
 		store.scheduleTimer({ sessionId: "stale-failure", timerId: "same", kind: "test", dueAt: 1, payload: 2 });
@@ -2370,7 +2469,7 @@ describe("SessionKernel durable runtime", () => {
 		}
 	});
 
-	test("backs off failed timers instead of refiring every runtime tick", () => {
+	test("backs off failed timers instead of refiring every runtime tick", async () => {
 		sessionKernel("timer-backoff").scheduleTimer({
 			timerId: "wake",
 			kind: "missing",
@@ -2385,7 +2484,7 @@ describe("SessionKernel durable runtime", () => {
 		});
 	});
 
-	test("dead-letters poison timers after bounded attempts", () => {
+	test("dead-letters poison timers after bounded attempts", async () => {
 		sessionKernel("timer-poison").scheduleTimer({
 			timerId: "wake",
 			kind: "broken",
@@ -2432,7 +2531,7 @@ describe("SessionKernel durable runtime", () => {
 		}
 	});
 
-	test("dead-letters a poison outbox effect after its bounded attempts", () => {
+	test("dead-letters a poison outbox effect after its bounded attempts", async () => {
 		const id = store.enqueueOutbox("poison", "notify", null, "one");
 		for (let attempt = 0; attempt < 20; attempt++)
 			store.noteOutboxFailure(id, "still broken", 20);
@@ -2496,7 +2595,7 @@ describe("SessionKernel durable runtime", () => {
 		}
 	});
 
-	test("re-admits only pre-execution branch compatibility false positives", () => {
+	test("re-admits only pre-execution branch compatibility false positives", async () => {
 		const sharedPayload = {
 			creationIdentity: "creation-one",
 			creationGeneration: 1,
@@ -2618,7 +2717,7 @@ describe("SessionKernel durable runtime", () => {
 			if (calls === 1) throw new Error("temporary");
 		});
 		try {
-			sessionKernel("outbox-session").enqueueEffect(
+			await sessionKernel("outbox-session").enqueueEffect(
 				"human_ask_deliver",
 				{ askId: "retry", skipUi: false },
 			);

@@ -103,7 +103,7 @@ describe("GitHub App onboarding link", () => {
 			name: "Acme Session App",
 			url: "https://os.acme.test/",
 			public: "false",
-			hook_url: "https://ingress.acme.test/github/webhook",
+			webhook_url: "https://ingress.acme.test/github/webhook",
 			webhook_active: "true",
 			// The canonical grant set — checks + statuses (the App-only CI rollup)
 			// and issues (PR/issue comments) included, so a created App holds every
@@ -130,7 +130,7 @@ describe("GitHub App onboarding link", () => {
 				"Open Session",
 			),
 		);
-		expect(url.searchParams.has("hook_url")).toBe(false);
+		expect(url.searchParams.has("webhook_url")).toBe(false);
 		expect(url.searchParams.has("webhook_active")).toBe(false);
 	});
 });

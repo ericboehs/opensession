@@ -1,7 +1,12 @@
 import type { SessionActorReducerCommand } from "./lifecycle-protocol";
+import type {
+  AgentHostPlanRegistration,
+  AgentHostPlanRegistrationResult,
+  AgentHostSupervisionRequest,
+  AgentHostSupervisionResult,
+} from "./agent-host-supervision-protocol";
 import {
   SessionKernelStore,
-  sessionKernelDbPath,
   type CreationEventDecision,
   type CreationEventDecisionResult,
   type DurableCommandRecord,
@@ -11,6 +16,7 @@ import {
   type DurableOutboxItem,
   type DeliverySlot,
   type DurableRunState,
+  type DurableSteerTarget,
   type DurableTimer,
   type RunEventDecision,
   type RunEventDecisionResult,
@@ -22,15 +28,18 @@ import type {
   DeliveryMutationReply,
 } from "./delivery-protocol";
 import type { AskActorRequest, AskActorResult } from "./ask-protocol";
+import type { AgentOperationRequest, AgentOperationResult } from "./agent-operation-protocol";
 import type { TurnActorRequest, TurnActorResult } from "./turn-protocol";
 import type { TimerActorRequest, TimerActorResult } from "./timer-protocol";
 import type { GatewayCommandRequest, GatewayCommandResult } from "./gateway-command-protocol";
 import type { CoreActorRequest, CoreActorResult } from "./core-protocol";
 import {
   SESSION_KERNEL_ACTOR_VERSION,
-  type KernelActorAsyncRequest,
-  type KernelActorAsyncResponse,
+  type KernelActorClientRequest,
+  type KernelActorClientResponse,
 } from "./actor-protocol";
+import { sessionActorReducerRoute } from "./actor-routing";
+import { sessionKernelStoreRoute } from "./store-routing";
 
 const SMALL_OUTPUT_BYTES = 256 * 1024;
 const LARGE_OUTPUT_BYTES = 8 * 1024 * 1024;
@@ -68,22 +77,62 @@ export class SessionKernelQuarantinedError extends SessionKernelActorError {
   }
 }
 
+export function isFatalSessionKernelAsyncTimeout(
+  request: KernelActorClientRequest,
+): boolean {
+  return request.t === "hello" || request.t === "acknowledge";
+}
+
+// The synchronous bridge blocks the gateway event loop while it waits. A slow
+// actor must therefore surface as fast failures, not stacked multi-second
+// waits: every concurrent UI request otherwise serializes behind each one and
+// can starve process timers past the watchdog threshold.
+const SYNC_CALL_TIMEOUT_MS_FLOOR = 25;
+
+function syncCallTimeoutMs(): number {
+  return Math.max(
+    SYNC_CALL_TIMEOUT_MS_FLOOR,
+    Number(process.env.OPENSESSION_SYNC_KERNEL_TIMEOUT_MS ?? 500),
+  );
+}
+const SYNC_BREAKER_AFTER_TIMEOUTS = 1;
+const SYNC_BREAKER_OPEN_MS = 10_000;
+
 type Pending = {
-  resolve: (value: KernelActorAsyncResponse) => void;
+  resolve: (value: KernelActorClientResponse) => void;
   reject: (error: Error) => void;
 };
 
+type SyncRequest =
+  | { t: "store"; method: string; args: unknown[] }
+  | { t: "reduce"; command: SessionActorReducerCommand };
+
+type SyncBreaker = {
+  consecutiveTimeouts: number;
+  openUntil: number;
+};
+
+function syncBreakerScope(request: SyncRequest): string {
+  const route = request.t === "reduce"
+    ? sessionActorReducerRoute(request.command)
+    : sessionKernelStoreRoute(request.method, request.args);
+  if (route.scope === "session") return `session:${route.sessionId}`;
+  if (route.scope === "outbox") return `outbox:${route.id}`;
+  return "global";
+}
+
 export class SessionKernelActorClient {
   private readonly pending = new Map<string, Pending>();
+  private readonly syncBreakers = new Map<string, SyncBreaker>();
   private deadError?: Error;
   // Synchronous calls cannot overlap on the gateway thread: Atomics.wait
   // blocks until the actor finishes. Reuse their shared response buffers
   // instead of allocating and faulting 256 KiB for every map read. Session
   // list enrichment alone performs hundreds of small reads.
-  private readonly syncControlBuffer = new SharedArrayBuffer(
+  private syncControlBuffer = new SharedArrayBuffer(
     Int32Array.BYTES_PER_ELEMENT * 2,
   );
-  private readonly syncSmallOutputBuffer = new SharedArrayBuffer(
+  private syncSmallOutputBuffer = new SharedArrayBuffer(
     SMALL_OUTPUT_BYTES,
   );
   private syncLargeOutputBuffer?: SharedArrayBuffer;
@@ -94,7 +143,7 @@ export class SessionKernelActorClient {
     private readonly onFatal?: (error: Error) => void,
   ) {
     worker.addEventListener("message", (event: MessageEvent) => {
-      const response = event.data as KernelActorAsyncResponse;
+      const response = event.data as KernelActorClientResponse;
       const pending = this.pending.get(response.rpcId);
       if (!pending) return;
       this.pending.delete(response.rpcId);
@@ -147,6 +196,10 @@ export class SessionKernelActorClient {
     });
     if (response.t !== "acknowledge_result")
       throw new Error("Invalid kernel acknowledgement response");
+  }
+
+  quarantinedSession(sessionId: string): DurableSessionQuarantine | undefined {
+    return this.store.quarantinedSession(sessionId);
   }
 
   async statsAsync(): Promise<ReturnType<SessionKernelStoreApi["stats"]>> {
@@ -258,6 +311,18 @@ export class SessionKernelActorClient {
     );
   }
 
+  decideGatewayAsync<T extends GatewayCommandRequest>(
+    request: T,
+  ): Promise<GatewayCommandResult<T>> {
+    return this.callAsync<GatewayCommandResult<T>>(
+      {
+        t: "reduce",
+        command: { kind: "gateway", commandId: crypto.randomUUID(), request },
+      },
+      `gateway ${request.operation} ${request.op}`,
+    );
+  }
+
   decideDelivery<T extends DeliveryActorRequest>(
     request: T,
   ): DeliveryActorResult<T> {
@@ -279,6 +344,38 @@ export class SessionKernelActorClient {
       `delivery ${request.op}`,
     );
     return (response as DeliveryMutationReply<DeliveryActorResult<T>>).result;
+  }
+
+  decideAgentOperation(request: AgentOperationRequest): AgentOperationResult {
+    return this.callSync<AgentOperationResult>(
+      { t: "reduce", command: { kind: "agent_operation", commandId: request.identity.operationId, request } },
+      `Agent operation ${request.op}`,
+    );
+  }
+
+  decideAgentHostSupervision<T extends AgentHostSupervisionRequest>(
+    request: T,
+  ): T extends AgentHostPlanRegistration
+    ? AgentHostPlanRegistrationResult
+    : AgentHostSupervisionResult {
+    return this.callSync<
+      AgentHostPlanRegistrationResult | AgentHostSupervisionResult
+    >(
+      {
+        t: "reduce",
+        command: {
+          kind: "agent_host_supervision",
+          commandId:
+            request.op === "register_plan"
+              ? request.registrationId
+              : request.claimId,
+          request,
+        },
+      },
+      "Agent Host supervision claim",
+    ) as T extends AgentHostPlanRegistration
+      ? AgentHostPlanRegistrationResult
+      : AgentHostSupervisionResult;
   }
 
   decideCreationEvent(
@@ -318,6 +415,228 @@ export class SessionKernelActorClient {
     return result;
   }
 
+  /**
+   * Awaited store/reduce RPC over the posted-message transport. Unlike
+   * callSync this never blocks the gateway event loop; callers await.
+   */
+  callAsync<TResult>(
+    request:
+      | { t: "store"; method: string; args: unknown[] }
+      | { t: "reduce"; command: SessionActorReducerCommand },
+    label: string,
+    large = false,
+  ): Promise<TResult> {
+    if (this.deadError) return Promise.reject(this.deadError);
+    const rpcId = crypto.randomUUID();
+    return new Promise<TResult>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pending.delete(rpcId);
+        reject(
+          new SessionKernelActorError(
+            `Session kernel actor timed out handling ${label}`,
+            true,
+          ),
+        );
+      }, 15_000);
+      const parse = (value: unknown): TResult => {
+        const response = value as {
+          status: number;
+          body?: string;
+          length?: number;
+        };
+        if (!response.body)
+          throw new SessionKernelActorError(
+            `Session kernel ${label} returned no result`,
+            true,
+          );
+        const body = JSON.parse(response.body) as {
+          ok: boolean;
+          result?: TResult;
+          error?: string;
+          code?: string;
+          sessionId?: string;
+        };
+        if (!body.ok) {
+          const message = body.error || `Session kernel ${label} failed`;
+          if (body.code === "session_quarantined" && body.sessionId)
+            throw new SessionKernelQuarantinedError(body.sessionId, message);
+          const error = new SessionKernelActorError(message, false);
+          if (body.code === "actor_fatal") this.markDead(error);
+          throw error;
+        }
+        return body.result as TResult;
+      };
+      this.pending.set(rpcId, {
+        resolve: (value) => {
+          clearTimeout(timeout);
+          try {
+            resolve(parse(value));
+          } catch (error) {
+            reject(error instanceof Error ? error : new Error(String(error)));
+          }
+        },
+        reject: (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        },
+      });
+      try {
+        this.worker.postMessage({ ...request, rpcId });
+      } catch (error) {
+        clearTimeout(timeout);
+        this.pending.delete(rpcId);
+        const failure = error instanceof Error ? error : new Error(String(error));
+        this.markDead(failure);
+        reject(failure);
+      }
+    });
+  }
+
+  async decideAskAsync<T extends AskActorRequest>(
+    request: T,
+  ): Promise<AskActorResult<T>> {
+    return this.callAsync<AskActorResult<T>>(
+      {
+        t: "reduce",
+        command: { kind: "ask", commandId: crypto.randomUUID(), request },
+      },
+      `ask ${request.op}`,
+    );
+  }
+
+  async decideTurnAsync<T extends TurnActorRequest>(
+    request: T,
+  ): Promise<TurnActorResult<T>> {
+    const result = await this.callAsync<TurnActorResult<T>>(
+      {
+        t: "reduce",
+        command: { kind: "turn", commandId: crypto.randomUUID(), request },
+      },
+      `turn ${request.op}`,
+    );
+    if (request.op === "prepare_cancel")
+      (this.store as RemoteStore).noteRunState(
+        request.sessionId,
+        (
+          result as TurnActorResult<
+            Extract<TurnActorRequest, { op: "prepare_cancel" }>
+          >
+        ).runState,
+      );
+    else if (
+      request.op === "prepare_outcome_projection" ||
+      request.op === "settle_outcome_projection"
+    )
+      (this.store as RemoteStore).noteChange(request.sessionId);
+    return result;
+  }
+
+  decideTimerAsync<T extends TimerActorRequest>(
+    request: T,
+  ): Promise<TimerActorResult<T>> {
+    return this.callAsync<TimerActorResult<T>>(
+      {
+        t: "reduce",
+        command: { kind: "timer", commandId: crypto.randomUUID(), request },
+      },
+      `timer ${request.op}`,
+    );
+  }
+
+  decideCoreAsync<T extends CoreActorRequest>(
+    request: T,
+  ): Promise<CoreActorResult<T>> {
+    return this.callAsync<CoreActorResult<T>>(
+      {
+        t: "reduce",
+        command: { kind: "core", commandId: crypto.randomUUID(), request },
+      },
+      `core ${request.op}`,
+    );
+  }
+
+  async decideDeliveryAsync<T extends DeliveryActorRequest>(
+    request: T,
+  ): Promise<DeliveryActorResult<T>> {
+    const response = await this.callAsync<
+      DeliveryActorResult<T> | DeliveryMutationReply<DeliveryActorResult<T>>
+    >(
+      {
+        t: "reduce",
+        command: {
+          kind: "delivery",
+          commandId: crypto.randomUUID(),
+          request,
+        },
+      },
+      `delivery ${request.op}`,
+    );
+    if (request.op === "snapshot" || request.op === "entries")
+      return response as DeliveryActorResult<T>;
+    return (response as DeliveryMutationReply<DeliveryActorResult<T>>).result;
+  }
+
+  async decideAgentHostSupervisionAsync<T extends AgentHostSupervisionRequest>(
+    request: T,
+  ): Promise<T extends AgentHostPlanRegistration
+    ? AgentHostPlanRegistrationResult
+    : AgentHostSupervisionResult> {
+    return this.callAsync<
+      AgentHostPlanRegistrationResult | AgentHostSupervisionResult
+    >(
+      {
+        t: "reduce",
+        command: {
+          kind: "agent_host_supervision",
+          commandId:
+            request.op === "register_plan"
+              ? request.registrationId
+              : request.claimId,
+          request,
+        },
+      },
+      "Agent Host supervision claim",
+    ) as Promise<T extends AgentHostPlanRegistration
+      ? AgentHostPlanRegistrationResult
+      : AgentHostSupervisionResult>;
+  }
+
+  async decideCreationEventAsync(
+    decision: CreationEventDecision,
+  ): Promise<CreationEventDecisionResult> {
+    return this.callAsync<CreationEventDecisionResult>(
+      {
+        t: "reduce",
+        command: {
+          kind: "creation_event",
+          commandId: crypto.randomUUID(),
+          decision,
+        },
+      },
+      "creation event decision",
+      true,
+    );
+  }
+
+  async decideRunEventAsync(
+    decision: RunEventDecision,
+  ): Promise<RunEventDecisionResult> {
+    const result = await this.callAsync<RunEventDecisionResult>(
+      {
+        t: "reduce",
+        command: {
+          kind: "run_event",
+          commandId: crypto.randomUUID(),
+          decision,
+        },
+      },
+      "run event decision",
+    );
+    if (result.accepted)
+      (this.store as RemoteStore).noteRunState(decision.sessionId, result.state);
+    return result;
+  }
+
   callStore<TResult>(method: string, args: unknown[]): TResult {
     return this.callSync<TResult>(
       { t: "store", method, args },
@@ -327,14 +646,21 @@ export class SessionKernelActorClient {
   }
 
   private callSync<TResult>(
-    request:
-      | { t: "store"; method: string; args: unknown[] }
-      | { t: "reduce"; command: SessionActorReducerCommand },
+    request: SyncRequest,
     label: string,
     large = false,
     outputBytes = large ? LARGE_OUTPUT_BYTES : SMALL_OUTPUT_BYTES,
   ): TResult {
     if (this.deadError) throw this.deadError;
+    const breakerScope = syncBreakerScope(request);
+    const breaker = this.syncBreakers.get(breakerScope);
+    if (breaker && breaker.openUntil > Date.now()) {
+      throw new SessionKernelActorError(
+        "Session kernel actor is unresponsive; sync call refused by breaker",
+        true,
+      );
+    }
+    if (breaker) this.syncBreakers.delete(breakerScope);
     const controlBuffer = this.syncControlBuffer;
     const outputBuffer =
       outputBytes === SMALL_OUTPUT_BYTES
@@ -352,12 +678,34 @@ export class SessionKernelActorClient {
       control: controlBuffer,
       output: outputBuffer,
     });
-    const waited = Atomics.wait(control, 0, 0, 10_000);
+    const waited = Atomics.wait(control, 0, 0, syncCallTimeoutMs());
     if (waited === "timed-out") {
-      const error = new Error(`Session kernel actor timed out in ${label}`);
-      this.markDead(error);
-      throw error;
+      // A slow actor is a retryable degradation, not a lost authority: the
+      // actor service fail-stops itself on real ambiguity, and the worker
+      // error/close listeners still mark the client dead on true failures.
+      // Killing the client here would turn every slowdown into a gateway
+      // restart. Abandon these handshake buffers so a late reply settles into
+      // an orphan instead of being misattributed to the next call.
+      this.syncControlBuffer = new SharedArrayBuffer(
+        Int32Array.BYTES_PER_ELEMENT * 2,
+      );
+      if (outputBytes === SMALL_OUTPUT_BYTES)
+        this.syncSmallOutputBuffer = new SharedArrayBuffer(SMALL_OUTPUT_BYTES);
+      else if (outputBytes === LARGE_OUTPUT_BYTES)
+        this.syncLargeOutputBuffer = undefined;
+      const consecutiveTimeouts = (breaker?.consecutiveTimeouts ?? 0) + 1;
+      this.syncBreakers.set(breakerScope, {
+        consecutiveTimeouts,
+        openUntil: consecutiveTimeouts >= SYNC_BREAKER_AFTER_TIMEOUTS
+          ? Date.now() + SYNC_BREAKER_OPEN_MS
+          : 0,
+      });
+      throw new SessionKernelActorError(
+        `Session kernel actor timed out in ${label}`,
+        true,
+      );
     }
+    this.syncBreakers.delete(breakerScope);
     const status = Atomics.load(control, 0);
     const length = Atomics.load(control, 1);
     if (status === 2) {
@@ -398,17 +746,20 @@ export class SessionKernelActorClient {
   }
 
   private request(
-    request: KernelActorAsyncRequest,
-  ): Promise<KernelActorAsyncResponse> {
+    request: KernelActorClientRequest,
+  ): Promise<KernelActorClientResponse> {
     if (this.deadError) return Promise.reject(this.deadError);
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pending.delete(request.rpcId);
-        const error = new Error(
-          `Session kernel actor timed out handling ${request.t}`,
-        );
-        this.markDead(error);
-        reject(error);
+        const message = `Session kernel actor timed out handling ${request.t}`;
+        if (isFatalSessionKernelAsyncTimeout(request)) {
+          const error = new Error(message);
+          this.markDead(error);
+          reject(error);
+          return;
+        }
+        reject(new SessionKernelActorError(message, true));
       }, 15_000);
       this.pending.set(request.rpcId, {
         resolve: (value) => {
@@ -451,10 +802,9 @@ class RemoteStore implements SessionKernelStoreApi {
   };
   constructor(private readonly actor: SessionKernelActorClient) {}
   openReadMirror(): void {
-    const path = sessionKernelDbPath();
-    if (path === ":memory:") return;
-    this.readStore?.close();
-    this.readStore = new SessionKernelStore(path, { readonly: true });
+    // Reads are routed by the actor host once sessions can live in distinct
+    // databases. Opening only the legacy central WAL here would return stale
+    // defaults for isolated sessions and silently violate single authority.
   }
   hydrateRunStates(): void {
     this.runStateCache.clear();
@@ -510,6 +860,9 @@ class RemoteStore implements SessionKernelStoreApi {
   releaseQuarantine(sessionId: string) {
     return this.call<boolean>("releaseQuarantine", sessionId);
   }
+  decideAgentOperation(request: AgentOperationRequest): AgentOperationResult {
+    return this.actor.decideAgentOperation(request);
+  }
   acceptCommand(input: {
     sessionId: string;
     requestId: string;
@@ -542,6 +895,16 @@ class RemoteStore implements SessionKernelStoreApi {
     return this.readStore
       ? this.readStore.creationState(sessionId)
       : this.call<DurableCreationState | undefined>("creationState", sessionId);
+  }
+  registerAgentHostPlan(
+    input: Parameters<SessionKernelStoreApi["registerAgentHostPlan"]>[0],
+  ) {
+    return this.actor.decideAgentHostSupervision(input);
+  }
+  claimAgentHostSupervision(
+    input: Parameters<SessionKernelStoreApi["claimAgentHostSupervision"]>[0],
+  ) {
+    return this.actor.decideAgentHostSupervision(input);
   }
   applyCreationEvent(input: CreationEventDecision) {
     return this.actor.decideCreationEvent(input);
@@ -766,25 +1129,52 @@ class RemoteStore implements SessionKernelStoreApi {
   setDeliverySlot(sessionId: string, slot: DeliverySlot, value: unknown) {
     this.actor.decideDelivery({ op: "set", sessionId, slot, value });
   }
+  enqueueDelivery(sessionId: string, item: unknown, front?: boolean) {
+    return this.actor.decideDelivery({ op: "enqueue", sessionId, item, front });
+  }
   deleteDeliverySlot(sessionId: string, slot: DeliverySlot) {
     return this.actor.decideDelivery({ op: "delete", sessionId, slot });
   }
   clearDeliverySlot(slot: DeliverySlot) {
     this.actor.decideDelivery({ op: "clear_slot", slot });
   }
-  prepareSteerDelivery(sessionId: string, itemId: string, item?: unknown) {
+  prepareSteerDelivery(
+    sessionId: string,
+    itemId: string,
+    target: DurableSteerTarget,
+    item?: unknown,
+  ) {
     return this.actor.decideDelivery({
       op: "prepare_steer",
       sessionId,
       itemId,
+      target,
       item,
     });
   }
-  acceptSteerDelivery(sessionId: string, itemId: string) {
-    return this.actor.decideDelivery({ op: "accept_steer", sessionId, itemId });
+  acceptSteerDelivery(
+    sessionId: string,
+    itemId: string,
+    target: DurableSteerTarget,
+  ) {
+    return this.actor.decideDelivery({
+      op: "accept_steer",
+      sessionId,
+      itemId,
+      target,
+    });
   }
-  rejectSteerDelivery(sessionId: string, itemId: string) {
-    return this.actor.decideDelivery({ op: "reject_steer", sessionId, itemId });
+  rejectSteerDelivery(
+    sessionId: string,
+    itemId: string,
+    target: DurableSteerTarget,
+  ) {
+    return this.actor.decideDelivery({
+      op: "reject_steer",
+      sessionId,
+      itemId,
+      target,
+    });
   }
   settlePendingSteers() {
     return this.actor.decideDelivery({ op: "settle_pending_steers" });

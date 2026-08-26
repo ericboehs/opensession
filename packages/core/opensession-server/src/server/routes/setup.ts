@@ -120,7 +120,7 @@ export function buildOnboardingGithubAppCreateUrl(
     public: "false",
     ...(ingressUrl.trim()
       ? {
-          hook_url: `${ingressUrl.replace(/\/$/, "")}/github/webhook`,
+          webhook_url: `${ingressUrl.replace(/\/$/, "")}/github/webhook`,
           webhook_active: "true",
         }
       : {}),

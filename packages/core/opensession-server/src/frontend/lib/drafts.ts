@@ -56,14 +56,18 @@ const syncedText = new Map<string, string>();
 // per character; remote changes need an event so a mounted composer can adopt.
 const CHANGE_EVENT = "backstage-drafts-changed";
 
-function emit() {
-  window.dispatchEvent(new Event(CHANGE_EVENT));
+function emit(key?: string) {
+  window.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: key }));
 }
 
-/** Subscribe to drafts appearing/disappearing; returns the unsubscribe. */
-export function onDraftsChanged(handler: () => void): () => void {
-  window.addEventListener(CHANGE_EVENT, handler);
-  return () => window.removeEventListener(CHANGE_EVENT, handler);
+/** Subscribe to drafts appearing/disappearing; returns the unsubscribe.
+ *  A key identifies a local change. An undefined key means several drafts may
+ *  have changed during hydration and subscribers should re-read their scope. */
+export function onDraftsChanged(handler: (key?: string) => void): () => void {
+  const listener = (event: Event) =>
+    handler((event as CustomEvent<string | undefined>).detail);
+  window.addEventListener(CHANGE_EVENT, listener);
+  return () => window.removeEventListener(CHANGE_EVENT, listener);
 }
 
 /** Whether a non-empty draft (text or attachments) is stored under this key. */
@@ -218,7 +222,7 @@ function writeLocal(
     attachmentsChanged ||
     (opts?.notifyText && previousText !== next.text)
   )
-    emit();
+    emit(key);
 }
 
 /** Merge a partial update into the stored draft; an all-empty result deletes it. */
@@ -238,7 +242,7 @@ export function clearDraft(key: string): void {
   } catch {}
   syncedText.delete(key);
   if (had) {
-    emit();
+    emit(key);
     // Sending or clearing is the one change worth telling the other device
     // about right away: it's what takes the pencil off the row over there.
     markEdited(key, { immediate: true });

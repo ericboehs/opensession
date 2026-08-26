@@ -54,9 +54,10 @@ export function ingressHostsFromCaddy(config: unknown): string[] {
 const MANAGED_START = "# BEGIN OPENSESSION SANDBOX INGRESS";
 const MANAGED_END = "# END OPENSESSION SANDBOX INGRESS";
 
-function managedRoutes(indent = "    "): string {
+function managedRoutes(indent = "    ", bindAddress?: string): string {
+  const bind = bindAddress ? `${indent}bind ${bindAddress}\n` : "";
   return `${indent}${MANAGED_START}
-${indent}handle {
+${bind}${indent}handle {
 ${indent}    reverse_proxy 127.0.0.1:3860
 ${indent}}
 ${indent}${MANAGED_END}`;
@@ -137,7 +138,11 @@ function stripKnownSandboxRoutes(site: string): string {
  * Own the sandbox route section in an existing webhook host, or create a new
  * public webhook host when it is absent. The markers make reruns idempotent.
  */
-export function upsertCaddyIngress(caddyfile: string, origin: string): string {
+export function upsertCaddyIngress(
+  caddyfile: string,
+  origin: string,
+  bindAddress?: string,
+): string {
   const host = new URL(origin).host;
   const managed = new RegExp(
     `^[ \\t]*${MANAGED_START}[\\s\\S]*?^[ \\t]*${MANAGED_END}[ \\t]*(?:\\r?\\n)?`,
@@ -149,16 +154,16 @@ export function upsertCaddyIngress(caddyfile: string, origin: string): string {
     throw new Error(`Caddyfile defines ${host} more than once; consolidate it before setup`);
   }
   if (!matches.length) {
-    return `${next.trimEnd()}\n\n${caddyIngressSnippet(origin)}\n`;
+    return `${next.trimEnd()}\n\n${caddyIngressSnippet(origin, bindAddress)}\n`;
   }
   const range = matches[0]!;
   const site = stripKnownSandboxRoutes(next.slice(range.opening + 1, range.closing));
-  return `${next.slice(0, range.opening + 1)}\n${managedRoutes()}\n${site.replace(/^\s*\n/, "")}${next.slice(range.closing)}`;
+  return `${next.slice(0, range.opening + 1)}\n${managedRoutes("    ", bindAddress)}\n${site.replace(/^\s*\n/, "")}${next.slice(range.closing)}`;
 }
 
-export function caddyIngressSnippet(origin: string): string {
+export function caddyIngressSnippet(origin: string, bindAddress?: string): string {
   const host = new URL(origin).host;
-  return `${host} {\n${managedRoutes()}\n}`;
+  return `${host} {\n${managedRoutes("    ", bindAddress)}\n}`;
 }
 
 async function health(origin: string | undefined): Promise<"ready" | "unreachable" | "not_configured"> {

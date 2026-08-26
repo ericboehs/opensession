@@ -23,6 +23,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   artefacts:
@@ -63,6 +65,7 @@ jobs:
           version="${TAG#v}"
           out="$RUNNER_TEMP/release"
           mkdir -p "$out/assets"
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
           for target in linux/x64 linux/arm64 darwin/x64 darwin/arm64; do
             os="${target%/*}"; arch="${target#*/}"
             # The default artefact is the compiled single-executable
@@ -73,6 +76,11 @@ jobs:
             test -s "$versioned"
             cp "$versioned" "$out/assets/"
             cp "$versioned" "$out/assets/opensession-$os-$arch.tar.gz"
+          done
+          cd "$out/assets"
+          for asset in *.tar.gz; do
+            hash="$(sha256sum "$asset" | awk '{ print $1 }')"
+            printf '%s  %s\n' "$hash" "$asset" > "$asset.sha256"
           done
           ls -la "$out/assets"
       - name: Smoke-test Linux binary
@@ -117,6 +125,10 @@ jobs:
           curl --fail --silent --show-error --retry 20 --retry-delay 1 --retry-connrefused \
             http://127.0.0.1:43850/api/health > "$root/health.json"
           grep -Fq 'Frontend served from embedded assets' "$log"
+      - name: Attest release archives
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: ${{ runner.temp }}/release/assets/*.tar.gz
       - name: Upload release assets
         env:
           GH_TOKEN: ${{ github.token }}

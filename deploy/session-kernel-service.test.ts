@@ -77,8 +77,19 @@ describe("session kernel service deployment", () => {
     expect(publishGateway).toBeGreaterThan(restartActor);
     expect(restartActor)
       .toBeLessThan(deploy.lastIndexOf("systemctl restart opensession.service"));
-    expect(selfDeploy).toContain('run_systemctl stop "$SERVICE_NAME"');
-    expect(selfDeploy.lastIndexOf('run_systemctl stop "$SERVICE_NAME"'))
+    expect(selfDeploy).toContain("preflight_session_kernel");
+    expect(selfDeploy).toContain(
+      'curl -fs --max-time 2 "$SESSION_KERNEL_READY_URL"',
+    );
+    expect(selfDeploy).toContain("restore_gateway_on_exit");
+    expect(selfDeploy).toContain("trap restore_gateway_on_exit EXIT");
+    expect(selfDeploy).not.toContain(
+      '[ ! -s /etc/opensession/session-kernel-token ]',
+    );
+    expect(selfDeploy.lastIndexOf("write_marker"))
+      .toBeLessThan(selfDeploy.lastIndexOf("stop_gateway"));
+    expect(selfDeploy).toContain("stop_gateway");
+    expect(selfDeploy.lastIndexOf("stop_gateway"))
       .toBeLessThan(selfDeploy.lastIndexOf("refresh_session_kernel"));
     expect(selfDeploy.lastIndexOf("refresh_session_kernel"))
       .toBeLessThan(selfDeploy.lastIndexOf("restart_service"));

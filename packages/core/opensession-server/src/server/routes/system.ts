@@ -18,11 +18,76 @@ import { getSessionControl } from "../session-control";
 import { MAX_UPLOAD_BYTES, stageHttpUpload } from "../uploads";
 import { systemStats } from "../system-stats";
 import { BOOT_ID, broadcastToAll } from "../ws-hub";
-import { executorClientHealth, executorClientReady } from "../executor-client";
-import { sessionKernelHealth, sessionKernelStore } from "../session-kernel";
+import {
+	executorClientHealth,
+	executorClientReadinessSnapshot,
+} from "../executor-client";
+import {
+	sessionKernelHealth,
+	sessionKernelReadinessSnapshot,
+	sessionKernelStore,
+} from "../session-kernel";
 import { requireWorkspaceAdmin } from "../workspace-auth";
 import { audit } from "../audit";
 import { serviceReadiness } from "../service-readiness";
+
+// Each dead-letter listing fans out across every isolated session database on
+// the actor's catalog lane, and the synchronous bridge blocks the gateway for
+// the duration. Polling this endpoint therefore amplifies actor load exactly
+// when the actor is already degraded. Serve a short-TTL snapshot with
+// single-flight refresh instead; mutations invalidate it immediately.
+const DEAD_LETTERS_CACHE_TTL_MS = 5_000;
+type DeadLettersEntry = {
+	at: number;
+	inFlight?: Promise<unknown>;
+	value?: unknown;
+};
+const deadLettersCaches = new Map<string, DeadLettersEntry>();
+
+/** Test access to cache timing state without fake timers. */
+export function __deadLettersCachesForTest(): Map<string, DeadLettersEntry> {
+	return deadLettersCaches;
+}
+
+export function deadLettersSnapshot(
+	limit: number,
+	offset: number,
+	load: (limit: number, offset: number) => unknown = () =>
+		sessionKernelStore().deadLetters(limit, offset),
+): Promise<unknown> {
+	// One entry per page: a cached page A must never be served for page B.
+	const key = `${limit}:${offset}`;
+	const now = Date.now();
+	const cached = deadLettersCaches.get(key);
+	if (cached && now - cached.at < DEAD_LETTERS_CACHE_TTL_MS) {
+		if (cached.inFlight) return cached.inFlight;
+		if (cached.value !== undefined) return Promise.resolve(cached.value);
+	}
+	// The last settled value is retained across refreshes so a degraded actor
+	// cannot take the reliability view down with it.
+	const entry: DeadLettersEntry = {
+		at: now,
+		...(cached?.value !== undefined ? { value: cached.value } : {}),
+	};
+	const inFlight = (async () => {
+		try {
+			const value = await Promise.resolve(load(limit, offset));
+			entry.value = value;
+			entry.at = Date.now();
+			return value;
+		} catch (error) {
+			// Rate-limit retry attempts while the actor keeps failing.
+			entry.at = Date.now();
+			if (entry.value === undefined) throw error;
+			return entry.value;
+		} finally {
+			entry.inFlight = undefined;
+		}
+	})();
+	entry.inFlight = inFlight;
+	deadLettersCaches.set(key, entry);
+	return inFlight;
+}
 
 export async function handleSystemRoutes(
 	ctx: RouteContext,
@@ -41,7 +106,7 @@ export async function handleSystemRoutes(
 				0,
 				Math.trunc(Number(url.searchParams.get("offset"))) || 0,
 			);
-			return Response.json(sessionKernelStore().deadLetters(limit, offset));
+			return Response.json(await deadLettersSnapshot(limit, offset));
 		}
 		if (req.method === "POST") {
 			const body = (await req.json().catch(() => null)) as {
@@ -91,6 +156,7 @@ export async function handleSystemRoutes(
 				outbox_id: Number.isSafeInteger(body?.id) ? Number(body?.id) : undefined,
 				changed,
 			});
+			if (changed) deadLettersCaches.clear();
 			return Response.json(
 				{ changed, action: validQuarantine ? "release" : discard ? "discard" : "retry" },
 				{ status: changed ? 200 : 404 },
@@ -104,11 +170,13 @@ export async function handleSystemRoutes(
 
 	if (path === "/ready" && req.method === "GET") {
 		try {
-			const kernel = await sessionKernelHealth();
+			const kernel = sessionKernelReadinessSnapshot();
 			const executor = executorClientHealth();
-			const executorReadiness = await executorClientReady();
+			const executorReadiness = executorClientReadinessSnapshot();
 			const readiness = serviceReadiness();
-			const ready = executorReadiness.ready && readiness.phase === "ready";
+			// This is the only gateway node. Keep serving the UI while a worker
+			// lane is degraded; launches themselves still fail closed.
+			const ready = readiness.phase === "ready";
 			return Response.json(
 				{ ok: ready, ready, phase: readiness.phase, bootId: BOOT_ID, activeRuns: activeAgentRunCount(), executor: { ...executor, ...executorReadiness }, sessionKernel: kernel },
 				{ status: ready ? 200 : 503 },

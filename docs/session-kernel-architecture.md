@@ -28,24 +28,31 @@ startup generates an inline token shared only with its child service. `/live`
 reports process/actor liveness and `/ready` reports whether the actor handshake
 completed. Neither endpoint exposes RPC data.
 
-The network frontend and the actor are separate isolates. The frontend bounds
-requests at 16 MiB, responses at 128 MiB, and outstanding calls at 1024, then
-forwards typed messages to the actor Worker. After startup ownership checks, actor
-turns perform bounded SQLite reductions only. They do not bind sockets, perform
-filesystem or process work, invoke models, or execute outbox effects. Physical
-filesystem, network, process, and model work remains in gateway continuations,
-the executor service, run hosts, sandboxes, or Runners. Active effect receipts
-do not hold the actor mailbox, so Stop, steering, and fenced run events remain
-responsive.
+The network frontend and actors are separate isolates. The frontend bounds
+requests at 16 MiB, responses at 128 MiB, and outstanding calls at 1024. A
+catalog lane plus a configurable bounded pool of session Worker lanes host typed
+messages. The service owns one serial promise mailbox per canonical session ID
+and gives that actor stable lane affinity, so process-local reducer caches remain
+coherent and two turns for one session cannot overlap. Many actors share each
+lane, while the short isolated SQLite wait bound leaves unrelated lanes
+available. A failed lane is restarted without stopping healthy lanes;
+system-catalog ambiguity still fail-stops the service. After startup ownership
+checks, actor turns perform bounded SQLite
+reductions only. They do not bind sockets, perform filesystem or process work,
+invoke models, or execute outbox effects. Physical filesystem, network,
+process, and model work remains in gateway continuations, the executor service,
+run hosts, sandboxes, or Runners. Active effect receipts do not hold the actor
+mailbox, so Stop, steering, and fenced run events remain responsive.
 
-The gateway retains a Worker bridge for typed reductions. Mutations perform
-authenticated bounded HTTP RPC and wake the gateway through its existing
-`SharedArrayBuffer`. Hot pure reads use a physically read-only, `query_only`
-SQLite WAL mirror in the gateway, avoiding an IPC round trip and event-loop wait
-on those paths. The mirror does not claim writer ownership, run migrations, or
-admit commands. A missing credential, actor/transport/incarnation mismatch,
-service failure, or invalid response fail-stops the gateway. There is no
-in-process actor or direct writer fallback in production.
+The gateway retains a Worker bridge for typed reductions. Mutations and durable
+reads perform authenticated bounded HTTP RPC and wake the gateway through its
+existing `SharedArrayBuffer`. Reads also route through the actor host because a
+central WAL mirror cannot authoritatively represent sessions placed in separate
+databases. Hot run-state projections remain cached in the gateway and are
+invalidated by committed actor replies. A missing credential,
+actor/transport/incarnation mismatch, service failure, or invalid response
+fail-stops the gateway. There is no in-process actor or direct writer fallback
+in production.
 
 Installer, deploy, and CLI restart flows stop the old gateway before restarting
 the actor service, then start the new gateway. This sequencing prevents mixed
@@ -69,14 +76,37 @@ is reduced and committed in one short actor turn, external work is emitted as a
 durable effect, and results return as fenced messages. The actor never waits for
 a model run or gateway callback before processing the next state fact.
 
+Schema 27 includes the production-unwired foundation for atomic signed Agent
+Host supervision receipts. Authority construction, bounded synchronous signing,
+receipt insertion, supersession and high-water updates share one immediate
+transaction. Production has no signing credential and therefore fails signed
+claim issuance closed. Legacy unsigned receipts remain explicitly
+non-authorizing. The exact protocol-v3 Host attach path now verifies that foundation with only
+a strict public keyring and fresh socket-bound challenges, but remains
+production-unwired. A separate import-inert Linux Unix-socket gate can verify
+`SO_PEERCRED` before reading protocol bytes, but is likewise not composed into
+the Host or SessionKernel services. Socket path ownership and modes are defense
+in depth; future activation requires an exact allowed numeric UID and must fail
+closed rather than falling back to a token, loopback, or socket permissions.
+Separate Host, SessionKernel, and gateway service identities, private/public key
+provisioning, and detached Host deployment are still required before it can
+authorize production work.
+
 ## Durable state
 
-The active sessions directory contains `session-kernel.sqlite`. A fresh default
-install uses `~/.opensession/sessions/session-kernel.sqlite`; an existing legacy
-`~/.opensession-sessions` directory remains active when the new directory does
-not exist. `OPENSESSION_SESSIONS_DIR` overrides the sessions directory directly.
-Without that override, `OPENSESSION_STATE_DIR` places it at
-`<state-dir>/.opensession-sessions/`. The database contains:
+The storage router uses two durable locations within the active sessions
+directory. A fresh default install uses `~/.opensession/sessions`; an existing
+legacy `~/.opensession-sessions` directory remains active when the new directory
+does not exist. `OPENSESSION_SESSIONS_DIR` overrides the sessions directory
+directly. Without that override, `OPENSESSION_STATE_DIR` places it at
+`<state-dir>/.opensession-sessions/`.
+
+- `session-kernel.sqlite` is the placement/wake catalog and temporary source for
+  not-yet-migrated legacy rows.
+- `session-kernel-sessions/<prefix>/<sha256>.sqlite` is the authoritative
+  database for each placed session.
+
+Each authoritative session database contains:
 
 - Durable commands, keyed by session id and client request id.
 - Authoritative run state, run id, and generation.
@@ -291,6 +321,103 @@ never enter actor payloads. Removing the remaining create-plan compatibility
 authority is the next creation cutover; the presence or absence of a plan file
 is not actor lifecycle evidence.
 
+## Agent operation receipts (unwired foundation)
+
+Schema 28 adds actor-owned Agent operation admission, transcript barriers, and
+terminal receipts to the existing Agent operation v1 protocol and import-inert
+gateway ledger. The internal facade is deliberately not composed at boot and
+has no Host transport, provider/MCP adapter, credential resolution, live key,
+or production operation route. It therefore performs no provider, MCP, socket,
+executor, or transcript I/O and creates no executable production authority.
+
+Each admit, settle, indeterminate, or exact query is one synchronous actor
+reduction and one short SQLite transaction. Admission binds the exact turn
+fence, operation identity and kind, descriptor and payload digests, adapter
+identity, transcript input anchor, registered plan, and the current active
+schema-27 signed supervision receipt. A caller-supplied authority hash is never
+accepted independently of that stored signed row. Legacy unsigned receipts do
+not authorize operations.
+
+A turn has at most one admitted nonterminal operation. A model terminal declares
+an ordered, bounded, unique set of pending tool-use entry IDs contained in its
+terminal transcript receipts. MCP admission binds the exact next declared entry,
+so distinct calls may proceed model, MCP, MCP. A successor anchor must
+cumulatively cover every required transcript entry and change sequence, and the
+next model is blocked until every declared MCP operation has settled. Physical
+prepared and executing phases remain gateway-ledger state. Actor state
+is only admitted, settled, or indeterminate. Indeterminate is visible terminal
+state and blocks continuation until a future explicit actor-owned recovery
+policy exists. Exact duplicate requests replay their original durable receipt;
+identity or terminal crossover quarantines the session.
+
+Terminal receipts and active operations are retained for at least seven days.
+Expiry-aware pruning never removes an active operation or the latest dependency
+for a turn. Per-turn and per-session receipt limits bound storage without a
+fixed session or turn count, while a separate monotonic operation high-water
+survives pruning and restart. Session deletion removes receipts and high-water
+in the same tombstone transaction.
+
+The shared gateway ledger requires an exact session/operation primary key plus
+kind, full turn fence, plan and authority hashes, descriptor and physical
+payload digests, and adapter ID/version. A mismatch is atomically quarantined
+without replacing the original identity. Exact terminal replay returns the
+canonical durable receipt. `prepared` means no physical invocation was allowed
+to start and may be reauthorized after recovery. Once `executing` commits,
+recovery requires explicit adapter proof; the default and initial adapter
+contract is reconciliation unsupported and settles the row visibly as
+`indeterminate`, never as a retry. The SessionKernel now admits and settles only these durable authority facts.
+Gateway execution remains unwired. No actor mailbox is held across physical
+provider, MCP, gateway-ledger, or transcript work.
+
+## Detached Agent Host supervision
+
+Schema 26 is an additive migration from live schemas 24 and 25 and raises the
+normal `user_version` rollback floor, so an older actor refuses the migrated
+store. Its receipt and plan backfill is transactional, crash-resumable, and
+validates every canonical authority before raising that floor.
+It adds a v2 Agent Host supervision authority consumed by the exact
+production-unwired Agent Host wire protocol v3. Before any claim, a short typed SessionKernel
+reduction registers the exact current run/generation, turn ID, and canonical
+plan hash once. Exact registration replays and any mismatch fails closed. A
+second short claim reduction must match that actor-owned plan, consumes a Host
+challenge and nonce once, and monotonically advances a per-session supervisor
+high-water mark. It binds the stable Host ID, Host generation and process
+incarnation to the current kernel service epoch. Exact retries return the same
+canonical immutable payload and bytes. A fresh challenge lets the same Host
+generation recover after either its process incarnation or the kernel service
+epoch changes; the higher supervisor epoch fences old control. Lower Host
+generations and changed Host IDs remain stale.
+
+The actor stores only bounded supervision metadata. It does not store prompts,
+transcripts, provider/model configuration, MCP payloads, or credentials, and it
+performs no provider, executor, model, socket, or signing work. Superseded and settled receipts remain replayable through their lease and clock
+skew. The actor prunes only expired non-active receipts before enforcing its
+fixed capacity; active and unexpired receipts are never pruned, and the separate
+supervisor and Host-generation high-water marks survive terminal runs, pruning,
+and restart. Legacy migrated payloads remain deliberately unsigned and provide no Host
+authentication. New schema-27 receipts are signed atomically. The import-inert
+wire-v3 Host consumes a fresh one-use challenge and strict V2 public keyring,
+then verifies the signed envelope against the exact actor-issued attachment
+descriptor before admitting one fenced turn. It is not referenced by boot or
+existing Pi routing. Separate Host and gateway service identities, peer
+credentials, keyring provisioning, and detached service deployment must land
+before production wiring. The current shared Ubuntu identity is not a security
+boundary.
+
+The hardened detached-host target keeps provider and MCP access gateway-proxied;
+ambiguous proxy outcomes are visible `indeterminate` failures rather than
+silent retries. Host workers use blue/green replacement with a 24-hour maximum
+worker lifetime. Kernel and Host services run as separate service users. Host
+ledger admission has no fixed concurrent-turn count. A turn may accumulate at
+most 32 MiB of actual worst-case physical charge. Ordinary growth stops at
+448 MiB and a protected 64 MiB remains inside, not beyond, the same 512 MiB
+physical ceiling for emergency-class transitions. The import-inert encrypted
+ledger v1 and conservative page/WAL accounting prototype are present but remain
+production-unwired. Bun SQLite cannot expose exact dirty-page/checkpoint-peak
+attribution, so production composition remains blocked on calibration and
+ENOSPC/checkpoint proof. Signed challenge leases are required before use, and
+same-UID processes are explicitly not treated as a security boundary.
+
 ## Run ownership
 
 Run state is durable and explicit. Run events are typed actor messages. The
@@ -399,13 +526,39 @@ and replay committed changes without becoming another session owner.
 
 ## Process boundary
 
-The writable `SessionKernelStore` and autonomous session coordinators currently
-run in one `session-kernel-worker.ts` JavaScript isolate over one SQLite store.
-The gateway starts and handshakes that actor before hydrating projections. This
-is not yet one process or database per session. A failed session-scoped critical
-settlement durably quarantines only that session, suppresses its timer and
-outbox dispatch, and leaves reads and unrelated sessions available. SQLite
-infrastructure failures still fail-stop the whole actor.
+The writable stores and autonomous session coordinators run in the bounded
+actor-host Worker pool behind `SessionKernelStoreHost`. The service mailbox is
+the logical actor: it is created on first routing, serializes one session's
+turns, and disappears when its queue drains. Worker-local SQLite connections
+activate lazily and are passivated by a bounded LRU. The pool defaults to four
+session lanes plus a compatibility catalog lane and is bounded to 32 lanes.
+A session with no legacy durable rows is claimed in the placement catalog before
+its first mutation, then writes only its own SQLite database. The schema-23
+offline deploy migrator runs after gateway and actor shutdown, verifies each
+unpublished target, and atomically switches placement while removing central
+rows. The router never dual-writes authoritative state. Isolated outbox
+rows use a globally reserved numeric identity allocated by the catalog so
+existing settlement protocols remain additive and mixed-version safe.
+
+Before every isolated mutation, the host durably marks that session's catalog
+wake record dirty. A crash can therefore leave an extra scan but cannot hide a
+committed timer or outbox item. Runtime reconciliation reads the authoritative
+session database, dispatches due work, and repairs its next-wake projection.
+
+The gateway starts and handshakes the actor host before hydrating projections. A
+failed session-scoped critical settlement durably quarantines only that session,
+suppresses its timer and outbox dispatch, and leaves reads and unrelated
+sessions available. An isolated database infrastructure failure is recorded as
+a catalog quarantine for that session. Catalog or legacy-store infrastructure
+ambiguity still fail-stops the whole actor.
+
+Sessions therefore converge on distinct physical databases and logical
+mailboxes inside a bounded, independently supervised pool. A locked isolated
+database has a 250 ms SQLite busy bound, after which that session is quarantined;
+the compatibility gateway's synchronous bridge cannot inherit the central
+store's five-second wait. Catalog-wide compatibility scans use read-only transient connections and paged
+maintenance; their final decomposition is cleanup rather than an authority
+change.
 
 A command admission is a short bounded reduction: the actor fingerprints and
 persists the intent, then immediately returns `execute`, `in_progress`, or the
@@ -425,6 +578,14 @@ unrelated sessions. Infrastructure ambiguity still fail-stops the actor client.
 
 Transcript and session-file projections use typed admission and settlement
 receipts, then mutate their specialized destination stores on the gateway thread.
+The narrowly scoped `transcript_destination_append` command is replay-safe
+because `transcripts.db` consumes the same stable append identity and stores an
+immutable transactional result receipt. Legacy `transcript_append` remains
+non-replay-safe. A crash after the transcript commit but before actor completion
+therefore re-admits only the new command and reconciles from the destination
+receipt. Admission and settlement are separate short actor reductions; SQLite,
+bus publication, and append hooks never run while a session mailbox lease is
+held.
 The actor returns from admission before that destination work begins and retains
 no execution waiter or callback. Extracting the Worker into the independently supervised local service was
 therefore a transport and failure-isolation change, not an ownership migration;

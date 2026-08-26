@@ -8,11 +8,9 @@ for OpenAI. You can instead configure a supported provider API key under
 Workspace → Providers. Open Session does not bundle a model credential.
 
 The installer adds the `claude` CLI, which mints and uses a Claude subscription
-token (the Pi engine itself is bundled in the binary). It skips an existing
-CLI, and `--no-engine` skips the install. The `codex` CLI, which backs the
-in-app ChatGPT sign-in, is not on the default path: pass `--codex`, or install
-it later with `curl -fsSL https://chatgpt.com/codex/install.sh | sh` (the
-sign-in tells you when it is missing).
+token, and the `codex` CLI, which backs the in-app ChatGPT sign-in (the Pi
+engine itself is bundled in the binary). It skips existing CLIs. `--no-engine`
+skips both installs, while `--no-codex` skips only Codex.
 
 Then, end to end:
 
@@ -24,11 +22,12 @@ curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh
 claude setup-token     # on your Max login; copy the sk-ant-… it prints
 ```
 
-Need access from other devices? Pass `--tailscale` to the downloaded script
-like this:
+Need access from other devices? The recommended remote-access install adds
+Tailscale plus Caddy and the lego certificate helper, which prepare the box for
+private HTTPS and friendly custom domains:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale --caddy
 ```
 
 The `bash -s --` separator is required: it tells Bash to read the script from
@@ -129,9 +128,9 @@ curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh
 
 This downloads the compiled release for your OS and architecture and unpacks
 it under `~/.opensession/releases` (with `src` linked at it), installs the
-`claude` CLI, puts an `opensession` command on your `PATH`, writes a default
-configuration (127.0.0.1:3850, a scratch repo, no integrations), installs and
-starts the service, and ends with the URL. No questions. If no release is
+`claude` and `codex` CLIs, puts an `opensession` command on your `PATH`, writes
+a default configuration (127.0.0.1:3850, a scratch repo, no integrations),
+installs and starts the service, and ends with the URL. No questions. If no release is
 published for your platform yet it falls back to a source clone; `--source`
 forces the git checkout, and `--artifact <path|url>` installs a specific
 release tarball. `--advanced` runs the full onboarding wizard instead; replace
@@ -146,35 +145,37 @@ Because this command pipes the installer into Bash, put installer flags after
 `bash -s --`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale --caddy
 # Multiple flags work too:
-curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale --advanced
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale --caddy --advanced
 ```
 
 Useful flags: `--dir <path>` to install elsewhere, `--channel <ref>` to track
 a branch or tag, `--advanced` for the wizard, `--org <name>` to set up an org
-install, `--tailscale` to install Tailscale, `--codex` for the ChatGPT sign-in
-CLI, `--no-engine` to skip the model CLI, `--yes` to never prompt, and
-`--uninstall` to remove it. `--help` lists them all.
+install, `--tailscale` to install Tailscale, `--cloudflare` to install
+`cloudflared`, `--caddy` to install Caddy and the lego certificate helper,
+`--no-codex` to skip the ChatGPT sign-in CLI, `--no-engine` to skip both model
+CLIs, `--yes` to never prompt, and `--uninstall`
+to remove it. `--help` lists them all.
 
 The Pi engine is compiled into the release binary and runs in-process, so
 there is no separate engine to seed or version. A release tarball carries the
 `opensession` executable, the embedded frontend, `sharp` and Worker sidecars,
 three systemd service templates, fixed-policy deploy helpers, and
-`release.json`. The default Anthropic path also needs the external `claude`
-CLI, which the installer adds (`--no-engine` skips it); ChatGPT device sign-in
-needs `codex`.
+`release.json`. The subscription paths also need the external `claude` and
+`codex` CLIs, which the installer adds by default.
 
 ### Install with Tailscale
 
 Authentication is opt-in (see the [trust
 model](README.md#trust-model-read-this)). A default install trusts everyone who
 can reach it, so the bind address is the access control. It binds `127.0.0.1`
-and needs no network software. To have the Open Session installer add the
-Tailscale client on Linux, pass `--tailscale` after `bash -s --`:
+and needs no network software. For remote access, have the Open Session
+installer add the Tailscale client plus Caddy and lego for private HTTPS and
+friendly custom domains:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale --caddy
 ```
 
 The installer uses Tailscale's Linux installer when passwordless `sudo` is
@@ -200,7 +201,7 @@ key](https://tailscale.com/kb/1085/auth-keys) and pass it to **Bash**, not to
 the `curl` process on the other side of the pipe:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | TS_AUTHKEY=tskey-auth-... bash -s -- --tailscale
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | TS_AUTHKEY=tskey-auth-... bash -s -- --tailscale --caddy
 ```
 
 #### Add Tailscale after a normal install
@@ -350,7 +351,7 @@ credentials its setup page marks as required. Common operator-facing variables:
 
 | Var | Default | Purpose |
 | --- | --- | --- |
-| `HOST` | `127.0.0.1` | bind address for the main server. Bind to a Tailscale IP to share it with your team — there is no auth layer (see the [trust model](README.md#trust-model-read-this)) |
+| `HOST` | `127.0.0.1` | bind address for the main server. Keep loopback behind an identity-gated private tunnel, or bind to a Tailscale IP; never use a public wildcard without authentication (see the [trust model](README.md#trust-model-read-this)) |
 | `PORT` | `3850` | private app server (UI + API at the server root) |
 | `OPENSESSION_UI_BASE` | `http://127.0.0.1:<port>` | private app base used in session links |
 | `OPENSESSION_INGRESS_BASE` | unset | public origin for webhooks, remote Sandbox callbacks and workload identity |
@@ -617,6 +618,8 @@ webhook and OAuth methods and paths into it; the same listener owns remote
 Sandbox WebSockets and workload identity. Everything else returns 404,
 including all private app/API routes.
 
-Choose Tailscale Funnel, Cloudflare Tunnel, or a Caddy-managed custom domain in
-Settings → Public ingress. All provider signature checks remain fail-closed: a
-missing secret rejects the webhook rather than allowing unsigned intake.
+Choose Tailscale Funnel, Cloudflare Tunnel, or Direct HTTPS with Caddy in
+**Settings → Domains and ingress → Public callbacks**. These are three
+alternatives for the same restricted endpoint. All provider signature checks
+remain fail-closed: a missing secret rejects the webhook rather than allowing
+unsigned intake.

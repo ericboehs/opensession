@@ -48,6 +48,15 @@ describe("github app permission sets", () => {
 		expect(GITHUB_APP_READ_PERMISSIONS.deployments).toBe("read");
 	});
 
+	test("the read mint keeps actions:read for the status check rollup", () => {
+		// gh's `pr view --json statusCheckRollup` selects checkSuite.workflowRun,
+		// which is gated on Actions. Dropping this scope does not degrade the
+		// rollup — GitHub fails the entire GraphQL response, so every PR panel,
+		// review and auto-fix run reports "missing a permission for this API".
+		expect(GITHUB_APP_READ_PERMISSIONS.actions).toBe("read");
+		expect(GITHUB_APP_GRANT_PERMISSIONS.actions).toBe("read");
+	});
+
 	test("the write mint carries no read-only scope whose absence would 422 it", () => {
 		// It must not request checks/statuses — writes never touch them, and an
 		// App without them granted would otherwise reject the whole write token.

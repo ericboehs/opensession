@@ -488,6 +488,11 @@ export function PrStatusBar({
 	});
 	const pr = prResource.data ?? null;
 	const git = gitResource.data ?? null;
+	// A failed PR read and a branch with no PR both land here as a null `pr`.
+	// Keep them apart: only the second one may claim "No PR open" and offer to
+	// create one. SWR keeps the last good value, so this is only true when there
+	// is nothing to show at all.
+	const prUnavailable = Boolean(prResource.error) && !prResource.data;
 	const { mutate: reloadPr } = prResource;
 	const { mutate: reloadGit } = gitResource;
 	const mergeKey = deferredMergeKey(pr?.url);
@@ -526,7 +531,7 @@ export function PrStatusBar({
 		if (refreshTick) load();
 	}, [refreshTick, load]);
 
-	const headline = (deriveHeadline(pr, git));
+	const headline = deriveHeadline(pr, git, prUnavailable);
 
 	// Everything except the primary branch's PR (which the headline covers):
 	// attached repos, manual links, and PRs discovered through their body
@@ -904,6 +909,18 @@ setBusy(null);
 						Address feedback
 					</PrBarButton>
 				) : null;
+			// The PR read failed, so the one thing not to offer is Create PR — the
+			// branch may well have a PR already. Retry is the only honest action.
+			case "unavailable":
+				return (
+					<PrBarButton
+						className={actionBtn}
+						tone="status-yellow"
+						onClick={() => void reloadPr()}
+					>
+						Retry
+					</PrBarButton>
+				);
 			case "no-pr":
 				return send ? (
 					<PrBarButton

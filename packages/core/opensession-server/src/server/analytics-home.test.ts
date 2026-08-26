@@ -26,9 +26,20 @@ beforeAll(() => {
 	writeFileSync(
 		join(auditDir, "audit-2026-08-16.jsonl"),
 		[
-			event({ kind: "result", session_id: "session-a", input_tokens: 1, output_tokens: 2 }),
-			event({ kind: "error", session_id: "session-a", error: "failed" }),
-			event({ msg: "pi_turn", direction: "out", duration_ms: 300 }),
+			event({
+				msg: "pi_turn",
+				direction: "out",
+				session: "session-a",
+				run_kind: "prompt",
+				model: "pi/anthropic/claude-opus-5",
+				ok: false,
+			}),
+			event({
+				kind: "session_turn_metric",
+				session_id: "session-a",
+				duration_ms: 300,
+				outcome: "failed",
+			}),
 		].join("\n") + "\n",
 	);
 	writeFileSync(

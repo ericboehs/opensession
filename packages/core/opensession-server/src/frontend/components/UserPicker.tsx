@@ -69,6 +69,13 @@ export interface AuthStatus {
   required: boolean;
   authenticated: boolean;
   admin?: boolean;
+  /** The server's own name, answered pre-auth so the sign-in card can say
+   *  whose server this is (every other source sits behind the gate). */
+  organizationName?: string;
+  /** The organization's configured icon, revisioned; null when the server
+   *  still wears the bundled app mark. The image itself is served pre-auth
+   *  as a static asset — only the URL needs this response to travel. */
+  organizationIconUrl?: string | null;
   /** Signed out because GitHub permanently rejected this person's grant, not
    *  because they never signed in: `login` is still theirs, and the way back
    *  in is the same authorize. */
@@ -186,9 +193,10 @@ function AuthBackdrop() {
  * earned. Over the charcoal cut there is nothing for a cast to fall on, so it
  * takes a hairline instead.
  *
- * Every screen opens on the product's own icon, the same one the loading
- * splash shows (index.html), so the app you are signing in to is what you land
- * on. GitHub is the method, and it is named on the button.
+ * Every screen opens on the organization's own mark when one is configured,
+ * else the product icon — the same one the loading splash shows (index.html),
+ * so the app you are signing in to is what you land on. GitHub is the method,
+ * and it is named on the button.
  */
 function AuthCard({
 	title,
@@ -205,13 +213,7 @@ function AuthCard({
 		<div className="relative flex h-screen items-center justify-center overflow-hidden p-6 [html.wco_&]:[-webkit-app-region:drag] [html.wco_&]:[app-region:drag] [html.desktop-shell_&]:[-webkit-app-region:drag] [html.desktop-shell_&]:[app-region:drag]">
 			<AuthBackdrop />
 			<div className="relative w-[400px] max-w-full rounded-2xl bg-surface p-8 text-center shadow-(--auth-card-edge) phone:p-6 [html.wco_&]:[-webkit-app-region:no-drag] [html.wco_&]:[app-region:no-drag] [html.desktop-shell_&]:[-webkit-app-region:no-drag] [html.desktop-shell_&]:[app-region:no-drag]">
-				<img
-					src={`${BASE_PATH}/mac-app-icon.png?v=7`}
-					alt=""
-					width={56}
-					height={56}
-					className="mx-auto mb-5 block size-14"
-				/>
+				<AuthMark />
 				{/* Medium, not semibold: at 19px on the card's own paper the heavier
 				    step read as a slab rather than a heading. */}
 				<h1 className="m-0 text-section-title font-title text-fg">{title}</h1>
@@ -221,13 +223,42 @@ function AuthCard({
 	);
 }
 
+/** The card's mark: the organization's configured icon when one exists (its
+ *  URL arrives pre-auth on /api/auth/status), else the bundled app mark. A
+ *  configured icon that fails to load falls back rather than leaving a hole. */
+function AuthMark() {
+	const fallback = `${BASE_PATH}/mac-app-icon.png?v=7`;
+	const configured = useAuthStatus()?.organizationIconUrl || null;
+	const [failedSrc, setFailedSrc] = useState<string | null>(null);
+	const custom = configured !== null && configured !== failedSrc;
+	const src = custom ? configured : fallback;
+	return (
+		<img
+			src={src}
+			alt=""
+			width={56}
+			height={56}
+			// The bundled mark is drawn to the tile's edge; an uploaded org icon is
+			// a full-bleed square (Settings → General crops it to one), so it rounds
+			// like it does in the OrganizationSwitcher.
+			className={cn(
+				"mx-auto mb-5 block size-14",
+				custom ? "rounded-control object-cover" : "",
+			)}
+			onError={() => {
+				if (custom) setFailedSrc(src);
+			}}
+		/>
+	);
+}
+
 /** The sentence under an AuthCard's title. */
 function AuthCopy({ children }: { children: React.ReactNode }) {
 	return (
 		// `last:mb-0` for the cards whose sentence IS the card (the expired
 		// notice): the margin is air before whatever follows, and with nothing
 		// following it just lands the card off-centre.
-		<p className="mx-auto mt-2 mb-6 max-w-[32ch] text-supporting leading-relaxed text-dim last:mb-0">
+		<p className="mx-auto mt-2 mb-6 max-w-[32ch] text-supporting leading-normal text-dim last:mb-0">
 			{children}
 		</p>
 	);
@@ -404,6 +435,7 @@ function GithubSignIn({
   } | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const serverName = useAuthStatus()?.organizationName || PRODUCT_NAME;
 
   // Poll GitHub (via the server) until the device code is authorized.
   useEffect(() => {
@@ -464,7 +496,7 @@ setError(e.message);
           ? "Enter this code"
           : reconnect
             ? "Reconnect GitHub"
-            : `Sign in to ${PRODUCT_NAME}`
+            : `Sign in to ${serverName}`
       }
     >
       {!flow ? (
@@ -477,10 +509,7 @@ setError(e.message);
                 continue.
               </>
             ) : (
-              <>
-                Sessions act as your own GitHub account, so pull requests are
-                authored by you.
-              </>
+              "Open Session is your team’s control room for coding agents. Sign in with GitHub so pull requests from your sessions are authored by you."
             )}
           </AuthCopy>
           <Button

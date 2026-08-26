@@ -103,6 +103,7 @@ import {
 } from "./AppearancePanel";
 import { PersonalSandboxDefaultRow } from "./SandboxDefaults";
 import { RepoTile } from "../RepoTile";
+import { ModelMark } from "../ModelMark";
 import { IconRepo, IconSparkle } from "../icons";
 
 // ── Desk voice ─────────────────────────────────────────────────────────────
@@ -533,6 +534,13 @@ export function PreferencesPanel() {
 									...modelOptions.map((m) => ({
 										value: m.id,
 										label: m.label,
+										icon: (
+											<ModelMark
+												id={m.id}
+												provider={m.provider}
+												composition={m.composition}
+											/>
+										),
 									})),
 								]}
 								onChange={setDefaultModelPref}

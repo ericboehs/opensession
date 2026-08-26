@@ -132,6 +132,7 @@ export const SETTINGS_KEYWORDS: Record<string, string[]> = {
 	deploys: ["releases", "restart", "version"],
 	papercuts: ["friction", "annoyances"],
 	audit: ["history", "events", "who did what"],
+	downloads: ["download", "mac app", "desktop app", "install", "pwa", "home screen", "dmg"],
 };
 
 export type SectionLike = { key: string; label: string; group: string };

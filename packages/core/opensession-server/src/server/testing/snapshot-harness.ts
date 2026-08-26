@@ -140,7 +140,7 @@ export interface SnapshotHarness {
   writeEngineTranscript(
     engineSessionId: string,
     lines: Record<string, unknown>[],
-  ): string;
+  ): Promise<string>;
   /** Seed a memory scope for the duration of `fn` (its own store dir). */
   withMemory(
     scopes: Record<string, Array<{ id: string; text: string; by: string }>>,
@@ -251,7 +251,7 @@ export async function loadSnapshotHarness(): Promise<SnapshotHarness> {
     patchSession(id, extra) {
       writeSession(id, { ...readSession(id), ...extra });
     },
-    writeEngineTranscript(engineSessionId, lines) {
+    async writeEngineTranscript(engineSessionId, lines) {
       const files = require("fs").readdirSync(d.sessions) as string[];
       const owner = files
         .filter((file) => file.endsWith(".json"))
@@ -263,7 +263,7 @@ export async function loadSnapshotHarness(): Promise<SnapshotHarness> {
         );
       if (!owner?.id) throw new Error(`No session owns engine id ${engineSessionId}`);
       const { parseJsonlLines } = require("../jsonl-parser") as typeof import("../jsonl-parser");
-      transcriptStore.transcriptStore().importLegacyTranscript(
+      await transcriptStore.transcriptStore().importLegacyTranscript(
         owner.id,
         parseJsonlLines(lines.map((line) => JSON.stringify(line))),
         "merged",

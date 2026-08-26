@@ -111,7 +111,7 @@ function warnFailureOnce(id: string, message: string, error: unknown): void {
   console.warn(`${message} (further warnings suppressed for this session)`, error);
 }
 
-function appendLines(engineSessionId: string, lines: JsonlLine[]): void {
+async function appendLines(engineSessionId: string, lines: JsonlLine[]): Promise<void> {
   const sessionId = sessionForEngineId(engineSessionId);
   if (!sessionId) {
     markTranscriptStoreDegraded(engineSessionId);
@@ -123,7 +123,7 @@ function appendLines(engineSessionId: string, lines: JsonlLine[]): void {
   }
   try {
     const entries = parseJsonlLines(lines.map((line) => JSON.stringify(line)));
-    if (entries.length) transcriptStore().appendTranscriptEvents(sessionId, entries);
+    if (entries.length) await transcriptStore().appendTranscriptEvents(sessionId, entries);
   } catch (error) {
     markTranscriptStoreDegraded(sessionId);
     warnFailureOnce(sessionId, `[transcript] append failed for ${sessionId}`, error);
@@ -142,7 +142,11 @@ export function storeAppendUserLineEarly(
   }
   try {
     const entries = parseJsonlLines([JSON.stringify(line)]);
-    if (entries.length) transcriptStore().appendTranscriptEvents(sessionId, entries);
+    if (entries.length) {
+      void transcriptStore().appendTranscriptEvents(sessionId, entries).catch((error) => {
+        warnFailureOnce(sessionId, `[transcript] early user-line persist failed for ${sessionId}`, error);
+      });
+    }
   } catch (error) {
     warnFailureOnce(sessionId, `[transcript] early user-line persist failed for ${sessionId}`, error);
   }
@@ -410,40 +414,40 @@ export function transcriptLineForEntry(e: TranscriptEntry): JsonlLine | null {
 }
 
 
-export function appendTranscriptEntries(
+export async function appendTranscriptEntries(
   engineSessionId: string,
   lines: JsonlLine[],
-): void {
-  if (lines.length) appendLines(engineSessionId, lines);
+): Promise<void> {
+  if (lines.length) await appendLines(engineSessionId, lines);
 }
 
-export function applyForwardedTranscriptStrict(
+export async function applyForwardedTranscriptStrict(
   sessionId: string,
   engineSessionId: string,
   lines: JsonlLine[],
-): void {
+): Promise<void> {
   if (!sessionId || !lines.length)
     throw new Error("Invalid forwarded transcript projection");
   if (engineSessionId && engineSessionId !== sessionId)
     recordEngineSessionOwner(engineSessionId, sessionId);
   const entries = parseJsonlLines(lines.map((line) => JSON.stringify(line)));
-  if (entries.length) transcriptStore().appendTranscriptEvents(sessionId, entries);
+  if (entries.length) await transcriptStore().appendTranscriptEvents(sessionId, entries);
 }
 
-export function applyForwardedTranscript(
+export async function applyForwardedTranscript(
   sessionId: string,
   engineSessionId: string,
   lines: JsonlLine[],
-): void {
+): Promise<void> {
   if (!sessionId || !lines.length) return;
   try {
     if (!engineSessionId || engineSessionId === sessionId) {
       const entries = parseJsonlLines(lines.map((line) => JSON.stringify(line)));
-      if (entries.length) transcriptStore().appendTranscriptEvents(sessionId, entries);
+      if (entries.length) await transcriptStore().appendTranscriptEvents(sessionId, entries);
       return;
     }
     recordEngineSessionOwner(engineSessionId, sessionId);
-    appendTranscriptEntries(engineSessionId, lines);
+    await appendTranscriptEntries(engineSessionId, lines);
   } catch (error) {
     warnFailureOnce(sessionId, `[transcript] forwarded append failed for ${sessionId}`, error);
   }

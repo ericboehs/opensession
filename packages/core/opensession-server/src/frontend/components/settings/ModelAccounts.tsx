@@ -1068,15 +1068,6 @@ export function ProviderAccountsSection({
 				className="phone:[&>span]:w-full phone:[&>div]:w-full phone:[&>div]:flex-wrap"
 				actions={
 				<>
-					<Segmented
-						label="Account view"
-						size="sm"
-						value={view}
-						onValueChange={(next) => setView(next as "providers" | "accounts")}
-					>
-						<SegmentedOption value="providers">Providers</SegmentedOption>
-						<SegmentedOption value="accounts">All accounts</SegmentedOption>
-					</Segmented>
 					{!onboarding && (
 						<Button
 							size="sm"
@@ -1116,7 +1107,18 @@ export function ProviderAccountsSection({
 				</>
 			}
 			>
-				Subscriptions
+				<span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1.5">
+					Subscriptions
+					<Segmented
+						label="Account view"
+						size="sm"
+						value={view}
+						onValueChange={(next) => setView(next as "providers" | "accounts")}
+					>
+						<SegmentedOption value="providers">Providers</SegmentedOption>
+						<SegmentedOption value="accounts">All accounts</SegmentedOption>
+					</Segmented>
+				</span>
 			</SettingsGroupLabel>
 
 			{claude.error && (

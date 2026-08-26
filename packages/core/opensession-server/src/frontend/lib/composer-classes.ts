@@ -345,10 +345,13 @@ export const composerQueueImageThumb =
 	"block size-full rounded-[calc(8px*var(--rf))] border border-line object-cover";
 export const composerQueueImageCount =
 	"absolute -right-1 -bottom-1 h-[18px] min-w-[18px] rounded-full border border-line bg-raised px-1 text-center text-[10px] font-bold leading-4 text-dim";
-/** The message itself, one line with an ellipsis. Size and leading stay in one
+/** The message itself, one line with an ellipsis. It is genuine user content,
+ *  so `.selectable` opts it back in from the app chrome's global selection
+ *  block and restores the touch copy callout. Size and leading stay in one
  *  string with leading last: tailwind-merge files `leading` as a conflict of
  *  `font-size`, so a later `text-*` would drop an earlier `leading-*`. */
-export const composerQueueBody = "min-w-0 flex-1 truncate text-label leading-[1.45]";
+export const composerQueueBody =
+	"selectable min-w-0 flex-1 cursor-text truncate text-label leading-[1.45]";
 /** Whose message it is. `github` outranks `human` — both were equally specific
  *  in the stylesheet and github came last. */
 export const composerQueueBodyTone = {

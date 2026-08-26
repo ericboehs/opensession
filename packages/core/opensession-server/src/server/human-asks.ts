@@ -149,8 +149,8 @@ function isTerminal(a: HumanAsk): boolean {
  * async — a late teammate reply then still steers into the (resumed) session
  * instead of vanishing. Re-arm timers for scheduled { atIso } deliveries.
  */
-function enqueueAskDelivery(a: HumanAsk, skipUi = false): void {
-  sessionKernel(a.sessionId).enqueueEffect(
+async function enqueueAskDelivery(a: HumanAsk, skipUi = false): Promise<void> {
+  await sessionKernel(a.sessionId).enqueueEffect(
     "human_ask_deliver",
     { askId: a.id, skipUi },
     `${a.id}:${skipUi || !a.uiFirst ? "slack" : "ui"}`,
@@ -360,7 +360,7 @@ function offerAskInUi(a: HumanAsk, windowMs: number): void {
     try {
       const { offerAskCard } = await import("./asks");
       if (asks.get(a.id)?.state !== "scheduled" || uiOffers.get(a.id) !== entry) return;
-      const card = offerAskCard(
+      const card = await offerAskCard(
         a.sessionId,
         [
           {
@@ -379,10 +379,10 @@ function offerAskInUi(a: HumanAsk, windowMs: number): void {
         },
       );
       if (uiOffers.get(a.id) !== entry) {
-        card.close(); // resolved while the card was being built
+        await card.close(); // resolved while the card was being built
         return;
       }
-      entry.close = card.close;
+      entry.close = () => { card.close().catch((error) => console.error(`[human-asks] UI offer close failed for ${a.id}:`, error)); };
     } catch (e) {
       console.error(`[human-asks] UI offer failed for ${a.id}:`, e);
     }

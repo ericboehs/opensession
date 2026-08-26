@@ -12,7 +12,6 @@ import React, {
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, Reorder } from "motion/react";
 import { duration, ease } from "../ui/motion";
-import { Spinner } from "../ui/spinner";
 import { EmptyState, InlineAlert, TranscriptSkeleton } from "../ui/state";
 import { LiveTurnStore } from "../lib/live-turn-store";
 import { getLiveTypingPref } from "../lib/live-typing-pref";
@@ -52,6 +51,7 @@ import {
 	mergeTranscriptEntries,
 	orderTranscriptEntries,
 	queueAttribution,
+	summarizeInFlightContent,
 } from "../lib/transcript-state";
 import {
 	HISTORY_PAGE_ENTRIES,
@@ -143,7 +143,11 @@ import {
 } from "../lib/slack-share-dismiss";
 import { latestFeaturedScreenshot } from "../../shared/shipped-change-media";
 import { useBackSwipe } from "../hooks/useBackSwipe";
-import { dedupeViewers, otherViewers } from "../lib/presence";
+import {
+	dedupeViewers,
+	facepileAvatarStyle,
+	otherViewers,
+} from "../lib/presence";
 import { otherTypingUsers } from "../lib/typing";
 import { personKey, prReviewCompletion } from "../lib/review-queue";
 import { Composer } from "./Composer";
@@ -272,6 +276,7 @@ import {
 	IconArrowUp,
 	IconArrowUpToLine,
 	IconCrosshair,
+	IconClock,
 	IconDesk,
 	IconDotsHorizontal,
 	IconEye,
@@ -379,7 +384,6 @@ import {
 	SCROLL_ACTION_CLEARANCE,
 	SUGGESTIONS_CLEARANCE,
 	TRANSCRIPT_ICON_BUTTON,
-	TRANSCRIPT_LOADING_MORE,
 	TRANSCRIPT_PILL_BUTTON,
 	TRANSCRIPT_PILL_LOADING,
 	TRANSCRIPT_PILL_SPINNER,
@@ -716,11 +720,10 @@ const HIDDEN_REOPEN_MS = 30_000;
 // late: on the iOS PWA the WebSocket only reconnects after visibility, so what
 // streamed while backgrounded arrives moments after the visibilitychange.
 const RESUME_GROWTH_WINDOW_MS = 8_000;
-// Opening a chat paints outline placeholders for ranges that have not
-// hydrated yet, and the first measure-and-hydrate pass reflows them. The
-// transcript stays invisible until the demanded ranges land, or at most this
-// long, so the churn happens behind the curtain instead of in front of the
-// reader. A cap, not a gate: a slow hydrate must still show something.
+// Let fast transcript hydration settle out of sight, but never leave readable
+// rows hidden behind the opening curtain while a slow outline or range request
+// catches up. The virtualizer preserves the live-edge position as that older
+// content grows above it.
 const OPEN_SETTLE_MAX_MS = 350;
 // "Jump to the start of the session" walks the backlog a page at a time rather
 // than asking for it in one frame: a multi-thousand-entry transcript would be a
@@ -1142,11 +1145,9 @@ export function SessionViewer({
 	// this is the FIRST render, before the session's detail has hydrated, and
 	// the list row carries the answer where it no longer carries the ids.
 	const [loading, setLoading] = useState(!cachedTranscript && !!session.ran);
-	// A cached transcript paints immediately while the watch handshake catches it
-	// up. Keep that background work visible without replacing readable history.
-	const [loadingMoreTranscript, setLoadingMoreTranscript] = useState(
-		Boolean(cachedTranscript),
-	);
+	// Cached transcripts stay visible while the watch handshake catches them up.
+	// That background sync is intentionally silent: it does not block reading or
+	// sending, and a loader at the live edge looks like part of the conversation.
 	// The initial transcript is the tail only when the file is large; these drive
 	// the "load earlier history" affordance at the top of the conversation.
 	const [historyTruncated, setHistoryTruncated] = useState(
@@ -1200,6 +1201,12 @@ export function SessionViewer({
 			: null;
 	const transcriptIndexEpochRef = useRef<number | null>(
 		cachedTranscript?.indexEpoch ?? null,
+	);
+	// A bounded v2 init only describes its loaded tail. The full outline is what
+	// proves every unloaded range lies above or below the opening fold, so do not
+	// accept a virtualizer "visible rows ready" signal until that frame arrives.
+	const [transcriptOutlineReady, setTranscriptOutlineReady] = useState(
+		!cachedTranscript?.index || cachedTranscript.indexEpoch !== null,
 	);
 	const transcriptRangeDemandReadyRef = useRef(false);
 	const [transcriptRangeRetryGeneration, setTranscriptRangeRetryGeneration] =
@@ -1888,12 +1895,13 @@ export function SessionViewer({
 		[suspendEndMaintenance],
 	);
 
-	// Open-settle curtain: armed on mount, lifted when the transcript reports
-	// every visible range rendered from real payload (onVisibleRangesSettled),
-	// or by the cap timer once the transcript actually renders.
+	// Open-settle curtain: positive proof lifts it as soon as the complete outline
+	// and near-visible payload settle. The deadline is equally load-bearing: an
+	// incomplete or slow hydration must not turn already-rendered transcript rows
+	// into an apparently empty page.
 	const [openSettlePending, setOpenSettlePending] = useState(true);
 	const transcriptRendered =
-		!loading && (entries.length > 0 || !!transcriptIndex);
+		!loading && (entries.length > 0 || Boolean(transcriptIndex));
 	useEffect(() => {
 		if (!transcriptRendered) return;
 		const timer = window.setTimeout(
@@ -1904,6 +1912,7 @@ export function SessionViewer({
 	}, [transcriptRendered]);
 	const settledIndexRef = useRef<TranscriptIndexEntry[] | null>(null);
 	const onVisibleRangesSettled = useCallback(() => {
+		if (!transcriptOutlineReady) return;
 		setOpenSettlePending(false);
 		// Keep the pre-refresh message anchor through the final row measurements.
 		// Two paints later every visible real row has reported its geometry, so the
@@ -1922,7 +1931,7 @@ export function SessionViewer({
 		if (settledIndexRef.current === transcriptIndex) return;
 		settledIndexRef.current = transcriptIndex;
 		if (readFollowingLive(followingLive)) scrollToLatest("auto");
-	}, [followingLive, scrollToLatest, transcriptIndex]);
+	}, [followingLive, scrollToLatest, transcriptIndex, transcriptOutlineReady]);
 	const [viewerInput, setViewerInput] = useState<HTMLDivElement | null>(null);
 	// The focused phone composer is fixed above the keyboard, so it contributes
 	// no height to the transcript's flex layout. Publish its real height without
@@ -2844,6 +2853,7 @@ export function SessionViewer({
 							: null;
 					transcriptIndexExpectedRef.current = v2;
 					setTranscriptIndexExpected(v2);
+					setTranscriptOutlineReady(!v2);
 					if (v2) {
 						transcriptSeqRef.current = {
 							sessionId: session.id,
@@ -2902,9 +2912,6 @@ export function SessionViewer({
 					loadingHistoryRef.current = false;
 					setLoadingHistory(false);
 					setLoading(false);
-					// Indexed mode still owes the complete outline after this bounded
-					// tail. Keep the quiet anchored spinner until that frame arrives.
-					if (!v2) setLoadingMoreTranscript(false);
 					// A whole-history walk ends here when the server answers with the
 					// whole transcript — the legacy path's only way to serve a backlog,
 					// and the seq path's fallback when a store read fails. A TRUNCATED
@@ -2961,8 +2968,8 @@ export function SessionViewer({
 					transcriptIndexExpectedRef.current = true;
 					setTranscriptIndexExpected(true);
 					transcriptIndexEpochRef.current = msg.epoch;
+					setTranscriptOutlineReady(true);
 					setTranscriptIndexState({ sessionId: session.id, entries: msg.entries });
-					setLoadingMoreTranscript(false);
 					setHistoryTruncated(false);
 					backgroundHistoryRef.current = false;
 					historyRevealRef.current = null;
@@ -3233,10 +3240,6 @@ export function SessionViewer({
 					}
 					break;
 				case "session_status":
-					// This is the final frame in a legacy watch handshake. Indexed mode
-					// still owes its complete outline after this frame.
-					if (transcriptSeqRef.current?.sessionId !== session.id)
-						setLoadingMoreTranscript(false);
 					setIsRunningLive(msg.isRunning);
 					if (!msg.isRunning) {
 						// Every isRunning:false broadcast follows its run's stream_done,
@@ -4585,51 +4588,43 @@ export function SessionViewer({
 	const queuedClassified = shownQueued.map((item) =>
 		classifyQueuedContent(item.content, item.user),
 	);
-	const queuedReviewCount = queuedClassified.filter(
-		(c) => c.notice?.kind === "review-handoff",
-	).length;
-	// A worker's report to this session is one agent handing work back to
-	// another, not something a person sent. Counting it as a queued message
-	// made the chip claim the human had written something they never did.
-	const queuedWorkerCount = queuedClassified.filter(
-		(c) => c.notice?.kind === "worker-report",
-	).length;
-	const queuedSessionMessageCount = queuedClassified.filter(
-		(c) => c.notice?.kind === "session-notice",
-	).length;
-
+	const steeredClassified = visibleSteered.map((item) =>
+		classifyQueuedContent(item.content, item.user),
+	);
+	const queuedSummary = summarizeInFlightContent(queuedClassified);
+	const steeredSummary = summarizeInFlightContent(steeredClassified);
+	// Transport ownership must not rename agent-to-agent traffic as a human
+	// steer. Reports and session notices keep their own waiting counts even once
+	// the running engine has accepted them for its next step.
+	const reviewCount = queuedSummary.reviews + steeredSummary.reviews;
+	const workerCount =
+		queuedSummary.workerReports + steeredSummary.workerReports;
+	const sessionMessageCount =
+		queuedSummary.sessionMessages + steeredSummary.sessionMessages;
 	const queueCount =
 		shownQueued.length + visibleSteered.length + pendingQueue.length + durableOutbox.length;
-	// Steered receipts are NOT queued — they have been ACCEPTED by the running
-	// turn and are waiting for it to reach its next step. Calling them "queued"
-	// read as "my message didn't go through" (three times, 2026-07-19); calling
-	// them delivered was the opposite lie, since the receipt is reconciled away
-	// the moment delivery actually happens, so "delivered" was on screen only
-	// while it hadn't happened yet.
+	// Ordinary steered receipts have been accepted by the running turn and wait
+	// for its next step. Agent traffic uses its own waiting labels above instead.
 	const queuedMessageCount =
-		shownQueued.length -
-		queuedReviewCount -
-		queuedWorkerCount -
-		queuedSessionMessageCount +
-		pendingQueue.length +
-		durableOutbox.length;
+		queuedSummary.messages + pendingQueue.length + durableOutbox.length;
+	const steeringMessageCount = steeredSummary.messages;
 	const queueTitle = settingUpWorkspace
 		? `Setting up workspace · ${queueCount} queued`
 		: [
 				queuedMessageCount
 					? `${queuedMessageCount} ${queuedMessageCount === 1 ? "message" : "messages"} queued`
 					: null,
-				queuedReviewCount
-					? `${queuedReviewCount} PR ${queuedReviewCount === 1 ? "review" : "reviews"} waiting`
+				reviewCount
+					? `${reviewCount} PR ${reviewCount === 1 ? "review" : "reviews"} waiting`
 					: null,
-				queuedWorkerCount
-					? `${queuedWorkerCount} worker ${queuedWorkerCount === 1 ? "report" : "reports"} waiting`
+				workerCount
+					? `${workerCount} worker ${workerCount === 1 ? "report" : "reports"} waiting`
 					: null,
-				queuedSessionMessageCount
-					? `${queuedSessionMessageCount} session ${queuedSessionMessageCount === 1 ? "message" : "messages"} waiting`
+				sessionMessageCount
+					? `${sessionMessageCount} session ${sessionMessageCount === 1 ? "message" : "messages"} waiting`
 					: null,
-				visibleSteered.length
-					? `${visibleSteered.length} steering into the current turn`
+				steeringMessageCount
+					? `${steeringMessageCount} steering into the current turn`
 					: null,
 			]
 				.filter(Boolean)
@@ -4645,8 +4640,13 @@ export function SessionViewer({
 			>
 				<div className={composerQueueTitle}>{queueTitle}</div>
 				{visibleSteered.map((s, i) => {
-					const c = classifyQueuedContent(s.content, s.user);
+					const c = steeredClassified[i];
+					const isReview = c.notice?.kind === "review-handoff";
+					const isWorker = c.notice?.kind === "worker-report";
+					const isSessionMessage = c.notice?.kind === "session-notice";
+					const isAgentTraffic = isReview || isWorker || isSessionMessage;
 					const canEdit =
+						!isAgentTraffic &&
 						s.editable === true &&
 						personKey(s.user || "") === personKey(currentUser);
 					return (
@@ -4662,10 +4662,20 @@ export function SessionViewer({
 							)}
 						>
 							<div className={composerQueueActions}>
-								<Tooltip label="The run has this message and folds it in when the current step finishes. A long tool call, like a test run, can hold it for a few minutes.">
+								<Tooltip
+									label={
+										isAgentTraffic
+											? "The run has this update and reads it when the current step finishes. A long tool call, like a test run, can hold it for a few minutes."
+											: "The run has this message and folds it in when the current step finishes. A long tool call, like a test run, can hold it for a few minutes."
+									}
+								>
 									<span className={composerQueuePill}>
-										<IconCrosshair size={20} />
-										Steering
+										{isAgentTraffic ? (
+											<IconClock size={20} />
+										) : (
+											<IconCrosshair size={20} />
+										)}
+										{isAgentTraffic ? "Waiting" : "Steering"}
 										<SteerWaiting since={s.steeredAt} />
 									</span>
 								</Tooltip>
@@ -4708,7 +4718,11 @@ export function SessionViewer({
 									<Tooltip label="Dismiss. The run keeps going and this message won't be re-sent.">
 										<button
 											type="button"
-											aria-label="Dismiss steering message"
+											aria-label={
+												isAgentTraffic
+													? queueDeleteLabel(isReview, isWorker, isSessionMessage)
+													: "Dismiss steering message"
+											}
 											className={cn(
 												composerQueueAction,
 												composerQueueActionDanger,
@@ -6538,12 +6552,13 @@ export function SessionViewer({
 					    filtered its own name out — this matches it.) */}
 					{!isPhone && others.length > 0 && (
 						<div className={VIEWER_PRESENCE} title={`Viewing: ${others.join(", ")}`}>
-							{dedupeViewers(others).map((v) => (
+							{dedupeViewers(others).map((v, index, viewers) => (
 								<UserAvatar
 									key={v.name}
 									name={v.name}
 									size={24}
 									className={VIEWER_PRESENCE_AVATAR}
+									style={facepileAvatarStyle(index, viewers.length, "var(--bg)")}
 								/>
 							))}
 						</div>
@@ -7481,7 +7496,7 @@ export function SessionViewer({
 							{inlineRunFailure && (
 								<InlineAlert
 									title="Run failed"
-									className="mx-auto mt-3 max-w-[var(--session-col)]"
+									className="mx-auto mt-3 max-w-[var(--session-col)] rounded-2xl border-0 text-center"
 								>
 									{inlineRunFailure.message}
 								</InlineAlert>
@@ -7546,21 +7561,6 @@ export function SessionViewer({
                 reply streams into the space below; sized by the scroll hook. */}
 							<div ref={spacerRef} className={TURN_SPACER} aria-hidden="true" />
 						</div>
-
-							{loadingMoreTranscript && (
-								<div
-									role="status"
-									aria-label="Loading more messages"
-									className={cn(
-										TRANSCRIPT_LOADING_MORE,
-										summaryStep > 0 && VIEWER_SUMMARY_STEP,
-									)}
-								>
-									<div className="mx-auto flex w-full max-w-[calc(var(--session-col)+40px)]">
-										<Spinner />
-									</div>
-								</div>
-							)}
 
 							{/* Sibling of the scroller, not a child: a press on the rail
 							    must never reach the transcript container, whose scroll hook

@@ -367,22 +367,21 @@ function v2StoreTranscript(
   // read as growth next time instead of being silently covered.
   const totalSize = v2MirrorFiles(session).reduce((sum, f) => sum + f.size, 0);
   const legacy = session.transcriptPath ? parseTranscript(session.transcriptPath) : [];
-  try {
-    store.importLegacyTranscript(
-      sessionId,
-      legacy,
-      store.getImportInfo(sessionId)?.src || "merged",
-      totalSize
-    );
-    // The full re-import restored every entry the store had missed — release
-    // the failure-side marker (no-op for ids that never carried it).
+  void store.importLegacyTranscript(
+    sessionId,
+    legacy,
+    store.getImportInfo(sessionId)?.src || "merged",
+    totalSize
+  ).then(() => {
+    // The full re-import restored every entry the store had missed. Release
+    // the failure marker only after actor completion.
     clearTranscriptStoreDegraded(sessionId);
-  } catch (e) {
+  }).catch((error) => {
     console.warn(
       `[sessions] transcript v2 drift re-import failed for ${sessionId}:`,
-      e instanceof Error ? e.message : e
+      error instanceof Error ? error.message : error
     );
-  }
+  });
   return legacy;
 }
 
@@ -509,98 +508,80 @@ function findTranscriptPath(
   return findTranscriptBySessionId(sessionId);
 }
 
-// Reverse index of every Claude transcript: session id → its .jsonl path,
-// built by walking each project dir ONCE. Without it, the last-resort lookup
-// below did an uncached readdir of ~1200 project dirs + an existsSync per dir
-// FOR EVERY session that missed the direct path (e.g. the ~575 slack sessions
-// with no worktreeDir) — ~600k stat() calls, ~1.4s, on every sessions rebuild.
-// That rebuild runs on every cache miss (and every "+ new tab", which nulls the
-// cache), so it was the dominant cost of a slow new-tab. Building the index is
-// ~16ms and turns each miss into an O(1) map hit. Memoized with a short TTL so a
-// burst of rebuilds shares one index while newly-written transcripts still show
-// up within a couple seconds.
+// Reverse index of every Claude transcript: session id → its .jsonl path.
+// This is only the last resort after the current worktree and home-directory
+// paths miss, so an absent or stale snapshot is safe. Production has enough
+// historical project directories that rebuilding it synchronously can hold the
+// gateway for seconds. Serve the last completed snapshot immediately and
+// refresh cooperatively in the background instead. Current transcripts still
+// resolve through their direct path without waiting for this index.
 let transcriptIndexCache: { map: Map<string, string>; ts: number } | null = null;
 let transcriptIndexRefresh: Promise<void> | null = null;
-let transcriptIndexGeneration = 0;
-const TRANSCRIPT_INDEX_TTL = 2000;
+const EMPTY_TRANSCRIPT_INDEX = new Map<string, string>();
+const TRANSCRIPT_INDEX_TTL = 5 * 60_000;
 function transcriptIndex(): Map<string, string> {
-  if (transcriptIndexCache && Date.now() - transcriptIndexCache.ts < TRANSCRIPT_INDEX_TTL)
-    return transcriptIndexCache.map;
-  transcriptIndexGeneration++;
-  const map = new Map<string, string>();
-  let projectDirs: string[];
-  try {
-    projectDirs = readdirSync(CLAUDE_PROJECTS_DIR);
-  } catch {
-    projectDirs = [];
-  }
-  for (const dir of projectDirs) {
-    let entries: string[];
-    try {
-      entries = readdirSync(`${CLAUDE_PROJECTS_DIR}/${dir}`);
-    } catch {
-      continue;
-    }
-    for (const e of entries) {
-      if (!e.endsWith(".jsonl")) continue;
-      const id = e.slice(0, -".jsonl".length);
-      // First dir wins — matches the old top-down readdir scan order.
-      if (!map.has(id)) map.set(id, `${CLAUDE_PROJECTS_DIR}/${dir}/${e}`);
-    }
-  }
-  transcriptIndexCache = { map, ts: Date.now() };
-  return map;
-}
-
-async function warmTranscriptIndexAsync(): Promise<void> {
-  while (
+  if (
     !transcriptIndexCache ||
     Date.now() - transcriptIndexCache.ts >= TRANSCRIPT_INDEX_TTL
   ) {
-    if (!transcriptIndexRefresh) {
-      const generation = ++transcriptIndexGeneration;
-      transcriptIndexRefresh = (async () => {
-        const map = new Map<string, string>();
-        let projects;
-        try {
-          projects = await opendir(CLAUDE_PROJECTS_DIR);
-        } catch {
-          projects = null;
-        }
-        try {
-          if (projects) for await (const project of projects) {
-            if (!project.isDirectory()) continue;
-            let entries;
-            try {
-              entries = await opendir(`${CLAUDE_PROJECTS_DIR}/${project.name}`);
-            } catch {
-              continue;
-            }
-            let indexed = 0;
-            for await (const entry of entries) {
-              if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
-              const id = entry.name.slice(0, -".jsonl".length);
-              if (!map.has(id))
-                map.set(id, `${CLAUDE_PROJECTS_DIR}/${project.name}/${entry.name}`);
-              if (++indexed % 256 === 0) await Bun.sleep(0);
-            }
-            // One project directory can hold thousands of transcripts. Yield
-            // after each directory so a cold reverse-index build never delays a
-            // WebSocket handshake behind a batch of large readdir calls.
-            await Bun.sleep(0);
-          }
-        } catch {
-          // The state root can change under tests and dev tooling. A partial
-          // reverse index is safe; direct transcript paths still resolve.
-        }
-        if (transcriptIndexGeneration === generation)
-          transcriptIndexCache = { map, ts: Date.now() };
-      })().finally(() => {
-        transcriptIndexRefresh = null;
-      });
-    }
-    await transcriptIndexRefresh;
+    void warmTranscriptIndexAsync().catch((error) => {
+      console.warn(
+        "[sessions] transcript index refresh failed:",
+        error instanceof Error ? error.message : error,
+      );
+    });
   }
+  return transcriptIndexCache?.map ?? EMPTY_TRANSCRIPT_INDEX;
+}
+
+async function warmTranscriptIndexAsync(): Promise<void> {
+  if (
+    transcriptIndexCache &&
+    Date.now() - transcriptIndexCache.ts < TRANSCRIPT_INDEX_TTL
+  ) {
+    return;
+  }
+  if (!transcriptIndexRefresh) {
+    transcriptIndexRefresh = (async () => {
+      const map = new Map<string, string>();
+      let projects;
+      try {
+        projects = await opendir(CLAUDE_PROJECTS_DIR);
+      } catch {
+        projects = null;
+      }
+      try {
+        if (projects) for await (const project of projects) {
+          if (!project.isDirectory()) continue;
+          let entries;
+          try {
+            entries = await opendir(`${CLAUDE_PROJECTS_DIR}/${project.name}`);
+          } catch {
+            continue;
+          }
+          let indexed = 0;
+          for await (const entry of entries) {
+            if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+            const id = entry.name.slice(0, -".jsonl".length);
+            if (!map.has(id))
+              map.set(id, `${CLAUDE_PROJECTS_DIR}/${project.name}/${entry.name}`);
+            if (++indexed % 256 === 0) await Bun.sleep(0);
+          }
+          // One project directory can hold thousands of transcripts. Yield
+          // after each directory so a cold reverse-index build never delays a
+          // WebSocket handshake behind a batch of large readdir calls.
+          await Bun.sleep(0);
+        }
+      } catch {
+        // The state root can change under tests and dev tooling. A partial
+        // reverse index is safe; direct transcript paths still resolve.
+      }
+      transcriptIndexCache = { map, ts: Date.now() };
+    })().finally(() => {
+      transcriptIndexRefresh = null;
+    });
+  }
+  await transcriptIndexRefresh;
 }
 
 function findTranscriptBySessionId(sessionId: string): string | null {
@@ -1389,8 +1370,8 @@ function removeSessionArtifacts(session: UnifiedSession): void {
     void removeSessionScratch(id);
 }
 
-export function deleteSession(session: UnifiedSession): void {
-  executeSessionProjection(session.id, "session_delete", () => {
+export async function deleteSession(session: UnifiedSession): Promise<void> {
+  await executeSessionProjection(session.id, "session_delete", () => {
     removeSessionArtifacts(session);
   });
 }

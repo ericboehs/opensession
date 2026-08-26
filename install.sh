@@ -23,13 +23,14 @@
 #                                              Bun install, no bun install
 #   --no-modify-path      NO_MODIFY_PATH=1     do not touch shell profiles
 #   --no-onboard          NO_ONBOARD=1         install only, skip the wizard
-#   --no-engine           NO_ENGINE=1          do not install the claude model CLI
-#   --codex               WITH_CODEX=1         also install the codex CLI (ChatGPT
-#                                              sign-in); off by default
+#   --no-engine           NO_ENGINE=1          do not install the model CLIs
+#   --no-codex            WITH_CODEX=0         do not install the codex CLI
+#   --codex               WITH_CODEX=1         install the codex CLI (the default;
+#                                              retained for compatibility)
 #   --tailscale           WITH_TAILSCALE=1     also install Tailscale (off by
 #                                              default; --no-tailscale still accepted)
-#   --caddy               WITH_CADDY=1         install Caddy for custom-domain
-#                                              public ingress
+#   --caddy               WITH_CADDY=1         install Caddy and lego for managed
+#                                              private or public custom domains
 #   --cloudflare          WITH_CLOUDFLARE=1    install cloudflared for Tunnel
 #                                              public ingress
 #   --org <name>          OPENSESSION_ORG      set this instance up for a GitHub
@@ -48,6 +49,8 @@
 #
 # OPENSESSION_CLAUDE_TOKEN  a `claude setup-token` value; staged for the server
 #                           to import into its account pool at first start
+# OPENSESSION_ARTIFACT_SHA256 expected SHA-256 for a local/custom artifact;
+#                           otherwise <artifact>.sha256 is required
 #
 # With --tailscale the client is installed but not joined to a network, since
 # joining needs your account. Set TS_AUTHKEY to have the installer do that too.
@@ -75,7 +78,7 @@ NO_MODIFY_PATH="${NO_MODIFY_PATH:-0}"
 NO_ONBOARD="${NO_ONBOARD:-0}"
 NO_ENGINE="${NO_ENGINE:-0}"
 IS_BINARY=0
-WITH_CODEX="${WITH_CODEX:-0}"
+WITH_CODEX="${WITH_CODEX:-1}"
 WITH_TAILSCALE="${WITH_TAILSCALE:-0}"
 WITH_CADDY="${WITH_CADDY:-0}"
 WITH_CLOUDFLARE="${WITH_CLOUDFLARE:-0}"
@@ -95,6 +98,7 @@ while [ $# -gt 0 ]; do
     --no-modify-path) NO_MODIFY_PATH=1; shift ;;
     --no-onboard) NO_ONBOARD=1; shift ;;
     --no-engine) NO_ENGINE=1; shift ;;
+    --no-codex) WITH_CODEX=0; shift ;;
     --codex) WITH_CODEX=1; shift ;;
     --tailscale) WITH_TAILSCALE=1; shift ;;
     --no-tailscale) WITH_TAILSCALE=0; shift ;;
@@ -128,6 +132,34 @@ muted() { printf '  %s%s%s\n' "$D" "$1" "$N"; }
 good() { printf '  %sok%s      %s\n' "$G" "$N" "$1"; }
 warn() { printf '  %swarn%s    %s\n' "$Y" "$N" "$1"; }
 die() { printf '  %serror%s   %s\n' "$R" "$N" "$1" >&2; exit 1; }
+
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    die "SHA-256 verification requires sha256sum or shasum"
+  fi
+}
+
+verify_release_archive() {
+  archive="$1" checksum_file="${2:-}" checksum_label="${3:-checksum}"
+  expected="${OPENSESSION_ARTIFACT_SHA256:-}"
+  if [ -z "$expected" ]; then
+    [ -n "$checksum_file" ] && [ -s "$checksum_file" ] ||
+      die "missing SHA-256 checksum for $archive ($checksum_label)"
+    expected="$(awk 'NF {print $1; exit}' "$checksum_file")"
+  fi
+  if [ "${#expected}" -ne 64 ]; then
+    die "invalid SHA-256 checksum from $checksum_label (expected 64 hex characters)"
+  fi
+  case "$expected" in *[!0-9a-fA-F]*) die "invalid SHA-256 checksum from $checksum_label" ;; esac
+  actual="$(sha256_file "$archive")"
+  [ "$(printf '%s' "$actual" | tr 'A-F' 'a-f')" = "$(printf '%s' "$expected" | tr 'A-F' 'a-f')" ] ||
+    die "SHA-256 mismatch for $archive (expected $expected, got $actual)"
+  good "verified SHA-256 for $(basename "$archive")"
+}
 
 # ── uninstall ───────────────────────────────────────────────────────────────
 
@@ -440,7 +472,12 @@ if [ "$FROM_SOURCE" != "1" ] && [ -z "$ARTIFACT" ] && ! { [ -e "$DIR/.git" ] && 
     muted "downloading $rel_url ..."
     art_tmp="$(mktemp -d)"
     if curl -fsSL --retry 3 "$rel_url" -o "$art_tmp/release.tar.gz" 2>/dev/null; then
+      checksum_url="$rel_url.sha256"
+      curl -fsSL --retry 3 "$checksum_url" -o "$art_tmp/release.tar.gz.sha256" 2>/dev/null ||
+        die "release downloaded but its checksum is unavailable at $checksum_url"
       ARTIFACT="$art_tmp/release.tar.gz"
+      art_checksum="$art_tmp/release.tar.gz.sha256"
+      art_checksum_label="$checksum_url"
     else
       rm -rf "$art_tmp"
       warn "no published release for $rel_os/$rel_arch at $rel_url"
@@ -454,11 +491,22 @@ if [ -n "$ARTIFACT" ]; then
   mkdir -p "$RELEASES"
   case "$ARTIFACT" in
     http://*|https://*)
+      artifact_url="$ARTIFACT"
       art_tmp="$(mktemp -d)"
-      curl -fsSL "$ARTIFACT" -o "$art_tmp/release.tar.gz" || die "could not download $ARTIFACT"
-      art_file="$art_tmp/release.tar.gz" ;;
-    *) art_file="$ARTIFACT"; [ -f "$art_file" ] || die "no such file: $art_file" ;;
+      curl -fsSL --retry 3 "$artifact_url" -o "$art_tmp/release.tar.gz" || die "could not download $artifact_url"
+      art_file="$art_tmp/release.tar.gz"
+      art_checksum="$art_tmp/release.tar.gz.sha256"
+      art_checksum_label="$artifact_url.sha256"
+      if [ -z "${OPENSESSION_ARTIFACT_SHA256:-}" ]; then
+        curl -fsSL --retry 3 "$artifact_url.sha256" -o "$art_checksum" ||
+          die "artifact downloaded but its checksum is unavailable at $artifact_url.sha256"
+      fi ;;
+    *)
+      art_file="$ARTIFACT"; [ -f "$art_file" ] || die "no such file: $art_file"
+      art_checksum="$art_file.sha256"
+      art_checksum_label="$art_checksum" ;;
   esac
+  verify_release_archive "$art_file" "${art_checksum:-}" "${art_checksum_label:-provided checksum}"
   # awk reads the whole listing so tar never sees a closed pipe (pipefail).
   rel_name="$(tar -tzf "$art_file" 2>/dev/null | awk -F/ 'NR==1{print $1}')"
   [ -n "$rel_name" ] || die "could not read the release tarball"
@@ -569,19 +617,17 @@ fi
 
 # ── engine ──────────────────────────────────────────────────────────────────
 #
-# Two binaries are needed before a session can run a turn, and one is not:
+# Pi is bundled with Open Session, while the subscription-backed provider paths
+# also use two external CLIs:
 #
-#             starts, the UI loads, and every session fails.
 #   claude    the bundled Anthropic bridge execs it, and `claude setup-token`
-#             is how you mint the account token for the default model.
+#             is how you mint an account token.
 #   codex     `codex login --device-auth` backs the ChatGPT sign-in in the UI
-#             (codex-device-login.ts). Off the critical path: only installed
-#             with --codex, and the sign-in names the install command when
-#             the binary is missing.
+#             (codex-device-login.ts).
 #
-# The first two are installed by default because leaving them out produces
-# the failure this installer exists to prevent: a box that looks installed
-# and cannot work. Each is skipped when already present, so re-runs are free.
+# Both are installed by default so either subscription path works out of the
+# box. Each is skipped when already present, so re-runs are free. `--no-engine`
+# skips both, while `--no-codex` skips only Codex.
 
 # First line of `<bin> --version`, or $2 when it prints nothing usable. Kept
 # separate so the `||` fallback isn't swallowed by a pipeline's exit status.
@@ -710,6 +756,40 @@ if [ "$WITH_CADDY" = "1" ]; then
     warn "could not install Caddy automatically"
     muted "install it from https://caddyserver.com/docs/install and reload /welcome"
   fi
+
+  # Private custom domains cannot use HTTP-01 because they terminate on a
+  # Tailscale address. lego handles Let's Encrypt DNS-01 and renewal while
+  # stock Caddy continues to serve the resulting certificate. On Linux, use
+  # lego's official build rather than a distro package: Ubuntu's older build
+  # advertises Cloudflare in `dnshelp` but rejects it when issuing a certificate.
+  if [ "$OS" = "Darwin" ]; then
+    if command -v lego >/dev/null 2>&1 || { install_package lego && command -v lego >/dev/null 2>&1; }; then
+      good "lego $(lego --version 2>/dev/null | head -1 || echo installed)"
+    else
+      warn "could not install lego automatically"
+      muted "install it with: brew install lego"
+    fi
+  else
+    case "$(uname -m)" in
+      x86_64|amd64) lego_arch="amd64" ;;
+      aarch64|arm64) lego_arch="arm64" ;;
+      *) lego_arch="" ;;
+    esac
+    lego_version="${LEGO_VERSION:-4.26.0}"
+    lego_tmp="$(mktemp -d)"
+    mkdir -p "$HOME/.local/bin"
+    if [ -n "$lego_arch" ] \
+      && curl -fsSL "https://github.com/go-acme/lego/releases/download/v${lego_version}/lego_v${lego_version}_linux_${lego_arch}.tar.gz" -o "$lego_tmp/lego.tar.gz" \
+      && tar -xzf "$lego_tmp/lego.tar.gz" -C "$lego_tmp" lego \
+      && install -m 0755 "$lego_tmp/lego" "$HOME/.local/bin/lego"; then
+      export PATH="$HOME/.local/bin:$PATH"
+      good "lego $(lego --version 2>/dev/null | head -1 || echo installed)"
+    else
+      warn "could not install the official lego build automatically"
+      muted "install it from https://go-acme.github.io/lego/installation/"
+    fi
+    rm -rf "$lego_tmp"
+  fi
 fi
 
 if [ "$WITH_CLOUDFLARE" = "1" ]; then
@@ -818,7 +898,7 @@ add_to_path() {
 
   display_profile="$config_file"
   case "$display_profile" in
-    "$HOME"/*) display_profile="$(printf '\176/%s' "${display_profile#"$HOME"/}")" ;;
+    "$HOME"/*) printf -v display_profile '%c/%s' '~' "${display_profile#"$HOME"/}" ;;
   esac
   PATH_CONFIGURED_PROFILES="${PATH_CONFIGURED_PROFILES:+$PATH_CONFIGURED_PROFILES, }$display_profile"
 }

@@ -54,7 +54,7 @@ describe("OpenAI auth", () => {
       id: "scoped-api-key",
       name: "Scoped API key",
       kind: "api_key",
-      value: "sk-selected-remote-key",
+      value: "test-selected-remote-key",
       createdAt: "2026-08-20T00:00:00.000Z",
     };
     try {

@@ -47,6 +47,7 @@ function writeSessionFile(id: string, extra: Record<string, unknown> = {}) {
 		`${tmp}/${id}.json`,
 		JSON.stringify({
 			id,
+			source: "opensession",
 			title: `Fake run ${id}`,
 			model: "claude-sonnet-5",
 			createdBy: "Test",
@@ -120,6 +121,16 @@ afterAll(() => {
 const sessionJson = (id: string) =>
 	JSON.parse(readFileSync(`${tmp}/${id}.json`, "utf-8"));
 
+async function waitForLastRunError(id: string): Promise<{ message: string }> {
+	const deadline = Date.now() + 2_000;
+	while (Date.now() < deadline) {
+		const error = sessionJson(id).lastRunError;
+		if (error?.message) return error;
+		await Bun.sleep(10);
+	}
+	throw new Error(`lastRunError was not persisted for ${id}`);
+}
+
 describe("fake-engine session runs (consumer loop end-to-end)", () => {
 	test("clean run: engine id + usage persisted, FSM idle, settled", async () => {
 		if (!redirected) return;
@@ -167,7 +178,9 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 
 		await runSession.runSessionPromptAndDrain(sid, "explode please", "Test");
 		expect(fake.calls).toHaveLength(1);
-		expect(sessionJson(sid).lastRunError?.message).toContain("boom");
+		// Session-file fencing is asynchronous, so wait for its durable projection
+		// instead of assuming run completion also flushes the JSON write.
+		expect((await waitForLastRunError(sid)).message).toContain("boom");
 		expect(runState.getRunState(sid)).toBe("failed");
 		expect(sessionCache.isRunSettled(sid)).toBe(true);
 		// The enriched list surfaces the FSM state.
@@ -183,7 +196,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 	// that centralization only runSessionPromptInner wrote it, and a resumed
 	// run's death left the conversation ending mid-turn with no explanation
 	// (bks-019fb757, 2026-07-31).
-	test("failed opening run: the failure lands in the transcript before an engine session exists", () => {
+	test("failed opening run: the failure lands in the transcript before an engine session exists", async () => {
 		if (!redirected) return;
 		// The store is a globalThis singleton — if an earlier suite file opened
 		// it against the real sessions dir, skip rather than write to it.
@@ -194,7 +207,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		writeSessionFile(sid);
 		sessionCache.invalidateSessionsCache();
 
-		sessionCache.recordRunOutcome(sid, "boom: unrecoverable test failure");
+		await sessionCache.recordRunOutcome(sid, "boom: unrecoverable test failure");
 
 		const chip = store
 			.readTail(sid, 50)
@@ -202,7 +215,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		expect(chip?.content).toBe("Run failed: boom: unrecoverable test failure");
 	});
 
-	test("usage-limit stop is worded as a stop, and a runner-written notice wins", () => {
+	test("usage-limit stop is worded as a stop, and a runner-written notice wins", async () => {
 		if (!redirected) return;
 		const store = transcriptStoreMod.transcriptStore();
 		if (!store.dbPath.startsWith(tmp)) return;
@@ -213,13 +226,13 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		sessionCache.invalidateSessionsCache();
 		ocTranscript.recordEngineSessionOwner(engineId, sid);
 
-		sessionCache.recordRunOutcome(sid, "Usage limit reached on every account", {
+		await sessionCache.recordRunOutcome(sid, "Usage limit reached on every account", {
 			engineSessionId: engineId,
 			noticeLabel: "Run stopped",
 		});
 		// noticePersisted: the runner already wrote its own friendlier line, so
 		// this must not add a second one.
-		sessionCache.recordRunOutcome(sid, "timed out after 60m", {
+		await sessionCache.recordRunOutcome(sid, "timed out after 60m", {
 			engineSessionId: engineId,
 			noticePersisted: true,
 		});
@@ -233,7 +246,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		);
 	});
 
-	test("a recovered Pi run falls back to the Pi transcript for its failure chip", () => {
+	test("a recovered Pi run falls back to the Pi transcript for its failure chip", async () => {
 		if (!redirected) return;
 		const store = transcriptStoreMod.transcriptStore();
 		if (!store.dbPath.startsWith(tmp)) return;
@@ -250,7 +263,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 
 		// Boot recovery failures do not always carry a terminal event session id.
 		// recordRunOutcome must resolve the active engine slot from the session.
-		sessionCache.recordRunOutcome(
+		await sessionCache.recordRunOutcome(
 			sid,
 			"Restart recovery stopped unexpectedly. Send the prompt again to continue.",
 		);
@@ -374,7 +387,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		expect(retried.autoFallbackModel).toBeUndefined();
 	});
 
-	test("an explicit model choice cancels the automatic retry", () => {
+	test("an explicit model choice cancels the automatic retry", async () => {
 		if (!redirected) return;
 		const sid = "bks-zz-cancel-model-retry";
 		writeSessionFile(sid, {
@@ -385,10 +398,15 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		const session = sessionCache.findSession(sid);
 		expect(session).toBeDefined();
 
-		slashCommands.handleSlashCommand(session!, "/model gpt-5.6-terra", "Test");
+		const notice = slashCommands.handleSlashCommand(session!, "/model dial/high", "Test");
+		expect(notice).toContain("Model set to");
 
-		const data = sessionJson(sid);
-		expect(data.model).toBe("gpt-5.6-terra");
+		let data = sessionJson(sid);
+		for (let attempt = 0; data.model !== "dial/high" && attempt < 50; attempt++) {
+			await Bun.sleep(10);
+			data = sessionJson(sid);
+		}
+		expect(data.model).toBe("dial/high");
 		expect(data.autoFallbackModel).toBeUndefined();
 	});
 
@@ -457,13 +475,13 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		// latch park the queue (ws-handlers "cancel"). This actor state is
 		// load-bearing: advancing it to `starting` during intake makes the drain
 		// mistake the new message for an already-owned run and park forever.
-		runState.transitionRunState(sid, "prompt", { run_key: "stopped-run" });
-		runState.transitionRunState(sid, "run_registered", {
+		await runState.transitionRunState(sid, "prompt", { run_key: "stopped-run" });
+		await runState.transitionRunState(sid, "run_registered", {
 			run_key: "stopped-run",
 		});
-		runState.transitionRunState(sid, "cancel", { run_key: "stopped-run" });
+		await runState.transitionRunState(sid, "cancel", { run_key: "stopped-run" });
 		queueState.stoppedSessions.add(sid);
-		runSession.enqueuePrompt(
+		await runSession.enqueuePrompt(
 			sid,
 			queueState.queueItem({ content: "parked", user: "Test" }),
 		);
@@ -474,8 +492,8 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		// The next explicit send lifts it at intake, the way every human send
 		// path does. Without that lift the message below is queued forever:
 		// only runSessionPrompt clears the latch, and the drain is what calls it.
-		queueState.liftUserStop(sid);
-		runSession.enqueuePrompt(
+		await queueState.liftUserStop(sid);
+		await runSession.enqueuePrompt(
 			sid,
 			queueState.queueItem({ content: "second try", user: "Test" }),
 		);

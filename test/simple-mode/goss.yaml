@@ -67,6 +67,9 @@ command:
   claude-installed:
     exec: "test -x {{.Vars.home}}/.local/bin/claude"
     exit-status: 0
+  codex-installed:
+    exec: "test -x {{.Vars.home}}/.local/bin/codex"
+    exit-status: 0
 port:
   tcp:{{.Vars.port}}:
     listening: true

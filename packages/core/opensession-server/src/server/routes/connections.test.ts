@@ -155,7 +155,13 @@ describe("GitHub connect gating", () => {
     const path = join(dir, `app-${Math.random().toString(36).slice(2)}.json`);
     writeFileSync(
       path,
-      JSON.stringify({ integrations: { github: { oauthClientId: "cfg-client-id" } } }),
+      JSON.stringify({
+        ingress: {
+          publicBaseUrl: "https://ingress.os.example.test",
+          exposure: "custom",
+        },
+        integrations: { github: { oauthClientId: "cfg-client-id" } },
+      }),
     );
     process.env.OPENSESSION_CONFIG = path;
     const response = await handleConnectionsRoutes(
@@ -166,6 +172,7 @@ describe("GitHub connect gating", () => {
     // userPrAuth is off, so a client id alone must not flip the sign-in gate.
     expect(body.webAuthRequired).toBe(false);
     expect(body.appConfigSource).toBe("config");
+    expect(body.webhookBaseUrl).toBe("https://ingress.os.example.test");
   });
 });
 

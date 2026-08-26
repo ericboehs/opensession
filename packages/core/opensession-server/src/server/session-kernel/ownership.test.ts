@@ -65,7 +65,8 @@ describe("single session ownership", () => {
 		expect(kernel).toContain("compatibilityStoreForTest");
 		expect(kernel).toContain('process.env.NODE_ENV !== "test"');
 		expect(kernel).toContain("requires the authoritative actor");
-		expect(kernel).toContain("projection.delete(request.sessionId)");
+		expect(kernel).toContain("actor.decideAskAsync(request)");
+		expect(kernel).toContain("actor.decideDeliveryAsync(request)");
 		expect(kernel).not.toContain(
 			'actor.decideDelivery({ op: "snapshot", sessionId: request.sessionId })',
 		);
@@ -186,6 +187,8 @@ describe("single session ownership", () => {
 
 	test("every transcript mutation enters the session owner", () => {
 		const source = read("transcript-store.ts");
+		expect(source).toContain("executeDestinationIdempotentSessionProjection(");
+		expect(source).toContain('"transcript_destination_append"');
 		for (const operation of [
 			"transcript_append",
 			"transcript_import",
@@ -209,7 +212,15 @@ describe("single session ownership", () => {
 		const steerItem = control.indexOf("const steerItem = durableQueueItem(id");
 		expect(steerEligibility).toBeGreaterThan(-1);
 		expect(steerItem).toBeGreaterThan(steerEligibility);
-		expect(control.indexOf("prepareQueuedSteer(id", steerItem)).toBeGreaterThan(steerItem);
+		expect(control.indexOf("await prepareAndSteerQueuedPrompt({", steerItem))
+      .toBeGreaterThan(steerItem);
+    const queuedSteer = read("queued-steer.ts");
+    expect(queuedSteer).toContain("await deps.prepare(");
+    expect(queuedSteer).toContain("steerAgentRunToken");
+    expect(queuedSteer).toContain("interruptAndSteerAgentRunToken");
+    const runSession = read("run-session.ts");
+    expect(runSession).toContain("await prepareAndInterruptQueuedPrompt({");
+    expect(runSession).not.toContain("!interruptAndSteerAgentRun(");
 	});
 
 	test("sandbox prompts are visible before remote startup can fail", () => {
@@ -247,8 +258,18 @@ describe("single session ownership", () => {
 		expect(entry.indexOf("await startSessionKernelActor()")).toBeLessThan(
 			entry.indexOf("initHumanAsks()"),
 		);
+		expect(entry).toContain("await restorePendingAsks()");
+		expect(entry).toContain("await hydratePersistedQueueState()");
+		expect(entry).toContain("await restorePromptQueues(new Set(resumedIds))");
+		const queueRestore = entry.indexOf(
+			"await restorePromptQueues(new Set(resumedIds))",
+		);
+		expect(queueRestore).toBeLessThan(
+			entry.indexOf("reconcileSessionKernelOwnership(", queueRestore),
+		);
 		const actor = read("session-kernel/actor-worker.ts");
-		expect(actor).toContain("const store = new SessionKernelStore()");
+		expect(actor).toContain("const host = new SessionKernelStoreHost()");
+		expect(actor).not.toContain("const store = new SessionKernelStore()");
 		expect(read("session-kernel/actor-client.ts")).toContain(
 			"SharedArrayBuffer",
 		);
@@ -616,7 +637,7 @@ describe("single session ownership", () => {
 			'throw new Error("Opening run ended without a terminal event")',
 		);
 		expect(create).toContain("openingJournal?.terminalFailure");
-		expect(create).toContain("startToken = markSessionStarting(");
+		expect(create).toContain("startToken = await markSessionStarting(");
 		expect(create).toContain("hostId: startToken");
 		expect(create).toContain("isAgentSessionCancelled(bksId, startToken)");
 		// Sandbox launches bind the physical host to the admitted token so
@@ -630,7 +651,7 @@ describe("single session ownership", () => {
 		const runSession = read("run-session.ts");
 		const cancelPrepared = runSession.indexOf('op: "prepare_cancel"');
 		const settleGuarded = runSession.indexOf(
-			"try {\n    settleCreationOpeningForStop(sessionId);",
+			"try {\n    await settleCreationOpeningForStop(sessionId);",
 			cancelPrepared,
 		);
 		const bookkeeping = runSession.indexOf("} finally {", settleGuarded);
@@ -699,6 +720,46 @@ describe("single session ownership", () => {
     expect(settleProjection).toBeGreaterThan(applyProjection);
     expect(run).toContain("projectionId: `outcome:${startToken}`");
     expect(create).toContain("projectionId: `outcome:${startToken}`");
+
+    const terminalOutcome = run.indexOf(
+      "await recordRunOutcome(session.id, runFailure",
+    );
+    expect(terminalOutcome).toBeGreaterThan(0);
+    expect(run.indexOf("await clearSteerReceipts", terminalOutcome))
+      .toBeGreaterThan(terminalOutcome);
+    expect(run.indexOf('type: "stream_done"', terminalOutcome))
+      .toBeGreaterThan(terminalOutcome);
+
+    const openingOutcome = create.indexOf(
+      "await recordRunOutcome(bksId, runFailure",
+    );
+    expect(openingOutcome).toBeGreaterThan(0);
+    expect(create.indexOf("await settleCreation", openingOutcome))
+      .toBeGreaterThan(openingOutcome);
+    const setupOutcome = create.lastIndexOf("await recordRunOutcome(");
+    expect(create.indexOf('type: "stream_done"', setupOutcome))
+      .toBeGreaterThan(setupOutcome);
+    expect(create.indexOf("await settleCreationFailed(", setupOutcome))
+      .toBeGreaterThan(setupOutcome);
+
+    const boot = read("../../opensession.ts");
+    const recoveredOutcome = boot.indexOf("await recordRunOutcome(");
+    expect(boot.indexOf("await settleRecoveredCreationOpening(", recoveredOutcome))
+      .toBeGreaterThan(recoveredOutcome);
+
+    const github = read("../agents/github/run.ts");
+    const githubOutcome = github.indexOf("await recordRunOutcome(");
+    expect(github.indexOf("journalClearIfLineage(", githubOutcome))
+      .toBeGreaterThan(githubOutcome);
+
+    const journal = read("run-journal.ts");
+    expect(journal).toContain(
+      'await transition(record.osSessionId, "run_registered"',
+    );
+    expect(journal).toContain(
+      'await transition(r.osSessionId, "boot_journal_found"',
+    );
+    expect(journal).not.toContain("void transitionRunState(");
 	});
 
 	test("WebSocket session mutations enter the mailbox before dispatch", () => {

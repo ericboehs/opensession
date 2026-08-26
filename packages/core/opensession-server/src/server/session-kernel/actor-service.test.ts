@@ -5,9 +5,10 @@ import {
   expect,
   test,
 } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Database } from "bun:sqlite";
 import {
   SESSION_KERNEL_ACTOR_VERSION,
   SESSION_KERNEL_MAX_RESPONSE_BYTES,
@@ -18,22 +19,32 @@ import {
   sessionKernelServiceUrl,
   startSessionKernelService,
 } from "./actor-service";
+import { sessionKernelSessionDbPath } from "./store";
 
 const token = "test-session-kernel-token";
 const stateDir = mkdtempSync(join(tmpdir(), "opensession-kernel-service-"));
 let service: Awaited<ReturnType<typeof startSessionKernelService>>;
 let serviceEpoch: string | undefined;
 const previousStateDir = process.env.OPENSESSION_STATE_DIR;
+const previousDatabasePath = process.env.OPENSESSION_SESSION_KERNEL_DB_PATH;
 
 beforeAll(async () => {
   process.env.OPENSESSION_STATE_DIR = stateDir;
-  service = await startSessionKernelService({ port: 0, token });
+  service = await startSessionKernelService({
+    port: 0,
+    token,
+    responseTimeoutMs: 700,
+    databasePath: join(stateDir, "sessions", "session-kernel.sqlite"),
+  });
 });
 
 afterAll(() => {
   service.stop();
   if (previousStateDir === undefined) delete process.env.OPENSESSION_STATE_DIR;
   else process.env.OPENSESSION_STATE_DIR = previousStateDir;
+  if (previousDatabasePath === undefined)
+    delete process.env.OPENSESSION_SESSION_KERNEL_DB_PATH;
+  else process.env.OPENSESSION_SESSION_KERNEL_DB_PATH = previousDatabasePath;
   rmSync(stateDir, { recursive: true, force: true });
 });
 
@@ -98,6 +109,106 @@ describe("session kernel actor service", () => {
         rpcId: "immediate-worker-handshake",
         version: SESSION_KERNEL_ACTOR_VERSION,
       });
+    } finally {
+      worker.terminate();
+      if (previousToken === undefined)
+        delete process.env.OPENSESSION_SESSION_KERNEL_TOKEN;
+      else process.env.OPENSESSION_SESSION_KERNEL_TOKEN = previousToken;
+      if (previousUrl === undefined)
+        delete process.env.OPENSESSION_SESSION_KERNEL_URL;
+      else process.env.OPENSESSION_SESSION_KERNEL_URL = previousUrl;
+    }
+  });
+
+  test("settles outbox work asynchronously on its session lane", async () => {
+    const previousToken = process.env.OPENSESSION_SESSION_KERNEL_TOKEN;
+    const previousUrl = process.env.OPENSESSION_SESSION_KERNEL_URL;
+    process.env.OPENSESSION_SESSION_KERNEL_TOKEN = token;
+    process.env.OPENSESSION_SESSION_KERNEL_URL = service.url;
+    const worker = new Worker(
+      new URL("../../session-kernel-transport-worker.ts", import.meta.url),
+      { type: "module" },
+    );
+    try {
+      const send = (message: Record<string, unknown>) =>
+        new Promise<Record<string, any>>((resolve, reject) => {
+          const timeout = setTimeout(
+            () => reject(new Error(`transport request ${message.rpcId} timed out`)),
+            2_000,
+          );
+          const onMessage = (event: MessageEvent) => {
+            const response = event.data as Record<string, any>;
+            if (response.rpcId !== message.rpcId) return;
+            clearTimeout(timeout);
+            worker.removeEventListener("message", onMessage);
+            resolve(response);
+          };
+          worker.addEventListener("message", onMessage);
+          worker.postMessage(message);
+        });
+      const result = (response: Record<string, any>) => {
+        expect(response.t).toBe("call_result");
+        expect(response.body).toBeString();
+        return JSON.parse(response.body as string) as {
+          ok: boolean;
+          result?: unknown;
+          error?: string;
+        };
+      };
+      await send({
+        t: "hello",
+        rpcId: "async-settlement-hello",
+        version: SESSION_KERNEL_ACTOR_VERSION,
+      });
+      const sessionId = "async-outbox-settlement";
+      const enqueued = result(await send({
+        t: "store",
+        rpcId: "async-settlement-enqueue",
+        method: "enqueueOutbox",
+        args: [
+          sessionId,
+          "human_ask_deliver",
+          { askId: "ask-one", skipUi: false },
+          "deliver-one",
+        ],
+      }));
+      expect(enqueued.ok).toBe(true);
+      const id = Number(enqueued.result);
+
+      const wrongSession = result(await send({
+        t: "reduce",
+        rpcId: "async-settlement-wrong-session",
+        command: {
+          kind: "core",
+          commandId: crypto.randomUUID(),
+          request: { op: "ack_outbox", id, sessionId: "wrong-session" },
+        },
+      }));
+      expect(wrongSession).toMatchObject({
+        ok: false,
+        error: `Outbox ${id} crossed session ownership`,
+      });
+
+      const settled = result(await send({
+        t: "reduce",
+        rpcId: "async-settlement-correct-session",
+        command: {
+          kind: "core",
+          commandId: crypto.randomUUID(),
+          request: { op: "ack_outbox", id, sessionId },
+        },
+      }));
+      expect(settled.ok).toBe(true);
+
+      const pending = result(await send({
+        t: "store",
+        rpcId: "async-settlement-pending",
+        method: "pendingOutbox",
+        args: [Date.now(), 100, ["human_ask_deliver"]],
+      }));
+      expect(pending.ok).toBe(true);
+      expect((pending.result as Array<{ id: number }>).some((item) => item.id === id))
+        .toBe(false);
     } finally {
       worker.terminate();
       if (previousToken === undefined)
@@ -203,6 +314,508 @@ describe("session kernel actor service", () => {
       t: "error",
       error: "Invalid kernel actor response bound",
     });
+  });
+
+  test("returns the first committed mutation result when it exceeds the service buffer", async () => {
+    const sessionId = "large-service-dispatch";
+    const content = "x".repeat(9 * 1024 * 1024);
+    const seeded = await rpc({
+      t: "call",
+      rpcId: "seed-large-service-dispatch",
+      outputBytes: 256 * 1024,
+      request: {
+        t: "reduce",
+        command: {
+          kind: "delivery",
+          commandId: "seed-large-service-dispatch",
+          request: {
+            op: "set",
+            sessionId,
+            slot: "queued",
+            value: [{ id: "large", content }],
+          },
+        },
+      },
+    });
+    expect(seeded).toMatchObject({ t: "call_result", status: 1 });
+
+    const claimed = await rpc({
+      t: "call",
+      rpcId: "claim-large-service-dispatch",
+      outputBytes: 8 * 1024 * 1024,
+      request: {
+        t: "reduce",
+        command: {
+          kind: "delivery",
+          commandId: "claim-large-service-dispatch",
+          request: {
+            op: "claim_next_dispatch",
+            sessionId,
+            promptEntryId: "large-entry",
+          },
+        },
+      },
+    });
+    expect(claimed).toMatchObject({ t: "call_result", status: 1 });
+    expect(JSON.parse(claimed.body)).toMatchObject({
+      ok: true,
+      result: {
+        result: {
+          kind: "deliver",
+          promptEntryId: "large-entry",
+          items: [{ id: "large", content }],
+        },
+      },
+    });
+  });
+
+  test("a locked session database does not block another session mailbox", async () => {
+    for (const sessionId of ["locked-pool-session", "healthy-pool-session"]) {
+      const created = await rpc({
+        t: "call",
+        rpcId: `create-${sessionId}`,
+        outputBytes: 256 * 1024,
+        request: {
+          t: "store",
+          method: "setRunState",
+          args: [{ sessionId, state: "idle", event: "seed" }],
+        },
+      });
+      expect(created).toMatchObject({ t: "call_result", status: 1 });
+    }
+
+    const isolatedRoot = join(
+      stateDir,
+      "sessions",
+      "session-kernel-sessions",
+    );
+    const lockedPath = sessionKernelSessionDbPath(
+      "locked-pool-session",
+      isolatedRoot,
+    );
+    const healthyPath = sessionKernelSessionDbPath(
+      "healthy-pool-session",
+      isolatedRoot,
+    );
+    expect(lockedPath).not.toBe(healthyPath);
+    expect(existsSync(lockedPath)).toBe(true);
+    expect(existsSync(healthyPath)).toBe(true);
+
+    const lock = new Database(lockedPath);
+    lock.exec("PRAGMA busy_timeout = 50; BEGIN IMMEDIATE;");
+    try {
+      const blocked = rpc({
+        t: "call",
+        rpcId: "blocked-session-turn",
+        outputBytes: 256 * 1024,
+        request: {
+          t: "store",
+          method: "setRunState",
+          args: [{
+            sessionId: "locked-pool-session",
+            state: "running",
+            event: "blocked",
+            currentRunId: "locked-run",
+          }],
+        },
+      });
+      await Bun.sleep(50);
+
+      const startedAt = performance.now();
+      const healthy = await rpc({
+        t: "call",
+        rpcId: "healthy-session-turn",
+        outputBytes: 256 * 1024,
+        request: {
+          t: "store",
+          method: "setRunState",
+          args: [{
+            sessionId: "healthy-pool-session",
+            state: "running",
+            event: "healthy",
+            currentRunId: "healthy-run",
+          }],
+        },
+      });
+      expect(healthy).toMatchObject({ t: "call_result", status: 1 });
+      expect(performance.now() - startedAt).toBeLessThan(1_000);
+
+      lock.exec("COMMIT;");
+      expect(await blocked).toMatchObject({ t: "call_result", status: 1 });
+    } finally {
+      try {
+        lock.exec("ROLLBACK;");
+      } catch {}
+      lock.close();
+    }
+  });
+
+  test("Stop keeps reserved capacity and passes queued ordinary turns", async () => {
+    const sessionId = "priority-stop-session";
+    await rpc({
+      t: "call",
+      rpcId: "priority-seed",
+      outputBytes: 256 * 1024,
+      request: {
+        t: "store",
+        method: "setRunState",
+        args: [{ sessionId, state: "idle", event: "seed" }],
+      },
+    });
+    const isolatedRoot = join(stateDir, "sessions", "session-kernel-sessions");
+    const lock = new Database(sessionKernelSessionDbPath(sessionId, isolatedRoot));
+    lock.exec("PRAGMA busy_timeout = 50; BEGIN IMMEDIATE;");
+    try {
+      const blocked = rpc({
+        t: "call",
+        rpcId: "priority-blocker",
+        outputBytes: 256 * 1024,
+        request: {
+          t: "store",
+          method: "setRunState",
+          args: [{ sessionId, state: "running", event: "blocked" }],
+        },
+      });
+      await Bun.sleep(25);
+      const ordinary = rpc({
+        t: "call",
+        rpcId: "priority-ordinary",
+        outputBytes: 256 * 1024,
+        request: {
+          t: "reduce",
+          command: {
+            kind: "run_event",
+            commandId: "queued-ordinary",
+            decision: { sessionId, event: "prompt" },
+          },
+        },
+      }).then(() => "ordinary");
+      const stop = rpc({
+        t: "call",
+        rpcId: "priority-stop",
+        outputBytes: 256 * 1024,
+        request: {
+          t: "reduce",
+          command: {
+            kind: "turn",
+            commandId: "queued-stop",
+            request: {
+              op: "request_cancel_command",
+              sessionId,
+              requestId: "priority-stop-request",
+              fallbackRunId: null,
+            },
+          },
+        },
+      }).then(() => "stop");
+
+      await blocked;
+      expect(await Promise.race([ordinary, stop])).toBe("stop");
+      await Promise.all([ordinary, stop]);
+    } finally {
+      try {
+        lock.exec("ROLLBACK;");
+      } catch {}
+      lock.close();
+    }
+  });
+
+  test("a global barrier cannot deadlock a later priority turn", async () => {
+    const sessionId = "barrier-priority-session";
+    await rpc({
+      t: "call",
+      rpcId: "barrier-seed",
+      outputBytes: 256 * 1024,
+      request: {
+        t: "store",
+        method: "setRunState",
+        args: [{ sessionId, state: "idle", event: "seed" }],
+      },
+    });
+    const isolatedRoot = join(stateDir, "sessions", "session-kernel-sessions");
+    const lock = new Database(sessionKernelSessionDbPath(sessionId, isolatedRoot));
+    lock.exec("PRAGMA busy_timeout = 50; BEGIN IMMEDIATE;");
+    const order: string[] = [];
+    try {
+      const active = rpc({
+        t: "call",
+        rpcId: "barrier-active",
+        outputBytes: 256 * 1024,
+        request: {
+          t: "store",
+          method: "setRunState",
+          args: [{ sessionId, state: "idle", event: "active" }],
+        },
+      });
+      await Bun.sleep(25);
+      const ordinary = rpc({
+        t: "call",
+        rpcId: "barrier-ordinary",
+        outputBytes: 256 * 1024,
+        request: {
+          t: "store",
+          method: "setRunState",
+          args: [{ sessionId, state: "idle", event: "ordinary" }],
+        },
+      }).then(() => { order.push("ordinary"); });
+      const global = rpc({
+        t: "stats",
+        rpcId: "barrier-global",
+      }).then(() => { order.push("global"); });
+      const stop = rpc({
+        t: "call",
+        rpcId: "barrier-stop",
+        outputBytes: 256 * 1024,
+        request: {
+          t: "reduce",
+          command: {
+            kind: "turn",
+            commandId: "barrier-stop-command",
+            request: {
+              op: "request_cancel_command",
+              sessionId,
+              requestId: "barrier-stop-request",
+              fallbackRunId: null,
+            },
+          },
+        },
+      }).then(() => { order.push("stop"); });
+      await Bun.sleep(50);
+      lock.exec("COMMIT;");
+      await Promise.all([active, ordinary, global, stop]);
+      expect(order).toEqual(["ordinary", "global", "stop"]);
+    } finally {
+      try {
+        lock.exec("ROLLBACK;");
+      } catch {}
+      lock.close();
+    }
+  });
+
+  test("a global barrier fails fast while a session mailbox is wedged", async () => {
+    const sessionId = "barrier-timeout-session";
+    await rpc({
+      t: "call",
+      rpcId: "barrier-timeout-seed",
+      outputBytes: 256 * 1024,
+      request: {
+        t: "store",
+        method: "setRunState",
+        args: [{ sessionId, state: "idle", event: "seed" }],
+      },
+    });
+    const isolatedRoot = join(stateDir, "sessions", "session-kernel-sessions");
+    const lock = new Database(sessionKernelSessionDbPath(sessionId, isolatedRoot));
+    lock.exec("PRAGMA busy_timeout = 50; BEGIN IMMEDIATE;");
+    try {
+      const active = rpc({
+        t: "call",
+        rpcId: "barrier-timeout-active",
+        outputBytes: 256 * 1024,
+        request: {
+          t: "store",
+          method: "setRunState",
+          args: [{ sessionId, state: "idle", event: "active" }],
+        },
+      });
+      await Bun.sleep(25);
+      const startedAt = Date.now();
+      const response = await fetch(`${service.url}/rpc`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          version: SESSION_KERNEL_TRANSPORT_VERSION,
+          actorVersion: SESSION_KERNEL_ACTOR_VERSION,
+          serviceEpoch,
+          request: {
+            t: "runtime_work",
+            rpcId: "barrier-timeout-global",
+            now: Date.now(),
+            timerKinds: [],
+            effectKinds: [],
+            limit: 100,
+          },
+        }),
+      });
+      expect(response.status).toBe(429);
+      expect(Date.now() - startedAt).toBeLessThan(400);
+      expect(await response.json()).toMatchObject({
+        error: expect.stringContaining("global barrier timed out"),
+      });
+      lock.exec("COMMIT;");
+      expect(await active).toMatchObject({ t: "call_result", status: 1 });
+    } finally {
+      try {
+        lock.exec("ROLLBACK;");
+      } catch {}
+      lock.close();
+    }
+  });
+
+  test("priority bursts yield to an ordinary turn", async () => {
+    const sessionId = "priority-fairness-session";
+    await rpc({
+      t: "call",
+      rpcId: "fairness-seed",
+      outputBytes: 256 * 1024,
+      request: {
+        t: "store",
+        method: "setRunState",
+        args: [{ sessionId, state: "idle", event: "seed" }],
+      },
+    });
+    const isolatedRoot = join(stateDir, "sessions", "session-kernel-sessions");
+    const lock = new Database(sessionKernelSessionDbPath(sessionId, isolatedRoot));
+    lock.exec("PRAGMA busy_timeout = 50; BEGIN IMMEDIATE;");
+    const order: string[] = [];
+    try {
+      const active = rpc({
+        t: "call",
+        rpcId: "fairness-active",
+        outputBytes: 256 * 1024,
+        request: {
+          t: "store",
+          method: "setRunState",
+          args: [{ sessionId, state: "idle", event: "active" }],
+        },
+      });
+      await Bun.sleep(25);
+      const ordinary = rpc({
+        t: "call",
+        rpcId: "fairness-ordinary",
+        outputBytes: 256 * 1024,
+        request: {
+          t: "store",
+          method: "setRunState",
+          args: [{ sessionId, state: "idle", event: "ordinary" }],
+        },
+      }).then(() => { order.push("ordinary"); });
+      const priority = Array.from({ length: 8 }, (_, index) => rpc({
+        t: "call",
+        rpcId: `fairness-priority-${index}`,
+        outputBytes: 256 * 1024,
+        request: {
+          t: "reduce",
+          command: {
+            kind: "turn",
+            commandId: `fairness-command-${index}`,
+            request: {
+              op: "request_cancel_command",
+              sessionId,
+              requestId: `fairness-request-${index}`,
+              fallbackRunId: null,
+            },
+          },
+        },
+      }).then(() => { order.push(`priority-${index}`); }));
+      await Bun.sleep(50);
+      lock.exec("COMMIT;");
+      await Promise.all([active, ordinary, ...priority]);
+      expect(order.indexOf("ordinary")).toBe(4);
+    } finally {
+      try {
+        lock.exec("ROLLBACK;");
+      } catch {}
+      lock.close();
+    }
+  });
+
+  test("an ambiguous critical settlement quarantines only its session", async () => {
+    const sessionId = "ambiguous-critical-session";
+    const centralPath = join(stateDir, "sessions", "session-kernel.sqlite");
+    const seed = new Database(centralPath);
+    seed.run(`
+      INSERT INTO session_kernel_state
+        (session_id, run_state, run_since, last_event, generation, change_seq, updated_at)
+      VALUES (?, 'idle', ?, 'legacy-seed', 0, 0, ?)
+    `, [sessionId, new Date().toISOString(), Date.now()]);
+    seed.close();
+    await rpc({
+      t: "call",
+      rpcId: "critical-admit",
+      outputBytes: 256 * 1024,
+      request: {
+        t: "reduce",
+        command: {
+          kind: "gateway",
+          commandId: "critical-request-command",
+          request: {
+            op: "request",
+            sessionId,
+            requestId: "critical-request",
+            operation: "websocket_command",
+            identity: { command: "prompt" },
+          },
+        },
+      },
+    });
+    const lock = new Database(centralPath);
+    lock.exec("PRAGMA busy_timeout = 50; BEGIN IMMEDIATE;");
+    try {
+      const settlement = rpc({
+        t: "call",
+        rpcId: "critical-settlement",
+        outputBytes: 256 * 1024,
+        request: {
+          t: "reduce",
+          command: {
+            kind: "gateway",
+            commandId: "critical-complete-command",
+            request: {
+              op: "complete",
+              sessionId,
+              requestId: "critical-request",
+              operation: "websocket_command",
+              result: "done",
+            },
+          },
+        },
+      });
+      await Bun.sleep(25);
+      const retained = rpc({
+        t: "call",
+        rpcId: "critical-retained-turn",
+        outputBytes: 256 * 1024,
+        request: {
+          t: "reduce",
+          command: {
+            kind: "run_event",
+            commandId: "critical-retained-command",
+            decision: { sessionId, event: "prompt" },
+          },
+        },
+      });
+      await Bun.sleep(750);
+      lock.exec("COMMIT;");
+      const response = await settlement;
+      expect(response).toMatchObject({ t: "call_result", status: -1 });
+      expect(JSON.parse(response.body)).toMatchObject({
+        ok: false,
+        code: "session_quarantined",
+        sessionId,
+      });
+      const retainedResponse = await retained;
+      expect(retainedResponse).toMatchObject({ t: "call_result", status: -1 });
+      expect(JSON.parse(retainedResponse.body)).toMatchObject({
+        ok: false,
+        code: "session_quarantined",
+        sessionId,
+      });
+      const evidence = new Database(centralPath, { readonly: true });
+      expect(evidence.query(
+        "SELECT reason FROM session_kernel_quarantine WHERE session_id = ?",
+      ).get(sessionId)).toBeTruthy();
+      evidence.close();
+      expect((await fetch(`${service.url}/ready`)).status).toBe(200);
+    } finally {
+      try {
+        lock.exec("ROLLBACK;");
+      } catch {}
+      lock.close();
+    }
   });
 
   test("keeps reductions responsive while an executor owns physical work", async () => {

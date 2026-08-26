@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { createServer } from "node:net";
 import { listPortalServices, listSandboxPortalServices, readPortalRegistry, reapOrphanedPortalServices, SANDBOX_PORTAL_AGENT_ENTRY, setPortalPath, startPortalService, startSandboxPortalService, stopPortalService, stopSandboxPortalService } from "./portal-supervisor";
 import { sleepingSandboxPortalStatus } from "./sandbox-portals";
 import type { Sandbox } from "./sandbox/provider";
@@ -144,10 +145,14 @@ describe("session Portal supervisor", () => {
 	});
 
 	test("supervises and deduplicates a Portal through the Sandbox execution boundary", async () => {
-		const sandbox = sandboxFor(worktree, 18_702);
+		const port = await freePort();
+		const sandbox = sandboxFor(worktree, port);
 		const input = {
-			sessionId: "os-sandbox-portal-test", sandbox, name: "remote-app", port: 18_702,
-			command: "bun -e 'Bun.serve({port:Number(process.env.PORT),fetch(){return new Response(\"sandbox\")}})'",
+			sessionId: "os-sandbox-portal-test", sandbox, name: "remote-app", port,
+			// Absolute interpreter path: the sandbox launch line pins PATH to the
+			// real sandbox layout (/home/ubuntu/.bun/bin), which this host-executed
+			// fake does not have on CI — a bare `bun` exits before listening there.
+			command: `${process.execPath} -e 'Bun.serve({port:Number(process.env.PORT),fetch(){return new Response("sandbox")}})'`,
 		};
 		const [portal, duplicate] = await Promise.all([
 			startSandboxPortalService(input),
@@ -155,7 +160,7 @@ describe("session Portal supervisor", () => {
 		]);
 		expect(portal.state).toBe("awake");
 		expect(duplicate.pid).toBe(portal.pid);
-		expect(await (await fetch("http://127.0.0.1:18702")).text()).toBe("sandbox");
+		expect(await (await fetch(`http://127.0.0.1:${port}`)).text()).toBe("sandbox");
 		expect(existsSync(join(worktree, ".opensession-portal-remote-app.log"))).toBe(false);
 		expect((await listSandboxPortalServices(sandbox))[0]).toMatchObject({ name: "remote-app", state: "awake" });
 		expect(sleepingSandboxPortalStatus("os-sandbox-portal-test", sandbox.id)?.services).toEqual([
@@ -170,6 +175,21 @@ describe("session Portal supervisor", () => {
 });
 
 function PREFIX(record: unknown): string { return `# opensession-portal ${JSON.stringify(record)}`; }
+
+async function freePort(): Promise<number> {
+	for (let offset = 0; offset < 1_000; offset++) {
+		const port = 18_000 + ((process.pid + offset) % 1_000);
+		const server = createServer();
+		const available = await new Promise<boolean>((resolve) => {
+			server.once("error", () => resolve(false));
+			server.listen(port, "127.0.0.1", () => resolve(true));
+		});
+		if (!available) continue;
+		await new Promise<void>((resolve) => server.close(() => resolve()));
+		return port;
+	}
+	throw new Error("no free Portal test port");
+}
 
 function sandboxFor(cwd: string, port: number): Sandbox {
 	return {

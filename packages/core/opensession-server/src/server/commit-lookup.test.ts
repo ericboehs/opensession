@@ -17,10 +17,10 @@ let blobSha = "";
 // exports GIT_AUTHOR_NAME/GIT_COMMITTER_NAME, and those outrank the repo's
 // config, so a fixture that only writes config records whoever ran the test.
 const identity = {
-	GIT_AUTHOR_NAME: "Kent de Bruin",
-	GIT_AUTHOR_EMAIL: "kent@tella.com",
-	GIT_COMMITTER_NAME: "Kent de Bruin",
-	GIT_COMMITTER_EMAIL: "kent@tella.com",
+	GIT_AUTHOR_NAME: "Alex Example",
+	GIT_AUTHOR_EMAIL: "alex@example.com",
+	GIT_COMMITTER_NAME: "Alex Example",
+	GIT_COMMITTER_EMAIL: "alex@example.com",
 };
 
 async function git(...args: string[]): Promise<string> {
@@ -78,7 +78,7 @@ describe("readCommitAt", () => {
 		expect(commit!.sha).toBe(sha);
 		expect(commit!.title).toBe("Info panel: colour marks what wants you");
 		expect(commit!.body).toBe("The body, which the card shows under the title.");
-		expect(commit!.author).toBe("Kent de Bruin");
+		expect(commit!.author).toBe("Alex Example");
 		expect(commit!.repo).toBe("demo");
 		expect(commit!.url).toBe(`https://github.com/tellahq/demo/commit/${sha}`);
 		expect(commit!.committedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);

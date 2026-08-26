@@ -13,6 +13,7 @@ import {
 import { ClampedBody, EntryImages, EntryVideos } from "./MessageBubble";
 import { IconChevronDown, IconStack } from "./icons";
 import { cn } from "../ui/cn";
+import { Fold } from "../ui/fold";
 import { msgBody } from "../lib/msg-classes";
 import { formatDuration } from "../lib/time";
 import {
@@ -242,7 +243,7 @@ export const TurnBlock = function TurnBlock({
         )}
       </button>
 
-      {expanded && (
+      <Fold open={expanded}>
         <div
           className={cn(
             "mt-0.5",
@@ -293,7 +294,7 @@ export const TurnBlock = function TurnBlock({
             )
           )}
         </div>
-      )}
+      </Fold>
 
       {/* Aligned with the fold's own rows (see TurnMessage on the 7px). */}
       {(featured.images.length > 0 || featured.videos.length > 0) && (
@@ -473,7 +474,7 @@ function ToolRunBlock({
           <span className="size-[11px] flex-shrink-0 animate-spin rounded-full border border-b-line-strong border-l-line-strong border-r-line-strong border-t-dim" />
         )}
       </button>
-      {expanded && (
+      <Fold open={expanded}>
         <div className="ml-3">
           {items.map((entry) => (
             <ToolCallBlock
@@ -492,7 +493,7 @@ function ToolRunBlock({
             />
           ))}
         </div>
-      )}
+      </Fold>
     </div>
   );
 }

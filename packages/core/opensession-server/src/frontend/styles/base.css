@@ -1121,12 +1121,14 @@ body {
 }
 
 
-/* Text the user may legitimately want to select and copy: message rows and
-   their prose, names, system text, code, diffs, inputs. The row wrapper is
-   included on purpose — a drag has to be able to start in a bubble's padding
-   or the gutter beside it (see the transcript rule below) — and the highlight
-   still hugs the words because .msg and .msg-body are flex columns, which is
-   what stopped WebKit painting full-width bands across the gaps. */
+/* Text the user may legitimately want to select and copy: supporting copy,
+   message rows and their prose, names, system text, code, diffs, inputs. The
+   row wrapper is included on purpose — a drag has to be able to start in a
+   bubble's padding or the gutter beside it (see the transcript rule below) —
+   and the highlight still hugs the words because .msg and .msg-body are flex
+   columns, which is what stopped WebKit painting full-width bands across the
+   gaps. */
+.text-supporting,
 input,
 textarea,
 select,
@@ -1261,10 +1263,9 @@ a {
 		border-color: color-mix(in srgb, var(--composer-border) 35%, transparent);
 	}
 
-	/* Keep the installed phone composer focused on drafting and sending. The
-	   add menu remains available for images and session options; only model
-	   selection and dictation stay in the browser view. */
-	.app .pwa-composer-auxiliary {
+	/* Keep dictation in the browser view, where its recording APIs are reliable.
+	   The installed phone composer still shows model selection after it expands. */
+	.app .pwa-composer-dictation {
 		display: none;
 	}
 
@@ -2954,6 +2955,24 @@ html[data-theme="light"] span.commit-ref:hover {
    a media-scoped keyframe whose consumer is not scoped the same way animates
    nothing, silently. */
 @keyframes session-info-in {
+	from {
+		opacity: 0;
+		transform: translateY(8px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+/* A transcript block arriving at the live edge fades up into place instead of
+   popping. Applied one-shot via VirtualTranscriptList's `enter` flag (see
+   newTailBlockKeys): only blocks whose key was not mounted by the previous
+   build play it, so opening a session, hydrating history, and virtualizer
+   remounts never re-run it. Travel matches session-info-in; duration --dur
+   because a whole block arriving is anchored movement, not an in-place
+   change. prefers-reduced-motion freezes it in the global block above. */
+@keyframes transcript-enter {
 	from {
 		opacity: 0;
 		transform: translateY(8px);

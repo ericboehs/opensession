@@ -16,6 +16,8 @@ export interface ModelOption {
 	group?: string;
 	/** One-line subtitle shown under the label (dial presets). */
 	description?: string;
+	/** Concrete lead and supporting models participating in a preset. */
+	composition?: string[];
 	/** This model has subscription-backend priority-tier variants configured. */
 	fastModeSupported?: boolean;
 }

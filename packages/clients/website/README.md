@@ -19,9 +19,9 @@ bun run website:build  # production build
 3. Leave the detected framework and build settings as Next.js defaults.
 4. Deploy.
 
-The app serves `/`, `/setup`, and `/product-demo`. Compatibility rewrites keep
-`/setup.html` and `/product-demo.html` working for existing links and capture
-tooling.
+The app serves `/`, `/announcement`, `/setup`, and `/product-demo`.
+Compatibility rewrites keep `/setup.html` and `/product-demo.html` working for
+existing links and capture tooling.
 
 The hero uses animated background artwork from Tella. Before importing the
 production app, the iframe replaces `fetch`, `WebSocket`, and `EventSource` with

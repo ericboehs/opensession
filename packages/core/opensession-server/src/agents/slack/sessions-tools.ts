@@ -680,14 +680,14 @@ export function createSessionsMcpServer(
           const current = getSessionControl().getSession(sessionId);
           const result =
             args.kind === "timer"
-              ? registerTimerAgentWait({
+              ? await registerTimerAgentWait({
                   sessionId,
                   user: ctx.createdBy,
                   seconds: args.seconds ?? Number.NaN,
                   prompt: args.prompt,
                   waitId,
                 })
-              : registerPrChecksAgentWait({
+              : await registerPrChecksAgentWait({
                   sessionId,
                   user: ctx.createdBy,
                   repo: args.repo || current?.repo || "",
@@ -738,7 +738,7 @@ export function createSessionsMcpServer(
         async () => {
           const sessionId = ctx.currentSessionId;
           if (!sessionId) return text("This run has no Open Session id.");
-          const cancelled = cancelAgentWait(sessionId);
+          const cancelled = await cancelAgentWait(sessionId);
           if (cancelled)
             audit({ msg: "agent_wait_cancelled", session_id: sessionId });
           return text(
@@ -1047,7 +1047,7 @@ export function createSessionsMcpServer(
               );
             }
           } catch {}
-          const res = migrateSessionEngine(args.sessionId, args.model, ctx.createdBy);
+          const res = await migrateSessionEngine(args.sessionId, args.model, ctx.createdBy);
           if (!res.ok) return text(res.error);
           return text(
             `Migrated \`${res.sessionId}\` to ${res.to}` +

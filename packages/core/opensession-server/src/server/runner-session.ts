@@ -183,7 +183,7 @@ export async function maybeLaunchRunnerRun(
 			launchState.phase === "rejected" ? "prepared" : launchState.phase,
 		startedAt: priorRun?.startedAt ?? new Date().toISOString(),
 	};
-	journalSet(run);
+	await journalSet(run);
 	registerRunToken(rpcToken, { sessionId: session.id, user: opts.user });
 	registerRunWsHost(hostId, wsToken);
 	const hostSpecs = new Map<string, RunHostSpec>([[hostId, spec]]);
@@ -231,13 +231,13 @@ export async function maybeLaunchRunnerRun(
 			launchState = { ...launchState, phase: "launching" };
 			writeJsonAtomic(launchStatePath, launchState);
 			run = { ...run, launchPhase: "launching" };
-			journalSet(run);
+			await journalSet(run);
 			await launcher.launch(hostId, hostDir);
       if (opts.shouldCancel?.()) handle.requestCancel();
 			launchState = { ...launchState, phase: "started" };
 			writeJsonAtomic(launchStatePath, launchState);
 			run = { ...run, launchPhase: "started" };
-			journalSet(run);
+			await journalSet(run);
 		} else {
 			const alive =
 				runnerHostAlive(hostId) &&
@@ -256,7 +256,7 @@ export async function maybeLaunchRunnerRun(
 				launchState = { ...launchState, phase: "started" };
 				writeJsonAtomic(launchStatePath, launchState);
 				run = { ...run, launchPhase: "started" };
-				journalSet(run);
+				await journalSet(run);
 			}
 		}
 		await handle.connectWithWait(20_000);
@@ -273,7 +273,7 @@ export async function maybeLaunchRunnerRun(
 				sourceCompleted = true;
 			} finally {
         if (sourceCompleted && sawTerminal) journalClear(run.runKey);
-				else if (sourceCompleted) journalRecordAbnormalCompletion(run);
+				else if (sourceCompleted) await journalRecordAbnormalCompletion(run);
 				setRunnerWorkload(runner.id, undefined, session.id);
 			}
 		})() as RunnerEvents;

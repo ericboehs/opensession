@@ -5,6 +5,7 @@ import { Modal } from "../ui/modal";
 import { Popover } from "../ui/popover";
 import { Segmented, SegmentedOption } from "../ui/segmented";
 import { Switch } from "../ui/switch";
+import { Menu } from "../ui/menu";
 import { cn } from "../ui/cn";
 import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
 import { Spinner } from "../ui/spinner";
@@ -16,10 +17,16 @@ import {
 	SettingRowTitle,
 	SettingsGroupLabel,
 	SettingsHint,
+	rowMenuTriggerClasses,
 	settingsInputClass,
 } from "../ui/settings";
 import { toast } from "../ui/toast";
-import { IconArrowUpToLine, IconPlus } from "./icons";
+import {
+	IconArrowUpToLine,
+	IconBranches,
+	IconDotsHorizontal,
+	IconPlus,
+} from "./icons";
 import { RepoTile } from "./RepoTile";
 import { REPO_TILE_COLORS, REPO_TILE_INK, repoColor, repoIconFill } from "../lib/repo-colors";
 import { repoLetter } from "../lib/repo-label";
@@ -98,7 +105,7 @@ export function ReposSection({
 				// step, where the label needs no space above it. On the settings
 				// page it follows the default-repository card and keeps the
 				// group's own mt-9, which is what separates the two.
-				className="first:mt-0"
+				className={cn("first:mt-0", compact && "text-body text-fg/65")}
 				actions={
 					<Button
 						size="sm"
@@ -176,12 +183,20 @@ export function ReposSection({
 								{showLifecycleStatus && (
 									<StateChip tone={lifecycle.tone} label={lifecycle.label} />
 								)}
+								{/* Same ⋯ menu as the settings page: a compact row is still a
+								    repo someone may need to repoint or re-mode. */}
+								<RepoActionsMenu
+									repo={repo}
+									appearance={appearance.get(repo.id)}
+									onChanged={onChanged}
+									onRepoUpdated={onRepoUpdated}
+								/>
 							</SettingRow>
 						);
 					})
 				)}
 			</SettingCard>
-			<SettingsHint>
+			<SettingsHint className={compact ? "text-fg/55" : undefined}>
 				Remote repositories are cloned onto the server. Local folders stay where
 				they are. Code sessions use isolated worktrees by default. New repos are
 				usable right away with no restart. Commit <code>.agents/</code> scripts to
@@ -208,6 +223,57 @@ function RepositoryRow({
 	) => void;
 }) {
 	const lifecycle = repoLifecycleState(repo);
+
+	return (
+		<SettingRow className="items-start">
+			<RepoTileButton
+				repo={appearance}
+				id={repo.id}
+				onChanged={onAppearanceChanged}
+			/>
+			<SettingRowText>
+				<div className="flex items-center justify-between gap-2">
+					<SettingRowTitle className="min-w-0 truncate">{repo.label}</SettingRowTitle>
+					<span className="hidden shrink-0 phone:inline-flex">
+						<StateChip tone={lifecycle.tone} label={lifecycle.label} />
+					</span>
+				</div>
+				<SettingRowDescription className="truncate font-mono text-meta">
+					{repo.path}
+				</SettingRowDescription>
+			</SettingRowText>
+			<div className="flex shrink-0 items-center gap-2">
+				<span className="phone:hidden">
+					<StateChip tone={lifecycle.tone} label={lifecycle.label} />
+				</span>
+				<RepoActionsMenu
+					repo={repo}
+					appearance={appearance}
+					onChanged={onChanged}
+					onRepoUpdated={onRepoUpdated}
+				/>
+			</div>
+		</SettingRow>
+	);
+}
+
+/** A repo row's ⋯ menu and its consequences: the default-branch dialog and
+ *  the isolated-worktrees toggle. Shared by the settings page's full row and
+ *  the wizard's compact rows, so both surfaces manage a repo identically. */
+function RepoActionsMenu({
+	repo,
+	appearance,
+	onChanged,
+	onRepoUpdated,
+}: {
+	repo: SetupStatus["repos"][number];
+	appearance: RepoInfo | undefined;
+	onChanged: () => void | Promise<void>;
+	onRepoUpdated?: (
+		updated: Pick<SetupRepo, "id"> &
+			Partial<Pick<SetupRepo, "defaultBranch" | "isolatedWorktrees">>,
+	) => void;
+}) {
 	// A hot frontend rebuild can briefly run against the prior setup-status
 	// payload, which omitted defaultBranch. The repository payload already had
 	// it, so use that as the compatibility fallback instead of crashing while
@@ -217,12 +283,11 @@ function RepositoryRow({
 	const [isolatedWorktrees, setIsolatedWorktrees] = useState(
 		repo.isolatedWorktrees,
 	);
+	const [branchDialogOpen, setBranchDialogOpen] = useState(false);
 	const [saving, setSaving] = useState<"branch" | "worktrees" | null>(null);
 	const [branchError, setBranchError] = useState<string | null>(null);
-	const [worktreeError, setWorktreeError] = useState<string | null>(null);
 	const branchErrorId = useId();
-	const worktreeErrorId = useId();
-	const worktreeDescriptionId = useId();
+	const branchInputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
 		setBranch(defaultBranch);
@@ -250,6 +315,7 @@ const updated = await setupRequest<{
 			setBranch(updated.defaultBranch);
 			if (onRepoUpdated) onRepoUpdated(updated);
 			else await onChanged();
+			setBranchDialogOpen(false);
 			toast(`${repo.label} default branch updated`);
 })().catch(async (e: any) => {
 setBranchError(e.message);
@@ -263,7 +329,6 @@ setSaving(null);
 		const previous = isolatedWorktrees;
 		setIsolatedWorktrees(next);
 		setSaving("worktrees");
-		setWorktreeError(null);
 		await (async () => {
 const updated = await setupRequest<{
 				id: string;
@@ -279,80 +344,114 @@ const updated = await setupRequest<{
 			toast(`${repo.label} worktree setting updated`);
 })().catch(async (e: any) => {
 setIsolatedWorktrees(previous);
-			setWorktreeError(e.message);
+			// No row of its own to paint an inline alert on anymore: this menu
+			// serves both the settings row and the wizard's compact rows, so
+			// failures surface app-wide instead.
+			toast(e.message, { variant: "error" });
 }).finally(async () => {
 setSaving(null);
 });
 	}
 
+	function openBranchDialog() {
+		setBranch(defaultBranch);
+		setBranchError(null);
+		setBranchDialogOpen(true);
+	}
+
 	return (
-		<SettingRow className="items-start">
-			<RepoTileButton
-				repo={appearance}
-				id={repo.id}
-				onChanged={onAppearanceChanged}
-			/>
-			<SettingRowText>
-				<SettingRowTitle>{repo.label}</SettingRowTitle>
-				<SettingRowDescription className="truncate font-mono text-meta">
-					{repo.path}
-				</SettingRowDescription>
-				<form className="mt-2 flex flex-wrap items-end gap-2" onSubmit={saveBranch}>
-					<Field label="Default branch" className="w-44">
-						<Input
-							className="font-mono"
-							value={branch}
-							onChange={(event) => {
-								setBranch(event.target.value);
-								setBranchError(null);
-							}}
-							disabled={!!saving}
-							aria-invalid={!!branchError}
-							aria-describedby={branchError ? branchErrorId : undefined}
-							autoCapitalize="none"
-							autoCorrect="off"
-							spellCheck={false}
-						/>
-					</Field>
-					<Button
-						type="submit"
-						size="sm"
-						disabled={!normalized || !changed || !!saving}
-					>
-						{saving === "branch" ? "Saving…" : "Save"}
-					</Button>
-				</form>
-				{branchError && (
-					<InlineAlert id={branchErrorId} className="mt-1.5">
-						{branchError}
-					</InlineAlert>
-				)}
-				<div className="mt-3 grid min-h-11 max-w-[36rem] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 py-1 phone:-ml-11 phone:max-w-[calc(100%+2.75rem)]">
-					<span className="min-w-0 text-label font-medium text-fg">
-						Use isolated worktrees
-					</span>
-					<Switch
-						aria-label={`Use isolated worktrees for ${repo.label}`}
-						aria-describedby={`${worktreeDescriptionId}${worktreeError ? ` ${worktreeErrorId}` : ""}`}
+		<>
+			<Menu.Root>
+				<Menu.Trigger
+					className={rowMenuTriggerClasses}
+					aria-label={`Manage ${repo.label}`}
+				>
+					<IconDotsHorizontal size={18} />
+				</Menu.Trigger>
+				<Menu.Popup align="end" sideOffset={4}>
+					<Menu.Item onClick={openBranchDialog}>
+						<IconBranches size={17} className="text-dim" />
+						<span className="min-w-0 flex-1 truncate">Default branch</span>
+						<Menu.Shortcut className="max-w-28 truncate font-mono">
+							{defaultBranch}
+						</Menu.Shortcut>
+					</Menu.Item>
+					<Menu.Separator />
+					<Menu.CheckboxItem
 						checked={isolatedWorktrees}
 						disabled={!!saving}
 						onCheckedChange={(next) => void saveWorktreeMode(next)}
-					/>
-					<span
-						id={worktreeDescriptionId}
-						className="col-span-2 text-meta text-dim"
+						closeOnClick
 					>
-						Give new code sessions a separate worktree. Existing sessions stay put.
-					</span>
-				</div>
-				{worktreeError && (
-					<InlineAlert id={worktreeErrorId} className="mt-1.5">
-						{worktreeError}
-					</InlineAlert>
-				)}
-			</SettingRowText>
-			<StateChip tone={lifecycle.tone} label={lifecycle.label} />
-		</SettingRow>
+						<span className="min-w-0 flex-1 truncate">Use isolated worktrees</span>
+						<Menu.Check on={isolatedWorktrees} />
+					</Menu.CheckboxItem>
+				</Menu.Popup>
+			</Menu.Root>
+			<Modal.Root
+				open={branchDialogOpen}
+				onOpenChange={(open) => {
+					if (saving === "branch") return;
+					setBranchDialogOpen(open);
+					if (!open) {
+						setBranch(defaultBranch);
+						setBranchError(null);
+					}
+				}}
+				disablePointerDismissal={saving === "branch"}
+			>
+				<Modal.Content initialFocus={branchInputRef}>
+					<form className="flex flex-col gap-4" onSubmit={saveBranch}>
+						<Modal.Header
+							title={
+								<span className="flex items-center gap-2.5">
+									<RepoTile name={repo.id} size={28} />
+									<span className="min-w-0 truncate">Default branch</span>
+								</span>
+							}
+							description={`Choose the branch new sessions use for ${repo.label}.`}
+						/>
+						<Field label="Branch">
+							<Input
+								ref={branchInputRef}
+								className="font-mono phone:min-h-11 phone:text-input-phone"
+								value={branch}
+								onChange={(event) => {
+									setBranch(event.target.value);
+									setBranchError(null);
+								}}
+								disabled={saving === "branch"}
+								aria-invalid={!!branchError}
+								aria-describedby={branchError ? branchErrorId : undefined}
+								autoCapitalize="none"
+								autoCorrect="off"
+								spellCheck={false}
+							/>
+						</Field>
+						{branchError && <InlineAlert id={branchErrorId}>{branchError}</InlineAlert>}
+						<Modal.Footer>
+							<Button
+								type="button"
+								variant="ghost"
+								className="phone:min-h-11"
+								disabled={saving === "branch"}
+								onClick={() => setBranchDialogOpen(false)}
+							>
+								Cancel
+							</Button>
+							<Button
+								type="submit"
+								variant="primary"
+								className="phone:min-h-11"
+								disabled={!normalized || !changed || !!saving}
+							>
+								{saving === "branch" ? "Saving…" : "Save"}
+							</Button>
+						</Modal.Footer>
+					</form>
+				</Modal.Content>
+			</Modal.Root>
+		</>
 	);
 }
 
@@ -580,8 +679,10 @@ function LetterTile({ id, color }: { id: string; color?: string }) {
 }
 
 interface BrowseResult {
-	source: "user" | "bot" | null;
+	source: "user" | "app" | null;
 	repos: BrowseRepo[];
+	appConfigured?: boolean;
+	appInstallUrl?: string | null;
 }
 
 /** GET /api/setup/codestorage/repos — `source: null` when the code.storage
@@ -905,8 +1006,9 @@ function RemoteRepoPicker({
 						)}
 					</div>
 					<div className="mt-2 text-meta text-faint">
-						Browsing as the {browse.source === "user" ? "connected account" : "bot"}.
-						Only repos that credential can reach are listed.
+						Browsing the{
+							browse.source === "user" ? " connected account" : " GitHub App installation"
+						}. Only repos that credential can reach are listed.
 					</div>
 				</>
 			) : (
@@ -914,6 +1016,12 @@ function RemoteRepoPicker({
 					<div className="text-supporting leading-relaxed text-dim">
 						{browseFailed ? (
 							<>Couldn&rsquo;t load the GitHub repo list right now.</>
+						) : browse?.appConfigured ? (
+							<>
+								The GitHub App installation isn&rsquo;t available yet. Check that
+								Installation owner matches the account where the App is installed,
+								then reopen this window.
+							</>
 						) : (
 							<>
 								No GitHub credential yet, so the repo list can&rsquo;t be browsed.
@@ -924,6 +1032,17 @@ function RemoteRepoPicker({
 						)}{" "}
 						You can still register a repo by name:
 					</div>
+					{browse?.appConfigured && browse.appInstallUrl && (
+						<Button
+							className="mt-2.5"
+							variant="primary"
+							render={
+								<a href={browse.appInstallUrl} target="_blank" rel="noreferrer" />
+							}
+						>
+							Install GitHub App
+						</Button>
+					)}
 					<div className="mt-2.5 flex items-center gap-2">
 						<input
 							ref={inputRef}

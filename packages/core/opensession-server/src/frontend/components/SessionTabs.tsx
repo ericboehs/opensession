@@ -3,14 +3,12 @@ import { useShortcutLabel } from "../hooks/useShortcutBindings";
 import { Reorder, useReducedMotion } from "motion/react";
 import type { UnifiedSession } from "../lib/types";
 import { TAB_COLORS, colorHex } from "../lib/tab-colors";
-import { hasDraft, onDraftsChanged } from "../lib/drafts";
 import { Menu, ContextMenu } from "../ui/menu";
 import { sessionPath, absoluteLink, copyToClipboard } from "../lib/share-link";
 import { copySessionTranscript } from "../lib/transcript-copy";
 import {
 	IconChevronRight,
 	IconHistory,
-	IconPencil,
 	IconPlus,
 	IconX,
 } from "./icons";
@@ -20,7 +18,6 @@ import { UserAvatar } from "./UserAvatar";
 import {
 	PANEL_TAB_DOT,
 	TAB_ACTIONS,
-	TAB_DRAFT,
 	TAB_DROP_SLOT,
 	TAB_FACE,
 	TAB_FACES,
@@ -48,6 +45,7 @@ import {
 	animateEmptyTabOpen,
 } from "./session-tabs/empty-tab-morph";
 import { useTabReorder } from "./session-tabs/useTabReorder";
+import { SessionDraftIndicator } from "./session-tabs/SessionDraftIndicator";
 import { shouldShowTabStrip } from "../lib/split-tabs";
 
 /**
@@ -293,10 +291,6 @@ export function SessionTabs({
 	const reducedMotion = useReducedMotion();
 	const [editKey, setEditKey] = useState<string | null>(null);
 	const [draft, setDraft] = useState("");
-	// Re-render when a composer draft appears/disappears — tabs check hasDraft()
-	// during render to show the unsent-draft pencil on sibling sessions.
-	const [, setDraftsRev] = useState(0);
-	useEffect(() => onDraftsChanged(() => setDraftsRev((v) => v + 1)), []);
 	// On phones the +/history controls ride INSIDE the scroll (see below) so the
 	// tab strip claims the full width instead of losing it to pinned chrome; on
 	// desktop they stay pinned after the last tab. Icons run a touch bigger on
@@ -678,11 +672,7 @@ export function SessionTabs({
 										})()}
 										{/* Unsent draft in a sibling session (the active tab's draft is
 							    already on screen in the composer — no pencil needed). */}
-										{key !== activeId && hasDraft(`session:${key}`) && (
-											<span className={TAB_DRAFT} title="Unsent draft">
-												<IconPencil size={16} dense />
-											</span>
-										)}
+										{key !== activeId && <SessionDraftIndicator sessionId={key} />}
 										<button
 											type="button"
 											className={tabCloseClass(isPhone)}

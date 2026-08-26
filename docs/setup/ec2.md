@@ -334,14 +334,18 @@ registered webhook URLs, must be updated unless you use stable addressing.
 
 ### Stable private and public addresses
 
-**For the private UI, use Tailscale.** Its tailnet address survives EC2
-stop/start and is not public. If the UI is all you need, you do not need an
-Elastic IP. See [networking.md](networking.md).
+**For the private UI, use a private or identity-gated access path.** Tailscale
+is the simplest built-in option: its tailnet address survives EC2 stop/start and
+is not public. An identity-gated Cloudflare Tunnel can also keep Open Session on
+loopback, but a bare Tunnel hostname is public and is not sufficient. If the UI
+is all you need, you do not need an Elastic IP. See
+[networking.md](networking.md).
 
-**For public ingress, prefer Tailscale Funnel or Cloudflare Tunnel.** Both give
-webhooks and remote Sandbox callbacks a stable HTTPS origin without an Elastic
-IP or inbound security-group rule. Configure them in Settings → Public ingress
-as described in [networking.md](networking.md#public-ingress-is-separate).
+**For public callbacks without inbound ports, use Tailscale Funnel or Cloudflare
+Tunnel.** Both give webhooks and remote Sandbox callbacks a stable HTTPS origin
+without an Elastic IP or inbound security-group rule. Configure them in
+**Settings → Domains and ingress → Public callbacks** as described in
+[networking.md](networking.md#public-ingress-is-separate).
 
 An **Elastic IP** is useful only when you choose the custom-domain/Caddy path
 and point public DNS directly at this instance:
@@ -366,9 +370,10 @@ aws ec2 authorize-security-group-ingress --group-id "$SG" --ip-permissions \
   '[{"IpProtocol":"tcp","FromPort":80,"ToPort":80,"IpRanges":[{"CidrIp":"0.0.0.0/0"}]},{"IpProtocol":"tcp","FromPort":443,"ToPort":443,"IpRanges":[{"CidrIp":"0.0.0.0/0"}]}]'
 ```
 
-Choose Custom domain in Settings → Public ingress. Caddy proxies those public
-ports to loopback 3860; never open 3850 or 3860 directly. The full requirements
-are in [networking.md](networking.md#custom-domain-with-caddy).
+Choose Direct HTTPS with Caddy in **Settings → Domains and ingress → Public
+callbacks**. Caddy proxies those public ports to loopback 3860; never open 3850
+or 3860 directly. The full requirements
+are in [networking.md](networking.md#direct-https-with-caddy).
 
 Public IPv4 addresses currently cost about $0.005/hour (~$3.60/month), attached
 or not. An Elastic IP survives instance termination and keeps billing until you

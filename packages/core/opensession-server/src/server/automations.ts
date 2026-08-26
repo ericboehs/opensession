@@ -843,12 +843,30 @@ export function selfImproveMcpForSession(
   return selfImproveMcpServers(a, sessionId);
 }
 
+/** Servers every automation run receives, including fail-closed run-rpc
+ * recovery after the owning server process has unwound. Keep this list at the
+ * automation-safe bar: no customer data, identity mutation, or run control. */
+export function automationBaselineMcpServers(
+  a: Pick<Automation, "id" | "name">,
+  sessionId: string
+): Record<string, unknown> {
+  return {
+    "opensession-report": createReportMcpServer({
+      automationId: a.id,
+      automationName: a.name,
+      sessionId,
+    }),
+    "opensession-turn": createTurnMcpServer({ turnKey: sessionId }),
+    "opensession-health": createHealthMcpServer(),
+    "opensession-audit": createAuditMcpServer(),
+  };
+}
+
 /** The automation-bar servers rebuilt for run-rpc's FALLBACK path. A real
  *  restart mid-run wipes the per-run registration (globalThis parking only
  *  survives hot reloads) while the reattached engine turn keeps calling its
- *  stdio proxies — so rebuild opensession-report (every run) and
- *  opensession-workflows (human-set `workflows` flag only) from the automation
- *  record, exactly the set runAutomation registers at dispatch. Never the
+ *  stdio proxies — so rebuild the baseline set and opensession-workflows
+ *  (human-set `workflows` flag only) from the automation record. Never the
  *  admin/sessions siblings. */
 export function automationRunMcpForSession(
   session: { automation?: string; worktreeDir?: string | null },
@@ -857,13 +875,7 @@ export function automationRunMcpForSession(
   if (!session.automation) return undefined;
   const a = listAutomations().find((x) => x.name === session.automation);
   if (!a) return undefined;
-  const servers: Record<string, unknown> = {
-    "opensession-report": createReportMcpServer({
-      automationId: a.id,
-      automationName: a.name,
-      sessionId,
-    }),
-  };
+  const servers = automationBaselineMcpServers(a, sessionId);
   if (a.workflows) {
     const cwd = session.worktreeDir || getRepo(a.repo).repo;
     servers["opensession-workflows"] = createWorkflowsMcpServer({
@@ -903,11 +915,7 @@ function automationRunInProcessMcp(
   }
 ): Record<string, unknown> {
   return {
-    "opensession-report": createReportMcpServer({
-      automationId: a.id,
-      automationName: a.name,
-      sessionId,
-    }),
+    ...automationBaselineMcpServers(a, sessionId),
     ...(papercutsEnabledForRepo(ctx.repoId)
       ? {
           "opensession-papercuts": createPapercutsMcpServer({
@@ -935,25 +943,6 @@ function automationRunInProcessMcp(
         }
       : {}),
     ...(a.selfImprove ? selfImproveMcpServers(a, sessionId) : {}),
-    // Held to the same bar as opensession-papercuts: append-only, reads
-    // nothing, controls nothing. It only lets an unattended run say "I
-    // looked and there was nothing to report" instead of ending on silence
-    // that reads exactly like an early stop (src/server/turn-outcome.ts).
-    "opensession-turn": createTurnMcpServer({ turnKey: sessionId }),
-    // Same bar again: one argument-less read of aggregate host counters, no
-    // path/url/command to steer and nothing to escalate with. It is here
-    // because a monitor cannot watch the box any other way — web-fetch.ts
-    // refuses loopback, and an unattended ask run has no shell on either
-    // engine (src/server/health-mcp.ts).
-    "opensession-health": createHealthMcpServer(),
-    // And once more: one read of a single day's rolled-up audit log, whose
-    // only argument is a date validated as YYYY-MM-DD before it becomes a
-    // filename component. Nothing to steer, nothing to escalate with. Here
-    // for the same reason as its neighbour, and it is the nightly reflection
-    // that cannot read the log any other way: web-fetch.ts refuses loopback,
-    // and Pi's ask tools are sandboxed to the session workspace, so
-    // ~/.opensession-audit is unreachable (src/server/audit-mcp.ts).
-    "opensession-audit": createAuditMcpServer(),
   };
 }
 

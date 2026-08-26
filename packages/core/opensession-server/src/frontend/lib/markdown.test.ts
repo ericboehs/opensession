@@ -1169,7 +1169,7 @@ describe("renderMarkdown @-mentions", () => {
     // An email address, another service's handle, quoted CSS, a name nobody
     // has. Turning any of these into a person invents a teammate.
     for (const src of [
-      "mail me@tella.com",
+      "mail me@example.com",
       "@media (hover: hover)",
       "@nobody here",
       "`@Kent` in code",
@@ -1178,9 +1178,9 @@ describe("renderMarkdown @-mentions", () => {
   });
 
   it("still links an email while chipping a real mention beside it", () => {
-    const html = renderMarkdown("mail kent@tella.com and tag @Kent");
+    const html = renderMarkdown("mail alex@example.com and tag @Kent");
     expect(persons(html)).toEqual(["Kent"]);
-    expect(html).toContain('href="mailto:kent@tella.com"');
+    expect(html).toContain('href="mailto:alex@example.com"');
   });
 
   it("mentions nobody once the roster is empty", () => {

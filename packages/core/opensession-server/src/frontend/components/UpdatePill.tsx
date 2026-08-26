@@ -164,7 +164,7 @@ export function UpdatePill({ addHandler, variant = "card" }: Props) {
         // exempts rounded-full from its generic squircle rule.
         className={
           "inline-flex h-7 shrink-0 items-center rounded-full [corner-shape:squircle] px-[13px] " +
-          "cursor-pointer border-none bg-red text-label font-semibold leading-none text-white transition-[background] duration-[var(--dur-micro)] ease-[var(--ease)] hover:bg-[color-mix(in_srgb,var(--red)_85%,black)] disabled:cursor-wait disabled:opacity-75 " +
+          "cursor-pointer border-none bg-accent text-label font-semibold leading-none text-on-accent transition-[background] duration-[var(--dur-micro)] ease-[var(--ease)] hover:bg-accent-hover disabled:cursor-wait disabled:opacity-75 " +
           "animate-[update-toast-in_var(--dur-lg)_var(--ease)] motion-reduce:animate-none " +
           // Phone: keep the visible pill compact while a pseudo-element grows
           // its tap target to the full 44px header row.
@@ -186,13 +186,15 @@ export function UpdatePill({ addHandler, variant = "card" }: Props) {
               : `A new update is available${by ? ` (${by})` : ""}. Tap to refresh.`
         }
       >
-        {refreshing
-          ? restart
-            ? "Restarting…"
-            : "Refreshing…"
-          : forced
-            ? `Update ${secondsLeft}s`
-            : "Update"}
+        <span className="[text-box:trim-both_cap_alphabetic]">
+          {refreshing
+            ? restart
+              ? "Restarting…"
+              : "Refreshing…"
+            : forced
+              ? `Update ${secondsLeft}s`
+              : "Update"}
+        </span>
       </button>
     );
   }
@@ -219,11 +221,11 @@ export function UpdatePill({ addHandler, variant = "card" }: Props) {
       </div>
       <div className="flex shrink-0 items-center gap-1">
         <button
-          className={"inline-flex h-7 items-center rounded-control px-3 cursor-pointer border-none bg-red text-supporting font-semibold leading-none text-white transition-[background] duration-[var(--dur-micro)] ease-[var(--ease)] hover:bg-[color-mix(in_srgb,var(--red)_85%,black)] disabled:cursor-wait disabled:opacity-75"}
+          className={"inline-flex h-7 items-center rounded-control px-3 cursor-pointer border-none bg-accent text-supporting font-semibold leading-none text-on-accent transition-[background] duration-[var(--dur-micro)] ease-[var(--ease)] hover:bg-accent-hover disabled:cursor-wait disabled:opacity-75"}
           onClick={refresh}
           disabled={refreshing}
         >
-          {action}
+          <span className="[text-box:trim-both_cap_alphabetic]">{action}</span>
         </button>
       </div>
     </div>

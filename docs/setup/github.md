@@ -89,9 +89,9 @@ rewritten to HTTPS for that process so host keys cannot bypass the App.
 ## Webhook intake
 
 The fail-closed public ingress gateway listens on `127.0.0.1:3860`. Choose
-Tailscale Funnel, Cloudflare Tunnel, or a Caddy-managed custom domain under
-Settings → Public ingress. Never route the private app port through that public
-origin.
+Tailscale Funnel, Cloudflare Tunnel, or Direct HTTPS with Caddy under
+**Settings → Domains and ingress → Public callbacks**. Never route the private
+app port through that public origin.
 
 - Route: `POST /github/webhook` (registered by the GitHub agent,
   `packages/core/opensession-server/src/agents/github/index.ts`). For an existing Slack-only deployment with

@@ -17,6 +17,10 @@ import {
 	readWorkflowJournal,
 } from "../workflow-store";
 import { cancelWorkflow } from "../workflow-runner";
+import {
+	findPiNativeTranscript,
+	readPiNativeTranscript,
+} from "../pi-native-transcript";
 
 // Boot pass: flip any run.json still "running" with no live worker to
 // "interrupted" (the orchestration state died with the previous process).
@@ -76,6 +80,42 @@ export async function handleWorkflowsRoutes(
 					{ status: 404 },
 				);
 			return Response.json(entry);
+		}
+	}
+
+	// One agent's full conversation — the drill-in. Workflow agents run
+	// WITHOUT an owning Open Session session, so their pi conversation is never
+	// in transcripts.db; the native session jsonl is the only record. Removed
+	// alongside the retired opencode engine (6b6bcfd2d) and restored here
+	// against pi after the drill-in started 404-ing into "No conversation
+	// recorded for this agent".
+	{
+		const m = path.match(
+			/^\/api\/workflows\/([^/]+)\/agents\/(\d+)\/transcript$/,
+		);
+		if (m && req.method === "GET") {
+			const runId = decodeURIComponent(m[1]);
+			const seq = parseInt(m[2], 10);
+			if (!getWorkflowRun(runId))
+				return Response.json({ error: "Workflow not found" }, { status: 404 });
+			const snap = getWorkflowRun(runId)?.agents.find((a) => a.seq === seq);
+			// mcp.* records share journal.jsonl and number their own seq space,
+			// so an agent lookup MUST skip them or it can match the wrong record.
+			const journal = agentJournalEntries(runId).find((e) => e.seq === seq);
+			const engineSessionId =
+				snap?.engineSessionId || journal?.outcome.engineSessionId;
+			if (!engineSessionId)
+				return Response.json(
+					{ error: "Agent has not started a run yet", entries: [] },
+					{ status: 404 },
+				);
+			const nativePath = findPiNativeTranscript(engineSessionId);
+			if (!nativePath)
+				return Response.json(
+					{ error: "No conversation recorded for this agent", entries: [] },
+					{ status: 404 },
+				);
+			return Response.json({ entries: readPiNativeTranscript(nativePath) });
 		}
 	}
 

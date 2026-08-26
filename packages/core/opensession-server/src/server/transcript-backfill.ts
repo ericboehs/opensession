@@ -140,7 +140,7 @@ export async function runTranscriptBackfill(
 				// WP-A touchpoint: chunked import (≤500 rows/tx, design §1);
 				// importLegacyTranscript marks the session imported with the
 				// src + mirror watermark internally.
-				store.importLegacyTranscript(session.id, entries, "merged", watermark);
+				await store.importLegacyTranscript(session.id, entries, "merged", watermark);
 			}
 			summary.imported++;
 			summary.entries += entries.length;

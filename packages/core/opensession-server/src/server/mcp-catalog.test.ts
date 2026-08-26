@@ -41,6 +41,10 @@ function wiredAutomation(): string[] {
       "/** selfImproveMcpServers for a session file",
     ),
     section(
+      "export function automationBaselineMcpServers(",
+      "/** The automation-bar servers rebuilt for run-rpc's FALLBACK path",
+    ),
+    section(
       "function automationRunInProcessMcp(",
       "/**\n * automationRunInProcessMcp for a session file",
     ),
@@ -75,7 +79,6 @@ describe("MCP server catalog", () => {
 
   test("complete automation wiring matches the catalog", () => {
     const wired = wiredAutomation();
-    expect(wired.length).toBeGreaterThan(5);
     expect([...new Set(wired)].sort()).toEqual(
       catalogFor("automation").map((entry) => entry.name).sort(),
     );

@@ -408,6 +408,87 @@ describe("MCP OAuth client registration", () => {
     globalThis.fetch = realFetch;
   });
 
+  test("revokes existing grants when registering a replacement URL", async () => {
+    const configPath = process.env.OPENSESSION_MCP_CONFIG!;
+    const originalConfig = readFileSync(configPath, "utf8");
+    const replacement = "https://replacement.example.test/mcp";
+    writeFileSync(store, JSON.stringify(legacyStore()), { mode: 0o600 });
+    writeFileSync(configPath, JSON.stringify({
+      mcpServers: { tella: { type: "http", url: replacement } },
+    }));
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://replacement.example.test/.well-known/oauth-protected-resource") {
+        return Response.json({
+          resource: replacement,
+          authorization_servers: ["https://auth.replacement.example.test"],
+        });
+      }
+      if (url === "https://auth.replacement.example.test/.well-known/oauth-authorization-server") {
+        return Response.json({
+          authorization_endpoint: "https://auth.replacement.example.test/authorize",
+          token_endpoint: "https://auth.replacement.example.test/token",
+          registration_endpoint: "https://auth.replacement.example.test/register",
+        });
+      }
+      if (url === "https://auth.replacement.example.test/register") {
+        return Response.json({ client_id: "replacement-client" });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    }) as unknown as typeof fetch;
+
+    try {
+      await oauth.startMcpOauthFlow("tella", replacement, undefined, "Michiel");
+      expect(oauth.mcpOauthStatus("tella").shared).toBeUndefined();
+      expect(oauth.mcpOauthBindingMatches("tella", {
+        type: "http",
+        url: replacement,
+      })).toBe(true);
+      expect(
+        Object.keys(proxy.mcpOauthProxyServers("all", undefined, [])),
+      ).not.toContain("tella");
+    } finally {
+      writeFileSync(configPath, originalConfig);
+    }
+  });
+
+  test("binds manual-token grants to the configured HTTP server", async () => {
+    const configPath = process.env.OPENSESSION_MCP_CONFIG!;
+    const originalConfig = readFileSync(configPath, "utf8");
+    const serverUrl = "https://mcp.vercel.example.test/mcp";
+    writeFileSync(configPath, JSON.stringify({
+      mcpServers: { vercel: { type: "http", url: serverUrl } },
+    }));
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      if (String(input) === "https://api.vercel.com/v2/user") {
+        return Response.json({ user: { id: "synthetic" } });
+      }
+      throw new Error(`Unexpected URL: ${String(input)}`);
+    }) as unknown as typeof fetch;
+
+    try {
+      await oauth.saveManualMcpGrant("vercel", serverUrl, "synthetic-vercel-token");
+      expect(oauth.mcpOauthBindingMatches("vercel", {
+        type: "http",
+        url: serverUrl,
+      })).toBe(true);
+      expect(
+        Object.keys(proxy.mcpOauthProxyServers("all", undefined, [])),
+      ).toContain("vercel");
+
+      writeFileSync(configPath, JSON.stringify({
+        mcpServers: {
+          vercel: { type: "http", url: "https://repointed.example.test/mcp" },
+        },
+      }));
+      await expect(
+        oauth.saveManualMcpGrant("vercel", serverUrl, "unused-token"),
+      ).rejects.toThrow("configured server URL does not match");
+    } finally {
+      writeFileSync(configPath, originalConfig);
+    }
+  });
+
   test("explains Figma's catalog restriction instead of reporting invalid JSON", async () => {
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input);

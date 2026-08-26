@@ -52,13 +52,13 @@ const branchInput = {
 };
 
 describe("creation setup plan", () => {
-  test("persists write-once setup decisions in the actor", () => {
+  test("persists write-once setup decisions in the actor", async () => {
     const sessionId = "create-setup-plan";
     const identity = "create-setup-request";
     const { store, kernel } = harness(sessionId);
     try {
       expect(
-        patchCreationSetupPlan(
+        await patchCreationSetupPlan(
           sessionId,
           identity,
           { branch: "feature/stable" },
@@ -66,21 +66,21 @@ describe("creation setup plan", () => {
         ),
       ).toEqual({ branch: "feature/stable" });
       expect(
-        patchCreationSetupPlan(
+        await patchCreationSetupPlan(
           sessionId,
           identity,
           { workspaceId: "ws-stable" },
           kernel,
         ),
       ).toEqual({ branch: "feature/stable", workspaceId: "ws-stable" });
-      expect(() =>
+      await expect(
         patchCreationSetupPlan(
           sessionId,
           identity,
           { branch: "feature-crossover" },
           kernel,
         ),
-      ).toThrow("setup_plan_conflict");
+      ).rejects.toThrow("setup_plan_conflict");
       expect(store.creationState(sessionId)?.setupPlan).toEqual({
         branch: "feature/stable",
         workspaceId: "ws-stable",
@@ -100,10 +100,10 @@ describe("creation setup plan", () => {
 });
 
 describe("creation lifecycle intents", () => {
-  test("records terminal setup failure without launching an opening", () => {
+  test("records terminal setup failure without launching an opening", async () => {
     const { store, kernel } = harness("create-failed-lifecycle");
     try {
-      const failed = settleCreationFailed(
+      const failed = await settleCreationFailed(
         "create-failed-lifecycle",
         "request-failed",
         new Error("workspace refused"),
@@ -111,12 +111,12 @@ describe("creation lifecycle intents", () => {
       );
       expect(failed.state).toBe("failed");
       expect(
-        settleCreationFailed(
+        (await settleCreationFailed(
           "create-failed-lifecycle",
           "request-failed",
           "duplicate",
           kernel,
-        ).state,
+        )).state,
       ).toBe("failed");
     } finally {
       store.close();
@@ -295,8 +295,8 @@ describe("creation opening intents", () => {
     };
     const { store, kernel } = harness(cancelled.sessionId);
     try {
-      setTimeout(() => {
-        settleCreationCancelled(
+      setTimeout(async () => {
+        await settleCreationCancelled(
           cancelled.sessionId,
           cancelled.identity,
           kernel,
@@ -320,7 +320,7 @@ describe("creation opening intents", () => {
     }
   });
 
-  test("Stop racing a terminal opening result stays idempotent", () => {
+  test("Stop racing a terminal opening result stays idempotent", async () => {
     const raced = {
       ...opening,
       sessionId: "create-raced-opening",
@@ -367,12 +367,12 @@ describe("creation opening intents", () => {
         effectId: `opening:${raced.openingPromptEntryId}`,
       });
       expect(
-        settleCreationCancelled(
+        (await settleCreationCancelled(
           raced.sessionId,
           raced.identity,
           kernel,
           `opening:${raced.openingPromptEntryId}`,
-        ).state,
+        )).state,
       ).toBe("ready");
     } finally {
       store.close();
@@ -385,19 +385,19 @@ describe("creation opening intents", () => {
     };
     const failedHarness = harness(failed.sessionId);
     try {
-      settleCreationFailed(
+      await settleCreationFailed(
         failed.sessionId,
         failed.identity,
         new Error("setup failed"),
         failedHarness.kernel,
       );
       expect(
-        settleCreationCancelled(
+        (await settleCreationCancelled(
           failed.sessionId,
           failed.identity,
           failedHarness.kernel,
           `opening:${failed.openingPromptEntryId}`,
-        ).state,
+        )).state,
       ).toBe("failed");
     } finally {
       failedHarness.store.close();

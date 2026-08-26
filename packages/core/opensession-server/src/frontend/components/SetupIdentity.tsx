@@ -54,6 +54,9 @@ setSaving(false);
 	return (
 		<input
 			className={IDENTITY_INPUT_CLASS}
+			// data-setup-field: FirstMile's onboarding wrapper widens these fields
+			// past their settings-page width; settings ignores the attribute.
+			data-setup-field="identity"
 			value={draft}
 			disabled={saving}
 			onChange={(e) => setDraft(e.target.value)}

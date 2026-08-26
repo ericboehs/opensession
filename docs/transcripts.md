@@ -37,6 +37,25 @@ sessions can remain file-backed as described below.
   local detached, sandbox, and remote run hosts relay transcript batches to
   the server instead of opening the database.
 
+For future detached Agent Host recovery, the store also exposes a typed internal
+`transcript_destination_append` API. This is deliberately separate from legacy
+`transcript_append`, whose behavior and replay policy are unchanged. A request
+carries an exact `{sessionId, runId, turnId, generation}` fence, a bounded
+`appendId`, and bounded validated entries. `(sessionId, appendId)` is the
+immutable destination identity. A domain-versioned SHA-256 digest binds the
+canonical fence and exact entries payload.
+
+The destination write and its immutable result receipt commit together in one
+`BEGIN IMMEDIATE` transaction. Exact retries return the stored sequence and
+change-sequence result without rewriting rows or notifying subscribers. The
+first destination append for a never-imported store session marks it `live-only`
+in that same transaction, as the existing first-live-append path does. An id
+reused with another digest fails closed. Receipts survive import and
+authoritative replacement, preventing an old append from being reapplied after
+a reset, and are retained until atomic session deletion removes both transcript
+rows and receipts. The destination-only method is internal and must be called
+after short SessionKernel admission; it is not an HTTP route.
+
 After each commit, the store publishes a wake-up on
 `packages/core/opensession-server/src/server/transcript-bus.ts`. Seq-mode
 watchers reconcile from SQLite by `changeSeq`; the in-process notification is

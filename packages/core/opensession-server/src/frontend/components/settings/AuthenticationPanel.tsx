@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useSetupStatus } from "../../hooks/useSetupStatus";
+import { shouldReloadAfterGithubAuthEnabled } from "../../lib/github-app-setup";
 import { Segmented, SegmentedOption } from "../../ui/segmented";
 import {
 	SettingCard,
@@ -39,6 +40,9 @@ function AuthenticationMethod({
 			.then((body) => {
 				toast(`GitHub sign-in ${enabled ? "enabled" : "disabled"}`);
 				onSaved(body.github, body.restartRequired === true);
+				if (shouldReloadAfterGithubAuthEnabled(github.userPrAuth, body.github.userPrAuth)) {
+					window.location.reload();
+				}
 			})
 			.catch((cause) => {
 				const message =

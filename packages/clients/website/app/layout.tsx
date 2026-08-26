@@ -13,14 +13,21 @@ export const metadata: Metadata = {
     title: "Open Session · Your team’s control room for coding agents",
     description:
       "Start parallel agents, collaborate with your team, and review and ship every session from one self-hosted workspace.",
-    images: ["/opensession-social.png"],
+    images: [
+      {
+        url: "/opensession-social-landing.png",
+        width: 1200,
+        height: 600,
+        alt: "Open Session",
+      },
+    ],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "Open Session · Your team’s control room for coding agents",
     description:
       "The open-source workspace for teams running coding agents together.",
-    images: ["/opensession-social.png"],
+    images: ["/opensession-social-landing.png"],
   },
   icons: { icon: "/icon.png" },
 };

@@ -1,9 +1,9 @@
 import type { DeliverySlot } from "./store";
-import { sessionDelivery } from "./kernel";
+import { sessionDelivery, sessionKernelStore } from "./kernel";
 import { immutableCopy } from "./immutable-copy";
 
 /** Map-compatible projection backed by the actor's durable delivery aggregate. */
-export class DeliveryOwnedMap<V> implements Map<string, V> {
+export class DeliveryOwnedMap<V> {
   readonly [Symbol.toStringTag] = "DeliveryOwnedMap";
   constructor(private readonly slot: DeliverySlot) {}
 
@@ -11,16 +11,16 @@ export class DeliveryOwnedMap<V> implements Map<string, V> {
     return this.entriesArray().length;
   }
 
-  clear(): void {
-    sessionDelivery({ op: "clear_slot", slot: this.slot });
+  async clear(): Promise<void> {
+    await sessionDelivery({ op: "clear_slot", slot: this.slot });
   }
 
-  delete(sessionId: string): boolean {
+  async delete(sessionId: string): Promise<boolean> {
     return sessionDelivery({ op: "delete", sessionId, slot: this.slot });
   }
 
   get(sessionId: string): V | undefined {
-    const state = sessionDelivery({ op: "snapshot", sessionId });
+    const state = sessionKernelStore().deliverySnapshot(sessionId);
     const value =
       this.slot === "queued"
         ? state.queued
@@ -36,8 +36,8 @@ export class DeliveryOwnedMap<V> implements Map<string, V> {
     return this.get(sessionId) !== undefined;
   }
 
-  set(sessionId: string, value: V): this {
-    sessionDelivery({
+  async set(sessionId: string, value: V): Promise<this> {
+    await sessionDelivery({
       op: "set",
       sessionId,
       slot: this.slot,
@@ -47,7 +47,7 @@ export class DeliveryOwnedMap<V> implements Map<string, V> {
   }
 
   private entriesArray(): Array<[string, V]> {
-    return sessionDelivery({ op: "entries", slot: this.slot }).map(
+    return sessionKernelStore().deliveryEntries(this.slot).map(
       ([sessionId, value]) => [sessionId, immutableCopy(value as V)],
     );
   }
@@ -56,17 +56,13 @@ export class DeliveryOwnedMap<V> implements Map<string, V> {
     return this.entriesArray()[Symbol.iterator]();
   }
   keys(): MapIterator<string> {
-    return this.entriesArray()
-      .map(([key]) => key)
-      [Symbol.iterator]();
+    return this.entriesArray().map(([key]) => key)[Symbol.iterator]();
   }
   values(): MapIterator<V> {
-    return this.entriesArray()
-      .map(([, value]) => value)
-      [Symbol.iterator]();
+    return this.entriesArray().map(([, value]) => value)[Symbol.iterator]();
   }
   forEach(
-    callbackfn: (value: V, key: string, map: Map<string, V>) => void,
+    callbackfn: (value: V, key: string, map: DeliveryOwnedMap<V>) => void,
     thisArg?: unknown,
   ): void {
     for (const [key, value] of this.entriesArray())

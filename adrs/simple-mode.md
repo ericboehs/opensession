@@ -288,11 +288,11 @@ second consumer of the same files, not the primary one.
   (no sane Apple Silicon provider).
 - **Goss** for assertions (`test/simple-mode/goss.yaml`): ports, services,
   files, HTTP, and commands in YAML with a pass/fail table. `goss.yaml` is the
-  current post-install bar (`opensession` on PATH, expected runtime files,
-  `doctor` runs, loopback-only listeners, health, and embedded assets).
-  `goss.dod.yaml` adds the user service, linger, stricter `doctor`, and no
-  Tailscale, Codex, or source checkout; `goss.uninstalled.yaml` checks the
-  strict clean uninstall. Both strict files run only with
+  current post-install bar (`opensession` on PATH, expected runtime files and
+  model CLIs, `doctor` runs, loopback-only listeners, health, and embedded
+  assets). `goss.dod.yaml` adds the user service, linger, stricter `doctor`, and
+  no Tailscale or source checkout; `goss.uninstalled.yaml` checks the strict
+  clean uninstall. Both strict files run only with
   `SIMPLE_MODE_STRICT=1`.
 - **A `bun test` driver** builds the release artefact for the VM's arch,
   creates the VM, installs the artefact as a customer would (no Bun or clone in

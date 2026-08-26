@@ -117,7 +117,7 @@ describe("slackUploadPermalink", () => {
     const link = await slackUploadPermalink(
       { ok: true, files: [{ id: "F1", title: "Shipped" }] },
       "C123",
-      "xoxp-test",
+      "test-user-token",
     );
 
     expect(link).toBe("https://tella.slack.com/archives/C123/p178642");
@@ -148,7 +148,7 @@ describe("Slack file uploads", () => {
 		globalThis.fetch = (async () => Response.json({ ok: false, error: "missing_scope" })) as unknown as typeof fetch;
 
 		try {
-			await expect(postSlackFiles("C123", [path], "Shipped it", {}, "xoxp-test")).rejects.toThrow(
+			await expect(postSlackFiles("C123", [path], "Shipped it", {}, "test-user-token")).rejects.toThrow(
 				"SLACK_RECONNECT_REQUIRED",
 			);
 		} finally {
@@ -182,7 +182,7 @@ describe("Slack file uploads", () => {
     }) as typeof fetch;
 
     try {
-      await postSlackFiles("C123", paths, "Shipped it", { title: "Editor" }, "xoxp-test");
+      await postSlackFiles("C123", paths, "Shipped it", { title: "Editor" }, "test-user-token");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -221,7 +221,7 @@ describe("Slack file uploads", () => {
     }) as typeof fetch;
 
     try {
-      await postSlackFiles("C123", paths, "", { threadTs: "1712.9" }, "xoxp-test");
+      await postSlackFiles("C123", paths, "", { threadTs: "1712.9" }, "test-user-token");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

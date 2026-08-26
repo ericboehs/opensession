@@ -42,32 +42,28 @@ export const SUPPORT_PLACEMENT_OPTIONS = SUPPORT_SURFACE_OPTIONS.filter(
 	(option) => option.value !== "off",
 );
 
-/** Where it goes when switched back on. Nothing records the placement it had
- *  before it went off (the two lists this is derived from only say what is
- *  showing), and the band is where the queue lived before the tool existed. */
-export const DEFAULT_SUPPORT_PLACEMENT: SupportSurface = "sidebar";
+/** Where Support goes when switched back on. Nothing records the placement it
+ *  had before it went off, so adding the tool puts it back with the other tools. */
+export const DEFAULT_SUPPORT_PLACEMENT: SupportSurface = "page";
 
 /**
  * Which surface is on, as one choice.
  *
- * Storage can still say both, because the two lists it is derived from are
- * older than this choice and each is independently editable: adding the
- * Support tool switched it on for everyone who had ever arranged their tools,
- * on top of the band they already had. Nobody chose that, so it resolves to
- * the band, which is what those accounts had before the tool existed. The
- * page is then one setting away rather than something that happened to them.
+ * Storage can still say both because the two lists it is derived from are
+ * independently editable. The tool wins that ambiguous state: Support is a
+ * default tool, while the band is the alternate placement someone can choose.
  */
 export function supportSurfaceOf(
 	toolShown: boolean,
 	bandShown: boolean,
 ): SupportSurface {
-	if (bandShown) return "sidebar";
 	if (toolShown) return "page";
+	if (bandShown) return "sidebar";
 	return "off";
 }
 
-/** Does the Support TOOL render? False whenever the band is on, so the two can
- *  never both be up, whatever the two underlying lists say. */
+/** Does the Support TOOL render? The derived choice ensures the band and tool
+ *  never both render, whatever the two underlying lists say. */
 export function supportToolShown(
 	toolShown: boolean,
 	bandShown: boolean,

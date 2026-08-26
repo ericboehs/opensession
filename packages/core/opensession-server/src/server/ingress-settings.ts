@@ -1,5 +1,6 @@
 /** Public-ingress configuration, discovery and managed exposure helpers. */
 import { randomBytes } from "crypto";
+import { createSocket } from "dgram";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { networkInterfaces } from "os";
 import { isIP } from "net";
@@ -20,22 +21,40 @@ import { isBlockedAddress } from "./shared/network-address";
 import { caddyIngressSnippet, upsertCaddyIngress } from "./sandbox/caddy-ingress";
 import { stateDir } from "./paths";
 import { writeFileAtomic } from "./shared/atomic-write";
+import { prepareEnvFileEdits } from "./env-file-edit";
+import { detectedTailnetIpv4, normalizeAppOrigin } from "./setup-access";
+import {
+  configurePrivateAppDomain,
+  privateAppCaddyUpstream,
+  privateAppDomainStatus,
+  testPrivateAppDomain,
+  type PrivateAppDomainStatus,
+  type PrivateAppDnsProvider,
+} from "./private-app-domain";
 
 export const PUBLIC_INGRESS_PORT = 3860;
 const CADDYFILE = process.env.OPENSESSION_CADDYFILE || "/etc/caddy/Caddyfile";
 const CLOUDFLARE_TOKEN_PATH = stateDir("cloudflared-tunnel-token");
+const FUNNEL_STARTING_GRACE_MS = 60_000;
 const runtime = globalThis as typeof globalThis & {
   __opensessionCloudflared?: ReturnType<typeof Bun.spawn>;
   __opensessionCloudflaredRestart?: ReturnType<typeof setTimeout>;
+  __opensessionTailscaleFunnelStartedAt?: number;
 };
 
 export interface IngressStatus {
   canManage: boolean;
   publicBaseUrl: string;
   exposure: IngressExposure | null;
-  health: "ready" | "waiting_dns" | "unreachable" | "not_configured";
+  health: "ready" | "starting" | "waiting_dns" | "unreachable" | "not_configured";
   localUrl: string;
   hostname: string;
+  app: {
+    publicBaseUrl: string;
+    hostname: string;
+    tailnetIpv4: string | null;
+    domain: PrivateAppDomainStatus;
+  };
   server: { ipv4: string[]; ipv6: string[] };
   dns: { a: string[]; aaaa: string[]; suggested: string[] };
   tailscale: { installed: boolean; dnsName: string; suggestedUrl: string };
@@ -94,6 +113,66 @@ export function normalizeIngressOrigin(value: string): string {
 export function normalizeCustomIngressOrigin(value: string): string {
   const trimmed = value.trim();
   return normalizeIngressOrigin(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
+}
+
+/** Select the local interface that carries traffic to the public internet.
+ * On NATed hosts the operator enters the public address, while Caddy must bind
+ * the corresponding private interface address. Never fall back to wildcard:
+ * the private app already owns HTTPS on the Tailscale interface, and two HTTP/3
+ * UDP listeners on port 443 cannot overlap. */
+export function directHttpsBindAddress(
+  publicAddress: string,
+  routedAddress: string,
+  tailnetAddress: string | null,
+): string | null {
+  const family = isIP(publicAddress);
+  if (!family || isIP(routedAddress) !== family) return null;
+  if (
+    routedAddress === tailnetAddress ||
+    routedAddress === "0.0.0.0" ||
+    routedAddress === "::" ||
+    routedAddress === "127.0.0.1" ||
+    routedAddress === "::1"
+  ) return null;
+  return routedAddress;
+}
+
+async function routedInternetAddress(family: 4 | 6): Promise<string> {
+  const socket = createSocket(family === 4 ? "udp4" : "udp6");
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      const address = error ? "" : socket.address().address;
+      socket.close();
+      if (error || !address) reject(error || new Error("No routed address"));
+      else resolve(address);
+    };
+    const timer = setTimeout(
+      () => finish(new Error("Timed out finding the public-facing interface")),
+      2_000,
+    );
+    socket.once("error", finish);
+    socket.connect(53, family === 4 ? "1.1.1.1" : "2606:4700:4700::1111", () => finish());
+  });
+}
+
+/** A private app custom domain is always HTTPS, but the form asks for the
+ * hostname rather than making people type protocol syntax. */
+export function normalizePrivateAppOrigin(value: string): string {
+  const trimmed = value.trim();
+  const origin = normalizeAppOrigin(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
+  if (new URL(origin).protocol !== "https:") throw new Error("Private app domain must use HTTPS");
+  const ingressHost = (() => {
+    try { return new URL(configuredIngress().publicBaseUrl).hostname.toLowerCase(); }
+    catch { return ""; }
+  })();
+  if (new URL(origin).hostname.toLowerCase() === ingressHost) {
+    throw new Error("Private app and public ingress must use different domains");
+  }
+  return origin;
 }
 
 async function command(argv: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
@@ -213,8 +292,16 @@ export function publicIngressHealth(
   probed: "ready" | "unreachable" | "not_configured",
   dns: { a: string[]; aaaa: string[] },
   server: { a: string[]; aaaa: string[] },
+  funnelStartedAt = 0,
+  now = Date.now(),
 ): IngressStatus["health"] {
-  if (exposure !== "custom" || probed !== "unreachable") return probed;
+  if (probed !== "unreachable") return probed;
+  if (
+    exposure === "tailscale" &&
+    funnelStartedAt > 0 &&
+    now - funnelStartedAt < FUNNEL_STARTING_GRACE_MS
+  ) return "starting";
+  if (exposure !== "custom") return probed;
   const expectedAddresses = [...server.a, ...server.aaaa];
   const resolvedAddresses = [...dns.a, ...dns.aaaa];
   const dnsPointsHere = expectedAddresses.length
@@ -231,17 +318,31 @@ export function displayedServerAddresses(
   return server.a.length || server.aaaa.length || health !== "ready" ? server : dns;
 }
 
-export async function publicIngressStatus(canManage: boolean): Promise<IngressStatus> {
+export async function publicIngressStatus(
+  canManage: boolean,
+  options: { appBaseUrl?: string } = {},
+): Promise<IngressStatus> {
   const configured = configuredIngress();
+  const appBaseUrl = options.appBaseUrl || configuredServer().publicBaseUrl;
+  let appHostname = "";
+  try { appHostname = new URL(appBaseUrl).hostname; } catch {}
   let hostname = "";
   try { hostname = new URL(configured.publicBaseUrl).hostname; } catch {}
-  const [dns, tsName, probedHealth, serverAddresses] = await Promise.all([
+  const tailnetIpv4 = detectedTailnetIpv4();
+  const [dns, tsName, probedHealth, serverAddresses, appDomain] = await Promise.all([
     currentDns(hostname),
     tailscaleDnsName(),
     ingressHealth(configured.publicBaseUrl),
     publicServerAddresses(),
+    privateAppDomainStatus(appBaseUrl, tailnetIpv4),
   ]);
-  const health = publicIngressHealth(configured.exposure, probedHealth, dns, serverAddresses);
+  const health = publicIngressHealth(
+    configured.exposure,
+    probedHealth,
+    dns,
+    serverAddresses,
+    runtime.__opensessionTailscaleFunnelStartedAt,
+  );
   // A healthy direct Caddy origin proves its resolved addresses reach this
   // listener. Reuse that exact answer on NATed hosts whose cloud metadata is
   // disabled, so an already-working setup still tells the operator which
@@ -255,6 +356,12 @@ export async function publicIngressStatus(canManage: boolean): Promise<IngressSt
     health,
     localUrl: `http://127.0.0.1:${PUBLIC_INGRESS_PORT}`,
     hostname,
+    app: {
+      publicBaseUrl: appBaseUrl.replace(/\/+$/, ""),
+      hostname: appHostname,
+      tailnetIpv4,
+      domain: appDomain,
+    },
     server: { ipv4: displayedAddresses.a, ipv6: displayedAddresses.aaaa },
     dns: {
       ...dns,
@@ -283,10 +390,57 @@ export async function publicIngressStatus(canManage: boolean): Promise<IngressSt
   };
 }
 
+export async function setupPrivateAppDomain(input: {
+  domain: string;
+  provider: PrivateAppDnsProvider;
+  email?: string;
+  apiToken?: string;
+  teamId?: string;
+}): Promise<string> {
+  const publicBaseUrl = normalizePrivateAppOrigin(input.domain);
+  const server = configuredServer();
+  await configurePrivateAppDomain({
+    domain: new URL(publicBaseUrl).hostname,
+    provider: input.provider,
+    email: input.email,
+    apiToken: input.apiToken,
+    teamId: input.teamId,
+    upstream: privateAppCaddyUpstream(server.host, server.port),
+    tailnetIpv4: detectedTailnetIpv4(),
+  });
+  return savePrivateAppOrigin(publicBaseUrl);
+}
+
+export async function verifyPrivateAppDomain(): Promise<PrivateAppDomainStatus> {
+  return testPrivateAppDomain(configuredServer().publicBaseUrl, detectedTailnetIpv4());
+}
+
+export async function savePrivateAppOrigin(value: string): Promise<string> {
+  const publicBaseUrl = normalizePrivateAppOrigin(value);
+  await withConfigMutationLock(async () => {
+    const raw = rawConfig();
+    const server = raw.server && typeof raw.server === "object" && !Array.isArray(raw.server)
+      ? raw.server as Record<string, unknown>
+      : {};
+    raw.server = server;
+    server.publicBaseUrl = publicBaseUrl;
+    const envEdit = prepareEnvFileEdits({ OPENSESSION_UI_BASE: publicBaseUrl });
+    envEdit.commit();
+    try {
+      persistRawConfig(raw);
+    } catch (error) {
+      envEdit.rollback();
+      throw error;
+    }
+  });
+  return publicBaseUrl;
+}
+
 export async function savePublicIngress(input: {
   publicBaseUrl: string;
   exposure: IngressExposure;
   cloudflareTunnelId?: string;
+  publicIp?: string;
 }): Promise<void> {
   const publicBaseUrl = normalizeIngressOrigin(input.publicBaseUrl);
   if (!(["tailscale", "cloudflare", "custom"] as string[]).includes(input.exposure)) {
@@ -295,6 +449,11 @@ export async function savePublicIngress(input: {
   const cloudflareTunnelId = (input.cloudflareTunnelId || "").trim();
   if (input.exposure === "cloudflare" && !/^[0-9a-f-]{36}$/i.test(cloudflareTunnelId)) {
     throw new Error("Cloudflare tunnel ID must be a UUID");
+  }
+  const publicIp = (input.publicIp || "").trim();
+  const publicIpFamily = isIP(publicIp);
+  if (publicIp && (!publicIpFamily || isBlockedAddress(publicIp))) {
+    throw new Error("Enter a publicly routable IPv4 or IPv6 address");
   }
   await withConfigMutationLock(async () => {
     const raw = rawConfig();
@@ -309,8 +468,18 @@ export async function savePublicIngress(input: {
       delete (raw.server as Record<string, unknown>).webhookBaseUrl;
       delete (raw.server as Record<string, unknown>).webhookPort;
     }
-    persistRawConfig(raw);
+    const envKey = publicIpFamily === 4 ? "OPENSESSION_PUBLIC_IPV4" : "OPENSESSION_PUBLIC_IPV6";
+    const envEdit = publicIp ? prepareEnvFileEdits({ [envKey]: publicIp }) : null;
+    envEdit?.commit();
+    try {
+      persistRawConfig(raw);
+    } catch (error) {
+      envEdit?.rollback();
+      throw error;
+    }
   });
+  if (publicIpFamily === 4) process.env.OPENSESSION_PUBLIC_IPV4 = publicIp;
+  if (publicIpFamily === 6) process.env.OPENSESSION_PUBLIC_IPV6 = publicIp;
   if (input.exposure !== "cloudflare") {
     if (runtime.__opensessionCloudflaredRestart) {
       clearTimeout(runtime.__opensessionCloudflaredRestart);
@@ -340,6 +509,7 @@ export async function enableTailscaleFunnel(): Promise<string> {
   // Persist the successful command immediately so a slow edge does not leave a
   // running Funnel reported as an entirely failed setup. The UI probes health.
   await savePublicIngress({ publicBaseUrl: origin, exposure: "tailscale" });
+  runtime.__opensessionTailscaleFunnelStartedAt = Date.now();
   return origin;
 }
 
@@ -395,8 +565,22 @@ export async function configureCloudflareTunnel(input: {
   if (!ensureCloudflareTunnel()) throw new Error("Could not start the Cloudflare Tunnel connector");
 }
 
-export async function installManagedCaddy(originValue: string): Promise<void> {
+export async function installManagedCaddy(originValue: string, publicIp?: string): Promise<void> {
   const origin = normalizeCustomIngressOrigin(originValue);
+  const publicAddress = (publicIp || "").trim();
+  const family = isIP(publicAddress);
+  if (family !== 4 && family !== 6) {
+    throw new Error("Enter this server’s public IPv4 or IPv6 address");
+  }
+  const routedAddress = await routedInternetAddress(family).catch(() => "");
+  const bindAddress = directHttpsBindAddress(
+    publicAddress,
+    routedAddress,
+    detectedTailnetIpv4(),
+  );
+  if (!bindAddress) {
+    throw new Error("Could not determine the public-facing network interface for Caddy");
+  }
   const caddy = Bun.which("caddy");
   const sudo = Bun.which("sudo");
   if (!caddy || !sudo) throw new Error("Caddy and sudo are required for managed custom domains");
@@ -412,7 +596,7 @@ export async function installManagedCaddy(originValue: string): Promise<void> {
     await runSudo(["systemctl", "reload", "caddy"]);
   };
   try {
-    await Bun.write(staged, upsertCaddyIngress(current, origin));
+    await Bun.write(staged, upsertCaddyIngress(current, origin, bindAddress));
     if ((await runSudo(["cp", "-p", CADDYFILE, backup])).code !== 0) {
       throw new Error("Could not back up the Caddyfile");
     }
@@ -431,7 +615,7 @@ export async function installManagedCaddy(originValue: string): Promise<void> {
       throw new Error(reload.stderr.trim() || "Caddy reload failed");
     }
     try {
-      await savePublicIngress({ publicBaseUrl: origin, exposure: "custom" });
+      await savePublicIngress({ publicBaseUrl: origin, exposure: "custom", publicIp });
     } catch (error) {
       await rollback();
       throw error;

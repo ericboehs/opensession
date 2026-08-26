@@ -16,6 +16,7 @@ export interface PrHeadline {
 		| "behind"
 		| "behind-base"
 		| "no-pr"
+		| "unavailable"
 		| "clean";
 	label: string;
 	tone: "green" | "purple" | "red" | "yellow" | "muted";
@@ -45,11 +46,23 @@ export function summarizeChecks(pr: PrDetails | null): {
 	return { passed, failed, pending, total: (pr?.checks || []).length };
 }
 
-/** Roll PR and local git state up into the one line the header shows. */
+/**
+ * Roll PR and local git state up into the one line the header shows.
+ *
+ * `prUnavailable` is the difference between "this branch has no PR" and "we
+ * could not find out". Both arrive here as a null `pr`, and without the flag
+ * the strip confidently says "No PR open" and offers Create PR on a branch
+ * that already has one — the state the GitHub App's missing actions:read scope
+ * put every PR surface into, and one that never corrects itself because
+ * nothing about it looks like an error worth retrying.
+ */
 export function deriveHeadline(
 	pr: PrDetails | null,
 	git: GitStatusInfo | null,
+	prUnavailable = false,
 ): PrHeadline {
+	if (!pr && prUnavailable)
+		return { key: "unavailable", label: "PR status unavailable", tone: "yellow" };
 	const sharedCheckout = git?.sharedCheckout ?? false;
 	const ahead = git?.ahead ?? 0;
 	const behind = git?.behind ?? 0;

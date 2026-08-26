@@ -519,7 +519,9 @@ async function ensureServerAuth(
     endpoints,
     clientInfo: { clientId: reg.client_id },
     binding: configuredBinding(name, serverUrl),
-    ...(cur ? { shared: cur.shared, users: cur.users } : {}),
+    ...(cur?.serverUrl === serverUrl
+      ? { shared: cur.shared, users: cur.users }
+      : {}),
   };
   const fresh = readStore();
   fresh[name] = next;
@@ -1182,6 +1184,9 @@ export async function saveManualMcpGrant(
 ): Promise<void> {
   const validate = TOKEN_VALIDATORS[name];
   if (!validate) throw new Error(`${name} has no token connect flow`);
+  const binding = configuredBinding(name, serverUrl);
+  if (!binding)
+    throw new Error(`${name}: configured server URL does not match the token connection`);
   const checked = await validate(token);
   if (!checked.ok) throw new Error(checked.error);
   const teamName = opts.forUser
@@ -1190,12 +1195,16 @@ export async function saveManualMcpGrant(
   if (opts.forUser && !teamName)
     throw new Error(`"${opts.forUser}" doesn't resolve to a configured teammate`);
   const store = readStore();
-  const entry = store[name] ?? {
-    serverUrl,
-    endpoints: { authorize: "", token: "" },
-    clientInfo: { clientId: "manual-token" },
-  };
+  const current = store[name];
+  const entry = current?.serverUrl === serverUrl
+    ? current
+    : {
+        serverUrl,
+        endpoints: { authorize: "", token: "" },
+        clientInfo: { clientId: "manual-token" },
+      };
   entry.serverUrl = serverUrl;
+  entry.binding = binding;
   store[name] = entry;
   writeGrant(entry, slotFor(teamName), {
     tokens: { accessToken: token },

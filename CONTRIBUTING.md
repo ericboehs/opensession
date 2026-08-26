@@ -10,23 +10,22 @@ worktrees or sandboxes.
 
 We take contributions as **human-written text, not code**. Describe the change
 you'd like — a bug, a missing feature, a design objection — informally in a
-`.txt` or `.md` file in [`adrs/`](adrs/), and open a pull request containing
-just that file. If we're aligned, we handle the implementation (this is an
+[GitHub issue](https://github.com/tellahq/opensession/issues). Prompts and
+suggestions are exactly the right shape: say what you'd want, the way you'd
+tell an agent. If we're aligned, we handle the implementation (this is an
 agent-infrastructure project; implementation is what the infrastructure is
-for). Your name stays on the proposal.
+for). Your name stays on the issue.
 
 Plain language beats a spec. Say what's wrong or missing, what you'd expect to
-happen instead, and why it matters to you. A paragraph is enough; see
-[`adrs/README.md`](adrs/README.md) for the little structure there is.
+happen instead, and why it matters to you. A paragraph is enough. For bug
+reports, include what you ran, what happened, and `opensession doctor` output;
+if it is an install problem, the full installer output — it prints every step
+it took.
 
-Two things that should *not* go through `adrs/`:
+One thing that should *not* go through the issue tracker:
 
 - **Vulnerabilities** — report privately, see [SECURITY.md](SECURITY.md).
-  Never a public issue or proposal.
-- **Bug reports** with no opinion about the fix — a regular issue is fine.
-  Include what you ran, what happened, and `opensession doctor` output. If it
-  is an install problem, the full installer output — it prints every step it
-  took.
+  Never a public issue.
 
 Code pull requests aren't the path for outside contributions — forking is.
 The project is MIT-licensed and built to be made your own: instance config
@@ -61,22 +60,22 @@ anywhere but loopback.
 ```sh
 bun run typecheck
 bun run lint
-bun run test
-bun run test:snapshots # the run-pipeline fixtures, which only work run alone
+scripts/test-unit-isolated.sh # the broad opensession-server/src and scripts sweep
+bun run test:snapshots       # the run-pipeline fixtures
 ```
 
-`bun run test` is the broad `opensession-server/src` and `scripts` sweep. It is
-currently order-dependent, so CI reports it with `continue-on-error` rather than
-treating green as a reliable gate. Run focused tests for the area changed.
+The broad unit suite runs each test file in its own process, four at a time, so
+fixtures that replace environment variables, globals, or module-level stores do
+not leak into later files. Run focused tests for the area changed as well.
 Deployment tests live under `deploy/`, and shared protocol tests under
 `packages/core/protocol/src/`.
 
-The snapshot suite needs its own command because it redirects module state that
-an earlier file in a sweep may already have frozen, in which case it skips
-itself. See [transcript snapshots](docs/transcript-snapshots.md).
+The snapshot suite keeps its own command because it exercises the run-pipeline
+fixtures as end-to-end transcript scenarios with a dedicated harness. See
+[transcript snapshots](docs/transcript-snapshots.md).
 
-CI gates type-checking, lint, the focused session-ownership and executor suite in
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml), transcript snapshots,
+CI gates type-checking, lint, the broad unit suite, the focused session-ownership
+and executor suite in [`.github/workflows/ci.yml`](.github/workflows/ci.yml), transcript snapshots,
 Linux and macOS installer jobs, and Windows runner checks. If you touched
 `install.sh`, the CLI or the service definitions, the installer jobs matter:
 they catch things unit tests cannot, like a `PATH` that works interactively and
@@ -115,7 +114,7 @@ Comments should explain *why*, particularly when the code looks odd. A lot of
 the stranger-looking decisions here encode a specific incident — `KillMode=mixed`
 in the systemd unit, the `IPAddressDeny` line, the deny-before-allow ordering in
 permission maps. If you find one of those and it has no comment, adding the
-explanation is a genuinely useful contribution (as a proposal, per above).
+explanation is a genuinely useful contribution (as an issue, per above).
 
 Prefer deleting to adding. If a change makes something simpler, say so; that is
 not a small thing.
@@ -137,12 +136,12 @@ layer, never in a prompt:
 - customer-facing and identity-mutating tools are hard-denied for unattended runs
 - money-moving tools are stripped from the model's tool list entirely
 
-If a proposal touches any of that, call it out explicitly. If you find a way
+If a suggestion touches any of that, call it out explicitly. If you find a way
 around it, report it privately — see [SECURITY.md](SECURITY.md), which also
 sets out what counts as a vulnerability here and what is working as designed.
 
 ## License
 
-By contributing — proposals included — you agree that your contributions are
-licensed under the [MIT License](LICENSE), the same license as the
-project.
+By contributing — issues and suggestions included — you agree that your
+contributions are licensed under the [MIT License](LICENSE), the same license
+as the project.

@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { handleStaticAssetsRoutes, pwaManifest } from "./static-assets";
+import {
+	builtAssetContentType,
+	handleStaticAssetsRoutes,
+	pwaManifest,
+} from "./static-assets";
 
 test("serves every stable shell asset family", async () => {
 	for (const [path, contentType] of [
@@ -7,6 +11,11 @@ test("serves every stable shell asset family", async () => {
 		["/icon.png", "image/png"],
 		["/signin-bg.webp", "image/webp"],
 		["/signin-bg.mp4", "video/mp4"],
+		["/onboarding-bg.webp", "image/webp"],
+		["/onboarding-bg-dark.webp", "image/webp"],
+		["/download-background.webp", "image/webp"],
+		["/download-mac.webp", "image/webp"],
+		["/download-phone.webp", "image/webp"],
 		["/sw.js", "text/javascript; charset=utf-8"],
 		["/splash/apple-splash-1206-2622.png", "image/png"],
 	] as const) {
@@ -21,6 +30,12 @@ test("serves every stable shell asset family", async () => {
 		expect(response?.headers.get("content-type")).toBe(contentType);
 		expect((await response?.arrayBuffer())?.byteLength).toBeGreaterThan(0);
 	}
+});
+
+test("recognizes bundled image assets alongside scripts and styles", () => {
+	expect(builtAssetContentType("download-mac-abc123.webp")).toBe("image/webp");
+	expect(builtAssetContentType("App-abc123.js")).toBe("text/javascript");
+	expect(builtAssetContentType("notes.txt")).toBeNull();
 });
 
 test("PWA manifest includes a new-agent shortcut under the active prefix", () => {

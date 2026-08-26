@@ -29,8 +29,9 @@ describe("notification lanes", () => {
 		expect(TOAST_NOTICE_LANE).not.toContain("top-");
 	});
 
-	test("moves ongoing phone status below the header and tab strip", () => {
-		expect(ONGOING_TOAST_POSITION).toContain("phone:fixed");
+	test("centres ongoing status across the product in a lower lane", () => {
+		expect(ONGOING_TOAST_POSITION).toContain("fixed");
+		expect(ONGOING_TOAST_POSITION).toContain("bottom-[72px]");
 		expect(ONGOING_TOAST_POSITION).toContain("var(--pane-header-h)");
 		expect(ONGOING_TOAST_POSITION).toContain("var(--strip-clearance,0px)");
 		expect(ONGOING_TOAST_POSITION).toContain("phone:bottom-auto");

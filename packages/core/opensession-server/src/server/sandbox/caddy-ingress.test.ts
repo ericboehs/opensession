@@ -47,14 +47,21 @@ describe("public Caddy ingress", () => {
     expect(upsertCaddyIngress(installed, "https://hooks.example.com")).toBe(installed);
   });
 
-  test("creates a dedicated host without exposing the private app", () => {
+  test("creates a dedicated, interface-bound host without exposing the private app", () => {
     const installed = upsertCaddyIngress(
-      "admin.example.com { reverse_proxy 127.0.0.1:3850 }\n",
+      "admin.example.com {\n    bind 100.64.0.10\n    reverse_proxy 127.0.0.1:3850\n}\n",
       "https://hooks.example.com",
+      "172.31.21.26",
     );
     expect(installed).toContain("hooks.example.com {");
+    expect(installed).toContain("bind 172.31.21.26");
     expect(installed).toContain("reverse_proxy 127.0.0.1:3860");
     expect(installed.match(/3850/g)).toHaveLength(1);
+    expect(upsertCaddyIngress(
+      installed,
+      "https://hooks.example.com",
+      "172.31.21.26",
+    )).toBe(installed);
   });
 
   test("refuses duplicate target site blocks", () => {

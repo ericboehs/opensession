@@ -6,9 +6,22 @@ export interface PublicIngressSettings {
 	canManage: boolean;
 	publicBaseUrl: string;
 	exposure: IngressExposure | null;
-	health: "ready" | "waiting_dns" | "unreachable" | "not_configured";
+	health: "ready" | "starting" | "waiting_dns" | "unreachable" | "not_configured";
 	localUrl: string;
 	hostname: string;
+	app: {
+		publicBaseUrl: string;
+		hostname: string;
+		tailnetIpv4: string | null;
+		domain: {
+			health: "ready" | "waiting_dns" | "unreachable" | "not_configured";
+			dnsProvider: "cloudflare" | "vercel" | null;
+			credentialConfigured: boolean;
+			certificateEmailConfigured: boolean;
+			certificateExpiresAt: string;
+			legoInstalled: boolean;
+		};
+	};
 	server: { ipv4: string[]; ipv6: string[] };
 	dns: { a: string[]; aaaa: string[]; suggested: string[] };
 	tailscale: { installed: boolean; dnsName: string; suggestedUrl: string };
@@ -25,6 +38,35 @@ export interface PublicIngressSettings {
 
 export function fetchPublicIngress(): Promise<PublicIngressSettings> {
 	return request("/ingress", { label: "Failed to load public ingress" });
+}
+
+export function setupPrivateAppDomain(input: {
+	domain: string;
+	provider: "cloudflare" | "vercel";
+	email?: string;
+	apiToken?: string;
+	teamId?: string;
+}): Promise<PublicIngressSettings & { restartRequired: boolean }> {
+	return request("/ingress/app/setup", {
+		method: "POST",
+		body: input,
+		label: "Failed to set up private app domain",
+	});
+}
+
+export function testPrivateAppDomain(): Promise<PublicIngressSettings["app"]["domain"]> {
+	return request("/ingress/app/test", {
+		method: "POST",
+		label: "Failed to verify private app domain",
+	});
+}
+
+export function savePrivateAppDomain(domain: string): Promise<PublicIngressSettings & { restartRequired: boolean }> {
+	return request("/ingress/app", {
+		method: "POST",
+		body: { domain },
+		label: "Failed to save private app domain",
+	});
 }
 
 export function savePublicIngress(input: {
@@ -58,10 +100,10 @@ export function configurePublicIngressCloudflare(input: {
 	});
 }
 
-export function installPublicIngressCaddy(publicBaseUrl: string): Promise<PublicIngressSettings> {
+export function installPublicIngressCaddy(publicBaseUrl: string, publicIp?: string): Promise<PublicIngressSettings> {
 	return request("/ingress/custom", {
 		method: "POST",
-		body: { publicBaseUrl },
+		body: { publicBaseUrl, ...(publicIp ? { publicIp } : {}) },
 		label: "Failed to configure Caddy",
 	});
 }

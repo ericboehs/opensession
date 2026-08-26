@@ -69,10 +69,7 @@ export const WS_SUMMARY_REVIEW_CANVAS_CLEARANCE = "desktop:mr-[312px]";
  * name back at you.
  */
 export const WS_SUMMARY_SECTION =
-	"mt-3 flex h-[22px] shrink-0 items-center px-4 text-label font-medium text-faint first:mt-1 " +
-	// The PR plate already closes with its own bottom breathing room. Do not
-	// stack the next section's full top gap on it as well.
-	"[.ws-summary-band+&]:mt-0";
+	"mt-3 flex h-[22px] shrink-0 items-center px-4 text-label font-medium text-faint first:mt-1";
 
 /**
  * A row. 31px tall on a 300px card, which is the proportion a dense list needs

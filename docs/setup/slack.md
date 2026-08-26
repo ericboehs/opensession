@@ -20,7 +20,7 @@ secret optional and does not remove the HTTP routes.
 
 ## Set up the app
 
-1. Configure an HTTPS origin under **Settings → Public ingress**. It must route
+1. Configure an HTTPS origin under **Settings → Domains and ingress → Public callbacks**. It must route
    to the fail-closed gateway on `127.0.0.1:3860`; see
    [Public ingress](install.md#public-ingress).
 2. Open **Settings → Integrations → Slack → Set up**, select **HTTP**, and click
