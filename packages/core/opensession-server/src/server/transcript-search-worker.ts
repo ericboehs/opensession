@@ -90,6 +90,11 @@ export function searchStoredTranscripts(
     if (!existsSync(path)) continue;
     const db = new Database(path, { readonly: true, strict: true });
     try {
+      const hasTranscriptEvents = db.query(`
+        SELECT 1 FROM sqlite_master
+        WHERE type = 'table' AND name = 'transcript_events'
+      `).get();
+      if (!hasTranscriptEvents) continue;
       let beforeSeq = Number.MAX_SAFE_INTEGER;
       while (true) {
         if (now() - startedAt >= maxMs) {

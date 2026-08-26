@@ -1,6 +1,7 @@
+import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "fs";
-import { join } from "path";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync } from "fs";
+import { dirname, join } from "path";
 import { tmpdir } from "os";
 import { TranscriptStore } from "./transcript-store";
 import { transcriptEntryMatchSnippet } from "./transcript-search";
@@ -71,6 +72,26 @@ describe("transcript search", () => {
     });
     expect(result.matches).toMatchObject([{ id: "deep" }]);
     expect(result.candidateRows).toBeGreaterThan(24);
+  });
+
+  test("skips actor databases whose transcript schema is not initialized", () => {
+    append("match", [entry("answer", "needle after an empty actor database")]);
+    const path = sessionKernelSessionDbPath("kernel-only", root);
+    mkdirSync(dirname(path), { recursive: true });
+    const kernelOnly = new Database(path);
+    kernelOnly.exec("CREATE TABLE session_kernel_state (id TEXT PRIMARY KEY)");
+    kernelOnly.close();
+
+    const result = searchStoredTranscripts({
+      isolatedRoot: root,
+      query: "needle",
+      sessionIds: ["kernel-only", "match"],
+    });
+    expect(result).toMatchObject({
+      matches: [{ id: "match" }],
+      searchedSessions: 2,
+      candidateRows: 1,
+    });
   });
 
   test("enforces total session and candidate-row budgets", () => {
