@@ -8,7 +8,7 @@
 import type { WebSocketHandler } from "bun";
 import type { WSClientData } from "./ws-hub";
 
-import { currentAgentRunToken, interruptAndSteerAgentRun, isAgentSessionBusy, retractAgentSteer, steerAgentRun } from "./agent-runner";
+import { currentAgentRunToken, interruptAndSteerAgentRun, isAgentSessionBusy, retractAgentSteer } from "./agent-runner";
 
 import { audit } from "./audit";
 import { pendingAskAwaitingAnswer } from "./asks";
@@ -19,7 +19,8 @@ import { INIT_WIRE_CLAMP_BYTES, entriesForWire, parseTranscriptAsync, parseTrans
 import { providerFor } from "./models";
 
 import { appendTranscriptEntries, clearTranscriptStoreDegraded, transcriptLineRunnerNotice } from "./transcript-persistence";
-import { deleteQueuedPrompt, editableSteerReceipt, liftUserStop, persistQueues, promptQueues, queueDisplayState, durableQueueItem, queueItem, acceptQueuedSteer, prepareQueuedSteer, rejectQueuedSteer, reorderQueuedPrompt, steeredReceipts, stoppedSessions, takeQueuedPrompt, takeSteeredPrompt, updateQueuedPrompt } from "./queue-state";
+import { deleteQueuedPrompt, editableSteerReceipt, liftUserStop, persistQueues, promptQueues, queueDisplayState, durableQueueItem, queueItem, reorderQueuedPrompt, steeredReceipts, stoppedSessions, takeQueuedPrompt, takeSteeredPrompt, updateQueuedPrompt } from "./queue-state";
+import { prepareAndSteerQueuedPrompt } from "./queued-steer";
 
 import { abortTurnAndDrain, drainQueue, enqueuePrompt, interruptQueuedPrompt, requestTurnCancel, runSessionPrompt, runSessionPromptAndDrain, steerQueuedPrompt, watchExternalRunAndDrain, } from "./run-session";
 import { sandboxWsClose, sandboxWsMessage, sandboxWsOpen } from "./run-ws";
@@ -1315,24 +1316,19 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						msg.busyMode === "steer" &&
 						!hasFiles &&
 						!hasContext &&
-						steerItem.id &&
-						await prepareQueuedSteer(sessionId, steerItem.id, steerItem)
+						steerItem.id
 					) {
-						if (
-							steerAgentRun(
-								[session.claudeSessionId, session.codexThreadId, session.id],
-								attributed,
-								images,
-								steerItem.id,
-							)
-						) {
-							if (!await acceptQueuedSteer(sessionId, steerItem.id))
-								throw new Error("Pending steer changed before runner acceptance");
-						} else {
-							await rejectQueuedSteer(sessionId, steerItem.id);
-							watchExternalRunAndDrain(sessionId);
+						const steerResult = await prepareAndSteerQueuedPrompt({
+							sessionId,
+							itemId: steerItem.id,
+							item: steerItem,
+							text: attributed,
+							images,
+						});
+						if (steerResult !== "not_prepared") {
+							if (steerResult === "rejected") watchExternalRunAndDrain(sessionId);
+							break;
 						}
-						break;
 					}
 					await enqueuePrompt(sessionId, {
 						id: msg.requestId,

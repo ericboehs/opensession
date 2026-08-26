@@ -22,7 +22,6 @@ import {
   cancelAgentRunTokenAndWait,
   currentAgentRunToken,
   isAgentRunTokenAdmitted,
-	steerAgentRun,
 	engineFamily,
 	interruptAndSteerAgentRun,
 	restartContinuationPrompt,
@@ -147,9 +146,6 @@ import {
 	promptQueues,
 	queuedPromptIndex,
 	queueItem,
-	acceptQueuedSteer,
-	prepareQueuedSteer,
-	rejectQueuedSteer,
 	requeueSteerReceipts,
 	restorePersistedQueueState,
 	steeredReceipts,
@@ -159,6 +155,7 @@ import {
 	undeliveredSteers,
 	type QueueItem,
 } from "./queue-state";
+import { prepareAndSteerQueuedPrompt } from "./queued-steer";
 import { isShuttingDown } from "./shutdown-state";
 import {
 	parseImageDataUrls,
@@ -639,21 +636,13 @@ export async function steerQueuedPrompt(
 			? `[${item.user}] ${item.content}`
 			: item.content;
 	const images = parseImageDataUrls(item.images || []);
-	if (!item.id || !(await prepareQueuedSteer(sessionId, item.id))) return false;
-	if (
-		!steerAgentRun(
-			[session.claudeSessionId, session.codexThreadId, session.id],
-			attributed,
-			images,
-			item.id,
-		)
-	) {
-		await rejectQueuedSteer(sessionId, item.id);
-		return false;
-	}
-	if (!await acceptQueuedSteer(sessionId, item.id))
-		throw new Error("Pending steer changed before runner acceptance");
-	return true;
+	if (!item.id) return false;
+	return (await prepareAndSteerQueuedPrompt({
+		sessionId,
+		itemId: item.id,
+		text: attributed,
+		images,
+	})) === "steered";
 }
 
 /**

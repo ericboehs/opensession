@@ -17,12 +17,13 @@
 
 import { AUTO_CONTINUE_USER } from "./auto-continue";
 import { personaName } from "./config";
-import { currentAgentRunToken, isAgentSessionBusy, steerAgentRun } from "./agent-runner";
+import { currentAgentRunToken, isAgentSessionBusy } from "./agent-runner";
 import { pendingAskAwaitingAnswer, pendingAsks } from "./asks";
 import { relinkAskThreads } from "./human-asks";
 import { SESSION_EFFORTS, type SessionEffort, providerFor, resolveModel } from "./models";
 import { configuredInteractiveDefaultModel } from "./model-catalog";
-import { deliveryQueueState, durableQueueItem, liftUserStop, promptQueues, acceptQueuedSteer, prepareQueuedSteer, rejectQueuedSteer } from "./queue-state";
+import { deliveryQueueState, durableQueueItem, liftUserStop, promptQueues } from "./queue-state";
+import { prepareAndSteerQueuedPrompt } from "./queued-steer";
 import { drainQueue, enqueuePrompt, requestTurnCancel, runSessionPrompt, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
 import { creationAttachmentPath, parseImageDataUrls, prepareCreationAttachmentSources, withUploadsNote } from "./uploads";
 import { type Sandbox } from "./sandbox";
@@ -284,32 +285,28 @@ registerSessionControl({
 						...(opts?.hold ? { hold: true } : {}),
 						...(opts?.reviewHandoff ? { reviewHandoff: true } : {}),
 					});
-					if (!prepareQueuedSteer(id, deliveryId, steerItem)) {
-						throw new Error("Delivery changed before steer preparation");
-					}
-					if (
-						steerAgentRun(
-							[session.claudeSessionId, session.codexThreadId, session.id],
-							attributed,
-							opts?.images,
-							deliveryId,
-						)
-					) {
-						if (!await acceptQueuedSteer(id, deliveryId))
-							throw new Error("Pending steer changed before runner acceptance");
+					const steerResult = await prepareAndSteerQueuedPrompt({
+						sessionId: id,
+						itemId: deliveryId,
+						item: steerItem,
+						text: attributed,
+						images: opts?.images,
+					});
+					if (steerResult === "steered") {
 						return {
 							status: "steered" as const,
 							message: "Folded into the running turn.",
 							deliveryId,
 						};
 					}
-					await rejectQueuedSteer(id, deliveryId);
-					watchExternalRunAndDrain(id);
-					return {
-						status: "queued" as const,
-						message: "Queued behind the current run.",
-						deliveryId,
-					};
+					if (steerResult === "rejected") {
+						watchExternalRunAndDrain(id);
+						return {
+							status: "queued" as const,
+							message: "Queued behind the current run.",
+							deliveryId,
+						};
+					}
 				}
 				await enqueuePrompt(id, {
 					id: deliveryId,

@@ -212,7 +212,11 @@ describe("single session ownership", () => {
 		const steerItem = control.indexOf("const steerItem = durableQueueItem(id");
 		expect(steerEligibility).toBeGreaterThan(-1);
 		expect(steerItem).toBeGreaterThan(steerEligibility);
-		expect(control.indexOf("prepareQueuedSteer(id", steerItem)).toBeGreaterThan(steerItem);
+		expect(control.indexOf("await prepareAndSteerQueuedPrompt({", steerItem))
+      .toBeGreaterThan(steerItem);
+    const queuedSteer = read("queued-steer.ts");
+    expect(queuedSteer).toContain("await deps.prepare(");
+    expect(queuedSteer).toContain("steerAgentRunToken");
 	});
 
 	test("sandbox prompts are visible before remote startup can fail", () => {

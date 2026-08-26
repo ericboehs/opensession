@@ -1054,10 +1054,14 @@ export class HostHandle {
     return false;
   }
 
-  private enqueueProjectionFrame(operation: () => void | Promise<void>): void {
+  private enqueueProjectionFrame(
+    operation: () => void | Promise<void>,
+    runAfterFailure = false,
+  ): void {
     const prior = this.projectionTail ?? Promise.resolve();
     const current = prior.then(async () => {
-      if (this.projectionFailure) throw this.projectionFailure;
+      if (this.projectionFailure && !runAfterFailure)
+        throw this.projectionFailure;
       await operation();
     });
     const observed = current.catch((error) => {
@@ -1083,7 +1087,9 @@ export class HostHandle {
 
   private handleMsg(msg: HostToClientMsg): void {
     if (msg.t !== "transcript" && this.projectionTail) {
-      this.enqueueProjectionFrame(() => this.handleMsgNow(msg));
+      // End is cleanup, not another projection. It must close the stream even
+      // when the transcript projection ahead of it failed.
+      this.enqueueProjectionFrame(() => this.handleMsgNow(msg), msg.t === "end");
       return;
     }
     this.handleMsgNow(msg);

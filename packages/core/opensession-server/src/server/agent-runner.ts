@@ -980,23 +980,24 @@ export function steerAgentRun(
   ids: Array<string | null | undefined>,
   text: string,
   images?: ImageInput[],
-
   steerId?: string
 ): boolean {
   for (const id of ids) {
-    if (!id) continue;
-    if (steerPiRun(id, text, images, steerId)) return true;
-
-    // Images ride the host frame too (protocol ClientToHostMsg.steer). This
-    // used to bail on any attachment, which read as "pi can't steer images"
-    // — it can; only the RPC frame was text-only. Once every local run moved
-    // into a detached host that guard covered every case, so no message with
-    // a screenshot could be steered at all.
-
-    if (hostSteer(id, text, images, steerId)) return true;
-
+    if (id && steerAgentRunToken(id, text, images, steerId)) return true;
   }
   return false;
+}
+
+/** Steer only one immutable dispatch token, never a reusable session alias. */
+export function steerAgentRunToken(
+  runToken: string,
+  text: string,
+  images?: ImageInput[],
+  steerId?: string,
+): boolean {
+  if (steerPiRun(runToken, text, images, steerId)) return true;
+  // Images ride the host frame too (protocol ClientToHostMsg.steer).
+  return hostSteer(runToken, text, images, steerId);
 }
 
 /** Retract one accepted steer only while it remains behind the engine's next

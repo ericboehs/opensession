@@ -425,6 +425,55 @@ describe("HostHandle model recovery", () => {
 		}
 	});
 
+  test("closes after an end frame that follows a failed transcript projection", async () => {
+    const root = mkdtempSync(join(tmpdir(), "host-client-projection-failure-test-"));
+    roots.push(root);
+    const store = new TranscriptStore(join(root, "transcripts.db"), { actorOwned: true });
+    (store as any).appendTranscriptEvents = async () => {
+      throw new Error("projection rejected");
+    };
+    const previous = __setTranscriptStoreForTest(store);
+    const kernelStore = new SessionKernelStore(join(root, "kernel.db"));
+    const previousKernel = __setSessionKernelStoreForTest(kernelStore);
+    const spec: RunHostSpec = {
+      hostId: "rh-projection-failure",
+      osSessionId: "os-projection-failure",
+      prompt: "test",
+      cwd: "/tmp",
+    };
+    registerTestRun(spec.osSessionId, spec.hostId);
+    const handle = makeHandle(spec);
+    const events = handle.events();
+    try {
+      (handle as any).handleMsg({
+        t: "transcript",
+        engineSessionId: spec.osSessionId,
+        lines: [transcriptLineUser("hello", "prompt-1")],
+      });
+      (handle as any).handleMsg({
+        t: "end",
+        done: { type: "done", result: "finished" },
+      });
+
+      expect((await events.next()).value).toMatchObject({
+        type: "error",
+        content: "Run host projection failed: projection rejected",
+      });
+      expect((await events.next()).value).toMatchObject({
+        type: "done",
+        result: "finished",
+      });
+      expect((await events.next()).done).toBe(true);
+      await expect(handle.waitForPendingProjections()).rejects.toThrow("projection rejected");
+      expect(handle.ended).toBe(true);
+    } finally {
+      (handle as any).finish();
+      __setTranscriptStoreForTest(previous);
+      __setSessionKernelStoreForTest(previousKernel);
+      kernelStore.close();
+    }
+  });
+
   test("serializes consecutive transcript frames through exact actor receipts", async () => {
     const root = mkdtempSync(join(tmpdir(), "host-client-transcript-order-test-"));
     roots.push(root);
