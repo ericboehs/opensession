@@ -28,6 +28,7 @@
 
 import type { McpScope } from "./runner-shared";
 import { audit } from "./audit";
+import { waitForRunHostAdmission } from "./host-admission";
 import {
   isRetryableSessionCommandError,
   sessionKernel,
@@ -63,6 +64,7 @@ import {
   addHostRunKey,
   unregisterHostRun,
   hostRunBusy,
+  hostRunCount,
   type HostRunControl,
 } from "./host-registry";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
@@ -149,9 +151,20 @@ const DISABLE_FILE = `${OPENSESSION_SESSIONS_DIR}/disable-run-hosts`;
 // registration takes over once launch completes.
 const activeHostedRunKeys: Set<string> = ((globalThis as any)
   .__activeHostedRunKeys ??= new Set());
+const pendingRunHostAdmissions: Set<symbol> = ((globalThis as any)
+  .__pendingRunHostAdmissions ??= new Set());
 registerActiveRunProbe(
   (runKey) => activeHostedRunKeys.has(runKey) || hostRunBusy(runKey),
 );
+
+function activeRunHostCount(): number {
+  // HostHandle registration includes spawned and reattached runs. Add only keys
+  // still in the pre-handle launch window, avoiding double-counting the rest.
+  const launchesWithoutHandle = [...activeHostedRunKeys].filter(
+    (runKey) => !hostRunBusy(runKey),
+  ).length;
+  return hostRunCount() + launchesWithoutHandle;
+}
 
 export function localRunHostsSupported(
   platform = process.platform,
@@ -259,10 +272,35 @@ export interface HostedRunOpts {
 export async function* runAgentHosted(opts: HostedRunOpts): AsyncGenerator<StreamEvent> {
   if (opts.shouldCancel?.()) return;
   if (runHostsEnabled()) {
+    // Machine-capacity admission before the engine process exists. Waits with
+    // backoff while the host is full (the queue claim and journal are already
+    // durable, so a crash mid-wait re-admits the turn) and fails closed after
+    // the configured patience: an in-process fallback would consume the same
+    // scarce memory, so RunHostAdmissionError deliberately propagates.
+    const admission = Symbol(opts.osSessionId);
+    if (
+      (await waitForRunHostAdmission({
+        sessionId: opts.osSessionId,
+        activeHosts: activeRunHostCount,
+        pendingHosts: () => pendingRunHostAdmissions.size,
+        onAdmit: () => pendingRunHostAdmissions.add(admission),
+        shouldCancel: opts.shouldCancel,
+      })) === "cancelled"
+    )
+      return;
+    if (opts.shouldCancel?.()) {
+      pendingRunHostAdmissions.delete(admission);
+      return;
+    }
     let spawned: { handle: HostHandle; spec: RunHostSpec } | null = null;
     try {
-      spawned = await spawnHostRun(opts);
+      // spawnHostRun reserves activeHostedRunKeys synchronously before its first
+      // await. Transfer the admission reservation without opening a race.
+      const launch = spawnHostRun(opts);
+      pendingRunHostAdmissions.delete(admission);
+      spawned = await launch;
     } catch (e) {
+      pendingRunHostAdmissions.delete(admission);
       if (e instanceof ExecutorProtocolError && e.ambiguousLaunch) throw e;
       console.error("[host-client] spawn failed — falling back to in-process run:", e);
     }

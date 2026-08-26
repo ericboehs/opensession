@@ -51,6 +51,37 @@ raw `systemd-run` or arbitrary `systemctl` arguments. If the executor restarts
 while a launch is in progress, the next request reconciles the existing unit and
 host socket instead of starting a second run.
 
+## Capacity controls
+
+Before persisting a detached launch, the gateway checks the active and pending
+host count, Linux `MemAvailable`, and CPU PSI `some avg10`. A launch waits with
+bounded backoff when a present signal is over its limit. Missing `/proc` signals
+fail open so non-Linux development remains usable. After the admission timeout,
+the turn fails visibly instead of falling back into the gateway process and
+consuming the same scarce resources.
+
+Gateway settings can be placed in `~/.opensession.env`:
+
+| Setting                                         | Default | Purpose                                  |
+| ----------------------------------------------- | ------: | ---------------------------------------- |
+| `OPENSESSION_RUN_HOST_MAX_ACTIVE`               |     128 | Active plus admitted detached hosts      |
+| `OPENSESSION_RUN_HOST_MIN_AVAILABLE_MB`         |    4096 | Memory headroom retained for the machine |
+| `OPENSESSION_RUN_HOST_RESERVED_MB`              |    1024 | Memory reserved for each pending launch  |
+| `OPENSESSION_RUN_HOST_MAX_CPU_PRESSURE`         |      85 | Maximum CPU PSI `some avg10` percentage  |
+| `OPENSESSION_RUN_HOST_ADMISSION_TIMEOUT_S`      |     900 | Maximum capacity wait before refusal     |
+| `OPENSESSION_ONESHOT_CONCURRENCY`               |       4 | Concurrent gateway one-shot jobs         |
+| `OPENSESSION_OPENING_TURN_CONCURRENCY`          |       8 | Concurrent session opening turns         |
+| `OPENSESSION_KERNEL_TIMER_CONCURRENCY`          |       8 | Concurrent durable timer effects         |
+| `OPENSESSION_KERNEL_OUTBOX_CONCURRENCY`         |       8 | Concurrent general outbox effects        |
+| `OPENSESSION_KERNEL_OPENING_OUTBOX_CONCURRENCY` |     100 | Concurrent opening-turn effects          |
+
+The independently supervised executor does not read `~/.opensession.env`. Set
+`OPENSESSION_EXECUTOR_LAUNCH_CONCURRENCY` (default 8) with an `Environment=`
+systemd drop-in on `opensession-executor.service`.
+
+All overrides are bounded integers. Invalid or out-of-range values log an error
+and retain the built-in default.
+
 ## Failure behavior
 
 | Failure | Behavior |
