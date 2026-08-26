@@ -79,7 +79,7 @@ export async function appendTranscriptDestination(
   return mutate({
     op: "append_destination",
     sessionId: request.sessionId,
-    requestId: `destination:${request.appendId}`,
+    requestId: `transcript-destination:${request.appendId}`,
     appendId: request.appendId,
     runId: request.runId,
     turnId: request.turnId,
