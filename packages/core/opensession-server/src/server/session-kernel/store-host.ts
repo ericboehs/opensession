@@ -228,6 +228,8 @@ export class SessionKernelStoreHost {
   transcript<T extends TranscriptActorRequest>(
     request: T,
   ): TranscriptActorResult<T> {
+    const mutation = "requestId" in request || request.op === "ack_wake";
+    if (mutation) this.storeForSession(request.sessionId, true);
     const placement = this.centralOperation(
       () => this.central.sessionPlacement(request.sessionId),
     );
@@ -236,9 +238,6 @@ export class SessionKernelStoreHost {
       throw new Error(
         `Session ${request.sessionId} has no isolated actor transcript placement`,
       );
-    const mutation = "requestId" in request || request.op === "ack_wake";
-    if (mutation)
-      this.centralOperation(() => this.central.markIsolatedSessionDirty(request.sessionId));
     const store = this.openTranscript(request.sessionId);
     let result: unknown;
     switch (request.op) {

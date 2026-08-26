@@ -63,6 +63,29 @@ describe("per-session session kernel storage", () => {
     isolated.close();
   });
 
+  test("publishes isolated placement before a new session's first transcript write", () => {
+    const path = paths();
+    const sessionId = "transcript-first-session";
+    const host = new SessionKernelStoreHost(path.central, path.isolated);
+    expect(host.transcript({
+      op: "append",
+      sessionId,
+      requestId: "append-first",
+      entries: [{
+        id: "first",
+        type: "user",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        content: "hello",
+      }],
+    })).toMatchObject({ result: { inserted: 1 } });
+    expect(host.central.sessionPlacement(sessionId)).toMatchObject({
+      placement: "isolated",
+      transcriptAuthority: "actor",
+    });
+    expect(host.central.hasSessionDurableState(sessionId)).toBe(false);
+    host.close();
+  });
+
   test("stores kernel and transcript tables in the same actor database", () => {
     const path = paths();
     const sessionId = "co-located-transcript";
@@ -182,6 +205,17 @@ describe("per-session session kernel storage", () => {
       transcriptAuthority: "shared",
       needsScan: true,
     });
+    expect(() => host.transcript({
+      op: "append",
+      sessionId,
+      requestId: "not-authoritative",
+      entries: [{
+        id: "blocked",
+        type: "user",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        content: "blocked",
+      }],
+    })).toThrow("no isolated actor transcript placement");
     expect(host.central.hasSessionDurableState(sessionId)).toBe(false);
     expect(host.central.isolatedOutboxSessionId(outboxId)).toBe(sessionId);
     expect(host.storeForSession(sessionId).runState(sessionId)).toMatchObject({
